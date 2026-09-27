@@ -22,6 +22,7 @@ test('seller uploads under review remain outstanding', () => {
   expect(html).toContain('1 of 2 complete')
 })
 
+
 test('optional seller documents remain visible without changing either view’s progress', () => {
   const legalItems = [
     { key: 'signed_mandate', label: 'Signed Mandate', required: true, state: 'pending' },

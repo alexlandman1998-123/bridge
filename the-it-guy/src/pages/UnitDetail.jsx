@@ -4051,6 +4051,11 @@ function UnitDetail() {
     }
 
     const normalizedStatus = normalizeDerivedDocumentStatus(nextStatus)
+    const mappedStatus = mapUiStatusToRequirement(normalizedStatus)
+    const reviewNotes = ['rejected', 'reupload_required', 'waived'].includes(mappedStatus)
+      ? window.prompt('Add a reason for this document decision', '')
+      : ''
+    if (reviewNotes === null || (['rejected', 'reupload_required', 'waived'].includes(mappedStatus) && !reviewNotes.trim())) return
     const previousStatus = manualDocumentStatusOverrides[documentItem.key]
     setManualDocumentStatusOverrides((previous) => ({
       ...previous,
@@ -4066,8 +4071,9 @@ function UnitDetail() {
       await updateTransactionRequiredDocumentStatus({
         transactionId: detail.transaction.id,
         documentKey: documentItem.requirementKey,
-        status: mapUiStatusToRequirement(normalizedStatus),
+        status: mappedStatus,
         actorRole: effectiveEditorRole,
+        reviewNotes,
       })
       setClientInfoSavedAt(new Date().toISOString())
       window.dispatchEvent(new Event('itg:transaction-updated'))
@@ -4130,6 +4136,10 @@ function UnitDetail() {
       return
     }
 
+    const needsReason = ['rejected', 'reupload_required', 'waived'].includes(nextStatus)
+    const reviewNotes = needsReason ? window.prompt('Add a reason for this document decision', '') : ''
+    if (reviewNotes === null || (needsReason && !reviewNotes.trim())) return
+
     try {
       setReservationActionLoading(nextStatus)
       setError('')
@@ -4139,6 +4149,7 @@ function UnitDetail() {
         documentKey: reservationRequirement.key,
         status: nextStatus,
         actorRole: effectiveEditorRole,
+        reviewNotes,
       })
 
       if (nextStatus === 'accepted') {
@@ -4449,6 +4460,7 @@ function UnitDetail() {
     try {
       const requestId = String(row?.documentRequestId || '').trim()
       const reason = window.prompt('Add rejection reason', '') || ''
+      if (!reason.trim()) return
       setDocumentRequestStatusUpdatingId(String(row?.requiredDocumentId || requestId || ''))
       setError('')
       if (row?.requiredDocumentId) {
@@ -4457,11 +4469,13 @@ function UnitDetail() {
           documentKey: row.requiredDocumentId,
           status: 'rejected',
           actorRole: effectiveEditorRole,
+          reviewNotes: reason,
         })
       } else if (requestId) {
         await updateTransactionDocumentRequestStatus({
           requestId,
           status: 'rejected',
+          rejectedReason: reason,
         })
       }
       window.dispatchEvent(new Event('itg:transaction-updated'))

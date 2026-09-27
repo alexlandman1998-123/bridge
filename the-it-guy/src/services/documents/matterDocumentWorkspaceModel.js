@@ -526,6 +526,9 @@ export function getAttorneyCategoryForRequiredDocument(requirement = {}) {
   if (visibleSection === 'finance_documents' || groupKey === 'finance') {
     return 'Internal Working Documents'
   }
+  // Historical seller rows may still carry the old buyer_fica group. Party
+  // ownership wins over that compatibility label until they are reconciled.
+  if (expectedFromRole === 'seller' && groupKey === 'buyer_fica') return 'Seller FICA / Compliance'
   if (groupKey.includes('buyer') || key.startsWith('buyer_')) return 'Buyer FICA / Compliance'
   if (groupKey.includes('seller') || groupKey.includes('developer') || key.startsWith('seller_') || key.startsWith('developer_') || expectedFromRole === 'developer') return 'Seller FICA / Compliance'
   if (key.includes('guarantee')) return 'Guarantees'

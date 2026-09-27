@@ -17,6 +17,7 @@ export async function createAdditionalDocumentRequest(payload = {}) {
     createdByRole: payload.createdByRole,
     requests: requests.map((item) => ({
       title: item.documentName || item.title,
+      canonicalRequirementInstanceId: item.canonicalRequirementInstanceId || null,
       notes: item.notes || item.reason || '',
       priority: item.priority || 'normal',
       dueDate: item.dueDate || null,

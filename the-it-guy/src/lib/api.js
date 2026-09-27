@@ -11302,6 +11302,7 @@ function normalizeDocumentRequestRow(row) {
       normalizeRoleType(row?.assigned_to_role || null) || normalizeRequestRoleScope(row?.assigned_to_role || null),
     assignedToUserId: row?.assigned_to_user_id || null,
     requestGroupId: row?.request_group_id || null,
+    canonicalRequirementInstanceId: row?.canonical_requirement_instance_id || null,
     status: normalizeDocumentRequestStatusValue(row?.status),
     requiresReview: row?.requires_review !== false,
     requestedDocumentId: row?.requested_document_id || null,
@@ -15049,7 +15050,7 @@ async function loadTransactionDocumentRequestsByIds(client, transactionIds = [])
   let query = await client
     .from('document_requests')
     .select(
-      'id, transaction_id, category, document_type, title, description, notes, priority, due_date, assigned_to_role, assigned_to_user_id, request_group_id, status, requires_review, requested_document_id, created_by, created_by_role, completed_at, rejected_reason, resend_count, last_resent_at, requested_from, visibility_scope, request_type, created_at, updated_at',
+      'id, transaction_id, category, document_type, title, description, notes, priority, due_date, assigned_to_role, assigned_to_user_id, request_group_id, canonical_requirement_instance_id, status, requires_review, requested_document_id, created_by, created_by_role, completed_at, rejected_reason, resend_count, last_resent_at, requested_from, visibility_scope, request_type, created_at, updated_at',
     )
     .in('transaction_id', ids)
     .order('created_at', { ascending: false })
@@ -15605,6 +15606,7 @@ export async function createTransactionDocumentRequests({
       ),
       assigned_to_user_id: request.assignedToUserId || request.assigned_to_user_id || null,
       request_group_id: groupId,
+      canonical_requirement_instance_id: request.canonicalRequirementInstanceId || request.canonical_requirement_instance_id || null,
       status: normalizeDocumentRequestStatusValue(request.status || 'requested'),
       requires_review: request.requiresReview !== false && request.requires_review !== false,
       created_by: actor.userId || null,
@@ -15619,10 +15621,11 @@ export async function createTransactionDocumentRequests({
     .from('document_requests')
     .insert(insertRows)
     .select(
-      'id, transaction_id, category, document_type, title, description, notes, priority, due_date, assigned_to_role, assigned_to_user_id, request_group_id, status, requires_review, requested_document_id, created_by, created_by_role, completed_at, rejected_reason, resend_count, last_resent_at, requested_from, visibility_scope, request_type, created_at, updated_at',
+      'id, transaction_id, category, document_type, title, description, notes, priority, due_date, assigned_to_role, assigned_to_user_id, request_group_id, canonical_requirement_instance_id, status, requires_review, requested_document_id, created_by, created_by_role, completed_at, rejected_reason, resend_count, last_resent_at, requested_from, visibility_scope, request_type, created_at, updated_at',
     )
 
   if (
+    !insertRows.some((row) => row.canonical_requirement_instance_id) &&
     insert.error &&
     (isMissingColumnError(insert.error, 'assigned_to_user_id') ||
       isMissingColumnError(insert.error, 'request_group_id') ||
@@ -15749,7 +15752,7 @@ export async function updateTransactionDocumentRequestStatus({
   const actor = await resolveActiveProfileContext(client)
   const existingRequestLookup = await client
     .from('document_requests')
-    .select('id, transaction_id')
+    .select('id, transaction_id, canonical_requirement_instance_id, requested_document_id')
     .eq('id', requestId)
     .maybeSingle()
 
@@ -15774,6 +15777,21 @@ export async function updateTransactionDocumentRequestStatus({
   }
 
   const normalizedStatus = normalizeDocumentRequestStatusValue(status)
+  if (existingRequest.canonical_requirement_instance_id && ['completed', 'rejected'].includes(normalizedStatus)) {
+    await reviewCanonicalDocumentRequirement({
+      requirementInstanceId: existingRequest.canonical_requirement_instance_id,
+      documentId: existingRequest.requested_document_id || null,
+      action: normalizedStatus === 'completed' ? 'approve' : 'reject',
+      reason: rejectedReason || '',
+    })
+    const refreshed = await client
+      .from('document_requests')
+      .select('id, transaction_id, canonical_requirement_instance_id, requested_document_id, status, rejected_reason, completed_at, updated_at')
+      .eq('id', requestId)
+      .single()
+    if (refreshed.error) throw refreshed.error
+    return normalizeDocumentRequestRow(refreshed.data)
+  }
   const now = new Date().toISOString()
   const payload = {
     status: normalizedStatus,
@@ -25787,6 +25805,26 @@ export async function fetchClientPortalCanonicalDocumentProjection(token) {
   }
 }
 
+export async function fetchTransactionCanonicalDocumentProjection(transactionId, options = {}) {
+  const normalizedId = normalizeNullableText(transactionId)
+  if (!normalizedId) throw new Error('Transaction ID is required.')
+  const client = requireClient()
+  const { data, error } = await client.rpc('bridge_transaction_document_projection', {
+    p_transaction_id: normalizedId,
+    p_seller_token: options.sellerToken || null,
+    p_seller_session: options.sellerSession || null,
+  })
+  if (error) throw error
+  if (!data || String(data.transactionId || '') !== normalizedId || !Array.isArray(data.requirements)) {
+    throw new Error('The shared document register returned an invalid transaction projection.')
+  }
+  const expectedRole = options.sellerToken ? 'seller' : ''
+  if (expectedRole && data.role !== expectedRole) {
+    throw new Error('The shared document register returned the wrong portal role.')
+  }
+  return data
+}
+
 export async function uploadClientPortalMatterFinancialProof({
   token,
   workspace = 'buyer',
@@ -35714,6 +35752,7 @@ export async function fetchTransactionDocumentsWorkspace(transactionId, options 
 
   const [
     documents,
+    canonicalDocumentProjection,
     onboardingFormData,
     documentRequestsByTransactionId,
     checklistItemsByTransactionId,
@@ -35721,6 +35760,7 @@ export async function fetchTransactionDocumentsWorkspace(transactionId, options 
     transactionRequirementsByTransactionId,
   ] = await Promise.all([
     loadSharedDocuments(client, { transactionIds: [canonicalTransactionId], viewer: 'internal' }),
+    fetchTransactionCanonicalDocumentProjection(canonicalTransactionId),
     fetchOnboardingFormDataForTransaction(client, canonicalTransactionId, transaction?.purchaser_type || 'individual'),
     loadTransactionDocumentRequestsByIds(client, [canonicalTransactionId]),
     loadTransactionChecklistItemsByIds(client, [canonicalTransactionId]),
@@ -35752,6 +35792,7 @@ export async function fetchTransactionDocumentsWorkspace(transactionId, options 
   return {
     transaction,
     documents,
+    canonicalDocumentProjection,
     onboardingFormData: onboardingFormData || null,
     transactionRequiredDocuments: liveChecklist.requiredDocuments,
     requiredDocumentChecklist: liveChecklist.requiredDocumentChecklist,
@@ -45781,7 +45822,7 @@ export async function updateTransactionRequiredDocumentStatus({
     normalizedInputStatus === 'verified' ? 'accepted' : normalizedInputStatus,
     'missing',
   )
-  const isUploaded = ['uploaded', 'under_review', 'accepted'].includes(normalizedStatus)
+  let isUploaded = ['uploaded', 'under_review', 'accepted'].includes(normalizedStatus)
   const normalizedActorRole = normalizeRoleType(actorRole || 'developer')
   const actorProfile = await resolveActiveProfileContext(client)
   const effectiveActorRole = normalizedActorRole || actorProfile.role || 'developer'
@@ -45791,7 +45832,7 @@ export async function updateTransactionRequiredDocumentStatus({
 
   const requirementLookup = await client
     .from('transaction_required_documents')
-    .select('uploaded_document_id')
+    .select('id, uploaded_document_id, canonical_requirement_instance_id')
     .eq('transaction_id', transactionId)
     .eq('document_key', documentKey)
     .maybeSingle()
@@ -45805,19 +45846,33 @@ export async function updateTransactionRequiredDocumentStatus({
   } else {
     uploadedDocumentId = requirementLookup.data?.uploaded_document_id || null
   }
+  if (uploadedDocumentId && ['rejected', 'reupload_required'].includes(normalizedStatus)) isUploaded = true
 
-  let updateResult = await client
+  const canonicalRequirementInstanceId = requirementLookup.data?.canonical_requirement_instance_id || null
+  if (canonicalRequirementInstanceId && ['accepted', 'approved', 'rejected', 'reupload_required', 'waived'].includes(normalizedStatus)) {
+    await reviewCanonicalDocumentRequirement({
+      requirementInstanceId: canonicalRequirementInstanceId,
+      documentId: uploadedDocumentId,
+      action: normalizedStatus === 'waived' ? 'waive' : ['rejected', 'reupload_required'].includes(normalizedStatus) ? 'reject' : 'approve',
+      reason: reviewNotes,
+    })
+  }
+
+  let updateQuery = client
     .from('transaction_required_documents')
     .update({
       status: normalizedStatus,
       is_uploaded: isUploaded,
       uploaded_at: isUploaded ? now : null,
       verified_at: normalizedStatus === 'accepted' ? now : null,
-      rejected_at: normalizedStatus === 'reupload_required' ? now : null,
+      rejected_at: ['rejected', 'reupload_required'].includes(normalizedStatus) ? now : null,
       updated_at: now,
     })
     .eq('transaction_id', transactionId)
-    .eq('document_key', documentKey)
+  updateQuery = requirementLookup.data?.id
+    ? updateQuery.eq('id', requirementLookup.data.id)
+    : updateQuery.eq('document_key', documentKey)
+  let updateResult = await updateQuery
 
   if (
     updateResult.error &&
@@ -45826,14 +45881,17 @@ export async function updateTransactionRequiredDocumentStatus({
       isMissingColumnError(updateResult.error, 'verified_at') ||
       isMissingColumnError(updateResult.error, 'rejected_at'))
   ) {
-    updateResult = await client
+    let fallbackUpdateQuery = client
       .from('transaction_required_documents')
       .update({
         is_uploaded: isUploaded,
         updated_at: now,
       })
       .eq('transaction_id', transactionId)
-      .eq('document_key', documentKey)
+    fallbackUpdateQuery = requirementLookup.data?.id
+      ? fallbackUpdateQuery.eq('id', requirementLookup.data.id)
+      : fallbackUpdateQuery.eq('document_key', documentKey)
+    updateResult = await fallbackUpdateQuery
   }
 
   if (updateResult.error) {

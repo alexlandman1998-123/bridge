@@ -3,6 +3,7 @@ import {
   fetchSellerTransferJourneyUpdatesByToken,
   fetchClientPortalByToken,
   fetchClientPortalCanonicalDocumentProjection,
+  fetchTransactionCanonicalDocumentProjection,
   fetchClientPortalContextsByToken,
   fetchClientPortalCoreByToken,
   fetchClientPortalJourneySnapshotByToken,
@@ -3388,7 +3389,7 @@ function canonicalUnmatchedDocumentStatus(document = {}) {
   return 'uploaded'
 }
 
-export function buildCanonicalBuyerDocumentCenter(projection = {}, projectionError = '') {
+export function buildCanonicalBuyerDocumentCenter(projection = {}, projectionError = '', role = 'buyer') {
   if (projectionError) {
     return {
       requiredDocuments: [],
@@ -3427,7 +3428,9 @@ export function buildCanonicalBuyerDocumentCenter(projection = {}, projectionErr
     const status = canonicalRequirementStatusForPortal(requirement?.status || 'required')
     const terminal = ['approved', 'completed', 'waived', 'not_applicable'].includes(status)
     const uploadable = Array.isArray(requirement?.uploadable_by_roles)
-      && requirement.uploadable_by_roles.some((role) => ['buyer', 'client', 'purchaser'].includes(normalizeValue(role)))
+      && requirement.uploadable_by_roles.some((candidate) =>
+        [role, 'client', ...(role === 'buyer' ? ['purchaser'] : ['vendor', 'selling_client'])].includes(normalizeValue(candidate)),
+      )
     const title = String(definition?.display_label || requirement?.display_label || requirement?.document_definition_key || 'Document').trim()
     const categoryKey = canonicalBuyerDocumentCategory(packKey)
     return {
@@ -3439,7 +3442,7 @@ export function buildCanonicalBuyerDocumentCenter(projection = {}, projectionErr
       canonical_requirement_instance_id: id,
       key: String(requirement?.document_definition_key || '').trim(),
       title,
-      description: String(definition?.description || requirement?.description || 'Supporting document required for your purchase.').trim(),
+      description: String(definition?.description || requirement?.description || 'Supporting document required for your transaction.').trim(),
       group: packKey,
       category: packKey,
       buyerCategoryKey: categoryKey,
@@ -3465,6 +3468,7 @@ export function buildCanonicalBuyerDocumentCenter(projection = {}, projectionErr
     }
   })
   const unmatchedItems = documents
+    .filter(() => role === 'buyer')
     .filter((document) => ['agent_buyer_document_upload', 'client_portal_requested_document_upload'].includes(document?.source) &&
       !document?.canonical_requirement_instance_id &&
       !document?.canonicalRequirementInstanceId &&
@@ -3517,7 +3521,44 @@ export function buildCanonicalBuyerDocumentCenter(projection = {}, projectionErr
   }
 }
 
+export function buildCanonicalSellerDocumentCenter(projection = {}, legacyCenter = {}) {
+  const canonical = buildCanonicalBuyerDocumentCenter(projection, '', 'seller')
+  const linkedIds = new Set((projection?.documents || []).map((document) => String(document?.id || '')).filter(Boolean))
+  const standaloneDocuments = (legacyCenter?.uploadedDocuments || [])
+    .filter((document) => document?.id && !linkedIds.has(String(document.id)) &&
+      !document?.canonical_requirement_instance_id && !document?.canonicalRequirementInstanceId)
+  const standaloneItems = standaloneDocuments.map((document) => ({
+    ...buildUploadedDocumentCenterItem(document),
+    sourceType: 'uploaded_document',
+    status: canonicalUnmatchedDocumentStatus(document),
+  }))
+  return {
+    ...legacyCenter,
+    ...canonical,
+    uploadedDocuments: [...canonical.uploadedDocuments, ...standaloneDocuments],
+    saleDocuments: legacyCenter?.saleDocuments || [],
+    signedDocuments: legacyCenter?.signedDocuments || [],
+    items: [...canonical.items, ...standaloneItems],
+    standaloneDocuments,
+    // Listing-stage paperwork remains accessible, but only transaction
+    // canonical rows can appear as required matter documents.
+    canonicalOnly: true,
+  }
+}
+
 export function buildDocumentCenter(portalData, workspaceMode = 'buying') {
+  if (workspaceMode === 'selling' && portalData?.canonicalDocumentProjection) {
+    return buildCanonicalSellerDocumentCenter(
+      portalData.canonicalDocumentProjection,
+      buildDocumentCenter({ ...portalData, canonicalDocumentProjection: null, canonicalDocumentProjectionError: null }, workspaceMode),
+    )
+  }
+  if (workspaceMode === 'selling' && portalData?.canonicalDocumentProjectionError) {
+    return {
+      ...buildCanonicalBuyerDocumentCenter(null, portalData.canonicalDocumentProjectionError, 'seller'),
+      saleDocuments: buildSellerPortalSaleDocuments(portalData, workspaceMode),
+    }
+  }
   if (workspaceMode === 'buying' && portalData?.canonicalDocumentProjection) {
     return buildCanonicalBuyerDocumentCenter(portalData.canonicalDocumentProjection)
   }
@@ -4144,7 +4185,7 @@ export async function getClientPortalWorkspaceData(token, workspace = 'shared', 
     sellerPortalAccessToken: options?.sellerPortalAccessToken,
     clientRole,
   })
-  if (workspaceMode === 'buying' && !isSellerOnboardingToken(token) && isDocumentTrustPhase4Enabled()) {
+  if (workspaceMode === 'buying' && !isSellerOnboardingToken(token)) {
     try {
       const canonicalDocumentProjection = await fetchClientPortalCanonicalDocumentProjection(token)
       if (portalData?.transaction?.id && canonicalDocumentProjection.transactionId !== portalData.transaction.id) {
@@ -4159,6 +4200,24 @@ export async function getClientPortalWorkspaceData(token, workspace = 'shared', 
       portalData = {
         ...portalData,
         canonicalDocumentProjectionError: error?.message || 'Canonical document projection unavailable.',
+      }
+    }
+  }
+  const sellerMatterId = portalData?.transaction?.id || (Array.isArray(context?.contexts)
+    ? context.contexts.find((item) => item?.contextType === 'selling' && item?.transactionId)?.transactionId
+    : null)
+  if (workspaceMode === 'selling' && isSellerOnboardingToken(token) && sellerMatterId) {
+    try {
+      const canonicalDocumentProjection = await fetchTransactionCanonicalDocumentProjection(sellerMatterId, {
+        sellerToken: token,
+        sellerSession: options?.sellerPortalAccessToken,
+      })
+      portalData = { ...portalData, canonicalDocumentProjection }
+    } catch (error) {
+      console.error('[document-trust-phase5] Seller transaction projection unavailable.', error)
+      portalData = {
+        ...portalData,
+        canonicalDocumentProjectionError: error?.message || 'Shared document register unavailable.',
       }
     }
   }

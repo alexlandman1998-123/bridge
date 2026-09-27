@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { buildCanonicalBuyerDocumentCenter } from '../clientPortalWorkspaceService.js'
+import { buildCanonicalBuyerDocumentCenter, buildCanonicalSellerDocumentCenter } from '../clientPortalWorkspaceService.js'
 
 test('Phase 4 buyer document centre uses only exact canonical projection documents', () => {
   const centre = buildCanonicalBuyerDocumentCenter({
@@ -79,4 +79,27 @@ test('additional-request buyer uploads remain visible without being mislabelled 
   expect(centre.standaloneDocuments).toHaveLength(1)
   expect(centre.unmatchedDocuments).toHaveLength(0)
   expect(centre.items[0]).toMatchObject({ status: 'uploaded', awaitingRequirementMatch: false })
+})
+
+test('seller transaction requirements replace legacy checklist rows but retain listing paperwork', () => {
+  const centre = buildCanonicalSellerDocumentCenter({
+    role: 'seller',
+    requirements: [{
+      id: 'seller-fica', document_definition_key: 'seller_id_document',
+      pack_key: 'seller_identity_fica', status: 'requested',
+      uploadable_by_roles: ['seller'],
+      document_definitions: { display_label: 'Seller ID' },
+    }],
+    documents: [],
+  }, {
+    requiredDocuments: [{ id: 'legacy-duplicate', key: 'seller_id_document' }],
+    uploadedDocuments: [{ id: 'signed-mandate', name: 'Signed mandate', status: 'approved' }],
+    saleDocuments: [{ id: 'otp', title: 'Signed OTP' }],
+  })
+  expect(centre.requiredDocuments).toHaveLength(1)
+  expect(centre.requiredDocuments[0].canonicalRequirementInstanceId).toBe('seller-fica')
+  expect(centre.requiredDocuments[0].uploadSpec.requirementInstanceId).toBe('seller-fica')
+  expect(centre.items.map((item) => item.sourceId)).not.toContain('legacy-duplicate')
+  expect(centre.standaloneDocuments.map((item) => item.id)).toContain('signed-mandate')
+  expect(centre.saleDocuments).toHaveLength(1)
 })

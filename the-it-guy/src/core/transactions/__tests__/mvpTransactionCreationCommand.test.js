@@ -27,6 +27,29 @@ const routingProfile = {
   assert.equal(command.launchScope.status, 'supported')
 }
 
+{
+  const command = prepareMvpTransactionCreationCommand({
+    routingProfile,
+    organisationId: 'org-1',
+    listingId: 'listing-1',
+    acceptedOfferId: 'offer-1',
+    assignedAgentEmail: 'agent@arch9.test',
+  })
+  assert.equal(command.leadId, null)
+  assert.equal(command.idempotencyKey, 'mvp_tx_org_1_offer_offer_1')
+}
+
+assert.throws(
+  () => prepareMvpTransactionCreationCommand({
+    routingProfile,
+    organisationId: 'org-1',
+    listingId: 'listing-1',
+    requireAcceptedOffer: false,
+    assignedAgentEmail: 'agent@arch9.test',
+  }),
+  (error) => error?.code === 'mvp_transaction_creation_incomplete',
+)
+
 assert.throws(
   () => prepareMvpTransactionCreationCommand({
     routingProfile,

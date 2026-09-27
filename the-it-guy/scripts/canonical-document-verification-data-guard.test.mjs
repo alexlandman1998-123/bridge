@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { assertCanonicalVerificationDataSource } from './canonical-document-verification-data-guard.mjs'
+import { createCanonicalVerificationClient } from './canonical-document-verification-client.mjs'
 
 function table(rows = [{}], extra = {}) {
   return { available: true, error: null, fetchedRows: rows.length, rows, ...extra }
@@ -63,5 +64,25 @@ assert.equal(assertCanonicalVerificationDataSource({
 const verifierSource = await readFile(new URL('./canonical-document-real-staging-dry-run.mjs', import.meta.url), 'utf8')
 assert.match(verifierSource, /assertCanonicalVerificationDataSource\(\{/, 'real staging verifier must invoke the fail-closed data guard')
 assert.doesNotMatch(verifierSource, /direct_table_reads|fetchAllTables/, 'real staging verifier must not fall back to partial direct table reads')
+assert.match(verifierSource, /fetchPhase6ReconciliationPlan\(supabase\)/, 'scoped verification must fetch the transaction reconciliation plan')
+
+const testJwt = (role) => `header.${Buffer.from(JSON.stringify({ role })).toString('base64url')}.signature`
+assert.throws(() => createCanonicalVerificationClient({ SUPABASE_URL: 'https://example.supabase.co' }), /SUPABASE_SERVICE_ROLE_KEY/)
+assert.throws(() => createCanonicalVerificationClient({
+  SUPABASE_URL: 'https://example.supabase.co',
+  SUPABASE_SERVICE_ROLE_KEY: testJwt('anon'),
+}), /service-role/)
+assert.equal(createCanonicalVerificationClient({
+  SUPABASE_URL: 'https://example.supabase.co',
+  SUPABASE_SERVICE_ROLE_KEY: testJwt('service_role'),
+}).supabaseUrl, 'https://example.supabase.co')
+
+const migration = await readFile(new URL('../../supabase/migrations/20260927093752_transaction_document_existing_matter_reconciliation_phase6.sql', import.meta.url), 'utf8')
+assert.match(migration, /revoke all on function public\.canonical_document_verification_snapshot\([\s\S]*?from public, anon, authenticated/i)
+assert.match(migration, /create or replace function public\.bridge_plan_transaction_document_reconciliation_phase6/)
+assert.match(migration, /create or replace function public\.bridge_apply_transaction_document_reconciliation_phase6/)
+assert.match(migration, /p_expected_digest/)
+assert.match(migration, /pg_advisory_xact_lock/)
+assert.doesNotMatch(migration, /update public\.document_requests/i, 'historical request state must remain for manual review')
 
 console.log('canonical document verification data guard tests passed')

@@ -482,7 +482,7 @@ try {
   const pageSource = readFileSync(new URL('../src/pages/AttorneyTransactionDetail.jsx', import.meta.url), 'utf8')
   assert.match(pageSource, /onSaveConfirmations=\{async \(responses\) => persistTaskUpdate\(\s*selectedTask,\s*selectedTask\.status,/,
     'Save answers must persist without changing task status')
-  assert.match(pageSource, /onSelectTask=\{selectTaskWithUnsavedGuard\}/)
+  assert.match(pageSource, /onSelectTask=\{navigateTaskWithGuard\}/)
   assert.match(pageSource, /onConfirmationDirtyChange=\{handleConfirmationDirtyChange\}/)
   assert.match(pageSource, /activeWorkspaceMenu === 'transfer' && nextMenu !== 'transfer' && !confirmDiscardAttorneyAnswers\(\)/,
     'leaving the Work tab must guard unsaved answers')
@@ -609,7 +609,7 @@ try {
     const requested = []
     const uploaded = []
     const missingView = renderInteractive(createElement(Workbench, {
-      model: otpModel, selectedPhaseKey: 'instruction', phases: [{ key: 'instruction', label: 'Instruction', completed: 0, total: 5, tasks: [] }],
+      model: otpModel, focusedStage: true, selectedPhaseKey: 'instruction', phases: [{ key: 'instruction', label: 'Instruction', completed: 0, total: 5, tasks: [] }],
       onRequestDocument: requirement => requested.push(requirement), onOpenDocuments: (document, requirement) => uploaded.push([document, requirement]), onSaveConfirmations: async () => true,
     }))
     fireEvent.click(missingView.getByRole('button', { name: /Review OTP/ }))

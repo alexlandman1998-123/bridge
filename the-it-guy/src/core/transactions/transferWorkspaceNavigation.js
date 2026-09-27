@@ -1,0 +1,60 @@
+import { isAttorneyTaskResolved } from './attorneyTaskOutcomes.js'
+
+const QUERY_KEYS = ['transferView', 'transferStage', 'transferTask']
+
+export function readTransferWorkspaceNavigation(search = '') {
+  const params = new URLSearchParams(search)
+  const view = params.get('transferView')
+  return {
+    active: view === 'overview' || view === 'workspace',
+    view: view === 'workspace' ? 'workspace' : 'overview',
+    stageKey: params.get('transferStage') || '',
+    taskKey: params.get('transferTask') || '',
+  }
+}
+
+export function writeTransferWorkspaceNavigation(search = '', navigation = null) {
+  const params = new URLSearchParams(search)
+  QUERY_KEYS.forEach((key) => params.delete(key))
+  if (navigation?.view === 'overview' || navigation?.view === 'workspace') {
+    params.set('transferView', navigation.view)
+    if (navigation.stageKey) params.set('transferStage', navigation.stageKey)
+    if (navigation.view === 'workspace' && navigation.taskKey) params.set('transferTask', navigation.taskKey)
+  }
+  const query = params.toString()
+  return query ? `?${query}` : ''
+}
+
+export function resolveTransferWorkspaceNavigation(navigation = {}, phases = []) {
+  const fallbackPhase = phases.find((phase) => phase.hasCurrentTask)
+    || phases.find((phase) => phase.status === 'in_progress')
+    || phases[0]
+    || null
+  const requestedPhase = phases.find((phase) => phase.key === navigation.stageKey)
+  const phase = requestedPhase || fallbackPhase
+  const requestedTask = phase?.tasks?.find((task) => task.key === navigation.taskKey) || null
+  const validWorkspace = navigation.view === 'workspace' && Boolean(requestedPhase && requestedTask)
+  return {
+    view: validWorkspace ? 'workspace' : 'overview',
+    phase,
+    task: validWorkspace ? requestedTask : null,
+    invalid: Boolean(navigation.active && (
+      (navigation.stageKey && !requestedPhase) ||
+      (navigation.view === 'workspace' && !validWorkspace)
+    )),
+  }
+}
+
+export function getTransferStageEntryTask(phase = null) {
+  if (!phase) return null
+  return phase.tasks?.find((task) => !isAttorneyTaskResolved(task.status))
+    || phase.currentTask
+    || phase.tasks?.[0]
+    || null
+}
+
+export function getNextTransferStageTask(phase = null, currentTaskKey = '') {
+  const tasks = phase?.tasks || []
+  const currentIndex = tasks.findIndex((task) => task.key === currentTaskKey)
+  return currentIndex >= 0 ? tasks[currentIndex + 1] || null : null
+}

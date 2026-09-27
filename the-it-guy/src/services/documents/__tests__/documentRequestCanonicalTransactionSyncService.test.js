@@ -20,6 +20,24 @@ function createFakeClient(seedRows = []) {
   return {
     state,
     from(table) {
+      if (table === 'document_requirement_instances') {
+        return {
+          select() {
+            return {
+              eq(column, value) {
+                assert.equal(column, 'context_type')
+                assert.equal(value, 'transaction')
+                return {
+                  eq(contextColumn) {
+                    assert.equal(contextColumn, 'context_id')
+                    return Promise.resolve({ data: [], error: null })
+                  },
+                }
+              },
+            }
+          },
+        }
+      }
       assert.equal(table, 'transaction_required_documents')
       return {
         select() {

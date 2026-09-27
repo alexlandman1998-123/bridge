@@ -1897,17 +1897,16 @@ export async function ensureAcceptedOfferConversionCandidate({ organisationId = 
   const scopedOfferId = toNullableUuid(offerId || offer?.offerId || offer?.id)
   if (!scopedOrganisationId || !scopedOfferId) throw new Error('Accepted offer id and organisation id are required before preparing conversion.')
 
-  let canonicalOffer = offer
-  if (!canonicalOffer) {
-    const { data, error } = await supabase
-      .from('offers')
-      .select('*')
-      .eq('id', scopedOfferId)
-      .eq('organisation_id', scopedOrganisationId)
-      .maybeSingle()
-    if (error) throw error
-    canonicalOffer = mapOfferDbRow(data)
-  }
+  // The saved offer, not a caller's possibly stale screen snapshot, owns the
+  // conversion identity and agreed terms.
+  const { data: offerRow, error: offerError } = await supabase
+    .from('offers')
+    .select('*')
+    .eq('id', scopedOfferId)
+    .eq('organisation_id', scopedOrganisationId)
+    .maybeSingle()
+  if (offerError) throw offerError
+  let canonicalOffer = mapOfferDbRow(offerRow)
   if (!canonicalOffer) throw new Error('Accepted offer not found.')
   if (!['accepted', 'converted_to_transaction'].includes(normalizeOfferStatus(canonicalOffer.status))) {
     throw new Error('Only an accepted offer can prepare a transaction conversion candidate.')
@@ -2988,6 +2987,20 @@ async function finalizeAcceptedOfferTransactionLinkage({
   return { transactionId: scopedTransactionId }
 }
 
+function assertAcceptedOfferTransactionSources(transaction, offer, listingId) {
+  const offerId = toNullableUuid(offer?.offerId || offer?.id)
+  if (!transaction ||
+    toNullableUuid(transaction.accepted_offer_id) !== offerId ||
+    toNullableUuid(transaction.listing_id) !== listingId ||
+    toNullableUuid(transaction.originating_buyer_lead_id) !== toNullableUuid(offer?.buyerLeadId) ||
+    toNullableUuid(transaction.buyer_contact_id) !== toNullableUuid(offer?.buyerContactId) ||
+    (offer?.sellerContactId && toNullableUuid(transaction.seller_contact_id) !== toNullableUuid(offer.sellerContactId))) {
+    const error = new Error('The existing transaction has conflicting offer, listing, or party source links.')
+    error.code = 'ACCEPTED_OFFER_SOURCE_CONFLICT'
+    throw error
+  }
+}
+
 export async function createTransactionFromAcceptedCanonicalOffer({
   organisationId = '',
   offerId = '',
@@ -3021,6 +3034,33 @@ export async function createTransactionFromAcceptedCanonicalOffer({
   if (!canonicalOffer) {
     throw new Error('Accepted offer not found.')
   }
+  if ((offer?.id || offer?.offerId) && toNullableUuid(offer.id || offer.offerId) !== scopedOfferId) {
+    const error = new Error('The requested offer conflicts with the provided offer snapshot.')
+    error.code = 'ACCEPTED_OFFER_SOURCE_CONFLICT'
+    throw error
+  }
+  const offerListingId = toNullableUuid(canonicalOffer.listingId)
+  if (!offerListingId) throw new Error('The accepted offer has no saved listing source.')
+  const requestedListingId = toNullableUuid(payload?.listingId || listing?.id)
+  if (requestedListingId && requestedListingId !== offerListingId) {
+    const error = new Error('The requested listing conflicts with the saved accepted offer.')
+    error.code = 'ACCEPTED_OFFER_SOURCE_CONFLICT'
+    throw error
+  }
+  const offerBuyerLeadId = toNullableUuid(canonicalOffer.buyerLeadId)
+  const requestedBuyerLeadId = toNullableUuid(payload?.originatingBuyerLeadId || payload?.originatingLeadId || lead?.leadId)
+  if (requestedBuyerLeadId && requestedBuyerLeadId !== offerBuyerLeadId) {
+    const error = new Error('The buyer lead conflicts with the saved accepted offer.')
+    error.code = 'ACCEPTED_OFFER_SOURCE_CONFLICT'
+    throw error
+  }
+  const requestedBuyerContactId = toNullableUuid(payload?.buyerContactId || lead?.contactId)
+  if (requestedBuyerContactId && requestedBuyerContactId !== toNullableUuid(canonicalOffer.buyerContactId)) {
+    const error = new Error('The buyer contact conflicts with the saved accepted offer.')
+    error.code = 'ACCEPTED_OFFER_SOURCE_CONFLICT'
+    throw error
+  }
+  const requestedSellerContactId = toNullableUuid(payload?.sellerContactId)
   const canonicalOfferStatus = normalizeOfferStatus(canonicalOffer.status)
   const linkedTransactionId = toNullableUuid(canonicalOffer.transactionId || canonicalOffer.transaction_id)
 
@@ -3029,11 +3069,12 @@ export async function createTransactionFromAcceptedCanonicalOffer({
       organisationId: scopedOrganisationId,
       transactionId: linkedTransactionId,
     })
+    assertAcceptedOfferTransactionSources(linkedTransactionIdentity, canonicalOffer, offerListingId)
     await finalizeAcceptedOfferTransactionLinkage({
       organisationId: scopedOrganisationId,
       offerId: scopedOfferId,
       offer: canonicalOffer,
-      listing,
+      listing: null,
       transactionId: linkedTransactionId,
       actor,
       payload,
@@ -3069,11 +3110,12 @@ export async function createTransactionFromAcceptedCanonicalOffer({
 
   if (existingAcceptedOfferTransaction?.id) {
     const reusedTransactionId = toNullableUuid(existingAcceptedOfferTransaction.id)
+    assertAcceptedOfferTransactionSources(existingAcceptedOfferTransaction, canonicalOffer, offerListingId)
     await finalizeAcceptedOfferTransactionLinkage({
       organisationId: scopedOrganisationId,
       offerId: scopedOfferId,
       offer: canonicalOffer,
-      listing,
+      listing: null,
       transactionId: reusedTransactionId,
       actor,
       payload,
@@ -3125,25 +3167,92 @@ export async function createTransactionFromAcceptedCanonicalOffer({
     throw error
   }
 
-  let canonicalListing = listing
-  const canonicalListingId = toNullableUuid(canonicalOffer.listingId || payload?.listingId || listing?.id)
-  if (canonicalListingId) {
-    const listingQuery = await supabase
-      .from('private_listings')
-      .select('*')
-      .eq('id', canonicalListingId)
-      .eq('organisation_id', scopedOrganisationId)
-      .maybeSingle()
-    if (!listingQuery.error && listingQuery.data) {
-      canonicalListing = { ...listingQuery.data, ...(listing || {}) }
-    } else if (listingQuery.error && !isMissingTableError(listingQuery.error, 'private_listings')) {
-      throw listingQuery.error
+  const listingQuery = await supabase
+    .from('private_listings')
+    .select('*')
+    .eq('id', offerListingId)
+    .eq('organisation_id', scopedOrganisationId)
+    .maybeSingle()
+  if (listingQuery.error) throw listingQuery.error
+  if (!listingQuery.data) throw new Error('The accepted offer listing is not available in this organisation.')
+  const canonicalListing = {
+    ...listingQuery.data,
+    listingTitle: listingQuery.data.title,
+    propertyAddress: listingQuery.data.address_line_1,
+    askingPrice: listingQuery.data.asking_price,
+  }
+  const onboardingQuery = await supabase
+    .from('private_listing_seller_onboarding')
+    .select('id, private_listing_id, form_data, seller_type, status')
+    .eq('private_listing_id', offerListingId)
+    .maybeSingle()
+  if (onboardingQuery.error && !isMissingTableError(onboardingQuery.error, 'private_listing_seller_onboarding')) {
+    throw onboardingQuery.error
+  }
+  if (onboardingQuery.data) {
+    canonicalListing.sellerOnboarding = {
+      id: onboardingQuery.data.id,
+      formData: onboardingQuery.data.form_data || {},
+      sellerType: onboardingQuery.data.seller_type,
+      status: onboardingQuery.data.status,
     }
   }
+  const offerSellerLeadId = toNullableUuid(canonicalOffer.sellerLeadId)
+  const listingSellerLeadId = toNullableUuid(canonicalListing.seller_lead_id)
+  if (offerSellerLeadId && listingSellerLeadId && offerSellerLeadId !== listingSellerLeadId) {
+    const error = new Error('The saved offer and listing link different seller leads.')
+    error.code = 'ACCEPTED_OFFER_SOURCE_CONFLICT'
+    throw error
+  }
+  const offerSellerContactId = toNullableUuid(canonicalOffer.sellerContactId)
+  const listingSellerContactId = toNullableUuid(canonicalListing.seller_contact_id)
+  if (offerSellerContactId && listingSellerContactId && offerSellerContactId !== listingSellerContactId) {
+    const error = new Error('The saved offer and listing link different seller contacts.')
+    error.code = 'ACCEPTED_OFFER_SOURCE_CONFLICT'
+    throw error
+  }
+  if (requestedSellerContactId && requestedSellerContactId !== (offerSellerContactId || listingSellerContactId)) {
+    const error = new Error('The seller contact conflicts with the saved offer and listing.')
+    error.code = 'ACCEPTED_OFFER_SOURCE_CONFLICT'
+    throw error
+  }
+  const requestedSellerLeadId = toNullableUuid(payload?.originatingSellerLeadId)
+  if (requestedSellerLeadId && requestedSellerLeadId !== (listingSellerLeadId || offerSellerLeadId)) {
+    const error = new Error('The seller lead conflicts with the saved listing and offer.')
+    error.code = 'ACCEPTED_OFFER_SOURCE_CONFLICT'
+    throw error
+  }
 
-  const buyerLead = lead || {
-    leadId: canonicalOffer.buyerLeadId,
-    contactId: canonicalOffer.buyerContactId,
+  let buyerSource = null
+  if (offerBuyerLeadId) {
+    const buyerLeadQuery = await supabase
+      .from('leads')
+      .select('*')
+      .eq('lead_id', offerBuyerLeadId)
+      .eq('organisation_id', scopedOrganisationId)
+      .maybeSingle()
+    if (buyerLeadQuery.error) throw buyerLeadQuery.error
+    if (!buyerLeadQuery.data) throw new Error('The accepted offer buyer lead is not available in this organisation.')
+    buyerSource = buyerLeadQuery.data
+  } else if (canonicalOffer.buyerContactId) {
+    const buyerContactQuery = await supabase
+      .from('contacts')
+      .select('*')
+      .eq('contact_id', canonicalOffer.buyerContactId)
+      .eq('organisation_id', scopedOrganisationId)
+      .maybeSingle()
+    if (buyerContactQuery.error) throw buyerContactQuery.error
+    if (!buyerContactQuery.data) throw new Error('The accepted offer buyer contact is not available in this organisation.')
+    buyerSource = buyerContactQuery.data
+  }
+  const buyerLead = {
+    leadId: offerBuyerLeadId || null,
+    contactId: toNullableUuid(canonicalOffer.buyerContactId),
+    firstName: buyerSource?.first_name || '',
+    lastName: buyerSource?.last_name || '',
+    contactName: buyerSource?.name || buyerSource?.full_name || '',
+    email: buyerSource?.email || '',
+    phone: buyerSource?.phone || buyerSource?.mobile || '',
     assignedAgentId: canonicalOffer.agentId || actor?.id,
     assignedAgentName: actor?.name || '',
     assignedAgentEmail: actor?.email || '',
@@ -3159,7 +3268,14 @@ export async function createTransactionFromAcceptedCanonicalOffer({
     originatingBuyerLeadId: canonicalOffer.buyerLeadId,
     originatingLeadId: canonicalOffer.buyerLeadId,
     buyerContactId: canonicalOffer.buyerContactId,
-    listingId: canonicalOffer.listingId || payload?.listingId,
+    buyerName: normalizeText([buyerLead.firstName, buyerLead.lastName].filter(Boolean).join(' ')) || buyerLead.contactName || payload?.buyerName,
+    buyerEmail: buyerLead.email || payload?.buyerEmail,
+    buyerPhone: buyerLead.phone || payload?.buyerPhone,
+    originatingSellerLeadId: listingSellerLeadId || offerSellerLeadId || null,
+    sellerContactId: offerSellerContactId || listingSellerContactId || null,
+    sellerName: resolveListingSellerName(canonicalListing) || payload?.sellerName,
+    sellerEmail: resolveListingSellerEmail(canonicalListing) || payload?.sellerEmail,
+    listingId: offerListingId,
     acceptedOfferId: canonicalOffer.offerId || canonicalOffer.id,
     purchasePrice: canonicalOffer.offerAmount || payload?.purchasePrice,
     dealValue: canonicalOffer.offerAmount || payload?.dealValue,
@@ -3234,7 +3350,7 @@ export async function createTransactionFromAcceptedCanonicalOffer({
     organisationId: scopedOrganisationId,
     offerId: scopedOfferId,
     offer: canonicalOffer,
-    listing,
+    listing: canonicalListing,
     transactionId,
     actor,
     payload,

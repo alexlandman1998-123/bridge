@@ -8,6 +8,10 @@ const migration = readFileSync(
   resolve(root, '../supabase/migrations/20260831125409_atomic_buyer_portal_document_upload.sql'),
   'utf8',
 )
+const actionMigration = readFileSync(
+  resolve(root, '../supabase/migrations/20260927091054_unify_transaction_document_actions_phase4.sql'),
+  'utf8',
+)
 const api = readFileSync(resolve(root, 'src/lib/api.js'), 'utf8')
 const portal = readFileSync(resolve(root, 'src/pages/ClientPortal.jsx'), 'utf8')
 
@@ -55,5 +59,15 @@ assert.ok(
 
 assert.match(portal, /requiredDocumentKey: 'grant_letter',\s*documentType: 'grant_letter'/)
 assert.match(portal, /canonicalRequirementInstanceId: options\.requirementInstanceId \|\| null/)
+
+assert.match(actionMigration, /v_requirement\.transaction_id is distinct from new\.transaction_id/)
+assert.match(actionMigration, /Document request audience does not match its requirement/)
+assert.match(actionMigration, /set canonical_requirement_instance_id = new\.canonical_requirement_instance_id/)
+assert.match(actionMigration, /v_requirement\.satisfied_by_document_id is distinct from v_document\.id/)
+assert.match(actionMigration, /create trigger trg_bridge_project_requirement_to_request_phase4/)
+assert.match(actionMigration, /create trigger trg_bridge_guard_linked_request_review_phase4/)
+assert.match(actionMigration, /canonical_requirement_instance_id = p_requirement_instance_id'\)/)
+assert.match(api, /canonical_requirement_instance_id: request\.canonicalRequirementInstanceId \|\| request\.canonical_requirement_instance_id \|\| null/)
+assert.match(api, /existingRequest\.canonical_requirement_instance_id && \['completed', 'rejected'\]/)
 
 console.log('Atomic buyer portal document upload contract tests passed')

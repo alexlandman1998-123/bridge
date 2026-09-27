@@ -60,8 +60,10 @@ export function prepareMvpTransactionCreationCommand({
   }
   const scopedOrganisationId = requireValue(organisationId, 'Organisation id is required before creating an MVP transaction.')
   const scopedListingId = requireValue(listingId, 'A listing or property context is required before creating an MVP transaction.')
-  const scopedLeadId = requireValue(leadId, 'A buyer lead is required before creating an MVP transaction.')
   const scopedOfferId = normalize(acceptedOfferId)
+  const scopedLeadId = scopedOfferId
+    ? normalize(leadId)
+    : requireValue(leadId, 'A buyer lead is required before creating an MVP transaction.')
 
   if (requireAcceptedOffer && !scopedOfferId) {
     const error = new Error('An accepted offer is required before creating an MVP transaction.')
@@ -82,7 +84,7 @@ export function prepareMvpTransactionCreationCommand({
     version: MVP_TRANSACTION_CREATION_COMMAND_VERSION,
     organisationId: scopedOrganisationId,
     listingId: scopedListingId,
-    leadId: scopedLeadId,
+    leadId: scopedLeadId || null,
     acceptedOfferId: scopedOfferId || null,
     idempotencyKey: stableIdempotencyKey,
     launchScope,

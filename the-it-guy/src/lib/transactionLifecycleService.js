@@ -70,7 +70,7 @@ function normalizeLower(value) {
 }
 
 const TRANSACTION_IDENTITY_SELECT_LEGACY = 'id, organisation_id, accepted_offer_id, listing_id, originating_lead_id, originating_buyer_lead_id, stage, current_main_stage, finance_type, assigned_agent_email, buyer_id, created_at, updated_at'
-const TRANSACTION_IDENTITY_SELECT = `${TRANSACTION_IDENTITY_SELECT_LEGACY}, creation_idempotency_key, buyer_contact_id, assigned_agent_id`
+const TRANSACTION_IDENTITY_SELECT = `${TRANSACTION_IDENTITY_SELECT_LEGACY}, creation_idempotency_key, buyer_contact_id, seller_contact_id, originating_seller_lead_id, assigned_agent_id`
 
 function isUuidLike(value) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalize(value))
@@ -1150,6 +1150,7 @@ export async function createTransactionFromLeadOverride({
       listing_id: nextListingId || null,
       originating_lead_id: nextLeadId || null,
       originating_buyer_lead_id: nextLeadId || null,
+      originating_seller_lead_id: normalize(payload?.originatingSellerLeadId || listing?.sellerLeadId || listing?.seller_lead_id) || null,
       accepted_offer_id: acceptedOfferId || null,
       buyer_contact_id: normalize(payload?.buyerContactId) || null,
       seller_contact_id: normalize(payload?.sellerContactId) || null,
@@ -1197,6 +1198,9 @@ export async function createTransactionFromLeadOverride({
       organisationId: nextOrganisationId,
       listingId: nextListingId,
       leadId: nextLeadId,
+      sellerLeadId: baseInsertPayload.originating_seller_lead_id,
+      buyerContactId: baseInsertPayload.buyer_contact_id,
+      sellerContactId: baseInsertPayload.seller_contact_id,
       acceptedOfferId,
       idempotencyKey: creationCommand.idempotencyKey,
     })

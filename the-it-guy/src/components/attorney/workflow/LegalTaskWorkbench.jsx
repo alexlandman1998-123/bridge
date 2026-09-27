@@ -1,5 +1,6 @@
 import {
   AlertTriangle,
+  ArrowRight,
   CheckCircle2,
   ChevronRight,
   Circle,
@@ -13,8 +14,10 @@ import Button from '../../ui/Button.jsx'
 import Field from '../../ui/Field.jsx'
 import Modal from '../../ui/Modal.jsx'
 import TaskConfirmations from './TaskConfirmations.jsx'
+import TransferStageTaskNavigation from './TransferStageTaskNavigation.jsx'
 import TransferJourneyUpdateComposer from './TransferJourneyUpdateComposer.jsx'
 import { isAttorneyTaskResolved } from '../../../core/transactions/attorneyTaskOutcomes.js'
+import { getNextTransferStageTask } from '../../../core/transactions/transferWorkspaceNavigation.js'
 import { relevantLegalTaskDocuments } from '../../../core/transactions/legalTaskWorkbenchModel.js'
 
 const CLEARANCE_TASK_SCOPE = {
@@ -167,6 +170,7 @@ export default function LegalTaskWorkbench({
   phases = [],
   selectedTaskKey = '',
   selectedPhaseKey = '',
+  focusedStage = false,
   saving = false,
   error = '',
   successMessage = '',
@@ -325,6 +329,7 @@ export default function LegalTaskWorkbench({
       : canRequestDocument ? `Request the ${focusedDocumentLabel} from the responsible party before reviewing it.`
         : 'Ask the responsible matter team to provide access to the file before reviewing it.'
   const activePhase = phases.find((phase) => phase.key === selectedPhaseKey) || phases[0] || null
+  const nextStageTask = focusedStage ? getNextTransferStageTask(activePhase, selectedTaskKey) : null
   const phaseProgress = activePhase?.total ? Math.round((activePhase.completed / activePhase.total) * 100) : 0
   const primaryAction = Object.values(model.requirementActions || {}).find((action) => action?.id === 'review_document' && !action.disabled)
     || model.primaryAction
@@ -342,6 +347,7 @@ export default function LegalTaskWorkbench({
     : baseConfirmationItems
   function handleAnswersDirtyChange(taskKey, dirty) {
     setAnswersDirty(dirty)
+    if (!dirty) setUtilityError((previous) => previous === 'Save your answers before changing the task status.' ? '' : previous)
     onConfirmationDirtyChange?.(taskKey, dirty)
   }
   function openDocumentLibrarySafely() {
@@ -485,7 +491,7 @@ export default function LegalTaskWorkbench({
   }
 
   function runAction(action, placement) {
-    if (answersDirty && action?.source === 'status') {
+    if (answersDirty && (action?.source === 'status' || action?.id === 'mark_complete' || model.statusActions?.some((item) => item.id === action?.id))) {
       setUtilityError('Save your answers before changing the task status.')
       return
     }
@@ -576,8 +582,9 @@ export default function LegalTaskWorkbench({
 
   return (
     <>
-      <section className={`archline-transfer-workspace grid items-start gap-5 ${railCollapsed ? 'xl:grid-cols-[72px_minmax(0,1fr)]' : 'xl:grid-cols-[minmax(340px,360px)_minmax(0,1fr)]'}`}>
-      <PhaseNavigator
+      {focusedStage && activePhase ? <TransferStageTaskNavigation phase={activePhase} selectedTaskKey={selectedTaskKey} onSelectTask={onSelectTask} /> : null}
+      <section className={`archline-transfer-workspace grid items-start gap-5 ${focusedStage ? 'mt-5 grid-cols-1' : railCollapsed ? 'xl:grid-cols-[72px_minmax(0,1fr)]' : 'xl:grid-cols-[minmax(340px,360px)_minmax(0,1fr)]'}`}>
+      {!focusedStage ? <PhaseNavigator
         phases={phases}
         selectedTaskKey={selectedTaskKey}
         selectedPhaseKey={selectedPhaseKey}
@@ -588,13 +595,13 @@ export default function LegalTaskWorkbench({
         onToggleCollapsed={toggleRail}
         onTogglePhase={(phaseKey) => setExpandedPhaseKey((current) => current === phaseKey ? '' : phaseKey)}
         onSelectTask={onSelectTask}
-      />
+      /> : null}
 
       <main
-        className="min-h-[560px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_12px_28px_rgba(15,23,42,0.035)] xl:h-[calc(100dvh-176px)]"
+        className="min-h-[560px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_12px_28px_rgba(15,23,42,0.035)]"
         aria-busy={saving}
       >
-        <div className="flex h-full min-h-0 flex-col overflow-hidden">
+        <div className="flex min-h-[560px] flex-col overflow-hidden">
           <header className="flex shrink-0 flex-wrap items-start justify-between gap-4 px-5 pb-5 pt-6 lg:px-7">
             {utilityError ? <p role="alert" className="mb-2 text-sm text-red-700">{utilityError}</p> : null}
             <div className="min-w-0 flex-1">
@@ -602,15 +609,17 @@ export default function LegalTaskWorkbench({
               <h2 className="mt-2 min-w-0 text-2xl font-semibold leading-tight tracking-[-0.025em] text-slate-950 sm:text-3xl">{model.taskLabel}</h2>
               {model.taskDescription ? <p className="mt-2 max-w-2xl text-sm leading-5 text-slate-600">{model.taskDescription}</p> : null}
             </div>
-            {activePhase ? <div className="w-full shrink-0 sm:w-56">
+            {activePhase && (!focusedStage || onPublishJourneyUpdate) ? <div className="w-full shrink-0 sm:w-56">
+              {!focusedStage ? <>
               <span className="text-xs font-semibold text-slate-600">Stage progress</span>
               <span className="mt-1 block h-1.5 overflow-hidden rounded-full bg-slate-200"><span className="block h-full rounded-full bg-emerald-700" style={{ width: `${phaseProgress}%` }} /></span>
               <span className="mt-1 block text-xs text-slate-500">{activePhase.completed} of {activePhase.total} complete</span>
+              </> : null}
               {onPublishJourneyUpdate ? <Button type="button" variant="secondary" size="sm" className="mt-3 w-full" disabled={!canPublishJourneyUpdate || !journeyStageKey} onClick={openJourneyPublisher} title={!canPublishJourneyUpdate ? 'Only the assigned firm team can publish client journey updates.' : ''}>Add stage update</Button> : null}
             </div> : null}
           </header>
 
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain border-t border-slate-200 px-5 py-5 lg:px-7">
+          <div className="min-h-0 flex-1 border-t border-slate-200 px-5 py-5 lg:px-7">
             {model.stageTwoParties?.length ? <section className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3" aria-label="Parties in this task">
               <div className="flex flex-wrap items-center justify-between gap-2"><div><h3 className="text-sm font-semibold text-slate-900">People and entities in this review</h3><p className="mt-0.5 text-xs text-slate-600">Evidence and capacity decisions must belong to the named party.</p></div><Button type="button" variant="secondary" size="sm" onClick={() => onOpenRoutingProfile?.()} disabled={!onOpenRoutingProfile}>Review party details</Button></div>
               <div className="mt-3 grid gap-2 sm:grid-cols-2">{model.stageTwoParties.map(party => <div key={party.id} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"><strong className="block text-slate-900">{party.name}</strong><span className="text-xs capitalize text-slate-600">{party.entityType.replaceAll('_', ' ')} · {party.status}</span>{party.signatories.length ? <span className="mt-1 block text-xs text-slate-600">Signatories: {party.signatories.join(', ')}</span> : null}{party.staleApproval ? <span role="alert" className="mt-1 block text-xs font-semibold text-amber-800">Previous approval is stale after a party or signatory change. Review again.</span> : party.specialistHold ? <span role="alert" className="mt-1 block text-xs font-semibold text-amber-800">Specialist capacity hold and attorney review required.</span> : null}</div>)}</div>
@@ -689,7 +698,7 @@ export default function LegalTaskWorkbench({
                 <summary className="w-fit cursor-pointer font-medium">Task outcome options</summary>
                 <div className="mt-2 flex flex-wrap gap-2">
                   {[...(model.outcomeActions || []), ...(model.followUpActions || [])].map(action => (
-                    <Button key={action.id} type="button" variant="secondary" size="sm" disabled={saving || action.disabled} onClick={() => runAction(action, 'outcome')}>{action.label}</Button>
+                    <Button key={action.id} type="button" variant="secondary" size="sm" disabled={saving || answersDirty || action.disabled} title={answersDirty ? 'Save answers before changing status' : undefined} onClick={() => runAction(action, 'outcome')}>{action.label}</Button>
                   ))}
                 </div>
               </details>
@@ -702,12 +711,13 @@ export default function LegalTaskWorkbench({
                   </Button>
                 ) : null}
               </div>
-              {model.completeAction ? (
+              {!model.readOnly && model.completeAction ? (
                 <Button
                   type="button"
                   variant="primary"
                   size="sm"
-                  disabled={saving || !model.canComplete || model.completeAction.disabled}
+                  disabled={saving || answersDirty || !model.canComplete || model.completeAction.disabled}
+                  title={answersDirty ? 'Save answers before completing this task' : undefined}
                   aria-describedby={!model.requirementsSatisfied ? completionHelpId : undefined}
                   onClick={() => runAction(model.completeAction, 'completion')}
                 >
@@ -722,6 +732,10 @@ export default function LegalTaskWorkbench({
                 <p className="mt-1">Missing evidence remains visible after completion. {model.completeAction?.requiresNote ? 'Add a completion note to explain the outcome.' : 'Review the outstanding items before completing the task.'}</p>
               </details>
             ) : null}
+            {nextStageTask ? <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-4">
+              <span className="min-w-0 text-xs text-slate-600">{answersDirty ? <><strong className="text-amber-800">Unsaved answers.</strong> Save them before continuing.</> : <><strong className="text-slate-800">Up next:</strong> {nextStageTask.label}</>}</span>
+              <Button type="button" variant="secondary" size="sm" disabled={saving || answersDirty} title={answersDirty ? 'Save answers before moving to the next task' : undefined} onClick={() => onSelectTask?.(nextStageTask.key)} aria-label={`Next task: ${nextStageTask.label}`}>Next task <ArrowRight size={15} /></Button>
+            </div> : null}
           </footer>
         </div>
       </main>

@@ -75,6 +75,14 @@ import TransactionBuyerPartiesPanel from '../components/transaction/TransactionB
 import DealSetupPanel from '../components/transaction/DealSetupPanel'
 import BondDealSetupHandoffPanel from '../components/bond/BondDealSetupHandoffPanel'
 import LegalTaskWorkbench from '../components/attorney/workflow/LegalTaskWorkbench.jsx'
+import TransferStageOverview from '../components/attorney/workflow/TransferStageOverview.jsx'
+import TransferStageTaskNavigation from '../components/attorney/workflow/TransferStageTaskNavigation.jsx'
+import {
+  getNextTransferStageTask,
+  readTransferWorkspaceNavigation,
+  resolveTransferWorkspaceNavigation,
+  writeTransferWorkspaceNavigation,
+} from '../core/transactions/transferWorkspaceNavigation.js'
 import { deriveProfessionalTransferMilestones, selectJourneyPublisherStage } from '../core/clientPortal/transferJourneyPresentationModel.js'
 import {
   buildBondHybridFinanceStageSteps,
@@ -223,6 +231,7 @@ import {
   updateTransactionAttorneyAssignment,
 } from '../services/transactionAttorneyAssignments'
 import { buildMatterDocumentWorkspaceModel, summarizeMatterOverviewPartyDocuments } from '../services/documents/matterDocumentWorkspaceModel'
+import { mergeProjectedDocuments, projectMatterDocumentRequirements } from '../services/documents/transactionDocumentProjection'
 import { getBankPanelForCurrentUser } from '../services/bondOriginatorBankService'
 import {
   BOND_CONSULTANT_ACTION_PARAM,
@@ -8169,6 +8178,8 @@ function ArchlineTransferWorkspace({
   onUxEvent,
   onReviewTaskDocument,
   onScheduleTask,
+  transferNavigation = null,
+  onNavigateTransfer,
 }) {
   const [selectedTaskKey, setSelectedTaskKey] = useState(() => {
     if (!selectionStorageKey || typeof window === 'undefined') return ''
@@ -8202,16 +8213,22 @@ function ArchlineTransferWorkspace({
   const [showFilters, setShowFilters] = useState(false)
   const [expandedPhaseKeys, setExpandedPhaseKeys] = useState({})
   const [activeTaskTab, setActiveTaskTab] = useState('checklist')
+  const handledFocusRequestRef = useRef(null)
   useEffect(() => {
-    if (!focusRequest || focusRequest.workflowKey !== workflowKey) return
-    if (!selectTaskWithUnsavedGuard(focusRequest.taskKey || '')) return
+    if (!focusRequest || focusRequest.workflowKey !== workflowKey || handledFocusRequestRef.current === focusRequest) return
+    handledFocusRequestRef.current = focusRequest
+    if (workflowKey === 'transfer' && transferNavigation && focusRequest.phaseKey && focusRequest.taskKey) {
+      if (onNavigateTransfer?.({ view: 'workspace', stageKey: focusRequest.phaseKey, taskKey: focusRequest.taskKey }) === false) return
+    } else if (!selectTaskWithUnsavedGuard(focusRequest.taskKey || '')) {
+      return
+    }
     setSearch('')
     setAttentionFilter('')
     setPhaseFilter('')
     setStatusFilter('')
     setExpandedPhaseKeys(previous => ({ ...previous, [focusRequest.phaseKey]: true }))
     setActiveTaskTab('checklist')
-  }, [focusRequest, selectTaskWithUnsavedGuard, workflowKey])
+  }, [focusRequest, onNavigateTransfer, selectTaskWithUnsavedGuard, transferNavigation, workflowKey])
   const [statusDraft, setStatusDraft] = useState({
     open: false,
     task: null,
@@ -8248,14 +8265,33 @@ function ArchlineTransferWorkspace({
       keyDates,
       parties,
       activityFeed,
-      selectedTaskKey,
+      selectedTaskKey: workflowKey === 'transfer' && transferNavigation?.view === 'workspace'
+        ? transferNavigation.taskKey || selectedTaskKey
+        : selectedTaskKey,
       search,
       filters: { attention: attentionFilter, phaseKey: phaseFilter, status: statusFilter },
     }),
-    [activityFeed, attentionFilter, bondApplicants, bondApplicationChecklist, documents, documentsLoaded, keyDates, parties, phaseFilter, requiredDocuments, routingProfile, search, securityDocuments, selectedTaskKey, sharedLegalJourney, statusFilter, workflow, workflowKey, workflowLanes],
+    [activityFeed, attentionFilter, bondApplicants, bondApplicationChecklist, documents, documentsLoaded, keyDates, parties, phaseFilter, requiredDocuments, routingProfile, search, securityDocuments, selectedTaskKey, sharedLegalJourney, statusFilter, transferNavigation?.taskKey, transferNavigation?.view, workflow, workflowKey, workflowLanes],
   )
   const selectedTask = viewModel.selectedTask
   selectedTaskKeyRef.current = selectedTask?.key || selectedTaskKey
+  useEffect(() => {
+    if (workflowKey !== 'transfer' || !transferNavigation) return
+    unsavedAnswersTaskRef.current = ''
+    onDirtyAnswersChange?.(false)
+    if (transferNavigation.view === 'workspace' && transferNavigation.taskKey) {
+      selectedTaskKeyRef.current = transferNavigation.taskKey
+      setSelectedTaskKey(transferNavigation.taskKey)
+    }
+  }, [onDirtyAnswersChange, transferNavigation?.taskKey, transferNavigation?.view, workflowKey])
+  function navigateTaskWithGuard(nextTaskKey) {
+    const nextTask = viewModel.tasks.find((task) => task.key === nextTaskKey)
+    if (!nextTask) return false
+    if (workflowKey === 'transfer' && transferNavigation) {
+      return onNavigateTransfer?.({ view: 'workspace', stageKey: nextTask.phaseKey, taskKey: nextTask.key }) !== false
+    }
+    return selectTaskWithUnsavedGuard(nextTaskKey)
+  }
   const currentPhase = viewModel.currentPhase
   const visibleTaskKeys = useMemo(
     () => new Set(viewModel.visibleTasks.map((task) => task.key)),
@@ -8538,6 +8574,10 @@ function ArchlineTransferWorkspace({
 
   async function markTaskInProgress() {
     if (!selectedTask || !canUpdateSteps || taskWorkbenchModel.readOnly || isAttorneyTaskResolved(selectedTask.displayStatus)) return
+    if (unsavedAnswersTaskRef.current === selectedTask.key) {
+      setTaskSaveError('Save your answers before changing the task status.')
+      return
+    }
     const saved = await persistTaskUpdate(
       selectedTask,
       'in_progress',
@@ -8559,7 +8599,7 @@ function ArchlineTransferWorkspace({
       return
     }
     if (item.taskKey) {
-      if (!selectTaskWithUnsavedGuard(item.taskKey)) return
+      if (!navigateTaskWithGuard(item.taskKey)) return
       if (item.phaseKey) {
         setExpandedPhaseKeys((previous) => ({ ...previous, [item.phaseKey]: true }))
       }
@@ -8651,7 +8691,7 @@ function ArchlineTransferWorkspace({
     }
   }
 
-  async function persistTaskUpdate(task, status, note, workPacket = null, visibility = 'professional_shared') {
+  async function persistTaskUpdate(task, status, note, workPacket = null, visibility = 'professional_shared', throwOnError = false) {
     if (taskSavePending.current) return false
     taskSavePending.current = true
     setTaskSaveBusy(true)
@@ -8666,6 +8706,7 @@ function ArchlineTransferWorkspace({
       return true
     } catch (error) {
       setTaskSaveError(error?.message || 'The task could not be saved. Please try again.')
+      if (throwOnError) throw error
       return false
     } finally {
       taskSavePending.current = false
@@ -8676,6 +8717,10 @@ function ArchlineTransferWorkspace({
   async function submitStatusDraft(event) {
     event.preventDefault()
     if (saving || taskSavePending.current) return
+    if (unsavedAnswersTaskRef.current === selectedTask?.key) {
+      setTaskSaveError('Save your answers before changing the task status.')
+      return
+    }
     const allowedActions = selectedTask?.operationalContract ? taskWorkbenchModel.statusActions : primaryTaskActions
     const allowedAction = allowedActions.find(action => action.id === statusDraft.actionId && action.status === statusDraft.status)
     if (!statusDraft.task || !canUpdateSteps || !allowedAction || allowedAction.disabled || statusDraft.task.key !== selectedTask?.key) {
@@ -8712,24 +8757,60 @@ function ArchlineTransferWorkspace({
       outcome: updateSucceeded === false ? 'failure' : 'success',
     })
     if (updateSucceeded === false) return
-    if (nextTaskKey && selectTaskWithUnsavedGuard(nextTaskKey)) {
+    if (nextTaskKey && navigateTaskWithGuard(nextTaskKey)) {
       setExpandedPhaseKeys((previous) => ({ ...previous, [viewModel.nextActionableTask.phaseKey]: true }))
       setActiveTaskTab('checklist')
     }
     closeStatusDraft()
   }
 
+  const resolvedTransferNavigation = workflowKey === 'transfer' && transferNavigation
+    ? resolveTransferWorkspaceNavigation(transferNavigation, viewModel.phases)
+    : null
+  const nextStageTask = resolvedTransferNavigation?.view === 'workspace'
+    ? getNextTransferStageTask(resolvedTransferNavigation.phase, selectedTask?.key)
+    : null
+  if (resolvedTransferNavigation?.view === 'overview') {
+    return <TransferStageOverview
+      phases={viewModel.phases}
+      selectedPhase={resolvedTransferNavigation.phase}
+      onSelectStage={(stageKey) => onNavigateTransfer?.({ view: 'overview', stageKey })}
+      onOpenStage={(stageKey, taskKey) => onNavigateTransfer?.({ view: 'workspace', stageKey, taskKey })}
+    />
+  }
+  const stageWorkspaceHeader = resolvedTransferNavigation?.view === 'workspace' ? (
+    <header className="mb-5 rounded-2xl border border-slate-200 bg-white px-5 py-5 shadow-[0_12px_30px_rgba(15,23,42,0.04)] sm:px-7 sm:py-6">
+      <button type="button" className="inline-flex min-h-9 items-center text-sm font-semibold text-emerald-800 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700" onClick={() => onNavigateTransfer?.({ view: 'overview', stageKey: resolvedTransferNavigation.phase.key })}>← Stage overview</button>
+      <div className="mt-3 flex flex-wrap items-end justify-between gap-4">
+        <div className="min-w-0">
+          <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Stage {viewModel.phases.findIndex((phase) => phase.key === resolvedTransferNavigation.phase.key) + 1} of {viewModel.phases.length} · Transfer Attorney</span>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-950 sm:text-3xl">{resolvedTransferNavigation.phase.label}</h1>
+          {resolvedTransferNavigation.phase.description ? <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">{resolvedTransferNavigation.phase.description}</p> : null}
+        </div>
+        <div className="w-full max-w-52 text-sm text-slate-600">
+          {resolvedTransferNavigation.phase.total ? <>
+            <span className="font-semibold">{resolvedTransferNavigation.phase.completed} of {resolvedTransferNavigation.phase.total} complete</span>
+            <span className="mt-2 block h-2 overflow-hidden rounded-full bg-slate-100" role="progressbar" aria-valuenow={resolvedTransferNavigation.phase.completed} aria-valuemin={0} aria-valuemax={resolvedTransferNavigation.phase.total} aria-label="Stage progress"><span className="block h-full bg-emerald-700" style={{ width: `${resolvedTransferNavigation.phase.percent}%` }} /></span>
+          </> : <span className="font-semibold">No applicable tasks in this stage</span>}
+        </div>
+      </div>
+    </header>
+  ) : null
+
   if (selectedTask?.operationalContract) {
     return (
+      <>
+      {stageWorkspaceHeader}
       <LegalTaskWorkbench
         model={taskWorkbenchModel}
         phases={viewModel.phases}
         selectedTaskKey={selectedTask.key}
         selectedPhaseKey={selectedTask.phaseKey}
+        focusedStage={Boolean(resolvedTransferNavigation)}
         saving={saving || taskSaveBusy}
         error={workflowError || taskSaveError}
         successMessage={taskSaveMessage}
-        onSelectTask={selectTaskWithUnsavedGuard}
+        onSelectTask={navigateTaskWithGuard}
         onConfirmationDirtyChange={handleConfirmationDirtyChange}
         onRunAction={handleTaskWorkbenchAction}
         onOpenDocuments={workflow?.lane?.permissions?.canUploadDocuments
@@ -8769,15 +8850,19 @@ function ArchlineTransferWorkspace({
           selectedTask.comment || '',
           { laneKey: workflowKey, stageKey: selectedTask.key, taskConfirmations: normalizeTaskConfirmations(responses) },
           'internal',
+          true,
         )}
       />
+      </>
     )
   }
 
   return (
     <>
-      <section className="archline-transfer-workspace grid gap-4 xl:sticky xl:top-24 xl:h-[calc(100dvh-120px)] xl:min-h-[600px] xl:grid-cols-[minmax(320px,390px)_minmax(0,1fr)] xl:overflow-hidden">
-          <aside className="min-h-0">
+      {stageWorkspaceHeader}
+      {resolvedTransferNavigation ? <TransferStageTaskNavigation phase={resolvedTransferNavigation.phase} selectedTaskKey={selectedTask?.key || ''} onSelectTask={navigateTaskWithGuard} /> : null}
+      <section className={`archline-transfer-workspace grid gap-4 ${resolvedTransferNavigation ? 'mt-5 grid-cols-1' : 'xl:sticky xl:top-24 xl:h-[calc(100dvh-120px)] xl:min-h-[600px] xl:grid-cols-[minmax(320px,390px)_minmax(0,1fr)] xl:overflow-hidden'}`}>
+          {!resolvedTransferNavigation ? <aside className="min-h-0">
             <ArchlinePanel className="flex h-full min-h-0 flex-col overflow-hidden">
               <div className="shrink-0 border-b border-slate-200 px-4 py-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
@@ -8920,7 +9005,7 @@ function ArchlineTransferWorkspace({
                                       : 'hover:bg-slate-50'
                                 }`}
                                 onClick={() => {
-                                  if (!selectTaskWithUnsavedGuard(task.key)) return
+                                  if (!navigateTaskWithGuard(task.key)) return
                                   setExpandedPhaseKeys((previous) => ({ ...previous, [task.phaseKey]: true }))
                                   setActiveTaskTab('checklist')
                                 }}
@@ -8950,10 +9035,10 @@ function ArchlineTransferWorkspace({
                 {!viewModel.visibleTasks.length ? <p className="px-4 py-8 text-sm text-slate-500">No tasks match this filter.</p> : null}
               </div>
             </ArchlinePanel>
-          </aside>
+          </aside> : null}
 
           <main className="min-h-0 min-w-0">
-            <ArchlinePanel className="flex h-full min-h-0 flex-col overflow-hidden">
+            <ArchlinePanel className={`flex min-h-0 flex-col overflow-hidden ${resolvedTransferNavigation ? '' : 'h-full'}`}>
               <div className="shrink-0 px-5 py-5">
                 <div className="min-w-0">
                   <span className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Current Task</span>
@@ -9183,7 +9268,7 @@ function ArchlineTransferWorkspace({
                   ))}
                 </div>
 
-                <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto overscroll-contain px-5 py-5 lg:grid-cols-2">
+                <div className={`grid min-h-0 flex-1 gap-4 px-5 py-5 lg:grid-cols-2 ${resolvedTransferNavigation ? '' : 'overflow-y-auto overscroll-contain'}`}>
                   {activeTaskTab === 'overview' ? (
                     <>
                       <section className="rounded-lg border border-slate-200 bg-white p-4">
@@ -9400,6 +9485,9 @@ function ArchlineTransferWorkspace({
                   <MoreHorizontal size={15} />
                   More Actions
                 </Button>
+                {nextStageTask ? <Button type="button" variant="secondary" size="sm" className="ml-auto" disabled={saving || taskSaveBusy} onClick={() => navigateTaskWithGuard(nextStageTask.key)} aria-label={`Next task: ${nextStageTask.label}`}>
+                  Next task <ChevronRight size={15} />
+                </Button> : null}
               </div>
             </ArchlinePanel>
           </main>
@@ -16279,9 +16367,11 @@ function AttorneyTransactionDetail() {
   const [matterAccessAllowed, setMatterAccessAllowed] = useState(workspaceRole !== 'attorney')
   const [matterAccessKey, setMatterAccessKey] = useState(() => (workspaceRole !== 'attorney' ? currentMatterAccessKey : ''))
   const [saving, setSaving] = useState(false)
-  const [workspaceMenu, setWorkspaceMenu] = useState('overview')
+  const [workspaceMenu, setWorkspaceMenu] = useState(() => workspaceRole === 'attorney' && readTransferWorkspaceNavigation(location.search).active ? 'transfer' : 'overview')
   const [localLegalWorkflowDetailKey, setLocalLegalWorkflowDetailKey] = useState('')
   const unsavedAttorneyAnswersRef = useRef(false)
+  const [transferNavigation, setTransferNavigation] = useState(() => readTransferWorkspaceNavigation(location.search))
+  const acceptedTransferNavigationRef = useRef(transferNavigation)
   const [legalTaskReturnContext, setLegalTaskReturnContext] = useState(null)
   const [legalTaskDrawer, setLegalTaskDrawer] = useState(null)
   const [legalTaskDrawerBusy, setLegalTaskDrawerBusy] = useState(false)
@@ -16303,6 +16393,7 @@ function AttorneyTransactionDetail() {
   const [documentRequestSaving, setDocumentRequestSaving] = useState(false)
   const [documentRequestForm, setDocumentRequestForm] = useState({
     title: '',
+    canonicalRequirementInstanceId: '',
     requestedFrom: 'buyer',
     visibility: 'client_visible',
     notes: '',
@@ -17441,6 +17532,10 @@ function AttorneyTransactionDetail() {
     if (workspaceRole !== 'bond_originator') return rows
     return rows.filter((requirement) => isBondOriginatorFinanceDocument(requirement))
   }, [data?.requiredDocumentChecklist, workspaceRole])
+  const documentWorkspaceRequiredChecklist = useMemo(
+    () => projectMatterDocumentRequirements(data?.canonicalDocumentProjection) ?? requiredDocumentChecklist,
+    [data?.canonicalDocumentProjection, requiredDocumentChecklist],
+  )
   const routingDiagnostics = useMemo(
     () => (transaction
       ? buildTransactionRoutingDiagnostics(transaction, {
@@ -17484,20 +17579,20 @@ function AttorneyTransactionDetail() {
   }, [routingDiagnostics?.profile?.matterProfile, routingProfileDraft, transaction, workspaceRole])
   const requiredDocumentsByDocumentId = useMemo(() => {
     const map = new Map()
-    for (const requirement of requiredDocumentChecklist) {
+    for (const requirement of documentWorkspaceRequiredChecklist) {
       const documentId = getRequirementDocumentId(requirement)
       if (documentId) map.set(String(documentId), requirement)
     }
     return map
-  }, [requiredDocumentChecklist])
+  }, [documentWorkspaceRequiredChecklist])
   const requiredDocumentsByCanonicalId = useMemo(() => {
     const map = new Map()
-    for (const requirement of requiredDocumentChecklist) {
+    for (const requirement of documentWorkspaceRequiredChecklist) {
       const canonicalId = getRequirementCanonicalId(requirement)
       if (canonicalId) map.set(String(canonicalId), requirement)
     }
     return map
-  }, [requiredDocumentChecklist])
+  }, [documentWorkspaceRequiredChecklist])
   const getLinkedRequirementForDocument = useCallback(
     (document = {}) => {
       const canonicalId = getDocumentCanonicalId(document)
@@ -18365,11 +18460,12 @@ function AttorneyTransactionDetail() {
     return new Set(keys.map((laneKey) => String(laneKey || '').trim().toLowerCase()).filter(Boolean))
   }, [attorneyMatterScope, workflowOperations?.lanes])
   const matterDocumentWorkspaceModel = useMemo(
-    () =>
-      buildMatterDocumentWorkspaceModel({
+    () => {
+      const projection = data?.canonicalDocumentProjection
+      return buildMatterDocumentWorkspaceModel({
         transaction,
-        documents,
-        requiredDocumentChecklist,
+        documents: mergeProjectedDocuments(documents, projection),
+        requiredDocumentChecklist: documentWorkspaceRequiredChecklist,
         documentRequests: additionalDocumentRequests,
         transactionParticipants,
         activeFilter: activeDocumentLibraryCategory,
@@ -18382,7 +18478,8 @@ function AttorneyTransactionDetail() {
         requestedFromOptions: additionalDocumentRequestedFromOptions,
         priorityOptions: ADDITIONAL_DOCUMENT_PRIORITY_OPTIONS,
         matterScope: attorneyMatterScope,
-      }),
+      })
+    },
     [
       activeDocumentLibraryCategory,
       additionalDocumentRequests,
@@ -18390,10 +18487,11 @@ function AttorneyTransactionDetail() {
       attorneyDocumentGroups,
       attorneyMatterScope,
       configuredOriginatorBanks,
+      data?.canonicalDocumentProjection,
       documentLibrarySearch,
+      documentWorkspaceRequiredChecklist,
       documents,
       getLinkedRequirementForDocument,
-      requiredDocumentChecklist,
       transaction,
       transactionFinanceWorkflow,
       transactionParticipants,
@@ -19543,7 +19641,7 @@ function AttorneyTransactionDetail() {
     setWorkflowInlineStepDraft(nextDraft)
   }
 
-  async function submitWorkflowStepUpdate(draft = null) {
+  async function submitWorkflowStepUpdate(draft = null, { throwOnError = false } = {}) {
     if (!draft || !transaction?.id) return false
     setWorkflowSaving(true)
     setWorkflowError('')
@@ -19571,6 +19669,7 @@ function AttorneyTransactionDetail() {
       return true
     } catch (stepError) {
       setWorkflowError(stepError?.message || 'Unable to update workflow step.')
+      if (throwOnError) throw stepError
       return false
     } finally {
       setWorkflowSaving(false)
@@ -19668,6 +19767,7 @@ function AttorneyTransactionDetail() {
       setDocumentRequestForm((previous) => ({
         ...previous,
         title: defaults.title ?? previous.title,
+        canonicalRequirementInstanceId: defaults.canonicalRequirementInstanceId ?? '',
         requestedFrom: defaults.requestedFrom ?? previous.requestedFrom,
         visibility: defaults.visibility ?? previous.visibility,
         notes: defaults.notes ?? previous.notes,
@@ -19771,6 +19871,7 @@ function AttorneyTransactionDetail() {
         requests: [
           {
             title,
+            canonicalRequirementInstanceId: documentRequestForm.canonicalRequirementInstanceId || null,
             notes: String(documentRequestForm.notes || '').trim(),
             category: 'Additional Requests',
             requestedFrom: documentRequestForm.requestedFrom || 'buyer',
@@ -19783,6 +19884,7 @@ function AttorneyTransactionDetail() {
       })
       setDocumentRequestForm({
         title: '',
+        canonicalRequirementInstanceId: '',
         requestedFrom: 'buyer',
         visibility: 'client_visible',
         notes: '',
@@ -19982,18 +20084,70 @@ function AttorneyTransactionDetail() {
     return true
   }, [])
 
+  const navigateTransferWorkspace = useCallback((navigation, { replace = false } = {}) => {
+    const next = {
+      active: true,
+      view: navigation.view === 'workspace' ? 'workspace' : 'overview',
+      stageKey: navigation.stageKey || '',
+      taskKey: navigation.view === 'workspace' ? navigation.taskKey || '' : '',
+    }
+    const current = acceptedTransferNavigationRef.current
+    if (current.active && current.view === next.view && current.stageKey === next.stageKey && current.taskKey === next.taskKey) return true
+    if (!confirmDiscardAttorneyAnswers()) return false
+    acceptedTransferNavigationRef.current = next
+    setTransferNavigation(next)
+    setWorkspaceMenu('transfer')
+    const search = writeTransferWorkspaceNavigation(location.search, next)
+    if (search !== location.search) navigate({ pathname: location.pathname, search }, { replace })
+    return true
+  }, [confirmDiscardAttorneyAnswers, location.pathname, location.search, navigate])
+
+  useEffect(() => {
+    const requested = readTransferWorkspaceNavigation(location.search)
+    const accepted = acceptedTransferNavigationRef.current
+    if (requested.active === accepted.active && requested.view === accepted.view &&
+      requested.stageKey === accepted.stageKey && requested.taskKey === accepted.taskKey) {
+      if (requested.active && workspaceRole === 'attorney') setWorkspaceMenu((current) => current === 'overview' ? 'transfer' : current)
+      return
+    }
+    if (!confirmDiscardAttorneyAnswers()) {
+      const search = writeTransferWorkspaceNavigation(location.search, accepted.active ? accepted : null)
+      navigate({ pathname: location.pathname, search }, { replace: true })
+      return
+    }
+    acceptedTransferNavigationRef.current = requested
+    setTransferNavigation(requested)
+    if (requested.active && workspaceRole === 'attorney') setWorkspaceMenu('transfer')
+  }, [confirmDiscardAttorneyAnswers, location.pathname, location.search, navigate, workspaceRole])
+
+  useEffect(() => {
+    if (workspaceRole !== 'attorney' || !transferNavigation.active || ['overview', 'transfer'].includes(workspaceMenu)) return
+    const cleared = readTransferWorkspaceNavigation('')
+    acceptedTransferNavigationRef.current = cleared
+    setTransferNavigation(cleared)
+    navigate({ pathname: location.pathname, search: writeTransferWorkspaceNavigation(location.search) }, { replace: true })
+  }, [location.pathname, location.search, navigate, transferNavigation.active, workspaceMenu, workspaceRole])
+
   const openWorkspaceMenu = useCallback((nextMenu) => {
     if (activeWorkspaceMenu === 'transfer' && nextMenu !== 'transfer' && !confirmDiscardAttorneyAnswers()) return false
     setWorkspaceMenu(nextMenu)
     if (nextMenu === 'transfer') {
       setLegalTaskReturnContext(null)
     }
-    if (routeLegalWorkflowDetailKey && nextMenu !== 'transfer') {
+    if (nextMenu !== 'transfer' && transferNavigation.active) {
+      const cleared = readTransferWorkspaceNavigation('')
+      acceptedTransferNavigationRef.current = cleared
+      setTransferNavigation(cleared)
+      navigate({
+        pathname: routeLegalWorkflowDetailKey ? transactionWorkspaceBasePath : location.pathname,
+        search: writeTransferWorkspaceNavigation(location.search),
+      })
+    } else if (routeLegalWorkflowDetailKey && nextMenu !== 'transfer') {
       setLocalLegalWorkflowDetailKey(routeLegalWorkflowDetailKey)
       navigate(transactionWorkspaceBasePath)
     }
     return true
-  }, [activeWorkspaceMenu, confirmDiscardAttorneyAnswers, navigate, routeLegalWorkflowDetailKey, transactionWorkspaceBasePath])
+  }, [activeWorkspaceMenu, confirmDiscardAttorneyAnswers, location.pathname, location.search, navigate, routeLegalWorkflowDetailKey, transactionWorkspaceBasePath, transferNavigation.active])
 
   const openLegalWorkflowDetail = useCallback((detailKey) => {
     const normalized = normalizeLegalWorkflowDetailKey(detailKey)
@@ -21097,7 +21251,7 @@ function AttorneyTransactionDetail() {
       note: typeof note === 'string' ? note : draft.note,
       visibility,
       workPacket,
-    })
+    }, { throwOnError: true })
   }
 
   function handleLegalTaskDocumentRequest(task, documents = [], requirement = null) {
@@ -21108,7 +21262,7 @@ function AttorneyTransactionDetail() {
       ...(requirement || {}),
       label: documentLabel,
       displayName: documentLabel,
-      requestedFrom: missingDocument?.requiredFrom || missingDocument?.required_from || missingDocument?.requiredParty || '',
+      requestedFrom: missingDocument?.requiredFrom || missingDocument?.required_from || missingDocument?.requiredParty || requirement?.requiredFromRole || requirement?.requestedFromRole || requirement?.requestedFrom || '',
       visibility: missingDocument?.visibilityDefault || task?.defaultVisibility || 'client_visible',
       notes: `Please provide ${documentLabel} for ${task?.label || 'this legal task'}.`,
       blocksStage: false,
@@ -22576,7 +22730,7 @@ function AttorneyTransactionDetail() {
     const stageTwoPartyNeedsLink = Boolean(stageTwoPartyId && !stageTwoParticipantId)
     const sourceKey = String(requirement?.sourceRequirementId || '').replace(/^document:/, '')
     const linkedRequirement = sourceKey
-      ? requiredDocumentChecklist.find(item => String(item?.key || item?.documentKey || item?.document_key || '') === sourceKey &&
+      ? documentWorkspaceRequiredChecklist.find(item => String(item?.key || item?.documentKey || item?.document_key || '') === sourceKey &&
           (!stageTwoPartyId || sameRoleParties.length === 1 ||
             (item.partyRequirements?.length === 1 && item.partyRequirements[0]?.partyId === stageTwoPartyId))) || null
       : requirement
@@ -22631,7 +22785,7 @@ function AttorneyTransactionDetail() {
   }
 
   function openConveyancingDocumentRequest(source = {}) {
-    const rawParty = normalizeDetailKey(source.requestedFrom || source.requiredParty || '')
+    const rawParty = normalizeDetailKey(source.requestedFrom || source.requiredFromRole || source.requestedFromRole || source.requiredParty || '')
     const requestedFrom = ADDITIONAL_DOCUMENT_REQUESTED_FROM_OPTIONS.some((option) => option.value === rawParty)
       ? rawParty
       : rawParty.includes('buyer') && rawParty.includes('seller')
@@ -22647,6 +22801,9 @@ function AttorneyTransactionDetail() {
                 : 'other'
     setDocumentRequestForm({
       title: source.label || source.displayName || source.title || '',
+      canonicalRequirementInstanceId: ['buyer', 'seller', 'developer', 'agent', 'attorney', 'bond_originator'].includes(requestedFrom)
+        ? getRequirementCanonicalId(source) || ''
+        : '',
       requestedFrom,
       visibility: source.visibility || 'client_visible',
       notes: source.notes || `Please provide ${source.displayName || source.label || 'the requested document'} for this transfer matter.`,
@@ -22698,7 +22855,7 @@ function AttorneyTransactionDetail() {
 
     const linkedRequirement =
       uploadDraft.satisfiesRequiredDocument === 'yes'
-        ? requiredDocumentChecklist.find((item) => {
+        ? documentWorkspaceRequiredChecklist.find((item) => {
             const canonicalId = getRequirementCanonicalId(item)
             return (
               (uploadDraft.canonicalRequirementInstanceId && String(canonicalId || '') === String(uploadDraft.canonicalRequirementInstanceId)) ||
@@ -23318,6 +23475,8 @@ function AttorneyTransactionDetail() {
               key={archlineActiveLegalTaskWorkflowKey}
               workflow={archlineActiveLegalTaskWorkflow}
               workflowKey={archlineActiveLegalTaskWorkflowKey}
+              transferNavigation={archlineActiveLegalTaskWorkflowKey === 'transfer' ? transferNavigation : null}
+              onNavigateTransfer={navigateTransferWorkspace}
               sharedLegalJourney={archlineSharedLegalJourney}
               selectionStorageKey={`arch9:attorney-workflow-selection:${transaction.id}:${archlineActiveLegalTaskWorkflowKey}`}
               focusRequest={journeyFocusRequest}
@@ -23496,7 +23655,7 @@ function AttorneyTransactionDetail() {
                 <div className="grid gap-3 md:grid-cols-2">
                   <label className="flex flex-col gap-1.5">
                     <span className="text-label font-semibold uppercase text-textMuted">Requested from</span>
-                    <Field as="select" value={documentRequestForm.requestedFrom} onChange={(event) => setDocumentRequestForm((previous) => ({ ...previous, requestedFrom: event.target.value }))}>
+                    <Field as="select" value={documentRequestForm.requestedFrom} onChange={(event) => setDocumentRequestForm((previous) => ({ ...previous, requestedFrom: event.target.value, canonicalRequirementInstanceId: '' }))}>
                       {additionalDocumentRequestedFromOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                     </Field>
                   </label>
@@ -23589,11 +23748,11 @@ function AttorneyTransactionDetail() {
                   <label className="flex flex-col gap-1.5">
                     <span className="text-label font-semibold uppercase text-textMuted">Required document</span>
                     <Field as="select" aria-label="Required document" value={uploadDraft.requiredDocumentKey || ''} onChange={(event) => {
-                      const requirement = requiredDocumentChecklist.find((item) => item.key === event.target.value)
+                      const requirement = documentWorkspaceRequiredChecklist.find((item) => item.key === event.target.value)
                       setUploadDraft((previous) => ({ ...previous, canonicalRequirementInstanceId: getRequirementCanonicalId(requirement) || '', requiredDocumentId: requirement?.id || '', requiredDocumentKey: requirement?.key || '', documentType: requirement?.key || previous.documentType }))
                     }}>
                       <option value="">Select required document</option>
-                      {requiredDocumentChecklist.filter(isUploadRequirementForSelectedParty).map((item) => <option key={item.key} value={item.key}>{item.label || item.key}</option>)}
+                      {documentWorkspaceRequiredChecklist.filter(isUploadRequirementForSelectedParty).map((item) => <option key={item.key} value={item.key}>{item.label || item.key}</option>)}
                     </Field>
                   </label>
                 ) : null}
@@ -24614,7 +24773,7 @@ function AttorneyTransactionDetail() {
                     <Field
                       as="select"
                       value={documentRequestForm.requestedFrom}
-                      onChange={(event) => setDocumentRequestForm((previous) => ({ ...previous, requestedFrom: event.target.value }))}
+                      onChange={(event) => setDocumentRequestForm((previous) => ({ ...previous, requestedFrom: event.target.value, canonicalRequirementInstanceId: '' }))}
                     >
                       {additionalDocumentRequestedFromOptions.map((option) => (
                         <option key={option.value} value={option.value}>{option.label}</option>
@@ -24786,7 +24945,7 @@ function AttorneyTransactionDetail() {
                       value={uploadDraft.canonicalRequirementInstanceId || ''}
                       onChange={(event) => {
                         const canonicalRequirementInstanceId = event.target.value
-                        const requirement = requiredDocumentChecklist.find((item) =>
+                        const requirement = documentWorkspaceRequiredChecklist.find((item) =>
                           String(getRequirementCanonicalId(item) || '') === canonicalRequirementInstanceId
                         )
                         setUploadDraft((previous) => ({
@@ -24801,7 +24960,7 @@ function AttorneyTransactionDetail() {
                       }}
                     >
                       <option value="">Select required document</option>
-                      {requiredDocumentChecklist
+                      {documentWorkspaceRequiredChecklist
                         .filter((item) => getRequirementCanonicalId(item) && isUploadRequirementForSelectedParty(item))
                         .map((item) => {
                           const canonicalId = getRequirementCanonicalId(item)

@@ -2,6 +2,7 @@ import {
   buildCanonicalDocumentRequestAudiencePlan,
 } from '../../core/documents/documentRequestCanonicalPlanner.js'
 import { DOCUMENT_REQUEST_CANONICAL_MATRIX } from '../../core/documents/documentRequestCanonicalMatrix.js'
+import { resolveCrossModuleDocumentReference } from './crossModuleDocumentKeyMapService.js'
 
 export const DOCUMENT_REQUEST_CANONICAL_REQUIRED_DOCUMENT_SYNC_VERSION =
   'document_request_canonical_required_document_sync_v1'
@@ -26,6 +27,7 @@ const RETIRED_UMBRELLA_DOCUMENT_KEYS = new Set(['buyer_fica_pack', 'seller_fica_
 const GROUP_LABELS = Object.freeze({
   sale: 'Sale',
   buyer_fica: 'Buyer & FICA',
+  seller_documents: 'Seller Documents',
   finance: 'Finance',
   transfer: 'Transfer',
 })
@@ -94,7 +96,9 @@ function groupKeyFromRequest(request = {}) {
   ) {
     return 'transfer'
   }
-  return 'buyer_fica'
+  return normalizeKey(request.requestedFrom || request.ownerRole) === 'seller'
+    ? 'seller_documents'
+    : 'buyer_fica'
 }
 
 function requiredDocumentStatusForRequest(request = {}, existing = null) {
@@ -138,6 +142,65 @@ function buildRequiredDocumentRowFromRequest({ transactionId, request, existing 
 
 function existingRowsByDocumentKey(existingRows = []) {
   return new Map((existingRows || []).map((row) => [normalizeKey(row.document_key || row.key), row]))
+}
+
+const MATRIX_KEYS_BY_ALIAS_AND_ROLE = new Map()
+for (const requirement of DOCUMENT_REQUEST_CANONICAL_MATRIX.requirements) {
+  const role = normalizeKey(requirement.requestedFrom || requirement.ownerRole)
+  const alias = resolveCrossModuleDocumentReference(requirement.key, { requestedFromRole: role }).canonicalDocumentKey
+  const identity = `${normalizeKey(alias)}:${role}`
+  MATRIX_KEYS_BY_ALIAS_AND_ROLE.set(identity, new Set([
+    ...(MATRIX_KEYS_BY_ALIAS_AND_ROLE.get(identity) || []),
+    normalizeKey(requirement.key),
+  ]))
+}
+
+function requiredDocumentIdentity(row = {}) {
+  const role = normalizeKey(row.required_from_role)
+  const key = normalizeKey(row.document_key)
+  const alias = normalizeKey(resolveCrossModuleDocumentReference(key, { requestedFromRole: role }).canonicalDocumentKey)
+  // A broad taxonomy alias must not collapse separate legal checklist items.
+  const safeAlias = MATRIX_KEYS_BY_ALIAS_AND_ROLE.get(`${alias}:${role}`)?.size === 1 ? alias : key
+  return `${safeAlias}:${role}`
+}
+
+function instanceIdentity(instance = {}) {
+  return `${normalizeKey(instance.document_definition_key)}:${normalizeKey(instance.requested_from_role)}`
+}
+
+// The compatibility table has one row per document key, while canonical
+// instances may have one row per contact. Never guess which contact owns a row.
+export function reconcileRequiredDocumentInstanceLinks(rows = [], instances = []) {
+  const active = (instances || []).filter((instance) => normalizeKey(instance.status) !== 'not_applicable')
+  const instancesById = new Map(active.map((instance) => [instance.id, instance]))
+  const instancesByIdentity = new Map()
+  for (const instance of active) {
+    const identity = instanceIdentity(instance)
+    instancesByIdentity.set(identity, [...(instancesByIdentity.get(identity) || []), instance])
+  }
+
+  const diagnostics = { linkedKeys: [], missingKeys: [], ambiguousKeys: [], conflictingKeys: [] }
+  const reconciledRows = rows.map((row) => {
+    const identity = requiredDocumentIdentity(row)
+    const candidates = instancesByIdentity.get(identity) || []
+    const linkedId = row.canonical_requirement_instance_id
+    if (linkedId) {
+      const linked = instancesById.get(linkedId)
+      if (!linked || instanceIdentity(linked) !== identity) {
+        diagnostics.conflictingKeys.push(row.document_key)
+        return row
+      }
+      diagnostics.linkedKeys.push(row.document_key)
+      return row
+    }
+    if (candidates.length === 1) {
+      diagnostics.linkedKeys.push(row.document_key)
+      return { ...row, canonical_requirement_instance_id: candidates[0].id }
+    }
+    diagnostics[candidates.length ? 'ambiguousKeys' : 'missingKeys'].push(row.document_key)
+    return row
+  })
+  return { rows: reconciledRows, diagnostics }
 }
 
 function matrixManagedDocumentKeys() {
@@ -205,6 +268,20 @@ async function fetchExistingRequiredDocumentRows(client, transactionId) {
   return query.data || []
 }
 
+async function fetchCanonicalRequirementInstances(client, transactionId) {
+  const query = await client
+    .from('document_requirement_instances')
+    .select('id, document_definition_key, requested_from_role, status')
+    .eq('context_type', 'transaction')
+    .eq('context_id', transactionId)
+
+  if (query.error) {
+    if (missingSchema(query.error, 'document_requirement_instances')) return null
+    throw query.error
+  }
+  return query.data || []
+}
+
 export async function syncCanonicalRequiredDocumentRows({
   client,
   transactionId,
@@ -226,25 +303,39 @@ export async function syncCanonicalRequiredDocumentRows({
     requestPendingPolicy,
     includePendingPolicyRows,
   })
+  const instances = await fetchCanonicalRequirementInstances(client, transactionId)
+  const reconciliation = instances === null
+    ? { rows: plan.rows, diagnostics: null }
+    : reconcileRequiredDocumentInstanceLinks(plan.rows, instances)
+  const reconciledPlan = {
+    ...plan,
+    rows: reconciliation.rows,
+    reconciliation: reconciliation.diagnostics,
+  }
 
-  if (dryRun || !plan.rows.length) {
+  if (dryRun || !reconciledPlan.rows.length) {
     return {
-      ...plan,
+      ...reconciledPlan,
       dryRun: Boolean(dryRun),
       synced: 0,
       persistedRows: [],
     }
   }
 
-  const write = await client
-    .from('transaction_required_documents')
-    .upsert(plan.rows, { onConflict: 'transaction_id,document_key' })
-    .select(REQUIRED_DOCUMENT_SELECT)
+  // A pre-existing link with the wrong identity is left untouched for review.
+  const conflictingKeys = new Set(reconciliation.diagnostics?.conflictingKeys || [])
+  const safeRows = reconciledPlan.rows.filter((row) => !conflictingKeys.has(row.document_key))
+  const write = safeRows.length
+    ? await client
+      .from('transaction_required_documents')
+      .upsert(safeRows, { onConflict: 'transaction_id,document_key' })
+      .select(REQUIRED_DOCUMENT_SELECT)
+    : { data: [], error: null }
 
   if (write.error) {
     if (missingSchema(write.error, 'transaction_required_documents')) {
       return {
-        ...plan,
+        ...reconciledPlan,
         skipped: true,
         reason: 'transaction_required_documents_missing',
         synced: 0,
@@ -257,7 +348,7 @@ export async function syncCanonicalRequiredDocumentRows({
   // Recalculation is a reconciliation, not an append-only import.  Only
   // deactivate matrix-owned, unsatisfied rows so an uploaded legacy document
   // is never hidden or discarded by a rules correction.
-  const activeKeys = new Set(plan.rows.map((row) => normalizeKey(row.document_key)))
+  const activeKeys = new Set(reconciledPlan.rows.map((row) => normalizeKey(row.document_key)))
   const managedKeys = matrixManagedDocumentKeys()
   const staleIds = existingRows
     .filter((row) => managedKeys.has(normalizeKey(row.document_key)))
@@ -280,9 +371,9 @@ export async function syncCanonicalRequiredDocumentRows({
   }
 
   return {
-    ...plan,
+    ...reconciledPlan,
     dryRun: false,
-    synced: (write.data?.length || plan.rows.length) + staleIds.length,
+    synced: (write.data?.length || safeRows.length) + staleIds.length,
     persistedRows: write.data || [],
     deactivatedStaleRowIds: staleIds,
   }

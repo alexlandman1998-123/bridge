@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { createServer } from 'vite'
+import { createCanonicalVerificationClient } from './canonical-document-verification-client.mjs'
 
 const TRANSACTION_ID = '5db513ad-5736-46fe-bd8f-6b298d1d791d'
 const REFERENCE = 'CANONICAL-DOC-TEST-001'
@@ -27,9 +28,7 @@ try {
   const consolidation = await server.ssrLoadModule('/src/services/documents/canonicalDocumentConsolidationService.js')
   const gates = await server.ssrLoadModule('/src/services/documents/canonicalWorkflowGateService.js')
   const reminders = await server.ssrLoadModule('/src/services/documents/canonicalDocumentReminderService.js')
-  const { supabase, isSupabaseConfigured } = await server.ssrLoadModule('/src/lib/supabaseClient.js')
-
-  assert.ok(isSupabaseConfigured && supabase, 'Supabase must be configured for scoped canonical_primary pilot verification')
+  const supabase = createCanonicalVerificationClient()
 
   const pilotOptions = {
     transactionId: TRANSACTION_ID,

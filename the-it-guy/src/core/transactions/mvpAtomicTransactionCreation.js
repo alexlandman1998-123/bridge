@@ -12,6 +12,9 @@ export function assessMvpAtomicTransactionCreation({
   organisationId = '',
   listingId = '',
   leadId = '',
+  sellerLeadId,
+  buyerContactId,
+  sellerContactId,
   acceptedOfferId = '',
   idempotencyKey = '',
 } = {}) {
@@ -21,6 +24,9 @@ export function assessMvpAtomicTransactionCreation({
   if (text(organisationId) && text(transaction?.organisation_id) !== text(organisationId)) issues.push(issue('organisation_mismatch'))
   if (text(listingId) && text(transaction?.listing_id) !== text(listingId)) issues.push(issue('listing_mismatch'))
   if (text(leadId) && ![text(transaction?.originating_lead_id), text(transaction?.originating_buyer_lead_id)].includes(text(leadId))) issues.push(issue('buyer_lead_mismatch'))
+  if (sellerLeadId !== undefined && text(transaction?.originating_seller_lead_id) !== text(sellerLeadId)) issues.push(issue('seller_lead_mismatch'))
+  if (buyerContactId !== undefined && text(transaction?.buyer_contact_id) !== text(buyerContactId)) issues.push(issue('buyer_contact_mismatch'))
+  if (sellerContactId !== undefined && text(transaction?.seller_contact_id) !== text(sellerContactId)) issues.push(issue('seller_contact_mismatch'))
   if (text(acceptedOfferId) && text(transaction?.accepted_offer_id) !== text(acceptedOfferId)) issues.push(issue('accepted_offer_mismatch'))
   if (text(idempotencyKey) && text(transaction?.creation_idempotency_key) !== text(idempotencyKey)) issues.push(issue('idempotency_key_mismatch'))
   return {

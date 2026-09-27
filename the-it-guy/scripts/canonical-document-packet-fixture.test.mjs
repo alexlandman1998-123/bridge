@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { createServer } from 'vite'
+import { createCanonicalVerificationClient } from './canonical-document-verification-client.mjs'
 
 const TRANSACTION_ID = '5db513ad-5736-46fe-bd8f-6b298d1d791d'
 const SNAPSHOT_RPC = 'canonical_document_verification_snapshot'
@@ -23,8 +24,7 @@ const server = await createServer({
 })
 
 try {
-  const { supabase, isSupabaseConfigured } = await server.ssrLoadModule('/src/lib/supabaseClient.js')
-  assert.ok(isSupabaseConfigured && supabase, 'Supabase must be configured for packet fixture verification')
+  const supabase = createCanonicalVerificationClient()
 
   const { data, error } = await supabase.rpc(SNAPSHOT_RPC, {
     p_purpose: 'canonical_staging_verification',

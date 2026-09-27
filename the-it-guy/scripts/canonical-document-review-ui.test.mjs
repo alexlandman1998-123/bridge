@@ -19,6 +19,16 @@ assert.equal(
 
 assert.match(apiSource, /reviewCanonicalDocumentRequirement/, 'API should expose canonical review lifecycle RPC wrapper')
 assert.match(apiSource, /bridge_review_canonical_requirement/, 'review actions should use the scoped review RPC')
+assert.match(
+  apiSource,
+  /const canonicalRequirementInstanceId = requirementLookup\.data\?\.canonical_requirement_instance_id[\s\S]*?await reviewCanonicalDocumentRequirement\(/,
+  'legacy required-document review should use the linked canonical review action',
+)
+assert.match(
+  apiSource,
+  /existingRequest\.canonical_requirement_instance_id && \['completed', 'rejected'\]\.includes\(normalizedStatus\)/,
+  'linked additional-document request reviews should use the canonical review action',
+)
 assert.doesNotMatch(
   apiSource,
   /\.from\('document_requirement_rules'\)/,

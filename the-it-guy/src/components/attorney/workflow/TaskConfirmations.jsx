@@ -98,7 +98,7 @@ export default function TaskConfirmations({ taskKey, items, saved = {}, disabled
         setDirty(false); onDirtyChangeRef.current?.(savingTaskKey, false); setSavedMessage(true)
       } else {
         if (attempt !== saveAttempt.current || savingTaskKey !== currentTaskKey.current) return
-        setError('Answers were not saved. Check the task permissions and try again.')
+        setError('Answers were not saved. Review the task error below and try again.')
       }
     }
     catch (error) {

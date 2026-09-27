@@ -1,5 +1,6 @@
 import { createServer } from 'vite'
 import { assertCanonicalVerificationDataSource } from './canonical-document-verification-data-guard.mjs'
+import { createCanonicalVerificationClient } from './canonical-document-verification-client.mjs'
 
 const TABLES = Object.freeze([
   'document_definitions',
@@ -95,6 +96,16 @@ async function fetchVerificationTables(client) {
   return snapshot.tables
 }
 
+async function fetchPhase6ReconciliationPlan(client) {
+  if (!SNAPSHOT_TRANSACTION_ID) return null
+  const { data, error } = await client.rpc('bridge_plan_transaction_document_reconciliation_phase6', {
+    p_transaction_id: SNAPSHOT_TRANSACTION_ID,
+  })
+  if (error) throw new Error(`Scoped reconciliation plan unavailable: ${error.message}`)
+  if (!data?.planDigest || !data?.summary) throw new Error('Scoped reconciliation plan returned an invalid result.')
+  return data
+}
+
 function mergePacketVersionRows(packetVersions = [], packets = []) {
   const packetsById = new Map(packets.map((packet) => [packet.id, packet]))
   return packetVersions.map((version) => {
@@ -141,6 +152,27 @@ function buildProjectionGapReport({ canonicalInstances = [], legacyRequirements 
     .filter(Boolean)
 }
 
+function buildCrossRoleIdentityReport(canonicalInstances = []) {
+  const attorneyRoles = new Set([
+    'transfer_attorney', 'attorney', 'transferring_attorney', 'conveyancer',
+    'conveyancing_secretary', 'bond_attorney', 'cancellation_attorney',
+  ])
+  const missingAttorneyVisibility = canonicalInstances
+    .filter((instance) => instance.context_type === 'transaction' && instance.status !== 'not_applicable')
+    .filter((instance) => ['buyer', 'seller'].includes(normalizeKey(instance.requested_from_role)))
+    .filter((instance) => !(instance.visible_to_roles || []).some((role) => attorneyRoles.has(normalizeKey(role))))
+    .map((instance) => ({
+      transactionId: instance.transaction_id,
+      requirementId: instance.id,
+      requestedFromRole: instance.requested_from_role,
+      documentDefinitionKey: instance.document_definition_key,
+    }))
+  return {
+    missingAttorneyVisibilityCount: missingAttorneyVisibility.length,
+    missingAttorneyVisibilityPreview: summariseRows(missingAttorneyVisibility),
+  }
+}
+
 function classifyBackfill(plan = {}) {
   const all = [
     ...plan.legacyRequirementLinks,
@@ -185,15 +217,12 @@ async function main() {
   })
 
   try {
-    const { supabase, isSupabaseConfigured } = await server.ssrLoadModule('/src/lib/supabaseClient.js')
     const consolidation = await server.ssrLoadModule('/src/services/documents/canonicalDocumentConsolidationService.js')
     const adapter = await server.ssrLoadModule('/src/services/documents/canonicalDocumentAdapterService.js')
-
-    if (!isSupabaseConfigured || !supabase) {
-      throw new Error('Supabase is not configured. Cannot run real staging dry-run parity verification.')
-    }
+    const supabase = createCanonicalVerificationClient()
 
     const tables = await fetchVerificationTables(supabase)
+    const phase6Plan = await fetchPhase6ReconciliationPlan(supabase)
     const rows = Object.fromEntries(Object.entries(tables).map(([table, result]) => [table, result.rows || []]))
 
     const canonicalDefinitions = rows.document_definitions
@@ -243,6 +272,7 @@ async function main() {
       legacyRequirements,
       adapter,
     })
+    const crossRoleIdentity = buildCrossRoleIdentityReport(canonicalInstances)
 
     const tableSummary = Object.fromEntries(TABLES.map((table) => [table, {
       available: tables[table].available,
@@ -261,12 +291,20 @@ async function main() {
       impossibleWorkflowBlockers: integrity.workflowGatesBlockedByImpossibleRules || [],
     }
 
+    const phase6NeedsReview = Boolean(phase6Plan && (
+      phase6Plan.summary.legacyRowsForManualReview > 0 ||
+      phase6Plan.summary.documentsForManualReview > 0 ||
+      phase6Plan.summary.statusesForManualReview > 0 ||
+      phase6Plan.summary.requestsForManualReview > 0
+    ))
     const recommendation = (
       critical.unmappedLegacyKeys.length === 0 &&
       critical.duplicateActiveCanonicalRequirements.length === 0 &&
       critical.statusConflicts.length === 0 &&
       critical.invalidRoleIssues.length === 0 &&
-      critical.impossibleWorkflowBlockers.length === 0
+      critical.impossibleWorkflowBlockers.length === 0 &&
+      crossRoleIdentity.missingAttorneyVisibilityCount === 0 &&
+      !phase6NeedsReview
     )
       ? 'proceed_to_browser_level_staging_verification_after_manual_review_of_backfill_report'
       : 'fix_real_staging_parity_issues_before_browser_level_verification'
@@ -279,10 +317,20 @@ async function main() {
       hardWorkflowBlocksEnabled: false,
       maxRowsPerTable: MAX_ROWS_PER_TABLE,
       dataSource: SNAPSHOT_RPC,
+      transactionId: SNAPSHOT_TRANSACTION_ID || null,
+      phase6ReconciliationPlan: phase6Plan ? {
+        planDigest: phase6Plan.planDigest,
+        summary: phase6Plan.summary,
+        legacyLinksPreview: summariseRows(phase6Plan.legacyLinks),
+        documentLinksPreview: summariseRows(phase6Plan.documentLinks),
+        requestSuggestionsPreview: summariseRows(phase6Plan.requestSuggestions),
+        requestsAutoLinked: false,
+      } : null,
       snapshotRpcError: null,
       tablesInspected: TABLES,
       rowCounts: tableSummary,
       paritySummary: parity.summary,
+      crossRoleIdentity,
       legacyRowsWithoutCanonicalMatch: {
         count: integrity.legacyRowsWithoutCanonicalInstance.length,
         byKey: groupCounts(integrity.legacyRowsWithoutCanonicalInstance, (row) => row.legacyKey),

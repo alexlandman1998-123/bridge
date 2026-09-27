@@ -2,8 +2,10 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   buildCanonicalRequiredDocumentRows,
+  reconcileRequiredDocumentInstanceLinks,
   syncCanonicalRequiredDocumentRows,
 } from '../documentRequestCanonicalRequiredDocumentSyncService.js'
+import { getAttorneyCategoryForRequiredDocument } from '../matterDocumentWorkspaceModel.js'
 
 const MIXED_SCENARIO = Object.freeze({
   buyerEntityType: 'trust',
@@ -30,7 +32,7 @@ function assertExcludes(keys, excluded, label) {
   }
 }
 
-function createFakeClient(seedRows = []) {
+function createFakeClient(seedRows = [], instances = []) {
   const state = {
     rows: [...seedRows],
     upsertedRows: [],
@@ -39,6 +41,27 @@ function createFakeClient(seedRows = []) {
   return {
     state,
     from(table) {
+      if (table === 'document_requirement_instances') {
+        return {
+          select() {
+            return {
+              eq(column, value) {
+                assert.equal(column, 'context_type')
+                assert.equal(value, 'transaction')
+                return {
+                  eq(contextColumn, transactionId) {
+                    assert.equal(contextColumn, 'context_id')
+                    return Promise.resolve({
+                      data: instances.filter((instance) => instance.context_id === transactionId),
+                      error: null,
+                    })
+                  },
+                }
+              },
+            }
+          },
+        }
+      }
       assert.equal(table, 'transaction_required_documents')
       return {
         select() {
@@ -115,6 +138,64 @@ test('builds required document rows from the canonical request plan', () => {
   assert.equal(bondApproval.visibility_scope, 'client')
   assert.equal(bondApproval.status, 'missing')
   assert.equal(bondApproval.enabled, true)
+  const sellerCompany = result.rows.find((row) => row.document_key === 'seller_company_registration')
+  assert.equal(sellerCompany.group_key, 'seller_documents')
+  assert.equal(sellerCompany.group_label, 'Seller Documents')
+})
+
+test('links only exact document identity and requested party, including canonical aliases', () => {
+  const rows = [
+    { document_key: 'buyer_id_document', required_from_role: 'buyer', canonical_requirement_instance_id: null },
+    { document_key: 'seller_id_document', required_from_role: 'seller', canonical_requirement_instance_id: null },
+    { document_key: 'grant_signed', required_from_role: 'buyer', canonical_requirement_instance_id: null },
+  ]
+  const instances = [
+    { id: 'buyer-id', document_definition_key: 'buyer_id_document', requested_from_role: 'buyer', status: 'pending' },
+    { id: 'seller-id', document_definition_key: 'seller_id_document', requested_from_role: 'seller', status: 'pending' },
+    { id: 'grant', document_definition_key: 'grant_letter', requested_from_role: 'buyer', status: 'pending' },
+  ]
+  const result = reconcileRequiredDocumentInstanceLinks(rows, instances)
+  assert.deepEqual(result.rows.map((row) => row.canonical_requirement_instance_id), ['buyer-id', 'seller-id', 'grant'])
+  assert.deepEqual(result.diagnostics.missingKeys, [])
+})
+
+test('does not guess between contacts or retain a wrong-party link as a valid match', () => {
+  const result = reconcileRequiredDocumentInstanceLinks([
+    { document_key: 'buyer_id_document', required_from_role: 'buyer', canonical_requirement_instance_id: null },
+    { document_key: 'seller_id_document', required_from_role: 'seller', canonical_requirement_instance_id: 'buyer-id' },
+    { document_key: 'bond_approval', required_from_role: 'buyer', canonical_requirement_instance_id: null },
+  ], [
+    { id: 'buyer-id', document_definition_key: 'buyer_id_document', requested_from_role: 'buyer', status: 'pending' },
+    { id: 'buyer-id-2', document_definition_key: 'buyer_id_document', requested_from_role: 'buyer', status: 'pending' },
+    { id: 'seller-id', document_definition_key: 'seller_id_document', requested_from_role: 'seller', status: 'pending' },
+    { id: 'ignored', document_definition_key: 'bond_approval', requested_from_role: 'buyer', status: 'not_applicable' },
+  ])
+  assert.equal(result.rows[0].canonical_requirement_instance_id, null)
+  assert.equal(result.rows[1].canonical_requirement_instance_id, 'buyer-id')
+  assert.deepEqual(result.diagnostics.ambiguousKeys, ['buyer_id_document'])
+  assert.deepEqual(result.diagnostics.conflictingKeys, ['seller_id_document'])
+  assert.deepEqual(result.diagnostics.missingKeys, ['bond_approval'])
+})
+
+test('broad taxonomy aliases cannot merge separate legal checklist requirements', () => {
+  const result = reconcileRequiredDocumentInstanceLinks([
+    { document_key: 'buyer_company_registration', required_from_role: 'buyer', canonical_requirement_instance_id: null },
+    { document_key: 'buyer_company_resolution', required_from_role: 'buyer', canonical_requirement_instance_id: null },
+    { document_key: 'proof_of_funds_cash_component', required_from_role: 'buyer', canonical_requirement_instance_id: null },
+  ], [
+    { id: 'registration', document_definition_key: 'buyer_company_registration', requested_from_role: 'buyer', status: 'pending' },
+    { id: 'funds', document_definition_key: 'proof_of_funds', requested_from_role: 'buyer', status: 'pending' },
+  ])
+  assert.deepEqual(result.rows.map((row) => row.canonical_requirement_instance_id), ['registration', null, null])
+  assert.deepEqual(result.diagnostics.missingKeys, ['buyer_company_resolution', 'proof_of_funds_cash_component'])
+})
+
+test('legacy seller rows are classified by party even if their old group says buyer FICA', () => {
+  assert.equal(getAttorneyCategoryForRequiredDocument({
+    key: 'property_condition_disclosure',
+    groupKey: 'buyer_fica',
+    requiredFromRole: 'seller',
+  }), 'Seller FICA / Compliance')
 })
 
 test('preserves existing uploaded/review state when rebuilding canonical rows', () => {
@@ -190,7 +271,13 @@ test('sync supports dry-run without upserting rows', async () => {
 })
 
 test('sync upserts canonical rows into transaction_required_documents', async () => {
-  const client = createFakeClient([])
+  const client = createFakeClient([], [{
+    id: 'instance-trust-deed',
+    context_id: 'transaction-1',
+    document_definition_key: 'buyer_trust_deed',
+    requested_from_role: 'buyer',
+    status: 'pending',
+  }])
   const result = await syncCanonicalRequiredDocumentRows({
     client,
     transactionId: 'transaction-1',
@@ -203,6 +290,34 @@ test('sync upserts canonical rows into transaction_required_documents', async ()
   assert.equal(client.state.upsertedRows.length, result.rows.length)
   assert.equal(client.state.rows.some((row) => row.document_key === 'buyer_trust_deed'), true)
   assert.equal(client.state.rows.every((row) => row.transaction_id === 'transaction-1'), true)
+  assert.equal(client.state.rows.find((row) => row.document_key === 'buyer_trust_deed').canonical_requirement_instance_id, 'instance-trust-deed')
+  assert.equal(result.reconciliation.linkedKeys.includes('buyer_trust_deed'), true)
+})
+
+test('sync leaves an incorrectly linked seller row untouched and reports it', async () => {
+  const existing = {
+    id: 'seller-row',
+    transaction_id: 'transaction-1',
+    document_key: 'seller_company_registration',
+    required_from_role: 'seller',
+    canonical_requirement_instance_id: 'buyer-instance',
+    status: 'uploaded',
+    is_uploaded: true,
+    uploaded_document_id: 'seller-upload',
+  }
+  const client = createFakeClient([existing], [
+    { id: 'buyer-instance', context_id: 'transaction-1', document_definition_key: 'buyer_company_registration', requested_from_role: 'buyer', status: 'pending' },
+    { id: 'seller-instance', context_id: 'transaction-1', document_definition_key: 'seller_company_registration', requested_from_role: 'seller', status: 'pending' },
+  ])
+  const result = await syncCanonicalRequiredDocumentRows({
+    client,
+    transactionId: 'transaction-1',
+    scenario: MIXED_SCENARIO,
+    audience: 'client',
+  })
+  assert.deepEqual(result.reconciliation.conflictingKeys, ['seller_company_registration'])
+  assert.equal(client.state.upsertedRows.some((row) => row.document_key === 'seller_company_registration'), false)
+  assert.deepEqual(client.state.rows.find((row) => row.id === 'seller-row'), existing)
 })
 
 test('sync no-op reports zero synced rows without marking the result as dry run', async () => {
@@ -211,7 +326,7 @@ test('sync no-op reports zero synced rows without marking the result as dry run'
     client,
     transactionId: 'transaction-1',
     scenario: MIXED_SCENARIO,
-    audience: 'agent',
+    audience: 'none',
   })
 
   assert.equal(result.rows.length, 0)
