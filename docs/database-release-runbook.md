@@ -6,9 +6,6 @@ The requester has chosen direct production releases at any hour during this earl
 
 For each requested release:
 
-The `direct-production-pilot` PR label records the reviewed exception to the Phase 0 new-migration CI freeze during this pilot. Apply it only after confirming the target, recovery lock, exact dry-run migration set, and user approval for this release. The ordinary guard and production verification still apply.
-
-
 1. Confirm the linked project is the intended production project, run `npm run supabase:guard` and `npm run supabase:push:lock-recovery`, and stop if target or recovery checks fail.
 2. Run the narrow app checks for the changed product. Inspect the exact pending migration set with `npx supabase db push --linked --dry-run --skip-vault`; use `--include-all` in the dry run only if older-version files require it. Do not push a surprising or unreviewed migration list.
 3. When the user has approved that release, use the Phase 0 guard's explicit override for the exact reviewed push. Keep `--skip-vault`; do not include seed data or custom roles. Apply migrations before dependent application code.
