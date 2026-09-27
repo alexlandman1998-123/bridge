@@ -1,9 +1,10 @@
 import { createHmac } from 'node:crypto'
-import { createClient } from '@supabase/supabase-js'
+import { HOME_SEEKERS_PUBLIC_PATH, getHomeSeekersWebsiteConnection, isHomeSeekersPageUrl } from './homeSeekersWebsiteBridge.js'
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const IDEMPOTENCY_PATTERN = /^[A-Za-z0-9._:-]{16,128}$/
-const SUPPORTED_TYPES = new Set(['general_enquiry', 'valuation_request'])
+const SUPPORTED_TYPES = new Set(['general_enquiry', 'valuation_request', 'property_enquiry'])
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 function text(value = '', maximum = 4000) {
   return String(value || '').trim().slice(0, maximum)
@@ -37,7 +38,7 @@ function siteUrl(value) {
   }
 }
 
-export async function createHomeSeekersLeadCaptureResponse({ method = 'POST', headers = {}, body = {} } = {}) {
+export async function createHomeSeekersLeadCaptureResponse({ method = 'POST', headers = {}, body = {}, getConnection = getHomeSeekersWebsiteConnection } = {}) {
   if (String(method).toUpperCase() === 'OPTIONS') {
     return { status: 204, headers: { 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type' }, body: null }
   }
@@ -52,22 +53,36 @@ export async function createHomeSeekersLeadCaptureResponse({ method = 'POST', he
   const email = text(payload.email, 254).toLowerCase()
   const phone = text(payload.phone, 64)
   const idempotencyKey = text(payload.idempotencyKey, 128)
-  if (!hostname || !SUPPORTED_TYPES.has(type) || name.length < 2 || (!email && !phone) || (email && !EMAIL_PATTERN.test(email)) || payload.privacyAccepted !== true || !IDEMPOTENCY_PATTERN.test(idempotencyKey)) {
+  const listingId = text(payload.listingId, 64)
+  const page = siteUrl(payload.pageUrl)
+  if (!hostname || !page || page.hostname.toLowerCase() !== hostname || !isHomeSeekersPageUrl(page.href)
+    || !SUPPORTED_TYPES.has(type) || (type === 'property_enquiry' && !UUID_PATTERN.test(listingId))
+    || name.length < 2 || (!email && !phone) || (email && !EMAIL_PATTERN.test(email)) || payload.privacyAccepted !== true || !IDEMPOTENCY_PATTERN.test(idempotencyKey)) {
     return response(400, { error: 'Please complete the required fields.' })
   }
 
-  const supabaseUrl = text(process.env.SUPABASE_URL, 2048)
-  const serviceRoleKey = text(process.env.SUPABASE_SERVICE_ROLE_KEY, 4096)
-  if (!supabaseUrl || !serviceRoleKey) return response(503, { error: 'Enquiries are temporarily unavailable.' })
-
   try {
-    const page = siteUrl(payload.pageUrl)
-    const supabase = createClient(supabaseUrl, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } })
-    const capture = await supabase.rpc('website_capture_lead_submission', {
-      p_hostname: hostname,
+    const { client, site, hostname: websiteHostname } = await getConnection()
+    let pageId = null
+    if (type !== 'property_enquiry') {
+      const pageKind = type === 'valuation_request' ? 'valuation'
+        : page.pathname === `${HOME_SEEKERS_PUBLIC_PATH}/contact` ? 'contact'
+          : page.pathname === `${HOME_SEEKERS_PUBLIC_PATH}/about` ? 'about' : 'home'
+      const { data: publishedPage, error: pageError } = await client.from('website_pages')
+        .select('id')
+        .eq('website_site_id', site.id)
+        .eq('revision_id', site.published_revision_id)
+        .eq('page_kind', pageKind)
+        .maybeSingle()
+      if (pageError) throw pageError
+      if (!publishedPage?.id) throw new Error('The enquiry page is not published.')
+      pageId = publishedPage.id
+    }
+    const capture = await client.rpc('website_capture_lead_submission', {
+      p_hostname: websiteHostname,
       p_submission_type: type,
-      p_listing_id: null,
-      p_page_id: null,
+      p_listing_id: type === 'property_enquiry' ? listingId : null,
+      p_page_id: pageId,
       p_name: name,
       p_email: email || null,
       p_phone: phone || null,
@@ -77,7 +92,7 @@ export async function createHomeSeekersLeadCaptureResponse({ method = 'POST', he
       p_idempotency_key: idempotencyKey,
       p_request_fingerprint: fingerprint(headers, hostname),
       p_attribution: {
-        pagePath: page?.host.toLowerCase() === hostname ? page.pathname : undefined,
+        pagePath: page.pathname,
         userAgent: text(headers['user-agent'] || headers['User-Agent'], 512),
         leadIntent: type === 'valuation_request' ? 'sell' : undefined,
       },

@@ -1,7 +1,9 @@
 import { ArrowRight, MapPin } from 'lucide-react'
+import { useHomeSeekersPageTracking } from './homeSeekersWebsiteData'
 import './HomeSeekersFooter.css'
 
 export default function HomeSeekersFooter() {
+  useHomeSeekersPageTracking()
   return <footer className="hs-site-footer">
     <div className="hs-site-footer__top">
       <div className="hs-site-footer__brand"><img src="/brand/homeseekers/home-seekers-vertical-white-tag.svg" alt="Home Seekers — Move Forward, Faster" /><p>Every move deserves a better way forward.</p></div>

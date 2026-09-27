@@ -18,6 +18,8 @@ const workspace = read(resolve(appRoot, 'src/components/marketing/WebsiteWorkspa
 const editor = read(resolve(appRoot, 'src/components/marketing/WebsiteBrandEditor.jsx'))
 const repository = read(resolve(repositoryRoot, 'apps/websites/lib/site-repository.ts'))
 const chrome = read(resolve(repositoryRoot, 'apps/websites/components/site-chrome.tsx'))
+const websiteBrand = read(resolve(repositoryRoot, 'apps/websites/lib/website-brand.ts'))
+const contactPage = read(resolve(repositoryRoot, 'apps/websites/components/contact-page.tsx'))
 const publicStyles = read(resolve(repositoryRoot, 'apps/websites/app/styles.css'))
 
 for (const [pattern, message] of [
@@ -57,14 +59,13 @@ assert.match(service, /export async function resetWebsiteDraftBrand/, 'exports t
 assert.match(service, /WEBSITE_BRAND_PUBLICATION_FUNCTION/, 'routes brand mutations through the server pipeline')
 assert.doesNotMatch(service, /supabase\.rpc\('website_update_draft_brand'/, 'does not expose the retired browser brand mutation')
 
-for (const label of ['Company display name', 'Logo for light backgrounds', 'Logo for dark backgrounds', 'Primary colour', 'Secondary colour', 'Accent colour', 'Contact email', 'Contact phone', 'WhatsApp number']) {
+for (const label of ['Display name', 'Standard logo', 'Dark-background logo', 'Primary colour', 'Secondary colour', 'Accent colour', 'Email address', 'Phone number', 'WhatsApp number']) {
   assert.match(editor, new RegExp(label, 'i'), `renders the ${label} editor`)
 }
 assert.match(editor, /uploadOrganisationBrandingAsset/, 'uses the organisation-scoped logo uploader')
-assert.match(editor, /permanent website copy/i, 'explains durable logo ownership')
 assert.doesNotMatch(editor, /Or use an HTTPS image URL/i, 'does not accept arbitrary remote logo URLs')
-assert.match(editor, /Live draft preview/i, 'renders a live draft preview')
-assert.match(editor, /Reset to organisation branding/i, 'provides the explicit reset action')
+assert.match(editor, /Save updates this draft only\. Publishing remains a separate action\./i, 'explains when brand changes reach the public website')
+assert.match(editor, /Use organisation details/i, 'provides the explicit reset action')
 assert.match(workspace, /isRepairableBrandBlocker/, 'allows the publisher to repair legacy draft logos')
 assert.match(workspace, /<WebsiteBrandEditor/, 'mounts the editor for an editable website draft')
 
@@ -72,11 +73,12 @@ for (const key of ['logoLightUrl', 'logoDarkUrl', 'primaryColor', 'secondaryColo
   assert.match(repository, new RegExp(`${key}:`), `maps ${key} from the published revision`)
 }
 assert.match(chrome, /import Image from 'next\/image'/, 'uses the Next.js image component for tenant logos')
-assert.match(chrome, /logoDarkUrl \|\| site\.logoLightUrl/, 'selects a logo suitable for the dark footer')
-assert.match(chrome, /site\.phone/, 'renders the website-specific contact phone')
-assert.match(chrome, /site\.email/, 'renders the website-specific contact email')
-assert.match(chrome, /site\.whatsappNumber/, 'renders the website-specific WhatsApp link')
-assert.match(chrome, /site\.website/, 'renders the website-specific company website link')
+assert.match(chrome, /selectWebsiteLogo\(site, dark\)/, 'selects a logo suitable for the footer')
+assert.match(websiteBrand, /site\.logoDarkUrl \|\| site\.logoUrl \|\| site\.logoLightUrl/, 'falls back to another logo on dark backgrounds')
+assert.match(contactPage, /site\.phone/, 'renders the website-specific contact phone')
+assert.match(contactPage, /site\.email/, 'renders the website-specific contact email')
+assert.match(contactPage, /site\.whatsappNumber/, 'renders the website-specific WhatsApp link')
+assert.match(websiteBrand, /publicWebsiteHref/, 'validates optional company website links')
 assert.match(publicStyles, /background:var\(--accent\)/, 'applies the editable accent colour to public template controls')
 
 console.log('Public websites phase 2 durable brand checks passed')

@@ -38,12 +38,11 @@ assert.match(service, /website_save_draft_page/, 'CRM saves pages through the gu
 assert.match(service, /website_delete_draft_campaign/, 'CRM deletes draft campaigns through the guarded command')
 assert.doesNotMatch(service, /from\('website_pages'\)\.insert/, 'CRM does not insert campaign pages directly')
 assert.match(workspace, /<WebsitePageEditor/, 'Website Studio mounts the page editor')
-for (const label of ['Page title', 'Search title', 'Search description', 'Social image URL', 'Save page', 'Add section']) {
+for (const label of ['Page title', 'Small heading', 'Main heading', 'Introduction', 'Section heading', 'Section text', 'Form heading', 'Form introduction', 'Save page changes']) {
   assert.match(editor, new RegExp(label, 'i'), `page editor exposes ${label}`)
 }
-assert.match(editor, /Fixed campaign layout/, 'campaign editor communicates the fixed layout')
-assert.match(editor, /Move section up/, 'standard sections can be reordered')
-assert.match(editor, /Hide section/, 'standard sections can be hidden')
+assert.match(editor, /corePages\.map/, 'lets editors select each core page')
+assert.match(editor, /Draft only\./, 'explains that saved changes remain private until publication')
 
 assert.match(publicHome, /getPublicPage\(site, ''\)/, 'homepage loads the published home page')
 assert.match(publicHome, /<ContentBlocks page=\{page\}/, 'homepage renders structured published content')
