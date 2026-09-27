@@ -98,6 +98,8 @@ const capturedEnquiry = {
   sourceReferenceId: 'PP-123',
   rawEnquiryPayload: { parser: { matchedFields: { propertyTitle: 'Original townhouse', propertyAddress: '12 Oak Street', propertyPrice: 1800000, listingReference: 'PP-123' } } },
 }
+assert.equal(buildBuyerPropertyEnquiryContext(null, null).displayKind, 'empty', 'the application shell should render before a lead is selected')
+assert.equal(buildBuyerPropertyEnquiryContext(undefined, null).displayKind, 'empty', 'an unavailable lead should not crash the enquiry card')
 const linkedContext = buildBuyerPropertyEnquiryContext(capturedEnquiry, {
   id: 'linked-2', title: 'Current villa', address: '9 Beach Road', askingPrice: 5200000,
   bedrooms: 4, bathrooms: 3, parking: 2, thumbnailUrl: 'https://example.com/current.jpg',
