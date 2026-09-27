@@ -14,102 +14,11 @@ import "./HomeSeekersBrand.css";
 import HomeSeekersValuationModal from "./HomeSeekersValuationModal";
 import HomeSeekersMobileNav from "./HomeSeekersMobileNav";
 import HomeSeekersFooter from "./HomeSeekersFooter";
+import HomeSeekersLeadForm from './HomeSeekersLeadForm';
+import { homeSeekersCard, useHomeSeekersWebsiteData } from './homeSeekersWebsiteData';
 import "./HomeSeekersBuying.css";
 
-const listings = [
-  {
-    id: "waterkloof-estate",
-    place: "Waterkloof",
-    address: "Waterkloof Estate, Pretoria",
-    price: "R25,800,000",
-    beds: 5,
-    baths: 7,
-    parking: 5,
-    type: "House",
-    feature:
-      "A private estate residence, designed for family life at its best.",
-    description:
-      "A grand garden setting, generous entertaining spaces and a sense of privacy that is hard to find.",
-    image:
-      "https://d21tw07c6rnmp0.cloudfront.net/media/uploads/869/residential/2026/2/869_42e792e711594d22ad9df15a573182f4_t_w_1540_h_635.avif",
-  },
-  {
-    id: "steyn-city",
-    place: "Steyn City",
-    address: "Steyn City, Midrand",
-    price: "R12,995,000",
-    beds: 3,
-    baths: 3,
-    parking: 2,
-    type: "House",
-    feature:
-      "Architectural simplicity with a considered indoor-outdoor rhythm.",
-    description:
-      "Contemporary lines, quiet finishes and a lifestyle designed around light, space and ease.",
-    image:
-      "https://d21tw07c6rnmp0.cloudfront.net/media/uploads/869/residential/2025/8/869_97bcc14546414da09ea8ba586b858759_t_w_505_h_490.avif",
-  },
-  {
-    id: "waterkloof-land",
-    place: "Waterkloof",
-    address: "Waterkloof, Pretoria",
-    price: "R3,490,000",
-    beds: null,
-    baths: null,
-    parking: null,
-    type: "Land",
-    feature: "A rare canvas for a home with a point of view.",
-    description:
-      "An opportunity to create a home with a point of view in one of Pretoria’s most established addresses.",
-    image:
-      "https://d21tw07c6rnmp0.cloudfront.net/media/uploads/869/residential/2025/8/869_f02bc109f42a499fb43e3e7b41af6c13_t_w_505_h_490.avif",
-  },
-  {
-    id: "menlo-park-residence",
-    place: "Menlo Park",
-    address: "Menlo Park, Pretoria",
-    price: "R8,950,000",
-    beds: 4,
-    baths: 3,
-    parking: 2,
-    type: "House",
-    feature: "A composed home for easy everyday living.",
-    description:
-      "Warm contemporary finishes, a sheltered garden and generous social spaces in a quietly connected address.",
-    image:
-      "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1200&q=88",
-  },
-  {
-    id: "brooklyn-courtyard-home",
-    place: "Brooklyn",
-    address: "Brooklyn, Pretoria",
-    price: "R6,750,000",
-    beds: 3,
-    baths: 2,
-    parking: 2,
-    type: "House",
-    feature: "Light, privacy and a courtyard at its centre.",
-    description:
-      "A calm urban home with a considered flow from living spaces to the garden and the street beyond.",
-    image:
-      "https://images.unsplash.com/photo-1600047509807-ba8f99d2cdde?auto=format&fit=crop&w=1200&q=88",
-  },
-  {
-    id: "moreleta-park-family-home",
-    place: "Moreleta Park",
-    address: "Moreleta Park, Pretoria",
-    price: "R4,850,000",
-    beds: 4,
-    baths: 3,
-    parking: 2,
-    type: "House",
-    feature: "A practical family home with room to grow.",
-    description:
-      "An established garden, adaptable rooms and an easy rhythm for the everyday moments that matter.",
-    image:
-      "https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?auto=format&fit=crop&w=1200&q=88",
-  },
-];
+const buyingHeroImage = 'https://d21tw07c6rnmp0.cloudfront.net/media/uploads/869/residential/2026/2/869_42e792e711594d22ad9df15a573182f4_t_w_1540_h_635.avif'
 const navigation = [
   ["Selling", "selling"],
   ["Buying", "buying"],
@@ -125,7 +34,7 @@ function PropertyCard({ listing, featured }) {
       className={`hs-buying-card ${featured ? "hs-buying-card--feature" : ""}`}
     >
       <div className="hs-buying-card__image">
-        <img src={listing.image} alt={listing.address} />
+        {listing.image ? <img src={listing.image} alt={listing.address} /> : <div className="hs-buying-card__image-placeholder" aria-hidden="true" />}
         <button type="button" aria-label={`Save ${listing.address}`}>
           <Heart size={18} />
         </button>
@@ -166,6 +75,8 @@ function PropertyCard({ listing, featured }) {
 }
 
 export default function HomeSeekersBuying() {
+  const { listings: websiteListings, loading: listingsLoading, error: listingsError } = useHomeSeekersWebsiteData();
+  const listings = useMemo(() => websiteListings.filter((listing) => listing.transactionType === 'sale').map(homeSeekersCard), [websiteListings]);
   const [query, setQuery] = useState("");
   const [type, setType] = useState("All homes");
   const [bedrooms, setBedrooms] = useState("Any beds");
@@ -183,7 +94,7 @@ export default function HomeSeekersBuying() {
           (listing.beds && listing.beds >= Number(bedrooms[0]));
         return matchesQuery && matchesType && matchesBeds;
       }),
-    [query, type, bedrooms],
+    [listings, query, type, bedrooms],
   );
   return (
     <main className="hs-buying">
@@ -223,7 +134,7 @@ export default function HomeSeekersBuying() {
       </header>
 
       <section className="hs-buying__hero">
-        <img src={listings[0].image} alt="Featured Waterkloof home" />
+        <img src={buyingHeroImage} alt="" />
         <div className="hs-buying__hero-shade" />
         <div className="hs-buying__hero-copy">
           <p>
@@ -292,11 +203,10 @@ export default function HomeSeekersBuying() {
           </div>
           <div className="hs-buying__inventory-note">
             <span>
-              {visibleListings.length.toString().padStart(2, "0")} PROPERTIES IN
-              PREVIEW
+              {visibleListings.length.toString().padStart(2, "0")} HOMES ONLINE
             </span>
             <p>
-              Live inventory will populate here as the listings feed connects.
+              Current homes published by Home Seekers in the CRM.
             </p>
           </div>
         </div>
@@ -364,7 +274,7 @@ export default function HomeSeekersBuying() {
         </div>
         {visibleListings.length === 0 && (
           <div className="hs-buying__empty">
-            <p>NO HOMES MATCH THESE FILTERS</p>
+            <p>{listingsLoading ? 'Loading current homes…' : listingsError || (listings.length ? 'NO HOMES MATCH THESE FILTERS' : 'No homes are published online right now.')}</p>
             <button
               type="button"
               onClick={() => {
@@ -395,9 +305,7 @@ export default function HomeSeekersBuying() {
             Some of the best homes never spend long on the market. Tell us what
             you are looking for and we will keep an eye out.
           </p>
-          <a href="mailto:info@homeseeker.co.za?subject=Property%20search%20request">
-            Start a property search <ArrowRight size={18} />
-          </a>
+          <HomeSeekersLeadForm subject="Property search" buttonLabel="Start a property search" />
         </div>
       </section>
 

@@ -4,6 +4,7 @@ import HomeSeekersValuationModal from "./HomeSeekersValuationModal";
 import HomeSeekersMobileNav from "./HomeSeekersMobileNav";
 import HomeSeekersFooter from "./HomeSeekersFooter";
 import HomeSeekersFastTrack from "./HomeSeekersFastTrack";
+import { homeSeekersCard, submitHomeSeekersLead, useHomeSeekersWebsiteData } from './homeSeekersWebsiteData';
 import "./HomeSeekersDemo.css";
 import "./HomeSeekersEditorial.css";
 import "./HomeSeekersProcess.css";
@@ -18,32 +19,6 @@ const images = {
   hero: `${asset}pages/2026/8/869_eeb9a8cde79f42729798b3578488dc1e_t_w_1440_h_900.avif`,
   careers: `${asset}pages/2025/12/869_424ce675e29a4906a0d709d7ef138c88_t_w_639_h_728.avif`,
 };
-const listings = [
-  {
-    place: "Waterkloof",
-    price: "R25,800,000",
-    beds: "5",
-    baths: "7",
-    cars: "5",
-    image: `${asset}residential/2026/2/869_42e792e711594d22ad9df15a573182f4_t_w_1540_h_635.avif`,
-  },
-  {
-    place: "Steyn City",
-    price: "R12,995,000",
-    beds: "3",
-    baths: "3",
-    cars: "2",
-    image: `${asset}residential/2025/8/869_97bcc14546414da09ea8ba586b858759_t_w_505_h_490.avif`,
-  },
-  {
-    place: "Waterkloof",
-    price: "R3,490,000",
-    beds: "Land",
-    baths: "",
-    cars: "",
-    image: `${asset}residential/2025/8/869_f02bc109f42a499fb43e3e7b41af6c13_t_w_505_h_490.avif`,
-  },
-];
 const localAreas = [
   {
     name: "Moreleta Park",
@@ -96,7 +71,7 @@ function Eyebrow({ children }) {
 function ListingCard({ listing }) {
   return (
     <article className="hs-brief-listing">
-      <img src={listing.image} alt={`${listing.place} property`} />
+      {listing.image ? <img src={listing.image} alt={`${listing.place} property`} /> : <div className="hs-brief-listing-placeholder" aria-hidden="true" />}
       <div>
         <p>For sale · {listing.place}</p>
         <h3>{listing.price}</h3>
@@ -113,7 +88,7 @@ function ListingCard({ listing }) {
             </>
           )}
         </span>
-        <a href="/demo/homeseekers/buy">
+        <a href={`/demo/homeseekers/buying/${listing.id}`}>
           View property <ArrowRight size={15} />
         </a>
       </div>
@@ -122,33 +97,26 @@ function ListingCard({ listing }) {
 }
 
 export default function HomeSeekersDemo() {
+  const { listings: websiteListings, loading: listingsLoading, error: listingsError } = useHomeSeekersWebsiteData();
+  const listings = websiteListings.filter((listing) => listing.transactionType === 'sale').slice(0, 3).map(homeSeekersCard);
   const [valuationOpen, setValuationOpen] = useState(false);
   const [contactStatus, setContactStatus] = useState("");
   const [contactSending, setContactSending] = useState(false);
 
   async function submitContact(event) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     setContactSending(true);
     setContactStatus("");
     try {
-      const response = await fetch("/api/home-seekers/leads", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          type: "general_enquiry",
-          name: form.get("name"),
-          email: form.get("email"),
-          message: form.get("message"),
-          privacyAccepted: true,
-          pageUrl: window.location.href,
-          idempotencyKey: crypto.randomUUID(),
-          companyWebsite: form.get("website"),
-        }),
+      await submitHomeSeekersLead({
+        type: 'general_enquiry', name: form.get('name'), email: form.get('email'),
+        message: form.get('message'), privacyAccepted: form.get('privacy') === 'on',
+        companyWebsite: form.get('website'),
       });
-      if (!response.ok) throw new Error("Submission failed");
       setContactStatus("Message received. We will be in touch shortly.");
-      event.currentTarget.reset();
+      formElement.reset();
     } catch {
       setContactStatus("We could not send that just now. Please call us on +27 12 880 3127.");
     } finally {
@@ -195,7 +163,7 @@ export default function HomeSeekersDemo() {
 
       <section className="hs-brief-hero hs-campaign-hero">
         <div className="hs-campaign-hero__visual" aria-hidden="true">
-          <img src={listings[0].image} alt="" />
+          <img src={images.hero} alt="" />
         </div>
         <div className="hs-brief-hero__copy">
           <Eyebrow>
@@ -534,14 +502,15 @@ export default function HomeSeekersDemo() {
               moving for.
             </h2>
           </div>
-          <a className="hs-brief-text-link" href="/demo/homeseekers/buy">
+          <a className="hs-brief-text-link" href="/demo/homeseekers/buying">
             Browse all properties <ArrowRight size={16} />
           </a>
         </div>
         <div className="hs-brief-listings">
           {listings.map((listing) => (
-            <ListingCard key={listing.price} listing={listing} />
+            <ListingCard key={listing.id} listing={listing} />
           ))}
+          {!listings.length && <p className="hs-brief-listings-empty" role="status">{listingsLoading ? 'Loading current homes…' : listingsError || 'There are no homes published online right now. Get in touch and we will help you find the right one.'}</p>}
         </div>
       </section>
 
@@ -618,6 +587,7 @@ export default function HomeSeekersDemo() {
             placeholder="How can we help?"
             rows="3"
           />
+          <label className="hs-brief-contact__privacy"><input type="checkbox" name="privacy" required /> I agree to be contacted about my enquiry.</label>
           <input className="hs-brief-contact__honeypot" name="website" tabIndex="-1" autoComplete="off" aria-hidden="true" />
           <p className="hs-brief-contact__status" role="status">{contactStatus}</p>
           <button className="hs-brief-button" disabled={contactSending}>
