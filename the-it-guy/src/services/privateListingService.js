@@ -1572,6 +1572,8 @@ const PRIVATE_LISTING_REQUIREMENT_MUTATION_SELECT_FIELDS_BASE =
   'id, private_listing_id, requirement_key, requirement_name, requirement_description, requirement_group, document_visibility, status, is_required, generated_from, created_at, updated_at'
 const PRIVATE_LISTING_DOCUMENT_SELECT_FIELDS =
   'id, private_listing_id, requirement_id, document_type, category, document_name, storage_path, file_url, generated_html, generated_file_name, signing_session_id, uploaded_by, status, visibility, canonical_requirement_instance_id, pending_transaction_promotion, promoted_transaction_id, promoted_document_id, promotion_status, promotion_error, promotion_attempted_at, promotion_revision, review_revision, review_started_at, reviewed_at, reviewed_by, review_reason, rejection_reason, review_due_at, review_sla_revision, review_sla_level, review_sla_escalated_at, uploaded_at, created_at, updated_at'
+const PRIVATE_LISTING_DOCUMENT_SELECT_FIELDS_REVIEWED_SIGNING =
+  `${PRIVATE_LISTING_DOCUMENT_SELECT_FIELDS}, reviewed_signing_version_id, reviewed_signing_version_digest`
 // Keep signed HTML in the first schema-drift fallback. Falling straight back
 // to the legacy projection would recreate the production bug whenever an
 // unrelated, newer review column has not reached an environment yet.
@@ -1589,6 +1591,7 @@ const PRIVATE_LISTING_REQUIREMENT_SELECT_VARIANTS = [
   PRIVATE_LISTING_REQUIREMENT_SELECT_FIELDS_MIN,
 ]
 const PRIVATE_LISTING_DOCUMENT_SELECT_VARIANTS = [
+  PRIVATE_LISTING_DOCUMENT_SELECT_FIELDS_REVIEWED_SIGNING,
   PRIVATE_LISTING_DOCUMENT_SELECT_FIELDS,
   PRIVATE_LISTING_DOCUMENT_SELECT_FIELDS_WITH_SIGNED_ARTIFACT,
   PRIVATE_LISTING_DOCUMENT_SELECT_FIELDS_LEGACY,
@@ -1947,6 +1950,10 @@ function normalizeDocumentRows(rows = []) {
       generatedHtml: normalizeText(row?.generated_html || row?.generatedHtml || ''),
       generated_file_name: normalizeText(row?.generated_file_name || row?.generatedFileName || ''),
       generatedFileName: normalizeText(row?.generated_file_name || row?.generatedFileName || ''),
+      reviewed_signing_version_id: normalizeText(row?.reviewed_signing_version_id || row?.reviewedSigningVersionId || ''),
+      reviewedSigningVersionId: normalizeText(row?.reviewed_signing_version_id || row?.reviewedSigningVersionId || ''),
+      reviewed_signing_version_digest: normalizeText(row?.reviewed_signing_version_digest || row?.reviewedSigningVersionDigest || ''),
+      reviewedSigningVersionDigest: normalizeText(row?.reviewed_signing_version_digest || row?.reviewedSigningVersionDigest || ''),
       signing_session_id: normalizeText(row?.signing_session_id || row?.signingSessionId || ''),
       signingSessionId: normalizeText(row?.signing_session_id || row?.signingSessionId || ''),
       // Server-side Phase 4 payloads can represent the canonical final
@@ -2223,7 +2230,7 @@ function getMissingPrivateListingDocumentInsertColumn(error = {}, payload = {}) 
   return (summary.columns || []).find((columnName) => columnName in payload) || ''
 }
 
-async function insertPrivateListingDocumentRow(client, payload = {}) {
+async function insertPrivateListingDocumentRow(client, payload = {}, { requiredColumns = [] } = {}) {
   let nextPayload = { ...(payload || {}) }
   const removedColumns = new Set()
 
@@ -2239,7 +2246,7 @@ async function insertPrivateListingDocumentRow(client, payload = {}) {
     }
 
     const missingColumn = getMissingPrivateListingDocumentInsertColumn(inserted.error, nextPayload)
-    if (!missingColumn) return { data: null, error: inserted.error, removedColumns: [...removedColumns] }
+    if (!missingColumn || requiredColumns.includes(missingColumn)) return { data: null, error: inserted.error, removedColumns: [...removedColumns] }
 
     delete nextPayload[missingColumn]
     removedColumns.add(missingColumn)
@@ -8964,12 +8971,19 @@ export async function uploadPrivateListingDocument(listingId, file, {
   documentName = '',
   visibility = 'internal',
   status = 'uploaded',
+  deferMandateSigning = false,
+  reviewedSigningVersionId = '',
+  reviewedSigningVersionDigest = '',
 } = {}) {
   const client = requireClient()
   const user = await getCurrentUser(client).catch(() => null)
   const normalizedListingId = normalizeUuid(listingId)
   if (!normalizedListingId) throw new Error('Listing id is required.')
   if (!file) throw new Error('A file is required.')
+  if (Boolean(reviewedSigningVersionId) !== Boolean(reviewedSigningVersionDigest)) {
+    throw new Error('A reviewed signing upload needs both its version ID and digest.')
+  }
+  const shouldDeferMandateSigning = deferMandateSigning || Boolean(reviewedSigningVersionId)
   const filePolicy = validateDocumentUploadFile(file, { surface: 'agent_listing', listingId: normalizedListingId })
   const accessibleListing = await getPrivateListingById(normalizedListingId, {
     includeRequirementsAndDocuments: false,
@@ -9023,9 +9037,15 @@ export async function uploadPrivateListingDocument(listingId, file, {
     visibility: normalizeText(visibility) || 'internal',
     canonical_requirement_instance_id: matchedRequirement?.canonical_requirement_instance_id || null,
     uploaded_at: new Date().toISOString(),
+    ...(reviewedSigningVersionId && reviewedSigningVersionDigest ? {
+      reviewed_signing_version_id: reviewedSigningVersionId,
+      reviewed_signing_version_digest: reviewedSigningVersionDigest,
+    } : {}),
   }
 
-  const inserted = await insertPrivateListingDocumentRow(client, insertPayload)
+  const inserted = await insertPrivateListingDocumentRow(client, insertPayload, {
+    requiredColumns: reviewedSigningVersionId ? ['reviewed_signing_version_id', 'reviewed_signing_version_digest'] : [],
+  })
   if (inserted.error) {
     try {
       await removePrivateListingDocumentObject(client, filePath, uploadedBucket)
@@ -9100,7 +9120,7 @@ export async function uploadPrivateListingDocument(listingId, file, {
     }
   }
 
-  if (mandateUpload) {
+  if (mandateUpload && !shouldDeferMandateSigning) {
     await updatePrivateListing(normalizedListingId, {
       listingStatus: 'mandate_signed',
       listingVisibility: 'internal',
@@ -9123,9 +9143,9 @@ export async function uploadPrivateListingDocument(listingId, file, {
     privateListingId: normalizedListingId,
     activityType: 'listing_document_uploaded',
     activityTitle: mandateUpload ? 'Signed mandate uploaded' : 'Listing document uploaded',
-    activityDescription: mandateUpload
+    activityDescription: mandateUpload && !shouldDeferMandateSigning
       ? `${insertPayload.document_name} uploaded. Mandate signed and listing created for the next internal steps.`
-      : `${insertPayload.document_name} uploaded.`,
+      : `${insertPayload.document_name} uploaded${shouldDeferMandateSigning ? ' for agent review' : ''}.`,
     performedBy: user?.id || null,
     visibility: 'internal',
     metadata: {

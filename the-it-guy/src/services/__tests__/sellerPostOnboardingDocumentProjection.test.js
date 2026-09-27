@@ -7,6 +7,8 @@ import {
 } from '../sellerDocumentRequirementsService.js'
 import { buildSellerPostOnboardingDrafts } from '../../core/documents/sellerPostOnboardingDrafts.js'
 import { PROPERTY_DISCLOSURE_QUESTIONS } from '../../lib/propertyDisclosure.js'
+import { createSellerReviewedDocumentVersions } from '../../core/documents/sellerReviewedDocumentVersions.js'
+import { getSellerPhysicalSigningCopy } from '../../core/documents/sellerPhysicalSigningCopy.js'
 
 const requiredDocuments = [
   { id: 'r-disclosure', key: 'signed_disclosure_form', label: 'Signed Mandatory Disclosure / Defects Form', status: 'required', is_required: true, group: 'legal' },
@@ -72,6 +74,32 @@ test('reviewed signing copies map to three outstanding legal rows with their fro
     assert.match(row.original.document.versionDigest, /^sha256:/)
   }
   assert.equal(rows.find((row) => row.key === 'signed_disclosure_form').original.document.versionId, 'disclosure-v1')
+})
+
+test('a returned signed mandate stays outstanding until its persisted copy is approved', async () => {
+  const listing = { id: 'listing-physical', sellerOnboarding: { status: 'completed' }, documentRequirements: requiredDocuments }
+  const reviewed = await createSellerReviewedDocumentVersions({
+    manualSigningPack: { documents: [{ key: 'signed_mandate', generatedHtml: '<article>Frozen mandate</article>' }] },
+    formalPackApproval: { status: 'approved', signingRoute: 'manual_upload', commission: { confirmed: true } },
+    signingPack: { signers: [{ name: 'Alex Seller', role: 'Seller' }], mandate: { propertyAddress: '1 Test Road' } },
+    actor: 'agent-1',
+  })
+  const formData = { sellerOnboardingManualSigningPack: { status: 'awaiting_signed_hard_copy', documents: reviewed.documents } }
+  const upload = {
+    id: 'signed-upload', requirement_id: 'r-mandate', document_type: 'signed_mandate', status: 'uploaded', storage_path: 'signed/mandate.pdf',
+    reviewed_signing_version_id: reviewed.documents[0].versionId,
+    reviewed_signing_version_digest: reviewed.documents[0].versionDigest,
+  }
+  const pending = buildSellerDocumentSourceOfTruth({ listing: { ...listing, documents: [upload] }, formData }).rows.find((row) => row.key === 'signed_mandate')
+  assert.equal(pending.status, 'uploaded')
+  assert.equal(pending.complete, false)
+  assert.equal(pending.original.document.id, 'signed-upload')
+  assert.equal(pending.original.document.reviewed_signing_version_id, reviewed.documents[0].versionId)
+  assert.equal(getSellerPhysicalSigningCopy(pending)?.versionId, reviewed.documents[0].versionId)
+
+  const approved = buildSellerDocumentSourceOfTruth({ listing: { ...listing, documents: [{ ...upload, status: 'approved' }] }, formData }).rows.find((row) => row.key === 'signed_mandate')
+  assert.equal(approved.status, 'approved')
+  assert.equal(approved.complete, true)
 })
 
 function source({ reviewStatus = '', commissionConfirmed = false, manualSigningPack = null } = {}) {

@@ -149,6 +149,7 @@ import { createSellerOnboardingFormalPackApproval } from '../core/documents/sell
 import { createSellerOnboardingManualSigningPack } from '../core/documents/sellerOnboardingManualSigningPack'
 import { buildSellerPostOnboardingDrafts } from '../core/documents/sellerPostOnboardingDrafts'
 import { createSellerReviewedDocumentVersions, buildSellerReviewedDocumentVersionIndex } from '../core/documents/sellerReviewedDocumentVersions'
+import { downloadSellerPhysicalSigningCopy, getSellerPhysicalSigningCopy, requireSellerPhysicalSigningCopy } from '../core/documents/sellerPhysicalSigningCopy'
 import { hasCompletedOnboardingDisclosureSignature } from '../core/documents/sellerDocumentSigningContract'
 import { ONLINE_SIGNING_DISABLED, ONLINE_SIGNING_DISABLED_MESSAGE } from '../core/documents/onlineSigningPolicy'
 import { buildSellerOnboardingSigningPackSnapshot } from '../core/documents/sellerOnboardingSigningPackSnapshot'
@@ -6930,9 +6931,19 @@ function AgentListingDetail() {
   }
 
   async function handleOpenSellerDocument(doc) {
-    if (!doc?.uploaded) return
+    if (!doc?.uploaded && !getSellerPhysicalSigningCopy(doc)) return
     setDetailError('')
     setOpeningSellerDocumentKey(doc.key)
+    if (getSellerPhysicalSigningCopy(doc)) {
+      try {
+        await downloadSellerPhysicalSigningCopy(doc, downloadGeneratedSellerDocumentPdf)
+      } catch (error) {
+        setDetailError(error?.message || 'Unable to download this reviewed signing copy.')
+      } finally {
+        setOpeningSellerDocumentKey('')
+      }
+      return
+    }
     if (doc.generatedHtml) {
       try {
         await downloadGeneratedSellerDocumentPdf(
@@ -11071,14 +11082,18 @@ function AgentListingDetail() {
     setDetailError('')
     setDetailMessage('')
     try {
+      const signingCopy = getSellerPhysicalSigningCopy(doc) ? await requireSellerPhysicalSigningCopy(doc) : null
       const uploadedDocument = await uploadPrivateListingDocument(listingRecord.id, file, {
-        requirementId: doc.id || doc.requirementId || doc.requirement_id || '',
+        requirementId: doc.requirementId || doc.requirement_id || doc.id || '',
         requirementKey: doc.key || doc.requirementKey || doc.requirement_key || '',
         documentType: doc.key || doc.documentType || doc.document_type || 'seller_document',
         documentCategory: getListingDocumentGroupingKey(doc),
         documentName: file.name || doc.label || 'Seller document',
         visibility: 'seller_visible',
         status: 'uploaded',
+        deferMandateSigning: Boolean(signingCopy),
+        reviewedSigningVersionId: signingCopy?.versionId || '',
+        reviewedSigningVersionDigest: signingCopy?.versionDigest || '',
       })
       patchListing((row) => ({
         ...row,
@@ -11112,7 +11127,9 @@ function AgentListingDetail() {
         : []
       setDetailMessage(persistenceWarnings.length
         ? `${file.name || 'Document'} was uploaded and saved. ${persistenceWarnings.join(' ')}`
-        : `${file.name || 'Document'} uploaded and verified in the seller document centre.`)
+        : signingCopy
+          ? `${file.name || 'Document'} uploaded and awaiting agent review.`
+          : `${file.name || 'Document'} uploaded and verified in the seller document centre.`)
       await loadListingData()
       await loadSellerDocumentDeliveries()
     } catch (error) {
@@ -17489,7 +17506,7 @@ function AgentListingDetail() {
                                   />
                                 </label>
                               ) : null}
-                              {actions.canOpen ? (
+                              {(actions.canOpen || getSellerPhysicalSigningCopy(doc)) ? (
                                 <button
                                   type="button"
                                   onClick={() => handleOpenSellerDocument(doc)}
@@ -17497,7 +17514,7 @@ function AgentListingDetail() {
                                   className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#1f4f78] transition hover:border-[#b7c8db] hover:bg-[#f7fbff] disabled:cursor-not-allowed disabled:opacity-60"
                                 >
                                   {openingSellerDocumentKey === doc.key ? <Loader2 size={14} className="animate-spin" /> : <ExternalLink size={14} />}
-                                  View
+                                  {getSellerPhysicalSigningCopy(doc) ? 'Generate and download' : 'View'}
                                 </button>
                               ) : null}
                               <SellerDocumentReviewActions

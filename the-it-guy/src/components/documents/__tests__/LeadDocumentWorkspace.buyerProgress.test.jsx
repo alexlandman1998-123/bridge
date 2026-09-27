@@ -17,9 +17,9 @@ test('buyer uploads under review do not count as completed requirements', () => 
   expect(html).toContain('1 outstanding')
 })
 
-test('seller review progress retains the existing behavior', () => {
+test('seller uploads under review remain outstanding', () => {
   const html = renderToStaticMarkup(<LeadDocumentWorkspace partyType="seller" categories={categories} getStatusMeta={getStatusMeta} />)
-  expect(html).toContain('2 of 2 complete')
+  expect(html).toContain('1 of 2 complete')
 })
 
 test('optional seller documents remain visible without changing either view’s progress', () => {
