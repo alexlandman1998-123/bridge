@@ -6,51 +6,6 @@ export const LEAD_CAPTURE_SOURCES = ['General', 'Property24', 'Private Property'
 export const LOW_CONFIDENCE_REVIEW_THRESHOLD = 0.65
 export const LEAD_CAPTURE_REVIEW_STATUSES = ['open', 'resolved', 'ignored']
 export const LEAD_CAPTURE_CONFIDENCE_FILTERS = ['all', 'low', 'medium', 'high', 'unscored']
-export const LEAD_CAPTURE_PRODUCTION_CHECKLIST = [
-  {
-    id: 'domain',
-    label: 'Inbound domain verified',
-    description: 'The capture domain is owned by Arch9 and ready to receive forwarded portal lead emails.',
-  },
-  {
-    id: 'mx',
-    label: 'MX routed to inbound provider',
-    description: 'MX records point the lead capture domain to the chosen inbound email provider.',
-  },
-  {
-    id: 'webhook',
-    label: 'Webhook connected',
-    description: 'The provider posts normalized inbound messages to the inbound-lead-email Edge Function.',
-  },
-  {
-    id: 'secret',
-    label: 'Webhook secret configured',
-    description: 'INBOUND_LEAD_EMAIL_WEBHOOK_SECRET is set in Supabase and provider requests include it.',
-  },
-  {
-    id: 'monitoring',
-    label: 'Delivery monitoring live',
-    description: 'Failed, unmatched, and low-confidence inbound emails are visible in the review queue.',
-  },
-]
-export const LEAD_CAPTURE_PRODUCTION_ENV_VARS = [
-  {
-    name: 'INBOUND_LEAD_EMAIL_WEBHOOK_SECRET',
-    required: true,
-    purpose: 'Shared secret that every inbound email provider webhook must send as x-arch9-inbound-secret.',
-  },
-  {
-    name: 'INBOUND_LEAD_EMAIL_REQUIRE_SECRET',
-    required: true,
-    purpose: 'Set to true in production so the Edge Function refuses unsigned webhook traffic.',
-  },
-  {
-    name: 'INBOUND_LEAD_EMAIL_ALLOWED_PROVIDERS',
-    required: false,
-    purpose: 'Comma-separated allowlist such as mailgun,sendgrid,postmark,resend,amazon-ses.',
-  },
-]
-
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 function normalizeText(value) {
@@ -295,63 +250,6 @@ export async function listLeadParseFailures(organisationId, { limit = 50, status
   return Array.isArray(data) ? data.map(mapParseFailureRow) : []
 }
 
-export async function createLeadCaptureAlias(params = {}) {
-  const normalizedOrganisationId = normalizeText(params.organisationId || params.organisation_id)
-  if (!isUuidLike(normalizedOrganisationId)) {
-    throw new Error('A valid organisation id is required before creating a lead capture alias.')
-  }
-  const client = requireClient()
-  const rpcParams = {
-    p_organisation_id: normalizedOrganisationId,
-    p_agent_user_id: isUuidLike(params.agentUserId || params.agent_user_id) ? normalizeText(params.agentUserId || params.agent_user_id) : null,
-    p_branch_id: isUuidLike(params.branchId || params.branch_id) ? normalizeText(params.branchId || params.branch_id) : null,
-    p_listing_id: isUuidLike(params.listingId || params.listing_id) ? normalizeText(params.listingId || params.listing_id) : null,
-    p_source: normalizeText(params.source) || 'General',
-    p_routing_level: normalizeText(params.routingLevel || params.routing_level) || 'agency',
-    p_alias_domain: normalizeText(params.aliasDomain || params.alias_domain) || DEFAULT_LEAD_CAPTURE_DOMAIN,
-    p_metadata: params.metadata || params.metadata_json || {},
-  }
-  const { data, error } = await client.rpc('bridge_create_lead_capture_alias', rpcParams)
-  if (error) throw error
-  return mapAliasRow(data)
-}
-
-export async function ensureDefaultLeadCaptureAliases(params = {}) {
-  const requests = buildDefaultLeadCaptureAliasRequests(params)
-  const aliases = []
-  for (const request of requests) {
-    aliases.push(await createLeadCaptureAlias(request))
-  }
-  return aliases
-}
-
-export async function ensureLeadCaptureAliasesForUsers({
-  organisationId = '',
-  users = [],
-  aliasDomain = DEFAULT_LEAD_CAPTURE_DOMAIN,
-  sources = ['General'],
-} = {}) {
-  const normalizedOrganisationId = normalizeText(organisationId)
-  if (!isUuidLike(normalizedOrganisationId)) {
-    throw new Error('A valid organisation id is required before generating lead capture aliases.')
-  }
-  const aliases = []
-  for (const user of Array.isArray(users) ? users : []) {
-    const userId = normalizeText(user?.userId || user?.user_id || user?.id)
-    if (!isUuidLike(userId)) continue
-    const branchId = normalizeText(user?.branchId || user?.branch_id)
-    const created = await ensureDefaultLeadCaptureAliases({
-      organisationId: normalizedOrganisationId,
-      agentUserId: userId,
-      branchId: isUuidLike(branchId) ? branchId : '',
-      aliasDomain,
-      sources,
-    })
-    aliases.push(...created)
-  }
-  return aliases
-}
-
 export function buildLeadCaptureStatusRows({ aliases = [], inboundEmails = [], users = [] } = {}) {
   const aliasesByAgent = new Map()
   const aliasesById = new Map()
@@ -583,55 +481,6 @@ export async function listLeadCaptureReviewQueue(organisationId, {
     listInboundLeadEmails(organisationId, { limit }),
   ])
   return buildLeadCaptureReviewQueueRows({ failures, inboundEmails, status, source, search, confidence, assignedAgentId })
-}
-
-export function buildLeadCaptureWebhookUrl({
-  supabaseProjectRef = '',
-  supabaseFunctionsUrl = '',
-  functionName = 'inbound-lead-email',
-} = {}) {
-  const directUrl = normalizeText(supabaseFunctionsUrl).replace(/\/+$/, '')
-  if (directUrl) return `${directUrl}/${functionName}`
-  const projectRef = normalizeText(supabaseProjectRef)
-  if (projectRef) return `https://${projectRef}.functions.supabase.co/${functionName}`
-  return `https://<supabase-project-ref>.functions.supabase.co/${functionName}`
-}
-
-export function buildLeadCaptureDnsChecklist({
-  domain = DEFAULT_LEAD_CAPTURE_DOMAIN,
-  provider = 'Inbound Provider',
-} = {}) {
-  const normalizedDomain = normalizeLower(domain || DEFAULT_LEAD_CAPTURE_DOMAIN)
-  return [
-    {
-      type: 'MX',
-      host: normalizedDomain,
-      value: '<provider inbound MX host>',
-      priority: '10',
-      purpose: `${provider} receives lead emails for generated Arch9 aliases.`,
-    },
-    {
-      type: 'TXT',
-      host: normalizedDomain,
-      value: '<provider SPF or domain verification token>',
-      priority: '',
-      purpose: 'Authorizes the provider and verifies the capture domain.',
-    },
-    {
-      type: 'CNAME/TXT',
-      host: `selector._domainkey.${normalizedDomain}`,
-      value: '<provider DKIM target or token>',
-      priority: '',
-      purpose: 'Enables DKIM signing where the provider requires it.',
-    },
-    {
-      type: 'TXT',
-      host: `_dmarc.${normalizedDomain}`,
-      value: 'v=DMARC1; p=none; rua=mailto:dmarc@arch9.co.za',
-      priority: '',
-      purpose: 'Starts DMARC reporting without blocking delivery during rollout.',
-    },
-  ]
 }
 
 async function updateLeadCaptureReviewItem(item = {}, {
@@ -1290,37 +1139,10 @@ export function parseInboundLeadEmail(input = {}, alias = {}) {
   }
 }
 
-export async function findLeadCaptureAliasByEmail(emailAddress) {
-  const normalizedEmail = normalizeCaptureEmail(emailAddress)
-  if (!normalizedEmail) return null
-  const client = requireClient()
-  const { data, error } = await client
-    .from('lead_capture_aliases')
-    .select('*')
-    .ilike('email_address', normalizedEmail)
-    .eq('status', 'active')
-    .limit(1)
-    .maybeSingle()
-  if (error) throw error
-  return data ? mapAliasRow(data) : null
-}
-
-export async function processInboundLeadEmail(input = {}, { actor = null } = {}) {
-  const recipient = normalizeCaptureEmail(input.recipient || input.to || input.toAddress || input.to_address)
-  const alias = input.alias || await findLeadCaptureAliasByEmail(recipient)
-  if (!alias) {
-    return { ok: false, status: 'unmatched', error: 'No active lead capture alias matched this email recipient.' }
-  }
-  const payload = parseInboundLeadEmail(input, alias)
-  return createOrUpdateLeadFromEnquiry(payload, { actor })
-}
-
 export const __leadEmailCaptureServiceTestUtils = {
   buildLeadCaptureStatusRows,
   buildLeadCaptureReviewQueueRows,
   buildLeadCaptureRepairDraft,
-  buildLeadCaptureDnsChecklist,
-  buildLeadCaptureWebhookUrl,
   filterLeadCaptureReviewQueueRows,
   buildDefaultLeadCaptureAliasRequests,
   buildLeadCaptureAliasLocalPart,

@@ -110,7 +110,6 @@ const CLIENT_COMMUNICATION_PHASE1_AUDIT = Object.freeze({
     triggerSource: CLIENT_COMMUNICATION_TRIGGER_SOURCE.EDGE_FUNCTION,
     ctaDestination: 'Property detail, enquiry follow-up, or buyer portal once available',
     sourceFiles: [
-      'supabase/functions/inbound-lead-email/index.ts',
       'supabase/functions/send-email/handlers/leadAcknowledgement.ts',
     ],
     duplicateRisk: 'Can overlap with internal lead operations assignment emails if audience boundaries are unclear.',
@@ -368,7 +367,6 @@ const CLIENT_COMMUNICATION_PHASE1_AUDIT = Object.freeze({
     triggerSource: CLIENT_COMMUNICATION_TRIGGER_SOURCE.EDGE_FUNCTION,
     ctaDestination: 'Seller portal or valuation follow-up destination once available',
     sourceFiles: [
-      'supabase/functions/inbound-lead-email/index.ts',
       'supabase/functions/send-email/handlers/leadAcknowledgement.ts',
     ],
     duplicateRisk: 'Seller enquiry acknowledgement may reuse buyer/property enquiry language.',
