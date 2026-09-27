@@ -46,7 +46,8 @@ assert.equal(packageJson.scripts['property24:lead-sync'], 'node scripts/property
 assert.equal(packageJson.scripts['test:property24-phase9-lead-sync-ops'], 'node scripts/property24-phase9-lead-sync-ops.test.mjs')
 assert.equal(rootPackageJson.scripts['property24:lead-sync'], 'npm --prefix the-it-guy run property24:lead-sync --')
 assert.equal(rootPackageJson.scripts['test:property24-phase9-lead-sync-ops'], 'npm --prefix the-it-guy run test:property24-phase9-lead-sync-ops --')
-assert.equal(resolveScheduledProperty24After({ cursorAfter: '2026-08-20T10:00:00.000Z' }), '2026-08-20T09:50:00.000Z')
+assert.equal(resolveScheduledProperty24After({ cursorAfter: '2026-08-20T10:00:00.000Z', now: new Date('2026-08-20T10:05:00.000Z') }), '2026-08-19T10:05:00.000Z')
+assert.equal(resolveScheduledProperty24After({ cursorAfter: '2026-08-17T10:00:00.000Z', now: new Date('2026-08-20T10:00:00.000Z') }), '2026-08-17T09:50:00.000Z')
 assert.equal(resolveScheduledProperty24After({ now: new Date('2026-08-20T10:00:00.000Z') }), '2026-08-19T10:00:00.000Z')
 
 const unauthorized = await createProperty24LeadSyncResponse({
@@ -96,6 +97,7 @@ assert.equal(delegatedPayload.body.after, '2026-08-19T00:00:00.000Z')
 assert.equal(dryRunState.calls[1].args.p_cursor_after, '2026-08-20T10:00:00.000Z')
 
 delegatedPayload = null
+const scheduledApplyState = createStateClient()
 const scheduledApply = await createProperty24LeadSyncResponse({
   method: 'GET',
   url: '/api/property24/leads/sync',
@@ -105,7 +107,7 @@ const scheduledApply = await createProperty24LeadSyncResponse({
     PROPERTY24_LEAD_SYNC_CRON_SECRET: 'cron-secret',
   },
   dependencies: {
-    createLeadSyncStateClient: () => createStateClient(),
+    createLeadSyncStateClient: () => scheduledApplyState,
     createProperty24ApiResponse: async ({ body }) => {
       delegatedPayload = JSON.parse(body)
       return {
@@ -121,6 +123,7 @@ const scheduledApply = await createProperty24LeadSyncResponse({
 assert.equal(scheduledApply.status, 200)
 assert.equal(scheduledApply.body.mode, 'APPLY')
 assert.equal(delegatedPayload.applyLeads, true)
+assert.equal(scheduledApplyState.calls[1].args.p_cursor_after, delegatedPayload.after)
 
 const emptyState = createStateClient({ cursorAfter: '2026-09-20T10:00:00.000Z' })
 const emptyFeed = await createProperty24LeadSyncResponse({
@@ -139,6 +142,40 @@ const emptyFeed = await createProperty24LeadSyncResponse({
 assert.equal(emptyFeed.status, 200)
 assert.equal(emptyFeed.body.cursorAdvanced, false)
 assert.equal(emptyState.calls[1].args.p_cursor_after, '2026-09-20T10:00:00.000Z')
+
+const initialEmptyState = createStateClient()
+const initialEmptyFeed = await createProperty24LeadSyncResponse({
+  method: 'GET',
+  url: '/api/property24/leads/sync',
+  headers: { authorization: 'Bearer cron-secret' },
+  env: { PROPERTY24_API_INTERNAL_TOKEN: 'internal-token', PROPERTY24_LEAD_SYNC_CRON_SECRET: 'cron-secret' },
+  dependencies: {
+    createLeadSyncStateClient: () => initialEmptyState,
+    createProperty24ApiResponse: async () => ({
+      status: 200,
+      body: { leads: { mode: 'APPLIED', import: { summary: { receivedCount: 0, importedCount: 0 } } } },
+    }),
+  },
+})
+assert.equal(initialEmptyFeed.body.cursorAdvanced, false)
+assert.equal(initialEmptyState.calls[1].args.p_cursor_after, null)
+
+const replayState = createStateClient({ cursorAfter: '2026-09-20T10:00:00.000Z' })
+const replayFeed = await createProperty24LeadSyncResponse({
+  method: 'GET',
+  url: '/api/property24/leads/sync',
+  headers: { authorization: 'Bearer cron-secret' },
+  env: { PROPERTY24_API_INTERNAL_TOKEN: 'internal-token', PROPERTY24_LEAD_SYNC_CRON_SECRET: 'cron-secret' },
+  dependencies: {
+    createLeadSyncStateClient: () => replayState,
+    createProperty24ApiResponse: async () => ({
+      status: 200,
+      body: { leads: { mode: 'APPLIED', nextAfter: '2026-09-19T10:00:00.000Z', import: { summary: { receivedCount: 1, importedCount: 0 } } } },
+    }),
+  },
+})
+assert.equal(replayFeed.body.cursorAdvanced, false)
+assert.equal(replayState.calls[1].args.p_cursor_after, '2026-09-20T10:00:00.000Z')
 
 const unresolvedState = createStateClient({ cursorAfter: '2026-09-20T10:00:00.000Z' })
 const unresolvedFeed = await createProperty24LeadSyncResponse({

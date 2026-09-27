@@ -223,6 +223,10 @@ const property24 = {
       },
     }
   },
+  fetchListingLeadsForListing: async (listingNumber) => {
+    calls.push(['listingLeads', listingNumber])
+    return { status: 200, durationMs: 3, data: { leads: [] } }
+  },
   fetchStatisticsLastUpdateDate: async () => ({ status: 200, durationMs: 1, data: '2026-08-20T00:00:00.000Z' }),
   fetchAgencyListingStatistics: async () => ({ status: 200, durationMs: 1, data: [] }),
   fetchLeadStatisticsPeriods: async () => ({ status: 200, durationMs: 1, data: [] }),
@@ -253,6 +257,7 @@ assert.equal(report.leadImportPlan.summary.readyForCrmIngestionCount, 1)
 assert.equal(report.leadImportPlan.summary.needsReviewCount, 1)
 assert.ok(calls.some(([name]) => name === 'reconciliation'))
 assert.ok(calls.some(([name]) => name === 'leads'))
+assert.ok(calls.some(([name, listingNumber]) => name === 'listingLeads' && listingNumber === 100))
 
 const operatorView = buildProperty24ReconciliationOperatorView(report)
 assert.equal(operatorView.status, 'NEEDS_REVIEW')

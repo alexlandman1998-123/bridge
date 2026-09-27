@@ -60,14 +60,23 @@ function scheduledEnvironment(env = {}) {
 }
 
 function asValidIso(value) {
+  if (!value) return ''
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? '' : date.toISOString()
 }
 
 export function resolveScheduledProperty24After({ cursorAfter = '', now = new Date() } = {}) {
   const cursor = asValidIso(cursorAfter)
-  if (cursor) return new Date(new Date(cursor).getTime() - CURSOR_OVERLAP_MS).toISOString()
-  return new Date(now.getTime() - DEFAULT_LOOKBACK_MS).toISOString()
+  const lookbackStart = now.getTime() - DEFAULT_LOOKBACK_MS
+  // A checkpoint can be ahead of leads that Property24 publishes late. Always
+  // replay the latest day and rely on ingestion references to deduplicate it.
+  return new Date(cursor
+    ? Math.min(new Date(cursor).getTime() - CURSOR_OVERLAP_MS, lookbackStart)
+    : lookbackStart).toISOString()
+}
+
+function latestCursor(...values) {
+  return values.map(asValidIso).filter(Boolean).sort().at(-1) || null
 }
 
 function leadCounts(body = {}) {
@@ -260,10 +269,10 @@ export async function createProperty24LeadSyncResponse({
 
     const counts = leadCounts(leadPullResponse.body)
     const succeeded = leadPullResponse.status >= 200 && leadPullResponse.status < 300 && (dryRun || counts.unresolved === 0)
-    // Keep the cursor on empty responses and dry runs. A late portal lead must
-    // still be in scope for the next scheduled import.
+    // Empty responses and dry runs must not move the checkpoint. A replayed
+    // older lead must not move it backwards either.
     const cursorAfter = succeeded && !dryRun
-      ? counts.received > 0 ? counts.nextAfter || lock.cursor_after || apiPayload.after : lock.cursor_after || apiPayload.after
+      ? counts.received > 0 ? latestCursor(counts.nextAfter, lock.cursor_after) || apiPayload.after : lock.cursor_after || null
       : succeeded ? lock.cursor_after || null : null
     await completeLeadSync({
       client: stateClient,

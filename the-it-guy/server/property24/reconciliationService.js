@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { normalizeProperty24Text, summarizeProperty24Payload } from './client.js'
-import { summarizeProperty24LeadPayload } from './leadService.js'
+import { fetchProperty24ListingLeads, summarizeProperty24LeadPayload } from './leadService.js'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
@@ -553,7 +553,27 @@ export async function createProperty24LeadImportPlan({
     return [summary.listingNumber, summary]
   }))
   const result = await property24.fetchListingLeads({ after })
-  const leads = asArray(result.data).map((lead) => normalizeProperty24LeadForImport(lead, listingMap))
+  const rawLeads = [...asArray(result.data)]
+  const listingChecks = []
+  // The agency feed can omit enquiries that are present on a live listing.
+  // Check each active published listing through Property24's listing endpoint
+  // and merge the results before the normal deduplicated import.
+  for (const { sync, listing } of localRows) {
+    if (!sync?.listing_number || listing?.listing_status !== 'active' || listing?.property24_status !== 'published') continue
+    const listingResult = await fetchProperty24ListingLeads({
+      property24,
+      listingNumber: sync.listing_number,
+      startDate: new Date(now.getTime() - 30 * DAY_MS),
+      endDate: now,
+    })
+    const listingLeads = asArray(listingResult.data)
+    listingChecks.push({ listingNumber: Number(sync.listing_number), receivedCount: listingLeads.length })
+    rawLeads.push(...listingLeads.map((lead) => ({
+      ...lead,
+      listingNumber: Number(sync.listing_number),
+    })))
+  }
+  const leads = rawLeads.map((lead) => normalizeProperty24LeadForImport(lead, listingMap))
   const duplicateKeys = new Set()
   const prepared = leads.map((lead) => {
     const duplicateInResponse = duplicateKeys.has(lead.dedupeKey)
@@ -570,6 +590,7 @@ export async function createProperty24LeadImportPlan({
       httpStatus: result.status,
       durationMs: result.durationMs,
       summary: summarizeProperty24LeadPayload(result.data),
+      listingChecks,
     },
     summary: {
       receivedCount: prepared.length,
