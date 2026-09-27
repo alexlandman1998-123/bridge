@@ -247,6 +247,56 @@ const planOnly = await pullAndImportProperty24Leads({
 assert.equal(planOnly.mode, 'DRY_RUN')
 assert.equal(planOnly.safety.databaseWritten, false)
 
+let listingCheck = null
+const listingOnlyPlan = await pullAndImportProperty24Leads({
+  supabase: createFakeSupabase({
+    property24_listing_syncs: [{
+      private_listing_id: listing.id,
+      environment: 'production',
+      agency_id: 40067,
+      listing_number: 116565928,
+    }],
+    private_listings: [{ ...listing, listing_status: 'active', property24_status: 'published' }],
+  }),
+  property24: {
+    fetchListingLeads: async () => ({ status: 200, durationMs: 5, data: { leads: [] } }),
+    fetchListingLeadsForListing: async (listingNumber, dates) => {
+      listingCheck = { listingNumber, dates }
+      return {
+        status: 200,
+        durationMs: 5,
+        data: { Leads: [{ ContactName: 'New Buyer', EmailAddress: 'buyer@example.test', ReceivedAt: '2026-09-27T09:00:00.000Z' }] },
+      }
+    },
+  },
+  config: { environment: 'production', agencyId: 40067, applyLeads: false },
+  now: new Date('2026-09-27T12:00:00.000Z'),
+})
+assert.equal(listingCheck.listingNumber, 116565928)
+assert.equal(listingCheck.dates.startDate, '2026-08-28T12:00:00.000Z')
+assert.equal(listingOnlyPlan.summary.receivedCount, 1)
+assert.equal(listingOnlyPlan.summary.readyForCrmIngestionCount, 1)
+assert.equal(listingOnlyPlan.leads[0].contactName, 'New Buyer')
+assert.equal(listingOnlyPlan.leads[0].listingNumber, 116565928)
+assert.equal(listingOnlyPlan.property24.listingChecks[0].receivedCount, 1)
+
+const sharedLead = { ListingNumber: 116565928, ContactName: 'New Buyer', EmailAddress: 'buyer@example.test', ReceivedAt: '2026-09-27T09:00:00.000Z' }
+const overlappingPlan = await pullAndImportProperty24Leads({
+  supabase: createFakeSupabase({
+    property24_listing_syncs: [{ private_listing_id: listing.id, environment: 'production', agency_id: 40067, listing_number: 116565928 }],
+    private_listings: [{ ...listing, listing_status: 'active', property24_status: 'published' }],
+  }),
+  property24: {
+    fetchListingLeads: async () => ({ status: 200, data: { leads: [sharedLead] } }),
+    fetchListingLeadsForListing: async () => ({ status: 200, data: { leads: [sharedLead] } }),
+  },
+  config: { environment: 'production', agencyId: 40067, applyLeads: false },
+  now: new Date('2026-09-27T12:00:00.000Z'),
+})
+assert.equal(overlappingPlan.summary.receivedCount, 2)
+assert.equal(overlappingPlan.summary.readyForCrmIngestionCount, 1)
+assert.equal(overlappingPlan.leads[1].duplicateInResponse, true)
+
 const apiApply = await createProperty24ApiResponse({
   method: 'POST',
   url: '/api/property24/leads/pull',
