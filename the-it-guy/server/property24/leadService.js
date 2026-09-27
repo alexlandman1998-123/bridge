@@ -35,12 +35,6 @@ const MAX_LISTING_LEAD_WINDOW_MS = 62 * 24 * 60 * 60 * 1000
 const DEFAULT_LISTING_LEAD_WINDOW_MS = 30 * 24 * 60 * 60 * 1000
 const SOUTH_AFRICA_UTC_OFFSET_MS = 2 * 60 * 60 * 1000
 
-function formatProperty24LeadWindowDate(date) {
-  return new Date(date.getTime() + SOUTH_AFRICA_UTC_OFFSET_MS)
-    .toISOString()
-    .replace(/Z$/, '+02:00')
-}
-
 function resolveListingLeadDate(value, label) {
   const date = value ? new Date(value) : null
   if (value && Number.isNaN(date?.getTime())) throw new Error(`${label} must be a valid date-time.`)
@@ -60,25 +54,28 @@ export async function fetchProperty24ListingLeads({ property24, listingNumber, s
   if (dateWindowMs > MAX_LISTING_LEAD_WINDOW_MS) throw new Error('Property24 listing lead checks are limited to a 62-day date range.')
 
   // Property24 returns lead dates in South African time. Live enquiries only
-  // appeared after the UTC request clock reached their local clock time,
-  // consistent with a two-hour filter offset. Keep the same instants, but
-  // send their +02:00 representation for the listing endpoint.
+  // appeared after the UTC request clock reached their local clock time.
+  // Extend the upper bound by two hours in UTC so the latest enquiries are
+  // included whether Property24 compares local clock values or UTC instants.
+  // Keep the requested start unchanged for the rolling replay. Respect the
+  // provider's 62-day maximum even for an explicit historical range.
+  const lookaheadMs = Math.min(SOUTH_AFRICA_UTC_OFFSET_MS, MAX_LISTING_LEAD_WINDOW_MS - dateWindowMs)
   let result
-  let utcFallback = false
+  let lookaheadFallback = false
   try {
     result = await property24.fetchListingLeadsForListing(listingNumber, {
-      startDate: formatProperty24LeadWindowDate(resolvedStartDate),
-      endDate: formatProperty24LeadWindowDate(resolvedEndDate),
+      startDate: resolvedStartDate.toISOString(),
+      endDate: new Date(resolvedEndDate.getTime() + lookaheadMs).toISOString(),
     })
   } catch (error) {
-    if (![400, 422].includes(Number(error?.status))) throw error
-    // Preserve the working request if Property24 rejects an explicit offset.
+    if (!lookaheadMs || ![400, 422].includes(Number(error?.status))) throw error
+    // Preserve the working request if Property24 rejects a future end date.
     // Surface the fallback so an apparently successful sync is not silent.
-    console.warn('[Property24] local-time lead window rejected; retrying UTC window', {
+    console.warn('[Property24] lead lookahead rejected; retrying original window', {
       listingNumber,
       status: error.status,
     })
-    utcFallback = true
+    lookaheadFallback = true
     result = await property24.fetchListingLeadsForListing(listingNumber, {
       startDate: resolvedStartDate.toISOString(),
       endDate: resolvedEndDate.toISOString(),
@@ -86,7 +83,7 @@ export async function fetchProperty24ListingLeads({ property24, listingNumber, s
   }
   return {
     ...result,
-    utcFallback,
+    lookaheadFallback,
     summary: summarizeProperty24LeadPayload(result.data),
   }
 }

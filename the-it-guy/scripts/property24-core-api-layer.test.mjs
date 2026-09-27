@@ -58,10 +58,10 @@ const leadResult = await fetchProperty24ListingLeads({
   endDate: '2026-08-20T00:00:00.000Z',
 })
 
-assert.equal(calls[0].url, 'https://api.exdev.property24-test.com/listing/v53/listings/100314793/leads?startDate=2026-08-01T02%3A00%3A00.000%2B02%3A00&endDate=2026-08-20T02%3A00%3A00.000%2B02%3A00')
+assert.equal(calls[0].url, 'https://api.exdev.property24-test.com/listing/v53/listings/100314793/leads?startDate=2026-08-01T00%3A00%3A00.000Z&endDate=2026-08-20T02%3A00%3A00.000Z')
 assert.equal(leadResult.summary.count, 1)
 assert.equal(leadResult.summary.nextAfter, '2026-08-20T10:00:00')
-assert.equal(leadResult.utcFallback, false)
+assert.equal(leadResult.lookaheadFallback, false)
 
 const fallbackCalls = []
 const originalWarn = console.warn
@@ -72,7 +72,7 @@ try {
     property24: {
       fetchListingLeadsForListing: async (_listingNumber, dates) => {
         fallbackCalls.push(dates)
-        if (fallbackCalls.length === 1) throw Object.assign(new Error('Offset not accepted'), { status: 400 })
+        if (fallbackCalls.length === 1) throw Object.assign(new Error('Future end date not accepted'), { status: 400 })
         return { status: 200, data: { leads: [] } }
       },
     },
@@ -80,13 +80,13 @@ try {
     startDate: '2026-08-01T00:00:00.000Z',
     endDate: '2026-08-20T00:00:00.000Z',
   })
-  assert.equal(fallbackResult.utcFallback, true)
+  assert.equal(fallbackResult.lookaheadFallback, true)
 } finally {
   console.warn = originalWarn
 }
-assert.equal(fallbackCalls[0].endDate, '2026-08-20T02:00:00.000+02:00')
+assert.equal(fallbackCalls[0].endDate, '2026-08-20T02:00:00.000Z')
 assert.equal(fallbackCalls[1].endDate, '2026-08-20T00:00:00.000Z')
-assert.match(fallbackWarning[0], /local-time lead window rejected/)
+assert.match(fallbackWarning[0], /lead lookahead rejected/)
 
 let rolloverWindow = null
 await fetchProperty24ListingLeads({
@@ -101,9 +101,24 @@ await fetchProperty24ListingLeads({
   endDate: '2026-09-27T00:15:00.000Z',
 })
 assert.deepEqual(rolloverWindow, {
-  startDate: '2026-09-27T01:30:00.000+02:00',
-  endDate: '2026-09-27T02:15:00.000+02:00',
+  startDate: '2026-09-26T23:30:00.000Z',
+  endDate: '2026-09-27T02:15:00.000Z',
 })
+
+let maximumWindow = null
+await fetchProperty24ListingLeads({
+  property24: {
+    fetchListingLeadsForListing: async (_listingNumber, dates) => {
+      maximumWindow = dates
+      return { status: 200, data: { leads: [] } }
+    },
+  },
+  listingNumber: 100314793,
+  startDate: '2026-08-01T00:00:00.000Z',
+  endDate: new Date(Date.parse('2026-08-01T00:00:00.000Z') + 62 * 24 * 60 * 60 * 1000).toISOString(),
+})
+assert.equal(maximumWindow.startDate, '2026-08-01T00:00:00.000Z')
+assert.equal(maximumWindow.endDate, new Date(Date.parse(maximumWindow.startDate) + 62 * 24 * 60 * 60 * 1000).toISOString())
 
 const v55Client = createProperty24Client({
   baseUrl: 'https://api.property24.com',

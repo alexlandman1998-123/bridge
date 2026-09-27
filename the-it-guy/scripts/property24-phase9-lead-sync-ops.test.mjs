@@ -209,7 +209,7 @@ const fallbackFeed = await createProperty24LeadSyncResponse({
       body: {
         leads: {
           mode: 'APPLIED',
-          property24: { listingChecks: [{ listingNumber: 116565928, receivedCount: 1, utcFallback: true }] },
+          property24: { listingChecks: [{ listingNumber: 116565928, receivedCount: 1, lookaheadFallback: true }] },
           import: { summary: { receivedCount: 1, importedCount: 1 } },
         },
       },
@@ -217,10 +217,10 @@ const fallbackFeed = await createProperty24LeadSyncResponse({
   },
 })
 assert.equal(fallbackFeed.status, 502)
-assert.equal(fallbackFeed.body.utcFallbacks, 1)
+assert.equal(fallbackFeed.body.lookaheadFallbacks, 1)
 assert.equal(fallbackState.calls[1].args.p_status, 'failed')
 assert.equal(fallbackState.calls[1].args.p_cursor_after, null)
-assert.match(fallbackState.calls[1].args.p_error, /fell back to UTC/)
+assert.match(fallbackState.calls[1].args.p_error, /fell back to the original window/)
 
 const overlapping = await createProperty24LeadSyncResponse({
   method: 'GET',

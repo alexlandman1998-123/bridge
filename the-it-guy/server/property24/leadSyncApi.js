@@ -91,7 +91,7 @@ function leadCounts(body = {}) {
     unresolved: importResults.length
       ? importResults.filter((result) => ['needs_review', 'failed'].includes(result.status)).length
       : Number(summary.failedCount || 0) + Number(summary.needsReviewCount || 0),
-    utcFallbacks: listingChecks.filter((check) => check.utcFallback).length,
+    lookaheadFallbacks: listingChecks.filter((check) => check.lookaheadFallback).length,
     nextAfter: asValidIso(body?.leads?.nextAfter || body?.leads?.summary?.nextAfter || ''),
   }
 }
@@ -273,11 +273,11 @@ export async function createProperty24LeadSyncResponse({
 
     const counts = leadCounts(leadPullResponse.body)
     const succeeded = leadPullResponse.status >= 200 && leadPullResponse.status < 300 &&
-      (dryRun || (counts.unresolved === 0 && counts.utcFallbacks === 0))
+      (dryRun || (counts.unresolved === 0 && counts.lookaheadFallbacks === 0))
     const failureReason = counts.unresolved
       ? `${counts.unresolved} Property24 lead(s) could not be imported.`
-      : counts.utcFallbacks
-        ? `${counts.utcFallbacks} Property24 listing lead window(s) rejected South African time and fell back to UTC.`
+      : counts.lookaheadFallbacks
+        ? `${counts.lookaheadFallbacks} Property24 listing lead window(s) rejected the two-hour lookahead and fell back to the original window.`
         : leadPullResponse.body?.message || `Property24 returned HTTP ${leadPullResponse.status}.`
     // Empty responses and dry runs must not move the checkpoint. A replayed
     // older lead must not move it backwards either.
@@ -301,7 +301,7 @@ export async function createProperty24LeadSyncResponse({
       received: counts.received,
       imported: counts.imported,
       unresolved: counts.unresolved,
-      utcFallbacks: counts.utcFallbacks,
+      lookaheadFallbacks: counts.lookaheadFallbacks,
       cursorAdvanced: Boolean(cursorAfter && cursorAfter !== lock.cursor_after),
     })
     return buildJsonResponse(succeeded ? leadPullResponse.status : Math.max(leadPullResponse.status, 502), {
@@ -312,7 +312,7 @@ export async function createProperty24LeadSyncResponse({
       received: counts.received,
       imported: counts.imported,
       unresolved: counts.unresolved,
-      utcFallbacks: counts.utcFallbacks,
+      lookaheadFallbacks: counts.lookaheadFallbacks,
       cursorAdvanced: Boolean(cursorAfter && cursorAfter !== lock.cursor_after),
       leadPull: leadPullResponse.body || null,
     })

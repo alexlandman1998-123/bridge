@@ -570,7 +570,7 @@ export async function createProperty24LeadImportPlan({
     listingChecks.push({
       listingNumber: Number(sync.listing_number),
       receivedCount: listingLeads.length,
-      utcFallback: Boolean(listingResult.utcFallback),
+      lookaheadFallback: Boolean(listingResult.lookaheadFallback),
     })
     rawLeads.push(...listingLeads.map((lead) => ({
       ...lead,
