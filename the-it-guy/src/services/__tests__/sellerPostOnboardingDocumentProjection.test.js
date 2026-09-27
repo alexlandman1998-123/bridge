@@ -76,6 +76,25 @@ test('reviewed signing copies map to three outstanding legal rows with their fro
   assert.equal(rows.find((row) => row.key === 'signed_disclosure_form').original.document.versionId, 'disclosure-v1')
 })
 
+test('mixed signing routes keep digital FICA out of the upload flow', () => {
+  const listing = { id: 'listing-mixed', sellerOnboarding: { status: 'completed' }, documentRequirements: requiredDocuments }
+  const formData = { sellerOnboardingManualSigningPack: {
+    status: 'awaiting_signature',
+    documents: [
+      { key: 'signed_fica_declaration', signingRoute: 'digital_pack', versionId: 'fica-v1', versionDigest: 'sha256:fica', contentDigest: 'sha256:content', generatedHtml: '<html>fica</html>' },
+      { key: 'signed_mandate', signingRoute: 'manual_upload', versionId: 'mandate-v1', versionDigest: 'sha256:mandate', contentDigest: 'sha256:content', generatedHtml: '<html>mandate</html>' },
+    ],
+  } }
+  const rows = buildSellerDocumentSourceOfTruth({ listing, formData }).rows
+  const fica = rows.find((row) => row.key === 'signed_fica_declaration')
+  const mandate = rows.find((row) => row.key === 'signed_mandate')
+  assert.equal(fica.status, 'awaiting_signature')
+  assert.equal(fica.canUpload, false)
+  assert.equal(mandate.status, 'awaiting_signed_hard_copy')
+  assert.equal(mandate.canUpload, true)
+  assert.equal(getSellerPhysicalSigningCopy(fica)?.versionId, 'fica-v1')
+})
+
 test('a returned signed mandate stays outstanding until its persisted copy is approved', async () => {
   const listing = { id: 'listing-physical', sellerOnboarding: { status: 'completed' }, documentRequirements: requiredDocuments }
   const reviewed = await createSellerReviewedDocumentVersions({

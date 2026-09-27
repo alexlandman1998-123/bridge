@@ -46,7 +46,7 @@ export async function createSellerReviewedDocumentVersions({
   approvedAt = new Date().toISOString(),
 } = {}) {
   const approval = record(formalPackApproval)
-  if (approval.status !== 'approved' || approval.signingRoute !== 'manual_upload') {
+  if (approval.status !== 'approved') {
     throw new Error('Approve the seller documents before freezing their signing versions.')
   }
   if (!text(actor) || !text(approvedAt)) throw new Error('Record the agent and approval time before freezing documents.')
@@ -80,7 +80,7 @@ export async function createSellerReviewedDocumentVersions({
       mandateTerms: frozenMandateTerms,
       approvedAt: text(approvedAt),
       approvedBy: text(actor),
-      status: 'awaiting_signed_hard_copy',
+      status: document.signingRoute === 'digital_pack' ? 'awaiting_signature' : 'awaiting_signed_hard_copy',
       signingContract: SELLER_DOCUMENT_SIGNING_CONTRACT,
     }
   }))
