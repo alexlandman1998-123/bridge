@@ -43,13 +43,13 @@ export function buildSellerSigningStatusModel({
             ? 'onboarding_submitted'
             : 'onboarding_incomplete'
 
-  const disclosure = signed || disclosureSigned
+  const disclosure = disclosureSigned
     ? { status: 'complete', label: 'Complete' }
     : onboardingSubmitted
-      ? { status: 'signed_in_onboarding', label: 'Signed in onboarding' }
+      ? { status: 'awaiting_review', label: 'Awaiting review and signature' }
       : { status: 'awaiting_submission', label: 'Awaiting submission' }
-  const fica = signed
-    ? { status: approved(ficaStatus) ? 'complete' : 'review_status', label: approved(ficaStatus) ? 'Complete' : 'Complete / review status' }
+  const fica = approved(ficaStatus)
+    ? { status: 'complete', label: 'Complete' }
     : digitallySent
       ? { status: 'sent_for_signature', label: 'Sent for signature' }
       : manuallySent
@@ -80,13 +80,13 @@ export function buildSellerSigningStatusModel({
     fica,
     mandate: mandateSurface,
     outstanding: signed
-      ? []
+      ? [...(disclosureSigned ? [] : ['disclosure_signature']), ...(approved(ficaStatus) ? [] : ['fica_signature'])]
       : manuallySent
-        ? ['signed_mandate_hard_copy']
+        ? [...(disclosureSigned ? [] : ['disclosure_signature']), 'signed_mandate_hard_copy']
         : digitallySent
-          ? ['fica_signature', 'mandate_signature']
+          ? [...(disclosureSigned ? [] : ['disclosure_signature']), 'fica_signature', 'mandate_signature']
           : onboardingSubmitted
-            ? reviewApproved ? ['fica_signature', 'mandate_signature'] : ['agent_review']
+            ? reviewApproved ? [...(disclosureSigned ? [] : ['disclosure_signature']), 'fica_signature', 'mandate_signature'] : ['agent_review']
             : ['seller_onboarding'],
   }
 }

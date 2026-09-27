@@ -2,6 +2,7 @@ import { buildFicaDeclarationDocumentMarkup } from './ficaDeclarationDocumentMar
 import { buildFicaDeclarationDocumentModel } from './ficaDeclarationDocumentModel.js'
 import { buildSellerComplianceDocumentModel } from './sellerComplianceDocumentModel.js'
 import { buildPropertyDisclosureDocumentMarkup } from '../../lib/propertyDisclosure.js'
+import { buildSellerSigningPlan } from '../../lib/sellerSigningPlanModel.js'
 import {
   SELLER_BASE_PACK_KEYS,
   SELLER_DOCUMENT_ARTIFACT_KEYS,
@@ -9,7 +10,7 @@ import {
   SELLER_DOCUMENT_CONTRACT_VERSION,
 } from '../../lib/sellerBasePackContract.js'
 
-export const SELLER_POST_ONBOARDING_DRAFTS_CONTRACT = 'arch9-seller-post-onboarding-drafts-v2'
+export const SELLER_POST_ONBOARDING_DRAFTS_CONTRACT = 'arch9-seller-post-onboarding-drafts-v3'
 
 const text = (value) => String(value ?? '').trim()
 const record = (value) => value && typeof value === 'object' && !Array.isArray(value) ? value : {}
@@ -125,7 +126,16 @@ export function buildSellerPostOnboardingDrafts({ formData = {}, listing = {}, b
   const property = propertyAddress(safeFormData, safeListing)
   const reference = documentReference(safeListing)
   const disclosure = record(safeFormData.propertyDisclosure || safeFormData.property_disclosure)
-  const compliancePack = buildSellerComplianceDocumentModel({ formData: safeFormData, listing: safeListing, generatedAt })
+  const signingPlan = buildSellerSigningPlan({
+    sellerType: firstText(safeFormData.sellerLegalType, safeFormData.seller_legal_type, safeFormData.sellerType, safeListing.sellerType),
+    form: safeFormData,
+  })
+  const compliancePack = buildSellerComplianceDocumentModel({
+    formData: safeFormData,
+    listing: safeListing,
+    signing: { signers: signingPlan.recipients.map((signer) => ({ ...signer, status: 'pending', signature: '' })) },
+    generatedAt,
+  })
   const ficaModel = buildFicaDeclarationDocumentModel({
     partyType: 'seller',
     party: { name: seller, idNumber: sellerId, email: safeFormData.email, mobile: firstText(safeFormData.mobile, safeFormData.phone) },
@@ -147,6 +157,7 @@ export function buildSellerPostOnboardingDrafts({ formData = {}, listing = {}, b
     listingId: text(safeListing.id),
     documentReference: reference,
     branding: safeBranding,
+    compliancePack: { signers: compliancePack.signers },
   })
   const ficaHtml = buildFicaDeclarationDocumentMarkup(ficaModel)
   const mandateHtml = mandatePreparationMarkup({ seller, sellerId, property, reference, branding: safeBranding, generatedAt })
@@ -186,7 +197,7 @@ export function buildSellerPostOnboardingDrafts({ formData = {}, listing = {}, b
     brandingVersion,
     brandingSnapshot,
     documents: [
-      draftDocument({ key: SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM, targetRequirementKey: SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM, artifactStage: SELLER_DOCUMENT_ARTIFACT_STAGES.FINAL_SIGNED, name: 'Mandatory Disclosure / Defects Form', status: 'complete', templateVersion: 'property_disclosure_annexure_a_v1', brandingVersion, generatedAt, generatedHtml: disclosureHtml, signable: true, metadata: { source: 'seller_onboarding', brandingSnapshot } }),
+      draftDocument({ key: SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM, targetRequirementKey: SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM, artifactStage: SELLER_DOCUMENT_ARTIFACT_STAGES.REVIEW_DRAFT, name: 'Mandatory Disclosure / Defects Form', status: 'awaiting_agent_review', templateVersion: 'property_disclosure_annexure_a_v1', brandingVersion, generatedAt, generatedHtml: disclosureHtml, metadata: { source: 'seller_onboarding', brandingSnapshot } }),
       draftDocument({ key: SELLER_DOCUMENT_ARTIFACT_KEYS.FICA_REVIEW_DRAFT, targetRequirementKey: SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION, name: 'Seller FICA review draft', status: 'awaiting_agent_review', templateVersion: ficaModel.declaration.wordingVersion, brandingVersion, generatedAt, generatedHtml: ficaHtml, metadata: { ficaDeclarationModel: ficaModel, brandingSnapshot } }),
       draftDocument({ key: SELLER_DOCUMENT_ARTIFACT_KEYS.MANDATE_PREPARATION_SUMMARY, targetRequirementKey: SELLER_BASE_PACK_KEYS.SIGNED_MANDATE, name: 'Mandate preparation summary', status: 'awaiting_agent_review', templateVersion: 'seller_mandate_preparation_summary_v1', brandingVersion, generatedAt, generatedHtml: mandateHtml, metadata: { commissionPending: true, notForSignature: true, brandingSnapshot } }),
     ],

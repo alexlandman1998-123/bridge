@@ -113,7 +113,9 @@ function findSignedMandateDocument(documents = []) {
   return (Array.isArray(documents) ? documents : []).find((document) =>
     documentLooksLikeSignedMandate(document) &&
     documentIsSellerVisible(document) &&
-    documentHasFileReference(document)
+    documentHasFileReference(document) &&
+    (!(document.reviewedSigningVersionId || document.reviewed_signing_version_id) ||
+      ['approved', 'completed'].includes(normalizeKey(document.status || document.document_status)))
   ) || null
 }
 

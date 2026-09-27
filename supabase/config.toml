@@ -333,3 +333,9 @@ entrypoint = "./functions/whatsapp-campaigns/index.ts"
 enabled = true
 verify_jwt = false
 entrypoint = "./functions/listing-mandate-signing/index.ts"
+
+[functions.seller-portal-document-signing]
+enabled = true
+verify_jwt = false
+import_map = "./functions/seller-portal-document-signing/deno.json"
+entrypoint = "./functions/seller-portal-document-signing/index.ts"

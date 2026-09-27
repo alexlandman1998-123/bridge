@@ -1,6 +1,6 @@
-// Phase 0 safety boundary: Arch9 must not initiate or capture online
-// signatures for property documents. Workflows may prepare documents, collect
-// non-execution information, and receive wet-ink signed originals for review.
+// Temporary compatibility boundary for the retired seller signing route.
+// Per-document portal signing must be approved and implemented separately;
+// this switch must not be lifted merely to expose a button.
 import { assertElectronicSigningApproved } from './signingClassificationPolicy.js'
 
 export const ONLINE_SIGNING_DISABLED = true

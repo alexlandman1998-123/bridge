@@ -28,9 +28,11 @@ test('every known signing workflow is classified and fails closed unless legally
   assert.ok(Object.keys(SIGNING_CLASSIFICATION_REGISTER).length >= 7)
   assert.equal(
     SIGNING_CLASSIFICATION_REGISTER.seller_mandate.classification,
-    SIGNING_CLASSIFICATION_STATUS.WET_INK_REQUIRED,
+    SIGNING_CLASSIFICATION_STATUS.ELECTRONIC_SIGNATURE_APPROVED,
   )
-  assert.equal(isElectronicSigningApproved('seller_mandate'), false)
+  assert.equal(SIGNING_CLASSIFICATION_REGISTER.seller_disclosure.classification, SIGNING_CLASSIFICATION_STATUS.ELECTRONIC_SIGNATURE_APPROVED)
+  assert.equal(SIGNING_CLASSIFICATION_REGISTER.seller_fica_declaration.classification, SIGNING_CLASSIFICATION_STATUS.ELECTRONIC_SIGNATURE_APPROVED)
+  assert.equal(isElectronicSigningApproved('seller_mandate'), true)
   assert.equal(isElectronicSigningApproved('offer_to_purchase'), false)
   assert.throws(
     () => assertElectronicSigningApproved('unclassified_future_workflow'),
@@ -84,7 +86,7 @@ test('staff pages and the shared Edge Function client contain no seller mandate 
   assert.doesNotMatch(supabaseClient, /listing-mandate-signing|isOnlineSigningDisabledEdgeFunction/)
 })
 
-test('seller lead signing UI presents physical signing only', async () => {
+test('seller lead signing UI retains the retired route guard while showing the separately gated portal option', async () => {
   const [listingPage, pipelinePage] = await Promise.all([
     readFile(new URL('../../../pages/AgentListingDetail.jsx', import.meta.url), 'utf8'),
     readFile(new URL('../../../pages/agency/AgencyPipelinePage.jsx', import.meta.url), 'utf8'),
@@ -94,6 +96,10 @@ test('seller lead signing UI presents physical signing only', async () => {
   assert.match(pipelinePage, /Prepare a physical-signature pack|Prepare physical copies/)
   assert.match(listingPage, /Wet-ink signatures required/)
   assert.doesNotMatch(listingPage, /Send signing link/)
+  assert.match(listingPage, /Send for signature/)
+  assert.match(pipelinePage, /Send for signature/)
+  assert.match(listingPage, /!SELLER_PORTAL_SIGNING_ENABLED/)
+  assert.match(pipelinePage, /!SELLER_PORTAL_SIGNING_ENABLED/)
 })
 
 test('the signing retirement migration revokes open sessions without erasing evidence', async () => {

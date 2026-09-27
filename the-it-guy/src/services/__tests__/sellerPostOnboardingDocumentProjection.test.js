@@ -1,15 +1,129 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  buildSellerPostOnboardingDraftDocuments,
   buildSellerDocumentSourceOfTruth,
   filterSellerDocumentRequirementsForOnboarding,
 } from '../sellerDocumentRequirementsService.js'
+import { buildSellerPostOnboardingDrafts } from '../../core/documents/sellerPostOnboardingDrafts.js'
+import { PROPERTY_DISCLOSURE_QUESTIONS } from '../../lib/propertyDisclosure.js'
+import { createSellerReviewedDocumentVersions } from '../../core/documents/sellerReviewedDocumentVersions.js'
+import { getSellerPhysicalSigningCopy } from '../../core/documents/sellerPhysicalSigningCopy.js'
 
 const requiredDocuments = [
   { id: 'r-disclosure', key: 'signed_disclosure_form', label: 'Signed Mandatory Disclosure / Defects Form', status: 'required', is_required: true, group: 'legal' },
   { id: 'r-fica', key: 'signed_fica_declaration', label: 'Signed FICA Declaration', status: 'required', is_required: true, group: 'legal' },
   { id: 'r-mandate', key: 'signed_mandate', label: 'Signed Mandate', status: 'required', is_required: true, group: 'legal' },
 ]
+
+test('new onboarding disclosure remains a review draft, even when a PDF can be downloaded', () => {
+  const listing = { id: 'listing-new', sellerOnboarding: { status: 'completed' } }
+  const drafts = buildSellerPostOnboardingDrafts({ formData: { sellerFirstName: 'Alex' }, listing, generatedAt: '2026-09-27T12:00:00Z' })
+  const formData = { sellerPostOnboardingDrafts: drafts }
+  const disclosure = buildSellerPostOnboardingDraftDocuments(formData, listing).find((row) => row.artifactKey === 'signed_disclosure_form')
+  assert.equal(disclosure.status, 'awaiting_agent_review')
+  assert.equal(disclosure.documentContract.stage, 'review_draft')
+  assert.equal(disclosure.documentContract.satisfiesRequirement, false)
+  assert.equal(disclosure.completionRoute, '')
+  assert.equal(disclosure.canDownload, false)
+
+  const approved = buildSellerPostOnboardingDraftDocuments({ ...formData, sellerOnboardingReview: { status: 'approved' } }, listing)
+    .find((row) => row.artifactKey === 'signed_disclosure_form')
+  assert.equal(approved.canDownload, true)
+  assert.equal(approved.documentContract.satisfiesRequirement, false)
+})
+
+test('a signed onboarding disclosure remains complete when every required seller has signed', () => {
+  const listing = { id: 'listing-signed', sellerOnboarding: { status: 'completed' }, documentRequirements: requiredDocuments }
+  const propertyDisclosure = {
+    responses: Object.fromEntries(PROPERTY_DISCLOSURE_QUESTIONS.map((question) => [question.key, { answer: 'no' }])),
+    declarationAccepted: true,
+    signature: 'data:image/png;base64,AA',
+    signedAt: '2026-09-27',
+    arch9TermsAccepted: true,
+  }
+  const formData = { propertyDisclosure, sellerComplianceSigning: { complete: true } }
+  formData.sellerPostOnboardingDrafts = buildSellerPostOnboardingDrafts({ formData, listing, generatedAt: '2026-09-27T12:00:00Z' })
+  const signed = buildSellerDocumentSourceOfTruth({ listing, formData }).rows.find((row) => row.key === 'signed_disclosure_form')
+  assert.equal(signed.status, 'completed')
+
+  const incomplete = buildSellerDocumentSourceOfTruth({ listing, formData: { ...formData, sellerComplianceSigning: { complete: false } } })
+    .rows.find((row) => row.key === 'signed_disclosure_form')
+  assert.notEqual(incomplete.status, 'completed')
+})
+
+test('reviewed signing copies map to three outstanding legal rows with their frozen versions', () => {
+  const listing = { id: 'listing-reviewed', sellerOnboarding: { status: 'completed' }, documentRequirements: requiredDocuments }
+  const formData = { sellerName: 'Alex Seller' }
+  formData.sellerPostOnboardingDrafts = buildSellerPostOnboardingDrafts({ formData, listing, generatedAt: '2026-09-27T12:00:00Z' })
+  formData.sellerOnboardingManualSigningPack = {
+    status: 'awaiting_signed_hard_copy',
+    documents: [
+      { key: 'signed_disclosure_form', generatedHtml: '<article>Frozen disclosure</article>', versionId: 'disclosure-v1', versionDigest: 'sha256:disclosure' },
+      { key: 'signed_fica_declaration', generatedHtml: '<article>Frozen FICA</article>', versionId: 'fica-v1', versionDigest: 'sha256:fica' },
+      { key: 'signed_mandate', generatedHtml: '<article>Frozen mandate</article>', versionId: 'mandate-v1', versionDigest: 'sha256:mandate' },
+    ],
+  }
+  const rows = buildSellerDocumentSourceOfTruth({ listing, formData }).rows
+    .filter((row) => ['signed_disclosure_form', 'signed_fica_declaration', 'signed_mandate'].includes(row.key))
+  assert.equal(rows.length, 3)
+  for (const row of rows) {
+    assert.notEqual(row.status, 'completed')
+    assert.equal(row.canUpload, true)
+    assert.equal(row.canDownload, true)
+    assert.match(row.original.document.versionDigest, /^sha256:/)
+  }
+  assert.equal(rows.find((row) => row.key === 'signed_disclosure_form').original.document.versionId, 'disclosure-v1')
+})
+
+test('a returned signed mandate stays outstanding until its persisted copy is approved', async () => {
+  const listing = { id: 'listing-physical', sellerOnboarding: { status: 'completed' }, documentRequirements: requiredDocuments }
+  const reviewed = await createSellerReviewedDocumentVersions({
+    manualSigningPack: { documents: [{ key: 'signed_mandate', generatedHtml: '<article>Frozen mandate</article>' }] },
+    formalPackApproval: { status: 'approved', signingRoute: 'manual_upload', commission: { confirmed: true } },
+    signingPack: { signers: [{ name: 'Alex Seller', role: 'Seller' }], mandate: { propertyAddress: '1 Test Road' } },
+    actor: 'agent-1',
+  })
+  const formData = { sellerOnboardingManualSigningPack: { status: 'awaiting_signed_hard_copy', documents: reviewed.documents } }
+  const upload = {
+    id: 'signed-upload', requirement_id: 'r-mandate', document_type: 'signed_mandate', status: 'uploaded', storage_path: 'signed/mandate.pdf',
+    reviewed_signing_version_id: reviewed.documents[0].versionId,
+    reviewed_signing_version_digest: reviewed.documents[0].versionDigest,
+  }
+  const pending = buildSellerDocumentSourceOfTruth({ listing: { ...listing, documents: [upload] }, formData }).rows.find((row) => row.key === 'signed_mandate')
+  assert.equal(pending.status, 'uploaded')
+  assert.equal(pending.complete, false)
+  assert.equal(pending.original.document.id, 'signed-upload')
+  assert.equal(pending.original.document.reviewed_signing_version_id, reviewed.documents[0].versionId)
+  assert.equal(getSellerPhysicalSigningCopy(pending)?.versionId, reviewed.documents[0].versionId)
+
+  const approved = buildSellerDocumentSourceOfTruth({ listing: { ...listing, documents: [{ ...upload, status: 'approved' }] }, formData }).rows.find((row) => row.key === 'signed_mandate')
+  assert.equal(approved.status, 'approved')
+  assert.equal(approved.complete, true)
+})
+
+test('an agent-reviewed portal signature becomes the canonical downloadable legal document', async () => {
+  const listing = { id: 'listing-portal', sellerOnboarding: { status: 'completed' }, documentRequirements: requiredDocuments }
+  const reviewed = await createSellerReviewedDocumentVersions({
+    manualSigningPack: { documents: [{ key: 'signed_mandate', generatedHtml: '<article>Frozen mandate</article>' }] },
+    formalPackApproval: { status: 'approved', signingRoute: 'manual_upload', commission: { confirmed: true } },
+    signingPack: { signers: [{ name: 'Alex Seller', role: 'Seller', email: 'alex@example.test' }], mandate: { propertyAddress: '1 Test Road' } },
+    actor: 'agent-1',
+  })
+  const formData = { sellerOnboardingManualSigningPack: { status: 'awaiting_signed_hard_copy', documents: reviewed.documents } }
+  const signed = {
+    id: 'portal-signed', requirement_id: 'r-mandate', document_type: 'signed_mandate',
+    status: 'approved', generated_html: '<article>Frozen mandate</article><section>Signed by Alex Seller</section>',
+    generated_file_name: 'signed_mandate-portal-signed.pdf',
+    reviewed_signing_version_id: reviewed.documents[0].versionId,
+    reviewed_signing_version_digest: reviewed.documents[0].versionDigest,
+  }
+  const row = buildSellerDocumentSourceOfTruth({ listing: { ...listing, documents: [signed] }, formData }).rows.find((item) => item.key === 'signed_mandate')
+  assert.equal(row.status, 'approved')
+  assert.equal(row.complete, true)
+  assert.equal(row.canDownload, true)
+  assert.match(row.original.document.generated_html, /Signed by Alex Seller/)
+})
 
 function source({ reviewStatus = '', commissionConfirmed = false, manualSigningPack = null } = {}) {
   const formData = {

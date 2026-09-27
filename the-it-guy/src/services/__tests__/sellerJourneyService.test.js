@@ -119,6 +119,20 @@ assert.equal(hardCopySignedJourney.mandateStatus, 'signed')
 assert.equal(hardCopySignedJourney.listingCreated, true)
 assert.equal(hardCopySignedJourney.listingLive, true)
 
+const reviewedHardCopy = {
+  document_type: 'signed_mandate', status: 'uploaded', storage_path: 'seller-mandates/reviewed.pdf',
+  reviewed_signing_version_id: 'reviewed-version-1',
+}
+const reviewedHardCopyContext = {
+  lead: { leadId: 'seller-lead-reviewed', leadCategory: 'seller', sellerOnboardingStatus: 'submitted', listingId: 'listing-reviewed' },
+  listing: { id: 'listing-reviewed', sellerLeadId: 'seller-lead-reviewed', sellerOnboarding: { status: 'completed' }, listingStatus: 'onboarding_completed' },
+}
+const reviewedUploadJourney = buildSellerJourney({ ...reviewedHardCopyContext, documents: [reviewedHardCopy] })
+assert.notEqual(reviewedUploadJourney.mandateStatus, 'signed')
+assert.equal(reviewedUploadJourney.actions.find((action) => action.id === 'activate_listing').enabled, false)
+const approvedHardCopyJourney = buildSellerJourney({ ...reviewedHardCopyContext, documents: [{ ...reviewedHardCopy, status: 'approved' }] })
+assert.equal(approvedHardCopyJourney.mandateStatus, 'signed')
+
 const onboardingSentJourney = buildSellerJourney({
   lead: {
     leadId: 'seller-lead-onboarding-sent',

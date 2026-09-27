@@ -1,8 +1,9 @@
 import { readSellerOnboardingReview, SELLER_ONBOARDING_REVIEW_STATUS } from './sellerOnboardingReview.js'
+import { hasCompletedOnboardingDisclosureSignature } from './sellerDocumentSigningContract.js'
 
 const text = (value) => String(value ?? '').trim()
 
-export function buildSellerOnboardingJourneyStatus({ formData = {}, onboardingSubmitted = false, mandateSigned = false } = {}) {
+export function buildSellerOnboardingJourneyStatus({ formData = {}, onboardingSubmitted = false, mandateSigned = false, disclosureSigned = false, ficaSigned = false } = {}) {
   const lifecycle = formData.sellerOnboardingSigningLifecycle || formData.seller_onboarding_signing_lifecycle || {}
   const review = readSellerOnboardingReview(formData.sellerOnboardingReview || formData.seller_onboarding_review)
   const stage = text(lifecycle.stage)
@@ -10,6 +11,7 @@ export function buildSellerOnboardingJourneyStatus({ formData = {}, onboardingSu
   const packSent = ['pack_sent', 'partially_signed', 'mandate_signed'].includes(stage)
   const manualAwaitingUpload = stage === 'manual_awaiting_upload'
   const signed = mandateSigned || stage === 'mandate_signed'
+  const signedDisclosure = disclosureSigned || hasCompletedOnboardingDisclosureSignature(formData)
   const correctionRequested = review.status === SELLER_ONBOARDING_REVIEW_STATUS.correctionRequested || stage === 'correction_requested'
   const reviewed = review.status === SELLER_ONBOARDING_REVIEW_STATUS.approved || ['agent_review_approved', 'pack_prepared', 'pack_sent', 'partially_signed', 'mandate_signed'].includes(stage)
   const currentLabel = signed
@@ -37,8 +39,8 @@ export function buildSellerOnboardingJourneyStatus({ formData = {}, onboardingSu
       { key: 'mandate', label: 'Mandate signed', complete: signed },
     ],
     documents: [
-      { key: 'disclosure', label: 'Seller disclosure', status: onboardingSubmitted ? 'signed_in_onboarding' : 'not_started' },
-      { key: 'fica', label: 'FICA declaration', status: manualAwaitingUpload ? 'awaiting_signed_hard_copy' : packSent ? 'sent_for_signature' : reviewed ? 'ready_to_send' : 'awaiting_agent_review' },
+      { key: 'disclosure', label: 'Seller disclosure', status: signedDisclosure ? 'signed' : onboardingSubmitted ? 'awaiting_review' : 'not_started' },
+      { key: 'fica', label: 'FICA declaration', status: ficaSigned ? 'signed' : manualAwaitingUpload ? 'awaiting_signed_hard_copy' : packSent ? 'sent_for_signature' : reviewed ? 'ready_to_send' : 'awaiting_agent_review' },
       { key: 'mandate', label: 'Mandate', status: signed ? 'signed' : manualAwaitingUpload ? 'awaiting_signed_hard_copy' : packSent ? 'sent_for_signature' : reviewed ? 'ready_to_send' : 'awaiting_agent_review' },
     ],
   }
