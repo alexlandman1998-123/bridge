@@ -1,6 +1,7 @@
 import { isAttorneyTaskResolved } from './attorneyTaskOutcomes.js'
 
-const QUERY_KEYS = ['transferView', 'transferStage', 'transferTask']
+const QUERY_KEYS = ['transferView', 'transferStage', 'transferTask', 'workflowLane']
+const WORKFLOW_LANES = new Set(['transfer', 'bond', 'cancellation'])
 
 export function readTransferWorkspaceNavigation(search = '') {
   const params = new URLSearchParams(search)
@@ -8,6 +9,7 @@ export function readTransferWorkspaceNavigation(search = '') {
   return {
     active: view === 'overview' || view === 'workspace',
     view: view === 'workspace' ? 'workspace' : 'overview',
+    laneKey: WORKFLOW_LANES.has(params.get('workflowLane')) ? params.get('workflowLane') : 'transfer',
     stageKey: params.get('transferStage') || '',
     taskKey: params.get('transferTask') || '',
   }
@@ -18,6 +20,7 @@ export function writeTransferWorkspaceNavigation(search = '', navigation = null)
   QUERY_KEYS.forEach((key) => params.delete(key))
   if (navigation?.view === 'overview' || navigation?.view === 'workspace') {
     params.set('transferView', navigation.view)
+    if (navigation.laneKey && navigation.laneKey !== 'transfer' && WORKFLOW_LANES.has(navigation.laneKey)) params.set('workflowLane', navigation.laneKey)
     if (navigation.stageKey) params.set('transferStage', navigation.stageKey)
     if (navigation.view === 'workspace' && navigation.taskKey) params.set('transferTask', navigation.taskKey)
   }
