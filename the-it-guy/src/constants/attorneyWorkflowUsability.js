@@ -626,6 +626,13 @@ export function normalizeAttorneyWorkflowWorkPacket(packet = null) {
     statusAction: compactText(packet.statusAction || ''),
     clientAudience,
     eventKey: compactText(packet.eventKey || ''),
+    completionMethod: compactText(packet.completionMethod || ''),
+    overrideScope: compactText(packet.overrideScope || ''),
+    overrideGroupId: compactText(packet.overrideGroupId || ''),
+    overrideReason: compactText(packet.overrideReason || ''),
+    overrideTaskKeys: Array.isArray(packet.overrideTaskKeys)
+      ? packet.overrideTaskKeys.map((item) => compactText(item)).filter(Boolean).slice(0, 100)
+      : [],
     ...(packet.taskConfirmations ? { taskConfirmations: normalizeTaskConfirmations(packet.taskConfirmations) } : {}),
   }
 }

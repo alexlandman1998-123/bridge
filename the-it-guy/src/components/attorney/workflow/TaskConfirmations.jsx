@@ -43,7 +43,7 @@ function ConfirmationRow({ item, response, noteOpen, disabled, busy, error, onCh
   </div>
 }
 
-export default function TaskConfirmations({ taskKey, items, saved = {}, disabled, onSave, onDirtyChange, onRunAction, renderRowDetails }) {
+export default function TaskConfirmations({ taskKey, items, saved = {}, disabled, compact = false, onSave, onDirtyChange, onRunAction, renderRowDetails }) {
   const [draft, setDraft] = useState(saved)
   const [notes, setNotes] = useState({})
   const [dirty, setDirty] = useState(false)
@@ -114,8 +114,9 @@ export default function TaskConfirmations({ taskKey, items, saved = {}, disabled
   }
   if (!items.length) return null
   const answeredCount = items.filter(item => item.authoritative ? item.authoritativeAnswer : draft[item.id]?.answer).length
-  return <section className="mt-5 rounded-xl border border-slate-200 px-5 py-4">
-    <div className="flex flex-wrap items-center justify-between gap-2"><div><h3 className="text-lg font-semibold text-slate-950">Confirmations</h3><p className="mt-0.5 text-sm text-slate-500">Record the current status of each confirmation.</p></div><span className="text-xs font-medium text-slate-500">{answeredCount} of {items.length} answered</span></div>
+  const completedCount = items.filter(item => (item.authoritative ? item.authoritativeAnswer : draft[item.id]?.answer) === 'yes').length
+  return <section className={`${compact ? 'rounded-xl border border-slate-200 px-4 py-4' : 'mt-5 rounded-xl border border-slate-200 px-5 py-4'}`}>
+    <div className="flex flex-wrap items-center justify-between gap-2"><div><h3 className="text-base font-semibold text-slate-950">Confirmations</h3><p className="mt-0.5 text-sm text-slate-500">Record the current status of each confirmation.</p></div><span className="text-xs font-medium text-slate-500">{compact ? completedCount : answeredCount} of {items.length} {compact ? 'completed' : 'answered'}</span></div>
     <div className="mt-4 divide-y divide-slate-200">{items.map(item => <ConfirmationRow key={item.id} item={item} response={draft[item.id]} noteOpen={notes[item.id]} disabled={disabled} busy={busy} error={rowErrors[item.id]} onChange={patch => change(item.id, patch)} onToggleNote={() => setNotes(previous => ({ ...previous, [item.id]: !previous[item.id] }))} onRunAction={onRunAction} details={renderRowDetails?.(item)} />)}</div>
     {error ? <p role="alert" className="text-sm text-red-700">{error}</p> : null}
     <div className="mt-3 flex items-center justify-between gap-3">{dirty ? <span role="status" className="text-xs font-medium text-amber-800">Unsaved answers</span> : savedMessage ? <span role="status" className="text-xs font-medium text-emerald-800">Answers saved</span> : <span />}<Button type="button" variant="secondary" size="sm" disabled={disabled || busy || !dirty} onClick={save}>{busy ? 'Saving…' : 'Save answers'}</Button></div>
