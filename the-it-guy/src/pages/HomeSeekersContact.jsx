@@ -20,7 +20,7 @@ function HomeSeekersContact() {
     setSending(true)
     setError('')
     try {
-      await submitHomeSeekersLead({ type: 'general_enquiry', name: form.get('name'), email: form.get('email'), message: `${form.get('interest')}: ${form.get('message')}`, privacyAccepted: form.get('privacy') === 'on', companyWebsite: form.get('website') })
+      await submitHomeSeekersLead({ type: 'general_enquiry', name: form.get('name'), email: form.get('email'), leadIntent: form.get('interest') === 'Selling a home' ? 'sell' : undefined, message: `${form.get('interest')}: ${form.get('message')}`, privacyAccepted: form.get('privacy') === 'on', companyWebsite: form.get('website') })
       setSent(true)
     } catch (submitError) { setError(submitError.message || 'Your enquiry could not be sent.') }
     finally { setSending(false) }

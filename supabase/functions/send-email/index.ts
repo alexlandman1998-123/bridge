@@ -20,6 +20,7 @@ import { handleArch9IntakeAcknowledgementEmail } from "./handlers/arch9IntakeAck
 import { handleLeadAcknowledgementEmail } from "./handlers/leadAcknowledgement.ts";
 import { handleKingstonsValuationDownloadEmail } from "./handlers/kingstonsValuationDownload.ts";
 import { handleLeadOperationsNotificationEmail } from "./handlers/leadOperationsNotification.ts";
+import { handleHomeSeekersSellerEmailPreview } from "./handlers/homeSeekersSellerEnquiry.ts";
 import { handleTemplatePreviewEmail } from "./handlers/templatePreview.ts";
 import { handleAdditionalDocumentRequestEmail } from "./handlers/additionalDocumentRequest.ts";
 import {
@@ -171,6 +172,10 @@ Deno.serve(async (req: Request) => {
           "Final signed legal documents must be delivered through the packet-bound canonical final-delivery endpoint.",
         errorCode: FINAL_SIGNED_LEGAL_DOCUMENT_DELIVERY_ROUTE_RETIRED,
       });
+    }
+
+    if (type === "home_seekers_seller_email_preview") {
+      return await handleHomeSeekersSellerEmailPreview(req, payload);
     }
 
     const recipientSafety = assessControlledTestRecipient({
