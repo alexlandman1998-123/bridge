@@ -1,5 +1,5 @@
 export const UAT_GRAPHQL_ENDPOINT =
-  "https://propinfoapi.co.za/live/uat/graphql/";
+  "https://propinfoapi.co.za/uat/v0_1/graphql/";
 
 export type DiscoveryAction = { action: "probe" } | { action: "roots" } | {
   action: "type";

@@ -10,7 +10,7 @@ Phase 0 creates the secure boundary only. It does not return live property, owne
 
    ```text
    # UAT only. Use this for the pilot and development.
-   KNOWLEDGE_FACTORY_GRAPHQL_ENDPOINT=https://propinfoapi.co.za/live/uat/graphql/
+   KNOWLEDGE_FACTORY_GRAPHQL_ENDPOINT=https://propinfoapi.co.za/uat/v0_1/graphql/
    KNOWLEDGE_FACTORY_EMAIL=service-account-email
    KNOWLEDGE_FACTORY_PASSWORD=service-account-password
    ```
@@ -40,7 +40,9 @@ Every allowed or denied validation attempt is recorded in `knowledge_factory_aud
 
 ## Supplier endpoint policy
 
-Use the UAT endpoint for development and the controlled pilot. Do not use the supplier's `latest` endpoint for production: it can change when new schema versions are deployed. When production is approved, replace only the server secret with the pinned explicit version:
+Use the UAT endpoint for development and the controlled pilot. The legacy `https://propinfoapi.co.za/live/uat/graphql/` UAT URL retires on 30 October 2026. The Vercel API accepts both v0_1 UAT URLs during cutover, but configure the explicit `/uat/v0_1/graphql/` URL in each private Vercel and Supabase environment and verify it before relying on it. Do not switch these v0_1 queries to v1 or `latest`.
+
+When production is approved, replace only the server secret with the pinned explicit version:
 
 ```text
 KNOWLEDGE_FACTORY_GRAPHQL_ENDPOINT=https://propinfoapi.co.za/live/v0_1/graphql/

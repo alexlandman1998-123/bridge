@@ -30,7 +30,7 @@ function agencyIdentity(pack = {}) {
     phone: first(branding.phone, practitioner.phone),
     practitionerName: first(practitioner.name, branding.practitionerName, branding.agentName),
     practitionerFfc: first(practitioner.ffcNumber, branding.practitionerFfcNumber),
-    logo: logo(first(branding.logoDarkUrl, branding.logoUrl, branding.logoLightUrl)),
+    logo: logo(first(branding.logoLightUrl, branding.logoUrl, branding.logoDarkUrl)),
     primary: colour(first(branding.primaryColour, branding.primaryColor), '#243b50'),
     accent: colour(first(branding.accentColour, branding.accentColor), '#b12d32'),
   }

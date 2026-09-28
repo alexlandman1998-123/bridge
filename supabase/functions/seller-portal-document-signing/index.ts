@@ -2,6 +2,11 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "supabase";
 import { sendViaResendApi } from "../send-email/services/resend.ts";
+import { resolveAudienceEmailSender, resolveEmailBranding } from "../send-email/services/emailBranding.ts";
+import { renderBridgeCta, renderBridgeEmailLayout, renderBridgeIntroParagraphs } from "../send-email/content/bridgeEmailLayout.ts";
+import { buildSellerMandateDocumentMarkup } from "../../../the-it-guy/src/core/documents/sellerMandateDocumentMarkup.js";
+import { buildSellerFicaDueDiligenceMarkup } from "../../../the-it-guy/src/core/documents/sellerFicaDueDiligenceMarkup.js";
+import { buildPropertyDisclosureDocumentMarkup, normalizePropertyDisclosure, PROPERTY_DISCLOSURE_QUESTIONS } from "../../../the-it-guy/src/lib/propertyDisclosure.js";
 
 type Row = Record<string, unknown>;
 const createAdmin = (url: string, key: string) => createClient(url, key, { auth: { persistSession: false } });
@@ -56,7 +61,9 @@ function signedHtml(reviewedHtml: string, evidence: Row[], versionDigest: string
   const blocks = evidence.map((row) => {
     const signature = text(row.signature_value);
     const drawn = text(row.signature_type) === "drawn" && /^data:image\/(png|jpeg);base64,[a-z0-9+/=]+$/i.test(signature);
-    return `<div style="border-top:1px solid #152338;padding:12px 0;margin-top:18px"><strong>${escapeHtml(row.signed_name)}</strong><br>${drawn ? `<img alt="Signature" src="${signature}" style="max-height:90px;max-width:280px" />` : `<em>${escapeHtml(signature)}</em>`}<br>Signed ${escapeHtml(row.accepted_at)} · Evidence ${escapeHtml(row.evidence_digest)}</div>`;
+    const signedAt = text(row.signed_date) || text(row.accepted_at);
+    const signedPlace = text(row.signed_place);
+    return `<div style="border-top:1px solid #152338;padding:12px 0;margin-top:18px"><strong>${escapeHtml(row.signed_name)}</strong><br>${drawn ? `<img alt="Signature" src="${signature}" style="max-height:90px;max-width:280px" />` : `<em>${escapeHtml(signature)}</em>`}<br>Signed ${signedPlace ? `at ${escapeHtml(signedPlace)} ` : ""}on ${escapeHtml(signedAt)} · Recorded ${escapeHtml(row.accepted_at)} · Evidence ${escapeHtml(row.evidence_digest)}</div>`;
   }).join("");
   const section = `<section style="max-width:820px;margin:28px auto;padding:24px;border:1px solid #dbe4df;page-break-before:always"><h2>Electronic signatures</h2><p>Reviewed document version: ${escapeHtml(versionDigest)}</p>${blocks}</section>`;
   return /<\/body>/i.test(reviewedHtml) ? reviewedHtml.replace(/<\/body>/i, `${section}</body>`) : `${reviewedHtml}${section}`;
@@ -129,7 +136,114 @@ async function reviewedCopy(admin: AdminClient, listingId: string, documentKey: 
       text(document.versionId) !== text(indexRow.versionId) ||
       JSON.stringify(canonical(signers)) !== JSON.stringify(canonical(indexRow.requiredSigners)) ||
       JSON.stringify(canonical(mandateTerms)) !== JSON.stringify(canonical(indexRow.mandateTerms))) return null;
-  return { document, html, signers, contentDigest, versionDigest };
+  return { document, html, signers, contentDigest, versionDigest, form, approval, pack };
+}
+
+const correctionFields = {
+  common: ["sellerName", "idNumber", "residentialAddress", "email", "phone", "propertyAddress"],
+  fica: ["idType", "saResident", "incomeTaxNumber", "maritalStatus", "employer", "jobTitle", "occupation", "industryOfBusiness", "countriesOfTrade", "dualUseGoods", "armsWeapons", "actingOnBehalfOfAnother", "heirInEstate", "sourceOfWealth", "sourceOfIncome", "politicallyInfluentialPerson", "bankName", "accountName", "accountNumber", "accountType"],
+  mandate: ["mandateType", "askingPrice", "startDate", "endDate", "protectionPeriod", "specialConditions", "commissionBasis", "commissionPercentage", "commissionAmount", "vatHandling"],
+  disclosure: ["comments", "remoteControlsQuantity"],
+} as const;
+
+function editData(copy: NonNullable<Awaited<ReturnType<typeof reviewedCopy>>>, key: string, saved: Row = {}) {
+  const pack = object(copy.pack.signingPackSnapshot);
+  const seller = object(pack.seller), property = object(pack.property), mandate = object(pack.mandate);
+  const form = copy.form, fica = object(form.fica || form.ficaDetails || form.fica_details);
+  const disclosure = normalizePropertyDisclosure(object(form.propertyDisclosure || form.property_disclosure));
+  const common = { sellerName: text(seller.name), idNumber: text(seller.idNumber), residentialAddress: text(seller.residentialAddress), email: text(seller.email), phone: text(seller.phone), propertyAddress: text(property.address) };
+  const ficaValues: Row = {};
+  const booleanFields = new Set(["saResident", "dualUseGoods", "armsWeapons", "actingOnBehalfOfAnother", "heirInEstate", "politicallyInfluentialPerson"]);
+  for (const field of correctionFields.fica) {
+    const value = text(fica[field] ?? form[field] ?? seller[field] ?? (field === "sourceOfIncome" ? seller.sourceOfFunds : ""));
+    ficaValues[field] = booleanFields.has(field)
+      ? (["true", "yes", "1"].includes(value.toLowerCase()) ? "yes" : ["false", "no", "0"].includes(value.toLowerCase()) ? "no" : value)
+      : value;
+  }
+  const mandateValues: Row = {};
+  const commission = object(copy.approval.commission);
+  for (const field of correctionFields.mandate) mandateValues[field] = text(mandate[field] ?? ({ commissionBasis: commission.basis, commissionPercentage: commission.percentage, commissionAmount: commission.amount, vatHandling: commission.vatHandling } as Row)[field]);
+  const disclosureValues = { comments: disclosure.comments, remoteControlsQuantity: disclosure.remoteControlsQuantity, responses: disclosure.responses };
+  return {
+    common: { ...common, ...object(saved.common) },
+    ...(key === "signed_fica_declaration" ? { fica: { ...ficaValues, ...object(saved.fica) } } : {}),
+    ...(key === "signed_mandate" ? { mandate: { ...mandateValues, ...object(saved.mandate) } } : {}),
+    ...(key === "signed_disclosure_form" ? { disclosure: { ...disclosureValues, ...object(saved.disclosure) }, questions: PROPERTY_DISCLOSURE_QUESTIONS.map(({ key: questionKey, text: label, number }) => ({ key: questionKey, label, number })) } : {}),
+  };
+}
+
+function validatedCorrections(value: Row, key: string) {
+  const result: Row = {};
+  for (const section of ["common", key === "signed_fica_declaration" ? "fica" : key === "signed_mandate" ? "mandate" : "disclosure"] as const) {
+    const input = object(value[section]);
+    const clean: Row = {};
+    for (const field of correctionFields[section]) {
+      const entry = text(input[field]);
+      if (entry.length > (field === "comments" || field === "specialConditions" ? 4000 : 500)) throw new Error("A corrected field is too long.");
+      clean[field] = entry;
+    }
+    if (section === "disclosure") {
+      const answers = object(input.responses), responses: Row = {};
+      for (const question of PROPERTY_DISCLOSURE_QUESTIONS) {
+        const response = object(answers[question.key]);
+        const answer = text(response.answer).toLowerCase();
+        const note = text(response.note);
+        if (!["", "yes", "no", "unsure"].includes(answer) || note.length > 2000) throw new Error("A disclosure answer is invalid.");
+        responses[question.key] = { answer, note };
+      }
+      clean.responses = responses;
+    }
+    if (section === "common" && (text(clean.sellerName).length < 2 || text(clean.propertyAddress).length < 5)) {
+      throw new Error("Enter the seller name and property address before saving.");
+    }
+    if (section === "mandate") {
+      if (!["sole", "exclusive", "sole_mandate", "open"].includes(text(clean.mandateType).toLowerCase()) ||
+        !(Number(text(clean.askingPrice).replace(/[^\d.-]/g, "")) > 0) ||
+        !/^\d{4}-\d{2}-\d{2}$/.test(text(clean.startDate)) ||
+        !/^\d{4}-\d{2}-\d{2}$/.test(text(clean.endDate)) ||
+        text(clean.endDate) < text(clean.startDate)) throw new Error("Enter a valid mandate type, price, and dates.");
+      if (!["percentage", "fixed"].includes(text(clean.commissionBasis)) ||
+        !(Number(text(clean.commissionBasis) === "fixed" ? clean.commissionAmount : clean.commissionPercentage) > 0) ||
+        !text(clean.vatHandling)) throw new Error("Enter valid commission and VAT terms.");
+    }
+    result[section] = clean;
+  }
+  return result;
+}
+
+function renderCorrectedHtml(copy: NonNullable<Awaited<ReturnType<typeof reviewedCopy>>>, key: string, corrections: Row, listingId: string) {
+  const pack = structuredClone(object(copy.pack.signingPackSnapshot));
+  const seller = object(pack.seller), property = object(pack.property), common = object(corrections.common);
+  seller.name = text(common.sellerName); seller.idNumber = text(common.idNumber);
+  seller.residentialAddress = text(common.residentialAddress); seller.email = text(common.email); seller.phone = text(common.phone);
+  const parties = Array.isArray(seller.parties) ? seller.parties : [];
+  if (parties.length) parties[0] = { ...object(parties[0]), name: seller.name, idNumber: seller.idNumber, residentialAddress: seller.residentialAddress, email: seller.email, phone: seller.phone };
+  property.address = text(common.propertyAddress);
+  pack.seller = seller; pack.property = property;
+  const branding = object(pack.branding);
+  if (key === "signed_mandate") {
+    pack.mandate = { ...object(pack.mandate), ...object(corrections.mandate), propertyAddress: property.address };
+    const terms = object(corrections.mandate);
+    const approval = { ...copy.approval, commission: { ...object(copy.approval.commission), basis: terms.commissionBasis,
+      percentage: terms.commissionPercentage, amount: terms.commissionAmount, vatHandling: terms.vatHandling } };
+    return buildSellerMandateDocumentMarkup({ signingPack: pack, formalPackApproval: approval });
+  }
+  if (key === "signed_fica_declaration") {
+    seller.incomeTaxNumber = text(object(corrections.fica).incomeTaxNumber);
+    seller.maritalStatus = text(object(corrections.fica).maritalStatus);
+    const drafts = object(copy.form.sellerPostOnboardingDrafts || copy.form.seller_post_onboarding_drafts);
+    const ficaDraft = (Array.isArray(drafts.documents) ? drafts.documents : []).find((row: Row) => text(row.targetRequirementKey || row.requirementKey) === key);
+    const ficaModel = object(object(ficaDraft?.metadata).ficaDeclarationModel);
+    const formData = { ...copy.form, ...object(corrections.fica), fica: { ...object(copy.form.fica || copy.form.ficaDetails || copy.form.fica_details), ...object(corrections.fica) } };
+    return buildSellerFicaDueDiligenceMarkup({ model: ficaModel as never, formData, signingPack: pack, branding, generatedAt: text(pack.frozenAt) });
+  }
+  const original = normalizePropertyDisclosure(object(copy.form.propertyDisclosure || copy.form.property_disclosure));
+  const disclosure = { ...original, ...object(corrections.disclosure), signature: "", signedAt: "", signedPlace: "" };
+  const responses = object(disclosure.responses);
+  disclosure.decision = PROPERTY_DISCLOSURE_QUESTIONS.some((question) =>
+    ["yes", "unsure"].includes(text(object(responses[question.key]).answer))) ? "disclose" : "none";
+  return buildPropertyDisclosureDocumentMarkup(disclosure, { sellerName: seller.name, sellerIdNumber: seller.idNumber,
+    propertyAddress: property.address, listingId, documentReference: pack.documentReference, branding });
 }
 
 async function expireStaleRequests(admin: AdminClient, listingId: string) {
@@ -200,6 +314,8 @@ async function issue(req: Request, admin: AdminClient, url: string, anonKey: str
     version_id: copy.document.versionId,
     version_digest: copy.versionDigest,
     content_digest: copy.contentDigest,
+    source_version_digest: copy.versionDigest,
+    source_content_digest: copy.contentDigest,
     reviewed_html: copy.html,
     required_signers: copy.signers,
     approval_reference: approvalReference,
@@ -223,21 +339,34 @@ async function issue(req: Request, admin: AdminClient, url: string, anonKey: str
     return respond(500, { error: "Unable to prepare all signer links. No link was sent." });
   }
   const apiKey = text(Deno.env.get("RESEND_API_KEY"));
-  const from = text(Deno.env.get("RESEND_FROM_EMAIL"));
-  if (!apiKey || !from) {
+  const platformSender = text(Deno.env.get("RESEND_FROM_EMAIL"));
+  if (!apiKey || !platformSender) {
     await admin.from("private_listing_seller_portal_signing_documents").update({ status: "revoked", revoked_at: new Date().toISOString(), revoke_reason: "email_not_configured" }).eq("id", signingDocumentId);
     return respond(503, { error: "Signature email delivery is not configured. No link was sent." });
   }
+  const branding = await resolveEmailBranding({ supabase: admin, organisationId: text(context.listing.organisation_id) });
+  const from = await resolveAudienceEmailSender({ audience: "client", branding, platformSender, supabase: admin });
   const baseUrl = text(Deno.env.get("PUBLIC_APP_URL") || "https://app.arch9.co.za").replace(/\/$/, "");
   let deliveryFailed = false;
   for (const recipient of recipients) {
     const link = `${baseUrl}/seller/sign/${encodeURIComponent(recipient.token)}`;
     const label = documentLabels[documentKey];
+    const html = renderBridgeEmailLayout({
+      preheader: `Review and sign your ${label} for ${branding.organisationName}.`,
+      title: `Review and sign your ${label}`,
+      greeting: `Hello ${text(recipient.signer.name)},`,
+      contentHtml: renderBridgeIntroParagraphs([
+        `${branding.organisationName} has prepared your ${label} for review and signature. Open your private link to read the details and sign on your phone or computer.`,
+        "You can correct the details before signing. This link expires in seven days.",
+      ]) + renderBridgeCta(`Review and sign ${label}`, link, { primaryColor: "#171717" }),
+      branding: { ...branding, primaryColor: "#171717", secondaryColor: "#777777" },
+    });
     const result = await sendViaResendApi({
       apiKey, from, to: text(recipient.signer.email),
+      replyTo: text(branding.replyTo || branding.supportEmail) || undefined,
       subject: `Please review and sign your ${label}`,
-      html: `<p>Hello ${escapeHtml(recipient.signer.name)},</p><p>Your agent has prepared your reviewed ${escapeHtml(label)} for signature. Use your private link to read and sign it:</p><p><a href="${escapeHtml(link)}">Review and sign ${escapeHtml(label)}</a></p><p>This link expires in seven days. Contact your agent if the document needs a correction.</p>`,
-      text: `Hello ${text(recipient.signer.name)},\n\nReview and sign your ${label}: ${link}\n\nThis link expires in seven days.`,
+      html,
+      text: `Hello ${text(recipient.signer.name)},\n\n${branding.organisationName} has prepared your ${label}. Review, correct details if needed, and sign it: ${link}\n\nThis link expires in seven days.`,
       idempotencyKey: `seller-portal-signature:${signingDocumentId}:${text(recipient.row.signer_email)}`,
     });
     if (!result.ok) { deliveryFailed = true; break; }
@@ -269,11 +398,11 @@ async function signerDocument(admin: AdminClient, token: string) {
   if (!token || token.length < 32) return null;
   const tokenHash = await sha256(token);
   const recipient = await admin.from("private_listing_seller_portal_signing_recipients")
-    .select("id, signing_document_id, signer_name, signer_role, status, expires_at, viewed_at")
+    .select("id, signing_document_id, signer_name, signer_role, signer_email, status, expires_at, viewed_at")
     .eq("token_hash", tokenHash).maybeSingle();
   if (recipient.error || !recipient.data) return null;
   const document = await admin.from("private_listing_seller_portal_signing_documents")
-    .select("id, private_listing_id, document_key, version_id, version_digest, content_digest, reviewed_html, status")
+    .select("id, private_listing_id, document_key, version_id, version_digest, content_digest, source_version_digest, source_content_digest, reviewed_html, seller_corrections, required_signers, status")
     .eq("id", recipient.data.signing_document_id).maybeSingle();
   if (document.error || !document.data) return null;
   const current = await reviewedCopy(admin, text(document.data.private_listing_id), text(document.data.document_key));
@@ -281,7 +410,8 @@ async function signerDocument(admin: AdminClient, token: string) {
       !["pending", "viewed"].includes(text(recipient.data.status)) ||
       new Date(text(recipient.data.expires_at)).getTime() <= Date.now() ||
       !current || text(current.document.versionId) !== text(document.data.version_id) ||
-      current.versionDigest !== text(document.data.version_digest) ||
+      current.versionDigest !== text(document.data.source_version_digest) ||
+      current.contentDigest !== text(document.data.source_content_digest) ||
       `sha256:${await sha256(String(document.data.reviewed_html || ""))}` !== text(document.data.content_digest)) return null;
   return { recipient: recipient.data, document: document.data, tokenHash };
 }
@@ -292,14 +422,72 @@ async function view(admin: AdminClient, payload: Row) {
   if (!signing) return respond(404, { error: "This signing link is unavailable or has expired." });
   if (text(signing.recipient.status) === "pending") await admin.from("private_listing_seller_portal_signing_recipients")
     .update({ status: "viewed", viewed_at: new Date().toISOString() }).eq("id", signing.recipient.id).eq("status", "pending");
+  const current = await reviewedCopy(admin, text(signing.document.private_listing_id), text(signing.document.document_key));
+  if (!current) return respond(409, { error: "The approved document has changed. Ask your agent for a new link." });
+  const listingDocuments = await admin.from("private_listing_seller_portal_signing_documents")
+    .select("id").eq("private_listing_id", signing.document.private_listing_id);
+  if (listingDocuments.error) return respond(500, { error: "Unable to check document signatures." });
+  const signed = await admin.from("private_listing_seller_portal_signature_evidence")
+    .select("id").in("signing_document_id", (listingDocuments.data || []).map((row: Row) => row.id)).limit(1);
+  if (signed.error) return respond(500, { error: "Unable to check document signatures." });
+  const firstSigner = object(Array.isArray(signing.document.required_signers) ? signing.document.required_signers[0] : {});
+  const correctedName = text(object(object(signing.document.seller_corrections).common).sellerName);
+  const signerName = text(firstSigner.email).toLowerCase() === text(signing.recipient.signer_email).toLowerCase() && correctedName
+    ? correctedName : signing.recipient.signer_name;
   return respond(200, {
     documentKey: signing.document.document_key,
     versionId: signing.document.version_id,
     versionDigest: signing.document.version_digest,
     reviewedHtml: signing.document.reviewed_html,
-    signerName: signing.recipient.signer_name,
+    signerName,
     signerRole: signing.recipient.signer_role,
+    editData: editData(current, text(signing.document.document_key), object(signing.document.seller_corrections)),
+    canEdit: !signed.data?.length && text(signing.document.status) === "sent",
   });
+}
+
+async function correct(admin: AdminClient, payload: Row) {
+  if (!enabled()) return respond(503, { error: "Seller portal signing is not enabled." });
+  const signing = await signerDocument(admin, text(payload.token));
+  if (!signing) return respond(404, { error: "This signing link is unavailable or has expired." });
+  if (text(signing.document.status) !== "sent") return respond(409, { error: "Details are locked after the first signature." });
+  const current = await reviewedCopy(admin, text(signing.document.private_listing_id), text(signing.document.document_key));
+  if (!current) return respond(409, { error: "The approved document has changed. Ask your agent for a new link." });
+  let corrections: Row;
+  try { corrections = validatedCorrections(object(payload.corrections), text(signing.document.document_key)); }
+  catch (error) { return respond(400, { error: error instanceof Error ? error.message : "Invalid corrected details." }); }
+  const active = await admin.from("private_listing_seller_portal_signing_documents")
+    .select("id, document_key, version_digest, source_version_digest, seller_corrections")
+    .eq("private_listing_id", signing.document.private_listing_id).eq("status", "sent");
+  if (active.error || !active.data?.length) return respond(409, { error: "Reload the signing pack before changing it." });
+  const updates = [];
+  for (const row of active.data) {
+    const key = text(row.document_key);
+    const source = key === text(signing.document.document_key) ? current
+      : await reviewedCopy(admin, text(signing.document.private_listing_id), key);
+    if (!source || source.versionDigest !== text(row.source_version_digest)) {
+      return respond(409, { error: "An approved document changed. Ask your agent for a new link." });
+    }
+    const values = key === text(signing.document.document_key) ? corrections
+      : validatedCorrections({ ...editData(source, key, object(row.seller_corrections)), common: corrections.common }, key);
+    const reviewedHtml = renderCorrectedHtml(source, key, values, text(signing.document.private_listing_id));
+    const contentDigest = `sha256:${await sha256(reviewedHtml)}`;
+    updates.push({ documentId: row.id, expectedVersionDigest: row.version_digest, corrections: values, reviewedHtml,
+      contentDigest, versionDigest: `sha256:${await sha256(`${source.versionDigest}:${contentDigest}`)}` });
+  }
+  const saved = await admin.rpc("bridge_update_seller_portal_document_corrections", {
+    p_token_hash: signing.tokenHash,
+    p_expected_version_digest: text(payload.versionDigest),
+    p_updates: updates,
+  });
+  if (saved.error) return respond(409, { error: "Details changed or became locked. Reload the link before signing." });
+  const selected = updates.find((row) => text(row.documentId) === text(signing.document.id));
+  if (!selected) return respond(500, { error: "Corrected document was not returned." });
+  const firstSigner = object(Array.isArray(signing.document.required_signers) ? signing.document.required_signers[0] : {});
+  const signerName = text(firstSigner.email).toLowerCase() === text(signing.recipient.signer_email).toLowerCase()
+    ? text(object(corrections.common).sellerName) : signing.recipient.signer_name;
+  return respond(200, { success: true, reviewedHtml: selected.reviewedHtml, versionDigest: selected.versionDigest,
+    editData: editData(current, text(signing.document.document_key), corrections), signerName });
 }
 
 async function sign(req: Request, admin: AdminClient, payload: Row) {
@@ -308,10 +496,19 @@ async function sign(req: Request, admin: AdminClient, payload: Row) {
   if (!signing) return respond(404, { error: "This signing link is unavailable or has expired." });
   const signedName = text(payload.signedName), signatureType = text(payload.signatureType);
   const signatureValue = text(payload.signatureValue);
-  if (signedName.toLowerCase() !== text(signing.recipient.signer_name).toLowerCase() ||
-      !["typed", "drawn"].includes(signatureType) || signatureValue.length < 2 || signatureValue.length > 1_500_000 ||
-      (signatureType === "drawn" && !/^data:image\/(png|jpeg);base64,[a-z0-9+/=]+$/i.test(signatureValue))) {
-    return respond(400, { error: "Confirm the named signer and provide a valid signature." });
+  const signedDate = text(payload.signedDate), signedPlace = text(payload.signedPlace);
+  const firstSigner = object(Array.isArray(signing.document.required_signers) ? signing.document.required_signers[0] : {});
+  const correctedName = text(object(object(signing.document.seller_corrections).common).sellerName);
+  const expectedName = text(firstSigner.email).toLowerCase() === text(signing.recipient.signer_email).toLowerCase() && correctedName
+    ? correctedName : text(signing.recipient.signer_name);
+  const validSignedDate = /^\d{4}-\d{2}-\d{2}$/.test(signedDate) &&
+    !Number.isNaN(Date.parse(`${signedDate}T00:00:00Z`)) &&
+    new Date(`${signedDate}T00:00:00Z`).toISOString().slice(0, 10) === signedDate;
+  if (signedName.toLowerCase() !== expectedName.toLowerCase() ||
+      signatureType !== "drawn" || signatureValue.length < 100 || signatureValue.length > 1_500_000 ||
+      !/^data:image\/(png|jpeg);base64,[a-z0-9+/=]+$/i.test(signatureValue) ||
+      !validSignedDate || signedPlace.length < 2 || signedPlace.length > 160) {
+    return respond(400, { error: "Confirm the named signer, draw a signature, and enter its date and place." });
   }
   if (payload.accepted !== true || text(payload.versionDigest) !== text(signing.document.version_digest)) {
     return respond(409, { error: "Review and accept the exact document version before signing." });
@@ -323,8 +520,11 @@ async function sign(req: Request, admin: AdminClient, payload: Row) {
     p_signed_name: signedName,
     p_signature_type: signatureType,
     p_signature_value: signatureValue,
+    p_signed_date: signedDate,
+    p_signed_place: signedPlace,
     p_acceptance_ip: ip || null,
     p_acceptance_user_agent: agent || null,
+    p_expected_version_digest: text(payload.versionDigest),
   });
   if (saved.error) return respond(409, { error: "This document could not be signed. Ask your agent for a new link." });
   return respond(200, { success: true, allRequiredSignersComplete: saved.data?.allRequiredSignersComplete === true });
@@ -344,7 +544,7 @@ async function list(req: Request, admin: AdminClient, url: string, anonKey: stri
 async function preview(req: Request, admin: AdminClient, url: string, anonKey: string, payload: Row) {
   const id = text(payload.signingDocumentId);
   const document = await admin.from("private_listing_seller_portal_signing_documents")
-    .select("id, private_listing_id, document_key, version_id, version_digest, reviewed_html, required_signers, status")
+    .select("id, private_listing_id, document_key, version_id, version_digest, source_version_digest, reviewed_html, required_signers, status")
     .eq("id", id).maybeSingle();
   if (document.error || !document.data) return respond(404, { error: "Signing document not found." });
   const context = await staffListing(req, admin, url, anonKey, text(document.data.private_listing_id));
@@ -352,11 +552,11 @@ async function preview(req: Request, admin: AdminClient, url: string, anonKey: s
   if (text(document.data.status) !== "signed") return respond(409, { error: "All signatures must be complete before review." });
   const current = await reviewedCopy(admin, text(document.data.private_listing_id), text(document.data.document_key));
   if (!current || text(current.document.versionId) !== text(document.data.version_id) ||
-      current.versionDigest !== text(document.data.version_digest)) {
+      current.versionDigest !== text(document.data.source_version_digest)) {
     return respond(409, { error: "A newer reviewed document replaced this signing request." });
   }
   const evidence = await admin.from("private_listing_seller_portal_signature_evidence")
-    .select("signed_name, signature_type, signature_value, accepted_at, evidence_digest")
+    .select("signed_name, signature_type, signature_value, signed_date, signed_place, accepted_at, evidence_digest")
     .eq("signing_document_id", id).order("accepted_at", { ascending: true });
   if (evidence.error || evidence.data?.length !== (Array.isArray(document.data.required_signers) ? document.data.required_signers.length : 0)) {
     return respond(409, { error: "Signature evidence is incomplete." });
@@ -371,7 +571,7 @@ async function preview(req: Request, admin: AdminClient, url: string, anonKey: s
 async function review(req: Request, admin: AdminClient, url: string, anonKey: string, payload: Row) {
   const id = text(payload.signingDocumentId);
   const document = await admin.from("private_listing_seller_portal_signing_documents")
-    .select("id, private_listing_id, document_key, version_id, version_digest, reviewed_html, status")
+    .select("id, private_listing_id, document_key, version_id, version_digest, source_version_digest, reviewed_html, status")
     .eq("id", id).maybeSingle();
   if (document.error || !document.data) return respond(404, { error: "Signing document not found." });
   const context = await staffListing(req, admin, url, anonKey, text(document.data.private_listing_id));
@@ -379,11 +579,11 @@ async function review(req: Request, admin: AdminClient, url: string, anonKey: st
   if (text(document.data.status) !== "signed") return respond(409, { error: "All signatures must be complete before review." });
   const current = await reviewedCopy(admin, text(document.data.private_listing_id), text(document.data.document_key));
   if (!current || text(current.document.versionId) !== text(document.data.version_id) ||
-      current.versionDigest !== text(document.data.version_digest)) {
+      current.versionDigest !== text(document.data.source_version_digest)) {
     return respond(409, { error: "A newer reviewed document replaced this signing request." });
   }
   const evidence = await admin.from("private_listing_seller_portal_signature_evidence")
-    .select("signed_name, signature_type, signature_value, accepted_at, evidence_digest")
+    .select("signed_name, signature_type, signature_value, signed_date, signed_place, accepted_at, evidence_digest")
     .eq("signing_document_id", id).order("accepted_at", { ascending: true });
   if (evidence.error || !evidence.data?.length) return respond(409, { error: "Signature evidence is unavailable." });
   const html = signedHtml(String(document.data.reviewed_html || ""), evidence.data, text(document.data.version_digest));
@@ -411,6 +611,7 @@ Deno.serve(async (req: Request) => {
     switch (text(payload.action)) {
       case "issue": return await issue(req, admin, url, anonKey, payload);
       case "view": return await view(admin, payload);
+      case "correct": return await correct(admin, payload);
       case "sign": return await sign(req, admin, payload);
       case "list": return await list(req, admin, url, anonKey, payload);
       case "preview": return await preview(req, admin, url, anonKey, payload);

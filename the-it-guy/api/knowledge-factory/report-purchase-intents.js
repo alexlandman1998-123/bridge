@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { packageReportQuery } from "./package-report-recipes.js";
+import { isKnowledgeFactoryV0_1UatEndpoint } from "./supplier-endpoint.js";
 
 function text(value, max = 1000) {
   return typeof value === "string" ? value.trim().slice(0, max) : "";
@@ -591,7 +592,7 @@ async function assertPilotAccess(
     throw commercialFailure(
       "The private package-pilot gate is off. An administrator must enable it before the pilot can request supplier data.",
     );
-  if (!/\/uat\/graphql\/?$/i.test(supplierEndpoint))
+  if (!isKnowledgeFactoryV0_1UatEndpoint(supplierEndpoint))
     throw commercialFailure(
       "The package pilot is restricted to the UAT supplier endpoint. Update the private endpoint before activating a live supplier rollout.",
     );
@@ -693,7 +694,7 @@ export default async function handler(request, response) {
         });
       const commercialPreflight = await assertPackageCommercialPolicy(db, organisationId, actorId, product);
       const supplierConfig = supplierRuntime();
-      if (!/\/uat\/graphql\/?$/i.test(supplierConfig.endpoint)) {
+      if (!isKnowledgeFactoryV0_1UatEndpoint(supplierConfig.endpoint)) {
         const error = new Error(
           "Cost-only report quotes are restricted to the UAT supplier endpoint.",
         );

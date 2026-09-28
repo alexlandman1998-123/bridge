@@ -10,7 +10,7 @@ These tasks require an Arch9 administrator with access to the relevant supplier 
 2. In Supabase Edge Function Secrets, add the UAT supplier values:
 
    ```text
-   KNOWLEDGE_FACTORY_GRAPHQL_ENDPOINT=https://propinfoapi.co.za/live/uat/graphql/
+   KNOWLEDGE_FACTORY_GRAPHQL_ENDPOINT=https://propinfoapi.co.za/uat/v0_1/graphql/
    KNOWLEDGE_FACTORY_EMAIL=<supplier UAT account email>
    KNOWLEDGE_FACTORY_PASSWORD=<supplier UAT password>
    ```

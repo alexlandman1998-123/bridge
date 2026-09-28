@@ -3,6 +3,7 @@ import {
   PACKAGE_COST_RECIPE_IDS,
   packageReportQuery,
 } from "./package-report-recipes.js";
+import { isKnowledgeFactoryV0_1UatEndpoint } from "./supplier-endpoint.js";
 
 const ADMIN_ROLES = new Set([
   "principal",
@@ -377,7 +378,7 @@ export default async function handler(request, response) {
       return json(response, 400, {
         error: "Provide a UAT purpose of at least 10 characters.",
       });
-    if (!/\/uat\/graphql\/?$/i.test(runtime.endpoint))
+    if (!isKnowledgeFactoryV0_1UatEndpoint(runtime.endpoint))
       return json(response, 409, {
         error: "Cost-only validation is restricted to the UAT supplier endpoint.",
       });

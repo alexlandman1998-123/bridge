@@ -7,7 +7,7 @@ import { buildSellerPostOnboardingDrafts } from '../sellerPostOnboardingDrafts.j
 test('creates printable FICA and mandate copies that remain awaiting wet-ink upload', () => {
   const pack = createSellerOnboardingManualSigningPack({
     formalPackApproval: { status: 'approved', signingRoute: 'manual_upload', commission: { basis: 'percentage', percentage: '5', vatHandling: 'inclusive' } },
-    signingPack: { seller: { name: 'Alex Seller', idNumber: '123' }, branding: { organisationName: 'Home Seekers', primaryColour: '#123456' }, mandate: { propertyAddress: '1 Test Road', askingPrice: 'R 1 000 000', mandateType: 'sole', startDate: '2026-09-27', endDate: '2026-12-27' } },
+    signingPack: { seller: { name: 'Alex Seller', idNumber: '123' }, branding: { organisationName: 'Home Seekers', primaryColour: '#123456', logoLightUrl: 'https://example.test/on-light.png', logoDarkUrl: 'https://example.test/on-dark.png' }, mandate: { propertyAddress: '1 Test Road', askingPrice: 'R 1 000 000', mandateType: 'sole', startDate: '2026-09-27', endDate: '2026-12-27' } },
     postOnboardingDrafts: { documents: [{ key: 'fica_review_draft', targetRequirementKey: 'signed_fica_declaration', generatedHtml: '<article>FICA</article>' }] },
     generatedAt: '2026-09-19T11:00:00.000Z',
   })
@@ -19,6 +19,8 @@ test('creates printable FICA and mandate copies that remain awaiting wet-ink upl
   assert.match(pack.documents[1].generatedHtml, /Home Seekers/)
   assert.match(pack.documents[0].generatedHtml, /CLIENT DUE DILIGENCE RECORD/)
   assert.match(pack.documents[0].generatedHtml, /Not yet verified by the agency/)
+  assert.match(pack.documents[0].generatedHtml, /src="https:\/\/example\.test\/on-light\.png"/)
+  assert.match(pack.documents[1].generatedHtml, /src="https:\/\/example\.test\/on-light\.png"/)
   assert.doesNotMatch(pack.documents[1].generatedHtml, /180 calendar days/)
 })
 

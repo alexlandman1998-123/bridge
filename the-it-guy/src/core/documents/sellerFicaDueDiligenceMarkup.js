@@ -60,7 +60,7 @@ function identity({ branding = {}, pack = {} } = {}) {
     registration: first(brand.registrationNumber, brand.companyRegistrationNumber),
     ficId: first(brand.ficOrganisationId, brand.ficOrganizationId),
     email: first(brand.email, practitioner.email),
-    logo: logo(first(brand.logoDarkUrl, brand.logoUrl, brand.logoLightUrl)),
+    logo: logo(first(brand.logoLightUrl, brand.logoUrl, brand.logoDarkUrl)),
     primary: colour(first(brand.primaryColour, brand.primaryColor), '#243b50'),
     accent: colour(first(brand.accentColour, brand.accentColor), '#a6242d'),
   }

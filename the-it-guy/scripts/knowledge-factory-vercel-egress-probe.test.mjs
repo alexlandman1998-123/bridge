@@ -16,7 +16,7 @@ const result = await probeSupplierUat(async (url, options) => {
 })
 
 assert.deepEqual(requests.map(({ url }) => url), [
-  'https://propinfoapi.co.za/live/uat/graphql/',
+  'https://propinfoapi.co.za/uat/v0_1/graphql/',
   'https://new.propertyintellect.co.za/graphql/portal/',
 ])
 assert.equal(requests[0].options.method, 'POST')

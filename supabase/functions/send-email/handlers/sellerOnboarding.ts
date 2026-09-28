@@ -372,7 +372,7 @@ export async function handleSellerOnboardingEmail(
     resolveEmailBranding({
       supabase: supabase || undefined,
       organisationId,
-      rolloutMode: brandingPayload.brandingResolved === true ? "payload_only" : undefined,
+      // Client branding can be incomplete; retain the saved logo fallback.
       payload: {
         ...brandingPayload,
         organisationName: senderOrganisationName || organisationName,

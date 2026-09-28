@@ -16,7 +16,9 @@ async function invoke(action, fields = {}) {
 export const listSellerPortalSigningRequests = (listingId) => invoke('list', { listingId })
 export const sendSellerDocumentForSignature = (listingId, documentKey) => invoke('issue', { listingId, documentKey })
 export const viewSellerDocumentForSignature = (token) => invoke('view', { token })
-export const signSellerDocumentInPortal = (token, { signedName, signatureType, signatureValue, versionDigest }) =>
-  invoke('sign', { token, signedName, signatureType, signatureValue, versionDigest, accepted: true })
+export const correctSellerDocumentInPortal = (token, versionDigest, corrections) =>
+  invoke('correct', { token, versionDigest, corrections })
+export const signSellerDocumentInPortal = (token, { signedName, signatureType, signatureValue, signedDate, signedPlace, versionDigest }) =>
+  invoke('sign', { token, signedName, signatureType, signatureValue, signedDate, signedPlace, versionDigest, accepted: true })
 export const previewSellerPortalSignedDocument = (signingDocumentId) => invoke('preview', { signingDocumentId })
 export const reviewSellerPortalSignedDocument = (signingDocumentId) => invoke('review', { signingDocumentId })

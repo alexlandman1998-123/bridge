@@ -1,11 +1,11 @@
 import { createClient } from '@supabase/supabase-js'
+import { KNOWLEDGE_FACTORY_UAT_V0_1_ENDPOINT } from './supplier-endpoint.js'
 
 const SOUTH_AFRICA = { west: 16.45, south: -34.833, east: 32.95, north: -22.125 }
 const MAX_BOUNDS_WIDTH = 0.5
 const MAX_BOUNDS_HEIGHT = 0.5
 const MAP_PAGE_SIZE = 25
 const MAP_REQUESTS_PER_MINUTE = 12
-const UAT_GRAPHQL_ENDPOINT = 'https://propinfoapi.co.za/live/uat/graphql/'
 const SUPPLIER_PORTAL_URL = 'https://new.propertyintellect.co.za/graphql/portal/'
 const PROBE_ADMIN_ROLES = new Set(['principal', 'owner', 'director', 'admin', 'super_admin', 'agency_admin'])
 let supplierSession = null
@@ -128,7 +128,7 @@ export async function probeSupplierUat(fetcher = fetch) {
     }
   }
   const [graphql, portal] = await Promise.all([
-    describe(UAT_GRAPHQL_ENDPOINT, request),
+    describe(KNOWLEDGE_FACTORY_UAT_V0_1_ENDPOINT, request),
     describe(SUPPLIER_PORTAL_URL, { method: 'GET', signal: AbortSignal.timeout(8_000) }),
   ])
   return { environment: 'uat', costMode: 'validate', graphql, portal }
