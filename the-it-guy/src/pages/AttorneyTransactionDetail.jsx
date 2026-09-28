@@ -8248,6 +8248,11 @@ function ArchlineTransferWorkspace({
   const [taskSaveBusy, setTaskSaveBusy] = useState(false)
   const [taskSaveError, setTaskSaveError] = useState('')
   const [taskSaveMessage, setTaskSaveMessage] = useState('')
+  const [stageActionOpen, setStageActionOpen] = useState(false)
+  const [stageActionReason, setStageActionReason] = useState('')
+  const [stageActionBusy, setStageActionBusy] = useState(false)
+  const [stageActionError, setStageActionError] = useState('')
+  const [stageOptionsOpen, setStageOptionsOpen] = useState(false)
   const canUpdateSteps = typeof onUpdateStep === 'function' && workflow?.lane?.permissions?.canUpdateStage === true
   const viewModel = useMemo(
     () => buildTransferWorkspaceViewModel({
@@ -8424,22 +8429,28 @@ function ArchlineTransferWorkspace({
 
   function openStatusDraft(task, action = null) {
     if (!task || !action || action.disabled || !canUpdateSteps) return
+    const manualCompletion = Boolean(action.manualOverride || action.completionOverrideRequired)
     setTaskSaveError('')
     setTaskSaveMessage('')
     setStatusDraft({
       open: true,
       task,
       actionId: action.id || '',
-      actionLabel: action.label || 'Update Status',
+      actionLabel: action.manualOverride ? 'Mark complete manually' : action.label || 'Update Status',
       status: action?.status || (task.displayStatus === 'completed' ? 'completed' : 'in_progress'),
       reason: '',
       note: task.comment || '',
       followUpDate: '',
       linkedDocumentKey: '',
       requiresReason: Boolean(action?.requiresReason || ['blocked', 'waiting'].includes(action?.status)),
+      showReason: manualCompletion,
       requiresNote: Boolean(action?.requiresNote),
       visibility: task.key === 'post_registration_closeout_review' ? 'internal' : 'professional_shared',
-      workPacket: action?.command?.draft?.workPacket || action?.command?.workPacket || null,
+      workPacket: manualCompletion ? {
+        ...(action?.command?.draft?.workPacket || action?.command?.workPacket || {}),
+        completionMethod: 'manual', overrideScope: 'task', overrideGroupId: globalThis.crypto?.randomUUID?.() || String(Date.now()),
+        overrideTaskKeys: [task.key],
+      } : action?.command?.draft?.workPacket || action?.command?.workPacket || null,
     })
   }
 
@@ -8455,6 +8466,7 @@ function ArchlineTransferWorkspace({
       followUpDate: '',
       linkedDocumentKey: '',
       requiresReason: false,
+      showReason: false,
       requiresNote: false,
       visibility: 'professional_shared',
       workPacket: null,
@@ -8744,7 +8756,7 @@ function ArchlineTransferWorkspace({
       statusDraft.task,
       statusDraft.status,
       buildStatusDraftNote(),
-      statusDraft.workPacket || null,
+      statusDraft.workPacket ? { ...statusDraft.workPacket, overrideReason: statusDraft.reason?.trim() || '' } : null,
       statusDraft.visibility || 'professional_shared',
     )
     onUxEvent?.({
@@ -8770,32 +8782,56 @@ function ArchlineTransferWorkspace({
   const nextStageTask = resolvedTransferNavigation?.view === 'workspace'
     ? getNextTransferStageTask(resolvedTransferNavigation.phase, selectedTask?.key)
     : null
+  const stageOutstanding = resolvedTransferNavigation?.phase?.tasks?.filter((task) => !isAttorneyTaskResolved(task.status)) || []
+  const stageHardBlocked = stageOutstanding.some((task) => task.taxLodgementReadiness?.ready === false || task.lodgementReview?.ready === false || task.closureReview?.ready === false)
+  async function completeCurrentStage() {
+    if (!canUpdateSteps || stageActionBusy || stageHardBlocked || !stageOutstanding.length) return
+    setStageActionBusy(true)
+    setStageActionError('')
+    const groupId = globalThis.crypto?.randomUUID?.() || String(Date.now())
+    const affectedTaskKeys = stageOutstanding.map((task) => task.key)
+    let savedCount = 0
+    try {
+      for (const task of stageOutstanding) {
+        const note = ['Manual stage override.', stageActionReason.trim() ? `Reason: ${stageActionReason.trim()}` : ''].filter(Boolean).join('\n')
+        const saved = await persistTaskUpdate(task, 'completed', note, {
+          commandType: 'manual_workflow_override', completionMethod: 'manual', overrideScope: 'stage',
+          overrideGroupId: groupId, overrideReason: stageActionReason.trim(), overrideTaskKeys: affectedTaskKeys,
+        }, 'internal')
+        if (saved !== true) throw new Error(`${task.label} could not be completed.`)
+        savedCount += 1
+      }
+      setStageActionOpen(false)
+      setStageActionReason('')
+    } catch (error) {
+      setStageActionOpen(false)
+      setStageActionError(`${savedCount ? `${savedCount} of ${stageOutstanding.length} tasks saved. ` : ''}${error?.message || 'The stage could not be completed.'} Refresh the matter before trying again.`)
+    } finally {
+      setStageActionBusy(false)
+    }
+  }
   if (resolvedTransferNavigation?.view === 'overview') {
     return <TransferStageOverview
       phases={viewModel.phases}
       selectedPhase={resolvedTransferNavigation.phase}
       onSelectStage={(stageKey) => onNavigateTransfer?.({ view: 'overview', stageKey })}
       onOpenStage={(stageKey, taskKey) => onNavigateTransfer?.({ view: 'workspace', stageKey, taskKey })}
+      canUpdate={canUpdateSteps && !saving && !taskSaveBusy}
+      onUpdateTask={(task, status, note, workPacket) => persistTaskUpdate(task, status, note, workPacket, 'internal')}
+      onSaveMatterNumber={onSaveMatterNumber}
     />
   }
-  const stageWorkspaceHeader = resolvedTransferNavigation?.view === 'workspace' ? (
-    <header className="mb-5 rounded-2xl border border-slate-200 bg-white px-5 py-5 shadow-[0_12px_30px_rgba(15,23,42,0.04)] sm:px-7 sm:py-6">
-      <button type="button" className="inline-flex min-h-9 items-center text-sm font-semibold text-emerald-800 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700" onClick={() => onNavigateTransfer?.({ view: 'overview', stageKey: resolvedTransferNavigation.phase.key })}>← Stage overview</button>
-      <div className="mt-3 flex flex-wrap items-end justify-between gap-4">
-        <div className="min-w-0">
-          <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Stage {viewModel.phases.findIndex((phase) => phase.key === resolvedTransferNavigation.phase.key) + 1} of {viewModel.phases.length} · Transfer Attorney</span>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-950 sm:text-3xl">{resolvedTransferNavigation.phase.label}</h1>
-          {resolvedTransferNavigation.phase.description ? <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">{resolvedTransferNavigation.phase.description}</p> : null}
-        </div>
-        <div className="w-full max-w-52 text-sm text-slate-600">
-          {resolvedTransferNavigation.phase.total ? <>
-            <span className="font-semibold">{resolvedTransferNavigation.phase.completed} of {resolvedTransferNavigation.phase.total} complete</span>
-            <span className="mt-2 block h-2 overflow-hidden rounded-full bg-slate-100" role="progressbar" aria-valuenow={resolvedTransferNavigation.phase.completed} aria-valuemin={0} aria-valuemax={resolvedTransferNavigation.phase.total} aria-label="Stage progress"><span className="block h-full bg-emerald-700" style={{ width: `${resolvedTransferNavigation.phase.percent}%` }} /></span>
-          </> : <span className="font-semibold">No applicable tasks in this stage</span>}
-        </div>
+  const stageWorkspaceHeader = resolvedTransferNavigation?.view === 'workspace' ? <>
+    <header className="rounded-2xl border border-slate-200 bg-white px-5 py-5 shadow-[0_8px_26px_rgba(15,23,42,0.035)] sm:px-7">
+      <div className="flex flex-wrap items-start justify-between gap-4"><div className="min-w-0"><span className="text-xs font-bold uppercase tracking-[0.1em] text-emerald-800">Stage {viewModel.phases.findIndex((phase) => phase.key === resolvedTransferNavigation.phase.key) + 1} of {viewModel.phases.length}</span><h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-950 sm:text-3xl">{resolvedTransferNavigation.phase.label}</h1></div>
+        {canUpdateSteps ? <div className="flex items-center gap-2"><Button type="button" variant="secondary" size="sm" disabled={saving || taskSaveBusy || stageActionBusy || !stageOutstanding.length || stageHardBlocked} onClick={() => { setStageActionError(''); setStageActionOpen(true) }}>Mark stage complete</Button><div className="relative"><button type="button" className="inline-flex size-10 items-center justify-center rounded-lg border border-slate-200 text-slate-600" aria-label="Stage options" aria-expanded={stageOptionsOpen} onClick={() => setStageOptionsOpen((current) => !current)}><MoreHorizontal size={18} /></button>{stageOptionsOpen ? <div className="absolute right-0 z-20 mt-1 w-44 rounded-lg border border-slate-200 bg-white p-1 shadow-lg"><button type="button" className="w-full rounded px-3 py-2 text-left text-sm hover:bg-slate-50" onClick={() => { setStageOptionsOpen(false); onNavigateTransfer?.({ view: 'overview', stageKey: resolvedTransferNavigation.phase.key }) }}>Stage overview</button><button type="button" disabled={!stageOutstanding.length || stageHardBlocked} className="w-full rounded px-3 py-2 text-left text-sm hover:bg-slate-50 disabled:opacity-50" onClick={() => { setStageOptionsOpen(false); setStageActionOpen(true) }}>Override stage</button></div> : null}</div></div> : null}
       </div>
+      {resolvedTransferNavigation.phase.total ? <div className="mt-4 flex flex-wrap items-center gap-4"><span className="h-2 min-w-32 max-w-[420px] flex-1 overflow-hidden rounded-full bg-slate-200" role="progressbar" aria-valuenow={resolvedTransferNavigation.phase.completed} aria-valuemin={0} aria-valuemax={resolvedTransferNavigation.phase.total} aria-label="Stage progress"><span className="block h-full rounded-full bg-emerald-700" style={{ width: `${resolvedTransferNavigation.phase.percent}%` }} /></span><span className="text-sm font-semibold text-slate-600">{resolvedTransferNavigation.phase.completed} of {resolvedTransferNavigation.phase.total} complete · {resolvedTransferNavigation.phase.percent}%</span></div> : <p className="mt-4 text-sm text-slate-600">No applicable tasks in this stage</p>}
+      {stageHardBlocked ? <p className="mt-2 text-xs text-slate-600">Complete the required legal check in its task workspace before overriding this stage.</p> : null}
+      {stageActionError ? <p role="alert" className="mt-3 text-sm text-red-700">{stageActionError}</p> : null}
     </header>
-  ) : null
+    <Modal open={stageActionOpen} title="Mark stage complete?" onClose={stageActionBusy ? undefined : () => setStageActionOpen(false)} footer={<div className="flex justify-end gap-2"><Button type="button" variant="secondary" disabled={stageActionBusy} onClick={() => setStageActionOpen(false)}>Cancel</Button><Button type="button" disabled={stageActionBusy} onClick={() => void completeCurrentStage()}>{stageActionBusy ? 'Saving…' : 'Mark stage complete'}</Button></div>}><p className="text-sm text-slate-700">{stageOutstanding.length} tasks are currently incomplete. Completing this stage manually will mark them as completed.</p><label className="mt-4 block text-sm font-medium text-slate-700">Reason (optional)<textarea rows={3} value={stageActionReason} onChange={(event) => setStageActionReason(event.target.value)} placeholder="Imported matter already progressed beyond this stage." className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2" /></label><p className="mt-3 text-xs text-slate-500">The action and completing user are recorded in the matter history.</p></Modal>
+  </> : null
 
   if (selectedTask?.operationalContract) {
     return (
@@ -8807,6 +8843,7 @@ function ArchlineTransferWorkspace({
         selectedTaskKey={selectedTask.key}
         selectedPhaseKey={selectedTask.phaseKey}
         focusedStage={Boolean(resolvedTransferNavigation)}
+        taskMeta={selectedTask}
         saving={saving || taskSaveBusy}
         error={workflowError || taskSaveError}
         successMessage={taskSaveMessage}
@@ -8814,7 +8851,7 @@ function ArchlineTransferWorkspace({
         onConfirmationDirtyChange={handleConfirmationDirtyChange}
         onRunAction={handleTaskWorkbenchAction}
         onOpenDocuments={workflow?.lane?.permissions?.canUploadDocuments
-          ? (document, requirement) => onUploadDocument?.(selectedTask, document ? [document] : selectedDocuments, requirement || document?.requirement || null)
+          ? (document, requirement, file) => onUploadDocument?.(selectedTask, document ? [document] : selectedDocuments, requirement || document?.requirement || null, file)
           : undefined}
         onOpenDocumentLibrary={onOpenDocumentLibrary}
         onOpenRoutingProfile={onOpenRoutingProfile}
@@ -8827,6 +8864,7 @@ function ArchlineTransferWorkspace({
           : undefined}
         onAddNote={() => onAddNote?.(selectedTask)}
         onMarkInProgress={markTaskInProgress}
+        onQuickComplete={async () => persistTaskUpdate(selectedTask, 'completed', 'Task completed from the matter workspace.')}
         onPersistTaskResponses={async (note) => persistTaskUpdate(
           selectedTask,
           'in_progress',
@@ -22720,7 +22758,7 @@ function AttorneyTransactionDetail() {
       requirement.partyRequirements[0]?.partyId === uploadDraft.stageTwoPartyId)
   }
 
-  function openDocumentUploadModal({ requirement = null, category = '' } = {}) {
+  function openDocumentUploadModal({ requirement = null, category = '', file = null } = {}) {
     const stageTwoPartyId = String(requirement?.partyId || '')
     const stageTwoPartyName = String(requirement?.partyName || '')
     const participantMatch = stageTwoPartyId.match(/^(?:buyer|seller):([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i)
@@ -22760,8 +22798,8 @@ function AttorneyTransactionDetail() {
 
     setUploadDraft((previous) => ({
       ...previous,
-      file: null,
-      fileName: '',
+      file,
+      fileName: file?.name || '',
       category: selectedCategory,
       documentType: requiredDocumentKey || previous.documentType || '',
       visibility: previous.visibility || 'client_visible',
@@ -23497,12 +23535,12 @@ function AttorneyTransactionDetail() {
               onPublishJourneyUpdate={archlineActiveLegalTaskWorkflowKey === 'transfer' ? handlePublishTransferJourneyUpdate : undefined}
               canPublishJourneyUpdate={archlineActiveLegalTaskWorkflowKey === 'transfer' && !workflowSaving && Boolean(archlineActiveLegalTaskWorkflow.lane.permissions?.canPublishClientVisibleUpdate)}
               onUpdateStep={(step, status, note, workPacket, visibility) => handleArchlineLegalWorkflowStepUpdate(archlineActiveLegalTaskWorkflow, step, status, note, workPacket, visibility)}
-              onUploadDocument={(task, documents = [], requirement = null) => {
+              onUploadDocument={(task, documents = [], requirement = null, file = null) => {
                 const targetRequirement = resolveLegalTaskUploadRequirement(documents || [], requirement)
                 if (targetRequirement) {
-                  openDocumentUploadModal({ requirement: targetRequirement })
+                  openDocumentUploadModal({ requirement: targetRequirement, file })
                 } else {
-                  openDocumentUploadModal({ category: archlineActiveLegalTaskWorkflowKey })
+                  openDocumentUploadModal({ category: archlineActiveLegalTaskWorkflowKey, file })
                 }
               }}
               onRequestDocument={handleLegalTaskDocumentRequest}
@@ -23696,6 +23734,7 @@ function AttorneyTransactionDetail() {
                 ) : null}
                 <label className="flex flex-col gap-1.5">
                   <span className="text-label font-semibold uppercase text-textMuted">File</span>
+                  {uploadDraft.fileName ? <span className="text-xs font-medium text-emerald-800">Selected: {uploadDraft.fileName}</span> : null}
                   <Field key={`archline-upload-input-${uploadInputVersion}`} type="file" onChange={(event) => {
                     const file = event.target.files?.[0] || null
                     setUploadDraft((previous) => ({ ...previous, file, fileName: file?.name || '' }))

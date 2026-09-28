@@ -10,6 +10,7 @@ import {
   resolveTransferWorkspaceNavigation,
   writeTransferWorkspaceNavigation,
 } from '../src/core/transactions/transferWorkspaceNavigation.js'
+import { normalizeAttorneyWorkflowWorkPacket } from '../src/constants/attorneyWorkflowUsability.js'
 
 const phases = [
   { key: 'instruction', label: 'Instruction & File Opening', description: 'Open the matter.', status: 'in_progress', completed: 0, total: 2, percent: 0, hasCurrentTask: true, tasks: [
@@ -37,6 +38,9 @@ assert.equal(getTransferStageEntryTask({ tasks: [{ key: 'done', status: 'complet
 assert.equal(getTransferStageEntryTask({ tasks: [{ key: 'not_needed', status: 'not_applicable' }] }).key, 'not_needed')
 assert.equal(getNextTransferStageTask(phases[0], 'instruction_received').key, 'matter_opened')
 assert.equal(getNextTransferStageTask(phases[0], 'matter_opened'), null)
+const overridePacket = normalizeAttorneyWorkflowWorkPacket({ laneKey: 'transfer', stageKey: 'instruction_received', completionMethod: 'manual', overrideScope: 'stage', overrideGroupId: 'group-1', overrideReason: 'Historical matter', overrideTaskKeys: ['instruction_received', 'matter_opened'] })
+assert.equal(overridePacket.completionMethod, 'manual')
+assert.deepEqual(overridePacket.overrideTaskKeys, ['instruction_received', 'matter_opened'])
 
 const server = await createServer({ configFile: false, envFile: false, logLevel: 'silent', esbuild: { jsx: 'automatic' }, server: { middlewareMode: true } })
 try {
@@ -47,7 +51,8 @@ try {
   assert.match(html, /Transfer stages/)
   assert.match(html, /Instruction &amp; File Opening/)
   assert.match(html, /Instruction Received/)
-  assert.match(html, /Open stage workspace/)
+  assert.match(html, /Matter workflow/)
+  assert.match(html, /Complete this stage to proceed/)
   assert.match(html, /Stage progress/)
   assert.doesNotMatch(html, /Save answers|Complete task|Yes<\/button>/)
   assert.doesNotMatch(html, /View all tasks|Show fewer tasks|Collapse workflow stages/)
@@ -58,20 +63,21 @@ try {
   const completedPhase = { ...phases[0], status: 'completed', completed: 2, percent: 100, tasks: phases[0].tasks.map((task) => ({ ...task, status: 'completed', displayStatus: 'completed', statusLabel: 'Completed' })) }
   const completedHtml = renderToStaticMarkup(createElement(TransferStageOverview, { phases: [completedPhase], selectedPhase: completedPhase }))
   assert.match(completedHtml, /2 of 2 complete/)
-  assert.match(completedHtml, /Open stage workspace/, 'completed stages remain reviewable')
+  assert.match(completedHtml, /Stage complete/, 'completed stages remain reviewable')
+  assert.match(completedHtml, /View/, 'completed tasks remain reviewable')
   const notApplicablePhase = { ...phases[0], status: 'not_applicable', completed: 0, total: 0, percent: 0, tasks: phases[0].tasks.map((task) => ({ ...task, status: 'not_applicable', displayStatus: 'not_applicable', statusLabel: 'Not applicable' })) }
   const notApplicableHtml = renderToStaticMarkup(createElement(TransferStageOverview, { phases: [notApplicablePhase], selectedPhase: notApplicablePhase }))
-  assert.match(notApplicableHtml, /No applicable tasks in this stage/)
-  assert.match(notApplicableHtml, /Open stage workspace/, 'not applicable stages remain reviewable')
-  assert.doesNotMatch(notApplicableHtml, /role="progressbar"/, 'zero applicable tasks do not expose a meaningless progress range')
+  assert.match(notApplicableHtml, /Not applicable/)
+  assert.match(notApplicableHtml, /View/, 'not applicable tasks remain reviewable')
+  assert.doesNotMatch(notApplicableHtml, /role="progressbar"/, 'zero applicable tasks do not expose a progress range')
   const attentionPhase = { ...phases[0], tasks: [
     { ...phases[0].tasks[0], status: 'blocked', displayStatus: 'blocked', isOverdue: true, missingDocumentCount: 2 },
     phases[0].tasks[1],
   ] }
   const attentionHtml = renderToStaticMarkup(createElement(TransferStageOverview, { phases: [attentionPhase], selectedPhase: attentionPhase }))
-  assert.match(attentionHtml, /1 task needs attention/, 'one blocked task with several issues counts once')
+  assert.doesNotMatch(attentionHtml, /needs attention/, 'ordinary outstanding work is not shown as a warning')
   const stageTasksHtml = renderToStaticMarkup(createElement(TransferStageTaskNavigation, { phase: phases[0], selectedTaskKey: 'instruction_received' }))
-  assert.match(stageTasksHtml, /Choose the work to review/)
+  assert.match(stageTasksHtml, /Choose a task in/)
   assert.match(stageTasksHtml, /Instruction Received/)
   assert.doesNotMatch(stageTasksHtml, /Lodgement Ready/)
   const focusedHtml = renderToStaticMarkup(createElement(LegalTaskWorkbench, {
@@ -84,7 +90,7 @@ try {
     },
     phases: [phases[0]], selectedPhaseKey: 'instruction', selectedTaskKey: 'instruction_received', focusedStage: true,
   }))
-  assert.match(focusedHtml, /Choose the work to review/)
+  assert.match(focusedHtml, /Choose a task in/)
   assert.doesNotMatch(focusedHtml, /Collapse workflow stages|Expand workflow stages/)
   const readOnlyHtml = renderToStaticMarkup(createElement(LegalTaskWorkbench, {
     model: {
@@ -105,7 +111,7 @@ try {
   globalThis.document = browser.window.document
   globalThis.HTMLElement = browser.window.HTMLElement
   try {
-    const { render, fireEvent, cleanup } = await import('@testing-library/react')
+    const { render, fireEvent, cleanup, waitFor, within } = await import('@testing-library/react')
     const selections = []
     const openings = []
     const view = render(createElement(TransferStageOverview, {
@@ -114,17 +120,54 @@ try {
       onSelectStage: (stageKey) => selections.push(stageKey),
       onOpenStage: (stageKey, taskKey) => openings.push([stageKey, taskKey]),
     }))
-    fireEvent.click(view.getByRole('button', { name: /Lodgement & Registration/ }))
-    fireEvent.click(view.getByRole('button', { name: /Open stage workspace/ }))
+    fireEvent.click(view.getByRole('navigation', { name: 'Transfer stages' }).querySelectorAll('button')[1])
+    fireEvent.click(view.getByRole('button', { name: 'Open' }))
     assert.deepEqual(selections, ['lodgement_registration'])
     assert.deepEqual(openings, [['instruction', 'instruction_received']])
+    cleanup()
+    const updates = []
+    const editable = render(createElement(TransferStageOverview, {
+      phases, selectedPhase: phases[0], canUpdate: true,
+      onUpdateTask: async (...args) => { updates.push(args); return true },
+    }))
+    fireEvent.click(editable.getByRole('button', { name: 'Mark complete' }))
+    await waitFor(() => assert.equal(updates.length, 1))
+    assert.equal(updates[0][0].key, 'instruction_received')
+    assert.equal(updates[0][1], 'completed')
+    assert.equal(updates[0][3].completionMethod, 'manual')
+    cleanup()
+    const bulkPhase = { ...phases[0], tasks: phases[0].tasks.map((task) => ({ ...task, status: 'not_started', displayStatus: 'not_started' })) }
+    const bulkUpdates = []
+    const bulk = render(createElement(TransferStageOverview, {
+      phases: [bulkPhase], selectedPhase: bulkPhase, canUpdate: true,
+      onUpdateTask: async (...args) => { bulkUpdates.push(args); return true },
+    }))
+    fireEvent.click(bulk.getByLabelText('Select tasks'))
+    fireEvent.click(bulk.getByRole('button', { name: /Mark selected complete/ }))
+    fireEvent.click(bulk.getByRole('button', { name: 'Save & complete' }))
+    await waitFor(() => assert.equal(bulkUpdates.length, 2))
+    assert.equal(bulkUpdates[0][3].overrideScope, 'bulk')
+    assert.equal(bulkUpdates[0][3].overrideGroupId, bulkUpdates[1][3].overrideGroupId)
+    cleanup()
+    const stageUpdates = []
+    const stage = render(createElement(TransferStageOverview, {
+      phases: [bulkPhase], selectedPhase: bulkPhase, canUpdate: true,
+      onUpdateTask: async (...args) => { stageUpdates.push(args); return true },
+    }))
+    fireEvent.click(stage.getByRole('button', { name: 'Mark stage complete' }))
+    fireEvent.change(stage.getByPlaceholderText('Imported matter already progressed beyond this stage.'), { target: { value: 'Historical file already progressed' } })
+    fireEvent.click(within(stage.getByRole('dialog')).getByRole('button', { name: 'Mark stage complete' }))
+    await waitFor(() => assert.equal(stageUpdates.length, 2))
+    assert.equal(stageUpdates[0][3].overrideScope, 'stage')
+    assert.equal(stageUpdates[0][3].overrideReason, 'Historical file already progressed')
     cleanup()
     const taskSelections = []
     const stageTasks = render(createElement(TransferStageTaskNavigation, {
       phase: phases[0], selectedTaskKey: 'instruction_received', onSelectTask: (taskKey) => taskSelections.push(taskKey),
     }))
     fireEvent.click(stageTasks.getByRole('button', { name: /File Opened/ }))
-    assert.deepEqual(taskSelections, ['matter_opened'])
+    fireEvent.change(stageTasks.getByRole('combobox'), { target: { value: 'matter_opened' } })
+    assert.deepEqual(taskSelections, ['matter_opened', 'matter_opened'])
     cleanup()
   } finally {
     Object.assign(globalThis, previous)
