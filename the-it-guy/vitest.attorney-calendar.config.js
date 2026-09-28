@@ -3,6 +3,9 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
+  resolve: {
+    alias: { supabase: '@supabase/supabase-js' },
+  },
   test: {
     include: [
       'src/components/attorney/scheduling/__tests__/CreateInviteDrawer.test.jsx',
