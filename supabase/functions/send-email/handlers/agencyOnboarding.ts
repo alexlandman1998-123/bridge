@@ -123,8 +123,7 @@ export async function handleAgencyOnboardingEmail(payload: SendAgencyOnboardingP
   }
 
   const fromAddress = normalizeText(
-    Deno.env.get("BRIDGE_FROM_EMAIL") || Deno.env.get("FROM_EMAIL") ||
-      Deno.env.get("ARCH9_RESEND_FROM_EMAIL") ||
+    Deno.env.get("ARCH9_RESEND_FROM_EMAIL") ||
       Deno.env.get("RESEND_FROM_EMAIL") ||
       "Arch9 <onboarding@resend.dev>",
   );
@@ -142,7 +141,7 @@ export async function handleAgencyOnboardingEmail(payload: SendAgencyOnboardingP
   const copy = buildMessageCopy(payload);
   const delivery = await sendViaResendApi({
     apiKey: resendApiKey,
-    from: formatEmailSender(fromAddress, branding.fromName || branding.organisationName),
+    from: formatEmailSender(fromAddress, "Arch9"),
     to,
     subject: copy.subject,
     html: buildHtml(payload, branding),

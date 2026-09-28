@@ -12,7 +12,7 @@ import {
   prepareEmailDelivery,
 } from "../services/communicationDeliveryLogging.ts";
 import {
-  formatEmailSender,
+  resolveAudienceEmailSender,
   resolveEmailBranding,
 } from "../services/emailBranding.ts";
 import { sendViaResendApi } from "../services/resend.ts";
@@ -406,11 +406,13 @@ export async function handleSellerOnboardingEmail(
   supportEmail = branding.supportEmail || supportEmail;
   supportPhone = branding.supportPhone || supportPhone;
 
-  const sender = formatEmailSender(
-    normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
+  const sender = await resolveAudienceEmailSender({
+    audience: "client",
+    branding,
+    platformSender: normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
       "Arch9 <onboarding@resend.dev>",
-    branding.fromName || branding.organisationName,
-  );
+    supabase: supabase || undefined,
+  });
 
   const subject = normalizeText(templateOverrides?.subject) ||
     buildSellerOnboardingSubject(

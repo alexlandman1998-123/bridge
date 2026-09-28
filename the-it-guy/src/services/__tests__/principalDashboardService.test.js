@@ -12,6 +12,7 @@ const server = await createServer({
 })
 
 const { getDateRangeFromPreset, getResidentialDashboardMetrics } = await server.ssrLoadModule('/src/services/principalDashboardService.js')
+const { getScopedDashboardTransactions, isDashboardTransactionAwaitingReview } = await server.ssrLoadModule('/src/lib/dashboardTransactionIntegrity.js')
 
 const now = new Date('2026-06-10T10:00:00.000Z')
 const range = {
@@ -66,6 +67,15 @@ function lead(overrides = {}) {
     listing_id: overrides.listing_id,
     seller_onboarding_status: overrides.seller_onboarding_status,
   }
+}
+
+{
+  const imported = tx({ id: 'imported', stage: 'Available', current_main_stage: 'AVAIL', organisation_id: 'org-a' })
+  assert.equal(isDashboardTransactionAwaitingReview(imported, { organisationId: 'org-a' }), true, 'unprogressed imported records should be available for home-screen review')
+  assert.equal(getScopedDashboardTransactions([imported], { organisationId: 'org-a' }).length, 0, 'review records should not inflate in-progress deal metrics')
+  assert.equal(isDashboardTransactionAwaitingReview({ ...imported, is_active: false }, { organisationId: 'org-a' }), false, 'inactive history should stay hidden')
+  assert.equal(isDashboardTransactionAwaitingReview({ ...imported, completed_at: now.toISOString() }, { organisationId: 'org-a' }), false, 'completed records should stay hidden')
+  assert.equal(isDashboardTransactionAwaitingReview(imported, { organisationId: 'another-org' }), false, 'agency scoping should be preserved')
 }
 
 {

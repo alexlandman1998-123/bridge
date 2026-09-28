@@ -6,7 +6,8 @@ import {
 } from "../content/bridgeEmailLayout.ts";
 import {
   type EmailBranding,
-  formatEmailSender,
+  isClientEmailRecipientRole,
+  resolveAudienceEmailSender,
   resolveEmailBranding,
 } from "../services/emailBranding.ts";
 import { applyNotificationQueueControls } from "../services/notificationControls.ts";
@@ -571,13 +572,17 @@ async function dispatchQueuedEvents(
 
     const sendResult = await sendViaResendApi({
       apiKey: resendApiKey,
-      from: formatEmailSender(
-        normalizeText(
+      from: await resolveAudienceEmailSender({
+        audience: isClientEmailRecipientRole(event.recipient_role)
+          ? "client"
+          : "internal",
+        branding,
+        platformSender: normalizeText(
           Deno.env.get("ARCH9_RESEND_FROM_EMAIL") ||
             Deno.env.get("RESEND_FROM_EMAIL"),
         ) || "Arch9 <onboarding@resend.dev>",
-        branding.fromName || branding.organisationName,
-      ),
+        supabase,
+      }),
       to: normalizeText(event.recipient_email).toLowerCase(),
       subject: content.subject,
       html: content.html,
@@ -690,11 +695,16 @@ export async function handleCommercialEnterpriseNotificationEmail(
   const content = contentFromPayload(req, payload, branding);
   const sendResult = await sendViaResendApi({
     apiKey: resendApiKey,
-    from: formatEmailSender(
-      normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
+    from: await resolveAudienceEmailSender({
+      audience: isClientEmailRecipientRole(
+        (payload as Record<string, unknown>).recipientRole ??
+          (payload as Record<string, unknown>).recipient_role,
+      ) ? "client" : "internal",
+      branding,
+      platformSender: normalizeText(Deno.env.get("ARCH9_RESEND_FROM_EMAIL")) ||
+        normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
         "Arch9 <no-reply@arch9.co.za>",
-      branding.fromName || branding.organisationName,
-    ),
+    }),
     to: recipientEmail,
     subject: content.subject,
     html: content.html,

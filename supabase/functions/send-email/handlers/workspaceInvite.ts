@@ -11,7 +11,7 @@ import {
   prepareEmailDelivery,
 } from "../services/communicationDeliveryLogging.ts";
 import {
-  formatEmailSender,
+  resolveAudienceEmailSender,
   resolveEmailBranding,
 } from "../services/emailBranding.ts";
 import { sendViaResendApi } from "../services/resend.ts";
@@ -72,11 +72,13 @@ export async function handleWorkspaceInviteEmail(
       ),
     },
   });
-  const sender = formatEmailSender(
-    normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
+  const sender = await resolveAudienceEmailSender({
+    audience: "internal",
+    branding,
+    platformSender: normalizeText(Deno.env.get("ARCH9_RESEND_FROM_EMAIL")) ||
+      normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
       "Arch9 <onboarding@resend.dev>",
-    branding.fromName || branding.organisationName,
-  );
+  });
   const contentHtml = [
     renderBridgeIntroParagraphs([
       `${inviterName} invited you to create or connect your Arch9 account and enter the ${branding.organisationName} workspace.`,

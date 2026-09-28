@@ -30,6 +30,8 @@ const signedDisclosure = {
 test('recognises an actual onboarding disclosure signature, including all required signers', () => {
   assert.equal(hasCompletedOnboardingDisclosureSignature({}), false)
   assert.equal(hasCompletedOnboardingDisclosureSignature({ propertyDisclosure: signedDisclosure }), true)
+  assert.equal(hasCompletedOnboardingDisclosureSignature({ propertyDisclosure: signedDisclosure, seller_compliance_signing: {}, seller_compliance_signers: [] }), true)
+  assert.equal(hasCompletedOnboardingDisclosureSignature({ propertyDisclosure: signedDisclosure, seller_compliance_signing: {}, seller_compliance_signers: [{ complete: false }] }), false)
   assert.equal(hasCompletedOnboardingDisclosureSignature({ propertyDisclosure: signedDisclosure, sellerComplianceSigning: { complete: false } }), false)
   assert.equal(hasCompletedOnboardingDisclosureSignature({ propertyDisclosure: signedDisclosure, sellerComplianceSigning: { complete: true } }), true)
 })

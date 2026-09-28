@@ -2234,6 +2234,31 @@ function _buildPrincipalPremiumModel(data = {}) {
   }
 }
 
+function TransactionsAwaitingReview({ rows = [], total = 0, onViewAll, onOpenTransaction }) {
+  if (!total) return null
+
+  return (
+    <section className={`${dashboardCardClass} ${dashboardCardPadding}`}>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-[1.08rem] font-semibold text-[#101828]">Transactions to review <span className="text-[#667085]">({formatCount(total)})</span></h2>
+          <p className="mt-1 text-sm text-[#667085]">These records are in Transactions but have not moved into an active deal stage yet.</p>
+        </div>
+        <button type="button" onClick={onViewAll} className="text-sm font-semibold text-[#1769d1]">View all</button>
+      </div>
+      <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+        {rows.map((row) => (
+          <button key={row.id} type="button" onClick={() => onOpenTransaction?.(row)} className="rounded-xl border border-[#dce6f2] bg-[#fbfdff] p-3 text-left transition hover:border-[#a8c5e8] hover:bg-white">
+            <span className="block truncate text-sm font-semibold text-[#172a3d]">{row.propertyName || row.reference || 'Transaction'}</span>
+            <span className="mt-1 block text-xs text-[#667085]">{row.reference} · {formatCurrency(row.dealValue)} · Available</span>
+            <span className="mt-2 block line-clamp-2 text-xs text-[#42566c]">{row.nextAction || 'Review the transaction details.'}</span>
+          </button>
+        ))}
+      </div>
+    </section>
+  )
+}
+
 function PrincipalPremiumCommandCenter({ data, mode = 'sales', dataScope = 'company', profile, dateRange = 'last_30_days', branchId = '', trainingPanel = null, onViewTransactions, onOpenTransaction, onViewCalendar, onOpenCalendar, onManageAppointment, onOpenAppointment, onScheduleAppointment }) {
   const dashboardScope = dataScope === 'agent' ? 'agent' : 'principal'
   const commissionTracker = (() => {
@@ -2278,6 +2303,14 @@ function PrincipalPremiumCommandCenter({ data, mode = 'sales', dataScope = 'comp
         trainingPanel={trainingPanel}
         onViewTransactions={onViewTransactions}
         onOpenTransaction={onOpenTransaction}
+        afterActiveTransactions={
+          <TransactionsAwaitingReview
+            rows={data?.awaitingReviewTransactions || []}
+            total={data?.awaitingReviewTransactionCount || 0}
+            onViewAll={onViewTransactions}
+            onOpenTransaction={onOpenTransaction}
+          />
+        }
         onViewCalendar={onViewCalendar}
         onOpenCalendar={onOpenCalendar}
         onManageAppointment={onManageAppointment}

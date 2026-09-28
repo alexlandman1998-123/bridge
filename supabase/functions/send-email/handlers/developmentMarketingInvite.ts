@@ -110,9 +110,10 @@ export async function handleDevelopmentMarketingInviteEmail(
   const result = await sendViaResendApi({
     apiKey: resendApiKey,
     from: formatEmailSender(
-      normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
+      normalizeText(Deno.env.get("ARCH9_RESEND_FROM_EMAIL")) ||
+        normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
         "Arch9 <no-reply@arch9.co.za>",
-      branding.fromName || branding.organisationName,
+      "Arch9",
     ),
     to,
     subject,

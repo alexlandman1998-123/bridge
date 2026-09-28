@@ -5,6 +5,7 @@ import {
   getDashboardPipelineValue,
   getDashboardTransactionPrice,
   getScopedDashboardTransactions,
+  isDashboardTransactionAwaitingReview,
   logDashboardPipelineDiagnostics,
 } from '../lib/dashboardTransactionIntegrity'
 import {
@@ -1606,6 +1607,8 @@ function buildEmptyDashboard() {
       alerts: [],
     },
     activeTransactions: [],
+    awaitingReviewTransactions: [],
+    awaitingReviewTransactionCount: 0,
     revenue: {
       registeredValue: 0,
       earnedCommission: 0,
@@ -1905,6 +1908,8 @@ async function getPrincipalDashboardDataUncached({
   const scopedDocuments = documents.filter((row) => transactionIds.has(normalizeText(row.transaction_id)))
   const scopedSubprocesses = subprocesses.filter((row) => transactionIds.has(normalizeText(row.transaction_id)))
   const activeTransactions = getScopedDashboardTransactions(transactions, { organisationId: resolvedAgencyId })
+  const awaitingReviewTransactions = getScopedDashboardTransactions(transactions, { organisationId: resolvedAgencyId, activeOnly: false })
+    .filter((row) => isDashboardTransactionAwaitingReview(row, { organisationId: resolvedAgencyId }))
   const completedTransactions = transactions.filter((row) => {
     const status = getTransactionStatusText(row)
     return COMPLETED_STATES.some((state) => status.includes(state)) || Boolean(getTransactionCompletedAt(row))
@@ -2009,6 +2014,11 @@ async function getPrincipalDashboardDataUncached({
     .slice()
     .sort((left, right) => new Date(right.updated_at || right.created_at || 0) - new Date(left.updated_at || left.created_at || 0))
     .slice(0, 60)
+    .map((row) => buildActiveTransactionCard(row, usersByKey))
+  const awaitingReviewCards = awaitingReviewTransactions
+    .slice()
+    .sort((left, right) => new Date(right.updated_at || right.created_at || 0) - new Date(left.updated_at || left.created_at || 0))
+    .slice(0, 8)
     .map((row) => buildActiveTransactionCard(row, usersByKey))
 
   const agentMap = new Map()
@@ -2303,6 +2313,8 @@ async function getPrincipalDashboardDataUncached({
       ...residentialMetrics.transactions,
     },
     activeTransactions: activeTransactionCards,
+    awaitingReviewTransactions: awaitingReviewCards,
+    awaitingReviewTransactionCount: awaitingReviewTransactions.length,
     revenue: {
       ...revenueOverview,
       ...residentialMetrics.revenue,

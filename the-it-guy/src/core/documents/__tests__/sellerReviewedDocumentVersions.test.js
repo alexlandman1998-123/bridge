@@ -58,4 +58,5 @@ test('approval requires the agent, every signer, distinct rows, and confirmed ma
   await assert.rejects(prepare({ formalPackApproval: { ...approval, commission: { confirmed: false } } }), /commission and VAT/)
   const physicalWithoutEmail = await prepare({ signingPack: { ...signingPack, signers: [{ name: 'Alex Seller', role: 'Seller', email: '' }] } })
   assert.equal(physicalWithoutEmail.documents[0].requiredSigners[0].email, '')
+  await assert.rejects(prepare({ formalPackApproval: { ...approval, signingRoute: 'digital_pack' }, signingPack: { ...signingPack, signers: [{ name: 'Alex Seller', role: 'Seller', email: '' }] } }), /distinct valid email/)
 })

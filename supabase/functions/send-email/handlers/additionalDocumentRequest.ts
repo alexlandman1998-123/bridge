@@ -1,3 +1,4 @@
+import { createClient } from "supabase";
 import {
   renderBridgeCta,
   renderBridgeEmailLayout,
@@ -6,7 +7,7 @@ import {
 } from "../content/bridgeEmailLayout.ts";
 import {
   type EmailBranding,
-  formatEmailSender,
+  resolveAudienceEmailSender,
   resolveEmailBranding,
 } from "../services/emailBranding.ts";
 import { sendViaResendApi } from "../services/resend.ts";
@@ -162,7 +163,15 @@ export async function handleAdditionalDocumentRequestEmail(
   }
 
   const metadata = asRecord(payload.metadata);
+  const supabaseUrl = normalizeText(Deno.env.get("SUPABASE_URL"));
+  const serviceKey = normalizeText(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
+  const supabase = supabaseUrl && serviceKey
+    ? createClient(supabaseUrl, serviceKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    })
+    : undefined;
   const branding = await resolveEmailBranding({
+    supabase,
     payload: payload as Record<string, unknown>,
     organisationId: firstText(
       payload.organisationId,
@@ -197,11 +206,13 @@ export async function handleAdditionalDocumentRequestEmail(
     metadata.documentRequestLink,
     metadata.document_request_link,
   );
-  const from = formatEmailSender(
-    normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
+  const from = await resolveAudienceEmailSender({
+    audience: "client",
+    branding,
+    platformSender: normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
       "Arch9 <no-reply@arch9.co.za>",
-    branding.fromName || branding.organisationName,
-  );
+    supabase,
+  });
 
   const { html, text } = buildAdditionalDocumentRequestEmail({
     recipientName,

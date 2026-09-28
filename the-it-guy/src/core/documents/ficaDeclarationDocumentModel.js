@@ -1,8 +1,8 @@
 export const FICA_DECLARATION_DOCUMENT_MODEL_CONTRACT = 'arch9-fica-declaration-document-model-v1'
-export const FICA_DECLARATION_WORDING_VERSION = 'arch9_fica_declaration_v1'
+export const FICA_DECLARATION_WORDING_VERSION = 'arch9_fica_declaration_v2'
 
 export const DEFAULT_FICA_DECLARATION_WORDING =
-  'I/We declare that the information supplied in this FICA declaration is true and complete to the best of my/our knowledge. I/We authorise Arch9 and the transaction team to use this information and the supporting documents for FICA/KYC compliance and for progressing this property transaction.'
+  'I/We confirm that the information supplied in this declaration is true and complete to the best of my/our knowledge. I/We authorise the agency to verify my/our identity, ownership and authority, and to process the information and supporting documents for customer due diligence and this property transaction. I/We will notify the agency if any material information changes.'
 
 function text(value) {
   return String(value ?? '').trim()

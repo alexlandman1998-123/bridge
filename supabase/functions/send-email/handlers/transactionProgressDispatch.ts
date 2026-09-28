@@ -6,7 +6,8 @@ import {
 } from "../content/bridgeEmailLayout.ts";
 import {
   type EmailBranding,
-  formatEmailSender,
+  isClientEmailRecipientRole,
+  resolveAudienceEmailSender,
   resolveEmailBranding,
 } from "../services/emailBranding.ts";
 import { applyNotificationQueueControls } from "../services/notificationControls.ts";
@@ -337,14 +338,17 @@ export async function handleTransactionProgressDispatchEmail(
     }
     const delivery = await sendViaResendApi({
       apiKey: resendKey,
-      from: formatEmailSender(
-        normalizeText(
+      from: await resolveAudienceEmailSender({
+        audience: isClientEmailRecipientRole(event.recipient_role)
+          ? "client"
+          : "internal",
+        branding,
+        platformSender: normalizeText(
           Deno.env.get("ARCH9_RESEND_FROM_EMAIL") ||
             Deno.env.get("RESEND_FROM_EMAIL"),
-        ) ||
-          "Arch9 <onboarding@resend.dev>",
-        branding.fromName || branding.organisationName,
-      ),
+        ) || "Arch9 <onboarding@resend.dev>",
+        supabase,
+      }),
       to: normalizeText(event.recipient_email).toLowerCase(),
       subject: content.subject,
       html: content.html,

@@ -97,6 +97,7 @@ function isCompletedSigningArtifactWithoutFile(row = {}, contract = rowContract(
 
 function projectionScore(row = {}) {
   const contract = row.documentContract || rowContract(row)
+  const artifact = rowArtifact(row)
   const missingSignedArtifact = isCompletedSigningArtifactWithoutFile(row, contract)
   const representationScore = {
     [SELLER_DOCUMENT_REPRESENTATION_KINDS.STORED_FILE]: 400,
@@ -112,7 +113,12 @@ function projectionScore(row = {}) {
   }[contract.stage] || 0
   const status = normalizedStatus(row)
   const statusScore = ['completed', 'complete', 'approved', 'signed', 'fully_signed', 'uploaded'].includes(status) ? 100 : 0
-  return (contract.satisfiesRequirement ? 10_000 : 0) + stageScore + representationScore + statusScore
+  // Prefer a reviewed, frozen signing version over an onboarding placeholder;
+  // prefer the submitted frozen disclosure over a regenerated fallback.
+  const source = key(artifact.source)
+  const provenanceScore = source === 'seller_onboarding_manual_signing_pack' ? 20
+    : source === 'seller_onboarding_post_submission_draft' ? 10 : 0
+  return (contract.satisfiesRequirement ? 10_000 : 0) + stageScore + representationScore + statusScore + provenanceScore
 }
 
 function originalRows(row = {}) {

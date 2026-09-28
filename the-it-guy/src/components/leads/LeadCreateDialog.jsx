@@ -32,6 +32,7 @@ function createLeadCreateDraft(overrides = {}) {
     category: 'buyer',
     source: 'Other',
     property: '',
+    listingId: '',
     notes: '',
     agentId: '',
     ...overrides,
@@ -49,6 +50,9 @@ function LeadCreateDialogContent({
   sourceField = 'source',
   propertyLabel = '',
   lockProperty = false,
+  listingOptions = [],
+  listingOptionsLoading = false,
+  listingOptionsError = '',
   showAgentAssignment = true,
   onChange,
   onClose,
@@ -140,6 +144,23 @@ function LeadCreateDialogContent({
           ) : null}
         </div>
 
+        {buyer && !lockProperty ? (
+          <label className="grid min-w-0 gap-1.5 text-sm font-semibold text-[#29435d]">
+            Listing
+            <Field
+              as="select"
+              value={form.listingId || ''}
+              onChange={(event) => setField('listingId', event.target.value)}
+              disabled={listingOptionsLoading || Boolean(listingOptionsError)}
+            >
+              <option value="">{listingOptionsLoading ? 'Loading listings...' : 'No listing selected'}</option>
+              {listingOptions.map((listing) => (
+                <option key={listing.id} value={listing.id}>{listing.label}</option>
+              ))}
+            </Field>
+            {listingOptionsError ? <span role="alert" className="text-xs font-normal text-[#9f3028]">{listingOptionsError}</span> : null}
+          </label>
+        ) : null}
         <label className="grid min-w-0 gap-1.5 text-sm font-semibold text-[#29435d]">
           {buyer && !lockProperty ? 'Property or area of interest' : 'Property address'}
           <Field

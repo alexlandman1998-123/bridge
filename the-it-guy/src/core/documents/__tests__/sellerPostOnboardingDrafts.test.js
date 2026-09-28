@@ -10,6 +10,9 @@ const input = {
     idNumber: '8001015009087',
     email: 'alex@example.test',
     mobile: '0820000000',
+    occupation: 'Researcher',
+    sourceOfFunds: 'Salary',
+    politicallyExposedPerson: 'no',
     propertyAddress: { line1: '1 Market Street', suburb: 'Pretoria', city: 'Tshwane' },
     sellerOnboardingCompletion: { version: 'seller_onboarding_submission_v1', completedAt: generatedAt },
     propertyDisclosure: { kind: 'residential', responses: {} },
@@ -46,10 +49,13 @@ test('freezes disclosure, FICA and review-only mandate HTML after seller onboard
   assert.ok(fica.templateVersion)
   assert.equal(fica.brandingVersion, 'seller_onboarding_branding_snapshot_v1')
   assert.equal(fica.signable, false)
-  assert.match(fica.generatedHtml, /Seller FICA Declaration/)
+  assert.match(fica.generatedHtml, /CLIENT DUE DILIGENCE RECORD/)
   assert.match(fica.generatedHtml, /Kingdom Real Estate/)
   assert.match(fica.generatedHtml, /Alex Landman/)
-  assert.match(fica.generatedHtml, /Awaiting signature/)
+  assert.match(fica.generatedHtml, /Signature __________________________/)
+  assert.match(fica.generatedHtml, /Source of income \/ funds/)
+  assert.match(fica.generatedHtml, /Salary/)
+  assert.match(fica.generatedHtml, /Politically influential person status/)
   assert.doesNotMatch(fica.generatedHtml, /Signature capture is completed in the onboarding step/)
   assert.equal(mandate.status, 'awaiting_agent_review')
   assert.equal(mandate.requirementKey, 'signed_mandate')
@@ -63,6 +69,25 @@ test('freezes disclosure, FICA and review-only mandate HTML after seller onboard
     assert.match(document.contentFingerprint, /^fnv1a-32:[0-9a-f]{8}$/)
     assert.equal(document.metadata.brandingSnapshot.fingerprint, result.brandingSnapshot.fingerprint)
   }
+})
+
+test('FICA draft uses the company as legal client and shows the captured beneficial owner', () => {
+  const result = buildSellerPostOnboardingDrafts({
+    ...input,
+    formData: {
+      ...input.formData,
+      ownerEntityType: 'company', ownerStructureType: 'company', ownershipType: 'company', ownershipRouteConfirmed: true,
+      companyName: 'Seller Holdings (Pty) Ltd', companyRegistrationNumber: '2026/123456/07',
+      authorisedSignatoryName: 'Alex Landman',
+      companyDirectors: [{ fullName: 'Alex Landman', idNumber: '8001015009087', signingAuthority: true }],
+      companyBeneficialOwners: [{ fullName: 'Pat Owner', idNumber: '8101015009088', nationality: 'South African', residentialAddress: '4 Cedar Road' }],
+    },
+  })
+  const fica = result.documents.find((document) => document.key === 'fica_review_draft')
+  assert.match(fica.generatedHtml, /Seller Holdings \(Pty\) Ltd/)
+  assert.match(fica.generatedHtml, /Beneficial owners \/ controllers/)
+  assert.match(fica.generatedHtml, /Pat Owner/)
+  assert.match(fica.generatedHtml, /4 Cedar Road/)
 })
 
 test('draft fingerprints are deterministic and only detect content changes', () => {

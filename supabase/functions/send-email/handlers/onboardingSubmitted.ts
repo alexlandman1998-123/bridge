@@ -19,7 +19,7 @@ import {
 } from "../services/communicationDeliveryLogging.ts";
 import { buildOnboardingSubmittedEmailPayload } from "../services/onboardingSubmittedPayload.ts";
 import {
-  formatEmailSender,
+  resolveAudienceEmailSender,
   resolveEmailBranding,
 } from "../services/emailBranding.ts";
 import { sendViaResendApi } from "../services/resend.ts";
@@ -429,11 +429,13 @@ export async function handleOnboardingSubmittedEmail(
     authProfileExists = Boolean(authProfileQuery.data?.id);
   }
 
-  const sender = formatEmailSender(
-    normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
+  const sender = await resolveAudienceEmailSender({
+    audience: "client",
+    branding,
+    platformSender: normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
       "Arch9 <onboarding@resend.dev>",
-    branding.fromName || branding.organisationName,
-  );
+    supabase,
+  });
 
   const delivery = await prepareEmailDelivery(payload as Record<string, unknown>, {
     communicationType,

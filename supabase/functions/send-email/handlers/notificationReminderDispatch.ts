@@ -7,7 +7,8 @@ import {
 } from "../content/bridgeEmailLayout.ts";
 import {
   type EmailBranding,
-  formatEmailSender,
+  isClientEmailRecipientRole,
+  resolveAudienceEmailSender,
   resolveEmailBranding,
 } from "../services/emailBranding.ts";
 import { applyNotificationQueueControls } from "../services/notificationControls.ts";
@@ -1304,11 +1305,25 @@ export async function handleNotificationReminderDispatchEmail(
         organisationName: template.organisationName || "Arch9",
       },
     });
-    const from = formatEmailSender(
-      normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
-        "Arch9 <no-reply@arch9.co.za>",
-      branding.fromName || branding.organisationName,
-    );
+    const clientReminder = isClientEmailRecipientRole(event.recipient_role) ||
+      [
+        "buyer_onboarding_reminder",
+        "seller_onboarding_reminder",
+        "seller_document_request_reminder",
+        "seller_document_manual_reminder",
+        "bond_application_portal_completion_reminder",
+      ].includes(automationKey);
+    const from = await resolveAudienceEmailSender({
+      audience: clientReminder ? "client" : "internal",
+      branding,
+      platformSender: clientReminder
+        ? normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
+          "Arch9 <no-reply@arch9.co.za>"
+        : normalizeText(Deno.env.get("ARCH9_RESEND_FROM_EMAIL")) ||
+          normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
+          "Arch9 <no-reply@arch9.co.za>",
+      supabase: clientReminder ? supabase : undefined,
+    });
     const content = buildReminderEmail(event, req, branding);
     const recipientSafety = assessControlledTestRecipient({
       email: recipientEmail,

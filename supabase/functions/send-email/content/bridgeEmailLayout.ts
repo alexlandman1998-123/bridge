@@ -11,6 +11,33 @@ export type BridgeEmailSummaryField = {
 
 export type BridgeEmailLayoutBranding = Partial<EmailBranding>;
 
+export function isHostedRasterImageUrl(value: string) {
+  if (!value) return false;
+  try {
+    const parsed = new URL(value);
+    return ["https:", "http:"].includes(parsed.protocol) &&
+      !parsed.pathname.toLowerCase().endsWith(".svg");
+  } catch {
+    return false;
+  }
+}
+
+export function firstEmailLogo(...values: (string | undefined)[]) {
+  return values.find((value) => value && isHostedRasterImageUrl(value)) || "";
+}
+
+export function brandColorLuminance(value: string) {
+  const hex = value.slice(1);
+  const expanded = hex.length === 3
+    ? hex.split("").map((part) => part + part).join("")
+    : hex;
+  const channels = [0, 2, 4].map((index) => {
+    const channel = Number.parseInt(expanded.slice(index, index + 2), 16) / 255;
+    return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+  });
+  return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
+}
+
 export function escapeHtml(value: string) {
   return String(value || "")
     .replaceAll("&", "&amp;")
@@ -24,7 +51,7 @@ export function renderBridgeIntroParagraphs(paragraphs: string[]) {
   return paragraphs
     .filter(Boolean)
     .map((paragraph) =>
-      `<p style="margin: 0 0 12px; font-size: 15px; line-height: 1.65; color: #1f3347;">${
+      `<p style="margin: 0 0 12px; font-size: 15px; line-height: 1.65; color: #333333;">${
         escapeHtml(paragraph)
       }</p>`
     )
@@ -35,7 +62,7 @@ export function renderBridgeBullets(items: string[]) {
   const points = items.filter(Boolean);
   if (!points.length) return "";
   return `
-    <ul style="margin: 0; padding: 0 0 0 18px; color: #1f3347;">
+    <ul style="margin: 0; padding: 0 0 0 18px; color: #333333;">
       ${
     points.map((item) =>
       `<li style="margin: 0 0 8px; font-size: 14px; line-height: 1.6;">${
@@ -51,7 +78,7 @@ export function renderBridgeSteps(items: string[]) {
   const steps = items.filter(Boolean);
   if (!steps.length) return "";
   return `
-    <ol style="margin: 0; padding: 0 0 0 18px; color: #1f3347;">
+    <ol style="margin: 0; padding: 0 0 0 18px; color: #333333;">
       ${
     steps.map((item) =>
       `<li style="margin: 0 0 8px; font-size: 14px; line-height: 1.6;">${
@@ -70,13 +97,13 @@ export function renderBridgeSummaryCard(
   const rows = fields.filter((field) => field?.label && field?.value);
   if (!rows.length) return "";
   return `
-    <div style="margin: 16px 0; padding: 16px; border: 1px solid #dbe6f2; border-radius: 12px; background: #f7fbff;">
-      <p style="margin: 0 0 10px; font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase; color: #5f7590; font-weight: 700;">${
+    <div style="margin: 20px 0; padding: 16px 18px; border: 1px solid #DDDDDA; background: #F7F7F5;">
+      <p style="margin: 0 0 10px; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: #171717; font-weight: 700;">${
     escapeHtml(title)
   }</p>
       ${
     rows.map((field) =>
-      `<p style="margin: 0 0 8px; font-size: 14px; line-height: 1.5; color: #1f3347;"><strong>${
+      `<p style="margin: 0 0 8px; font-size: 13px; line-height: 1.5; color: #555555;"><strong style="color: #171717;">${
         escapeHtml(field.label)
       }:</strong> ${escapeHtml(field.value)}</p>`
     ).join("")
@@ -92,16 +119,19 @@ export function renderBridgeCta(
 ) {
   if (!label || !url) return "";
   const safeUrl = escapeHtml(url);
-  const primaryColor = normalizeBrandColor(options.primaryColor, "#0f2f4f");
+  const primaryColor = normalizeBrandColor(options.primaryColor, "#07152f");
+  const textColor = brandColorLuminance(primaryColor) > 0.18
+    ? "#171717"
+    : "#FFFFFF";
   return `
-    <p style="margin: 0 0 12px;">
-      <a href="${safeUrl}" style="display: inline-block; padding: 14px 24px; background: ${primaryColor}; color: #ffffff; text-decoration: none; border-radius: 10px; font-size: 14px; font-weight: 700;">
-        ${escapeHtml(label)}
-      </a>
-    </p>
-    <p style="margin: 0 0 18px; font-size: 13px; line-height: 1.5; color: #5f7590;">
+    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin: 24px 0 0; width: 100%; border-collapse: collapse;">
+      <tr><td align="center" bgcolor="${primaryColor}" style="background: ${primaryColor};">
+        <a href="${safeUrl}" style="display: block; padding: 19px 20px; color: ${textColor}; background: ${primaryColor}; text-decoration: none; text-transform: uppercase; letter-spacing: 0.04em; font-family: Arial, Helvetica, sans-serif; font-size: 14px; line-height: 18px; font-weight: 700;">${escapeHtml(label)}&nbsp;&nbsp;&rarr;</a>
+      </td></tr>
+    </table>
+    <p style="margin: 12px 0 20px; font-size: 11px; line-height: 1.5; color: #686868;">
       If the button does not work, copy and paste this URL into your browser:<br />
-      <a href="${safeUrl}" style="color: ${primaryColor};">${safeUrl}</a>
+      <a href="${safeUrl}" style="color: #333333; text-decoration: underline; word-break: break-all;">${safeUrl}</a>
     </p>
   `;
 }
@@ -125,14 +155,14 @@ export function renderBridgeBrandMark({
   onDark?: boolean;
 }) {
   const safeOrganisationName = escapeHtml(organisationName || "Arch9");
-  const safeLogoUrl = logoUrl ? escapeHtml(logoUrl) : "";
+  const safeLogoUrl = firstEmailLogo(logoUrl) ? escapeHtml(logoUrl || "") : "";
   const safePrimaryColor = normalizeBrandColor(primaryColor, "#07152f");
   if (safeLogoUrl) {
-    return `<img src="${safeLogoUrl}" alt="${safeOrganisationName}" style="display: block; max-height: 44px; max-width: 220px; width: auto; height: auto; object-fit: contain; border: 0;" />`;
+    return `<img src="${safeLogoUrl}" alt="${safeOrganisationName} logo" width="240" style="display: block; max-height: 68px; max-width: 240px; width: auto; height: auto; margin: 0 auto; border: 0; outline: none; text-decoration: none;" />`;
   }
 
   if (onDark) {
-    return `<p style="margin: 0; font-size: 18px; line-height: 1.2; color: #ffffff; font-weight: 800; letter-spacing: 0.01em;">${safeOrganisationName}</p>`;
+    return `<span style="font-size: 22px; line-height: 1.2; color: #ffffff; font-weight: 800; letter-spacing: -0.02em;">${safeOrganisationName}</span>`;
   }
 
   return `<div style="width: 52px; height: 52px; border-radius: 14px; background: ${safePrimaryColor}; color: #ffffff; font-size: 18px; font-weight: 800; line-height: 52px; text-align: center;">${
@@ -194,6 +224,9 @@ export function renderBridgeEmailLayout({
     resolvedBranding.secondaryColor,
     "#b48a42",
   );
+  const accentColor = brandColorLuminance(secondaryColor) > 0.9
+    ? (brandColorLuminance(primaryColor) > 0.9 ? "#171717" : primaryColor)
+    : secondaryColor;
   const safeTagline = resolvedBranding.tagline
     ? escapeHtml(resolvedBranding.tagline)
     : "";
@@ -217,57 +250,69 @@ export function renderBridgeEmailLayout({
   ].filter(Boolean);
   const supportLine = supportParts.join(" · ");
   const safeFooterText = escapeHtml(footerText || `${resolvedBranding.organisationName} · Powered by Arch9`);
-  const headerBrandHtml = renderBridgeBrandMark({
-    organisationName: resolvedBranding.organisationName,
-    logoUrl: resolvedBranding.logoDarkUrl ||
-      resolvedBranding.logoLightUrl ||
-      resolvedBranding.logoUrl ||
-      resolvedBranding.logoIconUrl,
-    primaryColor,
-    onDark: true,
-  });
+  const lightBackgroundLogo = firstEmailLogo(resolvedBranding.logoLightUrl);
+  const darkBackgroundLogo = firstEmailLogo(resolvedBranding.logoDarkUrl);
+  const genericLogo = firstEmailLogo(
+    resolvedBranding.logoUrl,
+    resolvedBranding.logoIconUrl,
+  );
+  const useDarkHeader = !lightBackgroundLogo && !!darkBackgroundLogo &&
+    (!genericLogo || genericLogo === darkBackgroundLogo);
+  const headerColor = useDarkHeader
+    ? (brandColorLuminance(primaryColor) < 0.18 ? primaryColor : "#171717")
+    : "#FFFFFF";
+  const headerLogoUrl = lightBackgroundLogo ||
+    (useDarkHeader ? darkBackgroundLogo : genericLogo);
+  const headerBrandHtml = headerLogoUrl
+    ? renderBridgeBrandMark({
+      organisationName: resolvedBranding.organisationName,
+      logoUrl: headerLogoUrl,
+      primaryColor,
+      onDark: useDarkHeader,
+    })
+    : `<span style="font-size: 22px; line-height: 1.2; color: ${useDarkHeader ? "#FFFFFF" : "#171717"}; font-weight: 800; letter-spacing: -0.02em;">${escapeHtml(resolvedBranding.organisationName)}</span>`;
 
-  return `
-    <div style="display: none; max-height: 0; overflow: hidden; opacity: 0; color: transparent;">
-      ${escapeHtml(preheader)}
-    </div>
-    <div style="margin: 0; padding: 24px 12px; background: #eef3f8;">
-      <div style="max-width: 660px; margin: 0 auto; font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; color: #142132;">
-        <div style="background: linear-gradient(135deg, ${primaryColor} 0%, #102b46 100%); border-radius: 16px 16px 0 0; padding: 24px; border-bottom: 4px solid ${secondaryColor};">
-          <div style="margin: 0 0 18px;">${headerBrandHtml}</div>
-          <h1 style="margin: 10px 0 0; font-size: 28px; line-height: 1.2; color: #ffffff;">${
-    escapeHtml(title)
-  }</h1>
-          ${
-    safeTagline
-      ? `<p style="margin: 10px 0 0; font-size: 14px; line-height: 1.5; color: #ffffff; opacity: 0.82;">${safeTagline}</p>`
-      : ""
-  }
-        </div>
-        <div style="background: #ffffff; border: 1px solid #d8e3ef; border-top: 0; border-radius: 0 0 16px 16px; padding: 28px;">
-          <p style="margin: 0 0 14px; font-size: 15px; line-height: 1.6; color: #1f3347;">${
-    escapeHtml(greeting)
-  }</p>
-          ${contentHtml}
-          <div style="margin: 18px 0 16px; border: 1px solid #e2eaf4; border-left: 4px solid ${secondaryColor}; border-radius: 12px; background: #f8fbff; padding: 14px;">
-            <p style="margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: ${primaryColor}; font-weight: 700;">${
-    escapeHtml(securityTitle)
-  }</p>
-            <p style="margin: 0; font-size: 13px; line-height: 1.6; color: #35506d;">${
-    escapeHtml(securityBody)
-  }</p>
-          </div>
-          <p style="margin: 0 0 6px; font-size: 13px; line-height: 1.6; color: #35506d;">${
-    escapeHtml(helpBody)
-  }</p>
-          ${
-    supportLine
-      ? `<p style="margin: 0 0 16px; font-size: 13px; line-height: 1.6; color: #35506d;">Support: ${supportLine}</p>`
-      : ""
-  }
-          <p style="margin: 0; font-size: 12px; line-height: 1.6; color: #748aa2;">${safeFooterText}</p>
-        </div>
-      </div>
-    </div>
-  `;
+  return `<!doctype html>
+<html>
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="x-apple-disable-message-reformatting" />
+    <title>${escapeHtml(title)}</title>
+    <style>
+      @media screen and (max-width: 480px) {
+        .arch9-shell { width: 100% !important; max-width: 100% !important; }
+        .arch9-outer { padding: 0 !important; }
+        .arch9-header { padding: 28px 20px !important; }
+        .arch9-padded { padding-left: 20px !important; padding-right: 20px !important; }
+      }
+    </style>
+  </head>
+  <body style="margin: 0; padding: 0; background: #F4F4F2; -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%;">
+    <div style="display: none; max-height: 0; overflow: hidden; opacity: 0; color: transparent; mso-hide: all;">${escapeHtml(preheader)}</div>
+    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" bgcolor="#F4F4F2" style="width: 100%; background: #F4F4F2; border-collapse: collapse;">
+      <tr><td align="center" class="arch9-outer" style="padding: 32px 12px;">
+        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="600" class="arch9-shell" style="width: 600px; max-width: 600px; border-collapse: collapse; background: #FFFFFF; border: 1px solid #DDDDDA;">
+          <tr><td class="arch9-header" bgcolor="${headerColor}" align="center" valign="middle" style="padding: 32px; background: ${headerColor}; font-family: Arial, Helvetica, sans-serif; text-align: center;">${headerBrandHtml}${safeTagline ? `<p style="margin: 10px 0 0; font-size: 12px; line-height: 1.5; color: ${useDarkHeader ? "#FFFFFF" : "#555555"};">${safeTagline}</p>` : ""}</td></tr>
+          <tr><td bgcolor="${accentColor}" height="4" style="height: 4px; line-height: 4px; font-size: 0; background: ${accentColor};">&nbsp;</td></tr>
+          <tr><td class="arch9-padded" style="padding: 36px 32px 32px; background: #FFFFFF; font-family: Arial, Helvetica, sans-serif;">
+            <p style="margin: 0 0 14px; font-size: 11px; line-height: 1.3; letter-spacing: 0.15em; color: #171717; font-weight: 700; text-transform: uppercase;">From ${escapeHtml(resolvedBranding.organisationName)}</p>
+            <h1 style="margin: 0 0 24px; font-size: 32px; line-height: 1.12; letter-spacing: -0.03em; color: #171717; font-weight: 800;">${escapeHtml(title)}</h1>
+            <p style="margin: 0 0 16px; font-size: 16px; line-height: 1.6; color: #171717;">${escapeHtml(greeting)}</p>
+            ${contentHtml}
+            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin: 26px 0 0; border-collapse: collapse; border-top: 1px solid #DDDDDA;">
+              <tr><td style="padding: 22px 0 0; font-family: Arial, Helvetica, sans-serif;">
+                <p style="margin: 0 0 5px; font-size: 14px; line-height: 1.4; color: #171717; font-weight: 700;">Support</p>
+                <p style="margin: 0; font-size: 13px; line-height: 1.55; color: #555555;">${escapeHtml(helpBody)}</p>
+                ${supportLine ? `<p style="margin: 8px 0 0; font-size: 12px; line-height: 1.55; color: #555555;">${supportLine}</p>` : ""}
+              </td></tr>
+            </table>
+            ${securityBody ? `<p style="margin: 18px 0 0; font-size: 12px; line-height: 1.55; color: #606060;"><strong>${escapeHtml(securityTitle)}.</strong> ${escapeHtml(securityBody)}</p>` : ""}
+            <p style="margin: 30px 0 0; padding-top: 18px; border-top: 1px solid #DDDDDA; font-size: 11px; line-height: 1.5; letter-spacing: 0.04em; color: #686868; text-align: center;">${safeFooterText}</p>
+          </td></tr>
+        </table>
+      </td></tr>
+    </table>
+  </body>
+</html>`;
 }

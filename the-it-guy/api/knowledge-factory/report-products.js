@@ -219,17 +219,27 @@ async function administrator(request, db, organisationId) {
   return user.id;
 }
 function estimateSupplierCostCents(credits, creditsPerCent) {
+  if (credits === null || credits === undefined) return null;
   const safeCredits = Number(credits);
   const safeRate = Number(creditsPerCent);
   if (!Number.isFinite(safeCredits) || !Number.isFinite(safeRate) || safeRate <= 0)
     return null;
   return Math.ceil(safeCredits / safeRate);
 }
+export function completeCostEvidence(item) {
+  return item?.outcome === "validated" &&
+    item.field_cost !== null && item.field_cost !== undefined &&
+    item.type_cost !== null && item.type_cost !== undefined &&
+    item.credits_consumed !== null && item.credits_consumed !== undefined &&
+    [item.field_cost, item.type_cost, item.credits_consumed].every(
+      (value) => Number.isFinite(Number(value)) && Number(value) >= 0,
+    );
+}
 function mergeProducts(rows, validations, commercialPolicy = null, contractChecks = []) {
   const saved = new Map((rows || []).map((row) => [row.product_id, row]));
   const latestCost = new Map();
   for (const item of validations || []) {
-    if (item.outcome === "validated" && !latestCost.has(item.recipe_id))
+    if (completeCostEvidence(item) && !latestCost.has(item.recipe_id))
       latestCost.set(item.recipe_id, item);
   }
   const passedContractOperations = new Set(
@@ -242,10 +252,9 @@ function mergeProducts(rows, validations, commercialPolicy = null, contractCheck
     const validationRecipeId =
       row?.cost_validation_recipe_id || template.costValidationRecipeId;
     const evidence = [latestCost.get(validationRecipeId)].filter(Boolean);
-    const validatedSupplierCredits = evidence.reduce(
-      (sum, item) => sum + Number(item.credits_consumed || 0),
-      0,
-    );
+    const validatedSupplierCredits = evidence.length
+      ? Number(evidence[0].credits_consumed)
+      : null;
     const validatedSupplierCostCents = estimateSupplierCostCents(
       validatedSupplierCredits,
       commercialPolicy?.supplier_credits_per_cent,
@@ -322,7 +331,7 @@ export default async function handler(request, response) {
         .eq("organisation_id", organisationId),
       db
         .from("knowledge_factory_cost_validations")
-        .select("recipe_id, credits_consumed, outcome, created_at")
+        .select("recipe_id, field_cost, type_cost, credits_consumed, outcome, created_at")
         .eq("organisation_id", organisationId)
         .order("created_at", { ascending: false })
         .limit(100),

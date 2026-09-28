@@ -64,6 +64,16 @@ function normalizeKey(value = '') {
   return normalizeText(value).toLowerCase()
 }
 
+function toCurrentListingOption(listing = {}) {
+  const id = normalizeText(listing.id)
+  const status = normalizeKey(listing.listingStatus || listing.lifecycleStatus || listing.status)
+  if (!id || ['archived', 'withdrawn', 'lost', 'sold', 'registered', 'closed'].some((value) => status.includes(value))) return null
+  const title = normalizeText(listing.listingTitle || listing.title || listing.propertyAddress) || 'Untitled listing'
+  const area = normalizeText(listing.suburb || listing.city)
+  const reference = normalizeText(listing.listingReference)
+  return { id, label: [title, area, reference].filter(Boolean).join(' · ') }
+}
+
 function resolveMembershipRole(currentMembership = {}, fallback = '') {
   return normalizeText(
     currentMembership?.workspaceRole ||
@@ -128,6 +138,9 @@ export default function AgencyLeadListRoutePage() {
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [createDialog, setCreateDialog] = useState({ open: false, category: 'buyer' })
+  const [listingOptions, setListingOptions] = useState([])
+  const [listingOptionsLoading, setListingOptionsLoading] = useState(false)
+  const [listingOptionsError, setListingOptionsError] = useState('')
   const [creating, setCreating] = useState(false)
   const [archiveDialog, setArchiveDialog] = useState({ open: false, leadId: '' })
   const [archiving, setArchiving] = useState(false)
@@ -173,6 +186,27 @@ export default function AgencyLeadListRoutePage() {
   useEffect(() => {
     setViewMode(getAgencyLeadViewPreference({ userId: profile?.id, workspaceId: organisationId }))
   }, [organisationId, profile?.id])
+
+  useEffect(() => {
+    if (!createDialog.open || createDialog.category !== 'buyer' || !organisationId) return undefined
+    let cancelled = false
+    setListingOptions([])
+    setListingOptionsError('')
+    setListingOptionsLoading(true)
+    async function loadListings() {
+      try {
+        const { getOrganisationPrivateListings } = await import('../../services/privateListingService')
+        const listings = await getOrganisationPrivateListings(organisationId, { includeRequirementsAndDocuments: false })
+        if (!cancelled) setListingOptions(listings.map(toCurrentListingOption).filter(Boolean))
+      } catch {
+        if (!cancelled) setListingOptionsError('Listings could not be loaded. Close and reopen this form to retry.')
+      } finally {
+        if (!cancelled) setListingOptionsLoading(false)
+      }
+    }
+    void loadListings()
+    return () => { cancelled = true }
+  }, [createDialog.open, createDialog.category, organisationId])
 
   const handleViewModeChange = useCallback((nextViewMode) => {
     const preference = saveAgencyLeadViewPreference({ userId: profile?.id, workspaceId: organisationId }, nextViewMode)
@@ -258,6 +292,11 @@ export default function AgencyLeadListRoutePage() {
 
   const handleCreateLead = async (form) => {
     if (!organisationId || creating) return
+    const selectedListing = listingOptions.find((listing) => listing.id === normalizeText(form.listingId))
+    if (form.category === 'buyer' && form.listingId && !selectedListing) {
+      setError('Select a current listing from the list.')
+      return
+    }
     setCreating(true)
     setError('')
     try {
@@ -273,7 +312,8 @@ export default function AgencyLeadListRoutePage() {
         leadSource: form.source,
         stage: 'New Lead',
         priority: 'Medium',
-        propertyInterest: form.category === 'buyer' ? form.property : '',
+        propertyInterest: form.category === 'buyer' ? normalizeText(form.property || selectedListing?.label) : '',
+        listingId: form.category === 'buyer' ? selectedListing?.id || '' : '',
         sellerPropertyAddress: form.category === 'seller' ? form.property : '',
         notes: form.notes,
       }, { actor: currentAgent })
@@ -470,7 +510,7 @@ export default function AgencyLeadListRoutePage() {
           navigate(`/pipeline/leads/${encodeURIComponent(leadId)}?tab=${encodeURIComponent(tab || 'activity')}`)
         }}
       />
-      {createDialog.open ? <LeadCreateDialog open category={createDialog.category} agents={agentOptions} currentAgent={currentAgent} saving={creating} error={error} onClose={() => setCreateDialog((previous) => ({ ...previous, open: false }))} onSave={(form) => void handleCreateLead(form)} /> : null}
+      {createDialog.open ? <LeadCreateDialog open category={createDialog.category} agents={agentOptions} currentAgent={currentAgent} listingOptions={listingOptions} listingOptionsLoading={listingOptionsLoading} listingOptionsError={listingOptionsError} saving={creating} error={error} onClose={() => setCreateDialog((previous) => ({ ...previous, open: false }))} onSave={(form) => void handleCreateLead(form)} /> : null}
       <ConfirmDialog
         open={archiveDialog.open}
         title={`Archive ${category === 'seller' ? 'seller' : 'buyer'} lead?`}

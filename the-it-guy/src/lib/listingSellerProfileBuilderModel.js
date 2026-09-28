@@ -43,8 +43,8 @@ const BRANCH_VALUES = new Set(LISTING_SELLER_PROFILE_BRANCHES.map((item) => item
 const BRANCH_DETAIL_FIELDS = Object.freeze({
   married: ['spouseName', 'spouseEmail', 'spouseIdNumber'],
   multiple_owners: ['multipleOwners', 'coOwnerDetails'],
-  company: ['companyName', 'companyRegistrationNumber', 'companyRegisteredAddress', 'companyDirectors', 'authorisedSignatoryName', 'authorisedSignatoryCapacity', 'authorisedSignatoryEmail'],
-  trust: ['trustName', 'trustRegistrationNumber', 'trustRegisteredAddress', 'trustees', 'trustBeneficiaries', 'authorisedTrusteeName', 'authorisedTrusteeCapacity', 'authorisedTrusteeEmail'],
+  company: ['companyName', 'companyRegistrationNumber', 'companyRegisteredAddress', 'companyDirectors', 'companyBeneficialOwners', 'authorisedSignatoryName', 'authorisedSignatoryCapacity', 'authorisedSignatoryEmail', 'authorisedSignatoryIdNumber', 'authorisedSignatoryNationality', 'authorisedSignatoryAddress'],
+  trust: ['trustName', 'trustRegistrationNumber', 'trustRegisteredAddress', 'trustees', 'trustFounders', 'trustBeneficiaries', 'trustBeneficiaryClass', 'authorisedTrusteeName', 'authorisedTrusteeCapacity', 'authorisedTrusteeEmail', 'authorisedTrusteeIdNumber', 'authorisedTrusteeNationality', 'authorisedTrusteeAddress'],
   deceased_estate: ['deceasedEstateName', 'estateReferenceNumber', 'executorName', 'executorEmail'],
   power_of_attorney: ['powerOfAttorneyPrincipalName', 'powerOfAttorneyPrincipalIdNumber', 'powerOfAttorneyName', 'powerOfAttorneyEmail'],
   other: ['otherEntityName', 'otherEntityRegistrationNumber'],
@@ -70,7 +70,7 @@ function clearedBranchFields(currentBranch = '', nextBranch = '') {
 function hasEnteredBranchValue(value) {
   if (Array.isArray(value)) return value.some((person) =>
     person && (
-      ['name', 'surname', 'email', 'phone', 'idNumber', 'residentialAddress', 'ownershipShare', 'fullName'].some((key) => normalizeText(person[key])) ||
+      ['name', 'surname', 'email', 'phone', 'idNumber', 'nationality', 'residentialAddress', 'ownershipShare', 'controlBasis', 'fullName'].some((key) => normalizeText(person[key])) ||
       Boolean(person.consentToSell || person.signingAuthority)
     ))
   return Boolean(normalizeText(value))
@@ -315,17 +315,30 @@ export function createListingSellerProfileBuilderDraft(listing = {}) {
     companyRegistrationNumber: normalizeText(pickFirst(form.companyRegistrationNumber, canonicalCompany.registration_number, canonicalCompany.registrationNumber)),
     companyRegisteredAddress: normalizeText(pickFirst(form.companyRegisteredAddress, canonicalCompany.registered_address, canonicalCompany.registeredAddress)),
     companyDirectors: normalizePersonCollectionForSellerProfile(form.companyDirectors || canonicalCompany.directors || [], null, 'Director'),
+    companyBeneficialOwners: normalizePersonCollectionForSellerProfile(form.companyBeneficialOwners || canonicalCompany.beneficial_owners || [], null, 'Beneficial Owner'),
     authorisedSignatoryName: normalizeText(pickFirst(form.authorisedSignatoryName, canonicalCompany.authorised_signatory?.full_name, canonicalCompany.authorised_signatory?.name)),
     authorisedSignatoryCapacity: normalizeText(pickFirst(form.authorisedSignatoryCapacity, canonicalCompany.authorised_signatory?.capacity)),
     authorisedSignatoryEmail: normalizeText(pickFirst(form.authorisedSignatoryEmail, canonicalCompany.authorised_signatory?.email)).toLowerCase(),
+    authorisedSignatoryIdNumber: normalizeText(pickFirst(form.authorisedSignatoryIdNumber, canonicalCompany.authorised_signatory?.id_number)),
+    authorisedSignatoryNationality: normalizeText(pickFirst(form.authorisedSignatoryNationality, canonicalCompany.authorised_signatory?.nationality)),
+    authorisedSignatoryAddress: normalizeText(pickFirst(form.authorisedSignatoryAddress, canonicalCompany.authorised_signatory?.residential_address)),
     trustName: normalizeText(pickFirst(form.trustName, canonicalTrust.name)),
     trustRegistrationNumber: normalizeText(pickFirst(form.trustRegistrationNumber, canonicalTrust.registration_number, canonicalTrust.registrationNumber)),
     trustRegisteredAddress: normalizeText(pickFirst(form.trustRegisteredAddress, canonicalTrust.registered_address, canonicalTrust.registeredAddress)),
     trustees: normalizePersonCollectionForSellerProfile(form.trustees || canonicalTrust.trustees || [], null, 'Trustee'),
+    trustFounders: normalizePersonCollectionForSellerProfile(form.trustFounders || canonicalTrust.founders || [], null, 'Founder'),
     trustBeneficiaries: normalizePersonCollectionForSellerProfile(form.trustBeneficiaries || form.beneficiaries || canonicalTrust.beneficiaries || [], null, 'Beneficiary'),
+    trustBeneficiaryClass: normalizeText(pickFirst(form.trustBeneficiaryClass, canonicalTrust.beneficiary_class)),
     authorisedTrusteeName: normalizeText(pickFirst(form.authorisedTrusteeName, canonicalTrust.authorised_trustee?.full_name, canonicalTrust.authorised_trustee?.name)),
     authorisedTrusteeCapacity: normalizeText(pickFirst(form.authorisedTrusteeCapacity, canonicalTrust.authorised_trustee?.capacity)),
     authorisedTrusteeEmail: normalizeText(pickFirst(form.authorisedTrusteeEmail, canonicalTrust.authorised_trustee?.email)).toLowerCase(),
+    authorisedTrusteeIdNumber: normalizeText(pickFirst(form.authorisedTrusteeIdNumber, canonicalTrust.authorised_trustee?.id_number)),
+    authorisedTrusteeNationality: normalizeText(pickFirst(form.authorisedTrusteeNationality, canonicalTrust.authorised_trustee?.nationality)),
+    authorisedTrusteeAddress: normalizeText(pickFirst(form.authorisedTrusteeAddress, canonicalTrust.authorised_trustee?.residential_address)),
+    occupation: normalizeText(pickFirst(form.occupation, sellerFacts.occupation)),
+    sourceOfFunds: normalizeText(pickFirst(form.sourceOfFunds, sellerFacts.source_of_funds)),
+    politicallyExposedPerson: normalizeText(pickFirst(form.politicallyExposedPerson, sellerFacts.politically_exposed_person)),
+    politicallyExposedDetails: normalizeText(pickFirst(form.politicallyExposedDetails, sellerFacts.politically_exposed_details)),
     deceasedEstateName: normalizeText(pickFirst(form.deceasedEstateName, form.estateName, sellerFacts.deceased_estate?.name)),
     estateReferenceNumber: normalizeText(pickFirst(form.estateReferenceNumber, form.deceasedEstateReferenceNumber, sellerFacts.deceased_estate?.reference_number)),
     executorName: normalizeText(pickFirst(form.executorName, sellerFacts.deceased_estate?.executor?.full_name, sellerFacts.deceased_estate?.executor?.name)),
@@ -541,6 +554,10 @@ export function buildListingSellerProfileFormPatch(draft = {}) {
     mandateTerms: normalizeText(draft.mandateTerms),
     mandateCommissionTerms: normalizeText(draft.mandateTerms),
     popiConsent: normalizeText(draft.popiConsent),
+    occupation: normalizeText(draft.occupation),
+    sourceOfFunds: normalizeText(draft.sourceOfFunds),
+    politicallyExposedPerson: normalizeText(draft.politicallyExposedPerson),
+    politicallyExposedDetails: normalizeText(draft.politicallyExposedDetails),
     privacyConsent: normalizeText(draft.popiConsent),
   }
 
@@ -553,21 +570,30 @@ export function buildListingSellerProfileFormPatch(draft = {}) {
     base.companyRegistrationNumber = normalizeText(draft.companyRegistrationNumber)
     base.companyRegisteredAddress = normalizeText(draft.companyRegisteredAddress)
     base.companyDirectors = normalizePersonCollectionForSellerProfile(draft.companyDirectors || [], null, 'Director')
+    base.companyBeneficialOwners = normalizePersonCollectionForSellerProfile(draft.companyBeneficialOwners || [], null, 'Beneficial Owner')
     base.directors = base.companyDirectors
     base.authorisedSignatoryName = normalizeText(draft.authorisedSignatoryName)
     base.authorisedSignatoryCapacity = normalizeText(draft.authorisedSignatoryCapacity)
     base.authorisedSignatoryEmail = normalizeText(draft.authorisedSignatoryEmail).toLowerCase()
+    base.authorisedSignatoryIdNumber = normalizeText(draft.authorisedSignatoryIdNumber)
+    base.authorisedSignatoryNationality = normalizeText(draft.authorisedSignatoryNationality)
+    base.authorisedSignatoryAddress = normalizeText(draft.authorisedSignatoryAddress)
   }
   if (branch === 'trust' || branch === 'foreign_trust') {
     base.trustName = normalizeText(draft.trustName)
     base.trustRegistrationNumber = normalizeText(draft.trustRegistrationNumber)
     base.trustRegisteredAddress = normalizeText(draft.trustRegisteredAddress)
     base.trustees = normalizePersonCollectionForSellerProfile(draft.trustees || [], null, 'Trustee')
+    base.trustFounders = normalizePersonCollectionForSellerProfile(draft.trustFounders || [], null, 'Founder')
     base.trustBeneficiaries = normalizePersonCollectionForSellerProfile(draft.trustBeneficiaries || [], null, 'Beneficiary')
+    base.trustBeneficiaryClass = normalizeText(draft.trustBeneficiaryClass)
     base.beneficiaries = base.trustBeneficiaries
     base.authorisedTrusteeName = normalizeText(draft.authorisedTrusteeName)
     base.authorisedTrusteeCapacity = normalizeText(draft.authorisedTrusteeCapacity)
     base.authorisedTrusteeEmail = normalizeText(draft.authorisedTrusteeEmail).toLowerCase()
+    base.authorisedTrusteeIdNumber = normalizeText(draft.authorisedTrusteeIdNumber)
+    base.authorisedTrusteeNationality = normalizeText(draft.authorisedTrusteeNationality)
+    base.authorisedTrusteeAddress = normalizeText(draft.authorisedTrusteeAddress)
   }
   if (branch === 'deceased_estate') {
     base.deceasedEstateName = normalizeText(draft.deceasedEstateName)

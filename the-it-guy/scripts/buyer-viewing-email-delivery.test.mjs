@@ -39,7 +39,7 @@ assert.match(pageSource, />\s*Back\s*<\/Button>/, 'planner should expose a simpl
 assert.doesNotMatch(pageSource, /Edit selected properties/, 'planner should not use the old edit-selected-properties copy')
 assert.match(pageSource, /data-testid="buyer-viewing-request-status"[\s\S]*data-testid="simplified-viewing-planner"/, 'overview should show the viewing request status above Viewing Planner')
 assert.match(pageSource, /viewingRequestSummary\.proposedTimes\.map/, 'overview should surface the buyer-submitted preferred viewing options')
-assert.match(pageSource, /const VIEWING_PLANNER_PRICE_MATCH_TOLERANCE = 500000/, 'planner should keep suggested listings within the R500k price class')
+assert.match(pageSource, /const VIEWING_PLANNER_PRICE_MATCH_TOLERANCE = 300000/, 'planner should keep suggested listings within R300k of the enquiry price')
 assert.match(pageSource, /raw\.match\(\/\\d\[\\d\\s\.,\]\*\//, 'price matching should parse formatted currency values with thousands separators')
 assert.match(pageSource, /priceAmount >= priceFloor && priceAmount <= priceCeiling/, 'planner suggestions should filter active listings to the enquiry price band')
 assert.match(pageSource, /resolveListingImageUrl\(listing\)/, 'planner cards should use real listing image fields')

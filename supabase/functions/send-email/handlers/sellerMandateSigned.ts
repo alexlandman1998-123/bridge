@@ -54,9 +54,10 @@ export async function handleSellerMandateSignedEmail(payload: SendSellerMandateS
     defaults: { organisationName, supportEmail, supportPhone },
   });
   const sender = formatEmailSender(
-    normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
+    normalizeText(Deno.env.get("ARCH9_RESEND_FROM_EMAIL")) ||
+      normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
       "Arch9 <onboarding@resend.dev>",
-    branding.fromName || branding.organisationName,
+    "Arch9",
   );
 
   const subject = `All signed: ${propertyTitle} is ready for the next step`;

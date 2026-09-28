@@ -84,6 +84,9 @@ test('agent onboarding validates required facts and preserves existing onboardin
       ...draft,
       dateOfBirth: '1980-01-01',
       nationality: 'South African',
+      occupation: 'Teacher',
+      sourceOfFunds: 'Employment income',
+      politicallyExposedPerson: 'no',
       residentialAddress: '1 Main Road',
       incomeTaxNumber: '12345',
       saResident: 'Yes',
@@ -100,4 +103,22 @@ test('agent onboarding validates required facts and preserves existing onboardin
   assert.equal(complete.formData.canonicalSellerFacts.seller.tax_number, '12345')
   assert.equal(complete.formData.propertyDisclosure.answers.roof, 'good')
   assert.equal(complete.formData.popiConsentAccepted, true)
+})
+
+test('agent onboarding keeps beneficial owners and FICA answers in the shared seller facts', () => {
+  const draft = createSellerLeadAgentOnboardingDraft({
+    listing: { id: 'listing-1' },
+    formData: {
+      ownershipType: 'company',
+      companyName: 'Example Property Holdings',
+      companyBeneficialOwners: [{ name: 'Ana', surname: 'Nkosi', idNumber: '8001015009087', nationality: 'South African', residentialAddress: '1 Main Road', ownershipShare: '30%' }],
+      occupation: 'Property holding company',
+      sourceOfFunds: 'Rental income',
+      politicallyExposedPerson: 'no',
+    },
+  })
+  const { formData } = buildSellerLeadAgentOnboardingSubmission({ draft, listing: { id: 'listing-1' } })
+  assert.equal(formData.companyBeneficialOwners[0].ownershipShare, '30%')
+  assert.equal(formData.canonicalSellerFacts.seller.company.beneficial_owners[0].id_number, '8001015009087')
+  assert.equal(formData.canonicalSellerFacts.seller.source_of_funds, 'Rental income')
 })

@@ -79,6 +79,18 @@ export function isDashboardTransactionActive(row = {}, { organisationId = '' } =
   return !EXCLUDED_STATUS_TERMS.some((term) => statusText.includes(term))
 }
 
+export function isDashboardTransactionAwaitingReview(row = {}, { organisationId = '' } = {}) {
+  const transaction = getDashboardTransaction(row)
+  if (!getDashboardTransactionId(row)) return false
+  const requiredOrganisationId = normalizeText(organisationId)
+  if (requiredOrganisationId && getDashboardTransactionOrganisationId(row) !== requiredOrganisationId) return false
+  if (transaction?.is_active === false) return false
+  if (transaction?.deleted_at || transaction?.archived_at || transaction?.cancelled_at || transaction?.registered_at || transaction?.completed_at) return false
+  if (['registered', 'closed', 'completed', 'cancelled', 'canceled', 'lost', 'archived', 'deleted'].some((term) =>
+    getDashboardTransactionStatusText(row).includes(term))) return false
+  return ['avail', 'available'].includes(normalizeKey(transaction?.current_main_stage || transaction?.stage))
+}
+
 export function dedupeDashboardTransactions(rows = []) {
   const byId = new Map()
   for (const row of Array.isArray(rows) ? rows : []) {

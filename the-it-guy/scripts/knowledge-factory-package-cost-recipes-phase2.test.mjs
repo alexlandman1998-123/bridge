@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { completeCostEvidence } from "../api/knowledge-factory/report-products.js";
 
 const migration = await readFile(
   new URL(
@@ -62,6 +63,9 @@ assert.match(
   /costValidationRecipeId: "package_basic_v1"[\s\S]*costValidationRecipeId: "package_full_v1"/,
   "Products must require their complete-query validation evidence.",
 );
+assert.equal(completeCostEvidence({ outcome: "validated", field_cost: null, type_cost: null, credits_consumed: null }), false);
+assert.equal(completeCostEvidence({ outcome: "validated", field_cost: 12, type_cost: 4, credits_consumed: 16 }), true);
+assert.match(execution, /estimatedCredits = metric\(validation\.credits_consumed\)[\s\S]*estimatedCredits === null/, "Paid preflight must reject missing credit evidence.");
 assert.match(
   execution,
   /packageReportQuery\(productId, "CanvassingReport"\)/,

@@ -1,4 +1,6 @@
 import { handleClientOnboardingEmail } from "./handlers/clientOnboarding.ts";
+import { handleClientJourneyEmail } from "./handlers/clientJourneyEmail.ts";
+import { CLIENT_JOURNEY_EMAIL_KINDS } from "./content/clientJourneyEmails.ts";
 import { handleLegacyTestEmail } from "./handlers/legacyTest.ts";
 import { handleOnboardingSubmittedEmail } from "./handlers/onboardingSubmitted.ts";
 import { handleReservationDepositEmail } from "./handlers/reservationDeposit.ts";
@@ -210,6 +212,11 @@ Deno.serve(async (req: Request) => {
         reason: recipientSafety.reason,
         message: recipientSafety.message,
       });
+    }
+
+    if (CLIENT_JOURNEY_EMAIL_KINDS.some((kind) => kind === type)) {
+      console.log("[send-email] routing template", { route: type });
+      return await handleClientJourneyEmail(req, payload);
     }
 
     if (
@@ -1124,6 +1131,7 @@ Deno.serve(async (req: Request) => {
         supportedTypes: [
           "attorney_quote",
           "client_onboarding",
+          ...CLIENT_JOURNEY_EMAIL_KINDS,
           "client_portal_link",
           "client_portal",
           "portal_link",
@@ -1289,6 +1297,7 @@ Deno.serve(async (req: Request) => {
       supportedTypes: [
         "attorney_quote",
         "client_onboarding",
+        ...CLIENT_JOURNEY_EMAIL_KINDS,
         "client_portal_link",
         "client_portal",
         "portal_link",

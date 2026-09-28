@@ -78,12 +78,14 @@ function addPeopleRows(rows, label, people = []) {
       const idNumber = text(person?.id_number || person?.idNumber)
       const email = text(person?.email)
       const phone = text(person?.phone || person?.mobile)
+      const nationality = text(person?.nationality)
+      const residentialAddress = text(person?.residential_address || person?.residentialAddress)
       return {
         name,
         idNumber,
         email,
         phone,
-        summary: [name, idNumber ? `ID ${idNumber}` : '', email, phone].map(text).filter(Boolean).join(' | '),
+        summary: [name, idNumber ? `ID ${idNumber}` : '', nationality, residentialAddress, email, phone].map(text).filter(Boolean).join(' | '),
       }
     })
     .filter((person) => person.summary)
@@ -116,7 +118,8 @@ function buildSellerSection(facts = {}, formData = {}) {
       return !ownerKeys.some((ownerKey) => primarySellerKeys.has(ownerKey))
     })
     : []
-  addRow(rows, 'Seller name', firstText(fullName(seller.first_name, seller.surname), formData.sellerName))
+  const entityClient = ['company', 'close_corporation', 'foreign_company', 'trust', 'foreign_trust'].includes(key(seller.legal_type))
+  addRow(rows, entityClient ? 'Primary contact' : 'Seller name', firstText(fullName(seller.first_name, seller.surname), formData.sellerName))
   addRow(rows, 'Owner type', firstText(seller.branch_label, humanize(seller.owner_structure_type), humanize(seller.legal_type)))
   addRow(rows, 'Owner entity', humanize(seller.owner_entity_type))
   addRow(rows, 'Mobile', seller.phone)
@@ -124,11 +127,13 @@ function buildSellerSection(facts = {}, formData = {}) {
   addRow(rows, 'ID / passport number', firstText(seller.id_number, seller.foreign?.passport_number))
   addRow(rows, 'Date of birth', seller.date_of_birth)
   addRow(rows, 'Nationality', seller.nationality)
-  addRow(rows, 'Marital status', humanize(seller.marital_status))
-  addRow(rows, 'Marital regime', humanize(seller.marital_regime))
-  addRow(rows, 'Spouse name', seller.spouse?.name)
-  addRow(rows, 'Spouse ID number', seller.spouse?.id_number)
-  addRow(rows, 'Spouse email', seller.spouse?.email)
+  if (!entityClient) {
+    addRow(rows, 'Marital status', humanize(seller.marital_status))
+    addRow(rows, 'Marital regime', humanize(seller.marital_regime))
+    addRow(rows, 'Spouse name', seller.spouse?.name)
+    addRow(rows, 'Spouse ID number', seller.spouse?.id_number)
+    addRow(rows, 'Spouse email', seller.spouse?.email)
+  }
   addRow(rows, 'Residential address', seller.residential_address)
   addPeopleRows(rows, 'Additional owners', additionalOwners)
   return { title: 'Seller', rows }
@@ -144,6 +149,7 @@ function buildEntitySection(facts = {}) {
     addRow(rows, 'Authorised signatory', firstText(seller.company?.authorised_signatory?.name, seller.company?.director_name))
     addRow(rows, 'Authority basis', seller.company?.authority_basis)
     addPeopleRows(rows, 'Directors', seller.company?.directors)
+    addPeopleRows(rows, 'Beneficial owners / controllers', seller.company?.beneficial_owners)
   }
 
   if (seller.legal_type === 'trust' || seller.owner_entity_type === 'trust') {
@@ -152,6 +158,9 @@ function buildEntitySection(facts = {}) {
     addRow(rows, 'Authorised trustee', firstText(seller.trust?.authorised_trustee?.name, seller.trust?.trustee_name))
     addRow(rows, 'Authority basis', seller.trust?.authority_basis)
     addPeopleRows(rows, 'Trustees', seller.trust?.trustees)
+    addPeopleRows(rows, 'Founders', seller.trust?.founders)
+    addPeopleRows(rows, 'Named beneficiaries', seller.trust?.beneficiaries)
+    addRow(rows, 'Beneficiary class', seller.trust?.beneficiary_class)
   }
 
   if (seller.legal_type === 'deceased_estate') {
@@ -200,6 +209,16 @@ function buildTaxSection(facts = {}) {
   return { title: 'FICA / Tax', rows }
 }
 
+function buildFicaQuestionsSection(facts = {}) {
+  const seller = facts.seller || {}
+  const rows = []
+  addRow(rows, 'Main occupation / business activity', seller.occupation)
+  addRow(rows, 'Source of funds / wealth', seller.source_of_funds)
+  addRow(rows, 'Politically exposed person', humanize(seller.politically_exposed_person))
+  if (key(seller.politically_exposed_person) === 'yes') addRow(rows, 'Political exposure details', seller.politically_exposed_details)
+  return rows.length ? { title: 'FICA declarations', rows } : null
+}
+
 function buildSigningSummary(signing = {}) {
   const signers = Array.isArray(signing?.signers) ? signing.signers : Array.isArray(signing?.signingState?.signers) ? signing.signingState.signers : []
   return {
@@ -244,6 +263,7 @@ export function buildSellerComplianceDocumentModel({
     buildEntitySection(facts),
     buildPropertySection(facts, safeListing),
     buildTaxSection(facts),
+    buildFicaQuestionsSection(facts),
   ].filter((section) => section?.rows?.length)
   const signingSummary = buildSigningSummary(signing)
 

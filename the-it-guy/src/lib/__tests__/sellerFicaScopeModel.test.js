@@ -41,6 +41,16 @@ test('company scope includes entity, directors, beneficial owners and authorised
   assert.equal(scope.missing.some((entry) => entry.includes('Beneficial ownership / control declaration')), false)
 })
 
+test('company scope reuses the canonical signatory identity from a listed director', () => {
+  const director = person('Director One', '8001015009087')
+  const scope = buildSellerFicaScope({
+    sellerSubject: { kind: 'company', legalOwner: { name: 'Acme', registrationNumber: '2020/123456/07', address: '2 Market Road' } },
+    onboarding: { companyDirectors: [director], authorisedSignatoryName: 'Director One', companyAuthorityBasis: 'Resolution' },
+    canonicalFacts: { seller: { company: { authorised_signatory: { id_number: '8001015009087', nationality: director.nationality, residential_address: director.residentialAddress } } } },
+  })
+  assert.deepEqual(scope.subjects.find((entry) => entry.roles.includes('Director / member')).roles, ['Director / member', 'Authorised representative'])
+})
+
 test('same-name people with distinct IDs are never merged', () => {
   const scope = buildSellerFicaScope({
     sellerSubject: { kind: 'multiple_owners' },

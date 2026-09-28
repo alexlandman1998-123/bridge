@@ -7,8 +7,11 @@ function SellerDocumentReviewActions({
   onReview = null,
   onReminder = null,
   compact = false,
+  requireSignedCopyCheck = false,
 }) {
   const [rejecting, setRejecting] = useState(false)
+  const [confirmingSignedCopy, setConfirmingSignedCopy] = useState(false)
+  const [signedCopyChecked, setSignedCopyChecked] = useState(false)
   const [rejectionReason, setRejectionReason] = useState('')
   const document = item?.linkedDocument || item?.upload || null
   const documentId = String(document?.id || '').trim()
@@ -34,11 +37,38 @@ function SellerDocumentReviewActions({
     }
   }
 
+  const submitApproval = async () => {
+    if (requireSignedCopyCheck && !signedCopyChecked) return
+    const reason = requireSignedCopyCheck
+      ? 'Reviewed the uploaded signed file against the current signing copy and checked every required signature.'
+      : ''
+    const completed = await onReview?.({ item, document, action: 'approve', reason })
+    if (completed !== false) {
+      setConfirmingSignedCopy(false)
+      setSignedCopyChecked(false)
+    }
+  }
+
   if (!canReview && !canRemind) return null
 
   return (
     <div className={compact ? '' : 'mt-4 border-t border-[#e2eaf3] pt-4'}>
-      {rejecting ? (
+      {confirmingSignedCopy ? (
+        <div className="rounded-[14px] border border-[#cfe3d7] bg-[#f4fbf6] p-3">
+          <p className="text-xs font-semibold text-[#195a3a]">Check the physical signed copy</p>
+          <label className="mt-2 flex items-start gap-2 text-xs leading-5 text-[#315b45]">
+            <input type="checkbox" checked={signedCopyChecked} onChange={(event) => setSignedCopyChecked(event.target.checked)} disabled={isBusy} className="mt-1" />
+            <span>I compared the uploaded file with the reviewed signing copy and checked that every required seller has signed.</span>
+          </label>
+          <div className="mt-3 flex flex-wrap justify-end gap-2">
+            <button type="button" onClick={() => { setConfirmingSignedCopy(false); setSignedCopyChecked(false) }} disabled={isBusy} className="min-h-9 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#52657b] disabled:opacity-60">Cancel</button>
+            <button type="button" onClick={() => void submitApproval()} disabled={isBusy || !signedCopyChecked} className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-[#1f7a46] px-3 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60">
+              {busyAction === actionKey('approve') ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+              Approve signed copy
+            </button>
+          </div>
+        </div>
+      ) : rejecting ? (
         <div className="rounded-[14px] border border-[#f1d0cd] bg-[#fff8f7] p-3">
           <label htmlFor={`seller-document-rejection-${item?.key || item?.id}`} className="text-xs font-semibold text-[#7f312b]">
             Why must the seller replace this file?
@@ -110,7 +140,7 @@ function SellerDocumentReviewActions({
               </button>
               <button
                 type="button"
-                onClick={() => void onReview?.({ item, document, action: 'approve', reason: '' })}
+                onClick={() => requireSignedCopyCheck ? setConfirmingSignedCopy(true) : void submitApproval()}
                 disabled={isBusy}
                 className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-[#1f7a46] px-3 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
               >

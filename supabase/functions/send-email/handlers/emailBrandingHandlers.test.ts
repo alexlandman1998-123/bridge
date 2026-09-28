@@ -75,11 +75,10 @@ Deno.test({
         "resolveEmailBranding",
         `${fileName} should resolve the shared branding contract`,
       );
-      assertIncludes(
-        source,
-        "formatEmailSender",
-        `${fileName} should apply the branded sender display name`,
-      );
+      if (!source.includes("formatEmailSender") &&
+        !source.includes("resolveAudienceEmailSender")) {
+        throw new Error(`${fileName} should apply the branded sender display name`);
+      }
       assertNotIncludes(
         source,
         "extractEmailBrandingFromPayload",
@@ -130,5 +129,18 @@ Deno.test({
       "supabase,",
       "buyer offer submitted handler should pass the client into resolveEmailBranding",
     );
+  },
+});
+
+Deno.test({
+  name: "buyer onboarding uses the current invitation template for every source",
+  permissions: { read: true },
+  async fn() {
+    const source = await Deno.readTextFile(
+      new URL("clientOnboarding.ts", import.meta.url),
+    );
+    assertIncludes(source, '"client_onboarding"');
+    assertNotIncludes(source, '"client_onboarding_accepted_offer"');
+    assertNotIncludes(source, "acceptedOfferOnboarding");
   },
 });

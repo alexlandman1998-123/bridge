@@ -1,25 +1,12 @@
 import {
   type BridgeEmailLayoutBranding,
-  renderBridgeBullets,
-  renderBridgeCta,
-  renderBridgeEmailLayout,
-  renderBridgeIntroParagraphs,
-  renderBridgeSteps,
-  renderBridgeSummaryCard,
 } from "./bridgeEmailLayout.ts";
+import { renderOnboardingInvitation } from "./onboardingInvitationLayout.ts";
 
-export function buildOnboardingSubject(
-  transactionReference: string,
-  acceptedOffer = false,
-) {
-  if (acceptedOffer) {
-    return transactionReference
-      ? `Congratulations, the seller accepted your offer (${transactionReference})`
-      : "Congratulations, the seller accepted your offer";
-  }
+export function buildOnboardingSubject(transactionReference: string) {
   return transactionReference
-    ? `Complete your Arch9 onboarding (${transactionReference})`
-    : "Complete your Arch9 onboarding";
+    ? `Complete your buyer profile (${transactionReference})`
+    : "Complete your buyer profile";
 }
 
 function pickText(value: string | undefined, fallback: string) {
@@ -32,6 +19,16 @@ function pickLines(value: string[] | undefined, fallback: string[]) {
     ? value.map((item) => String(item || "").trim()).filter(Boolean)
     : [];
   return rows.length ? rows : fallback;
+}
+
+function pickCurrentBuyerText(value: string | undefined, fallback: string) {
+  const selected = pickText(value, fallback);
+  return /\boffer\b/i.test(selected) ? fallback : selected;
+}
+
+function pickCurrentBuyerLines(value: string[] | undefined, fallback: string[]) {
+  const selected = pickLines(value, fallback);
+  return selected.some((line) => /\boffer\b/i.test(line)) ? fallback : selected;
 }
 
 export function buildOnboardingEmailHtml({
@@ -48,7 +45,6 @@ export function buildOnboardingEmailHtml({
   organisationName,
   supportEmail,
   supportPhone,
-  acceptedOffer = false,
   templateOverrides,
   branding,
 }: {
@@ -65,7 +61,6 @@ export function buildOnboardingEmailHtml({
   organisationName?: string;
   supportEmail?: string;
   supportPhone?: string;
-  acceptedOffer?: boolean;
   branding?: BridgeEmailLayoutBranding;
   templateOverrides?: {
     title?: string;
@@ -79,104 +74,62 @@ export function buildOnboardingEmailHtml({
     helpBody?: string;
   };
 }) {
+  const agencyName = branding?.organisationName || organisationName || "Your agency";
   const greetingName = clientName || buyerName || "there";
   const summaryProperty = propertyName ||
     [developmentName, unitLabel].filter(Boolean).join(" • ");
   const summaryUnit = unitNumber || unitLabel;
+  const defaultIntro = [
+    `${agencyName} has prepared your secure buyer profile. Complete your details and share the requested documents so your team can prepare the next step with you.`,
+  ];
+  const introParagraphs = pickCurrentBuyerLines(templateOverrides?.introParagraphs, defaultIntro);
+  const customCapabilities = pickCurrentBuyerLines(templateOverrides?.capabilityBullets, []);
+  if (customCapabilities.length) {
+    introParagraphs.push(customCapabilities.join(" • "));
+  }
+  const customSteps = pickCurrentBuyerLines(templateOverrides?.processSteps, []);
+  const steps = customSteps.length
+    ? customSteps.map((title) => ({ title, detail: "" }))
+    : [
+      { title: "Your details", detail: "Confirm your buyer and contact information." },
+      { title: "Your documents", detail: "Upload the requested supporting documents securely." },
+      { title: "We take it forward", detail: "Your team coordinates finance, where applicable, and transfer next steps." },
+    ];
+  const ctaLabel = pickCurrentBuyerText(templateOverrides?.ctaLabel, "Complete your buyer profile");
+  const supportLine = [supportEmail, supportPhone].filter(Boolean).join(" | ");
 
-  const introParagraphs = pickLines(
-    templateOverrides?.introParagraphs,
-    acceptedOffer
-      ? [
-        "Congratulations, the seller has accepted your offer. This is an exciting step, and Arch9 is here to help keep the next part of the journey clear and coordinated.",
-        "Your accepted offer is now moving into the formal transaction workflow. Your agent and transaction team will guide you through onboarding, documents, finance where applicable, and the transfer process.",
-      ]
-      : [
-        "Your property transaction has been added to Arch9 and your onboarding process is now ready to begin.",
-        "Arch9 is a property transaction platform that keeps buyers, sellers, agents, attorneys, and bond originators connected throughout the process.",
-      ],
-  );
-  const capabilityBullets = pickLines(templateOverrides?.capabilityBullets, [
-    "Complete your onboarding information",
-    "Upload required documents securely",
-    "Track transaction progress",
-    "Receive updates and next steps from your team",
-  ]);
-  const processSteps = pickLines(
-    templateOverrides?.processSteps,
-    acceptedOffer
-      ? [
-        "Complete your buyer onboarding details so the transaction record is ready for the transfer team.",
-        "Upload the requested FICA and supporting documents securely in Arch9.",
-        "If your offer depends on finance, expect follow-up from your bond originator or finance team.",
-        "Your transfer attorney details and other roleplayers will be shared as they are confirmed.",
-      ]
-      : [
-        "Complete your onboarding information.",
-        "Upload the required documents.",
-        "Your team reviews and prepares the next steps.",
-        "Progress and updates appear in your client portal.",
-      ],
-  );
-  const ctaLabel = pickText(
-    templateOverrides?.ctaLabel,
-    acceptedOffer ? "Start Buyer Onboarding" : "Open Onboarding",
-  );
-
-  const contentHtml = [
-    renderBridgeIntroParagraphs(introParagraphs),
-    `<div style="margin: 14px 0 16px; padding: 14px; border: 1px solid #dbe6f2; border-radius: 12px; background: #ffffff;">
-       <p style="margin: 0 0 10px; font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase; color: #5f7590; font-weight: 700;">What you can do in Arch9</p>
-       ${renderBridgeBullets(capabilityBullets)}
-     </div>`,
-    `<div style="margin: 0 0 16px; padding: 14px; border: 1px solid #dbe6f2; border-radius: 12px; background: #ffffff;">
-       <p style="margin: 0 0 10px; font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase; color: #5f7590; font-weight: 700;">How onboarding works</p>
-       ${renderBridgeSteps(processSteps)}
-     </div>`,
-    renderBridgeSummaryCard(
-      [
-        { label: "Property", value: summaryProperty },
-        { label: "Unit", value: summaryUnit },
-        { label: "Purchase Price", value: purchasePrice },
-        { label: "Transaction Reference", value: transactionReference || "" },
-        { label: "Agent", value: agentName || "" },
-      ],
-      "Property / Transaction Summary",
-    ),
-    renderBridgeCta(ctaLabel, onboardingUrl, {
-      primaryColor: branding?.primaryColor,
-    }),
-  ].join("");
-
-  return renderBridgeEmailLayout({
-    preheader: pickText(
-      templateOverrides?.preheader,
-      acceptedOffer
-        ? "The seller has accepted your offer. Start buyer onboarding to continue."
-        : "Your Arch9 onboarding is ready. Complete your details and documents to continue.",
-    ),
-    title: pickText(
-      templateOverrides?.title,
-      acceptedOffer ? "Offer Accepted" : "Client Onboarding",
-    ),
-    greeting: `Hi ${greetingName},`,
-    contentHtml,
-    securityTitle: pickText(
-      templateOverrides?.securityTitle,
-      "Security & Privacy",
-    ),
-    securityBody: pickText(
-      templateOverrides?.securityBody,
-      "Your information and documents are handled securely through Arch9. Only authorised parties involved in your transaction can access your onboarding details.",
-    ),
-    helpBody: pickText(
-      templateOverrides?.helpBody,
-      "Need help? Reply to this email or contact your property representative directly.",
-    ),
-    organisationName: organisationName || "Arch9",
-    supportEmail: supportEmail || "",
-    supportPhone: supportPhone || "",
+  return renderOnboardingInvitation({
+    organisationName: agencyName,
     branding,
+    preheader: pickCurrentBuyerText(
+      templateOverrides?.preheader,
+      "Your secure buyer profile is ready. Complete your details to continue.",
+    ),
+    eyebrow: "Buyer onboarding",
+    title: pickCurrentBuyerText(templateOverrides?.title, "Your next step starts here."),
+    recipientName: greetingName,
+    introParagraphs,
+    ctaLabel,
+    ctaUrl: onboardingUrl,
+    timingText: "Open securely on any device.",
+    steps,
+    summaryRows: [
+      { label: "Property", value: summaryProperty },
+      { label: "Unit", value: summaryUnit },
+      { label: "Purchase price", value: purchasePrice },
+      { label: "Reference", value: transactionReference || "" },
+      { label: "Agent", value: agentName || "" },
+    ],
+    helpBody: pickCurrentBuyerText(
+      templateOverrides?.helpBody,
+      "Reply to this email or contact your agent directly.",
+    ),
+    contactLine: supportLine,
+    securityTitle: pickCurrentBuyerText(templateOverrides?.securityTitle, "Security & privacy"),
+    securityBody: pickCurrentBuyerText(
+      templateOverrides?.securityBody,
+      "Your information and documents are shared only with authorised people working on your transaction.",
+    ),
   });
 }
 
@@ -194,7 +147,6 @@ export function buildOnboardingEmailText({
   organisationName,
   supportEmail,
   supportPhone,
-  acceptedOffer = false,
   templateOverrides,
 }: {
   buyerName: string;
@@ -210,7 +162,6 @@ export function buildOnboardingEmailText({
   organisationName?: string;
   supportEmail?: string;
   supportPhone?: string;
-  acceptedOffer?: boolean;
   templateOverrides?: {
     introParagraphs?: string[];
     capabilityBullets?: string[];
@@ -220,85 +171,57 @@ export function buildOnboardingEmailText({
     helpBody?: string;
   };
 }) {
+  const agencyName = organisationName || "Your agency";
   const greetingName = clientName || buyerName || "there";
   const propertyLine = propertyName ||
     [developmentName, unitLabel].filter(Boolean).join(" • ");
   const supportLine = [supportEmail, supportPhone].filter(Boolean).join(" | ");
-
-  const introParagraphs = pickLines(
+  const introParagraphs = pickCurrentBuyerLines(
     templateOverrides?.introParagraphs,
-    acceptedOffer
-      ? [
-        "Congratulations, the seller has accepted your offer.",
-        "Your accepted offer is now moving into the formal transaction workflow. Your agent and transaction team will guide you through onboarding, documents, finance where applicable, and the transfer process.",
-      ]
-      : [
-        "Your property transaction has been added to Arch9 and your onboarding process is now ready.",
-        "Arch9 helps keep buyers, sellers, agents, attorneys, and bond originators connected throughout your transaction.",
-      ],
+    [
+      `${agencyName} has prepared your secure buyer profile. Complete your details and share the requested documents so your team can prepare the next step with you.`,
+    ],
   );
-  const capabilityBullets = pickLines(templateOverrides?.capabilityBullets, [
-    "Complete your onboarding information",
-    "Upload required documents securely",
-    "Track transaction progress",
-    "Receive updates and next steps from your team",
-  ]);
-  const processSteps = pickLines(
+  const customCapabilities = pickCurrentBuyerLines(templateOverrides?.capabilityBullets, []);
+  const processSteps = pickCurrentBuyerLines(
     templateOverrides?.processSteps,
-    acceptedOffer
-      ? [
-        "Complete your buyer onboarding details.",
-        "Upload the requested FICA and supporting documents.",
-        "If your offer depends on finance, expect follow-up from your bond originator or finance team.",
-        "Your transfer attorney details and other roleplayers will be shared as they are confirmed.",
-      ]
-      : [
-        "Complete your onboarding information.",
-        "Upload the required documents.",
-        "Your team reviews and prepares the next steps.",
-        "Progress and updates appear in your client portal.",
-      ],
+    [
+      "Confirm your buyer and contact information.",
+      "Upload the requested supporting documents securely.",
+      "Your team coordinates finance, where applicable, and transfer next steps.",
+    ],
   );
-  const ctaLabel = pickText(
-    templateOverrides?.ctaLabel,
-    acceptedOffer ? "Start Buyer Onboarding" : "Open Onboarding",
-  );
+  const ctaLabel = pickCurrentBuyerText(templateOverrides?.ctaLabel, "Complete your buyer profile");
 
   return [
     `Hi ${greetingName},`,
     "",
     ...introParagraphs,
     "",
-    "You can use Arch9 to:",
-    ...capabilityBullets.map((line) => `- ${line}`),
+    ...customCapabilities.map((line) => `- ${line}`),
     propertyLine ? `Property: ${propertyLine}` : null,
     unitNumber || unitLabel ? `Unit: ${unitNumber || unitLabel}` : null,
-    purchasePrice ? `Purchase Price: ${purchasePrice}` : null,
-    transactionReference
-      ? `Transaction Reference: ${transactionReference}`
-      : null,
+    purchasePrice ? `Purchase price: ${purchasePrice}` : null,
+    transactionReference ? `Reference: ${transactionReference}` : null,
     agentName ? `Agent: ${agentName}` : null,
     "",
-    "How onboarding works:",
+    "What happens next:",
     ...processSteps.map((line, index) => `${index + 1}. ${line}`),
     "",
     `${ctaLabel}:`,
     onboardingUrl,
     "",
     supportLine ? `Support: ${supportLine}` : null,
-    pickText(
+    pickCurrentBuyerText(
       templateOverrides?.securityBody,
-      "Your information and documents are handled securely through Arch9 and shared only with authorised parties in your transaction.",
+      "Your information and documents are shared only with authorised people working on your transaction.",
     ),
-    "",
-    pickText(
+    pickCurrentBuyerText(
       templateOverrides?.helpBody,
-      "Need help? Reply to this email or contact your property representative directly.",
+      "Need help? Reply to this email or contact your agent directly.",
     ),
     "",
-    organisationName || "Arch9",
+    agencyName,
     "Powered by Arch9",
-  ]
-    .filter(Boolean)
-    .join("\n");
+  ].filter(Boolean).join("\n");
 }

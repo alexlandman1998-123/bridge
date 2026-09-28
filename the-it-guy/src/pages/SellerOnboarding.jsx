@@ -27,6 +27,7 @@ import {
   SellerOnboardingIllustration,
 } from '../components/onboarding/OnboardingVisualStep'
 import PremiumOnboardingLanding from '../components/onboarding/PremiumOnboardingLanding'
+import SellerFicaQuestions from '../components/onboarding/SellerFicaQuestions'
 import Button from '../components/ui/Button'
 import { MOCK_DATA_ENABLED } from '../lib/mockData'
 import {
@@ -35,6 +36,7 @@ import {
   resolveOnboardingBranding,
 } from '../lib/onboardingBranding'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
+import { getSellerFicaOnboardingMissing } from '../lib/sellerFicaOnboardingFields'
 import {
   CANONICAL_SELLER_FACTS_FLAG,
   buildSellerEntityProfileAliases,
@@ -1376,11 +1378,16 @@ function normalizeFormData(listing) {
       name: existing.companyDirectorName || canonicalFacts?.seller?.company?.director_name || canonicalFacts?.seller?.company?.authorised_signatory?.name || existing.company?.authorisedSignatory?.name || existing.company?.authorised_signatory?.name || '',
       email: existing.companyDirectorEmail || canonicalFacts?.seller?.company?.director_email || canonicalFacts?.seller?.company?.authorised_signatory?.email || existing.company?.authorisedSignatory?.email || existing.company?.authorised_signatory?.email || '',
       phone: existing.companyDirectorPhone || canonicalFacts?.seller?.company?.director_phone || canonicalFacts?.seller?.company?.authorised_signatory?.phone || existing.company?.authorisedSignatory?.phone || existing.company?.authorised_signatory?.phone || '',
-      residentialAddress: existing.companyDirectorAddress || canonicalFacts?.seller?.company?.authorised_signatory?.residential_address || existing.company?.authorisedSignatory?.residentialAddress || existing.company?.authorisedSignatory?.residential_address || existing.company?.authorisedSignatory?.address || existing.company?.authorised_signatory?.address || existing.companyRegisteredAddress || existing.company_registered_address || existing.company?.registeredAddress || existing.company?.registered_address || existing.residentialAddress || '',
+      residentialAddress: existing.companyDirectorAddress || canonicalFacts?.seller?.company?.authorised_signatory?.residential_address || existing.company?.authorisedSignatory?.residentialAddress || existing.company?.authorisedSignatory?.residential_address || existing.company?.authorisedSignatory?.address || existing.company?.authorised_signatory?.address || '',
       signingAuthority: Boolean(canonicalFacts?.seller?.company?.authorised_signatory?.name),
       roleTitle: 'Director',
     },
     'Director',
+  )
+  const companyBeneficialOwners = normalizePersonCollectionForForm(
+    existing.companyBeneficialOwners || canonicalFacts?.seller?.company?.beneficial_owners || [],
+    null,
+    'Beneficial Owner',
   )
   const trustTrustees = normalizePersonCollectionForForm(
     existing.trustees || existing.trust_trustees || canonicalFacts?.seller?.trust?.trustees || existing.trust?.trustees || [],
@@ -1389,11 +1396,21 @@ function normalizeFormData(listing) {
       name: existing.trusteeName || canonicalFacts?.seller?.trust?.trustee_name || canonicalFacts?.seller?.trust?.authorised_trustee?.name || existing.trust?.authorisedTrustee?.name || existing.trust?.authorised_trustee?.name || '',
       email: existing.trusteeEmail || canonicalFacts?.seller?.trust?.trustee_email || canonicalFacts?.seller?.trust?.authorised_trustee?.email || existing.trust?.authorisedTrustee?.email || existing.trust?.authorised_trustee?.email || '',
       phone: existing.trusteePhone || canonicalFacts?.seller?.trust?.trustee_phone || canonicalFacts?.seller?.trust?.authorised_trustee?.phone || existing.trust?.authorisedTrustee?.phone || existing.trust?.authorised_trustee?.phone || '',
-      residentialAddress: existing.trusteeAddress || canonicalFacts?.seller?.trust?.authorised_trustee?.residential_address || existing.trust?.authorisedTrustee?.residentialAddress || existing.trust?.authorisedTrustee?.residential_address || existing.trust?.authorisedTrustee?.address || existing.trust?.authorised_trustee?.address || existing.trustRegisteredAddress || existing.trust_registered_address || existing.trust?.registeredAddress || existing.trust?.registered_address || existing.residentialAddress || '',
+      residentialAddress: existing.trusteeAddress || canonicalFacts?.seller?.trust?.authorised_trustee?.residential_address || existing.trust?.authorisedTrustee?.residentialAddress || existing.trust?.authorisedTrustee?.residential_address || existing.trust?.authorisedTrustee?.address || existing.trust?.authorised_trustee?.address || '',
       signingAuthority: Boolean(canonicalFacts?.seller?.trust?.authorised_trustee?.name),
       roleTitle: 'Trustee',
     },
     'Trustee',
+  )
+  const trustFounders = normalizePersonCollectionForForm(
+    existing.trustFounders || canonicalFacts?.seller?.trust?.founders || [],
+    null,
+    'Founder',
+  )
+  const trustBeneficiaries = normalizePersonCollectionForForm(
+    existing.trustBeneficiaries || canonicalFacts?.seller?.trust?.beneficiaries || [],
+    null,
+    'Beneficiary',
   )
   const estateExecutors = normalizePersonCollectionForForm(
     existing.executors || canonicalFacts?.seller?.deceased_estate?.executors || [],
@@ -1582,6 +1599,10 @@ function normalizeFormData(listing) {
     sellerSurname: existing.sellerSurname || canonicalFacts?.seller?.surname || split.surname,
     idNumber: resolveIdNumber(),
     dateOfBirth: existing.dateOfBirth || existing.date_of_birth || existing.birthDate || canonicalFacts?.seller?.date_of_birth || '',
+    occupation: existing.occupation || canonicalFacts?.seller?.occupation || '',
+    sourceOfFunds: existing.sourceOfFunds || existing.source_of_funds || canonicalFacts?.seller?.source_of_funds || '',
+    politicallyExposedPerson: existing.politicallyExposedPerson || existing.politically_exposed_person || canonicalFacts?.seller?.politically_exposed_person || '',
+    politicallyExposedDetails: existing.politicallyExposedDetails || existing.politically_exposed_details || canonicalFacts?.seller?.politically_exposed_details || '',
     nationality: existing.nationality || canonicalFacts?.seller?.nationality || '',
     email: existing.email || canonicalFacts?.seller?.email || seller.email || '',
     phone: existing.phone || canonicalFacts?.seller?.phone || seller.phone || '',
@@ -1626,6 +1647,7 @@ function normalizeFormData(listing) {
     companyName: existing.companyName || existing.company_name || canonicalFacts?.seller?.company?.name || existing.company?.name || existing.company?.companyName || existing.company?.company_name || existing.entityName || '',
     companyRegistrationNumber: existing.companyRegistrationNumber || existing.company_registration_number || canonicalFacts?.seller?.company?.registration_number || existing.company?.registrationNumber || existing.company?.registration_number || existing.entityRegistrationNumber || '',
     companyDirectors,
+    companyBeneficialOwners,
     companyDirectorName: existing.companyDirectorName || companyDirectors[0]?.name || canonicalFacts?.seller?.company?.director_name || canonicalFacts?.seller?.company?.authorised_signatory?.name || existing.entityRepresentative || '',
     companyDirectorEmail: existing.companyDirectorEmail || companyDirectors[0]?.email || canonicalFacts?.seller?.company?.director_email || canonicalFacts?.seller?.company?.authorised_signatory?.email || '',
     companyDirectorPhone: existing.companyDirectorPhone || companyDirectors[0]?.phone || canonicalFacts?.seller?.company?.director_phone || canonicalFacts?.seller?.company?.authorised_signatory?.phone || '',
@@ -1633,6 +1655,8 @@ function normalizeFormData(listing) {
     authorisedSignatoryName: existing.authorisedSignatoryName || existing.authorised_signatory_name || canonicalFacts?.seller?.company?.authorised_signatory?.name || existing.company?.authorisedSignatory?.name || existing.company?.authorised_signatory?.name || '',
     authorisedSignatoryCapacity: existing.authorisedSignatoryCapacity || existing.authorised_signatory_capacity || canonicalFacts?.seller?.company?.authorised_signatory?.capacity || existing.company?.authorisedSignatory?.capacity || existing.company?.authorised_signatory?.capacity || '',
     authorisedSignatoryEmail: existing.authorisedSignatoryEmail || existing.authorised_signatory_email || canonicalFacts?.seller?.company?.authorised_signatory?.email || existing.company?.authorisedSignatory?.email || existing.company?.authorised_signatory?.email || '',
+    authorisedSignatoryIdNumber: existing.authorisedSignatoryIdNumber || canonicalFacts?.seller?.company?.authorised_signatory?.id_number || '',
+    authorisedSignatoryNationality: existing.authorisedSignatoryNationality || canonicalFacts?.seller?.company?.authorised_signatory?.nationality || '',
     authorisedSignatoryPhone: existing.authorisedSignatoryPhone || existing.authorised_signatory_phone || canonicalFacts?.seller?.company?.authorised_signatory?.phone || existing.company?.authorisedSignatory?.phone || existing.company?.authorised_signatory?.phone || '',
     authorisedSignatoryAddress: existing.authorisedSignatoryAddress || existing.authorised_signatory_address || canonicalFacts?.seller?.company?.authorised_signatory?.residential_address || existing.company?.authorisedSignatory?.residentialAddress || existing.company?.authorisedSignatory?.residential_address || existing.company?.authorisedSignatory?.address || existing.company?.authorised_signatory?.residentialAddress || existing.company?.authorised_signatory?.residential_address || existing.company?.authorised_signatory?.address || '',
     companyResolutionDate: existing.companyResolutionDate || existing.company_resolution_date || canonicalFacts?.seller?.company?.resolution_date || existing.company?.resolutionDate || existing.company?.resolution_date || '',
@@ -1641,6 +1665,9 @@ function normalizeFormData(listing) {
     trustName: existing.trustName || existing.trust_name || canonicalFacts?.seller?.trust?.name || existing.trust?.name || existing.trust?.trustName || existing.trust?.trust_name || existing.entityName || '',
     trustRegistrationNumber: existing.trustRegistrationNumber || existing.trust_registration_number || canonicalFacts?.seller?.trust?.registration_number || existing.trust?.registrationNumber || existing.trust?.registration_number || existing.entityRegistrationNumber || '',
     trustees: trustTrustees,
+    trustFounders,
+    trustBeneficiaries,
+    trustBeneficiaryClass: existing.trustBeneficiaryClass || canonicalFacts?.seller?.trust?.beneficiary_class || '',
     trusteeName: existing.trusteeName || trustTrustees[0]?.name || canonicalFacts?.seller?.trust?.trustee_name || canonicalFacts?.seller?.trust?.authorised_trustee?.name || existing.entityRepresentative || '',
     trusteeEmail: existing.trusteeEmail || trustTrustees[0]?.email || canonicalFacts?.seller?.trust?.trustee_email || canonicalFacts?.seller?.trust?.authorised_trustee?.email || '',
     trusteePhone: existing.trusteePhone || trustTrustees[0]?.phone || canonicalFacts?.seller?.trust?.trustee_phone || canonicalFacts?.seller?.trust?.authorised_trustee?.phone || '',
@@ -1648,6 +1675,8 @@ function normalizeFormData(listing) {
     authorisedTrusteeName: existing.authorisedTrusteeName || existing.authorised_trustee_name || canonicalFacts?.seller?.trust?.authorised_trustee?.name || existing.trust?.authorisedTrustee?.name || existing.trust?.authorised_trustee?.name || '',
     authorisedTrusteeCapacity: existing.authorisedTrusteeCapacity || existing.authorised_trustee_capacity || canonicalFacts?.seller?.trust?.authorised_trustee?.capacity || existing.trust?.authorisedTrustee?.capacity || existing.trust?.authorised_trustee?.capacity || '',
     authorisedTrusteeEmail: existing.authorisedTrusteeEmail || existing.authorised_trustee_email || canonicalFacts?.seller?.trust?.authorised_trustee?.email || existing.trust?.authorisedTrustee?.email || existing.trust?.authorised_trustee?.email || '',
+    authorisedTrusteeIdNumber: existing.authorisedTrusteeIdNumber || canonicalFacts?.seller?.trust?.authorised_trustee?.id_number || '',
+    authorisedTrusteeNationality: existing.authorisedTrusteeNationality || canonicalFacts?.seller?.trust?.authorised_trustee?.nationality || '',
     authorisedTrusteePhone: existing.authorisedTrusteePhone || existing.authorised_trustee_phone || canonicalFacts?.seller?.trust?.authorised_trustee?.phone || existing.trust?.authorisedTrustee?.phone || existing.trust?.authorised_trustee?.phone || '',
     authorisedTrusteeAddress: existing.authorisedTrusteeAddress || existing.authorised_trustee_address || canonicalFacts?.seller?.trust?.authorised_trustee?.residential_address || existing.trust?.authorisedTrustee?.residentialAddress || existing.trust?.authorisedTrustee?.residential_address || existing.trust?.authorisedTrustee?.address || existing.trust?.authorised_trustee?.residentialAddress || existing.trust?.authorised_trustee?.residential_address || existing.trust?.authorised_trustee?.address || '',
     trustAuthorityBasis: existing.trustAuthorityBasis || existing.trust_authority_basis || canonicalFacts?.seller?.trust?.authority_basis || existing.trust?.authorityBasis || existing.trust?.authority_basis || '',
@@ -1673,6 +1702,8 @@ function normalizeFormData(listing) {
       name: owner.name || owner.first_name || '',
       surname: owner.surname || '',
       idNumber: owner.idNumber || owner.id_number || '',
+      nationality: owner.nationality || '',
+      residentialAddress: owner.residentialAddress || owner.residential_address || '',
       email: owner.email || '',
       phone: owner.phone || '',
       ownershipShare: owner.ownershipShare || owner.ownership_share || '',
@@ -4269,6 +4300,9 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         }
       }
 
+      const ficaMissing = getSellerFicaOnboardingMissing(form)
+      if (ficaMissing.length) return `Please complete the FICA details: ${ficaMissing.join(', ')}.`
+
       if (!areSellerOnboardingConsentsComplete(form)) {
         return 'Please accept the onboarding permissions and information declaration before continuing.'
       }
@@ -4438,6 +4472,8 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
             return 'Each owner needs a name, surname, ID/passport number, and consent to sell.'
           }
         }
+        const ficaMissing = getSellerFicaOnboardingMissing(form)
+        if (ficaMissing.length) return `Please complete the FICA details: ${ficaMissing.join(', ')}.`
       }
 
       if (activeMobilePaneIndex === sellerPaneIndexes.mandatePreferences) {
@@ -4716,6 +4752,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     ].filter(Boolean)
     const finalRequiredMissing = [
       ...submissionSellerMissing.map((item) => `Seller: ${item}`),
+      ...getSellerFicaOnboardingMissing(submissionForm).map((item) => `FICA: ${item}`),
       ...mandateMissing.map((item) => `Mandate: ${item}`),
       ...submissionPropertyMissing.map((item) => `Property: ${item}`),
       ...getPropertyDisclosureMissingItems(submissionDisclosure || {}).map((item) => `Disclosure: ${item}`),
@@ -5180,6 +5217,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     isNaturalPersonSeller && !form.nationality && 'Nationality',
     !form.sellerTaxNumber && 'Tax number',
     !form.saResident && 'SA resident status',
+    ...getSellerFicaOnboardingMissing(form),
     !areSellerOnboardingConsentsComplete(form) && 'Onboarding permissions',
     requiresSellerResidentialAddress && !sellerResidentialAddress && 'Residential address',
   ].filter(Boolean)
@@ -5632,6 +5670,12 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                                 Surname
                                 <input className={DETAIL_INPUT_CLASS} value={director.surname} onChange={(event) => updateCompanyDirector(director.id, 'surname', event.target.value)} />
                               </label>
+                              <label className="grid gap-2 text-sm font-medium text-[#2a4057]">ID / passport number
+                                <input className={DETAIL_INPUT_CLASS} value={director.idNumber || ''} onChange={(event) => updateCompanyDirector(director.id, 'idNumber', event.target.value)} />
+                              </label>
+                              <label className="grid gap-2 text-sm font-medium text-[#2a4057]">Nationality
+                                <input className={DETAIL_INPUT_CLASS} value={director.nationality || ''} onChange={(event) => updateCompanyDirector(director.id, 'nationality', event.target.value)} />
+                              </label>
                               <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                                 Email (optional)
                                 <input className={DETAIL_INPUT_CLASS} value={director.email} onChange={(event) => updateCompanyDirector(director.id, 'email', event.target.value)} />
@@ -5661,6 +5705,12 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                         <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                           Capacity
                           <input className={DETAIL_INPUT_CLASS} value={form.authorisedSignatoryCapacity} onChange={(event) => handleFormUpdate('authorisedSignatoryCapacity', event.target.value)} placeholder="Director" />
+                        </label>
+                        <label className="grid gap-2 text-sm font-medium text-[#2a4057]">ID / passport (if not a listed director)
+                          <input className={DETAIL_INPUT_CLASS} value={form.authorisedSignatoryIdNumber || ''} onChange={(event) => handleFormUpdate('authorisedSignatoryIdNumber', event.target.value)} />
+                        </label>
+                        <label className="grid gap-2 text-sm font-medium text-[#2a4057]">Nationality (if not a listed director)
+                          <input className={DETAIL_INPUT_CLASS} value={form.authorisedSignatoryNationality || ''} onChange={(event) => handleFormUpdate('authorisedSignatoryNationality', event.target.value)} />
                         </label>
                         <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                           Resolution Date
@@ -5741,6 +5791,12 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                                 Surname
                                 <input className={DETAIL_INPUT_CLASS} value={trustee.surname} onChange={(event) => updateTrustee(trustee.id, 'surname', event.target.value)} />
                               </label>
+                              <label className="grid gap-2 text-sm font-medium text-[#2a4057]">ID / passport number
+                                <input className={DETAIL_INPUT_CLASS} value={trustee.idNumber || ''} onChange={(event) => updateTrustee(trustee.id, 'idNumber', event.target.value)} />
+                              </label>
+                              <label className="grid gap-2 text-sm font-medium text-[#2a4057]">Nationality
+                                <input className={DETAIL_INPUT_CLASS} value={trustee.nationality || ''} onChange={(event) => updateTrustee(trustee.id, 'nationality', event.target.value)} />
+                              </label>
                               <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                                 Email (optional)
                                 <input className={DETAIL_INPUT_CLASS} value={trustee.email} onChange={(event) => updateTrustee(trustee.id, 'email', event.target.value)} />
@@ -5770,6 +5826,12 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                         <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                           Capacity
                           <input className={DETAIL_INPUT_CLASS} value={form.authorisedTrusteeCapacity} onChange={(event) => handleFormUpdate('authorisedTrusteeCapacity', event.target.value)} placeholder="Trustee" />
+                        </label>
+                        <label className="grid gap-2 text-sm font-medium text-[#2a4057]">ID / passport (if not a listed trustee)
+                          <input className={DETAIL_INPUT_CLASS} value={form.authorisedTrusteeIdNumber || ''} onChange={(event) => handleFormUpdate('authorisedTrusteeIdNumber', event.target.value)} />
+                        </label>
+                        <label className="grid gap-2 text-sm font-medium text-[#2a4057]">Nationality (if not a listed trustee)
+                          <input className={DETAIL_INPUT_CLASS} value={form.authorisedTrusteeNationality || ''} onChange={(event) => handleFormUpdate('authorisedTrusteeNationality', event.target.value)} />
                         </label>
                         <label className="grid gap-2 text-sm font-medium text-[#2a4057] md:col-span-2">
                           Authority Basis
@@ -5920,6 +5982,12 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                                 ID / Passport Number
                                 <input className={DETAIL_INPUT_CLASS} value={owner.idNumber} onChange={(event) => updateMultipleOwner(owner.id, 'idNumber', event.target.value)} />
                               </label>
+                              <label className="grid gap-2 text-sm font-medium text-[#2a4057]">Nationality
+                                <input className={DETAIL_INPUT_CLASS} value={owner.nationality || ''} onChange={(event) => updateMultipleOwner(owner.id, 'nationality', event.target.value)} />
+                              </label>
+                              <label className="grid gap-2 text-sm font-medium text-[#2a4057] md:col-span-2">Residential address
+                                <input className={DETAIL_INPUT_CLASS} value={owner.residentialAddress || ''} onChange={(event) => updateMultipleOwner(owner.id, 'residentialAddress', event.target.value)} />
+                              </label>
                               <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                                 Ownership Share % (optional)
                                 <input className={DETAIL_INPUT_CLASS} value={owner.ownershipShare} onChange={(event) => updateMultipleOwner(owner.id, 'ownershipShare', event.target.value)} />
@@ -5949,6 +6017,22 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                     {isCompanyOwnership ? 'Add every director now. The primary authorised signatory stays separate so the signing authority stays clear.' : 'Add every trustee now. The primary trustee stays separate so the signing authority stays clear.'}
                   </div>
                 ) : null}
+              </FormSection>
+
+              <FormSection icon={ShieldCheck} title="FICA details" description="Capture the details needed to prepare the declaration." mobilePaneIndex={sellerPaneIndexes.identity}>
+                <SellerFicaQuestions
+                  form={form}
+                  onChange={handleFormUpdate}
+                  onAddPerson={addCollectionItem}
+                  onUpdatePerson={(key, index, field, value) => setForm((previous) => ({
+                    ...(previous || {}),
+                    [key]: (previous?.[key] || []).map((person, personIndex) => personIndex === index ? { ...person, [field]: value } : person),
+                  }))}
+                  onRemovePerson={(key, index) => setForm((previous) => ({
+                    ...(previous || {}),
+                    [key]: (previous?.[key] || []).filter((_, personIndex) => personIndex !== index),
+                  }))}
+                />
               </FormSection>
 
               <FormSection

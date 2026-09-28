@@ -206,6 +206,7 @@ function normalizePersonRecord(entry = {}, index = 0, { defaultRoleTitle = '' } 
     first_name: firstName,
     surname,
     id_number: normalizeText(entry.id_number || entry.idNumber || entry.identity_number || entry.identityNumber),
+    nationality: normalizeText(entry.nationality || entry.citizenship),
     email: normalizeText(entry.email),
     phone: normalizeText(entry.phone),
     residential_address: normalizeText(entry.residential_address || entry.residentialAddress || entry.address),
@@ -214,7 +215,7 @@ function normalizePersonRecord(entry = {}, index = 0, { defaultRoleTitle = '' } 
     signing_authority: normalizeBoolean(entry.signing_authority ?? entry.signingAuthority, false),
     ownership_share: normalizeNumber(entry.ownership_share || entry.ownershipShare),
     consent_to_sell: normalizeBoolean(entry.consent_to_sell ?? entry.consentToSell, false),
-    authority_details: normalizeText(entry.authority_details || entry.authorityDetails),
+    authority_details: normalizeText(entry.authority_details || entry.authorityDetails || entry.controlBasis || entry.control_basis),
   }
   if (!record.capacity) delete record.capacity
   if (!record.role_title) delete record.role_title
@@ -236,7 +237,7 @@ function normalizePeopleCollection(entries = [], fallback = null, options = {}) 
   const source = Array.isArray(entries) ? entries : []
   const mapped = source
     .map((entry, index) => normalizePersonRecord(entry, index, options))
-    .filter((entry) => Boolean(entry.first_name || entry.surname || entry.id_number || entry.email || entry.phone))
+    .filter((entry) => Boolean(entry.first_name || entry.surname || entry.id_number || entry.email || entry.phone || entry.nationality || entry.residential_address))
 
   if (mapped.length) return mapped
 
@@ -415,6 +416,8 @@ export function transformSellerOnboardingToFacts(form = {}, listing = {}, option
     { defaultRoleTitle: 'Trustee' },
   )
   const trustBeneficiaries = normalizePeopleCollection(form.trustBeneficiaries || form.beneficiaries || [], null, { defaultRoleTitle: 'Beneficiary' })
+  const companySignatoryPerson = companyDirectors.find((person) => normalizeKey(person.full_name) === normalizeKey(form.authorisedSignatoryName))
+  const authorisedTrusteePerson = trustTrustees.find((person) => normalizeKey(person.full_name) === normalizeKey(form.authorisedTrusteeName))
   const executors = normalizePeopleCollection(
     form.executors || [],
     {
@@ -504,6 +507,10 @@ export function transformSellerOnboardingToFacts(form = {}, listing = {}, option
       id_number: normalizeText(form.idNumber),
       date_of_birth: normalizeDate(form.dateOfBirth || form.date_of_birth || form.birthDate),
       nationality: normalizeText(form.nationality),
+      occupation: normalizeText(form.occupation),
+      source_of_funds: normalizeText(form.sourceOfFunds || form.source_of_funds),
+      politically_exposed_person: normalizeText(form.politicallyExposedPerson || form.politically_exposed_person),
+      politically_exposed_details: normalizeText(form.politicallyExposedDetails || form.politically_exposed_details),
       residential_address: resolveSellerResidentialAddress(form),
       authorised_representative: normalizeText(form.authorisedRepresentative || form.companyDirectorName || form.trusteeName),
       tax_number: normalizeText(form.sellerTaxNumber || form.incomeTaxNumber || form.income_tax_number || form.taxNumber || form.tax_number),
@@ -541,10 +548,12 @@ export function transformSellerOnboardingToFacts(form = {}, listing = {}, option
         authorised_signatory: normalizePersonRecord(
           {
             name: form.authorisedSignatoryName || form.companyDirectorName || companyDirectors[0]?.full_name,
+            idNumber: form.authorisedSignatoryIdNumber || companySignatoryPerson?.id_number,
+            nationality: form.authorisedSignatoryNationality || companySignatoryPerson?.nationality,
             capacity: form.authorisedSignatoryCapacity,
             email: form.authorisedSignatoryEmail || form.companyDirectorEmail || companyDirectors[0]?.email,
             phone: form.authorisedSignatoryPhone || form.companyDirectorPhone || companyDirectors[0]?.phone,
-            residentialAddress: form.authorisedSignatoryAddress || form.companyRegisteredAddress || form.residentialAddress,
+            residentialAddress: form.authorisedSignatoryAddress || companySignatoryPerson?.residential_address,
             signingAuthority: true,
             roleTitle: 'Authorised Signatory',
           },
@@ -566,10 +575,12 @@ export function transformSellerOnboardingToFacts(form = {}, listing = {}, option
         authorised_trustee: normalizePersonRecord(
           {
             name: form.authorisedTrusteeName || form.trusteeName || trustTrustees[0]?.full_name,
+            idNumber: form.authorisedTrusteeIdNumber || authorisedTrusteePerson?.id_number,
+            nationality: form.authorisedTrusteeNationality || authorisedTrusteePerson?.nationality,
             capacity: form.authorisedTrusteeCapacity,
             email: form.authorisedTrusteeEmail || form.trusteeEmail || trustTrustees[0]?.email,
             phone: form.authorisedTrusteePhone || form.trusteePhone || trustTrustees[0]?.phone,
-            residentialAddress: form.authorisedTrusteeAddress || form.trustRegisteredAddress || form.residentialAddress,
+            residentialAddress: form.authorisedTrusteeAddress || authorisedTrusteePerson?.residential_address,
             signingAuthority: true,
             roleTitle: 'Authorised Trustee',
           },
@@ -577,6 +588,8 @@ export function transformSellerOnboardingToFacts(form = {}, listing = {}, option
           { defaultRoleTitle: 'Authorised Trustee' },
         ),
         beneficiaries: trustBeneficiaries,
+        founders: normalizePeopleCollection(form.trustFounders || [], null, { defaultRoleTitle: 'Founder' }),
+        beneficiary_class: normalizeText(form.trustBeneficiaryClass),
       },
       deceased_estate: {
         executor_name: normalizeText(form.executorName),

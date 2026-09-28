@@ -7,6 +7,7 @@ import {
   normalizeEmailAddress,
   normalizeEmailBranding,
   normalizeEmailLogoUrl,
+  resolveAudienceEmailSender,
   resolveEmailBranding,
 } from "./emailBranding.ts";
 
@@ -54,6 +55,81 @@ Deno.test("normalizeEmailBranding provides stable Arch9 defaults", () => {
   assertEquals(branding.primaryColor, DEFAULT_EMAIL_BRANDING.primaryColor);
   assertEquals(branding.secondaryColor, DEFAULT_EMAIL_BRANDING.secondaryColor);
   assertEquals(branding.logoUrl, undefined);
+});
+
+Deno.test("client and internal email senders keep their distinct identities", async () => {
+  const platformSender = "notifications@arch9.co.za";
+  const branding = {
+    organisationId: "org-1",
+    organisationName: "Home Seekers",
+    fromEmail: "hello@homeseekers.co.za",
+  };
+  assertEquals(
+    await resolveAudienceEmailSender({
+      audience: "client",
+      branding,
+      platformSender,
+    }),
+    "Home Seekers <notifications@arch9.co.za>",
+  );
+  assertEquals(
+    await resolveAudienceEmailSender({
+      audience: "internal",
+      branding,
+      platformSender,
+    }),
+    "Arch9 <notifications@arch9.co.za>",
+  );
+
+  const verifiedIdentity = {
+    from: () => {
+      const query = {
+        select: () => query,
+        eq: () => query,
+        is: () => query,
+        limit: async () => ({
+          data: [{ from_email: "hello@homeseekers.co.za" }],
+          error: null,
+        }),
+      };
+      return query;
+    },
+  };
+  assertEquals(
+    await resolveAudienceEmailSender({
+      audience: "client",
+      branding,
+      platformSender,
+      supabase: verifiedIdentity,
+    }),
+    "Home Seekers <hello@homeseekers.co.za>",
+  );
+
+  let lookups = 0;
+  const alternateVerifiedIdentity = {
+    from: () => {
+      const query = {
+        select: () => query,
+        eq: () => query,
+        is: () => query,
+        limit: async () => ({
+          data: ++lookups === 1 ? [] : [{ from_email: "mail@homeseekers.co.za" }],
+          error: null,
+        }),
+      };
+      return query;
+    },
+  };
+  assertEquals(
+    await resolveAudienceEmailSender({
+      audience: "client",
+      branding,
+      platformSender,
+      supabase: alternateVerifiedIdentity,
+    }),
+    "Home Seekers <mail@homeseekers.co.za>",
+  );
+  assertEquals(lookups, 2);
 });
 
 Deno.test("normalizeEmailBranding accepts canonical and legacy payload aliases", () => {

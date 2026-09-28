@@ -80,6 +80,14 @@ globalThis.fetch = async (input) => {
     )
   }
 
+  if (responseMode === 'available-transactions' && request.table === 'transactions') {
+    return jsonResponse([
+      { id: 'review-deal', organisation_id: ORGANISATION_ID, stage: 'Available', current_main_stage: 'AVAIL', lifecycle_state: 'active', is_active: true, transaction_reference: 'REVIEW-1', property_address_line_1: 'Review Street', purchase_price: 650000, next_action: 'Confirm source details', created_at: '2026-09-27T09:00:00Z', updated_at: '2026-09-27T09:00:00Z' },
+      { id: 'active-deal', organisation_id: ORGANISATION_ID, stage: 'OTP', current_main_stage: 'OTP', lifecycle_state: 'active', is_active: true, transaction_reference: 'ACTIVE-1', purchase_price: 800000, created_at: '2026-09-27T09:00:00Z', updated_at: '2026-09-27T09:00:00Z' },
+      { id: 'old-deal', organisation_id: ORGANISATION_ID, stage: 'Available', current_main_stage: 'AVAIL', lifecycle_state: 'active', is_active: false },
+    ])
+  }
+
   if (
     responseMode === 'hold-first-transaction' &&
     request.table === 'transactions' &&
@@ -253,6 +261,13 @@ try {
     failedRequestCount + 7,
     'degraded loads must not leave a stale in-flight promise behind',
   )
+
+  clearPrincipalDashboardRuntimeCache({ agencyId: ORGANISATION_ID })
+  responseMode = 'available-transactions'
+  const reviewResult = await getPrincipalDashboardData({ ...baseOptions, forceRefresh: true })
+  assert.equal(reviewResult.awaitingReviewTransactionCount, 1, 'available transactions should appear in the review section')
+  assert.equal(reviewResult.awaitingReviewTransactions[0]?.reference, 'REVIEW-1', 'review cards should retain their transaction link identity')
+  assert.equal(reviewResult.activeTransactions.length, 1, 'available transactions should not inflate in-progress cards')
 
   console.log('Principal dashboard Phase 6 cache and refresh tests passed')
 } finally {
