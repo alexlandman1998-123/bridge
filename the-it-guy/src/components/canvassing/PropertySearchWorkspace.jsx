@@ -28,6 +28,9 @@ const KNOWLEDGE_FACTORY_MAP_ENABLED =
   String(import.meta.env.VITE_KNOWLEDGE_FACTORY_MAP_ENABLED || "")
     .trim()
     .toLowerCase() === "true";
+const SAMPLE_MAP_ORGANISATION_IDS = new Set([
+  "1811d41c-491d-415c-ae03-85e6810b8cce", // Newberry Property demo workspace
+]);
 
 function providerFilters(filters) {
   const nextFilters = {
@@ -57,6 +60,14 @@ export default function PropertySearchWorkspace() {
   const navigate = useNavigate();
   const { currentWorkspace, profile } = useWorkspace();
   const { session } = useAuthSession();
+  const organisationId =
+    currentWorkspace?.organisationId ||
+    currentWorkspace?.organisation_id ||
+    currentWorkspace?.id ||
+    "";
+  const useKnowledgeFactoryMap =
+    KNOWLEDGE_FACTORY_MAP_ENABLED &&
+    !SAMPLE_MAP_ORGANISATION_IDS.has(organisationId);
   const [filters, setFilters] = useState(INITIAL_FILTERS);
   const [propertyState, setPropertyState] = useState({
     status: "loading",
@@ -84,21 +95,16 @@ export default function PropertySearchWorkspace() {
   );
   const [purchaseProperty, setPurchaseProperty] = useState(null);
   const [knowledgeFactoryState, setKnowledgeFactoryState] = useState({
-    status: KNOWLEDGE_FACTORY_MAP_ENABLED ? "loading" : "inactive",
+    status: useKnowledgeFactoryMap ? "loading" : "inactive",
     properties: [],
     count: 0,
     error: "",
     message: "",
   });
   const orderRunRef = useRef(0);
-  const organisationId =
-    currentWorkspace?.organisationId ||
-    currentWorkspace?.organisation_id ||
-    currentWorkspace?.id ||
-    "";
 
   useEffect(() => {
-    if (KNOWLEDGE_FACTORY_MAP_ENABLED) return undefined;
+    if (useKnowledgeFactoryMap) return undefined;
     let active = true;
     const timer = window.setTimeout(() => {
       setPropertyState((previous) => ({
@@ -134,10 +140,10 @@ export default function PropertySearchWorkspace() {
       active = false;
       window.clearTimeout(timer);
     };
-  }, [filters]);
+  }, [filters, useKnowledgeFactoryMap]);
 
   useEffect(() => {
-    if (!KNOWLEDGE_FACTORY_MAP_ENABLED || !organisationId) return undefined;
+    if (!useKnowledgeFactoryMap || !organisationId) return undefined;
     let active = true;
     getKnowledgeFactoryMapStatus({
       organisationId,
@@ -163,7 +169,7 @@ export default function PropertySearchWorkspace() {
     return () => {
       active = false;
     };
-  }, [organisationId, session?.access_token]);
+  }, [organisationId, session?.access_token, useKnowledgeFactoryMap]);
 
   const selectedPropertyIds = useMemo(
     () => selectedProperties.map((property) => property.id),
@@ -354,7 +360,7 @@ export default function PropertySearchWorkspace() {
     }
   }
 
-  if (KNOWLEDGE_FACTORY_MAP_ENABLED) {
+  if (useKnowledgeFactoryMap) {
     const focusedParcel =
       knowledgeFactoryState.properties.find(
         (property) => property.id === focusedPropertyId,
