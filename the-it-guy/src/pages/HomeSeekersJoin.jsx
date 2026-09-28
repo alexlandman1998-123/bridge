@@ -1,4 +1,4 @@
-import { ArrowRight, ArrowUpRight, Check, Compass, Users } from 'lucide-react'
+import { ArrowRight, ArrowUpRight, Check, Users } from 'lucide-react'
 import { useState } from 'react'
 import HomeSeekersValuationModal from './HomeSeekersValuationModal'
 import HomeSeekersMobileNav from './HomeSeekersMobileNav'
@@ -20,7 +20,26 @@ export default function HomeSeekersJoin() {
   const active = paths.find((path) => path.id === activeId) || paths[0]
   return <main className="hs-join">
     <header className="hs-join__header"><a href="/demo/homeseekers" aria-label="Home Seekers home"><img src="/brand/homeseekers/home-seekers-horizontal-black.svg" alt="Home Seekers" /></a><nav>{nav.map(([label, slug]) => <a className={slug === 'join' ? 'is-active' : ''} href={`/demo/homeseekers/${slug}`} key={slug}>{label}</a>)}</nav><button type="button" onClick={() => setValuationOpen(true)}>Book a free valuation</button><HomeSeekersMobileNav links={nav.map(([label, slug]) => [label, `/demo/homeseekers/${slug}`])} active="join us" onValuation={() => setValuationOpen(true)} /></header>
-    <section className="hs-join__hero"><div className="hs-join__hero-image"><img src="https://d21tw07c6rnmp0.cloudfront.net/media/uploads/869/pages/2025/12/869_424ce675e29a4906a0d709d7ef138c88_t_w_639_h_728.avif" alt="Home Seekers team members" /><div className="hs-join__hero-mark"><Compass size={22} /><span>YOUR<br />DIRECTION</span></div></div><div className="hs-join__hero-copy"><p>❯ JOIN <strong>HOME SEEKERS</strong></p><h1>Build a career<br />that moves<br /><em>with you.</em></h1><p>More than a desk and a logo. A modern property business for people who want to do the work properly—and move forward, faster.</p><a href="#path">Find your path <ArrowRight size={18} /></a><div><span>01</span><p>Training with intent</p><span>02</span><p>Mentorship that matters</p><span>03</span><p>A real local pipeline</p></div></div></section>
+    <section className="hs-join__hero">
+      <div className="hs-join__hero-copy">
+        <p>❯ JOIN <strong>HOME SEEKERS</strong></p>
+        <h1>Make your<br />next move<br /><em>count.</em></h1>
+        <p>Real training. Honest mentorship. A team that backs the work. Build a name your neighbourhood knows—and move forward, faster.</p>
+        <div className="hs-join__hero-actions">
+          <a href="#path">Find your path <ArrowRight size={18} /></a>
+          <a href="#apply">Talk to the team <ArrowUpRight size={17} /></a>
+        </div>
+        <div className="hs-join__hero-points">
+          <p><span>01</span> Training with intent</p>
+          <p><span>02</span> Mentorship that matters</p>
+          <p><span>03</span> A real local pipeline</p>
+        </div>
+      </div>
+      <div className="hs-join__hero-image">
+        <img src="/brand/homeseekers/join-team-hero-v2.jpg" alt="Two property professionals walking through a modern home together" fetchPriority="high" />
+        <div className="hs-join__hero-mark"><span>HOME SEEKERS / CAREERS</span><strong>Move forward.<br />Together.</strong></div>
+      </div>
+    </section>
     <section className="hs-join__intro"><div className="hs-join__intro-lede"><p>❯ THIS ISN’T A <strong>GENERIC JOB POST</strong></p><span>01 / THE HOME SEEKERS ACADEMY</span><p>We are creating a team built around local knowledge, honest work and people who care about the outcome. That needs a better place to learn the craft.</p></div><div className="hs-join__intro-statement"><h2>Property is<br />personal.<br /><em>So is your<br />growth.</em></h2><p>Build a career with feedback, a real local pipeline and people close enough to care how the work gets done.</p><div><span>TRAINING</span><span>MENTORSHIP</span><span>MOMENTUM</span></div></div></section>
     <section className="hs-join__path" id="path"><div className="hs-join__path-nav"><p>❯ CHOOSE YOUR <strong>STARTING POINT</strong></p>{paths.map((path) => <button className={path.id === activeId ? 'is-active' : ''} type="button" key={path.id} onClick={() => setActiveId(path.id)}><span>{path.number}</span>{path.title}<i>↗</i></button>)}</div><article className="hs-join__path-detail"><span>{active.eyebrow}</span><h2>{active.title}.</h2><p>{active.copy}</p><ul>{active.points.map((point) => <li key={point}><Check size={17} /> {point}</li>)}</ul><a href="#apply">Talk about joining us <ArrowUpRight size={18} /></a><small>Home Seekers academy / {active.number} of {paths.length.toString().padStart(2, '0')}</small></article></section>
     <section className="hs-join__principles"><div><p>❯ WHAT WE BUILD <strong>AROUND YOU</strong></p><h2>Support with<br />a standard.</h2></div><div>{[['Training', 'Learn the foundations, then apply them in real conversations and real local work.'], ['Mentorship', 'Get the perspective, accountability and direct feedback that shortens the learning curve.'], ['Momentum', 'Do meaningful work every week, with a clearer view of what to do next.']].map(([title, copy], index) => <article key={title}><span>0{index + 1}</span><h3>{title}</h3><p>{copy}</p></article>)}</div></section>
