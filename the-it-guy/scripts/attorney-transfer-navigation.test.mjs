@@ -11,6 +11,7 @@ import {
   writeTransferWorkspaceNavigation,
 } from '../src/core/transactions/transferWorkspaceNavigation.js'
 import { normalizeAttorneyWorkflowWorkPacket } from '../src/constants/attorneyWorkflowUsability.js'
+import { buildTransferWorkspaceViewModel, getLegalWorkspacePhases } from '../src/services/attorneyWorkflow/transferWorkspaceViewModel.js'
 
 const phases = [
   { key: 'instruction', label: 'Instruction & File Opening', description: 'Open the matter.', status: 'in_progress', completed: 0, total: 2, percent: 0, hasCurrentTask: true, tasks: [
@@ -19,6 +20,9 @@ const phases = [
   ] },
   { key: 'lodgement_registration', label: 'Lodgement & Registration', status: 'not_started', completed: 0, total: 1, percent: 0, tasks: [
     { key: 'lodgement_ready', label: 'Lodgement Ready', status: 'not_started', displayStatus: 'not_started', statusLabel: 'Not Started' },
+  ] },
+  { key: 'closure', label: 'Post-Registration & Closure', status: 'completed', completed: 1, total: 1, percent: 100, tasks: [
+    { key: 'closure_review', label: 'Closure Review', status: 'completed', displayStatus: 'completed', statusLabel: 'Completed' },
   ] },
 ]
 
@@ -31,9 +35,30 @@ assert.equal(parsed.active, true)
 assert.equal(resolveTransferWorkspaceNavigation(parsed, phases).task.key, 'instruction_received')
 assert.equal(writeTransferWorkspaceNavigation(deepLink, { view: 'overview', stageKey: 'instruction' }), '?source=matter&transferView=overview&transferStage=instruction')
 assert.equal(writeTransferWorkspaceNavigation(deepLink), '?source=matter')
+for (const [laneKey, stepKey, expectedCount] of [
+  ['transfer', 'instruction_received', 6],
+  ['bond', 'bond_instruction_received', 4],
+  ['cancellation', 'cancellation_instruction_received', 4],
+]) {
+  const laneNavigation = { view: 'workspace', laneKey, stageKey: getLegalWorkspacePhases(laneKey)[0].key, taskKey: stepKey }
+  const parsedLane = readTransferWorkspaceNavigation(writeTransferWorkspaceNavigation('', laneNavigation))
+  assert.equal(parsedLane.laneKey, laneKey, `${laneKey} deep links preserve the workflow lane`)
+  const model = buildTransferWorkspaceViewModel({ workflowKey: laneKey, sharedJourneyTasks: [{ key: stepKey, status: 'not_started' }], workflow: {
+    title: laneKey, lane: { laneKey, steps: [{ id: `${laneKey}-step`, stepKey, status: 'not_started' }] },
+  } })
+  assert.equal(model.phases.length, expectedCount, `${laneKey} displays every defined phase`)
+  assert.equal(model.phases[1].status, 'not_applicable', `${laneKey} labels empty phases not applicable`)
+  assert.equal(resolveTransferWorkspaceNavigation(parsedLane, model.phases).view, 'workspace', `${laneKey} opens its task workspace`)
+}
 assert.equal(resolveTransferWorkspaceNavigation(readTransferWorkspaceNavigation('?transferView=workspace&transferStage=missing&transferTask=missing'), phases).view, 'overview')
 assert.equal(resolveTransferWorkspaceNavigation(readTransferWorkspaceNavigation('?transferView=workspace&transferStage=instruction&transferTask=lodgement_ready'), phases).view, 'overview')
 assert.equal(getTransferStageEntryTask(phases[0]).key, 'instruction_received')
+assert.equal(getTransferStageEntryTask(phases[2]).key, 'closure_review', 'completed stages still open for review')
+for (const phase of phases) {
+  const entryTask = getTransferStageEntryTask(phase)
+  const navigation = readTransferWorkspaceNavigation(writeTransferWorkspaceNavigation('', { view: 'workspace', stageKey: phase.key, taskKey: entryTask.key }))
+  assert.equal(resolveTransferWorkspaceNavigation(navigation, phases).view, 'workspace', `${phase.label} opens its task workspace`)
+}
 assert.equal(getTransferStageEntryTask({ tasks: [{ key: 'done', status: 'completed' }] }).key, 'done')
 assert.equal(getTransferStageEntryTask({ tasks: [{ key: 'not_needed', status: 'not_applicable' }] }).key, 'not_needed')
 assert.equal(getNextTransferStageTask(phases[0], 'instruction_received').key, 'matter_opened')
@@ -70,6 +95,11 @@ try {
   assert.match(notApplicableHtml, /Not applicable/)
   assert.match(notApplicableHtml, /View/, 'not applicable tasks remain reviewable')
   assert.doesNotMatch(notApplicableHtml, /role="progressbar"/, 'zero applicable tasks do not expose a progress range')
+  const emptyPhase = { key: 'empty', label: 'No work in this phase', status: 'not_applicable', completed: 0, total: 0, percent: 0, tasks: [] }
+  const emptyHtml = renderToStaticMarkup(createElement(TransferStageOverview, { phases: [emptyPhase], selectedPhase: emptyPhase, workflowKey: 'bond', canUpdate: true }))
+  assert.match(emptyHtml, /Bond registration stages/)
+  assert.match(emptyHtml, /Not applicable/)
+  assert.doesNotMatch(emptyHtml, /Stage complete|Select tasks|Override stage/, 'empty phases cannot be marked complete')
   const attentionPhase = { ...phases[0], tasks: [
     { ...phases[0].tasks[0], status: 'blocked', displayStatus: 'blocked', isOverdue: true, missingDocumentCount: 2 },
     phases[0].tasks[1],
@@ -110,6 +140,7 @@ try {
   globalThis.window = browser.window
   globalThis.document = browser.window.document
   globalThis.HTMLElement = browser.window.HTMLElement
+  browser.window.scrollTo = () => {}
   try {
     const { render, fireEvent, cleanup, waitFor, within } = await import('@testing-library/react')
     const selections = []
@@ -120,10 +151,44 @@ try {
       onSelectStage: (stageKey) => selections.push(stageKey),
       onOpenStage: (stageKey, taskKey) => openings.push([stageKey, taskKey]),
     }))
+    fireEvent.click(view.getByRole('navigation', { name: 'Transfer stages' }).querySelectorAll('button')[0])
     fireEvent.click(view.getByRole('navigation', { name: 'Transfer stages' }).querySelectorAll('button')[1])
+    fireEvent.click(view.getByRole('navigation', { name: 'Transfer stages' }).querySelectorAll('button')[2])
+    fireEvent.click(view.getByRole('button', { name: 'Open task: Instruction Received' }))
     fireEvent.click(view.getByRole('button', { name: 'Open' }))
-    assert.deepEqual(selections, ['lodgement_registration'])
-    assert.deepEqual(openings, [['instruction', 'instruction_received']])
+    assert.deepEqual(selections, [], 'clicking a stage enters its task workspace')
+    assert.deepEqual(openings, [
+      ['instruction', 'instruction_received'],
+      ['lodgement_registration', 'lodgement_ready'],
+      ['closure', 'closure_review'],
+      ['instruction', 'instruction_received'],
+      ['instruction', 'instruction_received'],
+    ])
+    cleanup()
+    for (const [workflowKey, stageKey, taskKey, navigationName] of [
+      ['bond', 'bond_instruction', 'bond_instruction_received', 'Bond registration stages'],
+      ['cancellation', 'cancellation_instruction', 'cancellation_instruction_received', 'Cancellation stages'],
+    ]) {
+      const applicablePhase = { ...phases[0], key: stageKey, tasks: [{ ...phases[0].tasks[0], key: taskKey }] }
+      const laneOpenings = []
+      const laneSelections = []
+      const laneView = render(createElement(TransferStageOverview, {
+        workflowKey, phases: [applicablePhase, emptyPhase], selectedPhase: applicablePhase,
+        onOpenStage: (...args) => laneOpenings.push(args), onSelectStage: (key) => laneSelections.push(key),
+      }))
+      const stageButtons = laneView.getByRole('navigation', { name: navigationName }).querySelectorAll('button')
+      fireEvent.click(stageButtons[0])
+      fireEvent.click(stageButtons[1])
+      assert.deepEqual(laneOpenings, [[stageKey, taskKey]], `${workflowKey} stage opens the task workspace`)
+      assert.deepEqual(laneSelections, ['empty'], `${workflowKey} empty phase remains reviewable`)
+      cleanup()
+    }
+    const continuation = render(createElement(TransferStageOverview, {
+      phases: [completedPhase, emptyPhase, phases[1], phases[2]], selectedPhase: completedPhase,
+      onOpenStage: (stageKey, taskKey) => openings.push([stageKey, taskKey]),
+    }))
+    fireEvent.click(continuation.getByRole('button', { name: /Continue to Lodgement & Registration/ }))
+    assert.deepEqual(openings.at(-1), ['lodgement_registration', 'lodgement_ready'], 'continuing opens the next stage workspace')
     cleanup()
     const updates = []
     const editable = render(createElement(TransferStageOverview, {
@@ -173,7 +238,7 @@ try {
     Object.assign(globalThis, previous)
     browser.window.close()
   }
-  console.log('Attorney Transfer navigation: deep links, fallback, stage selection and read-only overview passed')
+  console.log('Attorney Transfer navigation: deep links, fallback, stage entry and read-only overview passed')
 } finally {
   await server.close()
 }

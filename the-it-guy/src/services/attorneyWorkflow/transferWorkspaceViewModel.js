@@ -943,7 +943,7 @@ function buildPhases(tasks = [], workflowKey = 'transfer') {
     const total = phaseTasks.filter(task => task.status !== 'not_applicable').length
     const currentTask = phaseTasks.find((task) => task.isCurrent) || phaseTasks.find((task) => !isAttorneyTaskResolved(task.status)) || phaseTasks.at(-1) || null
     const status = !total
-      ? (phaseTasks.length ? 'not_applicable' : 'not_started')
+      ? 'not_applicable'
       : completed === total
         ? 'completed'
         : blocked
@@ -973,7 +973,7 @@ function buildPhases(tasks = [], workflowKey = 'transfer') {
       currentTask,
       hasCurrentTask: phaseTasks.some((task) => task.isCurrent),
     }
-  }).filter((phase) => phase.tasks.length > 0)
+  })
 }
 
 function resolveSelectedTask(tasks = [], selectedTaskKey = '', workflowKey = 'transfer') {
