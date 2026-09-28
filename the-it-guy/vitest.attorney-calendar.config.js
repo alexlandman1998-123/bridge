@@ -1,10 +1,13 @@
 import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
+import { fileURLToPath } from 'node:url'
+
+const supabaseJsEntry = fileURLToPath(import.meta.resolve('@supabase/supabase-js'))
 
 export default defineConfig({
   plugins: [react()],
   resolve: {
-    alias: { supabase: '@supabase/supabase-js' },
+    alias: { supabase: supabaseJsEntry },
   },
   test: {
     include: [
