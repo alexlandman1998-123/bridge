@@ -307,6 +307,7 @@ export function projectSellerDocumentArtifact(artifact = {}, { requirementOnly =
   ].includes(artifactKey)
   const isSigningCopy = !isReviewDraft && (
     status === 'awaiting_signed_hard_copy' ||
+    status === 'awaiting_required_signatures' ||
     source === 'seller_onboarding_manual_signing_pack'
   )
   const stage = requirementOnly

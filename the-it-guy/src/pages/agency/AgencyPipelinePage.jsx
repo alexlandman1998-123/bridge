@@ -19,6 +19,7 @@ import {
 import Button from '../../components/ui/Button'
 import Field from '../../components/ui/Field'
 import SellerLeadAgentOnboardingEditor from '../../components/leads/SellerLeadAgentOnboardingEditor'
+import SellerOnboardingAgentReviewPanel from '../../components/onboarding/SellerOnboardingAgentReviewPanel'
 import { summarizeLeadDocumentCategory } from '../../components/documents/leadDocumentProgressModel'
 import SellerDocumentReviewActions from '../../components/documents/SellerDocumentReviewActions'
 import { useWorkspace } from '../../context/WorkspaceContext'
@@ -150,7 +151,15 @@ import { buildSellerPostOnboardingDrafts } from '../../core/documents/sellerPost
 import { projectSellerPackFromOnboarding } from '../../core/documents/sellerPackOnboardingProjection'
 import { buildSellerOnboardingSigningPackSnapshot } from '../../core/documents/sellerOnboardingSigningPackSnapshot'
 import { createSellerOnboardingFormalPackApproval } from '../../core/documents/sellerOnboardingFormalPackApproval'
-import { createSellerOnboardingManualSigningPack } from '../../core/documents/sellerOnboardingManualSigningPack'
+import { createSellerOnboardingCorrectionControl } from '../../core/documents/sellerOnboardingCorrectionControl'
+import {
+  buildSellerOnboardingReviewChecklist,
+  readSellerOnboardingReview,
+  recordSellerOnboardingReview,
+  SELLER_ONBOARDING_REVIEW_STATUS,
+} from '../../core/documents/sellerOnboardingReview'
+import { createSellerOnboardingManualSigningPack, createSellerOnboardingSigningCopyPack } from '../../core/documents/sellerOnboardingManualSigningPack'
+import { requireSellerMandateWording } from '../../core/documents/sellerMandateDocumentMarkup'
 import { createSellerReviewedDocumentVersions, buildSellerReviewedDocumentVersionIndex } from '../../core/documents/sellerReviewedDocumentVersions'
 import { downloadSellerPhysicalSigningCopy, getSellerPhysicalSigningCopy, requireSellerPhysicalSigningCopy } from '../../core/documents/sellerPhysicalSigningCopy'
 import { SELLER_PORTAL_SIGNING_ENABLED } from '../../core/documents/sellerPortalSigningPolicy'
@@ -4577,14 +4586,21 @@ function buildSellerLeadDocumentRowsFromSource({
     ...(Array.isArray(rawPayload?.seller_uploaded_documents) ? rawPayload.seller_uploaded_documents : []),
   ]
   const formData = {
-    ...getListingSellerFormData(listingRecord),
     ...getLeadSellerOnboardingFormData(leadRecord),
+    ...getListingSellerFormData(listingRecord),
   }
   const documents = [
     ...leadDocuments,
     ...(Array.isArray(listingRecord?.documents) ? listingRecord.documents : []),
     ...(Array.isArray(journey?.documents) ? journey.documents.map((document) => document?.original?.document || document).filter(Boolean) : []),
   ]
+  const canonicalSellerFacts = [
+    listingRecord?.sellerCanonicalFacts,
+    listingRecord?.seller_canonical_facts,
+    leadRecord?.sellerCanonicalFacts,
+    leadRecord?.seller_canonical_facts,
+    formData?.canonicalSellerFacts,
+  ].find((facts) => isPlainObject(facts) && Object.keys(facts).length) || {}
   const sourceListing = {
     ...leadRecord,
     ...listingRecord,
@@ -5061,6 +5077,7 @@ function buildBuyerOnboardingSectionRows(sections = [], formData = {}) {
               const value = readBuyerOnboardingFieldValue(entry, field.key)
               const required = Boolean(field.required || (typeof field.requiredWhen === 'function' && field.requiredWhen(entry)))
               return {
+                ...field,
                 key: field.key,
                 label: field.label || titleCaseWorkspaceValue(field.key),
                 required,
@@ -5077,6 +5094,7 @@ function buildBuyerOnboardingSectionRows(sections = [], formData = {}) {
             fields: fields.map((field) => {
               const required = Boolean(field.required)
               return {
+                ...field,
                 key: field.key,
                 label: field.label || titleCaseWorkspaceValue(field.key),
                 required,
@@ -5100,6 +5118,7 @@ function buildBuyerOnboardingSectionRows(sections = [], formData = {}) {
       const value = readBuyerOnboardingFieldValue(formData, field.key)
       const required = Boolean(field.required || (typeof field.requiredWhen === 'function' && field.requiredWhen(formData)))
       return {
+        ...field,
         key: field.key,
         label: field.label || titleCaseWorkspaceValue(field.key),
         required,
@@ -5116,6 +5135,25 @@ function buildBuyerOnboardingSectionRows(sections = [], formData = {}) {
       completedRequiredCount: sectionFields.filter((field) => field.required && field.complete).length,
     }
   })
+}
+
+function buildBuyerProfileCardSummary(section = {}) {
+  const captured = (Array.isArray(section.rows) ? section.rows : []).flatMap((row) =>
+    (Array.isArray(row.fields) ? row.fields : [])
+      .filter((field) => isBuyerOnboardingValueFilled(field.value))
+      .map((field) => ({
+        key: `${row.key}-${field.key}`,
+        label: section.repeatable ? `${row.title} · ${field.label}` : field.label,
+        value: field.displayValue,
+      })),
+  )
+  return {
+    rows: captured.slice(0, 6),
+    remainingCount: Math.max(0, captured.length - 6),
+    missingRequired: [...new Set((Array.isArray(section.fields) ? section.fields : [])
+      .filter((field) => field.required && !field.complete)
+      .map((field) => field.label))],
+  }
 }
 
 function buildBuyerOnboardingProfileModel({ lead = {}, contact = {}, formData = {}, transaction = {}, onboarding = {}, onboardingSubmitted = false, branding = {}, agent = {} } = {}) {
@@ -6157,7 +6195,7 @@ function parseCurrencyAmount(value) {
   return number
 }
 
-const VIEWING_PLANNER_PRICE_MATCH_TOLERANCE = 500000
+const VIEWING_PLANNER_PRICE_MATCH_TOLERANCE = 300000
 
 const PROPERTY_WORKSPACE_FIELD_MAPPING = [
   { uiField: 'fullAddress', source: 'property', sourceField: 'sellerPropertyAddress', fallbackSource: 'seller_onboarding.propertyAddress', writable: true },
@@ -8967,6 +9005,11 @@ function getLeadSellerOnboardingFormData(lead = {}) {
     ...(onboarding.replacement_form_data && typeof onboarding.replacement_form_data === 'object' ? onboarding.replacement_form_data : {}),
     ...(onboarding.replacementFormData && typeof onboarding.replacementFormData === 'object' ? onboarding.replacementFormData : {}),
   }
+}
+
+function getSellerLeadReviewFormData(lead = {}, listing = {}) {
+  // The listing holds the persisted onboarding; the CRM lead may be a lagging projection.
+  return { ...getLeadSellerOnboardingFormData(lead), ...getListingSellerFormData(listing) }
 }
 
 function splitSellerNameParts(value = '') {
@@ -11889,6 +11932,18 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [sellerOnboardingDocumentRoutes, setSellerOnboardingDocumentRoutes] = useState({
     signed_fica_declaration: 'manual_upload', signed_mandate: 'manual_upload',
   })
+  const [sellerOnboardingReviewSaving, setSellerOnboardingReviewSaving] = useState(false)
+  const [sellerOnboardingReviewError, setSellerOnboardingReviewError] = useState('')
+  const [sellerOnboardingCorrectionReason, setSellerOnboardingCorrectionReason] = useState('')
+  const [sellerOnboardingReviewRoute, setSellerOnboardingReviewRouteState] = useState('manual_upload')
+  const setSellerOnboardingReviewRoute = useCallback((route) => {
+    setSellerOnboardingReviewRouteState(!SELLER_PORTAL_SIGNING_ENABLED ? 'manual_upload' : route)
+  }, [])
+  useEffect(() => {
+    if (!SELLER_PORTAL_SIGNING_ENABLED && sellerOnboardingReviewRoute !== 'manual_upload') {
+      setSellerOnboardingReviewRoute('manual_upload')
+    }
+  }, [sellerOnboardingReviewRoute])
   const [sellerSigningPackModalOpen, setSellerSigningPackModalOpen] = useState(false)
   const [sellerSigningPackSaving, setSellerSigningPackSaving] = useState(false)
   const [sellerSigningPackError, setSellerSigningPackError] = useState('')
@@ -11900,6 +11955,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     startDate: '',
     endDate: '',
     protectionPeriod: '',
+    otherAgencyName: '',
+    protectionPeriodDays: '',
     commissionBasis: 'percentage',
     commissionPercentage: '',
     commissionAmount: '',
@@ -11908,6 +11965,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [leadDetailForm, setLeadDetailForm] = useState(LEAD_DETAIL_DEFAULTS)
   const [sellerProfileEditForm, setSellerProfileEditForm] = useState(KINGSTONS_SELLER_PROFILE_EDIT_DEFAULTS)
   const [buyerProfileForm, setBuyerProfileForm] = useState({})
+  const [editingBuyerProfileSectionKey, setEditingBuyerProfileSectionKey] = useState('')
+  const buyerProfileEditBaselineRef = useRef(null)
   const [isLeadDetailSaving, setIsLeadDetailSaving] = useState(false)
   const [buyerQualificationEditing, setBuyerQualificationEditing] = useState(false)
   const [buyerQualificationForm, setBuyerQualificationForm] = useState(BUYER_QUALIFICATION_FORM_DEFAULTS)
@@ -14452,6 +14511,27 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       selectedLead?.privateListingId ||
       selectedLead?.private_listing_id,
   )
+  useEffect(() => {
+    if (!SELLER_PORTAL_SIGNING_ENABLED || !selectedLeadLinkedListingId) {
+      setSellerPortalSigningRequests([])
+      return
+    }
+    let active = true
+    listSellerPortalSigningRequests(selectedLeadLinkedListingId)
+      .then((result) => { if (active) setSellerPortalSigningRequests(result.documents || []) })
+      .catch(() => { if (active) setSellerPortalSigningRequests([]) })
+    return () => { active = false }
+  }, [selectedLeadLinkedListingId])
+  const selectedLeadReviewFormData = useMemo(() => sellerOnboardingReviewModalOpen
+    ? getSellerLeadReviewFormData(selectedLead, selectedLeadLinkedListing)
+    : null, [sellerOnboardingReviewModalOpen, selectedLead, selectedLeadLinkedListing])
+  const selectedLeadOnboardingReviewChecklist = useMemo(() => sellerOnboardingReviewModalOpen && selectedLead
+    ? buildSellerOnboardingReviewChecklist({
+        formData: selectedLeadReviewFormData,
+        listing: selectedLeadLinkedListing || {},
+        lead: selectedLead,
+      })
+    : null, [sellerOnboardingReviewModalOpen, selectedLead, selectedLeadLinkedListing, selectedLeadReviewFormData])
   const selectedLeadIdentityKey = normalizeLeadIdentityKey(selectedLead?.leadId || selectedLead?.lead_id || selectedLeadId)
   const selectedLeadPrivateListingActivityKey = [
     normalizeText(organisationId),
@@ -15615,6 +15695,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     selectedLeadLinkedTransactionId,
     workspace,
   ])
+  useEffect(() => {
+    setEditingBuyerProfileSectionKey('')
+    buyerProfileEditBaselineRef.current = null
+  }, [selectedLead?.leadId])
   const selectedLeadBuyerProfileFormData = isPlainObject(buyerProfileForm) && Object.keys(buyerProfileForm).length
     ? buyerProfileForm
     : selectedLeadFinanceFormData
@@ -20959,6 +21043,33 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }
 
+  function openBuyerProfileSection(sectionKey = '') {
+    const key = normalizeText(sectionKey)
+    if (!key || isLeadDetailSaving) return
+    const targetKey = editingBuyerProfileSectionKey || key
+    if (!editingBuyerProfileSectionKey) {
+      buyerProfileEditBaselineRef.current = buyerProfileForm
+      setEditingBuyerProfileSectionKey(key)
+    }
+    if (typeof window !== 'undefined') {
+      window.requestAnimationFrame(() => document.getElementById(`buyer-profile-section-${targetKey}`)?.scrollIntoView?.({ behavior: 'smooth', block: 'start' }))
+    }
+  }
+
+  function cancelBuyerProfileSectionEdit() {
+    if (buyerProfileEditBaselineRef.current) setBuyerProfileForm(buyerProfileEditBaselineRef.current)
+    buyerProfileEditBaselineRef.current = null
+    setEditingBuyerProfileSectionKey('')
+  }
+
+  async function handleSaveBuyerProfileSection(event) {
+    const saved = await handleSaveBuyerProfile(event)
+    if (saved) {
+      buyerProfileEditBaselineRef.current = null
+      setEditingBuyerProfileSectionKey('')
+    }
+  }
+
   function handleToggleViewingPlanProperty(propertyId) {
     const normalizedId = normalizeText(propertyId)
     if (!normalizedId) return
@@ -26283,6 +26394,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     setSellerLeadMandateUploading(true)
     setError('')
     try {
+      const signingCopy = getSellerPhysicalSigningCopy(documentRow) ? await requireSellerPhysicalSigningCopy(documentRow) : null
+      if (signingCopy?.signingRoute === 'digital_pack') throw new Error('This mandate was approved for portal signing. Use its signing status in Documents.')
       let targetListingId = normalizeText(
         selectedLeadLinkedListing?.id ||
           selectedLeadLinkedListing?.listingId ||
@@ -26317,6 +26430,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         documentName: normalizeText(file.name || documentRow?.label || documentRow?.title) || 'Signed Mandate',
         visibility: 'internal',
         status: 'uploaded',
+        deferMandateSigning: Boolean(signingCopy),
+        reviewedSigningVersionId: signingCopy?.versionId || '',
+        reviewedSigningVersionDigest: signingCopy?.versionDigest || '',
       })
 
       await updatePrivateListing(targetListingId, {
@@ -26359,6 +26475,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           documentId: normalizeText(uploadedDocument?.id),
           documentPath: normalizeText(uploadedDocument?.storage_path || uploadedDocument?.storagePath),
           signingMethod: 'hard_copy',
+          reviewedSigningVersionId: signingCopy?.versionId || '',
+          reviewedSigningVersionDigest: signingCopy?.versionDigest || '',
         },
       }).catch(() => null)
 
@@ -27153,11 +27271,118 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       signed_fica_declaration: savedRoutes.signed_fica_declaration === 'digital_pack' && SELLER_PORTAL_SIGNING_ENABLED ? 'digital_pack' : 'manual_upload',
       signed_mandate: savedRoutes.signed_mandate === 'digital_pack' && SELLER_PORTAL_SIGNING_ENABLED ? 'digital_pack' : 'manual_upload',
     })
+    setSellerOnboardingReviewRoute('manual_upload')
+    setSellerOnboardingCorrectionReason('')
+    setSellerOnboardingReviewError('')
     setSellerOnboardingReviewModalOpen(true)
   }
 
+  function getSellerLeadOnboardingReviewChecklist() {
+    return buildSellerOnboardingReviewChecklist({
+      formData: getSellerLeadReviewFormData(selectedLead, selectedLeadLinkedListing),
+      listing: selectedLeadLinkedListing || {},
+      lead: selectedLead || {},
+    })
+  }
+
+  async function saveSellerLeadOnboardingReview(status) {
+    const listingId = normalizeText(selectedLeadLinkedListingId)
+    if (!listingId || sellerOnboardingReviewSaving) return false
+    const formData = getSellerLeadReviewFormData(selectedLead, selectedLeadLinkedListing)
+    if (status === SELLER_ONBOARDING_REVIEW_STATUS.approved) {
+      if (readSellerOnboardingReview(formData.sellerOnboardingReview || formData.seller_onboarding_review).status === SELLER_ONBOARDING_REVIEW_STATUS.correctionRequested) {
+        setSellerOnboardingReviewError('Wait for the corrected onboarding to be resubmitted before approving it.')
+        return false
+      }
+      const checklist = getSellerLeadOnboardingReviewChecklist()
+      if (!checklist.ready) {
+        setSellerOnboardingReviewError(`Complete the submitted onboarding fields before approval: ${checklist.missing.join(' ')}`)
+        return false
+      }
+      if (readSellerOnboardingReview(formData.sellerOnboardingReview || formData.seller_onboarding_review).status === SELLER_ONBOARDING_REVIEW_STATUS.approved) return true
+    }
+    setSellerOnboardingReviewSaving(true)
+    setSellerOnboardingReviewError('')
+    try {
+      const actor = normalizeText(currentAgent?.id)
+      const review = recordSellerOnboardingReview({
+        existing: formData.sellerOnboardingReview || formData.seller_onboarding_review,
+        status,
+        reason: status === SELLER_ONBOARDING_REVIEW_STATUS.correctionRequested ? sellerOnboardingCorrectionReason : '',
+        actor,
+      })
+      const correction = status === SELLER_ONBOARDING_REVIEW_STATUS.correctionRequested
+      const correctionControl = correction
+        ? createSellerOnboardingCorrectionControl({
+            existing: formData.sellerOnboardingCorrectionControl || formData.seller_onboarding_correction_control,
+            formData,
+            reason: sellerOnboardingCorrectionReason,
+            actor,
+          })
+        : formData.sellerOnboardingCorrectionControl || formData.seller_onboarding_correction_control || null
+      const nextFormData = {
+        ...formData,
+        sellerOnboardingReview: review,
+        seller_onboarding_review: review,
+        sellerOnboardingCorrectionControl: correctionControl,
+        seller_onboarding_correction_control: correctionControl,
+        ...(correction ? {
+          sellerOnboardingFormalPackApproval: null,
+          seller_onboarding_formal_pack_approval: null,
+          sellerOnboardingFormalPackDispatch: null,
+          seller_onboarding_formal_pack_dispatch: null,
+          sellerOnboardingManualSigningPack: null,
+          seller_onboarding_manual_signing_pack: null,
+          manualMandateSignature: null,
+        } : {}),
+        sellerOnboardingSigningLifecycle: createSellerOnboardingSigningLifecycle({
+          existing: formData.sellerOnboardingSigningLifecycle || formData.seller_onboarding_signing_lifecycle,
+          stage: correction ? SELLER_ONBOARDING_SIGNING_STAGES.correctionRequested : SELLER_ONBOARDING_SIGNING_STAGES.agentReviewApproved,
+          actor,
+          metadata: { reviewStatus: review.status, correctionReason: review.reason },
+        }),
+      }
+      nextFormData.seller_onboarding_signing_lifecycle = nextFormData.sellerOnboardingSigningLifecycle
+      const nextStatus = correction ? 'in_progress' : 'completed'
+      await persistSellerProfileOnboardingFormData({ listingId, formData: nextFormData, status: nextStatus })
+      const leadId = normalizeText(selectedLead?.leadId || selectedLead?.lead_id || selectedLead?.id)
+      const leadPatch = {
+        sellerOnboardingStatus: nextStatus,
+        sellerOnboarding: {
+          ...(selectedLead?.sellerOnboarding || {}),
+          status: nextStatus,
+          formData: nextFormData,
+        },
+      }
+      patchSelectedLeadRecord(leadPatch, leadId)
+      setSelectedLeadHydratedListing((listing) => listing ? {
+        ...listing,
+        sellerOnboardingStatus: nextStatus,
+        sellerOnboarding: { ...(listing.sellerOnboarding || {}), status: nextStatus, formData: nextFormData },
+      } : listing)
+      try {
+        await updateAgencyCrmLeadRecord(organisationId, leadId, leadPatch)
+      } catch (projectionError) {
+        console.warn('[AgencyPipelinePage] seller review saved; lead projection needs refresh', projectionError)
+      }
+      if (correction) {
+        setSellerOnboardingReviewModalOpen(false)
+        setMessage('Correction requested. The seller can update the existing onboarding link before documents are prepared.')
+      } else {
+        setMessage('Seller onboarding fields approved. You can now prepare the FICA and mandate copies.')
+      }
+      scheduleRecordsReload(organisationId, 500)
+      return true
+    } catch (reviewError) {
+      setSellerOnboardingReviewError(reviewError?.message || 'Unable to save the seller onboarding review.')
+      return false
+    } finally {
+      setSellerOnboardingReviewSaving(false)
+    }
+  }
+
   function getSellerLeadSigningRecipients() {
-    const formData = getLeadSellerOnboardingFormData(selectedLead)
+    const formData = getSellerLeadReviewFormData(selectedLead, selectedLeadLinkedListing)
     const model = buildSellerCompliancePortalModel({
       formData,
       listing: selectedLeadLinkedListing || {},
@@ -27196,14 +27421,17 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }
 
   function openSellerLeadSigningPack() {
-    const formData = getLeadSellerOnboardingFormData(selectedLead)
+    if (!SELLER_PORTAL_SIGNING_ENABLED) setSellerOnboardingReviewRoute('manual_upload')
+    const formData = getSellerLeadReviewFormData(selectedLead, selectedLeadLinkedListing)
     setSellerSigningPackError('')
     setSellerSigningPackTerms({
       mandateType: normalizeText(formData.mandateType || selectedLeadLinkedListing?.mandateType),
       askingPrice: normalizeText(formData.askingPrice || formData.asking_price || selectedLeadLinkedListing?.askingPrice || selectedLeadLinkedListing?.asking_price),
       startDate: normalizeText(formData.mandateStartDate || formData.mandate_start_date).slice(0, 10),
       endDate: normalizeText(formData.mandateEndDate || formData.mandate_end_date).slice(0, 10),
-      protectionPeriod: normalizeText(formData.mandateProtectionPeriod || formData.mandate_protection_period),
+      protectionPeriod: normalizeText(formData.mandateProtectionPeriod || formData.mandate_protection_period || formData.protectionPeriodDays),
+      otherAgencyName: normalizeText(formData.otherAgencyName || formData.coAgencyName),
+      protectionPeriodDays: normalizeText(formData.protectionPeriodDays || formData.mandateProtectionPeriod || formData.mandate_protection_period),
       commissionBasis: normalizeText(formData.commissionBasis || formData.commission_basis) === 'fixed' ? 'fixed' : 'percentage',
       commissionPercentage: normalizeText(formData.commissionPercentage || formData.commission_percent || formData.mandateCommissionPercentage),
       commissionAmount: normalizeText(formData.commissionAmount || formData.commission_amount),
@@ -27212,11 +27440,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     setSellerSigningPackModalOpen(true)
   }
 
-  function continueSellerOnboardingReview() {
+  async function continueSellerOnboardingReview() {
     if (!selectedLeadLinkedListingId) {
       setError('This seller lead does not yet have its onboarding intake record. Reload the lead and try again; do not create a market listing to send the signing pack.')
       return
     }
+    const saved = await saveSellerLeadOnboardingReview(SELLER_ONBOARDING_REVIEW_STATUS.approved)
+    if (!saved) return
+    if (!SELLER_PORTAL_SIGNING_ENABLED) setSellerOnboardingReviewRoute('manual_upload')
     setSellerOnboardingReviewModalOpen(false)
     openSellerLeadSigningPack()
   }
@@ -27242,6 +27473,17 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setSellerSigningPackModalOpen(true)
       return
     }
+    const formData = getSellerLeadReviewFormData(selectedLead, selectedLeadLinkedListing)
+    const review = readSellerOnboardingReview(formData.sellerOnboardingReview || formData.seller_onboarding_review)
+    if (review.status !== SELLER_ONBOARDING_REVIEW_STATUS.approved) {
+      setSellerSigningPackError('Approve the submitted seller onboarding before preparing documents.')
+      return
+    }
+    const checklist = getSellerLeadOnboardingReviewChecklist()
+    if (!checklist.ready) {
+      setSellerSigningPackError(`Complete the submitted onboarding fields before preparing documents: ${checklist.missing.join(' ')}`)
+      return
+    }
     const recipients = getSellerLeadSigningRecipients()
     const incompleteRecipients = recipients.map((signer, index) => {
       const missing = [!signer.name && 'full name', digitalKeys.length && !isValidEmail(signer.email) && 'valid email'].filter(Boolean)
@@ -27257,16 +27499,18 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setSellerSigningPackError('Choose the mandate type before sending.')
       return
     }
-    if (!['sole', 'open'].includes(normalizeText(sellerSigningPackTerms.mandateType))) {
-      setSellerSigningPackError('Choose an exclusive or open mandate for the available signing templates.')
+    try {
+      requireSellerMandateWording(sellerSigningPackTerms.mandateType)
+    } catch (wordingError) {
+      setSellerSigningPackError(wordingError.message)
       return
     }
-    if (!(Number(sellerSigningPackTerms.askingPrice) > 0)) {
-      setSellerSigningPackError('Enter the asking price before preparing the mandate.')
+    if (sellerSigningPackTerms.mandateType === 'dual' && !normalizeText(sellerSigningPackTerms.otherAgencyName)) {
+      setSellerSigningPackError('Name the second agency before preparing a dual mandate.')
       return
     }
-    if (!sellerSigningPackTerms.startDate || !sellerSigningPackTerms.endDate || sellerSigningPackTerms.endDate < sellerSigningPackTerms.startDate) {
-      setSellerSigningPackError('Enter a valid mandate start and end date before preparing the mandate.')
+    if (sellerSigningPackTerms.protectionPeriodDays && (!Number.isInteger(Number(sellerSigningPackTerms.protectionPeriodDays)) || Number(sellerSigningPackTerms.protectionPeriodDays) < 0)) {
+      setSellerSigningPackError('Enter a whole number of protection days, or leave it blank for none.')
       return
     }
     if (sellerSigningPackTerms.commissionBasis === 'fixed' ? !(amount > 0) : !(percentage > 0)) {
@@ -27299,10 +27543,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       amount: sellerSigningPackTerms.commissionBasis === 'fixed' ? String(sellerSigningPackTerms.commissionAmount) : '',
       vatHandling: sellerSigningPackTerms.vatHandling,
     }
-    const postOnboardingDrafts = formData.sellerPostOnboardingDrafts || formData.seller_post_onboarding_drafts || buildSellerPostOnboardingDrafts({
+    const draftSigningBranding = resolveOnboardingBranding(
+      selectedLeadLinkedListing?.branding,
+      currentWorkspace?.branding,
+      currentWorkspace,
+    )
+    const postOnboardingDrafts = buildSellerPostOnboardingDrafts({
       formData,
       listing: selectedLeadLinkedListing || {},
-      branding: selectedLeadLinkedListing?.branding || {},
+      branding: draftSigningBranding,
       generatedAt: now,
     })
     const formalPackApproval = createSellerOnboardingFormalPackApproval({
@@ -27356,6 +27605,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         endDate: sellerSigningPackTerms.endDate,
         protectionPeriod: sellerSigningPackTerms.protectionPeriod,
         specialConditions: normalizeText(formData.mandateSpecialConditions || formData.mandate_special_conditions),
+        otherAgencyName: normalizeText(sellerSigningPackTerms.otherAgencyName),
+        protectionPeriodDays: normalizeText(sellerSigningPackTerms.protectionPeriodDays || sellerSigningPackTerms.protectionPeriod),
         commissionBasis: commission.basis,
         commissionPercentage: commission.percentage,
         commissionAmount: commission.amount,
@@ -27363,12 +27614,22 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       },
       generatedAt: now,
     })
-    const reviewedSigningPack = createSellerOnboardingManualSigningPack({
+    const reviewedSigningPack = digitalKeys.length
+      ? createSellerOnboardingManualSigningPack({
           existing: formData.sellerOnboardingManualSigningPack || formData.seller_onboarding_manual_signing_pack,
           formalPackApproval,
           signingPack,
           postOnboardingDrafts,
           formData,
+          actor: normalizeText(currentAgent?.id),
+          generatedAt: now,
+        })
+      : createSellerOnboardingSigningCopyPack({
+          existing: formData.sellerOnboardingManualSigningPack || formData.seller_onboarding_manual_signing_pack,
+          formalPackApproval,
+          signingPack,
+          postOnboardingDrafts,
+          disclosureSigned: hasCompletedOnboardingDisclosureSignature(formData),
           actor: normalizeText(currentAgent?.id),
           generatedAt: now,
         })
@@ -27397,7 +27658,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       commission_amount: commission.amount,
       vatHandling: commission.vatHandling,
       mandateSignatureRoute: sellerOnboardingDocumentRoutes.signed_mandate,
-      sellerOnboardingReview: { status: 'approved', approvedAt: now, approvedBy: normalizeText(currentAgent?.id) },
+      sellerOnboardingReview: review,
+      seller_onboarding_review: review,
       sellerOnboardingFormalPackApproval: formalPackApproval,
       seller_onboarding_formal_pack_approval: formalPackApproval,
       sellerPostOnboardingDrafts: postOnboardingDrafts,
@@ -27436,7 +27698,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
       await updatePrivateListing(listingId, {
         mandateType: sellerSigningPackTerms.mandateType,
-        mandateStatus: 'sent',
+        mandateStatus: 'generated',
       }, { includeRequirementsAndDocuments: false })
       const leadPatch = {
         stage: 'Mandate Sent',
@@ -32060,20 +32322,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	    }
 	  }
 
-  function handleBuyerCommandSendListings() {
-    setLeadWorkspaceTab('properties')
-    const buyerEmail = normalizeText(selectedLeadContact?.email || selectedLead?.email)
-    if (buyerEmail && selectedLeadBuyerRecommendations.length && typeof window !== 'undefined') {
-      const recommendations = selectedLeadBuyerRecommendations
-        .slice(0, 3)
-        .map((property) => `${property.title} - ${property.price} - ${property.area}`)
-        .join('\n')
-      window.location.href = `mailto:${encodeURIComponent(buyerEmail)}?subject=${encodeURIComponent('Recommended properties')}&body=${encodeURIComponent(recommendations)}`
-      return
-    }
-    setMessage('Recommended listings are open in the Properties workspace.')
-  }
-
 	  async function handleBuyerCommandConvertToTransaction() {
 	    if (selectedLeadAcceptedOffer && !OFFER_WORKFLOW_RETIRED) {
 	      void handleLeadCanonicalOfferConversion(selectedLeadAcceptedOffer)
@@ -33921,11 +34169,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           </div>
                         </div>
 
-                        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                           {[
                             ['Buyer Score', selectedLeadBuyerScore, selectedLeadBuyerScore >= 80 ? 'High Potential' : selectedLeadBuyerScore >= 62 ? 'Qualified' : 'Needs Nurture', Gauge],
                             ['Budget Range', selectedLeadBuyerBudgetLabel, selectedLeadBuyerBudgetLabel === 'Not captured' ? 'Needs capture' : 'Active band', Home],
-                            ['Saved Searches', leadAppointmentOfferListingOptions.length || selectedLeadViewingAppointments.length || 0, 'Active signals', Bookmark],
                             ['Match Score', `${selectedLeadBuyerMatchScore}%`, selectedLeadBuyerMatchScore >= 86 ? 'Strong fit' : 'Good fit', TrendingUp],
                             ['Urgency', selectedLeadBuyerUrgency, selectedLeadBuyerUrgency === 'High' ? 'Act now' : 'Monitor', Zap],
                           ].map(([label, value, descriptor, Icon]) => (
@@ -33994,14 +34241,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                     onClick: () => {
                                       setLeadActionsMenuOpen(false)
                                       handleOpenAppointmentModal()
-                                    },
-                                  },
-                                  {
-                                    label: 'Send Listings',
-                                    Icon: Send,
-                                    onClick: () => {
-                                      setLeadActionsMenuOpen(false)
-                                      handleBuyerCommandSendListings()
                                     },
                                   },
                                   {
@@ -34222,15 +34461,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                                          onClick: () => {
 	                                            setLeadActionsMenuOpen(false)
 	                                            handleOpenAppointmentModal()
-	                                          },
-	                                        },
-	                                        {
-	                                          label: 'Send Listings',
-	                                          Icon: Send,
-	                                          tone: 'text-[#29435d]',
-	                                          onClick: () => {
-	                                            setLeadActionsMenuOpen(false)
-	                                            handleBuyerCommandSendListings()
 	                                          },
 	                                        },
 	                                        {
@@ -34809,7 +35039,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             if (phone && typeof window !== 'undefined') window.location.href = `tel:${phone}`
                           }],
                           ['Schedule Viewing', CalendarDays, () => handleOpenAppointmentModal()],
-                          ['Send Listings', Send, handleBuyerCommandSendListings],
                           ['Create Task', CheckSquare, () => {
                             setLeadWorkspaceTab('activity')
                             openActivityComposer('task')
@@ -38148,50 +38377,28 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   ) : null}
 
                   {resolveBuyerWorkspaceTabKey(leadWorkspaceTab) === BUYER_PROFILE_WORKSPACE_TAB_KEY && !selectedLeadIsSeller ? (
-                    <div className="space-y-5" data-testid="buyer-profile-onboarding-fields">
-                      <section className="overflow-hidden rounded-[24px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_16px_42px_rgba(31,54,78,0.06)]">
-                        <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[#edf3f8] px-6 py-5 sm:px-8">
+                    <div className="min-w-0 space-y-5" data-testid="buyer-profile-onboarding-fields">
+                      <section className="rounded-[24px] border border-[#dbe7f2] bg-white p-5 shadow-[0_12px_34px_rgba(31,54,78,0.045)] sm:p-6">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
                           <div>
-                            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#6d839b]">Buyer Profile</p>
-                            <h2 className="mt-2 text-2xl font-semibold text-[#102033]">{selectedLeadBuyerProfileModel.buyerName}</h2>
-                            <p className="mt-2 max-w-2xl text-sm leading-6 text-[#60758b]">
-                              This profile mirrors the buyer onboarding form fields, including the purchaser route, finance route, and conditional sections.
-                            </p>
+                            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#18324b]">Buyer Profile</p>
+                            <h2 className="mt-1 text-xl font-semibold tracking-[-0.03em] text-[#102033]">Buyer information</h2>
                           </div>
                           <div className="flex flex-wrap items-center gap-2">
                             <span className="rounded-full border border-[#cfe4db] bg-[#f4fbf7] px-3 py-1 text-xs font-bold uppercase tracking-[0.1em] text-[#17643a]">
                               {selectedLeadBuyerProfileModel.statusLabel}
                             </span>
-                            <Button type="submit" size="sm" form="buyer-profile-onboarding-form" disabled={isLeadDetailSaving}>
-                              {isLeadDetailSaving ? 'Saving...' : 'Save profile'}
-                            </Button>
                             <Button type="button" size="sm" variant="secondary" onClick={() => void downloadBuyerOnboardingForm(selectedLeadBuyerProfileModel)}>
                               <Download className="h-4 w-4" />
                               Download onboarding form
                             </Button>
                           </div>
                         </div>
-
-                        <div className="grid gap-4 px-6 py-5 sm:px-8 lg:grid-cols-4">
-                          {[
-                            ['Required fields', `${selectedLeadBuyerProfileModel.completedRequiredCount}/${selectedLeadBuyerProfileModel.requiredCount}`],
-                            ['Fields captured', `${selectedLeadBuyerProfileModel.capturedCount}/${selectedLeadBuyerProfileModel.totalFieldCount}`],
-                            ['Completion', `${selectedLeadBuyerProfileModel.completionPercent}%`],
-                            ['Last updated', selectedLeadBuyerProfileModel.updatedAt ? formatDateTime(selectedLeadBuyerProfileModel.updatedAt) : 'Not captured'],
-                          ].map(([label, value]) => (
-                            <div key={label} className="rounded-[16px] border border-[#e1eaf4] bg-[#fbfdff] px-4 py-3">
-                              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7d93aa]">{label}</p>
-                              <p className="mt-2 text-sm font-semibold text-[#20364c]">{value}</p>
-                            </div>
-                          ))}
-                        </div>
-
                         {selectedLeadBuyerProfileModel.submittedAt ? (
-                          <div className="mx-6 mb-5 rounded-[16px] border border-[#cfe4db] bg-[#f4fbf7] px-4 py-3 text-sm font-semibold text-[#17643a] sm:mx-8">
+                          <div className="mt-4 rounded-[16px] border border-[#cfe4db] bg-[#f4fbf7] px-4 py-3 text-sm font-semibold text-[#17643a]">
                             Buyer onboarding submitted {formatDateTime(selectedLeadBuyerProfileModel.submittedAt)}.
                           </div>
                         ) : null}
-                      </section>
 
                       <Suspense fallback={<div className="h-56 animate-pulse rounded-[20px] border border-[#dce7f2] bg-[#f5f8fb]" />}>
                         <BuyerFicaVerification
@@ -38203,7 +38410,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           missingFields={selectedLeadBuyerFicaVerificationModel.missingFields}
                           canView={can(PERMISSIONS.viewClients, assignmentPermissionContext)}
                           canRun={can(PERMISSIONS.editClients, assignmentPermissionContext)}
-                          onCompleteInformation={() => document.getElementById('buyer-profile-onboarding-form')?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })}
+                          onCompleteInformation={() => {
+                            const section = selectedLeadBuyerProfileModel.sections.find((item) => item.fields.some((field) => field.required && !field.complete)) || selectedLeadBuyerProfileModel.sections[0]
+                            openBuyerProfileSection(section?.key)
+                          }}
                           onAuditActivity={(activityType, verificationRun) => {
                             void createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
                               agent: currentAgent,
@@ -38217,20 +38427,35 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           }}
                         />
                       </Suspense>
+                      </section>
 
-                      <form id="buyer-profile-onboarding-form" className="grid gap-5" onSubmit={handleSaveBuyerProfile}>
-                        {selectedLeadBuyerProfileModel.sections.map((section) => (
-                          <section key={section.key} className="rounded-[22px] border border-[#dce7f2] bg-white p-5 shadow-[0_12px_30px_rgba(31,54,78,0.045)] sm:p-6">
+                      <form id="buyer-profile-onboarding-form" className="grid gap-4 lg:grid-cols-2" onSubmit={handleSaveBuyerProfileSection}>
+                        {selectedLeadBuyerProfileModel.sections.map((section) => {
+                          const summary = buildBuyerProfileCardSummary(section)
+                          const editing = editingBuyerProfileSectionKey === section.key
+                          return (
+                          <section id={`buyer-profile-section-${section.key}`} key={section.key} className={`rounded-[16px] border border-[#dfe8f2] bg-white p-4 shadow-[0_8px_20px_rgba(31,54,78,0.025)] ${editing ? 'lg:col-span-2' : ''}`}>
                             <div className="flex flex-wrap items-start justify-between gap-3">
                               <div>
-                                <h3 className="text-lg font-semibold text-[#102033]">{section.title}</h3>
-                                {section.description ? <p className="mt-1 max-w-3xl text-sm leading-6 text-[#60758b]">{section.description}</p> : null}
+                                <h3 className="text-sm font-semibold text-[#102033]">{section.title}</h3>
+                                {editing && section.description ? <p className="mt-1 max-w-3xl text-sm leading-6 text-[#60758b]">{section.description}</p> : null}
                               </div>
-                              <span className="rounded-full border border-[#dce7f2] bg-[#fbfdff] px-3 py-1 text-xs font-semibold text-[#60758b]">
-                                {section.completedRequiredCount}/{section.requiredCount} required
-                              </span>
+                              <div className="flex items-center gap-2">
+                                {section.requiredCount > 0 ? (
+                                  <span className="rounded-full border border-[#dce7f2] bg-[#fbfdff] px-3 py-1 text-xs font-semibold text-[#60758b]">
+                                    {section.completedRequiredCount}/{section.requiredCount} required
+                                  </span>
+                                ) : null}
+                                {!editing ? (
+                                  <button type="button" className="inline-flex h-8 items-center justify-center rounded-[10px] border border-[#dbe4ee] bg-white px-3 text-xs font-semibold text-[#405b75] transition hover:border-[#bfd0e2] hover:bg-[#f8fbfe] disabled:opacity-50" disabled={isLeadDetailSaving || Boolean(editingBuyerProfileSectionKey)} onClick={() => openBuyerProfileSection(section.key)}>
+                                    Edit
+                                  </button>
+                                ) : null}
+                              </div>
                             </div>
 
+                            {editing ? (
+                            <>
                             <div className="mt-5 space-y-4">
                               {section.rows.map((row) => (
                                 <div key={row.key} className="rounded-[16px] border border-[#edf3f8] bg-[#fbfdff] p-4">
@@ -38350,8 +38575,34 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                 {section.addLabel || 'Add entry'}
                               </Button>
                             ) : null}
+                            <div className="mt-5 flex flex-wrap justify-end gap-2 border-t border-[#edf3f8] pt-4">
+                              <Button type="button" size="sm" variant="secondary" disabled={isLeadDetailSaving} onClick={cancelBuyerProfileSectionEdit}>Cancel</Button>
+                              <Button type="submit" size="sm" disabled={isLeadDetailSaving}>{isLeadDetailSaving ? 'Saving...' : 'Save section'}</Button>
+                            </div>
+                            </>
+                            ) : (
+                              <>
+                                {summary.rows.length ? (
+                                  <dl className="mt-4 space-y-2.5">
+                                    {summary.rows.map((row) => (
+                                      <div key={row.key} className="grid grid-cols-[minmax(96px,0.5fr)_minmax(0,1fr)] gap-3 text-sm">
+                                        <dt className="text-[#60758b]">{row.label}</dt>
+                                        <dd className="min-w-0 truncate font-semibold text-[#20364c]" title={String(row.value)}>{row.value}</dd>
+                                      </div>
+                                    ))}
+                                  </dl>
+                                ) : <p className="mt-4 text-sm text-[#8aa0b7]">No information captured yet.</p>}
+                                {summary.remainingCount > 0 ? <p className="mt-3 text-xs font-medium text-[#60758b]">+{summary.remainingCount} more captured</p> : null}
+                                {summary.missingRequired.length ? (
+                                  <p className="mt-4 border-t border-[#edf3f8] pt-3 text-xs leading-5 text-[#8a641d]">
+                                    Missing: {summary.missingRequired.slice(0, 3).join(', ')}{summary.missingRequired.length > 3 ? ` +${summary.missingRequired.length - 3} more` : ''}
+                                  </p>
+                                ) : null}
+                              </>
+                            )}
                           </section>
-                        ))}
+                          )
+                        })}
                       </form>
                     </div>
                   ) : null}
@@ -38666,15 +38917,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   {leadWorkspaceTab === 'properties' ? (
                   <div className="space-y-6">
                     <section className="rounded-[20px] border border-[#dce7f2] bg-white p-5 shadow-[0_10px_30px_rgba(31,54,78,0.045)] sm:p-6">
-                      <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div>
-                          <h2 className="text-[18px] font-semibold text-[#102033]">Recommended For {selectedLeadContactName}</h2>
-                          <p className="mt-1 text-sm text-[#60758b]">Property match and saved-search signals are presented together for fast buyer action.</p>
-                        </div>
-                        <Button type="button" size="sm" variant="secondary" onClick={handleBuyerCommandSendListings}>
-                          <Send className="h-4 w-4" />
-                          Send Listings
-                        </Button>
+                      <div>
+                        <h2 className="text-[18px] font-semibold text-[#102033]">Recommended For {selectedLeadContactName}</h2>
+                        <p className="mt-1 text-sm text-[#60758b]">Listings within R300,000 of the enquiry price appear here.</p>
                       </div>
                       <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                         {selectedLeadBuyerRecommendations.map((property) => (
@@ -38684,9 +38929,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                               <span className="absolute left-3 top-3 rounded-full bg-white/95 px-2.5 py-1 text-[12px] font-semibold text-[#17643a] shadow-sm">
                                 {property.match}% Match
                               </span>
-                              <button type="button" className="absolute right-3 top-3 grid h-9 w-9 place-items-center rounded-full bg-white/95 text-[#60758b] shadow-sm" title="Save property">
-                                <Bookmark className="h-4 w-4" />
-                              </button>
                             </div>
                             <div className="p-4">
                               <p className="text-lg font-semibold text-[#102033]">{property.price}</p>
@@ -38710,18 +38952,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           </article>
                         ))}
                       </div>
-                    </section>
-
-                    <section className="rounded-[20px] border border-[#dce7f2] bg-white p-5 shadow-[0_10px_30px_rgba(31,54,78,0.045)] sm:p-6">
-                      <h2 className="text-[18px] font-semibold text-[#102033]">Saved Searches</h2>
-                      <div className="mt-4 grid gap-3 md:grid-cols-3">
-                        {(leadAppointmentOfferListingOptions.length ? leadAppointmentOfferListingOptions : selectedLeadBuyerRecommendations).slice(0, 6).map((item) => (
-                          <div key={`saved-${item.id}`} className="rounded-[14px] border border-[#e4edf6] bg-[#fbfdff] p-4">
-                            <p className="truncate text-sm font-semibold text-[#20364c]" title={item.label || item.title}>{item.label || item.title}</p>
-                            <p className="mt-1 text-xs font-medium text-[#7d91a8]">{item.source || 'Recommended'} · {selectedLeadBuyerBudgetLabel}</p>
-                          </div>
-                        ))}
-                      </div>
+                      {!selectedLeadBuyerRecommendations.length ? (
+                        <p className="mt-5 rounded-[14px] border border-dashed border-[#d7e2ef] bg-[#fbfdff] px-4 py-6 text-sm text-[#60758b]">
+                          No matching listings yet. Link an enquiry listing to compare prices with current listings.
+                        </p>
+                      ) : null}
                     </section>
                   </div>
                   ) : null}
@@ -40127,7 +40362,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                               else void handleKingstonsSellerPackUpload(documentKey, event, documentRow)
                             } else void handleSellerLeadDocumentUpload(event, documentRow, category)
                           }} /></label> : null}
-                          {physicalCopy && reviewDocument && isUuidLike(normalizeText(documentRow.requirementId || documentRow.requirement_id)) ? <SellerDocumentReviewActions item={{ ...documentRow, linkedDocument: reviewDocument, requirementId: documentRow.requirementId || documentRow.requirement_id }} busyAction={sellerLeadDocumentReviewAction} onReview={handleSellerLeadDocumentReview} compact /> : null}
+                          {physicalCopy && reviewDocument && isUuidLike(normalizeText(documentRow.requirementId || documentRow.requirement_id)) ? <SellerDocumentReviewActions item={{ ...documentRow, linkedDocument: reviewDocument, requirementId: documentRow.requirementId || documentRow.requirement_id }} busyAction={sellerLeadDocumentReviewAction} onReview={handleSellerLeadDocumentReview} requireSignedCopyCheck compact /> : null}
                         </>
                       }}
                     />
@@ -40404,7 +40639,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 		                                                  />
 		                                                </label>
 		                                              ) : null}
-		                                              {physicalCopy && reviewDocument && isUuidLike(normalizeText(documentRow.requirementId || documentRow.requirement_id)) ? <SellerDocumentReviewActions item={{ ...documentRow, linkedDocument: reviewDocument, requirementId: documentRow.requirementId || documentRow.requirement_id }} busyAction={sellerLeadDocumentReviewAction} onReview={handleSellerLeadDocumentReview} compact /> : null}
+		                                              {physicalCopy && reviewDocument && isUuidLike(normalizeText(documentRow.requirementId || documentRow.requirement_id)) ? <SellerDocumentReviewActions item={{ ...documentRow, linkedDocument: reviewDocument, requirementId: documentRow.requirementId || documentRow.requirement_id }} busyAction={sellerLeadDocumentReviewAction} onReview={handleSellerLeadDocumentReview} requireSignedCopyCheck compact /> : null}
 			                                              {canUploadKingstonsDocument ? (
 	                                                <label className={`inline-flex min-h-9 items-center gap-1.5 rounded-[12px] border px-3 text-xs font-semibold transition ${isUploadingKingstonsDocument ? 'cursor-not-allowed border-[#e5edf5] bg-[#f8fbff] text-[#a0afbf]' : 'cursor-pointer border-[#cfdceb] bg-white text-[#315b7a] hover:border-[#a9bfd6]'}`}>
 	                                                  <Upload className="h-3.5 w-3.5" />
@@ -40738,41 +40973,31 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             <Button type="button" variant="secondary" onClick={() => setSellerOnboardingReviewModalOpen(false)}>
               Cancel
             </Button>
-            <Button type="button" onClick={continueSellerOnboardingReview}>
-              Continue to review documents
+            <Button type="button" disabled={sellerOnboardingReviewSaving || (sellerOnboardingReviewModalOpen && (!selectedLeadOnboardingReviewChecklist?.ready || readSellerOnboardingReview(selectedLeadReviewFormData?.sellerOnboardingReview || selectedLeadReviewFormData?.seller_onboarding_review).status === SELLER_ONBOARDING_REVIEW_STATUS.correctionRequested))} onClick={() => void continueSellerOnboardingReview()}>
+              {sellerOnboardingReviewSaving ? 'Saving review…' : 'Approve and continue'}
             </Button>
           </div>
         )}
       >
         <div className="space-y-5">
+          {sellerOnboardingReviewError ? <p role="alert" className="rounded-[14px] border border-[#f3c6c1] bg-[#fff6f5] p-3 text-sm text-[#a33c32]">{sellerOnboardingReviewError}</p> : null}
           <div className="rounded-[16px] border border-[#dce6f2] bg-[#f8fbff] p-4 text-sm leading-6 text-[#47637d]">
             Commission terms are confirmed in the signing pack before anything is sent or prepared. Opening that screen does not create, publish, or activate a market listing.
             {(getLeadSellerOnboardingFormData(selectedLead).sellerReviewedDocumentVersions || getLeadSellerOnboardingFormData(selectedLead).seller_reviewed_document_versions)?.documents?.length ? ' Preparing another pack creates a new reviewed version and keeps the previous copies in the audit history.' : ''}
           </div>
-          <section className="rounded-[16px] border border-[#dce6f2] bg-white p-4">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <p className="text-sm font-semibold text-[#243d56]">Submitted onboarding facts</p>
-                <p className="mt-1 text-sm text-[#607387]">Only fields actually captured for this seller are shown.</p>
-              </div>
-              <span className="rounded-full bg-[#eaf7ee] px-3 py-1 text-xs font-semibold text-[#176842]">Onboarding submitted</span>
-            </div>
-            <div className="mt-4 grid gap-3 md:grid-cols-2">
-              {selectedSellerProfileCards.slice(0, 6).map((card) => (
-                <article key={`review-${card.key}`} className="rounded-xl border border-[#e4ecf4] bg-[#fbfdff] p-3">
-                  <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#6f839c]">{card.title}</p>
-                  <dl className="mt-2 grid gap-1.5 text-sm">
-                    {card.rows.slice(0, 6).map(([label, value]) => (
-                      <div key={`${card.key}:${label}`} className="grid grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] gap-2">
-                        <dt className="text-[#71859b]">{label}</dt>
-                        <dd className="min-w-0 break-words font-medium text-[#263e57]">{value}</dd>
-                      </div>
-                    ))}
-                  </dl>
-                </article>
-              ))}
-            </div>
-          </section>
+          {sellerOnboardingReviewModalOpen ? <SellerOnboardingAgentReviewPanel formData={selectedLeadReviewFormData} checklist={selectedLeadOnboardingReviewChecklist} /> : null}
+          {sellerOnboardingReviewModalOpen ? (() => {
+            const form = selectedLeadReviewFormData || {}
+            const review = readSellerOnboardingReview(form.sellerOnboardingReview || form.seller_onboarding_review)
+            return <section className="rounded-[16px] border border-[#dce6f2] bg-white p-4 text-sm">
+              <p className="font-semibold text-[#243d56]">Agent review decision</p>
+              {review.status === SELLER_ONBOARDING_REVIEW_STATUS.correctionRequested ? <p className="mt-1 text-[#76551a]">Correction requested: {review.reason}. Wait for resubmission before approving.</p> : <>
+                <p className="mt-1 text-[#607387]">Need a correction? The seller can update the existing onboarding link.</p>
+                <textarea value={sellerOnboardingCorrectionReason} onChange={(event) => setSellerOnboardingCorrectionReason(event.target.value)} rows={2} placeholder="For example, confirm the beneficial owner’s ID and residential address." className="mt-3 w-full rounded-xl border border-[#dce6f2] bg-white px-3 py-2" />
+                <Button type="button" size="sm" variant="secondary" className="mt-2" disabled={sellerOnboardingReviewSaving || sellerOnboardingCorrectionReason.trim().length < 5} onClick={() => void saveSellerLeadOnboardingReview(SELLER_ONBOARDING_REVIEW_STATUS.correctionRequested)}>Request correction</Button>
+              </>}
+            </section>
+          })() : null}
           <fieldset className="grid gap-3 rounded-[16px] border border-[#dce6f2] bg-white p-4">
             <legend className="px-1 text-sm font-semibold text-[#243d56]">Choose how each document will be signed</legend>
             {[
@@ -40829,6 +41054,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                 <option value="">Choose mandate type</option><option value="sole">Exclusive</option><option value="open">Open</option>
               </Field>
             </label>
+            {sellerSigningPackTerms.mandateType === 'dual' ? <label className="grid gap-1.5 font-semibold text-[#243d56]">Second agency name
+              <Field value={sellerSigningPackTerms.otherAgencyName} onChange={(event) => setSellerSigningPackTerms((previous) => ({ ...previous, otherAgencyName: event.target.value }))} placeholder="Agency named in the dual appointment" />
+            </label> : null}
             <label className="grid gap-1.5 font-semibold text-[#243d56]">Asking price (R)
               <Field type="number" min="1" step="1" value={sellerSigningPackTerms.askingPrice} onChange={(event) => setSellerSigningPackTerms((previous) => ({ ...previous, askingPrice: event.target.value }))} />
             </label>

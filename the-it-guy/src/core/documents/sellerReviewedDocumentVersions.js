@@ -46,12 +46,20 @@ export async function createSellerReviewedDocumentVersions({
   approvedAt = new Date().toISOString(),
 } = {}) {
   const approval = record(formalPackApproval)
-  if (approval.status !== 'approved') {
+  if (approval.status !== 'approved' || !['manual_upload', 'digital_pack'].includes(approval.signingRoute)) {
     throw new Error('Approve the seller documents before freezing their signing versions.')
   }
   if (!text(actor) || !text(approvedAt)) throw new Error('Record the agent and approval time before freezing documents.')
   const signers = requiredSigners(signingPack)
+  if (approval.signingRoute === 'digital_pack') {
+    const emails = signers.map((signer) => signer.email)
+    if (emails.some((email) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) || new Set(emails).size !== emails.length) {
+      throw new Error('Give every required signer a distinct valid email before preparing portal signing.')
+    }
+  }
   const documents = Array.isArray(manualSigningPack?.documents) ? manualSigningPack.documents : []
+  const selected = Array.isArray(approval.selectedDocuments) ? approval.selectedDocuments.map(text) : ['fica', 'mandate']
+  const selectedKeys = new Set(selected.map((value) => value === 'fica' ? SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION : value === 'mandate' ? SELLER_BASE_PACK_KEYS.SIGNED_MANDATE : value))
   const seen = new Set()
   if (!documents.length) throw new Error('No reviewed seller documents are available to freeze.')
   const mandateTerms = record(signingPack?.mandate)
@@ -59,6 +67,14 @@ export async function createSellerReviewedDocumentVersions({
     const key = normalizeSellerBasePackKey(document?.key || document?.requirementKey)
     if (!keys.has(key) || seen.has(key)) throw new Error('Each reviewed seller document needs one distinct requirement row.')
     seen.add(key)
+    if (text(document?.versionId) || text(document?.versionDigest)) {
+      if (selectedKeys.has(key) || !await verifySellerReviewedDocumentVersion(document)) throw new Error(`The existing ${key} copy cannot be reused. Include it in this signing pack for review.`)
+      if (canonicalJson(document.requiredSigners) !== canonicalJson(signers)) throw new Error(`The required signers changed. Include ${key} in this signing pack for review.`)
+      if (key === SELLER_BASE_PACK_KEYS.SIGNED_MANDATE && canonicalJson(record(document.mandateTerms)) !== canonicalJson(record(signingPack.mandate))) {
+        throw new Error('The mandate terms changed. Include the mandate in this signing pack for review.')
+      }
+      return document
+    }
     const generatedHtml = String(document?.generatedHtml || document?.generated_html || '')
     if (!text(generatedHtml)) throw new Error(`The reviewed ${key} document has no frozen content.`)
     if (key === SELLER_BASE_PACK_KEYS.SIGNED_MANDATE && !approval.commission?.confirmed) {
@@ -67,7 +83,8 @@ export async function createSellerReviewedDocumentVersions({
     const contentDigest = await sha256(generatedHtml)
     const frozenMandateTerms = key === SELLER_BASE_PACK_KEYS.SIGNED_MANDATE ? { ...mandateTerms } : null
     const sourceDraftFingerprint = text(document?.sourceDraftFingerprint)
-    const versionDigest = await sha256(canonicalJson({ key, contentDigest, sourceDraftFingerprint, signers, mandateTerms: frozenMandateTerms }))
+    const sourceFactsFingerprint = text(document?.sourceFactsFingerprint)
+    const versionDigest = await sha256(canonicalJson({ key, contentDigest, sourceDraftFingerprint, signers, mandateTerms: frozenMandateTerms, ...(sourceFactsFingerprint ? { sourceFactsFingerprint } : {}) }))
     return {
       ...document,
       key,
@@ -76,11 +93,15 @@ export async function createSellerReviewedDocumentVersions({
       versionDigest,
       contentDigest,
       sourceDraftFingerprint,
+      sourceFactsFingerprint,
       requiredSigners: signers,
       mandateTerms: frozenMandateTerms,
       approvedAt: text(approvedAt),
       approvedBy: text(actor),
-      status: document.signingRoute === 'digital_pack' ? 'awaiting_signature' : 'awaiting_signed_hard_copy',
+      status: (document.signingRoute || approval.signingRoute) === 'digital_pack'
+        ? (Array.isArray(approval.selectedDocuments) ? 'ready_for_portal_signature' : 'awaiting_signature')
+        : 'awaiting_signed_hard_copy',
+      signingRoute: document.signingRoute || approval.signingRoute,
       signingContract: SELLER_DOCUMENT_SIGNING_CONTRACT,
     }
   }))
@@ -101,7 +122,8 @@ export async function verifySellerReviewedDocumentVersion(document = {}) {
   if (!text(html) || await sha256(html) !== document.contentDigest) return false
   const signers = Array.isArray(document.requiredSigners) ? document.requiredSigners : []
   const mandateTerms = key === SELLER_BASE_PACK_KEYS.SIGNED_MANDATE ? record(document?.mandateTerms) : null
-  return await sha256(canonicalJson({ key, contentDigest: document.contentDigest, sourceDraftFingerprint: text(document?.sourceDraftFingerprint), signers, mandateTerms })) === document.versionDigest
+  const sourceFactsFingerprint = text(document?.sourceFactsFingerprint)
+  return await sha256(canonicalJson({ key, contentDigest: document.contentDigest, sourceDraftFingerprint: text(document?.sourceDraftFingerprint), signers, mandateTerms, ...(sourceFactsFingerprint ? { sourceFactsFingerprint } : {}) })) === document.versionDigest
 }
 
 /** Persist a compact lookup beside the existing HTML signing copies. */
@@ -112,6 +134,7 @@ export function buildSellerReviewedDocumentVersionIndex(pack = {}) {
     versionDigest: document.versionDigest,
     contentDigest: document.contentDigest,
     sourceDraftFingerprint: document.sourceDraftFingerprint,
+    sourceFactsFingerprint: document.sourceFactsFingerprint,
     requiredSigners: document.requiredSigners,
     mandateTerms: document.mandateTerms,
     approvedAt: document.approvedAt,

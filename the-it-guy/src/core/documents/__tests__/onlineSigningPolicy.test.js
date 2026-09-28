@@ -24,7 +24,7 @@ test('online signing is disabled for seller mandate execution', () => {
   assert.equal(ONLINE_SIGNING_DISABLED, true)
 })
 
-test('every known signing workflow is classified and fails closed unless legally approved', () => {
+test('seller portal documents have recorded approval while unrelated workflows fail closed', () => {
   assert.ok(Object.keys(SIGNING_CLASSIFICATION_REGISTER).length >= 7)
   assert.equal(
     SIGNING_CLASSIFICATION_REGISTER.seller_mandate.classification,
@@ -32,6 +32,7 @@ test('every known signing workflow is classified and fails closed unless legally
   )
   assert.equal(SIGNING_CLASSIFICATION_REGISTER.seller_disclosure.classification, SIGNING_CLASSIFICATION_STATUS.ELECTRONIC_SIGNATURE_APPROVED)
   assert.equal(SIGNING_CLASSIFICATION_REGISTER.seller_fica_declaration.classification, SIGNING_CLASSIFICATION_STATUS.ELECTRONIC_SIGNATURE_APPROVED)
+  assert.equal(SIGNING_CLASSIFICATION_REGISTER.seller_mandate.legalApprovalReference, '2026-09-27')
   assert.equal(isElectronicSigningApproved('seller_mandate'), true)
   assert.equal(isElectronicSigningApproved('offer_to_purchase'), false)
   assert.throws(
@@ -92,8 +93,9 @@ test('seller lead signing UI retains the retired route guard while showing the s
     readFile(new URL('../../../pages/agency/AgencyPipelinePage.jsx', import.meta.url), 'utf8'),
   ])
 
-  assert.doesNotMatch(pipelinePage, /Send the digital signing pack|Send secure digital links/)
-  assert.match(pipelinePage, /Prepare a physical-signature pack|Prepare physical copies/)
+  assert.match(pipelinePage, /Sign digitally · send private links/)
+  assert.match(pipelinePage, /Sign physically · upload original/)
+  assert.match(pipelinePage, /sendSellerDocumentForSignature/)
   assert.match(listingPage, /Wet-ink signatures required/)
   assert.doesNotMatch(listingPage, /Send signing link/)
   assert.match(listingPage, /Send for signature/)

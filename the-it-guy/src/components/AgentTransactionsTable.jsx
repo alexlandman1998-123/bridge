@@ -124,13 +124,18 @@ function getPropertyImageUrl(row) {
 }
 
 function getPropertyDisplay(row) {
-  const unitLabel = row?.unit?.unit_number ? `Unit ${row.unit.unit_number}` : ''
+  const isDerivedListing = String(row?.transaction?.id || '').startsWith('listing-trx-')
+  const unitNumber = isDerivedListing ? '' : String(row?.unit?.unit_number || row?.unit?.unit_label || '').trim()
+  const unitLabel = unitNumber ? (/^unit\b/i.test(unitNumber) ? unitNumber : `Unit ${unitNumber}`) : ''
   const addressLine = row?.transaction?.property_address_line_1 || row?.property?.address_line_1 || ''
   const suburb = row?.transaction?.suburb || row?.property?.suburb || row?.development?.suburb || ''
   const description = row?.transaction?.property_description || row?.unit?.name || row?.unit?.title || ''
   const development = row?.development?.name || ''
-  const title = resolvePortalPropertyLabel(row, { fallback: addressLine || unitLabel || description || 'Property pending' })
-  const secondary = suburb || development || (title !== description ? description : '') || 'Listing / development pending'
+  const propertyTitle = resolvePortalPropertyLabel(row, { fallback: addressLine || unitLabel || description || 'Property pending' })
+  const title = unitLabel && !propertyTitle.toLowerCase().includes(unitLabel.toLowerCase())
+    ? `${unitLabel} · ${propertyTitle}`
+    : propertyTitle
+  const secondary = suburb || development || (propertyTitle !== description ? description : '') || 'Listing / development pending'
   return { title, secondary }
 }
 
@@ -296,6 +301,7 @@ function rowMatchesQuickFilter(row, filterKey, searchTerm = '') {
       row?.buyer?.phone,
       row?.development?.name,
       row?.unit?.unit_number,
+      row?.unit?.unit_label,
       row?.transaction?.property_address_line_1,
       transaction.transaction_reference,
       transaction.arch9_listing_reference,

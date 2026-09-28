@@ -77,6 +77,7 @@ assert.match(
 const limits = { packageCreditCap: 500, monthlyCreditCap: 1_000, monthCredits: 400 };
 const validQuote = supplierCosts({ extensions: { cost: { fieldCost: 200, typeCost: 50, priceSurcharge: 50, creditsConsumed: 300 } } });
 assert.deepEqual(validQuote, { fieldCost: 200, typeCost: 50, surcharge: 50, credits: 300 });
+assert.deepEqual(supplierCosts({ extensions: { operationCost: { fieldCost: 200, typeCost: 50 }, creditsConsumed: 300 } }), { fieldCost: 200, typeCost: 50, surcharge: null, credits: 300 });
 assert.equal(quoteFitsCommercialLimits(validQuote.credits, limits), true);
 assert.equal(supplierCosts({ extensions: {} }).credits, null, "Missing supplier cost must not become a free quote.");
 assert.equal(supplierCosts({ extensions: { cost: { creditsConsumed: null } } }).credits, null);

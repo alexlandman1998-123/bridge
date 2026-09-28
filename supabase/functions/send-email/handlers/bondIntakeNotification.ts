@@ -5,7 +5,7 @@ import {
   renderBridgeSummaryCard,
 } from "../content/bridgeEmailLayout.ts";
 import {
-  formatEmailSender,
+  resolveAudienceEmailSender,
   resolveEmailBranding,
 } from "../services/emailBranding.ts";
 import { sendViaResendApi } from "../services/resend.ts";
@@ -68,11 +68,13 @@ export async function handleBondIntakeNotificationEmail(
       supportPhone: normalizeText(metadata.supportPhone as string),
     },
   });
-  const from = formatEmailSender(
-    normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
+  const from = await resolveAudienceEmailSender({
+    audience: "internal",
+    branding,
+    platformSender: normalizeText(Deno.env.get("ARCH9_RESEND_FROM_EMAIL")) ||
+      normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
       "Arch9 <no-reply@arch9.co.za>",
-    branding.fromName || branding.organisationName,
-  );
+  });
 
   const fields = [
     { label: "Transaction", value: transactionId },

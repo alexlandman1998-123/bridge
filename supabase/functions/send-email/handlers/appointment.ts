@@ -1,3 +1,4 @@
+import { createClient } from "supabase";
 import type { SendAppointmentEmailPayload } from "../types.ts";
 import {
   buildAppointmentEmailHtml,
@@ -5,7 +6,8 @@ import {
   buildAppointmentSubject,
 } from "../content/appointment.ts";
 import {
-  formatEmailSender,
+  isClientEmailRecipientRole,
+  resolveAudienceEmailSender,
   resolveEmailBranding,
 } from "../services/emailBranding.ts";
 import { sendViaResendApi } from "../services/resend.ts";
@@ -169,22 +171,36 @@ export async function handleAppointmentEmail(
   const supportPhone = normalizeText(
     rawPayload.supportPhone || rawPayload.support_phone,
   );
+  const supabaseUrl = normalizeText(Deno.env.get("SUPABASE_URL"));
+  const serviceKey = normalizeText(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
+  const supabase = supabaseUrl && serviceKey
+    ? createClient(supabaseUrl, serviceKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    })
+    : undefined;
   const branding = await resolveEmailBranding({
+    supabase,
     payload: rawPayload,
     organisationId: normalizeText(
       rawPayload.organisationId || rawPayload.organisation_id,
     ),
     defaults: { organisationName, supportEmail, supportPhone },
   });
-  const baseSender = normalizeText(branding.fromEmail) ||
-    normalizeText(rawPayload.fromEmail || rawPayload.from_email) ||
-    normalizeText(Deno.env.get("RESEND_APPOINTMENTS_FROM_EMAIL")) ||
+  const baseSender = normalizeText(Deno.env.get("RESEND_APPOINTMENTS_FROM_EMAIL")) ||
     normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
     "Arch9 Appointments <appointments@bridge.co.za>";
-  const sender = formatEmailSender(
-    baseSender,
-    branding.fromName || branding.organisationName,
-  );
+  const participantRole = normalizeText(payload.participantRole).toLowerCase();
+  const audience = participantRole && !isClientEmailRecipientRole(participantRole)
+    ? "internal"
+    : "client";
+  const sender = await resolveAudienceEmailSender({
+    audience,
+    branding,
+    platformSender: audience === "internal"
+      ? normalizeText(Deno.env.get("ARCH9_RESEND_FROM_EMAIL")) || baseSender
+      : baseSender,
+    supabase: audience === "client" ? supabase : undefined,
+  });
 
   const subject = buildAppointmentSubject(
     eventType,

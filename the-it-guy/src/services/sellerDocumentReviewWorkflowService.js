@@ -44,6 +44,9 @@ function workflowError(error, fallback) {
   if (/changed by another reviewer/i.test(message) || String(error?.code || '') === '40001') {
     return new Error('This document changed while you were reviewing it. Refresh and try again.')
   }
+  if (/does not match the current reviewed physical signing copy|no reviewed physical signing copy|reviewed signing pack is unavailable/i.test(message)) {
+    return new Error('This signed file belongs to an older or unavailable signing copy. Reopen the approved pack and upload a signed copy of its current version.')
+  }
   if (/function .* does not exist|could not find the function|PGRST202/i.test(message)) {
     return new Error('Deploy the P1-8 seller document review migration before using review actions.')
   }

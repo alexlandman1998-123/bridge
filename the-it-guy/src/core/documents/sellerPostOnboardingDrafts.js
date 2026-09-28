@@ -1,8 +1,10 @@
 import { buildFicaDeclarationDocumentModel } from './ficaDeclarationDocumentModel.js'
 import { buildSellerFicaDueDiligenceMarkup, SELLER_FICA_DUE_DILIGENCE_TEMPLATE_VERSION } from './sellerFicaDueDiligenceMarkup.js'
+import { buildFicaDeclarationDocumentMarkup } from './ficaDeclarationDocumentMarkup.js'
 import { buildSellerComplianceDocumentModel } from './sellerComplianceDocumentModel.js'
 import { buildPropertyDisclosureDocumentMarkup } from '../../lib/propertyDisclosure.js'
 import { buildSellerSigningPlan } from '../../lib/sellerSigningPlanModel.js'
+import { buildSellerSubject } from '../../lib/sellerSubjectModel.js'
 import {
   SELLER_BASE_PACK_KEYS,
   SELLER_DOCUMENT_ARTIFACT_KEYS,
@@ -65,6 +67,8 @@ function propertyAddress(formData = {}, listing = {}) {
   const address = record(formData.propertyAddress || formData.property_address)
   return firstText(
     [address.line1 || address.line_1, address.line2 || address.line_2, address.suburb, address.city || address.town, address.province, address.postalCode || address.postal_code].filter(Boolean).join(', '),
+    typeof formData.propertyAddress === 'string' ? formData.propertyAddress : '',
+    typeof formData.property_address === 'string' ? formData.property_address : '',
     formData.propertyAddressText,
     formData.property_address_text,
     listing?.propertyAddress,
@@ -85,10 +89,10 @@ function documentReference(listing = {}) {
 }
 
 function mandatePreparationMarkup({ seller, sellerId, property, reference, branding = {}, generatedAt }) {
-  const agency = firstText(branding.organisationName, branding.organizationName, branding.agencyName, 'Arch9')
-  const logo = firstText(branding.logoLightUrl, branding.logo_light_url, branding.logoUrl, branding.logo_url)
+  const agency = firstText(branding.organisationName, branding.organizationName, branding.agencyName, 'Agency')
+  const logo = firstText(branding.logoDarkUrl, branding.logo_dark_url, branding.logoUrl, branding.logo_url, branding.logoLightUrl, branding.logo_light_url)
   const brand = logo ? `<img src="${escapeHtml(logo)}" alt="${escapeHtml(agency)}" />` : escapeHtml(agency)
-  return `<!doctype html><html><head><meta charset="utf-8" /><title>Mandate preparation summary</title><style>body{margin:0;color:#172033;font:15px/1.55 Arial,sans-serif;background:#fff}.page{max-width:820px;margin:0 auto;padding:48px}.header{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #dbe4df;padding-bottom:22px}.brand{font-size:20px;font-weight:800}.brand img{max-width:220px;max-height:62px;object-fit:contain}.notice{margin:32px 0;padding:18px 20px;border:1px solid #f2c46e;background:#fff8e9;border-radius:10px;color:#704b00}.facts{border:1px solid #dbe4df;border-radius:10px;overflow:hidden}.facts div{display:grid;grid-template-columns:210px 1fr;gap:16px;padding:13px 16px;border-bottom:1px solid #e8eeeb}.facts div:last-child{border-bottom:0}.facts strong{color:#536174}h1{margin:32px 0 8px;font-size:27px}p{margin:8px 0}.footer{margin-top:34px;color:#6a7788;font-size:12px}</style></head><body><main class="page"><header class="header"><div class="brand">${brand}</div><span>Draft generated ${escapeHtml(generatedAt)}</span></header><h1>Mandate preparation summary</h1><p>This is a frozen summary of the submitted onboarding facts for the agent’s review.</p><aside class="notice"><strong>Not for signature.</strong> Commission, mandate terms, and any agency-specific conditions must be approved by the agent before a signable mandate is created or sent.</aside><section class="facts"><div><strong>Seller</strong><span>${escapeHtml(seller)}</span></div><div><strong>ID / passport</strong><span>${escapeHtml(sellerId || 'Not captured')}</span></div><div><strong>Property</strong><span>${escapeHtml(property)}</span></div><div><strong>Reference</strong><span>${escapeHtml(reference || 'Pending')}</span></div><div><strong>Commission structure</strong><span>To be confirmed by the agent</span></div></section><p class="footer">Template: seller_mandate_preparation_summary_v1</p></main></body></html>`
+  return `<!doctype html><html><head><meta charset="utf-8" /><title>Mandate preparation summary</title><style>body{margin:0;color:#172033;font:15px/1.55 Georgia,'Times New Roman',serif;background:#fff}.page{max-width:820px;margin:0 auto;padding:48px}.header{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #dbe4df;padding-bottom:22px}.brand{font-size:20px;font-weight:800}.brand img{max-width:220px;max-height:62px;object-fit:contain}.notice{margin:32px 0;padding:18px 20px;border:1px solid #f2c46e;background:#fff8e9;border-radius:10px;color:#704b00}.facts{border:1px solid #dbe4df;border-radius:10px;overflow:hidden}.facts div{display:grid;grid-template-columns:210px 1fr;gap:16px;padding:13px 16px;border-bottom:1px solid #e8eeeb}.facts div:last-child{border-bottom:0}.facts strong{color:#536174}h1{margin:32px 0 8px;font-size:27px}p{margin:8px 0}.footer{margin-top:34px;color:#6a7788;font-size:12px}</style></head><body><main class="page"><header class="header"><div class="brand">${brand}</div><span>Draft generated ${escapeHtml(generatedAt)}</span></header><h1>Mandate preparation summary</h1><p>This is a frozen summary of the submitted onboarding facts for the agent’s review.</p><aside class="notice"><strong>Not for signature.</strong> Commission, mandate terms, and any agency-specific conditions must be approved by the agent before a signable mandate is created or sent.</aside><section class="facts"><div><strong>Seller</strong><span>${escapeHtml(seller)}</span></div><div><strong>ID / passport</strong><span>${escapeHtml(sellerId || 'Not captured')}</span></div><div><strong>Property</strong><span>${escapeHtml(property)}</span></div><div><strong>Reference</strong><span>${escapeHtml(reference || 'Pending')}</span></div><div><strong>Commission structure</strong><span>To be confirmed by the agent</span></div></section><p class="footer">Template: seller_mandate_preparation_summary_v1</p></main></body></html>`
 }
 
 function draftDocument({ key, targetRequirementKey = key, artifactStage = SELLER_DOCUMENT_ARTIFACT_STAGES.REVIEW_DRAFT, name, status, templateVersion, brandingVersion, generatedAt, generatedHtml, signable = false, source = 'seller_onboarding.post_submission_draft', metadata = {} }) {
@@ -121,8 +125,9 @@ export function buildSellerPostOnboardingDrafts({ formData = {}, listing = {}, b
   const safeFormData = record(formData)
   const safeListing = record(listing)
   const safeBranding = record(branding)
-  const seller = sellerName(safeFormData, safeListing)
-  const sellerId = sellerIdNumber(safeFormData)
+  const sellerSubject = buildSellerSubject({ formData: safeFormData, listing: safeListing })
+  const seller = firstText(sellerSubject.legalOwner?.name, sellerName(safeFormData, safeListing))
+  const sellerId = firstText(sellerSubject.legalOwner?.registrationNumber, sellerIdNumber(safeFormData))
   const property = propertyAddress(safeFormData, safeListing)
   const reference = documentReference(safeListing)
   const disclosure = record(safeFormData.propertyDisclosure || safeFormData.property_disclosure)
@@ -159,7 +164,10 @@ export function buildSellerPostOnboardingDrafts({ formData = {}, listing = {}, b
     branding: safeBranding,
     compliancePack: { signers: compliancePack.signers },
   })
-  const ficaHtml = buildSellerFicaDueDiligenceMarkup({ model: ficaModel, formData: safeFormData, branding: safeBranding, generatedAt })
+  const isEntityFica = ficaModel.sections.some((section) => section.title === 'Entity / Authority')
+  const ficaHtml = isEntityFica
+    ? buildFicaDeclarationDocumentMarkup(ficaModel)
+    : buildSellerFicaDueDiligenceMarkup({ model: ficaModel, formData: safeFormData, branding: safeBranding, generatedAt })
   const mandateHtml = mandatePreparationMarkup({ seller, sellerId, property, reference, branding: safeBranding, generatedAt })
   const brandingVersion = firstText(
     safeBranding.brandingVersion,
@@ -171,7 +179,7 @@ export function buildSellerPostOnboardingDrafts({ formData = {}, listing = {}, b
     contract: 'arch9-seller-document-branding-snapshot-v1',
     frozenAt: generatedAt,
     organisationName: firstText(safeBranding.organisationName, safeBranding.agencyName),
-    logoUrl: firstText(safeBranding.logoLightUrl, safeBranding.logoUrl, safeBranding.logoDarkUrl),
+    logoUrl: firstText(safeBranding.logoDarkUrl, safeBranding.logoUrl, safeBranding.logoLightUrl),
     logoLightUrl: firstText(safeBranding.logoLightUrl, safeBranding.logoUrl),
     logoDarkUrl: firstText(safeBranding.logoDarkUrl, safeBranding.logoUrl),
     logoIconUrl: firstText(safeBranding.logoIconUrl),

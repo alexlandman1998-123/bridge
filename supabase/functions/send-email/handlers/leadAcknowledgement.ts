@@ -1,3 +1,4 @@
+import { createClient } from "supabase";
 import type { SendLeadAcknowledgementPayload } from "../types.ts";
 import {
   buildLeadAcknowledgementEmailText,
@@ -5,7 +6,7 @@ import {
   buildLeadAcknowledgementSubject,
 } from "../content/leadAcknowledgement.ts";
 import {
-  formatEmailSender,
+  resolveAudienceEmailSender,
   resolveEmailBranding,
 } from "../services/emailBranding.ts";
 import { sendViaResendApi } from "../services/resend.ts";
@@ -32,7 +33,6 @@ export async function handleLeadAcknowledgementEmail(
   }
 
   const centralSender =
-    normalizeText(payload.fromEmail || payload.from_email) ||
     normalizeText(Deno.env.get("RESEND_LEAD_ACK_FROM_EMAIL")) ||
     normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
     "Arch9 <onboarding@resend.dev>";
@@ -101,7 +101,15 @@ export async function handleLeadAcknowledgementEmail(
       payload.customResponseText || payload.custom_response_text,
     ),
   };
+  const supabaseUrl = normalizeText(Deno.env.get("SUPABASE_URL"));
+  const serviceKey = normalizeText(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
+  const supabase = supabaseUrl && serviceKey
+    ? createClient(supabaseUrl, serviceKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    })
+    : undefined;
   const branding = await resolveEmailBranding({
+    supabase,
     payload: payload as Record<string, unknown>,
     organisationId: normalizeText(
       payload.organisationId || payload.organisation_id,
@@ -138,10 +146,12 @@ export async function handleLeadAcknowledgementEmail(
     organisationBrandSecondaryColor: branding.secondaryColor,
     responseExpectation,
   });
-  const sender = formatEmailSender(
-    centralSender,
-    branding.fromName || branding.organisationName,
-  );
+  const sender = await resolveAudienceEmailSender({
+    audience: "client",
+    branding,
+    platformSender: centralSender,
+    supabase,
+  });
 
   const emailResult = await sendViaResendApi({
     apiKey: resendApiKey,

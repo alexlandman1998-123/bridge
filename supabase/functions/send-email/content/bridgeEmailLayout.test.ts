@@ -36,15 +36,16 @@ Deno.test("renderBridgeEmailLayout renders canonical branding", () => {
 
   assertIncludes(html, "Preview text");
   assertIncludes(html, "https://cdn.example.test/kingstons.png");
-  assertIncludes(html, "background: #123abc");
-  assertIncludes(html, "border-bottom: 4px solid #fedcba");
+  assertIncludes(html, "class=\"arch9-shell\"");
+  assertIncludes(html, "background: #F4F4F2");
+  assertIncludes(html, "background: #fedcba");
   assertIncludes(html, "Trusted property people");
   assertIncludes(html, "mailto:support@example.test");
   assertIncludes(html, "https://kingstons.example.test");
   assertIncludes(html, "Kingstons Property · Powered by Arch9");
 });
 
-Deno.test("renderBridgeEmailLayout prefers the dark-header logo variant", () => {
+Deno.test("renderBridgeEmailLayout prefers the light-background logo variant", () => {
   const html = renderBridgeEmailLayout({
     title: "Mandate Ready",
     greeting: "Hi Agent,",
@@ -59,8 +60,25 @@ Deno.test("renderBridgeEmailLayout prefers the dark-header logo variant", () => 
     },
   });
 
-  assertIncludes(html, "https://cdn.example.test/logo-dark-header.png");
-  assertNotIncludes(html, "https://cdn.example.test/logo-light-background.png");
+  assertIncludes(html, "https://cdn.example.test/logo-light-background.png");
+  assertNotIncludes(html, "https://cdn.example.test/logo-dark-header.png");
+  assertIncludes(html, "background: #FFFFFF");
+});
+
+Deno.test("renderBridgeEmailLayout uses a dark header for a dark-only logo", () => {
+  const html = renderBridgeEmailLayout({
+    title: "Portal Ready",
+    greeting: "Hi Seller,",
+    contentHtml: "<p>Body</p>",
+    branding: {
+      organisationName: "Harbour Homes",
+      logoDarkUrl: "https://cdn.example.test/logo-for-dark-header.png",
+      primaryColor: "#123456",
+    },
+  });
+
+  assertIncludes(html, "https://cdn.example.test/logo-for-dark-header.png");
+  assertIncludes(html, "background: #123456");
 });
 
 Deno.test("renderBridgeEmailLayout remains backward compatible with legacy props", () => {
@@ -123,9 +141,23 @@ Deno.test("renderBridgeEmailLayout rejects unsafe brand colors", () => {
     },
   });
 
-  assertIncludes(html, "background: #07152f");
-  assertIncludes(html, "border-bottom: 4px solid #b48a42");
+  assertIncludes(html, "background: #b48a42");
   assertNotIncludes(html, "javascript:alert");
+});
+
+Deno.test("renderBridgeEmailLayout falls back to text for SVG logos", () => {
+  const html = renderBridgeEmailLayout({
+    title: "Portal Ready",
+    greeting: "Hi Seller,",
+    contentHtml: "<p>Body</p>",
+    branding: {
+      organisationName: "Harbour Homes",
+      logoUrl: "https://cdn.example.test/logo.svg",
+    },
+  });
+
+  assertIncludes(html, "Harbour Homes");
+  assertNotIncludes(html, "<img src=");
 });
 
 Deno.test("renderBridgeCta supports branded button color and URL fallback", () => {
@@ -140,6 +172,14 @@ Deno.test("renderBridgeCta supports branded button color and URL fallback", () =
   assertIncludes(html, "background: #456def");
   assertIncludes(html, "copy and paste this URL");
   assertIncludes(html, "https://app.example.test/portal");
+});
+
+Deno.test("renderBridgeCta keeps bright agency buttons legible", () => {
+  const html = renderBridgeCta("Open Portal", "https://app.example.test/portal", {
+    primaryColor: "#F5C400",
+  });
+  assertIncludes(html, "background: #F5C400");
+  assertIncludes(html, "color: #171717");
 });
 
 Deno.test("renderBridgeBrandMark renders initials outside the dark header", () => {

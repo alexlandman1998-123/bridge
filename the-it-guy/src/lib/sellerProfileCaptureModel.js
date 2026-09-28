@@ -47,7 +47,9 @@ export function normalizePersonRecordForSellerProfile(entry = {}, index = 0, rol
     phone: normalizeText(entry.phone),
     residentialAddress: normalizeText(entry.residentialAddress || entry.residential_address || entry.address),
     idNumber: normalizeText(entry.idNumber || entry.id_number || entry.identityNumber || entry.identity_number),
+    nationality: normalizeText(entry.nationality || entry.citizenship),
     ownershipShare: normalizeText(entry.ownershipShare || entry.ownership_share),
+    controlBasis: normalizeText(entry.controlBasis || entry.control_basis || entry.authority_details),
     consentToSell: Boolean(entry.consentToSell ?? entry.consent_to_sell),
     signingAuthority: Boolean(entry.signingAuthority ?? entry.signing_authority),
     roleTitle: normalizeText(entry.roleTitle || entry.role_title || roleTitle),
@@ -58,13 +60,13 @@ export function normalizePersonCollectionForSellerProfile(entries = [], fallback
   const source = Array.isArray(entries) ? entries : []
   const mapped = source
     .map((entry, index) => normalizePersonRecordForSellerProfile(entry, index, roleTitle))
-    .filter((entry) => Boolean(entry.name || entry.surname || entry.email || entry.phone || entry.idNumber))
+    .filter((entry) => Boolean(entry.name || entry.surname || entry.email || entry.phone || entry.idNumber || entry.nationality || entry.residentialAddress))
 
   if (mapped.length) return mapped
 
   if (fallback && typeof fallback === 'object') {
     const record = normalizePersonRecordForSellerProfile(fallback, 0, roleTitle)
-    if (record.name || record.surname || record.email || record.phone || record.idNumber) {
+    if (record.name || record.surname || record.email || record.phone || record.idNumber || record.nationality || record.residentialAddress) {
       return [record]
     }
   }
@@ -82,7 +84,9 @@ export function createBlankSellerProfilePersonRecord(roleTitle = 'Person', index
     phone: '',
     residentialAddress: '',
     idNumber: '',
+    nationality: '',
     ownershipShare: '',
+    controlBasis: '',
     consentToSell: false,
     signingAuthority: false,
     roleTitle,
@@ -109,7 +113,9 @@ export function normalizeSellerProfileEntityPersonAliases(entry = {}, index = 0,
     roleCapacity: capacity,
     role_capacity: capacity,
     id_number: record.idNumber,
+    nationality: record.nationality,
     ownership_share: record.ownershipShare,
+    control_basis: record.controlBasis,
     consent_to_sell: record.consentToSell,
     signing_authority: record.signingAuthority,
     role_title: record.roleTitle,

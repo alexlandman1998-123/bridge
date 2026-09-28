@@ -3,6 +3,7 @@ import test from 'node:test'
 import {
   buildSellerPostOnboardingDraftDocuments,
   buildSellerDocumentSourceOfTruth,
+  buildSellerOnboardingManualSigningDocuments,
   filterSellerDocumentRequirementsForOnboarding,
 } from '../sellerDocumentRequirementsService.js'
 import { buildSellerPostOnboardingDrafts } from '../../core/documents/sellerPostOnboardingDrafts.js'
@@ -202,6 +203,27 @@ test('keeps review drafts out of the three authoritative signed-document rows', 
   assert.equal(result.rows.some((row) => ['fica_review_draft', 'mandate_preparation_summary'].includes(row.key)), false)
 })
 
+test('rebuilds legacy unsigned physical copies from saved onboarding facts and brand snapshot', () => {
+  const formData = {
+    sellerName: 'Sam Seller', idNumber: '8001015009087', mandateType: 'open', askingPrice: '1000000',
+    mandateStartDate: '2026-09-27', mandateEndDate: '2026-12-27',
+    sellerOnboardingFormalPackApproval: { status: 'approved', signingRoute: 'manual_upload', commission: { basis: 'percentage', percentage: '5', vatHandling: 'inclusive' } },
+    sellerPostOnboardingDrafts: { documents: [{ key: 'fica_review_draft', targetRequirementKey: 'signed_fica_declaration', metadata: { brandingSnapshot: { organisationName: 'Original Agency' } }, generatedHtml: '<html>old fica</html>' }] },
+    sellerOnboardingManualSigningPack: { status: 'awaiting_signed_hard_copy', generatedAt: '2026-09-27T12:00:00.000Z', documents: [
+      { key: 'signed_fica_declaration', generatedHtml: '<html>old physical fica</html>' },
+      { key: 'signed_mandate', generatedHtml: '<html>old physical mandate</html>' },
+    ] },
+  }
+  const listing = { id: 'listing-1', sellerOnboarding: { status: 'completed' }, propertyAddress: '1 Test Road' }
+  const rows = buildSellerOnboardingManualSigningDocuments(formData, listing)
+  assert.equal(rows.length, 2)
+  assert.match(rows[0].generatedHtml, /CLIENT DUE DILIGENCE RECORD/)
+  assert.match(rows[1].generatedHtml, /Open Mandate to Sell/)
+  assert.match(rows[1].generatedHtml, /Original Agency/)
+  assert.equal(rows[1].status, 'awaiting_signed_hard_copy')
+  assert.equal(formData.sellerOnboardingManualSigningPack.documents[1].generatedHtml, '<html>old physical mandate</html>')
+})
+
 test('lead Documents keeps one outstanding legal FICA declaration after onboarding', () => {
   const rows = filterSellerDocumentRequirementsForOnboarding(source().rows, {
     onboardingSubmitted: true,
@@ -304,6 +326,28 @@ test('replaces draft FICA and mandate rows with downloadable, uploadable physica
   assert.equal(mandate.satisfiesRequirement, false)
   assert.match(fica.upload.generatedHtml, /physical fica/)
   assert.match(mandate.upload.generatedHtml, /physical mandate/)
+})
+
+test('mixed signing routes keep the digital FICA out of the upload flow', () => {
+  const rows = source({
+    reviewStatus: 'approved',
+    commissionConfirmed: true,
+    manualSigningPack: {
+      status: 'awaiting_signature',
+      documents: [
+        { key: 'signed_fica_declaration', name: 'Seller FICA Declaration', signingRoute: 'digital_pack', versionId: 'fica-version', versionDigest: 'fica-digest', contentDigest: 'content-digest', generatedHtml: '<html>fica</html>' },
+        { key: 'signed_mandate', name: 'Seller Mandate', signingRoute: 'manual_upload', versionId: 'mandate-version', versionDigest: 'mandate-digest', contentDigest: 'content-digest', generatedHtml: '<html>mandate</html>' },
+      ],
+    },
+  }).rows
+  const fica = rows.find((row) => row.key === 'signed_fica_declaration')
+  const mandate = rows.find((row) => row.key === 'signed_mandate')
+  assert.equal(fica.canUpload, false)
+  assert.equal(fica.status, 'awaiting_signature')
+  assert.equal(mandate.canUpload, true)
+  assert.equal(mandate.status, 'awaiting_signed_hard_copy')
+  assert.equal(getSellerPhysicalSigningCopy(fica)?.versionId, 'fica-version')
+  assert.equal(getSellerPhysicalSigningCopy(mandate)?.versionId, 'mandate-version')
 })
 
 test('agent approval never promotes review drafts into signed artefacts', () => {

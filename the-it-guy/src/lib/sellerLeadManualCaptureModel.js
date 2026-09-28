@@ -6,6 +6,7 @@ import {
 import { buildSellerProfileCanonicalPayload } from './sellerProfileCaptureModel.js'
 import { validateSellerOnboardingFacts } from '../services/documents/sellerOnboardingFactTransformer.js'
 import { resolveSellerLeadOwnershipRoute } from './sellerLeadOwnershipSetupModel.js'
+import { getSellerFicaOnboardingMissing } from './sellerFicaOnboardingFields.js'
 
 function text(value = '') {
   return String(value ?? '').trim()
@@ -88,6 +89,9 @@ const EXTRA_ONBOARDING_FIELDS = [
   'companyResolutionDate', 'companyAuthorityBasis', 'trustAuthorityBasis',
   'executorAuthorityDetails', 'powerOfAttorneyAuthorityDetails',
   'leaseExpiryDate',
+  'occupation', 'sourceOfFunds', 'politicallyExposedPerson', 'politicallyExposedDetails',
+  'authorisedSignatoryIdNumber', 'authorisedSignatoryNationality',
+  'authorisedTrusteeIdNumber', 'authorisedTrusteeNationality', 'trustBeneficiaryClass',
 ]
 
 export function createSellerLeadAgentOnboardingDraft({ lead = {}, contact = {}, listing = {}, formData = {} } = {}) {
@@ -106,7 +110,7 @@ export function createSellerLeadAgentOnboardingDraft({ lead = {}, contact = {}, 
     sellerOnboardingFormData: source,
     seller_onboarding_form_data: source,
   })
-  for (const field of EXTRA_ONBOARDING_FIELDS) draft[field] = text(formData[field] || listing[field])
+  for (const field of EXTRA_ONBOARDING_FIELDS) draft[field] = text(formData[field] || listing[field] || draft[field])
   draft.incomeTaxNumber = text(formData.incomeTaxNumber || formData.sellerTaxNumber || formData.taxNumber)
   draft.saResident = text(formData.saResident || formData.taxResident)
   draft.propertySuburb = text(formData.propertySuburb || formData.suburb || listing.suburb)
@@ -119,6 +123,7 @@ export function createSellerLeadAgentOnboardingDraft({ lead = {}, contact = {}, 
 
 export function buildSellerLeadAgentOnboardingSubmission({ draft = {}, listing = {}, existingFormData = {} } = {}) {
   const errors = validateListingSellerProfileBuilderDraft(draft)
+  errors.push(...getSellerFicaOnboardingMissing(draft))
   if (!draft.popiConsentAccepted) errors.push('Confirm that the seller gave POPI consent before submitting.')
   const { formPatch } = buildListingSellerProfileCapturePayload(draft, listing, { draft: false })
   const formData = {

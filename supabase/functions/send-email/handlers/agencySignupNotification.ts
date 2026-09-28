@@ -5,6 +5,7 @@ import {
   renderBridgeSummaryCard,
 } from "../content/bridgeEmailLayout.ts";
 import { sendViaResendApi } from "../services/resend.ts";
+import { resolveAudienceEmailSender } from "../services/emailBranding.ts";
 import type { SendAgencySignupNotificationPayload } from "../types.ts";
 import { jsonResponse } from "../utils/http.ts";
 import { normalizeText } from "../utils/text.ts";
@@ -140,9 +141,12 @@ export async function handleAgencySignupNotificationEmail(
     adminUrl,
   });
 
-  const from = normalizeText(Deno.env.get("ARCH9_RESEND_FROM_EMAIL")) ||
-    normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
-    "Arch9 <no-reply@arch9.co.za>";
+  const from = await resolveAudienceEmailSender({
+    audience: "internal",
+    platformSender: normalizeText(Deno.env.get("ARCH9_RESEND_FROM_EMAIL")) ||
+      normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
+      "Arch9 <no-reply@arch9.co.za>",
+  });
   const delivery = await sendViaResendApi({
     apiKey: resendApiKey,
     from,

@@ -10,7 +10,7 @@ import {
   prepareEmailDelivery,
 } from "../services/communicationDeliveryLogging.ts";
 import {
-  formatEmailSender,
+  resolveAudienceEmailSender,
   resolveEmailBranding,
 } from "../services/emailBranding.ts";
 import { fetchOrganisationEmailTemplateOverride } from "../services/emailTemplateSettings.ts";
@@ -385,10 +385,6 @@ export async function handleClientOnboardingEmail(
   });
 
   const nowIso = new Date().toISOString();
-  const onboardingSource = normalizeText(payload.source).toLowerCase();
-  const acceptedOfferOnboarding = onboardingSource.includes("accepted_offer") ||
-    onboardingSource === "seller_accepted_offer";
-
   console.log("Loading transaction", transactionId);
 
   let transactionQuery = await supabase
@@ -502,9 +498,7 @@ export async function handleClientOnboardingEmail(
     templateOverrides = await fetchOrganisationEmailTemplateOverride(
       supabase,
       organisationId,
-      acceptedOfferOnboarding
-        ? "client_onboarding_accepted_offer"
-        : "client_onboarding",
+      "client_onboarding",
     );
   }
 
@@ -774,8 +768,10 @@ export async function handleClientOnboardingEmail(
         maximumFractionDigits: 0,
       }).format(purchasePriceRaw)
       : "";
-  const subject = normalizeText(templateOverrides?.subject) ||
-    buildOnboardingSubject(transactionReference, acceptedOfferOnboarding);
+  const configuredSubject = normalizeText(templateOverrides?.subject);
+  const subject = configuredSubject && !/\boffer\b/i.test(configuredSubject)
+    ? configuredSubject
+    : buildOnboardingSubject(transactionReference);
   const branding = await resolveEmailBranding({
     supabase,
     organisationId,
@@ -794,11 +790,13 @@ export async function handleClientOnboardingEmail(
   organisationName = branding.organisationName;
   supportEmail = branding.supportEmail || supportEmail;
   supportPhone = branding.supportPhone || supportPhone;
-  const sender = formatEmailSender(
-    normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
+  const sender = await resolveAudienceEmailSender({
+    audience: "client",
+    branding,
+    platformSender: normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
       "Arch9 <onboarding@resend.dev>",
-    branding.fromName || branding.organisationName,
-  );
+    supabase,
+  });
   const html = buildOnboardingEmailHtml({
     buyerName,
     clientName: buyerName,
@@ -813,7 +811,6 @@ export async function handleClientOnboardingEmail(
     organisationName,
     supportEmail,
     supportPhone,
-    acceptedOffer: acceptedOfferOnboarding,
     templateOverrides: templateOverrides || undefined,
     branding,
   });
@@ -831,7 +828,6 @@ export async function handleClientOnboardingEmail(
     organisationName,
     supportEmail,
     supportPhone,
-    acceptedOffer: acceptedOfferOnboarding,
     templateOverrides: templateOverrides || undefined,
   });
 

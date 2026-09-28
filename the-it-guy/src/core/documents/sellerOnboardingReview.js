@@ -1,3 +1,8 @@
+import { getSellerFicaOnboardingMissing } from '../../lib/sellerFicaOnboardingFields.js'
+import { buildSellerFicaScope } from '../../lib/sellerFicaScopeModel.js'
+import { buildSellerSubject } from '../../lib/sellerSubjectModel.js'
+import { buildCanonicalSellerOnboardingPayload, validateSellerOnboardingFacts } from '../../services/documents/sellerOnboardingFactTransformer.js'
+
 export const SELLER_ONBOARDING_REVIEW_CONTRACT = 'arch9-seller-onboarding-review-v1'
 
 export const SELLER_ONBOARDING_REVIEW_STATUS = Object.freeze({
@@ -8,6 +13,28 @@ export const SELLER_ONBOARDING_REVIEW_STATUS = Object.freeze({
 
 const text = (value) => String(value ?? '').trim()
 const record = (value) => value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+
+/** One checklist for listing and seller-lead review. Evidence is tracked later. */
+export function buildSellerOnboardingReviewChecklist({ formData = {}, listing = {}, lead = {} } = {}) {
+  const form = record(formData)
+  const facts = buildCanonicalSellerOnboardingPayload(form, listing).canonicalSellerFacts
+  const factValidation = validateSellerOnboardingFacts(facts, { draft: false })
+  const subject = buildSellerSubject({ formData: form, listing, lead, canonicalFacts: facts })
+  const scope = buildSellerFicaScope({ sellerSubject: subject, onboarding: form, canonicalFacts: facts })
+  const missing = [...new Set([
+    ...factValidation.required.map((issue) => issue.message),
+    ...getSellerFicaOnboardingMissing(form),
+    ...subject.requiredSetupFields,
+  ])]
+  return {
+    ready: missing.length === 0,
+    missing,
+    followUps: [...new Set([...scope.missing, ...factValidation.recommended.map((issue) => issue.message)])],
+    subject,
+    scope,
+    facts,
+  }
+}
 
 export function readSellerOnboardingReview(value = {}) {
   const source = record(value)

@@ -1,9 +1,7 @@
 import { generateSellerDocumentRequirements } from '../lib/privateListingRequirementEngine.js'
-import {
-  buildPropertyDisclosureDocumentMarkup,
-  isPropertyDisclosureDigitallyComplete,
-} from '../lib/propertyDisclosure.js'
+import { buildPropertyDisclosureDocumentMarkup } from '../lib/propertyDisclosure.js'
 import { buildSellerComplianceDocumentModel } from '../core/documents/sellerComplianceDocumentModel.js'
+import { buildSellerCompliancePortalModel } from '../core/documents/sellerCompliancePortalModel.js'
 import { hasCompletedOnboardingDisclosureSignature } from '../core/documents/sellerDocumentSigningContract.js'
 import { buildFicaDeclarationDocumentMarkup } from '../core/documents/ficaDeclarationDocumentMarkup.js'
 import { buildFicaDeclarationDocumentModel } from '../core/documents/ficaDeclarationDocumentModel.js'
@@ -2240,11 +2238,12 @@ function getOnboardingDisclosure(formData = {}) {
       : null
 }
 
-function getOnboardingDisclosureSigningState(formData = {}) {
+function getOnboardingDisclosureSigningState(formData = {}, listing = {}) {
   const disclosure = getOnboardingDisclosure(formData)
   if (!disclosure || !Object.keys(disclosure).length) return null
+  const signing = buildSellerCompliancePortalModel({ formData, listing })
   return {
-    complete: isPropertyDisclosureDigitallyComplete(disclosure) && hasCompletedOnboardingDisclosureSignature(formData),
+    complete: hasCompletedOnboardingDisclosureSignature(formData) && signing.complete,
     hasPrimarySignature: Boolean(
       normalizeText(disclosure.signature || disclosure.signatureValue || disclosure.signature_value) &&
       normalizeText(disclosure.signedAt || disclosure.signed_at),
@@ -2504,7 +2503,7 @@ export function buildSellerPostOnboardingDraftDocuments(formData = {}, listing =
 // They deliberately remain outstanding until an agent uploads the wet-ink copy.
 function currentManualSigningDocuments(formData = {}, listing = {}, pack = {}) {
   const documents = Array.isArray(pack.documents) ? pack.documents : []
-  if (documents.every((document) => normalizeText(document?.templateVersion || document?.versionId || document?.versionDigest))) return documents
+  if (documents.every((document) => normalizeText(document?.templateVersion))) return documents
   const approval = isPlainObject(formData.sellerOnboardingFormalPackApproval)
     ? formData.sellerOnboardingFormalPackApproval : formData.seller_onboarding_formal_pack_approval
   if (approval?.status !== 'approved' || approval?.signingRoute !== 'manual_upload') return documents
@@ -2536,7 +2535,7 @@ function currentManualSigningDocuments(formData = {}, listing = {}, pack = {}) {
       formData,
       generatedAt: normalizeText(pack.generatedAt || pack.generated_at),
     })
-    return documents.map((document) => normalizeText(document?.templateVersion || document?.versionId || document?.versionDigest)
+    return documents.map((document) => normalizeText(document?.templateVersion)
       ? document
       : refreshed.documents.find((replacement) => replacement.key === document.key) || document)
   } catch {

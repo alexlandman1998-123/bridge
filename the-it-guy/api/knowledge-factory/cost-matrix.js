@@ -69,6 +69,8 @@ function json(response, status, body) {
   response.end(JSON.stringify(body));
 }
 function metric(value) {
+  if (value === null || value === undefined || String(value).trim() === "")
+    return null;
   const number = typeof value === "number" ? value : Number(value);
   return Number.isFinite(number) && number >= 0 ? Math.round(number) : null;
 }
@@ -130,24 +132,41 @@ function propertyId(value) {
     throw new Error("Enter a valid UAT property ID.");
   return Number(id);
 }
-function costs(payload) {
+export function costs(payload) {
   const extension =
     payload?.extensions && typeof payload.extensions === "object"
       ? payload.extensions
       : {};
   const cost =
-    extension.cost && typeof extension.cost === "object"
-      ? extension.cost
-      : extension;
+    extension.operationCost && typeof extension.operationCost === "object"
+      ? extension.operationCost
+      : extension.cost && typeof extension.cost === "object"
+        ? extension.cost
+        : extension;
   return {
-    fieldCost: metric(cost.fieldCost || cost.field_cost),
-    typeCost: metric(cost.typeCost || cost.type_cost),
-    surcharge: metric(cost.priceSurcharge || cost.price_surcharge),
-    credits: metric(cost.creditsConsumed || cost.credits_consumed),
+    fieldCost: metric(cost.fieldCost ?? cost.field_cost),
+    typeCost: metric(cost.typeCost ?? cost.type_cost),
+    surcharge: metric(cost.priceSurcharge ?? cost.price_surcharge ??
+      extension.priceSurcharge ?? extension.price_surcharge),
+    credits: metric(cost.creditsConsumed ?? cost.credits_consumed ??
+      extension.creditsConsumed ?? extension.credits_consumed),
   };
 }
 
-async function administrator(request, db, organisationId) {
+export function mayUseStagedBasicCostMatrix({
+  action, organisationAccess, userPermission, draftProduct, recipeId,
+}) {
+  return (action === "list" || (action === "validate" && recipeId === "package_basic_v1")) &&
+    organisationAccess?.enabled === false &&
+    !organisationAccess?.suspended_at &&
+    organisationAccess?.allowed_operations?.includes("property_report") === true &&
+    !userPermission?.revoked_at &&
+    userPermission?.allowed_operations?.includes("property_report") === true &&
+    draftProduct?.status === "draft" &&
+    draftProduct?.cost_validation_recipe_id === "package_basic_v1";
+}
+
+async function administrator(request, db, organisationId, action, recipeId) {
   const token = header(request.headers, "authorization").replace(
     /^Bearer\s+/i,
     "",
@@ -207,20 +226,40 @@ async function administrator(request, db, organisationId) {
       .eq("user_id", user.id)
       .maybeSingle(),
   ]);
-  const allowed =
+  const activeAccess =
     access.data?.enabled === true &&
     !access.data.suspended_at &&
     access.data?.allowed_operations?.includes("property_report") &&
     !permission.data?.revoked_at &&
     permission.data?.allowed_operations?.includes("property_report");
-  if (access.error || permission.error || !allowed) {
+  let stagedAccess = false;
+  if (
+    !access.error && !permission.error && !activeAccess &&
+    access.data?.enabled === false && !access.data?.suspended_at &&
+    permission.data?.allowed_operations?.includes("property_report")
+  ) {
+    const { data: draftProduct, error: draftError } = await db
+      .from("knowledge_factory_report_products")
+      .select("status, cost_validation_recipe_id")
+      .eq("organisation_id", organisationId)
+      .eq("product_id", "basic_owner_lookup")
+      .maybeSingle();
+    if (draftError) throw new Error("The staged package could not be checked.");
+    stagedAccess = mayUseStagedBasicCostMatrix({
+      action,
+      organisationAccess: access.data,
+      userPermission: permission.data,
+      draftProduct, recipeId,
+    });
+  }
+  if (access.error || permission.error || (!activeAccess && !stagedAccess)) {
     const failure = new Error(
       "An approved property-report entitlement and named-user permission are required.",
     );
     failure.status = 403;
     throw failure;
   }
-  return user.id;
+  return { userId: user.id, stagedAccess };
 }
 
 async function supplierToken(runtime) {
@@ -261,7 +300,6 @@ async function validate(runtime, recipe, id) {
       "GraphQL-Cost": "validate",
     },
     body: JSON.stringify({
-      operationName: "CostMatrix",
       query: recipe.query,
       variables: { id },
     }),
@@ -272,8 +310,16 @@ async function validate(runtime, recipe, id) {
       text(payload?.errors?.[0]?.message, 300) ||
         `Knowledge Factory could not validate this recipe (HTTP ${response.status}).`,
     );
+  const quote = costs(payload);
+  const missing = [
+    ["field cost", quote.fieldCost],
+    ["type cost", quote.typeCost],
+    ["credit cost", quote.credits],
+  ].filter(([, value]) => value === null).map(([name]) => name);
+  if (missing.length)
+    throw new Error(`The supplier did not return ${missing.join(", ")}. This recipe is not validated.`);
   return {
-    costs: costs(payload),
+    costs: quote,
     vendorRequestId: text(response.headers.get("x-request-id"), 200) || null,
   };
 }
@@ -293,25 +339,31 @@ export default async function handler(request, response) {
     const db = createClient(runtime.url, runtime.key, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
-    const actorId = await administrator(request, db, organisationId);
+    const actor = await administrator(
+      request, db, organisationId, action, text(input.recipeId, 80),
+    );
     if (action === "list") {
-      const { data, error } = await db
+      let query = db
         .from("knowledge_factory_cost_validations")
         .select(
           "id, property_id, recipe_id, request_purpose, field_cost, type_cost, price_surcharge, credits_consumed, outcome, error_code, created_at",
         )
-        .eq("organisation_id", organisationId)
+        .eq("organisation_id", organisationId);
+      if (actor.stagedAccess) query = query.eq("recipe_id", "package_basic_v1");
+      const { data, error } = await query
         .order("created_at", { ascending: false })
         .limit(100);
       if (error) throw new Error("The canvassing cost matrix is unavailable.");
       return json(response, 200, {
-        recipes: Object.entries(RECIPES).map(([id, item]) => ({
-          id,
-          label: item.label,
-          packageProductId: Object.entries(PACKAGE_COST_RECIPE_IDS).find(
-            ([, recipeId]) => recipeId === id,
-          )?.[0] || null,
-        })),
+        recipes: Object.entries(RECIPES)
+          .filter(([id]) => !actor.stagedAccess || id === "package_basic_v1")
+          .map(([id, item]) => ({
+            id,
+            label: item.label,
+            packageProductId: Object.entries(PACKAGE_COST_RECIPE_IDS).find(
+              ([, recipeId]) => recipeId === id,
+            )?.[0] || null,
+          })),
         items: data || [],
       });
     }
@@ -325,9 +377,13 @@ export default async function handler(request, response) {
       return json(response, 400, {
         error: "Provide a UAT purpose of at least 10 characters.",
       });
+    if (!/\/uat\/graphql\/?$/i.test(runtime.endpoint))
+      return json(response, 409, {
+        error: "Cost-only validation is restricted to the UAT supplier endpoint.",
+      });
     const existing = await db
       .from("knowledge_factory_cost_validations")
-      .select("id")
+      .select("id, field_cost, type_cost, credits_consumed")
       .eq("organisation_id", organisationId)
       .eq("property_id", id)
       .eq("recipe_id", recipeId)
@@ -335,18 +391,29 @@ export default async function handler(request, response) {
       .maybeSingle();
     if (existing.error)
       throw new Error("The cost-matrix history could not be checked.");
-    if (existing.data)
+    if (existing.data && existing.data.field_cost !== null &&
+        existing.data.type_cost !== null && existing.data.credits_consumed !== null)
       return json(response, 409, {
         error:
           "This recipe has already been validated for this property. Choose another UAT property to rerun it.",
       });
     try {
       const result = await validate(runtime, recipe, id);
-      const { data, error } = await db
-        .from("knowledge_factory_cost_validations")
-        .insert({
+      let write = db.from("knowledge_factory_cost_validations");
+      write = existing.data
+        ? write.update({
+          actor_id: actor.userId,
+          request_purpose: purpose,
+          field_cost: result.costs.fieldCost,
+          type_cost: result.costs.typeCost,
+          price_surcharge: result.costs.surcharge,
+          credits_consumed: result.costs.credits,
+          vendor_request_id: result.vendorRequestId,
+          error_code: null,
+        }).eq("id", existing.data.id)
+        : write.insert({
           organisation_id: organisationId,
-          actor_id: actorId,
+          actor_id: actor.userId,
           property_id: id,
           recipe_id: recipeId,
           request_purpose: purpose,
@@ -356,7 +423,8 @@ export default async function handler(request, response) {
           credits_consumed: result.costs.credits,
           vendor_request_id: result.vendorRequestId,
           outcome: "validated",
-        })
+        });
+      const { data, error } = await write
         .select(
           "id, property_id, recipe_id, request_purpose, field_cost, type_cost, price_surcharge, credits_consumed, outcome, created_at",
         )
@@ -367,7 +435,7 @@ export default async function handler(request, response) {
     } catch (error) {
       await db.from("knowledge_factory_cost_validations").insert({
         organisation_id: organisationId,
-        actor_id: actorId,
+        actor_id: actor.userId,
         property_id: id,
         recipe_id: recipeId,
         request_purpose: purpose,

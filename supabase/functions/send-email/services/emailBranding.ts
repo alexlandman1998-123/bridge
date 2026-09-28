@@ -261,6 +261,66 @@ export function formatEmailSender(sender: unknown, fromName: unknown) {
   return cleanName ? `${cleanName} <${email}>` : normalizeText(sender) || email;
 }
 
+export async function resolveAudienceEmailSender({
+  audience,
+  branding,
+  platformSender,
+  supabase,
+}: {
+  audience: "client" | "internal";
+  branding?: Partial<EmailBranding>;
+  platformSender: string;
+  supabase?: SupabaseLike;
+}) {
+  if (audience === "internal") {
+    return formatEmailSender(platformSender, "Arch9");
+  }
+
+  const organisationId = normalizeText(branding?.organisationId);
+  const preferredAddress = normalizeEmailAddress(branding?.fromEmail);
+  let verifiedAgencyAddress = "";
+  if (supabase && organisationId) {
+    try {
+      for (const address of preferredAddress ? [preferredAddress, ""] : [""]) {
+        let query = supabase.from("email_sender_identities")
+          .select("from_email")
+          .eq("organisation_id", organisationId)
+          .eq("provider", "resend")
+          .eq("verification_status", "verified")
+          .is("sending_paused_at", null);
+        if (address) query = query.eq("from_email", address);
+        const result = await query.limit(1);
+        if (!result.error) {
+          verifiedAgencyAddress = normalizeEmailAddress(result.data?.[0]?.from_email);
+        }
+        if (verifiedAgencyAddress) break;
+      }
+    } catch {
+      // The platform address remains available when identity lookup fails.
+    }
+  }
+  return formatEmailSender(
+    verifiedAgencyAddress || platformSender,
+    branding?.organisationName || "Your agency",
+  );
+}
+
+export function isClientEmailRecipientRole(role: unknown) {
+  const normalized = normalizeText(role).toLowerCase();
+  if (/^(buyer|seller|client|tenant|landlord)[_:-]/.test(normalized)) {
+    return true;
+  }
+  return new Set([
+    "buyer",
+    "seller",
+    "client",
+    "tenant",
+    "landlord",
+    "prospective_buyer",
+    "prospective_seller",
+  ]).has(normalized);
+}
+
 export function normalizeEmailBranding(
   input: EmailBrandingInput = {},
 ): EmailBranding {

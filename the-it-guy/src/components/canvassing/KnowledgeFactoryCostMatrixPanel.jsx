@@ -56,11 +56,12 @@ const RECIPES = [
 ];
 
 function credits(value) {
-  return Number.isFinite(Number(value))
+  return value !== null && value !== undefined && Number.isFinite(Number(value))
     ? `${new Intl.NumberFormat("en-ZA").format(Number(value))} credits`
     : "No estimate returned";
 }
 function money(value, divisor) {
+  if (value === null || value === undefined) return "—";
   const number = Number(value);
   return Number.isFinite(number) ? `~R${(number / divisor).toFixed(2)}` : "—";
 }
@@ -100,7 +101,9 @@ export default function KnowledgeFactoryCostMatrixPanel({ organisationId }) {
           .filter(
             (item) =>
               String(item.property_id) === propertyId &&
-              item.outcome === "validated",
+              item.outcome === "validated" &&
+              item.field_cost !== null && item.type_cost !== null &&
+              item.credits_consumed !== null,
           )
           .map((item) => [item.recipe_id, item]),
       ),

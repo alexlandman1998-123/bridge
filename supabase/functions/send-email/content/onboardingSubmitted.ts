@@ -31,8 +31,11 @@ export function buildOnboardingSubmittedEmailHtml(
   const contentHtml = [
     renderBridgeIntroParagraphs([
       "Thank you. We have successfully received your onboarding information.",
-      "Our team will now review your details and begin preparing your Offer to Purchase (OTP).",
+      "Our team will review your details and contact you if anything else is needed.",
     ]),
+    renderBridgeCta("Open Client Portal", payload.clientPortalLink, {
+      primaryColor: branding?.primaryColor,
+    }),
     renderBridgeSummaryCard(
       [
         { label: "Property", value: propertyLine },
@@ -40,18 +43,14 @@ export function buildOnboardingSubmittedEmailHtml(
       ],
       "Onboarding Summary",
     ),
-    `<div style="margin: 0 0 16px; padding: 14px; border: 1px solid #dbe6f2; border-radius: 12px; background: #ffffff;">
-       <p style="margin: 0 0 10px; font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase; color: #5f7590; font-weight: 700;">What happens next</p>
+    `<div style="margin: 22px 0; padding: 16px 18px; border: 1px solid #DDDDDA; background: #F7F7F5;">
+       <p style="margin: 0 0 10px; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: #171717; font-weight: 700;">What happens next</p>
        ${renderBridgeSteps([
       "Our team reviews your information.",
-      "We prepare your Offer to Purchase (OTP).",
-      "You will receive your documents for review and signature.",
-      "You can track your transaction and upload documents through your client portal.",
+      "We contact you if any details or documents are needed.",
+      "You can follow updates and upload documents through your client portal.",
     ])}
      </div>`,
-    renderBridgeCta("Open Client Portal", payload.clientPortalLink, {
-      primaryColor: branding?.primaryColor,
-    }),
   ].join("");
 
   return renderBridgeEmailLayout({
@@ -76,7 +75,7 @@ export function buildOnboardingSubmittedEmailText(
     `Hi ${payload.buyerName || "there"},`,
     "",
     "Thank you — we’ve successfully received your onboarding information.",
-    "Our team will now review your details and begin preparing your Offer to Purchase (OTP).",
+    "Our team will review your details and contact you if anything else is needed.",
     propertyLine ? `Property: ${propertyLine}` : null,
     payload.transactionReference
       ? `Transaction Reference: ${payload.transactionReference}`
@@ -84,9 +83,8 @@ export function buildOnboardingSubmittedEmailText(
     "",
     "What happens next:",
     "1. Our team reviews your information",
-    "2. We prepare your Offer to Purchase (OTP)",
-    "3. You will receive your documents for review and signature",
-    "4. You can track your transaction and upload documents via your client portal",
+    "2. We contact you if any details or documents are needed",
+    "3. You can follow updates and upload documents via your client portal",
     "",
     `Open Client Portal: ${payload.clientPortalLink}`,
     "",

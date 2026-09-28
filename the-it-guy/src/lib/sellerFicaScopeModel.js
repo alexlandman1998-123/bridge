@@ -106,9 +106,9 @@ export function buildSellerFicaScope({ sellerSubject = {}, onboarding = {}, cano
     if (!beneficialOwners.length) gap('Beneficial ownership / control declaration')
     addPerson('Authorised representative', {
       fullName: first(form.authorisedSignatoryName, company.authorisedSignatory?.name, subject.signers?.[0]?.name),
-      idNumber: first(form.authorisedSignatoryIdNumber, company.authorisedSignatory?.idNumber, subject.signers?.[0]?.idNumber),
-      residentialAddress: first(form.authorisedSignatoryAddress, company.authorisedSignatory?.residentialAddress),
-      nationality: first(form.authorisedSignatoryNationality, company.authorisedSignatory?.nationality),
+      idNumber: first(form.authorisedSignatoryIdNumber, company.authorisedSignatory?.idNumber, canonicalCompany.authorised_signatory?.id_number, subject.signers?.[0]?.idNumber),
+      residentialAddress: first(form.authorisedSignatoryAddress, company.authorisedSignatory?.residentialAddress, canonicalCompany.authorised_signatory?.residential_address),
+      nationality: first(form.authorisedSignatoryNationality, company.authorisedSignatory?.nationality, canonicalCompany.authorised_signatory?.nationality),
     })
     if (!first(form.companyAuthorityBasis, company.authorityBasis)) gap('Company representative authority basis')
     evidence.add('Beneficial ownership / control structure')
@@ -128,9 +128,9 @@ export function buildSellerFicaScope({ sellerSubject = {}, onboarding = {}, cano
     if (!beneficiaries.length && !first(form.trustBeneficiaryClass, form.trust_beneficiary_class, trust.beneficiaryClass)) gap('Named beneficiaries or beneficiary class declaration')
     addPerson('Authorised representative', {
       fullName: first(form.authorisedTrusteeName, trust.authorisedTrustee?.name, subject.signers?.[0]?.name),
-      idNumber: first(form.authorisedTrusteeIdNumber, trust.authorisedTrustee?.idNumber, subject.signers?.[0]?.idNumber),
-      residentialAddress: first(form.authorisedTrusteeAddress, trust.authorisedTrustee?.residentialAddress),
-      nationality: first(form.authorisedTrusteeNationality, trust.authorisedTrustee?.nationality),
+      idNumber: first(form.authorisedTrusteeIdNumber, trust.authorisedTrustee?.idNumber, canonicalTrust.authorised_trustee?.id_number, subject.signers?.[0]?.idNumber),
+      residentialAddress: first(form.authorisedTrusteeAddress, trust.authorisedTrustee?.residentialAddress, canonicalTrust.authorised_trustee?.residential_address),
+      nationality: first(form.authorisedTrusteeNationality, trust.authorisedTrustee?.nationality, canonicalTrust.authorised_trustee?.nationality),
     })
     if (!first(form.trustAuthorityBasis, trust.authorityBasis)) gap('Trustee authority basis')
     evidence.add('Trust deed and Letters of Authority')

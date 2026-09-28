@@ -6,7 +6,7 @@ import {
   renderBridgeIntroParagraphs,
 } from "../send-email/content/bridgeEmailLayout.ts";
 import {
-  formatEmailSender,
+  resolveAudienceEmailSender,
   resolveEmailBranding,
 } from "../send-email/services/emailBranding.ts";
 import { sendViaResendApi } from "../send-email/services/resend.ts";
@@ -110,11 +110,13 @@ Deno.serve(async (req: Request) => {
     });
     const delivery = await sendViaResendApi({
       apiKey: resendApiKey,
-      from: formatEmailSender(
-        normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
+      from: await resolveAudienceEmailSender({
+        audience: "client",
+        branding,
+        platformSender: normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
           "Arch9 <onboarding@resend.dev>",
-        branding.fromName || branding.organisationName,
-      ),
+        supabase,
+      }),
       to: recipient,
       subject: "Reset your seller portal password",
       html: content.html,

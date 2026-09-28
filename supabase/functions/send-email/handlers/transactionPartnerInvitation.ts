@@ -10,7 +10,7 @@ import {
   prepareEmailDelivery,
 } from "../services/communicationDeliveryLogging.ts";
 import {
-  formatEmailSender,
+  resolveAudienceEmailSender,
   resolveEmailBranding,
 } from "../services/emailBranding.ts";
 import { sendViaResendApi } from "../services/resend.ts";
@@ -88,11 +88,13 @@ export async function handleTransactionPartnerInvitationEmail(
     organisationId: normalizeText(payload.organisationId ?? payload.organisation_id),
     defaults: { organisationName },
   });
-  const from = formatEmailSender(
-    normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
+  const from = await resolveAudienceEmailSender({
+    audience: "internal",
+    branding,
+    platformSender: normalizeText(Deno.env.get("ARCH9_RESEND_FROM_EMAIL")) ||
+      normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
       "Arch9 <no-reply@arch9.co.za>",
-    branding.fromName || branding.organisationName,
-  );
+  });
   const subject = isResend
     ? `${organisationName} has resent your Arch9 transaction invite`
     : reusedProspect

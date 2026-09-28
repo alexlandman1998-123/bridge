@@ -59,6 +59,7 @@ function canonicalParties(seller = {}) {
   add(source.company?.directors, 'Director')
   add(source.company?.beneficial_owners, 'Beneficial owner')
   add(source.trust?.trustees, 'Trustee')
+  add(source.trust?.founders, 'Founder')
   add(source.trust?.beneficiaries, 'Beneficiary')
   add(source.deceased_estate?.executors, 'Executor')
   add(source.power_of_attorney?.representatives, 'Representative')
@@ -128,6 +129,8 @@ export function buildSellerOnboardingSigningPackSnapshot({
     phone: canonicalSeller.phone || form.mobile || form.mobileNumber || form.phone || currentListing.sellerPhone,
     occupation: form.occupation,
     sourceOfFunds: form.sourceOfFunds || form.source_of_funds,
+    politicallyExposedPerson: canonicalSeller.politically_exposed_person || form.politicallyExposedPerson || form.politically_exposed_person,
+    politicallyExposedDetails: canonicalSeller.politically_exposed_details || form.politicallyExposedDetails || form.politically_exposed_details,
   })
   const legalType = firstText(canonicalSeller.legal_type, form.sellerLegalType, form.seller_legal_type, form.sellerType, currentListing.sellerType)
   const seller = {
@@ -136,7 +139,8 @@ export function buildSellerOnboardingSigningPackSnapshot({
     ownershipType: firstText(canonicalSeller.owner_structure_type, form.ownerStructureType, form.owner_structure_type, form.ownershipType),
     maritalStatus: firstText(canonicalSeller.marital_status, form.maritalStatus, form.marital_status),
     maritalRegime: firstText(canonicalSeller.marital_regime, form.maritalRegime, form.marital_regime),
-    spouseName: firstText(form.spouseFullName, form.spouse_full_name, form.spouseName, form.spouse_name),
+    spouseName: firstText(canonicalSeller.spouse?.name, form.spouseFullName, form.spouse_full_name, form.spouseName, form.spouse_name),
+    spouseIdNumber: firstText(canonicalSeller.spouse?.id_number, form.spouseIdNumber, form.spouse_id_number),
     vatRegistered: firstText(canonicalSeller.vat_registered, form.vatRegistered, form.vat_registered),
     vatNumber: firstText(canonicalSeller.vat_number, form.vatNumber, form.vat_number),
     companyName: firstText(canonicalSeller.company?.name, form.companyName, form.company_name),
@@ -176,10 +180,11 @@ export function buildSellerOnboardingSigningPackSnapshot({
     property: {
       address,
       titleDeedNumber: firstText(form.titleDeedNumber, form.title_deed_number, form.deedNumber),
-      erfNumber: firstText(form.erfNumber, form.erf_number, currentListing.erfNumber),
-      unitNumber: firstText(form.unitNumber, form.unit_number, currentListing.unitNumber),
-      sectionNumber: firstText(form.sectionNumber, form.section_number, currentListing.sectionNumber),
-      schemeName: firstText(form.schemeName, form.scheme_name, form.complexName, currentListing.complexName),
+      erfNumber: firstText(canonicalFacts.property?.erf_number, form.erfNumber, form.erf_number, currentListing.erfNumber),
+      unitNumber: firstText(canonicalFacts.property?.unit_number, form.unitNumber, form.unit_number, currentListing.unitNumber),
+      sectionNumber: firstText(canonicalFacts.property?.section_number, form.sectionNumber, form.section_number, currentListing.sectionNumber),
+      schemeName: firstText(canonicalFacts.property?.scheme_name, form.schemeName, form.scheme_name, form.complexName, currentListing.complexName),
+      municipality: firstText(canonicalFacts.property?.municipality, form.municipality),
       occupationStatus: firstText(form.occupationStatus, form.occupation_status),
       bondStatus: firstText(form.bondStatus, form.propertyBondStatus, form.property_bond_status),
     },
@@ -191,7 +196,7 @@ export function buildSellerOnboardingSigningPackSnapshot({
     templateVersions: {
       mandate: firstText(form.mandateTemplateVersion, form.mandate_template_version, 'agency_sales_mandate_vnext'),
       disclosure: 'property_disclosure_annexure_a_v1',
-      fica: 'arch9_fica_declaration_v1',
+      fica: 'arch9_fica_declaration_v2',
     },
   }
 }

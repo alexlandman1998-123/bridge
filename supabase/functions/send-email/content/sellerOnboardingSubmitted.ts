@@ -113,8 +113,8 @@ export function buildSellerOnboardingSubmittedEmailHtml({
       ],
       "Seller Onboarding Submitted",
     ),
-    `<div style="margin: 0 0 16px; padding: 16px; border: 1px solid #dbe6f2; border-radius: 14px; background: #ffffff;">
-       <p style="margin: 0 0 10px; font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase; color: #5f7590; font-weight: 700;">What happens next</p>
+    `<div style="margin: 22px 0; padding: 16px 18px; border: 1px solid #DDDDDA; background: #F7F7F5;">
+       <p style="margin: 0 0 10px; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: #171717; font-weight: 700;">What happens next</p>
        ${renderBridgeSteps(processSteps)}
      </div>`,
     actionLink

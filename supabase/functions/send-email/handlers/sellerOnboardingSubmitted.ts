@@ -15,7 +15,7 @@ import {
   prepareEmailDelivery,
 } from "../services/communicationDeliveryLogging.ts";
 import {
-  formatEmailSender,
+  resolveAudienceEmailSender,
   resolveEmailBranding,
 } from "../services/emailBranding.ts";
 import { sendViaResendApi } from "../services/resend.ts";
@@ -629,10 +629,18 @@ export async function handleSellerOnboardingSubmittedEmail(
     senderOrganisationLogoUrl;
   supportEmail = branding.supportEmail || supportEmail;
   supportPhone = branding.supportPhone || supportPhone;
-  const sender = formatEmailSender(
-    baseSender,
-    branding.fromName || branding.organisationName,
-  );
+  const internalSender = await resolveAudienceEmailSender({
+    audience: "internal",
+    branding,
+    platformSender: normalizeText(Deno.env.get("ARCH9_RESEND_FROM_EMAIL")) ||
+      baseSender,
+  });
+  const sellerSender = await resolveAudienceEmailSender({
+    audience: "client",
+    branding,
+    platformSender: baseSender,
+    supabase: supabase || undefined,
+  });
 
   const internalSubject = normalizeText(templateOverrides?.subject) ||
     buildSellerOnboardingSubmittedSubject(propertyTitle);
@@ -705,7 +713,7 @@ export async function handleSellerOnboardingSubmittedEmail(
 
     const emailResult = await sendViaResendApi({
       apiKey: resendApiKey,
-      from: sender,
+      from: internalSender,
       to: recipient.email,
       subject: internalSubject,
       html: internalHtml,
@@ -795,7 +803,7 @@ export async function handleSellerOnboardingSubmittedEmail(
 
     const sellerResult = await sendViaResendApi({
       apiKey: resendApiKey,
-      from: sender,
+      from: sellerSender,
       to: sellerEmail,
       subject: sellerSubject,
       html: sellerHtml,

@@ -1,4 +1,5 @@
 import ListingSellerInformationEditor from '../listings/ListingSellerInformationEditor.jsx'
+import SellerFicaQuestions from '../onboarding/SellerFicaQuestions.jsx'
 import Field from '../ui/Field.jsx'
 
 function Input({ label, field, draft, onChange, type = 'text' }) {
@@ -54,11 +55,20 @@ export default function SellerLeadAgentOnboardingEditor({
         {company ? <>
           <Input label="Company resolution date" field="companyResolutionDate" type="date" draft={draft} onChange={onChange} />
           <Input label="Company authority basis" field="companyAuthorityBasis" draft={draft} onChange={onChange} />
+          <Input label="Signatory ID / passport (if not listed above)" field="authorisedSignatoryIdNumber" draft={draft} onChange={onChange} />
+          <Input label="Signatory nationality (if not listed above)" field="authorisedSignatoryNationality" draft={draft} onChange={onChange} />
+          <Input label="Signatory residential address (if not listed above)" field="authorisedSignatoryAddress" draft={draft} onChange={onChange} />
         </> : null}
-        {trust ? <Input label="Trust authority basis" field="trustAuthorityBasis" draft={draft} onChange={onChange} /> : null}
+        {trust ? <>
+          <Input label="Trust authority basis" field="trustAuthorityBasis" draft={draft} onChange={onChange} />
+          <Input label="Authorised trustee ID / passport (if not listed above)" field="authorisedTrusteeIdNumber" draft={draft} onChange={onChange} />
+          <Input label="Authorised trustee nationality (if not listed above)" field="authorisedTrusteeNationality" draft={draft} onChange={onChange} />
+          <Input label="Authorised trustee residential address (if not listed above)" field="authorisedTrusteeAddress" draft={draft} onChange={onChange} />
+        </> : null}
         {draft.branch === 'deceased_estate' ? <Input label="Executor authority details" field="executorAuthorityDetails" draft={draft} onChange={onChange} /> : null}
         {draft.branch === 'power_of_attorney' ? <Input label="Power of attorney authority details" field="powerOfAttorneyAuthorityDetails" draft={draft} onChange={onChange} /> : null}
       </section>
+      <SellerFicaQuestions form={draft} onChange={onChange} onAddPerson={onAddPerson} onUpdatePerson={onUpdatePerson} onRemovePerson={onRemovePerson} />
       <section className="grid gap-4 rounded-[18px] border border-[#dce6f2] bg-white p-4 sm:grid-cols-2">
         <h4 className="text-sm font-semibold text-[#243d56] sm:col-span-2">Property and mandate details</h4>
         <Input label="Suburb" field="propertySuburb" draft={draft} onChange={onChange} />

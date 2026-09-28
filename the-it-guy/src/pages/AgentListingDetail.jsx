@@ -134,9 +134,11 @@ import {
 import { requestPersistedPdfAccess } from '../lib/documentPacketsApi'
 import { fetchDevelopmentsData } from '../lib/api'
 import { resolveOnboardingBranding } from '../lib/onboardingBranding'
+import SellerOnboardingAgentReviewPanel from '../components/onboarding/SellerOnboardingAgentReviewPanel'
 import { downloadHtmlDocumentPdf } from '../lib/htmlDocumentPdf'
 import { SELLER_ONBOARDING_SIGNING_STAGES, buildSellerOnboardingSigningAuditExport, createSellerOnboardingSigningLifecycle } from '../core/documents/sellerOnboardingSigningLifecycle'
 import {
+  buildSellerOnboardingReviewChecklist,
   recordSellerOnboardingReview,
   readSellerOnboardingReview,
   SELLER_ONBOARDING_REVIEW_STATUS,
@@ -146,7 +148,8 @@ import {
   validateSellerOnboardingFormalSigningSelection,
 } from '../core/documents/sellerOnboardingFormalSigningPack'
 import { createSellerOnboardingFormalPackApproval } from '../core/documents/sellerOnboardingFormalPackApproval'
-import { createSellerOnboardingManualSigningPack } from '../core/documents/sellerOnboardingManualSigningPack'
+import { createSellerOnboardingSigningCopyPack } from '../core/documents/sellerOnboardingManualSigningPack'
+import { requireSellerMandateWording } from '../core/documents/sellerMandateDocumentMarkup'
 import { buildSellerPostOnboardingDrafts } from '../core/documents/sellerPostOnboardingDrafts'
 import { createSellerReviewedDocumentVersions, buildSellerReviewedDocumentVersionIndex } from '../core/documents/sellerReviewedDocumentVersions'
 import { downloadSellerPhysicalSigningCopy, getSellerPhysicalSigningCopy, requireSellerPhysicalSigningCopy } from '../core/documents/sellerPhysicalSigningCopy'
@@ -3787,6 +3790,8 @@ function AgentListingDetail() {
   const [sellerDocumentSendSaving, setSellerDocumentSendSaving] = useState(false)
   const [sellerOnboardingReviewSaving, setSellerOnboardingReviewSaving] = useState(false)
   const [sellerOnboardingCorrectionReason, setSellerOnboardingCorrectionReason] = useState('')
+  const [sellerDocumentOtherAgencyName, setSellerDocumentOtherAgencyName] = useState('')
+  const [sellerDocumentProtectionPeriodDays, setSellerDocumentProtectionPeriodDays] = useState('')
   const [sellerDocumentSendSelection, setSellerDocumentSendSelection] = useState({ disclosure: false, fica: false, mandate: false })
   const [sellerDocumentReplacementGroupId, setSellerDocumentReplacementGroupId] = useState('')
   const [sellerDocumentReplacementReason, setSellerDocumentReplacementReason] = useState('')
@@ -3979,6 +3984,9 @@ function AgentListingDetail() {
   const listingRecord = useMemo(() => {
     return findPrivateListingById(privateListings, listingId)
   }, [listingId, privateListings])
+  const sellerOnboardingReviewChecklist = useMemo(() => sellerDocumentSendOpen && listingRecord
+    ? buildSellerOnboardingReviewChecklist({ formData: getListingSellerFormData(listingRecord), listing: listingRecord })
+    : null, [sellerDocumentSendOpen, listingRecord])
 
   useEffect(() => {
     let active = true
@@ -7686,6 +7694,8 @@ function AgentListingDetail() {
       sellerPortalTasks,
       mandate: {
         mandateType: marketingDraft.mandateType || listingRecord?.mandateType || form.mandateType || 'sole',
+        otherAgencyName: sellerDocumentOtherAgencyName.trim(),
+        protectionPeriodDays: sellerDocumentProtectionPeriodDays.trim(),
         askingPrice: formatCurrency(Number(listingRecord?.askingPrice || marketingDraft.price || 0) || 0),
         startDate: String(form.mandateStartDate || form.startDate || ''),
         endDate: String(form.mandateEndDate || form.expiryDate || ''),
@@ -7700,6 +7710,9 @@ function AgentListingDetail() {
 
   function openSellerDocumentSend(selectionOverride = null, correctionRequest = null) {
     const { byKey } = getSellerSigningDocumentOptions()
+    const form = getListingSellerFormData(listingRecord)
+    setSellerDocumentOtherAgencyName(String(form.otherAgencyName || form.coAgencyName || '').trim())
+    setSellerDocumentProtectionPeriodDays(String(form.protectionPeriodDays || '').trim())
     setSellerDocumentSendSelection(normalizeSellerOnboardingFormalSigningSelection({
       fica: byKey.fica.ready,
       mandate: byKey.mandate.ready,
@@ -7746,9 +7759,27 @@ function AgentListingDetail() {
     )
   }
 
+  function getSellerOnboardingReviewChecklist() {
+    return buildSellerOnboardingReviewChecklist({
+      formData: getListingSellerFormData(listingRecord),
+      listing: listingRecord || {},
+    })
+  }
+
   async function saveSellerOnboardingReview(status) {
     if (!listingRecord?.id || sellerOnboardingReviewSaving) return
     const existingForm = getListingSellerFormData(listingRecord)
+    if (status === SELLER_ONBOARDING_REVIEW_STATUS.approved) {
+      if (readSellerOnboardingReview(existingForm.sellerOnboardingReview || existingForm.seller_onboarding_review).status === SELLER_ONBOARDING_REVIEW_STATUS.correctionRequested) {
+        setDetailError('Wait for the corrected onboarding to be resubmitted before approving it.')
+        return
+      }
+      const checklist = getSellerOnboardingReviewChecklist()
+      if (!checklist.ready) {
+        setDetailError(`Complete the submitted onboarding fields before approval: ${checklist.missing.join(' ')}`)
+        return
+      }
+    }
     try {
       setSellerOnboardingReviewSaving(true)
       setDetailError('')
@@ -7887,8 +7918,37 @@ function AgentListingDetail() {
       setDetailError('Give a short reason before replacing an active seller signing pack.')
       return
     }
+    const reviewedForm = getListingSellerFormData(listingRecord)
+    const recordedReview = readSellerOnboardingReview(reviewedForm.sellerOnboardingReview || reviewedForm.seller_onboarding_review)
+    if (recordedReview.status !== SELLER_ONBOARDING_REVIEW_STATUS.approved) {
+      setDetailError('Approve the submitted seller onboarding before preparing documents.')
+      return
+    }
+    if (!mandateReplacementIntent) {
+      const checklist = getSellerOnboardingReviewChecklist()
+      if (!checklist.ready) {
+        setDetailError(`Complete the submitted onboarding fields before preparing documents: ${checklist.missing.join(' ')}`)
+        return
+      }
+    }
     const commissionBasis = commissionDraft.basis === 'fixed' ? 'fixed' : 'percentage'
     const mandateType = marketingDraft.mandateType || listingRecord?.mandateType || getListingSellerFormData(listingRecord).mandateType || 'sole'
+    if (selected.includes('mandate')) {
+      try {
+        requireSellerMandateWording(mandateType)
+      } catch (wordingError) {
+        setDetailError(wordingError.message)
+        return
+      }
+    }
+    if (sellerDocumentSendSelection.mandate && mandateType === 'dual' && !sellerDocumentOtherAgencyName.trim()) {
+      setDetailError('Name the second agency before preparing a dual mandate.')
+      return
+    }
+    if (sellerDocumentSendSelection.mandate && sellerDocumentProtectionPeriodDays && (!Number.isInteger(Number(sellerDocumentProtectionPeriodDays)) || Number(sellerDocumentProtectionPeriodDays) < 0)) {
+      setDetailError('Enter a whole number of protection days, or leave it blank for none.')
+      return
+    }
     try {
       setSellerDocumentSendSaving(true)
       let commissionSaveResult = null
@@ -7901,13 +7961,10 @@ function AgentListingDetail() {
       if (onboardingReview.status === SELLER_ONBOARDING_REVIEW_STATUS.correctionRequested) {
         throw new Error('The seller onboarding is awaiting correction. Review the resubmitted onboarding before preparing another signing pack.')
       }
-      const packReview = onboardingReview.status === SELLER_ONBOARDING_REVIEW_STATUS.approved
-        ? onboardingReview
-        : recordSellerOnboardingReview({
-            existing: existingForm.sellerOnboardingReview || existingForm.seller_onboarding_review,
-            status: SELLER_ONBOARDING_REVIEW_STATUS.approved,
-            actor: String(listingActor?.id || profile?.id || ''),
-          })
+      if (onboardingReview.status !== SELLER_ONBOARDING_REVIEW_STATUS.approved) {
+        throw new Error('The seller onboarding approval changed. Review the latest details before preparing documents.')
+      }
+      const packReview = onboardingReview
       const formalPackApproval = createSellerOnboardingFormalPackApproval({
         existing: existingForm.sellerOnboardingFormalPackApproval || existingForm.seller_onboarding_formal_pack_approval,
         reviewApproved: packReview.status === SELLER_ONBOARDING_REVIEW_STATUS.approved,
@@ -7922,15 +7979,14 @@ function AgentListingDetail() {
         actor: String(listingActor?.id || profile?.id || ''),
       })
       const proposedTransferAttorney = preferredTransferAttorneyOptions.find((partner) => String(partner?.id || '') === preferredTransferAttorneyOptionId) || null
-      const signingPackSnapshot = sellerMandateSignatureRoute === 'manual_upload' ? buildSellerSigningPackSnapshot(selected) : null
-      const postOnboardingDrafts = existingForm.sellerPostOnboardingDrafts || existingForm.seller_post_onboarding_drafts || buildSellerPostOnboardingDrafts({
+      const signingPackSnapshot = buildSellerSigningPackSnapshot(selected)
+      const postOnboardingDrafts = buildSellerPostOnboardingDrafts({
         formData: existingForm,
         listing: listingRecord || {},
         branding: signingPackSnapshot?.branding || {},
         generatedAt: formalPackApproval.approvedAt,
       })
-      const manualSigningPack = sellerMandateSignatureRoute === 'manual_upload'
-        ? createSellerOnboardingManualSigningPack({
+      const manualSigningPack = createSellerOnboardingSigningCopyPack({
             existing: existingForm.sellerOnboardingManualSigningPack || existingForm.seller_onboarding_manual_signing_pack,
             formalPackApproval,
             signingPack: signingPackSnapshot,
@@ -7938,9 +7994,7 @@ function AgentListingDetail() {
             disclosureSigned: hasCompletedOnboardingDisclosureSignature(existingForm),
             actor: String(listingActor?.id || profile?.id || ''),
           })
-        : null
-      const reviewedDocuments = manualSigningPack
-        ? await createSellerReviewedDocumentVersions({
+      const reviewedDocuments = await createSellerReviewedDocumentVersions({
             existing: existingForm.sellerReviewedDocumentVersions || existingForm.seller_reviewed_document_versions,
             manualSigningPack,
             formalPackApproval,
@@ -7948,9 +8002,8 @@ function AgentListingDetail() {
             actor: String(listingActor?.id || profile?.id || ''),
             approvedAt: formalPackApproval.approvedAt,
           })
-        : null
-      if (reviewedDocuments) manualSigningPack.documents = reviewedDocuments.documents
-      const reviewedDocumentIndex = reviewedDocuments ? buildSellerReviewedDocumentVersionIndex(reviewedDocuments) : null
+      manualSigningPack.documents = reviewedDocuments.documents
+      const reviewedDocumentIndex = buildSellerReviewedDocumentVersionIndex(reviewedDocuments)
       const nextFormData = {
         ...existingForm,
         sellerOnboardingReview: packReview,
@@ -7959,6 +8012,8 @@ function AgentListingDetail() {
         seller_onboarding_formal_pack_approval: formalPackApproval,
         sellerDocumentSendSelection: sellerDocumentSendSelection,
         mandateType,
+        otherAgencyName: sellerDocumentOtherAgencyName.trim(),
+        protectionPeriodDays: sellerDocumentProtectionPeriodDays.trim(),
         commissionBasis,
         commission_basis: commissionBasis,
         commissionPercentage: commissionBasis === 'percentage' ? String(commissionDraft.percentage || '').trim() : '',
@@ -7979,7 +8034,7 @@ function AgentListingDetail() {
           status: 'awaiting_upload',
           requestedAt: new Date().toISOString(),
           requestedBy: String(listingActor?.id || profile?.id || ''),
-        } : existingForm.manualMandateSignature || null,
+        } : null,
         sellerOnboardingManualSigningPack: manualSigningPack || existingForm.sellerOnboardingManualSigningPack || existingForm.seller_onboarding_manual_signing_pack || null,
         seller_onboarding_manual_signing_pack: manualSigningPack || existingForm.sellerOnboardingManualSigningPack || existingForm.seller_onboarding_manual_signing_pack || null,
         sellerPostOnboardingDrafts: postOnboardingDrafts,
@@ -8020,7 +8075,9 @@ function AgentListingDetail() {
       }))
       setSellerDocumentSendOpen(false)
       setMandateReplacementIntent(false)
-      setDetailMessage(`Physical ${manualSigningPack?.documents?.some((document) => document.key === 'signed_disclosure_form') ? 'disclosure, FICA and mandate' : 'FICA and mandate'} copies are ready in Documents. Download them for wet-ink signature, then upload each signed copy; the documents remain outstanding until signed evidence is reviewed.`)
+      setDetailMessage(sellerMandateSignatureRoute === 'manual_upload'
+        ? `Physical ${manualSigningPack.documents.some((document) => document.key === 'signed_disclosure_form') ? 'disclosure, FICA and mandate' : 'FICA and mandate'} copies are ready in Documents. Download them for wet-ink signature, then upload each signed copy; the documents remain outstanding until signed evidence is reviewed.`
+        : 'Reviewed FICA and mandate copies are ready in Documents. Send each document for portal signature from there.')
     } catch (error) {
       setDetailError(error?.message || 'Unable to save the selected seller documents.')
     } finally {
@@ -13416,9 +13473,9 @@ function AgentListingDetail() {
         footer={(
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <Button type="button" variant="secondary" disabled={sellerDocumentSendSaving} onClick={() => { setSellerDocumentSendOpen(false); setMandateReplacementIntent(false) }}>Cancel</Button>
-            <Button type="button" disabled={sellerDocumentSendSaving} onClick={() => void saveSellerDocumentSendSelection()}>
+            <Button type="button" disabled={sellerDocumentSendSaving || (sellerDocumentSendOpen && !mandateReplacementIntent && (readSellerOnboardingReview(getListingSellerFormData(listingRecord).sellerOnboardingReview || getListingSellerFormData(listingRecord).seller_onboarding_review).status !== SELLER_ONBOARDING_REVIEW_STATUS.approved || !sellerOnboardingReviewChecklist?.ready))} onClick={() => void saveSellerDocumentSendSelection()}>
               {sellerDocumentSendSaving ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
-              {sellerDocumentSendSaving ? 'Preparing...' : sellerMandateSignatureRoute === 'manual_upload' ? 'Approve and prepare physical copies' : 'Approve and send signing pack'}
+              {sellerDocumentSendSaving ? 'Preparing...' : sellerMandateSignatureRoute === 'manual_upload' ? 'Approve and prepare physical copies' : 'Approve and prepare portal copies'}
             </Button>
           </div>
         )}
@@ -13429,15 +13486,24 @@ function AgentListingDetail() {
               ? 'This creates a traceable replacement pack. The previous signed mandate remains preserved and the new mandate only becomes current after every required signer completes it.'
               : 'This action records your approval of the submitted onboarding and freezes the selected documents using the terms below.'}
           </div>
-          {(() => {
-            const onboardingReview = readSellerOnboardingReview(getListingSellerFormData(listingRecord).sellerOnboardingReview || getListingSellerFormData(listingRecord).seller_onboarding_review)
+          {sellerDocumentSendOpen ? (() => {
+            const formData = getListingSellerFormData(listingRecord)
+            const onboardingReview = readSellerOnboardingReview(formData.sellerOnboardingReview || formData.seller_onboarding_review)
+            const checklist = sellerOnboardingReviewChecklist
             const approved = onboardingReview.status === SELLER_ONBOARDING_REVIEW_STATUS.approved
-            return <section className={`rounded-[16px] border p-4 text-sm ${approved ? 'border-[#c9e8d5] bg-[#f0faf3]' : 'border-[#f2dfbd] bg-[#fff9ec]'}`}>
-              <p className="font-semibold text-[#243d56]">Submitted onboarding</p>
-              <p className="mt-1 leading-5 text-[#607387]">{approved ? 'Already approved. The submitted facts will be used as-is.' : onboardingReview.status === SELLER_ONBOARDING_REVIEW_STATUS.correctionRequested ? `Correction requested: ${onboardingReview.reason}` : 'Review the submitted ownership, FICA, property and disclosure details here. The final action below approves them and prepares the signing documents.'}</p>
-              {!approved && onboardingReview.status !== SELLER_ONBOARDING_REVIEW_STATUS.correctionRequested ? <div className="mt-3 grid gap-3"><label className="grid gap-1.5 font-semibold text-[#243d56]">Need a correction instead? <textarea value={sellerOnboardingCorrectionReason} onChange={(event) => setSellerOnboardingCorrectionReason(event.target.value)} rows={2} placeholder="Explain what the seller needs to correct." className="rounded-xl border border-[#dce6f2] bg-white px-3 py-2 font-normal" /></label><div><Button type="button" size="sm" variant="secondary" disabled={sellerOnboardingReviewSaving || !sellerOnboardingCorrectionReason.trim()} onClick={() => void saveSellerOnboardingReview(SELLER_ONBOARDING_REVIEW_STATUS.correctionRequested)}>Request correction</Button></div></div> : null}
-            </section>
-          })()}
+            return <>
+              {!mandateReplacementIntent ? <SellerOnboardingAgentReviewPanel formData={formData} checklist={checklist} /> : null}
+              <section className={`rounded-[16px] border p-4 text-sm ${approved ? 'border-[#c9e8d5] bg-[#f0faf3]' : 'border-[#f2dfbd] bg-[#fff9ec]'}`}>
+                <p className="font-semibold text-[#243d56]">Agent review decision</p>
+                <p className="mt-1 leading-5 text-[#607387]">{approved ? 'Submitted fields approved. Supporting FICA evidence remains a separate review.' : onboardingReview.status === SELLER_ONBOARDING_REVIEW_STATUS.correctionRequested ? `Correction requested: ${onboardingReview.reason}` : 'Check the submitted information above, then approve it or request a correction.'}</p>
+                {!approved && onboardingReview.status !== SELLER_ONBOARDING_REVIEW_STATUS.correctionRequested ? <div className="mt-3 space-y-3">
+                  <Button type="button" size="sm" disabled={sellerOnboardingReviewSaving || !checklist?.ready} onClick={() => void saveSellerOnboardingReview(SELLER_ONBOARDING_REVIEW_STATUS.approved)}>Approve submitted fields</Button>
+                  <label className="grid gap-1.5 font-semibold text-[#243d56]">Need a correction instead? <textarea value={sellerOnboardingCorrectionReason} onChange={(event) => setSellerOnboardingCorrectionReason(event.target.value)} rows={2} placeholder="Explain what the seller needs to correct." className="rounded-xl border border-[#dce6f2] bg-white px-3 py-2 font-normal" /></label>
+                  <Button type="button" size="sm" variant="secondary" disabled={sellerOnboardingReviewSaving || sellerOnboardingCorrectionReason.trim().length < 5} onClick={() => void saveSellerOnboardingReview(SELLER_ONBOARDING_REVIEW_STATUS.correctionRequested)}>Request correction</Button>
+                </div> : null}
+              </section>
+            </>
+          })() : null}
           {(() => {
             const mandateReadiness = getListingMandateReadiness()
             return <div data-testid="listing-mandate-readiness" className={`rounded-[16px] border p-4 text-sm leading-5 ${mandateReadiness.ready ? 'border-[#c9e8d5] bg-[#f0faf3] text-[#176842]' : 'border-[#f2dfbd] bg-[#fff9ec] text-[#7a5a17]'}`}>
@@ -13446,7 +13512,13 @@ function AgentListingDetail() {
               {!mandateReadiness.ready ? <><ul className="mt-2 list-disc space-y-1 pl-5 text-xs">{mandateReadiness.missing.map((item) => <li key={item}>{item}</li>)}</ul><div className="mt-3 flex flex-wrap gap-2"><Button type="button" size="sm" variant="secondary" onClick={() => { setSellerProfileBuilderReturnToDocuments(true); setSellerDocumentSendOpen(false); openSellerProfileBuilder('Complete the seller details needed for the mandate, then return to send the secure pack.') }}>Edit seller details</Button><Button type="button" size="sm" variant="secondary" onClick={() => { setSellerSectionReturnToDocuments(true); setSellerDocumentSendOpen(false); openSellerSectionEditor(sellerProfile.sections.find((section) => section.key === 'mandate_details')) }}>Edit mandate details</Button></div></> : null}
             </div>
           })()}
-          {ONLINE_SIGNING_DISABLED ? <div className="rounded-[16px] border border-[#f2dfbd] bg-[#fff9ec] p-4 text-sm leading-6 text-[#7a5a17]"><p className="font-semibold">Wet-ink signatures required</p><p className="mt-1">Arch9 will prepare printable FICA and mandate copies. Download them, arrange physical signatures, then upload the signed originals in Documents.</p></div> : null}
+          {ONLINE_SIGNING_DISABLED ? <div className="rounded-[16px] border border-[#f2dfbd] bg-[#fff9ec] p-4 text-sm leading-6 text-[#7a5a17]"><p className="font-semibold">Wet-ink signatures required</p><p className="mt-1">We will prepare printable FICA and mandate copies. Download them, arrange physical signatures, then upload the signed originals in Documents.</p></div> : null}
+          {(marketingDraft.mandateType || listingRecord?.mandateType || getListingSellerFormData(listingRecord).mandateType) === 'dual' ? <label className="grid gap-1.5 rounded-[16px] border border-[#dce6f2] bg-white p-4 text-sm font-semibold text-[#243d56]">Second agency named in the dual mandate
+            <Field value={sellerDocumentOtherAgencyName} onChange={(event) => setSellerDocumentOtherAgencyName(event.target.value)} placeholder="Other agency name" />
+          </label> : null}
+          <label className="grid gap-1.5 rounded-[16px] border border-[#dce6f2] bg-white p-4 text-sm font-semibold text-[#243d56]">Introduced-buyer protection period (calendar days)
+            <Field type="number" min="0" step="1" value={sellerDocumentProtectionPeriodDays} onChange={(event) => setSellerDocumentProtectionPeriodDays(event.target.value)} placeholder="Blank means no post-mandate protection" />
+          </label>
         </div>
       </Modal>
       <Modal
@@ -17608,6 +17680,7 @@ function AgentListingDetail() {
                                 busyAction={sellerDocumentWorkflowAction}
                                 onReview={handleSellerDocumentReview}
                                 onReminder={handleSellerDocumentReminder}
+                                requireSignedCopyCheck={Boolean(physicalCopy)}
                                 compact
                               />
                             </div>

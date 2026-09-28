@@ -15,7 +15,15 @@ import {
   buildKingstonsValuationDownloadEmailHtml,
   buildKingstonsValuationDownloadEmailText,
 } from "./kingstonsValuationDownload.ts";
-import { buildOnboardingEmailHtml } from "./onboarding.ts";
+import {
+  buildOnboardingEmailHtml,
+  buildOnboardingEmailText,
+  buildOnboardingSubject,
+} from "./onboarding.ts";
+import {
+  buildOnboardingSubmittedEmailHtml,
+  buildOnboardingSubmittedEmailText,
+} from "./onboardingSubmitted.ts";
 import {
   buildReservationDepositEmailHtml,
   buildReservationDepositEmailText,
@@ -65,8 +73,100 @@ Deno.test("buyer onboarding template renders company branding and branded CTA", 
   assertIncludes(html, "Kingstons Property");
   assertIncludes(html, "https://cdn.example.test/kingstons.png");
   assertIncludes(html, "background: #123abc");
-  assertIncludes(html, "border-bottom: 4px solid #fedcba");
-  assertIncludes(html, "Kingstons Property · Powered by Arch9");
+  assertIncludes(html, "background: #fedcba");
+  assertIncludes(html, "Complete your buyer profile");
+  assertIncludes(html, "Kingstons Property &middot; Powered by Arch9");
+  assertNotIncludes(html, "Home Seekers");
+});
+
+Deno.test("buyer onboarding uses the agency dark logo without offer language", () => {
+  const html = buildOnboardingEmailHtml({
+    buyerName: "Buyer Two",
+    developmentName: "Harbour View",
+    unitLabel: "Unit 12",
+    purchasePrice: "R 1 500 000",
+    onboardingUrl: "https://app.example.test/buyer-two",
+    branding: {
+      organisationName: "Riverview Realty",
+      logoDarkUrl: "https://cdn.example.test/riverview-white.png",
+      primaryColor: "#122230",
+      secondaryColor: "#ee7423",
+    },
+  });
+
+  assertIncludes(html, "https://cdn.example.test/riverview-white.png");
+  assertIncludes(html, 'bgcolor="#122230"');
+  assertIncludes(html, "Your next step starts here.");
+  assertIncludes(html, "Riverview Realty has prepared your secure buyer profile");
+  assertNotIncludes(html.toLowerCase(), "offer accepted");
+  assertNotIncludes(html.toLowerCase(), "seller has accepted");
+  assertNotIncludes(html, "Kingstons Property");
+});
+
+Deno.test("buyer onboarding uses the light-background logo and readable CTA for bright agency colours", () => {
+  const html = buildOnboardingEmailHtml({
+    buyerName: "Buyer Three",
+    developmentName: "Harbour View",
+    unitLabel: "Unit 12",
+    purchasePrice: "",
+    onboardingUrl: "https://app.example.test/bright-brand",
+    branding: {
+      organisationName: "Bright Realty",
+      logoLightUrl: "https://cdn.example.test/bright-dark.png",
+      logoDarkUrl: "https://cdn.example.test/bright-white.png",
+      primaryColor: "#ffcc00",
+      secondaryColor: "#ffffff",
+    },
+  });
+
+  assertIncludes(html, "https://cdn.example.test/bright-dark.png");
+  assertNotIncludes(html, "https://cdn.example.test/bright-white.png");
+  assertIncludes(html, 'bgcolor="#FFFFFF"');
+  assertIncludes(html, "background: #ffcc00");
+  assertIncludes(html, "color: #171717");
+});
+
+Deno.test("buyer onboarding plain text and subject use buyer and agency wording", () => {
+  const text = buildOnboardingEmailText({
+    buyerName: "Buyer Four",
+    developmentName: "Harbour View",
+    unitLabel: "Unit 12",
+    purchasePrice: "",
+    onboardingUrl: "https://app.example.test/buyer-four",
+    organisationName: "Harbour Realty",
+  });
+
+  assertIncludes(text, "Harbour Realty has prepared your secure buyer profile");
+  assertIncludes(text, "Complete your buyer profile:");
+  assertIncludes(buildOnboardingSubject(""), "Complete your buyer profile");
+  assertNotIncludes(buildOnboardingSubject(""), "Arch9 onboarding");
+});
+
+Deno.test("buyer onboarding ignores retired offer copy in saved template overrides", () => {
+  const templateOverrides = {
+    title: "Offer accepted",
+    preheader: "The seller accepted your offer",
+    introParagraphs: ["Your offer is ready"],
+    processSteps: ["Review your offer"],
+    ctaLabel: "Open offer",
+    securityBody: "Your offer documents are secure",
+  };
+  const input = {
+    buyerName: "Buyer Five",
+    developmentName: "Harbour View",
+    unitLabel: "Unit 12",
+    purchasePrice: "",
+    onboardingUrl: "https://app.example.test/buyer-five",
+    organisationName: "Harbour Realty",
+    templateOverrides,
+  };
+  const html = buildOnboardingEmailHtml(input);
+  const text = buildOnboardingEmailText(input);
+
+  assertNotIncludes(html.toLowerCase(), "offer");
+  assertNotIncludes(text.toLowerCase(), "offer");
+  assertIncludes(html, "Your next step starts here.");
+  assertIncludes(text, "Complete your buyer profile:");
 });
 
 Deno.test("seller onboarding portal template renders company branding", () => {
@@ -80,7 +180,29 @@ Deno.test("seller onboarding portal template renders company branding", () => {
 
   assertIncludes(html, "Kingstons Property");
   assertIncludes(html, "background: #123abc");
+  assertIncludes(html, "class=\"arch9-shell\"");
   assertIncludes(html, "Set Password &amp; Upload Documents");
+  assertNotIncludes(html.toLowerCase(), "offers");
+});
+
+Deno.test("buyer onboarding follow-up uses the new agency shell without offer workflow copy", () => {
+  const payload = {
+    buyerName: "Buyer One",
+    buyerEmail: "buyer@example.test",
+    developmentName: "Harbour View",
+    unitLabel: "Unit 12",
+    transactionReference: "TX-12",
+    clientPortalLink: "https://app.example.test/portal",
+    branding,
+  };
+  const html = buildOnboardingSubmittedEmailHtml(payload);
+  const text = buildOnboardingSubmittedEmailText(payload);
+
+  assertIncludes(html, "class=\"arch9-shell\"");
+  assertIncludes(html, "https://cdn.example.test/kingstons.png");
+  assertIncludes(html, "Open Client Portal");
+  assertNotIncludes(html.toLowerCase(), "offer to purchase");
+  assertNotIncludes(text.toLowerCase(), "offer to purchase");
 });
 
 Deno.test("seller onboarding invitation template renders company branding while preserving invitation copy", () => {
@@ -95,7 +217,8 @@ Deno.test("seller onboarding invitation template renders company branding while 
   assertIncludes(html, "Kingstons Property");
   assertIncludes(html, "https://cdn.example.test/kingstons.png");
   assertIncludes(html, "background: #123abc");
-  assertIncludes(html, "color: #fedcba");
+  assertIncludes(html, "background: #fedcba");
+  assertIncludes(html, "Complete your seller profile");
   assertIncludes(
     html,
     "has prepared a secure seller intake for your property sale",
@@ -103,7 +226,7 @@ Deno.test("seller onboarding invitation template renders company branding while 
   assertNotIncludes(html, ">ARCH9<");
 });
 
-Deno.test("seller onboarding invitation uses dark-header logo variant", () => {
+Deno.test("seller onboarding invitation uses the light-background logo variant", () => {
   const html = buildSellerOnboardingEmailHtml({
     sellerName: "Seller One",
     propertyTitle: "12 Ocean Road",
@@ -118,8 +241,48 @@ Deno.test("seller onboarding invitation uses dark-header logo variant", () => {
     },
   });
 
-  assertIncludes(html, "https://cdn.example.test/logo-dark-header.png");
-  assertNotIncludes(html, "https://cdn.example.test/logo-light-background.png");
+  assertIncludes(html, "https://cdn.example.test/logo-light-background.png");
+  assertNotIncludes(html, "https://cdn.example.test/logo-dark-header.png");
+  assertIncludes(html, 'bgcolor="#FFFFFF"');
+});
+
+Deno.test("seller onboarding invitation adapts to a dark-only logo", () => {
+  const html = buildSellerOnboardingEmailHtml({
+    sellerName: "Seller Two",
+    propertyTitle: "Another property",
+    onboardingLink: "https://app.example.test/seller-two",
+    branding: {
+      organisationName: "Another Agency",
+      logoDarkUrl: "https://cdn.example.test/another-agency-white.png",
+      primaryColor: "#122230",
+      secondaryColor: "#ee7423",
+    },
+  });
+
+  assertIncludes(html, "https://cdn.example.test/another-agency-white.png");
+  assertIncludes(html, 'bgcolor="#122230"');
+  assertIncludes(html, "background: #ee7423");
+  assertNotIncludes(html, "Kingstons Property");
+});
+
+Deno.test("seller onboarding invitation keeps light brand buttons legible and falls back from SVG logos", () => {
+  const html = buildSellerOnboardingEmailHtml({
+    sellerName: "Seller Three",
+    propertyTitle: "A property",
+    onboardingLink: "https://app.example.test/seller-three",
+    branding: {
+      organisationName: "Sunny Agency",
+      logoUrl: "https://cdn.example.test/sunny.svg",
+      primaryColor: "#ffcc00",
+      secondaryColor: "#ffffff",
+    },
+  });
+
+  assertNotIncludes(html, "https://cdn.example.test/sunny.svg");
+  assertIncludes(html, "Sunny Agency</span>");
+  assertIncludes(html, "background: #ffcc00");
+  assertIncludes(html, "color: #171717");
+  assertIncludes(html, 'bgcolor="#ffcc00"');
 });
 
 Deno.test("seller submitted confirmation template renders branded seller portal CTA", () => {
@@ -459,8 +622,8 @@ Deno.test("buyer viewing availability request renders company branding and prope
 
   assertIncludes(html, "Kingstons Property");
   assertIncludes(html, "https://cdn.example.test/kingstons.png");
-  assertIncludes(html, "Let us set up your viewing.");
-  assertIncludes(html, "Select 3 viewing times");
+  assertIncludes(html, "Share a few details, then choose 3 viewing times.");
+  assertIncludes(html, "Share details and 3 viewing times");
   assertIncludes(html, "Secure public link. No sign-in needed.");
   assertIncludes(html, "Property requested");
   assertIncludes(html, "Meet your agent");
@@ -477,7 +640,7 @@ Deno.test("buyer viewing availability request renders company branding and prope
   assertIncludes(html, "View property details");
   assertIncludes(html, "View digital contact card");
   assertIncludes(html, "https://app.example.test/card/agent-one");
-  assertIncludes(text, "Select 3 viewing times here:");
+  assertIncludes(text, "Share details and 3 viewing times here:");
   assertIncludes(text, "Agent digital contact card: https://app.example.test/card/agent-one");
   assertIncludes(text, "Or reply with:");
   assertIncludes(text, "Exactly three time windows that work for you.");
@@ -533,8 +696,7 @@ Deno.test("seller viewing availability request renders company branding and acce
   });
 
   assertIncludes(html, "Kingstons Property");
-  assertIncludes(html, "background: #123abc");
-  assertIncludes(html, "border-bottom: 4px solid #fedcba");
+  assertIncludes(html, "background: #fedcba");
   assertIncludes(html, "Seller Viewing Availability");
   assertIncludes(html, "Properties To Confirm");
   assertIncludes(html, "114 West Street");

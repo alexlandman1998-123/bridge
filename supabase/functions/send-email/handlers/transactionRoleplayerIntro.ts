@@ -527,9 +527,10 @@ export async function handleTransactionRoleplayerIntroEmail(
     defaults: { organisationName, supportEmail, supportPhone },
   });
   const sender = formatEmailSender(
-    normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
+    normalizeText(Deno.env.get("ARCH9_RESEND_FROM_EMAIL")) ||
+      normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
       "Arch9 <onboarding@resend.dev>",
-    branding.fromName || branding.organisationName,
+    "Arch9",
   );
 
   if (!transferAttorneyName && !transferAttorneyEmail) {
@@ -884,9 +885,10 @@ export async function handleTransactionRoleplayerHandoffEmail(
     defaults: { organisationName, supportEmail, supportPhone },
   });
   const sender = formatEmailSender(
-    normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
+    normalizeText(Deno.env.get("ARCH9_RESEND_FROM_EMAIL")) ||
+      normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
       "Arch9 <onboarding@resend.dev>",
-    branding.fromName || branding.organisationName,
+    "Arch9",
   );
 
   const sentRecipients: Array<{

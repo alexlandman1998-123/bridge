@@ -152,14 +152,18 @@ export function supplierCosts(payload) {
       ? payload.extensions
       : {};
   const cost =
-    extension.cost && typeof extension.cost === "object"
-      ? extension.cost
-      : extension;
+    extension.operationCost && typeof extension.operationCost === "object"
+      ? extension.operationCost
+      : extension.cost && typeof extension.cost === "object"
+        ? extension.cost
+        : extension;
   return {
     fieldCost: metric(cost.fieldCost ?? cost.field_cost),
     typeCost: metric(cost.typeCost ?? cost.type_cost),
-    surcharge: metric(cost.priceSurcharge ?? cost.price_surcharge),
-    credits: metric(cost.creditsConsumed ?? cost.credits_consumed),
+    surcharge: metric(cost.priceSurcharge ?? cost.price_surcharge ??
+      extension.priceSurcharge ?? extension.price_surcharge),
+    credits: metric(cost.creditsConsumed ?? cost.credits_consumed ??
+      extension.creditsConsumed ?? extension.credits_consumed),
   };
 }
 export function quoteFitsCommercialLimits(credits, preflight) {
@@ -510,7 +514,12 @@ async function assertPackageCommercialPolicy(
     throw commercialFailure(
       "This package has not yet passed complete-query UAT cost validation.",
     );
-  const estimatedCredits = Number(validation.credits_consumed) || 0;
+  const estimatedCredits = metric(validation.credits_consumed);
+  if (metric(validation.field_cost) === null ||
+      metric(validation.type_cost) === null || estimatedCredits === null)
+    throw commercialFailure(
+      "This package has no complete supplier cost evidence. It cannot be purchased yet.",
+    );
   const packageCreditCap =
     product.product_id === "basic_owner_lookup"
       ? Number(policy.basic_report_credit_cap || policy.per_report_credit_cap || 0)
