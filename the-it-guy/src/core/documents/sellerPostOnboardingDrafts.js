@@ -1,5 +1,5 @@
-import { buildFicaDeclarationDocumentMarkup } from './ficaDeclarationDocumentMarkup.js'
 import { buildFicaDeclarationDocumentModel } from './ficaDeclarationDocumentModel.js'
+import { buildSellerFicaDueDiligenceMarkup, SELLER_FICA_DUE_DILIGENCE_TEMPLATE_VERSION } from './sellerFicaDueDiligenceMarkup.js'
 import { buildSellerComplianceDocumentModel } from './sellerComplianceDocumentModel.js'
 import { buildPropertyDisclosureDocumentMarkup } from '../../lib/propertyDisclosure.js'
 import { buildSellerSigningPlan } from '../../lib/sellerSigningPlanModel.js'
@@ -159,7 +159,7 @@ export function buildSellerPostOnboardingDrafts({ formData = {}, listing = {}, b
     branding: safeBranding,
     compliancePack: { signers: compliancePack.signers },
   })
-  const ficaHtml = buildFicaDeclarationDocumentMarkup(ficaModel)
+  const ficaHtml = buildSellerFicaDueDiligenceMarkup({ model: ficaModel, formData: safeFormData, branding: safeBranding, generatedAt })
   const mandateHtml = mandatePreparationMarkup({ seller, sellerId, property, reference, branding: safeBranding, generatedAt })
   const brandingVersion = firstText(
     safeBranding.brandingVersion,
@@ -198,7 +198,7 @@ export function buildSellerPostOnboardingDrafts({ formData = {}, listing = {}, b
     brandingSnapshot,
     documents: [
       draftDocument({ key: SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM, targetRequirementKey: SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM, artifactStage: SELLER_DOCUMENT_ARTIFACT_STAGES.REVIEW_DRAFT, name: 'Mandatory Disclosure / Defects Form', status: 'awaiting_agent_review', templateVersion: 'property_disclosure_annexure_a_v1', brandingVersion, generatedAt, generatedHtml: disclosureHtml, metadata: { source: 'seller_onboarding', brandingSnapshot } }),
-      draftDocument({ key: SELLER_DOCUMENT_ARTIFACT_KEYS.FICA_REVIEW_DRAFT, targetRequirementKey: SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION, name: 'Seller FICA review draft', status: 'awaiting_agent_review', templateVersion: ficaModel.declaration.wordingVersion, brandingVersion, generatedAt, generatedHtml: ficaHtml, metadata: { ficaDeclarationModel: ficaModel, brandingSnapshot } }),
+      draftDocument({ key: SELLER_DOCUMENT_ARTIFACT_KEYS.FICA_REVIEW_DRAFT, targetRequirementKey: SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION, name: 'Seller FICA review draft', status: 'awaiting_agent_review', templateVersion: SELLER_FICA_DUE_DILIGENCE_TEMPLATE_VERSION, brandingVersion, generatedAt, generatedHtml: ficaHtml, metadata: { ficaDeclarationModel: ficaModel, wordingVersion: ficaModel.declaration.wordingVersion, brandingSnapshot } }),
       draftDocument({ key: SELLER_DOCUMENT_ARTIFACT_KEYS.MANDATE_PREPARATION_SUMMARY, targetRequirementKey: SELLER_BASE_PACK_KEYS.SIGNED_MANDATE, name: 'Mandate preparation summary', status: 'awaiting_agent_review', templateVersion: 'seller_mandate_preparation_summary_v1', brandingVersion, generatedAt, generatedHtml: mandateHtml, metadata: { commissionPending: true, notForSignature: true, brandingSnapshot } }),
     ],
   }

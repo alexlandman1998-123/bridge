@@ -44,10 +44,13 @@ export function hasCompletedOnboardingDisclosureSignature(formData = {}) {
   const disclosure = formData?.propertyDisclosure || formData?.property_disclosure || {}
   if (!isPropertyDisclosureDigitallyComplete(disclosure)) return false
   const compliance = formData?.sellerComplianceSigning || formData?.seller_compliance_signing
-  if (compliance && typeof compliance === 'object') {
+  if (compliance && typeof compliance === 'object' && !Array.isArray(compliance) && Object.keys(compliance).length) {
     return compliance.complete === true || compliance.signingState?.complete === true
   }
-  // Older single-seller records predate the separate signer matrix.
+  const signers = formData?.sellerComplianceSigners || formData?.seller_compliance_signers
+  if (Array.isArray(signers) && signers.length) return false
+  // Older single-seller records can contain empty compliance placeholders.
+  // The completed disclosure itself is their signature evidence.
   return true
 }
 

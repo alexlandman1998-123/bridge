@@ -1,12 +1,15 @@
 import { generateSellerDocumentRequirements } from '../lib/privateListingRequirementEngine.js'
 import {
   buildPropertyDisclosureDocumentMarkup,
+  isPropertyDisclosureDigitallyComplete,
 } from '../lib/propertyDisclosure.js'
 import { buildSellerComplianceDocumentModel } from '../core/documents/sellerComplianceDocumentModel.js'
+import { hasCompletedOnboardingDisclosureSignature } from '../core/documents/sellerDocumentSigningContract.js'
 import { buildFicaDeclarationDocumentMarkup } from '../core/documents/ficaDeclarationDocumentMarkup.js'
 import { buildFicaDeclarationDocumentModel } from '../core/documents/ficaDeclarationDocumentModel.js'
 import { getSellerPostOnboardingPdfAvailability } from '../core/documents/sellerPostOnboardingPdf.js'
-import { hasCompletedOnboardingDisclosureSignature } from '../core/documents/sellerDocumentSigningContract.js'
+import { buildSellerOnboardingSigningPackSnapshot } from '../core/documents/sellerOnboardingSigningPackSnapshot.js'
+import { createSellerOnboardingManualSigningPack } from '../core/documents/sellerOnboardingManualSigningPack.js'
 import {
   getSellerBasePackAliases,
   normalizeSellerBasePackKey,
@@ -199,6 +202,7 @@ export function getSellerDocumentStatusLabel(status = '') {
     rejected: 'Action required',
     approved: 'Complete',
     completed: 'Complete',
+    awaiting_required_signatures: 'Awaiting signatures',
     not_applicable: 'Not applicable',
     cancelled: 'Cancelled',
   }
@@ -2223,14 +2227,30 @@ export function buildSellerSignedMandateDocumentFromPacket(mandatePacket = null)
   }
 }
 
-function buildSellerPropertyDisclosureDocumentFromFormData(formData = {}, listing = {}) {
-  const disclosure = isPlainObject(formData?.propertyDisclosure)
+function getOnboardingDisclosure(formData = {}) {
+  return isPlainObject(formData?.propertyDisclosure)
     ? formData.propertyDisclosure
     : isPlainObject(formData?.property_disclosure)
       ? formData.property_disclosure
       : null
-  // A captured draft must never be treated as a signed disclosure artifact.
-  if (!disclosure || !hasCompletedOnboardingDisclosureSignature(formData)) return null
+}
+
+function getOnboardingDisclosureSigningState(formData = {}) {
+  const disclosure = getOnboardingDisclosure(formData)
+  if (!disclosure || !Object.keys(disclosure).length) return null
+  return {
+    complete: isPropertyDisclosureDigitallyComplete(disclosure) && hasCompletedOnboardingDisclosureSignature(formData),
+    hasPrimarySignature: Boolean(
+      normalizeText(disclosure.signature || disclosure.signatureValue || disclosure.signature_value) &&
+      normalizeText(disclosure.signedAt || disclosure.signed_at),
+    ),
+  }
+}
+
+function buildSellerPropertyDisclosureDocumentFromFormData(formData = {}, listing = {}, { brandingSnapshot = null } = {}) {
+  const disclosure = getOnboardingDisclosure(formData)
+  const signingState = getOnboardingDisclosureSigningState(formData, listing)
+  if (!signingState) return null
 
   const generatedDocument = isPlainObject(disclosure.generatedDocument)
     ? disclosure.generatedDocument
@@ -2254,7 +2274,7 @@ function buildSellerPropertyDisclosureDocumentFromFormData(formData = {}, listin
       generatedDocument.listingId,
       listing?.id,
     )),
-    branding: resolveSellerDocumentBranding(listing, formData),
+    branding: isPlainObject(brandingSnapshot) ? brandingSnapshot : resolveSellerDocumentBranding(listing, formData),
   }
   const fileName = normalizeText(generatedDocument.fileName || generatedDocument.file_name) || 'seller-disclosure-annexure-a.pdf'
 
@@ -2272,9 +2292,9 @@ function buildSellerPropertyDisclosureDocumentFromFormData(formData = {}, listin
     generatedFileName: fileName.replace(/\.(html?|pdf)$/i, '.pdf'),
     canUpload: false,
     can_upload: false,
-    canDownload: true,
-    can_download: true,
-    status: 'completed',
+    canDownload: signingState.complete,
+    can_download: signingState.complete,
+    status: signingState.complete ? 'completed' : 'awaiting_required_signatures',
     visibility: 'seller_visible',
     source: 'seller_onboarding.property_disclosure.generated_document',
     created_at: generatedDocument.generatedAt || generatedDocument.generated_at || disclosure.signedAt || disclosure.signed_at || null,
@@ -2384,10 +2404,32 @@ export function buildSellerPostOnboardingDraftDocuments(formData = {}, listing =
   const agentReviewApproved = isSellerOnboardingReviewApproved(listing, formData)
   const correctionRequested = isSellerOnboardingCorrectionRequested(formData)
   const commissionConfirmed = isSellerOnboardingCommissionConfirmed(formData)
+  const disclosureSigningState = getOnboardingDisclosureSigningState(formData, listing)
   return readSellerPostOnboardingDrafts(formData)
     .map((draft) => {
+      const isDisclosureDraft = normalizeSellerBasePackKey(draft?.key || draft?.artifactKey || draft?.artifact_key) === SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM
+      const resolvedStatus = isDisclosureDraft && disclosureSigningState
+        ? disclosureSigningState.complete ? 'completed' : 'awaiting_required_signatures'
+        : draft?.status
+      const savedHtml = normalizeText(draft?.generatedHtml || draft?.generated_html)
+      // Some older frozen copies captured the signed Annexure A with a stale
+      // "Pending signatures" certificate. Re-render only those copies from
+      // the signed onboarding form and their original branding snapshot.
+      const staleSignatureCertificate = isDisclosureDraft && disclosureSigningState?.complete &&
+        /<strong[^>]*>\s*Pending signatures\s*<\/strong>/i.test(savedHtml)
+      const generatedHtml = staleSignatureCertificate
+        ? buildSellerPropertyDisclosureDocumentFromFormData(formData, listing, {
+            brandingSnapshot: draft?.metadata?.brandingSnapshot,
+          })?.generatedHtml || savedHtml
+        : savedHtml
       const draftArtifact = {
         ...draft,
+        status: resolvedStatus,
+        generatedHtml,
+        generated_html: generatedHtml,
+        ...(isDisclosureDraft && disclosureSigningState && !disclosureSigningState.complete
+          ? { canDownload: false, can_download: false }
+          : {}),
         source: normalizeText(draft?.source) || SELLER_DOCUMENT_SOURCE_OF_TRUTH.sellerOnboardingPostSubmissionDraftSource,
       }
       const documentContract = projectSellerDocumentArtifact(draftArtifact)
@@ -2397,9 +2439,8 @@ export function buildSellerPostOnboardingDraftDocuments(formData = {}, listing =
       // Facts and corporate identity are one frozen document input. Rebuilding
       // this HTML from today's listing branding breaks the audit lineage and
       // is what repeatedly caused the disclosure to revert to another CI.
-      const generatedHtml = normalizeText(draft?.generatedHtml || draft?.generated_html)
       if (!artifactKey || !requirementKey || !generatedHtml) return null
-      const availability = getSellerPostOnboardingPdfAvailability({ ...draftArtifact, artifactStage: documentContract.stage }, { agentReviewApproved, commissionConfirmed })
+      const availability = getSellerPostOnboardingPdfAvailability(draftArtifact, { agentReviewApproved, commissionConfirmed })
       const label = normalizeText(draft?.name) || (isDisclosure ? 'Mandatory Disclosure / Defects Form' : artifactKey === SELLER_DOCUMENT_ARTIFACT_KEYS.MANDATE_PREPARATION_SUMMARY ? 'Mandate preparation summary' : 'Seller FICA review draft')
       return {
         id: `seller-post-onboarding-draft:${normalizeText(listing?.id || listing?.private_listing_id || 'listing')}:${artifactKey}`,
@@ -2416,7 +2457,7 @@ export function buildSellerPostOnboardingDraftDocuments(formData = {}, listing =
         document_name: label,
         name: label,
         description: isDisclosure
-          ? 'Draft captured from submitted onboarding facts. Awaiting agent review and seller signature.'
+          ? disclosureSigningState?.complete ? 'Captured and signed during seller onboarding.' : 'Draft captured from submitted onboarding facts. Awaiting seller signatures.'
           : artifactKey === SELLER_DOCUMENT_ARTIFACT_KEYS.MANDATE_PREPARATION_SUMMARY
             ? correctionRequested ? 'Correction requested. A replacement mandate will be prepared after the seller resubmits onboarding.' : 'Draft prepared from submitted onboarding facts. Commission and terms still need agent approval.'
             : correctionRequested ? 'Correction requested. A replacement FICA declaration will be prepared after the seller resubmits onboarding.' : 'Draft prepared from submitted onboarding facts. Awaiting agent review before signing.',
@@ -2424,21 +2465,19 @@ export function buildSellerPostOnboardingDraftDocuments(formData = {}, listing =
         generated_html: generatedHtml,
         generatedFileName: sellerPostOnboardingDraftFileName(artifactKey),
         generated_file_name: sellerPostOnboardingDraftFileName(artifactKey),
-        status: correctionRequested
+        status: correctionRequested && !isDisclosure
           ? 'correction_requested'
-          : documentContract.stage === 'review_draft'
-            ? 'awaiting_agent_review'
-            : normalizeSellerDocumentRequirementStatus(draft?.status || 'awaiting_agent_review'),
+          : normalizeSellerDocumentRequirementStatus(resolvedStatus || (isDisclosure ? 'completed' : 'awaiting_agent_review')),
         visibility: documentContract.visibleInSellerDocuments ? 'seller_visible' : 'internal',
         source: SELLER_DOCUMENT_SOURCE_OF_TRUTH.sellerOnboardingPostSubmissionDraftSource,
-        completionRoute: isDisclosure ? '' : 'agent_review_signing_pack',
-        completion_route: isDisclosure ? '' : 'agent_review_signing_pack',
+        completionRoute: isDisclosure ? disclosureSigningState?.complete ? 'seller_onboarding' : '' : 'agent_review_signing_pack',
+        completion_route: isDisclosure ? disclosureSigningState?.complete ? 'seller_onboarding' : '' : 'agent_review_signing_pack',
         canUpload: false,
         can_upload: false,
-        canDownload: correctionRequested ? false : availability.available,
-        can_download: correctionRequested ? false : availability.available,
-        downloadReason: correctionRequested ? 'A correction was requested. Wait for the seller to resubmit onboarding before using this draft.' : availability.reason,
-        download_reason: correctionRequested ? 'A correction was requested. Wait for the seller to resubmit onboarding before using this draft.' : availability.reason,
+        canDownload: (correctionRequested && !isDisclosure) || (isDisclosure && disclosureSigningState && !disclosureSigningState.complete) ? false : availability.available,
+        can_download: (correctionRequested && !isDisclosure) || (isDisclosure && disclosureSigningState && !disclosureSigningState.complete) ? false : availability.available,
+        downloadReason: correctionRequested && !isDisclosure ? 'A correction was requested. Wait for the seller to resubmit onboarding before using this draft.' : availability.reason,
+        download_reason: correctionRequested && !isDisclosure ? 'A correction was requested. Wait for the seller to resubmit onboarding before using this draft.' : availability.reason,
         isGeneratedDraft: true,
         is_generated_draft: true,
         generatedAt: normalizeText(draft?.generatedAt || draft?.generated_at),
@@ -2448,6 +2487,7 @@ export function buildSellerPostOnboardingDraftDocuments(formData = {}, listing =
           contentFingerprint: normalizeText(draft?.contentFingerprint || draft?.content_fingerprint),
           templateVersion: normalizeText(draft?.templateVersion || draft?.template_version),
           pdfAvailability: availability,
+          ...(staleSignatureCertificate ? { reconciledFromSignedOnboarding: true } : {}),
         },
         documentContract,
       }
@@ -2457,32 +2497,83 @@ export function buildSellerPostOnboardingDraftDocuments(formData = {}, listing =
 
 // Physical-route documents are printable templates, not uploaded evidence.
 // They deliberately remain outstanding until an agent uploads the wet-ink copy.
+function currentManualSigningDocuments(formData = {}, listing = {}, pack = {}) {
+  const documents = Array.isArray(pack.documents) ? pack.documents : []
+  if (documents.every((document) => normalizeText(document?.templateVersion || document?.versionId || document?.versionDigest))) return documents
+  const approval = isPlainObject(formData.sellerOnboardingFormalPackApproval)
+    ? formData.sellerOnboardingFormalPackApproval : formData.seller_onboarding_formal_pack_approval
+  if (approval?.status !== 'approved' || approval?.signingRoute !== 'manual_upload') return documents
+  const drafts = readSellerPostOnboardingDrafts(formData)
+  const ficaDraft = drafts.find((draft) => normalizeSellerBasePackKey(draft?.targetRequirementKey) === SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION)
+  if (!ficaDraft) return documents
+  const originalBranding = isPlainObject(ficaDraft?.metadata?.brandingSnapshot) ? ficaDraft.metadata.brandingSnapshot : {}
+  const branding = { ...resolveSellerDocumentBranding(listing, formData), ...originalBranding }
+  const mandateType = normalizeText(firstPresent(formData.mandateType, formData.mandate_type, listing.mandateType, listing.mandate_type))
+  if (!['sole', 'exclusive', 'sole_mandate', 'open'].includes(mandateType.toLowerCase())) return documents
+  try {
+    const signingPack = isPlainObject(pack.signingPackSnapshot) ? pack.signingPackSnapshot : buildSellerOnboardingSigningPackSnapshot({
+      formData, listing, branding,
+      mandate: {
+        mandateType,
+        propertyAddress: normalizeText(firstPresent(listing.propertyAddress, listing.property_address, listing.formattedAddress)),
+        askingPrice: firstPresent(formData.askingPrice, formData.asking_price, listing.askingPrice, listing.asking_price),
+        startDate: firstPresent(formData.mandateStartDate, formData.mandate_start_date),
+        endDate: firstPresent(formData.mandateEndDate, formData.mandate_end_date),
+        protectionPeriod: firstPresent(formData.mandateProtectionPeriod, formData.mandate_protection_period),
+        specialConditions: firstPresent(formData.mandateSpecialConditions, formData.mandate_special_conditions),
+      },
+      generatedAt: normalizeText(pack.generatedAt || pack.generated_at),
+    })
+    const refreshed = createSellerOnboardingManualSigningPack({
+      formalPackApproval: approval,
+      signingPack,
+      postOnboardingDrafts: { documents: drafts },
+      formData,
+      generatedAt: normalizeText(pack.generatedAt || pack.generated_at),
+    })
+    return documents.map((document) => normalizeText(document?.templateVersion || document?.versionId || document?.versionDigest)
+      ? document
+      : refreshed.documents.find((replacement) => replacement.key === document.key) || document)
+  } catch {
+    return documents
+  }
+}
+
 export function buildSellerOnboardingManualSigningDocuments(formData = {}, listing = {}) {
   if (!isSellerOnboardingCompleted(listing, formData)) return []
   const pack = readSellerOnboardingManualSigningPack(formData)
-  if (normalizeKey(pack?.status) !== 'awaiting_signed_hard_copy') return []
-  return pack.documents.map((document) => {
+  if (!['awaiting_signed_hard_copy', 'awaiting_signature'].includes(normalizeKey(pack?.status))) return []
+  const disclosureSigningState = getOnboardingDisclosureSigningState(formData, listing)
+  return currentManualSigningDocuments(formData, listing, pack).map((document) => {
     const requirementKey = normalizeSellerBasePackKey(document?.key || document?.requirementKey)
     const generatedHtml = normalizeText(document?.generatedHtml || document?.generated_html)
+    // Older physical packs included a disclosure copy even after onboarding
+    // captured the seller's signature. Let the onboarding evidence and signer
+    // matrix decide that requirement instead of forcing another wet-ink upload.
+    if (requirementKey === SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM &&
+        (disclosureSigningState?.complete || (disclosureSigningState?.hasPrimarySignature && !document?.signingRoute))) return null
     if (!requirementKey || !generatedHtml) return null
+    const digital = normalizeText(document?.signingRoute || pack?.documentRoutes?.[requirementKey]) === 'digital_pack'
     const name = normalizeText(document?.name) || (requirementKey === SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION ? 'Seller FICA Declaration' : 'Signed Mandate')
     return {
       id: `seller-onboarding-manual-signing:${normalizeText(listing?.id || listing?.private_listing_id || 'listing')}:${requirementKey}`,
       requirementKey, requirement_key: requirementKey, document_type: requirementKey, documentType: requirementKey,
-      category: requirementKey === SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION ? 'fica_declaration' : requirementKey === SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM ? 'property_condition_disclosure' : 'mandate_signature',
-      document_category: requirementKey === SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION ? 'fica_declaration' : requirementKey === SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM ? 'property_condition_disclosure' : 'mandate_signature',
+      category: requirementKey === SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION ? 'fica_declaration' : requirementKey === SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM ? 'property_disclosure' : 'mandate_signature',
+      document_category: requirementKey === SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION ? 'fica_declaration' : requirementKey === SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM ? 'property_disclosure' : 'mandate_signature',
       document_name: name, name,
-      description: 'Printable physical-signing copy. Upload the wet-ink signed document when it is returned.',
+      description: digital ? 'Reviewed copy sent to the required signers. Track its signature status here.' : 'Printable physical-signing copy. Upload the wet-ink signed document when it is returned.',
       generatedHtml, generated_html: generatedHtml,
+      versionId: normalizeText(document?.versionId), versionDigest: normalizeText(document?.versionDigest),
+      contentDigest: normalizeText(document?.contentDigest), requiredSigners: document?.requiredSigners,
+      mandateTerms: document?.mandateTerms, sourceDraftFingerprint: normalizeText(document?.sourceDraftFingerprint),
+      signingRoute: digital ? 'digital_pack' : 'manual_upload',
       generatedFileName: normalizeText(document?.generatedFileName || document?.generated_file_name),
       generated_file_name: normalizeText(document?.generatedFileName || document?.generated_file_name),
-      status: 'awaiting_signed_hard_copy', visibility: 'seller_visible', source: 'seller_onboarding.manual_signing_pack',
-      completionRoute: 'manual_upload', completion_route: 'manual_upload',
-      canUpload: true, can_upload: true, canDownload: true, can_download: true,
+      status: digital ? 'awaiting_signature' : 'awaiting_signed_hard_copy', visibility: 'seller_visible', source: 'seller_onboarding.manual_signing_pack',
+      completionRoute: digital ? 'digital_pack' : 'manual_upload', completion_route: digital ? 'digital_pack' : 'manual_upload',
+      canUpload: !digital, can_upload: !digital, canDownload: true, can_download: true,
       isGeneratedDraft: true, is_generated_draft: true,
-      versionId: normalizeText(document?.versionId), versionDigest: normalizeText(document?.versionDigest),
-      contentDigest: normalizeText(document?.contentDigest), requiredSigners: document?.requiredSigners || [],
-      metadata: { physicalSigning: true, generatedAt: normalizeText(pack?.generatedAt || pack?.generated_at), versionId: normalizeText(document?.versionId), versionDigest: normalizeText(document?.versionDigest), sourceDraftFingerprint: normalizeText(document?.sourceDraftFingerprint) },
+      metadata: { physicalSigning: !digital, portalSigning: digital, generatedAt: normalizeText(pack?.generatedAt || pack?.generated_at), templateVersion: normalizeText(document?.templateVersion) },
     }
   }).filter(Boolean)
 }
@@ -2973,12 +3064,10 @@ export function buildSellerDocumentSourceOfTruth({
   const manualSigningDocuments = buildSellerOnboardingManualSigningDocuments(resolvedFormData, listing)
   const postOnboardingDraftDocuments = buildSellerPostOnboardingDraftDocuments(resolvedFormData, listing)
   const frozenFinalDisclosure = postOnboardingDraftDocuments.find((document) => (
-    normalizeSellerBasePackKey(document?.targetRequirementKey || document?.target_requirement_key || document?.requirementKey || document?.requirement_key) === SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM &&
+    normalizeSellerBasePackKey(document?.targetRequirementKey || document?.target_requirement_key || document?.requirementKey || document?.requirement_key || document?.artifactKey || document?.artifact_key) === SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM &&
     document?.documentContract?.stage === 'final_signed' &&
     normalizeText(document?.generatedHtml || document?.generated_html)
   ))
-  // Preserve a historical signed snapshot, while letting a genuinely signed
-  // onboarding disclosure outrank a new unsigned review draft.
   const propertyDisclosureDocument = frozenFinalDisclosure
     ? null
     : buildSellerPropertyDisclosureDocumentFromFormData(resolvedFormData, listing)

@@ -48,6 +48,7 @@ export function createSellerOnboardingFormalPackApproval({
   selectedDocuments = [],
   commission = {},
   signingRoute = 'digital_pack',
+  documentRoutes = {},
   actor = '',
   at = new Date().toISOString(),
 } = {}) {
@@ -58,6 +59,7 @@ export function createSellerOnboardingFormalPackApproval({
     at: text(at),
     actor: text(actor),
     signingRoute: validation.signingRoute,
+    documentRoutes: { ...documentRoutes },
     selectedDocuments: validation.selectedDocuments,
     commission: validation.commission,
   }
@@ -70,6 +72,8 @@ export function createSellerOnboardingFormalPackApproval({
     approved_by: entry.actor,
     signingRoute: entry.signingRoute,
     signing_route: entry.signingRoute,
+    documentRoutes: entry.documentRoutes,
+    document_routes: entry.documentRoutes,
     selectedDocuments: entry.selectedDocuments,
     selected_documents: entry.selectedDocuments,
     commission: entry.commission,

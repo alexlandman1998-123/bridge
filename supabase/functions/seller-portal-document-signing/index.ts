@@ -95,6 +95,12 @@ async function reviewedCopy(admin: AdminClient, listingId: string, documentKey: 
   const approval = object(form.sellerOnboardingFormalPackApproval || form.seller_onboarding_formal_pack_approval);
   const review = object(form.sellerOnboardingReview || form.seller_onboarding_review);
   if (text(approval.status) !== "approved" || text(review.status) !== "approved") return null;
+  if (documentKey === "signed_disclosure_form") {
+    const disclosure = object(form.propertyDisclosure || form.property_disclosure);
+    const compliance = object(form.sellerComplianceSigning || form.seller_compliance_signing);
+    if (text(disclosure.signature) && text(disclosure.signedAt || disclosure.signed_at) &&
+        (compliance.complete === true || object(compliance.signingState).complete === true)) return null;
+  }
   if (documentKey === "signed_mandate" && object(approval.commission).confirmed !== true) return null;
   const pack = object(form.sellerOnboardingManualSigningPack || form.seller_onboarding_manual_signing_pack);
   const index = object(form.sellerReviewedDocumentVersions || form.seller_reviewed_document_versions);
@@ -179,6 +185,7 @@ async function issue(req: Request, admin: AdminClient, url: string, anonKey: str
   if (!context) return respond(403, { error: "Agent access to this listing is required." });
   const copy = await reviewedCopy(admin, listingId, documentKey);
   if (!copy) return respond(409, { error: "Approve and freeze this document and all signer details before sending it." });
+  if (text(copy.document.signingRoute) !== "digital_pack") return respond(409, { error: "This document was approved for physical signing." });
   await expireStaleRequests(admin, listingId);
   await revokeSupersededRequests(admin, listingId, documentKey, text(copy.document.versionId));
   const existing = await admin.from("private_listing_seller_portal_signing_documents")
