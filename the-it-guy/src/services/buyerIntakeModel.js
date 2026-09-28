@@ -256,6 +256,17 @@ function getBuyerQualificationAnsweredFields(answers = {}) {
     .filter((field) => field.value)
 }
 
+export function getBuyerQualificationReadiness(answers = {}) {
+  const answeredFields = getBuyerQualificationAnsweredFields(answers)
+  const qualifyingFields = answeredFields.filter(({ key }) => key !== 'propertyNeed' && key !== 'additionalNotes')
+  return {
+    answeredFields: qualifyingFields,
+    answeredCount: qualifyingFields.length,
+    minimumCount: BUYER_INTAKE_MINIMUM_ANSWER_COUNT,
+    complete: qualifyingFields.length >= BUYER_INTAKE_MINIMUM_ANSWER_COUNT,
+  }
+}
+
 function normalizeBuyerQualificationAnswers(form = {}) {
   return compactObject({
     budget: normalizeText(form.budget),
@@ -281,8 +292,8 @@ function buildBuyerQualificationSection(answers = {}, {
   const normalizedAnswers = normalizeBuyerQualificationAnswers(answers)
   const existingSection = asRecord(existing)
   const mergedAnswers = mergeRecord(existingSection.answers || {}, normalizedAnswers)
-  const answeredFields = getBuyerQualificationAnsweredFields(mergedAnswers)
-  const complete = answeredFields.length >= BUYER_INTAKE_MINIMUM_ANSWER_COUNT
+  const readiness = getBuyerQualificationReadiness(mergedAnswers)
+  const complete = readiness.complete
   const nextCapturedAt = normalizeText(capturedAt) || normalizeText(existingSection.capturedAt)
   const nextUpdatedAt = normalizeText(updatedAt) || nextCapturedAt || normalizeText(existingSection.updatedAt)
   const nextQualifiedAt = complete
@@ -294,9 +305,9 @@ function buildBuyerQualificationSection(answers = {}, {
     capturedAt: nextCapturedAt,
     updatedAt: nextUpdatedAt,
     qualifiedAt: nextQualifiedAt,
-    answeredFields,
-    answeredCount: answeredFields.length,
-    minimumCount: BUYER_INTAKE_MINIMUM_ANSWER_COUNT,
+    answeredFields: readiness.answeredFields,
+    answeredCount: readiness.answeredCount,
+    minimumCount: readiness.minimumCount,
     complete,
     answers: mergedAnswers,
   })

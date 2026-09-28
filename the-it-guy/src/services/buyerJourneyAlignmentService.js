@@ -43,7 +43,7 @@ function nextActionForStage(stageKey, evidence, inPersonOtpFlow) {
     return { key: 'qualify', title: 'Qualify lead', description: 'Capture buyer intent, budget, timing, preferred areas, and finance route.' }
   }
   if (stageKey === BUYER_PROCESS_STAGE_KEYS.viewing) {
-    return evidence.viewingStarted
+    return evidence.viewingScheduled || evidence.viewingCompleted
       ? {
           key: 'progress_from_viewing',
           title: evidence.viewingCompleted ? 'Record the viewing outcome' : 'Viewing scheduled',
@@ -80,6 +80,7 @@ export function buildBuyerJourneyAlignmentModel({
     qualificationStarted: Boolean(rawEvidence.qualificationStarted),
     qualified: Boolean(rawEvidence.qualified),
     viewingStarted: Boolean(rawEvidence.viewingStarted),
+    viewingScheduled: Boolean(rawEvidence.viewingScheduled),
     viewingCompleted: Boolean(rawEvidence.viewingCompleted),
     transactionSetupStarted: Boolean(rawEvidence.transactionSetupStarted),
     transactionSetupComplete: Boolean(rawEvidence.transactionSetupComplete),

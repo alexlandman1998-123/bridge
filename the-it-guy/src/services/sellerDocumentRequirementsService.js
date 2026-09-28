@@ -1778,6 +1778,11 @@ export function documentMatchesSellerRequirement(document = {}, requirement = {}
   const documentType = normalizeDocumentMatchKey(document?.document_type || document?.documentType)
   const documentCategory = normalizeDocumentMatchKey(document?.category || document?.document_category)
   const documentName = normalizeDocumentMatchKey(document?.document_name || document?.name || document?.file_name)
+  const specificDocumentKey = [documentRequirementKey, documentType]
+    .find((key) => key && !['document', 'listing_document', 'seller_document', 'other'].includes(key))
+  if (basePackRequirementKey && specificDocumentKey && normalizeSellerBasePackKey(specificDocumentKey) !== basePackRequirementKey) {
+    return false
+  }
   return Boolean(
     requirementKey &&
       [documentRequirementKey, documentType, documentCategory, documentName].some((candidate) => {

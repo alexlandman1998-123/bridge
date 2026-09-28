@@ -191,6 +191,7 @@ import {
   buildBuyerQualificationIntake,
   buildBuyerQualificationLeadFields,
   parseBuyerIntakeNoteBlock,
+  getBuyerQualificationReadiness,
 } from '../../services/buyerIntakeModel'
 import {
   getClientAccessPolicyMessage,
@@ -310,6 +311,7 @@ import {
 
 const PIPELINE_CONTEXT_TIMEOUT_MS = 8000
 const PIPELINE_RECORDS_TIMEOUT_MS = 10000
+const SELLER_LEAD_DOCUMENT_UPLOAD_TIMEOUT_MS = 30000
 const PIPELINE_CRM_RECORDS_TIMEOUT_MS = 10000
 const SELLER_DOCUMENT_HYDRATION_TIMEOUT_MS = 20000
 const PIPELINE_APPOINTMENT_RECORDS_TIMEOUT_MS = 15000
@@ -10663,8 +10665,6 @@ const BUYER_QUALIFICATION_NOTE_FIELDS = [
   { key: 'propertyNeed', label: 'Property need' },
   { key: 'additionalNotes', label: 'Call notes' },
 ]
-const BUYER_QUALIFICATION_MINIMUM_ANSWER_COUNT = 2
-
 const BUYER_MOVE_TIMEFRAME_OPTIONS = ['', 'Immediately', '1-3 months', '3-6 months', '6+ months', 'Just browsing']
 const BUYER_BUDGET_OPTIONS = ['', 'Under R 1m', 'R 1m – R 2m', 'R 2m – R 3m', 'R 3m – R 5m', 'R 5m – R 8m', 'R 8m+', 'Flexible / discuss']
 const BUYER_FINANCE_TYPE_OPTIONS = ['', 'Bond', 'Cash', 'Cash + bond', 'Not sure']
@@ -10778,24 +10778,12 @@ function buildBuyerQualificationFormFromLead(lead = {}, { includeLeadFieldFallba
     budget: normalizeText(parsed.budget) || (canUseLeadFieldFallbacks ? normalizeText(lead?.budget) : ''),
     areaInterest: normalizeText(parsed.areaInterest) || (canUseLeadFieldFallbacks ? normalizeText(lead?.areaInterest) : ''),
     propertyNeed: normalizeText(parsed.propertyNeed) || (canUseLeadFieldFallbacks ? normalizeText(lead?.propertyInterest) : ''),
-    additionalNotes: [normalizeText(parsed.additionalNotes), parsed.additionalNotes ? freeformNotes : ''].filter(Boolean).join('\n\n') || (canUseLeadFieldFallbacks ? freeformNotes : ''),
+    additionalNotes: normalizeText(parsed.additionalNotes) || (canUseLeadFieldFallbacks ? freeformNotes : ''),
   }
-}
-
-function getBuyerQualificationAnsweredFields(form = {}) {
-  return BUYER_QUALIFICATION_NOTE_FIELDS
-    .map(({ key, label }) => ({ key, label, value: normalizeText(form[key]) }))
-    .filter((field) => field.value)
 }
 
 function getBuyerQualificationEvidence(form = {}) {
-  const answeredFields = getBuyerQualificationAnsweredFields(form)
-  return {
-    answeredFields,
-    answeredCount: answeredFields.length,
-    minimumCount: BUYER_QUALIFICATION_MINIMUM_ANSWER_COUNT,
-    complete: answeredFields.length >= BUYER_QUALIFICATION_MINIMUM_ANSWER_COUNT,
-  }
+  return getBuyerQualificationReadiness(form)
 }
 
 function buildBuyerQualificationBlock(form = {}) {
@@ -15712,7 +15700,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setLeadWorkspaceTab('overview')
       if (isLeadWorkspaceRoute) replaceLeadWorkspaceTabInUrl('overview')
     }
-    if (!selectedLeadIsSeller && ['seller', 'property', 'mandate', 'documents', 'insights', 'mapping'].includes(leadWorkspaceTab)) {
+    if (!selectedLeadIsSeller && ['seller', 'property', 'mandate', 'insights', 'mapping'].includes(leadWorkspaceTab)) {
       setLeadWorkspaceTab('overview')
       if (isLeadWorkspaceRoute) replaceLeadWorkspaceTabInUrl('overview')
     }
@@ -16569,6 +16557,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
       if (
         sellerTimelineComplianceSigning &&
+        sellerTimelineComplianceStatus.complianceRequired &&
         sellerTimelineComplianceStatus.complianceComplete &&
         !hasTimelineSignal(timelineRows, 'seller compliance pack completed', 'seller_compliance_pack_completed')
       ) {
@@ -17511,15 +17500,28 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const selectedBuyerDocumentCategories = useMemo(() => {
     const ficaRows = selectedBuyerFicaRoleplayerModel.flatMap((group) => group.items || [])
     const ficaByKey = new Map(ficaRows.map((row) => [normalizeKey(row.key || row.requirementKey || row.requirement_key), row]))
-    const configuredRows = BUYER_AGENT_DOCUMENT_TYPES.map((definition) => ({
-      key: definition.key,
-      requirementKey: definition.key,
-      label: definition.label,
-      required: true,
-      status: 'missing',
-      statusLabel: 'Missing',
-      ...(ficaByKey.get(definition.key) || {}),
-    }))
+    const configuredRows = BUYER_AGENT_DOCUMENT_TYPES.map((definition) => {
+      const row = {
+        key: definition.key,
+        requirementKey: definition.key,
+        label: definition.label,
+        required: true,
+        status: 'missing',
+        statusLabel: 'Missing',
+        ...(ficaByKey.get(definition.key) || {}),
+      }
+      const savedUpload = selectedBuyerDocumentReadModel.uploads.find((upload) => normalizeKey(upload.key) === definition.key)
+      if (!savedUpload || getSellerLeadDocumentStatusMeta(row).state === 'complete') return row
+      return {
+        ...row,
+        status: savedUpload.status,
+        statusLabel: savedUpload.statusLabel,
+        storagePath: savedUpload.storagePath,
+        storageBucket: savedUpload.storageBucket,
+        uploadedAt: savedUpload.uploadedAt,
+        uploadedFileName: savedUpload.fileName,
+      }
+    })
     const categoryForKey = (key = '') => ['proof_of_funds', 'bank_statements', 'bond_pre_approval'].includes(normalizeKey(key)) ? 'finance' : 'buyer'
     const buyerRows = configuredRows.filter((row) => categoryForKey(row.key) === 'buyer')
     const financeRows = configuredRows.filter((row) => categoryForKey(row.key) === 'finance')
@@ -17537,7 +17539,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }]
     const rowsByCategory = { buyer: buyerRows, finance: financeRows, property: [], legal: legalRows }
     return BUYER_LEAD_DOCUMENT_CATEGORY_CONFIG.map((category) => ({ ...category, items: rowsByCategory[category.key] || [] }))
-  }, [selectedBuyerFicaRoleplayerModel, selectedLeadBuyerOfferDocumentUploaded])
+  }, [selectedBuyerDocumentReadModel, selectedBuyerFicaRoleplayerModel, selectedLeadBuyerOfferDocumentUploaded])
 
   useEffect(() => {
     const firstId = selectedSellerFicaRoleplayerModel[0]?.id || ''
@@ -19463,6 +19465,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     const qualificationStarted = selectedLeadBuyerQualificationEvidence.answeredCount > 0
     const qualified = selectedLeadBuyerQualificationEvidence.complete
     const viewingStarted = selectedLeadViewingAppointments.length > 0 || stageKey.includes('viewing')
+    const viewingScheduled = selectedLeadViewingAppointments.some((appointment) => ['accepted', 'confirmed', 'scheduled', 'booked'].includes(normalizeText(appointment?.status).toLowerCase()))
     const viewingCompleted = selectedLeadViewingAppointments.some((appointment) => normalizeText(appointment?.status).toLowerCase() === 'completed') || stageKey.includes('viewing completed')
     const offerStarted = selectedLeadBuyerOfferDocumentUploaded || selectedLeadOfferSummary.total > 0 || stageKey.includes('offer') || stageKey.includes('otp')
     const offerComplete = selectedLeadBuyerOfferDocumentUploaded || Boolean(selectedLeadAcceptedOffer)
@@ -19476,6 +19479,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         qualificationStarted,
         qualified,
         viewingStarted,
+        viewingScheduled,
         viewingCompleted,
         transactionSetupStarted: selectedLeadTransactionSetupStarted,
         transactionSetupComplete: selectedLeadTransactionSetupComplete,
@@ -19491,7 +19495,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           : qualificationStarted
             ? `${selectedLeadBuyerQualificationEvidence.answeredCount}/${selectedLeadBuyerQualificationEvidence.minimumCount} captured`
             : 'Pending',
-        [BUYER_PROCESS_STAGE_KEYS.viewing]: viewingCompleted ? 'Completed' : viewingStarted ? 'Upcoming' : 'Not booked',
+        [BUYER_PROCESS_STAGE_KEYS.viewing]: viewingCompleted ? 'Completed' : viewingScheduled ? 'Upcoming' : 'Not booked',
         [BUYER_PROCESS_STAGE_KEYS.transactionSetup]: selectedLeadTransactionSetupComplete
           ? 'Setup complete'
           : selectedLeadTransactionSetupStarted
@@ -26487,8 +26491,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           reviewedSigningVersionId: signingCopy?.versionId || '',
           reviewedSigningVersionDigest: signingCopy?.versionDigest || '',
         }),
-        `${documentLabel} upload is taking too long. Please try again.`,
-        PIPELINE_RECORDS_TIMEOUT_MS,
+        `${documentLabel} upload is still processing. Refresh the checklist before trying again to avoid a duplicate.`,
+        SELLER_LEAD_DOCUMENT_UPLOAD_TIMEOUT_MS,
       )
 
       const uploadedAt = normalizeText(uploadedDocument?.uploaded_at || uploadedDocument?.uploadedAt) || new Date().toISOString()
