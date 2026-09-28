@@ -287,17 +287,6 @@
 :root { --about-paper: #f4f4f2 !important; }
 .hs-about-next__hero-image { background: #1e1e1e !important; }
 
-.hs-join { --paper: #f4f4f2 !important; }
-.hs-join__hero-image { background: #171717 !important; }
-.hs-join__hero-image::before {
-  background: linear-gradient(135deg, rgba(255, 99, 25, .92) 0 34%, transparent 34%) !important;
-}
-.hs-join__path-nav { background: #f4f4f2 !important; }
-.hs-join__hero-copy > div,
-.hs-join__path-nav button,
-.hs-join__principles > div:last-child,
-.hs-join__principles article { border-color: #d6d6d3 !important; }
-
 .hs-presentation-proof {
   display: grid;
   grid-template-columns: minmax(260px, .85fr) minmax(220px, .6fr) minmax(420px, 1.2fr);

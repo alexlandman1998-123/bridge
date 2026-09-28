@@ -2713,6 +2713,10 @@
   font-size: 14px;
   line-height: 1.5;
 }
+.hs-brief-commitments p > span {
+  min-width: 0;
+  text-align: left;
+}
 .hs-brief-commitments svg {
   flex: 0 0 auto;
   margin-top: 2px;

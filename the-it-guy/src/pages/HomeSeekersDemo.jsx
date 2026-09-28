@@ -314,7 +314,7 @@ export default function HomeSeekersDemo() {
           <article>
             <h3 style={{ color: "#fff" }}>What we put on the line.</h3>
             <p>
-              <Check size={16} /> Live on the market within <em>3 working days</em> of signature
+              <Check size={16} /> <span>Live on the market within <em>3 working days</em> of signature</span>
             </p>
             <p>
               <Check size={16} /> The full marketing plan, executed as agreed
@@ -323,7 +323,7 @@ export default function HomeSeekersDemo() {
               <Check size={16} /> Written feedback every single week
             </p>
             <p>
-              <Check size={16} /> Commission reduced from <em>7.5% to 3.75% (excl. VAT)</em> if not sold by day 45
+              <Check size={16} /> Agreed Commission reduced to half
             </p>
             <small>
               Our promise has a consequence. Not just a nice headline.
