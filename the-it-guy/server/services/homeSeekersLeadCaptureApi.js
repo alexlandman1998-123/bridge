@@ -54,6 +54,7 @@ export async function createHomeSeekersLeadCaptureResponse({ method = 'POST', he
   const phone = text(payload.phone, 64)
   const idempotencyKey = text(payload.idempotencyKey, 128)
   const listingId = text(payload.listingId, 64)
+  const leadIntent = text(payload.leadIntent, 16).toLowerCase()
   const page = siteUrl(payload.pageUrl)
   if (!hostname || !page || page.hostname.toLowerCase() !== hostname || !isHomeSeekersPageUrl(page.href)
     || !SUPPORTED_TYPES.has(type) || (type === 'property_enquiry' && !UUID_PATTERN.test(listingId))
@@ -94,7 +95,8 @@ export async function createHomeSeekersLeadCaptureResponse({ method = 'POST', he
       p_attribution: {
         pagePath: page.pathname,
         userAgent: text(headers['user-agent'] || headers['User-Agent'], 512),
-        leadIntent: type === 'valuation_request' ? 'sell' : undefined,
+        leadIntent: type === 'valuation_request' ? 'sell'
+          : type === 'general_enquiry' && ['buy', 'sell', 'rent', 'other'].includes(leadIntent) ? leadIntent : undefined,
       },
     })
     if (capture.error) throw capture.error

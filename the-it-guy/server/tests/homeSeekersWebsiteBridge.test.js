@@ -34,6 +34,7 @@ test('Home Seekers enquiries use the published CRM page and registered domain', 
         headers: { host: 'app.arch9.co.za', 'x-forwarded-for': '198.51.100.1' },
         body: {
           type, name: 'Alex Example', email: 'alex@example.com', privacyAccepted: true,
+          ...(type === 'general_enquiry' ? { leadIntent: 'sell' } : {}),
           pageUrl: `https://app.arch9.co.za${pathname}`, idempotencyKey: 'valid-key-1234567890',
           ...(listingId ? { listingId } : {}),
         },
@@ -44,6 +45,7 @@ test('Home Seekers enquiries use the published CRM page and registered domain', 
       assert.equal(captured.params.p_hostname, 'home-seekers-website-alpha.vercel.app')
       assert.equal(captured.params.p_page_id, expectedKind ? `page-${expectedKind}` : null)
       assert.equal(captured.params.p_listing_id, listingId)
+      assert.equal(captured.params.p_attribution.leadIntent, type === 'property_enquiry' ? undefined : 'sell')
       if (expectedKind) assert.deepEqual(calls, [
         ['website_site_id', SITE_ID], ['revision_id', REVISION_ID], ['page_kind', expectedKind],
       ])

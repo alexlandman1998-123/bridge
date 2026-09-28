@@ -10,6 +10,11 @@ import {
   resolveEmailBranding,
 } from "../services/emailBranding.ts";
 import { sendViaResendApi } from "../services/resend.ts";
+import {
+  homeSeekersSellerDetails,
+  isHomeSeekersSellerEnquiry,
+  sendHomeSeekersSellerEnquiryEmails,
+} from "./homeSeekersSellerEnquiry.ts";
 import type { SendLeadOperationsNotificationPayload } from "../types.ts";
 import { jsonResponse } from "../utils/http.ts";
 import { normalizeText } from "../utils/text.ts";
@@ -113,7 +118,9 @@ function defaultMessage({
     } came in without an assigned owner. Please assign it to an agent.`;
   }
   if (eventKind === "new_website_enquiry_principal") {
-    return `${leadName || "A new lead"} submitted a website enquiry. Review the details and make sure the lead is followed up.`;
+    return `${
+      leadName || "A new lead"
+    } submitted a website enquiry. Review the details and make sure the lead is followed up.`;
   }
   if (eventKind === "lead_reassigned") {
     return `${leadName || "A lead"} was reassigned${
@@ -369,6 +376,77 @@ export async function handleLeadOperationsNotificationEmail(
       normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
       "Arch9 <no-reply@arch9.co.za>",
   });
+
+  const leadCategory = firstText(
+    payload.leadCategory,
+    payload.lead_category,
+    metadata.leadCategory,
+  );
+  if (
+    envEnabled(Deno.env.get("HOME_SEEKERS_SELLER_EMAILS_ENABLED"), false) &&
+    isHomeSeekersSellerEnquiry({ eventKind, organisationId, leadCategory })
+  ) {
+    const sellerEmail = firstText(
+      payload.leadEmail,
+      payload.lead_email,
+      metadata.leadEmail,
+    );
+    const leadId = firstText(payload.leadId, payload.lead_id);
+    const result = await sendHomeSeekersSellerEnquiryEmails({
+      apiKey: resendApiKey,
+      configuredSender:
+        normalizeText(Deno.env.get("ARCH9_RESEND_FROM_EMAIL")) ||
+        normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) || from,
+      agencyTo: recipientEmail,
+      sellerTo: sellerEmail,
+      details: homeSeekersSellerDetails({
+        sellerName: leadName,
+        sellerEmail,
+        sellerPhone: firstText(
+          payload.leadPhone,
+          payload.lead_phone,
+          metadata.leadPhone,
+        ),
+        propertyAddress: firstText(
+          payload.propertyAddress,
+          payload.property_address,
+          metadata.propertyAddress,
+        ),
+        enquiryMessage: firstText(
+          payload.enquiryMessage,
+          payload.enquiry_message,
+          metadata.enquiryMessage,
+        ),
+        leadUrl: actionLink,
+      }),
+      idempotencyKey: firstText(
+        payload.idempotencyKey,
+        payload.idempotency_key,
+        `home-seekers-seller:${leadId}:${recipientEmail}`,
+      ),
+    });
+    if (!result.ok) {
+      return jsonResponse(502, {
+        error: "Home Seekers seller email delivery failed.",
+        stage: result.stage,
+        details: result.error,
+      });
+    }
+    return jsonResponse(200, {
+      ok: true,
+      type: eventKind,
+      sent: true,
+      leadId,
+      recipientEmail,
+      sellerRecipientEmail: sellerEmail || null,
+      sellerSkipped: "sellerSkipped" in result ? result.sellerSkipped : null,
+      provider: "resend",
+      providerResponse: result.agencyResponse,
+      sellerProviderResponse: "sellerResponse" in result
+        ? result.sellerResponse
+        : null,
+    });
+  }
 
   const { html, text } = buildLeadOperationsNotificationEmail({
     eventKind,
