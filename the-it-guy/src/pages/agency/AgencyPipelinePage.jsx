@@ -26511,6 +26511,20 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }
 
+  async function handleSellerLeadPortalSigningRefresh() {
+    if (!SELLER_PORTAL_SIGNING_ENABLED || !selectedLeadLinkedListingId || sellerPortalSigningBusy) return
+    setSellerPortalSigningBusy('refresh')
+    setError('')
+    try {
+      const refreshed = await listSellerPortalSigningRequests(selectedLeadLinkedListingId)
+      setSellerPortalSigningRequests(refreshed.documents || [])
+    } catch (reason) {
+      setError(reason?.message || 'Unable to refresh the signing status.')
+    } finally {
+      setSellerPortalSigningBusy('')
+    }
+  }
+
   async function handleSellerLeadPortalSigningPreview(documentKey, requestId) {
     if (!SELLER_PORTAL_SIGNING_ENABLED || !requestId || sellerPortalSigningBusy) return
     setSellerPortalSigningBusy(documentKey)
@@ -40345,6 +40359,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           {physicalCopy && approvedSigningRoute === 'digital_pack' && !portalSigningRequest ? <button type="button" disabled={!SELLER_PORTAL_SIGNING_ENABLED || Boolean(sellerPortalSigningBusy)} onClick={() => void handleSellerLeadPortalSigningAction(basePackDocumentKey)} className="inline-flex min-h-9 items-center rounded-[11px] border border-[#cfdceb] bg-white px-3 text-xs font-semibold text-[#315b7a] disabled:opacity-50">{sellerPortalSigningBusy === basePackDocumentKey ? 'Sending…' : 'Send signing links'}</button> : null}
                           {portalSigningRequest?.status === 'signed' ? <button type="button" disabled={Boolean(sellerPortalSigningBusy)} onClick={() => void handleSellerLeadPortalSigningPreview(basePackDocumentKey, portalSigningRequest.id)} className="inline-flex min-h-9 items-center rounded-[11px] bg-[#13784f] px-3 text-xs font-semibold text-white disabled:opacity-50">Review signed copy</button> : null}
                           {portalSigningRequest && portalSigningRequest.status !== 'signed' ? <span className="inline-flex min-h-9 items-center rounded-full bg-[#edf5f0] px-3 text-xs font-semibold text-[#176842]">Portal: {portalSigningRequest.status.replaceAll('_', ' ')}</span> : null}
+                          {portalSigningRequest && !['reviewed', 'revoked', 'expired'].includes(portalSigningRequest.status) ? <button type="button" onClick={() => void handleSellerLeadPortalSigningRefresh()} disabled={Boolean(sellerPortalSigningBusy)} className="inline-flex min-h-9 items-center rounded-[11px] border border-[#cfdceb] bg-white px-3 text-xs font-semibold text-[#315b7a] disabled:opacity-50">Refresh status</button> : null}
                           {(documentRow.canDownload !== false && documentRow.can_download !== false) && (hasFile || (!awaitingServerPdf && generatedHtml) || documentRow.canonicalFinalArtifact) ? <button type="button" disabled={openingSellerLeadDocumentId === normalizeText(documentRow.id || documentRow.key)} onClick={() => {
                             if (generatedHtml && !documentStoragePath && !documentUrl) openSellerLeadGeneratedDocumentHtml(generatedHtml, documentRow.generatedFileName || documentRow.generated_file_name || `${documentRow.label || 'seller-document'}.html`, { canDownload: !physicalCopy && documentRow.canDownload !== false && documentRow.can_download !== false })
                             else if (documentRow.canonicalFinalArtifact && !documentStoragePath && !documentUrl) void handleOpenSellerLeadFinalSignedDocument(documentRow)
@@ -40564,6 +40579,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                               {physicalCopy && approvedSigningRoute === 'digital_pack' && !portalSigningRequest ? <button type="button" onClick={() => void handleSellerLeadPortalSigningAction(basePackDocumentKey)} disabled={!SELLER_PORTAL_SIGNING_ENABLED || Boolean(sellerPortalSigningBusy)} title={SELLER_PORTAL_SIGNING_ENABLED ? 'Send each required signer a private document link' : 'Portal signing is awaiting release'} className="inline-flex min-h-9 items-center gap-1.5 rounded-[12px] border border-[#dbe4ee] bg-white px-3 text-xs font-semibold text-[#315b7a] disabled:cursor-not-allowed disabled:opacity-50"><Send className="h-3.5 w-3.5" /> {sellerPortalSigningBusy === basePackDocumentKey ? 'Sending…' : 'Send for signature'}</button> : null}
                                               {portalSigningRequest?.status === 'signed' ? <button type="button" onClick={() => void handleSellerLeadPortalSigningPreview(basePackDocumentKey, portalSigningRequest.id)} disabled={!SELLER_PORTAL_SIGNING_ENABLED || Boolean(sellerPortalSigningBusy)} className="inline-flex min-h-9 items-center gap-1.5 rounded-[12px] bg-[#13784f] px-3 text-xs font-semibold text-white disabled:opacity-50">Review signed copy</button> : null}
                                               {portalSigningRequest && portalSigningRequest.status !== 'signed' ? <span className="rounded-full bg-[#edf5f0] px-2.5 py-1 text-xs font-semibold text-[#176842]">Portal: {portalSigningRequest.status.replaceAll('_', ' ')}</span> : null}
+                                              {portalSigningRequest && !['reviewed', 'revoked', 'expired'].includes(portalSigningRequest.status) ? <button type="button" onClick={() => void handleSellerLeadPortalSigningRefresh()} disabled={Boolean(sellerPortalSigningBusy)} className="inline-flex min-h-9 items-center rounded-[12px] border border-[#dbe4ee] bg-white px-3 text-xs font-semibold text-[#315b7a] disabled:opacity-50">Refresh status</button> : null}
                                               {documentHasFile ? (
                                                 shouldDownloadDocument || documentStoragePath || !documentUrl ? (
                                                   <button
