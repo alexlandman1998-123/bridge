@@ -201,6 +201,7 @@ export default async function handler(request, response) {
     const organisationId = normalizeProperty24Text(body.organisationId)
     const sourceReferencePrefix = normalizeProperty24Text(body.sourceReferencePrefix || 'ARCH9')
     const compatibilityMappings = Array.isArray(body.existingMappings) ? body.existingMappings : []
+    const previewOnly = body.previewOnly === true
     const applyProfileUpdates = body.applyProfileUpdates === true
 
     if (!organisationId) {
@@ -228,6 +229,17 @@ export default async function handler(request, response) {
     const agencyId = connection.agencyId
 
     const property24 = await createProperty24ForOrganisation({ env, connection, supabase, organisationId })
+    if (previewOnly) {
+      const agentSnapshot = await fetchProperty24AgencyAgentSnapshot({ property24, agencyId })
+      writeNodeJsonResponse(response, buildResponse(200, {
+        phase: 'property24-agent-roster-preview',
+        mode: 'read-only',
+        organisationId,
+        agencyId,
+        property24Agents: agentSnapshot.agents.map(({ raw, ...agent }) => agent),
+      }))
+      return
+    }
     const [agentSnapshot, arch9Agents, canonicalMappings] = await Promise.all([
       fetchProperty24AgencyAgentSnapshot({ property24, agencyId }),
       fetchArch9AgentCandidates({ supabase, organisationId }),
