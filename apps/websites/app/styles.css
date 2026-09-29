@@ -476,3 +476,6 @@
 
 /* The about-page circle deliberately bleeds its composition, never the document. */
 .lwp-about-hero{overflow:hidden}
+
+/* The gallery image is absolutely positioned, so its button needs a width on narrow screens. */
+@media(max-width:760px){.listing-gallery-main{width:100%}}
