@@ -3,6 +3,22 @@ export const DEAL_SETUP_CONTRACT_VERSION = 'deal_setup_v1'
 const text = (value) => String(value ?? '').trim()
 const number = (value) => value === '' || value === null || value === undefined || !Number.isFinite(Number(value)) ? null : Number(value)
 
+export function buildDealSetupCommercialPayload({ terms = {}, finance = {} } = {}) {
+  const financeType = text(finance.type).toLowerCase()
+  const usesCash = ['cash', 'hybrid', 'combination'].includes(financeType)
+  const usesBond = ['bond', 'hybrid', 'combination'].includes(financeType)
+  return {
+    purchaser_type: text(terms.purchaserType) || null,
+    purchase_price: number(terms.purchasePrice),
+    deposit_amount: number(terms.depositAmount),
+    finance_type: financeType || null,
+    finance_managed_by: usesBond ? text(finance.managedBy) || null : null,
+    cash_amount: usesCash ? number(finance.cashAmount) : null,
+    bond_amount: usesBond ? number(finance.bondAmount) : null,
+    bank: usesBond ? text(finance.bank) || null : null,
+  }
+}
+
 export function buildDealSetup({ transaction = {}, buyerParties = [] } = {}) {
   const parties = Array.isArray(buyerParties) ? buyerParties.filter((party) => !party.removed_at && party.status !== 'removed') : []
   const primary = parties.find((party) => party.is_primary_buyer) || null

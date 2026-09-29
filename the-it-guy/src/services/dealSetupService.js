@@ -1,4 +1,4 @@
-import { buildDealSetup, validateDealSetup } from '../core/transactions/dealSetupContract.js'
+import { buildDealSetup, buildDealSetupCommercialPayload, validateDealSetup } from '../core/transactions/dealSetupContract.js'
 import { buildDealSetupDocumentRequirements } from '../core/transactions/dealSetupDocumentRequirements.js'
 import { buildDealSetupReadiness } from '../core/transactions/dealSetupReadiness.js'
 import { auditDealSetupCompatibility as auditDealSetupCompatibilityModel } from '../core/transactions/dealSetupCompatibilityAudit.js'
@@ -115,14 +115,7 @@ export async function saveCanonicalDealTerms({ transactionId, terms = {}, financ
   const current = await client.from('transactions').select('development_id, unit_id, transaction_type').eq('id', text(transactionId)).single()
   if (current.error) throw current.error
   const payload = {
-    purchaser_type: text(terms.purchaserType) || null,
-    purchase_price: terms.purchasePrice === '' ? null : Number(terms.purchasePrice) || null,
-    deposit_amount: terms.depositAmount === '' ? null : Number(terms.depositAmount) || null,
-    finance_type: text(finance.type) || null,
-    finance_managed_by: text(finance.managedBy) || null,
-    cash_amount: finance.cashAmount === '' ? null : Number(finance.cashAmount) || null,
-    bond_amount: finance.bondAmount === '' ? null : Number(finance.bondAmount) || null,
-    bank: text(finance.bank) || null,
+    ...buildDealSetupCommercialPayload({ terms, finance }),
     transaction_type: resolveCanonicalTransactionType(current.data),
     updated_at: new Date().toISOString(),
   }

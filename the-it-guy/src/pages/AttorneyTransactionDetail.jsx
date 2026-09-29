@@ -18639,6 +18639,13 @@ function AttorneyTransactionDetail() {
     }) || null,
     [transactionRolePlayers],
   )
+  const transferFirmNominated = Boolean(activeTransferRoleplayer && (
+    activeTransferRoleplayer.partnerOrganisationId || activeTransferRoleplayer.partner_organisation_id ||
+    activeTransferRoleplayer.organisationId || activeTransferRoleplayer.organisation_id ||
+    activeTransferRoleplayer.partnerRelationshipId || activeTransferRoleplayer.partner_relationship_id ||
+    activeTransferRoleplayer.relationshipId || activeTransferRoleplayer.snapshot?.firmFirstAllocation ||
+    activeTransferRoleplayer.snapshot_json?.firmFirstAllocation
+  )) || Number(transferInstructionLifecycle?.openAssignmentCount || 0) > 0
   const transferAttorneyReassignmentRequired = Boolean(
     isAgentTransactionView &&
     declinedTransferRoleplayer &&
@@ -22498,6 +22505,45 @@ function AttorneyTransactionDetail() {
     return refreshed
   }
 
+  async function saveDealSetupSellerDetails(sellerDetails) {
+    const refreshed = await updateTransactionStakeholderContacts({
+      transactionId: transaction.id,
+      sellerOnly: true,
+      sellerName: sellerDetails.name,
+      sellerEmail: sellerDetails.email,
+      sellerPhone: sellerDetails.phone,
+      actorRole: workspaceRole,
+    })
+    if (refreshed) setData(refreshed)
+    try { await loadData({ background: true }) }
+    catch { setError('Seller details were saved, but the latest transaction view could not be refreshed. Refresh the page.') }
+    window.dispatchEvent(new Event('itg:transaction-updated'))
+  }
+
+  async function assignImportedTransferPartner(option) {
+    if (!canManageTransactionRoleplayers || !transaction?.id) throw new Error('You do not have permission to allocate a transfer partner.')
+    const transferSelection = {
+      ...buildRoleplayerSelection('transfer_attorney', option),
+      firmFirstAllocation: true,
+      userId: null,
+      preferredAttorneyUserId: option.userId || null,
+      assignmentStatus: 'selected',
+      activationTrigger: 'appointed_firm_staff_assignment',
+      snapshot: { firmFirstAllocation: true, preferredAttorneyUserId: option.userId || null, allocationState: 'awaiting_firm_acceptance' },
+    }
+    const refreshed = await saveTransactionRoleplayerSelections({
+      transactionId: transaction.id,
+      roleplayers: [transferSelection],
+      actorRole: workspaceRole,
+      preserveUnspecifiedRoleplayers: true,
+      source: 'imported_transaction_conveyancing',
+    })
+    if (refreshed) setData(refreshed)
+    try { await loadData({ background: true }) }
+    catch { setError('Transfer firm was nominated, but the latest transaction view could not be refreshed. Refresh the page.') }
+    window.dispatchEvent(new Event('itg:transaction-updated'))
+  }
+
   async function handleSendRoleplayerIntro() {
     if (!transaction?.id) return
     if (!roleplayerForm.buyerEmail.trim()) {
@@ -23471,6 +23517,11 @@ function AttorneyTransactionDetail() {
             result={agentOverviewJourneyModel?.legalJourney}
             loading={agentOverviewJourneyLoading}
             onOpenActivity={() => openWorkspaceMenu('activity')}
+            canAssignPartner={canManageTransactionRoleplayers && !transferAttorneyReassignmentRequired && !transferFirmNominated}
+            partnerPending={transferFirmNominated}
+            partnerOptions={attorneyPartnerOptions}
+            assignedPartner={transferAttorney?.organisationName || transaction?.attorney || ''}
+            onAssignPartner={assignImportedTransferPartner}
           />
         ) : null}
 
@@ -23924,7 +23975,21 @@ function AttorneyTransactionDetail() {
         ) : null}
 
         {isTransactionOperatorView && activeWorkspaceMenu === 'deal_setup' ? (
-          <DealSetupPanel transactionId={transaction?.id} organisationId={transaction?.organisation_id || workspaceOrganisationId} canEdit onSaved={() => refreshCanonicalTransactionSnapshot()} />
+          <DealSetupPanel
+            transactionId={transaction?.id}
+            organisationId={transaction?.organisation_id || workspaceOrganisationId}
+            canEdit
+            onSaved={() => refreshCanonicalTransactionSnapshot()}
+            sellerDetails={isAgentTransactionView ? {
+              name: roleplayerForm.sellerName,
+              email: roleplayerForm.sellerEmail,
+              phone: roleplayerForm.sellerPhone,
+              type: transaction?.seller_type || '',
+              hasExistingBond: Boolean(transaction?.seller_has_existing_bond),
+            } : null}
+            onSaveSellerDetails={saveDealSetupSellerDetails}
+            onEditSellerProfile={openRoutingProfileModal}
+          />
         ) : null}
 
         {!isTransactionOperatorView && workspaceRole !== 'attorney' && workspaceRole !== 'bond_originator' && activeWorkspaceMenu === 'today' ? (

@@ -28298,7 +28298,7 @@ async function replayRoleplayerAllocationForCompletedOnboarding(
   }
 }
 
-export async function saveTransactionRoleplayerSelections({ transactionId, roleplayers = [], actorRole = null } = {}) {
+export async function saveTransactionRoleplayerSelections({ transactionId, roleplayers = [], actorRole = null, preserveUnspecifiedRoleplayers = false, source = 'buyer_onboarding_roleplayer_confirmation' } = {}) {
   if (!transactionId) throw new Error('Transaction is required.')
   const client = requireClient()
   const actorProfile = await resolveActiveProfileContext(client)
@@ -28330,6 +28330,14 @@ export async function saveTransactionRoleplayerSelections({ transactionId, rolep
     throw new Error('Transaction not found.')
   }
 
+  if (source === 'imported_transaction_conveyancing') {
+    const firmId = await resolveAttorneyFirmIdForCreationRoleplayer(client, {
+      ...transferAttorney,
+      partnerName: transferAttorney.companyName || transferAttorney.contactPerson,
+    }, transactionId)
+    if (!firmId) throw new Error('The selected partner is not linked to an active attorney workspace.')
+  }
+
   for (const selection of selections) {
     const savedRows = await upsertTransactionRoleplayerSelection(client, {
       transactionId,
@@ -28342,6 +28350,8 @@ export async function saveTransactionRoleplayerSelections({ transactionId, rolep
   }
 
   const bondOriginator = selections.find((item) => item.roleType === 'bond_originator')
+  const bondOriginatorName = bondOriginator?.companyName || bondOriginator?.contactPerson || (preserveUnspecifiedRoleplayers ? transaction.bond_originator : null) || null
+  const bondOriginatorEmail = bondOriginator?.email || (preserveUnspecifiedRoleplayers ? transaction.assigned_bond_originator_email : null) || null
   await updateRecordByIdWithMissingColumnFallback(
     client,
     'transactions',
@@ -28349,8 +28359,8 @@ export async function saveTransactionRoleplayerSelections({ transactionId, rolep
     {
       attorney: transferAttorney.companyName || transferAttorney.contactPerson || null,
       assigned_attorney_email: transferAttorney.email || null,
-      bond_originator: bondOriginator?.companyName || bondOriginator?.contactPerson || null,
-      assigned_bond_originator_email: bondOriginator?.email || null,
+      bond_originator: bondOriginatorName,
+      assigned_bond_originator_email: bondOriginatorEmail,
       updated_at: new Date().toISOString(),
     },
     'id, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, updated_at',
@@ -28362,8 +28372,8 @@ export async function saveTransactionRoleplayerSelections({ transactionId, rolep
       ...transaction,
       attorney: transferAttorney.companyName || transferAttorney.contactPerson || null,
       assigned_attorney_email: transferAttorney.email || null,
-      bond_originator: bondOriginator?.companyName || bondOriginator?.contactPerson || null,
-      assigned_bond_originator_email: bondOriginator?.email || null,
+      bond_originator: bondOriginatorName,
+      assigned_bond_originator_email: bondOriginatorEmail,
     },
     rolePlayers: selections.map((selection) => ({
       roleType: selection.roleType,
@@ -28397,7 +28407,7 @@ export async function saveTransactionRoleplayerSelections({ transactionId, rolep
     createdBy: actorProfile.userId || null,
     createdByRole: normalizedActorRole,
     eventData: {
-      source: 'buyer_onboarding_roleplayer_confirmation',
+      source,
       roleplayers: selections.map((item) => ({
         roleType: item.roleType,
         organisationId: item.organisationId,
@@ -28430,7 +28440,7 @@ export async function saveTransactionRoleplayerSelections({ transactionId, rolep
       createdBy: actorProfile.userId || null,
       createdByRole: normalizedActorRole,
       eventData: {
-        source: 'buyer_onboarding_roleplayer_confirmation',
+        source,
         partnerName: selection.companyName,
         email: selection.email,
         organisationId: selection.organisationId,
@@ -28447,8 +28457,8 @@ export async function saveTransactionRoleplayerSelections({ transactionId, rolep
       ...transaction,
       attorney: transferAttorney.companyName || transferAttorney.contactPerson || null,
       assigned_attorney_email: transferAttorney.email || null,
-      bond_originator: bondOriginator?.companyName || bondOriginator?.contactPerson || null,
-      assigned_bond_originator_email: bondOriginator?.email || null,
+      bond_originator: bondOriginatorName,
+      assigned_bond_originator_email: bondOriginatorEmail,
     },
     actorProfile,
     actorRole: normalizedActorRole,
@@ -39481,6 +39491,7 @@ export async function runTransactionRoutingProfileBackfill({
 
 export async function updateTransactionStakeholderContacts({
   transactionId,
+  sellerOnly = false,
   buyerName,
   buyerEmail,
   buyerPhone,
@@ -39556,9 +39567,9 @@ export async function updateTransactionStakeholderContacts({
     throw new Error('Transaction not found.')
   }
 
-  const normalizedBuyerName = normalizeNullableText(buyerName)
-  const normalizedBuyerEmail = normalizeNullableText(buyerEmail)?.toLowerCase() || null
-  const normalizedBuyerPhone = normalizeNullableText(buyerPhone)
+  const normalizedBuyerName = sellerOnly ? null : normalizeNullableText(buyerName)
+  const normalizedBuyerEmail = sellerOnly ? null : normalizeNullableText(buyerEmail)?.toLowerCase() || null
+  const normalizedBuyerPhone = sellerOnly ? null : normalizeNullableText(buyerPhone)
   const normalizedSellerName = normalizeNullableText(sellerName)
   const normalizedSellerEmail = normalizeNullableText(sellerEmail)?.toLowerCase() || null
   const normalizedSellerPhone = normalizeNullableText(sellerPhone)
@@ -39605,7 +39616,12 @@ export async function updateTransactionStakeholderContacts({
     buyer = buyerUpdate.data
   }
 
-  const transactionPayload = {
+  const transactionPayload = sellerOnly ? {
+    seller_name: normalizedSellerName,
+    seller_email: normalizedSellerEmail,
+    seller_phone: normalizedSellerPhone,
+    updated_at: new Date().toISOString(),
+  } : {
     buyer_id: effectiveBuyerId,
     assigned_agent: normalizeNullableText(agentName),
     assigned_agent_email: normalizeNullableText(agentEmail)?.toLowerCase() || null,
@@ -39631,7 +39647,9 @@ export async function updateTransactionStakeholderContacts({
     'seller_phone',
   ]
 
-  let transactionUpdate = await client.from('transactions').update(transactionPayload).eq('id', transactionId)
+  let transactionUpdate = sellerOnly
+    ? await client.from('transactions').update(transactionPayload).eq('id', transactionId).select('id').single()
+    : await client.from('transactions').update(transactionPayload).eq('id', transactionId)
 
   if (transactionUpdate.error) {
     let fallbackPayload = { ...transactionPayload }
@@ -39644,6 +39662,8 @@ export async function updateTransactionStakeholderContacts({
         break
       }
 
+      if (sellerOnly && missingColumns.some((column) => column.startsWith('seller_'))) break
+
       const beforeKeys = Object.keys(fallbackPayload).length
       missingColumns.forEach((column) => {
         delete fallbackPayload[column]
@@ -39652,7 +39672,9 @@ export async function updateTransactionStakeholderContacts({
         break
       }
 
-      const fallbackResult = await client.from('transactions').update(fallbackPayload).eq('id', transactionId)
+      const fallbackResult = sellerOnly
+        ? await client.from('transactions').update(fallbackPayload).eq('id', transactionId).select('id').single()
+        : await client.from('transactions').update(fallbackPayload).eq('id', transactionId)
       transactionUpdate = fallbackResult
       fallbackError = fallbackResult.error
       fallbackAttempts += 1
@@ -39687,9 +39709,11 @@ export async function updateTransactionStakeholderContacts({
         existingFormData[key] = String(value)
       }
 
-      applyFormDataValue('full_name', normalizedBuyerName || buyer?.name || '')
-      applyFormDataValue('email', normalizedBuyerEmail || buyer?.email || '')
-      applyFormDataValue('phone', normalizedBuyerPhone || buyer?.phone || '')
+      if (!sellerOnly) {
+        applyFormDataValue('full_name', normalizedBuyerName || buyer?.name || '')
+        applyFormDataValue('email', normalizedBuyerEmail || buyer?.email || '')
+        applyFormDataValue('phone', normalizedBuyerPhone || buyer?.phone || '')
+      }
       applyFormDataValue('seller_name', normalizedSellerName)
       applyFormDataValue('seller_email', normalizedSellerEmail)
       applyFormDataValue('seller_phone', normalizedSellerPhone)
@@ -39722,20 +39746,30 @@ export async function updateTransactionStakeholderContacts({
   }
 
   try {
-    await ensureTransactionParticipants(client, {
-      transaction: {
-        ...transaction,
-        id: transactionId,
-        buyer_id: effectiveBuyerId,
-        assigned_agent: transactionPayload.assigned_agent,
-        assigned_agent_email: transactionPayload.assigned_agent_email,
-        attorney: transactionPayload.attorney,
-        assigned_attorney_email: transactionPayload.assigned_attorney_email,
-        bond_originator: transactionPayload.bond_originator,
-        assigned_bond_originator_email: transactionPayload.assigned_bond_originator_email,
-      },
-      buyer,
-    })
+    if (sellerOnly) {
+      const sellerParticipantUpdate = await client.from('transaction_participants')
+        .update({ participant_name: normalizedSellerName, participant_email: normalizedSellerEmail })
+        .eq('transaction_id', transactionId)
+        .eq('role_type', 'seller')
+      if (sellerParticipantUpdate.error && !isMissingTableError(sellerParticipantUpdate.error, 'transaction_participants')) {
+        throw sellerParticipantUpdate.error
+      }
+    } else {
+      await ensureTransactionParticipants(client, {
+        transaction: {
+          ...transaction,
+          id: transactionId,
+          buyer_id: effectiveBuyerId,
+          assigned_agent: transactionPayload.assigned_agent,
+          assigned_agent_email: transactionPayload.assigned_agent_email,
+          attorney: transactionPayload.attorney,
+          assigned_attorney_email: transactionPayload.assigned_attorney_email,
+          bond_originator: transactionPayload.bond_originator,
+          assigned_bond_originator_email: transactionPayload.assigned_bond_originator_email,
+        },
+        buyer,
+      })
+    }
   } catch (participantError) {
     if (!isMissingSchemaError(participantError)) {
       throw participantError
@@ -39748,14 +39782,14 @@ export async function updateTransactionStakeholderContacts({
     createdBy: actorProfile.userId || null,
     createdByRole: normalizedActorRole,
     eventData: {
-      source: 'update_transaction_stakeholders',
+      source: sellerOnly ? 'update_transaction_seller_contacts' : 'update_transaction_stakeholders',
       buyerName: normalizedBuyerName || buyer?.name || null,
       buyerEmail: normalizedBuyerEmail || buyer?.email || null,
       sellerName: normalizedSellerName,
       sellerEmail: normalizedSellerEmail,
-      assignedAgent: transactionPayload.assigned_agent,
-      assignedAttorney: transactionPayload.attorney,
-      assignedBondOriginator: transactionPayload.bond_originator,
+      assignedAgent: sellerOnly ? transaction.assigned_agent : transactionPayload.assigned_agent,
+      assignedAttorney: sellerOnly ? transaction.attorney : transactionPayload.attorney,
+      assignedBondOriginator: sellerOnly ? transaction.bond_originator : transactionPayload.bond_originator,
     },
   })
 
