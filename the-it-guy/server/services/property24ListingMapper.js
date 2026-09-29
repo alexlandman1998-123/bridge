@@ -15,6 +15,7 @@ export const DEFAULT_PROPERTY24_COUNTRY_ID = 1
 export const DEFAULT_PROPERTY24_PROPERTY_TYPE_MAPPINGS = PROPERTY24_PHASE2_PROPERTY_TYPES
 
 const RESIDENTIAL_DWELLING_PROPERTY_TYPE_IDS = new Set([4, 5, 6])
+const PROPERTY24_COMMERCIAL_PROPERTY_TYPE_ID = 11
 
 // These v55 Tag values explicitly support association with a listing. Tags
 // marked feature-description-only in the contract need a FeatureType context.
@@ -191,6 +192,16 @@ export function resolveProperty24PropertyTypeId(value, mappings = DEFAULT_PROPER
   return null
 }
 
+export function resolveProperty24CategoryPropertyTypeId(value, category, mappings = DEFAULT_PROPERTY24_PROPERTY_TYPE_MAPPINGS) {
+  const resolved = resolveProperty24PropertyTypeId(value, mappings)
+  // Arch9 keeps the physical building type (for example, House) separately
+  // from the portal category. Property24 lists commercial stock as type 11.
+  if (category === 'commercial' && (!resolved || RESIDENTIAL_DWELLING_PROPERTY_TYPE_IDS.has(resolved))) {
+    return PROPERTY24_COMMERCIAL_PROPERTY_TYPE_ID
+  }
+  return resolved
+}
+
 function resolveAgentMapping(agentMapping = {}, listing = {}, options = {}) {
   const property24AgentId = toProperty24Integer(
     agentMapping.property24AgentId ||
@@ -303,6 +314,30 @@ function resolveSpecialistFacts(listing = {}, publication = {}, options = {}) {
   return candidates.reduce((facts, candidate) => ({ ...facts, ...asObject(candidate) }), {})
 }
 
+export function evaluateProperty24CommercialSaleFacts({ listing = {}, publication = {}, options = {} } = {}) {
+  const facts = resolveSpecialistFacts(listing, publication, options)
+  const canonical = asObject(listing.seller_canonical_facts_json || listing.sellerCanonicalFacts)
+  const parkingCount = firstNumber(
+    publication.parkingCount, publication.parking_count,
+    listing.parkingCount, listing.parking_count,
+    canonical.parkingCount, canonical.parking_count,
+  )
+  const parking = firstText(facts.parking, parkingCount !== null ? `${parkingCount} bays` : '')
+  const saleTerms = firstText(facts.listingTerms, publication.listingTerms, publication.listing_terms)
+  const askingPrice = resolvePrice(listing, publication, options)
+  const grossLettableArea = toProperty24Number(facts.grossLettableArea)
+  const blockers = []
+  if (grossLettableArea !== null && (!Number.isInteger(grossLettableArea) || grossLettableArea <= 0)) {
+    blockers.push('property24_commercial_gross_lettable_area_whole_sqm_required')
+  }
+  if (!firstText(facts.zoning)) blockers.push('property24_commercial_zoning_required')
+  if (!parking) blockers.push('property24_commercial_parking_required')
+  if (!saleTerms && !(askingPrice > 0) && !resolvePoa(listing, publication, options)) {
+    blockers.push('property24_commercial_sale_terms_required')
+  }
+  return { facts: { ...facts, parking }, blockers }
+}
+
 function resolveSpecialistProperty24Description(description = '', facts = {}, category = '') {
   const detailsByCategory = {
     commercial: [
@@ -381,7 +416,9 @@ function mappedCountFact(facts, key) {
 function buildPropertyFeatures(listing = {}, publication = {}, { category = '' } = {}) {
   const normalized = normalizeListingPortalFeatures({ listing, publication })
   const facts = normalized.featureFacts
-  const specialistFacts = resolveSpecialistFacts(listing, publication)
+  const specialistFacts = category === 'commercial'
+    ? evaluateProperty24CommercialSaleFacts({ listing, publication }).facts
+    : resolveSpecialistFacts(listing, publication)
   const bedrooms = normalized.bedrooms
   const bathrooms = normalized.bathrooms
   const garages = normalized.garages ?? 0
@@ -450,12 +487,17 @@ function buildPropertyFeatures(listing = {}, publication = {}, { category = '' }
 }
 
 export function buildProperty24CategoryPayload({ listing = {}, publication = {}, category = '', propertyTypeId = null, options = {} } = {}) {
-  const facts = resolveSpecialistFacts(listing, publication, options)
+  const facts = category === 'commercial'
+    ? evaluateProperty24CommercialSaleFacts({ listing, publication, options }).facts
+    : resolveSpecialistFacts(listing, publication, options)
   const propertyInfo = {}
+  const commercialInfo = {}
 
   if (category === 'commercial') {
     const floorArea = buildArea(facts.grossLettableArea)
     if (floorArea) propertyInfo.floorArea = floorArea
+    const grossLettableAreaSqm = toProperty24Number(facts.grossLettableArea)
+    if (Number.isInteger(grossLettableAreaSqm) && grossLettableAreaSqm > 0) commercialInfo.grossLettableAreaSqm = grossLettableAreaSqm
   }
   if (category === 'industrial') {
     const floorArea = buildArea(facts.warehouseOrFactoryArea)
@@ -482,6 +524,7 @@ export function buildProperty24CategoryPayload({ listing = {}, publication = {},
     propertyTypeId,
     specialistFacts: facts,
     propertyInfo,
+    commercialInfo,
     description: resolveSpecialistProperty24Description('', facts, category),
   }
 }
@@ -589,7 +632,7 @@ export function createProperty24ListingPlan({
     listing.property_type,
     listing.propertyType,
   )
-  const propertyTypeId = resolveProperty24PropertyTypeId(propertyTypeValue, propertyTypeMappings)
+  const propertyTypeId = resolveProperty24CategoryPropertyTypeId(propertyTypeValue, categoryContract.category, propertyTypeMappings)
   const categoryPayload = buildProperty24CategoryPayload({
     listing,
     publication,
@@ -648,6 +691,9 @@ export function createProperty24ListingPlan({
 
   dataBlockers.push(...categoryContract.blockers)
   dataBlockers.push(...categoryModel.blockers)
+  if (categoryContract.category === 'commercial' && listingType === 'Sale') {
+    dataBlockers.push(...evaluateProperty24CommercialSaleFacts({ listing, publication, options }).blockers)
+  }
   if (isNew && status === 'ReducedPrice') dataBlockers.push('reduced_price_status_requires_existing_listing')
 
   if (!agencyId) dataBlockers.push('missing_property24_agency_id')
@@ -709,6 +755,7 @@ export function createProperty24ListingPlan({
         photos: previewPhotos,
         propertyInfo,
         propertyFeatures,
+        ...(Object.keys(categoryPayload.commercialInfo).length ? { commercialInfo: categoryPayload.commercialInfo } : {}),
         ...(tags.length ? { tags } : {}),
         ...(featureTags.length ? { featureTags } : {}),
       }
@@ -739,6 +786,7 @@ export function createProperty24ListingPlan({
       categoryPayload: {
         category: categoryPayload.category,
         mappedPropertyInfo: categoryPayload.propertyInfo,
+        mappedCommercialInfo: categoryPayload.commercialInfo,
         specialistFactKeys: Object.keys(categoryPayload.specialistFacts).filter((key) => normalizeProperty24ListingText(categoryPayload.specialistFacts[key])),
       },
       status,

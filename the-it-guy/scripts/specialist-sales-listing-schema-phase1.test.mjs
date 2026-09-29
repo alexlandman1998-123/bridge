@@ -10,8 +10,10 @@ assert.equal(resolveSpecialistSalesCategory('vacant_land'), 'land')
 
 assert.deepEqual(
   getSpecialistSalesListingSchema('commercial').requiredFields,
-  ['grossLettableArea', 'zoning', 'parking', 'listingTerms'],
+  ['zoning', 'parking', 'listingTerms'],
 )
+assert.equal(getSpecialistSalesListingSchema('commercial').fields.find((field) => field.key === 'grossLettableArea').required, false)
+assert.deepEqual(getSpecialistSalesListingSchema('commercial', 'lease').requiredFields, ['grossLettableArea', 'zoning', 'parking', 'listingTerms'])
 assert.deepEqual(
   getSpecialistSalesListingSchema('industrial').requiredFields,
   ['warehouseOrFactoryArea', 'yardSize', 'powerSupply', 'loadingAccess'],

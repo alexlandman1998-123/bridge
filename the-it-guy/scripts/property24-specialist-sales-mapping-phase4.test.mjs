@@ -69,7 +69,16 @@ for (const entry of cases) {
   assert.equal(plan.summary.categoryPayload.mappedPropertyInfo.floorArea?.size, entry.expected.floorArea)
   assert.equal(plan.summary.categoryPayload.mappedPropertyInfo.erf?.size, entry.expected.erf)
   assert.equal(plan.summary.categoryPayload.mappedPropertyInfo.zoneType, entry.expected.zoneType)
-  assert.ok(plan.dataBlockers.includes(`property24_${entry.category === 'vacant_land' ? 'land' : entry.category}_mapping_not_verified`))
+  if (entry.category === 'commercial') {
+    assert.equal(plan.canPreview, true)
+    assert.equal(plan.canSubmit, true)
+    assert.equal(plan.summary.categoryPayload.mappedCommercialInfo.grossLettableAreaSqm, 1250)
+    assert.equal(plan.previewPayload.propertyInfo.propertyTypeId, 11)
+    assert.equal(plan.previewPayload.commercialInfo.grossLettableAreaSqm, 1250)
+    assert.deepEqual(plan.technicalBlockers, [])
+  } else {
+    assert.ok(plan.dataBlockers.includes(`property24_${entry.category === 'vacant_land' ? 'land' : entry.category}_mapping_not_verified`))
+  }
 }
 
 console.log('Property24 specialist sales mapping phase 4 checks passed')

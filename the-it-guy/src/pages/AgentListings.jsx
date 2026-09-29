@@ -8131,14 +8131,14 @@ function AgentListings({ initialTab = null } = {}) {
                   </div>
                 </ListingWizardSection>
 
-                {getSpecialistSalesListingSchema(form.propertyCategory).fields.length ? (
-                  <ListingWizardSection title="4. Specialist property details" description="These details are required for the selected non-residential category before portal publication." divided>
+                {getSpecialistSalesListingSchema(form.propertyCategory, form.listingType).fields.length ? (
+                  <ListingWizardSection title="4. Specialist property details" description="Capture the known specialist facts. Required fields are marked with an asterisk." divided>
                     <div className="mt-3 grid gap-4 md:grid-cols-2">
-                      {getSpecialistSalesListingSchema(form.propertyCategory).fields.map((field) => (
+                      {getSpecialistSalesListingSchema(form.propertyCategory, form.listingType).fields.map((field) => (
                         field.kind === 'boolean' ? (
                           <BooleanChoiceField key={field.key} label={field.label} value={Boolean(form[field.key])} yesDescription="Available at this property." noDescription="Not available or not confirmed." onChange={(value) => updateForm(field.key, value)} />
                         ) : (
-                          <FormField key={field.key} label={`${field.label} *`} className={field.kind === 'terms' ? 'md:col-span-2' : ''}>
+                          <FormField key={field.key} label={`${field.label}${field.required ? ' *' : ''}`} className={field.kind === 'terms' ? 'md:col-span-2' : ''}>
                             <Field as={field.kind === 'terms' ? 'textarea' : undefined} type={field.kind === 'measurement' ? 'number' : undefined} min={field.kind === 'measurement' ? '0' : undefined} step={field.kind === 'measurement' ? '0.1' : undefined} value={form[field.key] || ''} onChange={(event) => updateForm(field.key, event.target.value)} placeholder={field.unit ? `Enter ${field.label.toLowerCase()} in ${field.unit}` : `Enter ${field.label.toLowerCase()}`} />
                           </FormField>
                         )
@@ -8147,7 +8147,7 @@ function AgentListings({ initialTab = null } = {}) {
                   </ListingWizardSection>
                 ) : null}
 
-                <ListingWizardSection title={getSpecialistSalesListingSchema(form.propertyCategory).fields.length ? '5. Property specifications' : '4. Property specifications'} divided>
+                <ListingWizardSection title={getSpecialistSalesListingSchema(form.propertyCategory, form.listingType).fields.length ? '5. Property specifications' : '4. Property specifications'} divided>
                   <div className="mt-3 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                     <NumberStepper label="Bedrooms" value={form.bedrooms} onChange={(value) => updateForm('bedrooms', value)} />
                     <NumberStepper label="Bathrooms" value={form.bathrooms} onChange={(value) => updateForm('bathrooms', value)} />
@@ -8183,7 +8183,7 @@ function AgentListings({ initialTab = null } = {}) {
                   ) : null}
                 </ListingWizardSection>
 
-                <ListingWizardSection title={`${getSpecialistSalesListingSchema(form.propertyCategory).fields.length ? '6' : '5'}. ${form.listingType === 'rental' ? 'Rental' : 'Sales'} portal options`} description="Capture the publication flags agents expect before syndication." divided>
+                <ListingWizardSection title={`${getSpecialistSalesListingSchema(form.propertyCategory, form.listingType).fields.length ? '6' : '5'}. ${form.listingType === 'rental' ? 'Rental' : 'Sales'} portal options`} description="Capture the publication flags agents expect before syndication." divided>
                   <div className="mt-3 grid gap-3 md:grid-cols-2">
                     {CREATE_LISTING_SALES_FLAG_OPTIONS.filter((option) => form.listingType !== 'rental' || option.key === 'noTransferDuty').map((option) => (
                       <SelectionCard

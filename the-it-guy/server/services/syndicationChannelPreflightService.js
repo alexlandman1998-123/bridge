@@ -3,6 +3,7 @@ import { evaluateProperty24ListingCategoryContract } from '../property24/listing
 import { resolveSyndicationReviewRollout } from './syndicationReviewRolloutService.js'
 import { evaluateListingPortalAddressProtection } from './listingPortalAddressProtectionService.js'
 import { buildListingFeatureDeliveryReview } from './listingFeatureDeliveryReview.js'
+import { evaluateProperty24CommercialSaleFacts } from './property24ListingMapper.js'
 
 export const SYNDICATION_CHANNEL_PREFLIGHT_VERSION = 'arch9_syndication_channel_preflight_v1'
 
@@ -94,6 +95,10 @@ function property24Preflight({ listing, publication, data, facts, sharedBlockers
   })
   const blockers = [...sharedBlockers, ...categoryContract.blockers]
   const warnings = [...(addressProtection.property24.warnings || [])]
+
+  if (categoryContract.category === 'commercial' && facts.listingPurpose === 'Sale') {
+    blockers.push(...evaluateProperty24CommercialSaleFacts({ listing, publication }).blockers)
+  }
 
   if (facts.listingPurpose === 'Sale' && ['Negotiable', 'OffersFrom'].includes(facts.pricePresentation)) {
     blockers.push('property24_price_presentation_not_verified')
