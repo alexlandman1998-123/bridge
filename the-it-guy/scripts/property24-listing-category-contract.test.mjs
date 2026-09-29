@@ -78,9 +78,22 @@ const incomplete = createProperty24ListingPlan({
   options: { agencyId: 39837, expiryDate: '2026-12-31' },
 })
 assert.equal(incomplete.summary.propertyTypeId, 11)
-assert.ok(incomplete.dataBlockers.includes('property24_commercial_gross_lettable_area_required'))
+assert.equal(incomplete.dataBlockers.includes('property24_commercial_gross_lettable_area_required'), false)
 assert.ok(incomplete.dataBlockers.includes('property24_commercial_zoning_required'))
 assert.ok(incomplete.dataBlockers.includes('property24_commercial_parking_required'))
+const saleWithoutGla = createProperty24ListingPlan({
+  listing: { property_category: 'commercial', property_type: 'House', asking_price: 2000000,
+    seller_canonical_facts_json: { property: { specialistFacts: { zoning: 'Residential', parking: '4 bays' } } } },
+  publication: { listing_type: 'Sale', description: 'Residential zoning, no business rights.' },
+  media: [{ media_type: 'image', bytes: 'base64-image-data' }],
+  agentMapping: { property24AgentId: 539393 },
+  catalogMapping: { suburbId: 309 },
+  options: { agencyId: 39837, expiryDate: '2026-12-31' },
+})
+assert.equal(saleWithoutGla.canPreview, true)
+assert.equal(saleWithoutGla.canSubmit, false)
+assert.equal(saleWithoutGla.previewPayload.propertyInfo.propertyTypeId, 11)
+assert.equal(saleWithoutGla.previewPayload.commercialInfo, undefined)
 assert.ok(evaluateProperty24CommercialSaleFacts({
   listing: { asking_price: 2000000, seller_canonical_facts_json: { property: { specialistFacts: {
     grossLettableArea: '125.5', zoning: 'Residential', parking: '4 bays',

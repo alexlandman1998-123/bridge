@@ -55,7 +55,7 @@ function hasListingTerms(facts = {}, listing = {}) {
 export function evaluateCommercialListingReadiness({ listing = {}, property = {} } = {}) {
   const category = resolveCommercialListingCategory(listing, property)
   const facts = valueForFacts(listing, property)
-  const requiredFacts = getSpecialistSalesRequiredFields(resolveSpecialistSalesCategory(category) || 'commercial')
+  const requiredFacts = getSpecialistSalesRequiredFields(resolveSpecialistSalesCategory(category) || 'commercial', listing.listing_type)
   const missingFacts = requiredFacts.filter((name) => name === 'listingTerms'
     ? !hasListingTerms(facts, listing)
     : !facts[name])

@@ -16,14 +16,14 @@ The category contract prevents a specialist listing from silently using resident
 | Arch9 category | Sale | Rental | Current publish state | Property24 fields verified by ExDev/current mapper | Arch9 information required before the future mapper |
 | --- | --- | --- | --- | --- | --- |
 | Residential | supported | supported | supported | Core listing payload, location/type mapping, marketing content/media, residential feature object | None beyond the normal readiness gate |
-| Commercial | schema-backed preview | blocked | preview only until ExDev acceptance | Core listing, Commercial Property type 11, `commercialInfo.grossLettableAreaSqm`, parking | Gross lettable area, zoning, parking, sale price or terms |
+| Commercial | schema-backed preview | blocked | preview only until ExDev acceptance | Core listing, Commercial Property type 11, optional `commercialInfo.grossLettableAreaSqm`, parking | Zoning, parking, sale price or terms |
 | Industrial | pending | pending | blocked | None beyond the general Property24 account/catalog operations | Warehouse/factory area, yard size, power supply, loading access |
 | Agricultural | pending | pending | blocked | None beyond the general Property24 account/catalog operations | Farm size, water supply/rights, agricultural use |
 | Land/development | pending | not yet in scope | blocked | None beyond the general Property24 account/catalog operations | Erf size, zoning, development rights |
 
 ## Enforcement
 
-`server/property24/listingCategoryContract.js` is the single source for this matrix. The base mapper checks the category before generating a submit-ready payload. Commercial sales with complete facts can produce a schema-backed preview, but `property24_commercial_exdev_acceptance_required` prevents submission. Missing gross lettable area, zoning, parking or sale terms receive specific data blockers. Other unsupported categories remain blocked.
+`server/property24/listingCategoryContract.js` is the single source for this matrix. The base mapper checks the category before generating a submit-ready payload. Commercial sales with complete facts can produce a schema-backed preview, but `property24_commercial_exdev_acceptance_required` prevents submission. Zoning, parking and sale price or terms are checked; gross lettable area is optional for a sale and is mapped only when supplied as a whole number of square metres. Other unsupported categories remain blocked.
 
 ## Unlock criteria for a category
 

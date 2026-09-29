@@ -17,6 +17,13 @@ const commercialLease = evaluateCommercialListingReadiness({
 assert.equal(commercialLease.complete, true)
 assert.deepEqual(commercialLease.missingFacts, [])
 
+const commercialSale = evaluateCommercialListingReadiness({
+  listing: { listing_type: 'sale', listing_category: 'commercial', pricing: 2049000 },
+  property: { property_type: 'house', zoning: 'Residential', parking_ratio: '12 bays' },
+})
+assert.equal(commercialSale.complete, true)
+assert.deepEqual(commercialSale.missingFacts, [])
+
 const incompleteIndustrial = evaluateCommercialListingReadiness({
   listing: { listing_type: 'lease', listing_category: 'industrial' },
   property: {

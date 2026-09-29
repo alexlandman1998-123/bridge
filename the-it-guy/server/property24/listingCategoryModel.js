@@ -23,7 +23,7 @@ export const PROPERTY24_LISTING_CATEGORY_MODELS = Object.freeze({
     transactionTypes: ['Sale'],
     pricingModes: { Sale: ['fixed_price', 'poa'] },
     lifecycle: { Sale: SALE_LIFECYCLE },
-    requiredMeasurements: { 11: ['grossLettableArea'] },
+    requiredMeasurements: {},
     supportedFeatures: ['zoning', 'parking', 'leaseTermsOrSaleTerms'],
     payloadModel: 'commercial_sale_v53_v55',
   },

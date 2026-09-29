@@ -9,7 +9,8 @@ portal fields or send a Property24 request.
 
 | Category | Required facts |
 | --- | --- |
-| Commercial | Gross lettable area, zoning, parking, and at least one listing term. |
+| Commercial sale | Zoning, parking, and sale price or terms. Gross lettable area is optional. |
+| Commercial lease | Gross lettable area, zoning, parking, and lease terms. |
 | Industrial | Warehouse/factory area, yard size, power supply, loading access. |
 | Agricultural | Farm size, water supply or rights, agricultural use. |
 | Land/development | Erf size, zoning, development rights. |
@@ -22,6 +23,7 @@ when producing a future-mapper assessment.
 
 Completeness is an Arch9 data-quality signal. Commercial sales now have a
 schema-backed v53/v55 Property24 preview mapper with explicit blockers for missing
-gross lettable area, zoning, parking and sale terms. A controlled ExDev
+zoning, parking and sale price or terms. Gross lettable area is optional for
+the Property24 sale payload and is included only when known. A controlled ExDev
 create/update is still needed before commercial submission is enabled. Industrial,
 agricultural and land/development categories remain blocked.

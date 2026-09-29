@@ -11,7 +11,7 @@ const commercial = evaluateProperty24ListingCategoryModel({
 })
 assert.equal(commercial.category, PROPERTY24_LISTING_CATEGORIES.COMMERCIAL)
 assert.equal(commercial.payloadModel, 'commercial_sale_v53_v55')
-assert.deepEqual(commercial.requiredMeasurements, ['grossLettableArea'])
+assert.deepEqual(commercial.requiredMeasurements, [])
 assert.ok(commercial.allowedLifecycle.includes('Sold'))
 assert.deepEqual(commercial.blockers, [])
 const commercialRental = evaluateProperty24ListingCategoryModel({ category: 'commercial', listingType: 'Rental', status: 'Active', propertyTypeId: 11 })

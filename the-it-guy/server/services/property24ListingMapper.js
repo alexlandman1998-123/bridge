@@ -327,8 +327,9 @@ export function evaluateProperty24CommercialSaleFacts({ listing = {}, publicatio
   const askingPrice = resolvePrice(listing, publication, options)
   const grossLettableArea = toProperty24Number(facts.grossLettableArea)
   const blockers = []
-  if (!(grossLettableArea > 0)) blockers.push('property24_commercial_gross_lettable_area_required')
-  else if (!Number.isInteger(grossLettableArea)) blockers.push('property24_commercial_gross_lettable_area_whole_sqm_required')
+  if (grossLettableArea !== null && (!Number.isInteger(grossLettableArea) || grossLettableArea <= 0)) {
+    blockers.push('property24_commercial_gross_lettable_area_whole_sqm_required')
+  }
   if (!firstText(facts.zoning)) blockers.push('property24_commercial_zoning_required')
   if (!parking) blockers.push('property24_commercial_parking_required')
   if (!saleTerms && !(askingPrice > 0) && !resolvePoa(listing, publication, options)) {
