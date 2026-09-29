@@ -133,6 +133,7 @@ function mapProperty(row: Record<string, unknown>, media: PublicProperty['media'
     floorSize: typeof row.floor_size === 'number' ? row.floor_size : Number(row.floor_size || 0) || undefined,
     description: row.description ? String(row.description) : undefined,
     consultant: consultantName ? { name: consultantName, email: row.consultant_email ? String(row.consultant_email) : undefined, phone: row.consultant_phone ? String(row.consultant_phone) : undefined, avatarUrl: row.consultant_avatar_url ? String(row.consultant_avatar_url) : undefined } : undefined,
+    partnerListing: row.partner_listing === true,
     features: strings(row.features),
     amenities: strings(row.amenities),
     media,
@@ -188,6 +189,56 @@ function mapSnapshotMedia(value: unknown): PublicProperty['media'] {
   })
 }
 
+async function getPublishedPartnerListings(
+  supabase: ReturnType<typeof getServerSupabase>,
+  site: Pick<ResolvedSite, 'id' | 'organisationId'>,
+  limit: number,
+) {
+  const channels = await supabase.from('website_partner_listing_publications')
+    .select('listing_id, grant_id, publication_json, media_json')
+    .eq('website_site_id', site.id).eq('status', 'published')
+    .order('last_synced_at', { ascending: false }).limit(limit)
+  if (channels.error?.code === '42P01' || channels.error?.code === 'PGRST205') return []
+  if (channels.error) throw channels.error
+  if (!channels.data?.length) return []
+
+  const grants = await supabase.from('website_partner_listing_grants')
+    .select('id, source_organisation_id, website_site_id, enabled')
+    .in('id', [...new Set(channels.data.map((row) => row.grant_id))])
+    .eq('website_site_id', site.id).eq('enabled', true)
+  if (grants.error) throw grants.error
+  const approvedSources = new Map((grants.data || []).map((grant) => [String(grant.id), String(grant.source_organisation_id)]))
+  if (!approvedSources.size) return []
+
+  const listingIds = channels.data.map((row) => String(row.listing_id))
+  const [listings, projections] = await Promise.all([
+    supabase.from('private_listings').select('id, organisation_id, arch9_reference').in('id', listingIds),
+    supabase.from('listing_publication_data').select('listing_id, status').in('listing_id', listingIds),
+  ])
+  if (listings.error) throw listings.error
+  if (projections.error) throw projections.error
+  const byId = new Map((listings.data || []).map((listing) => [String(listing.id), listing]))
+  const publishedIds = new Set((projections.data || []).filter((row) => row.status === 'Published').map((row) => String(row.listing_id)))
+
+  return channels.data.flatMap((channel) => {
+    const listingId = String(channel.listing_id)
+    const listing = byId.get(listingId)
+    if (!listing || !publishedIds.has(listingId) ||
+      approvedSources.get(String(channel.grant_id)) !== String(listing.organisation_id) ||
+      String(listing.organisation_id) === site.organisationId ||
+      !channel.publication_json || typeof channel.publication_json !== 'object' || Array.isArray(channel.publication_json)) return []
+    return [{
+      row: {
+        ...(channel.publication_json as Record<string, unknown>),
+        listing_id: listingId,
+        arch9_reference: String(listing.arch9_reference || listingId),
+        partner_listing: true,
+      },
+      media: mapSnapshotMedia(channel.media_json),
+    }]
+  })
+}
+
 async function getPublishedWebsiteListings(
   supabase: ReturnType<typeof getServerSupabase>,
   site: Pick<ResolvedSite, 'id' | 'organisationId'>,
@@ -202,7 +253,7 @@ async function getPublishedWebsiteListings(
     .limit(limit)
   if (channelResult.error) throw channelResult.error
   const listingIds = (channelResult.data || []).map((row) => String(row.listing_id)).filter(Boolean)
-  if (!listingIds.length) return []
+  if (!listingIds.length) return getPublishedPartnerListings(supabase, site, limit)
 
   const eligibilityResult = await supabase
     .from('listing_publication_data')
@@ -235,7 +286,7 @@ async function getPublishedWebsiteListings(
     }
   }
 
-  return (channelResult.data || []).flatMap((channel) => {
+  const ownListings = (channelResult.data || []).flatMap((channel) => {
     const listingId = String(channel.listing_id)
     const listing = eligibleListings.get(listingId)
     if (!listing || !channel.publication_json || typeof channel.publication_json !== 'object' || Array.isArray(channel.publication_json)) return []
@@ -263,6 +314,8 @@ async function getPublishedWebsiteListings(
       media: mapSnapshotMedia(channel.media_json),
     }]
   })
+  const partnerListings = await getPublishedPartnerListings(supabase, site, limit)
+  return [...ownListings, ...partnerListings].slice(0, limit)
 }
 
 export async function getPublicProperties(site: ResolvedSite, query: Record<string, string | undefined> = {}): Promise<PublicProperty[]> {

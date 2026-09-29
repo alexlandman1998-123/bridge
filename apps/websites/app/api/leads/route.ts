@@ -164,10 +164,38 @@ export async function POST(request: Request) {
     return respond({ error: 'Enquiries are temporarily unavailable.' }, 503, 'lead.failed', { code: 'configuration', submissionType: type })
   }
 
-  const capture = await supabase.rpc('website_capture_lead_submission', {
+  let partnerListing = false
+  const propertyId = text(body.propertyId, 64)
+  if (type === 'property_enquiry' && propertyId) {
+    const partner = await supabase.from('website_partner_listing_publications')
+      .select('website_site_id').eq('listing_id', propertyId).eq('status', 'published').maybeSingle()
+    if (partner.error && !['42P01', 'PGRST205'].includes(partner.error.code || '')) {
+      return respond({ error: 'Enquiries are temporarily unavailable.' }, 503, 'lead.failed', { code: 'partner_lookup', submissionType: type })
+    }
+    if (partner.data?.website_site_id) {
+      const domain = await supabase.from('website_domains').select('id')
+        .eq('website_site_id', partner.data.website_site_id).eq('hostname', host).eq('status', 'active').maybeSingle()
+      if (domain.error) return respond({ error: 'Enquiries are temporarily unavailable.' }, 503, 'lead.failed', { code: 'partner_domain_lookup', submissionType: type })
+      partnerListing = Boolean(domain.data)
+    }
+  }
+
+  const capture = partnerListing ? await supabase.rpc('website_capture_partner_listing_enquiry', {
+    p_hostname: host,
+    p_listing_id: propertyId,
+    p_name: name,
+    p_email: email || null,
+    p_phone: phone || null,
+    p_message: text(body.message, 4000) || null,
+    p_privacy_accepted: true,
+    p_marketing_consent: body.marketingConsent === true,
+    p_idempotency_key: idempotencyKey,
+    p_request_fingerprint: fingerprint,
+    p_attribution: attribution(request, body, host),
+  }) : await supabase.rpc('website_capture_lead_submission', {
     p_hostname: host,
     p_submission_type: type,
-    p_listing_id: text(body.propertyId, 64) || null,
+    p_listing_id: propertyId || null,
     p_page_id: text(body.pageId, 64) || null,
     p_name: name,
     p_email: email || null,
