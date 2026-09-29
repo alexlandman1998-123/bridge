@@ -148,6 +148,10 @@
     border-bottom-color: rgba(255, 255, 255, 0.16) !important;
   }
 
+  .hs-campaign-header .hs-mobile-nav__trigger {
+    color: #fff;
+  }
+
   .hs-campaign-header .hs-brief-header__cta {
     background: #ff6319 !important;
     border-color: #ff6319 !important;
