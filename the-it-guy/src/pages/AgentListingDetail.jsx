@@ -100,7 +100,9 @@ import {
 } from '../services/listings/listingSellerOverviewModel'
 import SyndicationReviewModal from '../components/listings/SyndicationReviewModal'
 import WebsiteListingPublicationPanel from '../components/listings/WebsiteListingPublicationPanel'
+import KingdomWebsitePublicationChannel from '../components/listings/KingdomWebsitePublicationChannel'
 import { setWebsiteListingPublication } from '../services/websiteListingPublicationService'
+import { setKingdomWebsitePublication } from '../services/kingdomWebsitePublicationService'
 import {
   ListingWorkspacePortalActionPanel,
   ListingWorkspacePortalChecklist,
@@ -3833,6 +3835,7 @@ function AgentListingDetail() {
   const [readinessChecklistOpen, setReadinessChecklistOpen] = useState(false)
   const [publicationChangesOpen, setPublicationChangesOpen] = useState(false)
   const [agencyWebsitePublication, setAgencyWebsitePublication] = useState(null)
+  const [kingdomWebsitePublication, setKingdomWebsitePublication] = useState(null)
   const [property24ManageOpen, setProperty24ManageOpen] = useState(false)
   const [propertyDetailsReturnTarget, setPropertyDetailsReturnTarget] = useState('')
   const [sellerWorkspaceTab, setSellerWorkspaceTab] = useState(() => getSellerWorkspaceTabFromSearch(typeof window !== 'undefined' ? window.location.search : '') || 'overview')
@@ -5626,6 +5629,7 @@ function AgentListingDetail() {
       agencyWebsiteLive: agencyWebsitePublication?.status === 'published' &&
         agencyWebsitePublication?.websiteStatus === 'published' &&
         agencyWebsitePublication?.projectionStatus === 'Published',
+      kingdomWebsiteLive: kingdomWebsitePublication?.status === 'published',
       arch9Live: arch9IsPublished,
     })
   }
@@ -5714,6 +5718,8 @@ function AgentListingDetail() {
               ? marketingDraft.privatePropertyReference
               : result.key === 'agency_website'
                 ? agencyWebsitePublication?.websiteSiteId || ''
+              : result.key === 'kingdom_website'
+                ? kingdomWebsitePublication?.websiteSiteId || ''
                 : listingRecord.id,
           detail: result.detail || '',
           ...(result.status === 'succeeded'
@@ -5762,6 +5768,10 @@ function AgentListingDetail() {
           const publication = await setWebsiteListingPublication(listingRecord.id, 'unpublish')
           setAgencyWebsitePublication(publication)
           updateResult(channel.key, { status: 'succeeded', detail: 'Removed from the agency website' })
+        } else if (channel.key === 'kingdom_website') {
+          const publication = await setKingdomWebsitePublication(listingRecord.id, 'unpublish')
+          setKingdomWebsitePublication(publication)
+          updateResult(channel.key, { status: 'succeeded', detail: 'Removed from the Kingdom website' })
         }
       } catch (error) {
         updateResult(channel.key, { status: 'failed', detail: error?.message || `${channel.label} withdrawal failed.` })
@@ -5815,13 +5825,13 @@ function AgentListingDetail() {
     }
   }
 
-  async function prepareAgencyWebsiteListing() {
+  async function prepareAgencyWebsiteListing(channelName = 'agency website') {
     const pendingMedia = getPendingListingMediaUploads(marketingDraft)
     if (pendingMedia.length) {
-      throw new Error(`Retry the ${pendingMedia.length} failed media upload${pendingMedia.length === 1 ? '' : 's'} before publishing to the agency website.`)
+      throw new Error(`Retry the ${pendingMedia.length} failed media upload${pendingMedia.length === 1 ? '' : 's'} before publishing to the ${channelName}.`)
     }
     const blockers = getArch9PublicationBlockers(marketingDraft, coverImage)
-    if (blockers.length) throw new Error(`Before publishing to the agency website: ${blockers.join(' ')}`)
+    if (blockers.length) throw new Error(`Before publishing to the ${channelName}: ${blockers.join(' ')}`)
 
     const currentListingStatus = normalizeKey(marketingDraft.listingStatus)
     const nextDraft = {
@@ -5834,7 +5844,7 @@ function AgentListingDetail() {
     setMarketingDraft(nextDraft)
     const saveResult = await saveMarketingDraft(nextDraft, {
       listingVisibility: 'active_market',
-      successMessage: 'Listing details prepared for the agency website.',
+      successMessage: `Listing details prepared for the ${channelName}.`,
     })
     if (saveResult?.distributionSync?.skipped) {
       throw saveResult.distributionSync.error || new Error('The listing saved, but its public projection could not be synchronized. Retry before publishing to the website.')
@@ -12765,8 +12775,12 @@ function AgentListingDetail() {
     const agencyWebsiteLive = agencyWebsitePublication?.status === 'published' &&
       agencyWebsitePublication?.websiteStatus === 'published' &&
       agencyWebsitePublication?.projectionStatus === 'Published'
-    const marketingLiveChannelCount = channelRows.filter((channel) => normalizeKey(channel.status) === 'live').length + (agencyWebsiteLive ? 1 : 0)
-    const marketingChannelCount = channelRows.length + (agencyWebsiteConnected ? 1 : 0)
+    const kingdomWebsiteAvailable = kingdomWebsitePublication?.available === true
+    const kingdomWebsiteLive = kingdomWebsitePublication?.status === 'published' &&
+      kingdomWebsitePublication?.websiteStatus === 'published' &&
+      kingdomWebsitePublication?.projectionStatus === 'Published'
+    const marketingLiveChannelCount = channelRows.filter((channel) => normalizeKey(channel.status) === 'live').length + (agencyWebsiteLive ? 1 : 0) + (kingdomWebsiteLive ? 1 : 0)
+    const marketingChannelCount = channelRows.length + (agencyWebsiteConnected ? 1 : 0) + (kingdomWebsiteAvailable ? 1 : 0)
     const channelCountLabel = marketingChannelCount ? `${marketingLiveChannelCount} / ${marketingChannelCount}` : String(marketingLiveChannelCount)
     const remainingReadinessCount = incompleteReadinessItems.length
     const pendingMediaUploads = getPendingListingMediaUploads(marketingDraft)
@@ -13002,12 +13016,20 @@ function AgentListingDetail() {
             onReviewChanges={() => setPublicationChangesOpen(true)}
             savedAt={formatRelativeTime(listingRecord?.updatedAt || listingRecord?.updated_at)}
           />
+          <KingdomWebsitePublicationChannel
+            listingId={listingRecord?.id}
+            listingTitle={marketingDraft.headline || listingRecord?.listingTitle || listingRecord?.title}
+            listingReference={listingRecord?.arch9Reference || listingRecord?.listingReference || listingRecord?.listingCode || ''}
+            onPrepare={() => prepareAgencyWebsiteListing('Kingdom website')}
+            onStatusChange={setKingdomWebsitePublication}
+            savedAt={formatRelativeTime(listingRecord?.updatedAt || listingRecord?.updated_at)}
+          />
         </article>
 
         <ListingShowDaysPanel
           organisationId={listingOrganisationId}
           listing={listingShowDaySnapshot}
-          publicListingReady={Boolean(arch9IsPublished || property24Published || privatePropertyPortalLive || agencyWebsiteLive)}
+          publicListingReady={Boolean(arch9IsPublished || property24Published || privatePropertyPortalLive || agencyWebsiteLive || kingdomWebsiteLive)}
         />
 
         <div className="flex flex-col gap-4 rounded-[18px] border border-[#d8e3ee] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.045)] lg:flex-row lg:items-center lg:justify-between">
@@ -13052,7 +13074,7 @@ function AgentListingDetail() {
         <div className="flex flex-col gap-3 rounded-[18px] border border-[#ead8b8] bg-[#fffaf0] p-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="text-sm font-semibold text-[#624417]">Need to remove this listing from the market?</p>
-            <p className="mt-1 text-sm text-[#80632f]">Withdraw it from Property24, Private Property, the agency website and Arch9 in one controlled action.</p>
+            <p className="mt-1 text-sm text-[#80632f]">Withdraw it from Property24, Private Property, {kingdomWebsiteAvailable ? 'the Kingdom website, ' : ''}the agency website and Arch9 in one controlled action.</p>
           </div>
           <Button type="button" variant="secondary" onClick={requestWithdrawListing} disabled={publicationSaving || normalizeKey(marketingDraft.listingStatus) === 'withdrawn'} className="border-[#d8b87f] text-[#7a4e12] hover:bg-[#fff3dc]">
             {publicationSaving ? <Loader2 size={15} className="animate-spin" /> : <X size={15} />}
