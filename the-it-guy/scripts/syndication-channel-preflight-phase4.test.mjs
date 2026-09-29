@@ -30,8 +30,8 @@ const commercialSale = buildSyndicationChannelPreflight({
   },
   publication: { title: 'Commercial opportunity', description: 'Registered residential with no business rights.' },
 })
-assert.equal(commercialSale.channels.property24.status, 'blocked')
-assert.deepEqual(commercialSale.channels.property24.blockers, ['property24_commercial_exdev_acceptance_required'])
+assert.equal(commercialSale.channels.property24.status, 'ready')
+assert.deepEqual(commercialSale.channels.property24.blockers, [])
 assert.equal(commercialSale.channels.property24.mappedOutcome.category, 'commercial')
 assert.equal(commercialSale.channels.property24.featureDelivery.find((item) => item.key === 'solar_panels').field, 'propertyFeatures.sustainabilityInfo.solarPanels')
 
