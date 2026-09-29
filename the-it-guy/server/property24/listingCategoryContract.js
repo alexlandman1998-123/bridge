@@ -1,4 +1,4 @@
-export const PROPERTY24_LISTING_CATEGORY_CONTRACT_VERSION = 'arch9_property24_listing_category_contract_v1'
+export const PROPERTY24_LISTING_CATEGORY_CONTRACT_VERSION = 'arch9_property24_listing_category_contract_v2'
 
 export const PROPERTY24_LISTING_CATEGORIES = Object.freeze({
   RESIDENTIAL: 'residential',
@@ -46,9 +46,14 @@ export const PROPERTY24_LISTING_CATEGORY_FIELD_MATRIX = Object.freeze({
     requiredArch9FieldsBeforePublish: [],
   },
   [PROPERTY24_LISTING_CATEGORIES.COMMERCIAL]: {
-    publishingStatus: 'blocked_pending_property24_contract',
-    transactionTypes: ['Sale', 'Rental'],
+    publishingStatus: 'preview_only_pending_exdev_acceptance',
+    transactionTypes: ['Sale'],
     verifiedProperty24Fields: [],
+    documentedProperty24Fields: [
+      'agencyId', 'contactAgentIds', 'listingType', 'status', 'price', 'expiryDate',
+      'description', 'photos', 'propertyInfo.suburbId', 'propertyInfo.propertyTypeId',
+      'propertyInfo.floorArea', 'propertyFeatures.parking', 'commercialInfo.grossLettableAreaSqm',
+    ],
     requiredArch9FieldsBeforePublish: ['grossLettableArea', 'zoning', 'parking', 'leaseTermsOrSaleTerms'],
   },
   [PROPERTY24_LISTING_CATEGORIES.INDUSTRIAL]: {
@@ -124,7 +129,11 @@ export function evaluateProperty24ListingCategoryContract({ listing = {}, public
   const normalizedListingType = firstText(listingType)
   const blockers = []
 
-  if (contract.publishingStatus !== 'supported') {
+  if (category === PROPERTY24_LISTING_CATEGORIES.COMMERCIAL) {
+    if (!normalizedListingType || normalizedListingType === 'Sale') {
+      blockers.push('property24_commercial_exdev_acceptance_required')
+    }
+  } else if (contract.publishingStatus !== 'supported') {
     blockers.push(category === PROPERTY24_LISTING_CATEGORIES.UNKNOWN
       ? 'property24_listing_category_unclassified'
       : `property24_${category}_mapping_not_verified`)
@@ -139,6 +148,7 @@ export function evaluateProperty24ListingCategoryContract({ listing = {}, public
     listingType: normalizedListingType || null,
     publishingStatus: contract.publishingStatus,
     verifiedProperty24Fields: contract.verifiedProperty24Fields,
+    documentedProperty24Fields: contract.documentedProperty24Fields || [],
     recommendedFields: contract.recommendedFields || [],
     requiredArch9FieldsBeforePublish: contract.requiredArch9FieldsBeforePublish,
     blockers,
