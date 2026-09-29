@@ -7,7 +7,7 @@ Phase 2 introduces a category model alongside the Phase 0 contract boundary. It 
 | Category | Property24 type IDs currently known | Transaction types | Category model | Publish state |
 | --- | --- | --- | --- | --- |
 | Residential | 4 House, 5 Apartment/Flat, 6 Townhouse | Sale, Rental | `residential_v1` | enabled |
-| Commercial | 11 Commercial Property | Sale | `commercial_sale_v53_v55` | schema-backed preview; submission blocked pending ExDev acceptance |
+| Commercial | 11 Commercial Property | Sale | `commercial_sale_v53_v55` | submit-ready after normal connection and listing checks |
 | Industrial | 12 Industrial Property | Sale, Rental | `industrial_pending_property24_schema` | blocked |
 | Agricultural | 10 Farm | Sale, Rental | `agricultural_pending_property24_schema` | blocked |
 | Vacant land/plot | 8 Vacant Land/Plot | Sale or rental | `vacant_land_pending_property24_v55_payload` | blocked; developments are explicitly out of scope |

@@ -24,6 +24,8 @@ when producing a future-mapper assessment.
 Completeness is an Arch9 data-quality signal. Commercial sales now have a
 schema-backed v53/v55 Property24 preview mapper with explicit blockers for missing
 zoning, parking and sale price or terms. Gross lettable area is optional for
-the Property24 sale payload and is included only when known. A controlled ExDev
-create/update is still needed before commercial submission is enabled. Industrial,
+the Property24 sale payload and is included only when known. Commercial sales
+can pass the local Property24 readiness check for the organisation's configured
+connection. A publish still requires an explicit action and may be rejected by
+Property24; no real commercial submission has been accepted yet. Industrial,
 agricultural and land/development categories remain blocked.
