@@ -1,4 +1,4 @@
-export const SPECIALIST_SALES_LISTING_SCHEMA_VERSION = 'arch9_specialist_sales_listing_schema_v1'
+export const SPECIALIST_SALES_LISTING_SCHEMA_VERSION = 'arch9_specialist_sales_listing_schema_v2'
 
 const text = (value = '') => String(value || '').trim()
 
@@ -41,18 +41,23 @@ export function resolveSpecialistSalesCategory(value = '') {
   return CATEGORY_ALIASES[key] || ''
 }
 
-export function getSpecialistSalesListingSchema(propertyCategory = '') {
+export function getSpecialistSalesListingSchema(propertyCategory = '', listingType = 'sale') {
   const category = resolveSpecialistSalesCategory(propertyCategory)
-  const requiredFields = REQUIRED_FIELDS[category] || []
+  const allFields = REQUIRED_FIELDS[category] || []
+  const sale = ['sale', 'private_sale'].includes(text(listingType).toLowerCase())
+  // A commercial sale can be described without lettable area. Keep the field
+  // available when known; commercial leases still require it for readiness.
+  const requiredFields = category === 'commercial' && sale
+    ? allFields.filter((key) => key !== 'grossLettableArea')
+    : allFields
   return {
     version: SPECIALIST_SALES_LISTING_SCHEMA_VERSION,
     category,
     requiredFields,
-    fields: requiredFields.map((key) => ({ key, ...FIELD_DEFINITIONS[key] })),
+    fields: allFields.map((key) => ({ key, ...FIELD_DEFINITIONS[key], required: requiredFields.includes(key) })),
   }
 }
 
-export function getSpecialistSalesRequiredFields(propertyCategory = '') {
-  return getSpecialistSalesListingSchema(propertyCategory).requiredFields
+export function getSpecialistSalesRequiredFields(propertyCategory = '', listingType = 'sale') {
+  return getSpecialistSalesListingSchema(propertyCategory, listingType).requiredFields
 }
-

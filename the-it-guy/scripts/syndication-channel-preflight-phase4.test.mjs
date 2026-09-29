@@ -40,7 +40,7 @@ const incompleteCommercialSale = buildSyndicationChannelPreflight({
     seller_canonical_facts_json: { parkingCount: '12' } },
   publication: { title: 'Commercial opportunity', description: 'Registered residential with no business rights.' },
 })
-assert.ok(incompleteCommercialSale.channels.property24.blockers.includes('property24_commercial_gross_lettable_area_required'))
+assert.equal(incompleteCommercialSale.channels.property24.blockers.includes('property24_commercial_gross_lettable_area_required'), false)
 assert.ok(incompleteCommercialSale.channels.property24.blockers.includes('property24_commercial_zoning_required'))
 assert.equal(incompleteCommercialSale.channels.property24.blockers.includes('property24_commercial_parking_required'), false)
 assert.equal(incompleteCommercialSale.channels.property24.blockers.includes('property24_commercial_mapping_not_verified'), false)
