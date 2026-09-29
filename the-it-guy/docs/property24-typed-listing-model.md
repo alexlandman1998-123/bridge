@@ -1,17 +1,17 @@
 # Property24 typed listing model
 
-Version: `arch9_property24_listing_category_model_v1`
+Version: `arch9_property24_listing_category_model_v2`
 
 Phase 2 introduces a category model alongside the Phase 0 contract boundary. It gives each listing category an explicit type universe, allowed transaction types, pricing modes, lifecycle states, required measurements and supported feature domain.
 
 | Category | Property24 type IDs currently known | Transaction types | Category model | Publish state |
 | --- | --- | --- | --- | --- |
 | Residential | 4 House, 5 Apartment/Flat, 6 Townhouse | Sale, Rental | `residential_v1` | enabled |
-| Commercial | 11 Commercial Property | Sale, Rental | `commercial_pending_property24_schema` | blocked |
+| Commercial | 11 Commercial Property | Sale | `commercial_sale_v53_v55` | schema-backed preview; submission blocked pending ExDev acceptance |
 | Industrial | 12 Industrial Property | Sale, Rental | `industrial_pending_property24_schema` | blocked |
 | Agricultural | 10 Farm | Sale, Rental | `agricultural_pending_property24_schema` | blocked |
 | Vacant land/plot | 8 Vacant Land/Plot | Sale or rental | `vacant_land_pending_property24_v55_payload` | blocked; developments are explicitly out of scope |
 
-The known IDs come from the current Property24 catalog mapping. They do not certify a category payload. Non-residential models are deliberately descriptive and validating only: their fields are captured as canonical Arch9 requirements, but no unverified Property24 JSON is emitted.
+The known IDs come from Property24's authenticated catalogue. Commercial sales use the documented v53/v55 `commercialInfo` object; the other specialist models remain descriptive and validating only. A schema-backed payload is not evidence that Property24 has accepted an ExDev or production submission.
 
 The shared mapper now validates category/type consistency and listing lifecycle. For example, a rental cannot be submitted with a `Sold` lifecycle; it must use `Rented` when closed.

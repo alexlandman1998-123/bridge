@@ -49,12 +49,14 @@ function selectedValue(feature, facts) {
 
 function reviewFact(feature, value, { property24Category, property24TypeId, privatePropertyCategory }) {
   const key = feature.key
-  const property24Field = property24Category === 'residential'
+  const property24Field = ['residential', 'commercial'].includes(property24Category)
     ? PROPERTY24_NATIVE_FACT_FIELDS[key]
-      || (RESIDENTIAL_LISTING_TAGS[key] && (key !== 'new_development' || [4, 6].includes(property24TypeId)) ? `tags.${RESIDENTIAL_LISTING_TAGS[key]}` : '')
-      || (RESIDENTIAL_FEATURE_TAGS[key] ? `featureTags.${RESIDENTIAL_FEATURE_TAGS[key][0]}.${RESIDENTIAL_FEATURE_TAGS[key][1]}` : '')
-      || (RESIDENTIAL_FEATURE_TYPES[key] ? `featureTags.${RESIDENTIAL_FEATURE_TYPES[key]}` : '')
-      || (key === 'roof_type' && RESIDENTIAL_ROOF_TAGS[value] ? `tags.${RESIDENTIAL_ROOF_TAGS[value]}` : '')
+      || (property24Category === 'residential' ? (
+        (RESIDENTIAL_LISTING_TAGS[key] && (key !== 'new_development' || [4, 6].includes(property24TypeId)) ? `tags.${RESIDENTIAL_LISTING_TAGS[key]}` : '')
+        || (RESIDENTIAL_FEATURE_TAGS[key] ? `featureTags.${RESIDENTIAL_FEATURE_TAGS[key][0]}.${RESIDENTIAL_FEATURE_TAGS[key][1]}` : '')
+        || (RESIDENTIAL_FEATURE_TYPES[key] ? `featureTags.${RESIDENTIAL_FEATURE_TYPES[key]}` : '')
+        || (key === 'roof_type' && RESIDENTIAL_ROOF_TAGS[value] ? `tags.${RESIDENTIAL_ROOF_TAGS[value]}` : '')
+      ) : '')
     : ''
   const privatePropertyAttribute = PRIVATE_PROPERTY_FEATURE_ATTRIBUTES[key]
   const privatePropertyNative = Boolean(privatePropertyAttribute && supportsPrivatePropertyFeature(key, privatePropertyCategory))
