@@ -70,6 +70,31 @@ const productionConfigWithListingSuburb = buildProperty24ApiConfig({
 })
 assert.equal(productionConfigWithListingSuburb.suburbId, '309')
 
+const liveListingConfig = buildProperty24ApiConfig({
+  env: {
+    ...baseEnv,
+    VERCEL_ENV: 'production',
+    PROPERTY24_ENVIRONMENT: 'exdev',
+    PROPERTY24_PRODUCTION_BASE_URL: 'https://api.property24.com',
+  },
+  requestUrl: new URL('https://app.arch9.co.za/api/property24/listings/listing-123/preview'),
+  route: { name: 'previewListing', listingId: 'listing-123' },
+})
+assert.equal(liveListingConfig.environment, 'production')
+assert.equal(liveListingConfig.property24BaseUrl, 'https://api.property24.com')
+assert.equal(liveListingConfig.suburbId, '')
+
+const sandboxListingConfig = buildProperty24ApiConfig({
+  env: {
+    ...baseEnv,
+    VERCEL_ENV: 'preview',
+    PROPERTY24_ENVIRONMENT: 'exdev',
+  },
+  requestUrl: new URL('https://preview.arch9.co.za/api/property24/listings/listing-123/preview'),
+  route: { name: 'previewListing', listingId: 'listing-123' },
+})
+assert.equal(sandboxListingConfig.environment, 'exdev')
+
 const fakePreview = {
   canSubmit: true,
   dataBlockers: [],
