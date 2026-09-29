@@ -148,5 +148,48 @@ assert.equal(await status(ids.bondedTransfer, 'lodgement_ready'), 'not_started',
   'changed figures withdraw transfer readiness')
 await assert.rejects(complete(ids.bondedTransfer, 'lodged_at_deeds_office'), /cancellation attorney must hand over/)
 
+// Exercise the deployed v14 funding gate with an imported matter that has
+// transfer, bond and cancellation task rows but no reconciled workflow plan.
+const fundingDefinition = (await db.query("select pg_get_functiondef('journey_private.enforce_attorney_funding_handoffs()'::regprocedure) as definition")).rows[0].definition
+const v12Guard = "v_plan ->> 'version' is distinct from 'attorney_matter_workflow_plan_v12'"
+assert.ok(fundingDefinition.includes(v12Guard))
+await db.exec(fundingDefinition.replace(v12Guard,
+  "v_plan ->> 'version' not in ('attorney_matter_workflow_plan_v12', 'attorney_matter_workflow_plan_v13', 'attorney_matter_workflow_plan_v14')"))
+const importedMatter = '00000000-0000-0000-0000-000000000301'
+await db.query('insert into transactions values ($1,$2,$3)', [importedMatter, { financeType: 'cash' }, 'active'])
+for (const [laneId, laneKey, earlyStep, readyStep] of [
+  ['00000000-0000-0000-0000-000000000302', 'transfer', 'instruction_received', 'lodgement_ready'],
+  ['00000000-0000-0000-0000-000000000303', 'bond', 'bond_instruction_received', 'bond_lodgement_ready'],
+  ['00000000-0000-0000-0000-000000000304', 'cancellation', 'cancellation_instruction_received', 'cancellation_lodgement_ready'],
+]) {
+  await db.query('insert into transaction_subprocesses values ($1,$2,$3)', [laneId, importedMatter, laneKey])
+  for (const stepKey of [earlyStep, readyStep]) await db.query(
+    "insert into transaction_subprocess_steps(subprocess_id,step_key,status) values ($1,$2,'not_started')", [laneId, stepKey])
+}
+await db.exec(`
+create function journey_private.enforce_attorney_phase4_tax_clearances() returns trigger language plpgsql as $$
+declare v_profile jsonb;
+begin
+  if v_profile #>> '{workflowPlan,version}' not in ('attorney_matter_workflow_plan_v13','attorney_matter_workflow_plan_v14') then return new; end if;
+  return new;
+end; $$;
+create function journey_private.enforce_attorney_phase5_specialist_routes() returns trigger language plpgsql as $$
+declare v_profile jsonb;
+begin
+  if v_profile #>> '{workflowPlan,version}' <> 'attorney_matter_workflow_plan_v14' then return new; end if;
+  return new;
+end; $$;
+`)
+await db.exec(readFileSync(new URL('../../supabase/migrations/20260929082723_handle_unreconciled_attorney_workflow_plans.sql', import.meta.url), 'utf8'))
+for (const [laneId, earlyStep, readyStep] of [
+  ['00000000-0000-0000-0000-000000000302', 'instruction_received', 'lodgement_ready'],
+  ['00000000-0000-0000-0000-000000000303', 'bond_instruction_received', 'bond_lodgement_ready'],
+  ['00000000-0000-0000-0000-000000000304', 'cancellation_instruction_received', 'cancellation_lodgement_ready'],
+]) {
+  await complete(laneId, earlyStep)
+  assert.equal(await status(laneId, earlyStep), 'completed')
+  await assert.rejects(complete(laneId, readyStep), /Reconcile the current funding and cancellation task plan before lodgement/)
+}
+
 await db.close()
-console.log('Attorney funding handoff gates passed: cash source, linked lanes, consent, guarantees and figures expiry.')
+console.log('Attorney funding handoff gates passed: cash source, linked lanes, imported work, plan reconciliation and figures expiry.')
