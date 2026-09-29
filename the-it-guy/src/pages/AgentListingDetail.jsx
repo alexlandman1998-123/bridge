@@ -1233,6 +1233,9 @@ function formatPrivatePropertyBlocker(value = '') {
 function getPrivatePropertyApiMessage(payload = {}, fallback = 'Private Property request failed.') {
   const missing = Array.isArray(payload?.missingConfiguration) ? payload.missingConfiguration : []
   if (missing.length) return `Private Property setup is incomplete: ${missing.join(', ')}.`
+  if (payload?.route === 'listingStatus' && payload?.monitor?.apiError) {
+    return `Private Property status check failed: ${payload.monitor.apiError.message || 'Please try again shortly.'}`
+  }
   const preview = payload?.preview || payload?.readiness?.preview || payload?.report?.preview || {}
   const readinessBlockers = payload?.readiness?.blockers || payload?.report?.readiness?.blockers || payload?.report?.blockers || []
   const dataBlockers = Array.isArray(preview.dataBlockers) ? preview.dataBlockers : []
@@ -6202,6 +6205,10 @@ function AgentListingDetail() {
   }
 
   async function refreshPrivatePropertyListingStatus() {
+    if (!privatePropertyHasChannel) {
+      setDetailError('This listing has not been submitted to Private Property yet. Run readiness, then use Publish to submit it first.')
+      return null
+    }
     setPrivatePropertyAction('status')
     setDetailError('')
     setDetailMessage('Checking Private Property live status...')
@@ -10083,6 +10090,12 @@ function AgentListingDetail() {
   const privatePropertyHasPreviewBlockers = privatePropertyPreviewCounts.dataBlockers > 0 ||
     privatePropertyPreviewCounts.technicalBlockers > 0 ||
     privatePropertyPreviewCounts.readinessBlockers > 0
+  const privatePropertyReadyForFirstPublish = privatePropertyCanSubmit === true &&
+    !privatePropertyHasPreviewBlockers && !privatePropertyHasChannel
+  const privatePropertyRecoveredPreflight = privatePropertyReadyForFirstPublish &&
+    channelUpdateStates['Private Property']?.status === 'needs_attention' &&
+    channelUpdateStates['Private Property']?.action === 'publish' &&
+    channelUpdateStates['Private Property']?.detail?.startsWith('Private Property cannot publish yet:')
   const privatePropertyExternalStatus = normalizeKey(privatePropertyStatusCheck?.monitor?.externalStatus || privatePropertyStatusCheck?.report?.externalStatus || '')
   const currentPublicationSnapshot = useMemo(
     () => buildListingPublicationSnapshot(marketingDraft),
@@ -10464,7 +10477,8 @@ function AgentListingDetail() {
   const property24OverviewUpdate = channelUpdateStates.Property24?.status === 'current' && ['expired', 'removed', 'withdrawn'].includes(property24StatusKey)
     ? { status: 'needs_attention' }
     : channelUpdateStates.Property24
-  const privatePropertyOverviewUpdate = channelUpdateStates['Private Property']?.status === 'current' && ['expired', 'removed', 'withdrawn'].includes(privatePropertyStatusKey)
+  const privatePropertyOverviewUpdate = privatePropertyRecoveredPreflight ? null
+    : channelUpdateStates['Private Property']?.status === 'current' && ['expired', 'removed', 'withdrawn'].includes(privatePropertyStatusKey)
     ? { status: 'needs_attention' }
     : channelUpdateStates['Private Property']
   const overviewPublishedChannels = [
@@ -10483,7 +10497,9 @@ function AgentListingDetail() {
       key: 'private_property', label: 'Private Property', live: privatePropertyPortalLive,
       reference: privatePropertyPortalReference,
       publicUrl: privatePropertyPortalUrl || listingRecord?.privatePropertyListingUrl || listingRecord?.private_property_listing_url,
-      publicationState: listingPublicationStates.private_property,
+      publicationState: privatePropertyRecoveredPreflight
+        ? { ...listingPublicationStates.private_property, stage: 'not_published', changeCount: 0 }
+        : listingPublicationStates.private_property,
       updateState: privatePropertyOverviewUpdate,
       activityAvailable: !channelActivityUnavailable || !privatePropertyHasChannel,
       actionBusy: Boolean(privatePropertyAction), withdrawn: listingWithdrawnForChannels,
@@ -12475,6 +12491,15 @@ function AgentListingDetail() {
               {privatePropertyAction === 'preview' ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
               Run readiness check
             </Button>
+            {privatePropertyReadyForFirstPublish ? (
+              <Button type="button" onClick={() => {
+                setPrivatePropertyManageOpen(false)
+                void publishPrivatePropertyListing()
+              }} disabled={Boolean(privatePropertyAction)}>
+                <Send size={15} />
+                Publish to Private Property
+              </Button>
+            ) : null}
           </div>
         )}
       >
@@ -12549,7 +12574,7 @@ function AgentListingDetail() {
     const privatePropertyBaseUpdate = !privatePropertyIntentionallyInactive && channelUpdateStates['Private Property']?.status === 'current' && ['expired', 'removed', 'withdrawn'].includes(privatePropertyStatusKey)
       ? { status: 'needs_attention', retriable: false, detail: 'The portal now reports this listing as inactive. Review its channel status before treating it as current.' }
       : channelUpdateStates['Private Property']
-    const privatePropertyUpdate = privatePropertyBaseUpdate
+    const privatePropertyUpdate = privatePropertyRecoveredPreflight ? null : privatePropertyBaseUpdate
     const privatePropertyHasUnpublishedChanges = listingPublicationStates.private_property.changeCount > 0
     const property24MonitoringIssue = channelActivityUnavailable && property24HasReference
     const privatePropertyMonitoringIssue = channelActivityUnavailable && privatePropertyHasChannel
@@ -12578,6 +12603,7 @@ function AgentListingDetail() {
     const privatePropertyChannelStatus = overviewPublishedChannels[1].status
     const privatePropertyChannelLabel = overviewPublishedChannels[1].statusLabel
     const privatePropertyContextTitle = privatePropertyIntentionallyInactive ? 'Removed through the Arch9 withdrawal workflow'
+      : privatePropertyRecoveredPreflight ? 'Ready to publish'
       : privatePropertyHasUnpublishedChanges ? `${listingPublicationStates.private_property.changeCount} saved Arch9 change${listingPublicationStates.private_property.changeCount === 1 ? '' : 's'} not published`
       : privatePropertyUpdate?.status === 'needs_attention' ? privatePropertyUpdate.retriable === false ? 'No confirmed live Private Property listing to update' : 'Latest portal update needs attention'
       : privatePropertyMonitoringIssue ? 'Update history unavailable; channel currency cannot be confirmed'
@@ -12724,10 +12750,10 @@ function AgentListingDetail() {
             {privatePropertyAction === 'preview' ? <Loader2 size={15} className="animate-spin" /> : <Eye size={15} />}
             Check readiness
           </button>,
-          <button key="status" type="button" onClick={refreshPrivatePropertyListingStatus} disabled={Boolean(privatePropertyAction)} className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#243d56] transition hover:bg-[#f7fbff] disabled:cursor-not-allowed disabled:opacity-50">
+          privatePropertyHasChannel ? <button key="status" type="button" onClick={refreshPrivatePropertyListingStatus} disabled={Boolean(privatePropertyAction)} className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#243d56] transition hover:bg-[#f7fbff] disabled:cursor-not-allowed disabled:opacity-50">
             {privatePropertyAction === 'status' ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
             Refresh status
-          </button>,
+          </button> : null,
           privatePropertyLive ? <button key="expire" type="button" onClick={() => expirePrivatePropertyListing()} disabled={Boolean(privatePropertyAction)} className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#a43d35] transition hover:bg-[#fff5f5] disabled:cursor-not-allowed disabled:opacity-50">
             {privatePropertyAction === 'expire' ? <Loader2 size={15} className="animate-spin" /> : <CalendarDays size={15} />}
             Expire listing
