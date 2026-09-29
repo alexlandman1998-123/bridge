@@ -689,9 +689,7 @@ export function createProperty24ListingPlan({
   const technicalBlockers = []
   const qualityWarnings = []
 
-  const commercialAcceptanceBlocker = 'property24_commercial_exdev_acceptance_required'
-  dataBlockers.push(...categoryContract.blockers.filter((blocker) => blocker !== commercialAcceptanceBlocker))
-  if (categoryContract.blockers.includes(commercialAcceptanceBlocker)) technicalBlockers.push(commercialAcceptanceBlocker)
+  dataBlockers.push(...categoryContract.blockers)
   dataBlockers.push(...categoryModel.blockers)
   if (categoryContract.category === 'commercial' && listingType === 'Sale') {
     dataBlockers.push(...evaluateProperty24CommercialSaleFacts({ listing, publication, options }).blockers)

@@ -176,6 +176,7 @@ const report = createProperty24Arch9ListingPreview({
 assert.equal(report.status, 'PREVIEW_READY')
 assert.equal(report.canPreview, true)
 assert.equal(report.canSubmit, false)
+assert.doesNotMatch(report.nextStep, /ExDev/)
 assert.deepEqual(report.dataBlockers, [])
 assert.deepEqual(report.technicalBlockers, ['listing_image_bytes_not_loaded_for_property24_submit'])
 assert.equal(report.summary.agencyId, 31382)
@@ -307,6 +308,7 @@ const submitReadyReport = createProperty24Arch9ListingPreview({
   },
 })
 assert.equal(submitReadyReport.canSubmit, true)
+assert.doesNotMatch(submitReadyReport.nextStep, /ExDev/)
 assert.deepEqual(submitReadyReport.technicalBlockers, [])
 assert.equal(submitReadyReport.previewPayload.photos[0].bytesLoaded, true)
 assert.equal(submitReadyReport.imageByteLoad.summary.loaded, 1)
