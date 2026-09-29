@@ -54,7 +54,7 @@ export const PROPERTY24_LISTING_CATEGORY_FIELD_MATRIX = Object.freeze({
       'description', 'photos', 'propertyInfo.suburbId', 'propertyInfo.propertyTypeId',
       'propertyInfo.floorArea', 'propertyFeatures.parking', 'commercialInfo.grossLettableAreaSqm',
     ],
-    requiredArch9FieldsBeforePublish: ['grossLettableArea', 'zoning', 'parking', 'leaseTermsOrSaleTerms'],
+    requiredArch9FieldsBeforePublish: ['zoning', 'parking', 'salePriceOrTerms'],
   },
   [PROPERTY24_LISTING_CATEGORIES.INDUSTRIAL]: {
     publishingStatus: 'blocked_pending_property24_contract',
