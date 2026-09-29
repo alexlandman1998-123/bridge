@@ -239,7 +239,13 @@ function matchProperty24Route(requestUrl, routeParams = {}) {
 export function buildProperty24ApiConfig({ env = getRuntimeEnv(), requestUrl, payload = {}, route = {} } = {}) {
   const query = requestUrl?.searchParams || new URLSearchParams()
   const legacyBaseUrl = normalizeProperty24Text(env.PROPERTY24_BASE_URL) || PROPERTY24_EXDEV_BASE_URL
-  const environment = normalizeProperty24Text(env.PROPERTY24_ENVIRONMENT) || resolveProperty24Environment(legacyBaseUrl)
+  // A listing opened on the live Arch9 app must resolve the owning agency's
+  // production account, even if a legacy platform default still points at
+  // ExDev. Preview deployments retain the explicit sandbox setting.
+  const productionListingRoute = normalizeProperty24Text(env.VERCEL_ENV).toLowerCase() === 'production' && Boolean(route.listingId)
+  const environment = productionListingRoute
+    ? 'production'
+    : normalizeProperty24Text(env.PROPERTY24_ENVIRONMENT) || resolveProperty24Environment(legacyBaseUrl)
   const environmentCredentials = resolveProperty24EnvironmentCredentials({ env, environment })
   const property24BaseUrl = environmentCredentials.baseUrl || legacyBaseUrl
   const explicitAgencyId = normalizeProperty24Text(firstValue(payload.agencyId, query.get('agencyId')))
