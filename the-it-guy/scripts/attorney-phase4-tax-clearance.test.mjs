@@ -117,7 +117,7 @@ const completeImportedStep = (stepKey) => db.query(
 )
 await assert.rejects(completeImportedStep('instruction_received'), /case not found/)
 await db.exec(readFileSync(new URL('../../supabase/migrations/20260929081502_handle_unconfirmed_transfer_tax_route.sql', import.meta.url), 'utf8'))
-for (const route of ['needs_tax_advice', null]) {
+for (const route of ['needs_tax_advice', 'pending_attorney_decision', null]) {
   const candidate = { ...importedProfile, transferTaxDecision: { ...importedProfile.transferTaxDecision, route } }
   const fromSql = (await db.query('select journey_private.phase4_required_transfer_steps($1::jsonb) as steps', [candidate])).rows[0].steps
   const fromPlan = buildMatterWorkflowPlan({ routingProfile: candidate }).lanes[0].stepKeys
