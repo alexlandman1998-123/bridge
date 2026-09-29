@@ -20,6 +20,31 @@ assert.equal(residentialRental.overall.status, 'ready')
 assert.equal(residentialRental.rollout.enabled, false)
 assert.equal(residentialRental.overall.legacyPublishPathPreserved, true)
 
+const commercialSale = buildSyndicationChannelPreflight({
+  listing: {
+    id: 'commercial-house', property_category: 'commercial', property_type: 'House', asking_price: 2049000,
+    seller_canonical_facts_json: { property: { specialistFacts: {
+      grossLettableArea: '220', zoning: 'Residential', parking: '12 bays', listingTerms: 'Sale as is',
+    } } },
+    sellerOnboarding: { formData: { featureFacts: { solar_panels: true } } },
+  },
+  publication: { title: 'Commercial opportunity', description: 'Registered residential with no business rights.' },
+})
+assert.equal(commercialSale.channels.property24.status, 'blocked')
+assert.deepEqual(commercialSale.channels.property24.blockers, ['property24_commercial_exdev_acceptance_required'])
+assert.equal(commercialSale.channels.property24.mappedOutcome.category, 'commercial')
+assert.equal(commercialSale.channels.property24.featureDelivery.find((item) => item.key === 'solar_panels').field, 'propertyFeatures.sustainabilityInfo.solarPanels')
+
+const incompleteCommercialSale = buildSyndicationChannelPreflight({
+  listing: { property_category: 'commercial', property_type: 'House', asking_price: 2049000,
+    seller_canonical_facts_json: { parkingCount: '12' } },
+  publication: { title: 'Commercial opportunity', description: 'Registered residential with no business rights.' },
+})
+assert.ok(incompleteCommercialSale.channels.property24.blockers.includes('property24_commercial_gross_lettable_area_required'))
+assert.ok(incompleteCommercialSale.channels.property24.blockers.includes('property24_commercial_zoning_required'))
+assert.equal(incompleteCommercialSale.channels.property24.blockers.includes('property24_commercial_parking_required'), false)
+assert.equal(incompleteCommercialSale.channels.property24.blockers.includes('property24_commercial_mapping_not_verified'), false)
+
 const featureReview = buildSyndicationChannelPreflight({
   listing: {
     id: 'feature-review', property_type: 'House', asking_price: 2000000,

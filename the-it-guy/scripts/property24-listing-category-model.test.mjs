@@ -5,15 +5,17 @@ import { createProperty24ListingPlan } from '../server/services/property24Listin
 
 const commercial = evaluateProperty24ListingCategoryModel({
   listing: { property_type: 'office' },
-  listingType: 'Rental',
+  listingType: 'Sale',
   status: 'Active',
   propertyTypeId: 11,
 })
 assert.equal(commercial.category, PROPERTY24_LISTING_CATEGORIES.COMMERCIAL)
-assert.equal(commercial.payloadModel, 'commercial_pending_property24_schema')
+assert.equal(commercial.payloadModel, 'commercial_sale_v53_v55')
 assert.deepEqual(commercial.requiredMeasurements, ['grossLettableArea'])
-assert.ok(commercial.allowedLifecycle.includes('Rented'))
+assert.ok(commercial.allowedLifecycle.includes('Sold'))
 assert.deepEqual(commercial.blockers, [])
+const commercialRental = evaluateProperty24ListingCategoryModel({ category: 'commercial', listingType: 'Rental', status: 'Active', propertyTypeId: 11 })
+assert.ok(commercialRental.blockers.includes('property24_commercial_rental_not_supported'))
 
 const rentalSold = evaluateProperty24ListingCategoryModel({
   listing: { property_type: 'apartment' },

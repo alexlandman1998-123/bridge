@@ -20,7 +20,8 @@ dashboard highlight the actual missing fact rather than scoring arbitrary JSON
 metadata. `server/property24/commercialListingFacts.js` uses the same evaluator
 when producing a future-mapper assessment.
 
-Completeness is an Arch9 data-quality signal only. The Property24 category
-contract remains blocked for commercial, industrial, agricultural, and
-land/development listings until the exact v53 schema is received and verified
-in ExDev.
+Completeness is an Arch9 data-quality signal. Commercial sales now have a
+schema-backed v53/v55 Property24 preview mapper with explicit blockers for missing
+gross lettable area, zoning, parking and sale terms. A controlled ExDev
+create/update is still needed before commercial submission is enabled. Industrial,
+agricultural and land/development categories remain blocked.

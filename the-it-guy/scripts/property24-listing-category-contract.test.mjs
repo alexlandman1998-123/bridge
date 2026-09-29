@@ -4,7 +4,11 @@ import {
   evaluateProperty24ListingCategoryContract,
   resolveProperty24ListingCategory,
 } from '../server/property24/listingCategoryContract.js'
-import { createProperty24ListingPlan } from '../server/services/property24ListingMapper.js'
+import {
+  createProperty24ListingPlan,
+  evaluateProperty24CommercialSaleFacts,
+  resolveProperty24CategoryPropertyTypeId,
+} from '../server/services/property24ListingMapper.js'
 
 assert.equal(resolveProperty24ListingCategory({ property_type: 'House' }), PROPERTY24_LISTING_CATEGORIES.RESIDENTIAL)
 assert.equal(resolveProperty24ListingCategory({ property_type: 'Warehouse' }), PROPERTY24_LISTING_CATEGORIES.INDUSTRIAL)
@@ -17,10 +21,14 @@ assert.equal(
 
 const commercial = evaluateProperty24ListingCategoryContract({
   listing: { property_category: 'commercial' },
-  listingType: 'Rental',
+  listingType: 'Sale',
 })
-assert.deepEqual(commercial.blockers, ['property24_commercial_mapping_not_verified'])
-assert.equal(commercial.publishingStatus, 'blocked_pending_property24_contract')
+assert.deepEqual(commercial.blockers, ['property24_commercial_exdev_acceptance_required'])
+assert.equal(commercial.publishingStatus, 'preview_only_pending_exdev_acceptance')
+assert.ok(commercial.documentedProperty24Fields.includes('commercialInfo.grossLettableAreaSqm'))
+assert.deepEqual(commercial.verifiedProperty24Fields, [])
+const commercialRental = evaluateProperty24ListingCategoryContract({ listing: { property_category: 'commercial' }, listingType: 'Rental' })
+assert.deepEqual(commercialRental.blockers, ['property24_commercial_rental_not_supported'])
 
 const vacantLand = evaluateProperty24ListingCategoryContract({
   listing: { property_type: 'vacant land' },
@@ -36,24 +44,47 @@ const plan = createProperty24ListingPlan({
     listing_reference: 'COMM-001',
     listing_status: 'active',
     property_category: 'commercial',
-    property_type: 'office',
+    property_type: 'House',
     asking_price: 40000,
+    seller_canonical_facts_json: { property: { specialistFacts: {
+      grossLettableArea: '125', zoning: 'Residential', parking: '4 bays', listingTerms: 'Sale as is',
+    } } },
   },
   publication: {
-    listing_type: 'Rental',
-    property_type: 'Commercial Property',
+    listing_type: 'Sale',
+    property_type: 'House',
     description: 'Prime commercial office space.',
   },
   media: [{ media_type: 'image', bytes: 'base64-image-data' }],
   agentMapping: { property24AgentId: 77959, sourceReference: 'ARCH9-COMMERCIAL-001' },
   catalogMapping: { suburbId: 12345 },
-  options: { expiryDate: '2026-12-31' },
+  options: { agencyId: 39837, expiryDate: '2026-12-31' },
 })
 
-assert.equal(plan.canPreview, false)
+assert.equal(plan.canPreview, true)
 assert.equal(plan.canSubmit, false)
-assert.ok(plan.dataBlockers.includes('property24_commercial_mapping_not_verified'))
+assert.equal(plan.summary.propertyTypeId, 11)
+assert.equal(plan.previewPayload.propertyInfo.propertyTypeId, 11)
+assert.equal(plan.previewPayload.commercialInfo.grossLettableAreaSqm, 125)
+assert.ok(plan.technicalBlockers.includes('property24_commercial_exdev_acceptance_required'))
+assert.equal(plan.dataBlockers.includes('property24_commercial_property_type_mismatch'), false)
 assert.equal(plan.summary.categoryContract.category, PROPERTY24_LISTING_CATEGORIES.COMMERCIAL)
-assert.equal(plan.summary.categoryContract.publishingStatus, 'blocked_pending_property24_contract')
+assert.equal(plan.summary.categoryContract.publishingStatus, 'preview_only_pending_exdev_acceptance')
+assert.equal(resolveProperty24CategoryPropertyTypeId(12, 'commercial'), 12, 'An explicit specialist mismatch must remain visible')
+
+const incomplete = createProperty24ListingPlan({
+  listing: { property_category: 'commercial', property_type: 'House', asking_price: 2000000 },
+  publication: { listing_type: 'Sale', description: 'Commercial opportunity.' },
+  options: { agencyId: 39837, expiryDate: '2026-12-31' },
+})
+assert.equal(incomplete.summary.propertyTypeId, 11)
+assert.ok(incomplete.dataBlockers.includes('property24_commercial_gross_lettable_area_required'))
+assert.ok(incomplete.dataBlockers.includes('property24_commercial_zoning_required'))
+assert.ok(incomplete.dataBlockers.includes('property24_commercial_parking_required'))
+assert.ok(evaluateProperty24CommercialSaleFacts({
+  listing: { asking_price: 2000000, seller_canonical_facts_json: { property: { specialistFacts: {
+    grossLettableArea: '125.5', zoning: 'Residential', parking: '4 bays',
+  } } } },
+}).blockers.includes('property24_commercial_gross_lettable_area_whole_sqm_required'))
 
 console.log('Property24 listing category contract passed')
