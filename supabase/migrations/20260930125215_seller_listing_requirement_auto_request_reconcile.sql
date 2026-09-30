@@ -3,6 +3,7 @@ begin;
 -- The 202607170002 seller request file collided with a different production
 -- migration version. Restore the listing-only triggers under a fresh version.
 -- Existing requirements are deliberately not backfilled or emailed.
+-- Any historical backfill requires a separate reviewed release.
 
 create or replace function journey_private.request_new_seller_listing_requirement()
 returns trigger
