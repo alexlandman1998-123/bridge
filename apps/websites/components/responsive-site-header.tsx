@@ -18,13 +18,13 @@ function HeaderLogo({ site, light }: { site: ResolvedSite; light: boolean }) {
   return <Image className="site-logo-image" src={logoUrl} alt={`${site.name} logo`} width={220} height={72} sizes="(max-width: 760px) 150px, 190px" unoptimized />
 }
 
-export function ResponsiveSiteHeader({ site, navigation, resources, enquiryHref, currentHref, homeSeekers, overlay }: {
+export function ResponsiveSiteHeader({ site, navigation, resources, enquiryHref, currentHref, editorialTemplate, overlay }: {
   site: ResolvedSite
   navigation: NavigationItem[]
   resources: NavigationItem[]
   enquiryHref: string
   currentHref?: string
-  homeSeekers: boolean
+  editorialTemplate: boolean
   overlay: boolean
 }) {
   const [scrolled, setScrolled] = useState(false)
@@ -51,7 +51,7 @@ export function ResponsiveSiteHeader({ site, navigation, resources, enquiryHref,
   return <header className={headerClassName}>
     <Link className="wordmark" href="/" aria-label={`${site.name} home`}>
       <HeaderLogo site={site} light={useLightLogo} />
-      {homeSeekers && lwp ? <span className="header-brand-note">Beyond the sale.</span> : null}
+      {editorialTemplate && lwp ? <span className="header-brand-note">Beyond the sale.</span> : null}
     </Link>
     <nav aria-label="Primary">
       {navigation.map((item) => <Link href={item.href} aria-current={currentHref === item.href ? 'page' : undefined} key={`${item.href}-${item.label}`}>{item.label}</Link>)}
@@ -60,7 +60,7 @@ export function ResponsiveSiteHeader({ site, navigation, resources, enquiryHref,
         <div className={resourceStyles.dropdown}>{resources.map(item => <Link key={item.href} href={item.href} aria-current={currentHref === item.href ? 'page' : undefined}>{item.label}<span aria-hidden="true">↗</span></Link>)}</div>
       </details>
     </nav>
-    {lwp ? <ValuationModal privacyPolicyUrl={site.privacyPolicyUrl} triggerClassName="header-cta" /> : <Link className="header-cta" href={enquiryHref}>{homeSeekers ? 'Book a valuation' : 'Enquire now'}</Link>}
-    <MobileNavigation items={[...navigation, ...resources]} currentHref={currentHref} enquiryHref={enquiryHref} enquiryLabel={lwp ? 'See your home’s value' : homeSeekers ? 'Book a valuation' : 'Enquire now'} brandName={site.name} brandNote={lwp ? 'Beyond the sale.' : undefined} />
+    {lwp ? <ValuationModal privacyPolicyUrl={site.privacyPolicyUrl} triggerClassName="header-cta" /> : <Link className="header-cta" href={enquiryHref}>{editorialTemplate ? 'Book a valuation' : 'Enquire now'}</Link>}
+    <MobileNavigation items={[...navigation, ...resources]} currentHref={currentHref} enquiryHref={enquiryHref} enquiryLabel={lwp ? 'See your home’s value' : editorialTemplate ? 'Book a valuation' : 'Enquire now'} brandName={site.name} brandNote={lwp ? 'Beyond the sale.' : undefined} />
   </header>
 }

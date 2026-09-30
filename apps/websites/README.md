@@ -2,6 +2,12 @@
 
 The public, server-rendered multi-tenant website application. It is intentionally separate from the existing iSite Vite application.
 
+## Home Seekers and Kingdom release boundary
+
+Home Seekers' customer site is implemented in the primary Vite app under `the-it-guy/src/pages/HomeSeekers*` and has its own `home-seekers-website` Vercel project. Kingdom's Arch9 site is rendered here and is released through the separate `arch9-websites-production` project. A Home Seekers website release does not include this app; a Kingdom website release does not deploy the Vite app.
+
+Kingdom uses the `kingdom-v1` template and its visual rules live in `app/kingdom.css` and `app/kingdom.module.css`. The former `home-seekers-v1` assignment is changed only for Kingdom by migration `20260930123000_isolate_kingdom_website_template.sql`. Shared listing, lead, and publication code remains tenant-scoped. Before a Kingdom release, check its project target and the Kingdom preview hostname; before a Home Seekers release, check the `home-seekers-website` target and `/demo/homeseekers`. Do not bundle the two project deployments into one site release.
+
 ## Local preview
 
 ```bash

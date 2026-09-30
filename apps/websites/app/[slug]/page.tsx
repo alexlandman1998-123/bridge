@@ -6,7 +6,7 @@ import { ContentBlocks } from '@/components/content-blocks'
 import { LwpAboutPage } from '@/components/lwp-about-page'
 import { SiteFooter, SiteHeader } from '@/components/site-chrome'
 import { getPublicPage, getPublicProperties, getPublicTeamMembers, resolveSite } from '@/lib/site-repository'
-import { hasEditorialPropertyExperience, isHomeSeekersTemplate, templateClassName } from '@/lib/site-templates'
+import { hasEditorialPropertyExperience, usesEditorialTemplate, templateClassName } from '@/lib/site-templates'
 
 export const dynamic = 'force-dynamic'
 type Props = { params: Promise<{ slug: string }> }
@@ -31,8 +31,8 @@ export default async function PublicPage({ params }: Props) {
   const [properties, team] = await Promise.all([getPublicProperties(site), page.kind === 'about' && editorial ? getPublicTeamMembers(site) : Promise.resolve([])])
   return <main className={`${templateClassName(site.templateKey)} ${page.kind}-page`} style={{ '--primary': site.primaryColor, '--secondary': site.secondaryColor, '--accent': site.accentColor } as React.CSSProperties}>
     <SiteHeader site={site} currentHref={`/${page.slug}`} />
-    {page.kind === 'about' && editorial ? <LwpAboutPage team={team} /> : page.kind === 'contact' && isHomeSeekersTemplate(site.templateKey) ? <ContactPageContent page={page} site={site} /> : <ContentBlocks page={page} properties={properties} site={site} templateKey={site.templateKey} />}
-    {page.kind === 'about' && isHomeSeekersTemplate(site.templateKey) && !editorial && <section className="listing-help"><div><p className="eyebrow">YOUR NEXT CHAPTER</p><h2>Good advice starts with a conversation.</h2><p>Tell us about your next move. We’re here to help.</p></div><a className="header-cta" href="/contact">Talk to the team ↗</a></section>}
+    {page.kind === 'about' && editorial ? <LwpAboutPage team={team} /> : page.kind === 'contact' && usesEditorialTemplate(site.templateKey) ? <ContactPageContent page={page} site={site} /> : <ContentBlocks page={page} properties={properties} site={site} templateKey={site.templateKey} />}
+    {page.kind === 'about' && usesEditorialTemplate(site.templateKey) && !editorial && <section className="listing-help"><div><p className="eyebrow">YOUR NEXT CHAPTER</p><h2>Good advice starts with a conversation.</h2><p>Tell us about your next move. We’re here to help.</p></div><a className="header-cta" href="/contact">Talk to the team ↗</a></section>}
     <SiteFooter site={site} />
   </main>
 }

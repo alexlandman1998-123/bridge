@@ -1,5 +1,7 @@
 # Kingdom Real Estate — Phase 0 site brief
 
+> Historical plan, superseded on 30 September 2026: Kingdom now has its own `kingdom-v1` design template and stylesheet. Home Seekers has separate design code and a separate Vercel deployment. The shared public platform still supplies tenant-scoped listings, leads, and publication controls.
+
 ## Purpose
 
 Create Kingdom Real Estate's first Arch9-managed public website using the Home Seekers design system as the base. This is a configured agency instance, not a separate bespoke codebase.

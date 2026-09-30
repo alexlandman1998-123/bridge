@@ -5,11 +5,16 @@ import { legacyPropertySlug, matchesPropertySlug, propertySlug } from '@/lib/pro
 import { getServerSupabase } from '@/lib/supabase-server'
 import type { PublicBlogPost, PublicPage, PublicProperty, ResolvedSite, WebsiteBlock, WebsiteTemplateKey } from '@/lib/types'
 
+function supportedTemplateKey(value: unknown): WebsiteTemplateKey {
+  if (value === 'kingdom-v1' || value === 'home-seekers-v1') return value
+  return 'property-standard-v1'
+}
+
 const demoSite: ResolvedSite = {
   id: '00000000-0000-0000-0000-000000000001',
   organisationId: '00000000-0000-0000-0000-000000000001',
   publishedRevisionId: '00000000-0000-0000-0000-000000000002',
-  templateKey: 'home-seekers-v1',
+  templateKey: 'kingdom-v1',
   experienceKey: 'standard',
   name: 'Arch9 Demo Realty',
   status: 'published',
@@ -565,7 +570,7 @@ export async function resolveSite(host: string | null | undefined): Promise<Reso
     id: site.id,
     organisationId: site.organisation_id,
     publishedRevisionId: site.published_revision_id,
-    templateKey: site.template_key === 'home-seekers-v1' ? 'home-seekers-v1' : 'property-standard-v1',
+    templateKey: supportedTemplateKey(site.template_key),
     experienceKey: brand.experienceKey === 'editorial-property-v1' ? 'editorial-property-v1' : 'standard',
     name: String(brand.name || 'Property'),
     status: site.status,
@@ -634,7 +639,7 @@ async function resolveLocalSitePreview(siteId: string): Promise<ResolvedSite | n
     id: String(site.id),
     organisationId: String(site.organisation_id),
     publishedRevisionId: String(revisionResult.data.id),
-    templateKey: site.template_key === 'home-seekers-v1' ? 'home-seekers-v1' : 'property-standard-v1',
+    templateKey: supportedTemplateKey(site.template_key),
     experienceKey: brand.experienceKey === 'editorial-property-v1' ? 'editorial-property-v1' : 'standard',
     name: String(brand.name || 'Property'),
     status: site.status === 'published' ? 'published' : 'draft',

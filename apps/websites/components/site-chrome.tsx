@@ -2,7 +2,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { hasPublishedBlogPosts } from '@/lib/site-repository'
 import type { ResolvedSite } from '@/lib/types'
-import { hasEditorialPropertyExperience, isHomeSeekersTemplate, templateNavigation } from '@/lib/site-templates'
+import { hasEditorialPropertyExperience, usesEditorialTemplate, templateNavigation } from '@/lib/site-templates'
 import { selectWebsiteLogo } from '@/lib/website-brand'
 import { ResponsiveSiteHeader } from './responsive-site-header'
 
@@ -22,19 +22,19 @@ function SiteLogo({ site, dark = false }: { site: ResolvedSite; dark?: boolean }
 }
 
 export async function SiteHeader({ site, enquiryHref = '/valuation', homepage = false, currentHref }: { site: ResolvedSite; enquiryHref?: string; homepage?: boolean; currentHref?: string }) {
-  const homeSeekers = isHomeSeekersTemplate(site.templateKey)
-  const navigation = templateNavigation(site.templateKey).filter(item => !(homepage || homeSeekers) || item.label !== 'Our people')
+  const editorialTemplate = usesEditorialTemplate(site.templateKey)
+  const navigation = templateNavigation(site.templateKey).filter(item => !(homepage || editorialTemplate) || item.label !== 'Our people')
   const resources = resourceLinks(await hasPublishedBlogPosts(site))
-  return <ResponsiveSiteHeader site={site} navigation={navigation} resources={resources} enquiryHref={enquiryHref} currentHref={currentHref} homeSeekers={homeSeekers} overlay={homepage && homeSeekers && hasEditorialPropertyExperience(site)} />
+  return <ResponsiveSiteHeader site={site} navigation={navigation} resources={resources} enquiryHref={enquiryHref} currentHref={currentHref} editorialTemplate={editorialTemplate} overlay={homepage && editorialTemplate && hasEditorialPropertyExperience(site)} />
 }
 
 export async function SiteFooter({ site }: { site: ResolvedSite }) {
-  const homeSeekers = isHomeSeekersTemplate(site.templateKey)
+  const editorialTemplate = usesEditorialTemplate(site.templateKey)
   const resources = resourceLinks(await hasPublishedBlogPosts(site))
-  const explore = homeSeekers ? [
+  const explore = editorialTemplate ? [
     { href: '/properties?type=sale', label: 'Buy' }, { href: '/properties?type=rental', label: 'Rent' }, { href: '/valuation', label: 'Sell' }, { href: '/properties', label: 'Developments' },
   ] : templateNavigation(site.templateKey)
-  const agency = homeSeekers ? [{ href: '/about', label: 'About us' }, { href: '/about', label: 'Our team' }, { href: '/contact', label: 'Contact' }] : templateNavigation(site.templateKey)
+  const agency = editorialTemplate ? [{ href: '/about', label: 'About us' }, { href: '/about', label: 'Our team' }, { href: '/contact', label: 'Contact' }] : templateNavigation(site.templateKey)
   explore.push(...resources)
   const social = Object.entries(site.socialLinks || {}) as Array<[string, string]>
 
