@@ -41,6 +41,13 @@ export function getPropertyStructureTypesByCategory(category) {
   return PROPERTY_STRUCTURES_BY_CATEGORY[key] || PROPERTY_STRUCTURES_BY_CATEGORY.residential
 }
 
+export function getPropertyStructureTypesForListing(category) {
+  return [...new Set([
+    ...getPropertyStructureTypesByCategory(category),
+    ...Object.values(PROPERTY_STRUCTURES_BY_CATEGORY).flat(),
+  ])]
+}
+
 export const PROPERTY_TYPES_BY_CATEGORY = {
   residential: ['house', 'apartment', 'townhouse', 'cluster', 'duplex', 'penthouse', 'vacant_stand'],
   commercial: ['office_building', 'medical_suite', 'business_park', 'commercial_building'],
@@ -137,6 +144,22 @@ export function getPropertyTypeOptionsByCategory(category) {
     value,
     label: getPropertyTypeLabel(value),
   }))
+}
+
+export function getPropertyTypeOptionsForListing(category, currentValue = '') {
+  const preferred = getPropertyTypeOptionsByCategory(category)
+  const all = [...preferred, ...Object.values(PROPERTY_TYPES_BY_CATEGORY).flatMap((types) => types.map((value) => ({ value, label: getPropertyTypeLabel(value) })))]
+  const seen = new Set()
+  const options = all.filter(({ value }) => {
+    if (seen.has(value)) return false
+    seen.add(value)
+    return true
+  })
+  const current = normalizeText(currentValue)
+  if (!current) return options
+  const matching = options.find((option) => option.value.toLowerCase() === current.toLowerCase())
+  if (matching) return options.map((option) => option === matching ? { ...option, value: current } : option)
+  return [{ value: current, label: getPropertyTypeLabel(current) }, ...options]
 }
 
 export function mapLegacyPropertyTypeToCategory(value, { fallback = null } = {}) {

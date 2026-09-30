@@ -70,8 +70,9 @@ import {
   getPropertyCategoryLabel,
   getPropertyTypeLabel,
   getPropertyTypeOptionsByCategory,
+  getPropertyTypeOptionsForListing,
   getPropertyStructureTypeLabel,
-  getPropertyStructureTypesByCategory,
+  getPropertyStructureTypesForListing,
   normalizePropertyCategory,
   normalizePropertyStructureType,
   PROPERTY_CATEGORIES,
@@ -242,7 +243,7 @@ const OWNERSHIP_OPTION_ICONS = {
 
 const PROPERTY_CATEGORY_META = {
   residential: { icon: Home, description: 'Homes, apartments, townhouses' },
-  commercial: { icon: Building2, description: 'Offices, medical suites, business parks' },
+  commercial: { icon: Building2, description: 'Business use, including converted homes' },
   industrial: { icon: Building2, description: 'Warehouses, factories, logistics' },
   retail: { icon: Building2, description: 'Retail stores, showrooms, shopping centres' },
   agricultural: { icon: Landmark, description: 'Farms, holdings, agricultural land' },
@@ -429,7 +430,7 @@ function choiceCardClass(isActive) {
 }
 
 function getPropertyStructureOptionsByCategory(category) {
-  return getPropertyStructureTypesByCategory(category)
+  return getPropertyStructureTypesForListing(category)
     .map((value) => ({
       value,
       label: getPropertyStructureTypeLabel(value),
@@ -1477,9 +1478,7 @@ function normalizeFormData(listing) {
   )
   const propertyTypeOptions = getPropertyTypeOptionsByCategory(resolvedPropertyCategory)
   const candidatePropertyType = existing.propertyType || listing?.propertyType || canonicalFacts?.property?.property_type || ''
-  const resolvedPropertyType = propertyTypeOptions.some((item) => item.value === candidatePropertyType)
-    ? candidatePropertyType
-    : propertyTypeOptions[0]?.value || candidatePropertyType || 'house'
+  const resolvedPropertyType = candidatePropertyType || propertyTypeOptions[0]?.value || 'house'
   const propertyStructureOptions = getPropertyStructureOptionsByCategory(resolvedPropertyCategory)
   const rawPropertyStructureType = normalizePropertyStructureType(
     existing.propertyTitleType ||
@@ -3240,8 +3239,8 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   }, [activeComplianceSigner, form?.propertyDisclosure, form?.sellerComplianceSignatureDrafts, form?.seller_compliance_signature_drafts, hasRequestedComplianceSigner])
   const propertyAddressDetails = useMemo(() => getPropertyAddressDetails(listing || {}, form || {}), [listing, form])
   const propertyTypeOptions = useMemo(
-    () => getPropertyTypeOptionsByCategory(form?.propertyCategory || 'residential'),
-    [form?.propertyCategory],
+    () => getPropertyTypeOptionsForListing(form?.propertyCategory || 'residential', form?.propertyType),
+    [form?.propertyCategory, form?.propertyType],
   )
   const propertyStructureOptions = useMemo(
     () => getPropertyStructureOptionsByCategory(form?.propertyCategory || 'residential'),
@@ -3407,14 +3406,6 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         }
       }
       if (key === 'propertyCategory') {
-        const propertyOptions = getPropertyTypeOptionsByCategory(value)
-        if (!propertyOptions.some((option) => option.value === next.propertyType)) {
-          next.propertyType = propertyOptions[0]?.value || next.propertyType || ''
-        }
-        const structureOptions = getPropertyStructureOptionsByCategory(value)
-        if (!structureOptions.some((option) => option.value === next.propertyStructureType)) {
-          next.propertyStructureType = structureOptions[0]?.value || next.propertyStructureType || ''
-        }
         const nextStructureType = normalizePropertyStructureType(next.propertyStructureType, { fallback: '' })
         next.sectionalTitle = ['sectional_title', 'share_block'].includes(nextStructureType)
         next.shareBlock = nextStructureType === 'share_block'
@@ -3550,14 +3541,6 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   function handlePropertyCategoryChange(value) {
     setForm((previous) => {
       const next = { ...(previous || {}), propertyCategory: value }
-      const propertyOptions = getPropertyTypeOptionsByCategory(value)
-      if (!propertyOptions.some((option) => option.value === next.propertyType)) {
-        next.propertyType = propertyOptions[0]?.value || next.propertyType || ''
-      }
-      const structureOptions = getPropertyStructureOptionsByCategory(value)
-      if (!structureOptions.some((option) => option.value === next.propertyStructureType)) {
-        next.propertyStructureType = structureOptions[0]?.value || next.propertyStructureType || ''
-      }
       const nextStructureType = normalizePropertyStructureType(next.propertyStructureType, { fallback: '' })
       next.sectionalTitle = ['sectional_title', 'share_block'].includes(nextStructureType)
       next.shareBlock = nextStructureType === 'share_block'
@@ -6256,7 +6239,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                 <FormSection
                   icon={Building2}
                   title="Property category"
-                  description="Choose the broad category first. It controls the type options and the rest of the flow."
+                  description="Choose how the property is used or marketed. Its building type and legal zoning can differ."
                   illustration="property_details"
                   mobilePaneIndex={propertyPaneIndexes.category}
                 >
@@ -6280,7 +6263,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                 <FormSection
                   icon={Home}
                   title="Property type & structure"
-                  description="Choose the specific property type and title type."
+                  description="Choose the physical building type and title type, even if they differ from the category."
                   illustration="property_details"
                   mobilePaneIndex={propertyPaneIndexes.type}
                 >

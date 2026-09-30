@@ -6,7 +6,6 @@ import {
 } from './sellerProfileCaptureModel.js'
 import { normalizeSellerEntityType } from './sellerEntityModel.js'
 import {
-  getPropertyStructureTypesByCategory,
   getPropertyTypeOptionsByCategory,
   normalizePropertyCategory,
   normalizePropertyStructureType,
@@ -421,12 +420,6 @@ export function updateListingSellerProfileDraftPerson(draft = {}, key = 'multipl
 
 export function updateListingSellerProfileDraftField(draft = {}, field = '', value = '') {
   const next = { ...draft, [field]: value }
-  if (field === 'propertyCategory') {
-    const typeOptions = getPropertyTypeOptionsByCategory(value)
-    if (!typeOptions.some((option) => option.value === next.propertyType)) next.propertyType = typeOptions[0]?.value || ''
-    const structures = getPropertyStructureTypesByCategory(value)
-    if (!structures.includes(next.propertyStructureType)) next.propertyStructureType = structures[0] || 'full_title'
-  }
   if (field === 'sectionNumber') next.unitNumber = value
   return next
 }
