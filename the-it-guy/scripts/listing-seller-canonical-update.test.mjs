@@ -6,7 +6,7 @@ import {
   buildListingSellerCanonicalUpdate,
   LISTING_SELLER_CANONICAL_UPDATE_VERSION,
 } from '../src/services/listings/listingSellerCanonicalUpdateModel.js'
-import { saveListingSellerCanonicalUpdate } from '../src/services/listings/listingSellerCanonicalUpdateService.js'
+import { limitSellerCanonicalSaveWait, saveListingSellerCanonicalUpdate } from '../src/services/listings/listingSellerCanonicalUpdateService.js'
 
 function test(name, fn) {
   return Promise.resolve()
@@ -37,6 +37,13 @@ const listing = {
     },
   },
 }
+
+await test('releases a stalled seller profile save without claiming it failed', async () => {
+  await assert.rejects(
+    limitSellerCanonicalSaveWait(new Promise(() => {}), 5),
+    (error) => error.code === 'SELLER_PROFILE_SAVE_TIMEOUT' && /may have completed/.test(error.message),
+  )
+})
 
 await test('builds one canonical seller mutation with provenance and optimistic concurrency', () => {
   const update = buildListingSellerCanonicalUpdate({

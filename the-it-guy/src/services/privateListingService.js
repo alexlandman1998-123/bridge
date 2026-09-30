@@ -5958,22 +5958,41 @@ export async function savePrivateListingSellerCanonicalUpdate(update = {}, optio
   if (!listingId) throw new Error('Listing id is required.')
   if (!mutationId) throw new Error('A valid seller update id is required.')
 
-  const result = await client.rpc('save_private_listing_seller_canonical_update', {
-    p_listing_id: listingId,
-    p_form_data: update.nextFormData && typeof update.nextFormData === 'object' ? update.nextFormData : {},
-    p_canonical_facts: update.canonicalFacts && typeof update.canonicalFacts === 'object' ? update.canonicalFacts : {},
-    p_canonical_readiness: update.readiness && typeof update.readiness === 'object' ? update.readiness : {},
-    p_listing_patch: update.listingPatch && typeof update.listingPatch === 'object' ? update.listingPatch : {},
-    p_onboarding_status: normalizeNullableText(update.onboardingStatus) || 'not_started',
-    p_seller_type: normalizeNullableText(update.sellerType),
-    p_ownership_structure: normalizeNullableText(update.ownershipStructure),
-    p_marital_regime: normalizeNullableText(update.maritalRegime),
-    p_mutation_id: mutationId,
-    p_mutation_type: normalizeNullableText(update.mutationType) || 'seller_edit',
-    p_source: normalizeNullableText(update.source) || 'agent_listing_workspace',
-    p_changed_fields: Array.isArray(update.changedFields) ? update.changedFields.map(normalizeText).filter(Boolean) : [],
-    p_expected_updated_at: normalizeNullableText(update.expectedUpdatedAt),
-  })
+  const saveTimeout = createRequestTimeout(25000)
+  let result
+  try {
+    result = await client.rpc('save_private_listing_seller_canonical_update', {
+      p_listing_id: listingId,
+      p_form_data: update.nextFormData && typeof update.nextFormData === 'object' ? update.nextFormData : {},
+      p_canonical_facts: update.canonicalFacts && typeof update.canonicalFacts === 'object' ? update.canonicalFacts : {},
+      p_canonical_readiness: update.readiness && typeof update.readiness === 'object' ? update.readiness : {},
+      p_listing_patch: update.listingPatch && typeof update.listingPatch === 'object' ? update.listingPatch : {},
+      p_onboarding_status: normalizeNullableText(update.onboardingStatus) || 'not_started',
+      p_seller_type: normalizeNullableText(update.sellerType),
+      p_ownership_structure: normalizeNullableText(update.ownershipStructure),
+      p_marital_regime: normalizeNullableText(update.maritalRegime),
+      p_mutation_id: mutationId,
+      p_mutation_type: normalizeNullableText(update.mutationType) || 'seller_edit',
+      p_source: normalizeNullableText(update.source) || 'agent_listing_workspace',
+      p_changed_fields: Array.isArray(update.changedFields) ? update.changedFields.map(normalizeText).filter(Boolean) : [],
+      p_expected_updated_at: normalizeNullableText(update.expectedUpdatedAt),
+    }).abortSignal(saveTimeout.signal)
+  } catch (error) {
+    if (saveTimeout.signal.aborted) {
+      const timeoutError = new Error('The seller save request timed out. Check the listing before retrying because the save may have completed.')
+      timeoutError.code = 'SELLER_PROFILE_SAVE_TIMEOUT'
+      throw timeoutError
+    }
+    throw error
+  } finally {
+    saveTimeout.clear()
+  }
+
+  if (saveTimeout.signal.aborted) {
+    const timeoutError = new Error('The seller save request timed out. Check the listing before retrying because the save may have completed.')
+    timeoutError.code = 'SELLER_PROFILE_SAVE_TIMEOUT'
+    throw timeoutError
+  }
 
   if (result.error) {
     if (isMissingRpcError(result.error, 'save_private_listing_seller_canonical_update')) {
