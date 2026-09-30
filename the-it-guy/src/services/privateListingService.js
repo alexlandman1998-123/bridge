@@ -3258,7 +3258,15 @@ function mapPrivateListingSummaryRow(row = {}, onboardingCommissionByListingId =
     listingStatus,
     listingVisibility: normalizeStatus(row.listing_visibility, LISTING_VISIBILITY, 'internal'),
     listingSource: normalizeListingSource(row.listing_source || row.stock_source || row.listing_category, { fallback: 'private_listing' }),
-    propertyCategory: normalizePropertyCategory(row.property_category || row.property_type, { fallback: 'residential' }),
+    propertyCategory: normalizePropertyCategory(
+      row.property_category ||
+        canonicalPropertyFacts.propertyCategory ||
+        canonicalPropertyFacts.property_category ||
+        canonicalSellerFacts.propertyCategory ||
+        canonicalSellerFacts.property_category ||
+        row.property_type,
+      { fallback: 'residential' },
+    ),
     propertyStructureType: normalizePropertyStructureType(row.property_structure_type || row.ownership_structure || row.property_type, { fallback: 'other' }),
     propertyType: row.property_type || '',
     listingCategory: row.listing_category || 'private_sale',

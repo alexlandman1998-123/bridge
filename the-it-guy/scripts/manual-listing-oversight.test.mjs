@@ -19,20 +19,20 @@ for (const removedPattern of [
 
 assert.match(
   source,
-  /residentialListingCards\.length/,
-  'Residential listing cards should render directly without a follow-up oversight filter.',
+  /propertyListingCards\.length/,
+  'Property listing cards should render directly without a follow-up oversight filter.',
 )
 
 assert.match(
   source,
-  /residentialListingCards\.map\(\(card\) =>/,
-  'Residential listing cards should map the unfiltered residential card list.',
+  /propertyListingCards\.map\(\(card, index\) =>/,
+  'Property listing cards should map the unfiltered property card list.',
 )
 
 assert.doesNotMatch(
   source,
   /Listing follow-ups/,
-  'Listing cards should not render follow-up hints on the residential grid.',
+  'Listing cards should not render follow-up hints on the property grid.',
 )
 
 assert.match(
