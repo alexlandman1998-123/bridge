@@ -1,9 +1,11 @@
-import { ArrowRight, Bath, BedDouble, Car, Check } from "lucide-react";
+import { ArrowRight, Bath, BedDouble, Car, Search } from "lucide-react";
 import { useState } from "react";
 import HomeSeekersValuationModal from "./HomeSeekersValuationModal";
 import HomeSeekersMobileNav from "./HomeSeekersMobileNav";
 import HomeSeekersFooter from "./HomeSeekersFooter";
 import HomeSeekersFastTrack from "./HomeSeekersFastTrack";
+import HomeSeekersFeaturedHomes from "./HomeSeekersFeaturedHomes";
+import HomeSeekersAreaAtlas from "./HomeSeekersAreaAtlas";
 import { homeSeekersCard, submitHomeSeekersLead, useHomeSeekersWebsiteData } from './homeSeekersWebsiteData';
 import "./HomeSeekersDemo.css";
 import "./HomeSeekersEditorial.css";
@@ -13,6 +15,8 @@ import "./HomeSeekersResults.css";
 import "./HomeSeekersAcademy.css";
 import "./HomeSeekersFooter.css";
 import "./HomeSeekersBrand.css";
+import "./HomeSeekersHomeHero.css";
+import "./HomeSeekersHomeAreas.css";
 
 const asset = "https://d21tw07c6rnmp0.cloudfront.net/media/uploads/869/";
 const images = {
@@ -68,6 +72,16 @@ function Eyebrow({ children }) {
   );
 }
 
+function CampaignTrack() {
+  return (
+    <div className="hs-campaign-hero__track" aria-label="The 45-day sales process">
+      <span><b>DAY 01</b> Price it right. Launch it hard.</span>
+      <span><b>DAY 14</b> Viewings, feedback, momentum.</span>
+      <span><b>DAY 45</b> Sold — or the commission drops.</span>
+    </div>
+  );
+}
+
 function ListingCard({ listing }) {
   return (
     <article className="hs-brief-listing">
@@ -96,9 +110,9 @@ function ListingCard({ listing }) {
   );
 }
 
-export default function HomeSeekersDemo() {
+export default function HomeSeekersDemo({ guaranteePage = false }) {
   const { listings: websiteListings, loading: listingsLoading, error: listingsError } = useHomeSeekersWebsiteData();
-  const listings = websiteListings.filter((listing) => listing.transactionType === 'sale').slice(0, 3).map(homeSeekersCard);
+  const listings = websiteListings.filter((listing) => listing.transactionType === 'sale').slice(0, 9).map(homeSeekersCard);
   const [valuationOpen, setValuationOpen] = useState(false);
   const [contactStatus, setContactStatus] = useState("");
   const [contactSending, setContactSending] = useState(false);
@@ -126,7 +140,7 @@ export default function HomeSeekersDemo() {
   return (
     <main className="hs-site hs-brief" id="top">
       <header className="hs-brief-header hs-campaign-header">
-        <a href="#top" className="hs-brief-logo" aria-label="Home Seekers home">
+        <a href="/demo/homeseekers" className="hs-brief-logo" aria-label="Home Seekers home">
           <img
             src="/brand/homeseekers/home-seekers-horizontal-black.svg"
             alt="Home Seekers"
@@ -141,7 +155,7 @@ export default function HomeSeekersDemo() {
         </nav>
         <a
           className="hs-campaign-header__guarantee"
-          href="#guarantee"
+          href="/demo/homeseekers/guarantee"
           aria-label="Read about the 45-day guarantee"
         >
           <strong>45</strong>
@@ -155,13 +169,13 @@ export default function HomeSeekersDemo() {
           Book a free valuation
         </button>
         <HomeSeekersMobileNav
-          links={nav}
+          links={[...nav, ["45-day guarantee", "/demo/homeseekers/guarantee"]]}
           active=""
           onValuation={() => setValuationOpen(true)}
         />
       </header>
 
-      <section className="hs-brief-hero hs-campaign-hero">
+      {guaranteePage ? <section className="hs-brief-hero hs-campaign-hero">
         <div className="hs-campaign-hero__visual" aria-hidden="true">
           <img src={images.hero} alt="" />
         </div>
@@ -191,12 +205,33 @@ export default function HomeSeekersDemo() {
             <a href="#guarantee">Full terms published - no small print.</a>
           </small>
         </div>
-        <div className="hs-campaign-hero__track" aria-label="The 45-day sales process">
-          <span><b>DAY 01</b> Price it right. Launch it hard.</span>
-          <span><b>DAY 14</b> Viewings, feedback, momentum.</span>
-          <span><b>DAY 45</b> Sold — or the commission drops.</span>
+        <CampaignTrack />
+      </section> : <>
+      <section className="hs-home-hero" aria-labelledby="hs-home-hero-title">
+        <div className="hs-home-hero__visual" aria-hidden="true"><img src={images.hero} alt="" /></div>
+        <div className="hs-home-hero__content">
+          <p className="hs-home-hero__eyebrow"><span /> HOME SEEKERS / PRETORIA EAST</p>
+          <h1 id="hs-home-hero-title">Find a home<br />that <em>moves you.</em></h1>
+          <p className="hs-home-hero__intro">Real homes. Real local knowledge. A better way to move forward.</p>
+          <form className="hs-home-hero__search" action="/demo/homeseekers/buying#properties" method="get" role="search">
+            <Search size={24} aria-hidden="true" />
+            <label className="hs-home-hero__search-label" htmlFor="hs-home-search">Search homes by suburb or address</label>
+            <input id="hs-home-search" name="q" type="search" placeholder="Search suburb or address" autoComplete="off" />
+            <button type="submit">Find homes <ArrowRight size={20} aria-hidden="true" /></button>
+          </form>
+          <div className="hs-home-hero__shortcuts" aria-label="Popular property searches">
+            <span>START SOMEWHERE LOCAL</span>
+            <a href="/demo/homeseekers/buying?q=Moreleta+Park#properties">Moreleta Park</a>
+            <a href="/demo/homeseekers/buying?q=Garsfontein#properties">Garsfontein</a>
+            <a href="/demo/homeseekers/buying?q=Olympus#properties">Olympus</a>
+          </div>
         </div>
       </section>
+      <CampaignTrack />
+      </>}
+
+      {!guaranteePage && <HomeSeekersFeaturedHomes listings={listings} loading={listingsLoading} error={listingsError} />}
+      {!guaranteePage && <div className="hs-home-areas"><HomeSeekersAreaAtlas id="areas" /></div>}
 
       <section className="hs-brief-problem hs-editorial-problem">
         <div className="hs-editorial-problem__story">
@@ -283,68 +318,51 @@ export default function HomeSeekersDemo() {
       </section>
 
       <section className="hs-brief-guarantee" id="guarantee">
-        <div>
-          <Eyebrow>
-            THE <strong>GUARANTEE</strong>
-          </Eyebrow>
-          <h2 style={{ color: "#fff" }}>
-            No crossed fingers.
-            <br />
-            Just a <em>45-day</em> promise.
-          </h2>
-          <p>
-            We have all heard the big promise and the small print. This is the
-            part where we put something on the line too.
-          </p>
-          <a
-            className="hs-brief-button hs-brief-button--light"
-            href="#valuation"
-          >
-            See if your home qualifies
-          </a>
-          <div className="hs-guarantee-marker">
-            <strong>45</strong>
-            <span>
-              DAYS
-              <br />· NO CROSSED FINGERS
-            </span>
+        <div className="hs-guarantee__frame">
+          <div className="hs-guarantee__topline">
+            <span>THE 45-DAY GUARANTEE</span>
+            <span>A WRITTEN COMMITMENT, BOTH WAYS</span>
           </div>
-        </div>
-        <div className="hs-brief-commitments">
-          <article>
-            <h3 style={{ color: "#fff" }}>What we put on the line.</h3>
-            <p>
-              <Check size={16} /> <span>Live on the market within <em>3 working days</em> of signature</span>
-            </p>
-            <p>
-              <Check size={16} /> The full marketing plan, executed as agreed
-            </p>
-            <p>
-              <Check size={16} /> Written feedback every single week
-            </p>
-            <p>
-              <Check size={16} /> Agreed Commission reduced to half
-            </p>
-            <small>
-              Our promise has a consequence. Not just a nice headline.
-            </small>
-          </article>
-          <article>
-            <h3 style={{ color: "#fff" }}>What makes it work.</h3>
-            <p>
-              <Check size={16} /> An exclusive mandate for the guarantee period
-            </p>
-            <p>
-              <Check size={16} /> Listing at the recommended price
-            </p>
-            <p>
-              <Check size={16} /> Reasonable access for viewings
-            </p>
-            <p>
-              <Check size={16} /> Considering market-value offers in good faith
-            </p>
-            <small>A fair plan needs a fair partnership.</small>
-          </article>
+          <div className="hs-guarantee__layout">
+            <div className="hs-guarantee__intro">
+              <h2>
+                No crossed fingers.
+                <br />
+                Just a <em>45-day</em> promise.
+              </h2>
+              <p>
+                We have all heard the big promise and the small print. This is the
+                part where we put something on the line too.
+              </p>
+              <a className="hs-guarantee__cta" href="#valuation">
+                See if your home qualifies <ArrowRight size={18} aria-hidden="true" />
+              </a>
+            </div>
+            <div className="hs-guarantee__terms">
+              <article>
+                <span className="hs-guarantee__label">01 / OUR PROMISE</span>
+                <h3>What we put on the line.</h3>
+                <ol>
+                  <li><span>01</span><span>Live on the market within <em>3 working days</em> of signature</span></li>
+                  <li><span>02</span><span>The full marketing plan, executed as agreed</span></li>
+                  <li><span>03</span><span>Written feedback every single week</span></li>
+                  <li><span>04</span><span>Agreed Commission reduced to half</span></li>
+                </ol>
+                <small>Our promise has a consequence. Not just a nice headline.</small>
+              </article>
+              <article>
+                <span className="hs-guarantee__label">02 / YOUR PART</span>
+                <h3>What makes it work.</h3>
+                <ol>
+                  <li><span>01</span><span>An exclusive mandate for the guarantee period</span></li>
+                  <li><span>02</span><span>Listing at the recommended price</span></li>
+                  <li><span>03</span><span>Reasonable access for viewings</span></li>
+                  <li><span>04</span><span>Considering market-value offers in good faith</span></li>
+                </ol>
+                <small>A fair plan needs a fair partnership.</small>
+              </article>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -379,7 +397,7 @@ export default function HomeSeekersDemo() {
             </div>
             <div>
               <span>ON THE MARKET</span>
-              <a href="#on-market">
+              <a href={guaranteePage ? '#on-market' : '#featured-homes'}>
                 Explore current homes <ArrowRight size={16} />
               </a>
             </div>
@@ -387,7 +405,7 @@ export default function HomeSeekersDemo() {
         </article>
       </section>
 
-      <section className="hs-brief-areas" id="areas">
+      {guaranteePage && <section className="hs-brief-areas" id="areas">
         <header>
           <div>
             <Eyebrow>
@@ -431,7 +449,7 @@ export default function HomeSeekersDemo() {
             </i>
           </a>
         </div>
-      </section>
+      </section>}
 
       <section className="hs-brief-home-values">
         <header>
@@ -490,7 +508,7 @@ export default function HomeSeekersDemo() {
         </footer>
       </section>
 
-      <section className="hs-brief-section hs-brief-market" id="on-market">
+      {guaranteePage && <section className="hs-brief-section hs-brief-market" id="on-market">
         <div className="hs-brief-market__heading">
           <div>
             <Eyebrow>
@@ -507,12 +525,12 @@ export default function HomeSeekersDemo() {
           </a>
         </div>
         <div className="hs-brief-listings">
-          {listings.map((listing) => (
+          {listings.slice(0, 3).map((listing) => (
             <ListingCard key={listing.id} listing={listing} />
           ))}
           {!listings.length && <p className="hs-brief-listings-empty" role="status">{listingsLoading ? 'Loading current homes…' : listingsError || 'There are no homes published online right now. Get in touch and we will help you find the right one.'}</p>}
         </div>
-      </section>
+      </section>}
 
       <section className="hs-brief-join" id="join-us">
         <div className="hs-academy-image">

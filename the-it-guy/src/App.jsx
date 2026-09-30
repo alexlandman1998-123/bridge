@@ -1933,6 +1933,7 @@ function AppRoutes() {
           <Route path="/tuckers-attorneys/calculators" element={<AppErrorBoundary scope="tuckers-attorneys-calculators" title="Tuckers Attorneys calculators failed to load"><TuckersAttorneysCalculatorsPage /></AppErrorBoundary>} />
           <Route path="/demo/tuckers-attorneys" element={<AppErrorBoundary scope="tuckers-attorneys-calculators" title="Tuckers Attorneys calculators failed to load"><TuckersAttorneysCalculatorsPage /></AppErrorBoundary>} />
           <Route path="/demo/homeseekers" element={<AppErrorBoundary scope="homeseekers-demo" title="HomeSeekers demo failed to load"><HomeSeekersDemo /></AppErrorBoundary>} />
+          <Route path="/demo/homeseekers/guarantee" element={<AppErrorBoundary scope="homeseekers-guarantee" title="Home Seekers guarantee page failed to load"><HomeSeekersDemo guaranteePage /></AppErrorBoundary>} />
           <Route path="/demo/homeseekers/buy" element={<Navigate to="/demo/homeseekers/buying" replace />} />
           <Route path="/demo/homeseekers/sell" element={<Navigate to="/demo/homeseekers/selling" replace />} />
           <Route path="/demo/homeseekers/rent" element={<Navigate to="/demo/homeseekers/renting" replace />} />

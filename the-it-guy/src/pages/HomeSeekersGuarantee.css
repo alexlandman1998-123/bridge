@@ -1,202 +1,151 @@
-/* The guarantee is a dense comparison, so its dividers stop with the content. */
-.hs-brief-guarantee {
-  position: relative;
-  grid-template-columns: minmax(300px, 0.66fr) minmax(620px, 1.34fr) !important;
-  gap: clamp(38px, 5vw, 88px) !important;
-  padding: clamp(66px, 6vw, 108px) clamp(24px, 4vw, 84px) !important;
-  overflow: hidden;
+main.hs-brief .hs-brief-guarantee {
+  display: block;
+  padding: clamp(78px, 7vw, 116px) clamp(24px, 6vw, 112px);
+  background: #1e1e1e;
+  color: #fff;
 }
-.hs-brief-guarantee:after {
-  position: absolute;
-  right: -0.06em;
-  bottom: -0.18em;
-  z-index: 0;
-  content: "45";
-  color: rgba(255, 255, 255, 0.025);
-  font:
-    800 clamp(250px, 31vw, 570px)/0.7 Montserrat,
-    sans-serif;
-  letter-spacing: -0.12em;
+
+main.hs-brief .hs-brief-guarantee::after { content: none; }
+
+.hs-guarantee__frame {
+  max-width: 1600px;
+  margin: 0 auto;
 }
-.hs-brief-guarantee > div {
-  position: relative;
-  z-index: 1;
-}
-.hs-brief-guarantee > div:first-child {
-  max-width: 550px;
-}
-.hs-brief-guarantee h2 {
-  max-width: 510px;
-}
-.hs-brief-guarantee > div > p:not(.hs-brief-eyebrow) {
-  margin-bottom: 26px;
-}
-.hs-guarantee-marker {
+
+.hs-guarantee__topline {
   display: flex;
   align-items: center;
-  gap: 14px;
-  margin-top: clamp(28px, 3.5vw, 55px);
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: clamp(42px, 4.5vw, 76px);
   padding-top: 17px;
-  border-top: 1px solid rgba(255, 255, 255, 0.33);
+  border-top: 1px solid rgba(255, 255, 255, .42);
+  color: #c9c9c7;
+  font: 800 10px/1.25 Montserrat, Arial, sans-serif;
+  letter-spacing: .12em;
 }
-.hs-guarantee-marker strong {
-  color: var(--hs-fast);
-  font:
-    800 clamp(68px, 7vw, 106px)/0.72 Montserrat,
-    sans-serif;
-  letter-spacing: -0.105em;
+
+.hs-guarantee__topline span:first-child { color: #ff6319; }
+
+.hs-guarantee__layout {
+  display: grid;
+  grid-template-columns: minmax(0, .82fr) minmax(0, 1.18fr);
+  gap: clamp(48px, 6vw, 105px);
+  align-items: start;
 }
-.hs-guarantee-marker span {
+
+main.hs-brief .hs-guarantee__intro h2 {
+  max-width: 660px;
+  margin: 0;
   color: #fff;
-  font:
-    700 11px/1.18 Montserrat,
-    sans-serif;
-  letter-spacing: 0.08em;
-}
-.hs-brief-commitments {
-  align-self: start;
-  margin-top: 0;
-  background: linear-gradient(90deg, rgba(255, 255, 255, 0.035), transparent);
-}
-.hs-brief-commitments article {
-  position: relative;
-  padding: 27px clamp(22px, 2.6vw, 46px) 8px !important;
-}
-.hs-brief-commitments article:before {
-  display: block;
-  margin-bottom: 10px;
-  color: var(--hs-fast);
-  font:
-    700 9px Montserrat,
-    sans-serif;
-  letter-spacing: 0.1em;
-}
-.hs-brief-commitments article:first-child:before {
-  content: "01 / OUR PROMISE";
-}
-.hs-brief-commitments article:last-child:before {
-  content: "02 / YOUR PART";
-}
-.hs-brief-commitments h3 {
-  margin-bottom: 26px;
-  font-size: clamp(19px, 1.25vw, 22px) !important;
-}
-.hs-brief-commitments p {
-  gap: 12px;
-  margin-bottom: 19px;
-  font-size: clamp(15px, 1vw, 17px) !important;
-  line-height: 1.55 !important;
-}
-.hs-brief-commitments svg {
-  width: 18px;
-  height: 18px;
-  margin-top: 3px;
-}
-@media (max-width: 850px) {
-  .hs-brief-guarantee {
-    grid-template-columns: 1fr !important;
-    padding: 72px 28px !important;
-  }
-  .hs-brief-commitments {
-    margin-top: 0;
-  }
-}
-@media (max-width: 600px) {
-  .hs-brief-guarantee {
-    padding: 64px 22px !important;
-  }
-  .hs-brief-guarantee:after {
-    font-size: 250px;
-  }
-  .hs-guarantee-marker {
-    margin-top: 32px;
-  }
-  .hs-brief-commitments article {
-    padding: 25px 0 !important;
-  }
-  .hs-brief-commitments article:first-child {
-    padding-top: 0 !important;
-  }
-  .hs-brief-commitments h3 {
-    font-size: 19px !important;
-  }
-  .hs-brief-commitments p {
-    font-size: 15px !important;
-  }
+  font: 900 clamp(48px, 4.5vw, 82px)/.96 Montserrat, Arial, sans-serif;
+  letter-spacing: -.075em;
 }
 
-/* Give the guarantee a clearer deal structure and a touch of Home Seekers' voice. */
-.hs-brief-guarantee {
-  align-items: stretch;
-}
-
-.hs-brief-guarantee h2 em {
-  color: var(--hs-fast);
+.hs-guarantee__intro h2 em {
+  color: #ff6319;
   font-style: normal;
 }
 
-.hs-brief-guarantee > div:first-child {
-  display: flex;
-  flex-direction: column;
+main.hs-brief .hs-guarantee__intro p {
+  max-width: 500px;
+  margin: clamp(24px, 2.7vw, 42px) 0 30px;
+  color: #d0d0ce;
+  font: 500 clamp(16px, 1.1vw, 19px)/1.55 Asap, Arial, sans-serif;
 }
 
-.hs-guarantee-marker {
-  margin-top: auto;
-  padding-bottom: 5px;
+main.hs-brief .hs-guarantee__cta {
+  display: inline-flex;
+  min-height: 54px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 32px;
+  padding: 0 19px 0 22px;
+  background: #fff;
+  color: #171717;
+  font: 800 11px/1.2 Montserrat, Arial, sans-serif;
+  letter-spacing: .02em;
+  text-decoration: none;
+  text-transform: uppercase;
+  transition: background .2s ease, transform .2s ease;
 }
 
-.hs-brief-commitments {
-  align-self: stretch;
-  min-height: 100%;
-  border-top: 1px solid #686868;
-  border-bottom: 1px solid #686868;
-  background: transparent;
+.hs-guarantee__cta svg { color: #ff6319; }
+main.hs-brief .hs-guarantee__cta:hover { background: #f4f4f2; transform: translateY(-2px); }
+main.hs-brief .hs-guarantee__cta:focus-visible { outline: 3px solid #ff6319; outline-offset: 4px; }
+
+.hs-guarantee__terms {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: clamp(24px, 2.6vw, 46px);
 }
 
-.hs-brief-commitments article {
-  display: flex;
-  flex-direction: column;
-  min-height: 100%;
-  padding-top: 31px !important;
-  padding-bottom: 27px !important;
+.hs-guarantee__terms article {
+  min-width: 0;
+  padding-top: 22px;
+  border-top: 1px solid rgba(255, 255, 255, .45);
 }
 
-.hs-brief-commitments article:first-child {
-  background: rgba(255, 99, 25, 0.07);
+.hs-guarantee__label {
+  color: #ff6319;
+  font: 800 10px/1.25 Montserrat, Arial, sans-serif;
+  letter-spacing: .1em;
 }
 
-.hs-brief-commitments small {
+main.hs-brief .hs-guarantee__terms h3 {
+  margin: 15px 0 19px;
+  color: #fff;
+  font: 800 clamp(21px, 1.45vw, 26px)/1.15 Montserrat, Arial, sans-serif;
+  letter-spacing: -.045em;
+}
+
+.hs-guarantee__terms ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hs-guarantee__terms li {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 13px;
+  align-items: start;
+  padding: 13px 0;
+  border-top: 1px solid rgba(255, 255, 255, .14);
+  color: #e7e7e5;
+  font: 500 clamp(14px, 1vw, 17px)/1.42 Asap, Arial, sans-serif;
+}
+
+.hs-guarantee__terms li > span:first-child {
+  padding-top: 3px;
+  color: #ff6319;
+  font: 800 10px/1.2 Montserrat, Arial, sans-serif;
+}
+
+.hs-guarantee__terms li em {
+  color: #fff;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.hs-guarantee__terms small {
   display: block;
-  margin-top: auto;
-  padding-top: 18px;
-  border-top: 1px solid rgba(255, 255, 255, 0.2);
-  color: #bdbdbb;
-  font-size: 12px;
-  font-style: italic;
-  line-height: 1.45;
+  margin-top: 16px;
+  color: #aaa;
+  font: 500 12px/1.45 Asap, Arial, sans-serif;
 }
 
-@media (max-width: 850px) {
-  .hs-guarantee-marker {
-    margin-top: 34px;
-  }
-
-  .hs-brief-commitments article {
-    min-height: 285px;
-  }
+@media (max-width: 1050px) {
+  .hs-guarantee__layout { grid-template-columns: 1fr; gap: 54px; }
+  .hs-guarantee__intro { max-width: 740px; }
 }
 
-@media (max-width: 600px) {
-  .hs-brief-commitments {
-    border-bottom: 0;
-  }
-
-  .hs-brief-commitments article {
-    min-height: 0;
-    padding-bottom: 25px !important;
-  }
-
-  .hs-brief-commitments small {
-    margin-top: 10px;
-  }
+@media (max-width: 680px) {
+  main.hs-brief .hs-brief-guarantee { padding: 65px 22px 72px; }
+  .hs-guarantee__topline { align-items: flex-start; flex-direction: column; gap: 8px; margin-bottom: 36px; }
+  main.hs-brief .hs-guarantee__intro h2 { font-size: clamp(42px, 10vw, 58px); }
+  .hs-guarantee__layout { gap: 48px; }
+  .hs-guarantee__terms { grid-template-columns: 1fr; gap: 31px; }
+  .hs-guarantee__terms article { padding-top: 20px; }
+  .hs-guarantee__terms li { grid-template-columns: 25px minmax(0, 1fr); }
 }

@@ -49,7 +49,7 @@ export default function HomeSeekersFastTrack({ compact = false, onValuation }) {
         {!compact && (
           <small>
             Exclusive mandate and recommended-price conditions apply.{" "}
-            <a href="#guarantee">Read the guarantee terms.</a>
+            <a href="/demo/homeseekers/guarantee#guarantee">Read the guarantee terms.</a>
           </small>
         )}
       </header>

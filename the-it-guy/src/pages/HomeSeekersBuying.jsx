@@ -77,7 +77,7 @@ function PropertyCard({ listing, featured }) {
 export default function HomeSeekersBuying() {
   const { listings: websiteListings, loading: listingsLoading, error: listingsError } = useHomeSeekersWebsiteData();
   const listings = useMemo(() => websiteListings.filter((listing) => listing.transactionType === 'sale').map(homeSeekersCard), [websiteListings]);
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(() => new URLSearchParams(window.location.search).get('q')?.trim() || "");
   const [type, setType] = useState("All homes");
   const [bedrooms, setBedrooms] = useState("Any beds");
   const [filtersOpen, setFiltersOpen] = useState(false);
