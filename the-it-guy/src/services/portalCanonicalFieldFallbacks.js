@@ -181,6 +181,38 @@ export function resolvePortalBuyerName(row = {}, { fallback = 'Buyer pending' } 
   ) || fallback
 }
 
+export function resolveSectionalTitleIdentity(row = {}) {
+  const transaction = isPlainObject(row.transaction) ? row.transaction : {}
+  const unit = isPlainObject(row.unit) ? row.unit : {}
+  const development = isPlainObject(row.development) ? row.development : {}
+  const listing = isPlainObject(row.listing) ? row.listing : {}
+  const onboarding = isPlainObject(row.onboardingFormData?.formData)
+    ? row.onboardingFormData.formData
+    : isPlainObject(row.onboardingFormData) ? row.onboardingFormData : {}
+  const listingFacts = isPlainObject(listing.seller_canonical_facts_json) ? listing.seller_canonical_facts_json : {}
+  const listingProperty = isPlainObject(listingFacts.property) ? listingFacts.property : {}
+  const onboardingProperty = isPlainObject(onboarding.property) ? onboarding.property : {}
+  const listingScheme = isPlainObject(listingProperty.scheme) ? listingProperty.scheme : {}
+  const onboardingScheme = isPlainObject(onboardingProperty.scheme) ? onboardingProperty.scheme : {}
+  const profile = isPlainObject(development.profile) ? development.profile : {}
+  const complexName = firstText(
+    listingProperty.complexName, listingProperty.complex_name, listingProperty.schemeName, listingProperty.scheme_name, listingScheme.name,
+    onboardingProperty.complexName, onboardingProperty.complex_name, onboardingProperty.schemeName, onboardingProperty.scheme_name, onboardingScheme.name,
+    listing.complexName, listing.complex_name, listing.schemeName, listing.scheme_name,
+    onboarding.complexName, onboarding.complex_name, onboarding.schemeName, onboarding.scheme_name,
+    development.scheme_name, development.schemeName, profile.scheme_name, profile.schemeName,
+    development.development_name, development.developmentName, development.name,
+  )
+  const unitNumber = firstText(
+    unit.unit_label, unit.unitLabel, unit.unit_number, unit.unitNumber,
+    listingProperty.unitNumber, listingProperty.unit_number, listingScheme.unitNumber, listingScheme.unit_number,
+    onboardingProperty.unitNumber, onboardingProperty.unit_number, onboardingScheme.unitNumber, onboardingScheme.unit_number,
+    listing.unitNumber, listing.unit_number, onboarding.unitNumber, onboarding.unit_number,
+    transaction.unit_number, transaction.unitNumber,
+  ).replace(/^unit\s+/i, '')
+  return { complexName, unitNumber }
+}
+
 export function resolvePortalPropertyLabel(row = {}, { fallback = 'Property pending' } = {}) {
   const transaction = isPlainObject(row.transaction) ? row.transaction : {}
   const unit = isPlainObject(row.unit) ? row.unit : {}

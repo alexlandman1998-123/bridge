@@ -144,6 +144,7 @@ import { resolveTransactionRoutingProfile } from '../services/transactionRouting
 import { buildLegalTaskWorkbenchModel } from '../core/transactions/legalTaskWorkbenchModel.js'
 import { readTaskConfirmations, normalizeTaskConfirmations } from '../core/transactions/legalTaskConfirmations.js'
 import { createAttorneyAppointmentInvite, resendAttorneyAppointmentCommunication } from '../services/attorneyOperations.js'
+import { saveAttorneyMatterNumber, savedAttorneyMatterNumber } from '../services/attorneyMatterNumberService.js'
 import { buildAttorneyInviteOutcome } from '../core/appointments/attorneyInviteDelivery.js'
 import LegalTaskAppointmentForm from '../components/attorney/workflow/LegalTaskAppointmentForm.jsx'
 import { getCanonicalLegalWorkflowProgressPercent } from '../core/transactions/legalWorkflowProgress.js'
@@ -167,6 +168,7 @@ import {
   createTransactionDocumentSignedUrl,
   createTransactionWorkspaceHydrationContext,
   declineBondQuote,
+  fetchTransactionCoreById,
   fetchTransactionRouteCoreById,
   fetchTransactionById,
   fetchTransactionReferralIncentive,
@@ -260,6 +262,7 @@ import {
   resolvePortalBuyerName,
   resolvePortalPropertyLabel,
   resolvePortalSellerName,
+  resolveSectionalTitleIdentity,
 } from '../services/portalCanonicalFieldFallbacks'
 
 const AttorneyMatterAccountsPanel = lazy(() => import('../components/AttorneyMatterAccountsPanel'))
@@ -1515,6 +1518,8 @@ function toTitle(value) {
 
 function formatRoleFriendlyReference(transaction = {}, role = '') {
   const normalizedRole = String(role || '').trim().toLowerCase()
+  const savedMatterNumber = savedAttorneyMatterNumber(transaction)
+  if (normalizedRole === 'attorney' && savedMatterNumber) return savedMatterNumber
   const rawReference = String(
     transaction?.application_reference ||
       transaction?.bond_application_reference ||
@@ -6824,6 +6829,7 @@ function ArchlineMatterHeader({
   statusLabel,
   property,
   propertyType,
+  sectionalTitleIdentity = null,
   propertyImageUrl = '',
   purchasePrice,
   matterType = 'transfer',
@@ -6834,6 +6840,7 @@ function ArchlineMatterHeader({
   matterChips = [],
   workflow = null,
   sharedLegalJourney = null,
+  sharedLegalJourneyLoading = false,
   tabs = [],
   activeTab,
   workspaceLabel = 'Legal Matter Workspace',
@@ -6854,9 +6861,20 @@ function ArchlineMatterHeader({
 }) {
   const propertyDisplay = property || 'Property pending'
   const propertyParts = String(propertyDisplay).split(',').map((item) => item.trim()).filter(Boolean)
-  const propertyPrimary = propertyParts[0] || propertyDisplay
-  const propertySecondary = propertyParts.slice(1, 3).join(', ')
-  const propertyTertiary = propertyParts.slice(3).join(', ')
+  const isSectionalTitle = String(propertyType || '').toLowerCase().includes('sectional')
+  const complexName = sectionalTitleIdentity?.complexName || ''
+  const unitNumber = sectionalTitleIdentity?.unitNumber || ''
+  const sectionalTitleLabel = isSectionalTitle
+    ? [complexName, unitNumber ? `Unit ${unitNumber}` : ''].filter(Boolean).join(' · ')
+    : ''
+  const propertyPrimary = sectionalTitleLabel || propertyParts[0] || propertyDisplay
+  const identityAlreadyInAddress = complexName && unitNumber &&
+    propertyDisplay.toLowerCase().includes(complexName.toLowerCase()) &&
+    propertyDisplay.toLowerCase().includes(unitNumber.toLowerCase())
+  const propertySecondary = sectionalTitleLabel
+    ? identityAlreadyInAddress ? '' : propertyDisplay
+    : propertyParts.slice(1, 3).join(', ')
+  const propertyTertiary = sectionalTitleLabel ? '' : propertyParts.slice(3).join(', ')
   const cleanMetricValue = (value) => {
     const label = String(value || '').trim()
     if (!label || ['not captured', 'not set', 'not provided', 'tbd', 'unknown', 'undefined', 'null', '—'].includes(label.toLowerCase())) {
@@ -6965,6 +6983,11 @@ function ArchlineMatterHeader({
                     </div>
                     {propertySecondary ? <p className="mt-2 text-base font-medium leading-6 text-white/80">{propertySecondary}</p> : null}
                     {propertyTertiary ? <p className="mt-1 text-sm leading-5 text-white/65">{propertyTertiary}</p> : null}
+                    {isSectionalTitle && (!complexName || !unitNumber) ? (
+                      <p className="mt-2 text-sm leading-5 text-white/70">
+                        Complex: {complexName || 'Not captured'} · Unit: {unitNumber || 'Not captured'}
+                      </p>
+                    ) : null}
                   </div>
                 </div>
 
@@ -7002,7 +7025,15 @@ function ArchlineMatterHeader({
         <section className="rounded-[20px] border border-slate-200/80 bg-white px-4 py-5 shadow-[0_14px_32px_rgba(15,23,42,0.04)]">
           <p className="mb-4 text-xs font-semibold text-slate-600">{workflow?.title || 'Attorney work'} · Select a phase to open its tasks</p>
           {sharedLegalJourney?.stale ? <p role="status" className="mb-3 text-sm text-amber-700">Showing the last loaded journey. Updates will retry automatically.</p> : null}
-          {!visibleWorkflowSteps.length ? <p className="text-sm text-slate-500">{sharedLegalJourney?.status === 'ready' ? 'No applicable legal tasks in this lane.' : 'Legal journey unavailable. Refresh to try again.'}</p> : null}
+          {!visibleWorkflowSteps.length ? (
+            <p className="text-sm text-slate-500" role={sharedLegalJourneyLoading && sharedLegalJourney?.status !== 'ready' ? 'status' : undefined}>
+              {sharedLegalJourney?.status === 'ready'
+                ? 'No applicable legal tasks in this lane.'
+                : sharedLegalJourneyLoading
+                  ? 'Loading legal journey…'
+                  : 'Legal journey unavailable. Refresh to try again.'}
+            </p>
+          ) : null}
           {workflow?.workflowPlan?.provisional ? <p className="mb-3 text-xs text-amber-700">Matter profile not confirmed. Review the buyer, seller and funding details in Work.</p> : null}
           <div className="overflow-x-auto px-1 pb-2">
             <div className="grid min-w-[960px] grid-cols-6 items-start lg:min-w-0">
@@ -14861,6 +14892,8 @@ function AgentTransactionCommandCenter({
 function MatterOverviewQuickFacts({
   purchasePrice,
   financeDescription,
+  matterNumber,
+  onSaveMatterNumber,
   buyerDocuments,
   sellerDocuments,
   documentSourceStatus,
@@ -14870,6 +14903,34 @@ function MatterOverviewQuickFacts({
   onOpenDocuments,
   onOpenAgency,
 }) {
+  const [numberEditorOpen, setNumberEditorOpen] = useState(false)
+  const [numberDraft, setNumberDraft] = useState('')
+  const [numberSaving, setNumberSaving] = useState(false)
+  const [numberError, setNumberError] = useState('')
+
+  async function submitMatterNumber(event) {
+    event.preventDefault()
+    const normalized = numberDraft.trim()
+    if (!normalized) {
+      setNumberError('Enter a matter number before saving.')
+      return
+    }
+    if (normalized === matterNumber) {
+      setNumberEditorOpen(false)
+      return
+    }
+    setNumberSaving(true)
+    setNumberError('')
+    try {
+      await onSaveMatterNumber?.(normalized)
+      setNumberEditorOpen(false)
+    } catch (error) {
+      setNumberError(error?.message || 'The matter number could not be saved. Please try again.')
+    } finally {
+      setNumberSaving(false)
+    }
+  }
+
   const documentCard = (party, label, summary) => {
     const available = documentSourceStatus === 'available'
     const hasRequirements = available && summary.requiredCount > 0
@@ -14904,25 +14965,47 @@ function MatterOverviewQuickFacts({
   }
 
   return (
-    <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-label="Matter overview at a glance">
-      <button type="button" onClick={onOpenFinance} className="flex min-h-[120px] min-w-0 items-start gap-4 rounded-[16px] border border-slate-100 bg-white px-5 py-4 text-left shadow-[0_10px_28px_rgba(15,23,42,0.045)] transition hover:border-emerald-200 hover:shadow-[0_14px_32px_rgba(15,23,42,0.08)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700">
-        <span className="inline-flex size-12 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-700"><CircleDollarSign size={24} /></span>
-        <span className="min-w-0">
-          <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.09em] text-slate-500">Purchase Price</span>
-          <strong className="mt-2 block truncate text-xl font-semibold leading-tight text-slate-900">{purchasePrice}</strong>
-          <span className="mt-2 block text-sm text-slate-500">{financeDescription}</span>
-        </span>
-      </button>
-      {documentCard('buyer', 'Buyer Documents', buyerDocuments)}
-      {documentCard('seller', 'Seller Documents', sellerDocuments)}
-      <button type="button" onClick={onOpenAgency} className="flex min-h-[120px] min-w-0 items-start gap-4 rounded-[16px] border border-slate-100 bg-white px-5 py-4 text-left shadow-[0_10px_28px_rgba(15,23,42,0.045)] transition hover:border-emerald-200 hover:shadow-[0_14px_32px_rgba(15,23,42,0.08)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700">
-        <span className="inline-flex size-12 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-700"><Building2 size={23} /></span>
-        <span className="min-w-0">
-          <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.09em] text-slate-500">Agency</span>
-          <strong className="mt-2 block truncate text-lg font-semibold leading-tight text-slate-900">{agencyName || 'Not assigned'}</strong>
-          <span className="mt-2 block truncate text-sm text-slate-500">{agencyDetail || 'No agency branch captured'}</span>
-        </span>
-      </button>
+    <section className="space-y-4" aria-label="Matter overview at a glance">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <button type="button" onClick={onOpenFinance} className="flex min-h-[120px] min-w-0 items-start gap-4 rounded-[16px] border border-slate-100 bg-white px-5 py-4 text-left shadow-[0_10px_28px_rgba(15,23,42,0.045)] transition hover:border-emerald-200 hover:shadow-[0_14px_32px_rgba(15,23,42,0.08)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700">
+          <span className="inline-flex size-12 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-700"><CircleDollarSign size={24} /></span>
+          <span className="min-w-0">
+            <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.09em] text-slate-500">Purchase Price</span>
+            <strong className="mt-2 block truncate text-xl font-semibold leading-tight text-slate-900">{purchasePrice}</strong>
+            <span className="mt-2 block text-sm text-slate-500">{financeDescription}</span>
+          </span>
+        </button>
+        {documentCard('buyer', 'Buyer Documents', buyerDocuments)}
+        {documentCard('seller', 'Seller Documents', sellerDocuments)}
+        <button type="button" onClick={onOpenAgency} className="flex min-h-[120px] min-w-0 items-start gap-4 rounded-[16px] border border-slate-100 bg-white px-5 py-4 text-left shadow-[0_10px_28px_rgba(15,23,42,0.045)] transition hover:border-emerald-200 hover:shadow-[0_14px_32px_rgba(15,23,42,0.08)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700">
+          <span className="inline-flex size-12 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-700"><Building2 size={23} /></span>
+          <span className="min-w-0">
+            <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.09em] text-slate-500">Agency</span>
+            <strong className="mt-2 block truncate text-lg font-semibold leading-tight text-slate-900">{agencyName || 'Not assigned'}</strong>
+            <span className="mt-2 block truncate text-sm text-slate-500">{agencyDetail || 'No agency branch captured'}</span>
+          </span>
+        </button>
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-4 rounded-[16px] border border-slate-200 bg-white px-5 py-4 shadow-[0_10px_28px_rgba(15,23,42,0.045)]">
+        <div className="min-w-0">
+          <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.09em] text-slate-500">Matter number</span>
+          <strong className="mt-1 block break-all text-base font-semibold text-slate-900">{matterNumber || 'Not assigned'}</strong>
+        </div>
+        {onSaveMatterNumber ? <Button type="button" variant="secondary" size="sm" onClick={() => { setNumberDraft(matterNumber || ''); setNumberError(''); setNumberEditorOpen(true) }}>Change matter number</Button> : null}
+      </div>
+      <Modal
+        open={numberEditorOpen}
+        onClose={numberSaving ? undefined : () => setNumberEditorOpen(false)}
+        title="Change matter number"
+        subtitle="Use your firm's internal reference. It will appear throughout this matter."
+        footer={<div className="flex justify-end gap-2"><Button type="button" variant="ghost" disabled={numberSaving} onClick={() => setNumberEditorOpen(false)}>Cancel</Button><Button type="submit" form="matter-number-form" disabled={numberSaving || !numberDraft.trim()}>{numberSaving ? 'Saving…' : 'Save matter number'}</Button></div>}
+      >
+        <form id="matter-number-form" onSubmit={submitMatterNumber}>
+          <label htmlFor="matter-number-input" className="block text-sm font-medium text-slate-800">Matter number</label>
+          <input id="matter-number-input" type="text" maxLength={120} value={numberDraft} onChange={(event) => setNumberDraft(event.target.value)} className="mt-2 min-h-11 w-full rounded-lg border border-slate-300 px-3 text-sm text-slate-900 outline-none focus:border-emerald-700" />
+          {numberError ? <p role="alert" className="mt-2 text-sm text-red-700">{numberError}</p> : null}
+        </form>
+      </Modal>
     </section>
   )
 }
@@ -17341,6 +17424,32 @@ function AttorneyTransactionDetail() {
   const buyer = data?.buyer || null
   const development = data?.development || null
   const unit = data?.unit || null
+  const sectionalPropertyRequestRef = useRef('')
+
+  useEffect(() => {
+    if (workspaceRole !== 'attorney' || !matterAccessAllowed || !transaction?.id || !data?.__coreHydrated) return
+    if (!String(resolveMatterPropertyType(transaction, unit)).toLowerCase().includes('sectional')) return
+    if (!transaction.unit_id && !transaction.development_id) return
+    if (unit?.unit_number && (development?.scheme_name || development?.name)) return
+
+    const requestKey = `${transaction.id}:${transaction.updated_at || ''}`
+    if (sectionalPropertyRequestRef.current === requestKey) return
+    sectionalPropertyRequestRef.current = requestKey
+    const matterId = transaction.id
+    let active = true
+    void fetchTransactionCoreById(matterId)
+      .then((detail) => {
+        if (!active || detail?.transaction?.id !== matterId) return
+        if (!detail.unit && !detail.development) return
+        setData((previous) => previous?.transaction?.id === matterId ? {
+          ...previous,
+          unit: detail.unit || previous.unit,
+          development: detail.development || previous.development,
+        } : previous)
+      })
+      .catch(() => {})
+    return () => { active = false }
+  }, [data?.__coreHydrated, development?.name, development?.scheme_name, matterAccessAllowed, transaction?.development_id, transaction?.id, transaction?.property_tenure, transaction?.property_type, transaction?.unit_id, transaction?.updated_at, unit?.unit_number, workspaceRole])
 
   useEffect(() => {
     let active = true
@@ -17475,15 +17584,17 @@ function AttorneyTransactionDetail() {
     return saved
   }, [transaction?.id])
   const saveTransferMatterNumber = useCallback(async (matterNumber) => {
-    const normalized = String(matterNumber || '').trim()
-    if (!transaction?.id || !normalized) throw new Error('Enter a matter number before saving.')
-    const { error } = await supabase
-      .from('transactions')
-      .update({ matter_number: normalized })
-      .eq('id', transaction.id)
-    if (error) throw error
-    await refreshAttorneyMutationWorkspace('transfer_matter_number_saved')
-    return true
+    const saved = await saveAttorneyMatterNumber(supabase, transaction?.id, matterNumber)
+    setData((previous) => previous ? {
+      ...previous,
+      transaction: { ...(previous.transaction || {}), matter_number: saved },
+    } : previous)
+    try {
+      await refreshAttorneyMutationWorkspace('transfer_matter_number_saved')
+    } catch (refreshError) {
+      console.warn('[matter-number] saved but workspace refresh failed', refreshError)
+    }
+    return saved
   }, [refreshAttorneyMutationWorkspace, transaction?.id])
   const loadTransferMatterTeam = useCallback(async (requestedFirmId = '') => {
     if (!transaction?.id) throw new Error('Matter details are unavailable.')
@@ -18339,6 +18450,22 @@ function AttorneyTransactionDetail() {
   ) || 0
   const bondAmountFallback = hasCapturedFinanceType ? (financeRequiresBondSupport ? 'Pending' : 'N/A') : 'Not captured'
   const propertyAddress = buildPropertyAddress(transaction, data?.onboardingFormData, unit, development)
+  const matterHeroPropertyType = resolveMatterPropertyType(transaction, unit) || routingDiagnostics?.facts?.propertyTenure || ''
+  const matterHeroAddress = String(matterHeroPropertyType).toLowerCase().includes('sectional')
+    ? [
+        transaction?.property_address_line_1,
+        transaction?.property_address_line_2,
+        transaction?.suburb,
+        transaction?.city,
+      ].filter(Boolean).join(', ') || propertyAddress
+    : propertyAddress
+  const sectionalTitleIdentity = resolveSectionalTitleIdentity({
+    transaction,
+    unit,
+    development,
+    listing: data?.listing,
+    onboardingFormData: data?.onboardingFormData,
+  })
   const propertyImageUrl = [
     ...(!isPrivateMatter ? [resolveDevelopmentCoverImage(development)] : []),
     transaction?.propertyImageUrl,
@@ -21225,6 +21352,9 @@ function AttorneyTransactionDetail() {
     workspaceDatasetLoads.workflow?.status === 'loading' ||
     (!data?.__workflowHydrated && workspaceDatasetLoads.workflow?.status !== 'error')
   )
+  const sharedLegalJourneyLoading = transactionRollupLoading ||
+    workspaceDatasetLoads.workflow?.status === 'loading' ||
+    (['today', 'tasks', 'transfer'].includes(activeWorkspaceMenu) && attorneyWorkflowIsLoading)
 
   function openTaskLinkedWorkspace(targetWorkspace, task = null) {
     if (workspaceRole === 'attorney' && activeWorkspaceMenu === 'transfer') {
@@ -23309,10 +23439,9 @@ function AttorneyTransactionDetail() {
             backLabel={workspaceBackLabel}
             reference={workspaceReference}
             statusLabel={displayedLifecycleLabel}
-            property={propertyAddress || matterHeadline}
-            propertyType={resolveMatterPropertyType(transaction, unit) || routingDiagnostics?.facts?.propertyTenure
-              ? toTitle(resolveMatterPropertyType(transaction, unit) || routingDiagnostics?.facts?.propertyTenure)
-              : '—'}
+            property={matterHeroAddress || matterHeadline}
+            propertyType={matterHeroPropertyType ? toTitle(matterHeroPropertyType) : '—'}
+            sectionalTitleIdentity={sectionalTitleIdentity}
             propertyImageUrl={propertyImageUrl}
             purchasePrice={formatCurrencyValue(displayPurchasePriceValue, '—')}
             matterType={transaction?.matter_type || transaction?.transaction_type || transaction?.transaction_category || 'transfer'}
@@ -23323,6 +23452,7 @@ function AttorneyTransactionDetail() {
             matterChips={archlineMatterChips}
             workflow={archlineActiveLegalTaskWorkflow}
             sharedLegalJourney={archlineSharedLegalJourney}
+            sharedLegalJourneyLoading={sharedLegalJourneyLoading}
             workflowKey={archlineActiveLegalTaskWorkflowKey}
             workflowDocuments={archlineActiveLegalTaskDocuments}
             onSelectWorkflowPhase={(phase, workflowKey) => {
@@ -23350,6 +23480,8 @@ function AttorneyTransactionDetail() {
             <MatterOverviewQuickFacts
               purchasePrice={formatCurrencyValue(displayPurchasePriceValue, 'Not captured')}
               financeDescription={normalizedFinanceType === 'cash' ? 'Cash purchase' : normalizedFinanceType === 'bond' ? 'Bond finance' : normalizedFinanceType === 'hybrid' ? 'Hybrid finance' : 'Finance type not captured'}
+              matterNumber={workspaceReference}
+              onSaveMatterNumber={saveTransferMatterNumber}
               buyerDocuments={overviewPartyDocuments.buyer}
               sellerDocuments={overviewPartyDocuments.seller}
               documentSourceStatus={documentWorkspaceLoad.status === 'error' ? 'unavailable' : documentDataHydrated ? 'available' : 'loading'}

@@ -79,6 +79,8 @@ try {
   assert.match(html, /Matter workflow/)
   assert.match(html, /Complete this stage to proceed/)
   assert.match(html, /Stage progress/)
+  assert.doesNotMatch(html, /Open the matter\./, 'stage summaries stay out of the compact header')
+  assert.match(html, /aria-label="Open task: Instruction Received"[^>]*class="[^"]*absolute inset-0|class="[^"]*absolute inset-0[^>]*aria-label="Open task: Instruction Received"/, 'the entire task row opens its workspace')
   assert.doesNotMatch(html, /Save answers|Complete task|Yes<\/button>/)
   assert.doesNotMatch(html, /View all tasks|Show fewer tasks|Collapse workflow stages/)
   const newPhase = { ...phases[0], status: 'not_started', tasks: phases[0].tasks.map((task) => ({ ...task, status: 'not_started', displayStatus: 'not_started', statusLabel: 'Not Started' })) }
@@ -191,10 +193,15 @@ try {
     assert.deepEqual(openings.at(-1), ['lodgement_registration', 'lodgement_ready'], 'continuing opens the next stage workspace')
     cleanup()
     const updates = []
+    const controlOpenings = []
     const editable = render(createElement(TransferStageOverview, {
       phases, selectedPhase: phases[0], canUpdate: true,
+      onOpenStage: (stageKey, taskKey) => controlOpenings.push([stageKey, taskKey]),
       onUpdateTask: async (...args) => { updates.push(args); return true },
     }))
+    fireEvent.click(editable.getByRole('checkbox', { name: 'Select Instruction Received' }))
+    fireEvent.click(editable.getByRole('button', { name: 'Options for Instruction Received' }))
+    assert.deepEqual(controlOpenings, [], 'task controls do not navigate')
     fireEvent.click(editable.getByRole('button', { name: 'Mark complete' }))
     await waitFor(() => assert.equal(updates.length, 1))
     assert.equal(updates[0][0].key, 'instruction_received')

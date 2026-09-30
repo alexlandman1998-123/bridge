@@ -35590,7 +35590,7 @@ export async function fetchTransactionCoreById(transactionId) {
 // long-lived columns form the route contract; richer metadata is hydrated after
 // the workspace is already interactive.
 const TRANSACTION_ROUTE_CORE_SELECT =
-  'id, development_id, unit_id, listing_id, buyer_id, transaction_type, property_type, property_tenure, property_address_line_1, property_address_line_2, suburb, city, province, property_description, purchase_price, sales_price, finance_type, lifecycle_state, current_main_stage, current_sub_stage_summary, current_detailed_stage, operational_state, stage, attorney, bond_originator, next_action, updated_at, created_at'
+  'id, development_id, unit_id, listing_id, buyer_id, matter_number, transaction_type, property_type, property_tenure, property_address_line_1, property_address_line_2, suburb, city, province, property_description, purchase_price, sales_price, finance_type, lifecycle_state, current_main_stage, current_sub_stage_summary, current_detailed_stage, operational_state, stage, attorney, bond_originator, next_action, updated_at, created_at'
 
 export async function fetchTransactionRouteCoreById(transactionId) {
   if (!transactionId) return null

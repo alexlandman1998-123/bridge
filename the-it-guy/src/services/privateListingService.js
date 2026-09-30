@@ -2054,6 +2054,7 @@ function isRentalPrivateListingPayload(payload = {}) {
 }
 
 function missingRentalCaptureColumns(error) {
+  if (!isMissingColumnError(error)) return []
   const requiredColumns = [
     'seller_canonical_facts_json',
     'seller_canonical_fact_readiness_json',
@@ -2064,7 +2065,11 @@ function missingRentalCaptureColumns(error) {
     'street_address',
     'country',
   ]
-  return requiredColumns.filter((column) => isMissingColumnError(error, column))
+  const message = [error?.message, error?.details, error?.hint].filter(Boolean).join(' ')
+  return requiredColumns.filter((column) => new RegExp(
+    `(?:\\bcolumn\\s+(?:[\\w"]+\\.)?["']?${column}["']?|["']${column}["']\\s+column)`,
+    'i',
+  ).test(message))
 }
 
 const PRIVATE_LISTING_DEVELOPMENT_LINK_COLUMNS = [
@@ -5428,11 +5433,12 @@ function buildPrivateListingPayload(payload = {}, userId = null) {
 
   const stage = normalizeStatus(payload.listingStatus, LISTING_STATUSES, 'seller_lead')
   const visibility = normalizeStatus(payload.listingVisibility, LISTING_VISIBILITY, 'internal')
+  const unitId = normalizeUuid(payload.unitId || payload.unit_id)
 
   return {
     organisation_id: organisationId,
     development_id: normalizeUuid(payload.developmentId || payload.development_id),
-    unit_id: normalizeUuid(payload.unitId || payload.unit_id),
+    ...(unitId ? { unit_id: unitId } : {}),
     branch_id: normalizeUuid(payload.branchId || payload.branch_id),
     assigned_agent_id: normalizeUuid(payload.assignedAgentId),
     seller_lead_id: normalizeLeadLink(payload.sellerLeadId),
@@ -5532,6 +5538,13 @@ export async function createPrivateListing(payload = {}, options = {}) {
     throw new Error(
       `Rental listing was not saved because the database is missing required rental storage fields: ${rentalCaptureColumns.join(', ')}. ` +
       'Apply the rental listing persistence migration, then try again. No rental fields were discarded.',
+    )
+  }
+  if (isRentalPrivateListingPayload(payload) && isMissingColumnError(insert.error)) {
+    throw new Error(
+      `Rental listing was not saved because the database rejected a listing field. ` +
+      `Check the rental listing schema and try again. No rental fields were discarded. ` +
+      `(${buildSupabaseErrorSummary(insert.error)})`,
     )
   }
   if (insert.error && (
@@ -8961,6 +8974,8 @@ export async function uploadSellerClientPortalDocument({
 }
 
 export const __privateListingServiceTestUtils = Object.freeze({
+  buildPrivateListingPayload,
+  missingRentalCaptureColumns,
   notifyAgentWhenSellerDocumentsComplete,
   getSellerCompletionDocuments,
   getSellerCompletionRequirements,
@@ -9151,9 +9166,9 @@ export async function uploadPrivateListingDocument(listingId, file, {
     privateListingId: normalizedListingId,
     activityType: 'listing_document_uploaded',
     activityTitle: mandateUpload ? 'Signed mandate uploaded' : 'Listing document uploaded',
-    activityDescription: mandateUpload && !shouldDeferMandateSigning
+    activityDescription: mandateUpload
       ? `${insertPayload.document_name} uploaded. Mandate signed and listing created for the next internal steps.`
-      : `${insertPayload.document_name} uploaded${shouldDeferMandateSigning ? ' for agent review' : ''}.`,
+      : `${insertPayload.document_name} uploaded.`,
     performedBy: user?.id || null,
     visibility: 'internal',
     metadata: {
