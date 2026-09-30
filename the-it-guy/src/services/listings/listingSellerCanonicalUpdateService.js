@@ -5,6 +5,18 @@ import {
 
 const CONTACT_FIELD_PATTERN = /^(?:firstName|lastName|fullName|sellerName|sellerFirstName|sellerSurname|email|sellerEmail|phone|sellerPhone|mobile)$/
 
+export function limitSellerCanonicalSaveWait(savePromise, timeoutMs = 40000) {
+  let timeoutId
+  const timeout = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => {
+      const error = new Error('The seller profile save is taking too long. Your entries are still in this form. Check the listing in another tab before retrying, since the save may have completed.')
+      error.code = 'SELLER_PROFILE_SAVE_TIMEOUT'
+      reject(error)
+    }, timeoutMs)
+  })
+  return Promise.race([savePromise, timeout]).finally(() => clearTimeout(timeoutId))
+}
+
 function text(value) {
   return String(value ?? '').trim()
 }

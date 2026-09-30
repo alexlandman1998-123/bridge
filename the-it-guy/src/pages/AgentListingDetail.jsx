@@ -291,7 +291,7 @@ import {
 } from '../services/listings/listingBuyerActionsService'
 import { buildListingLeadMetrics, isBookedListingViewing } from '../services/listings/listingLeadMetrics'
 import { clampListingLeadPage, escapeListingLeadCsvValue, filterListingLeadRows } from '../services/listings/listingLeadListModel'
-import { saveListingSellerCanonicalUpdate } from '../services/listings/listingSellerCanonicalUpdateService'
+import { limitSellerCanonicalSaveWait, saveListingSellerCanonicalUpdate } from '../services/listings/listingSellerCanonicalUpdateService'
 import { buildListingSellerSetupState } from '../services/listings/listingSellerSetupState'
 import { buildListingSellerInformationModel } from '../services/listings/listingSellerInformationModel'
 import {
@@ -10847,7 +10847,7 @@ function AgentListingDetail() {
       let result = null
       if (isSupabaseConfigured && isUuidLike(listingRecord.id)) {
         try {
-          result = await saveListingSellerCanonicalUpdate({
+          result = await limitSellerCanonicalSaveWait(saveListingSellerCanonicalUpdate({
             listing: listingRecord,
             formPatch: canonicalFormPatch,
             suppliedCanonicalFacts: canonicalSellerFacts,
@@ -10858,7 +10858,7 @@ function AgentListingDetail() {
             requireIdentifiedSeller: true,
             syncRequirements: true,
             requirementSyncReason: 'listing_seller_profile_capture',
-          })
+          }))
         } catch (remoteError) {
           if (!isRemoteListingMissingError(remoteError)) throw remoteError
           remoteListingMissing = true
@@ -13710,19 +13710,22 @@ function AgentListingDetail() {
           : 'Capture the seller ownership model and mandate facts for this listing.'}
         className="max-w-5xl"
         footer={
-          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
-            {sellerProfileBuilderReturnToDocuments ? <Button type="button" variant="secondary" onClick={returnToSellerDocumentSend} disabled={sellerProfileBuilderSaving}><ArrowLeft size={16} /> Back to documents</Button> : null}
-            <Button type="button" variant="secondary" onClick={() => { setSellerProfileBuilderOpen(false); setSellerProfileBuilderReturnToDocuments(false) }} disabled={sellerProfileBuilderSaving}>
-              Cancel
-            </Button>
-            {sellerProfileBuilderStep > 1 ? <Button type="button" variant="secondary" onClick={() => setSellerProfileBuilderStep((step) => step - 1)} disabled={sellerProfileBuilderSaving}>Back</Button> : null}
-            {sellerProfileBuilderStep < 3 ? (
-              <Button type="button" onClick={advanceSellerProfileBuilder} disabled={sellerProfileBuilderSaving}>Continue</Button>
-            ) : (
-              <Button type="submit" form="listing-seller-profile-builder-form" disabled={sellerProfileBuilderSaving}>
-                {sellerProfileBuilderSaving ? 'Saving...' : sellerOwnershipUnidentified ? 'Save Owner Details' : 'Save Seller Profile'}
+          <div className="w-full space-y-2">
+            {detailError ? <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{detailError}</div> : null}
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
+              {sellerProfileBuilderReturnToDocuments ? <Button type="button" variant="secondary" onClick={returnToSellerDocumentSend} disabled={sellerProfileBuilderSaving}><ArrowLeft size={16} /> Back to documents</Button> : null}
+              <Button type="button" variant="secondary" onClick={() => { setSellerProfileBuilderOpen(false); setSellerProfileBuilderReturnToDocuments(false) }} disabled={sellerProfileBuilderSaving}>
+                Cancel
               </Button>
-            )}
+              {sellerProfileBuilderStep > 1 ? <Button type="button" variant="secondary" onClick={() => setSellerProfileBuilderStep((step) => step - 1)} disabled={sellerProfileBuilderSaving}>Back</Button> : null}
+              {sellerProfileBuilderStep < 3 ? (
+                <Button type="button" onClick={advanceSellerProfileBuilder} disabled={sellerProfileBuilderSaving}>Continue</Button>
+              ) : (
+                <Button type="submit" form="listing-seller-profile-builder-form" disabled={sellerProfileBuilderSaving}>
+                  {sellerProfileBuilderSaving ? 'Saving...' : sellerOwnershipUnidentified ? 'Save Owner Details' : 'Save Seller Profile'}
+                </Button>
+              )}
+            </div>
           </div>
         }
       >
