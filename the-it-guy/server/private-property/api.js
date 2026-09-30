@@ -339,6 +339,7 @@ function toPublicPreview(preview = {}) {
     canSubmit: Boolean(preview.canPreview),
     dataBlockers: preview.dataBlockers || [],
     technicalBlockers: preview.technicalBlockers || [],
+    qualityWarnings: preview.qualityWarnings || [],
     summary: preview.summary || {},
     payloadPreview: preview.payloadPreview || null,
   }

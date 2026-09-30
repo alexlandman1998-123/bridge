@@ -5,6 +5,7 @@ import {
   normalizeListingPortalFeatures,
   resolveListingAddressVisibility,
 } from './listingPortalFeatureNormalizer.js'
+import { resolveListingPortalVideo } from './listingPortalVideo.js'
 import {
   PROPERTY24_PHASE2_PROPERTY_TYPES,
   resolveProperty24Phase2PropertyTypeId,
@@ -318,7 +319,7 @@ export function evaluateProperty24CommercialSaleFacts({ listing = {}, publicatio
   const facts = resolveSpecialistFacts(listing, publication, options)
   const canonical = asObject(listing.seller_canonical_facts_json || listing.sellerCanonicalFacts)
   const parkingCount = firstNumber(
-    publication.parkingCount, publication.parking_count,
+    publication.parkingCount, publication.parking_count, publication.parking_bays,
     listing.parkingCount, listing.parking_count,
     canonical.parkingCount, canonical.parking_count,
   )
@@ -648,6 +649,7 @@ export function createProperty24ListingPlan({
   const suburbId = resolveSuburbId(catalogMapping, listing, publication, options)
   const { property24AgentId, sourceReference } = resolveAgentMapping(agentMapping, listing, options)
   const mediaRows = normalizeMediaRows(media)
+  const video = resolveListingPortalVideo(mediaRows)
   const imageRows = mediaRows.filter((item) => item.mediaType === 'image')
   const includePhotos = isNew || options.photosChanged !== false
   const requirePhotoBytes = options.requirePhotoBytes !== false
@@ -688,6 +690,7 @@ export function createProperty24ListingPlan({
   const dataBlockers = []
   const technicalBlockers = []
   const qualityWarnings = []
+  qualityWarnings.push(...video.warnings)
 
   dataBlockers.push(...categoryContract.blockers)
   dataBlockers.push(...categoryModel.blockers)
@@ -752,6 +755,8 @@ export function createProperty24ListingPlan({
         expiryDate,
         description,
         ...(descriptionHeader ? { descriptionHeader } : {}),
+        ...(video.youTubeVideoId ? { youTubeVideoId: video.youTubeVideoId } : {}),
+        ...(video.matterportSpaceId ? { matterportSpaceId: video.matterportSpaceId } : {}),
         photos: previewPhotos,
         propertyInfo,
         propertyFeatures,
@@ -796,6 +801,7 @@ export function createProperty24ListingPlan({
       propertyTypeId,
       suburbId,
       imageCount: imageRows.length,
+      video,
       expectedPhotoPayloadCount,
       photoPayloadCount: photos ? photos.length : null,
       descriptionPresent: Boolean(description),

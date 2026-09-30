@@ -8,6 +8,7 @@ import {
   resolveListingAddressVisibility,
 } from './listingPortalFeatureNormalizer.js'
 import { buildListingAddressFingerprint } from './listingPortalAddressProtectionService.js'
+import { resolveListingPortalVideo } from './listingPortalVideo.js'
 import { resolveListingFeature } from '../../src/services/listings/listingFeatureCatalog.js'
 
 export function normalizePrivatePropertyListingKey(value = '') {
@@ -752,6 +753,7 @@ export function createPrivatePropertyListingPlan({
   const address = resolveAddress(listing, publication, options)
   const attributes = buildAttributes({ listing, publication, category, options })
   const mediaRows = normalizeMediaRows(media)
+  const video = resolveListingPortalVideo(mediaRows)
   const imageRows = mediaRows.filter((item) => item.mediaType === 'image')
   const includePhotos = options.photosChanged !== false
   const photoUrls = includePhotos ? imageRows.map((item) => item.sourceUrl).slice(0, 256) : null
@@ -821,6 +823,7 @@ export function createPrivatePropertyListingPlan({
     canSubmit: false,
     dataBlockers,
     technicalBlockers,
+    qualityWarnings: video.warnings,
     summary: {
       propertyId,
       branchId,
@@ -834,6 +837,7 @@ export function createPrivatePropertyListingPlan({
       listingDate,
       suburbId: address.suburbId || null,
       imageUrlCount: imageRows.length,
+      video,
       photoUrlPayloadCount: photoUrls ? photoUrls.length : null,
       attributeCount: attributes.length,
       specialistCategory: specialistCategory || null,
@@ -843,5 +847,13 @@ export function createPrivatePropertyListingPlan({
     },
     payload,
     listingXml,
+    videoUpdate: video.youTubeVideoId || video.matterportSpaceId ? {
+      branchGuid: branchId,
+      uniqueListingId: propertyId,
+      listingType,
+      youtubeVideoId: video.youTubeVideoId || '',
+      matterportId: video.matterportSpaceId || '',
+      requiresPortalActivation: true,
+    } : null,
   }
 }

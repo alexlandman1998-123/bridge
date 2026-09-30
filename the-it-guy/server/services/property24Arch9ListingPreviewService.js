@@ -518,6 +518,7 @@ export function createProperty24Arch9ListingPreview({
     canSubmit: plan.canSubmit,
     dataBlockers: plan.dataBlockers,
     technicalBlockers: plan.technicalBlockers,
+    qualityWarnings: plan.qualityWarnings,
     summary: plan.summary,
     source: {
       privateListingId: normalizeProperty24PreviewText(listing.id),

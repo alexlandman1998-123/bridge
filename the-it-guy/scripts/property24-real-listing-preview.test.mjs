@@ -6,6 +6,7 @@ import {
   fetchRecentArch9ListingsForProperty24Preview,
   loadProperty24ImageBytesForPreview,
 } from '../server/services/property24Arch9ListingPreviewService.js'
+import { extractMatterportSpaceId, extractYouTubeVideoId } from '../server/services/listingPortalVideo.js'
 
 function read(path) {
   return fs.readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
@@ -313,6 +314,43 @@ assert.deepEqual(submitReadyReport.technicalBlockers, [])
 assert.equal(submitReadyReport.previewPayload.photos[0].bytesLoaded, true)
 assert.equal(submitReadyReport.imageByteLoad.summary.loaded, 1)
 assert.equal(Object.hasOwn(submitReadyReport.imageByteLoad, 'media'), false)
+
+assert.equal(extractYouTubeVideoId('https://youtu.be/dQw4w9WgXcQ?t=10'), 'dQw4w9WgXcQ')
+assert.equal(extractYouTubeVideoId('https://www.youtube.com/watch?v=dQw4w9WgXcQ'), 'dQw4w9WgXcQ')
+assert.equal(extractYouTubeVideoId('https://youtube.com/shorts/dQw4w9WgXcQ'), 'dQw4w9WgXcQ')
+assert.equal(extractYouTubeVideoId('https://youtube.com.evil.test/watch?v=dQw4w9WgXcQ'), '')
+assert.equal(extractMatterportSpaceId('https://my.matterport.com/show/?m=cJhhdz6udAu&play=1'), 'cJhhdz6udAu')
+assert.equal(extractMatterportSpaceId('https://my.matterport.com.evil.test/show/?m=cJhhdz6udAu'), '')
+
+const mediaWithVideo = [
+  ...loaded.media,
+  { media_type: 'video', file_url: 'https://youtu.be/dQw4w9WgXcQ?t=10' },
+  { media_type: 'virtual_tour', file_url: 'https://my.matterport.com/show/?m=cJhhdz6udAu' },
+]
+const mappedVideoReport = createProperty24Arch9ListingPreview({
+  ...bundle,
+  media: mediaWithVideo,
+  agentMapping: { property24AgentId: 77959, sourceReference: 'ARCH9-AGENT-001' },
+  catalogMapping: { suburbId: 5864, propertyTypeId: 4 },
+  options: { agencyId: 31382, expiryDate: '2026-12-31', includeSubmitPayload: true },
+})
+assert.equal(mappedVideoReport.canSubmit, true)
+assert.equal(mappedVideoReport.previewPayload.youTubeVideoId, 'dQw4w9WgXcQ')
+assert.equal(mappedVideoReport.payload.youTubeVideoId, 'dQw4w9WgXcQ')
+assert.equal(mappedVideoReport.payload.matterportSpaceId, 'cJhhdz6udAu')
+assert.equal(mappedVideoReport.summary.video.videoLinkPresent, true)
+assert.deepEqual(mappedVideoReport.summary.video.warnings, [])
+
+const unsupportedVideoReport = createProperty24Arch9ListingPreview({
+  ...bundle,
+  media: [...loaded.media, { media_type: 'video', file_url: 'https://vimeo.com/123456' }],
+  agentMapping: { property24AgentId: 77959 },
+  catalogMapping: { suburbId: 5864, propertyTypeId: 4 },
+  options: { agencyId: 31382, expiryDate: '2026-12-31', includeSubmitPayload: true },
+})
+assert.equal(unsupportedVideoReport.canSubmit, true)
+assert.equal(Object.hasOwn(unsupportedVideoReport.payload, 'youTubeVideoId'), false)
+assert.ok(unsupportedVideoReport.qualityWarnings.includes('unsupported_youtube_video_link'))
 
 const scriptSource = read('scripts/property24-preview-listing.mjs')
 assert.match(scriptSource, /SUPABASE_SERVICE_ROLE_KEY/)

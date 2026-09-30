@@ -180,9 +180,11 @@ export function createPrivatePropertyArch9ListingPreview({
     canSubmit: false,
     dataBlockers: plan.dataBlockers,
     technicalBlockers: plan.technicalBlockers,
+    qualityWarnings: plan.qualityWarnings || [],
     summary: plan.summary,
     payloadPreview: plan.payload,
     listingXml: plan.listingXml,
+    videoUpdate: plan.videoUpdate || null,
     nextStep: plan.canPreview
       ? 'Phase 4 can wrap this ListingImport XML in UpdateListing SOAP and submit it with --apply.'
       : 'Resolve the blockers, then run the Private Property preview again.',

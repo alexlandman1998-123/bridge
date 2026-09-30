@@ -12328,6 +12328,7 @@ function AgentListingDetail() {
     const mandateExpiryDate = formatDateInputValue(marketingDraft.expiryDate)
     const canUseMandateExpiry = Boolean(mandateExpiryDate) && !getProperty24ExpiryDateError(mandateExpiryDate)
     const resolvedLocation = property24Preview?.preview?.summary?.property24Location || property24Preview?.report?.preview?.summary?.property24Location || null
+    const video = property24Preview?.preview?.summary?.video || property24Preview?.report?.preview?.summary?.video || null
     return (
       <Modal
         open={property24ManageOpen}
@@ -12342,6 +12343,15 @@ function AgentListingDetail() {
             <InfoTile icon={Link2} label="Property24 reference" value={property24Reference || 'Not assigned'} />
             <InfoTile icon={RefreshCw} label="Last synced" value={formatRelativeTime(property24LastSyncedAt)} />
           </section>
+
+          {video && (video.videoLinkPresent || video.virtualTourLinkPresent) ? (
+            <section className="rounded-[18px] border border-[#e1e9f2] bg-[#fbfdff] p-4">
+              <p className="text-sm font-semibold text-[#142132]">Video and 3D tour mapping</p>
+              {video.videoLinkPresent ? <p className="mt-2 text-sm text-[#607387]">YouTube video: {video.youTubeVideoId ? `Ready to send (ID ${video.youTubeVideoId})` : 'This link cannot be sent. Use a YouTube video link.'}</p> : null}
+              {video.virtualTourLinkPresent ? <p className="mt-2 text-sm text-[#607387]">3D tour: {video.matterportSpaceId ? `Ready to send (Matterport ID ${video.matterportSpaceId})` : 'This link cannot be sent. Use a Matterport share link.'}</p> : null}
+              <p className="mt-2 text-xs text-[#607387]">Ready IDs are included when you publish or update this Property24 listing.</p>
+            </section>
+          ) : null}
 
           {(property24Published || channelUpdateStates.Property24?.status === 'awaiting_verification') && !listingRecord?.property24ListingUrl && !listingRecord?.property24_listing_url ? <section className="rounded-[18px] border border-[#f0d6a8] bg-[#fff9ed] p-4">
             <p className="text-sm font-semibold text-[#8a5b13]">Live listing URL not yet confirmed</p>
@@ -12487,6 +12497,7 @@ function AgentListingDetail() {
     const status = privatePropertyLiveValue ? 'Live' : formatStatusLabel(privatePropertyStatusKey || 'not_published')
     const previewComplete = Boolean(privatePropertyPreview)
     const hasIssues = privatePropertyReadinessIssues.length > 0
+    const video = privatePropertyPreview?.preview?.summary?.video || privatePropertyPreview?.readiness?.preview?.summary?.video || null
     return (
       <Modal
         open={privatePropertyManageOpen}
@@ -12519,6 +12530,15 @@ function AgentListingDetail() {
             <InfoTile icon={Link2} label="Private Property reference" value={privatePropertyReferenceValue || 'Not assigned'} />
             <InfoTile icon={CircleAlert} label="Issues found" value={previewComplete ? privatePropertyReadinessIssues.length : 'Not checked'} status={hasIssues ? 'missing' : previewComplete ? 'complete' : 'pending'} />
           </section>
+
+          {video && (video.videoLinkPresent || video.virtualTourLinkPresent) ? (
+            <section className="rounded-[18px] border border-[#e1e9f2] bg-[#fbfdff] p-4">
+              <p className="text-sm font-semibold text-[#142132]">Video and 3D tour mapping</p>
+              {video.videoLinkPresent ? <p className="mt-2 text-sm text-[#607387]">YouTube video: {video.youTubeVideoId ? `ID ${video.youTubeVideoId} prepared` : 'This link cannot be sent. Use a YouTube video link.'}</p> : null}
+              {video.virtualTourLinkPresent ? <p className="mt-2 text-sm text-[#607387]">3D tour: {video.matterportSpaceId ? `Matterport ID ${video.matterportSpaceId} prepared` : 'This link cannot be sent. Use a Matterport share link.'}</p> : null}
+              <p className="mt-2 text-xs text-[#607387]">Private Property requires a separate video update after the listing is active. Previewing or submitting the listing does not send these IDs yet.</p>
+            </section>
+          ) : null}
 
           {(privatePropertyLiveValue || channelUpdateStates['Private Property']?.status === 'awaiting_verification') && !listingRecord?.privatePropertyListingUrl && !listingRecord?.private_property_listing_url ? <section className="rounded-[18px] border border-[#f0d6a8] bg-[#fff9ed] p-4">
             <p className="text-sm font-semibold text-[#8a5b13]">Live listing URL not yet confirmed</p>

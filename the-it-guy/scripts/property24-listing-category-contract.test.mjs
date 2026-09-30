@@ -81,6 +81,10 @@ assert.equal(incomplete.summary.propertyTypeId, 11)
 assert.equal(incomplete.dataBlockers.includes('property24_commercial_gross_lettable_area_required'), false)
 assert.ok(incomplete.dataBlockers.includes('property24_commercial_zoning_required'))
 assert.ok(incomplete.dataBlockers.includes('property24_commercial_parking_required'))
+assert.deepEqual(evaluateProperty24CommercialSaleFacts({
+  listing: { seller_canonical_facts_json: { property: { specialistFacts: { zoning: 'Residential' } } } },
+  publication: { parking_bays: 12 },
+}).blockers, ['property24_commercial_sale_terms_required'])
 const saleWithoutGla = createProperty24ListingPlan({
   listing: { property_category: 'commercial', property_type: 'House', asking_price: 2000000,
     seller_canonical_facts_json: { property: { specialistFacts: { zoning: 'Residential', parking: '4 bays' } } } },
