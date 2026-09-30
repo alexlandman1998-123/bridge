@@ -1,6 +1,7 @@
 import { defineConfig, loadEnv } from 'vite'
 import { execFileSync } from 'node:child_process'
-import { dirname } from 'node:path'
+import { access, readFile, writeFile } from 'node:fs/promises'
+import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import react from '@vitejs/plugin-react'
 import { createAdminMobileDashboardResponse } from './server/services/adminMobileDashboardApi.js'
@@ -156,6 +157,22 @@ function releaseIntegrityPlugin() {
           listingDetailAssetDetected: seedFiles.some((fileName) => fileName.includes('AgentListingDetail')),
         }, null, 2)}\n`,
       })
+    },
+    async writeBundle(outputOptions) {
+      const outputDirectory = outputOptions.dir
+      if (!outputDirectory) return
+      const manifestPath = resolve(outputDirectory, 'release-manifest.json')
+      const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
+      const presentAssets = await Promise.all(manifest.criticalAssets.map(async (fileName) => {
+        try {
+          await access(resolve(outputDirectory, fileName))
+          return fileName
+        } catch {
+          return null
+        }
+      }))
+      manifest.criticalAssets = presentAssets.filter(Boolean)
+      await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
     },
   }
 }
