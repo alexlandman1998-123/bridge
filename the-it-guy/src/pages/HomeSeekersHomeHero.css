@@ -38,7 +38,7 @@
 }
 
 .hs-home-hero__content {
-  width: min(100%, 1040px);
+  width: min(100%, 1220px);
   margin: auto;
 }
 
@@ -60,9 +60,12 @@
 
 .hs-home-hero h1 {
   margin: 0;
+  max-width: 100%;
   color: #fff;
-  font: 900 clamp(64px, 7.1vw, 128px)/.88 Montserrat, Arial, sans-serif;
-  letter-spacing: -.075em;
+  font: 900 clamp(58px, 6.4vw, 116px)/.92 Montserrat, Arial, sans-serif;
+  letter-spacing: -.07em;
+  white-space: normal;
+  text-wrap: balance;
 }
 
 .hs-home-hero h1 em {
