@@ -16,6 +16,7 @@ const SATISFYING_DOCUMENT_STATUSES = new Set([
 ])
 
 const REQUESTABLE_VISIBILITIES = new Set(['seller_visible', 'client_visible'])
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 function normalizeText(value) {
   return String(value ?? '').trim()
@@ -48,7 +49,11 @@ function requirementKey(requirement = {}) {
 }
 
 function requirementId(requirement = {}) {
-  return normalizeText(requirement.id || requirement.requirement_id)
+  return normalizeText(requirement.requirementId || requirement.requirement_id || requirement.id)
+}
+
+function isPersistedRequirementId(value) {
+  return UUID_PATTERN.test(normalizeText(value))
 }
 
 function requirementStatus(requirement = {}) {
@@ -327,6 +332,10 @@ export async function issueSellerDocumentRequests({
   const failed = []
 
   for (const item of plan.issued) {
+    if (!isPersistedRequirementId(item.requirementId)) {
+      failed.push({ ...item, error: new Error('This seller document is not saved yet. Refresh the listing and try again.') })
+      continue
+    }
     let update = await client
       .from('private_listing_document_requirements')
       .update(requestUpdatePayload(item))
@@ -362,6 +371,7 @@ export async function issueSellerDocumentRequests({
 
     if (update.error) failed.push({ ...item, error: update.error })
     else if (update.data) applied.push({ ...item, row: update.data })
+    else failed.push({ ...item, error: new Error('This seller document requirement could not be found. Refresh the listing and try again.') })
   }
 
   return {
@@ -374,4 +384,36 @@ export async function issueSellerDocumentRequests({
       failed: failed.length,
     },
   }
+}
+
+export async function issueSelectedSellerDocumentRequests({
+  ensureRequirements,
+  ...options
+} = {}) {
+  const selected = toArray(options.requirements)
+  const unsaved = selected.filter((requirement) => !isPersistedRequirementId(requirementId(requirement)))
+  if (!unsaved.length) return issueSellerDocumentRequests(options)
+  if (typeof ensureRequirements !== 'function') {
+    throw new Error('The seller document checklist cannot be saved right now.')
+  }
+
+  const listingId = normalizeText(options.listing?.id || options.listing?.private_listing_id)
+  if (!isPersistedRequirementId(listingId)) throw new Error('The listing must be saved before requesting seller documents.')
+  const saved = await ensureRequirements(listingId, unsaved.map((requirement) => ({
+    ...toRecord(requirement.original?.requirement),
+    requirementKey: requirementKey(requirement),
+    requirementName: normalizeText(requirement.title || requirement.label || requirement.requirement_name),
+    status: requirement.status || 'required',
+    isRequired: requirement.required !== false,
+  })), { reason: 'agent_document_request' })
+  const savedByKey = new Map(toArray(saved).map((row) => [requirementKey(row), row]))
+  const requirements = selected.map((requirement) => {
+    if (isPersistedRequirementId(requirementId(requirement))) return requirement
+    const persisted = savedByKey.get(requirementKey(requirement))
+    if (!persisted || !isPersistedRequirementId(requirementId(persisted))) {
+      throw new Error(`Could not save the ${normalizeText(requirement.title || requirement.label) || 'seller document'} requirement. Refresh the listing and try again.`)
+    }
+    return persisted
+  })
+  return issueSellerDocumentRequests({ ...options, requirements })
 }

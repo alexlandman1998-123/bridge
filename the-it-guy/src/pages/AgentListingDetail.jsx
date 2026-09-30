@@ -267,6 +267,7 @@ import {
   getPrivateListingActivity,
   createPrivateListingDocumentDownloadUrl,
   deletePrivateListing,
+  ensurePrivateListingDocumentRequirements,
   getSellerPortalAccessState,
   getSellerPortalSecurityDiagnostics,
   issueSellerPortalInvite,
@@ -348,7 +349,7 @@ import {
   reviseSellerOnboardingAttorneyRecommendation,
 } from '../core/documents/sellerOnboardingAttorneyRecommendation'
 import { reviewSellerDocument, sendSellerDocumentManualReminder } from '../services/sellerDocumentReviewWorkflowService'
-import { issueSellerDocumentRequests } from '../services/sellerDocumentRequestOrchestrationService'
+import { issueSelectedSellerDocumentRequests } from '../services/sellerDocumentRequestOrchestrationService'
 import {
   getSellerBasePackAliases,
   SELLER_BASE_PACK_KEYS,
@@ -7133,8 +7134,9 @@ function AgentListingDetail() {
     setDetailMessage('')
     setSellerDocumentWorkflowAction(actionKey)
     try {
-      const result = await issueSellerDocumentRequests({
+      const result = await issueSelectedSellerDocumentRequests({
         client: supabase,
+        ensureRequirements: ensurePrivateListingDocumentRequirements,
         listing: listingRecord,
         requirements: [item],
         documents: Array.isArray(listingRecord?.documents) ? listingRecord.documents : [],
@@ -7175,8 +7177,9 @@ function AgentListingDetail() {
     setDetailMessage('')
     setSellerDocumentWorkflowAction(actionKey)
     try {
-      const result = await issueSellerDocumentRequests({
+      const result = await issueSelectedSellerDocumentRequests({
         client: supabase,
+        ensureRequirements: ensurePrivateListingDocumentRequirements,
         listing: listingRecord,
         requirements: requestableDocuments,
         documents: Array.isArray(listingRecord?.documents) ? listingRecord.documents : [],
