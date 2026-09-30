@@ -40,6 +40,48 @@ function normalizeStatusKey(value: unknown) {
   );
 }
 
+function sellerParticipantInvitationToken(link: string) {
+  try {
+    const path = new URL(normalizeText(link)).pathname;
+    return path.match(/^\/seller\/collaboration\/invite\/([a-f0-9]{64})\/?$/i)?.[1] || "";
+  } catch {
+    return "";
+  }
+}
+
+export async function verifySellerParticipantInviteSetup(
+  supabase: Parameters<typeof ensureCanonicalClientInvite>[0] | null,
+  listingId: string,
+  recipientEmail: string,
+  invitationLink: string,
+) {
+  if (!supabase) return { ok: false, status: 500, error: "Seller Portal setup could not be checked. Please try again.", code: "seller_portal_setup_unavailable" };
+  if (!listingId) return { ok: false, status: 400, error: "A listing is required before sending the Seller Portal invitation.", code: "seller_portal_listing_required" };
+  const token = sellerParticipantInvitationToken(invitationLink);
+  if (!token) return { ok: false, status: 409, error: "This seller participant invitation is invalid. Create a new invitation from the listing.", code: "seller_participant_invite_invalid" };
+
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
+  const tokenHash = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+  const query = await supabase.from("private_listing_seller_participants")
+    .select("id, email, display_name, status, invitation_expires_at")
+    .eq("private_listing_id", listingId)
+    .eq("invitation_token_hash", tokenHash)
+    .maybeSingle();
+  if (query.error) {
+    console.error("[seller_onboarding] seller participant invitation lookup failed", query.error);
+    return { ok: false, status: 500, error: "Unable to check seller participant access before sending the portal link.", code: "seller_portal_setup_check_failed" };
+  }
+  const participant = query.data;
+  const recipientMatches = normalizeText(participant?.email).toLowerCase() === normalizeText(recipientEmail).toLowerCase();
+  const expiresAt = Date.parse(normalizeText(participant?.invitation_expires_at));
+  if (!participant || !normalizeText(participant.display_name) || !recipientMatches ||
+    !["invited", "active"].includes(normalizeStatusKey(participant.status)) ||
+    !Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+    return { ok: false, status: 409, error: "This seller participant invitation is invalid or expired. Create a new invitation from the listing.", code: "seller_participant_invite_invalid" };
+  }
+  return { ok: true };
+}
+
 async function verifySellerPortalInviteSetup(
   supabase: Parameters<typeof ensureCanonicalClientInvite>[0] | null,
   listingId: string,
@@ -328,12 +370,12 @@ export async function handleSellerOnboardingEmail(
     })
     : null;
   const listingId = normalizeText(payload.listingId);
+  const sellerParticipantInvite = portalDocumentsMode &&
+    normalizeStatusKey(emailKind) === "seller_participant";
   if (portalDocumentsMode) {
-    const guard = await verifySellerPortalInviteSetup(
-      supabase,
-      listingId,
-      to,
-    );
+    const guard = sellerParticipantInvite
+      ? await verifySellerParticipantInviteSetup(supabase, listingId, to, onboardingLink)
+      : await verifySellerPortalInviteSetup(supabase, listingId, to);
     if (!guard.ok) {
       return jsonResponse(guard.status || 500, {
         error: guard.error,
@@ -342,7 +384,7 @@ export async function handleSellerOnboardingEmail(
     }
   }
   let canonicalClientInvite: any = null;
-  if (portalDocumentsMode && supabase) {
+  if (portalDocumentsMode && supabase && !sellerParticipantInvite) {
     canonicalClientInvite = await ensureCanonicalClientInvite(supabase, {
       email: to,
       clientRole: "seller",
