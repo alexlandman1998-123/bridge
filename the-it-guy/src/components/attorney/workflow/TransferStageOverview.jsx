@@ -91,7 +91,7 @@ export default function TransferStageOverview({ phases = [], selectedPhase = nul
   }
 
   return <section className="grid items-start gap-4 xl:grid-cols-[minmax(260px,316px)_minmax(0,1fr)]" aria-label={`${workflowKey} stage overview`}>
-    <nav className="rounded-2xl border border-slate-200 bg-white p-3 shadow-[0_8px_26px_rgba(15,23,42,0.035)] xl:sticky xl:top-4" aria-label={`${workflowKey === 'transfer' ? 'Transfer' : workflowKey === 'bond' ? 'Bond registration' : 'Cancellation'} stages`}>
+    <nav className="rounded-2xl border border-slate-200 bg-white p-3 shadow-[0_8px_26px_rgba(15,23,42,0.035)]" aria-label={`${workflowKey === 'transfer' ? 'Transfer' : workflowKey === 'bond' ? 'Bond registration' : 'Cancellation'} stages`}>
       <div className="px-3 pb-4 pt-3"><h2 className="text-xs font-bold uppercase tracking-[0.1em] text-emerald-800">Matter workflow</h2><p className="mt-1 text-sm text-slate-500">{phases.length} stages to completion</p></div>
       <ol className="flex gap-2 overflow-x-auto xl:block xl:space-y-2 xl:overflow-visible">{phases.map((phase, index) => {
         const active = phase.key === selectedPhase.key
