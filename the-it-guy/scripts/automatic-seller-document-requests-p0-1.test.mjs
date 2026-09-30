@@ -135,4 +135,15 @@ assert.match(migration, /not exists\s*\([\s\S]*private_listing_documents/i)
 assert.match(migration, /status in \('uploaded', 'under_review', 'approved', 'completed'\)/i)
 assert.match(migration, /status = 'requested'/i)
 
+const reconciliation = await readFile(
+  new URL('../../supabase/migrations/20260930125215_seller_listing_requirement_auto_request_reconcile.sql', import.meta.url),
+  'utf8',
+)
+assert.match(reconciliation, /before insert or update of status, is_required, document_visibility/i)
+assert.match(reconciliation, /after insert or update of status/i)
+assert.match(reconciliation, /agent_document_request/)
+assert.match(reconciliation, /old\.is_required is true[\s\S]*old\.document_visibility = 'seller_visible'/i)
+assert.doesNotMatch(reconciliation, /\n\s*update\s+public\.private_listing_document_requirements\b/i, 'do not backfill existing seller requests during this release')
+assert.doesNotMatch(reconciliation, /\n\s*update\s+public\.transaction_document_requirements\b/i, 'transaction requests are outside this listing correction')
+
 console.log('automatic seller document request P0-1 tests passed')
