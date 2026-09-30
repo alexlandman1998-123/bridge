@@ -4,7 +4,14 @@ import {
   buildListingSellerDocumentDeliveryIndex,
   normalizeListingSellerDocumentDelivery,
 } from '../listingSellerDocumentCollaborationService.js'
-import { buildSellerDocumentRequestPlan } from '../../sellerDocumentRequestOrchestrationService.js'
+import {
+  buildSellerDocumentRequestPlan,
+  issueSelectedSellerDocumentRequests,
+  issueSellerDocumentRequests,
+} from '../../sellerDocumentRequestOrchestrationService.js'
+
+const listingId = '11111111-1111-4111-8111-111111111111'
+const persistedRequirementId = '22222222-2222-4222-8222-222222222222'
 
 test('normalizes seller document delivery failures with retry evidence', () => {
   const delivery = normalizeListingSellerDocumentDelivery({
@@ -67,4 +74,62 @@ test('routes grouped requests to each requirement participant and preserves the 
     ],
   )
   assert.notEqual(plan.issued[0].requestDedupeKey, plan.issued[1].requestDedupeKey)
+})
+
+test('saves a generated checklist item before requesting it with a persisted UUID', async () => {
+  let savedInput = null
+  let updatedId = null
+  const query = {
+    update() { return this },
+    eq(column, value) { if (column === 'id') updatedId = value; return this },
+    in() { return this },
+    select() { return this },
+    async maybeSingle() { return { data: { id: updatedId, status: 'requested' }, error: null } },
+  }
+  const result = await issueSelectedSellerDocumentRequests({
+    client: { from: () => query },
+    listing: { id: listingId },
+    requirements: [{
+      id: 'seller-requirement-9',
+      key: 'authorised_signatory_id',
+      title: 'Authorised Signatory ID',
+      status: 'required',
+      original: { requirement: { requirement_group: 'fica', portalRequest: { requestedFromRole: 'seller' } } },
+    }],
+    ensureRequirements: async (id, rows) => {
+      assert.equal(id, listingId)
+      savedInput = rows[0]
+      return [{ id: persistedRequirementId, requirement_key: 'authorised_signatory_id', status: 'required' }]
+    },
+  })
+  assert.equal(savedInput.requirementKey, 'authorised_signatory_id')
+  assert.equal(savedInput.requirement_group, 'fica')
+  assert.equal(updatedId, persistedRequirementId)
+  assert.equal(result.applied.length, 1)
+})
+
+test('never sends a generated display ID into a UUID database filter', async () => {
+  let queried = false
+  const result = await issueSellerDocumentRequests({
+    client: { from: () => { queried = true; throw new Error('Should not query') } },
+    listing: { id: listingId },
+    requirements: [{ id: 'seller-requirement-9', key: 'signatory_id', status: 'required' }],
+  })
+  assert.equal(queried, false)
+  assert.equal(result.failed.length, 1)
+  assert.match(result.failed[0].error.message, /not saved yet/i)
+})
+
+test('stops a grouped request when a generated requirement cannot be saved', async () => {
+  let queried = false
+  await assert.rejects(
+    issueSelectedSellerDocumentRequests({
+      client: { from: () => { queried = true; throw new Error('Should not query') } },
+      listing: { id: listingId },
+      requirements: [{ id: 'seller-requirement-9', key: 'signatory_id', title: 'Signatory ID', status: 'required' }],
+      ensureRequirements: async () => [],
+    }),
+    /Could not save the Signatory ID requirement/,
+  )
+  assert.equal(queried, false)
 })
