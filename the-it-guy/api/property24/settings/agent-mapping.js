@@ -19,6 +19,7 @@ import {
   persistCanonicalProperty24AgentMapping,
 } from '../../../server/property24/agentMappingService.js'
 import { resolveOrganisationProperty24Connection } from '../../../server/property24/organisationConnectionService.js'
+import { fetchOrganisationProperty24Credentials } from '../../../server/property24/organisationCredentialService.js'
 import { writeNodeJsonResponse } from '../../../server/services/hqMissionControlApi.js'
 
 const appRoot = fileURLToPath(new URL('../../..', import.meta.url))
@@ -149,18 +150,29 @@ export default async function handler(request, response) {
     }
 
     const property24Runtime = resolveProperty24EnvironmentCredentials({ env, environment: connection.environment })
-    if (!property24Runtime.configured) {
+    const organisationCredentials = await fetchOrganisationProperty24Credentials({
+      supabase,
+      organisationId,
+      environment: connection.environment,
+    })
+    const credentials = organisationCredentials || (connection.environment === 'exdev' ? property24Runtime : null)
+    if (!property24Runtime.environmentMatches || !property24Runtime.baseUrl || !credentials?.username || !credentials?.password) {
       writeNodeJsonResponse(response, buildResponse(503, {
         error: 'property24_environment_credentials_missing',
-        missingConfiguration: property24Runtime.missing,
+        missingConfiguration: [
+          ...(!property24Runtime.baseUrl || !property24Runtime.environmentMatches ? ['Property24 endpoint'] : []),
+          ...(!credentials?.username ? ['organisation username'] : []),
+          ...(!credentials?.password ? ['organisation password'] : []),
+        ],
       }))
       return
     }
     const property24 = createProperty24Client({
       baseUrl: property24Runtime.baseUrl,
-      username: property24Runtime.username,
-      password: property24Runtime.password,
-      userGroupId: property24Runtime.userGroupId,
+      apiVersion: property24Runtime.apiVersion,
+      username: credentials.username,
+      password: credentials.password,
+      userGroupId: credentials.userGroupId,
     })
     const snapshot = await property24.fetchAgencyAgents(connection.agencyId)
     const remoteAgent = unwrapProperty24AgentCollection(snapshot.data)

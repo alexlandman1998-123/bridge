@@ -1,4 +1,4 @@
-export const PROPERTY24_LISTING_CATEGORY_CONTRACT_VERSION = 'arch9_property24_listing_category_contract_v1'
+export const PROPERTY24_LISTING_CATEGORY_CONTRACT_VERSION = 'arch9_property24_listing_category_contract_v3'
 
 export const PROPERTY24_LISTING_CATEGORIES = Object.freeze({
   RESIDENTIAL: 'residential',
@@ -46,10 +46,15 @@ export const PROPERTY24_LISTING_CATEGORY_FIELD_MATRIX = Object.freeze({
     requiredArch9FieldsBeforePublish: [],
   },
   [PROPERTY24_LISTING_CATEGORIES.COMMERCIAL]: {
-    publishingStatus: 'blocked_pending_property24_contract',
-    transactionTypes: ['Sale', 'Rental'],
+    publishingStatus: 'supported',
+    transactionTypes: ['Sale'],
     verifiedProperty24Fields: [],
-    requiredArch9FieldsBeforePublish: ['grossLettableArea', 'zoning', 'parking', 'leaseTermsOrSaleTerms'],
+    documentedProperty24Fields: [
+      'agencyId', 'contactAgentIds', 'listingType', 'status', 'price', 'expiryDate',
+      'description', 'photos', 'propertyInfo.suburbId', 'propertyInfo.propertyTypeId',
+      'propertyInfo.floorArea', 'propertyFeatures.parking', 'commercialInfo.grossLettableAreaSqm',
+    ],
+    requiredArch9FieldsBeforePublish: ['zoning', 'parking', 'salePriceOrTerms'],
   },
   [PROPERTY24_LISTING_CATEGORIES.INDUSTRIAL]: {
     publishingStatus: 'blocked_pending_property24_contract',
@@ -139,6 +144,7 @@ export function evaluateProperty24ListingCategoryContract({ listing = {}, public
     listingType: normalizedListingType || null,
     publishingStatus: contract.publishingStatus,
     verifiedProperty24Fields: contract.verifiedProperty24Fields,
+    documentedProperty24Fields: contract.documentedProperty24Fields || [],
     recommendedFields: contract.recommendedFields || [],
     requiredArch9FieldsBeforePublish: contract.requiredArch9FieldsBeforePublish,
     blockers,

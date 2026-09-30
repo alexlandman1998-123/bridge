@@ -53,7 +53,7 @@ not silently turn a weekly rental into a monthly rental for a portal.
 | Fibre and other features | Canonical feature catalogue with yes/no/unknown or applicable/not-applicable | Private Property attribute mapping | Property24 feature mapping only where its contract has a matching feature | Capture once. A feature may be shown on one portal only; never invent an equivalent where none exists. |
 | Images | Ordered image records, captions, cover choice and update timestamp | Minimum 3; up to 256 URLs; unchanged images must be sent as an explicit nil update | Required on a new listing; bytes are loaded for submit | Ready, with channel-specific delivery. Track image changes separately from listing changes. |
 | Floor plans | Media type `floor_plan` | Channel capability must be confirmed per feed payload | Supported as an identified floor-plan photo | Keep as a distinct media type. Do not flatten it into a generic image. |
-| Video and virtual tour | Canonical URLs with type validation | Separate Private Property video/Matterport actions exist | Not confirmed in the current verified Property24 listing contract | Capture once; Private Property ready after validation, Property24 is a confirmed gap. |
+| Video and virtual tour | Canonical YouTube and Matterport links, validated into portal IDs | Separate `UpdateListingVideoOrMatterport` action after activation | Listing Service v55 accepts `youTubeVideoId` and `matterportSpaceId` | The listing preview shows both mapped IDs. Property24 receives them in the listing payload; Private Property needs its separate post-activation update. Other video providers are not mapped. |
 | Assigned agent | Primary Arch9 agent and optional additional agents | Agent must exist first; comma-separated multi-agent IDs accepted | One mapped contact agent is currently verified | Store ordered Arch9 agent assignments. Private Property may receive multiple; Property24 must show that it currently sends only the verified primary contact. |
 | Agency and branch | Organisation plus operating branch | Required branch GUID and active branch agent IDs | Required connected agency ID | Channel configuration, not listing data. Resolve server-side. |
 
@@ -123,7 +123,7 @@ shown only when a selected channel and listing category make them relevant.
    industrial, agricultural/farm and land/development listings. These categories
    are intentionally blocked in the current Arch9 implementation.
 2. Confirm Property24's official handling of weekly, daily and per-m2 rental
-   pricing, Offers From, Negotiable pricing, auctions, farm name, virtual tours
+   pricing, Offers From, Negotiable pricing, auctions, farm name
    and multiple listing agents. Do not infer support from the public website.
 3. Define the Arch9 canonical feature catalogue: each feature needs a stable key,
    a type (boolean, count, enum or text), applicability rules and mappings for

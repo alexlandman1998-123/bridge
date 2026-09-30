@@ -109,6 +109,38 @@ assert.equal(rentalPreview.safety.privatePropertyApiCalled, false)
 assert.equal(rentalPreview.safety.databaseWritten, false)
 assert.equal(rentalPreview.safety.listingPublished, false)
 
+const videoPreview = createPrivatePropertyArch9ListingPreview({
+  ...fixture,
+  media: [
+    ...fixture.media,
+    { media_type: 'video', file_url: 'https://youtu.be/dQw4w9WgXcQ' },
+    { media_type: 'virtual_tour', file_url: 'https://my.matterport.com/show/?m=cJhhdz6udAu' },
+  ],
+  agentMapping: { agentIds: 'ARCH9-SANDBOX-USER-1' },
+  options: {
+    ...fixture.options,
+    branchGuid: 'CA167B18-C6DC-49AD-B018-2B72B187918F',
+    agentIds: 'ARCH9-SANDBOX-USER-1',
+    suburbId: '12345',
+  },
+})
+assert.equal(videoPreview.canPreview, true)
+assert.equal(videoPreview.summary.video.youTubeVideoId, 'dQw4w9WgXcQ')
+assert.equal(videoPreview.videoUpdate.youtubeVideoId, 'dQw4w9WgXcQ')
+assert.equal(videoPreview.videoUpdate.matterportId, 'cJhhdz6udAu')
+assert.equal(videoPreview.videoUpdate.requiresPortalActivation, true)
+assert.doesNotMatch(videoPreview.listingXml, /YoutubeVideoId|MatterportId/)
+
+const unsupportedVideoPreview = createPrivatePropertyArch9ListingPreview({
+  ...fixture,
+  media: [...fixture.media, { media_type: 'video', file_url: 'https://vimeo.com/123456' }],
+  agentMapping: { agentIds: 'ARCH9-SANDBOX-USER-1' },
+  options: { ...fixture.options, branchGuid: 'CA167B18-C6DC-49AD-B018-2B72B187918F', agentIds: 'ARCH9-SANDBOX-USER-1', suburbId: '12345' },
+})
+assert.equal(unsupportedVideoPreview.canPreview, true)
+assert.equal(unsupportedVideoPreview.videoUpdate, null)
+assert.ok(unsupportedVideoPreview.qualityWarnings.includes('unsupported_youtube_video_link'))
+
 const blocked = createPrivatePropertyListingPlan({
   listing: { id: 'blocked-listing', listing_type: 'Sale' },
   publication: {},
@@ -154,6 +186,7 @@ const inferredAddressPlan = createPrivatePropertyListingPlan({
     { media_type: 'image', file_url: 'https://cdn.example.com/one.jpg' },
     { media_type: 'image', file_url: 'https://cdn.example.com/two.jpg' },
     { media_type: 'image', file_url: 'https://cdn.example.com/three.jpg' },
+    { media_type: 'video', file_url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ' },
   ],
   agentMapping: { agentIds: 'ARCH9-SANDBOX-USER-1' },
   options: {
@@ -166,6 +199,8 @@ assert.equal(inferredAddressPlan.payload.address.streetNumber, '99')
 assert.equal(inferredAddressPlan.payload.address.streetName, 'Ridge Road')
 assert.doesNotMatch(inferredAddressPlan.listingXml, /<StreetName>99 Ridge Road<\/StreetName>/)
 assert.match(inferredAddressPlan.listingXml, /<StreetNumber>99<\/StreetNumber>/)
+assert.equal(inferredAddressPlan.videoUpdate.listingType, 'Sale')
+assert.equal(inferredAddressPlan.videoUpdate.youtubeVideoId, 'dQw4w9WgXcQ')
 
 const normalizedFeaturePlan = createPrivatePropertyListingPlan({
   listing: {

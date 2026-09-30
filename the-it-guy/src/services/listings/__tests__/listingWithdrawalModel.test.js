@@ -8,8 +8,8 @@ import {
 } from '../listingWithdrawalModel.js'
 
 test('withdrawal plan includes every public channel and exposes missing portal references', () => {
-  const plan = buildListingWithdrawalPlan({ property24Live: true, privatePropertyLive: true, agencyWebsiteLive: true, arch9Live: true })
-  assert.deepEqual(plan.map((item) => item.key), ['property24', 'private_property', 'agency_website', 'arch9_catalogue'])
+  const plan = buildListingWithdrawalPlan({ property24Live: true, privatePropertyLive: true, agencyWebsiteLive: true, kingdomWebsiteLive: true, arch9Live: true })
+  assert.deepEqual(plan.map((item) => item.key), ['property24', 'private_property', 'agency_website', 'kingdom_website', 'arch9_catalogue'])
   assert.match(plan[0].blockedReason, /no listing reference/i)
   assert.equal(plan.every((item) => item.status === 'pending'), true)
 })

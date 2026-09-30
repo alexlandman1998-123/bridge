@@ -14,6 +14,7 @@ export type PublicProperty = {
   floorSize?: number
   description?: string
   consultant?: { name: string; email?: string; phone?: string; avatarUrl?: string }
+  partnerListing?: boolean
   features: string[]
   amenities: string[]
   isShowcase?: boolean

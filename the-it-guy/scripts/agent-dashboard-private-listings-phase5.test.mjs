@@ -44,7 +44,7 @@ function requestSummary(url) {
   }
 }
 
-function privateListingRow({ id, assignedAgentId, assignedAgentEmail, askingPrice, isActive = true }) {
+function privateListingRow({ id, assignedAgentId, assignedAgentEmail, askingPrice, isActive = true, propertyCategory = 'residential', propertyType = 'house', canonicalFacts = {} }) {
   return {
     id,
     listing_reference: `PL-${id.slice(0, 4)}`,
@@ -71,13 +71,13 @@ function privateListingRow({ id, assignedAgentId, assignedAgentEmail, askingPric
     seller_type: 'individual',
     finance_context: '',
     mandate_type: 'sole',
-    property_category: 'residential',
-    property_type: 'house',
+    property_category: propertyCategory,
+    property_type: propertyType,
     property_structure_type: 'freehold',
     listing_category: 'private_sale',
     listing_source: 'private_listing',
     stock_source: 'private_listing',
-    seller_canonical_facts_json: {},
+    seller_canonical_facts_json: canonicalFacts,
     seller_canonical_fact_readiness_json: {},
     seller_lead_id: null,
     seller_profile_id: null,
@@ -98,6 +98,9 @@ const privateListingRows = [
     assignedAgentId: PROFILE_ID,
     assignedAgentEmail: 'agent@example.test',
     askingPrice: 1000000,
+    propertyCategory: null,
+    propertyType: 'House',
+    canonicalFacts: { property: { property_category: 'commercial' } },
   }),
   privateListingRow({
     id: ALIAS_LISTING_ID,
@@ -257,6 +260,7 @@ try {
   const rowsById = new Map(rows.map((row) => [row.id, row]))
   assert.equal(rowsById.size, 2, 'the summary must retain canonical-ID and alias-ID listing rows')
   assert.equal(rowsById.get(PROFILE_LISTING_ID)?.askingPrice, 1000000, 'the summary must retain pipeline value')
+  assert.equal(rowsById.get(PROFILE_LISTING_ID)?.propertyCategory, 'commercial', 'the compact summary must retain the canonical commercial category when the category column is unavailable')
   assert.equal(rowsById.get(PROFILE_LISTING_ID)?.isActive, true, 'the summary must retain active-listing state')
   assert.equal(rowsById.has(EMAIL_LISTING_ID), false, 'the summary must not broaden scope through legacy email assignments')
   assert.equal(rowsById.get(ALIAS_LISTING_ID)?.commission?.commission_percentage, '5', 'the summary must retain custom commission terms')

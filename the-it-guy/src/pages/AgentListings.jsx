@@ -7257,7 +7257,7 @@ function AgentListings({ initialTab = null } = {}) {
     : listingCollectionView
   const showImportedReviewTab = hasImportedReview || (listingCollectionView === 'review' && (loading || supportingDataLoading))
   // Development cards depend on assignment and workspace lookups that finish
-  // after the lightweight residential listing summaries.
+  // after the lightweight property listing summaries.
   const isDevelopmentTabLoading = listingsTab === 'developments' && (loading || developmentDataLoading)
 
   useEffect(() => {
@@ -7266,7 +7266,7 @@ function AgentListings({ initialTab = null } = {}) {
     }
   }, [hasImportedReview, loading, supportingDataLoading])
 
-  const residentialListingCards = useMemo(() => {
+  const propertyListingCards = useMemo(() => {
     const query = String(filters.search || '').trim().toLowerCase()
     if (isDeveloperWorkspace) {
       return sortListingCards(privateListingCards.filter((card) => (
@@ -7275,27 +7275,21 @@ function AgentListings({ initialTab = null } = {}) {
           : true
       )), filters.sortBy)
     }
-    const tabCategoryMap = {
-      residential: new Set(['residential', 'mixed_use', 'vacant_land']),
-    }
-    const targetCategories = tabCategoryMap[listingsTab] || tabCategoryMap.residential
-
     return sortListingCards(privateListingCards.filter((card) => {
-      const categoryMatch = targetCategories.has(String(card.propertyCategory || 'residential').toLowerCase())
       const collectionMatch = card.collectionView === activeListingCollectionView
       const searchMatch = query
         ? [card.title, card.addressLabel, card.suburb, card.typeLabel, card.agentName, card.originLabel, ...(card.followUpQueue || []).map((item) => item.label)].join(' ').toLowerCase().includes(query)
         : true
-      return categoryMatch && collectionMatch && searchMatch
+      return collectionMatch && searchMatch
     }), filters.sortBy)
-  }, [activeListingCollectionView, filters.search, filters.sortBy, isDeveloperWorkspace, listingsTab, privateListingCards])
+  }, [activeListingCollectionView, filters.search, filters.sortBy, isDeveloperWorkspace, privateListingCards])
 
-  const visibleCardCoverRequests = useMemo(() => residentialListingCards
+  const visibleCardCoverRequests = useMemo(() => propertyListingCards
     .map((card) => ({
       id: getRemotePrivateListingId(card.listingRecord),
       revision: String(card.updatedAt || ''),
     }))
-    .filter((card) => card.id), [residentialListingCards])
+    .filter((card) => card.id), [propertyListingCards])
 
   useEffect(() => {
     const pending = visibleCardCoverRequests.filter(({ id, revision }) => {
@@ -7508,7 +7502,7 @@ function AgentListings({ initialTab = null } = {}) {
 
   const listingTabCounts = useMemo(
     () => ({
-      residential: privateListingCards.filter((card) => ['residential', 'mixed_use', 'vacant_land'].includes(card.propertyCategory) && card.collectionView === 'current').length,
+      properties: privateListingCards.filter((card) => card.collectionView === 'current').length,
       archived: privateListingCards.filter((card) => card.collectionView === 'archived').length,
       review: privateListingCards.filter((card) => card.collectionView === 'review').length,
       developments: developmentCards.length,
@@ -7518,11 +7512,11 @@ function AgentListings({ initialTab = null } = {}) {
   const finalListingModuleOverview = useMemo(
     () => buildFinalListingModuleOverview({
       activeType: 'sales',
-      salesCount: listingTabCounts.residential,
+      salesCount: listingTabCounts.properties,
       rentalCount: null,
       developmentCount: listingTabCounts.developments,
     }),
-    [listingTabCounts.developments, listingTabCounts.residential],
+    [listingTabCounts.developments, listingTabCounts.properties],
   )
 
   const selectedDeveloperLeadDevelopment = useMemo(
@@ -8131,14 +8125,14 @@ function AgentListings({ initialTab = null } = {}) {
                   </div>
                 </ListingWizardSection>
 
-                {getSpecialistSalesListingSchema(form.propertyCategory).fields.length ? (
-                  <ListingWizardSection title="4. Specialist property details" description="These details are required for the selected non-residential category before portal publication." divided>
+                {getSpecialistSalesListingSchema(form.propertyCategory, form.listingType).fields.length ? (
+                  <ListingWizardSection title="4. Specialist property details" description="Capture the known specialist facts. Required fields are marked with an asterisk." divided>
                     <div className="mt-3 grid gap-4 md:grid-cols-2">
-                      {getSpecialistSalesListingSchema(form.propertyCategory).fields.map((field) => (
+                      {getSpecialistSalesListingSchema(form.propertyCategory, form.listingType).fields.map((field) => (
                         field.kind === 'boolean' ? (
                           <BooleanChoiceField key={field.key} label={field.label} value={Boolean(form[field.key])} yesDescription="Available at this property." noDescription="Not available or not confirmed." onChange={(value) => updateForm(field.key, value)} />
                         ) : (
-                          <FormField key={field.key} label={`${field.label} *`} className={field.kind === 'terms' ? 'md:col-span-2' : ''}>
+                          <FormField key={field.key} label={`${field.label}${field.required ? ' *' : ''}`} className={field.kind === 'terms' ? 'md:col-span-2' : ''}>
                             <Field as={field.kind === 'terms' ? 'textarea' : undefined} type={field.kind === 'measurement' ? 'number' : undefined} min={field.kind === 'measurement' ? '0' : undefined} step={field.kind === 'measurement' ? '0.1' : undefined} value={form[field.key] || ''} onChange={(event) => updateForm(field.key, event.target.value)} placeholder={field.unit ? `Enter ${field.label.toLowerCase()} in ${field.unit}` : `Enter ${field.label.toLowerCase()}`} />
                           </FormField>
                         )
@@ -8147,7 +8141,7 @@ function AgentListings({ initialTab = null } = {}) {
                   </ListingWizardSection>
                 ) : null}
 
-                <ListingWizardSection title={getSpecialistSalesListingSchema(form.propertyCategory).fields.length ? '5. Property specifications' : '4. Property specifications'} divided>
+                <ListingWizardSection title={getSpecialistSalesListingSchema(form.propertyCategory, form.listingType).fields.length ? '5. Property specifications' : '4. Property specifications'} divided>
                   <div className="mt-3 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                     <NumberStepper label="Bedrooms" value={form.bedrooms} onChange={(value) => updateForm('bedrooms', value)} />
                     <NumberStepper label="Bathrooms" value={form.bathrooms} onChange={(value) => updateForm('bathrooms', value)} />
@@ -8183,7 +8177,7 @@ function AgentListings({ initialTab = null } = {}) {
                   ) : null}
                 </ListingWizardSection>
 
-                <ListingWizardSection title={`${getSpecialistSalesListingSchema(form.propertyCategory).fields.length ? '6' : '5'}. ${form.listingType === 'rental' ? 'Rental' : 'Sales'} portal options`} description="Capture the publication flags agents expect before syndication." divided>
+                <ListingWizardSection title={`${getSpecialistSalesListingSchema(form.propertyCategory, form.listingType).fields.length ? '6' : '5'}. ${form.listingType === 'rental' ? 'Rental' : 'Sales'} portal options`} description="Capture the publication flags agents expect before syndication." divided>
                   <div className="mt-3 grid gap-3 md:grid-cols-2">
                     {CREATE_LISTING_SALES_FLAG_OPTIONS.filter((option) => form.listingType !== 'rental' || option.key === 'noTransferDuty').map((option) => (
                       <SelectionCard
@@ -8577,7 +8571,7 @@ function AgentListings({ initialTab = null } = {}) {
           {!isDeveloperWorkspace ? (
             <div className="grid w-full grid-cols-2 gap-1.5 rounded-[18px] border border-[#dbe6f2] bg-[#f5f9fd] p-1.5 xl:max-w-[460px] xl:flex-1">
               {[
-                { key: 'residential', label: 'Residential', count: listingTabCounts.residential || 0 },
+                { key: 'residential', label: 'Properties', count: listingTabCounts.properties || 0 },
                 { key: 'developments', label: 'Developments', count: listingTabCounts.developments || 0 },
               ].map((tab) => {
                 const active = listingsTab === tab.key
@@ -8643,7 +8637,7 @@ function AgentListings({ initialTab = null } = {}) {
         {!isDeveloperWorkspace && listingsTab !== 'developments' ? (
           <div className={`mb-5 grid gap-2 rounded-[18px] border border-[#dbe6f2] bg-[#f5f9fd] p-1.5 ${showImportedReviewTab ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
             {[
-              { key: 'current', label: 'Current', count: listingTabCounts.residential || 0, description: 'Working stock, drafts, and live listings' },
+              { key: 'current', label: 'Current', count: listingTabCounts.properties || 0, description: 'Working stock, drafts, and live listings' },
               { key: 'archived', label: 'Previous Listings', count: listingTabCounts.archived || 0, description: 'Past listings and historical imports' },
               ...(showImportedReviewTab
                 ? [{ key: 'review', label: 'Imported Review', count: listingTabCounts.review || 0, description: 'Property24 and Private Property imports' }]
@@ -8679,9 +8673,9 @@ function AgentListings({ initialTab = null } = {}) {
         ) : null}
 
         {!loading && (isDeveloperWorkspace || listingsTab !== 'developments') ? (
-          residentialListingCards.length ? (
+          propertyListingCards.length ? (
             <div className="grid items-stretch gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-              {residentialListingCards.map((card, index) => (
+              {propertyListingCards.map((card, index) => (
                 <article
                   key={card.id}
                   style={{ contentVisibility: 'auto', containIntrinsicSize: '0 430px' }}
@@ -8809,7 +8803,7 @@ function AgentListings({ initialTab = null } = {}) {
             <div className="rounded-[18px] border border-dashed border-[#d3deea] bg-[#fbfcfe] px-5 py-10 text-center">
               <Building2 className="mx-auto text-[#8da0b5]" size={24} />
               <p className="mt-3 text-base font-semibold text-[#142132]">
-                {isDeveloperWorkspace ? 'No listings yet.' : 'No residential listings yet.'}
+                {isDeveloperWorkspace ? 'No listings yet.' : 'No properties in this view yet.'}
               </p>
               <p className="mt-1 text-sm text-[#6b7d93]">
                 {isDeveloperWorkspace

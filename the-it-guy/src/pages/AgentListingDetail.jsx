@@ -100,7 +100,9 @@ import {
 } from '../services/listings/listingSellerOverviewModel'
 import SyndicationReviewModal from '../components/listings/SyndicationReviewModal'
 import WebsiteListingPublicationPanel from '../components/listings/WebsiteListingPublicationPanel'
+import KingdomWebsitePublicationChannel from '../components/listings/KingdomWebsitePublicationChannel'
 import { setWebsiteListingPublication } from '../services/websiteListingPublicationService'
+import { setKingdomWebsitePublication } from '../services/kingdomWebsitePublicationService'
 import {
   ListingWorkspacePortalActionPanel,
   ListingWorkspacePortalChecklist,
@@ -1233,6 +1235,9 @@ function formatPrivatePropertyBlocker(value = '') {
 function getPrivatePropertyApiMessage(payload = {}, fallback = 'Private Property request failed.') {
   const missing = Array.isArray(payload?.missingConfiguration) ? payload.missingConfiguration : []
   if (missing.length) return `Private Property setup is incomplete: ${missing.join(', ')}.`
+  if (payload?.route === 'listingStatus' && payload?.monitor?.apiError) {
+    return `Private Property status check failed: ${payload.monitor.apiError.message || 'Please try again shortly.'}`
+  }
   const preview = payload?.preview || payload?.readiness?.preview || payload?.report?.preview || {}
   const readinessBlockers = payload?.readiness?.blockers || payload?.report?.readiness?.blockers || payload?.report?.blockers || []
   const dataBlockers = Array.isArray(preview.dataBlockers) ? preview.dataBlockers : []
@@ -3830,6 +3835,7 @@ function AgentListingDetail() {
   const [readinessChecklistOpen, setReadinessChecklistOpen] = useState(false)
   const [publicationChangesOpen, setPublicationChangesOpen] = useState(false)
   const [agencyWebsitePublication, setAgencyWebsitePublication] = useState(null)
+  const [kingdomWebsitePublication, setKingdomWebsitePublication] = useState(null)
   const [property24ManageOpen, setProperty24ManageOpen] = useState(false)
   const [propertyDetailsReturnTarget, setPropertyDetailsReturnTarget] = useState('')
   const [sellerWorkspaceTab, setSellerWorkspaceTab] = useState(() => getSellerWorkspaceTabFromSearch(typeof window !== 'undefined' ? window.location.search : '') || 'overview')
@@ -5623,6 +5629,7 @@ function AgentListingDetail() {
       agencyWebsiteLive: agencyWebsitePublication?.status === 'published' &&
         agencyWebsitePublication?.websiteStatus === 'published' &&
         agencyWebsitePublication?.projectionStatus === 'Published',
+      kingdomWebsiteLive: kingdomWebsitePublication?.status === 'published',
       arch9Live: arch9IsPublished,
     })
   }
@@ -5711,6 +5718,8 @@ function AgentListingDetail() {
               ? marketingDraft.privatePropertyReference
               : result.key === 'agency_website'
                 ? agencyWebsitePublication?.websiteSiteId || ''
+              : result.key === 'kingdom_website'
+                ? kingdomWebsitePublication?.websiteSiteId || ''
                 : listingRecord.id,
           detail: result.detail || '',
           ...(result.status === 'succeeded'
@@ -5759,6 +5768,10 @@ function AgentListingDetail() {
           const publication = await setWebsiteListingPublication(listingRecord.id, 'unpublish')
           setAgencyWebsitePublication(publication)
           updateResult(channel.key, { status: 'succeeded', detail: 'Removed from the agency website' })
+        } else if (channel.key === 'kingdom_website') {
+          const publication = await setKingdomWebsitePublication(listingRecord.id, 'unpublish')
+          setKingdomWebsitePublication(publication)
+          updateResult(channel.key, { status: 'succeeded', detail: 'Removed from the Kingdom website' })
         }
       } catch (error) {
         updateResult(channel.key, { status: 'failed', detail: error?.message || `${channel.label} withdrawal failed.` })
@@ -5812,13 +5825,13 @@ function AgentListingDetail() {
     }
   }
 
-  async function prepareAgencyWebsiteListing() {
+  async function prepareAgencyWebsiteListing(channelName = 'agency website') {
     const pendingMedia = getPendingListingMediaUploads(marketingDraft)
     if (pendingMedia.length) {
-      throw new Error(`Retry the ${pendingMedia.length} failed media upload${pendingMedia.length === 1 ? '' : 's'} before publishing to the agency website.`)
+      throw new Error(`Retry the ${pendingMedia.length} failed media upload${pendingMedia.length === 1 ? '' : 's'} before publishing to the ${channelName}.`)
     }
     const blockers = getArch9PublicationBlockers(marketingDraft, coverImage)
-    if (blockers.length) throw new Error(`Before publishing to the agency website: ${blockers.join(' ')}`)
+    if (blockers.length) throw new Error(`Before publishing to the ${channelName}: ${blockers.join(' ')}`)
 
     const currentListingStatus = normalizeKey(marketingDraft.listingStatus)
     const nextDraft = {
@@ -5831,7 +5844,7 @@ function AgentListingDetail() {
     setMarketingDraft(nextDraft)
     const saveResult = await saveMarketingDraft(nextDraft, {
       listingVisibility: 'active_market',
-      successMessage: 'Listing details prepared for the agency website.',
+      successMessage: `Listing details prepared for the ${channelName}.`,
     })
     if (saveResult?.distributionSync?.skipped) {
       throw saveResult.distributionSync.error || new Error('The listing saved, but its public projection could not be synchronized. Retry before publishing to the website.')
@@ -6202,6 +6215,10 @@ function AgentListingDetail() {
   }
 
   async function refreshPrivatePropertyListingStatus() {
+    if (!privatePropertyHasChannel) {
+      setDetailError('This listing has not been submitted to Private Property yet. Run readiness, then use Publish to submit it first.')
+      return null
+    }
     setPrivatePropertyAction('status')
     setDetailError('')
     setDetailMessage('Checking Private Property live status...')
@@ -10083,6 +10100,12 @@ function AgentListingDetail() {
   const privatePropertyHasPreviewBlockers = privatePropertyPreviewCounts.dataBlockers > 0 ||
     privatePropertyPreviewCounts.technicalBlockers > 0 ||
     privatePropertyPreviewCounts.readinessBlockers > 0
+  const privatePropertyReadyForFirstPublish = privatePropertyCanSubmit === true &&
+    !privatePropertyHasPreviewBlockers && !privatePropertyHasChannel
+  const privatePropertyRecoveredPreflight = privatePropertyReadyForFirstPublish &&
+    channelUpdateStates['Private Property']?.status === 'needs_attention' &&
+    channelUpdateStates['Private Property']?.action === 'publish' &&
+    channelUpdateStates['Private Property']?.detail?.startsWith('Private Property cannot publish yet:')
   const privatePropertyExternalStatus = normalizeKey(privatePropertyStatusCheck?.monitor?.externalStatus || privatePropertyStatusCheck?.report?.externalStatus || '')
   const currentPublicationSnapshot = useMemo(
     () => buildListingPublicationSnapshot(marketingDraft),
@@ -10464,7 +10487,8 @@ function AgentListingDetail() {
   const property24OverviewUpdate = channelUpdateStates.Property24?.status === 'current' && ['expired', 'removed', 'withdrawn'].includes(property24StatusKey)
     ? { status: 'needs_attention' }
     : channelUpdateStates.Property24
-  const privatePropertyOverviewUpdate = channelUpdateStates['Private Property']?.status === 'current' && ['expired', 'removed', 'withdrawn'].includes(privatePropertyStatusKey)
+  const privatePropertyOverviewUpdate = privatePropertyRecoveredPreflight ? null
+    : channelUpdateStates['Private Property']?.status === 'current' && ['expired', 'removed', 'withdrawn'].includes(privatePropertyStatusKey)
     ? { status: 'needs_attention' }
     : channelUpdateStates['Private Property']
   const overviewPublishedChannels = [
@@ -10483,7 +10507,9 @@ function AgentListingDetail() {
       key: 'private_property', label: 'Private Property', live: privatePropertyPortalLive,
       reference: privatePropertyPortalReference,
       publicUrl: privatePropertyPortalUrl || listingRecord?.privatePropertyListingUrl || listingRecord?.private_property_listing_url,
-      publicationState: listingPublicationStates.private_property,
+      publicationState: privatePropertyRecoveredPreflight
+        ? { ...listingPublicationStates.private_property, stage: 'not_published', changeCount: 0 }
+        : listingPublicationStates.private_property,
       updateState: privatePropertyOverviewUpdate,
       activityAvailable: !channelActivityUnavailable || !privatePropertyHasChannel,
       actionBusy: Boolean(privatePropertyAction), withdrawn: listingWithdrawnForChannels,
@@ -12302,6 +12328,7 @@ function AgentListingDetail() {
     const mandateExpiryDate = formatDateInputValue(marketingDraft.expiryDate)
     const canUseMandateExpiry = Boolean(mandateExpiryDate) && !getProperty24ExpiryDateError(mandateExpiryDate)
     const resolvedLocation = property24Preview?.preview?.summary?.property24Location || property24Preview?.report?.preview?.summary?.property24Location || null
+    const video = property24Preview?.preview?.summary?.video || property24Preview?.report?.preview?.summary?.video || null
     return (
       <Modal
         open={property24ManageOpen}
@@ -12316,6 +12343,15 @@ function AgentListingDetail() {
             <InfoTile icon={Link2} label="Property24 reference" value={property24Reference || 'Not assigned'} />
             <InfoTile icon={RefreshCw} label="Last synced" value={formatRelativeTime(property24LastSyncedAt)} />
           </section>
+
+          {video && (video.videoLinkPresent || video.virtualTourLinkPresent) ? (
+            <section className="rounded-[18px] border border-[#e1e9f2] bg-[#fbfdff] p-4">
+              <p className="text-sm font-semibold text-[#142132]">Video and 3D tour mapping</p>
+              {video.videoLinkPresent ? <p className="mt-2 text-sm text-[#607387]">YouTube video: {video.youTubeVideoId ? `Ready to send (ID ${video.youTubeVideoId})` : 'This link cannot be sent. Use a YouTube video link.'}</p> : null}
+              {video.virtualTourLinkPresent ? <p className="mt-2 text-sm text-[#607387]">3D tour: {video.matterportSpaceId ? `Ready to send (Matterport ID ${video.matterportSpaceId})` : 'This link cannot be sent. Use a Matterport share link.'}</p> : null}
+              <p className="mt-2 text-xs text-[#607387]">Ready IDs are included when you publish or update this Property24 listing.</p>
+            </section>
+          ) : null}
 
           {(property24Published || channelUpdateStates.Property24?.status === 'awaiting_verification') && !listingRecord?.property24ListingUrl && !listingRecord?.property24_listing_url ? <section className="rounded-[18px] border border-[#f0d6a8] bg-[#fff9ed] p-4">
             <p className="text-sm font-semibold text-[#8a5b13]">Live listing URL not yet confirmed</p>
@@ -12461,6 +12497,7 @@ function AgentListingDetail() {
     const status = privatePropertyLiveValue ? 'Live' : formatStatusLabel(privatePropertyStatusKey || 'not_published')
     const previewComplete = Boolean(privatePropertyPreview)
     const hasIssues = privatePropertyReadinessIssues.length > 0
+    const video = privatePropertyPreview?.preview?.summary?.video || privatePropertyPreview?.readiness?.preview?.summary?.video || null
     return (
       <Modal
         open={privatePropertyManageOpen}
@@ -12475,6 +12512,15 @@ function AgentListingDetail() {
               {privatePropertyAction === 'preview' ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
               Run readiness check
             </Button>
+            {privatePropertyReadyForFirstPublish ? (
+              <Button type="button" onClick={() => {
+                setPrivatePropertyManageOpen(false)
+                void publishPrivatePropertyListing()
+              }} disabled={Boolean(privatePropertyAction)}>
+                <Send size={15} />
+                Publish to Private Property
+              </Button>
+            ) : null}
           </div>
         )}
       >
@@ -12484,6 +12530,15 @@ function AgentListingDetail() {
             <InfoTile icon={Link2} label="Private Property reference" value={privatePropertyReferenceValue || 'Not assigned'} />
             <InfoTile icon={CircleAlert} label="Issues found" value={previewComplete ? privatePropertyReadinessIssues.length : 'Not checked'} status={hasIssues ? 'missing' : previewComplete ? 'complete' : 'pending'} />
           </section>
+
+          {video && (video.videoLinkPresent || video.virtualTourLinkPresent) ? (
+            <section className="rounded-[18px] border border-[#e1e9f2] bg-[#fbfdff] p-4">
+              <p className="text-sm font-semibold text-[#142132]">Video and 3D tour mapping</p>
+              {video.videoLinkPresent ? <p className="mt-2 text-sm text-[#607387]">YouTube video: {video.youTubeVideoId ? `ID ${video.youTubeVideoId} prepared` : 'This link cannot be sent. Use a YouTube video link.'}</p> : null}
+              {video.virtualTourLinkPresent ? <p className="mt-2 text-sm text-[#607387]">3D tour: {video.matterportSpaceId ? `Matterport ID ${video.matterportSpaceId} prepared` : 'This link cannot be sent. Use a Matterport share link.'}</p> : null}
+              <p className="mt-2 text-xs text-[#607387]">Private Property requires a separate video update after the listing is active. Previewing or submitting the listing does not send these IDs yet.</p>
+            </section>
+          ) : null}
 
           {(privatePropertyLiveValue || channelUpdateStates['Private Property']?.status === 'awaiting_verification') && !listingRecord?.privatePropertyListingUrl && !listingRecord?.private_property_listing_url ? <section className="rounded-[18px] border border-[#f0d6a8] bg-[#fff9ed] p-4">
             <p className="text-sm font-semibold text-[#8a5b13]">Live listing URL not yet confirmed</p>
@@ -12549,7 +12604,7 @@ function AgentListingDetail() {
     const privatePropertyBaseUpdate = !privatePropertyIntentionallyInactive && channelUpdateStates['Private Property']?.status === 'current' && ['expired', 'removed', 'withdrawn'].includes(privatePropertyStatusKey)
       ? { status: 'needs_attention', retriable: false, detail: 'The portal now reports this listing as inactive. Review its channel status before treating it as current.' }
       : channelUpdateStates['Private Property']
-    const privatePropertyUpdate = privatePropertyBaseUpdate
+    const privatePropertyUpdate = privatePropertyRecoveredPreflight ? null : privatePropertyBaseUpdate
     const privatePropertyHasUnpublishedChanges = listingPublicationStates.private_property.changeCount > 0
     const property24MonitoringIssue = channelActivityUnavailable && property24HasReference
     const privatePropertyMonitoringIssue = channelActivityUnavailable && privatePropertyHasChannel
@@ -12578,6 +12633,7 @@ function AgentListingDetail() {
     const privatePropertyChannelStatus = overviewPublishedChannels[1].status
     const privatePropertyChannelLabel = overviewPublishedChannels[1].statusLabel
     const privatePropertyContextTitle = privatePropertyIntentionallyInactive ? 'Removed through the Arch9 withdrawal workflow'
+      : privatePropertyRecoveredPreflight ? 'Ready to publish'
       : privatePropertyHasUnpublishedChanges ? `${listingPublicationStates.private_property.changeCount} saved Arch9 change${listingPublicationStates.private_property.changeCount === 1 ? '' : 's'} not published`
       : privatePropertyUpdate?.status === 'needs_attention' ? privatePropertyUpdate.retriable === false ? 'No confirmed live Private Property listing to update' : 'Latest portal update needs attention'
       : privatePropertyMonitoringIssue ? 'Update history unavailable; channel currency cannot be confirmed'
@@ -12724,10 +12780,10 @@ function AgentListingDetail() {
             {privatePropertyAction === 'preview' ? <Loader2 size={15} className="animate-spin" /> : <Eye size={15} />}
             Check readiness
           </button>,
-          <button key="status" type="button" onClick={refreshPrivatePropertyListingStatus} disabled={Boolean(privatePropertyAction)} className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#243d56] transition hover:bg-[#f7fbff] disabled:cursor-not-allowed disabled:opacity-50">
+          privatePropertyHasChannel ? <button key="status" type="button" onClick={refreshPrivatePropertyListingStatus} disabled={Boolean(privatePropertyAction)} className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#243d56] transition hover:bg-[#f7fbff] disabled:cursor-not-allowed disabled:opacity-50">
             {privatePropertyAction === 'status' ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
             Refresh status
-          </button>,
+          </button> : null,
           privatePropertyLive ? <button key="expire" type="button" onClick={() => expirePrivatePropertyListing()} disabled={Boolean(privatePropertyAction)} className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#a43d35] transition hover:bg-[#fff5f5] disabled:cursor-not-allowed disabled:opacity-50">
             {privatePropertyAction === 'expire' ? <Loader2 size={15} className="animate-spin" /> : <CalendarDays size={15} />}
             Expire listing
@@ -12739,8 +12795,12 @@ function AgentListingDetail() {
     const agencyWebsiteLive = agencyWebsitePublication?.status === 'published' &&
       agencyWebsitePublication?.websiteStatus === 'published' &&
       agencyWebsitePublication?.projectionStatus === 'Published'
-    const marketingLiveChannelCount = channelRows.filter((channel) => normalizeKey(channel.status) === 'live').length + (agencyWebsiteLive ? 1 : 0)
-    const marketingChannelCount = channelRows.length + (agencyWebsiteConnected ? 1 : 0)
+    const kingdomWebsiteAvailable = kingdomWebsitePublication?.available === true
+    const kingdomWebsiteLive = kingdomWebsitePublication?.status === 'published' &&
+      kingdomWebsitePublication?.websiteStatus === 'published' &&
+      kingdomWebsitePublication?.projectionStatus === 'Published'
+    const marketingLiveChannelCount = channelRows.filter((channel) => normalizeKey(channel.status) === 'live').length + (agencyWebsiteLive ? 1 : 0) + (kingdomWebsiteLive ? 1 : 0)
+    const marketingChannelCount = channelRows.length + (agencyWebsiteConnected ? 1 : 0) + (kingdomWebsiteAvailable ? 1 : 0)
     const channelCountLabel = marketingChannelCount ? `${marketingLiveChannelCount} / ${marketingChannelCount}` : String(marketingLiveChannelCount)
     const remainingReadinessCount = incompleteReadinessItems.length
     const pendingMediaUploads = getPendingListingMediaUploads(marketingDraft)
@@ -12976,12 +13036,20 @@ function AgentListingDetail() {
             onReviewChanges={() => setPublicationChangesOpen(true)}
             savedAt={formatRelativeTime(listingRecord?.updatedAt || listingRecord?.updated_at)}
           />
+          <KingdomWebsitePublicationChannel
+            listingId={listingRecord?.id}
+            listingTitle={marketingDraft.headline || listingRecord?.listingTitle || listingRecord?.title}
+            listingReference={listingRecord?.arch9Reference || listingRecord?.listingReference || listingRecord?.listingCode || ''}
+            onPrepare={() => prepareAgencyWebsiteListing('Kingdom website')}
+            onStatusChange={setKingdomWebsitePublication}
+            savedAt={formatRelativeTime(listingRecord?.updatedAt || listingRecord?.updated_at)}
+          />
         </article>
 
         <ListingShowDaysPanel
           organisationId={listingOrganisationId}
           listing={listingShowDaySnapshot}
-          publicListingReady={Boolean(arch9IsPublished || property24Published || privatePropertyPortalLive || agencyWebsiteLive)}
+          publicListingReady={Boolean(arch9IsPublished || property24Published || privatePropertyPortalLive || agencyWebsiteLive || kingdomWebsiteLive)}
         />
 
         <div className="flex flex-col gap-4 rounded-[18px] border border-[#d8e3ee] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.045)] lg:flex-row lg:items-center lg:justify-between">
@@ -13026,7 +13094,7 @@ function AgentListingDetail() {
         <div className="flex flex-col gap-3 rounded-[18px] border border-[#ead8b8] bg-[#fffaf0] p-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="text-sm font-semibold text-[#624417]">Need to remove this listing from the market?</p>
-            <p className="mt-1 text-sm text-[#80632f]">Withdraw it from Property24, Private Property, the agency website and Arch9 in one controlled action.</p>
+            <p className="mt-1 text-sm text-[#80632f]">Withdraw it from Property24, Private Property, {kingdomWebsiteAvailable ? 'the Kingdom website, ' : ''}the agency website and Arch9 in one controlled action.</p>
           </div>
           <Button type="button" variant="secondary" onClick={requestWithdrawListing} disabled={publicationSaving || normalizeKey(marketingDraft.listingStatus) === 'withdrawn'} className="border-[#d8b87f] text-[#7a4e12] hover:bg-[#fff3dc]">
             {publicationSaving ? <Loader2 size={15} className="animate-spin" /> : <X size={15} />}

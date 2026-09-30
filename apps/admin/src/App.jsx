@@ -6184,6 +6184,9 @@ function InboundLeadsView({ onRefresh, snapshot }) {
 
 function SettingsView({ access, profile, snapshot = EMPTY_DASHBOARD }) {
   const configStatus = getSupabaseConfigStatus()
+  const organisations = snapshot.drilldowns?.activeOrganisations || []
+  const [privatePropertyOrganisationId, setPrivatePropertyOrganisationId] = useState('')
+  const privatePropertyOrganisation = organisations.find((organisation) => organisation.id === privatePropertyOrganisationId)
   const rows = [
     ['Access level', formatAdminLevelLabel(access.level)],
     ['Resolved roles', access.roles.join(', ') || 'No roles'],
@@ -6209,9 +6212,28 @@ function SettingsView({ access, profile, snapshot = EMPTY_DASHBOARD }) {
           ))}
         </dl>
       </section>
-      <Property24CredentialsView access={access} organisations={snapshot.drilldowns?.activeOrganisations || []} />
-      <PrivatePropertyConfigurationView access={access} />
-      <PrivatePropertyAgentMappingsView access={access} />
+      <Property24CredentialsView access={access} organisations={organisations} />
+      {access.level === 'executive' ? (
+        <section className="data-panel property24-credentials-panel">
+          <div className="panel-title"><h2>Private Property organisation</h2></div>
+          <p>Select the organisation that owns the Private Property branch before entering credentials or mapping agents.</p>
+          <label className="property24-credentials-form">
+            <span>Organisation</span>
+            <select value={privatePropertyOrganisationId} onChange={(event) => setPrivatePropertyOrganisationId(event.target.value)}>
+              <option value="">Choose an organisation</option>
+              {[...organisations].sort((left, right) => String(left.name || left.displayName || '').localeCompare(String(right.name || right.displayName || ''))).map((organisation) => (
+                <option key={organisation.id} value={organisation.id}>{organisation.name || organisation.displayName || 'Unnamed organisation'}</option>
+              ))}
+            </select>
+          </label>
+        </section>
+      ) : null}
+      {privatePropertyOrganisation ? (
+        <>
+          <PrivatePropertyConfigurationView key={`config-${privatePropertyOrganisationId}`} access={access} organisationId={privatePropertyOrganisationId} organisationName={privatePropertyOrganisation.name || privatePropertyOrganisation.displayName} />
+          <PrivatePropertyAgentMappingsView key={`agents-${privatePropertyOrganisationId}`} access={access} organisationId={privatePropertyOrganisationId} organisationName={privatePropertyOrganisation.name || privatePropertyOrganisation.displayName} />
+        </>
+      ) : null}
     </div>
   )
 }

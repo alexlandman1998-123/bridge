@@ -385,6 +385,8 @@ export default function SettingsProperty24Page() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [syncing, setSyncing] = useState(false)
+  const [loadingAgentRoster, setLoadingAgentRoster] = useState(false)
+  const [loadedProperty24Agents, setLoadedProperty24Agents] = useState(null)
   const [healthLoading, setHealthLoading] = useState(false)
   const [statisticsLoading, setStatisticsLoading] = useState(false)
   const [statisticsSyncing, setStatisticsSyncing] = useState(false)
@@ -506,13 +508,14 @@ export default function SettingsProperty24Page() {
     () => summarizeProperty24SettingsReadiness({ settings, arch9Agents: agentCandidates }),
     [settings, agentCandidates],
   )
+  const availableProperty24Agents = loadedProperty24Agents ?? settings.property24Agents
   const selectableProperty24Agents = useMemo(
-    () => settings.property24Agents.filter((agent) => normalizeProperty24SettingsText(agent.property24AgentId)),
-    [settings.property24Agents],
+    () => availableProperty24Agents.filter((agent) => normalizeProperty24SettingsText(agent.property24AgentId)),
+    [availableProperty24Agents],
   )
   const property24AgentsMissingIds = useMemo(
-    () => settings.property24Agents.filter((agent) => !normalizeProperty24SettingsText(agent.property24AgentId)),
-    [settings.property24Agents],
+    () => availableProperty24Agents.filter((agent) => !normalizeProperty24SettingsText(agent.property24AgentId)),
+    [availableProperty24Agents],
   )
   const visibleAgentCandidates = showAllAgents ? agentCandidates : agentCandidates.slice(0, 6)
   const hiddenAgentCount = Math.max(agentCandidates.length - visibleAgentCandidates.length, 0)
@@ -641,14 +644,16 @@ export default function SettingsProperty24Page() {
     const mappingPayload = await mappingResponse.json().catch(() => ({}))
     if (!mappingResponse.ok) throw new Error(mappingPayload.message || 'Unable to save the canonical Property24 agent mapping.')
     const nextMappings = createNextMappingsForAgent(agent, patch)
-    await persistProperty24Settings({
+    const saved = await persistProperty24Settings({
       ...settings,
+      property24Agents: availableProperty24Agents,
       agentMappings: nextMappings,
     }, successMessage)
+    if (saved) setLoadedProperty24Agents(null)
   }
 
   async function chooseProperty24Agent(agent, property24AgentId) {
-    const property24Agent = findProperty24AgentById(settings.property24Agents, property24AgentId)
+    const property24Agent = findProperty24AgentById(availableProperty24Agents, property24AgentId)
     if (property24AgentId && !property24Agent) {
       setError('That Property24 agent is missing its Property24 ID. Sync agents again or create the agent from Arch9.')
       return
@@ -662,7 +667,11 @@ export default function SettingsProperty24Page() {
       matchStatus: property24Agent ? 'mapped' : 'unmapped',
       confidence: property24Agent ? 1 : 0,
     }
-    await persistMapping(agent, patch, property24Agent ? 'Agent match saved.' : 'Agent match cleared.')
+    try {
+      await persistMapping(agent, patch, property24Agent ? 'Agent match saved.' : 'Agent match cleared.')
+    } catch (mappingError) {
+      setError(mappingError.message || 'Unable to save the Property24 agent mapping.')
+    }
   }
 
   async function acceptSuggestedMapping(agent, mapping = {}) {
@@ -909,7 +918,7 @@ export default function SettingsProperty24Page() {
       })
       const nextSettings = {
         ...settings,
-        property24Agents: [...settings.property24Agents, createdAgent],
+        property24Agents: [...availableProperty24Agents, createdAgent],
         agentMappings: agentCandidates.map((candidate) => {
           const candidateKey = candidate.userId || candidate.id || candidate.email
           const existing = mappingLookup.get(candidateKey) || mappingLookup.get(normalizeEmail(candidate.email)) || {}
@@ -934,6 +943,7 @@ export default function SettingsProperty24Page() {
           ? `Created and verified the Property24 profile, phone and photo for ${agent.fullName || agent.email}.`
           : `Property24 agent ${payload.property24AgentId} was saved, but profile verification needs attention. Sync agent profiles to retry.`,
       )
+      setLoadedProperty24Agents(null)
       if (Array.isArray(payload.warnings) && payload.warnings.length) {
         setError(payload.warnings.map((warning) => warning.message).filter(Boolean).join(' '))
       }
@@ -941,6 +951,38 @@ export default function SettingsProperty24Page() {
       setError(createError.message || 'Property24 agent creation failed.')
     } finally {
       setCreatingAgentKey('')
+    }
+  }
+
+  async function loadProperty24AgentRoster() {
+    if (!settings.agencyId || !context?.organisation?.id) {
+      setError('Add the Property24 agency ID before loading agents.')
+      return
+    }
+    setLoadingAgentRoster(true)
+    setError('')
+    setSuccess('')
+    try {
+      const sessionResult = await supabase.auth.getSession()
+      const accessToken = sessionResult.data?.session?.access_token
+      if (!accessToken) throw new Error('Sign in again before loading Property24 agents.')
+      const response = await fetch('/api/property24/settings/agents-sync', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ organisationId: context.organisation.id, previewOnly: true }),
+      })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(payload.message || 'Unable to load Property24 agents.')
+      const agents = (payload.property24Agents || []).map(normalizeProperty24AgentRow)
+      setLoadedProperty24Agents(agents)
+      setSuccess(`Loaded ${agents.length} Property24 profile${agents.length === 1 ? '' : 's'} for agency ${settings.agencyId}. Choose the matching profile below to save an agent mapping.`)
+    } catch (loadError) {
+      setError(loadError.message || 'Unable to load Property24 agents.')
+    } finally {
+      setLoadingAgentRoster(false)
     }
   }
 
@@ -999,6 +1041,7 @@ export default function SettingsProperty24Page() {
         ? ` Synced ${profileSync.syncedCount || 0} canonical profile${profileSync.syncedCount === 1 ? '' : 's'}; ${profileSync.partialCount || 0} partial and ${profileSync.failedCount || 0} failed.`
         : ''
       await persistProperty24Settings(nextSettings, `Synced and saved ${nextAgents.length} Property24 agents.${profileSyncMessage}`)
+      setLoadedProperty24Agents(null)
       const attention = (profileSync.results || [])
         .filter((result) => result.status === 'FAILED' || String(result.status || '').endsWith('_PARTIAL'))
         .map((result) => result.message || result.warnings?.map((warning) => warning.message).filter(Boolean).join(' '))
@@ -1212,12 +1255,17 @@ export default function SettingsProperty24Page() {
             }`}>
               {agentConnectionLabel}
             </span>
-            <button type="button" className={SECONDARY_BUTTON_CLASS} onClick={syncProperty24Agents} disabled={saving || syncing || !settings.agencyId}>
+            <button type="button" className={SECONDARY_BUTTON_CLASS} onClick={loadProperty24AgentRoster} disabled={saving || syncing || loadingAgentRoster || !settings.agencyId}>
+              <RefreshCw className="h-4 w-4" />
+              {loadingAgentRoster ? 'Loading profiles...' : 'Load Property24 profiles'}
+            </button>
+            <button type="button" className={SECONDARY_BUTTON_CLASS} onClick={syncProperty24Agents} disabled={saving || syncing || loadingAgentRoster || !settings.agencyId} title="May update matched agents' profiles on Property24">
               <Wand2 className="h-4 w-4" />
               {syncing ? 'Syncing profiles...' : 'Sync profiles & auto-match'}
             </button>
           </div>
         </div>
+        <p className="mt-2 text-sm leading-6 text-[#6b7d93]">Load Property24 profiles to review existing agents without changing their Property24 profiles. Sync profiles & auto-match may update matched agents on Property24.</p>
 
         {property24AgentsMissingIds.length ? (
           <div className="mt-4">
@@ -1248,7 +1296,7 @@ export default function SettingsProperty24Page() {
                 const profileReady = Boolean(canonicalProfile.email && canonicalProfile.phone && canonicalProfile.avatarUrl)
                 const mapping = mappingLookup.get(agentKey) || mappingLookup.get(normalizeEmail(agent.email)) || toMappingPatch(agent)
                 const mapped = Boolean(mapping.property24AgentId)
-                const matchedAgent = findProperty24AgentById(settings.property24Agents, mapping.property24AgentId)
+                const matchedAgent = findProperty24AgentById(availableProperty24Agents, mapping.property24AgentId)
                 const missingIdCandidate = !mapped
                   ? property24AgentsMissingIds.find((property24Agent) => property24Agent.email && property24Agent.email === normalizeEmail(agent.email))
                   : null
@@ -1831,7 +1879,7 @@ export default function SettingsProperty24Page() {
                   <span>Status</span>
                   <span>Last sync</span>
                 </div>
-                {settings.property24Agents.length ? settings.property24Agents.map((agent, index) => (
+                {availableProperty24Agents.length ? availableProperty24Agents.map((agent, index) => (
                   <div key={agent.rowId || index} className="grid grid-cols-[1fr_1.4fr_0.8fr_1fr] gap-4 border-t border-[#edf2f7] bg-white px-4 py-3 text-sm text-[#40546b]">
                     <span className="font-semibold text-[#17233a]">{agent.property24AgentId || 'Pending from Property24'}</span>
                     <span className="truncate">{agent.sourceReference || 'Not returned'}</span>

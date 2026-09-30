@@ -2,6 +2,7 @@ const CHANNELS = [
   { key: 'property24', label: 'Property24' },
   { key: 'private_property', label: 'Private Property' },
   { key: 'agency_website', label: 'Agency Website' },
+  { key: 'kingdom_website', label: 'Kingdom Website' },
   { key: 'arch9_catalogue', label: 'Arch9 public catalogue' },
 ]
 
@@ -10,6 +11,7 @@ export function buildListingWithdrawalPlan(state = {}) {
     property24: Boolean(state.property24Live),
     private_property: Boolean(state.privatePropertyLive),
     agency_website: Boolean(state.agencyWebsiteLive),
+    kingdom_website: Boolean(state.kingdomWebsiteLive),
     arch9_catalogue: Boolean(state.arch9Live),
   }
   return CHANNELS.map((channel) => ({

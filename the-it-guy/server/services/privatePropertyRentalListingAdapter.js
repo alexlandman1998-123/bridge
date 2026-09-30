@@ -345,6 +345,7 @@ export function createPrivatePropertyRentalListingPlan({
     },
     payload,
     listingXml,
+    videoUpdate: basePlan.videoUpdate,
     nextStep: canPreview
       ? 'Private Property rental XML is ready for a controlled sandbox submit with --apply.'
       : 'Resolve the rental blockers before submitting to Private Property.',

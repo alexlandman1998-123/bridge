@@ -481,8 +481,8 @@ function getProperty24PreviewNextStep(plan = {}) {
   if ((plan.technicalBlockers || []).includes('sandbox_property24_agent_id_required_before_submit')) {
     return 'Sandbox payload is ready for review. Property24 must return a real agent ID before submit.'
   }
-  if (!plan.canSubmit) return 'Resolve the listed technicalBlockers before a real ExDev publish.'
-  return 'Preview passed. This is ready for a controlled ExDev publish.'
+  if (!plan.canSubmit) return 'Resolve the listed technicalBlockers before publishing to Property24.'
+  return 'Preview passed. This is ready for a controlled publish through the configured Property24 connection.'
 }
 
 export function createProperty24Arch9ListingPreview({
@@ -518,6 +518,7 @@ export function createProperty24Arch9ListingPreview({
     canSubmit: plan.canSubmit,
     dataBlockers: plan.dataBlockers,
     technicalBlockers: plan.technicalBlockers,
+    qualityWarnings: plan.qualityWarnings,
     summary: plan.summary,
     source: {
       privateListingId: normalizeProperty24PreviewText(listing.id),

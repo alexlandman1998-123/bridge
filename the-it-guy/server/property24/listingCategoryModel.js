@@ -3,7 +3,7 @@ import {
   resolveProperty24ListingCategory,
 } from './listingCategoryContract.js'
 
-export const PROPERTY24_LISTING_CATEGORY_MODEL_VERSION = 'arch9_property24_listing_category_model_v1'
+export const PROPERTY24_LISTING_CATEGORY_MODEL_VERSION = 'arch9_property24_listing_category_model_v2'
 
 const SALE_LIFECYCLE = Object.freeze(['NewListing', 'Active', 'ReducedPrice', 'Pending', 'Sold', 'Withdrawn', 'Expired', 'Cancelled', 'BackOnMarket'])
 const RENTAL_LIFECYCLE = Object.freeze(['NewListing', 'Active', 'Pending', 'Rented', 'Withdrawn', 'Expired', 'Cancelled', 'BackOnMarket'])
@@ -20,12 +20,12 @@ export const PROPERTY24_LISTING_CATEGORY_MODELS = Object.freeze({
   },
   [PROPERTY24_LISTING_CATEGORIES.COMMERCIAL]: {
     property24TypeIds: [11],
-    transactionTypes: ['Sale', 'Rental'],
-    pricingModes: { Sale: ['fixed_price', 'poa'], Rental: ['rental_rate'] },
-    lifecycle: { Sale: SALE_LIFECYCLE, Rental: RENTAL_LIFECYCLE },
-    requiredMeasurements: { 11: ['grossLettableArea'] },
+    transactionTypes: ['Sale'],
+    pricingModes: { Sale: ['fixed_price', 'poa'] },
+    lifecycle: { Sale: SALE_LIFECYCLE },
+    requiredMeasurements: {},
     supportedFeatures: ['zoning', 'parking', 'leaseTermsOrSaleTerms'],
-    payloadModel: 'commercial_pending_property24_schema',
+    payloadModel: 'commercial_sale_v53_v55',
   },
   [PROPERTY24_LISTING_CATEGORIES.INDUSTRIAL]: {
     property24TypeIds: [12],
