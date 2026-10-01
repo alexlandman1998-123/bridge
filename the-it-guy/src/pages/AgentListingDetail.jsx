@@ -203,7 +203,7 @@ import {
   validateListingSellerProfileBuilderDraft,
 } from '../lib/listingSellerProfileBuilderModel'
 import { resolveOfferLinkDeliveryPlan } from '../lib/offerLinkDeliveryPlan'
-import { getPropertyCategoryLabel, getPropertyStructureTypeLabel, getPropertyStructureTypesByCategory, getPropertyTypeLabel, getPropertyTypeOptionsByCategory, PROPERTY_CATEGORIES } from '../lib/propertyTaxonomy'
+import { getPropertyCategoryLabel, getPropertyStructureTypeLabel, getPropertyStructureTypesForListing, getPropertyTypeOptionsForListing, PROPERTY_CATEGORIES } from '../lib/propertyTaxonomy'
 import {
   buildSellerOnboardingLink,
   buildSellerClientPortalLink,
@@ -13974,19 +13974,19 @@ function AgentListingDetail() {
               <Field as="select" value={sellerProfileBuilderDraft.propertyCategory || 'residential'} onChange={(event) => updateSellerProfileBuilderDraft('propertyCategory', event.target.value)}>
                 {PROPERTY_CATEGORIES.map((category) => <option key={category} value={category}>{getPropertyCategoryLabel(category)}</option>)}
               </Field>
+              <span className="text-xs font-normal text-[#607387]">Listing use; the building type and zoning may differ.</span>
             </label>
             <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
               Property title type
               <Field as="select" value={sellerProfileBuilderDraft.propertyStructureType || 'full_title'} onChange={(event) => updateSellerProfileBuilderDraft('propertyStructureType', event.target.value)}>
-                {sellerProfileBuilderDraft.propertyStructureType && !getPropertyStructureTypesByCategory(sellerProfileBuilderDraft.propertyCategory).includes(sellerProfileBuilderDraft.propertyStructureType) ? <option value={sellerProfileBuilderDraft.propertyStructureType}>{getPropertyStructureTypeLabel(sellerProfileBuilderDraft.propertyStructureType)} (existing title type)</option> : null}
-                {getPropertyStructureTypesByCategory(sellerProfileBuilderDraft.propertyCategory).map((type) => <option key={type} value={type}>{getPropertyStructureTypeLabel(type)}</option>)}
+                {sellerProfileBuilderDraft.propertyStructureType && !getPropertyStructureTypesForListing(sellerProfileBuilderDraft.propertyCategory).includes(sellerProfileBuilderDraft.propertyStructureType) ? <option value={sellerProfileBuilderDraft.propertyStructureType}>{getPropertyStructureTypeLabel(sellerProfileBuilderDraft.propertyStructureType)} (existing title type)</option> : null}
+                {getPropertyStructureTypesForListing(sellerProfileBuilderDraft.propertyCategory).map((type) => <option key={type} value={type}>{getPropertyStructureTypeLabel(type)}</option>)}
               </Field>
             </label>
             <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
               Property type
               <Field as="select" value={sellerProfileBuilderDraft.propertyType || ''} onChange={(event) => updateSellerProfileBuilderDraft('propertyType', event.target.value)}>
-                {sellerProfileBuilderDraft.propertyType && !getPropertyTypeOptionsByCategory(sellerProfileBuilderDraft.propertyCategory).some((type) => type.value === sellerProfileBuilderDraft.propertyType) ? <option value={sellerProfileBuilderDraft.propertyType}>{getPropertyTypeLabel(sellerProfileBuilderDraft.propertyType)} (existing property type)</option> : null}
-                {getPropertyTypeOptionsByCategory(sellerProfileBuilderDraft.propertyCategory).map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}
+                {getPropertyTypeOptionsForListing(sellerProfileBuilderDraft.propertyCategory, sellerProfileBuilderDraft.propertyType).map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}
               </Field>
             </label>
             <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e] sm:col-span-2">

@@ -81,6 +81,7 @@ import { SELLER_ENTITY_TYPES, normalizeSellerEntityType } from '../lib/sellerEnt
 import {
   getPropertyCategoryLabel,
   getPropertyStructureTypeLabel,
+  getPropertyTypeOptionsForListing,
   normalizeListingSource,
   normalizePropertyCategory,
   normalizePropertyStructureType,
@@ -273,6 +274,9 @@ const CREATE_LISTING_DESCRIPTIVE_PROPERTY_TYPES = [
   { value: 'smallholding', label: 'Smallholding' },
   { value: 'Farm', label: 'Farm' },
   { value: 'new_development', label: 'New Development' },
+  ...getPropertyTypeOptionsForListing('residential').filter((option) => ![
+    'house', 'apartment', 'townhouse', 'cluster', 'duplex', 'penthouse', 'vacant_stand', 'smallholding', 'farm',
+  ].includes(option.value)),
 ]
 
 const CREATE_LISTING_SALES_FLAG_OPTIONS = [
@@ -4301,9 +4305,6 @@ function AgentListings({ initialTab = null } = {}) {
       const next = { ...previous, [key]: key === 'sellerType' ? normalizeSellerEntityType(value) : value }
       if (key === 'propertyType' && normalizePropertyStructureType(value, { fallback: '' }) === 'sectional_title') {
         next.propertyStructureType = 'sectional_title'
-      }
-      if (key === 'propertyType') {
-        next.propertyCategory = normalizePropertyCategory(value, { fallback: previous.propertyCategory || 'residential' })
       }
       if (key === 'propertyStructureType' && value !== 'sectional_title') {
         next.sectionNumber = ''
@@ -9642,10 +9643,10 @@ function AgentListings({ initialTab = null } = {}) {
                       <label className="grid gap-2">
                         <span className="text-sm font-semibold text-[#2d445e]">Property type *</span>
                         <Field as="select" value={form.propertyType} onChange={(event) => updateForm('propertyType', event.target.value)}>
-                          <option>House</option>
-                          <option>Apartment</option>
-                          <option>Townhouse</option>
-                          <option>Sectional Title</option>
+                          {form.propertyType === 'Sectional Title' ? <option value="Sectional Title">Sectional Title</option> : null}
+                          {CREATE_LISTING_DESCRIPTIVE_PROPERTY_TYPES.map((option) => (
+                            <option key={option.value} value={option.value}>{option.label}</option>
+                          ))}
                         </Field>
                       </label>
                       <label className="grid gap-2">

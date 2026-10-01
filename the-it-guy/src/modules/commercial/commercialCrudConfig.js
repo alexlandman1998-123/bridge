@@ -8,7 +8,7 @@ import { getCommercialNextAction, getCommercialUpdatedDate } from './commercialP
 import { lifecycleOptions } from './commercialWorkflow'
 import { scoreListingQuality } from './services/commercialIntelligenceApi'
 import {
-  getPropertyTypeOptionsByCategory,
+  getPropertyTypeOptionsForListing,
   normalizePropertyCategory,
 } from '../../lib/propertyTaxonomy'
 import {
@@ -108,10 +108,7 @@ export const TRANSACTION_STAGES = [
 ]
 
 export const PROPERTY_TYPES = [
-  ...getPropertyTypeOptionsByCategory('commercial'),
-  ...getPropertyTypeOptionsByCategory('industrial'),
-  ...getPropertyTypeOptionsByCategory('retail'),
-  ...getPropertyTypeOptionsByCategory('agricultural'),
+  ...getPropertyTypeOptionsForListing('commercial'),
   { value: 'office', label: 'Office' },
   { value: 'retail', label: 'Retail' },
   { value: 'industrial', label: 'Industrial' },
@@ -141,7 +138,7 @@ function commercialPropertyCategoryOptions() {
 
 function commercialPropertyTypeOptions(values = {}) {
   const category = normalizeCommercialPropertyCategory(values.property_category || values.property_type)
-  const options = [...getPropertyTypeOptionsByCategory(category)]
+  const options = getPropertyTypeOptionsForListing(category, values.property_type)
 
   if (category === 'commercial') {
     options.push(

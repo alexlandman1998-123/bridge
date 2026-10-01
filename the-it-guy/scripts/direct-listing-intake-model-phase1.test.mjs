@@ -116,6 +116,18 @@ test('captures sectional-title fields alongside global property facts', () => {
   assert.equal(property.sectionalTitleNumber, 'SS 455/2019')
 })
 
+test('keeps commercial use and a house building type as separate listing facts', () => {
+  const property = buildDirectListingPropertyFacts({
+    propertyCategory: 'commercial',
+    propertyType: 'House',
+    propertyStructureType: 'full_title',
+  })
+
+  assert.equal(property.propertyCategory, 'commercial')
+  assert.equal(property.propertyType, 'House')
+  assert.equal(property.propertyStructureType, 'full_title')
+})
+
 test('normalizes foreign individual owner facts for portal and document requirement consumers', () => {
   const party = buildDirectListingPartyFacts({
     sellerType: 'foreign individual',

@@ -22,7 +22,7 @@ import {
 } from '../src/lib/sellerDocumentRequirementEngine.js'
 import { buildListingSellerCanonicalUpdate } from '../src/services/listings/listingSellerCanonicalUpdateModel.js'
 import { buildSellerSigningPlan } from '../src/lib/sellerSigningPlanModel.js'
-import { getPropertyStructureTypesByCategory, getPropertyTypeOptionsByCategory } from '../src/lib/propertyTaxonomy.js'
+import { getPropertyStructureTypesByCategory, getPropertyStructureTypesForListing, getPropertyTypeOptionsByCategory, getPropertyTypeOptionsForListing } from '../src/lib/propertyTaxonomy.js'
 
 async function test(name, fn) {
   try {
@@ -260,14 +260,21 @@ await test('both listing owner editors expose the onboarding owner fields', asyn
   }
 })
 
-await test('property category and title options follow seller onboarding choices', async () => {
+await test('property category, building type, and title type can be selected independently', async () => {
   assert.ok(getPropertyStructureTypesByCategory('residential').includes('share_block'))
   assert.ok(getPropertyStructureTypesByCategory('commercial').includes('sectional_title'))
   assert.ok(getPropertyStructureTypesByCategory('agricultural').includes('agricultural_holding'))
   assert.ok(getPropertyTypeOptionsByCategory('commercial').some((type) => type.value === 'office_building'))
   const selected = updateListingSellerProfileDraftField({ propertyCategory: 'residential', propertyType: 'house', propertyStructureType: 'share_block' }, 'propertyCategory', 'commercial')
-  assert.equal(selected.propertyType, 'office_building')
-  assert.equal(selected.propertyStructureType, 'full_title')
+  assert.equal(selected.propertyType, 'house')
+  assert.equal(selected.propertyStructureType, 'share_block')
+  assert.ok(getPropertyTypeOptionsForListing('commercial').some((type) => type.value === 'house'))
+  assert.ok(getPropertyStructureTypesForListing('commercial').includes('share_block'))
+  assert.equal(getPropertyTypeOptionsForListing('commercial', 'House').filter((type) => type.label === 'House').length, 1)
+  const saved = createListingSellerProfileBuilderDraft({ propertyCategory: 'commercial', propertyType: 'House', propertyStructureType: 'full_title' })
+  assert.equal(saved.propertyCategory, 'commercial')
+  assert.equal(saved.propertyType, 'House')
+  assert.equal(buildListingSellerProfileFormPatch(saved).propertyType, 'House')
   const sectionalIdentifier = updateListingSellerProfileDraftField({ sectionNumber: '1', unitNumber: '1' }, 'sectionNumber', '7')
   assert.equal(sectionalIdentifier.unitNumber, '7')
   const capture = await readFile(new URL('../src/pages/AgentListingDetail.jsx', import.meta.url), 'utf8')
@@ -281,7 +288,7 @@ await test('property category and title options follow seller onboarding choices
   assert.equal(sellerOnboarding.includes('Body corporate name'), false)
   assert.equal(sellerOnboarding.includes('!form.schemeManagingAgentName'), false)
   assert.match(propertySection, /bondStatus === 'bonded' \? <>/)
-  assert.match(editor, /getPropertyStructureTypesByCategory\(draft\.propertyCategory\)/)
+  assert.match(editor, /getPropertyStructureTypesForListing\(draft\.propertyCategory\)/)
   assert.match(editor, /\['sectional_title', 'share_block'\]\.includes\(draft\.propertyStructureType\)/)
   assert.match(editor, /draft\.bondStatus === 'bonded' \? <>/)
 })
