@@ -158,7 +158,7 @@ const LWP_PROPERTIES_DEMO_PROFILE = Object.freeze({
   }),
 })
 
-function createRequestedAgencyDemoProfile({ id, name, email }) {
+function createRequestedAgencyDemoProfile({ id, name, email, organisationEmail = '', requireExplicitPassword = false }) {
   const principalLabel = name.replace(/\s+Properties$/i, '').trim() || name
   return Object.freeze({
     id,
@@ -180,6 +180,8 @@ function createRequestedAgencyDemoProfile({ id, name, email }) {
     }),
     seedData: Object.freeze({
       seedKey: `${id}-demo-seed-v1`,
+      requireExplicitPassword,
+      organisationEmail,
       sourceScripts: Object.freeze([
         'scripts/agencyDemoBootstrap.mjs',
         'scripts/seed-agency-demo-transactions.mjs',
@@ -207,6 +209,13 @@ const REQUESTED_AGENCY_DEMO_PROFILES = Object.freeze([
   createRequestedAgencyDemoProfile({ id: 'keyworx-properties', name: 'Keyworx Properties', email: 'principal@keyworx-properties.demo' }),
   createRequestedAgencyDemoProfile({ id: 'vanguard-properties', name: 'Vanguard Properties', email: 'principal@vanguard-properties.demo' }),
   createRequestedAgencyDemoProfile({ id: 'newberry-property', name: 'Newberry Property', email: 'principal@newberry-property.demo' }),
+  createRequestedAgencyDemoProfile({
+    id: 'bain-international-realty',
+    name: 'Bain International Realty',
+    email: 'bain.international.realty@arch9.test',
+    organisationEmail: 'principal@bain-international-realty.demo',
+    requireExplicitPassword: true,
+  }),
 ])
 
 export const DEMO_ENVIRONMENT_DOMAINS = Object.freeze({
@@ -245,6 +254,21 @@ export const DEMO_SEED_MANIFEST = Object.freeze([
     summary:
       'Agency demo seed covering principal, branch manager, agent, admin staff, branches, leads, listings, appointments, transactions, and clients.',
     sourceScripts: ORIPROP_DEMO_PROFILE.seedData.sourceScripts,
+  }),
+  Object.freeze({
+    id: 'bain-international-realty-seed-manifest',
+    environment: 'demo',
+    demoKey: 'bain-international-realty-agency-seed-v1',
+    accountId: 'bain-international-realty',
+    accountName: 'Bain International Realty',
+    status: 'ready',
+    seedKey: 'bain-international-realty-demo-seed-v1',
+    summary: 'Agency demo seed covering a principal login, branches, listings, clients, and transactions.',
+    sourceScripts: Object.freeze([
+      'scripts/agencyDemoBootstrap.mjs',
+      'scripts/seed-agency-demo-transactions.mjs',
+      'scripts/seed-agency-demo-listing-images.mjs',
+    ]),
   }),
 ])
 

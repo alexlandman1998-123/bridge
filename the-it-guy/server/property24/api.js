@@ -304,7 +304,7 @@ export function buildProperty24ApiConfig({ env = getRuntimeEnv(), requestUrl, pa
     property24ListingUrl: normalizeProperty24Text(payload.property24ListingUrl || query.get('property24ListingUrl')),
     actorUserId: normalizeProperty24Text(payload.actorUserId || query.get('actorUserId')),
     idempotencyKey: normalizeProperty24Text(payload.idempotencyKey || query.get('idempotencyKey')),
-    maxImages: toPositiveInteger(payload.maxImages || query.get('maxImages'), 20, 50),
+    maxImages: toPositiveInteger(payload.maxImages || query.get('maxImages'), null, Number.MAX_SAFE_INTEGER),
     limit: toPositiveInteger(payload.limit || query.get('limit'), 500, 1000),
     startDate: normalizeProperty24Text(payload.startDate || query.get('startDate')),
     endDate: normalizeProperty24Text(payload.endDate || query.get('endDate')),

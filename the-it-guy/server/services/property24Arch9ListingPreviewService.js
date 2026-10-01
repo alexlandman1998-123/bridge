@@ -357,22 +357,41 @@ export async function loadProperty24ImageBytesForPreview({
   fetchImpl = globalThis.fetch,
   storageClient = null,
   storageBaseUrl = '',
-  maxImages = 20,
+  maxImages = null,
   maxBytesPerImage = 10 * 1024 * 1024,
+  maxTotalImageBytes = 60_000_000,
   convertImagesToJpeg = false,
 } = {}) {
   if (typeof fetchImpl !== 'function') throw new Error('A fetch implementation is required to load image bytes.')
-  const safeMaxImages = Math.max(1, Math.min(Number(maxImages) || 20, 50))
+  const safeMaxImages = Number.isFinite(Number(maxImages)) && Number(maxImages) > 0
+    ? Math.floor(Number(maxImages))
+    : null
   const rows = Array.isArray(media) ? media : []
-  const imageIndexes = rows
+  const indexedMedia = rows
     .map((item, index) => ({ item, index }))
     .filter(({ item }) => isProperty24ImageMedia(item) && getMediaUrl(item))
-    .slice(0, safeMaxImages)
+    .sort((left, right) => {
+      const leftCover = Boolean(left.item.is_cover ?? left.item.isCover)
+      const rightCover = Boolean(right.item.is_cover ?? right.item.isCover)
+      if (leftCover !== rightCover) return leftCover ? -1 : 1
+      const leftOrder = Number(left.item.sort_order ?? left.item.sortOrder ?? left.index) || 0
+      const rightOrder = Number(right.item.sort_order ?? right.item.sortOrder ?? right.index) || 0
+      return leftOrder - rightOrder
+    })
+  const allImageIndexes = indexedMedia
+    .filter(({ item }) => normalizeProperty24PreviewText(item.media_type || item.mediaType || 'image').toLowerCase() === 'image')
+  const imageIndexes = safeMaxImages ? allImageIndexes.slice(0, safeMaxImages) : allImageIndexes
+  const floorPlanIndexes = indexedMedia
+    .filter(({ item }) => normalizeProperty24PreviewText(item.media_type || item.mediaType).toLowerCase() === 'floor_plan')
+    .slice(0, 5)
+  const selectedIndexes = [...imageIndexes, ...floorPlanIndexes]
+    .sort((left, right) => indexedMedia.indexOf(left) - indexedMedia.indexOf(right))
 
   const results = []
   const nextMedia = rows.map((item) => ({ ...item }))
+  let totalImageBytes = 0
 
-  for (const { item, index } of imageIndexes) {
+  for (const { item, index } of selectedIndexes) {
     const url = getMediaUrl(item)
     const storageLocation = parseSupabaseStorageLocation(url)
     const storageHostMismatch = (() => {
@@ -406,6 +425,17 @@ export async function loadProperty24ImageBytesForPreview({
       if (finalBuffer.byteLength > maxBytesPerImage) {
         throw new Error(`Image is ${finalBuffer.byteLength} bytes after conversion, above the ${maxBytesPerImage} byte safety limit.`)
       }
+      if (totalImageBytes + finalBuffer.byteLength > maxTotalImageBytes) {
+        results.push({
+          index,
+          status: 'SKIPPED',
+          sourceUrl: sanitizeUrl(url),
+          message: `Adding this image would exceed the ${maxTotalImageBytes}-byte Property24 image budget.`,
+          byteLength: finalBuffer.byteLength,
+        })
+        continue
+      }
+      totalImageBytes += finalBuffer.byteLength
       nextMedia[index] = {
         ...nextMedia[index],
         bytes: finalBuffer.toString('base64'),
@@ -441,11 +471,12 @@ export async function loadProperty24ImageBytesForPreview({
   return {
     media: nextMedia,
     summary: {
-      requested: imageIndexes.length,
+      requested: results.filter((result) => result.status !== 'SKIPPED').length,
       loaded: results.filter((result) => result.status === 'LOADED').length,
       failed: results.filter((result) => result.status === 'FAILED').length,
       convertedToJpeg: results.filter((result) => result.convertedToJpeg).length,
-      skipped: Math.max(0, rows.filter(isProperty24ImageMedia).length - imageIndexes.length),
+      skipped: Math.max(0, rows.filter(isProperty24ImageMedia).length - selectedIndexes.length) + results.filter((result) => result.status === 'SKIPPED').length,
+      totalImageBytes,
     },
     results,
   }

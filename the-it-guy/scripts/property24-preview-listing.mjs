@@ -26,7 +26,7 @@ function parseArgs(argv) {
     photosChanged: true,
     loadImageBytes: false,
     convertImagesToJpeg: false,
-    maxImages: 20,
+    maxImages: null,
     listCandidates: false,
     limit: 10,
     output: '',
@@ -60,7 +60,7 @@ function parseArgs(argv) {
     } else if (arg.startsWith('--limit=')) {
       options.limit = Number(arg.slice('--limit='.length)) || 10
     } else if (arg.startsWith('--max-images=')) {
-      options.maxImages = Number(arg.slice('--max-images='.length)) || 20
+      options.maxImages = Number(arg.slice('--max-images='.length)) || null
     } else if (arg.startsWith('--output=')) {
       options.output = normalizeProperty24PreviewText(arg.slice('--output='.length))
     } else {

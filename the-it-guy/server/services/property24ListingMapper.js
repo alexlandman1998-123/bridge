@@ -732,10 +732,9 @@ export function createProperty24ListingPlan({
   if (propertyFeatures.pool === null || propertyFeatures.pool === undefined) dataBlockers.push('missing_pool_value')
   if (propertyFeatures.flatlet === null || propertyFeatures.flatlet === undefined) dataBlockers.push('missing_flatlet_value')
 
-  // The byte loader deliberately limits the Property24 submission batch (20
-  // images by default). Compare against that selected batch, not every image
-  // in the Arch9 gallery, otherwise any gallery larger than the cap can never
-  // become submit-ready even when every selected image loaded successfully.
+  // The byte loader selects at most 5 floor plans within the combined image
+  // size budget. Compare against the selected batch so extra gallery images
+  // do not block publishing when every selected image loads successfully.
   if (requirePhotoBytes && includePhotos && imageRows.length && photos.length !== expectedPhotoPayloadCount) {
     technicalBlockers.push('listing_image_bytes_not_loaded_for_property24_submit')
   }

@@ -29,7 +29,9 @@ export function getAgencyDemoConfig(account = HOME_SEEKERS_DEMO_ACCOUNT) {
     accountId,
     email: normalizeEmail(profile.email || HOME_SEEKERS_DEMO_EMAIL),
     seedKey: normalizeText(account?.seedData?.seedKey || HOME_SEEKERS_DEMO_SEED_KEY),
-    password: isHomeSeekers ? HOME_SEEKERS_DEMO_PASSWORD : 'OripropDemo!2026',
+    password: account?.seedData?.requireExplicitPassword
+      ? ''
+      : (isHomeSeekers ? HOME_SEEKERS_DEMO_PASSWORD : 'OripropDemo!2026'),
     organisationId: isHomeSeekers ? HOME_SEEKERS_DEMO_ORGANISATION_ID : stableUuid(`${accountId}:organisation`),
     branchId: isHomeSeekers ? HOME_SEEKERS_DEMO_BRANCH_ID : stableUuid(`${accountId}:branch:head-office`),
     membershipId: isHomeSeekers ? HOME_SEEKERS_DEMO_MEMBERSHIP_ID : stableUuid(`${accountId}:membership:principal`),
@@ -166,6 +168,7 @@ async function resolveExistingBranchId(client, organisationId, account) {
 function buildOrganisationPayload({ account = HOME_SEEKERS_DEMO_ACCOUNT } = {}) {
   const config = getAgencyDemoConfig(account)
   const organisationName = normalizeText(account.name || 'Home Seekers') || 'Home Seekers'
+  const organisationEmail = normalizeEmail(account.seedData?.organisationEmail || config.email)
   return {
     id: config.organisationId,
     name: organisationName,
@@ -174,10 +177,10 @@ function buildOrganisationPayload({ account = HOME_SEEKERS_DEMO_ACCOUNT } = {}) 
     type: 'agency',
     workspace_kind: 'agency',
     status: 'active',
-    company_email: config.email,
+    company_email: organisationEmail,
     company_phone: null,
     website: `https://${config.accountId}.demo`,
-    support_email: config.email,
+    support_email: organisationEmail,
     support_phone: null,
     primary_contact_person: account.profile?.fullName || 'Home Seekers Principal',
     is_demo_data: true,

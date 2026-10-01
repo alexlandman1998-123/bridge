@@ -57,6 +57,7 @@ const productionConfigWithoutSuburb = buildProperty24ApiConfig({
 })
 assert.equal(productionConfigWithoutSuburb.suburbId, '')
 assert.equal(productionConfigWithoutSuburb.agencyId, '')
+assert.equal(productionConfigWithoutSuburb.maxImages, null)
 
 const productionConfigWithListingSuburb = buildProperty24ApiConfig({
   env: {

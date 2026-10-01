@@ -5881,7 +5881,6 @@ function AgentListingDetail() {
     if (method !== 'GET') {
       requestOptions.headers['Content-Type'] = 'application/json'
       requestOptions.body = JSON.stringify({
-        maxImages: 20,
         photosChanged: true,
         ...body,
       })

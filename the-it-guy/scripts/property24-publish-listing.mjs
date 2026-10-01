@@ -30,7 +30,7 @@ function parseArgs(argv) {
     propertyTypeId: '',
     expiryDate: '',
     listingNumber: '',
-    maxImages: 20,
+    maxImages: null,
     photosChanged: true,
     property24ListingUrl: '',
     output: '',
@@ -56,7 +56,7 @@ function parseArgs(argv) {
     } else if (arg.startsWith('--listing-number=')) {
       options.listingNumber = normalizeProperty24PreviewText(arg.slice('--listing-number='.length))
     } else if (arg.startsWith('--max-images=')) {
-      options.maxImages = Number(arg.slice('--max-images='.length)) || 20
+      options.maxImages = Number(arg.slice('--max-images='.length)) || null
     } else if (arg === '--photos-unchanged') {
       options.photosChanged = false
     } else if (arg.startsWith('--property24-listing-url=')) {

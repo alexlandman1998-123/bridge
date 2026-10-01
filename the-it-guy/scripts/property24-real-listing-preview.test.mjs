@@ -228,6 +228,88 @@ assert.equal(loaded.summary.loaded, 1)
 assert.equal(loaded.results[0].status, 'LOADED')
 assert.match(loaded.media[0].bytes, /^[A-Za-z0-9+/=]+$/)
 
+const largeGallery = Array.from({ length: 151 }, (_, index) => ({
+  media_type: 'image',
+  file_url: `https://www.arch9.co.za/gallery-${index}.jpg`,
+}))
+const galleryLoaded = await loadProperty24ImageBytesForPreview({
+  media: largeGallery,
+  fetchImpl: async () => ({
+    ok: true,
+    status: 200,
+    headers: { get: () => 'image/jpeg' },
+    arrayBuffer: async () => new Uint8Array([1]).buffer,
+  }),
+})
+assert.equal(galleryLoaded.summary.requested, 151)
+assert.equal(galleryLoaded.summary.loaded, 151)
+assert.equal(galleryLoaded.summary.skipped, 0)
+assert.equal(galleryLoaded.media[150].bytes, 'AQ==')
+
+const galleryCappedByCaller = await loadProperty24ImageBytesForPreview({
+  media: largeGallery,
+  maxImages: 50,
+  fetchImpl: async () => ({
+    ok: true,
+    status: 200,
+    headers: { get: () => 'image/jpeg' },
+    arrayBuffer: async () => new Uint8Array([1]).buffer,
+  }),
+})
+assert.equal(galleryCappedByCaller.summary.loaded, 50)
+assert.equal(galleryCappedByCaller.summary.skipped, 101)
+
+const galleryWithPlans = await loadProperty24ImageBytesForPreview({
+  media: [
+    ...largeGallery,
+    ...Array.from({ length: 6 }, (_, index) => ({
+      media_type: 'floor_plan',
+      file_url: `https://www.arch9.co.za/plan-${index}.jpg`,
+    })),
+  ],
+  fetchImpl: async () => ({
+    ok: true,
+    status: 200,
+    headers: { get: () => 'image/jpeg' },
+    arrayBuffer: async () => new Uint8Array([1]).buffer,
+  }),
+})
+assert.equal(galleryWithPlans.summary.loaded, 156)
+assert.equal(galleryWithPlans.summary.skipped, 1)
+assert.equal(galleryWithPlans.media[155].bytes, 'AQ==')
+assert.equal(galleryWithPlans.media[156].bytes, undefined)
+const gallerySubmit = createProperty24Arch9ListingPreview({
+  ...bundle,
+  media: galleryWithPlans.media,
+  agentMapping: { property24AgentId: 77959, sourceReference: 'ARCH9-AGENT-001' },
+  catalogMapping: { suburbId: 5864, propertyTypeId: 4 },
+  options: {
+    agencyId: 31382,
+    expiryDate: '2026-12-31',
+    expectedPhotoPayloadCount: galleryWithPlans.summary.requested,
+    includeSubmitPayload: true,
+  },
+})
+assert.equal(gallerySubmit.canSubmit, true)
+assert.equal(gallerySubmit.payload.photos.length, 156)
+assert.equal(gallerySubmit.payload.photos.filter((photo) => photo.isFloorPlan).length, 5)
+
+const budgetLoaded = await loadProperty24ImageBytesForPreview({
+  media: largeGallery.slice(0, 3),
+  maxTotalImageBytes: 2,
+  fetchImpl: async () => ({
+    ok: true,
+    status: 200,
+    headers: { get: () => 'image/jpeg' },
+    arrayBuffer: async () => new Uint8Array([1]).buffer,
+  }),
+})
+assert.equal(budgetLoaded.summary.requested, 2)
+assert.equal(budgetLoaded.summary.loaded, 2)
+assert.equal(budgetLoaded.summary.skipped, 1)
+assert.equal(budgetLoaded.summary.totalImageBytes, 2)
+assert.equal(budgetLoaded.results[2].status, 'SKIPPED')
+
 const fallbackLoaded = await loadProperty24ImageBytesForPreview({
   media: [
     {

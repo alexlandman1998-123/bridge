@@ -355,7 +355,6 @@ export async function previewRentalProperty24Listing(listingId, options = {}) {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      maxImages: 20,
       photosChanged: true,
       ...options,
     }),
@@ -383,7 +382,6 @@ export async function publishRentalProperty24Listing(listingId, options = {}) {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      maxImages: 20,
       photosChanged: true,
       ...options,
     }),
