@@ -3,6 +3,7 @@ import { Analytics } from '@vercel/analytics/next'
 import { SpeedInsights } from '@vercel/speed-insights/next'
 import { SiteAnalyticsTracker } from '@/components/site-analytics'
 import './styles.css'
+import './kingdom.css'
 import './brand.css'
 
 export const metadata: Metadata = {

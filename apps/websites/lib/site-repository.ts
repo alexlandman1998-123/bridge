@@ -5,11 +5,22 @@ import { legacyPropertySlug, matchesPropertySlug, propertySlug } from '@/lib/pro
 import { getServerSupabase } from '@/lib/supabase-server'
 import type { PublicBlogPost, PublicPage, PublicProperty, ResolvedSite, WebsiteBlock, WebsiteTemplateKey } from '@/lib/types'
 
+const KINGDOM_SITE_ID = '0160e45a-2268-4875-91d7-275c43f574d0'
+const KINGDOM_ORGANISATION_ID = '13c6b79f-1d8b-4886-aabf-42ea49565ef5'
+
+function supportedTemplateKey(value: unknown, siteId: string, organisationId: string): WebsiteTemplateKey {
+  // The schema still stores the legacy template key. Keep Kingdom's design
+  // isolated in code while the Phase 0 migration freeze remains active.
+  if (siteId === KINGDOM_SITE_ID && organisationId === KINGDOM_ORGANISATION_ID) return 'kingdom-v1'
+  if (value === 'home-seekers-v1') return value
+  return 'property-standard-v1'
+}
+
 const demoSite: ResolvedSite = {
   id: '00000000-0000-0000-0000-000000000001',
   organisationId: '00000000-0000-0000-0000-000000000001',
   publishedRevisionId: '00000000-0000-0000-0000-000000000002',
-  templateKey: 'home-seekers-v1',
+  templateKey: 'kingdom-v1',
   experienceKey: 'standard',
   name: 'Arch9 Demo Realty',
   status: 'published',
@@ -565,7 +576,7 @@ export async function resolveSite(host: string | null | undefined): Promise<Reso
     id: site.id,
     organisationId: site.organisation_id,
     publishedRevisionId: site.published_revision_id,
-    templateKey: site.template_key === 'home-seekers-v1' ? 'home-seekers-v1' : 'property-standard-v1',
+    templateKey: supportedTemplateKey(site.template_key, site.id, site.organisation_id),
     experienceKey: brand.experienceKey === 'editorial-property-v1' ? 'editorial-property-v1' : 'standard',
     name: String(brand.name || 'Property'),
     status: site.status,
@@ -634,7 +645,7 @@ async function resolveLocalSitePreview(siteId: string): Promise<ResolvedSite | n
     id: String(site.id),
     organisationId: String(site.organisation_id),
     publishedRevisionId: String(revisionResult.data.id),
-    templateKey: site.template_key === 'home-seekers-v1' ? 'home-seekers-v1' : 'property-standard-v1',
+    templateKey: supportedTemplateKey(site.template_key, String(site.id), String(site.organisation_id)),
     experienceKey: brand.experienceKey === 'editorial-property-v1' ? 'editorial-property-v1' : 'standard',
     name: String(brand.name || 'Property'),
     status: site.status === 'published' ? 'published' : 'draft',

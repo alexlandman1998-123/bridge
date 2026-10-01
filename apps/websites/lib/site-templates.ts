@@ -1,11 +1,13 @@
 import styles from '@/app/agency.module.css'
+import kingdomStyles from '@/app/kingdom.module.css'
 import type { ResolvedSite, WebsiteTemplateKey } from '@/lib/types'
 
 export const HOME_SEEKERS_TEMPLATE_KEY: WebsiteTemplateKey = 'home-seekers-v1'
+export const KINGDOM_TEMPLATE_KEY: WebsiteTemplateKey = 'kingdom-v1'
 export const STANDARD_TEMPLATE_KEY: WebsiteTemplateKey = 'property-standard-v1'
 
-export function isHomeSeekersTemplate(templateKey: WebsiteTemplateKey) {
-  return templateKey === HOME_SEEKERS_TEMPLATE_KEY
+export function usesEditorialTemplate(templateKey: WebsiteTemplateKey) {
+  return templateKey === HOME_SEEKERS_TEMPLATE_KEY || templateKey === KINGDOM_TEMPLATE_KEY
 }
 
 /** A site capability, never an agency-name check. */
@@ -14,11 +16,13 @@ export function hasEditorialPropertyExperience(site: Pick<ResolvedSite, 'experie
 }
 
 export function templateClassName(templateKey: WebsiteTemplateKey) {
-  return isHomeSeekersTemplate(templateKey) ? `template-home-seekers ${styles.shell}` : 'template-property-standard'
+  if (templateKey === KINGDOM_TEMPLATE_KEY) return `template-kingdom ${kingdomStyles.shell}`
+  if (templateKey === HOME_SEEKERS_TEMPLATE_KEY) return `template-home-seekers ${styles.shell}`
+  return 'template-property-standard'
 }
 
 export function templateNavigation(templateKey: WebsiteTemplateKey) {
-  if (isHomeSeekersTemplate(templateKey)) {
+  if (usesEditorialTemplate(templateKey)) {
     return [
       { href: '/properties?type=sale', label: 'Buy' },
       { href: '/valuation', label: 'Sell' },

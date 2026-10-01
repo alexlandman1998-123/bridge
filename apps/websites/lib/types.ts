@@ -21,7 +21,7 @@ export type PublicProperty = {
   media: Array<{ type: 'image' | 'floor_plan' | 'video' | 'virtual_tour'; url: string; caption?: string; order: number }>
 }
 
-export type WebsiteTemplateKey = 'property-standard-v1' | 'home-seekers-v1'
+export type WebsiteTemplateKey = 'property-standard-v1' | 'home-seekers-v1' | 'kingdom-v1'
 export type WebsiteExperienceKey = 'standard' | 'editorial-property-v1'
 
 export type ResolvedSite = {
