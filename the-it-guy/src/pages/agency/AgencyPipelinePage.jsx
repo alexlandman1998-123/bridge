@@ -1,3 +1,5 @@
+import { saveListingSellerCanonicalUpdate } from '../../services/listings/listingSellerCanonicalUpdateService.js'
+import { buildListingSellerCanonicalUpdate } from '../../services/listings/listingSellerCanonicalUpdateModel.js'
 import { AlertTriangle, ArrowLeft, ArrowUpRight, Bath, BedDouble, Bold, Bookmark, Box, Building2, CalendarDays, Car, Check, CheckCircle2, CheckSquare, ChevronDown, ChevronRight, Clock3, Columns3, Copy, Download, ExternalLink, Eye, FileText, Filter, Gauge, Home, ImageIcon, Italic, Lightbulb, Link2, List, Lock, Mail, MapPin, MessageCircle, MoreHorizontal, Paperclip, Pencil, Phone, Plus, RefreshCw, Ruler, Search, Send, Settings, ShieldCheck, Smile, Star, Table2, Tag, Trash2, TrendingUp, Upload, UserRound, X, Zap } from 'lucide-react'
 import { Suspense, createElement, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
@@ -35,10 +37,12 @@ import {
 import {
   buildSellerLeadAgentOnboardingSubmission,
   buildSellerLeadManualCapturePayload,
+  buildSellerLeadSigningPackTermsPatch,
   createSellerLeadAgentOnboardingDraft,
 } from '../../lib/sellerLeadManualCaptureModel'
 import {
   addListingSellerProfileDraftPerson,
+  getListingSellerFormData,
   hasListingSellerProfileBranchDetailsToDiscard,
   removeListingSellerProfileDraftPerson,
   selectListingSellerProfileBranch,
@@ -6395,8 +6399,8 @@ function countWorkspaceMedia(...groups) {
 
 function getWorkspaceSellerOnboarding(lead = {}, listing = {}) {
   return {
-    ...getListingSellerFormData(listing?.sourceListing || listing || {}),
     ...getLeadSellerOnboardingFormData(lead),
+    ...getListingSellerFormData(listing?.sourceListing || listing || {}),
   }
 }
 
@@ -7772,24 +7776,6 @@ function describeOtpTemplateReadiness(templateResolution = {}, policy = {}) {
   }
 }
 
-function getListingSellerFormData(listing = {}) {
-  const onboarding = listing?.sellerOnboarding && typeof listing.sellerOnboarding === 'object'
-    ? listing.sellerOnboarding
-    : listing?.seller_onboarding && typeof listing.seller_onboarding === 'object'
-      ? listing.seller_onboarding
-      : {}
-  const onboardingFormData = onboarding?.formData && typeof onboarding.formData === 'object'
-    ? onboarding.formData
-    : {}
-  const rawOnboardingFormData = onboarding?.form_data && typeof onboarding.form_data === 'object'
-    ? onboarding.form_data
-    : {}
-  return {
-    ...rawOnboardingFormData,
-    ...onboardingFormData,
-  }
-}
-
 function resolveSellerEmailFromListing(listing = {}) {
   const formData = getListingSellerFormData(listing)
   return normalizeText(
@@ -9047,7 +9033,8 @@ function buildKingstonsSellerProfileEditForm({ lead = {}, contact = {}, listing 
     ...(isPlainObject(lead?.property_details) ? lead.property_details : {}),
   }
   const resolvedName = normalizeText(
-    onboarding?.fullName ||
+    onboarding?.primaryContactName || onboarding?.contactName ||
+      onboarding?.fullName ||
       onboarding?.sellerFullName ||
       (lead?.sellerName && lead?.sellerSurname ? `${lead.sellerName} ${lead.sellerSurname}` : '') ||
       lead?.name ||
@@ -9067,10 +9054,10 @@ function buildKingstonsSellerProfileEditForm({ lead = {}, contact = {}, listing 
     ownerEntityType: normalizeText(onboarding?.ownerEntityType || onboarding?.owner_entity_type) || (isCompanyKingstonsSellerProfileKind(profileKind) ? 'Company' : isTrustKingstonsSellerProfileKind(profileKind) ? 'Trust' : ''),
     ownerStructureType: normalizeText(onboarding?.ownerStructureType || onboarding?.owner_structure_type) || (isForeignKingstonsSellerProfileKind(profileKind) ? profileKind.replace(/_/g, ' ') : ''),
     sellerLegalType: normalizeText(onboarding?.sellerLegalType || onboarding?.seller_legal_type || onboarding?.sellerType || onboarding?.ownershipType || onboarding?.ownership_type),
-    firstName: normalizeText(contact?.firstName || lead?.sellerName || onboarding?.firstName || onboarding?.sellerFirstName || nameParts.firstName),
-    lastName: normalizeText(contact?.lastName || lead?.sellerSurname || onboarding?.lastName || onboarding?.sellerLastName || nameParts.lastName),
-    phone: normalizeText(contact?.phone || lead?.sellerPhone || lead?.phone || onboarding?.sellerPhone || onboarding?.phone || onboarding?.mobile),
-    email: normalizeText(contact?.email || lead?.sellerEmail || lead?.email || onboarding?.sellerEmail || onboarding?.email).toLowerCase(),
+    firstName: normalizeText(onboarding?.sellerFirstName ?? onboarding?.firstName ?? contact?.firstName ?? lead?.sellerName ?? nameParts.firstName),
+    lastName: normalizeText(onboarding?.sellerSurname ?? onboarding?.lastName ?? onboarding?.sellerLastName ?? contact?.lastName ?? lead?.sellerSurname ?? nameParts.lastName),
+    phone: normalizeText(onboarding?.phone ?? onboarding?.sellerPhone ?? onboarding?.mobile ?? contact?.phone ?? lead?.sellerPhone ?? lead?.phone),
+    email: normalizeText(onboarding?.email ?? onboarding?.sellerEmail ?? contact?.email ?? lead?.sellerEmail ?? lead?.email).toLowerCase(),
     idNumber: normalizeText(onboarding?.idNumber || onboarding?.id_number || onboarding?.sellerIdNumber || lead?.sellerIdNumber || lead?.idNumber),
     dateOfBirth: normalizeText(onboarding?.dateOfBirth || onboarding?.date_of_birth || onboarding?.birthDate),
     nationality: normalizeText(onboarding?.nationality || lead?.nationality),
@@ -12007,7 +11994,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [appointmentForm, setAppointmentForm] = useState(() => buildDefaultAppointmentFormForType('', LEAD_DETAIL_DEFAULT_APPOINTMENT))
   const [calendarView, setCalendarView] = useState('week')
   const [calendarCursorDate, setCalendarCursorDate] = useState(() => new Date())
-  const [calendarAgentFilter, setCalendarAgentFilter] = useState('all')
+  const [calendarAgentFilter, setCalendarAgentFilter] = useState(() => normalizeText(new URLSearchParams(location.search).get('agent')) || 'all')
   const appointmentReloadWindowRef = useRef(buildAppointmentReloadRange({ isCalendarMode, calendarView, calendarCursorDate }))
   const principalView = isOverviewMode ? 'reporting' : 'operational'
   const [appointmentModalOpen, setAppointmentModalOpen] = useState(false)
@@ -12251,9 +12238,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const stillAvailable = agentOptions.some(
         (agent) => normalizeKey(agent.id) === normalizeKey(normalizedPrevious) || normalizeKey(agent.email) === normalizeKey(normalizedPrevious),
       )
-      return stillAvailable ? previous : 'all'
+      const requestedAgent = normalizeText(new URLSearchParams(location.search).get('agent'))
+      return stillAvailable || normalizedPrevious === requestedAgent ? previous : 'all'
     })
-  }, [agentOptions, currentAgent.email, currentAgent.id, isPrincipal])
+  }, [agentOptions, currentAgent.email, currentAgent.id, isPrincipal, location.search])
 
   useEffect(() => {
     appointmentReloadWindowRef.current = buildAppointmentReloadRange({
@@ -17289,6 +17277,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     if (!isPrincipal) return records.appointments
     const filterKey = normalizeKey(calendarAgentFilter)
     if (!filterKey || filterKey === 'all') return records.appointments
+    const selectedAgent = agentOptions.find((agent) => [agent.id, agent.userId, agent.email].some((key) => normalizeKey(key) === filterKey))
+    const filterKeys = [filterKey, selectedAgent?.id, selectedAgent?.userId, selectedAgent?.email].map(normalizeKey).filter(Boolean)
     return records.appointments.filter((appointment) => {
       const appointmentKeys = [
         appointment?.assignedAgentId,
@@ -17305,9 +17295,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       ]
         .map((value) => normalizeKey(value))
         .filter(Boolean)
-      return appointmentKeys.includes(filterKey)
+      return filterKeys.some((key) => appointmentKeys.includes(key))
     })
-  }, [calendarAgentFilter, isCalendarMode, isPrincipal, records.appointments])
+  }, [agentOptions, calendarAgentFilter, isCalendarMode, isPrincipal, records.appointments])
 
   const appointmentSummary = useMemo(() => {
     if (!organisationId) {
@@ -22976,6 +22966,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
 
     setIsLeadDetailSaving(true)
+    let canonicalSaveResult = null
     try {
       const savedAt = new Date().toISOString()
       const legacyFormData = buildKingstonsSellerProfileFormData(sellerProfileEditForm)
@@ -22984,7 +22975,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         legacyFormData,
         listing: selectedLeadLinkedListing || {},
       })
-      const formData = {
+      let formData = {
         ...legacyFormData,
         ...manualCapture.formPatch,
         // The lead route includes Power of Attorney in addition to the
@@ -22994,7 +22985,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         ownershipRouteConfirmed: Boolean(sellerProfileEditForm.ownershipRouteConfirmed || sellerProfileEditForm.ownership_route_confirmed),
         ownership_route_confirmed: Boolean(sellerProfileEditForm.ownershipRouteConfirmed || sellerProfileEditForm.ownership_route_confirmed),
       }
-      const sellerCanonicalFacts = isPlainObject(manualCapture?.canonicalSellerFacts)
+      let sellerCanonicalFacts = isPlainObject(manualCapture?.canonicalSellerFacts)
         ? manualCapture.canonicalSellerFacts
         : null
       const existingOnboardingCandidate = isPlainObject(selectedLead?.sellerOnboarding)
@@ -23043,17 +23034,35 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         onboardingStatus: existingOnboarding.status || rawOnboarding.status || selectedLead?.sellerOnboardingStatus,
         onboardingToken: sellerProfileOnboardingToken,
       })
-      const persistedSellerProfileOnboarding = !sellerOnboardingReplacementRequired && isSupabaseConfigured && (sellerProfileListingId || sellerProfileOnboardingToken)
-        ? await persistSellerProfileOnboardingFormData({
-            listingId: sellerProfileListingId,
-            token: sellerProfileOnboardingToken,
-            formData,
-            status: normalizeText(existingOnboarding.status || rawOnboarding.status || selectedLead?.sellerOnboardingStatus || 'in_progress'),
-            sellerType: normalizeText(formData.sellerLegalType || formData.seller_legal_type || formData.ownershipType),
-            ownershipStructure: normalizeText(formData.ownerStructureType || formData.owner_structure_type || formData.ownershipType),
-            maritalRegime: normalizeText(formData.maritalRegime || formData.marriageRegime || formData.maritalStatus),
-          })
-        : null
+      let persistedSellerProfileOnboarding = null
+      if (!sellerOnboardingReplacementRequired && isSupabaseConfigured && sellerProfileListingId) {
+        let listingSnapshot = selectedLeadLinkedListing?.sourceListing || selectedLeadLinkedListing
+        if (!listingSnapshot?.updatedAt && !listingSnapshot?.updated_at) {
+          listingSnapshot = await getPrivateListing(sellerProfileListingId)
+        }
+        if (!listingSnapshot?.id) throw new Error('The linked listing could not be loaded. Reload before saving the seller profile.')
+        canonicalSaveResult = await saveListingSellerCanonicalUpdate({
+          listing: listingSnapshot,
+          formPatch: formData,
+          mutationType: 'seller_profile_capture',
+          source: 'seller_lead_profile_editor',
+          organisationId,
+          syncLinkedCrmContact: false,
+        })
+        formData = canonicalSaveResult.update.nextFormData
+        sellerCanonicalFacts = canonicalSaveResult.update.canonicalFacts
+        persistedSellerProfileOnboarding = canonicalSaveResult.receipt?.onboarding || canonicalSaveResult.listing.sellerOnboarding
+        setSelectedLeadHydratedListing(canonicalSaveResult.listing)
+      } else if (!sellerOnboardingReplacementRequired && isSupabaseConfigured && sellerProfileOnboardingToken) {
+        persistedSellerProfileOnboarding = await persistSellerProfileOnboardingFormData({
+          token: sellerProfileOnboardingToken, formData,
+          status: normalizeText(existingOnboarding.status || rawOnboarding.status || selectedLead?.sellerOnboardingStatus || 'in_progress'),
+          sellerType: normalizeText(formData.sellerLegalType || formData.ownershipType),
+          ownershipStructure: normalizeText(formData.ownerStructureType || formData.ownershipType),
+          maritalRegime: normalizeText(formData.maritalRegime || formData.maritalStatus),
+        })
+        if (!persistedSellerProfileOnboarding) throw new Error('The seller profile save could not be confirmed. Reload before retrying.')
+      }
       const canonicalSellerProfileFormData = sellerOnboardingReplacementRequired
         ? existingSellerOnboardingFormData
         : isPlainObject(persistedSellerProfileOnboarding?.form_data)
@@ -23137,8 +23146,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }
       const resolvedContactId = normalizeText(selectedLeadContact?.contactId || selectedLead?.contactId)
 
-      patchSelectedLeadRecord(leadPatch, selectedLead.leadId)
       if (resolvedContactId) {
+        await updateAgencyCrmContactRecord(organisationId, resolvedContactId, contactPatch)
         setRecords((previous) => ({
           ...previous,
           contacts: (Array.isArray(previous.contacts) ? previous.contacts : []).map((contact) =>
@@ -23147,9 +23156,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               : contact,
           ),
         }))
-        await updateAgencyCrmContactRecord(organisationId, resolvedContactId, contactPatch)
       }
       await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, leadPatch)
+      patchSelectedLeadRecord(leadPatch, selectedLead.leadId)
       await createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
         agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
         activityType: 'Seller Profile Updated',
@@ -23180,11 +23189,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         estimatedValue: String(leadPatch.estimatedValue || ''),
       }))
       setError('')
-      setMessage('Seller profile saved.')
+      setMessage(canonicalSaveResult?.warnings?.[0]?.message || 'Seller profile saved.')
       setSellerLeadEditModal((previous) => ({ ...previous, open: false }))
       scheduleRecordsReload(organisationId, 500)
     } catch (saveError) {
-      setError(saveError?.message || 'Unable to save seller profile right now.')
+      setError(canonicalSaveResult
+        ? 'Seller details were saved on the listing, but the CRM refresh failed. Reload the lead before retrying.'
+        : saveError?.message || 'Unable to save seller profile right now.')
     } finally {
       setIsLeadDetailSaving(false)
     }
@@ -24160,6 +24171,17 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     setError('')
     setAppointmentModalOpen(true)
   }
+
+  useEffect(() => {
+    if (!isCalendarMode || loading) return
+    const params = new URLSearchParams(location.search)
+    if (params.get('schedule') !== '1') return
+    const requestedAgent = normalizeText(params.get('agent'))
+    if (isPrincipal && requestedAgent && !agentOptions.some((agent) => [agent.id, agent.email].includes(requestedAgent))) return
+    handleOpenAppointmentModal()
+    params.delete('schedule')
+    navigate({ pathname: location.pathname, search: params.toString() }, { replace: true })
+  }, [agentOptions, isCalendarMode, isPrincipal, loading, location.pathname, location.search, navigate])
 
   function handleScheduleSellerAppointment() {
     if (!selectedLead) return
@@ -26894,8 +26916,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         ...existingFormData,
         sellerFirstName: normalizeText(existingFormData.sellerFirstName || existingFormData.firstName || selectedLeadContact?.firstName || selectedLead?.sellerName),
         sellerSurname: normalizeText(existingFormData.sellerSurname || existingFormData.lastName || selectedLeadContact?.lastName || selectedLead?.sellerSurname),
-        email: normalizeText(existingFormData.email || existingFormData.sellerEmail || selectedLeadContact?.email || selectedLead?.sellerEmail).toLowerCase(),
-        phone: normalizeText(existingFormData.phone || existingFormData.sellerPhone || selectedLeadContact?.phone || selectedLead?.sellerPhone),
+        email: normalizeText(existingFormData.email ?? existingFormData.sellerEmail ?? selectedLeadContact?.email ?? selectedLead?.sellerEmail).toLowerCase(),
+        phone: normalizeText(existingFormData.phone ?? existingFormData.sellerPhone ?? selectedLeadContact?.phone ?? selectedLead?.sellerPhone),
         propertyAddress: normalizeText(existingFormData.propertyAddress || selectedLead?.sellerPropertyAddress || selectedLead?.formattedAddress),
       }
       const canonicalSellerFacts = isPlainObject(selectedLead?.sellerCanonicalFacts)
@@ -27523,7 +27545,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setSellerSigningPackError('Name the second agency before preparing a dual mandate.')
       return
     }
-    if (sellerSigningPackTerms.protectionPeriodDays && (!Number.isInteger(Number(sellerSigningPackTerms.protectionPeriodDays)) || Number(sellerSigningPackTerms.protectionPeriodDays) < 0)) {
+    if (sellerSigningPackTerms.protectionPeriod && (!Number.isInteger(Number(sellerSigningPackTerms.protectionPeriod)) || Number(sellerSigningPackTerms.protectionPeriod) < 0)) {
       setSellerSigningPackError('Enter a whole number of protection days, or leave it blank for none.')
       return
     }
@@ -27540,7 +27562,18 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     setSellerSigningPackSaving(true)
     let dispatchedDocuments = 0
     try {
-    const formData = getLeadSellerOnboardingFormData(selectedLead)
+    let listingSnapshot = selectedLeadLinkedListing?.sourceListing || selectedLeadLinkedListing
+    if (!listingSnapshot?.updatedAt && !listingSnapshot?.updated_at) {
+      listingSnapshot = await getPrivateListing(listingId)
+    }
+    if (listingSnapshot?.id !== listingId) throw new Error('The linked listing could not be confirmed. Reload before preparing seller documents.')
+    const termsPatch = buildSellerLeadSigningPackTermsPatch(sellerSigningPackTerms)
+    const formData = buildListingSellerCanonicalUpdate({
+      listing: listingSnapshot,
+      formPatch: { ...getSellerLeadReviewFormData(selectedLead, listingSnapshot), ...termsPatch },
+      onboardingStatus: 'completed',
+      source: 'seller_lead_signing_pack',
+    }).nextFormData
     if (digitalKeys.length && (formData.sellerReviewedDocumentVersions || formData.seller_reviewed_document_versions)?.documents?.length) {
       const existingRequests = await listSellerPortalSigningRequests(listingId)
       if ((existingRequests.documents || []).some((request) => ['sent', 'partially_signed', 'signed', 'reviewed'].includes(request.status))) {
@@ -27548,14 +27581,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }
     }
     const propertyAddress = normalizeText(
-      selectedLeadLinkedListing?.propertyAddress || selectedLeadLinkedListing?.formattedAddress || selectedLead?.sellerPropertyAddress || selectedLead?.propertyInterest,
+      formData.propertyAddress || listingSnapshot?.propertyAddress || listingSnapshot?.formattedAddress || selectedLead?.sellerPropertyAddress || selectedLead?.propertyInterest,
     )
     const now = new Date().toISOString()
     const commission = {
-      basis: sellerSigningPackTerms.commissionBasis,
-      percentage: sellerSigningPackTerms.commissionBasis === 'percentage' ? String(sellerSigningPackTerms.commissionPercentage) : '',
-      amount: sellerSigningPackTerms.commissionBasis === 'fixed' ? String(sellerSigningPackTerms.commissionAmount) : '',
-      vatHandling: sellerSigningPackTerms.vatHandling,
+      basis: termsPatch.commissionBasis,
+      percentage: termsPatch.commissionPercentage,
+      amount: termsPatch.commissionAmount,
+      vatHandling: termsPatch.vatHandling,
     }
     const draftSigningBranding = resolveOnboardingBranding(
       selectedLeadLinkedListing?.branding,
@@ -27564,7 +27597,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     )
     const postOnboardingDrafts = buildSellerPostOnboardingDrafts({
       formData,
-      listing: selectedLeadLinkedListing || {},
+      listing: listingSnapshot,
       branding: draftSigningBranding,
       generatedAt: now,
     })
@@ -27600,7 +27633,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
     const signingPack = buildSellerOnboardingSigningPackSnapshot({
       formData,
-      listing: selectedLeadLinkedListing || {},
+      listing: listingSnapshot,
       recipients,
       selectedDocuments: disclosureOutstanding ? ['disclosure', 'fica', 'mandate'] : ['fica', 'mandate'],
       propertyAddress,
@@ -27617,10 +27650,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         askingPrice: sellerSigningPackTerms.askingPrice,
         startDate: sellerSigningPackTerms.startDate,
         endDate: sellerSigningPackTerms.endDate,
-        protectionPeriod: sellerSigningPackTerms.protectionPeriod,
+        protectionPeriod: termsPatch.protectionPeriodDays,
         specialConditions: normalizeText(formData.mandateSpecialConditions || formData.mandate_special_conditions),
-        otherAgencyName: normalizeText(sellerSigningPackTerms.otherAgencyName),
-        protectionPeriodDays: normalizeText(sellerSigningPackTerms.protectionPeriodDays || sellerSigningPackTerms.protectionPeriod),
+        otherAgencyName: termsPatch.otherAgencyName,
+        protectionPeriodDays: termsPatch.protectionPeriodDays,
         commissionBasis: commission.basis,
         commissionPercentage: commission.percentage,
         commissionAmount: commission.amount,
@@ -27659,18 +27692,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     reviewedSigningPack.documents = frozenVersions.documents
     const nextFormData = {
       ...formData,
-      mandateType: sellerSigningPackTerms.mandateType,
-      askingPrice: sellerSigningPackTerms.askingPrice,
-      mandateStartDate: sellerSigningPackTerms.startDate,
-      mandateEndDate: sellerSigningPackTerms.endDate,
-      mandateProtectionPeriod: sellerSigningPackTerms.protectionPeriod,
-      commissionBasis: commission.basis,
-      commission_basis: commission.basis,
-      commissionPercentage: commission.percentage,
-      commission_percent: commission.percentage,
-      commissionAmount: commission.amount,
-      commission_amount: commission.amount,
-      vatHandling: commission.vatHandling,
       mandateSignatureRoute: sellerOnboardingDocumentRoutes.signed_mandate,
       sellerOnboardingReview: review,
       seller_onboarding_review: review,
@@ -27692,12 +27713,20 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
     nextFormData.seller_onboarding_signing_lifecycle = nextFormData.sellerOnboardingSigningLifecycle
 
-      await updatePrivateListing(listingId, { mandateType: sellerSigningPackTerms.mandateType }, { includeRequirementsAndDocuments: false })
-      await persistSellerProfileOnboardingFormData({
-        listingId,
-        formData: nextFormData,
-        status: 'completed',
+      const canonicalSaveResult = await saveListingSellerCanonicalUpdate({
+        listing: listingSnapshot,
+        formPatch: nextFormData,
+        onboardingStatus: 'completed',
+        mutationType: 'seller_signing_pack_preparation',
+        source: 'seller_lead_signing_pack',
+        organisationId,
+        syncLinkedCrmContact: false,
+        includeRequirementsAndDocuments: false,
       })
+      setSelectedLeadHydratedListing(canonicalSaveResult.listing)
+      if (canonicalSaveResult.warnings.length) {
+        throw new Error(canonicalSaveResult.warnings.map((warning) => warning.message).join(' '))
+      }
 
       const sent = []
       for (const documentKey of digitalKeys) {
@@ -27711,7 +27740,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }
 
       await updatePrivateListing(listingId, {
-        mandateType: sellerSigningPackTerms.mandateType,
         mandateStatus: 'generated',
       }, { includeRequirementsAndDocuments: false })
       const leadPatch = {

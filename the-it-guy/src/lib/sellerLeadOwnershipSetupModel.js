@@ -6,6 +6,7 @@ const ROUTE_MODELS = Object.freeze({
   individual: { ownerEntityType: 'natural_person', ownerStructureType: 'individual', sellerLegalType: 'individual' },
   married: { ownerEntityType: 'natural_person', ownerStructureType: 'married_cop', sellerLegalType: 'individual' },
   multiple_owners: { ownerEntityType: 'natural_person', ownerStructureType: 'multiple_owners', sellerLegalType: 'multiple_owners' },
+  close_corporation: { ownerEntityType: 'close_corporation', ownerStructureType: 'close_corporation', sellerLegalType: 'close_corporation' },
   company: { ownerEntityType: 'company', ownerStructureType: 'company', sellerLegalType: 'company' },
   trust: { ownerEntityType: 'trust', ownerStructureType: 'trust', sellerLegalType: 'trust' },
   deceased_estate: { ownerEntityType: 'natural_person', ownerStructureType: 'deceased_estate', sellerLegalType: 'deceased_estate' },
@@ -42,6 +43,7 @@ export function applySellerLeadOwnershipRoute(form = {}, route = '') {
 export function resolveSellerLeadOwnershipRoute(form = {}) {
   const explicit = String(form.sellerOwnershipRoute || form.ownershipType || form.ownerStructureType || '').trim().toLowerCase()
   if (ROUTE_MODELS[explicit]) return explicit
+  if (String(form.ownerEntityType || '').trim().toLowerCase() === 'close_corporation') return 'close_corporation'
   if (String(form.ownerEntityType || '').trim().toLowerCase() === 'company') return 'company'
   if (String(form.ownerEntityType || '').trim().toLowerCase() === 'trust') return 'trust'
   return ''

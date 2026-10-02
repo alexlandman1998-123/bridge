@@ -1,3 +1,4 @@
+import { transactionReviewedBuyerName } from '../core/transactions/transactionDetailReview.js'
 import {
   buildCanonicalMergeFieldPayload,
   resolveCanonicalFieldValue,
@@ -151,6 +152,8 @@ export function resolvePortalSellerName(row = {}, options = {}) {
 }
 
 export function resolvePortalBuyerName(row = {}, { fallback = 'Buyer pending' } = {}) {
+  const reviewedName = transactionReviewedBuyerName(row.transaction || row)
+  if (reviewedName) return reviewedName
   const transaction = isPlainObject(row.transaction) ? row.transaction : {}
   const formData = isPlainObject(row.formData)
     ? row.formData

@@ -76,7 +76,7 @@ executive
 customer_support
 ```
 
-Recommended Supabase user metadata:
+Trusted Supabase app metadata (not user-editable user metadata):
 
 ```json
 { "role": "executive" }
@@ -91,4 +91,35 @@ or
 Executive level can access Dashboard, Support, Search, and Settings.
 Customer support level can access Support, Search, and Settings.
 
-Roles are read from Supabase app metadata, user metadata, and common profile fields. Legacy internal roles still map into these two levels so existing staff access continues to work.
+The database resolves internal access from trusted app metadata. User metadata and writable profile fields cannot grant internal access.
+
+## Knowledge Factory setup
+
+Executive Settings includes an organisation-scoped Knowledge Factory setup panel.
+It reads report readiness, saves explicitly chosen caps in `controlled_uat`, and
+validates the server-owned Basic or Full package query on the pinned v1 UAT
+endpoint. It cannot grant report access, activate a pilot, or execute client reports.
+Exact-package checks now return a conservative maximum: freshly validated
+complexity plus the September 2026 v1 fee schedule at every selected list limit.
+Basic reserves 11,050 field-fee credits; Full reserves 17,575. The literal query
+fingerprint must match the reviewed envelope. Estimates are not stored as
+validated billing evidence and cannot approve a product. Actual execution billing
+remains separate, parsed from `extensions.billingCost`.
+The API is hosted by the primary app at
+`/api/admin/knowledge-factory/configuration`; both apps must be released before
+this panel can be used in production. No new migration is required.
+
+Confirm whether the supplier account is subscription (40 credits per cent) or
+prepaid (30 credits per cent). Those conversions are illustrative supplier cost,
+not the customer report price or an invoice. Cost checks request
+`GraphQL-Cost: validate` and `GraphQL-Billing: report`; missing billing evidence
+does not become a free quote. Live UAT evidence for the exact property/package
+must be checked before releasing paid reports.
+
+The separately approved 1 October diagnostic is shown only to the named executive
+for Home Seekers. `/api/admin/knowledge-factory/uat-report-test` permits one fixed
+Basic v1 UAT report for property 383723, before 2 October 00:00 UTC. Its permanent
+audit primary-key claim blocks repeat attempts across deployments, including after
+timeouts or failed preflights. It does not grant client access or validate customer
+pricing. Only billing metadata is saved; report data stays in the private page's
+memory. The 12,000-credit preflight budget is not a supplier-enforced billing cap.

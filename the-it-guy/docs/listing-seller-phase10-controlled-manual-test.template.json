@@ -31,7 +31,17 @@
     "permissionsAndVisibility": false,
     "specialConditionsIncluded": false,
     "internalNotesExcluded": false,
-    "noHighSeverityErrors": false
+    "noHighSeverityErrors": false,
+    "manualCaptureWithoutClientContact": false,
+    "noClientEmailsInvitationsOrReminders": false,
+    "leadListingSaveReopenMatch": false,
+    "repeatConversionDoesNotDuplicate": false,
+    "explicitNoZeroAndClearingPersist": false,
+    "soleOpenDualMandates": false,
+    "allOwnersInReviewedCopies": false,
+    "signedUploadReviewFromBothEntryPoints": false,
+    "portalSigningWhenEnabled": false,
+    "existingRecordReviewRecorded": false
   },
   "deploymentApproved": false,
   "remoteDataOperationApproved": false,

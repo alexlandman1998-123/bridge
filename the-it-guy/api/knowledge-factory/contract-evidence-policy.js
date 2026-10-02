@@ -9,6 +9,7 @@ function recordedNumber(value) {
 export function normalizeContractCostEvidence(value) {
   const input = value && typeof value === "object" && !Array.isArray(value) ? value : {};
   return {
+    supplierApiVersion: input.supplierApiVersion === "v1" ? "v1" : "v0_1",
     credits: recordedNumber(input.credits),
     fieldCost: recordedNumber(input.fieldCost),
     typeCost: recordedNumber(input.typeCost),
@@ -18,6 +19,7 @@ export function normalizeContractCostEvidence(value) {
 
 export function hasRecordedContractEvidence(check) {
   return check?.status === "passed" &&
+    check.cost_evidence?.supplierApiVersion === "v1" &&
     Array.isArray(check.observed_field_manifest) &&
     check.observed_field_manifest.some((field) => typeof field === "string" && field.trim()) &&
     normalizeContractCostEvidence(check.cost_evidence).credits !== null;

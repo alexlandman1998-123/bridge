@@ -1,3 +1,4 @@
+import { resolveDealSetupFinanceType } from './dealSetupContract.js'
 import { normalizeFinanceType } from './financeType.js'
 
 export const DEAL_SETUP_DOCUMENT_REQUIREMENTS_VERSION = 'deal_setup_document_requirements_v1'
@@ -26,7 +27,7 @@ function profileDocumentKeys(profileDocumentsByBuyer, buyerId) {
 export function buildDealSetupDocumentRequirements({ setup = {}, profileDocumentsByBuyer = {} } = {}) {
   const buyers = Array.isArray(setup.buyers) ? setup.buyers.filter((buyer) => !buyer.removed_at && key(buyer.status) !== 'removed') : []
   const purchaserType = key(setup.terms?.purchaserType)
-  const financeType = normalizeFinanceType(setup.finance?.type, { allowUnknown: true })
+  const financeType = normalizeFinanceType(resolveDealSetupFinanceType(setup.finance?.type), { allowUnknown: true })
   const requirements = []
   buyers.forEach((buyer, index) => {
     const buyerId = text(buyer.buyer_party_id || buyer.buyerId || buyer.id) || `buyer-${index + 1}`

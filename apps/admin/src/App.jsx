@@ -44,6 +44,7 @@ import EmailOperationsView from './EmailOperationsView'
 import Property24CredentialsView from './Property24CredentialsView'
 import PrivatePropertyConfigurationView from './PrivatePropertyConfigurationView'
 import PrivatePropertyAgentMappingsView from './PrivatePropertyAgentMappingsView'
+import KnowledgeFactoryConfigurationView from './KnowledgeFactoryConfigurationView'
 
 const APP_ENV = import.meta.env || {}
 const ARCH9_EXPLORE_URL = APP_ENV.VITE_ARCH9_EXPLORE_URL || '/'
@@ -6213,6 +6214,7 @@ function SettingsView({ access, profile, snapshot = EMPTY_DASHBOARD }) {
         </dl>
       </section>
       <Property24CredentialsView access={access} organisations={organisations} />
+      <KnowledgeFactoryConfigurationView access={access} organisations={organisations} />
       {access.level === 'executive' ? (
         <section className="data-panel property24-credentials-panel">
           <div className="panel-title"><h2>Private Property organisation</h2></div>

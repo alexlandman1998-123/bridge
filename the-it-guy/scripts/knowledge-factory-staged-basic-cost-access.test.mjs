@@ -14,6 +14,7 @@ const staged = {
 }
 
 assert.equal(mayUseStagedBasicCostMatrix({ ...staged, action: 'list' }), true)
+assert.equal(mayUseStagedBasicCostMatrix({ ...staged, action: 'supplier_login_probe' }), false)
 assert.equal(mayUseStagedBasicCostMatrix({ ...staged, action: 'validate', recipeId: 'package_basic_v1' }), true)
 assert.equal(mayUseStagedBasicCostMatrix({ ...staged, action: 'validate', recipeId: 'package_full_v1' }), false)
 assert.equal(mayUseStagedBasicCostMatrix({ ...staged, action: 'execute', recipeId: 'package_basic_v1' }), false)

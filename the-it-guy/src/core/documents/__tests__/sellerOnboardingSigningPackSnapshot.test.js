@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { buildSellerMandateDocumentModel } from '../sellerMandateWordingMarkup.js'
 import { buildSellerOnboardingSigningPackSnapshot, SELLER_ONBOARDING_SIGNING_PACK_SNAPSHOT_CONTRACT } from '../sellerOnboardingSigningPackSnapshot.js'
 
 test('builds one complete frozen contract for a natural-person seller', () => {
@@ -73,4 +74,45 @@ test('uses the canonical onboarding facts mapping for legacy and authority field
   assert.equal(pack.seller.parties[0].authorityBasis, 'Board resolution')
   assert.equal(pack.seller.parties[1].role, 'Beneficial Owner')
   assert.match(pack.property.address, /22 Canonical Street/)
+})
+
+test('estate, principal and other entity identities do not become their contact person', () => {
+  const scenarios = [
+    { ownershipType: 'deceased_estate', deceasedEstateName: 'Estate Late Owner', estateReference: 'EST-123', executorName: 'Pat Executor', expectedName: 'Estate Late Owner', expectedId: 'EST-123' },
+    { ownershipType: 'power_of_attorney', powerOfAttorneyPrincipalName: 'Alex Principal', powerOfAttorneyPrincipalIdNumber: 'OWNER-ID', powerOfAttorneyName: 'Pat Representative', expectedName: 'Alex Principal', expectedId: 'OWNER-ID' },
+    { ownershipType: 'other', otherEntityName: 'Example Association', otherEntityRegistrationNumber: 'ASSOC-123', expectedName: 'Example Association', expectedId: 'ASSOC-123' },
+  ]
+  for (const scenario of scenarios) {
+    const pack = buildSellerOnboardingSigningPackSnapshot({ formData: { sellerFirstName: 'Contact', sellerSurname: 'Person', idNumber: 'CONTACT-ID', ...scenario } })
+    assert.equal(pack.seller.legalOwnerName, scenario.expectedName)
+    assert.equal(pack.seller.legalOwnerIdentity, scenario.expectedId)
+    const document = buildSellerMandateDocumentModel({ signingPack: { ...pack, mandate: { mandateType: 'sole' }, branding: { organisationName: 'Agency' }, signers: [{ name: 'Pat Representative', role: 'Representative' }] } })
+    assert.equal(document.sellerName, scenario.expectedName)
+    assert.equal(document.sellerIdentity, scenario.expectedId)
+  }
+  const missingEstate = buildSellerOnboardingSigningPackSnapshot({ formData: { ownershipType: 'deceased_estate', sellerFirstName: 'Pat', sellerSurname: 'Executor' } })
+  assert.equal(missingEstate.seller.legalOwnerName, '')
+})
+
+test('multiple-owner mandate names owners once and does not identify the contact as an owner', () => {
+  const pack = buildSellerOnboardingSigningPackSnapshot({
+    formData: { ownershipType: 'multiple_owners', sellerFirstName: 'Administrative', sellerSurname: 'Contact',
+      multipleOwners: [{ name: 'Alex', surname: 'Owner', idNumber: 'A1' }, { name: 'Sam', surname: 'Owner', idNumber: 'S2' }] },
+    mandate: { mandateType: 'sole' }, branding: { organisationName: 'Agency' }, recipients: [{ name: 'Alex Owner', role: 'Seller' }, { name: 'Sam Owner', role: 'Seller' }],
+  })
+  const document = buildSellerMandateDocumentModel({ signingPack: pack })
+  assert.equal(document.sellerName, 'Alex Owner')
+  assert.equal(document.sellerIdentity, 'A1')
+  assert.deepEqual(document.coOwners.map((owner) => owner.name), ['Sam Owner'])
+})
+
+test('an entity contact and stale owner arrays cannot become mandate co-owners', () => {
+  const pack = buildSellerOnboardingSigningPackSnapshot({ formData: {
+    ownerEntityType: 'company', ownerStructureType: 'company', ownershipType: 'company',
+    companyName: 'Current Company', companyRegistrationNumber: 'CO-123',
+    primaryContactName: 'Pat Contact', sellerFirstName: 'Pat', sellerSurname: 'Contact',
+    multipleOwners: [{ name: 'Previous', surname: 'Owner', idNumber: 'OLD-ID' }],
+  } })
+  assert.equal(pack.seller.legalOwnerName, 'Current Company')
+  assert.equal(pack.seller.parties.some(person => ['Owner', 'Seller'].includes(person.role)), false)
 })

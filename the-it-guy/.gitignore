@@ -29,3 +29,10 @@ private-evidence/
 output/historical-transaction-classification-*.json
 output/historical-transaction-backfill-*.json
 output/historical-transaction-quarantine-*.json
+output/audits/imported-deal-audit-*.json
+
+# Imported deal review browser verification screenshots
+/output/playwright/imported-review-*.png
+/output/playwright/
+/output/pdf/
+/output/imported-deals/

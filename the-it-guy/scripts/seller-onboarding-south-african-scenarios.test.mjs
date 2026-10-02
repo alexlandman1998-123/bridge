@@ -139,7 +139,7 @@ assertScenario({
     spousePhone: '0829991111',
     idNumber: '9001015009083',
   }),
-  docKeys: ['marriage_certificate', 'spouse_consent', 'spouse_id_document'],
+  docKeys: ['marriage_certificate', 'spouse_id_document'],
   factsChecks: [
     ({ facts }) => assert.equal(facts.seller.marital_regime, 'in_community'),
     ({ facts }) => assert.equal(facts.seller.spouse.name, 'Maya Example'),
@@ -260,6 +260,7 @@ assertScenario({
   propertyBranch: 'residential',
   form: buildBaseForm({
     ownershipType: 'deceased_estate',
+    deceasedEstateName: 'Estate Late Alex Manvandeland',
     executorName: 'Pat Executor',
     executorEmail: 'pat@example.com',
     executorPhone: '0850000001',
@@ -454,3 +455,24 @@ assertScenario({
 })
 
 console.log('seller onboarding South African scenario tests passed')
+
+test('manual capture distinguishes estate and principal identity from their representatives', () => {
+  for (const [details, requiredField, issueCode] of [
+    [{ ownershipType: 'deceased_estate', deceasedEstateName: 'Estate Late Owner', estateReference: 'EST-1', executorName: 'Pat Executor', executorAuthorityDetails: 'Letters of executorship' }, 'deceasedEstateName', 'estate_name_missing'],
+    [{ ownershipType: 'power_of_attorney', powerOfAttorneyPrincipalName: 'Alex Owner', powerOfAttorneyPrincipalIdNumber: 'OWNER-1', powerOfAttorneyName: 'Pat Representative', powerOfAttorneyAuthorityDetails: 'Power of attorney' }, 'powerOfAttorneyPrincipalName', 'principal_name_missing'],
+    [{ ownershipType: 'other', otherEntityName: 'Example Association', otherAuthorityDetails: 'Pat Representative appointed under constitution; manual review required' }, 'otherAuthorityDetails', 'other_authority_missing'],
+  ]) {
+    const form = buildBaseForm({ ...details, sellerFirstName: '', sellerSurname: '', email: '', idNumber: '', dateOfBirth: '', nationality: '' })
+    const valid = buildCanonicalSellerOnboardingPayload(form, listing)
+    assert.deepEqual(valid.canonicalSellerFactReadiness.validation.required, [])
+    const incomplete = buildCanonicalSellerOnboardingPayload({ ...form, [requiredField]: '' }, listing)
+    assert.ok(incomplete.canonicalSellerFactReadiness.validation.required.some((issue) => issue.code === issueCode))
+  }
+})
+
+test('email is optional in manual facts but required when explicitly preparing an email route', () => {
+  const form = buildBaseForm({ email: '' })
+  assert.equal(buildCanonicalSellerOnboardingPayload(form, listing).canonicalSellerFactReadiness.validation.ok, true)
+  const emailRoute = buildCanonicalSellerOnboardingPayload(form, listing, { requireEmail: true })
+  assert.ok(emailRoute.canonicalSellerFactReadiness.validation.required.some((issue) => issue.code === 'seller_email_missing'))
+})

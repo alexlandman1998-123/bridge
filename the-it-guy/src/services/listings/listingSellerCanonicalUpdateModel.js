@@ -20,10 +20,10 @@ function object(value) {
 function getExistingFormData(listing = {}) {
   const onboarding = object(listing.sellerOnboarding || listing.seller_onboarding)
   return {
-    ...object(onboarding.form_data),
-    ...object(onboarding.formData),
     ...object(listing.seller_onboarding_form_data),
     ...object(listing.sellerOnboardingFormData),
+    ...object(onboarding.form_data),
+    ...object(onboarding.formData),
   }
 }
 
@@ -60,6 +60,15 @@ export function buildListingSellerCanonicalUpdate({
   const existingFormData = getExistingFormData(listing)
   const normalizedPatch = object(formPatch)
   const nextFormData = { ...existingFormData, ...normalizedPatch }
+  // An explicit empty value is an edit, not a request to restore a legacy alias.
+  for (const aliases of [
+    ['email', 'sellerEmail'], ['phone', 'sellerPhone', 'mobile'],
+    ['sellerFirstName', 'firstName'], ['sellerSurname', 'lastName'],
+    ['primaryContactName', 'contactName'],
+  ]) {
+    const edited = aliases.find((field) => Object.hasOwn(normalizedPatch, field))
+    if (edited) for (const field of aliases) nextFormData[field] = normalizedPatch[edited]
+  }
   const projectedListing = {
     ...listing,
     sellerOnboarding: {
@@ -70,25 +79,41 @@ export function buildListingSellerCanonicalUpdate({
   const authority = resolveListingSellerAuthorityContract(projectedListing, nextFormData)
   const changedFields = Object.keys(normalizedPatch).filter((key) => valuesDiffer(existingFormData[key], normalizedPatch[key])).sort()
   const requirementsAffected = changedFields.some((key) => REQUIREMENT_AFFECTING_FIELD.test(key))
-  const fullName = text(first(
-    nextFormData.fullName,
-    nextFormData.sellerName,
-    [nextFormData.sellerFirstName || nextFormData.firstName, nextFormData.sellerSurname || nextFormData.lastName].filter(Boolean).join(' '),
-    nextFormData.companyName,
-    nextFormData.trustName,
-    nextFormData.deceasedEstateName,
-    nextFormData.otherEntityName,
-    listing.sellerName,
-    listing.seller?.name,
-  ))
-  const email = text(first(nextFormData.sellerEmail, nextFormData.email, listing.sellerEmail, listing.seller?.email)).toLowerCase()
-  const phone = text(first(nextFormData.sellerPhone, nextFormData.phone, listing.sellerPhone, listing.seller?.phone))
+  if (['individual', 'married', 'foreign_individual'].includes(authority.profileType) &&
+      (Object.hasOwn(normalizedPatch, 'fullName') || Object.hasOwn(normalizedPatch, 'sellerName')) &&
+      !['sellerFirstName', 'firstName', 'sellerSurname', 'lastName'].some((field) => Object.hasOwn(normalizedPatch, field))) {
+    const parts = text(normalizedPatch.fullName ?? normalizedPatch.sellerName).split(/\s+/).filter(Boolean)
+    nextFormData.sellerFirstName = nextFormData.firstName = parts.length > 1 ? parts.slice(0, -1).join(' ') : parts[0] || ''
+    nextFormData.sellerSurname = nextFormData.lastName = parts.length > 1 ? parts.at(-1) : ''
+  }
+  if (!['individual', 'married', 'foreign_individual'].includes(authority.profileType) &&
+      ['primaryContactName', 'contactName'].some((field) => Object.hasOwn(normalizedPatch, field))) {
+    const parts = text(nextFormData.primaryContactName).split(/\s+/).filter(Boolean)
+    nextFormData.sellerFirstName = nextFormData.firstName = parts.length > 1 ? parts.slice(0, -1).join(' ') : parts[0] || ''
+    nextFormData.sellerSurname = nextFormData.lastName = parts.length > 1 ? parts.at(-1) : ''
+  }
   const generated = buildSellerProfileCanonicalPayload(nextFormData, projectedListing, {
     draft: onboardingStatus !== 'completed',
     source,
   })
+  const fullName = authority.identified
+    ? text(generated.canonicalSellerFacts?.seller?.name)
+    : text(first(nextFormData.fullName, nextFormData.sellerName,
+      [nextFormData.sellerFirstName, nextFormData.sellerSurname].filter(Boolean).join(' '), listing.sellerName, listing.seller?.name))
+  const presentValue = (keys, fallback) => {
+    const field = keys.find((key) => Object.hasOwn(nextFormData, key))
+    return field ? nextFormData[field] : fallback
+  }
+  const email = text(presentValue(['email', 'sellerEmail'], listing.sellerEmail || listing.seller?.email)).toLowerCase()
+  const phone = text(presentValue(['phone', 'sellerPhone', 'mobile'], listing.sellerPhone || listing.seller?.phone))
+  const contactName = ['individual', 'married', 'foreign_individual'].includes(authority.profileType)
+    ? fullName
+    : text(first(nextFormData.primaryContactName, nextFormData.contactName,
+      [nextFormData.sellerFirstName, nextFormData.sellerSurname].filter(Boolean).join(' ')))
+  Object.assign(nextFormData, { fullName, sellerName: fullName, email, sellerEmail: email, phone, sellerPhone: phone,
+    primaryContactName: contactName, contactName })
   const currentFacts = object(listing.sellerCanonicalFacts || listing.seller_canonical_facts_json)
-  const generatedFacts = object(suppliedCanonicalFacts || generated.canonicalSellerFacts)
+  const generatedFacts = object(generated.canonicalSellerFacts || suppliedCanonicalFacts)
   const authoritativeFacts = authority.identified && Object.keys(generatedFacts).length ? generatedFacts : currentFacts
   const canonicalFacts = {
     ...authoritativeFacts,
@@ -103,6 +128,7 @@ export function buildListingSellerCanonicalUpdate({
       ...object(authoritativeFacts.seller),
       full_name: fullName,
       name: fullName,
+      contact: { name: contactName, email, phone },
       email,
       phone,
     },
@@ -120,6 +146,7 @@ export function buildListingSellerCanonicalUpdate({
   }
   const readiness = {
     ...object(listing.sellerCanonicalFactReadiness || listing.seller_canonical_fact_readiness_json),
+    ...object(generated.canonicalSellerFactReadiness),
     sellerName: Boolean(fullName),
     sellerEmail: Boolean(email),
     sellerPhone: Boolean(phone),
@@ -129,6 +156,9 @@ export function buildListingSellerCanonicalUpdate({
     authorityProfile: authority.profileType,
     authorityConfirmed: authority.identified && authority.signatoryPolicy.mode !== 'blocked',
   }
+  nextFormData.canonicalSellerFacts = canonicalFacts
+  nextFormData.canonical_seller_facts = canonicalFacts
+  nextFormData.canonicalSellerFactReadiness = readiness
   const currentStatus = text(first(listing.sellerOnboardingStatus, listing.seller_onboarding_status, listing.sellerOnboarding?.status, 'not_started'))
   const status = text(onboardingStatus) || (currentStatus === 'not_started' && authority.identified ? 'in_progress' : currentStatus)
   const sellerType = sellerTypeForAuthority(authority, nextFormData)
@@ -170,7 +200,7 @@ export function buildListingSellerCanonicalUpdate({
     onboardingStatus: status,
     changedFields,
     requirementsAffected,
-    contact: Object.freeze({ fullName, email, phone }),
+    contact: Object.freeze({ fullName: contactName, email, phone }),
   })
 }
 
@@ -183,10 +213,13 @@ export function applyListingSellerCanonicalUpdateSnapshot(listing = {}, update =
     seller: {
       ...object(listing.seller),
       ...object(update.formPatch),
-      name: update.contact?.fullName || '',
+      name: update.listingPatch?.sellerName || '',
       email: update.contact?.email || '',
       phone: update.contact?.phone || '',
     },
+    sellerOnboardingFormData: update.nextFormData,
+    seller_onboarding_form_data: update.nextFormData,
+    seller_onboarding: { ...object(listing.seller_onboarding), ...object(committed.seller_onboarding), formData: update.nextFormData, form_data: update.nextFormData, status: update.onboardingStatus },
     sellerOnboardingStatus: update.onboardingStatus,
     sellerOnboarding: {
       ...object(listing.sellerOnboarding),

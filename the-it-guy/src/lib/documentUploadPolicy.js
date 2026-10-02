@@ -1,6 +1,6 @@
 import { reportDocumentUploadTelemetry } from './documentUploadObservability.js'
 
-export const DOCUMENT_UPLOAD_MAX_BYTES = 25 * 1024 * 1024
+export const DOCUMENT_UPLOAD_MAX_BYTES = 35 * 1024 * 1024
 export const RENTAL_DOCUMENT_UPLOAD_MAX_BYTES = 8 * 1024 * 1024
 export const DOCUMENT_UPLOAD_POLICY_VERSION = 'document_upload_policy_v2'
 

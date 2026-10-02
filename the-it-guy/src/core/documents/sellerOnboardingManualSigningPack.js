@@ -1,5 +1,4 @@
-import { buildFicaDeclarationDocumentMarkup } from './ficaDeclarationDocumentMarkup.js'
-import { buildSellerMandateDocumentModel } from './sellerMandateDocumentMarkup.js'
+import { buildSellerMandateDocumentModel, requireSellerMandateWording } from './sellerMandateDocumentMarkup.js'
 import { createSellerPostOnboardingDraftFingerprint } from './sellerPostOnboardingDrafts.js'
 import { buildSellerFicaDueDiligenceMarkup, SELLER_FICA_DUE_DILIGENCE_TEMPLATE_VERSION } from './sellerFicaDueDiligenceMarkup.js'
 import { buildSellerMandateDocumentMarkup, SELLER_MANDATE_DOCUMENT_TEMPLATE_VERSION } from './sellerMandateDocumentMarkup.js'
@@ -16,16 +15,20 @@ export function createSellerOnboardingManualSigningPack({ existing = {}, formalP
   if (approval.status !== 'approved') throw new Error('Approve the onboarding before preparing signing copies.')
   const drafts = Array.isArray(record(postOnboardingDrafts).documents) ? postOnboardingDrafts.documents : []
   const ficaDraft = drafts.find((draft) => text(draft?.targetRequirementKey || draft?.requirementKey || draft?.key) === 'signed_fica_declaration')
-  if (!ficaDraft) throw new Error('The approved FICA declaration draft is unavailable.')
+  const selected = Array.isArray(approval.selectedDocuments) ? approval.selectedDocuments : ['fica', 'mandate']
+  const includeFica = selected.includes('fica')
+  const includeMandate = selected.includes('mandate')
+  if (!includeFica && !includeMandate) throw new Error('Choose FICA or the mandate before preparing signing copies.')
+  if (includeFica && !ficaDraft) throw new Error('The approved FICA declaration draft is unavailable.')
   const disclosureComplete = hasCompletedOnboardingDisclosureSignature(formData)
   const disclosureDraft = drafts.find((draft) => text(draft?.targetRequirementKey || draft?.requirementKey || draft?.key) === 'signed_disclosure_form')
   if (!disclosureComplete && approval.documentRoutes?.signed_disclosure_form && !text(disclosureDraft?.generatedHtml)) {
     throw new Error('The reviewed defects disclosure is unavailable. Rebuild the onboarding drafts before sending it for signature.')
   }
   const mandateType = text(record(signingPack.mandate).mandateType).toLowerCase()
-  if (!['sole', 'exclusive', 'sole_mandate', 'open'].includes(mandateType)) throw new Error('Choose an exclusive or open mandate before preparing signing copies.')
-  const mandateName = mandateType === 'open' ? 'Open Mandate to Sell' : 'Exclusive Mandate to Sell'
-  const ficaModel = record(record(ficaDraft.metadata).ficaDeclarationModel)
+  const mandateVariant = includeMandate ? requireSellerMandateWording(mandateType) : ''
+  const mandateName = { open: 'Open Mandate to Sell', exclusive: 'Exclusive Mandate to Sell', dual: 'Dual Mandate to Sell' }[mandateVariant]
+  const ficaModel = record(record(ficaDraft?.metadata).ficaDeclarationModel)
   const entry = {
     generatedAt: text(generatedAt), generatedBy: text(actor), status: Object.values(approval.documentRoutes || {}).includes('digital_pack') || approval.signingRoute === 'digital_pack' ? 'awaiting_signature' : 'awaiting_signed_hard_copy',
     signingPackSnapshot: signingPack,
@@ -37,24 +40,27 @@ export function createSellerOnboardingManualSigningPack({ existing = {}, formalP
         generatedFileName: 'seller-defects-disclosure-signing.pdf',
         sourceDraftFingerprint: text(disclosureDraft.fingerprint || disclosureDraft.sourceDraftFingerprint),
       }] : []),
-      {
+      ...(includeFica ? [{
         key: 'signed_fica_declaration', name: 'Seller FICA Due Diligence Record',
         templateVersion: SELLER_FICA_DUE_DILIGENCE_TEMPLATE_VERSION,
+        sourceFactsFingerprint: ficaFactsFingerprint(ficaDraft),
         generatedHtml: buildSellerFicaDueDiligenceMarkup({ model: ficaModel, formData, signingPack, branding: signingPack.branding, generatedAt }),
         generatedFileName: 'seller-fica-due-diligence-physical-signing.pdf',
-      },
-      {
+      }] : []),
+      ...(includeMandate ? [{
         key: 'signed_mandate', name: mandateName,
         templateVersion: SELLER_MANDATE_DOCUMENT_TEMPLATE_VERSION,
-        generatedHtml: buildSellerMandateDocumentMarkup({ signingPack, formalPackApproval: approval }),
-        generatedFileName: `seller-${mandateType === 'open' ? 'open' : 'exclusive'}-mandate-physical-signing.pdf`,
-      },
+        sourceFactsFingerprint: mandateFactsFingerprint(signingPack, approval),
+        generatedHtml: buildSellerMandateDocumentMarkup({ signingPack, approval, generatedAt }),
+        generatedFileName: `seller-${mandateVariant}-mandate-physical-signing.pdf`,
+      }] : []),
     ].map((document) => ({
       ...document,
       signingRoute: approval.documentRoutes?.[document.key] || approval.signingRoute || 'manual_upload',
     })),
   }
   const current = record(existing)
+  retainUnselectedCopies({ entry, current, includeFica, includeMandate, ficaDraft, signingPack, approval })
   const previousVersions = Array.isArray(current.versionHistory) ? current.versionHistory : []
   const previousDocuments = Array.isArray(current.documents) && current.documents.some((document) => text(document?.versionId))
     ? [{ approvedAt: current.generatedAt, documents: current.documents }]
@@ -82,44 +88,7 @@ function mandateFactsFingerprint(signingPack, approval) {
   return createSellerPostOnboardingDraftFingerprint(model)
 }
 
-/** One reviewed content pack powers download and portal signing. */
-export function createSellerOnboardingSigningCopyPack({ existing = {}, formalPackApproval = {}, signingPack = {}, postOnboardingDrafts = {}, disclosureSigned = false, actor = '', generatedAt = new Date().toISOString() } = {}) {
-  const approval = record(formalPackApproval)
-  if (approval.status !== 'approved' || !['manual_upload', 'digital_pack'].includes(approval.signingRoute)) throw new Error('Approve the onboarding and choose a signing route before preparing the copies.')
-  const selected = Array.isArray(approval.selectedDocuments) ? approval.selectedDocuments.map(text) : ['fica', 'mandate']
-  const includeFica = selected.includes('fica')
-  const includeMandate = selected.includes('mandate')
-  if (!includeFica && !includeMandate) throw new Error('Choose FICA or the mandate before preparing signing copies.')
-  const drafts = Array.isArray(record(postOnboardingDrafts).documents) ? postOnboardingDrafts.documents : []
-  const ficaDraft = drafts.find((draft) => text(draft?.targetRequirementKey || draft?.requirementKey || draft?.key) === 'signed_fica_declaration')
-  const disclosureDraft = drafts.find((draft) => text(draft?.targetRequirementKey || draft?.requirementKey || draft?.key) === 'signed_disclosure_form')
-  if (includeFica && !text(ficaDraft?.generatedHtml || ficaDraft?.generated_html)) throw new Error('The approved FICA declaration draft is unavailable.')
-  if (!disclosureSigned && !text(disclosureDraft?.generatedHtml || disclosureDraft?.generated_html)) throw new Error('The approved disclosure draft is unavailable.')
-  const ficaModel = record(record(ficaDraft?.metadata).ficaDeclarationModel)
-  const reviewedFicaHtml = includeFica && ficaModel.contract
-    ? buildFicaDeclarationDocumentMarkup({
-        ...ficaModel,
-        signers: (Array.isArray(signingPack?.signers) ? signingPack.signers : []).map((signer, index) => ({
-          id: `signer-${index + 1}`,
-          name: text(signer?.name),
-          roleLabel: text(signer?.role) || 'Seller',
-          email: text(signer?.email),
-          status: 'Awaiting signature',
-          signedAt: '',
-          signature: '',
-        })),
-      })
-    : ficaDraft?.generatedHtml || ficaDraft?.generated_html || ''
-  const current = record(existing)
-  const entry = {
-    generatedAt: text(generatedAt), generatedBy: text(actor), signingRoute: approval.signingRoute,
-    status: approval.signingRoute === 'manual_upload' ? 'awaiting_signed_hard_copy' : 'ready_for_portal_signature',
-    documents: [
-      ...(!disclosureSigned ? [{ key: 'signed_disclosure_form', name: 'Mandatory Disclosure / Defects Form', generatedHtml: disclosureDraft.generatedHtml || disclosureDraft.generated_html, generatedFileName: 'seller-disclosure-physical-signing.pdf', sourceDraftFingerprint: disclosureDraft.contentFingerprint || '' }] : []),
-      ...(includeFica ? [{ key: 'signed_fica_declaration', name: 'Seller FICA Declaration', generatedHtml: reviewedFicaHtml, generatedFileName: 'seller-fica-declaration-signing.pdf', sourceDraftFingerprint: ficaDraft.contentFingerprint || '', sourceFactsFingerprint: ficaFactsFingerprint(ficaDraft) }] : []),
-      ...(includeMandate ? [{ key: 'signed_mandate', name: 'Seller Mandate', generatedHtml: buildSellerMandateDocumentMarkup({ signingPack, approval, generatedAt }), generatedFileName: 'seller-mandate-signing.pdf', sourceFactsFingerprint: mandateFactsFingerprint(signingPack, approval) }] : []),
-    ],
-  }
+function retainUnselectedCopies({ entry, current, includeFica, includeMandate, ficaDraft, signingPack, approval }) {
   const freshKeys = new Set(entry.documents.map((document) => document.key))
   const retainedKeys = new Set([
     ...(!includeFica ? ['signed_fica_declaration'] : []),
@@ -137,6 +106,47 @@ export function createSellerOnboardingSigningCopyPack({ existing = {}, formalPac
     throw new Error('The mandate details changed. Include the mandate in this signing pack for review.')
   }
   entry.documents.push(...retained)
+}
+
+/** One reviewed content pack powers download and portal signing. */
+export function createSellerOnboardingSigningCopyPack({ existing = {}, formalPackApproval = {}, signingPack = {}, postOnboardingDrafts = {}, disclosureSigned = false, actor = '', generatedAt = new Date().toISOString() } = {}) {
+  const approval = record(formalPackApproval)
+  if (approval.status !== 'approved' || !['manual_upload', 'digital_pack'].includes(approval.signingRoute)) throw new Error('Approve the onboarding and choose a signing route before preparing the copies.')
+  const selected = Array.isArray(approval.selectedDocuments) ? approval.selectedDocuments.map(text) : ['fica', 'mandate']
+  const includeFica = selected.includes('fica')
+  const includeMandate = selected.includes('mandate')
+  if (!includeFica && !includeMandate) throw new Error('Choose FICA or the mandate before preparing signing copies.')
+  const drafts = Array.isArray(record(postOnboardingDrafts).documents) ? postOnboardingDrafts.documents : []
+  const ficaDraft = drafts.find((draft) => text(draft?.targetRequirementKey || draft?.requirementKey || draft?.key) === 'signed_fica_declaration')
+  const disclosureDraft = drafts.find((draft) => text(draft?.targetRequirementKey || draft?.requirementKey || draft?.key) === 'signed_disclosure_form')
+  if (includeFica && !text(ficaDraft?.generatedHtml || ficaDraft?.generated_html)) throw new Error('The approved FICA declaration draft is unavailable.')
+  if (!disclosureSigned && !text(disclosureDraft?.generatedHtml || disclosureDraft?.generated_html)) throw new Error('The approved disclosure draft is unavailable.')
+  const ficaModel = record(record(ficaDraft?.metadata).ficaDeclarationModel)
+  const reviewedFicaHtml = includeFica && ficaModel.contract
+    ? buildSellerFicaDueDiligenceMarkup({ model: {
+        ...ficaModel,
+        signers: (Array.isArray(signingPack?.signers) ? signingPack.signers : []).map((signer, index) => ({
+          id: `signer-${index + 1}`,
+          name: text(signer?.name),
+          roleLabel: text(signer?.role) || 'Seller',
+          email: text(signer?.email),
+          status: 'Awaiting signature',
+          signedAt: '',
+          signature: '',
+        })),
+      }, signingPack, branding: signingPack.branding, generatedAt })
+    : ficaDraft?.generatedHtml || ficaDraft?.generated_html || ''
+  const current = record(existing)
+  const entry = {
+    generatedAt: text(generatedAt), generatedBy: text(actor), signingRoute: approval.signingRoute,
+    status: approval.signingRoute === 'manual_upload' ? 'awaiting_signed_hard_copy' : 'ready_for_portal_signature',
+    documents: [
+      ...(!disclosureSigned ? [{ key: 'signed_disclosure_form', name: 'Mandatory Disclosure / Defects Form', templateVersion: text(disclosureDraft.templateVersion), generatedHtml: disclosureDraft.generatedHtml || disclosureDraft.generated_html, generatedFileName: 'seller-disclosure-physical-signing.pdf', sourceDraftFingerprint: disclosureDraft.contentFingerprint || '' }] : []),
+      ...(includeFica ? [{ key: 'signed_fica_declaration', name: 'Seller FICA Declaration', templateVersion: SELLER_FICA_DUE_DILIGENCE_TEMPLATE_VERSION, generatedHtml: reviewedFicaHtml, generatedFileName: 'seller-fica-declaration-signing.pdf', sourceDraftFingerprint: ficaDraft.contentFingerprint || '', sourceFactsFingerprint: ficaFactsFingerprint(ficaDraft) }] : []),
+      ...(includeMandate ? [{ key: 'signed_mandate', name: 'Seller Mandate', templateVersion: SELLER_MANDATE_DOCUMENT_TEMPLATE_VERSION, generatedHtml: buildSellerMandateDocumentMarkup({ signingPack, approval, generatedAt }), generatedFileName: 'seller-mandate-signing.pdf', sourceFactsFingerprint: mandateFactsFingerprint(signingPack, approval) }] : []),
+    ],
+  }
+  retainUnselectedCopies({ entry, current, includeFica, includeMandate, ficaDraft, signingPack, approval })
   const previousVersions = Array.isArray(current.versionHistory) ? current.versionHistory : []
   const previousDocuments = Array.isArray(current.documents) && current.documents.some((document) => text(document?.versionId))
     ? [{ approvedAt: current.generatedAt, documents: current.documents }]

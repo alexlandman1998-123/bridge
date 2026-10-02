@@ -8,6 +8,11 @@ try {
   const valid = validateDocumentUploadFile({ name: 'proof-of-funds.pdf', type: 'application/pdf', size: 1024 }, { surface: 'internal_transaction' })
   assert.equal(valid.policyVersion, 'document_upload_policy_v2')
   assert.equal(valid.malwareScan.status, 'not_configured')
+  for (const surface of ['internal_transaction', 'listing', 'client_portal']) {
+    assert.equal(getDocumentUploadPolicy({ surface }).maxBytes, 35 * 1024 * 1024)
+    assert.equal(validateDocumentUploadFile({ name: 'signed-otp.pdf', type: 'application/pdf', size: 35 * 1024 * 1024 }, { surface }).size, 35 * 1024 * 1024)
+    assert.throws(() => validateDocumentUploadFile({ name: 'signed-otp.pdf', type: 'application/pdf', size: 35 * 1024 * 1024 + 1 }, { surface }), /limited to 35 MB/)
+  }
   assert.throws(() => validateDocumentUploadFile({ name: 'invoice.pdf.exe', type: 'application/octet-stream', size: 1024 }), /Unsupported file type/)
   assert.throws(() => validateDocumentUploadFile({ name: 'photo.jpg', type: 'image/png', size: 1024 }), /does not match/)
   assert.equal(getDocumentUploadPolicy({ surface: 'rental_application' }).maxBytes, 8 * 1024 * 1024)

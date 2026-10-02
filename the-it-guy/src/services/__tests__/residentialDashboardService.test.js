@@ -10,6 +10,29 @@ import {
 }
 
 {
+  for (const scope of ['principal', 'agent']) {
+    for (const activeListings of [2, 0]) {
+      const model = deriveResidentialDashboardMetrics({
+        scope,
+        source: {
+          kpis: { activeListings },
+          pipeline: {
+            funnel: [{ key: 'mandates', label: 'Mandates', count: 1 }],
+            mandateInsights: { active_mandates: 1 },
+          },
+        },
+      })
+      assert.equal(model.kpis[1].value, String(activeListings), 'active listing stock must take priority over mandate activity, including zero')
+    }
+  }
+
+  const fallback = deriveResidentialDashboardMetrics({
+    source: { pipeline: { funnel: [{ key: 'mandates', count: 1 }] } },
+  })
+  assert.equal(fallback.kpis[1].value, '1', 'legacy mandate fallback should remain available when no active stock count is provided')
+}
+
+{
   const model = deriveResidentialDashboardMetrics({
     scope: 'principal',
     mode: 'sales',
@@ -176,3 +199,38 @@ import {
 }
 
 console.log('residentialDashboardService tests passed')
+
+
+// Headers, health and flow must share the authoritative count, including zero.
+for (const count of [0, 9]) {
+  const model = deriveResidentialDashboardMetrics({ source: {
+    transactions: { totalActive: count },
+    kpis: { activeTransactions: 15 }, health: { total: 20 },
+    activeTransactions: [],
+  } })
+  assert.equal(model.kpis[0].value, String(count))
+  assert.equal(model.transactionFlow.activeTransactionCount, count)
+  assert.equal(model.transactionHealth.total, count)
+}
+{
+  const rows = Array.from({ length: 75 }, (_, index) => ({ id: `deal-${index}`, stage: 'Finance', purchase_price: 100 }))
+  const model = deriveResidentialDashboardMetrics({ source: { transactions: { totalActive: 75 }, activeTransactions: rows } })
+  assert.equal(model.kpis[0].value, '75')
+  assert.equal(model.activeTransactions.rows.length, 75)
+  assert.equal(model.transactionFlow.activeTransactionCount, 75)
+}
+{
+  const model = deriveResidentialDashboardMetrics({ source: { kpis: { activeTransactions: 0 }, health: { total: 5 } } })
+  assert.equal(model.kpis[0].value, '0')
+  assert.equal(model.transactionFlow.activeTransactionCount, 0)
+}
+
+{
+  const model = deriveResidentialDashboardMetrics({ source: {
+    transactions: { totalActive: 0, dashboardFlow: [{ key: 'finance', count: 4 }] },
+    activeTransactions: [{ id: 'stale-deal', stage: 'Finance' }],
+  } })
+  assert.equal(model.activeTransactions.rows.length, 0, 'a stale preview must not contradict an explicit zero')
+  assert.equal(model.activeTransactions.emptyState, true)
+  assert.equal(model.transactionFlow.stages.reduce((sum, stage) => sum + stage.count, 0), 0)
+}

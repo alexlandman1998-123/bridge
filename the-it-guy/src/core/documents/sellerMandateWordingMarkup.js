@@ -25,6 +25,7 @@ export function requireSellerMandateWording(value) {
 }
 
 function ownerName(seller = {}) {
+  if (seller.legalOwnerName !== undefined) return text(seller.legalOwnerName)
   const type = text(seller.legalType).toLowerCase()
   if (type.includes('company') || type === 'close_corporation') return first(seller.companyName, seller.name)
   if (type.includes('trust')) return first(seller.trustName, seller.name)
@@ -32,6 +33,7 @@ function ownerName(seller = {}) {
 }
 
 function ownerIdentity(seller = {}) {
+  if (seller.legalOwnerIdentity !== undefined) return text(seller.legalOwnerIdentity)
   const type = text(seller.legalType).toLowerCase()
   if (type.includes('company') || type === 'close_corporation') return first(seller.companyRegistrationNumber, seller.idNumber)
   if (type.includes('trust')) return first(seller.trustRegistrationNumber, seller.idNumber)
@@ -80,12 +82,12 @@ export function buildSellerMandateDocumentModel({ signingPack = {}, approval = {
   const branding = record(pack.branding)
   const commission = record(approval.commission)
   const type = requireSellerMandateWording(mandate.mandateType)
-  const protectionDays = text(mandate.protectionPeriodDays) ? Number(mandate.protectionPeriodDays) : 0
+  const protectionDays = text(mandate.protectionPeriodDays ?? mandate.protectionPeriod) ? Number(mandate.protectionPeriodDays ?? mandate.protectionPeriod) : 0
   if (!Number.isInteger(protectionDays) || protectionDays < 0) throw new Error('The introduced-buyer protection period must be a whole number of calendar days.')
   const agencyName = first(branding.organisationName, branding.organizationName, branding.agencyName)
   if (!agencyName) throw new Error('Add the agency name before preparing its mandate.')
-  const signers = (Array.isArray(pack.signers) ? pack.signers : []).map((signer) => ({ name: text(signer?.name), role: first(signer?.role, 'Seller') })).filter((signer) => signer.name)
-  if (!signers.length) throw new Error('Add a required seller signer before preparing the mandate.')
+  const signers = (Array.isArray(pack.signers) ? pack.signers : []).map((signer) => ({ name: text(signer?.name), role: first(signer?.role, 'Seller') }))
+  if (!signers.length || signers.some((signer) => !signer.name)) throw new Error('Add a required seller signer before preparing the mandate.')
   const primaryOwnerName = ownerName(seller)
   const coOwners = (Array.isArray(seller.parties) ? seller.parties : [])
     .filter((person) => ['seller', 'owner'].includes(text(person?.role).toLowerCase()))
@@ -96,15 +98,22 @@ export function buildSellerMandateDocumentModel({ signingPack = {}, approval = {
     type,
     ...variantTerms(type, mandate, agencyName),
     agencyName,
-    logoUrl: first(branding.logoDarkUrl, branding.logo_dark_url, branding.logoUrl, branding.logo_url, branding.logoLightUrl, branding.logo_light_url),
+    primaryColour: /^#[0-9a-f]{6}$/i.test(branding.primaryColour || branding.primaryColor || '') ? (branding.primaryColour || branding.primaryColor) : '#193d2e',
+    accentColour: /^#[0-9a-f]{6}$/i.test(branding.accentColour || branding.accentColor || '') ? (branding.accentColour || branding.accentColor) : '#176842',
+    logoUrl: first(branding.logoLightUrl, branding.logo_light_url, branding.logoUrl, branding.logo_url, branding.logoDarkUrl, branding.logo_dark_url),
     generatedAt: text(generatedAt),
-    reference: first(pack.reference, pack.listingReference, pack.property?.reference),
+    reference: first(pack.documentReference, pack.reference, pack.listingReference, pack.property?.reference),
+    practitionerName: first(pack.practitioner?.name, branding.practitionerName),
+    practitionerFfc: first(pack.practitioner?.ffcNumber, branding.practitionerFfcNumber),
+    businessFfc: first(branding.businessFfcNumber, branding.ffcNumber),
     sellerName: primaryOwnerName,
     coOwners,
     sellerIdentity: ownerIdentity(seller),
-    sellerAddress: first(seller.companyRegisteredAddress, seller.trustRegisteredAddress, seller.residentialAddress),
-    maritalStatus: text(seller.maritalStatus),
-    spouseName: text(seller.spouseName),
+    sellerAddress: seller.legalType?.includes('company') || seller.legalType === 'close_corporation'
+      ? text(seller.companyRegisteredAddress)
+      : seller.legalType?.includes('trust') ? text(seller.trustRegisteredAddress) : text(seller.residentialAddress),
+    maritalStatus: ['individual', 'married', 'foreign_individual'].includes(seller.ownershipType || seller.legalType || 'individual') ? text(seller.maritalStatus) : '',
+    spouseName: ['individual', 'married', 'foreign_individual'].includes(seller.ownershipType || seller.legalType || 'individual') ? text(seller.spouseName) : '',
     spouseIdNumber: text(seller.spouseIdNumber),
     sellerEmail: text(seller.email),
     sellerPhone: text(seller.phone),
@@ -137,8 +146,6 @@ function section(title, body) {
 export function buildSellerMandateWordingMarkup(input = {}) {
   const model = input?.contract === SELLER_MANDATE_DOCUMENT_CONTRACT ? input : buildSellerMandateDocumentModel(input)
   const logo = model.logoUrl ? `<img src="${escapeHtml(model.logoUrl)}" alt="${escapeHtml(model.agencyName)} logo" />` : escapeHtml(model.agencyName)
-  const signatureLines = model.signers.map((signer) => `<div class="signature"><strong>${escapeHtml(signer.name)}</strong><span>${escapeHtml(signer.role)}</span><div class="line">Signature</div><div class="line">Date and place</div></div>`).join('')
-  const coOwnerFacts = (model.coOwners || []).map((person, index) => `${fact(`Additional seller ${index + 1}`, person.name)}${fact('Additional seller ID', person.idNumber)}${person.address ? fact('Additional seller address', person.address) : ''}`).join('')
   const clauses = [
     section('1. Appointment', model.appointment),
     section('2. Agency services', 'The Agency may market the Property through agreed channels, arrange reasonable access and viewings, introduce prospective purchasers, present written offers promptly, and assist with negotiations. The Seller retains the decision to accept, reject or counter any offer.'),
@@ -149,6 +156,34 @@ export function buildSellerMandateWordingMarkup(input = {}) {
       : 'No post-mandate introduced-buyer protection period applies unless separately agreed by the parties in writing.'),
     section('6. Cancellation and changes', model.cancellation),
     section('7. Information and records', 'The Agency may collect and verify information reasonably needed for identity, ownership, authority, FICA compliance, marketing and the resulting transaction. The Agency must handle personal information in accordance with applicable law. Changes to the asking price, period or other material terms must be recorded and accepted by the parties.'),
-  ].join('')
-  return `<!doctype html><html><head><meta charset="utf-8" /><title>${escapeHtml(model.heading)}</title><style>*{box-sizing:border-box}body{margin:0;background:#fff;color:#1d2935;font:10.5pt/1.45 Georgia,'Times New Roman',serif}.document{width:210mm;margin:0 auto;padding:15mm 17mm 18mm}.header{display:flex;justify-content:space-between;align-items:center;gap:10mm;padding-bottom:5mm;border-bottom:1px solid #cbd9d0}.brand{font-size:17pt;font-weight:700}.brand img{max-width:55mm;max-height:18mm;object-fit:contain}.meta{color:#607387;font-size:8.5pt;text-align:right}.eyebrow{margin:8mm 0 1mm;color:#176842;font:700 8pt/1.2 Georgia,'Times New Roman',serif;letter-spacing:.14em;text-transform:uppercase}h1{margin:0 0 5mm;color:#193d2e;font-size:21pt;line-height:1.1}.intro{color:#475569}.facts{display:grid;grid-template-columns:1fr 1fr;gap:3mm;margin:6mm 0}.fact{min-height:16mm;padding:3mm 4mm;border:1px solid #dbe7df;border-radius:2mm;break-inside:avoid}.fact dt{color:#5b6d7f;font:700 8pt/1.2 Georgia,'Times New Roman',serif;text-transform:uppercase;letter-spacing:.05em}.fact dd{margin:2mm 0 0;font-weight:700;overflow-wrap:anywhere}.terms{margin-top:8mm}.clause{margin:0 0 5mm;break-inside:avoid}.clause h2{margin:0 0 1.5mm;padding-bottom:1mm;border-bottom:1px solid #dbe7df;color:#193d2e;font-size:11pt}.clause p{margin:0}.conditions{margin:7mm 0;padding:4mm;border:1px solid #dbe7df;border-radius:2mm;white-space:pre-wrap;break-inside:avoid}.conditions h2{margin:0 0 2mm;font-size:11pt}.signatures{display:grid;grid-template-columns:1fr 1fr;gap:7mm;margin-top:11mm;break-inside:avoid}.signature{min-height:34mm}.signature strong,.signature span{display:block}.signature span{color:#64748b;font-size:8.5pt}.line{margin-top:9mm;padding-top:1mm;border-top:1px solid #324253;color:#5b6d7f;font-size:8pt}.footer{margin-top:9mm;padding-top:3mm;border-top:1px solid #cbd9d0;color:#607387;font-size:8pt}@media print{.document{width:auto;margin:0;padding:12mm 15mm}body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style></head><body><main class="document"><header class="header"><div class="brand">${logo}</div><div class="meta">${escapeHtml(model.agencyName)}<br/>Prepared ${escapeHtml(model.generatedAt)}</div></header><p class="eyebrow">Property sale mandate</p><h1>${escapeHtml(model.heading)}</h1><p class="intro">This mandate records the appointment, property, agreed financial terms and signatures.</p><dl class="facts">${fact('Seller / legal owner', model.sellerName)}${fact('ID / registration', model.sellerIdentity)}${coOwnerFacts}${fact('Seller address', model.sellerAddress)}${fact('Seller email', model.sellerEmail)}${fact('Seller phone', model.sellerPhone)}${model.maritalStatus ? fact('Marital status', model.maritalStatus) : ''}${model.spouseName ? fact('Spouse', [model.spouseName, model.spouseIdNumber].filter(Boolean).join(' · ')) : ''}${fact('Property', model.propertyAddress)}${fact('Title deed / erf reference', model.propertyReference)}${fact('Mandate starts', model.startDate)}${fact('Mandate ends', model.endDate, { blank: model.type === 'open' ? 'Until cancelled in writing' : '________________________' })}${fact('Asking price', model.askingPrice)}${fact('Commission', model.commission)}${fact('Buyer protection period', model.protectionPeriodDays ? `${model.protectionPeriodDays} calendar days` : 'None')}${model.otherAgency ? fact('Second agency', model.otherAgency) : ''}</dl><div class="terms">${clauses}</div>${model.specialConditions ? `<section class="conditions"><h2>Special conditions</h2>${escapeHtml(model.specialConditions)}</section>` : ''}<section class="signatures">${signatureLines}<div class="signature"><strong>${escapeHtml(model.agencyName)}</strong><span>Agency acceptance</span><div class="line">Practitioner name and FFC number</div><div class="line">Business FFC number</div><div class="line">Authorised signature</div><div class="line">Date and place</div></div></section><footer class="footer">${escapeHtml(model.agencyName)} · ${escapeHtml(model.heading)} · This copy requires all applicable signatures and separate review of the signed evidence.</footer></main></body></html>`
+  ]
+  const facts = [
+    fact('Seller / legal owner', model.sellerName), fact('ID / registration', model.sellerIdentity),
+    ...(model.coOwners || []).flatMap((person, index) => [fact(`Additional seller ${index + 1}`, person.name), fact('Additional seller ID', person.idNumber), ...(person.address ? [fact('Additional seller address', person.address)] : [])]),
+    fact('Seller address', model.sellerAddress), fact('Seller email', model.sellerEmail), fact('Seller phone', model.sellerPhone),
+    ...(model.maritalStatus ? [fact('Marital status', model.maritalStatus)] : []),
+    ...(model.spouseName ? [fact('Spouse', [model.spouseName, model.spouseIdNumber].filter(Boolean).join(' · '))] : []),
+    fact('Property', model.propertyAddress), fact('Title deed / erf reference', model.propertyReference),
+    fact('Mandate starts', model.startDate), fact('Mandate ends', model.endDate, { blank: model.type === 'open' ? 'Until cancelled in writing' : '________________________' }),
+    fact('Asking price', model.askingPrice), fact('Commission', model.commission),
+    fact('Buyer protection period', model.protectionPeriodDays ? `${model.protectionPeriodDays} calendar days` : 'None'),
+    ...(model.otherAgency ? [fact('Second agency', model.otherAgency)] : []),
+  ]
+  const chunks = (items, size) => Array.from({ length: Math.ceil(items.length / size) }, (_, index) => items.slice(index * size, (index + 1) * size))
+  const bodies = chunks(facts, 14).map((rows, index) => `<h1>${escapeHtml(model.heading)}</h1><p class="eyebrow">${index ? 'Seller and mandate details continued' : 'Seller and mandate details'}</p><dl class="facts">${rows.join('')}</dl>`)
+  bodies.push(...chunks(clauses, 4).map((parts) => `<h1>${escapeHtml(model.heading)}</h1><div class="terms">${parts.join('')}</div>`))
+  if (model.specialConditions) {
+    const lines = model.specialConditions.split('\n').flatMap((line) => line.match(/.{1,90}(?:\s|$)|\S{1,90}/g) || [''])
+    bodies.push(...chunks(lines, 30).map((lines) => `<h1>Special conditions</h1><section class="conditions">${escapeHtml(lines.join('\n'))}</section>`))
+  }
+  const signerGroups = chunks(model.signers, 4)
+  signerGroups.forEach((signers, index) => {
+    const cards = signers.map((signer) => `<div class="signature"><strong>${escapeHtml(signer.name)}</strong><span>${escapeHtml(signer.role)}</span><div class="line">Signature</div><div class="line">Date and place</div></div>`).join('')
+    const acceptance = index === signerGroups.length - 1 ? `<section class="acceptance"><h2>Agency acceptance</h2><p>${escapeHtml(model.agencyName)}</p><p>Practitioner: ${escapeHtml(model.practitionerName || '________________')} · FFC: ${escapeHtml(model.practitionerFfc || '________________')}</p><p>Business FFC: ${escapeHtml(model.businessFfc || '________________')}</p><div class="line">Authorised signature</div><div class="line">Date and place</div></section>` : ''
+    bodies.push(`<h1>Signatures</h1><p>All required owners or authorised representatives must sign.</p><section class="signatures">${cards}</section>${acceptance}`)
+  })
+  const pages = bodies.map((body, index) => `<section class="page"><header class="header"><div class="brand">${logo}</div><div class="meta">${escapeHtml(model.agencyName)}<br />${escapeHtml(model.reference)}<br />Prepared ${escapeHtml(model.generatedAt)}</div></header><main>${body}</main><footer class="footer"><span>${escapeHtml(model.agencyName)} · ${escapeHtml(model.heading)}</span><span>Page ${index + 1} of ${bodies.length}</span></footer></section>`).join('')
+  return `<!doctype html><html><head><meta charset="utf-8" /><title>${escapeHtml(model.heading)} - reviewed signing copy</title><style>
+  @page{size:A4;margin:0}*{box-sizing:border-box}body{margin:0;background:#fff;color:#1d2935;font:10pt/1.45 Georgia,'Times New Roman',serif}.document{--primary:${model.primaryColour};--accent:${model.accentColour};width:210mm;margin:auto}.page{width:210mm;min-height:296mm;padding:12mm 16mm 22mm;position:relative;break-after:page}.page:last-child{break-after:auto}.header{display:flex;justify-content:space-between;align-items:center;gap:8mm;padding-bottom:5mm;border-bottom:1px solid #cbd9d0}.brand{font-size:17pt;font-weight:700;color:var(--primary)}.brand img{max-width:55mm;max-height:16mm;object-fit:contain}.meta{color:#607387;font-size:8pt;text-align:right}.eyebrow{color:var(--accent);font-size:8pt;text-transform:uppercase;letter-spacing:.08em}h1{margin:6mm 0 4mm;color:var(--primary);font-size:20pt;line-height:1.15}.facts{display:grid;grid-template-columns:1fr 1fr;gap:3mm;margin:4mm 0}.fact{min-height:15mm;padding:3mm;border:1px solid #dbe7df;border-radius:2mm;break-inside:avoid}.fact dt{color:#5b6d7f;font-size:7.5pt;text-transform:uppercase;letter-spacing:.04em}.fact dd{margin:1.5mm 0 0;font-size:9pt;font-weight:700;overflow-wrap:anywhere}.clause{margin:0 0 6mm;break-inside:avoid}.clause h2,.acceptance h2{margin:0 0 2mm;padding-bottom:1mm;border-bottom:1px solid #dbe7df;color:var(--primary);font-size:11pt}.clause p{margin:0}.conditions{white-space:pre-wrap;overflow-wrap:anywhere}.signatures{display:grid;grid-template-columns:1fr 1fr;gap:8mm;margin-top:8mm}.signature{min-height:40mm;break-inside:avoid;overflow-wrap:anywhere}.signature strong,.signature span{display:block}.signature span{color:#64748b;font-size:8.5pt}.line{margin-top:10mm;padding-top:1mm;border-top:1px solid #324253;color:#5b6d7f;font-size:8pt}.acceptance{margin-top:10mm;break-inside:avoid}.acceptance p{margin:2mm 0}.footer{position:absolute;bottom:7mm;left:16mm;right:16mm;display:flex;justify-content:space-between;gap:5mm;border-top:1px solid #cbd9d0;padding-top:3mm;color:#607387;font-size:7pt}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}.document{margin:0}}
+  </style></head><body><div class="document">${pages}</div></body></html>`
 }

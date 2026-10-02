@@ -1,6 +1,8 @@
+import { resolveSellerBondStatus } from './sellerBondStatus.js'
 import {
   buildListingSellerProfileCapturePayload,
   createListingSellerProfileBuilderDraft,
+  resolveListingSellerProfileBranch,
   validateListingSellerProfileBuilderDraft,
 } from './listingSellerProfileBuilderModel.js'
 import { buildSellerProfileCanonicalPayload } from './sellerProfileCaptureModel.js'
@@ -16,12 +18,6 @@ function isAffirmative(value) {
   return value === true || ['accepted', 'yes', 'true', '1'].includes(text(value).toLowerCase())
 }
 
-function booleanBondStatus(value = '') {
-  if (value === true || ['yes', 'true', '1'].includes(text(value).toLowerCase())) return 'active'
-  if (value === false || ['no', 'false', '0'].includes(text(value).toLowerCase())) return 'none'
-  return 'unknown'
-}
-
 /**
  * Adapts the seller-lead agent editor to the same capture payload used by the
  * listing-side Seller Profile Builder. The lead UI may remain compact, but its
@@ -32,14 +28,26 @@ export function buildSellerLeadManualCapturePayload({ form = {}, listing = {}, l
   const branch = resolveSellerLeadOwnershipRoute(source)
   const draft = {
     branch,
+    primaryContactName: text(source.primaryContactName || source.contactName),
+    otherEntityName: text(source.otherEntityName),
+    otherEntityRegistrationNumber: text(source.otherEntityRegistrationNumber),
+    otherAuthorityDetails: text(source.otherAuthorityDetails),
     sellerFirstName: text(source.firstName || source.sellerFirstName),
     sellerSurname: text(source.lastName || source.sellerSurname),
-    email: text(source.email || source.sellerEmail).toLowerCase(),
-    phone: text(source.phone || source.sellerPhone || source.mobile),
+    email: text(source.email ?? source.sellerEmail).toLowerCase(),
+    phone: text(source.phone ?? source.sellerPhone ?? source.mobile),
     idNumber: text(source.idNumber || source.sellerIdNumber),
     residentialAddress: text(source.residentialAddress || source.residentialStreet),
-    maritalStatus: text(source.maritalStatus),
+    maritalStatus: text(source.maritalStatus || source.maritalRegime),
+    spouseName: text(source.spouseName),
+    spouseEmail: text(source.spouseEmail),
+    spouseIdNumber: text(source.spouseIdNumber),
     multipleOwners: Array.isArray(source.multipleOwners) ? source.multipleOwners : [],
+    companyAuthorityBasis: text(source.companyAuthorityBasis),
+    companyResolutionDate: text(source.companyResolutionDate),
+    trustAuthorityBasis: text(source.trustAuthorityBasis),
+    executorAuthorityDetails: text(source.executorAuthorityDetails),
+    powerOfAttorneyAuthorityDetails: text(source.powerOfAttorneyAuthorityDetails),
     companyName: text(source.companyName),
     companyRegistrationNumber: text(source.companyRegistrationNumber),
     companyRegisteredAddress: text(source.companyRegisteredAddress),
@@ -69,11 +77,13 @@ export function buildSellerLeadManualCapturePayload({ form = {}, listing = {}, l
     propertyAddress: text(source.propertyAddress || source.formattedAddress),
     propertyStructureType: text(source.ownershipScheme || source.propertyStructureType),
     propertyCategory: text(source.propertyCategory),
-    bondStatus: booleanBondStatus(source.bondExists || source.bondStatus),
+    bondStatus: resolveSellerBondStatus(form.bondStatus, form.bondExists, form.existingBond, legacyFormData.bondStatus, legacyFormData.bondExists, legacyFormData.existingBond),
     bondHolder: text(source.mortgageBank || source.bondHolder),
-    ratesTaxes: text(source.ratesAndTaxes || source.ratesTaxes),
+    ratesTaxes: text(source.ratesAndTaxes ?? source.ratesTaxes),
     levies: text(source.levies),
     askingPrice: text(source.askingPrice),
+    mandateType: text(source.mandateType),
+    otherAgencyName: text(source.otherAgencyName),
     popiConsent: text(source.popiConsent),
   }
 
@@ -87,20 +97,23 @@ const EXTRA_ONBOARDING_FIELDS = [
   'dateOfBirth', 'nationality', 'incomeTaxNumber', 'saResident',
   'propertySuburb', 'propertyCity', 'propertyProvince', 'propertyPostalCode',
   'companyResolutionDate', 'companyAuthorityBasis', 'trustAuthorityBasis',
-  'executorAuthorityDetails', 'powerOfAttorneyAuthorityDetails',
-  'leaseExpiryDate',
+  'executorAuthorityDetails', 'powerOfAttorneyAuthorityDetails', 'otherAuthorityDetails',
+  'leaseExpiryDate', 'otherAgencyName',
   'occupation', 'sourceOfFunds', 'politicallyExposedPerson', 'politicallyExposedDetails',
   'authorisedSignatoryIdNumber', 'authorisedSignatoryNationality',
   'authorisedTrusteeIdNumber', 'authorisedTrusteeNationality', 'trustBeneficiaryClass',
 ]
 
 export function createSellerLeadAgentOnboardingDraft({ lead = {}, contact = {}, listing = {}, formData = {} } = {}) {
+  const branch = resolveListingSellerProfileBranch(formData, listing)
+  const naturalPerson = !branch || ['individual', 'married', 'foreign_individual'].includes(branch)
   const source = {
     ...formData,
-    sellerFirstName: text(formData.sellerFirstName || formData.firstName || contact.firstName || lead.sellerName),
-    sellerSurname: text(formData.sellerSurname || formData.lastName || contact.lastName || lead.sellerSurname),
-    email: text(formData.email || formData.sellerEmail || contact.email || lead.sellerEmail),
-    phone: text(formData.phone || formData.sellerPhone || contact.phone || lead.sellerPhone),
+    primaryContactName: text(formData.primaryContactName ?? formData.contactName ?? [contact.firstName, contact.lastName].filter(Boolean).join(' ')),
+    sellerFirstName: text(formData.sellerFirstName || formData.firstName || contact.firstName || (naturalPerson ? lead.sellerName : '')),
+    sellerSurname: text(formData.sellerSurname || formData.lastName || contact.lastName || (naturalPerson ? lead.sellerSurname : '')),
+    email: text(formData.email ?? formData.sellerEmail ?? contact.email ?? lead.sellerEmail),
+    phone: text(formData.phone ?? formData.sellerPhone ?? contact.phone ?? lead.sellerPhone),
     residentialAddress: text(formData.residentialAddress || formData.residentialStreet || formData.streetAddress),
     propertyAddress: text(formData.propertyAddress || lead.sellerPropertyAddress || lead.formattedAddress || listing.formattedAddress),
   }
@@ -165,8 +178,36 @@ export function buildSellerLeadAgentOnboardingSubmission({ draft = {}, listing =
   }
 }
 
+export function buildSellerLeadSigningPackTermsPatch(terms = {}) {
+  const protectionDays = text(terms.protectionPeriod ?? terms.protectionPeriodDays)
+  const percentage = terms.commissionBasis === 'percentage' ? text(terms.commissionPercentage) : ''
+  const amount = terms.commissionBasis === 'fixed' ? text(terms.commissionAmount) : ''
+  return {
+    mandateType: text(terms.mandateType),
+    otherAgencyName: text(terms.otherAgencyName),
+    coAgencyName: text(terms.otherAgencyName),
+    askingPrice: text(terms.askingPrice),
+    mandateStartDate: text(terms.startDate),
+    mandate_start_date: text(terms.startDate),
+    mandateEndDate: text(terms.endDate),
+    mandate_end_date: text(terms.endDate),
+    mandateProtectionPeriod: protectionDays,
+    mandate_protection_period: protectionDays,
+    protectionPeriodDays: protectionDays,
+    commissionBasis: text(terms.commissionBasis),
+    commission_basis: text(terms.commissionBasis),
+    commissionPercentage: percentage,
+    commission_percent: percentage,
+    mandateCommissionPercentage: percentage,
+    commissionAmount: amount,
+    commission_amount: amount,
+    vatHandling: text(terms.vatHandling),
+  }
+}
+
 export default {
   buildSellerLeadManualCapturePayload,
   createSellerLeadAgentOnboardingDraft,
   buildSellerLeadAgentOnboardingSubmission,
+  buildSellerLeadSigningPackTermsPatch,
 }

@@ -48,7 +48,8 @@ assert.match(serviceSource, /occupancy: 'property'/)
 assert.match(serviceSource, /seller_authority: 'seller_identity'/)
 
 assert.match(serviceSource, /const requirementSync = await syncPrivateListingRequirements\(rpcContext\.listing,\s*\{\s*emitActivity: true,\s*reason: completionMode === 'agent_assisted' \? 'agent_assisted_onboarding_completed' : 'onboarding_completed'/s)
-assert.match(serviceSource, /const requirementSync = await syncPrivateListingRequirements\(transitionResult\?\.listing \|\| fallbackListing,\s*\{\s*emitActivity: true,\s*reason: completionMode === 'agent_assisted' \? 'agent_assisted_onboarding_completed' : 'onboarding_completed'/s)
+assert.match(serviceSource, /canManageSellerOnboardingProjections\(client, rpcContext\.listing\?\.id\)/)
+assert.doesNotMatch(serviceSource, /syncPrivateListingRequirements\(transitionResult\?\.listing \|\| fallbackListing/, 'Submission must not fall back to unscoped direct-table persistence.')
 assert.doesNotMatch(serviceSource, /void syncPrivateListingRequirements\(transitionResult\?\.listing\?\.id \|\| context\.listing\.id/)
 
 assert.match(serviceSource, /options\.syncRequirements !== false/)

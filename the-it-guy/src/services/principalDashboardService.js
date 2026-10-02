@@ -2013,7 +2013,6 @@ async function getPrincipalDashboardDataUncached({
   const activeTransactionCards = activeTransactions
     .slice()
     .sort((left, right) => new Date(right.updated_at || right.created_at || 0) - new Date(left.updated_at || left.created_at || 0))
-    .slice(0, 60)
     .map((row) => buildActiveTransactionCard(row, usersByKey))
   const awaitingReviewCards = awaitingReviewTransactions
     .slice()

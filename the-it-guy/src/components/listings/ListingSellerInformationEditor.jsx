@@ -9,7 +9,7 @@ function Input({ label, field, draft, onChange, type = 'text', as, className = '
   return (
     <label className={`grid gap-1.5 text-sm font-semibold text-[#2d445e] ${className}`}>
       {label}
-      <Field as={as} type={type} value={draft[field] || ''} onChange={(event) => onChange(field, event.target.value)} />
+      <Field as={as} type={type} value={draft[field] ?? ''} onChange={(event) => onChange(field, event.target.value)} />
     </label>
   )
 }
@@ -52,7 +52,7 @@ export default function ListingSellerInformationEditor({
 }) {
   const branch = draft.branch || ''
   const individual = ['individual', 'married', 'foreign_individual'].includes(branch)
-  const company = ['company', 'foreign_company'].includes(branch)
+  const company = ['company', 'close_corporation', 'foreign_company'].includes(branch)
   const trust = ['trust', 'foreign_trust'].includes(branch)
   const foreign = branch.startsWith('foreign_')
 
@@ -83,6 +83,8 @@ export default function ListingSellerInformationEditor({
           <Input label="Registration number" field="companyRegistrationNumber" draft={draft} onChange={onChange} />
           <Input label="Registered address" field="companyRegisteredAddress" draft={draft} onChange={onChange} className="sm:col-span-2" />
           <PeopleEditor title="Directors / members" rows={draft.companyDirectors} onAdd={() => onAddPerson('companyDirectors', 'Director')} onUpdate={(index, field, value) => onUpdatePerson('companyDirectors', index, field, value)} onRemove={(index) => onRemovePerson('companyDirectors', index)} />
+          <Input label="Company resolution date" field="companyResolutionDate" type="date" draft={draft} onChange={onChange} />
+          <Input label="Authority basis" field="companyAuthorityBasis" draft={draft} onChange={onChange} />
           <Input label="Authorised signatory" field="authorisedSignatoryName" draft={draft} onChange={onChange} />
           <Input label="Signatory capacity" field="authorisedSignatoryCapacity" draft={draft} onChange={onChange} />
           <Input label="Signatory email" field="authorisedSignatoryEmail" type="email" draft={draft} onChange={onChange} />
@@ -93,19 +95,21 @@ export default function ListingSellerInformationEditor({
           <Input label="Registered address" field="trustRegisteredAddress" draft={draft} onChange={onChange} className="sm:col-span-2" />
           <PeopleEditor title="Trustees" rows={draft.trustees} onAdd={() => onAddPerson('trustees', 'Trustee')} onUpdate={(index, field, value) => onUpdatePerson('trustees', index, field, value)} onRemove={(index) => onRemovePerson('trustees', index)} />
           <PeopleEditor title="Beneficial owners" rows={draft.trustBeneficiaries} onAdd={() => onAddPerson('trustBeneficiaries', 'Beneficiary')} onUpdate={(index, field, value) => onUpdatePerson('trustBeneficiaries', index, field, value)} onRemove={(index) => onRemovePerson('trustBeneficiaries', index)} />
+          <Input label="Trust authority basis" field="trustAuthorityBasis" draft={draft} onChange={onChange} />
           <Input label="Authorised trustee" field="authorisedTrusteeName" draft={draft} onChange={onChange} />
           <Input label="Trustee capacity" field="authorisedTrusteeCapacity" draft={draft} onChange={onChange} />
           <Input label="Trustee email" field="authorisedTrusteeEmail" type="email" draft={draft} onChange={onChange} />
         </> : null}
-        {branch === 'deceased_estate' ? <><Input label="Estate name" field="deceasedEstateName" draft={draft} onChange={onChange} /><Input label="Estate reference" field="estateReferenceNumber" draft={draft} onChange={onChange} /><Input label="Executor" field="executorName" draft={draft} onChange={onChange} /><Input label="Executor email" field="executorEmail" type="email" draft={draft} onChange={onChange} /></> : null}
-        {branch === 'power_of_attorney' ? <><Input label="Legal owner / principal" field="powerOfAttorneyPrincipalName" draft={draft} onChange={onChange} /><Input label="Principal ID number" field="powerOfAttorneyPrincipalIdNumber" draft={draft} onChange={onChange} /><Input label="Authorised representative" field="powerOfAttorneyName" draft={draft} onChange={onChange} /><Input label="Representative email" field="powerOfAttorneyEmail" type="email" draft={draft} onChange={onChange} /></> : null}
-        {branch === 'other' ? <><Input label="Legal entity name" field="otherEntityName" draft={draft} onChange={onChange} /><Input label="Registration / reference" field="otherEntityRegistrationNumber" draft={draft} onChange={onChange} /></> : null}
-        {foreign ? <><Input label="Country / jurisdiction" field="foreignOwnerCountry" draft={draft} onChange={onChange} /><Input label="Foreign registration number" field="foreignRegistrationNumber" draft={draft} onChange={onChange} /><Input label="Residency / signing status" field="foreignResidencyStatus" draft={draft} onChange={onChange} /></> : null}
+        {branch === 'deceased_estate' ? <><Input label="Estate name" field="deceasedEstateName" draft={draft} onChange={onChange} /><Input label="Estate reference" field="estateReferenceNumber" draft={draft} onChange={onChange} /><Input label="Executor" field="executorName" draft={draft} onChange={onChange} /><Input label="Executor email" field="executorEmail" type="email" draft={draft} onChange={onChange} /><Input label="Executor authority details" field="executorAuthorityDetails" draft={draft} onChange={onChange} /></> : null}
+        {branch === 'power_of_attorney' ? <><Input label="Legal owner / principal" field="powerOfAttorneyPrincipalName" draft={draft} onChange={onChange} /><Input label="Principal ID number" field="powerOfAttorneyPrincipalIdNumber" draft={draft} onChange={onChange} /><Input label="Authorised representative" field="powerOfAttorneyName" draft={draft} onChange={onChange} /><Input label="Representative email" field="powerOfAttorneyEmail" type="email" draft={draft} onChange={onChange} /><Input label="Power of attorney authority details" field="powerOfAttorneyAuthorityDetails" draft={draft} onChange={onChange} /></> : null}
+        {branch === 'other' ? <><Input label="Legal entity name" field="otherEntityName" draft={draft} onChange={onChange} /><Input label="Registration / reference" field="otherEntityRegistrationNumber" draft={draft} onChange={onChange} /><Input label="Representative and authority details" field="otherAuthorityDetails" draft={draft} onChange={onChange} /><p className="text-sm text-[#607387] sm:col-span-2">This ownership type needs manual review of its legal identity and authority before documents are approved.</p></> : null}
+        {foreign ? <><Input label="Country / jurisdiction" field="foreignOwnerCountry" draft={draft} onChange={onChange} /><Input label="Residency / signing status" field="foreignResidencyStatus" draft={draft} onChange={onChange} /></> : null}
       </section>
 
       <section className="grid gap-4 rounded-[18px] border border-[#dce6f2] bg-white p-4 sm:grid-cols-2">
         <div className="sm:col-span-2"><h4 className="text-sm font-semibold text-[#243d56]">Primary contact details</h4></div>
-        <Input label="Email" field="email" type="email" draft={draft} onChange={onChange} />
+        {!individual ? <Input label="Contact person full name" field="primaryContactName" draft={draft} onChange={onChange} /> : null}
+        <Input label="Email (optional for manual capture)" field="email" type="email" draft={draft} onChange={onChange} />
         <Input label="Phone" field="phone" type="tel" draft={draft} onChange={onChange} />
         <Input label="Alternative contact" field="alternativeContact" draft={draft} onChange={onChange} />
         <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">Preferred contact<Field as="select" value={draft.preferredContactMethod || ''} onChange={(event) => onChange('preferredContactMethod', event.target.value)}><option value="">Not captured</option><option value="email">Email</option><option value="phone">Phone</option><option value="whatsapp">WhatsApp</option></Field></label>

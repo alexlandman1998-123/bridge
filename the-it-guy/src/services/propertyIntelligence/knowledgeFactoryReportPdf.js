@@ -1,4 +1,5 @@
 import { jsPDF } from "jspdf";
+import { reportMoney as money, suppliedNumber, ownerDetails, financeIndicator, transferScope } from './knowledgeFactoryReportDisplay.js';
 
 const PAGE = { left: 16, right: 194, top: 19, bottom: 278 };
 const INK = "#14213d";
@@ -15,12 +16,6 @@ function date(value) {
   return Number.isNaN(parsed.getTime())
     ? text(value)
     : new Intl.DateTimeFormat("en-ZA", { dateStyle: "medium" }).format(parsed);
-}
-function money(value) {
-  const amount = Number(value);
-  return Number.isFinite(amount)
-    ? `R${amount.toLocaleString("en-ZA", { maximumFractionDigits: 0 })}`
-    : "Not supplied";
 }
 function filenamePart(value) {
   return text(value, "property-report")
@@ -117,8 +112,8 @@ export function buildKnowledgeFactoryReportPdf(report = {}) {
   row("Address", property.address);
   row("Suburb / town", [property.suburb, property.town].filter(Boolean).join(" / "));
   row("Province / postal code", [property.province, property.postalCode].filter(Boolean).join(" / "));
-  row("Type / extent", [property.type, property.extent ? `${property.extent} sqm` : ""].filter(Boolean).join(" / "));
-  row("Deeds / parcel reference", [property.deedsOfficeId, property.erf ? `Erf ${property.erf}` : "", property.portion ? `Portion ${property.portion}` : "", property.unit ? `Unit ${property.unit}` : ""].filter(Boolean).join(" / "));
+  row("Type / extent", [property.type, suppliedNumber(property.extent) ? `Extent ${property.extent} (supplier units)` : ""].filter(Boolean).join(" / "));
+  row("Deeds / parcel reference", [property.deedsOfficeId, property.erf != null ? `Erf ${property.erf}` : "", property.portion != null ? `Portion ${property.portion}` : "", property.unit != null ? `Unit ${property.unit}` : ""].filter(Boolean).join(" / "));
 
   section("Current ownership");
   const owners = Array.isArray(report.report_data?.owners) ? report.report_data.owners : [];
@@ -126,17 +121,17 @@ export function buildKnowledgeFactoryReportPdf(report = {}) {
     owners.forEach((owner, index) =>
       row(
         `Owner ${index + 1}`,
-        [owner?.name, owner?.type, owner?.share ? `Share: ${owner.share}` : ""].filter(Boolean).join(" - "),
+        ownerDetails(owner).join(" - "),
       ),
     );
   } else {
     paragraph("No current owner record was supplied in this report snapshot.", { color: MUTED });
   }
   if (
-    signals.ownershipRegisteredAt ||
-    Number.isFinite(Number(signals.ownershipTenureYears))
+    signals.ownershipRegisteredAt || report.report_data?.ownership?.registeredAt ||
+    suppliedNumber(signals.ownershipTenureYears)
   ) {
-    row("Current ownership registered", date(signals.ownershipRegisteredAt));
+    row("Current ownership registered", date(signals.ownershipRegisteredAt || report.report_data?.ownership?.registeredAt));
     row("Approximate ownership tenure", signals.ownershipTenureYears === null || signals.ownershipTenureYears === undefined ? "Not supplied" : `${signals.ownershipTenureYears} years`);
   }
 
@@ -150,6 +145,7 @@ export function buildKnowledgeFactoryReportPdf(report = {}) {
     row("Valuation reason", valuation.reason);
 
     section("Selected transfer timeline");
+    paragraph(transferScope(report.report_data), { color: MUTED });
     const transactions = Array.isArray(report.report_data?.transactions)
       ? report.report_data.transactions
       : [];
@@ -160,7 +156,7 @@ export function buildKnowledgeFactoryReportPdf(report = {}) {
           [
             transaction?.registeredAt ? `Registered ${date(transaction.registeredAt)}` : "",
             transaction?.purchasedAt ? `Purchased ${date(transaction.purchasedAt)}` : "",
-            Number.isFinite(Number(transaction?.purchaseAmount)) ? money(transaction.purchaseAmount) : "",
+            `Purchase amount: ${money(transaction?.purchaseAmount)}`,
             transaction?.isCurrentOwner ? "Current ownership record" : "",
           ].filter(Boolean).join(" - "),
         );
@@ -171,19 +167,20 @@ export function buildKnowledgeFactoryReportPdf(report = {}) {
 
     section("Current finance indicator");
     const finance = report.report_data?.finance || {};
-    row("Current finance recorded", finance.hasCurrentBond === true ? "Yes" : "No record supplied");
-    row("Current bond count", finance.currentBondCount ?? "Not supplied");
+    row("Current finance indicator", financeIndicator(finance.hasCurrentBond));
+    row("Current bonds in returned records", finance.currentBondCount ?? "Not supplied");
+    if (finance.hasMoreBondRecords === true) paragraph("Only five bond records were requested; further records exist. This count is not the total bond count.", { color: MUTED });
     (Array.isArray(finance.currentBonds) ? finance.currentBonds : []).forEach((bond, index) =>
       row(`Finance record ${index + 1}`, [bond?.registeredAt ? `Registered ${date(bond.registeredAt)}` : "", bond?.indicator].filter(Boolean).join(" - ")),
     );
 
     section("Canvassing opportunity signals");
     row("Transfer records reviewed", signals.transferRecordsReviewed ?? "Not supplied");
-    row("Latest transfer registration", date(signals.latestTransferRegisteredAt));
-    row("Current finance indicator", signals.currentFinanceRecorded === true ? "Recorded" : "Not recorded");
+    row("Newest registration in returned records", date(signals.latestTransferRegisteredAt));
+    row("Current finance indicator", financeIndicator(signals.currentFinanceRecorded));
     const comparison = signals.municipalValuationVsLatestPurchase;
     row(
-      "Valuation compared with latest purchase",
+      "Valuation vs newest returned purchase",
       comparison
         ? `${money(comparison.difference)} (${comparison.percentageDifference}% difference)`
         : "Insufficient data to compare",

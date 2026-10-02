@@ -1,0 +1,81 @@
+{
+  "project": "isdowlnollckzvltkasn",
+  "capturedAt": "2026-10-01T18:26:22.145Z",
+  "definitions": [
+    {
+      "kind": "bucket",
+      "definition": {
+        "id": "documents",
+        "file_size_limit": 26214400
+      }
+    },
+    {
+      "kind": "policy",
+      "definition": {
+        "name": "private_listing_seller_onboarding_mutate_member",
+        "check": "true",
+        "roles": [
+          "authenticated"
+        ],
+        "using": "true"
+      }
+    },
+    {
+      "kind": "policy",
+      "definition": {
+        "name": "private_listing_seller_onboarding_select_member",
+        "check": null,
+        "roles": [
+          "authenticated"
+        ],
+        "using": "true"
+      }
+    },
+    {
+      "kind": "policy",
+      "definition": {
+        "name": "private_listing_seller_onboarding_select_token",
+        "check": null,
+        "roles": [
+          "anon"
+        ],
+        "using": "((token IS NOT NULL) AND ((token_expires_at IS NULL) OR (token_expires_at > now())))"
+      }
+    },
+    {
+      "kind": "policy",
+      "definition": {
+        "name": "private_listing_seller_onboarding_update_token",
+        "check": "((token IS NOT NULL) AND ((token_expires_at IS NULL) OR (token_expires_at > now())))",
+        "roles": [
+          "anon"
+        ],
+        "using": "((token IS NOT NULL) AND ((token_expires_at IS NULL) OR (token_expires_at > now())))"
+      }
+    },
+    {
+      "kind": "function",
+      "definition": {
+        "acl": [
+          "postgres=X/postgres"
+        ],
+        "identity": "bridge_resolve_private_listing_seller_portal_token(text)",
+        "definition": "CREATE OR REPLACE FUNCTION public.bridge_resolve_private_listing_seller_portal_token(p_token text)\n RETURNS TABLE(onboarding_id uuid, legacy_token text, stable_portal_token text, token_kind text, token_valid boolean)\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public', 'extensions'\nAS $function$\n  with input as (\n    select nullif(trim(coalesce(p_token, '')), '') as token,\n      case when nullif(trim(coalesce(p_token, '')), '') is null then null\n        else encode(digest(trim(p_token), 'sha256'), 'hex') end as token_hash\n  ), candidates as (\n    select onboarding.id as onboarding_id, onboarding.token as legacy_token,\n      onboarding.seller_portal_token as stable_portal_token,\n      case when onboarding.seller_portal_token = input.token then 'stable'\n        when onboarding.token = input.token then 'legacy' else 'invite' end as token_kind,\n      case when onboarding.seller_portal_token = input.token then true\n        when onboarding.token = input.token then true\n        else onboarding.seller_portal_invite_consumed_at is null\n          and onboarding.seller_portal_invite_expires_at is not null\n          and onboarding.seller_portal_invite_expires_at > now() end as token_valid,\n      1 as priority\n    from input join public.private_listing_seller_onboarding onboarding\n      on onboarding.seller_portal_token = input.token\n      or onboarding.token = input.token\n      or onboarding.seller_portal_invite_token_hash = input.token_hash\n    union all\n    select onboarding.id, onboarding.token, onboarding.seller_portal_token,\n      'recipient_invite',\n      recipient.consumed_at is null and recipient.expires_at > now()\n        and recipient.status not in ('revoked', 'expired'),\n      2\n    from input\n    join public.private_listing_seller_portal_recipient_invites recipient\n      on recipient.invite_token_hash = input.token_hash\n    join public.private_listing_seller_onboarding onboarding\n      on onboarding.id = recipient.seller_onboarding_id\n  )\n  select onboarding_id, legacy_token, stable_portal_token, token_kind, token_valid\n  from candidates\n  order by priority\n  limit 1;\n$function$\n"
+      }
+    },
+    {
+      "kind": "function",
+      "definition": {
+        "acl": [
+          "=X/postgres",
+          "postgres=X/postgres",
+          "anon=X/postgres",
+          "authenticated=X/postgres",
+          "service_role=X/postgres"
+        ],
+        "identity": "bridge_update_private_listing_seller_onboarding_progress(text,text,jsonb,text,text,text)",
+        "definition": "CREATE OR REPLACE FUNCTION public.bridge_update_private_listing_seller_onboarding_progress(p_token text, p_status text DEFAULT 'in_progress'::text, p_form_data jsonb DEFAULT '{}'::jsonb, p_seller_type text DEFAULT NULL::text, p_ownership_structure text DEFAULT NULL::text, p_marital_regime text DEFAULT NULL::text)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\ndeclare\n  v_onboarding public.private_listing_seller_onboarding%rowtype;\n  v_listing public.private_listings%rowtype;\n  v_status text := coalesce(nullif(trim(lower(p_status)), ''), 'in_progress');\n  v_form_data jsonb := coalesce(p_form_data, '{}'::jsonb);\nbegin\n  if v_status not in ('not_started', 'sent', 'in_progress', 'completed', 'rejected') then\n    v_status := 'in_progress';\n  end if;\n\n  select *\n    into v_onboarding\n  from public.private_listing_seller_onboarding\n  where token = nullif(trim(p_token), '')\n    and (token_expires_at is null or token_expires_at > now())\n  limit 1;\n\n  if not found then\n    return null;\n  end if;\n\n  update public.private_listing_seller_onboarding\n     set status = v_status,\n         form_data = coalesce(form_data, '{}'::jsonb) || v_form_data,\n         seller_type = coalesce(nullif(trim(p_seller_type), ''), seller_type),\n         ownership_structure = coalesce(nullif(trim(p_ownership_structure), ''), ownership_structure),\n         marital_regime = coalesce(nullif(trim(p_marital_regime), ''), marital_regime),\n         updated_at = now()\n   where id = v_onboarding.id\n   returning * into v_onboarding;\n\n  update public.private_listings\n     set listing_status = case\n           when v_status in ('sent', 'in_progress') and listing_status = 'seller_lead' then 'onboarding_sent'\n           else listing_status\n         end,\n         seller_onboarding_status = case\n           when v_status in ('sent', 'in_progress') then v_status\n           else seller_onboarding_status\n         end,\n         updated_at = case\n           when v_status in ('sent', 'in_progress') then now()\n           else updated_at\n         end\n   where id = v_onboarding.private_listing_id\n   returning * into v_listing;\n\n  if not found then\n    return null;\n  end if;\n\n  return jsonb_build_object(\n    'listing', to_jsonb(v_listing),\n    'onboarding', to_jsonb(v_onboarding) - 'seller_portal_password_hash' - 'seller_portal_access_token_hash' - 'seller_portal_invite_token_hash',\n    'transaction', 'null'::jsonb,\n    'requirements', '[]'::jsonb,\n    'documents', '[]'::jsonb,\n    'appointments', '[]'::jsonb,\n    'mandatePacket', 'null'::jsonb,\n    'corePayload', true,\n    'portalAccess', jsonb_build_object(\n      'passwordSet', v_onboarding.seller_portal_password_hash is not null,\n      'accessGranted', true,\n      'expiresAt', v_onboarding.seller_portal_access_token_expires_at,\n      'portalLinkExpiresAt', v_onboarding.seller_portal_link_expires_at\n    )\n  );\nend;\n$function$\n"
+      }
+    }
+  ]
+}

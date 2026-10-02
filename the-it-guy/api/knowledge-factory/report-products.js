@@ -1,5 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
+import { estimateSupplierCostCents as supplierCreditValue } from "./supplier-costs.js";
 import { hasRecordedContractEvidence } from "./contract-evidence-policy.js";
+import { packageReportQueryFingerprint, PACKAGE_COST_RECIPE_IDS } from "./package-report-recipes.js";
 
 const ADMIN_ROLES = new Set([
   "principal",
@@ -219,19 +221,17 @@ async function administrator(request, db, organisationId) {
   return user.id;
 }
 function estimateSupplierCostCents(credits, creditsPerCent) {
-  if (credits === null || credits === undefined) return null;
-  const safeCredits = Number(credits);
-  const safeRate = Number(creditsPerCent);
-  if (!Number.isFinite(safeCredits) || !Number.isFinite(safeRate) || safeRate <= 0)
-    return null;
-  return Math.ceil(safeCredits / safeRate);
+  return supplierCreditValue(credits, creditsPerCent);
 }
 export function completeCostEvidence(item) {
   return item?.outcome === "validated" &&
+    item.supplier_api_version === "v1" &&
+    /^[0-9a-f]{64}$/.test(item.supplier_query_sha256 || "") &&
+    item.price_surcharge !== null && item.price_surcharge !== undefined &&
     item.field_cost !== null && item.field_cost !== undefined &&
     item.type_cost !== null && item.type_cost !== undefined &&
     item.credits_consumed !== null && item.credits_consumed !== undefined &&
-    [item.field_cost, item.type_cost, item.credits_consumed].every(
+    [item.field_cost, item.type_cost, item.price_surcharge, item.credits_consumed].every(
       (value) => Number.isFinite(Number(value)) && Number(value) >= 0,
     );
 }
@@ -239,7 +239,8 @@ function mergeProducts(rows, validations, commercialPolicy = null, contractCheck
   const saved = new Map((rows || []).map((row) => [row.product_id, row]));
   const latestCost = new Map();
   for (const item of validations || []) {
-    if (completeCostEvidence(item) && !latestCost.has(item.recipe_id))
+    const productId = Object.keys(PACKAGE_COST_RECIPE_IDS).find((id) => PACKAGE_COST_RECIPE_IDS[id] === item.recipe_id);
+    if (productId && item.supplier_query_sha256 === packageReportQueryFingerprint(productId) && completeCostEvidence(item) && !latestCost.has(item.recipe_id))
       latestCost.set(item.recipe_id, item);
   }
   const passedContractOperations = new Set(
@@ -331,8 +332,9 @@ export default async function handler(request, response) {
         .eq("organisation_id", organisationId),
       db
         .from("knowledge_factory_cost_validations")
-        .select("recipe_id, field_cost, type_cost, credits_consumed, outcome, created_at")
+        .select("recipe_id, field_cost, type_cost, price_surcharge, credits_consumed, outcome, supplier_api_version, supplier_query_sha256, created_at")
         .eq("organisation_id", organisationId)
+        .eq("supplier_api_version", "v1")
         .order("created_at", { ascending: false })
         .limit(100),
       db

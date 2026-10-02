@@ -9,6 +9,7 @@ vi.mock('../../../services/dealSetupService.js', () => ({
   saveCanonicalDealTerms: mocks.save,
 }))
 vi.mock('../TransactionBuyerPartiesPanel.jsx', () => ({ default: (props) => { mocks.buyerProps(props); return <div>Buyer profiles <button type="button" onClick={() => void props.onUpdated()}>Refresh buyer</button></div> } }))
+vi.mock('../TransactionDetailReviewPanel.jsx', () => ({ default: () => <div>Imported review screen</div> }))
 vi.mock('../DealSetupReadinessPanel.jsx', () => ({ default: () => <div>Deal readiness</div> }))
 
 import DealSetupPanel from '../DealSetupPanel.jsx'
@@ -26,6 +27,28 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.clearAllMocks() })
 
 describe('agent deal setup', () => {
+  it('opens the review for a known bulk import, with no automatic save', async () => {
+    mocks.load.mockResolvedValue({ setup, transaction: { transaction_origin_source: 'bulk_upload' } })
+    render(<DealSetupPanel transactionId="imported" canEdit />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Review details' }))
+    expect(await screen.findByText('Imported review screen')).toBeTruthy()
+    expect(mocks.save).not.toHaveBeenCalled()
+  })
+  it('keeps review closed until unsaved Deal Setup edits are saved', async () => {
+    mocks.load.mockResolvedValue({ setup, transaction: { transaction_origin_source: 'bulk_import' } })
+    render(<DealSetupPanel transactionId="imported" canEdit />)
+    const button = await screen.findByRole('button', { name: 'Review details' })
+    fireEvent.change(screen.getByLabelText('Purchase price'), { target: { value: '1350000' } })
+    expect(button.disabled).toBe(true)
+  })
+
+  it('shows captured-buyer link gaps without linking or saving automatically', async () => {
+    mocks.load.mockResolvedValueOnce({ setup: { ...setup, buyerLinkIssues: [{ code: 'unlinked_captured_buyer', message: 'Check the captured buyer before linking a profile.' }] } })
+    render(<DealSetupPanel transactionId="imported" canEdit />)
+    expect(await screen.findByText('Buyer details need checking')).toBeTruthy()
+    expect(screen.getByText('Check the captured buyer before linking a profile.')).toBeTruthy()
+    expect(mocks.save).not.toHaveBeenCalled()
+  })
   it('keeps buyer fields when switching tabs and saves the buyer terms and funding', async () => {
     const onSaved = vi.fn()
     render(<DealSetupPanel transactionId="matter-1" canEdit sellerDetails={seller} onSaved={onSaved} onSaveSellerDetails={vi.fn()} />)
@@ -113,4 +136,19 @@ describe('agent deal setup', () => {
     await screen.findByLabelText('Purchase price')
     expect(screen.queryByRole('tablist')).toBeNull()
   })
+})
+
+it('displays legacy combination funding with both amounts and no automatic write',async()=>{
+  mocks.load.mockResolvedValue({setup:{...setup,finance:{type:' Combination ',cashAmount:300000,bondAmount:700000,managedBy:'client',bank:'Captured bank'}}})
+  render(<DealSetupPanel transactionId="legacy" canEdit />)
+  expect(await screen.findByLabelText('Finance type')).toHaveProperty('value','hybrid')
+  expect(screen.getByLabelText('Cash amount')).toHaveProperty('value','300000');expect(screen.getByLabelText('Bond amount')).toHaveProperty('value','700000');expect(mocks.save).not.toHaveBeenCalled()
+})
+it('makes an unknown imported finance type explicit until the user resolves it',async()=>{
+  mocks.load.mockResolvedValue({setup:{...setup,finance:{type:'check scanned terms',cashAmount:300000,bondAmount:700000,managedBy:'client',bank:'Captured bank'}}})
+  render(<DealSetupPanel transactionId="unknown" canEdit />)
+  expect(await screen.findByRole('option',{name:'Unresolved: check scanned terms'})).toBeTruthy()
+  expect(screen.getByText(/No finance route has been assumed/)).toBeTruthy();expect(mocks.save).not.toHaveBeenCalled()
+  fireEvent.change(screen.getByLabelText('Finance type'),{target:{value:'hybrid'}})
+  expect(screen.queryByText(/No finance route has been assumed/)).toBeNull();expect(screen.getByLabelText('Cash amount')).toHaveProperty('value','300000');expect(screen.getByLabelText('Bond amount')).toHaveProperty('value','700000')
 })

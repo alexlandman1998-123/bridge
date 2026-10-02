@@ -1,22 +1,11 @@
 import { createClient } from "@supabase/supabase-js";
+import { requireKnowledgeFactoryExecutive } from "../../server/services/knowledgeFactoryAdminAccess.js";
 
-const ADMIN_ROLES = new Set([
-  "principal",
-  "owner",
-  "director",
-  "admin",
-  "super_admin",
-  "agency_admin",
-]);
 const PRODUCT_IDS = new Set(["basic_owner_lookup", "full_canvassing_report"]);
 const STAGES = new Set(["controlled_uat", "pilot", "suspended"]);
 
 function text(value, max = 1000) {
   return typeof value === "string" ? value.trim().slice(0, max) : "";
-}
-function header(headers, name) {
-  const value = headers?.[name] || headers?.[name.toLowerCase()];
-  return Array.isArray(value) ? text(value[0], 20_000) : text(value, 20_000);
 }
 function json(response, status, body) {
   response
@@ -54,13 +43,6 @@ function runtime() {
     throw error;
   }
   return { url, key };
-}
-function normalizeRole(value) {
-  const role = text(value).toLowerCase();
-  if (role === "administrator") return "admin";
-  if (role === "superadmin") return "super_admin";
-  if (role === "principal / owner") return "principal";
-  return role;
 }
 function wholeNumber(value, label, { min = 1, max = 100_000_000 } = {}) {
   const parsed = Number(value);
@@ -105,53 +87,7 @@ function defaultPolicy() {
   };
 }
 async function administrator(request, db, organisationId) {
-  const token = header(request.headers, "authorization").replace(
-    /^Bearer\s+/i,
-    "",
-  );
-  if (!token) {
-    const error = new Error(
-      "Your browser did not provide an active sign-in token.",
-    );
-    error.status = 401;
-    throw error;
-  }
-  const {
-    data: { user },
-    error: userError,
-  } = await db.auth.getUser(token);
-  if (userError || !user?.id) {
-    const error = new Error(
-      "Your sign-in token could not be verified. Please sign in again.",
-    );
-    error.status = 401;
-    throw error;
-  }
-  const { data: membership, error } = await db
-    .from("organisation_users")
-    .select(
-      "status, membership_status, role, workspace_role, organization_role, organisation_role",
-    )
-    .eq("organisation_id", organisationId)
-    .eq("user_id", user.id)
-    .maybeSingle();
-  const active =
-    text(membership?.membership_status || membership?.status).toLowerCase() ===
-    "active";
-  const role = normalizeRole(
-    membership?.workspace_role ||
-      membership?.organization_role ||
-      membership?.organisation_role ||
-      membership?.role,
-  );
-  if (error || !membership || !active || !ADMIN_ROLES.has(role)) {
-    const failure = new Error(
-      "Only a principal-level administrator can manage package commercial controls.",
-    );
-    failure.status = 403;
-    throw failure;
-  }
-  return user.id;
+  return (await requireKnowledgeFactoryExecutive(request, db, organisationId)).userId;
 }
 function monthStart() {
   const now = new Date();
@@ -270,7 +206,7 @@ export default async function handler(request, response) {
       .from("knowledge_factory_package_commercial_policies")
       .upsert(patch, { onConflict: "organisation_id" })
       .select(
-        "allowed_product_ids, per_report_credit_cap, monthly_credit_cap, monthly_report_cap, daily_report_cap_per_user, rollout_stage, supplier_credits_per_cent, created_at, updated_at",
+        "allowed_product_ids, per_report_credit_cap, basic_report_credit_cap, full_report_credit_cap, monthly_credit_cap, monthly_report_cap, daily_report_cap_per_user, rollout_stage, supplier_credits_per_cent, created_at, updated_at",
       )
       .single();
     if (error || !data)

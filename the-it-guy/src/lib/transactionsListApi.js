@@ -1,10 +1,11 @@
+import { transactionReviewedBuyerName } from '../core/transactions/transactionDetailReview.js'
 import { CANONICAL_TRANSACTION_STAGES, MAIN_PROCESS_STAGES, getMainStageFromDetailedStage, normalizeStageLabel } from '../core/transactions/stageConfig'
 import { financeTypeMatchesFilter } from '../core/transactions/financeType'
 import { supabase } from './supabaseClient'
 import { hydrateMatterPropertyContext } from '../services/matterPropertyContext'
 
-const SELECT = 'id, organisation_id, owner_user_id, matter_number, transaction_reference, arch9_listing_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, suburb, city, property_description, sales_price, purchase_price, finance_type, purchaser_type, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, next_action, expected_transfer_date, finance_status, attorney_stage, risk_status, operational_state, missing_documents_count, uploaded_documents_count, total_required_documents, updated_at, created_at, is_active'
-const FALLBACK_SELECT = 'id, organisation_id, development_id, unit_id, buyer_id, transaction_reference, arch9_listing_reference, finance_type, purchaser_type, purchase_price, sales_price, stage, attorney, bond_originator, next_action, updated_at, created_at'
+const SELECT = 'transaction_origin_source, comment, buyer_name, deal_review_details, primary_buyer_participant_id, id, organisation_id, owner_user_id, matter_number, transaction_reference, arch9_listing_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, suburb, city, property_description, sales_price, purchase_price, finance_type, purchaser_type, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, next_action, expected_transfer_date, finance_status, attorney_stage, risk_status, operational_state, missing_documents_count, uploaded_documents_count, total_required_documents, updated_at, created_at, is_active'
+const FALLBACK_SELECT = 'transaction_origin_source, comment, id, organisation_id, development_id, unit_id, buyer_id, transaction_reference, arch9_listing_reference, finance_type, purchaser_type, purchase_price, sales_price, stage, attorney, bond_originator, next_action, updated_at, created_at'
 const SUMMARY_RELATIONS = 'buyer:buyers(id, name, phone, email), unit:units(id, development_id, unit_number, phase, price, status, development:developments(id, name, location)), development:developments(id, name, location)'
 const SUMMARY_SELECT = `${SELECT}, ${SUMMARY_RELATIONS}`
 const SUMMARY_FALLBACK_SELECT = `${FALLBACK_SELECT}, ${SUMMARY_RELATIONS}`
@@ -304,7 +305,9 @@ async function resolveAccessibleTransactionIds(client, {
 
 function normalizeSummaryRows(transactions = []) {
   return transactions.map((source) => {
-    const buyer = one(source?.buyer)
+    const originalBuyer = one(source?.buyer)
+    const reviewedName = transactionReviewedBuyerName(source)
+    const buyer = reviewedName ? { ...originalBuyer, name: reviewedName } : originalBuyer
     const rawUnit = one(source?.unit)
     const nestedDevelopment = one(rawUnit?.development)
     const directDevelopment = one(source?.development)

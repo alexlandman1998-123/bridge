@@ -21,6 +21,26 @@ const CLASSIFICATION_COPY = Object.freeze({
   },
 })
 
+export function assertListingEditorSellerOwnership(form = {}, listing = {}) {
+  const onboarding = listing.sellerOnboarding || {}
+  const savedForm = onboarding.formData || onboarding.form_data || {}
+  const facts = onboarding.storedCanonicalFacts || onboarding.canonicalFacts || {}
+  const seller = facts.seller || {}
+  const normalize = (value) => {
+    const key = String(value || '').trim().toLowerCase()
+    if (['individual', 'natural_person', 'person'].includes(key)) return 'individual'
+    if (['multiple_owners', 'multiple_individuals', 'joint'].includes(key)) return 'multiple_owners'
+    return key
+  }
+  const requested = normalize(form.sellerType)
+  const saved = normalize(seller.owner_structure_type || seller.profile_type || seller.legal_type || savedForm.ownerStructureType || onboarding.sellerType)
+  const owners = savedForm.owners || seller.owners || []
+  if ((saved && requested && saved !== requested) ||
+      (requested === 'individual' && Array.isArray(owners) && owners.length > 1)) {
+    throw new Error('The seller ownership structure differs from the saved Seller record. Review and confirm the legal owners in the Seller section before saving this listing. No listing changes were saved.')
+  }
+}
+
 export function buildListingSellerHistoricalNormalization(raw = null) {
   if (!raw || typeof raw !== 'object') return null
   const classification = CLASSIFICATION_COPY[raw.classification] ? raw.classification : 'ambiguous'
@@ -47,4 +67,3 @@ export function buildListingSellerHistoricalNormalization(raw = null) {
         : 'Review seller details',
   }
 }
-

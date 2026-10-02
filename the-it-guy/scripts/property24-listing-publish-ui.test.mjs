@@ -1,11 +1,30 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
+import { summarizeProperty24Payload } from '../server/services/property24Client.js'
 
 function read(path) {
   return fs.readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
 }
 
 const listingDetail = read('src/pages/AgentListingDetail.jsx')
+
+const validationFormatterSource = listingDetail.slice(
+  listingDetail.indexOf('function getProperty24ValidationDetails('),
+  listingDetail.indexOf('function getProperty24ListingNumberFromResponse('),
+)
+const formatApiMessage = new Function(`${validationFormatterSource}; return getProperty24ApiMessage;`)()
+for (const errors of [
+  { errors: { 'property.tags': ['Unsupported feature code'] } },
+  { validationErrors: [{ propertyName: 'property.tags', message: 'Unsupported feature code' }] },
+  { ModelState: { 'property.tags': ['Unsupported feature code'] } },
+]) {
+  const response = summarizeProperty24Payload({ message: 'Validation Failed', ...errors })
+  const message = formatApiMessage({ report: { error: { response } } })
+  assert.match(message, /Validation Failed/)
+  assert.match(message, /property.tags: Unsupported feature code/)
+  assert.match(formatApiMessage({ response }), /property.tags: Unsupported feature code/)
+}
+assert.equal(formatApiMessage({ report: { error: { response: summarizeProperty24Payload({ message: 'Validation Failed' }) } } }), 'Property24 rejected this request: Validation Failed')
 
 assert.match(listingDetail, /Property24 lifecycle/)
 assert.match(listingDetail, /Publish, update, refresh, or withdraw this listing/)

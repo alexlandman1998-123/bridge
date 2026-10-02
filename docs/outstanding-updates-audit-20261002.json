@@ -1,0 +1,1625 @@
+{
+  "checkedAt": "2026-10-02T08:14:03.347621+02:00",
+  "requestedDate": "2026-10-01",
+  "scope": "All currently outstanding tracked modifications and untracked source/docs across primary app, websites, admin and shared Supabase layer. Generated browser/build output excluded from source inventory. Uncommitted status alone does not prove an update is undeployed; worktree modification dates do not reliably establish when work began.",
+  "result": "ATTENTION_REQUIRED",
+  "sourceAndDocsFiles": 241,
+  "checks": [
+    {
+      "command": "npm run check:app",
+      "result": "FAIL",
+      "reason": "Stopped at standard eslint scan: 205 errors in generated output/playwright/email-homepage/preview.js; 581 total warnings. All reported errors are in generated output."
+    },
+    {
+      "command": "npx --no-install eslint . --ignore-pattern 'output/**' --ignore-pattern 'outputs/**' --ignore-pattern 'artifacts/**' --format json",
+      "package": "the-it-guy",
+      "result": "PASS",
+      "errors": 0,
+      "warnings": 559
+    },
+    {
+      "command": "npm --prefix the-it-guy run test",
+      "result": "PASS"
+    },
+    {
+      "command": "NODE_OPTIONS=--max-old-space-size=8192 npx --no-install vite build --outDir /tmp/arch9-oct01-primary-build",
+      "package": "the-it-guy",
+      "result": "PASS"
+    },
+    {
+      "command": "npm run check:website",
+      "result": "PASS",
+      "details": "Typecheck, 33 tests and Next production build passed."
+    },
+    {
+      "command": "npm run check:admin",
+      "result": "PASS"
+    },
+    {
+      "command": "node --test <each outstanding Node test file>",
+      "package": "the-it-guy",
+      "result": "FAIL",
+      "files": 61,
+      "passedFiles": 59,
+      "failedFiles": 2
+    },
+    {
+      "command": "npx --no-install vitest run --maxWorkers=2 <outstanding Vitest files>",
+      "package": "the-it-guy",
+      "result": "PASS",
+      "files": 15,
+      "tests": 94,
+      "testFiles": [
+        "server/services/sellerOnboardingCoreApi.test.js",
+        "src/components/__tests__/AgentTransactionsTable.importReview.test.jsx",
+        "src/components/agents/__tests__/AgentWorkspaceOverview.test.jsx",
+        "src/components/listings/__tests__/ListingSellerInformationEditor.test.jsx",
+        "src/components/marketing/__tests__/EmailCampaignOverview.test.jsx",
+        "src/components/marketing/__tests__/EmailCampaignSettings.test.jsx",
+        "src/components/transaction/__tests__/DealSetupPanel.test.jsx",
+        "src/components/transaction/__tests__/DealSetupReadinessPanel.test.jsx",
+        "src/components/transaction/__tests__/TransactionBuyerPartiesPanel.links.test.jsx",
+        "src/components/transaction/__tests__/TransactionDetailReviewPanel.test.jsx",
+        "src/pages/__tests__/EmailWorkspaceNavigation.test.jsx",
+        "src/services/__tests__/dealSetupService.buyerLinks.test.js",
+        "src/services/__tests__/importedDealReviewStatusService.test.js",
+        "src/services/__tests__/privateListingService.sellerAccess.test.js",
+        "src/services/__tests__/transactionDetailReviewService.test.js"
+      ]
+    },
+    {
+      "command": "deno test supabase/functions/knowledge-factory-fica-discovery/policy.test.ts",
+      "result": "PASS",
+      "tests": 3
+    },
+    {
+      "command": "deno check supabase/functions/knowledge-factory-graphql/index.ts supabase/functions/knowledge-factory-fica-discovery/index.ts",
+      "result": "PASS"
+    },
+    {
+      "command": "git diff --check",
+      "result": "PASS"
+    }
+  ],
+  "failures": [
+    {
+      "file": "the-it-guy/scripts/direct-listing-persistence-phase3.test.mjs",
+      "line": 83,
+      "finding": "Source assertion expects listingPreviewDescription to fall back to draft.description. Current code persists an explicit empty preview with nullish coalescing and resolves marketing text through the shared safety helper. Reconcile the intended behavior and regression assertion."
+    },
+    {
+      "file": "the-it-guy/scripts/seller-onboarding-progress-serialization.test.mjs",
+      "line": 96,
+      "finding": "Source assertion expects sellerJourney.listingCreated in the seller timeline condition. Current condition uses sellerTimelineComplianceStatus.listingDraftExists. Verify the intended evidence requirement and update the assertion or implementation accordingly."
+    }
+  ],
+  "migrations": {
+    "target": {
+      "name": "Arch9 SaaS",
+      "id": "isdowlnollckzvltkasn",
+      "status": "ACTIVE_HEALTHY"
+    },
+    "verification": "Live SELECT of migration history, CLI linked migration list, and normalized statement comparison for applied 1 October migrations. No SQL mutations performed.",
+    "localVersions": 1328,
+    "remoteVersions": 1323,
+    "remoteOnlyVersions": [],
+    "october1Files": 11,
+    "october1Applied": 6,
+    "pending": [
+      "20261001185738_imported_transaction_detail_review.sql",
+      "20261001191425_imported_transaction_review_status.sql",
+      "20261001195834_imported_transaction_funding_review.sql",
+      "20261001201355_imported_transaction_funding_validation.sql",
+      "20261001202026_branch_fic_training_compliance.sql"
+    ],
+    "appliedStatementComparison": [
+      {
+        "version": "20261001091343",
+        "file": "20261001091343_knowledge_factory_v1_cost_provenance.sql",
+        "localStatements": 7,
+        "remoteStatements": 7,
+        "localOnlyCount": 0,
+        "remoteOnlyCount": 0
+      },
+      {
+        "version": "20261001092313",
+        "file": "20261001092313_knowledge_factory_versioned_cost_uniqueness.sql",
+        "localStatements": 5,
+        "remoteStatements": 5,
+        "localOnlyCount": 0,
+        "remoteOnlyCount": 0
+      },
+      {
+        "version": "20261001092402",
+        "file": "20261001092402_seller_onboarding_access_scope.sql",
+        "localStatements": 0,
+        "remoteStatements": 0,
+        "localOnlyCount": 0,
+        "remoteOnlyCount": 0
+      },
+      {
+        "version": "20261001092739",
+        "file": "20261001092739_seller_onboarding_access_enforcement.sql",
+        "localStatements": 16,
+        "remoteStatements": 16,
+        "localOnlyCount": 0,
+        "remoteOnlyCount": 0
+      },
+      {
+        "version": "20261001104037",
+        "file": "20261001104037_independent_kingdom_listing_publication.sql",
+        "localStatements": 12,
+        "remoteStatements": 12,
+        "localOnlyCount": 0,
+        "remoteOnlyCount": 0
+      },
+      {
+        "version": "20261001105246",
+        "file": "20261001105246_document_upload_limit_35mb.sql",
+        "localStatements": 3,
+        "remoteStatements": 3,
+        "localOnlyCount": 0,
+        "remoteOnlyCount": 0
+      }
+    ],
+    "pendingLocalDatabaseChecks": "PASS: actual imported transaction detail/status/funding/validation migration SQL exercised by scripts/transaction-detail-review.test.mjs; branch FIC migration exercised by scripts/branch-fic-training.test.mjs in isolated PGlite fixtures.",
+    "dependencyReadCheck": "Branch membership and organisation branch columns required by FIC migration are present in production. deal_review_details is absent as expected while the imported-review migration remains unapplied.",
+    "limits": "Local fixture checks do not prove a production migration will apply successfully. No database push, dry-run push, migration repair or application performed."
+  },
+  "manualVerification": "Authenticated browser workflows and customer data integrations were not re-tested live. Historical release records are evidence of prior releases, not a verification of the current deployed application.",
+  "actionsTaken": "Checks and read-only production metadata queries only. No commits, deployments, remote writes, emails or migration applications. Only this audit report was added to the repository.",
+  "sourceStableDuringChecks": true,
+  "nodeTestResults": [
+    {
+      "file": "the-it-guy/scripts/branch-fic-training.test.mjs",
+      "exit": 0
+    },
+    {
+      "file": "the-it-guy/scripts/canonical-document-required-role.test.mjs",
+      "exit": 0
+    },
+    {
+      "file": "the-it-guy/scripts/create-listing-draft-storage-quota.test.mjs",
+      "exit": 0
+    },
+    {
+      "file": "the-it-guy/scripts/direct-listing-intake-model-phase1.test.mjs",
+      "exit": 0
+    },
+    {
+      "file": "the-it-guy/scripts/direct-listing-persistence-phase3.test.mjs",
+      "exit": 1
+    },
+    {
+      "file": "the-it-guy/scripts/document-upload-policy-phase5.test.mjs",
+      "exit": 0
+    },
+    {
+      "file": "the-it-guy/scripts/email-campaign-landing.test.mjs",
+      "exit": 0
+    },
+    {
+      "file": "the-it-guy/scripts/kingdom-isell-listing-channel.test.mjs",
+      "exit": 0
+    },
+    {
+      "file": "the-it-guy/scripts/kingstons-seller-documents-phase6-authority-documents.test.mjs",
+      "exit": 0
+    },
+    {
+      "file": "the-it-guy/scripts/knowledge-factory-billing-contract.test.mjs",
+      "exit": 0
+    },
+    {
+      "file": "the-it-guy/scripts/knowledge-factory-contract-discovery-phase1.test.mjs",
+      "exit": 0
+    },
+    {
+      "file": "the-it-guy/scripts/knowledge-factory-cost-matrix.test.mjs",
+      "exit": 0
+    },
+    {
+      "file": "the-it-guy/scripts/knowledge-factory-internal-admin.test.mjs",
+      "exit": 0
+    },
+    {
+      "file": "the-it-guy/scripts/knowledge-factory-login-probe.test.mjs",
+      "exit": 0
+    },
+    {
+      "file": "the-it-guy/scripts/knowledge-factory-package-cost-envelope.test.mjs",
+      "exit": 0
+    },
+    {
+      "file": "the-it-guy/scripts/knowledge-factory-package-cost-recipes-phase2.test.mjs",
+      "exit": 0
+    },
+    {
+      "file": "the-it-guy/scripts/knowledge-factory-report-pdf-phase5.test.mjs",
+      "exit": 0
+    },
+    {
+      "file": "the-it-guy/scripts/knowledge-factory-report-snapshots-phase4.test.mjs",
+      "exit": 0
+    },
+    {
+      "file": "the-it-guy/scripts/knowledge-factory-staged-basic-cost-access.test.mjs",
+      "exit": 0
+    },
+    {
+      "file": "the-it-guy/scripts/knowledge-factory-uat-endpoint.test.mjs",
+      "exit": 0
+    },
+    {
+      "file": "the-it-guy/scripts/knowledge-factory-uat-report-test.test.mjs",
+      "exit": 0
+    },
+    {
+      "file": "the-it-guy/scripts/knowledge-factory-vercel-egress-probe.test.mjs",
+      "exit": 0
+    },
+    {
+      "file": "the-it-guy/scripts/listing-channel-update-state.test.mjs",
+      "exit": 0
+    },
+    {
+      "file": "the-it-guy/scripts/listing-mandate-readiness-phase1.test.mjs",
+      "exit": 0
+    },
+    {
+      "file": "the-it-guy/scripts/listing-seller-canonical-update.test.mjs",
+      "exit": 0
+    },
+    {
+      "file": "the-it-guy/scripts/listing-seller-end-to-end-release.test.mjs",
+      "exit": 0
+    },
+    {
+      "file": "the-it-guy/scripts/private-property-listing-preview.test.mjs",
+      "exit": 0
+    },
+    {
+      "file": "the-it-guy/scripts/property24-listing-publish-ui.test.mjs",
+      "exit": 0
+    },
+    {
+      "file": "the-it-guy/scripts/residential-canvassing.test.mjs",
+      "exit": 0
+    },
+    {
+      "file": "the-it-guy/scripts/seller-document-persistence-phase3.test.mjs",
+      "exit": 0
+    },
+    {
+      "file": "the-it-guy/scripts/seller-onboarding-access.test.mjs",
+      "exit": 0
+    },
+    {
+      "file": "the-it-guy/scripts/seller-onboarding-flow-contract.test.mjs",
+      "exit": 0
+    },
+    {
+      "file": "the-it-guy/scripts/seller-onboarding-profile-canonical-wiring-phase3.test.mjs",
+      "exit": 0
+    },
+    {
+      "file": "the-it-guy/scripts/seller-onboarding-progress-serialization.test.mjs",
+      "exit": 1
+    },
+    {
+      "file": "the-it-guy/scripts/seller-onboarding-south-african-scenarios.test.mjs",
+      "exit": 0
+    },
+    {
+      "file": "the-it-guy/scripts/seller-onboarding-submit-fast-return.test.mjs",
+      "exit": 0
+    },
+    {
+      "file": "the-it-guy/scripts/seller-readiness.test.mjs",
+      "exit": 0
+    },
+    {
+      "file": "the-it-guy/scripts/settings-branding-save-order.test.mjs",
+      "exit": 0
+    },
+    {
+      "file": "the-it-guy/scripts/transaction-detail-review.test.mjs",
+      "exit": 0
+    },
+    {
+      "file": "the-it-guy/src/core/documents/__tests__/sellerComplianceSignerResolver.test.js",
+      "exit": 0
+    },
+    {
+      "file": "the-it-guy/src/core/documents/__tests__/sellerMandateDocumentMarkup.test.js",
+      "exit": 0
+    },
+    {
+      "file": "the-it-guy/src/core/documents/__tests__/sellerOnboardingManualSigningPack.test.js",
+      "exit": 0
+    },
+    {
+      "file": "the-it-guy/src/core/documents/__tests__/sellerOnboardingPhase8Operational.test.js",
+      "exit": 0
+    },
+    {
+      "file": "the-it-guy/src/core/documents/__tests__/sellerOnboardingSigningPackSnapshot.test.js",
+      "exit": 0
+    },
+    {
+      "file": "the-it-guy/src/core/documents/__tests__/sellerPhysicalSigningCopy.test.js",
+      "exit": 0
+    },
+    {
+      "file": "the-it-guy/src/core/documents/__tests__/sellerPostOnboardingDrafts.test.js",
+      "exit": 0
+    },
+    {
+      "file": "the-it-guy/src/core/transactions/__tests__/dealSetupCompatibilityAudit.test.js",
+      "exit": 0
+    },
+    {
+      "file": "the-it-guy/src/core/transactions/__tests__/dealSetupContract.test.js",
+      "exit": 0
+    },
+    {
+      "file": "the-it-guy/src/core/transactions/__tests__/dealSetupDocumentRequirements.test.js",
+      "exit": 0
+    },
+    {
+      "file": "the-it-guy/src/core/transactions/__tests__/dealSetupReadiness.test.js",
+      "exit": 0
+    },
+    {
+      "file": "the-it-guy/src/core/transactions/__tests__/importedDealRecoveryPlan.test.js",
+      "exit": 0
+    },
+    {
+      "file": "the-it-guy/src/lib/__tests__/sellerLeadManualCaptureModel.test.js",
+      "exit": 0
+    },
+    {
+      "file": "the-it-guy/src/lib/__tests__/transactionsListApi.test.js",
+      "exit": 0
+    },
+    {
+      "file": "the-it-guy/src/services/__tests__/agencyBranchMetrics.test.js",
+      "exit": 0
+    },
+    {
+      "file": "the-it-guy/src/services/__tests__/branchDashboardModel.test.js",
+      "exit": 0
+    },
+    {
+      "file": "the-it-guy/src/services/__tests__/branchDashboardScope.test.js",
+      "exit": 0
+    },
+    {
+      "file": "the-it-guy/src/services/__tests__/branchSettingsPersistence.test.js",
+      "exit": 0
+    },
+    {
+      "file": "the-it-guy/src/services/__tests__/residentialDashboardService.test.js",
+      "exit": 0
+    },
+    {
+      "file": "the-it-guy/src/services/listings/__tests__/listingEditorSellerOwnership.test.js",
+      "exit": 0
+    },
+    {
+      "file": "the-it-guy/src/services/listings/__tests__/listingMarketingChannelPresentation.test.js",
+      "exit": 0
+    },
+    {
+      "file": "the-it-guy/src/services/listings/__tests__/listingPortalError.test.js",
+      "exit": 0
+    }
+  ],
+  "inventory": [
+    {
+      "file": "apps/admin/src/KnowledgeFactoryConfigurationView.jsx",
+      "sha256": "de854911e1223f0a059ba7057bf3683662e8e7c6ae3e964c0945ae9fe043b23c",
+      "bytes": 15794
+    },
+    {
+      "file": "apps/websites/lib/partner-listing-publication.test.mjs",
+      "sha256": "853851c0e39df1419459e22bddf788fd0e50d57abfb3e2996b2273e8291ba20b",
+      "bytes": 2476
+    },
+    {
+      "file": "docs/imported-transaction-recovery.md",
+      "sha256": "8840f9a44fc8db7f57e05133ecc7f010408b6ac2f602dfe9db2cf9fbcf203098",
+      "bytes": 4921
+    },
+    {
+      "file": "docs/imported-transaction-review-release.md",
+      "sha256": "67dbb34ead6536bfbd07a80396112878b8ecdf78c365e49e587630766b2d3f38",
+      "bytes": 14099
+    },
+    {
+      "file": "docs/listing-portal-recovery-production-release-20261001.json",
+      "sha256": "88004a859b9d8d38c6a13609cca0dce5675344f934621f5d07eaebe13d77854c",
+      "bytes": 5468
+    },
+    {
+      "file": "docs/listing-portal-recovery-production-rollback-20261001.sql",
+      "sha256": "7c4db8c714fe548fcbc451921f0f90aaf44d652543db015dfae32c9878ef8623",
+      "bytes": 21146
+    },
+    {
+      "file": "docs/private-property-feature-hotfix-release-20261001.json",
+      "sha256": "b78375c288cf1b3c7f7d227e1ec62827a8d7d1e03a0ce85b64741f6a1bf5cb9f",
+      "bytes": 10162
+    },
+    {
+      "file": "docs/production-branch-header-release-20261001.json",
+      "sha256": "a265295a43c6f719c1cdf3b6591a7ea995c3dbc9db795b0fefefacb300ee717d",
+      "bytes": 662
+    },
+    {
+      "file": "docs/production-branch-location-release-20261001.json",
+      "sha256": "4fc0181069f76153efa0e709d2bc8aa4cc251cc53ef8a08749b0a64df850a7ad",
+      "bytes": 1019
+    },
+    {
+      "file": "docs/production-branch-settings-layout-release-20261001.json",
+      "sha256": "6b40329d53a34eb75c822a8e93ee488c40f6ce740309432e62d24a9218266f26",
+      "bytes": 914
+    },
+    {
+      "file": "docs/production-branch-settings-release-20261001.json",
+      "sha256": "2e4207e35df4d6ea92f8d0ae3af43adc01a29bfd9e9c3f35004f70b45289bee1",
+      "bytes": 1341
+    },
+    {
+      "file": "docs/production-branches-release-20261001.json",
+      "sha256": "4a07df081057e9a521b90db9e8dfc4a27a51a44a5df8df9641db5ab51f5af67c",
+      "bytes": 2916
+    },
+    {
+      "file": "docs/production-migrations-20261001-prechange.json",
+      "sha256": "c746474cb0695e85859c74829a40eab29f2f5f83d6a1f46fd0f792fcdc41dd8a",
+      "bytes": 7200
+    },
+    {
+      "file": "docs/production-migrations-20261001-release.json",
+      "sha256": "e302c5195b88eb0d6fdaefb6303c8d2685de745dd794b4cbc3e1ac5db83f2b50",
+      "bytes": 5649
+    },
+    {
+      "file": "docs/production-migrations-20261001-rollback.sql",
+      "sha256": "455da8618de487702ec0bca502a3141dbb248d626df336b756c2edc2306dfd10",
+      "bytes": 7617
+    },
+    {
+      "file": "docs/production-onboarding-compatibility-20261001.patch",
+      "sha256": "8718cad628445b7c15504d51e9fe9ec710681722b6251dee55cd85fc49f4294d",
+      "bytes": 17149
+    },
+    {
+      "file": "docs/produktive-table-import-20261001.json",
+      "sha256": "25de70a681fd92aed37dd40bfb1eee1a8630d8a857c2b5f65eb1378d69168395",
+      "bytes": 2216
+    },
+    {
+      "file": "supabase/functions/_shared/knowledgeFactorySupplierCosts.mjs",
+      "sha256": "80e854e4803bc47b6f9e9fcb80e89a8da2f8d3bee8b76421b16fcb5d13adb4ab",
+      "bytes": 3244
+    },
+    {
+      "file": "supabase/functions/_shared/knowledgeFactoryV1Contract.mjs",
+      "sha256": "97cd159cc5b94428b89f7a592aad1a20daae4a9f75e1b6929f161809fccaa1d5",
+      "bytes": 1789
+    },
+    {
+      "file": "supabase/migrations/20261001091343_knowledge_factory_v1_cost_provenance.sql",
+      "sha256": "5445f01099426ab8f4ac91fe87f50effe0e5e2481aa59c355190b19761ea8722",
+      "bytes": 1081
+    },
+    {
+      "file": "supabase/migrations/20261001092313_knowledge_factory_versioned_cost_uniqueness.sql",
+      "sha256": "41db0cb82aa563ebdee2d1c2adb84b0d46a72d917b7c6c8bfcfd9f1800c049a5",
+      "bytes": 478
+    },
+    {
+      "file": "supabase/migrations/20261001092402_seller_onboarding_access_scope.sql",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "file": "supabase/migrations/20261001092739_seller_onboarding_access_enforcement.sql",
+      "sha256": "642527093295338f63067ad1f22c54e4fa2dc51897dcb80dd8c877e8b0bd8d39",
+      "bytes": 8368
+    },
+    {
+      "file": "supabase/migrations/20261001104037_independent_kingdom_listing_publication.sql",
+      "sha256": "3327393b0c4915a96c5200ae56bbcf1568056e187ea99ec457ac4f59f32061a6",
+      "bytes": 22159
+    },
+    {
+      "file": "supabase/migrations/20261001105246_document_upload_limit_35mb.sql",
+      "sha256": "b6da4d205964fab73d9bfb2d8f39c76e80126d1a8eaf8a29c6b925a6710bebb2",
+      "bytes": 258
+    },
+    {
+      "file": "supabase/migrations/20261001185738_imported_transaction_detail_review.sql",
+      "sha256": "3dae12009e1abcf9d2017c46187ec69e8132910b5a21ea9cfc4a327d598d7368",
+      "bytes": 17556
+    },
+    {
+      "file": "supabase/migrations/20261001191425_imported_transaction_review_status.sql",
+      "sha256": "1b9042436ad4b45e9ad9e20196af95fd6481b0f58abb812f626ecda3f06df0c7",
+      "bytes": 3510
+    },
+    {
+      "file": "supabase/migrations/20261001195834_imported_transaction_funding_review.sql",
+      "sha256": "6a895e3f003ec0567fd5b2ae283152dae8409f5fc9494a841b9b4c902614e932",
+      "bytes": 19762
+    },
+    {
+      "file": "supabase/migrations/20261001201355_imported_transaction_funding_validation.sql",
+      "sha256": "dc3124828561c71661b8d9ce47d2c0567ea154fc57b04efaea5a1ff635690856",
+      "bytes": 16717
+    },
+    {
+      "file": "supabase/migrations/20261001202026_branch_fic_training_compliance.sql",
+      "sha256": "c4a5ac8b9057eb5a6abba9fc8ad451cdd20535ec2f9b9a69c121d64fc0da5793",
+      "bytes": 13426
+    },
+    {
+      "file": "the-it-guy/api/admin/knowledge-factory/configuration.js",
+      "sha256": "0c6700e0801b1f0f17377b6ccb6475876377ac0482c9b0d60724bea023d07263",
+      "bytes": 6637
+    },
+    {
+      "file": "the-it-guy/api/admin/knowledge-factory/uat-full-report-test.js",
+      "sha256": "1d766558544f8326123268dd078cd8f3eefca5a13a1fcc81530da6ea6b1d02dd",
+      "bytes": 856
+    },
+    {
+      "file": "the-it-guy/api/admin/knowledge-factory/uat-report-test.js",
+      "sha256": "7c4632a601fb01d63b085e2a3ccc5ddf962dfd999c70f5c5c7770ff175315010",
+      "bytes": 17312
+    },
+    {
+      "file": "the-it-guy/api/knowledge-factory/package-cost-envelope.js",
+      "sha256": "5038d0c75b532b300485c92e50d33e3a1ca421332832278e1f6af0718ab83722",
+      "bytes": 3870
+    },
+    {
+      "file": "the-it-guy/api/knowledge-factory/supplier-contract.js",
+      "sha256": "53b1b241f34852b1b3c631be53105abd929f568f340ccabb46a9688909657321",
+      "bytes": 537
+    },
+    {
+      "file": "the-it-guy/api/knowledge-factory/supplier-costs.js",
+      "sha256": "77989609a430f83c1b3e80cbfa723ce58e3e630a2651ca4e00e62acfdf78d424",
+      "bytes": 189
+    },
+    {
+      "file": "the-it-guy/docs/seller-mvp-review-candidates.json",
+      "sha256": "4bb5d6023cee97a6f93209685d1beaa49ba30f2e70c3e6905f458f3e146e5758",
+      "bytes": 7989
+    },
+    {
+      "file": "the-it-guy/scripts/audit-imported-deals.mjs",
+      "sha256": "9b4a2f463141ec932252d5da7c7a9fe0febc7a21e0cf2b6abc511d2883801c2b",
+      "bytes": 1425
+    },
+    {
+      "file": "the-it-guy/scripts/branch-fic-training.test.mjs",
+      "sha256": "8353a82fa03e1ece3ceba5c438f0e827168c597ac3d09429a882345501d2af7d",
+      "bytes": 9897
+    },
+    {
+      "file": "the-it-guy/scripts/canonical-document-required-role.test.mjs",
+      "sha256": "5cad9f153ae350e16bbca7cb21992201829663722be206f5cdd0776e5b43067d",
+      "bytes": 3100
+    },
+    {
+      "file": "the-it-guy/scripts/fixtures/private-property-attribute-types.json",
+      "sha256": "c78778637266bfc1b33af44c798a8440a93eb30be39621991832924157b49a09",
+      "bytes": 1330
+    },
+    {
+      "file": "the-it-guy/scripts/knowledge-factory-billing-contract.test.mjs",
+      "sha256": "3583ef232ea61dc71d6d6affcab17d1abbf24871c2983bb0768ab6eda93c9cd0",
+      "bytes": 11140
+    },
+    {
+      "file": "the-it-guy/scripts/knowledge-factory-internal-admin.test.mjs",
+      "sha256": "3e4e57b393a73321ab95e2276fc6f42723213a3c913023df9283c40985da6d45",
+      "bytes": 7090
+    },
+    {
+      "file": "the-it-guy/scripts/knowledge-factory-login-probe.mjs",
+      "sha256": "2dba71d4612aa82003b42eab19b0e531c7d250f4c0868ce1617c3067ecce167b",
+      "bytes": 517
+    },
+    {
+      "file": "the-it-guy/scripts/knowledge-factory-login-probe.test.mjs",
+      "sha256": "dcee1c1ec0ea0244e5ce29df5cba78eb87f6977c716f3e352568f516fa5023f2",
+      "bytes": 4064
+    },
+    {
+      "file": "the-it-guy/scripts/knowledge-factory-package-cost-envelope.test.mjs",
+      "sha256": "86a1d9f292672ea00f00cb8a78ec27a19340fe24da41b00b198297b65d25b739",
+      "bytes": 7865
+    },
+    {
+      "file": "the-it-guy/scripts/knowledge-factory-uat-report-test.test.mjs",
+      "sha256": "a3bcd77fc3accd2d8b0bd2151585b9f4b661ab3734ebee92ba68e77e3d3ef298",
+      "bytes": 16256
+    },
+    {
+      "file": "the-it-guy/scripts/lib/transactionDetailReviewFixture.mjs",
+      "sha256": "be2e5be845d387a4212307e21c6f426148d8dee01a166ff7bcad8b3e5107e6a4",
+      "bytes": 5900
+    },
+    {
+      "file": "the-it-guy/scripts/seller-onboarding-access.test.mjs",
+      "sha256": "386d58e30b1b39e1476f126f9a61e3a43eda74cb7c8d7462769175936809d23e",
+      "bytes": 30674
+    },
+    {
+      "file": "the-it-guy/scripts/settings-branding-save-order.test.mjs",
+      "sha256": "48d4c637bd7ee9d2cbc04e3829c3edfbf57d7c3efe262d8e433c825a540e8ea5",
+      "bytes": 2939
+    },
+    {
+      "file": "the-it-guy/scripts/sql/imported-deal-audit.sql",
+      "sha256": "d4615235a6088aa293834f8a2ec1a10c3bb9043ee89d98c898e1be82e0e2f32c",
+      "bytes": 2436
+    },
+    {
+      "file": "the-it-guy/scripts/sql/seller-mvp-acceptance-audit.sql",
+      "sha256": "2980217b15524880f52bd27e0e00aeda58fc4f86504a1bb6f562462e489763c4",
+      "bytes": 2838
+    },
+    {
+      "file": "the-it-guy/scripts/transaction-detail-review-browser.mjs",
+      "sha256": "cc29df2fab333784ae2a7e267254cc7db7c80672a48912040b27dbf2ddf84876",
+      "bytes": 9611
+    },
+    {
+      "file": "the-it-guy/scripts/transaction-detail-review.test.mjs",
+      "sha256": "99357219260af7f0c3d39b6e8e62697b43122b6ae5d17c7fb0d5beea0b36dbbd",
+      "bytes": 13012
+    },
+    {
+      "file": "the-it-guy/server/services/knowledgeFactoryAdminAccess.js",
+      "sha256": "04eebcf71588ad4571b7cb842ff5fc3da8edff311fe8950667df1295c1ed9ed6",
+      "bytes": 1553
+    },
+    {
+      "file": "the-it-guy/server/services/knowledgeFactoryLoginProbe.js",
+      "sha256": "d5cd77d049ae1c18afc88844446e9c5b62c17a167b1f2f845b64870e08bb4a00",
+      "bytes": 1836
+    },
+    {
+      "file": "the-it-guy/server/services/sellerOnboardingCoreApi.test.js",
+      "sha256": "7fdd8b6264e82d6e802c26982b72dd6ea5a24a0e7f182dee963723f2d5f81d9b",
+      "bytes": 2669
+    },
+    {
+      "file": "the-it-guy/src/components/__tests__/AgentTransactionsTable.importReview.test.jsx",
+      "sha256": "a78e0deb505a51b7ca2208dd142829fa4765f571071691d6e3d79cbee5954187",
+      "bytes": 4041
+    },
+    {
+      "file": "the-it-guy/src/components/agency/BranchCoverImage.jsx",
+      "sha256": "6cf397bc1f594bd4846b6aea30a3a3281c221b4d239aa3856bf2f5191cf5954c",
+      "bytes": 1061
+    },
+    {
+      "file": "the-it-guy/src/components/agency/BranchExecutiveOverview.jsx",
+      "sha256": "30c4de183ef0932134e751b9ab4419cc4f064b2ff95a19ac7b951d600d5e98df",
+      "bytes": 17705
+    },
+    {
+      "file": "the-it-guy/src/components/agency/BranchFicTraining.jsx",
+      "sha256": "3c2bc30e0c2dee01dd3c33f28e2a1717f230cdda8317e901c2a9a2fef94b5454",
+      "bytes": 32248
+    },
+    {
+      "file": "the-it-guy/src/components/agents/__tests__/AgentWorkspaceOverview.test.jsx",
+      "sha256": "4d9f480f8b91dc98429fa34d9191b369b2e73f4bf8e881a5d3e71a8c6d3a8d6a",
+      "bytes": 3994
+    },
+    {
+      "file": "the-it-guy/src/components/listings/__tests__/ListingSellerInformationEditor.test.jsx",
+      "sha256": "29dd7bcbc9a2e35ff18cfbca4cb1e011ebc3dc07c144adc10f71ccbeb6359ebb",
+      "bytes": 2162
+    },
+    {
+      "file": "the-it-guy/src/components/marketing/EmailCampaignSettings.jsx",
+      "sha256": "45d693db71d89c63f860a125a149f2a3408f8fc95a06367f30f9589ea1a649c6",
+      "bytes": 8009
+    },
+    {
+      "file": "the-it-guy/src/components/marketing/__tests__/EmailCampaignOverview.test.jsx",
+      "sha256": "1476a96d133bbc0b53e16c4d83d857f7811c33db7d1ceb1c7155ed5946e10e48",
+      "bytes": 10977
+    },
+    {
+      "file": "the-it-guy/src/components/marketing/__tests__/EmailCampaignSettings.test.jsx",
+      "sha256": "6ffc4ca28af7f84fa7e785aa5acc09e183368e5b3acde3acc467c83cda56ed81",
+      "bytes": 4036
+    },
+    {
+      "file": "the-it-guy/src/components/transaction/ImportedDealReviewBadge.jsx",
+      "sha256": "53ba88b053ad8bc6163b6bfd21e1ec509b5479fbff092b457bdc69e2cd0a02e2",
+      "bytes": 895
+    },
+    {
+      "file": "the-it-guy/src/components/transaction/TransactionDetailReviewPanel.jsx",
+      "sha256": "1b56cc7f8ae98cc086c7edfb11b11b7301c1a0e38473ecb6d42a93e66c1f4f59",
+      "bytes": 19454
+    },
+    {
+      "file": "the-it-guy/src/components/transaction/__tests__/DealSetupReadinessPanel.test.jsx",
+      "sha256": "30ad54af8c22085db6de2db1cec18bcda3a890e88891de92b53761e3dc52c52d",
+      "bytes": 4671
+    },
+    {
+      "file": "the-it-guy/src/components/transaction/__tests__/TransactionBuyerPartiesPanel.links.test.jsx",
+      "sha256": "3e60ef512b7f1293b0f355bf009eba01988be8a0d56a27045bc572492926da00",
+      "bytes": 2372
+    },
+    {
+      "file": "the-it-guy/src/components/transaction/__tests__/TransactionDetailReviewPanel.test.jsx",
+      "sha256": "8a4414132cb16d86ffa5a5b0999ecb9c98cd30bf7ff12dee89d9bd7fedba6843",
+      "bytes": 6449
+    },
+    {
+      "file": "the-it-guy/src/core/transactions/__tests__/importedDealRecoveryPlan.test.js",
+      "sha256": "cdcce65bd55985fab9209d9f5d72dbc4bbe40c9a0d408d82601592e52abed7c0",
+      "bytes": 3255
+    },
+    {
+      "file": "the-it-guy/src/core/transactions/importedDealRecoveryPlan.js",
+      "sha256": "a549c20b30325cb8ced9061b5d678e6a6294bfc6a4bfafe04e63770f1d249403",
+      "bytes": 3514
+    },
+    {
+      "file": "the-it-guy/src/core/transactions/importedDealReviewStatus.js",
+      "sha256": "9f54dcce9a96ba0fdfbf632ee7ca4b99f0474b6f61927596ecf166f0093e1a16",
+      "bytes": 1429
+    },
+    {
+      "file": "the-it-guy/src/core/transactions/transactionDetailReview.js",
+      "sha256": "1e6a97698a633c9ee6e9bd3d8455ebf8cec62a8ca11a108fe7dc3b3692f40f51",
+      "bytes": 6178
+    },
+    {
+      "file": "the-it-guy/src/hooks/useImportedDealReviewStatuses.js",
+      "sha256": "462fb966c3a3a9fa0c0400a12cfc4f4b759dbc37341d9d41f7b07b32404a2925",
+      "bytes": 1640
+    },
+    {
+      "file": "the-it-guy/src/lib/sellerBondStatus.js",
+      "sha256": "1e299b19d446fc413677335c9c799ed35224f91d0bd01431f66748a0971fdf6a",
+      "bytes": 719
+    },
+    {
+      "file": "the-it-guy/src/pages/__tests__/EmailWorkspaceNavigation.test.jsx",
+      "sha256": "581fb38b5c7cae90812887563e0dad94d91d64f9853876f8200e5f2154372df3",
+      "bytes": 3255
+    },
+    {
+      "file": "the-it-guy/src/services/__tests__/branchDashboardModel.test.js",
+      "sha256": "4453dc13d8558fb714e22e61e98d993b43ddf08e448fb4a2f3e0d57b9aa2ca08",
+      "bytes": 7697
+    },
+    {
+      "file": "the-it-guy/src/services/__tests__/branchDashboardScope.test.js",
+      "sha256": "a7e8fb89e1d36868abb3cc7861504bdb05ff9908e3403898926385be2f51bc6a",
+      "bytes": 2915
+    },
+    {
+      "file": "the-it-guy/src/services/__tests__/branchSettingsPersistence.test.js",
+      "sha256": "ff058ea5c8566c6afae8b67bfe44ac1665084a9f5fcb2c2b8172cc63c373cef9",
+      "bytes": 3327
+    },
+    {
+      "file": "the-it-guy/src/services/__tests__/dealSetupService.buyerLinks.test.js",
+      "sha256": "30ec11b85b596629b819fa03098b104e1be2867c296ea795750384c7b239350a",
+      "bytes": 2503
+    },
+    {
+      "file": "the-it-guy/src/services/__tests__/importedDealReviewStatusService.test.js",
+      "sha256": "150493d31b787508a669323e3b27b87803b2d17a1c4812422b025e9cf4b052eb",
+      "bytes": 2906
+    },
+    {
+      "file": "the-it-guy/src/services/__tests__/privateListingService.sellerAccess.test.js",
+      "sha256": "c98a869485af6ebbe0a142c95955d0655cb96b46e09c3e80459e25dcfcb62904",
+      "bytes": 8143
+    },
+    {
+      "file": "the-it-guy/src/services/__tests__/transactionDetailReviewService.test.js",
+      "sha256": "853d5589da45d8a0f2b6dbb46130c630b772718736ed3e4a28f75800f58142d8",
+      "bytes": 5567
+    },
+    {
+      "file": "the-it-guy/src/services/branchDashboardDataService.js",
+      "sha256": "c3bb20bcade8dfac30874417b97c63af4fe2dc875122d66131e04b3a525f2ccb",
+      "bytes": 2548
+    },
+    {
+      "file": "the-it-guy/src/services/branchDashboardModel.js",
+      "sha256": "750e7875041fa71f1e2ef58eec87bc9822356e13513fc5d18feb67ac95f08c50",
+      "bytes": 20836
+    },
+    {
+      "file": "the-it-guy/src/services/branchFicTrainingService.js",
+      "sha256": "7ceb829bed299d33a01d6776a9e4492d041beeada2010bca70d66134dcbe0c28",
+      "bytes": 11860
+    },
+    {
+      "file": "the-it-guy/src/services/importedDealReviewStatusService.js",
+      "sha256": "c78e30d8d28f71e632c8d418c0a01e3019145a59ee2a8f986a57e33857e9c17d",
+      "bytes": 1593
+    },
+    {
+      "file": "the-it-guy/src/services/listings/__tests__/listingEditorSellerOwnership.test.js",
+      "sha256": "9c06766f19b4dbbf19ee8004c34160bb958623d89c45c32d53327936965de760",
+      "bytes": 1649
+    },
+    {
+      "file": "the-it-guy/src/services/listings/__tests__/listingPortalError.test.js",
+      "sha256": "ec8966a485a8d6c088c4aa1d876228505c6ebe342507438e6d9cf3812bb84173",
+      "bytes": 1906
+    },
+    {
+      "file": "the-it-guy/src/services/propertyIntelligence/knowledgeFactoryReportDisplay.js",
+      "sha256": "ad24ab52c3e7770f8c347c2c5a6f1f3cd11646f89f024d35d6645a46b6d04b1a",
+      "bytes": 1280
+    },
+    {
+      "file": "the-it-guy/src/services/transactionDetailReviewService.js",
+      "sha256": "5101a23dd34b2d6d705e8b6cf1925b5a7621c2fa5758c3b6a34fde9f40e08285",
+      "bytes": 3959
+    },
+    {
+      "file": "apps/admin/README.md",
+      "sha256": "a080f6f3e1ca8f272dd0b8929c1e39fd2799c824f09dbd4237555f38d037e6e9",
+      "bytes": 4037
+    },
+    {
+      "file": "apps/admin/src/App.jsx",
+      "sha256": "52a35f273163656e524536a7861fb434b507a2ca47b4b375ae35d56f6d0a2a90",
+      "bytes": 253695
+    },
+    {
+      "file": "apps/websites/lib/site-repository.ts",
+      "sha256": "6ed74e8f29b79de4e86bf356c81d8afb022f67acdd54e2e6ba69dc4802f988c4",
+      "bytes": 38830
+    },
+    {
+      "file": "docs/knowledge-factory-phase0-runbook.md",
+      "sha256": "3551d5b6ad505111734f21a89b2e2b38fcd5d3211c603ff739ca14eff90664ae",
+      "bytes": 22357
+    },
+    {
+      "file": "docs/supabase-production-recovery-lock-report.md",
+      "sha256": "f5508c8f3906d113ee85a6aeb1f97d25bdeb551ec664677535f313d9d0af1601",
+      "bytes": 1366
+    },
+    {
+      "file": "docs/supabase-production-recovery-lock.json",
+      "sha256": "a70ec08e0765fb0ee962a67c5d9de3a60d685c03d477fc3b827bcc2e69b9196f",
+      "bytes": 1902
+    },
+    {
+      "file": "docs/supabase-production-recovery-test-packet.md",
+      "sha256": "3e4a922a0b7542cfb42655814550ca8f009df73a07446815f14b08c942df2750",
+      "bytes": 2212
+    },
+    {
+      "file": "supabase/functions/knowledge-factory-fica-discovery/policy.test.ts",
+      "sha256": "ebddaacce290be51ac6cb002972e7a3579ffb5b0a4915ad04453c1aed83c0ae6",
+      "bytes": 2173
+    },
+    {
+      "file": "supabase/functions/knowledge-factory-fica-discovery/policy.ts",
+      "sha256": "0c5dbb141cbe5ffa623c076d401d3e535914573152b0118d27ead0da864b5c18",
+      "bytes": 2030
+    },
+    {
+      "file": "supabase/functions/knowledge-factory-graphql/index.ts",
+      "sha256": "3490093505139d13438aa8c92d4e2f6b81763cf52e6b3d0c58bce85b99c792d0",
+      "bytes": 30788
+    },
+    {
+      "file": "the-it-guy/.gitignore",
+      "sha256": "2834d58b99bd8bf141c61b8544a5549d59a90ba36982cd472d3dff4609bc705b",
+      "bytes": 601
+    },
+    {
+      "file": "the-it-guy/README.md",
+      "sha256": "cfcc8b8f8b8793019aa01ced0d2a9bfd324c79326aab31dd2b384fad8451e633",
+      "bytes": 39317
+    },
+    {
+      "file": "the-it-guy/api/knowledge-factory/commercial-policy.js",
+      "sha256": "45e0fb0c7caecae0355b6d4f0be525cdae28c5729b35fe47c3445c68cc555247",
+      "bytes": 6656
+    },
+    {
+      "file": "the-it-guy/api/knowledge-factory/contract-discovery.js",
+      "sha256": "c6a87dec35356ed30fa6bd2d2787d5172525a436d6e590faee1ad550ce82e81b",
+      "bytes": 9850
+    },
+    {
+      "file": "the-it-guy/api/knowledge-factory/contract-evidence-policy.js",
+      "sha256": "dd3153f2599c9808eb79c025fa5682cb597d37c0fbf9cd91b2c2db9133800cd1",
+      "bytes": 1061
+    },
+    {
+      "file": "the-it-guy/api/knowledge-factory/cost-matrix.js",
+      "sha256": "f421f8b87d50f338923c8324664a211a1eb392b0a71d6f512baa54798188a678",
+      "bytes": 19113
+    },
+    {
+      "file": "the-it-guy/api/knowledge-factory/map.js",
+      "sha256": "1782ce6bc2d787e5aa9759359d3e199c5fbf90532a8ea727bcc7a98f73700856",
+      "bytes": 16736
+    },
+    {
+      "file": "the-it-guy/api/knowledge-factory/package-commercial-policy.js",
+      "sha256": "2b438ab60e252c40eee9e82af083f845fc2124500faabe241b27b62418752f2b",
+      "bytes": 8171
+    },
+    {
+      "file": "the-it-guy/api/knowledge-factory/package-report-recipes.js",
+      "sha256": "3252c660d7027c0fa73af543d8e7a7a05278c7fc547e5229c1c5a0e1635121e0",
+      "bytes": 1991
+    },
+    {
+      "file": "the-it-guy/api/knowledge-factory/report-products.js",
+      "sha256": "777056be4989f2983c3dca332fd428738c68ba92d1185dc93f58b9e54f43af0f",
+      "bytes": 17175
+    },
+    {
+      "file": "the-it-guy/api/knowledge-factory/report-purchase-intents.js",
+      "sha256": "d81d6880de8d23ad954e7936c073ba54da6994f25edf11c7ae31a728c5288f53",
+      "bytes": 43446
+    },
+    {
+      "file": "the-it-guy/api/knowledge-factory/reports.js",
+      "sha256": "d94591261ab9699ebd15b7df4e4444dedf381bb81b6164393300a9aa263080bf",
+      "bytes": 21400
+    },
+    {
+      "file": "the-it-guy/api/knowledge-factory/supplier-endpoint.js",
+      "sha256": "2bb8bbcb10882da811d97fbfe54c4098a0c731fc2ab654af12467e3c243b544a",
+      "bytes": 171
+    },
+    {
+      "file": "the-it-guy/docs/branch-workspace-overview-metrics.md",
+      "sha256": "f8950d8fc8164653e56bc6a7c1d26a0994b76e7ea0eebfd78236810b0ff7f3af",
+      "bytes": 4086
+    },
+    {
+      "file": "the-it-guy/docs/listing-seller-phase10-controlled-manual-test.template.json",
+      "sha256": "71ac750525c6d2d042dba094989fcf91351819896b1df5b8fa94a46e05e5a801",
+      "bytes": 1954
+    },
+    {
+      "file": "the-it-guy/docs/listing-seller-phase10-release-runbook.md",
+      "sha256": "ffcf171ebab8be8ea59329549b095e1c82a66eea47e8af6413994a5c685bcf6e",
+      "bytes": 4076
+    },
+    {
+      "file": "the-it-guy/package.json",
+      "sha256": "e311eaa631c8864a45f743108314f0b87fef8148128ed84a064e31c9c3f248ac",
+      "bytes": 240496
+    },
+    {
+      "file": "the-it-guy/scripts/create-listing-draft-storage-quota.test.mjs",
+      "sha256": "5ba85e9f3674b61ffb715b35706999700c6058271914ec0b1cb91fb7f333f7a4",
+      "bytes": 2268
+    },
+    {
+      "file": "the-it-guy/scripts/direct-listing-intake-model-phase1.test.mjs",
+      "sha256": "c0d1998d6c6dabd7f09af51129207fb0dea9d1a6dc68b64f445420eefb8cf05b",
+      "bytes": 8437
+    },
+    {
+      "file": "the-it-guy/scripts/direct-listing-persistence-phase3.test.mjs",
+      "sha256": "fbfbe6877bf0b0a7aa85f6baea3939fa63b12ebf80ba02d04de57c80a4700ca6",
+      "bytes": 18402
+    },
+    {
+      "file": "the-it-guy/scripts/document-upload-policy-phase5.test.mjs",
+      "sha256": "39648b1eddf75d7d07e0ccca38ae545c8c1586ad746f08c8a890b074346df867",
+      "bytes": 2222
+    },
+    {
+      "file": "the-it-guy/scripts/email-campaign-landing.test.mjs",
+      "sha256": "0ae8ae8aad647f21aef67d904647dae7c8834a310019d76c148b52d29631d41e",
+      "bytes": 1514
+    },
+    {
+      "file": "the-it-guy/scripts/kingdom-isell-listing-channel.test.mjs",
+      "sha256": "23da19507255da762a0fc23f30dca7f79f292cfaceb645fa6fb256afce5a0212",
+      "bytes": 12252
+    },
+    {
+      "file": "the-it-guy/scripts/kingstons-seller-documents-phase6-authority-documents.test.mjs",
+      "sha256": "3d30e9d3c56f14cc2fcfac3ae0d1a37621cfab76e7c4c13dea064b605583c98f",
+      "bytes": 6035
+    },
+    {
+      "file": "the-it-guy/scripts/knowledge-factory-contract-discovery-phase1.test.mjs",
+      "sha256": "10d3662a82be42b4e6e169969a6152dcca77a41801b972ecdbfa674ee033cded",
+      "bytes": 3344
+    },
+    {
+      "file": "the-it-guy/scripts/knowledge-factory-cost-matrix.test.mjs",
+      "sha256": "f7ad59348460c9907c4f3d49a370682c36d4fc004cb4c63ed877666a7d4f1301",
+      "bytes": 13309
+    },
+    {
+      "file": "the-it-guy/scripts/knowledge-factory-package-cost-recipes-phase2.test.mjs",
+      "sha256": "a675abf2800fd18bf3feb42db0ceb260d805f25b5749ac3988c4ddf5041a8d40",
+      "bytes": 3380
+    },
+    {
+      "file": "the-it-guy/scripts/knowledge-factory-report-pdf-phase5.test.mjs",
+      "sha256": "e1a9c3dbdbd277df0ba80918379894b84269406527ed5ab69936d31ac5bd9924",
+      "bytes": 4450
+    },
+    {
+      "file": "the-it-guy/scripts/knowledge-factory-report-snapshots-phase4.test.mjs",
+      "sha256": "6f9d174802a9aabf59b396df98d2f5ffc2b2e9e19681a8aac037309e54e15b94",
+      "bytes": 4852
+    },
+    {
+      "file": "the-it-guy/scripts/knowledge-factory-staged-basic-cost-access.test.mjs",
+      "sha256": "897cb6ba12eda85d28269757c7174cd95d73f7a486690aadce0a0f3b323e1c42",
+      "bytes": 2378
+    },
+    {
+      "file": "the-it-guy/scripts/knowledge-factory-uat-endpoint.test.mjs",
+      "sha256": "97dbd253cd3e4697cde0289bf0de2e5cb5b9554d6a6264331f75ce48f1bbb766",
+      "bytes": 1121
+    },
+    {
+      "file": "the-it-guy/scripts/knowledge-factory-vercel-egress-probe.test.mjs",
+      "sha256": "a117887dc92aae76ab9b7718d1ccf6b51a4f4fbc56655bd1dbec105e03858c1c",
+      "bytes": 2011
+    },
+    {
+      "file": "the-it-guy/scripts/listing-channel-update-state.test.mjs",
+      "sha256": "c2ddbab5ff8fec302a42d92c4fd6db43088ef8645d54a7ec15c64f43a37331ff",
+      "bytes": 6675
+    },
+    {
+      "file": "the-it-guy/scripts/listing-mandate-readiness-phase1.test.mjs",
+      "sha256": "a3da9562a5be17a6dde00bbf7c3d0fdd3e4a8580a516e68c199d69a45eba61b8",
+      "bytes": 3071
+    },
+    {
+      "file": "the-it-guy/scripts/listing-seller-canonical-update.test.mjs",
+      "sha256": "4931ef0056c3790ef894bb97feb07cdf3f169c5ee2b2dafef7d881213e3a7e17",
+      "bytes": 22008
+    },
+    {
+      "file": "the-it-guy/scripts/listing-seller-end-to-end-release.test.mjs",
+      "sha256": "40c568de8d120c949fe554b32496dfefcf857ecd8bf543b7217ee7e31dcf0afc",
+      "bytes": 15360
+    },
+    {
+      "file": "the-it-guy/scripts/private-property-listing-preview.test.mjs",
+      "sha256": "b4b6dcf45a4bb387dd3ff519e4b897370808f64977c857737ae99b64df9904fa",
+      "bytes": 26085
+    },
+    {
+      "file": "the-it-guy/scripts/property24-listing-publish-ui.test.mjs",
+      "sha256": "3ba3e7a17fc385ca9b8ef017584b2142f387cad3cb7928da1f188f6723c5829d",
+      "bytes": 5843
+    },
+    {
+      "file": "the-it-guy/scripts/residential-canvassing.test.mjs",
+      "sha256": "2549981ad4da066ee70d7861049c5d81c09ee080bf9a0040a9319a69460ed1c3",
+      "bytes": 34625
+    },
+    {
+      "file": "the-it-guy/scripts/seller-document-persistence-phase3.test.mjs",
+      "sha256": "4460fca92fa628cd6a4b93e04e391535b44f02799c69eedd836b2be0703b047d",
+      "bytes": 5195
+    },
+    {
+      "file": "the-it-guy/scripts/seller-onboarding-flow-contract.test.mjs",
+      "sha256": "53b34a09206d56f3df2730c1853aa50a7413d671e205b1e5e66d7e409568ff1b",
+      "bytes": 20553
+    },
+    {
+      "file": "the-it-guy/scripts/seller-onboarding-profile-canonical-wiring-phase3.test.mjs",
+      "sha256": "c1d6487107c6603b2b03a8b79560cd418257300b8ba17e2fa3df76cea34ac383",
+      "bytes": 3880
+    },
+    {
+      "file": "the-it-guy/scripts/seller-onboarding-progress-serialization.test.mjs",
+      "sha256": "0abe317fdcd7ebdf68460cd56705771371b13cdc3279207fbd6b87eda8843b2c",
+      "bytes": 5205
+    },
+    {
+      "file": "the-it-guy/scripts/seller-onboarding-south-african-scenarios.test.mjs",
+      "sha256": "9c98cb248408e3771a33db0176bc8df387b1716e89417a0f7edd5391d7717acf",
+      "bytes": 19040
+    },
+    {
+      "file": "the-it-guy/scripts/seller-onboarding-submit-fast-return.test.mjs",
+      "sha256": "9856514332f17a51b4b1f3b569a76fe50f6ffe36e1da1769d568862afac90eff",
+      "bytes": 9845
+    },
+    {
+      "file": "the-it-guy/scripts/seller-readiness.test.mjs",
+      "sha256": "b52b7689aea4c0b55e98141c04250f3dd8925d9e49aa5f1edfab4339f53b59ec",
+      "bytes": 12904
+    },
+    {
+      "file": "the-it-guy/server/services/privatePropertyListingMapper.js",
+      "sha256": "4697b9db88124c52d8764d9f7f2cba761459e1241a014653ecf26e6a506846b2",
+      "bytes": 39830
+    },
+    {
+      "file": "the-it-guy/server/services/property24Client.js",
+      "sha256": "ea2a8269e905ee484937d40f10db31d6ca6c39e8da90abb12a4bf04120c5d92c",
+      "bytes": 10918
+    },
+    {
+      "file": "the-it-guy/server/services/sellerOnboardingCoreApi.js",
+      "sha256": "1cc686072491329dbe6cc33971ed5873053a0bf9d429fa735581d2400732e1cb",
+      "bytes": 13686
+    },
+    {
+      "file": "the-it-guy/src/App.jsx",
+      "sha256": "aaffa4e04fccf789d7ed35622eff5bd3da780fa2222c9bda662efc2f33c2e712",
+      "bytes": 214652
+    },
+    {
+      "file": "the-it-guy/src/components/AgentTransactionsTable.jsx",
+      "sha256": "1e45b5023e27bf7772b1df5c813ac183ac4ec00cb3b0b65ec57bdb4936ac81b7",
+      "bytes": 31117
+    },
+    {
+      "file": "the-it-guy/src/components/agents/AgentWorkspaceUi.jsx",
+      "sha256": "2cfcecff73b09a6bccc44afbec973da7251d2af6f7308b164cc3599ea2bf621a",
+      "bytes": 5157
+    },
+    {
+      "file": "the-it-guy/src/components/appointments/dashboard/AppointmentDashboardSection.jsx",
+      "sha256": "967d54bb7e2f508bfabd1da070a69b925b617bb00f5a6c3b1b529b62ee3a3a0c",
+      "bytes": 42981
+    },
+    {
+      "file": "the-it-guy/src/components/canvassing/CanvassingWorkspaceTabs.jsx",
+      "sha256": "8b62e9caccbfaed8dea111dddd59f125d55ccd283ce9b0951f935a1b55a38821",
+      "bytes": 894
+    },
+    {
+      "file": "the-it-guy/src/components/canvassing/KnowledgeFactoryPackageReportsWorkspace.jsx",
+      "sha256": "5212e3274e8522567cb3ea4e92a9922b41f6ac2fd488e1216b8c8add7f132ef7",
+      "bytes": 24206
+    },
+    {
+      "file": "the-it-guy/src/components/canvassing/KnowledgeFactoryReportPurchaseModal.jsx",
+      "sha256": "d31a86335d9b36b495436a478a426ff2773cb31074cb9e505b9815b2ffa4417a",
+      "bytes": 14458
+    },
+    {
+      "file": "the-it-guy/src/components/dashboard/PartnerBusinessDistributionPanel.jsx",
+      "sha256": "b24ed6e74d757cdd6a2bf41e0fbdcff2071937a5a9371468cb39ebec59eadd08",
+      "bytes": 13297
+    },
+    {
+      "file": "the-it-guy/src/components/leads/SellerLeadAgentOnboardingEditor.jsx",
+      "sha256": "723964725a1548b67f42c0ab7c275e69508ea9c80b7b295caf3884d033cc34a0",
+      "bytes": 6816
+    },
+    {
+      "file": "the-it-guy/src/components/listings/KingdomWebsitePublicationChannel.jsx",
+      "sha256": "c258f4757868ed514833c41e3284257eda684ec934b59636a075fe02e54c5c09",
+      "bytes": 7794
+    },
+    {
+      "file": "the-it-guy/src/components/listings/ListingSellerInformationEditor.jsx",
+      "sha256": "891a47b1d72c7b4386f9b54e886c4d78c038a5c434995c24bcca5aa7109a9d90",
+      "bytes": 17478
+    },
+    {
+      "file": "the-it-guy/src/components/marketing/EmailCampaigns.jsx",
+      "sha256": "5c4bbc2a2f38d1cd860d08da236c63eb17d696e2d5a42e534cc7f373a51572ce",
+      "bytes": 34626
+    },
+    {
+      "file": "the-it-guy/src/components/transaction/DealSetupPanel.jsx",
+      "sha256": "b7539432c2b6ea59d74eada34e36cfc8306f5ae60e97a7de060657f531485750",
+      "bytes": 17595
+    },
+    {
+      "file": "the-it-guy/src/components/transaction/DealSetupReadinessPanel.jsx",
+      "sha256": "b7567acc142909e1774799fd9f67b4d02155e58c341d30b7c505698d16797476",
+      "bytes": 3012
+    },
+    {
+      "file": "the-it-guy/src/components/transaction/TransactionBuyerPartiesPanel.jsx",
+      "sha256": "9f5b86b267efbc81d72fe60d05449ad5ca64f804173478f2013450eab93ea3f4",
+      "bytes": 15706
+    },
+    {
+      "file": "the-it-guy/src/components/transaction/__tests__/DealSetupPanel.test.jsx",
+      "sha256": "c2e523876467a17df26c3948e0e244c18b14a6cb4828c97c7f8bb54834d2b2b6",
+      "bytes": 10757
+    },
+    {
+      "file": "the-it-guy/src/core/documents/__tests__/sellerComplianceSignerResolver.test.js",
+      "sha256": "da3fa88fdb69d02927fc9e212ae1459104c0387f3209f732dcdcd565596fbf44",
+      "bytes": 8975
+    },
+    {
+      "file": "the-it-guy/src/core/documents/__tests__/sellerMandateDocumentMarkup.test.js",
+      "sha256": "fb27bbfa279cf02c91362f564efb249591ae5fd43b6ca2f6cb4b1c5e02d4eef7",
+      "bytes": 4853
+    },
+    {
+      "file": "the-it-guy/src/core/documents/__tests__/sellerOnboardingManualSigningPack.test.js",
+      "sha256": "7665b002ba40cf93b6ca98e21c4394c4cae1b8cb66b84043abb014c961bb0555",
+      "bytes": 18198
+    },
+    {
+      "file": "the-it-guy/src/core/documents/__tests__/sellerOnboardingPhase8Operational.test.js",
+      "sha256": "cc25ec2b27dcc061c4eb1d7236f072b6b0df9f56693646f4c6900a0fd662fa9b",
+      "bytes": 6528
+    },
+    {
+      "file": "the-it-guy/src/core/documents/__tests__/sellerOnboardingSigningPackSnapshot.test.js",
+      "sha256": "7907853f44b0229ce569d6778b160daf9928374ead7ddbba70df5420a63215e7",
+      "bytes": 7935
+    },
+    {
+      "file": "the-it-guy/src/core/documents/__tests__/sellerPhysicalSigningCopy.test.js",
+      "sha256": "cc1fc090b337d8f6b6d97fbfff7b81161dd8d4fe2112eba11b8d72ac209ccd2b",
+      "bytes": 2832
+    },
+    {
+      "file": "the-it-guy/src/core/documents/__tests__/sellerPostOnboardingDrafts.test.js",
+      "sha256": "0dbb9a8a828f7f9a497e9ebf012602ea20cfb62e9733aaeb8c5693de315240b2",
+      "bytes": 9345
+    },
+    {
+      "file": "the-it-guy/src/core/documents/ficaDeclarationDocumentMarkup.js",
+      "sha256": "c300dbac37a795b4b220686669f03213d24058758d8bbc054264cd9fb2ab54f7",
+      "bytes": 9451
+    },
+    {
+      "file": "the-it-guy/src/core/documents/sellerComplianceDocumentModel.js",
+      "sha256": "fa4f4b9e4a898356a36d91d6b7b023ffbfcf4c414aa6efa4ba709619472a18a2",
+      "bytes": 13182
+    },
+    {
+      "file": "the-it-guy/src/core/documents/sellerComplianceSignerModel.js",
+      "sha256": "f31a7cfff380c1aa9e26657df32275506756a295bd6747aa4d3f1dbfa9a2a5bd",
+      "bytes": 14162
+    },
+    {
+      "file": "the-it-guy/src/core/documents/sellerComplianceSignerResolver.js",
+      "sha256": "2525c10f11beab68cd040f7ad2999990060b6301a9c3846d47af4a9db1411eb4",
+      "bytes": 11875
+    },
+    {
+      "file": "the-it-guy/src/core/documents/sellerFicaDueDiligenceMarkup.js",
+      "sha256": "804bf2b180eafc3bc4a658df6d3895dcfa5c052b31c694747f3a30ba919d32d8",
+      "bytes": 1777
+    },
+    {
+      "file": "the-it-guy/src/core/documents/sellerMandateDocumentMarkup.js",
+      "sha256": "88fb366098bab07b505720e21054c8e605b93b5f8bd817fc9b1272a5df4e6f32",
+      "bytes": 597
+    },
+    {
+      "file": "the-it-guy/src/core/documents/sellerMandateWordingMarkup.js",
+      "sha256": "f0b8c3b5470383a4d9875f0863bdece751d477ba285ea6e5e8f6f22bc011d5b0",
+      "bytes": 18382
+    },
+    {
+      "file": "the-it-guy/src/core/documents/sellerOnboardingManualSigningPack.js",
+      "sha256": "27014b5bb063d30ed0d77f462fc455162b4070f807e13fa7806e0de51ae156bf",
+      "bytes": 11915
+    },
+    {
+      "file": "the-it-guy/src/core/documents/sellerOnboardingSigningPackSnapshot.js",
+      "sha256": "685794b6cb7adbccf893d9a2ab7467a51774b434ddff79aaf2d90a4f9fd2247e",
+      "bytes": 14017
+    },
+    {
+      "file": "the-it-guy/src/core/documents/sellerPostOnboardingDrafts.js",
+      "sha256": "c2ce29b943490e89576f33aec57c5923009b125a4c5eddd0acc14c099175669b",
+      "bytes": 12725
+    },
+    {
+      "file": "the-it-guy/src/core/transactions/__tests__/dealSetupCompatibilityAudit.test.js",
+      "sha256": "d9def1ffd57efa296004946dd4a49a00ef48ab2b85dedbd5711f153b9fd63987",
+      "bytes": 4407
+    },
+    {
+      "file": "the-it-guy/src/core/transactions/__tests__/dealSetupContract.test.js",
+      "sha256": "3dbf70b5cf00a774f429a86b292e397d3fae6ea57d0c72ae665b7cef2add1e69",
+      "bytes": 7280
+    },
+    {
+      "file": "the-it-guy/src/core/transactions/__tests__/dealSetupDocumentRequirements.test.js",
+      "sha256": "381d063de244eb426e1f29a84786bea9bacac9ba8c17bc4c9816f8786f544bc4",
+      "bytes": 1337
+    },
+    {
+      "file": "the-it-guy/src/core/transactions/__tests__/dealSetupReadiness.test.js",
+      "sha256": "a5c55cdc807283dc36b6d3608edcfbe1970db7c7d49deae38f4251df7a15f8ca",
+      "bytes": 1377
+    },
+    {
+      "file": "the-it-guy/src/core/transactions/dealSetupCompatibilityAudit.js",
+      "sha256": "7496ae94b8eabe3427131ad2a2512eb822e5a083d9009e2ec6bef427c3b58057",
+      "bytes": 5820
+    },
+    {
+      "file": "the-it-guy/src/core/transactions/dealSetupContract.js",
+      "sha256": "821e540f882923fe7f267bf9927f5b8c62cd227f192303ec1e4263c659f0604f",
+      "bytes": 8823
+    },
+    {
+      "file": "the-it-guy/src/core/transactions/dealSetupDocumentRequirements.js",
+      "sha256": "7baa5f79df7cff0fa6d48d99aa083e374f0a8f1c99a202da37a4c80e1cc5bb62",
+      "bytes": 3606
+    },
+    {
+      "file": "the-it-guy/src/core/transactions/dealSetupReadiness.js",
+      "sha256": "da4ef2a779c7d39fe92a5c739844fb80d46846cdaf7a3377e26dc1558eefd6a1",
+      "bytes": 978
+    },
+    {
+      "file": "the-it-guy/src/lib/__tests__/sellerLeadManualCaptureModel.test.js",
+      "sha256": "c014f7b393579c364dcfb36120da29d4808b0da27ac5f2a22dee9f764b84b18f",
+      "bytes": 12464
+    },
+    {
+      "file": "the-it-guy/src/lib/__tests__/transactionsListApi.test.js",
+      "sha256": "dc45a5ca952b928b8e286ca0041cb402de6878e8022f90ce78f3668ce8c7ba81",
+      "bytes": 6824
+    },
+    {
+      "file": "the-it-guy/src/lib/dashboardSecondaryApi.js",
+      "sha256": "2129a4ac10edaca50a1b5941cce68b63f3ded2941487a0e82f6fff1e35f3ddff",
+      "bytes": 1795
+    },
+    {
+      "file": "the-it-guy/src/lib/directListingIntakeModel.js",
+      "sha256": "f7405f55188d302e74680510fc62045c420b508cf023d9b0bb4ead4e3916163c",
+      "bytes": 28293
+    },
+    {
+      "file": "the-it-guy/src/lib/documentUploadPolicy.js",
+      "sha256": "be3af620aeba3d7eb98afcb9b8965f6d9ac0a787160002c1f50d2d9b1434a8dc",
+      "bytes": 4066
+    },
+    {
+      "file": "the-it-guy/src/lib/listingPropertySaveVerification.js",
+      "sha256": "b2f50f296a31183918642b593a30f9c275f3be6ac25c6a4f56e7cc4f071c0900",
+      "bytes": 7390
+    },
+    {
+      "file": "the-it-guy/src/lib/listingSellerProfileBuilderModel.js",
+      "sha256": "5939bfd5345831daa3044959c2bdfd38f2f0aaa92c4dc917b456d1670bace077",
+      "bytes": 60599
+    },
+    {
+      "file": "the-it-guy/src/lib/propertyDisclosure.js",
+      "sha256": "7e4d0a171e730808bd7d07892a92ce90c7d09d2c9fb8ec8b524430cf65c8f7bf",
+      "bytes": 51258
+    },
+    {
+      "file": "the-it-guy/src/lib/sellerDocumentRequirementEngine.js",
+      "sha256": "9204641fdad4516a0f82a12fd9fa9823c1b4eecc7d4f314a93a0f2a3f8ccaa1b",
+      "bytes": 70265
+    },
+    {
+      "file": "the-it-guy/src/lib/sellerLeadManualCaptureModel.js",
+      "sha256": "531c028432bb51cf0de9e1ea0a3a79d870b8847d5c12751fa523d13d20b8144e",
+      "bytes": 11540
+    },
+    {
+      "file": "the-it-guy/src/lib/sellerLeadOwnershipSetupModel.js",
+      "sha256": "d5e47dae16817e7fac22cf79ec4fc6a335f9823f655e56924dd6272f6991ac54",
+      "bytes": 5572
+    },
+    {
+      "file": "the-it-guy/src/lib/sellerOnboardingFlowContract.js",
+      "sha256": "a14f8c3476244db1a6d169f2ebb9e120f0a2b1558b426b715088973ac15a3b19",
+      "bytes": 45861
+    },
+    {
+      "file": "the-it-guy/src/lib/sellerProfileCaptureModel.js",
+      "sha256": "bc5c23350dbaa073e0d6e9fe53f2bb91edad1183b715766241ea135643ed6746",
+      "bytes": 14978
+    },
+    {
+      "file": "the-it-guy/src/lib/sellerSigningPlanModel.js",
+      "sha256": "445af611e50411f7ff0f0b16d3e7d2152c82df3181973f3e556d514c5ed44540",
+      "bytes": 2183
+    },
+    {
+      "file": "the-it-guy/src/lib/transactionsListApi.js",
+      "sha256": "81d286e463702899960e47cfe68cae73a074dbd2930ed34e4705675423ec973b",
+      "bytes": 21379
+    },
+    {
+      "file": "the-it-guy/src/pages/AgentListingDetail.jsx",
+      "sha256": "bb140514b4d4fdc62e9959a8a4adb7f2d4463f08c49ee34d5c71ae231d1d0ff7",
+      "bytes": 1045705
+    },
+    {
+      "file": "the-it-guy/src/pages/AgentListings.jsx",
+      "sha256": "72d07eadba4ac953457425b116ecaf955cfd539b575875c2ba4bc6bc4d4ebc85",
+      "bytes": 561158
+    },
+    {
+      "file": "the-it-guy/src/pages/Agents.jsx",
+      "sha256": "05b93bd9ec7a99d8b662e00f3b52ce4dbebfbea7e210f828317f9a57cf33e019",
+      "bytes": 370518
+    },
+    {
+      "file": "the-it-guy/src/pages/ClientPortal.jsx",
+      "sha256": "1f780b433c621e57521df5e438a919a638f17927f4395e7db71012a9baf2e6bb",
+      "bytes": 918987
+    },
+    {
+      "file": "the-it-guy/src/pages/EmailCampaigns.css",
+      "sha256": "cc23a0af303a415ad8a9a4f533939c274f3c885e654eab4f3943176c895f4b34",
+      "bytes": 43316
+    },
+    {
+      "file": "the-it-guy/src/pages/MarketingComingSoonPage.jsx",
+      "sha256": "36cff91c487f1f2f4fb85d098c101b07263606561ef39fbcb2f6561b44d99f48",
+      "bytes": 4488
+    },
+    {
+      "file": "the-it-guy/src/pages/Pipeline.jsx",
+      "sha256": "defc3c7ef6ab8b12c1158ad0d5020e1fd0df9754c4742d45390812a51538cd0c",
+      "bytes": 100005
+    },
+    {
+      "file": "the-it-guy/src/pages/PipelineCanvassingPage.jsx",
+      "sha256": "0905889a0b4cd7e4be0a3dec9fd05be4c9cd03de1e115faab268fcf27ceb5977",
+      "bytes": 223360
+    },
+    {
+      "file": "the-it-guy/src/pages/SellerOnboarding.jsx",
+      "sha256": "4a5584544f56e45828958bcf480e308693753cc0034998831e8bb7cded171ecc",
+      "bytes": 385890
+    },
+    {
+      "file": "the-it-guy/src/pages/agency/AgencyBranchWorkspacePage.jsx",
+      "sha256": "009e7e317f15468466151f6cd2da31a1e05bdfb3f9dc0507a61d61c01b9a835a",
+      "bytes": 85257
+    },
+    {
+      "file": "the-it-guy/src/pages/agency/AgencyBranchesPage.jsx",
+      "sha256": "a229c8eaede533eac3b87fbc19547db1aa8ea8e6f42cb4dec5c6c5dfb3831aa4",
+      "bytes": 39925
+    },
+    {
+      "file": "the-it-guy/src/pages/agency/AgencyPipelinePage.jsx",
+      "sha256": "0f0e94a229ae4b96279d0d7d769639f35ac20effcde1799715e10fb3dcc9c418",
+      "bytes": 2328189
+    },
+    {
+      "file": "the-it-guy/src/pages/settings/SettingsOrganisationPage.jsx",
+      "sha256": "8abf9e8e65e325c56949a26072ad7da4260bdf0e7a718a5b86193549a6cfe2ed",
+      "bytes": 146150
+    },
+    {
+      "file": "the-it-guy/src/services/__tests__/agencyBranchMetrics.test.js",
+      "sha256": "a471fedae4d67d44953959675622b87f45127001050566d67b9fe4315e2815fd",
+      "bytes": 5492
+    },
+    {
+      "file": "the-it-guy/src/services/__tests__/residentialDashboardService.test.js",
+      "sha256": "5efd87649f37b04c1738f0087cc0d7cef72251b6d946db8d57591ca0d9700fa3",
+      "bytes": 8642
+    },
+    {
+      "file": "the-it-guy/src/services/agencyBranchService.js",
+      "sha256": "a689bca89dcac2457ef36702f97adc7760c9213dd9925565086a23fd88b27fb6",
+      "bytes": 50510
+    },
+    {
+      "file": "the-it-guy/src/services/branchAnalyticsService.js",
+      "sha256": "8702305ed69443163b4d069b9740fbdd367cf3e962a1f8aa00351c91ee064ba2",
+      "bytes": 3623
+    },
+    {
+      "file": "the-it-guy/src/services/branchWorkspaceOverviewService.js",
+      "sha256": "c9dc0b21a48d78662fb5aada42c00c6fefb5024246ccff829baa57808c3edc2c",
+      "bytes": 397
+    },
+    {
+      "file": "the-it-guy/src/services/branchWorkspacePerformanceService.js",
+      "sha256": "1042e0eb5bda2facd09780cff54a4561824b954d77a2954c08f46e8ce7568dca",
+      "bytes": 3737
+    },
+    {
+      "file": "the-it-guy/src/services/commissionService.js",
+      "sha256": "32ce59f14aaf7e65b585d980080cf6c85dfe9d310b562b580ad0d91d64a0d403",
+      "bytes": 60508
+    },
+    {
+      "file": "the-it-guy/src/services/dealSetupService.js",
+      "sha256": "6d099605b2dd355992e544e6157d8a8aebfbcc25dc3bf30f5afbe705bebb9f52",
+      "bytes": 6991
+    },
+    {
+      "file": "the-it-guy/src/services/documents/canonicalDocumentAdapterService.js",
+      "sha256": "41fbf64a280dc206c6f79f2378e86675896069e5c844520f3296c01fb9be900d",
+      "bytes": 45400
+    },
+    {
+      "file": "the-it-guy/src/services/documents/sellerOnboardingFactTransformer.js",
+      "sha256": "522f5ab7eebf1bec4284e54c769d2e03061550ed76282ad906b798edb6fb4478",
+      "bytes": 68619
+    },
+    {
+      "file": "the-it-guy/src/services/listings/__tests__/listingMarketingChannelPresentation.test.js",
+      "sha256": "679b62900027ff92de125b2b98ec90d828f9fafd1a28c6b5c161642232a4e4aa",
+      "bytes": 5084
+    },
+    {
+      "file": "the-it-guy/src/services/listings/listingChannelUpdateState.js",
+      "sha256": "2bd99119e4fed79e9ba7e42935021d4a9587f52d2e434a09b895793350e7bd12",
+      "bytes": 5536
+    },
+    {
+      "file": "the-it-guy/src/services/listings/listingSellerCanonicalUpdateModel.js",
+      "sha256": "8146b86f0df316ea9dd303a0b6607291083ce87af588c377dda9339624f1b0e9",
+      "bytes": 11452
+    },
+    {
+      "file": "the-it-guy/src/services/listings/listingSellerCanonicalUpdateService.js",
+      "sha256": "07ccc611f40746d1e6c2a6cedb9c84def616d0bd8ec5dd955c5d3114979a0736",
+      "bytes": 5139
+    },
+    {
+      "file": "the-it-guy/src/services/listings/listingSellerHistoricalNormalizationModel.js",
+      "sha256": "7772ac658cad1e5f7f326d58eb3b4bc21715df47520a9241bf6850121990ff97",
+      "bytes": 3407
+    },
+    {
+      "file": "the-it-guy/src/services/portalCanonicalFieldFallbacks.js",
+      "sha256": "65f5be3276cdc494a6b3d2fe441009d4da8d4e06bffe2aa0df833df70efd79c9",
+      "bytes": 12964
+    },
+    {
+      "file": "the-it-guy/src/services/privateListingService.js",
+      "sha256": "7ef9cda028e55d97dad48d498a9a695e0a2316e6fe0e3d106259fa81797475bf",
+      "bytes": 397893
+    },
+    {
+      "file": "the-it-guy/src/services/propertyIntelligence/knowledgeFactoryReportPdf.js",
+      "sha256": "e6adf66ef04d163829fe0c752a150bc7de0f58a4509243fa58d63dc6d37b7a3d",
+      "bytes": 9755
+    },
+    {
+      "file": "the-it-guy/src/services/residentialDashboardService.js",
+      "sha256": "939e8ae18fcb81c6f8a68d9d907e2fdcb6dd8769406da4ae45f75229c1359942",
+      "bytes": 36922
+    },
+    {
+      "file": "the-it-guy/src/services/sellerDocumentRequirementsService.js",
+      "sha256": "a2a0f64195b3f73e37e2fb6f01519bc58380caa48dcf87cdc7aa88cc0b0d8aee",
+      "bytes": 138457
+    }
+  ]
+}

@@ -1,16 +1,10 @@
 import {
   ArrowDownRight,
   ArrowRight,
-  ArrowRightLeft,
   ArrowUpRight,
-  Banknote,
-  Building2,
   CheckCircle2,
   Copy,
   Filter,
-  LineChart,
-  LayoutGrid,
-  List,
   MapPin,
   MoreHorizontal,
   Plus,
@@ -20,8 +14,10 @@ import {
   UserRound,
   Users,
 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
+import BranchCoverImage from '../../components/agency/BranchCoverImage'
 import AddressAutocomplete from '../../components/location/AddressAutocomplete'
 import Button from '../../components/ui/Button'
 import ConfirmDialog from '../../components/ui/ConfirmDialog'
@@ -169,12 +165,6 @@ function getChangeTone(value) {
   return toNumber(value) > 0 ? 'text-[#0f8f52]' : 'text-[#c2410c]'
 }
 
-function getInitials(value = '') {
-  const parts = normalizeText(value).split(/\s+/).filter(Boolean)
-  if (!parts.length) return 'BR'
-  return parts.slice(0, 2).map((part) => part.charAt(0)).join('').toUpperCase()
-}
-
 function MiniSparkline({ values = [], tone = 'blue', className = 'h-9 w-24' }) {
   const safeValues = values.length ? values.map(toNumber) : [0, 0, 0, 0, 0, 0, 0, 0]
   const max = Math.max(...safeValues, 1)
@@ -216,32 +206,6 @@ function ChangeLabel({ value, suffix = '' }) {
   )
 }
 
-function KpiCard({ label, value, helper, icon: Icon, tone = 'blue', sparkline = [], change = null }) {
-  const toneClass = {
-    blue: 'bg-[#eef6ff] text-[#1d4ed8]',
-    green: 'bg-[#ecfdf3] text-[#15803d]',
-    gold: 'bg-[#fff7ed] text-[#c2410c]',
-    red: 'bg-[#fef2f2] text-[#b91c1c]',
-    slate: 'bg-[#f1f5f9] text-[#475569]',
-  }[tone] || 'bg-[#eef6ff] text-[#1d4ed8]'
-
-  return (
-    <article className="min-w-0 rounded-lg border border-[#e2e8f0] bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.04)]">
-      <div className="flex items-start justify-between gap-3">
-        <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg ${toneClass}`}>
-          {Icon ? <Icon size={18} /> : null}
-        </span>
-        <MiniSparkline values={sparkline} tone={tone} className="h-8 w-20" />
-      </div>
-      <p className="mt-4 text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#64748b]">{label}</p>
-      <strong className="mt-1 block truncate text-[1.45rem] font-semibold leading-none tracking-[-0.035em] text-[#0f172a] tabular-nums">{value}</strong>
-      <div className="mt-2 min-h-[20px] text-sm font-medium text-[#64748b]">
-        {change !== null && change !== undefined ? <ChangeLabel value={change} /> : helper}
-      </div>
-    </article>
-  )
-}
-
 function StatusBadge({ children, tone = 'slate' }) {
   const toneClass = {
     green: 'border-[#bbf7d0] bg-[#f0fdf4] text-[#166534]',
@@ -255,13 +219,13 @@ function StatusBadge({ children, tone = 'slate' }) {
 
 function PerformanceMetric({ label, value, changePercent, sparkline, tone = 'blue' }) {
   return (
-    <article className="min-w-0 rounded-lg border border-[#e2e8f0] bg-[#fbfdff] p-4">
+    <article className="min-w-0 rounded-lg border border-[#e2e8f0] bg-[#fbfdff] p-3 sm:p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#64748b]">{label}</p>
           <strong className="mt-2 block truncate text-[1.35rem] font-semibold tracking-[-0.035em] text-[#0f172a] tabular-nums">{value}</strong>
         </div>
-        <MiniSparkline values={sparkline} tone={tone} />
+        <MiniSparkline values={sparkline} tone={tone} className="hidden h-9 w-24 shrink-0 lg:block" />
       </div>
       <div className="mt-3">
         <ChangeLabel value={changePercent} suffix="vs previous" />
@@ -272,6 +236,49 @@ function PerformanceMetric({ label, value, changePercent, sparkline, tone = 'blu
 
 function BranchActionMenu({ branch, onView, onManageAgents, onDelete }) {
   const [open, setOpen] = useState(false)
+  const [position, setPosition] = useState({ top: 0, left: 0 })
+  const triggerRef = useRef(null)
+  const menuRef = useRef(null)
+
+  useLayoutEffect(() => {
+    if (!open) return
+    const trigger = triggerRef.current.getBoundingClientRect()
+    const menu = menuRef.current.getBoundingClientRect()
+    const margin = 8
+    const top = trigger.bottom + margin + menu.height <= window.innerHeight - margin
+      ? trigger.bottom + margin
+      : trigger.top - menu.height - margin
+    setPosition({
+      top: Math.max(margin, top),
+      left: Math.max(margin, Math.min(trigger.right - menu.width, window.innerWidth - menu.width - margin)),
+    })
+  }, [open])
+
+  useEffect(() => {
+    if (!open) return
+    function dismiss(event) {
+      if (!triggerRef.current?.contains(event.target) && !menuRef.current?.contains(event.target)) setOpen(false)
+    }
+    function handleKeyDown(event) {
+      if (event.key === 'Escape') {
+        setOpen(false)
+        triggerRef.current?.focus()
+      }
+    }
+    function closeOnMove(event) {
+      if (!menuRef.current?.contains(event.target)) setOpen(false)
+    }
+    document.addEventListener('pointerdown', dismiss)
+    document.addEventListener('keydown', handleKeyDown)
+    window.addEventListener('scroll', closeOnMove, true)
+    window.addEventListener('resize', closeOnMove)
+    return () => {
+      document.removeEventListener('pointerdown', dismiss)
+      document.removeEventListener('keydown', handleKeyDown)
+      window.removeEventListener('scroll', closeOnMove, true)
+      window.removeEventListener('resize', closeOnMove)
+    }
+  }, [open])
 
   function runAction(event, action) {
     event.stopPropagation()
@@ -282,6 +289,7 @@ function BranchActionMenu({ branch, onView, onManageAgents, onDelete }) {
   return (
     <div className="relative">
       <button
+        ref={triggerRef}
         type="button"
         className="grid h-9 w-9 place-items-center rounded-lg border border-[#dbe4ee] bg-white text-[#64748b] transition hover:bg-[#f8fafc]"
         aria-label={`More actions for ${branch?.name || 'branch'}`}
@@ -294,8 +302,8 @@ function BranchActionMenu({ branch, onView, onManageAgents, onDelete }) {
       >
         <MoreHorizontal size={17} />
       </button>
-      {open ? (
-        <div className="absolute right-0 top-[calc(100%+8px)] z-20 w-48 rounded-lg border border-[#dbe4ee] bg-white p-1.5 shadow-[0_18px_40px_rgba(15,23,42,0.16)]" role="menu">
+      {open ? createPortal(
+        <div ref={menuRef} style={position} className="fixed z-50 max-h-[calc(100dvh-16px)] w-48 max-w-[calc(100vw-16px)] overflow-y-auto rounded-lg border border-[#dbe4ee] bg-white p-1.5 shadow-[0_18px_40px_rgba(15,23,42,0.16)]" role="menu">
           <button type="button" className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm font-semibold text-[#1f3448] hover:bg-[#f8fafc]" onClick={(event) => runAction(event, onView)}>
             <ArrowRight size={15} />View
           </button>
@@ -305,172 +313,59 @@ function BranchActionMenu({ branch, onView, onManageAgents, onDelete }) {
           <button type="button" className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm font-semibold text-[#b42318] hover:bg-[#fef2f2]" onClick={(event) => runAction(event, onDelete)}>
             <Trash2 size={15} />Delete branch
           </button>
-        </div>
+        </div>,
+        document.body,
       ) : null}
-    </div>
-  )
-}
-
-function BranchTable({ rows, onView, onManageAgents, onDelete }) {
-  return (
-    <div className="hidden overflow-x-auto rounded-lg border border-[#e2e8f0] bg-white md:block">
-      <table className="min-w-[980px] w-full text-left text-sm">
-        <thead className="border-b border-[#e2e8f0] bg-[#f8fafc] text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#64748b]">
-          <tr>
-            <th className="px-4 py-3">Rank</th>
-            <th className="px-4 py-3">Branch</th>
-            <th className="px-4 py-3">Pipeline Value</th>
-            <th className="px-4 py-3">Transactions</th>
-            <th className="px-4 py-3">Listings</th>
-            <th className="px-4 py-3">Sales Agents</th>
-            <th className="px-4 py-3">Team</th>
-            <th className="px-4 py-3">Health</th>
-            <th className="px-4 py-3">Trend</th>
-            <th className="px-4 py-3 text-right">Actions</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-[#edf2f7]">
-          {rows.map((branch) => (
-            <tr key={branch.id} className="transition hover:bg-[#fbfdff]">
-              <td className="px-4 py-4 text-sm font-semibold text-[#475569]">#{branch.rank}</td>
-              <td className="px-4 py-4">
-                <div className="flex min-w-0 items-center gap-3">
-                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-[#102236] text-sm font-semibold text-white">{getInitials(branch.name)}</span>
-                  <div className="min-w-0">
-                    <p className="truncate font-semibold text-[#0f172a]">{branch.name}</p>
-                    <p className="mt-1 inline-flex max-w-[240px] items-center gap-1 truncate text-xs text-[#64748b]">
-                      <MapPin size={13} className="shrink-0" />
-                      <span className="truncate">{branch.location || 'Location pending'}</span>
-                    </p>
-                  </div>
-                </div>
-              </td>
-              <td className="px-4 py-4 font-semibold text-[#0f172a] tabular-nums">{formatCompactCurrency(branch.pipelineValue)}</td>
-              <td className="px-4 py-4 text-[#1f3448] tabular-nums">{formatNumber(branch.activeTransactions)}</td>
-              <td className="px-4 py-4 text-[#1f3448] tabular-nums">{formatNumber(branch.activeListings)}</td>
-              <td className="px-4 py-4 text-[#1f3448] tabular-nums">{formatNumber(branch.activeAgents)}</td>
-              <td className="px-4 py-4 text-[#1f3448] tabular-nums">{formatNumber(branch.activeOperationalTeam)}</td>
-              <td className="px-4 py-4">
-                <StatusBadge tone={branch.health?.tone}>{branch.health?.label || 'Watch'}</StatusBadge>
-              </td>
-              <td className="px-4 py-4">
-                <div className="flex items-center gap-2">
-                  <MiniSparkline values={branch.trend?.sparkline} tone={branch.health?.tone === 'red' ? 'red' : branch.health?.tone === 'gold' ? 'gold' : 'green'} className="h-8 w-20" />
-                  <span className={`text-xs font-semibold ${getChangeTone(branch.trend?.changePercent)}`}>{formatChange(branch.trend?.changePercent)}</span>
-                </div>
-              </td>
-              <td className="px-4 py-4">
-                <div className="flex items-center justify-end gap-2">
-                  <Button size="sm" variant="secondary" onClick={() => onView(branch.id)}>View</Button>
-                  <BranchActionMenu
-                    branch={branch}
-                    onView={() => onView(branch.id)}
-                    onManageAgents={() => onManageAgents(branch.id)}
-                    onDelete={() => onDelete(branch)}
-                  />
-                </div>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  )
-}
-
-function BranchMobileCards({ rows, onView, onManageAgents, onDelete }) {
-  return (
-    <div className="grid gap-3 md:hidden">
-      {rows.map((branch) => (
-        <article key={branch.id} className="rounded-lg border border-[#e2e8f0] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="rounded-full bg-[#f1f5f9] px-2.5 py-1 text-xs font-semibold text-[#475569]">#{branch.rank}</span>
-                <StatusBadge tone={branch.health?.tone}>{branch.health?.label || 'Watch'}</StatusBadge>
-              </div>
-              <h3 className="mt-3 truncate text-[1rem] font-semibold text-[#0f172a]">{branch.name}</h3>
-              <p className="mt-1 flex items-center gap-1 truncate text-sm text-[#64748b]">
-                <MapPin size={14} className="shrink-0" />
-                <span className="truncate">{branch.location || 'Location pending'}</span>
-              </p>
-            </div>
-            <BranchActionMenu
-              branch={branch}
-              onView={() => onView(branch.id)}
-              onManageAgents={() => onManageAgents(branch.id)}
-              onDelete={() => onDelete(branch)}
-            />
-          </div>
-          <div className="mt-4 grid grid-cols-2 gap-2">
-            <MobileMetric label="Pipeline" value={formatCompactCurrency(branch.pipelineValue)} />
-            <MobileMetric label="Transactions" value={formatNumber(branch.activeTransactions)} />
-            <MobileMetric label="Sales Agents" value={formatNumber(branch.activeAgents)} />
-            <MobileMetric label="Team" value={formatNumber(branch.activeOperationalTeam)} />
-            <MobileMetric label="Listings" value={formatNumber(branch.activeListings)} />
-          </div>
-          <Button size="sm" className="mt-4 w-full" onClick={() => onView(branch.id)}>View Branch <ArrowRight size={15} /></Button>
-        </article>
-      ))}
     </div>
   )
 }
 
 function BranchCardGrid({ rows, onView, onManageAgents, onDelete }) {
   return (
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+    <div className="grid items-start gap-5 sm:grid-cols-2 xl:grid-cols-3">
       {rows.map((branch) => (
-        <article key={branch.id} className="rounded-lg border border-[#e2e8f0] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex min-w-0 items-start gap-3">
-              <span className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-[#102236] text-sm font-semibold text-white">{getInitials(branch.name)}</span>
+        <article key={branch.id} className="overflow-hidden rounded-2xl border border-[#e2e8f0] bg-white shadow-[0_8px_24px_rgba(15,23,42,0.04)] transition hover:shadow-[0_12px_32px_rgba(15,23,42,0.08)]">
+          <div className="relative">
+            <BranchCoverImage src={branch.coverImageUrl} name={branch.name} className="aspect-[16/9] w-full" />
+            <div className="absolute left-4 top-4 flex flex-wrap gap-2">
+              <span className="rounded-full bg-white/95 px-2.5 py-1 text-xs font-semibold text-[#334155]">#{branch.rank}</span>
+              {branch.isHeadOffice ? <span className="rounded-full bg-white/95 px-2.5 py-1 text-xs font-semibold text-[#176b50]">Head office</span> : null}
+            </div>
+            <div className="absolute right-4 top-4">
+              <BranchActionMenu branch={branch} onView={() => onView(branch.id)} onManageAgents={() => onManageAgents(branch.id)} onDelete={() => onDelete(branch)} />
+            </div>
+          </div>
+          <div className="p-5">
+            <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="rounded-full bg-[#f1f5f9] px-2.5 py-1 text-xs font-semibold text-[#475569]">#{branch.rank}</span>
-                  <StatusBadge tone={branch.health?.tone}>{branch.health?.label || 'Watch'}</StatusBadge>
-                </div>
-                <h3 className="mt-3 truncate text-[1.05rem] font-semibold text-[#0f172a]">{branch.name}</h3>
-                <p className="mt-1 flex items-center gap-1 truncate text-sm text-[#64748b]">
-                  <MapPin size={14} className="shrink-0" />
-                  <span className="truncate">{branch.location || 'Location pending'}</span>
+                <h3 className="truncate text-lg font-semibold tracking-[-0.025em] text-[#0f172a]">{branch.name}</h3>
+                <p className="mt-1 flex items-center gap-1.5 text-sm text-[#64748b]">
+                  <MapPin size={14} className="shrink-0" /><span className="truncate">{branch.location || 'Location pending'}</span>
                 </p>
               </div>
+              <StatusBadge tone={branch.health?.tone}>{branch.health?.label || 'Watch'}</StatusBadge>
             </div>
-            <BranchActionMenu
-              branch={branch}
-              onView={() => onView(branch.id)}
-              onManageAgents={() => onManageAgents(branch.id)}
-              onDelete={() => onDelete(branch)}
-            />
-          </div>
-
-          <div className="mt-5 grid grid-cols-2 gap-2">
-            <MobileMetric label="Pipeline" value={formatCompactCurrency(branch.pipelineValue)} />
-            <MobileMetric label="Transactions" value={formatNumber(branch.activeTransactions)} />
-            <MobileMetric label="Listings" value={formatNumber(branch.activeListings)} />
-            <MobileMetric label="Sales Agents" value={formatNumber(branch.activeAgents)} />
-            <MobileMetric label="Team" value={formatNumber(branch.activeOperationalTeam)} />
-            <div className="rounded-lg border border-[#e2e8f0] bg-[#fbfdff] px-3 py-2">
-              <p className="text-[0.66rem] font-semibold uppercase tracking-[0.1em] text-[#64748b]">Trend</p>
-              <div className="mt-1 flex items-center gap-1.5">
-                <MiniSparkline values={branch.trend?.sparkline} tone={branch.health?.tone === 'red' ? 'red' : branch.health?.tone === 'gold' ? 'gold' : 'green'} className="h-5 w-14" />
-                <span className={`text-xs font-semibold ${getChangeTone(branch.trend?.changePercent)}`}>{formatChange(branch.trend?.changePercent)}</span>
+            <div className="mt-5 flex items-center justify-between gap-3 border-y border-[#edf2f7] py-4">
+              <div>
+                <p className="text-xs font-medium text-[#64748b]">Pipeline value</p>
+                <p className="mt-1 text-xl font-semibold tracking-tight text-[#0f172a] tabular-nums">{formatCompactCurrency(branch.pipelineValue)}</p>
+              </div>
+              <div className="text-right">
+                <MiniSparkline values={branch.trend?.sparkline} tone={branch.health?.tone === 'red' ? 'red' : branch.health?.tone === 'gold' ? 'gold' : 'green'} className="ml-auto h-6 w-20" />
+                <span className={`text-xs font-medium ${getChangeTone(branch.trend?.changePercent)}`}>{formatChange(branch.trend?.changePercent)}</span>
               </div>
             </div>
+            <dl className="mt-4 grid grid-cols-2 gap-x-5 gap-y-3">
+              {[['Transactions', branch.activeTransactions], ['Listings', branch.activeListings], ['Sales agents', branch.activeAgents], ['Team', branch.activeOperationalTeam]].map(([label, value]) => (
+                <div key={label} className="flex items-center justify-between gap-2 text-sm">
+                  <dt className="text-[#64748b]">{label}</dt><dd className="font-semibold text-[#0f172a] tabular-nums">{formatNumber(value)}</dd>
+                </div>
+              ))}
+            </dl>
+            <Button variant="secondary" size="sm" className="mt-5 w-full" onClick={() => onView(branch.id)}>View Branch <ArrowRight size={15} /></Button>
           </div>
-
-          <Button size="sm" className="mt-5 w-full" onClick={() => onView(branch.id)}>View Branch <ArrowRight size={15} /></Button>
         </article>
       ))}
-    </div>
-  )
-}
-
-function MobileMetric({ label, value }) {
-  return (
-    <div className="rounded-lg border border-[#e2e8f0] bg-[#fbfdff] px-3 py-2">
-      <p className="text-[0.66rem] font-semibold uppercase tracking-[0.1em] text-[#64748b]">{label}</p>
-      <p className="mt-1 truncate text-sm font-semibold text-[#0f172a]">{value}</p>
     </div>
   )
 }
@@ -774,7 +669,6 @@ export default function AgencyBranchesPage() {
   const [statusFilter, setStatusFilter] = useState(() => searchParams.get('status') || 'all')
   const [provinceFilter, setProvinceFilter] = useState(() => searchParams.get('province') || 'all')
   const [sortBy, setSortBy] = useState(() => searchParams.get('sort') || 'pipeline')
-  const [viewMode, setViewMode] = useState(() => searchParams.get('view') || 'list')
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showPrincipalInviteModal, setShowPrincipalInviteModal] = useState(false)
   const [deleteDialog, setDeleteDialog] = useState({ open: false, branch: null, error: '' })
@@ -807,7 +701,6 @@ export default function AgencyBranchesPage() {
     if (statusFilter !== 'all') nextParams.set('status', statusFilter)
     if (provinceFilter !== 'all') nextParams.set('province', provinceFilter)
     if (sortBy !== 'pipeline') nextParams.set('sort', sortBy)
-    if (viewMode !== 'list') nextParams.set('view', viewMode)
     const nextSearch = nextParams.toString()
     const currentSearch = typeof window === 'undefined' ? searchParams.toString() : window.location.search.replace(/^\?/, '')
     if (nextSearch === currentSearch || typeof window === 'undefined') return
@@ -817,7 +710,7 @@ export default function AgencyBranchesPage() {
     // looks like a full-page refresh. Keep the shareable URL without navigating.
     const nextUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ''}${window.location.hash || ''}`
     window.history.replaceState(window.history.state, '', nextUrl)
-  }, [period, provinceFilter, searchParams, searchTerm, sortBy, statusFilter, viewMode])
+  }, [period, provinceFilter, searchParams, searchTerm, sortBy, statusFilter])
 
   const provinceOptions = useMemo(() => {
     const values = [...new Set((overview.branches || []).map((row) => normalizeText(row?.province)).filter(Boolean))]
@@ -882,45 +775,21 @@ export default function AgencyBranchesPage() {
     }
   }
 
-  const totals = overview.totals || EMPTY_OVERVIEW.totals
   const periodMetrics = overview.periodMetrics || EMPTY_OVERVIEW.periodMetrics
-  const projectedCommissionValue = totals.hasProjectedCommissionData ? formatCompactCurrency(totals.projectedCommission) : 'No data yet'
 
   return (
     <section className="flex flex-col gap-5 pb-8">
-      <header className="flex flex-col gap-4 rounded-lg border border-[#e2e8f0] bg-white px-5 py-5 shadow-[0_12px_28px_rgba(15,23,42,0.04)] lg:flex-row lg:items-center lg:justify-between">
-        <div className="min-w-0">
-          <h1 className="text-[1.85rem] font-semibold leading-tight tracking-[-0.04em] text-[#0f172a]">Branches</h1>
-          <p className="mt-1 text-sm leading-6 text-[#64748b]">Manage every branch across your organisation.</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button variant="secondary" onClick={openPrincipalManagerInvite}>
-            <Users size={16} />Invite Principal / Manager
-          </Button>
-          <Button onClick={() => setShowCreateModal(true)}>
-            <Plus size={16} />New Branch
-          </Button>
-        </div>
-      </header>
 
       {error ? <p className="rounded-lg border border-[#fecaca] bg-[#fef2f2] px-5 py-4 text-sm text-[#991b1b]">{error}</p> : null}
       {loading ? <p className="rounded-lg border border-[#e2e8f0] bg-white px-5 py-4 text-sm text-[#64748b]">Loading company branch overview...</p> : null}
 
       {!loading ? (
         <>
-          <section className="grid grid-cols-2 gap-3 xl:grid-cols-6" aria-label="Company branch metrics">
-            <KpiCard label="Branches" value={formatNumber(totals.branches)} helper="Active branches" icon={Building2} tone="blue" sparkline={periodMetrics.listings?.sparkline} />
-            <KpiCard label="Sales Agents" value={formatNumber(totals.salesAgents ?? totals.agents)} helper="Live agent-role memberships" icon={Users} tone="green" sparkline={periodMetrics.agents?.sparkline} />
-            <KpiCard label="Operational Team" value={formatNumber(totals.operationalTeam)} helper="Agents, principals and managers" icon={Users} tone="blue" sparkline={periodMetrics.agents?.sparkline} />
-            <KpiCard label="Company Pipeline" value={formatCompactCurrency(totals.companyPipeline)} helper="Open listings and transactions" icon={LineChart} tone="gold" sparkline={periodMetrics.pipeline?.sparkline} />
-            <KpiCard label="Active Transactions" value={formatNumber(totals.activeTransactions)} helper="Open branch transactions" icon={ArrowRightLeft} tone="blue" sparkline={periodMetrics.transactions?.sparkline} />
-            <KpiCard label="Projected Commission" value={projectedCommissionValue} helper={totals.hasProjectedCommissionData ? 'Estimated commission' : 'No data yet'} icon={Banknote} tone={totals.hasProjectedCommissionData ? 'green' : 'slate'} sparkline={periodMetrics.pipeline?.sparkline} />
-          </section>
-
           <section className="rounded-lg border border-[#e2e8f0] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.04)]">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <div>
-                <h2 className="text-[1.15rem] font-semibold tracking-[-0.03em] text-[#0f172a]">Company Performance</h2>
+                <h1 className="text-xl font-semibold tracking-[-0.03em] text-[#0f172a]">Company Performance</h1>
+                <p className="mt-1 text-sm text-[#64748b]">A view of performance across your organisation.</p>
               </div>
               <div className="grid grid-cols-3 overflow-hidden rounded-lg border border-[#dbe4ee] bg-[#f8fafc] p-1">
                 {PERIOD_OPTIONS.map((option) => (
@@ -935,7 +804,7 @@ export default function AgencyBranchesPage() {
                 ))}
               </div>
             </div>
-            <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <div className="mt-5 grid grid-cols-2 gap-3 xl:grid-cols-4">
               <PerformanceMetric label="Pipeline Value" value={formatCompactCurrency(periodMetrics.pipeline?.value)} changePercent={periodMetrics.pipeline?.changePercent} sparkline={periodMetrics.pipeline?.sparkline} tone="gold" />
               <PerformanceMetric label="Transactions" value={formatNumber(periodMetrics.transactions?.value)} changePercent={periodMetrics.transactions?.changePercent} sparkline={periodMetrics.transactions?.sparkline} tone="green" />
               <PerformanceMetric label="Listings" value={formatNumber(periodMetrics.listings?.value)} changePercent={periodMetrics.listings?.changePercent} sparkline={periodMetrics.listings?.sparkline} tone="blue" />
@@ -944,73 +813,50 @@ export default function AgencyBranchesPage() {
           </section>
 
           <section className="rounded-lg border border-[#e2e8f0] bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.04)]">
-            <div className="grid gap-2 lg:grid-cols-[minmax(220px,1fr)_160px_180px_180px_auto_auto]">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <div><h2 className="text-lg font-semibold text-[#0f172a]">Branches</h2><p className="mt-0.5 text-sm text-[#64748b]">{filteredRows.length} branch{filteredRows.length === 1 ? '' : 'es'}</p></div>
+              <Button variant="secondary" size="sm" onClick={openPrincipalManagerInvite}><Users size={15} />Invite Principal / Manager</Button>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
               <label className="flex h-[42px] min-w-0 items-center gap-3 rounded-lg border border-[#dbe4ee] bg-white px-3">
                 <Search size={16} className="shrink-0 text-[#94a3b8]" />
                 <input
                   type="search"
                   value={searchTerm}
                   onChange={(event) => setSearchTerm(event.target.value)}
+                  aria-label="Search branches"
                   placeholder="Search branches"
                   className="min-w-0 flex-1 border-0 bg-transparent p-0 text-sm text-[#0f172a] outline-none placeholder:text-[#94a3b8]"
                 />
               </label>
-              <Field as="select" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="h-[42px]">
+              <Button onClick={() => setShowCreateModal(true)}><Plus size={16} />Add Branch</Button>
+            </div>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-[160px_180px_200px_auto]">
+              <Field aria-label="Branch status" as="select" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="h-[42px]">
                 {STATUS_OPTIONS.map((option) => (
                   <option key={option.value} value={option.value}>{option.label}</option>
                 ))}
               </Field>
-              <Field as="select" value={provinceFilter} onChange={(event) => setProvinceFilter(event.target.value)} className="h-[42px]">
+              <Field aria-label="Province" as="select" value={provinceFilter} onChange={(event) => setProvinceFilter(event.target.value)} className="h-[42px]">
                 <option value="all">Province</option>
                 {provinceOptions.map((province) => (
                   <option key={province} value={province}>{province}</option>
                 ))}
               </Field>
-              <Field as="select" value={sortBy} onChange={(event) => setSortBy(event.target.value)} className="h-[42px]">
+              <Field aria-label="Sort branches" as="select" value={sortBy} onChange={(event) => setSortBy(event.target.value)} className="h-[42px]">
                 {SORT_OPTIONS.map((option) => (
                   <option key={option.value} value={option.value}>Sort: {option.label}</option>
                 ))}
               </Field>
-              <Button variant="secondary" size="sm" onClick={loadOverview} disabled={loading}>
+              <Button variant="secondary" size="sm" className="lg:justify-self-start" onClick={loadOverview} disabled={loading}>
                 <RefreshCw size={15} />Refresh
               </Button>
-              <div className="grid h-[42px] grid-cols-2 rounded-lg border border-[#dbe4ee] bg-[#f8fafc] p-1" role="group" aria-label="Branch results view">
-                <button
-                  type="button"
-                  onClick={() => setViewMode('list')}
-                  aria-pressed={viewMode === 'list'}
-                  className={`grid min-w-[38px] place-items-center rounded-md transition ${viewMode === 'list' ? 'bg-white text-[#0f172a] shadow-[0_4px_12px_rgba(15,23,42,0.08)]' : 'text-[#64748b] hover:text-[#0f172a]'}`}
-                  title="List view"
-                >
-                  <List size={17} aria-hidden="true" />
-                  <span className="sr-only">List view</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setViewMode('cards')}
-                  aria-pressed={viewMode === 'cards'}
-                  className={`grid min-w-[38px] place-items-center rounded-md transition ${viewMode === 'cards' ? 'bg-white text-[#0f172a] shadow-[0_4px_12px_rgba(15,23,42,0.08)]' : 'text-[#64748b] hover:text-[#0f172a]'}`}
-                  title="Card view"
-                >
-                  <LayoutGrid size={17} aria-hidden="true" />
-                  <span className="sr-only">Card view</span>
-                </button>
-              </div>
             </div>
           </section>
 
           <section>
             {filteredRows.length ? (
-              <>
-                {viewMode === 'cards' ? (
-                  <BranchCardGrid rows={filteredRows} onView={openBranch} onManageAgents={openManageAgents} onDelete={openDeleteBranch} />
-                ) : (
-                  <>
-                    <BranchTable rows={filteredRows} onView={openBranch} onManageAgents={openManageAgents} onDelete={openDeleteBranch} />
-                    <BranchMobileCards rows={filteredRows} onView={openBranch} onManageAgents={openManageAgents} onDelete={openDeleteBranch} />
-                  </>
-                )}
-              </>
+              <BranchCardGrid rows={filteredRows} onView={openBranch} onManageAgents={openManageAgents} onDelete={openDeleteBranch} />
             ) : (
               <EmptyState onCreate={() => setShowCreateModal(true)} />
             )}

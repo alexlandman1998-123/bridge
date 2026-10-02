@@ -1,3 +1,4 @@
+import { resolveSellerBondStatus, sellerBondDeclaration } from './sellerBondStatus.js'
 import {
   buildSellerEntityProfileAliases,
   buildSellerProfileCanonicalPayload,
@@ -27,7 +28,8 @@ export const LISTING_SELLER_PROFILE_BRANCHES = [
   { value: 'individual', label: 'Individual' },
   { value: 'married', label: 'Married Individual' },
   { value: 'multiple_owners', label: 'Multiple Owners' },
-  { value: 'company', label: 'Company / CC' },
+  { value: 'company', label: 'Company' },
+  { value: 'close_corporation', label: 'Close Corporation (CC)' },
   { value: 'trust', label: 'Trust' },
   { value: 'deceased_estate', label: 'Deceased Estate' },
   { value: 'power_of_attorney', label: 'Power of Attorney' },
@@ -42,16 +44,16 @@ const BRANCH_VALUES = new Set(LISTING_SELLER_PROFILE_BRANCHES.map((item) => item
 const BRANCH_DETAIL_FIELDS = Object.freeze({
   married: ['spouseName', 'spouseEmail', 'spouseIdNumber'],
   multiple_owners: ['multipleOwners', 'coOwnerDetails'],
-  company: ['companyName', 'companyRegistrationNumber', 'companyRegisteredAddress', 'companyDirectors', 'companyBeneficialOwners', 'authorisedSignatoryName', 'authorisedSignatoryCapacity', 'authorisedSignatoryEmail', 'authorisedSignatoryIdNumber', 'authorisedSignatoryNationality', 'authorisedSignatoryAddress'],
-  trust: ['trustName', 'trustRegistrationNumber', 'trustRegisteredAddress', 'trustees', 'trustFounders', 'trustBeneficiaries', 'trustBeneficiaryClass', 'authorisedTrusteeName', 'authorisedTrusteeCapacity', 'authorisedTrusteeEmail', 'authorisedTrusteeIdNumber', 'authorisedTrusteeNationality', 'authorisedTrusteeAddress'],
-  deceased_estate: ['deceasedEstateName', 'estateReferenceNumber', 'executorName', 'executorEmail'],
-  power_of_attorney: ['powerOfAttorneyPrincipalName', 'powerOfAttorneyPrincipalIdNumber', 'powerOfAttorneyName', 'powerOfAttorneyEmail'],
-  other: ['otherEntityName', 'otherEntityRegistrationNumber'],
+  company: ['companyName', 'companyRegistrationNumber', 'companyRegisteredAddress', 'companyDirectors', 'companyBeneficialOwners', 'authorisedSignatoryName', 'authorisedSignatoryCapacity', 'authorisedSignatoryEmail', 'authorisedSignatoryIdNumber', 'authorisedSignatoryNationality', 'authorisedSignatoryAddress', 'companyAuthorityBasis', 'companyResolutionDate'],
+  trust: ['trustName', 'trustRegistrationNumber', 'trustRegisteredAddress', 'trustees', 'trustFounders', 'trustBeneficiaries', 'trustBeneficiaryClass', 'authorisedTrusteeName', 'authorisedTrusteeCapacity', 'authorisedTrusteeEmail', 'authorisedTrusteeIdNumber', 'authorisedTrusteeNationality', 'authorisedTrusteeAddress', 'trustAuthorityBasis'],
+  deceased_estate: ['deceasedEstateName', 'estateReferenceNumber', 'executorName', 'executorEmail', 'executorAuthorityDetails'],
+  power_of_attorney: ['powerOfAttorneyPrincipalName', 'powerOfAttorneyPrincipalIdNumber', 'powerOfAttorneyName', 'powerOfAttorneyEmail', 'powerOfAttorneyAuthorityDetails'],
+  other: ['otherEntityName', 'otherEntityRegistrationNumber', 'otherAuthorityDetails'],
   foreign: ['foreignOwnerCountry', 'foreignPassportNumber', 'foreignRegistrationNumber', 'foreignResidencyStatus'],
 })
 
 function branchDetailFamily(branch = '') {
-  if (['company', 'foreign_company'].includes(branch)) return 'company'
+  if (['company', 'close_corporation', 'foreign_company'].includes(branch)) return 'company'
   if (['trust', 'foreign_trust'].includes(branch)) return 'trust'
   return branch
 }
@@ -175,7 +177,6 @@ function normalizeBranch(value, fallback = 'individual') {
   const key = normalizeKey(value)
   if (!key) return fallback
   const sharedEntityType = normalizeSellerEntityType(key, '')
-  if (sharedEntityType === 'close_corporation') return 'company'
   if (sharedEntityType && sharedEntityType !== 'unknown') return sharedEntityType
   if (BRANCH_VALUES.has(key)) return key
   if (['company', 'close_corporation', 'cc', 'pty_ltd', 'corporate'].includes(key)) return 'company'
@@ -191,7 +192,7 @@ function normalizeBranch(value, fallback = 'individual') {
   return key === 'unknown' ? '' : fallback
 }
 
-function getListingSellerFormData(listing = {}) {
+export function getListingSellerFormData(listing = {}) {
   const mergeObjects = (...sources) => sources.reduce((accumulator, source) => {
     if (!source || typeof source !== 'object' || Array.isArray(source)) return accumulator
     return {
@@ -209,10 +210,10 @@ function getListingSellerFormData(listing = {}) {
     sellerFacts,
     propertyFacts,
     canonicalFacts,
-    onboarding.formData,
-    onboarding.form_data,
-    listing?.sellerOnboardingFormData,
     listing?.seller_onboarding_form_data,
+    listing?.sellerOnboardingFormData,
+    onboarding.form_data,
+    onboarding.formData,
   )
 }
 
@@ -278,10 +279,10 @@ export function createListingSellerProfileBuilderDraft(listing = {}) {
   const split = splitName(sellerName)
   const branch = resolveListingSellerProfileBranch(form, listing)
   const ownerFallback = {
-    name: pickFirst(form.sellerFirstName, form.firstName, split.firstName),
-    surname: pickFirst(form.sellerSurname, form.lastName, split.surname),
-    email: pickFirst(form.email, form.sellerEmail, listing?.sellerEmail, listing?.seller?.email, mandateDraft.sellerEmail),
-    phone: pickFirst(form.phone, form.sellerPhone, listing?.sellerPhone, listing?.seller?.phone, mandateDraft.sellerPhone),
+    name: pickFirst(form.sellerFirstName, form.firstName, ['individual', 'married', 'foreign_individual'].includes(branch) ? split.firstName : ''),
+    surname: pickFirst(form.sellerSurname, form.lastName, ['individual', 'married', 'foreign_individual'].includes(branch) ? split.surname : ''),
+    email: form.email ?? form.sellerEmail ?? pickFirst(listing?.sellerEmail, listing?.seller?.email, mandateDraft.sellerEmail),
+    phone: form.phone ?? form.sellerPhone ?? form.mobile ?? pickFirst(listing?.sellerPhone, listing?.seller?.phone, mandateDraft.sellerPhone),
     idNumber: pickFirst(form.idNumber, form.sellerIdNumber, mandateDraft.sellerIdNumber),
   }
   const savedOwners = [form.multipleOwners, form.owners, sellerFacts.owners, mandateDraft.sellerParties]
@@ -289,14 +290,11 @@ export function createListingSellerProfileBuilderDraft(listing = {}) {
   const propertyCategory = normalizePropertyCategory(pickFirst(form.propertyCategory, canonicalProperty.property_category, listing?.propertyCategory), { fallback: 'residential' })
   const propertyTypeOptions = getPropertyTypeOptionsByCategory(propertyCategory)
   const savedPropertyType = normalizeText(pickFirst(form.propertyType, canonicalProperty.property_type, listing?.propertyType))
-  const explicitBondStatus = normalizeKey(pickFirst(form.bondStatus, form.propertyBondStatus, form.bond_status))
-  const existingBond = form.existingBond ?? form.sellerHasExistingBond ?? canonicalFinance.existing_bond
-  const bondStatus = ['bonded', 'no_bond'].includes(explicitBondStatus)
-    ? explicitBondStatus
-    : existingBond === true ? 'bonded' : existingBond === false ? 'no_bond' : 'unknown'
+  const bondStatus = resolveSellerBondStatus(form.bondStatus, form.propertyBondStatus, form.bond_status, form.existingBond, form.sellerHasExistingBond, form.bondExists, canonicalFinance.existing_bond)
 
   return {
     branch,
+    primaryContactName: normalizeText(pickFirst(form.primaryContactName, form.contactName, sellerFacts.contact?.name, [form.sellerFirstName, form.sellerSurname].filter(Boolean).join(' '))),
     sellerFirstName: normalizeText(ownerFallback.name),
     sellerSurname: normalizeText(ownerFallback.surname),
     email: normalizeText(ownerFallback.email).toLowerCase(),
@@ -310,8 +308,14 @@ export function createListingSellerProfileBuilderDraft(listing = {}) {
     spouseEmail: normalizeText(pickFirst(form.spouseEmail, form.spouse?.email, sellerFacts.spouse?.email)).toLowerCase(),
     spouseIdNumber: normalizeText(pickFirst(form.spouseIdNumber, form.spouse?.idNumber, sellerFacts.spouse?.id_number)),
     multipleOwners: normalizePersonCollectionForSellerProfile(savedOwners, ownerFallback, 'Owner'),
+    companyAuthorityBasis: normalizeText(pickFirst(form.companyAuthorityBasis, canonicalCompany.authority_basis)),
+    companyResolutionDate: normalizeText(pickFirst(form.companyResolutionDate, canonicalCompany.resolution_date)),
+    trustAuthorityBasis: normalizeText(pickFirst(form.trustAuthorityBasis, canonicalTrust.authority_basis)),
+    executorAuthorityDetails: normalizeText(pickFirst(form.executorAuthorityDetails, sellerFacts.deceased_estate?.authority_details)),
+    powerOfAttorneyAuthorityDetails: normalizeText(pickFirst(form.powerOfAttorneyAuthorityDetails, sellerFacts.power_of_attorney?.authority_details)),
+    otherAuthorityDetails: normalizeText(pickFirst(form.otherAuthorityDetails, sellerFacts.other_entity?.authority_details)),
     companyName: normalizeText(pickFirst(form.companyName, canonicalCompany.name)),
-    companyRegistrationNumber: normalizeText(pickFirst(form.companyRegistrationNumber, canonicalCompany.registration_number, canonicalCompany.registrationNumber)),
+    companyRegistrationNumber: normalizeText(pickFirst(form.companyRegistrationNumber, form.foreignRegistrationNumber, canonicalCompany.registration_number, canonicalCompany.registrationNumber)),
     companyRegisteredAddress: normalizeText(pickFirst(form.companyRegisteredAddress, canonicalCompany.registered_address, canonicalCompany.registeredAddress)),
     companyDirectors: normalizePersonCollectionForSellerProfile(form.companyDirectors || canonicalCompany.directors || [], null, 'Director'),
     companyBeneficialOwners: normalizePersonCollectionForSellerProfile(form.companyBeneficialOwners || canonicalCompany.beneficial_owners || [], null, 'Beneficial Owner'),
@@ -322,7 +326,7 @@ export function createListingSellerProfileBuilderDraft(listing = {}) {
     authorisedSignatoryNationality: normalizeText(pickFirst(form.authorisedSignatoryNationality, canonicalCompany.authorised_signatory?.nationality)),
     authorisedSignatoryAddress: normalizeText(pickFirst(form.authorisedSignatoryAddress, canonicalCompany.authorised_signatory?.residential_address)),
     trustName: normalizeText(pickFirst(form.trustName, canonicalTrust.name)),
-    trustRegistrationNumber: normalizeText(pickFirst(form.trustRegistrationNumber, canonicalTrust.registration_number, canonicalTrust.registrationNumber)),
+    trustRegistrationNumber: normalizeText(pickFirst(form.trustRegistrationNumber, form.foreignRegistrationNumber, canonicalTrust.registration_number, canonicalTrust.registrationNumber)),
     trustRegisteredAddress: normalizeText(pickFirst(form.trustRegisteredAddress, canonicalTrust.registered_address, canonicalTrust.registeredAddress)),
     trustees: normalizePersonCollectionForSellerProfile(form.trustees || canonicalTrust.trustees || [], null, 'Trustee'),
     trustFounders: normalizePersonCollectionForSellerProfile(form.trustFounders || canonicalTrust.founders || [], null, 'Founder'),
@@ -338,8 +342,8 @@ export function createListingSellerProfileBuilderDraft(listing = {}) {
     sourceOfFunds: normalizeText(pickFirst(form.sourceOfFunds, sellerFacts.source_of_funds)),
     politicallyExposedPerson: normalizeText(pickFirst(form.politicallyExposedPerson, sellerFacts.politically_exposed_person)),
     politicallyExposedDetails: normalizeText(pickFirst(form.politicallyExposedDetails, sellerFacts.politically_exposed_details)),
-    deceasedEstateName: normalizeText(pickFirst(form.deceasedEstateName, form.estateName, sellerFacts.deceased_estate?.name)),
-    estateReferenceNumber: normalizeText(pickFirst(form.estateReferenceNumber, form.deceasedEstateReferenceNumber, sellerFacts.deceased_estate?.reference_number)),
+    deceasedEstateName: normalizeText(pickFirst(form.deceasedEstateName, sellerFacts.deceased_estate?.name)),
+    estateReferenceNumber: normalizeText(pickFirst(form.estateReferenceNumber, form.deceasedEstateReferenceNumber, form.estateReference, sellerFacts.deceased_estate?.reference_number, sellerFacts.deceased_estate?.estate_reference)),
     executorName: normalizeText(pickFirst(form.executorName, sellerFacts.deceased_estate?.executor?.full_name, sellerFacts.deceased_estate?.executor?.name)),
     executorEmail: normalizeText(pickFirst(form.executorEmail, sellerFacts.deceased_estate?.executor?.email)).toLowerCase(),
     powerOfAttorneyPrincipalName: normalizeText(pickFirst(form.powerOfAttorneyPrincipalName, form.power_of_attorney_principal_name, sellerFacts.power_of_attorney?.principal?.full_name, sellerFacts.power_of_attorney?.principal?.name)),
@@ -379,6 +383,7 @@ export function createListingSellerProfileBuilderDraft(listing = {}) {
     leviesNotApplicable: Boolean(form.leviesNotApplicable ?? form.levies_not_applicable ?? false),
     waterBillingType: normalizeText(pickFirst(form.waterBillingType, form.water_billing_type, 'municipal')),
     mandateType: normalizeText(pickFirst(form.mandateType, listing?.mandateType, listing?.mandate?.type, 'sole')),
+    otherAgencyName: normalizeText(form.otherAgencyName ?? form.coAgencyName),
     askingPrice: normalizeText(pickFirst(form.askingPrice, form.price, listing?.askingPrice)),
     mandateStartDate: normalizeText(pickFirst(form.mandateStartDate, listing?.mandateStartDate)),
     expiryDate: normalizeText(pickFirst(form.expiryDate, form.mandateEndDate, listing?.expiryDate)),
@@ -426,6 +431,7 @@ export function updateListingSellerProfileDraftField(draft = {}, field = '', val
 
 function resolveOwnerModel(branch) {
   if (!branch) return { ownerEntityType: '', ownerStructureType: '', sellerLegalType: '' }
+  if (branch === 'close_corporation') return { ownerEntityType: 'close_corporation', ownerStructureType: 'close_corporation', sellerLegalType: 'close_corporation' }
   if (branch === 'company') return { ownerEntityType: 'company', ownerStructureType: 'company', sellerLegalType: 'company' }
   if (branch === 'trust') return { ownerEntityType: 'trust', ownerStructureType: 'trust', sellerLegalType: 'trust' }
   if (branch === 'foreign_company') return { ownerEntityType: 'foreign', ownerStructureType: 'foreign_company', sellerLegalType: 'foreign_company' }
@@ -442,22 +448,31 @@ function resolveOwnerModel(branch) {
 export function buildListingSellerProfileFormPatch(draft = {}) {
   const branch = normalizeBranch(draft.branch, '')
   const ownerModel = resolveOwnerModel(branch)
+  const bondStatus = resolveSellerBondStatus(draft.bondStatus)
   const fullName = [draft.sellerFirstName, draft.sellerSurname].map(normalizeText).filter(Boolean).join(' ')
-  const entityName = branch === 'company' || branch === 'foreign_company'
+  const entityName = ['company', 'close_corporation', 'foreign_company'].includes(branch)
     ? normalizeText(draft.companyName)
     : branch === 'trust' || branch === 'foreign_trust'
       ? normalizeText(draft.trustName)
       : branch === 'deceased_estate'
         ? normalizeText(draft.deceasedEstateName)
-        : branch === 'other'
-          ? normalizeText(draft.otherEntityName)
-        : ''
+        : branch === 'power_of_attorney'
+          ? normalizeText(draft.powerOfAttorneyPrincipalName)
+          : branch === 'other'
+            ? normalizeText(draft.otherEntityName)
+            : ''
   const maritalStatus = normalizeText(draft.maritalStatus)
   const normalizedMaritalStatus = maritalStatus.toLowerCase()
   const maritalRegime = ['single', 'not married', 'not-married', 'not_married', 'notmarried', 'unmarried', 'never married', 'never-married', 'never_married'].includes(normalizedMaritalStatus)
     ? 'single'
     : maritalStatus
   const base = {
+    companyAuthorityBasis: normalizeText(draft.companyAuthorityBasis),
+    companyResolutionDate: normalizeText(draft.companyResolutionDate),
+    trustAuthorityBasis: normalizeText(draft.trustAuthorityBasis),
+    executorAuthorityDetails: normalizeText(draft.executorAuthorityDetails),
+    powerOfAttorneyAuthorityDetails: normalizeText(draft.powerOfAttorneyAuthorityDetails),
+    otherAuthorityDetails: normalizeText(draft.otherAuthorityDetails),
     sellerProfileBuilderVersion: LISTING_SELLER_PROFILE_BUILDER_VERSION,
     sellerProfileCaptureSource: LISTING_SELLER_PROFILE_CAPTURE_SOURCE,
     sellerType: ownerModel.sellerLegalType,
@@ -474,7 +489,8 @@ export function buildListingSellerProfileFormPatch(draft = {}) {
     lastName: normalizeText(draft.sellerSurname),
     sellerName: entityName || fullName,
     fullName: entityName || fullName,
-    contactName: fullName,
+    primaryContactName: normalizeText(draft.primaryContactName) || fullName,
+    contactName: normalizeText(draft.primaryContactName) || fullName,
     email: normalizeText(draft.email).toLowerCase(),
     sellerEmail: normalizeText(draft.email).toLowerCase(),
     phone: normalizeText(draft.phone),
@@ -513,22 +529,22 @@ export function buildListingSellerProfileFormPatch(draft = {}) {
     schemeRulesAvailable: Boolean(draft.schemeRulesAvailable),
     titleDeedNumber: normalizeText(draft.titleDeedNumber),
     deedNumber: normalizeText(draft.titleDeedNumber),
-    bondStatus: normalizeText(draft.bondStatus) || 'unknown',
-    propertyBondStatus: normalizeText(draft.bondStatus) || 'unknown',
-    existingBond: draft.bondStatus === 'bonded',
-    sellerHasExistingBond: draft.bondStatus === 'bonded',
-    bondedProperty: draft.bondStatus === 'bonded',
-    bondHolder: draft.bondStatus === 'bonded' ? normalizeText(draft.bondHolder) : '',
-    bondBank: draft.bondStatus === 'bonded' ? normalizeText(draft.bondHolder) : '',
-    currentBondBank: draft.bondStatus === 'bonded' ? normalizeText(draft.bondHolder) : '',
-    bondAccountReference: draft.bondStatus === 'bonded' ? normalizeText(draft.bondAccountReference) : '',
-    currentBondAccountNumber: draft.bondStatus === 'bonded' ? normalizeText(draft.bondAccountReference) : '',
-    outstandingBond: draft.bondStatus === 'bonded' ? normalizeText(draft.outstandingBond) : '',
-    estimatedSettlementAmount: draft.bondStatus === 'bonded' ? normalizeText(draft.outstandingBond) : '',
-    bondSettlementAmount: draft.bondStatus === 'bonded' ? normalizeText(draft.outstandingBond) : '',
-    multipleBonds: draft.bondStatus === 'bonded' && Boolean(draft.multipleBonds),
-    accessBond: draft.bondStatus === 'bonded' && Boolean(draft.accessBond),
-    cancellationRequired: draft.bondStatus === 'bonded' && Boolean(draft.cancellationRequired),
+    bondStatus: bondStatus,
+    propertyBondStatus: bondStatus,
+    existingBond: sellerBondDeclaration(bondStatus),
+    sellerHasExistingBond: sellerBondDeclaration(bondStatus),
+    bondedProperty: sellerBondDeclaration(bondStatus),
+    bondHolder: bondStatus === 'bonded' ? normalizeText(draft.bondHolder) : '',
+    bondBank: bondStatus === 'bonded' ? normalizeText(draft.bondHolder) : '',
+    currentBondBank: bondStatus === 'bonded' ? normalizeText(draft.bondHolder) : '',
+    bondAccountReference: bondStatus === 'bonded' ? normalizeText(draft.bondAccountReference) : '',
+    currentBondAccountNumber: bondStatus === 'bonded' ? normalizeText(draft.bondAccountReference) : '',
+    outstandingBond: bondStatus === 'bonded' ? normalizeText(draft.outstandingBond) : '',
+    estimatedSettlementAmount: bondStatus === 'bonded' ? normalizeText(draft.outstandingBond) : '',
+    bondSettlementAmount: bondStatus === 'bonded' ? normalizeText(draft.outstandingBond) : '',
+    multipleBonds: bondStatus === 'bonded' && Boolean(draft.multipleBonds),
+    accessBond: bondStatus === 'bonded' && Boolean(draft.accessBond),
+    cancellationRequired: bondStatus === 'bonded' && Boolean(draft.cancellationRequired),
     coOwnerDetails: normalizeText(draft.coOwnerDetails),
     coOwners: normalizeText(draft.coOwnerDetails),
     ratesTaxes: normalizeText(draft.ratesTaxes),
@@ -536,6 +552,8 @@ export function buildListingSellerProfileFormPatch(draft = {}) {
     leviesNotApplicable: Boolean(draft.leviesNotApplicable),
     waterBillingType: normalizeText(draft.waterBillingType),
     mandateType: normalizeText(draft.mandateType) || 'sole',
+    otherAgencyName: normalizeText(draft.otherAgencyName),
+    coAgencyName: normalizeText(draft.otherAgencyName),
     askingPrice: normalizeText(draft.askingPrice),
     price: normalizeText(draft.askingPrice),
     mandateStartDate: normalizeText(draft.mandateStartDate),
@@ -558,7 +576,7 @@ export function buildListingSellerProfileFormPatch(draft = {}) {
     base.multipleOwners = normalizePersonCollectionForSellerProfile(draft.multipleOwners || [], null, 'Owner')
     base.owners = base.multipleOwners
   }
-  if (branch === 'company' || branch === 'foreign_company') {
+  if (['company', 'close_corporation', 'foreign_company'].includes(branch)) {
     base.companyName = normalizeText(draft.companyName)
     base.companyRegistrationNumber = normalizeText(draft.companyRegistrationNumber)
     base.companyRegisteredAddress = normalizeText(draft.companyRegisteredAddress)
@@ -590,8 +608,8 @@ export function buildListingSellerProfileFormPatch(draft = {}) {
   }
   if (branch === 'deceased_estate') {
     base.deceasedEstateName = normalizeText(draft.deceasedEstateName)
-    base.estateName = base.deceasedEstateName
     base.estateReferenceNumber = normalizeText(draft.estateReferenceNumber)
+    base.estateReference = base.estateReferenceNumber
     base.executorName = normalizeText(draft.executorName)
     base.executorEmail = normalizeText(draft.executorEmail).toLowerCase()
     base.executors = base.executorName ? [{ name: base.executorName, fullName: base.executorName, email: base.executorEmail, roleTitle: 'Executor', signingAuthority: true }] : []
@@ -621,17 +639,36 @@ export function buildListingSellerProfileFormPatch(draft = {}) {
     base.foreign_owner = true
     base.foreignOwnerCountry = normalizeText(draft.foreignOwnerCountry)
     base.foreignPassportNumber = normalizeText(draft.foreignPassportNumber)
-    base.foreignRegistrationNumber = normalizeText(draft.foreignRegistrationNumber)
+    base.foreignRegistrationNumber = normalizeText(branch === 'foreign_company' ? draft.companyRegistrationNumber || draft.foreignRegistrationNumber : branch === 'foreign_trust' ? draft.trustRegistrationNumber || draft.foreignRegistrationNumber : '')
     base.foreignResidencyStatus = normalizeText(draft.foreignResidencyStatus)
   }
 
-  const patch = compactObject({
-    ...base,
-    ...buildSellerEntityProfileAliases(base),
-  })
+  const collectionFields = new Set(['multipleOwners', 'companyDirectors', 'companyBeneficialOwners', 'trustees', 'trustFounders', 'trustBeneficiaries'])
+  for (const [family, fields] of Object.entries(BRANCH_DETAIL_FIELDS)) {
+    const active = family === branchDetailFamily(branch) || (family === 'foreign' && branch.startsWith('foreign_')) ||
+      (family === 'married' && String(draft.maritalStatus || '').startsWith('married'))
+    for (const field of fields) {
+      if (!active) base[field] = collectionFields.has(field) ? [] : ''
+      else if (!Object.hasOwn(base, field)) base[field] = draft[field] ?? (collectionFields.has(field) ? [] : '')
+    }
+  }
+  if (branch !== 'multiple_owners') base.owners = []
+  if (branch !== 'deceased_estate') Object.assign(base, { executors: [], deceased_estate: {}, estateReference: '' })
+  if (branch !== 'power_of_attorney') Object.assign(base, { powerOfAttorneyRepresentatives: [], power_of_attorney: {}, power_of_attorney_name: '', power_of_attorney_email: '', power_of_attorney_principal_name: '', power_of_attorney_principal_id_number: '' })
+  if (branch !== 'other') base.other_entity = {}
+  const aliases = buildSellerEntityProfileAliases(base)
+  const patch = { ...compactObject(base), ...aliases }
+  for (const fields of Object.values(BRANCH_DETAIL_FIELDS)) {
+    for (const field of fields) patch[field] = base[field]
+  }
+  for (const key of ['sellerName', 'fullName', 'sellerFirstName', 'sellerSurname', 'firstName', 'lastName', 'primaryContactName', 'contactName', 'idNumber', 'residentialAddress']) patch[key] = base[key] ?? ''
+  // Optional contacts and dual-agency details can be deliberately cleared.
+  for (const key of ['email', 'sellerEmail', 'phone', 'sellerPhone', 'mobile', 'otherAgencyName', 'coAgencyName', 'spouseEmail', 'authorisedSignatoryEmail', 'authorisedTrusteeEmail', 'executorEmail', 'powerOfAttorneyEmail']) {
+    if (Object.hasOwn(base, key)) patch[key] = base[key]
+  }
   // Empty strings normally disappear from patches. An explicit "no bond" must
   // clear old bond values when this patch is merged into saved onboarding data.
-  if (draft.bondStatus === 'no_bond') {
+  if (bondStatus === 'no_bond') {
     for (const key of ['bondHolder', 'bondBank', 'currentBondBank', 'mortgageBank', 'bondAccountReference', 'currentBondAccountNumber', 'outstandingBond', 'estimatedSettlementAmount', 'bondSettlementAmount']) patch[key] = ''
   }
   return patch
@@ -643,12 +680,12 @@ export function validateListingSellerProfileBuilderDraft(draft = {}) {
   if (!branch) return ['Choose who owns this property before continuing.']
   const email = normalizeText(draft.email)
   const hasPrimarySeller = normalizeText(draft.sellerFirstName || draft.sellerSurname || draft.email || draft.phone || draft.idNumber)
-  if (!hasPrimarySeller && !['company', 'trust', 'foreign_company', 'foreign_trust'].includes(branch)) {
+  if (!hasPrimarySeller && ['individual', 'married', 'foreign_individual'].includes(branch)) {
     errors.push('Capture at least one seller name, email, phone, or ID number.')
   }
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.push('Add a valid seller email address.')
   if (!normalizeText(draft.propertyAddress)) errors.push('Capture the property address.')
-  if (['company', 'foreign_company'].includes(branch) && !normalizeText(draft.companyName)) errors.push('Capture the company name.')
+  if (['company', 'close_corporation', 'foreign_company'].includes(branch) && !normalizeText(draft.companyName)) errors.push('Capture the company name.')
   if (['trust', 'foreign_trust'].includes(branch) && !normalizeText(draft.trustName)) errors.push('Capture the trust name.')
   if (branch === 'deceased_estate' && !normalizeText(draft.deceasedEstateName)) errors.push('Capture the estate name.')
   if (branch === 'power_of_attorney' && !normalizeText(draft.powerOfAttorneyPrincipalName)) errors.push('Capture the principal / legal owner name.')
@@ -675,11 +712,12 @@ function personName(person = {}) {
  * does not require FICA evidence or a completed disclosure: those are separate
  * documents that can be requested later in the seller-document flow.
  */
-export function buildListingMandateReadiness(listing = {}, commission = {}) {
+export function buildListingMandateReadiness(listing = {}, commission = {}, { requireEmail = false } = {}) {
   const form = getListingSellerFormData(listing)
   const branch = resolveListingSellerProfileBranch(form, listing)
   const missing = []
   const legalType = branch || 'not_identified'
+  const emailReady = (value) => (!requireEmail && !normalizeText(value)) || isEmail(value)
   const require = (condition, message) => { if (!condition) missing.push(message) }
   const contactName = normalizeText(form.contactName || form.sellerName || form.fullName || [form.sellerFirstName || form.firstName, form.sellerSurname || form.lastName].filter(Boolean).join(' '))
   const contactEmail = normalizeText(form.sellerEmail || form.email)
@@ -690,37 +728,37 @@ export function buildListingMandateReadiness(listing = {}, commission = {}) {
     require(owners.length > 0, 'Add every property owner.')
     owners.forEach((owner, index) => {
       require(Boolean(personName(owner)), `Add owner ${index + 1}'s full name.`)
-      require(isEmail(owner.email), `Add a valid email for owner ${index + 1}.`)
+      require(emailReady(owner.email), `Add a valid email for owner ${index + 1}.`)
     })
-  } else if (branch === 'company' || branch === 'foreign_company') {
+  } else if (['company', 'close_corporation', 'foreign_company'].includes(branch)) {
     require(Boolean(normalizeText(form.companyName)), 'Add the company or CC name.')
     require(Boolean(normalizeText(form.companyRegistrationNumber)), 'Add the company or CC registration number.')
     require(Boolean(normalizeText(form.authorisedSignatoryName)), 'Add the authorised signatory.')
     require(Boolean(normalizeText(form.authorisedSignatoryCapacity)), 'Add the signatory capacity.')
-    require(isEmail(form.authorisedSignatoryEmail), 'Add a valid authorised-signatory email.')
+    require(emailReady(form.authorisedSignatoryEmail), 'Add a valid authorised-signatory email.')
   } else if (branch === 'trust' || branch === 'foreign_trust') {
     require(Boolean(normalizeText(form.trustName)), 'Add the trust name.')
     require(Boolean(normalizeText(form.trustRegistrationNumber)), 'Add the trust registration number.')
     require(Boolean(normalizeText(form.authorisedTrusteeName)), 'Add the authorised trustee.')
     require(Boolean(normalizeText(form.authorisedTrusteeCapacity)), 'Add the trustee capacity.')
-    require(isEmail(form.authorisedTrusteeEmail), 'Add a valid authorised-trustee email.')
+    require(emailReady(form.authorisedTrusteeEmail), 'Add a valid authorised-trustee email.')
   } else if (branch === 'deceased_estate') {
-    require(Boolean(normalizeText(form.deceasedEstateName || form.estateName)), 'Add the estate name.')
-    require(Boolean(normalizeText(form.estateReferenceNumber)), 'Add the estate reference number.')
+    require(Boolean(normalizeText(form.deceasedEstateName)), 'Add the estate name.')
+    require(Boolean(normalizeText(form.estateReferenceNumber || form.estateReference)), 'Add the estate reference number.')
     require(Boolean(normalizeText(form.executorName)), 'Add the executor.')
-    require(isEmail(form.executorEmail), 'Add a valid executor email.')
+    require(emailReady(form.executorEmail), 'Add a valid executor email.')
   } else if (branch === 'power_of_attorney') {
     require(Boolean(normalizeText(form.powerOfAttorneyPrincipalName)), 'Add the principal / legal owner name.')
     require(Boolean(normalizeText(form.powerOfAttorneyPrincipalIdNumber)), 'Add the principal ID/passport number.')
     require(Boolean(normalizeText(form.powerOfAttorneyName)), 'Add the authorised representative.')
-    require(isEmail(form.powerOfAttorneyEmail), 'Add a valid authorised-representative email.')
+    require(emailReady(form.powerOfAttorneyEmail), 'Add a valid authorised-representative email.')
   } else if (branch === 'other') {
     require(Boolean(normalizeText(form.otherEntityName)), 'Add the legal entity name.')
     require(Boolean(contactName), 'Add the authorised contact name.')
-    require(isEmail(contactEmail), 'Add a valid authorised-contact email.')
+    require(emailReady(contactEmail), 'Add a valid authorised-contact email.')
   } else {
     require(Boolean(contactName), 'Add the seller’s full name.')
-    require(isEmail(contactEmail), 'Add a valid seller email.')
+    require(emailReady(contactEmail), 'Add a valid seller email.')
   }
 
   require(Boolean(normalizeText(form.propertyAddress || form.addressLine1 || listing.propertyAddress || listing.addressLine1)), 'Add the property address.')

@@ -28,7 +28,6 @@ import CanvassingWorkspaceTabs from '../components/canvassing/CanvassingWorkspac
 import PropertyReportsWorkspace from '../components/canvassing/PropertyReportsWorkspace'
 import KnowledgeFactoryFicaWorkspace from '../components/canvassing/KnowledgeFactoryFicaWorkspace'
 import KnowledgeFactorySensitiveLookupWorkspace from '../components/canvassing/KnowledgeFactorySensitiveLookupWorkspace'
-import KnowledgeFactoryOperationsWorkspace from '../components/canvassing/KnowledgeFactoryOperationsWorkspace'
 import PropertySearchWorkspace from '../components/canvassing/PropertySearchWorkspace'
 import AddressAutocomplete from '../components/location/AddressAutocomplete'
 import AreaAutocomplete from '../components/location/AreaAutocomplete'
@@ -1568,9 +1567,7 @@ function PipelineCanvassingPage() {
         ? 'fica-kyc'
         : location.pathname.endsWith('/lookup-approvals')
           ? 'sensitive-lookups'
-          : location.pathname.endsWith('/operations')
-            ? 'operations'
-      : 'prospects'
+          : 'prospects'
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -4004,10 +4001,6 @@ function PipelineCanvassingPage() {
         <KnowledgeFactorySensitiveLookupWorkspace />
       </section>
     )
-  }
-
-  if (activeCanvassingWorkspace === 'operations') {
-    return <section className="space-y-5">{canvassingWorkspaceHeader}<KnowledgeFactoryOperationsWorkspace /></section>
   }
 
   return (

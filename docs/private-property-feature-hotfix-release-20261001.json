@@ -1,0 +1,213 @@
+{
+  "verifiedAtUtc": "2026-10-01T11:22:23.160290+00:00",
+  "product": "Primary Arch9 transaction workspace",
+  "scope": "Private Property SOAP AttributeType enum correction and focused regression coverage",
+  "rootCause": "A later production deployment superseded the earlier corrected mapper with display-label feature identifiers.",
+  "productionProject": {
+    "name": "bridge",
+    "id": "prj_rbfXykMU6mU1eECbc0lJS9sPspmp",
+    "domain": "app.arch9.co.za"
+  },
+  "rollbackDeployment": "dpl_6prFLuc8V7qZErcoTGk7CAGX5wT5",
+  "deployment": {
+    "id": "dpl_8eHU4uehsZAvqcsYneo4UuCamYeP",
+    "url": "bridge-h1dkywex5-alexs-projects-f5496a21.vercel.app",
+    "readyState": "READY",
+    "alias": [
+      "app.arch9.co.za",
+      "bridgenine.co.za",
+      "app.bridgenine.co.za",
+      "bridge-alexs-projects-f5496a21.vercel.app"
+    ],
+    "ready": 1790853594834
+  },
+  "productionAliasVerified": true,
+  "changes": [
+    {
+      "path": "the-it-guy/server/services/privatePropertyListingMapper.js",
+      "beforeSha1": "d0aaba5bbc8d1c8d4f2b30ceb3616a609f2dd0cf",
+      "afterSha1": "636e69f9b3c32ea1d847f5c6f5b8176c9b8c0e76"
+    },
+    {
+      "path": "the-it-guy/scripts/private-property-listing-preview.test.mjs",
+      "beforeSha1": "284ef170d17c8eaa8b4e8327b434ef1a5bfe9fb5",
+      "afterSha1": "0eeaea3dfd88bf38d67f7a505f608d6c53323276"
+    },
+    {
+      "path": "the-it-guy/scripts/fixtures/private-property-attribute-types.json",
+      "beforeSha1": null,
+      "afterSha1": "51c70871bf143c0bb37042912d4689d95e6b2b12"
+    }
+  ],
+  "sourceVerification": {
+    "deploymentId": "dpl_8eHU4uehsZAvqcsYneo4UuCamYeP",
+    "sourceFileCount": 11465,
+    "fullManifestMatches": true,
+    "mapperSha1": "636e69f9b3c32ea1d847f5c6f5b8176c9b8c0e76",
+    "correctedFeatureCodesVerified": true
+  },
+  "liveAssets": {
+    "main": "/assets/index-DjYcSerE.js",
+    "checked": 661,
+    "passed": 661,
+    "failures": [],
+    "listingAssets": [
+      {
+        "asset": "assets/AgentListingDetail-DWKE3glO.js",
+        "status": 200,
+        "type": "application/javascript; charset=utf-8",
+        "passed": true
+      },
+      {
+        "asset": "assets/AgentListings-D_nxo7gg.js",
+        "status": 200,
+        "type": "application/javascript; charset=utf-8",
+        "passed": true
+      }
+    ]
+  },
+  "checks": {
+    "privatePropertyLiveSoapSchema": "Passed: current WSDL matches independent 70-value AttributeType fixture.",
+    "privatePropertyListingPreview": "Passed: all mapped feature identifiers are in the SOAP schema; typed electric fencing and legacy display labels covered.",
+    "privatePropertyListingPublish": "Passed",
+    "privatePropertyListingSync": "Passed",
+    "previewDependencies": "All unchanged imported dependencies match production source.",
+    "productionBuild": "Passed on Vercel, including bundle budget, operational script deployment audit and agent schema compatibility.",
+    "rentalAdapter": "Existing description wording assertion fails identically against baseline production code; not introduced by this feature enum fix.",
+    "deployedReleaseAssets": "Passed: app shell and release manifest agree; all 720 critical assets return the expected JavaScript/CSS content type. Release marker is local-unknown; deployment identity independently verified through Vercel and the complete source manifest."
+  },
+  "failedDeploymentAttempt": {
+    "id": "dpl_Hb1FNPnQZHWK6eGnWPqsrKJGWfrX",
+    "reason": "Deployment omitted explicit monorepo root/outside-root settings; shared import resolution failed. Live alias remained on previous healthy deployment. Retried with the-it-guy root and sourceFilesOutsideRootDirectory=true."
+  },
+  "databaseChanges": false,
+  "listingsSubmittedToPrivateProperty": false,
+  "remainingVerification": [],
+  "sharedWorkingTree": "Unrelated local changes were preserved and excluded; deployment reuses complete current production file manifest plus the three scoped files.",
+  "browserIncident": {
+    "reportedIssue": "App update is still reaching this browser",
+    "evidence": "Current main bundle was loaded; browser reported HTTP 404 for buyerLifecycleService-ZgbbxbsM.js and failed dynamic imports of AgentListings and AgentListingDetail. Exact deployed assets returned HTTP 200 with correct content types in independent server checks.",
+    "recovery": "Chrome developer-tools reload bypassed the cached failure for Listings. Empty cache and hard reload then restored the listing detail/Marketing screen.",
+    "authenticatedListingsVerified": true,
+    "authenticatedListingMarketingVerified": true,
+    "screenshot": "/tmp/arch9-marketing-recovered.png",
+    "verifiedAtUtc": "2026-10-01T11:29:59.466865+00:00",
+    "notes": "No browser extension was disabled, no cookies or credentials were removed, and no listing submission was initiated by the agent."
+  },
+  "currentProductionDeployment": "dpl_Acm98yAm9r1pmqEgsujUQuVZMrmz",
+  "retryButtonRelease": {
+    "verifiedAtUtc": "2026-10-01T11:44:23.022799+00:00",
+    "rootCause": "The Retry update handler silently returned for publish and update actions from failed publication records.",
+    "rollbackDeployment": "dpl_8eHU4uehsZAvqcsYneo4UuCamYeP",
+    "deployment": {
+      "id": "dpl_7zhVeA8yrNceGqAGxeShM2tGmafK",
+      "url": "bridge-hyjtc9nmc-alexs-projects-f5496a21.vercel.app",
+      "readyState": "READY",
+      "alias": [
+        "app.arch9.co.za",
+        "bridgenine.co.za",
+        "app.bridgenine.co.za",
+        "bridge-alexs-projects-f5496a21.vercel.app"
+      ]
+    },
+    "productionAliasVerified": true,
+    "changedRuntimeFile": "the-it-guy/src/pages/AgentListingDetail.jsx",
+    "sourceVerification": {
+      "deploymentId": "dpl_7zhVeA8yrNceGqAGxeShM2tGmafK",
+      "allSourceFilesMatch": true,
+      "sourceFileCount": 11465,
+      "componentSha1": "5ac9524d6d25e3171cea63a501a3b7cdad99c63c",
+      "mapperSha1": "636e69f9b3c32ea1d847f5c6f5b8176c9b8c0e76"
+    },
+    "unchangedSourceFileCount": 11464,
+    "checks": {
+      "actualScopedComponentRuntime": "Passed 13 scenarios; the same test fails against the previous live handler.",
+      "listingChannelUpdateState": "Passed",
+      "property24ListingPublishUi": "Passed",
+      "privatePropertyListingPreview": "Passed",
+      "privatePropertyPublishListing": "Passed",
+      "jsxSyntax": "Passed",
+      "productionBuild": "Passed, including bundle budget, operational script and agent schema checks"
+    },
+    "liveAssets": {
+      "main": "/assets/index-C7c3dAqS.js",
+      "listingRouteAssets": [
+        "assets/AgentListingDetail-C3Jfs8dL.js",
+        "assets/AgentListings-Bfz10PJ_.js"
+      ],
+      "passed": true
+    },
+    "browserVerification": {
+      "listingId": "47bedf1b-49a8-4700-81c6-87d7c6cc9e67",
+      "result": "Retry update opened the Private Property production submission confirmation in the authenticated user browser.",
+      "confirmationDismissed": true,
+      "privatePropertySubmissionInitiated": false,
+      "screenshot": "/tmp/arch9-pp-retry-confirmation.png"
+    },
+    "databaseChanges": false,
+    "scope": "Isolated current production component patched only at retry dispatch; unrelated local changes excluded."
+  },
+  "channelCountRelease": {
+    "verifiedAtUtc": "2026-10-01T11:54:23.432156+00:00",
+    "rootCause": "The live-channel count used the display label live, omitting active portals labelled Current or Awaiting verification.",
+    "rollbackDeployment": "dpl_7zhVeA8yrNceGqAGxeShM2tGmafK",
+    "deployment": {
+      "id": "dpl_Acm98yAm9r1pmqEgsujUQuVZMrmz",
+      "url": "bridge-733o1p363-alexs-projects-f5496a21.vercel.app",
+      "readyState": "READY",
+      "alias": [
+        "app.arch9.co.za",
+        "bridgenine.co.za",
+        "app.bridgenine.co.za",
+        "bridge-alexs-projects-f5496a21.vercel.app"
+      ]
+    },
+    "productionAliasVerified": true,
+    "changedRuntimeFile": "the-it-guy/src/pages/AgentListingDetail.jsx",
+    "sourceVerification": {
+      "deploymentId": "dpl_Acm98yAm9r1pmqEgsujUQuVZMrmz",
+      "allSourceFilesMatch": true,
+      "sourceFileCount": 11465,
+      "unchangedSourceFileCount": 11464,
+      "componentSha1": "9ae4e10bf070d1149158ce6be26ae5b3e9843e86",
+      "mapperSha1": "636e69f9b3c32ea1d847f5c6f5b8176c9b8c0e76"
+    },
+    "checks": {
+      "channelPresentation": "6 focused tests passed, including live count independent of update currency; inactive, accepted-only, failed-update and withdrawn scenarios.",
+      "channelUpdateState": "Passed",
+      "property24PublishUi": "Passed",
+      "exactProductionPatch": "JSX transform and actual live-count expression cases passed.",
+      "productionBuild": "Passed, including bundle budget, operational script and agent schema compatibility."
+    },
+    "browserVerification": {
+      "listingId": "47bedf1b-49a8-4700-81c6-87d7c6cc9e67",
+      "summary": "3 / 3 Channels live",
+      "channelStatuses": {
+        "Property24": "Current",
+        "Private Property": "Awaiting verification",
+        "Kingdom Website": "Live"
+      },
+      "screenshot": "/tmp/arch9-channels-live-count-fixed.png"
+    },
+    "databaseChanges": false,
+    "listingSubmissionsInitiatedByAgent": false,
+    "scope": "Three-line patch to current production component; all other current source files preserved."
+  },
+  "publicListingVerification": {
+    "verifiedAtUtc": "2026-10-01T12:00:27.910176+00:00",
+    "reference": "T5639823",
+    "url": "https://www.privateproperty.co.za/for-sale/gauteng/pretoria/northern-pretoria/montana-tuine/T5639823",
+    "apiStatus": "For Sale",
+    "presentInActiveListings": true,
+    "activatedAtUtc": "2026-10-01T11:46:44.0101733Z",
+    "publicPageVerifiedInBrowser": true,
+    "agent": "Esmerie Croft",
+    "agency": "I Sell Property.CO.ZA",
+    "price": 2750000,
+    "agencyOverviewLag": "Agency overview showed only the commercial listing; agent residential page and exact property page show the new listing. Public aggregation lag inferred, not independently diagnosed inside PP.",
+    "screenshot": "/tmp/arch9-private-property-public-listing.png",
+    "diagnosticReport": "/tmp/arch9-pp-public-visibility-monitor.json",
+    "databaseWrittenByAgent": false,
+    "propertyPublishedByAgent": false
+  }
+}

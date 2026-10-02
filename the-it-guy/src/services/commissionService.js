@@ -630,7 +630,7 @@ function getTransactionStatusText(row = {}) {
   ].map(normalizeKey).join(' ')
 }
 
-function isRegisteredTransaction(row = {}) {
+export function isRegisteredTransaction(row = {}) {
   const source = row.transaction && typeof row.transaction === 'object' ? row.transaction : row
   const status = getTransactionStatusText(source)
   return Boolean(
@@ -643,7 +643,7 @@ function isRegisteredTransaction(row = {}) {
   )
 }
 
-function isCancelledTransaction(row = {}) {
+export function isCancelledTransaction(row = {}) {
   const source = row.transaction && typeof row.transaction === 'object' ? row.transaction : row
   const status = getTransactionStatusText(source)
   return Boolean(source.cancelled_at || source.deleted_at || source.archived_at || status.includes('cancel') || status.includes('lost'))

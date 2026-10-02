@@ -139,7 +139,7 @@ const server = await createServer({
 })
 
 try {
-  const { fetchTransactionsByParticipantSummary } = await server.ssrLoadModule('/src/lib/transactionsListApi.js')
+  const { fetchTransactionsByParticipantSummary, invalidateTransactionsListCache } = await server.ssrLoadModule('/src/lib/transactionsListApi.js')
   const options = {
     client,
     userId: 'user-a',
@@ -172,6 +172,15 @@ try {
   await fetchTransactionsByParticipantSummary(options)
   assert.equal(calls.length, callCount, 'the second request should reuse the 60-second cache')
 
+  transactions[0].buyer_name = 'Reviewed Buyer A'
+  transactions[0].primary_buyer_participant_id = 'primary-a'
+  transactions[0].deal_review_details = { buyer: { profileId: 'buyer-a', participantId: 'primary-a', savedPrimaryId: 'primary-a' } }
+  invalidateTransactionsListCache()
+  assert.equal((await fetchTransactionsByParticipantSummary(options))[0].buyer.name, 'Reviewed Buyer A')
+  assert.equal(transactions[0].buyer.name, 'Buyer A', 'review display must not change the embedded shared profile')
+  transactions[0].primary_buyer_participant_id = null
+  invalidateTransactionsListCache()
+  assert.equal((await fetchTransactionsByParticipantSummary(options))[0].buyer.name, 'Buyer A', 'changed primary assignment must not inherit the correction')
   console.log('Transactions scoped summary tests passed')
 } finally {
   await server.close()

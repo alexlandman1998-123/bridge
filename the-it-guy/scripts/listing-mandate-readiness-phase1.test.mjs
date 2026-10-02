@@ -37,9 +37,14 @@ const commission = { basis: 'percentage', percentage: '5', vatHandling: 'exclusi
     sellerProfileCaptureSource: 'listing_seller_profile_capture', sellerType: 'multiple_owners', ownerStructureType: 'multiple_owners',
     multipleOwners: [{ fullName: 'Ava Seller', email: 'ava@example.test' }, { fullName: 'Ben Seller', email: '' }],
     propertyAddress: '10 Example Road', mandateType: 'sole', askingPrice: '2500000', mandateStartDate: '2026-09-18', expiryDate: '2026-12-18',
-  }), commission)
+  }), commission, { requireEmail: true })
   assert.equal(readiness.ready, false)
   assert.ok(readiness.missing.includes('Add a valid email for owner 2.'))
+  const manual = buildListingMandateReadiness(listing({
+    ownerStructureType: 'multiple_owners', multipleOwners: [{ fullName: 'Ava Seller' }, { fullName: 'Ben Seller' }],
+    propertyAddress: '10 Example Road', mandateType: 'sole', askingPrice: '2500000', mandateStartDate: '2026-09-18', expiryDate: '2026-12-18',
+  }), commission)
+  assert.equal(manual.ready, true)
 }
 
 {

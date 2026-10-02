@@ -11,8 +11,7 @@ function personName(person = {}) {
   return firstText(
     value.fullName,
     value.full_name,
-    value.name,
-    [value.firstName || value.first_name, value.surname || value.lastName || value.last_name].filter(Boolean).join(' '),
+    [value.firstName || value.first_name || value.name, value.surname || value.lastName || value.last_name].filter(Boolean).join(' '),
   )
 }
 
@@ -55,14 +54,19 @@ function canonicalParties(seller = {}) {
       if (snapshot.name || snapshot.idNumber || snapshot.email) parties.push(snapshot)
     })
   }
-  add(source.owners, 'Seller')
-  add(source.company?.directors, 'Director')
-  add(source.company?.beneficial_owners, 'Beneficial owner')
-  add(source.trust?.trustees, 'Trustee')
-  add(source.trust?.founders, 'Founder')
-  add(source.trust?.beneficiaries, 'Beneficiary')
-  add(source.deceased_estate?.executors, 'Executor')
-  add(source.power_of_attorney?.representatives, 'Representative')
+  const branch = source.owner_structure_type || source.legal_type
+  if (branch === 'multiple_owners') add(source.owners, 'Seller')
+  if (['company', 'close_corporation', 'foreign_company'].includes(branch)) {
+    add(source.company?.directors, 'Director')
+    add(source.company?.beneficial_owners, 'Beneficial owner')
+  }
+  if (['trust', 'foreign_trust'].includes(branch)) {
+    add(source.trust?.trustees, 'Trustee')
+    add(source.trust?.founders, 'Founder')
+    add(source.trust?.beneficiaries, 'Beneficiary')
+  }
+  if (branch === 'deceased_estate') add(source.deceased_estate?.executors, 'Executor')
+  if (branch === 'power_of_attorney') add(source.power_of_attorney?.representatives, 'Representative')
   return parties
 }
 
@@ -125,15 +129,36 @@ export function buildSellerOnboardingSigningPackSnapshot({
     countryOfResidence: canonicalSeller.foreign?.country || form.countryOfResidence || form.country_of_residence,
     incomeTaxNumber: canonicalSeller.tax_number || form.sellerIncomeTaxNumber || form.incomeTaxNumber || form.taxNumber,
     residentialAddress: canonicalSeller.residential_address || form.residentialAddress || form.residential_address || form.physicalAddress,
-    email: canonicalSeller.email || form.sellerEmail || form.seller_email || form.email || currentListing.sellerEmail,
-    phone: canonicalSeller.phone || form.mobile || form.mobileNumber || form.phone || currentListing.sellerPhone,
+    email: form.email ?? form.sellerEmail ?? form.seller_email ?? firstText(canonicalSeller.email, currentListing.sellerEmail),
+    phone: form.phone ?? form.mobile ?? form.mobileNumber ?? firstText(canonicalSeller.phone, currentListing.sellerPhone),
     occupation: form.occupation,
     sourceOfFunds: form.sourceOfFunds || form.source_of_funds,
     politicallyExposedPerson: canonicalSeller.politically_exposed_person || form.politicallyExposedPerson || form.politically_exposed_person,
     politicallyExposedDetails: canonicalSeller.politically_exposed_details || form.politicallyExposedDetails || form.politically_exposed_details,
   })
   const legalType = firstText(canonicalSeller.legal_type, form.sellerLegalType, form.seller_legal_type, form.sellerType, currentListing.sellerType)
+  const ownerStructure = firstText(canonicalSeller.owner_structure_type, form.ownershipType)
+  const primaryOwner = personSnapshot(canonicalSeller.owners?.[0])
+  const legalOwnerIdentity = ownerStructure === 'multiple_owners'
+    ? primaryOwner.idNumber
+    : ownerStructure === 'deceased_estate'
+    ? firstText(canonicalSeller.deceased_estate?.reference_number, canonicalSeller.deceased_estate?.estate_reference)
+    : ownerStructure === 'power_of_attorney'
+      ? text(canonicalSeller.power_of_attorney?.principal?.id_number)
+      : ownerStructure === 'other'
+        ? text(canonicalSeller.other_entity?.registration_number)
+        : legalType.includes('company') || legalType === 'close_corporation'
+          ? text(canonicalSeller.company?.registration_number)
+          : legalType.includes('trust')
+            ? text(canonicalSeller.trust?.registration_number)
+            : firstText(canonicalSeller.foreign?.passport_number, canonicalSeller.id_number, sellerIdentity.idNumber)
   const seller = {
+    legalOwnerName: ownerStructure === 'multiple_owners'
+      ? primaryOwner.name
+      : ['deceased_estate', 'power_of_attorney', 'other'].includes(ownerStructure)
+      ? text(canonicalSeller.name)
+      : firstText(canonicalSeller.name, sellerIdentity.name),
+    legalOwnerIdentity,
     ...sellerIdentity,
     legalType,
     ownershipType: firstText(canonicalSeller.owner_structure_type, form.ownerStructureType, form.owner_structure_type, form.ownershipType),
@@ -152,7 +177,8 @@ export function buildSellerOnboardingSigningPackSnapshot({
   }
   const parties = canonicalParties(canonicalSeller)
   if (!parties.length) parties.push(...selectedParties(form, seller))
-  seller.parties = parties.length ? parties : [sellerIdentity].filter((person) => person.name || person.idNumber || person.email)
+  seller.parties = parties.length ? parties : ['individual', 'married', 'foreign_individual'].includes(ownerStructure)
+    ? [sellerIdentity].filter((person) => person.name || person.idNumber || person.email) : []
   const address = firstText(
     propertyAddressOverride,
     canonicalFacts.property?.address,
@@ -195,7 +221,7 @@ export function buildSellerOnboardingSigningPackSnapshot({
     mandate: { ...safeMandate, propertyAddress: firstText(safeMandate.propertyAddress, address), branding: record(branding) },
     templateVersions: {
       mandate: firstText(form.mandateTemplateVersion, form.mandate_template_version, 'agency_sales_mandate_vnext'),
-      disclosure: 'property_disclosure_annexure_a_v1',
+      disclosure: 'property_disclosure_annexure_a_v2',
       fica: 'arch9_fica_declaration_v2',
     },
   }

@@ -1560,7 +1560,9 @@ function getSellerRequirementCandidates(requirementProfile = {}) {
 }
 
 export function getRequiredSellerDocuments(requirementProfile = {}) {
+  // Spouse consent remains a required signer action, not a second upload slot.
   return partitionSellerDocumentRequirements(getSellerRequirementCandidates(requirementProfile)).documentRequirements
+    .filter((requirement) => normalizeKey(requirement.key || requirement.requirement_key) !== 'spouse_consent')
 }
 
 export function getRequiredSellerStructuredFacts(requirementProfile = {}) {

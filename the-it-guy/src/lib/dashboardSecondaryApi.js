@@ -32,3 +32,8 @@ export async function loadAgencyAgentCardLink(...args) {
   agentCardPromise ||= import('../services/agencyPublicIntakeLinkService')
   return (await agentCardPromise).loadAgencyAgentCardLink(...args)
 }
+
+export async function saveAgencyAgentCardLink(...args) {
+  agentCardPromise ||= import('../services/agencyPublicIntakeLinkService')
+  return (await agentCardPromise).saveAgencyAgentCardLink(...args)
+}

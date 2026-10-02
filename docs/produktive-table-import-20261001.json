@@ -1,0 +1,80 @@
+{
+  "date": "2026-10-01",
+  "projectId": "isdowlnollckzvltkasn",
+  "organisationId": "efa6c6ff-6941-4b59-8bcb-e4d9ba9e585a",
+  "batchId": "produktive-user-table-20261001",
+  "source": "user_supplied_table",
+  "imported": [
+    {
+      "transactionId": "e84267ad-7096-5a57-b916-030a8e2d04b3",
+      "reference": "PR-TBL-20261001-R01",
+      "price": 650000
+    },
+    {
+      "transactionId": "936ccd1e-d163-52e0-9e0b-fdb55d3ab711",
+      "reference": "PR-TBL-20261001-R02",
+      "price": 2100000
+    },
+    {
+      "transactionId": "5e4845b0-3a30-5be7-ae16-35b1326e4759",
+      "reference": "PR-TBL-20261001-R03",
+      "price": 419500
+    },
+    {
+      "transactionId": "f752cdaa-ca8e-50ea-a32b-261491e4091d",
+      "reference": "PR-TBL-20261001-R04",
+      "price": 360000
+    },
+    {
+      "transactionId": "b23fa6ba-a32a-53dd-97c3-80f5248ca042",
+      "reference": "PR-TBL-20261001-R05",
+      "price": 380000
+    },
+    {
+      "transactionId": "07b353d8-0a26-565d-a67e-12619a2e6c8c",
+      "reference": "PR-TBL-20261001-R06",
+      "price": 2000000
+    },
+    {
+      "transactionId": "fe1fa7f0-45ff-5962-a1ab-af132aa1cf0f",
+      "reference": "PR-TBL-20261001-R07",
+      "price": 1040000
+    },
+    {
+      "transactionId": "c13cdbb7-e04b-5960-9df7-25b184c70d21",
+      "reference": "PR-TBL-20261001-R08",
+      "price": 690000
+    },
+    {
+      "transactionId": "bac65396-5f8e-5056-9af7-3eb8ac0169b4",
+      "reference": "PR-TBL-20261001-R09",
+      "price": 1050000
+    }
+  ],
+  "pendingGroupingConfirmation": [],
+  "reviewRequired": true,
+  "identityVerificationPerformed": false,
+  "emailsQueued": 0,
+  "totalPrice": 8689500,
+  "agentReviewRequired": {
+    "PR-TBL-20261001-R07": [
+      "Confirm additional buyer and marriage details",
+      "Verify supplied company registration format"
+    ],
+    "PR-TBL-20261001-R08": [
+      "Resolve continuation-party role from supplied source"
+    ],
+    "PR-TBL-20261001-R09": [
+      "Add buyer and confirm purchaser type"
+    ]
+  },
+  "verification": {
+    "transactions": 9,
+    "primaryBuyerLinks": 8,
+    "onboardingSourceCaptures": 9,
+    "correctWorkspace": true,
+    "queuedEmails": 0,
+    "datesInferred": false,
+    "fundingInferred": false
+  }
+}

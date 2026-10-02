@@ -839,7 +839,8 @@ export default function AppointmentDashboardSection({
   variant = 'legacy',
 }) {
   const [state, setState] = useState({ loading: true, error: '', data: null })
-  const isCompact = variant === 'compact'
+  const isAgentOverview = variant === 'agent-overview'
+  const isCompact = variant === 'compact' || isAgentOverview
 
   useEffect(() => {
     let active = true
@@ -883,6 +884,21 @@ export default function AppointmentDashboardSection({
     : null
 
   if (state.loading) return isCompact ? <CompactLoadingCard /> : <LoadingCard />
+
+  if (isAgentOverview && (state.error || !data || data.empty)) {
+    return (
+      <section className="rounded-2xl border border-[#dde6f1] bg-white p-4 shadow-sm sm:p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="flex items-center gap-2 text-lg font-semibold text-[#10243a]"><CalendarDays size={20} />{heading}</h2>
+          {onViewCalendar ? <button type="button" onClick={onViewCalendar} className="text-sm font-semibold text-[#1769d1] hover:underline">View calendar</button> : null}
+        </div>
+        {state.error ? <p role="alert" className="mt-4 rounded-xl bg-rose-50 p-4 text-sm text-rose-700">{state.error}</p> : <div className="mt-4 flex flex-col gap-4 rounded-xl border border-[#e5edf6] bg-[#f8fafc] p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div><p className="text-sm font-semibold text-[#10243a]">No appointments scheduled</p><p className="mt-1 text-sm text-[#647a92]">This agent’s appointments and client meetings will appear here.</p></div>
+          {onScheduleAppointment && canManage ? <button type="button" onClick={onScheduleAppointment} className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-xl bg-[#147a55] px-4 text-sm font-semibold text-white hover:bg-[#0f6847]"><CalendarDays size={16} />Schedule appointment</button> : null}
+        </div>}
+      </section>
+    )
+  }
 
   if (isCompact) {
     return (

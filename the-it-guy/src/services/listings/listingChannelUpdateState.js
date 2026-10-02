@@ -8,6 +8,17 @@ function text(value) {
   return String(value ?? '').trim()
 }
 
+export function summarizeListingPortalError(value = '') {
+  const message = text(value)
+  if (!message) return ''
+  const invalidAttribute = message.match(/['"]([^'"]+)['"] is not a valid value for AttributeType/i)
+  if (invalidAttribute) return `The portal rejected the feature code “${invalidAttribute[1]}”. Retry the submission with the latest saved listing.`
+  if (/SoapException|System\.\w+|<soap:|stack trace/i.test(message)) {
+    return 'The portal could not process this submission. Your listing is saved in Arch9; retry or review the technical details.'
+  }
+  return message.length > 240 ? `${message.slice(0, 237)}…` : message
+}
+
 function eventType(event = {}) {
   return text(event.activity_type || event.activityType)
 }

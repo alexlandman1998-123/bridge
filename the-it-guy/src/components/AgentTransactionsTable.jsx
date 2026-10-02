@@ -1,3 +1,6 @@
+import useImportedDealReviewStatuses from '../hooks/useImportedDealReviewStatuses.js'
+import { importedDealNeedsReview, importedDealReviewLabel, importedDealReviewStatus } from '../core/transactions/importedDealReviewStatus.js'
+import ImportedDealReviewBadge from './transaction/ImportedDealReviewBadge.jsx'
 import { ArrowRight, ArrowUpRight, BriefcaseBusiness, Building2, CheckCircle2, Home, MoreHorizontal, Plus, Search, UserRound } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { MAIN_STAGE_LABELS, getMainStageFromDetailedStage } from '../lib/stages'
@@ -27,6 +30,8 @@ const MAIN_STAGE_PROGRESS = {
 const QUICK_FILTERS = [
   { key: 'all', label: 'All' },
   { key: 'needs_review', label: 'Needs Review' },
+  { key: 'imported', label: 'Imported deals' },
+  { key: 'import_reviewed', label: 'Reviewed imports' },
   { key: 'development', label: 'Development' },
   { key: 'second_hand', label: 'Second-Hand' },
   { key: 'commercial', label: 'Commercial' },
@@ -311,6 +316,7 @@ function rowMatchesQuickFilter(row, filterKey, searchTerm = '') {
       stage,
       mainStage,
       health,
+      importedDealReviewLabel(row.importReview),
       buyerBondOriginatorRequest?.label,
       buyerBondOriginatorRequest?.summary,
       buyerBondOriginatorRequest?.companyName,
@@ -326,7 +332,9 @@ function rowMatchesQuickFilter(row, filterKey, searchTerm = '') {
   }
 
   if (filterKey === 'all') return true
-  if (filterKey === 'needs_review') return getBuyerBondOriginatorRequestSummary(row)?.actionRequired === true
+  if (filterKey === 'needs_review') return importedDealNeedsReview(row.importReview) || getBuyerBondOriginatorRequestSummary(row)?.actionRequired === true
+  if (filterKey === 'imported') return Boolean(row.importReview)
+  if (filterKey === 'import_reviewed') return row.importReview?.status === 'reviewed'
   if (filterKey === 'development') return Boolean(row?.development?.id) || typeText.includes('development')
   if (filterKey === 'second_hand') return typeText.includes('second') || typeText.includes('private') || (!row?.development?.id && !typeText.includes('commercial'))
   if (filterKey === 'commercial') return typeText.includes('commercial')
@@ -390,9 +398,12 @@ function AgentTransactionsTable({
   const pageSize = 20
   const searchFilter = onSearchChange ? String(searchValue || '') : localSearch
 
+  const reviewStatuses = useImportedDealReviewStatuses((rows || []).map((row) => row.transaction || {}))
+  const reviewRows = useMemo(() => (rows || []).map((row) => ({ ...row, importReview: importedDealReviewStatus(row.transaction, reviewStatuses.summaries[row.transaction?.id], { unavailable: Boolean(reviewStatuses.error) }) })), [rows, reviewStatuses.summaries, reviewStatuses.error])
+
   const filteredRows = useMemo(
-    () => (rows || []).filter((row) => rowMatchesQuickFilter(row, quickFilter, searchFilter)),
-    [searchFilter, quickFilter, rows],
+    () => reviewRows.filter((row) => rowMatchesQuickFilter(row, quickFilter, searchFilter)),
+    [searchFilter, quickFilter, reviewRows],
   )
   const totalPages = Math.max(1, Math.ceil((filteredRows?.length || 0) / pageSize))
   const currentPage = Math.min(page, totalPages)
@@ -435,6 +446,7 @@ function AgentTransactionsTable({
       }
       className={`table-panel agent-transactions-panel${compactLayout ? ' transactions-page-compact' : ''}`}
     >
+      {reviewStatuses.error ? <p role="status" className="mx-5 my-3 rounded-control bg-warningSoft p-3 text-sm text-warning">{reviewStatuses.error}</p> : null}
       {hasAnyRows ? (
         <div className="transaction-ops-filter-bar" aria-label="Transaction quick filters">
           <div className="transaction-ops-filter-toolbar">
@@ -640,6 +652,7 @@ function AgentTransactionsTable({
                     </div>
                   </td>
                   <td data-label="Health">
+                    {row.importReview ? <div className="mb-2"><ImportedDealReviewBadge status={row.importReview} /></div> : null}
                     <StatusBadge className={`transaction-workflow-chip transaction-health-chip ${health.className}`}>{healthLabel}</StatusBadge>
                   </td>
                   <td

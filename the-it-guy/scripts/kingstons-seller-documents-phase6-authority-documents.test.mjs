@@ -175,7 +175,7 @@ const source = buildSellerDocumentSourceOfTruth({
 })
 const companyResolutionRow = source.rows.find((row) => row.key === 'company_resolution_to_sell')
 assert.equal(companyResolutionRow.status, 'uploaded')
-assert.equal(companyResolutionRow.complete, true)
+assert.equal(companyResolutionRow.complete, false, 'An uploaded authority document still requires review.')
 assert.equal(companyResolutionRow.hasUpload, true)
 assert.equal(companyResolutionRow.category, 'sales')
 

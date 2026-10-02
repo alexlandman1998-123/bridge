@@ -1,10 +1,9 @@
 import { buildFicaDeclarationDocumentModel } from './ficaDeclarationDocumentModel.js'
 import { buildSellerFicaDueDiligenceMarkup, SELLER_FICA_DUE_DILIGENCE_TEMPLATE_VERSION } from './sellerFicaDueDiligenceMarkup.js'
-import { buildFicaDeclarationDocumentMarkup } from './ficaDeclarationDocumentMarkup.js'
 import { buildSellerComplianceDocumentModel } from './sellerComplianceDocumentModel.js'
 import { buildPropertyDisclosureDocumentMarkup } from '../../lib/propertyDisclosure.js'
 import { buildSellerSigningPlan } from '../../lib/sellerSigningPlanModel.js'
-import { buildSellerSubject } from '../../lib/sellerSubjectModel.js'
+import { buildSellerOnboardingSigningPackSnapshot } from './sellerOnboardingSigningPackSnapshot.js'
 import {
   SELLER_BASE_PACK_KEYS,
   SELLER_DOCUMENT_ARTIFACT_KEYS,
@@ -57,10 +56,6 @@ function sellerName(formData = {}, listing = {}) {
     listing?.sellerName,
     'Seller',
   )
-}
-
-function sellerIdNumber(formData = {}) {
-  return firstText(formData.idNumber, formData.id_number, formData.foreignPassportNumber, formData.foreign_passport_number, formData.passportNumber, formData.passport_number)
 }
 
 function propertyAddress(formData = {}, listing = {}) {
@@ -125,9 +120,10 @@ export function buildSellerPostOnboardingDrafts({ formData = {}, listing = {}, b
   const safeFormData = record(formData)
   const safeListing = record(listing)
   const safeBranding = record(branding)
-  const sellerSubject = buildSellerSubject({ formData: safeFormData, listing: safeListing })
-  const seller = firstText(sellerSubject.legalOwner?.name, sellerName(safeFormData, safeListing))
-  const sellerId = firstText(sellerSubject.legalOwner?.registrationNumber, sellerIdNumber(safeFormData))
+  const capturedSeller = buildSellerOnboardingSigningPackSnapshot({ formData: safeFormData, listing: safeListing }).seller
+  const owners = capturedSeller.ownershipType === 'multiple_owners' ? capturedSeller.parties.filter((person) => ['seller', 'owner'].includes(text(person.role).toLowerCase())) : []
+  const seller = owners.length ? owners.map((person) => person.name).join(', ') : firstText(capturedSeller.legalOwnerName, sellerName(safeFormData, safeListing))
+  const sellerId = owners.length ? owners.map((person) => person.idNumber).filter(Boolean).join(' / ') : capturedSeller.legalOwnerIdentity
   const property = propertyAddress(safeFormData, safeListing)
   const reference = documentReference(safeListing)
   const disclosure = record(safeFormData.propertyDisclosure || safeFormData.property_disclosure)
@@ -158,16 +154,14 @@ export function buildSellerPostOnboardingDrafts({ formData = {}, listing = {}, b
   const disclosureHtml = buildPropertyDisclosureDocumentMarkup(disclosure, {
     sellerName: seller,
     sellerIdNumber: sellerId,
+    sellerIdentityLabel: ['company', 'close_corporation', 'foreign_company', 'trust', 'foreign_trust', 'other', 'deceased_estate'].includes(capturedSeller.ownershipType) ? 'registration / estate reference' : 'ID/passport number',
     propertyAddress: property,
     listingId: text(safeListing.id),
     documentReference: reference,
     branding: safeBranding,
     compliancePack: { signers: compliancePack.signers },
   })
-  const isEntityFica = ficaModel.sections.some((section) => section.title === 'Entity / Authority')
-  const ficaHtml = isEntityFica
-    ? buildFicaDeclarationDocumentMarkup(ficaModel)
-    : buildSellerFicaDueDiligenceMarkup({ model: ficaModel, formData: safeFormData, branding: safeBranding, generatedAt })
+  const ficaHtml = buildSellerFicaDueDiligenceMarkup({ model: ficaModel, formData: safeFormData, branding: safeBranding, generatedAt })
   const mandateHtml = mandatePreparationMarkup({ seller, sellerId, property, reference, branding: safeBranding, generatedAt })
   const brandingVersion = firstText(
     safeBranding.brandingVersion,
@@ -205,7 +199,7 @@ export function buildSellerPostOnboardingDrafts({ formData = {}, listing = {}, b
     brandingVersion,
     brandingSnapshot,
     documents: [
-      draftDocument({ key: SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM, targetRequirementKey: SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM, artifactStage: SELLER_DOCUMENT_ARTIFACT_STAGES.REVIEW_DRAFT, name: 'Mandatory Disclosure / Defects Form', status: 'awaiting_agent_review', templateVersion: 'property_disclosure_annexure_a_v1', brandingVersion, generatedAt, generatedHtml: disclosureHtml, metadata: { source: 'seller_onboarding', brandingSnapshot } }),
+      draftDocument({ key: SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM, targetRequirementKey: SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM, artifactStage: SELLER_DOCUMENT_ARTIFACT_STAGES.REVIEW_DRAFT, name: 'Mandatory Disclosure / Defects Form', status: 'awaiting_agent_review', templateVersion: 'property_disclosure_annexure_a_v2', brandingVersion, generatedAt, generatedHtml: disclosureHtml, metadata: { source: 'seller_onboarding', brandingSnapshot } }),
       draftDocument({ key: SELLER_DOCUMENT_ARTIFACT_KEYS.FICA_REVIEW_DRAFT, targetRequirementKey: SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION, name: 'Seller FICA review draft', status: 'awaiting_agent_review', templateVersion: SELLER_FICA_DUE_DILIGENCE_TEMPLATE_VERSION, brandingVersion, generatedAt, generatedHtml: ficaHtml, metadata: { ficaDeclarationModel: ficaModel, wordingVersion: ficaModel.declaration.wordingVersion, brandingSnapshot } }),
       draftDocument({ key: SELLER_DOCUMENT_ARTIFACT_KEYS.MANDATE_PREPARATION_SUMMARY, targetRequirementKey: SELLER_BASE_PACK_KEYS.SIGNED_MANDATE, name: 'Mandate preparation summary', status: 'awaiting_agent_review', templateVersion: 'seller_mandate_preparation_summary_v1', brandingVersion, generatedAt, generatedHtml: mandateHtml, metadata: { commissionPending: true, notForSignature: true, brandingSnapshot } }),
     ],

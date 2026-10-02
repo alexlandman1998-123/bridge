@@ -35,3 +35,17 @@ test('changed reviewed content cannot be downloaded', async () => {
   const row = { original: { document: { ...copy, generatedHtml: '<article>Changed mandate</article>' } } }
   await assert.rejects(downloadSellerPhysicalSigningCopy(row, async () => {}), /changed since approval/)
 })
+
+test('opening an older versioned copy does not regenerate its approved HTML', async () => {
+  const { buildSellerOnboardingManualSigningDocuments } = await import('../../../services/sellerDocumentRequirementsService.js')
+  const copy = await reviewedMandate()
+  const rows = buildSellerOnboardingManualSigningDocuments({
+    sellerFirstName: 'Alex', sellerSurname: 'Seller', ownershipType: 'individual', mandateType: 'sole',
+    sellerOnboardingFormalPackApproval: approval,
+    sellerOnboardingManualSigningPack: { status: 'awaiting_signed_hard_copy', documents: [copy] },
+    sellerPostOnboardingDrafts: { documents: [{ targetRequirementKey: 'signed_fica_declaration', generatedHtml: '<article>New FICA</article>' }] },
+  }, { id: 'listing-1', sellerOnboardingStatus: 'completed' })
+  assert.equal(rows.length, 1)
+  assert.equal(rows[0].generatedHtml, copy.generatedHtml)
+  assert.equal(rows[0].versionDigest, copy.versionDigest)
+})

@@ -1,0 +1,77 @@
+{
+  "releasedAt": "2026-10-01T19:00:15.824Z",
+  "product": "Primary Arch9 workspace",
+  "url": "https://app.arch9.co.za",
+  "deployment": "dpl_3vDTbwPAjMydNpNswTjvAg22DAV1",
+  "baseline": "dpl_Gkaasu4FefTsPbYaRZg9JBqRtP5N",
+  "changedFiles": [
+    {
+      "file": "the-it-guy/src/pages/agency/AgencyBranchesPage.jsx",
+      "before": "b2e2560c121e92817f8f1013afb64bc098d92b8d",
+      "after": "11ae625b007bbabdaab989dac6a3e20266b77e13"
+    },
+    {
+      "file": "the-it-guy/src/pages/agency/AgencyBranchWorkspacePage.jsx",
+      "before": "1d9a866dd13d1605d1c6bf94347717695d66f96d",
+      "after": "86921562bf07f0ddac291b54e92a3a5ef6ee79e2"
+    },
+    {
+      "file": "the-it-guy/src/services/agencyBranchService.js",
+      "before": "a3f748963e536defa3f9a99a0def71e60d33d93a",
+      "after": "bfd3b704d80a9e36b4cc6f5a25c35da32c4d25f9"
+    },
+    {
+      "file": "the-it-guy/src/services/branchAnalyticsService.js",
+      "before": "a8c3c678a233da7a33b696a8c5f8e380e45495b5",
+      "after": "39ec445fe68436cd03f231a1ebfc02612c81481f"
+    },
+    {
+      "file": "the-it-guy/src/services/branchWorkspaceOverviewService.js",
+      "before": "806f22f816c130d3686c904a7ea441eb97665b59",
+      "after": "72fe06b5d6feefd81d2abe445824cb98569e221d"
+    },
+    {
+      "file": "the-it-guy/src/services/branchWorkspacePerformanceService.js",
+      "before": "8fcff13ba64b228fa428a497364dddef9faec3a0",
+      "after": "8da964d8973de3a4db6399a43344a164a0131f2c"
+    },
+    {
+      "file": "the-it-guy/src/services/commissionService.js",
+      "before": "99bac3cc7d92fd7114c94de1890ebe0bd223a9b8",
+      "after": "0ad258b36f0561d532ebf62bcc21d3b7451dea4a"
+    },
+    {
+      "file": "the-it-guy/src/components/agency/BranchCoverImage.jsx",
+      "before": null,
+      "after": "2b0f1b3f1384b765515b8998bb57c488847c2d59"
+    },
+    {
+      "file": "the-it-guy/src/components/agency/BranchExecutiveOverview.jsx",
+      "before": null,
+      "after": "50e611f6d5eca9c5eefa3d398327f3741842409b"
+    },
+    {
+      "file": "the-it-guy/src/services/branchDashboardDataService.js",
+      "before": null,
+      "after": "5879d5601ef2c927ee6cf2dac988625ff6145ff3"
+    },
+    {
+      "file": "the-it-guy/src/services/branchDashboardModel.js",
+      "before": null,
+      "after": "c62dc88eb191947308fde7269102e093785cea92"
+    }
+  ],
+  "preservedFiles": 11458,
+  "verification": {
+    "ready": true,
+    "productionAlias": true,
+    "exactSourceScope": true,
+    "focusedBranchChecks": "passed: dashboard calculations, branch scope, agency branch metrics",
+    "localProductionBuild": "passed",
+    "vercelProductionBuild": "READY",
+    "browserSmoke": "production sign-in page loaded without console errors",
+    "liveEntryAsset": "/assets/index-BhqyUt9k.js",
+    "authenticatedBranchVerification": "not performed; verification browser requires sign-in"
+  },
+  "rollbackCommand": "vercel promote dpl_Gkaasu4FefTsPbYaRZg9JBqRtP5N --yes"
+}

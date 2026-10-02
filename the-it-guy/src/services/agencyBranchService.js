@@ -1,3 +1,4 @@
+import { calculateBranchLeadConversion, resolveBranchReportingRange } from './branchDashboardModel'
 import { fetchOrganisationSettings } from '../lib/settingsApi'
 import { hasOpenAgencyOperations } from '../lib/agencyOperationsAccess'
 import { buildRoleHeadcount } from '../lib/reportingRoleLogic'
@@ -9,7 +10,6 @@ import { WORKSPACE_TYPES } from '../constants/workspaceTypes'
 import { recordSecurityAuditEvent } from './auditLogService'
 import { assertMembershipStatusTransition } from './transitions/stateTransitionEngine'
 import { assertResolvedWorkspaceContext } from './workspaceResolutionService'
-import { resolveWorkspaceRole } from './roleResolutionService'
 import { ENTITLEMENT_KEYS } from '../constants/workspaceEntitlements'
 import { assertWorkspaceEntitlementLimit } from './workspaceEntitlementsService'
 
@@ -417,18 +417,22 @@ function buildBranchViewModel(branch = {}, related = {}) {
     return summary
   }, { value: 0, hasData: false })
 
-  const closedDeals = branchTransactions.length ? registeredTransactions : 0
-  const conversionRate = branchLeads.length ? Math.round((closedDeals / branchLeads.length) * 100) : 0
+  const conversionRate = calculateBranchLeadConversion(branchLeads, branchTransactions, [], resolveBranchReportingRange()).value
 
-  const principalMember = activeMemberRows.find((member) =>
-    ['principal', 'owner', 'admin_staff', 'branch_manager'].includes(resolveWorkspaceRole(member, { workspaceType: WORKSPACE_TYPES.agency })),
-  )
+  const selectedManager = activeMemberRows.find((member) => normalizeText(member.user_id) === normalizeText(branch?.principal_user_id))
+
 
   const city = normalizeText(branch?.city)
   const province = normalizeText(branch?.province)
-  const locationText = normalizeText(branch?.location) || [city, province].filter(Boolean).join(', ') || 'Location pending'
+  const savedLocation = normalizeText(branch?.location)
+  const locationText = (normalizeLower(savedLocation) === 'location pending' ? '' : savedLocation)
+    || [city, province].filter(Boolean).join(', ')
+    || normalizeText(branch?.formatted_address)
+    || normalizeText(branch?.address)
+    || ''
 
-  const principalName = [normalizeText(principalMember?.first_name), normalizeText(principalMember?.last_name)].filter(Boolean).join(' ') || normalizeText(principalMember?.email) || normalizeText(branch?.manager_name) || 'Principal pending'
+  const selectedManagerName = [normalizeText(selectedManager?.first_name), normalizeText(selectedManager?.last_name)].filter(Boolean).join(' ') || normalizeText(selectedManager?.email)
+  const principalName = selectedManagerName || normalizeText(branch?.manager_name) || 'Principal pending'
 
   return {
     id: normalizeText(branch?.id),
@@ -448,6 +452,7 @@ function buildBranchViewModel(branch = {}, related = {}) {
     location: locationText,
     principalUserId: normalizeText(branch?.principal_user_id),
     principalName,
+    managerName: principalName === 'Principal pending' ? '' : principalName,
     phone: normalizeText(branch?.phone),
     email: normalizeText(branch?.email),
     logoUrl: normalizeText(branch?.logo_url),
@@ -523,14 +528,67 @@ export async function getBranches() {
   )
 }
 
+export async function getBranchOptions() {
+  if (!isSupabaseConfigured || !supabase) return []
+  const context = await resolveOrganisationContext()
+  assertBranchOperationalAccess(context, 'view branch operations')
+  const rows = await listOrganisationBranches(supabase, context.organisationId)
+  return filterBranchesForContext(rows, context).map((row) => ({ id: row.id, name: row.name, isActive: row.is_active !== false }))
+}
+
+// Page through scoped records: Supabase's default result cap must not silently
+// turn a busy branch into a misleading dashboard total.
+export async function readScopedBranchRows(table, organisationId, field, ids, orderField = 'id') {
+  const values = [...new Set(ids.filter(Boolean))]
+  if (!values.length) return { rows: [], available: true }
+  const rows = []
+  for (let offset = 0; offset < values.length; offset += 100) {
+    const batch = values.slice(offset, offset + 100)
+    for (let page = 0; ; page += 1) {
+      const query = await supabase.from(table).select('*').eq('organisation_id', organisationId).in(field, batch).order(orderField, { ascending: true }).range(page * 500, page * 500 + 499)
+      if (query.error) {
+        // Optional/missing schema and denied reads remain unavailable, never 0.
+        if (isMissingTableError(query.error) || isSchemaMismatchError(query.error) || ['42501', 'PGRST301'].includes(query.error.code)) return { rows: [], available: false }
+        throw query.error
+      }
+      const result = query.data || []
+      rows.push(...result)
+      if (result.length < 500) break
+    }
+  }
+  return { rows, available: true }
+}
+
 export async function getBranch(branchId) {
   const safeBranchId = normalizeText(branchId)
-  if (!safeBranchId) {
-    throw new Error('Branch id is required.')
+  if (!safeBranchId) throw new Error('Branch id is required.')
+  if (!isSupabaseConfigured || !supabase) return null
+  const context = await resolveOrganisationContext()
+  assertBranchOperationalAccess(context, 'view branch operations')
+  if (!hasAllBranchAccess(context) && safeBranchId !== normalizeText(context.membershipBranchId || context.membershipPrimaryBranchId)) return null
+  const result = await supabase.from('organisation_branches').select('*').eq('organisation_id', context.organisationId).eq('id', safeBranchId).maybeSingle()
+  if (result.error) throw result.error
+  if (!result.data) return null
+  const [members, primaryMembers, transactions, listings, leads] = await Promise.all([
+    readScopedBranchRows('organisation_users', context.organisationId, 'branch_id', [safeBranchId]),
+    readScopedBranchRows('organisation_users', context.organisationId, 'primary_branch_id', [safeBranchId]),
+    readScopedBranchRows('transactions', context.organisationId, 'assigned_branch_id', [safeBranchId]),
+    readScopedBranchRows('private_listings', context.organisationId, 'branch_id', [safeBranchId]),
+    readScopedBranchRows('leads', context.organisationId, 'branch_id', [safeBranchId], 'lead_id'),
+  ])
+  const memberRows = [...new Map([...primaryMembers.rows, ...members.rows].filter((row) => normalizeText(row.branch_id || row.primary_branch_id) === safeBranchId).map((row) => [row.id, row])).values()]
+  // Profile reads use only user IDs from the authorised branch membership set.
+  // RLS may hide photos; that does not make operational metrics unavailable.
+  const profiles = new Map()
+  const userIds = [...new Set(memberRows.map((row) => row.user_id).filter(Boolean))]
+  for (let offset = 0; offset < userIds.length; offset += 100) {
+    const photos = await supabase.from('profiles').select('id, avatar_url').in('id', userIds.slice(offset, offset + 100))
+    if (!photos.error) (photos.data || []).forEach((profile) => profiles.set(profile.id, profile))
   }
-
-  const branches = await getBranches()
-  return branches.find((branch) => normalizeText(branch?.id) === safeBranchId) || null
+  const enrichedMembers = memberRows.map((member) => ({ ...member, avatar_url: member.avatar_url || profiles.get(member.user_id)?.avatar_url || '' }))
+  const branch = buildBranchViewModel(result.data, { members: enrichedMembers, transactions: transactions.rows, listings: listings.rows, leads: leads.rows })
+  branch.dataAvailability = { members: members.available || primaryMembers.available, transactions: transactions.available, listings: listings.available, leads: leads.available }
+  return branch
 }
 
 function toSlug(value) {

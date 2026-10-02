@@ -6,7 +6,6 @@ const styles = await readFile(new URL('../src/pages/EmailCampaigns.css', import.
 
 for (const marker of [
   'Email campaigns',
-  'Create, schedule and measure campaigns that keep your audience moving.',
   'email-campaign-table',
   "['all', 'draft', 'scheduled', 'sending', 'sent', 'failed']",
   'PerformanceOverview',
@@ -14,7 +13,12 @@ for (const marker of [
   'TOP PERFORMING CAMPAIGNS',
   'DELIVERABILITY CONTROL',
   'Verify your sender domain to improve deliverability and ensure emails reach the inbox.',
-  'Email credits and campaign usage',
+  'Wallet & usage',
+  'Search campaigns',
+  'Continue editing',
+  'Your first send starts the story',
+  'email-support-grid',
+  'Wallet top-ups & billing details coming soon',
   'No charges have been applied yet.',
 ]) assert.ok(component.includes(marker), `Email landing should include ${marker}.`)
 

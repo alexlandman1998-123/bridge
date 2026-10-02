@@ -21,6 +21,31 @@ function test(name, fn) {
   }
 }
 
+test('New Listing retains seller identity, mandate dates and both commission types', () => {
+  for (const [commissionType, commissionValue, field] of [
+    ['percentage', '5.25', 'commissionPercentage'],
+    ['fixed', '50000', 'commissionAmount'],
+  ]) {
+    const payload = buildDirectListingIntakePayload({
+      sellerType: 'individual', sellerName: 'Jane', sellerSurname: 'Smith',
+      sellerEmail: 'jane@example.com', sellerPhone: '0821234567',
+      mandateType: 'sole', mandateStartDate: '2026-10-01', mandateEndDate: '2027-01-01',
+      commissionType, commissionValue,
+    })
+    const saved = payload.sellerOnboardingFormData
+    assert.equal(saved.sellerName, 'Jane')
+    assert.equal(saved.sellerSurname, 'Smith')
+    assert.equal(saved.sellerEmail, 'jane@example.com')
+    assert.equal(saved.sellerPhone, '0821234567')
+    assert.equal(saved.mandateType, 'sole')
+    assert.equal(saved.mandateStartDate, '2026-10-01')
+    assert.equal(saved.mandateEndDate, '2027-01-01')
+    assert.equal(saved.commissionType, commissionType)
+    assert.equal(saved.commissionValue, commissionValue)
+    assert.equal(saved[field], commissionValue)
+  }
+})
+
 test('builds declaration-only compliance status without upload requirements', () => {
   const declarations = buildDirectListingComplianceDeclarations({
     hasSignedMandate: true,

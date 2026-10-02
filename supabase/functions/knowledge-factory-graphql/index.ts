@@ -1,5 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { supplierCosts } from "../_shared/knowledgeFactorySupplierCosts.mjs";
+import { propertyReportQuery, supplierProperty } from "../_shared/knowledgeFactoryV1Contract.mjs";
 
 type Json = Record<string, unknown>;
 type Operation = "map_properties" | "property_summary" | "property_report" | "fica_kyc" | "credit_check";
@@ -188,19 +190,8 @@ async function supplierToken(): Promise<string> {
   return token;
 }
 
-function metric(value: unknown): number | null {
-  const parsed = typeof value === "number" ? value : Number(value);
-  return Number.isFinite(parsed) && parsed >= 0 ? Math.round(parsed) : null;
-}
-
 function costs(body: Json) {
-  const root = body.extensions && typeof body.extensions === "object" ? body.extensions as Json : {};
-  const cost = root.cost && typeof root.cost === "object" ? root.cost as Json : root;
-  const fieldCost = metric(cost.fieldCost || cost.field_cost);
-  const typeCost = metric(cost.typeCost || cost.type_cost);
-  const surcharge = metric(cost.priceSurcharge || cost.price_surcharge);
-  const credits = metric(cost.creditsConsumed || cost.credits_consumed);
-  return { fieldCost, typeCost, surcharge, credits };
+  return supplierCosts(body);
 }
 
 function vendorError(body: Json, fallback: string): string {
@@ -214,7 +205,7 @@ async function validateMapQuery(bounds: { west: number; east: number; south: num
   if (!endpoint) throw new Error("Knowledge Factory is not configured.");
   const response = await fetch(endpoint, {
     method: "POST",
-    headers: { "content-type": "application/json", "authorization": `Bearer ${await supplierToken()}`, "GraphQL-Cost": "validate" },
+    headers: { "content-type": "application/json", "authorization": `Bearer ${await supplierToken()}`, "GraphQL-Cost": "validate", "GraphQL-Billing": "report" },
     body: JSON.stringify({
       operationName: "ValidateMapProperties",
       query: "query ValidateMapProperties($minX: Decimal!, $maxX: Decimal!, $minY: Decimal!, $maxY: Decimal!) { properties(where: { x: { gt: $minX, lt: $maxX }, y: { gt: $minY, lt: $maxY } }, first: 25) { nodes { propertyId wkt } } }",
@@ -243,7 +234,7 @@ async function mapProperties(bounds: { west: number; east: number; south: number
   if (!endpoint) throw new Error("Knowledge Factory is not configured.");
   const response = await fetch(endpoint, {
     method: "POST",
-    headers: { "content-type": "application/json", "authorization": `Bearer ${await supplierToken()}`, "GraphQL-Cost": "report" },
+    headers: { "content-type": "application/json", "authorization": `Bearer ${await supplierToken()}`, "GraphQL-Cost": "report", "GraphQL-Billing": "report" },
     body: JSON.stringify({
       operationName: "MapProperties",
       query: "query MapProperties($minX: Decimal!, $maxX: Decimal!, $minY: Decimal!, $maxY: Decimal!) { properties(where: { x: { gt: $minX, lt: $maxX }, y: { gt: $minY, lt: $maxY } }, first: 25) { nodes { propertyId wkt erf portion suburb { suburbId } } } }",
@@ -291,7 +282,7 @@ function validateReportTypes(value: unknown): string[] {
 }
 
 function reportQuery() {
-  return "query PropertyReport($id: Int!) { propertyById(id: $id) { propertyId erf extent propertyType propertyName propertyNumber propertyYear valuationDate valuationMunicipality valuationValue valuationZoning streetAddress { address isMaster streetName streetNumber streetType x y } suburb { postCode suburbId suburbName town province { provinceName } } } }";
+  return propertyReportQuery("propertyId erf extent propertyType propertyName propertyNumber propertyYear valuationDate valuationMunicipality valuationValue valuationZoning streetAddress { address isMaster streetName streetNumber streetType x y } suburb { postCode suburbId suburbName town province { provinceName } }", "PropertyReport");
 }
 
 async function supplierReport(propertyId: number, costMode: "validate" | "report") {
@@ -299,7 +290,7 @@ async function supplierReport(propertyId: number, costMode: "validate" | "report
   if (!endpoint) throw new Error("Knowledge Factory is not configured.");
   const response = await fetch(endpoint, {
     method: "POST",
-    headers: { "content-type": "application/json", "authorization": `Bearer ${await supplierToken()}`, "GraphQL-Cost": costMode },
+    headers: { "content-type": "application/json", "authorization": `Bearer ${await supplierToken()}`, "GraphQL-Cost": costMode, "GraphQL-Billing": "report" },
     body: JSON.stringify({ operationName: "PropertyReport", query: reportQuery(), variables: { id: propertyId } }),
   });
   const body = await response.json().catch(() => ({})) as Json;
@@ -310,7 +301,8 @@ async function supplierReport(propertyId: number, costMode: "validate" | "report
 }
 
 function reportSummary(body: Json, requestedTypes: string[]) {
-  const property = ((body.data as Json | undefined)?.propertyById as Json | undefined) || {};
+  const property = supplierProperty(body) as Json | null;
+  if (!property) throw new Error("The supplier returned no property for this report.");
   const streetAddresses = Array.isArray(property.streetAddress) ? property.streetAddress as Json[] : [];
   const street = streetAddresses.find((item) => item.isMaster === true) || streetAddresses[0] || {};
   const suburb = property.suburb && typeof property.suburb === "object" ? property.suburb as Json : {};

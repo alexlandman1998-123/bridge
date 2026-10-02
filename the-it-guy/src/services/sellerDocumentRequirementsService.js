@@ -2503,7 +2503,7 @@ export function buildSellerPostOnboardingDraftDocuments(formData = {}, listing =
 // They deliberately remain outstanding until an agent uploads the wet-ink copy.
 function currentManualSigningDocuments(formData = {}, listing = {}, pack = {}) {
   const documents = Array.isArray(pack.documents) ? pack.documents : []
-  if (documents.every((document) => normalizeText(document?.templateVersion))) return documents
+  if (documents.every((document) => normalizeText(document?.templateVersion || document?.versionId || document?.versionDigest))) return documents
   const approval = isPlainObject(formData.sellerOnboardingFormalPackApproval)
     ? formData.sellerOnboardingFormalPackApproval : formData.seller_onboarding_formal_pack_approval
   if (approval?.status !== 'approved' || approval?.signingRoute !== 'manual_upload') return documents
@@ -2513,7 +2513,7 @@ function currentManualSigningDocuments(formData = {}, listing = {}, pack = {}) {
   const originalBranding = isPlainObject(ficaDraft?.metadata?.brandingSnapshot) ? ficaDraft.metadata.brandingSnapshot : {}
   const branding = { ...resolveSellerDocumentBranding(listing, formData), ...originalBranding }
   const mandateType = normalizeText(firstPresent(formData.mandateType, formData.mandate_type, listing.mandateType, listing.mandate_type))
-  if (!['sole', 'exclusive', 'sole_mandate', 'open'].includes(mandateType.toLowerCase())) return documents
+  if (!['sole', 'exclusive', 'sole_mandate', 'open', 'dual'].includes(mandateType.toLowerCase())) return documents
   try {
     const signingPack = isPlainObject(pack.signingPackSnapshot) ? pack.signingPackSnapshot : buildSellerOnboardingSigningPackSnapshot({
       formData, listing, branding,
@@ -2523,7 +2523,8 @@ function currentManualSigningDocuments(formData = {}, listing = {}, pack = {}) {
         askingPrice: firstPresent(formData.askingPrice, formData.asking_price, listing.askingPrice, listing.asking_price),
         startDate: firstPresent(formData.mandateStartDate, formData.mandate_start_date),
         endDate: firstPresent(formData.mandateEndDate, formData.mandate_end_date),
-        protectionPeriod: firstPresent(formData.mandateProtectionPeriod, formData.mandate_protection_period),
+        protectionPeriodDays: firstPresent(formData.protectionPeriodDays, formData.mandateProtectionPeriod, formData.mandate_protection_period),
+        otherAgencyName: firstPresent(formData.otherAgencyName, formData.coAgencyName),
         specialConditions: firstPresent(formData.mandateSpecialConditions, formData.mandate_special_conditions),
       },
       generatedAt: normalizeText(pack.generatedAt || pack.generated_at),
@@ -2535,7 +2536,7 @@ function currentManualSigningDocuments(formData = {}, listing = {}, pack = {}) {
       formData,
       generatedAt: normalizeText(pack.generatedAt || pack.generated_at),
     })
-    return documents.map((document) => normalizeText(document?.templateVersion)
+    return documents.map((document) => normalizeText(document?.templateVersion || document?.versionId || document?.versionDigest)
       ? document
       : refreshed.documents.find((replacement) => replacement.key === document.key) || document)
   } catch {

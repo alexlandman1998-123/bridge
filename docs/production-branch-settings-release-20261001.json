@@ -1,0 +1,32 @@
+{
+  "releasedAt": "2026-10-01T19:54:16.376Z",
+  "product": "Primary Arch9 workspace",
+  "url": "https://app.arch9.co.za",
+  "deployment": "dpl_7ehCUvw8Sxf25rjAPdQnfvCqdimq",
+  "baseline": "dpl_5NFi2UXfxtRX77moeh7Qex3k3VEq",
+  "changedFiles": [
+    {
+      "file": "the-it-guy/src/pages/agency/AgencyBranchWorkspacePage.jsx",
+      "before": "290ea35c741655613b2bd0ac1dc716309e74f3f0",
+      "after": "3349eac93b6604c5726e06bdcd6549d97eceda6b"
+    },
+    {
+      "file": "the-it-guy/src/services/agencyBranchService.js",
+      "before": "bfd3b704d80a9e36b4cc6f5a25c35da32c4d25f9",
+      "after": "e65740d41be573a60e4d7438fd8c49a2e073794c"
+    }
+  ],
+  "preservedFiles": 11467,
+  "verification": {
+    "ready": true,
+    "productionAlias": true,
+    "exactSourceScope": true,
+    "checkApp": "passed",
+    "focusedChecks": "settings persistence, manager selection, branch scope, inline form upload/save/reopen and upload failure passed",
+    "brandingBucket": "organisation-branding: public, verified read-only in production",
+    "browserSmoke": "sign-in screen loaded without console errors",
+    "liveEntryAsset": "/assets/index-CA705YD2.js",
+    "authenticatedProductionSave": "not performed; fixture persistence checked without editing customer records"
+  },
+  "rollbackCommand": "vercel promote dpl_5NFi2UXfxtRX77moeh7Qex3k3VEq --yes"
+}

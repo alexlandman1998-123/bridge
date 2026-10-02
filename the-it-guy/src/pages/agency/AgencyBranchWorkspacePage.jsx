@@ -7,14 +7,10 @@ import {
   BriefcaseBusiness,
   Building2,
   CalendarDays,
-  CircleAlert,
   Clock3,
   Copy,
   FileCheck2,
-  FileSearch,
-  Files,
   Grid2X2,
-  Landmark,
   Mail,
   MapPin,
   Plus,
@@ -25,9 +21,12 @@ import {
   UserPlus,
   Users,
 } from 'lucide-react'
-import { createElement, useCallback, useEffect, useMemo, useState } from 'react'
+import { createElement, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import AddressAutocomplete from '../../components/location/AddressAutocomplete'
+import BranchExecutiveOverview, { BranchOverviewSkeleton } from '../../components/agency/BranchExecutiveOverview'
+import BranchCoverImage from '../../components/agency/BranchCoverImage'
+import BranchFicTraining from '../../components/agency/BranchFicTraining'
 import AgentTransactionsTable from '../../components/AgentTransactionsTable'
 import Button from '../../components/ui/Button'
 import Field from '../../components/ui/Field'
@@ -42,13 +41,14 @@ import {
   fetchOrganisationSettings,
   listOrganisationCommissionStructures,
   listOrganisationPreferredPartners,
+  uploadOrganisationBrandingAsset,
 } from '../../lib/settingsApi'
 import { upsertAreaFromAddress } from '../../lib/location/upsertArea'
 import { isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
 import { createWorkspaceUserInvite, resendWorkspaceUserInvite } from '../../services/workspaceUserInviteService'
-import { getAgentLeaderboard } from '../../services/branchAnalyticsService'
-import { getBranch, getBranches, getBranchListings, getBranchTransactions, updateBranch } from '../../services/agencyBranchService'
-import { getBranchWorkspaceOverview } from '../../services/branchWorkspaceOverviewService'
+import { getBranchOptions, updateBranch } from '../../services/agencyBranchService'
+import { getBranchDashboardData } from '../../services/branchDashboardDataService'
+import { buildBranchDashboard, BRANCH_REPORTING_PERIODS, isOpenBranchTransaction } from '../../services/branchDashboardModel'
 import { buildBranchWorkspacePerformance } from '../../services/branchWorkspacePerformanceService'
 
 const TABS = [
@@ -58,7 +58,7 @@ const TABS = [
   { key: 'leads', label: 'Leads', icon: Users },
   { key: 'transactions', label: 'Transactions', icon: BriefcaseBusiness },
   { key: 'performance', label: 'Performance', icon: TrendingUp },
-  { key: 'compliance', label: 'Compliance', icon: ShieldCheck },
+  { key: 'compliance', label: 'FIC Training', icon: ShieldCheck },
   { key: 'settings', label: 'Settings', icon: Settings },
 ]
 
@@ -109,6 +109,7 @@ function mergeBranchAddress(previous = {}, value = null) {
       latitude: null,
       longitude: null,
       googlePlaceId: '',
+      location: '',
     }
   }
 
@@ -124,6 +125,7 @@ function mergeBranchAddress(previous = {}, value = null) {
     latitude: value.latitude ?? null,
     longitude: value.longitude ?? null,
     googlePlaceId: value.placeId || '',
+    location: [value.city, value.province].filter(Boolean).join(', ') || value.formattedAddress || '',
   }
 }
 
@@ -397,16 +399,6 @@ function BranchListingCard({ listing, onOpen, assignedAgentName, canViewFinancia
   )
 }
 
-function ComplianceCredentialCard({ icon, label, description, status, detail, tone = 'slate' }) {
-  const toneClass = {
-    green: 'border-[#cfe8dc] bg-[#effaf3] text-[#26724c]',
-    gold: 'border-[#efdcb7] bg-[#fff9ec] text-[#8a641d]',
-    slate: 'border-[#dbe6f1] bg-[#f8fbff] text-[#4d6782]',
-  }[tone] || 'border-[#dbe6f1] bg-[#f8fbff] text-[#4d6782]'
-
-  return <article className="rounded-[18px] border border-[#e1eaf3] bg-white p-4 shadow-[0_8px_22px_rgba(24,45,68,0.04)]"><div className="flex items-start justify-between gap-3"><span className={`grid h-10 w-10 place-items-center rounded-[14px] ${tone === 'green' ? 'bg-[#effaf3] text-[#26724c]' : tone === 'gold' ? 'bg-[#fff7e8] text-[#8a641d]' : 'bg-[#edf4fb] text-[#315f8f]'}`}>{createElement(icon, { size: 18 })}</span><span className={`rounded-full border px-2.5 py-1 text-[0.7rem] font-semibold ${toneClass}`}>{status}</span></div><h3 className="mt-4 text-sm font-semibold text-[#142132]">{label}</h3><p className="mt-1 text-sm leading-5 text-[#60758b]">{description}</p><p className="mt-3 border-t border-[#edf2f7] pt-3 text-xs font-semibold text-[#71849a]">{detail}</p></article>
-}
-
 function ActionButton({ children, icon, variant = 'default', ...props }) {
   const Icon = icon
   const className = variant === 'danger'
@@ -425,7 +417,9 @@ function ActionButton({ children, icon, variant = 'default', ...props }) {
   )
 }
 
-function BranchSettingsModal({ open, branch, onClose, onSaved }) {
+function BranchSettingsForm({ branch, onSaved }) {
+  const [coverFile, setCoverFile] = useState(null)
+  const [coverPreview, setCoverPreview] = useState('')
   const [form, setForm] = useState({
     name: '',
     city: '',
@@ -440,14 +434,18 @@ function BranchSettingsModal({ open, branch, onClose, onSaved }) {
     googlePlaceId: '',
     location: '',
     managerName: '',
+    principalUserId: '',
     email: '',
     phone: '',
+    coverImageUrl: '',
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [saved, setSaved] = useState(false)
+  const managerOptions = [...new Map((branch?.members || []).filter((member) => normalizeLower(member.status) === 'active' && member.user_id).map((member) => [member.user_id, { id: member.user_id, name: [member.first_name, member.last_name].filter(Boolean).join(' ') || member.email || 'Branch team member' }])).values()].sort((a, b) => a.name.localeCompare(b.name))
 
   useEffect(() => {
-    if (!open || !branch) return
+    if (!branch) return
     setForm({
       name: branch.name || '',
       city: branch.city || '',
@@ -461,14 +459,41 @@ function BranchSettingsModal({ open, branch, onClose, onSaved }) {
       longitude: branch.longitude ?? null,
       googlePlaceId: branch.googlePlaceId || '',
       location: branch.location || '',
-      managerName: branch.principalName === 'Principal pending' ? '' : branch.principalName || '',
+      managerName: branch.managerName || (branch.principalName === 'Principal pending' ? '' : branch.principalName) || '',
+      principalUserId: branch.principalUserId || '',
       email: branch.email || '',
       phone: branch.phone || '',
+      coverImageUrl: branch.coverImageUrl || '',
     })
+    setCoverFile(null)
     setError('')
-  }, [branch, open])
+  }, [branch])
+
+  useEffect(() => {
+    if (!coverFile) {
+      setCoverPreview('')
+      return
+    }
+    const url = URL.createObjectURL(coverFile)
+    setCoverPreview(url)
+    return () => URL.revokeObjectURL(url)
+  }, [coverFile])
+
+  function selectCover(event) {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 5 * 1024 * 1024) {
+      setError('Choose a JPG, PNG, or WebP image up to 5 MB.')
+      return
+    }
+    setError('')
+    setCoverFile(file)
+    setSaved(false)
+  }
 
   function updateField(key, value) {
+    setSaved(false)
     setForm((previous) => ({ ...previous, [key]: value }))
   }
 
@@ -480,11 +505,22 @@ function BranchSettingsModal({ open, branch, onClose, onSaved }) {
 
     try {
       setSaving(true)
+      setSaved(false)
       setError('')
-      const updated = await updateBranch(branch.id, form)
-      await upsertAreaFromAddress(buildBranchAddressValue(form), { incrementListingCount: false })
+      let coverImageUrl = form.coverImageUrl
+      if (coverFile) {
+        const upload = await uploadOrganisationBrandingAsset({ file: coverFile, variant: `branch-${branch.id}-cover` })
+        coverImageUrl = upload.publicUrl
+        if (upload.bucket !== 'organisation-branding') throw new Error('Branch covers require the organisation branding bucket. The image has not been applied.')
+        if (!coverImageUrl) throw new Error('The cover image could not be saved. Please try again.')
+        setForm((previous) => ({ ...previous, coverImageUrl }))
+        setCoverFile(null)
+      }
+      const updated = await updateBranch(branch.id, { ...form, coverImageUrl })
+      if (!updated || updated.name !== normalizeText(form.name) || updated.coverImageUrl !== normalizeText(coverImageUrl) || updated.principalUserId !== normalizeText(form.principalUserId) || updated.address !== normalizeText(form.address) || updated.email !== normalizeText(form.email) || updated.phone !== normalizeText(form.phone)) throw new Error('The branch changes could not be confirmed. Please reload and try again.')
+      void upsertAreaFromAddress(buildBranchAddressValue(form), { incrementListingCount: false }).catch(() => {})
       onSaved?.(updated)
-      onClose?.()
+      setSaved(true)
     } catch (saveError) {
       setError(saveError?.message || 'Unable to update this branch right now.')
     } finally {
@@ -493,21 +529,26 @@ function BranchSettingsModal({ open, branch, onClose, onSaved }) {
   }
 
   return (
-    <Modal
-      open={open}
-      onClose={saving ? undefined : onClose}
-      title="Branch Settings"
-      subtitle="Update the branch profile, contact details, and manager label."
-      className="max-w-3xl"
-      footer={(
-        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
-          <Button type="button" variant="secondary" onClick={onClose} disabled={saving}>Cancel</Button>
-          <Button type="button" onClick={handleSave} disabled={saving}>{saving ? 'Saving...' : 'Save Branch'}</Button>
-        </div>
-      )}
-    >
-      <div className="grid gap-4 md:grid-cols-2">
-        <label className="grid gap-1.5 md:col-span-2">
+    <section className="rounded-2xl border border-[#dfe8f1] bg-white p-5 shadow-sm sm:p-6">
+      <h2 className="text-xl font-semibold text-[#142132]">Branch Settings</h2>
+      <p className="mt-1 text-sm text-[#60758b]">Update the branch cover image, profile, and contact details.</p>
+      <form className="mt-6" onSubmit={(event) => { event.preventDefault(); if (!saving) void handleSave() }}>
+      <fieldset disabled={saving}>
+      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] lg:gap-8">
+        <section className="min-w-0 lg:border-r lg:border-[#e4ebf2] lg:pr-8" aria-label="Branch cover image">
+          <p className="mb-2 text-sm font-semibold text-[#142132]">Cover image</p>
+          <BranchCoverImage src={coverPreview || form.coverImageUrl} name={form.name} className="aspect-video w-full rounded-xl" />
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <label className={`inline-flex cursor-pointer items-center rounded-lg border border-[#dbe4ee] px-3 py-2 text-sm font-semibold text-[#1f3448] focus-within:ring-2 focus-within:ring-[#176b50] ${saving ? 'pointer-events-none opacity-50' : 'hover:bg-[#f8fafc]'}`}>
+              {coverPreview || form.coverImageUrl ? 'Replace cover image' : 'Upload cover image'}
+              <input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" disabled={saving} onChange={selectCover} />
+            </label>
+            {coverFile || form.coverImageUrl ? <Button type="button" variant="secondary" size="sm" disabled={saving} onClick={() => { setCoverFile(null); updateField('coverImageUrl', '') }}>Remove image</Button> : null}
+          </div>
+          <p className="mt-2 text-xs text-[#60758b]">JPG, PNG, or WebP, up to 5 MB. A wide landscape image works best. Changes apply when you save the branch.</p>
+        </section>
+        <div className="grid min-w-0 gap-4 sm:grid-cols-2">
+        <label className="grid gap-1.5 sm:col-span-2">
           <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Branch Name</span>
           <Field value={form.name} onChange={(event) => updateField('name', event.target.value)} />
         </label>
@@ -519,11 +560,11 @@ function BranchSettingsModal({ open, branch, onClose, onSaved }) {
           <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Province</span>
           <Field value={form.province} onChange={(event) => updateField('province', event.target.value)} />
         </label>
-        <div className="md:col-span-2">
+        <div className="sm:col-span-2">
           <AddressAutocomplete
-            label="Address"
+            label="Branch address"
             value={buildBranchAddressValue(form)}
-            onChange={(nextAddress) => setForm((previous) => mergeBranchAddress(previous, nextAddress))}
+            onChange={(nextAddress) => { setSaved(false); setForm((previous) => mergeBranchAddress(previous, nextAddress)) }}
             placeholder="12 Main Road Bedfordview"
             description="Used for branch reporting, routing, local search, and support context."
           />
@@ -541,8 +582,13 @@ function BranchSettingsModal({ open, branch, onClose, onSaved }) {
           <Field value={form.location} onChange={(event) => updateField('location', event.target.value)} placeholder="e.g. Benoni, Gauteng" />
         </label>
         <label className="grid gap-1.5">
-          <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Principal / Manager</span>
-          <Field value={form.managerName} onChange={(event) => updateField('managerName', event.target.value)} />
+          <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Branch Manager</span>
+          <select value={form.principalUserId} onChange={(event) => { const selected = managerOptions.find((person) => person.id === event.target.value); setSaved(false); setForm((previous) => ({ ...previous, principalUserId: selected?.id || '', managerName: selected?.name || '' })) }} className="min-h-11 rounded-xl border border-[#dbe6f1] bg-white px-3 text-sm text-[#142132]">
+            <option value="">{form.managerName && !form.principalUserId ? `Current: ${form.managerName} — select a person` : 'Not assigned'}</option>
+            {form.principalUserId && !managerOptions.some((person) => person.id === form.principalUserId) ? <option value={form.principalUserId}>{form.managerName || 'Current manager'}</option> : null}
+            {managerOptions.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}
+          </select>
+          <span className="text-xs text-[#60758b]">Select an active member of this branch. Add people through the Staff tab.</span>
         </label>
         <label className="grid gap-1.5">
           <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Branch Email</span>
@@ -552,10 +598,15 @@ function BranchSettingsModal({ open, branch, onClose, onSaved }) {
           <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Branch Phone</span>
           <Field value={form.phone} onChange={(event) => updateField('phone', event.target.value)} />
         </label>
-        <p className="rounded-[14px] border border-[#e1e8f2] bg-[#fbfcfe] px-4 py-3 text-sm leading-6 text-[#60758b] md:col-span-2">Trading status is managed separately in the confirmed Branch trading status section so active transactions cannot be orphaned.</p>
+        <p className="rounded-[14px] border border-[#e1e8f2] bg-[#fbfcfe] px-4 py-3 text-sm leading-6 text-[#60758b] sm:col-span-2">Trading status is managed separately in the confirmed Branch trading status section so active transactions cannot be orphaned.</p>
+        </div>
       </div>
       {error ? <p className="mt-4 rounded-[12px] border border-[#f2d7d7] bg-[#fff6f6] px-3 py-2 text-sm text-[#b42318]">{error}</p> : null}
-    </Modal>
+      </fieldset>
+      {saved ? <p role="status" className="mt-4 text-sm font-medium text-[#087b55]">Branch settings saved.</p> : null}
+      <div className="mt-6 flex justify-end border-t border-[#e4ebf2] pt-4"><Button type="submit" disabled={saving}>{saving ? 'Saving...' : 'Save Branch'}</Button></div>
+      </form>
+    </section>
   )
 }
 
@@ -916,6 +967,7 @@ export default function AgencyBranchWorkspacePage() {
   const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
   const [branch, setBranch] = useState(null)
+  const loadRequestRef = useRef(0)
   const [accessibleBranches, setAccessibleBranches] = useState([])
   const [branchTransactions, setBranchTransactions] = useState([])
   const [branchListings, setBranchListings] = useState([])
@@ -923,7 +975,6 @@ export default function AgencyBranchWorkspacePage() {
   const [pendingInvites, setPendingInvites] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [settingsOpen, setSettingsOpen] = useState(false)
   const [archiveOpen, setArchiveOpen] = useState(false)
   const [archiveSaving, setArchiveSaving] = useState(false)
   const [actionError, setActionError] = useState('')
@@ -932,9 +983,10 @@ export default function AgencyBranchWorkspacePage() {
   const [organisationContext, setOrganisationContext] = useState({ organisation: null, profile: null })
   const [commissionStructures, setCommissionStructures] = useState([])
   const [preferredPartners, setPreferredPartners] = useState([])
-  const [workspaceOverview, setWorkspaceOverview] = useState(null)
-  const [workspacePerformance, setWorkspacePerformance] = useState(null)
-  const period = 'this_month'
+  const [financialMonths, setFinancialMonths] = useState(12)
+  const period = BRANCH_REPORTING_PERIODS.some((item) => item.value === searchParams.get('period')) ? searchParams.get('period') : '30_days'
+  const workspaceOverview = useMemo(() => buildBranchDashboard(branch || {}, { period, financialMonths }), [branch, period, financialMonths])
+  const workspacePerformance = useMemo(() => buildBranchWorkspacePerformance(branch || {}, { period }), [branch, period])
   const activeTab = TABS.some((item) => item.key === tab) ? tab : 'overview'
 
   useEffect(() => {
@@ -945,7 +997,7 @@ export default function AgencyBranchWorkspacePage() {
 
   function navigateToTab(nextTab, updates = {}) {
     const nextSearch = new URLSearchParams(searchParams)
-    ;['period', 'from', 'to'].forEach((key) => nextSearch.delete(key))
+    ;['from', 'to'].forEach((key) => nextSearch.delete(key))
     Object.entries(updates).forEach(([key, value]) => {
       if (value == null || value === '') nextSearch.delete(key)
       else nextSearch.set(key, value)
@@ -978,29 +1030,21 @@ export default function AgencyBranchWorkspacePage() {
   }
 
   const loadWorkspace = useCallback(async () => {
+    const request = ++loadRequestRef.current
     setLoading(true)
     setError('')
     try {
-      const [branchRow, transactions, listings, topAgents, overview, branches] = await Promise.all([
-        getBranch(branchId),
-        getBranchTransactions(branchId),
-        getBranchListings(branchId),
-        getAgentLeaderboard(branchId),
-        getBranchWorkspaceOverview(branchId, { period }),
-        getBranches(),
+      const [branchRow, branches] = await Promise.all([
+        getBranchDashboardData(branchId),
+        getBranchOptions(),
       ])
-
-      if (!branchRow) {
-        throw new Error('Branch not found or no longer accessible.')
-      }
-
+      if (request !== loadRequestRef.current) return
       setBranch(branchRow)
       setAccessibleBranches(Array.isArray(branches) ? branches.filter((item) => item?.isActive !== false) : [])
-      setBranchTransactions(transactions)
-      setBranchListings(listings)
-      setLeaderboard(topAgents)
-      setWorkspaceOverview(overview)
-      setWorkspacePerformance(buildBranchWorkspacePerformance(branchRow, { period }))
+      setBranchTransactions(branchRow.transactions)
+      setBranchListings(branchRow.listings)
+      const agents = buildBranchDashboard(branchRow).agents
+      setLeaderboard(agents.map((agent) => ({ ...agent, transactions: agent.deals, revenue: agent.commission })))
 
       const [settingsContext, structures, branchInvites, partners] = await Promise.all([
         fetchOrganisationSettings().catch(() => null),
@@ -1011,6 +1055,7 @@ export default function AgencyBranchWorkspacePage() {
         }),
         listOrganisationPreferredPartners().catch(() => []),
       ])
+      if (request !== loadRequestRef.current) return
       setOrganisationContext({
         organisation: settingsContext?.organisation || null,
         profile: settingsContext?.profile || null,
@@ -1020,59 +1065,33 @@ export default function AgencyBranchWorkspacePage() {
       setPendingInvites(branchInvites)
       setPreferredPartners(Array.isArray(partners) ? partners.filter((partner) => partner?.isActive !== false) : [])
     } catch (loadError) {
+      if (request !== loadRequestRef.current) return
       setError(loadError?.message || 'Unable to load branch workspace right now.')
     } finally {
-      setLoading(false)
+      if (request === loadRequestRef.current) setLoading(false)
     }
-  }, [branchId, period])
+  }, [branchId])
 
   useEffect(() => {
     void loadWorkspace()
   }, [loadWorkspace])
 
-  const activeDeals = useMemo(() => branchTransactions.filter((row) => {
-    const status = normalizeLower(row?.lifecycle_state)
-    return status !== 'completed' && status !== 'archived' && status !== 'cancelled'
-  }).length, [branchTransactions])
-
-  const closedDeals = useMemo(() => branchTransactions.filter((row) => Boolean(row?.registered_at)).length, [branchTransactions])
-
-  const closedRate = useMemo(() => {
-    if (!branchTransactions.length) return 0
-    return Math.round((closedDeals / branchTransactions.length) * 100)
-  }, [closedDeals, branchTransactions.length])
-
-  const overviewKpis = workspaceOverview?.kpis || []
-  const pipelineValue = Number(overviewKpis.find((item) => item.key === 'pipeline')?.value || 0)
-  const revenueSecured = Number(overviewKpis.find((item) => item.key === 'commission')?.value || 0)
+  const activeDeals = useMemo(() => branchTransactions.filter((row) => isOpenBranchTransaction(row)).length, [branchTransactions])
   const branchName = branch?.name || 'Branch Workspace'
   const branchLocation = normalizeText(branch?.location) || [branch?.city, branch?.province].map(normalizeText).filter(Boolean).join(', ') || 'Location pending'
-  const branchManager = normalizeText(branch?.managerName || branch?.principalName) || 'Not assigned'
+  const branchManager = normalizeText(branch?.managerName) || 'Not assigned'
   const activeSalesAgents = Number(branch?.kpis?.activeSalesAgents ?? branch?.kpis?.activeAgents ?? leaderboard.length ?? 0)
-  const activeOperationalTeam = Number(branch?.kpis?.activeOperationalTeam ?? branch?.kpis?.activeProductionUsers ?? activeSalesAgents)
-  const conversionRate = Number(branch?.kpis?.conversionRate || closedRate || 0)
   const membershipRole = normalizeLower(organisationContext.membershipRole || organisationContext.profile?.role)
   const canViewFinancials = ['owner', 'principal'].includes(membershipRole)
   const canViewCompliance = ['owner', 'principal', 'branch_manager', 'compliance'].includes(membershipRole)
   const canManageBranch = ['owner', 'principal', 'branch_manager'].includes(membershipRole)
-  const branchCompliance = workspacePerformance?.compliance || {}
-  const complianceExceptions = Array.isArray(branchCompliance.exceptions) ? branchCompliance.exceptions : []
-  const complianceControls = [branchCompliance.mandate, branchCompliance.transaction].filter((metric) => metric?.available)
-  const completedComplianceControls = complianceControls.reduce((total, metric) => total + Number(metric.complete || 0), 0)
-  const totalComplianceControls = complianceControls.reduce((total, metric) => total + Number(metric.total || 0), 0)
-  const complianceScore = totalComplianceControls ? Math.round((completedComplianceControls / totalComplianceControls) * 100) : null
-  const compliancePosture = complianceExceptions.length ? 'Action needed' : complianceScore !== null && complianceScore < 100 ? 'Review due' : 'Monitoring'
-
-  const openBranchAgentInvite = useCallback(() => {
-    setAgentInviteOpen(true)
-  }, [])
+  const openBranchAgentInvite = useCallback(() => { setAgentInviteOpen(true) }, [])
 
   const handleBranchSaved = useCallback((updatedBranch) => {
     if (updatedBranch) {
       setBranch(updatedBranch)
     }
-    void loadWorkspace()
-  }, [loadWorkspace])
+  }, [])
 
   const branchStaffRows = useMemo(() => {
     const performanceByKey = new Map()
@@ -1202,17 +1221,7 @@ export default function AgencyBranchWorkspacePage() {
     }
   }
 
-  if (loading) {
-    return (
-      <section className="rounded-[24px] border border-[#dde4ee] bg-white p-6 shadow-[0_18px_42px_rgba(24,45,68,0.06)]">
-        <div className="h-4 w-44 animate-pulse rounded-full bg-[#e7eef6]" />
-        <div className="mt-5 h-10 w-80 max-w-full animate-pulse rounded-full bg-[#e7eef6]" />
-        <div className="mt-8 grid gap-3 md:grid-cols-3">
-          {[0, 1, 2].map((item) => <div key={item} className="h-28 animate-pulse rounded-[20px] bg-[#f0f5fa]" />)}
-        </div>
-      </section>
-    )
-  }
+  if (loading || branch && branch.id !== branchId) return <BranchOverviewSkeleton />
 
   if (error) {
     return <p className="rounded-[16px] border border-[#f3d2cc] bg-[#fef3f2] px-5 py-4 text-sm text-[#b42318]">{error}</p>
@@ -1228,52 +1237,22 @@ export default function AgencyBranchWorkspacePage() {
         <span aria-hidden="true">/</span>
         <span className="truncate font-semibold text-[#142132]" aria-current="page">{branchName}</span>
       </nav>
-      {activeTab !== 'settings' ? <section className="rounded-[24px] border border-[#dfe8f1] bg-white px-5 py-4 shadow-[0_14px_34px_rgba(24,45,68,0.06)]">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-          <div className="min-w-0">
-            <div className="flex min-w-0 items-center gap-4">
-              <div className="grid h-14 w-14 shrink-0 place-items-center rounded-[18px] border border-[#dce7f2] bg-[#f4f8fc] text-[1rem] font-bold text-[#163247]">
-                {getInitials(branchName)}
-              </div>
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h1 className="truncate text-[1.7rem] font-semibold leading-tight tracking-[-0.045em] text-[#142132]">{branchName}</h1>
-                  <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[0.75rem] font-semibold ${branch?.isActive !== false ? 'border-[#d6ece0] bg-[#edfdf3] text-[#1c7d45]' : 'border-[#f4d7d4] bg-[#fff4f3] text-[#b42318]'}`}>
-                    <span className="h-2 w-2 rounded-full bg-current" />
-                    {branch?.isActive !== false ? 'Active' : 'Suspended'}
-                  </span>
-                </div>
-                <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm font-medium text-[#60758d]">
-                  <span className="inline-flex items-center gap-1.5">
-                    <MapPin size={14} />
-                    {branchLocation}
-                  </span>
-                  <span>{activeOperationalTeam} team members</span>
-                  <span>{activeSalesAgents} sales agents</span>
-                  <span>{activeDeals} active deals</span>
-                </div>
-                {accessibleBranches.length > 1 ? <label className="mt-3 inline-flex items-center gap-2 text-xs font-semibold text-[#60758d]">Switch branch<select value={branchId} onChange={(event) => switchBranch(event.target.value)} className="rounded-md border border-[#dce7f2] bg-white px-2 py-1.5 text-sm font-semibold text-[#263f58]"><option value={branchId}>{branchName}</option>{accessibleBranches.filter((item) => item.id !== branchId).map((item) => <option key={item.id} value={item.id}>{item.name || item.id}</option>)}</select></label> : null}
-              </div>
-            </div>
+      <header className="relative min-h-[200px] overflow-hidden rounded-2xl bg-[#123d36]">
+        <BranchCoverImage src={branch?.coverImageUrl} name={branchName} position="absolute" className="inset-0 h-full w-full" />
+        <div className="absolute inset-0 bg-gradient-to-r from-[#071d2c]/85 via-[#071d2c]/45 to-[#071d2c]/10" />
+        <div className="absolute inset-0 bg-gradient-to-t from-[#071d2c]/65 to-transparent" />
+        <div className="relative flex min-h-[200px] flex-col justify-between gap-5 p-5 sm:p-6">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            {accessibleBranches.length > 1 ? <label className="inline-flex items-center gap-2 text-xs text-white/80"><span className="sr-only">Switch branch</span><select aria-label="Switch branch" value={branchId} onChange={(event) => switchBranch(event.target.value)} className="max-w-[220px] rounded-lg border border-white/25 bg-white/95 px-2.5 py-2 text-xs font-medium text-[#263f58]"><option value={branchId}>{branchName}</option>{accessibleBranches.filter((item) => item.id !== branchId).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label> : <span />}
+            {canManageBranch ? <div className="ml-auto flex flex-wrap gap-2"><button type="button" onClick={openBranchAgentInvite} className="inline-flex items-center gap-2 rounded-lg border border-white/50 bg-white/95 px-3.5 py-2.5 text-sm font-semibold text-[#163247]"><UserPlus size={16} />Add Staff</button><button type="button" onClick={() => navigateToTab('settings')} className="inline-flex items-center gap-2 rounded-lg border border-white/20 bg-[#087b55] px-3.5 py-2.5 text-sm font-semibold text-white"><Settings size={16} />Edit Branch</button></div> : null}
           </div>
-
-          <div className="flex flex-wrap items-center gap-2 xl:justify-end">
-            <div className="hidden min-w-[150px] border-r border-[#e5edf5] pr-5 sm:block">
-              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Branch manager</p>
-              <p className="mt-1 truncate text-sm font-semibold text-[#142132]">{branchManager}</p>
-            </div>
-            <ActionButton icon={UserPlus} onClick={openBranchAgentInvite}>Add staff</ActionButton>
-            <button
-              type="button"
-              className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-[15px] bg-[#08784b] px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(8,120,75,0.18)] transition hover:-translate-y-0.5 hover:bg-[#076a43]"
-              onClick={() => setSettingsOpen(true)}
-            >
-              <Settings size={16} />
-              Edit branch
-            </button>
+          <div className="min-w-0 text-white">
+            <h1 className="text-2xl font-semibold leading-tight tracking-[-0.035em] text-white sm:text-[2rem]">{branchName}{branch?.city && !branchName.toLowerCase().includes(branch.city.toLowerCase()) ? ` — ${branch.city}` : ''}</h1>
+            <p className="mt-1 text-base font-medium text-white/95">{branchLocation}</p>
+            <p className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs font-medium text-white/85"><span>Branch Manager: {branchManager}</span><span>· {activeSalesAgents} agents</span><span>· {workspaceOverview.portfolio.active ?? '—'} active listings</span>{branch?.isActive === false ? <span>· Suspended</span> : null}</p>
           </div>
         </div>
-      </section> : null}
+      </header>
 
       <nav className="min-w-0 max-w-full overflow-x-auto rounded-2xl border border-[#dde6f1] bg-white p-2 shadow-sm" aria-label="Branch workspace sections">
         <div className="flex min-w-max items-center gap-1 lg:min-w-full" role="tablist">
@@ -1287,7 +1266,7 @@ export default function AgencyBranchWorkspacePage() {
               onClick={() => navigateToTab(tabItem.key)}
               className={`inline-flex min-h-10 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl px-3.5 text-sm font-semibold transition lg:flex-1 ${
                 activeTab === tabItem.key
-                  ? 'bg-[#0f2742] text-white shadow-sm'
+                  ? 'bg-[#087b55] text-white shadow-sm'
                   : 'text-[#405870] hover:bg-[#f6f9fc] hover:text-[#10243a]'
               }`}
             >
@@ -1299,124 +1278,7 @@ export default function AgencyBranchWorkspacePage() {
       </nav>
 
       <section>
-        {activeTab === 'overview' ? (
-          <div className="grid gap-5 xl:grid-cols-[minmax(0,1.85fr)_minmax(300px,0.9fr)]">
-            <div className="min-w-0 space-y-5">
-              <section className="rounded-[22px] border border-[#dfe8f1] bg-white p-5 shadow-[0_12px_28px_rgba(24,45,68,0.05)] sm:p-6">
-                <SectionTitle eyebrow="Executive Overview" title="Branch Performance Cockpit" copy="Pipeline health, transaction velocity, listing movement, and conversion quality in one operating view." />
-                <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                  {canViewFinancials ? <KpiCard label="Pipeline Value" value={formatCurrency(pipelineValue)} helper="Open branch portfolio" icon={BarChart3} tone="blue" /> : null}
-                  <KpiCard label="Conversion Quality" value={formatPercent(conversionRate)} helper="Lead to closed signal" icon={TrendingUp} tone="green" />
-                  <KpiCard label="Deal Velocity" value={activeDeals} helper="Deals in motion" icon={ArrowRightLeft} tone="gold" />
-                  <KpiCard label="Listing Movement" value={branchListings.length} helper="Inventory tracked" icon={Building2} tone="slate" />
-                </div>
-              </section>
-
-              <section className="rounded-[22px] border border-[#dfe8f1] bg-white p-5 shadow-[0_12px_28px_rgba(24,45,68,0.05)] sm:p-6">
-                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                  <div>
-                    <p className="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Transaction Pipeline</p>
-                    <h3 className="mt-1 text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Closed deal ratio across this branch portfolio</h3>
-                  </div>
-                  <span className="w-fit rounded-full border border-[#dce7f2] bg-[#f8fbff] px-3 py-1 text-sm font-semibold text-[#405b75]">{closedRate}% closed</span>
-                </div>
-                <div className="mt-4 h-3 w-full overflow-hidden rounded-full bg-[#e7eef6]">
-                  <div className="h-full rounded-full bg-[linear-gradient(90deg,#163247_0%,#4f82b8_70%,#77b8d6_100%)]" style={{ width: `${closedRate > 0 ? Math.min(100, Math.max(4, closedRate)) : 0}%` }} />
-                </div>
-                <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                  <KpiCard label="Registered" value={closedDeals} helper="Completed outcomes" icon={FileCheck2} tone="green" />
-                  <KpiCard label="Transactions" value={branchTransactions.length} helper="Total branch deals" icon={ArrowRightLeft} tone="slate" />
-                  {canViewFinancials ? <KpiCard label="Projected Commission" value={formatCurrency(revenueSecured)} helper="Recorded commission data" icon={Banknote} tone="blue" /> : null}
-                </div>
-              </section>
-
-              <section className="rounded-[22px] border border-[#dfe8f1] bg-white p-5 shadow-[0_12px_28px_rgba(24,45,68,0.05)] sm:p-6">
-                <SectionTitle eyebrow="Branch performance" title="Operational movement" copy="Activity is grouped across the selected period from this branch’s live records." />
-                <div className="mt-5 grid gap-4 lg:grid-cols-3">
-                  {Object.entries(workspaceOverview?.series || {}).map(([key, values]) => {
-                    const label = key === 'transactions' ? 'Transactions' : key === 'registrations' ? 'Registrations' : 'Listings'
-                    const peak = Math.max(...values, 1)
-                    return (
-                      <div key={key} className="rounded-[18px] border border-[#e4edf5] bg-[#fbfdff] p-4">
-                        <p className="text-sm font-semibold text-[#142132]">{label}</p>
-                        <div className="mt-5 flex h-20 items-end gap-1.5" aria-label={`${label} activity chart`}>
-                          {values.map((value, index) => <span key={index} title={`${value} ${label.toLowerCase()}`} className="min-w-0 flex-1 rounded-t-sm bg-[#2f7ee6]" style={{ height: `${Math.max(value ? 12 : 4, Math.round(value / peak * 100))}%`, opacity: 0.45 + (index / 20) }} />)}
-                        </div>
-                        <p className="mt-3 text-xs text-[#71849a]">{values.reduce((total, value) => total + value, 0)} updates in this period</p>
-                      </div>
-                    )
-                  })}
-                </div>
-
-                <div className="mt-6">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Sales pipeline</p>
-                      <h3 className="mt-1 text-[1.05rem] font-semibold tracking-[-0.025em] text-[#142132]">Current branch stages</h3>
-                    </div>
-                  </div>
-                  <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-                    {(workspaceOverview?.stages || []).map((stage) => {
-                      const tab = ['new', 'qualified', 'viewings'].includes(stage.key) ? 'leads' : 'transactions'
-                      return <button key={stage.key} type="button" onClick={() => navigateToTab(tab, { stage: stage.key })} className="flex items-center justify-between rounded-[14px] border border-[#e0eaf3] bg-white px-3 py-3 text-left transition hover:border-[#9ecbb7] hover:bg-[#f5fcf8]"><span className="text-sm font-medium text-[#405b75]">{stage.label}</span><span className="text-lg font-semibold text-[#142132]">{stage.count}</span></button>
-                    })}
-                  </div>
-                </div>
-              </section>
-
-              <section className="rounded-[22px] border border-[#dfe8f1] bg-white p-5 shadow-[0_12px_28px_rgba(24,45,68,0.05)] sm:p-6">
-                <SectionTitle eyebrow="Team Output" title="Agent Performance Snapshot" copy="Production is scoped to the selected period. Open Staff for the complete branch roster." />
-                <div className="mt-5">
-                  {(workspaceOverview?.staff || []).length ? (
-                    <SimpleTable
-                      columns={['Agent', 'Listings created', 'Transactions opened', ...(canViewFinancials ? ['Projected commission'] : [])]}
-                      rows={workspaceOverview.staff.map((agent) => [agent.name, String(agent.listings), String(agent.transactions), ...(canViewFinancials ? [formatCurrency(agent.commission)] : [])])}
-                    />
-                  ) : (
-                    <EmptyState title="Agent performance will appear here" copy="Agent performance will appear here once agents start managing listings and transactions." icon={Users} />
-                  )}
-                </div>
-              </section>
-            </div>
-
-            <aside className="min-w-0 xl:sticky xl:top-5 xl:self-start">
-              <section className="mb-5 rounded-[22px] border border-[#dfe8f1] bg-white p-5 shadow-[0_12px_28px_rgba(24,45,68,0.05)] sm:p-6">
-                <SectionTitle eyebrow="Follow-up" title="Needs attention" copy="Items are derived from branch records that need an owner or review." />
-                <div className="mt-5 space-y-2">
-                  {(workspaceOverview?.attention || []).length ? workspaceOverview.attention.map((item) => (
-                    <button key={item.key} type="button" onClick={() => navigateToTab(item.tab, { attention: item.key })} className="w-full rounded-[16px] border border-[#e5edf5] bg-[#fbfdff] p-3 text-left transition hover:border-[#9ecbb7] hover:bg-white">
-                      <div className="flex items-start gap-3"><span className="grid h-7 min-w-7 place-items-center rounded-full bg-[#fff3e8] text-sm font-bold text-[#d56a00]">{item.count}</span><span><span className="block text-sm font-semibold text-[#142132]">{item.title}</span><span className="mt-1 block text-xs leading-5 text-[#71849a]">{item.detail}</span></span></div>
-                    </button>
-                  )) : <EmptyState title="Nothing needs attention" copy="This branch has no unassigned open leads or listings, and no stale transactions." icon={ShieldCheck} />}
-                </div>
-              </section>
-              <section className="rounded-[22px] border border-[#dfe8f1] bg-white p-5 shadow-[0_12px_28px_rgba(24,45,68,0.05)] sm:p-6">
-                <SectionTitle eyebrow="Live Feed" title="Recent Activity" copy="Agent, transaction, listing, and client movements will appear here in real time." />
-                <div className="mt-5 space-y-3">
-                  {(workspaceOverview?.activity || []).length ? (
-                    workspaceOverview.activity.map((item) => {
-                      const Icon = item.tab === 'transactions' ? ArrowRightLeft : item.tab === 'leads' ? Users : Building2
-                      return (
-                        <button key={item.id} type="button" onClick={() => navigateToTab(item.tab)} className="flex w-full items-start gap-3 rounded-[18px] border border-[#e7eef6] bg-[#fbfdff] px-4 py-3 text-left transition hover:border-[#cbd9e7] hover:bg-white">
-                          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#edf4fb] text-[#35546c]">
-                            <Icon size={16} />
-                          </span>
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-semibold text-[#142132]">{item.type}</p>
-                            <p className="mt-1 text-sm leading-5 text-[#60758b]">{item.detail}</p>
-                          </div>
-                          <time className="shrink-0 text-[0.7rem] font-semibold text-[#8a9bb0]">{formatDateShort(item.at)}</time>
-                        </button>
-                      )
-                    })
-                  ) : (
-                    <EmptyState title="No activity yet" copy="Recent branch activity will appear here as agents create leads, listings, appointments, and transactions." icon={CalendarDays} />
-                  )}
-                </div>
-              </section>
-            </aside>
-          </div>
-        ) : null}
+        {activeTab === 'overview' ? <BranchExecutiveOverview data={workspaceOverview} period={period} onPeriodChange={(value) => updateTabFilters({ period: value })} financialMonths={financialMonths} onFinancialMonthsChange={setFinancialMonths} canViewFinancials={canViewFinancials} onViewAgents={() => navigateToTab('performance')} onOpenAgent={(agent) => handleAgentRowClick({ ...agent, routeId: agent.id })} /> : null}
 
         {activeTab === 'staff' ? (
           <section className="space-y-4">
@@ -1480,55 +1342,25 @@ export default function AgencyBranchWorkspacePage() {
                 {(workspacePerformance?.funnel || []).map((stage) => {
                   const tab = ['leads', 'qualified', 'viewings'].includes(stage.key) ? 'leads' : 'transactions'
                   const filter = stage.key === 'leads' ? {} : { stage: stage.key === 'transactions' ? 'active' : stage.key }
-                  return <button key={stage.key} type="button" onClick={() => navigateToTab(tab, filter)} className="rounded-[16px] border border-[#e1eaf3] bg-[#fbfdff] p-4 text-left transition hover:border-[#9ecbb7] hover:bg-white"><p className="text-sm font-semibold text-[#405b75]">{stage.label}</p><div className="mt-2 flex items-end justify-between gap-3"><strong className="text-2xl tracking-[-0.04em] text-[#142132]">{stage.count}</strong><span className="text-xs font-semibold text-[#08784b]">{stage.rate == null ? 'Starting point' : `${stage.rate}% through`}</span></div></button>
+                  return <button key={stage.key} type="button" onClick={() => navigateToTab(tab, filter)} className="rounded-[16px] border border-[#e1eaf3] bg-[#fbfdff] p-4 text-left transition hover:border-[#9ecbb7] hover:bg-white"><p className="text-sm font-semibold text-[#405b75]">{stage.label}</p><div className="mt-2 flex items-end justify-between gap-3"><strong className="text-2xl tracking-[-0.04em] text-[#142132]">{stage.count ?? '—'}</strong><span className="text-xs font-semibold text-[#08784b]">{stage.rate == null ? 'Starting point' : `${stage.rate}% through`}</span></div></button>
                 })}
               </div>
             </section>
 
             <section className="rounded-[22px] border border-[#dfe8f1] bg-white p-5 shadow-[0_12px_28px_rgba(24,45,68,0.05)] sm:p-6">
               <SectionTitle eyebrow="Agent comparison" title="Production by agent" copy="Counts reflect branch records created or updated during the selected period." />
-              {(workspacePerformance?.agentPerformance || []).length ? <div className="mt-5"><SimpleTable columns={['Agent', 'Listings', 'Transactions', 'Transaction/listing rate', canViewFinancials ? 'Projected commission' : null].filter(Boolean)} rows={workspacePerformance.agentPerformance.map((agent) => [agent.name, agent.listings, agent.transactions, agent.conversion == null ? '—' : `${agent.conversion}%`, ...(canViewFinancials ? [formatCurrency(agent.commission)] : [])])} /></div> : <div className="mt-5"><EmptyState title="No agent performance for this period" copy="Performance will appear when branch agents own listings or transactions in the selected date range." icon={Users} /></div>}
+              {(workspacePerformance?.agentPerformance || []).length ? <div className="mt-5"><SimpleTable columns={['Agent', 'Active listings', 'Registered deals', canViewFinancials ? 'Agent commission' : null].filter(Boolean)} rows={workspacePerformance.agentPerformance.map((agent) => [agent.name, agent.listings ?? '—', agent.transactions ?? '—', ...(canViewFinancials ? [agent.commission == null ? '—' : formatCurrency(agent.commission)] : [])])} /></div> : <div className="mt-5"><EmptyState title="No agent performance for this period" copy="Performance will appear when branch agents own listings or transactions in the selected date range." icon={Users} /></div>}
             </section>
 
-            {canViewFinancials ? <section className="grid gap-3 sm:grid-cols-2"><KpiCard label="Projected commission" value={formatCurrency(workspacePerformance?.financials?.projectedCommission || 0)} helper="Active transactions" icon={Banknote} tone="green" /><KpiCard label="Registered commission" value={formatCurrency(workspacePerformance?.financials?.registeredCommission || 0)} helper="Registered during the selected period" icon={Banknote} tone="blue" /></section> : <p className="rounded-[16px] border border-[#dfe8f1] bg-[#fbfdff] px-4 py-3 text-sm text-[#60758b]">Financial performance is restricted to roles with commission visibility.</p>}
+            {canViewFinancials ? <section className="grid gap-3 sm:grid-cols-2"><KpiCard label="Projected commission" value={workspacePerformance?.financials?.projectedCommission == null ? '—' : formatCurrency(workspacePerformance.financials.projectedCommission)} helper="Active transactions" icon={Banknote} tone="green" /><KpiCard label="Registered commission" value={workspacePerformance?.financials?.registeredCommission == null ? '—' : formatCurrency(workspacePerformance.financials.registeredCommission)} helper="Registered during the selected period" icon={Banknote} tone="blue" /></section> : <p className="rounded-[16px] border border-[#dfe8f1] bg-[#fbfdff] px-4 py-3 text-sm text-[#60758b]">Financial performance is restricted to roles with commission visibility.</p>}
           </section>
         ) : null}
 
-        {activeTab === 'compliance' ? (
-          canViewCompliance ? <section className="space-y-5">
-            <section className="relative overflow-hidden rounded-[24px] border border-[#163c58] bg-[linear-gradient(135deg,#102b43_0%,#174f63_55%,#19734e_140%)] p-5 text-white shadow-[0_20px_48px_rgba(15,45,67,0.22)] sm:p-7">
-              <div className="absolute -right-20 -top-24 h-64 w-64 rounded-full bg-[#74d3a8]/15 blur-2xl" />
-              <div className="relative grid gap-6 lg:grid-cols-[minmax(0,1.3fr)_minmax(250px,0.7fr)] lg:items-end">
-                <div><p className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#bce3d1]">Branch compliance centre</p><h2 className="mt-2 text-2xl font-semibold tracking-[-0.04em] sm:text-3xl">Know what is ready, what needs evidence, and who owns the next step.</h2><p className="mt-3 max-w-2xl text-sm leading-6 text-[#d2e5ed]">A single operational view for file controls, practitioner credentials, FICA evidence, and PPRA-related renewal readiness.</p><div className="mt-5 flex flex-wrap gap-2"><span className="rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-sm font-semibold">{compliancePosture}</span><span className="rounded-full border border-white/15 bg-black/10 px-3 py-1.5 text-sm font-medium">{complianceExceptions.length} open exception{complianceExceptions.length === 1 ? '' : 's'}</span></div></div>
-                <div className="rounded-[20px] border border-white/15 bg-white/10 p-5 backdrop-blur"><p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#bce3d1]">Control posture</p><div className="mt-2 flex items-end justify-between gap-3"><strong className="text-5xl font-semibold tracking-[-0.06em]">{complianceScore === null ? '—' : `${complianceScore}%`}</strong><span className="pb-1 text-sm text-[#d2e5ed]">{totalComplianceControls ? `${completedComplianceControls} of ${totalComplianceControls} tracked controls complete` : 'Awaiting compatible file data'}</span></div><div className="mt-4 h-2 overflow-hidden rounded-full bg-white/15"><span className="block h-full rounded-full bg-[#8ee5b7]" style={{ width: `${complianceScore || 0}%` }} /></div></div>
-              </div>
-            </section>
-
-            <section className="grid gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.75fr)]">
-              <div className="rounded-[22px] border border-[#dfe8f1] bg-white p-5 shadow-[0_12px_28px_rgba(24,45,68,0.05)] sm:p-6"><SectionTitle eyebrow="Regulatory evidence register" title="Credential and firm-control readiness" copy="These are evidence registers, not automatic legal determinations. Record verified certificates and supporting documentation here as the workflow is connected." /><div className="mt-5 grid gap-3 sm:grid-cols-2"><ComplianceCredentialCard icon={ShieldCheck} label="PPRA / Fidelity Fund Certificates" description="Firm and practitioner certificate records, expiry dates, and renewal ownership." status="Evidence required" detail={`${branchStaffRows.filter((member) => !member.isPendingInvite).length} active branch practitioner${branchStaffRows.filter((member) => !member.isPendingInvite).length === 1 ? '' : 's'} to register`} tone="gold" /><ComplianceCredentialCard icon={FileSearch} label="FICA & KYC verification" description="Track identity, risk classification, and authorised evidence at the relevant client or transaction record." status="Evidence workflow" detail={`${branchCompliance.transaction?.total || 0} tracked transaction file${branchCompliance.transaction?.total === 1 ? '' : 's'}`} tone="slate" /><ComplianceCredentialCard icon={Landmark} label="FIC registration" description="Store the firm's registration evidence and nominate a compliance owner for renewal or review." status="Evidence required" detail="Firm-level control" tone="gold" /><ComplianceCredentialCard icon={Files} label="Trust account / exemption" description="Record the operating model, audit evidence, or a valid exemption where applicable." status="Confirm model" detail="Firm-level control" tone="slate" /></div></div>
-              <aside className="rounded-[22px] border border-[#dfe8f1] bg-[linear-gradient(180deg,#ffffff_0%,#f7fbff_100%)] p-5 shadow-[0_12px_28px_rgba(24,45,68,0.05)] sm:p-6"><div className="flex items-center gap-3"><span className="grid h-10 w-10 place-items-center rounded-[14px] bg-[#fff7e8] text-[#8a641d]"><CircleAlert size={19} /></span><div><p className="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Priority queue</p><h2 className="text-lg font-semibold tracking-[-0.03em] text-[#142132]">Needs an owner</h2></div></div><div className="mt-5 space-y-2">{complianceExceptions.length ? complianceExceptions.slice(0, 5).map((item) => <button key={item.id} type="button" onClick={() => navigate(item.kind === 'listing' ? `/agent/listings/${encodeURIComponent(item.recordId)}` : `/transactions/${encodeURIComponent(item.recordId)}`, { state: { returnTo: `${location.pathname}${location.search}` } })} className="w-full rounded-[16px] border border-[#e5edf5] bg-white p-3 text-left transition hover:border-[#d6ad6a] hover:shadow-sm"><span className="flex items-start justify-between gap-3"><span><strong className="block text-sm text-[#142132]">{item.title}</strong><span className="mt-1 block text-xs leading-5 text-[#71849a]">{item.detail}</span></span><span className="shrink-0 text-xs font-semibold text-[#08784b]">Review</span></span></button>) : <div className="rounded-[16px] border border-dashed border-[#cfe3d9] bg-[#f4fcf7] p-4 text-center"><ShieldCheck className="mx-auto text-[#26724c]" size={22} /><p className="mt-2 text-sm font-semibold text-[#1f5c3e]">No record-level exceptions</p><p className="mt-1 text-xs leading-5 text-[#60758b]">Add credential evidence to complete the firm-level register.</p></div>}</div></aside>
-            </section>
-
-            <section className="grid gap-4 lg:grid-cols-3"><ComplianceCredentialCard icon={FileCheck2} label="Mandates" description="Signed mandate evidence across tracked listings." status={branchCompliance.mandate?.available ? `${branchCompliance.mandate.complete}/${branchCompliance.mandate.total} complete` : 'Not tracked'} detail={branchCompliance.mandate?.available ? 'Record-level control' : 'No compatible listing records'} tone={branchCompliance.mandate?.available && branchCompliance.mandate.complete === branchCompliance.mandate.total ? 'green' : 'gold'} /><ComplianceCredentialCard icon={ShieldCheck} label="Transaction file checks" description="Operational transaction compliance status and required-file completion." status={branchCompliance.transaction?.available ? `${branchCompliance.transaction.complete}/${branchCompliance.transaction.total} complete` : 'Not tracked'} detail={branchCompliance.transaction?.available ? 'Record-level control' : 'No compatible transaction records'} tone={branchCompliance.transaction?.available && branchCompliance.transaction.complete === branchCompliance.transaction.total ? 'green' : 'gold'} /><ComplianceCredentialCard icon={Clock3} label="Outstanding documents" description="Files flagged as needing documents or a compliance review." status={branchCompliance.documents?.available ? `${branchCompliance.documents.outstanding || 0} open` : 'Not tracked'} detail={branchCompliance.documents?.available ? 'Prioritise the exception queue' : 'No compatible transaction records'} tone={branchCompliance.documents?.outstanding ? 'gold' : 'green'} /></section>
-
-            <section className="rounded-[22px] border border-[#dfe8f1] bg-white p-5 shadow-[0_12px_28px_rgba(24,45,68,0.05)] sm:p-6"><div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Audit readiness</p><h2 className="mt-1 text-[1.18rem] font-semibold tracking-[-0.03em] text-[#142132]">Evidence stays with the authorised record</h2><p className="mt-1 text-sm leading-6 text-[#60758b]">This overview exposes only operational status. Sensitive FICA and identity evidence should remain in the authorised client, listing, or transaction workflow.</p></div><span className="inline-flex items-center gap-2 rounded-full border border-[#dbe6f1] bg-[#f8fbff] px-3 py-2 text-sm font-semibold text-[#405b75]"><Clock3 size={15} /> Review on change</span></div></section>
-          </section> : <EmptyState title="Compliance access is restricted" copy="This summary is available only to authorised branch management and compliance roles." icon={ShieldCheck} />
-        ) : null}
+        {activeTab === 'compliance' ? <BranchFicTraining key={branch.id} branch={branch} userId={organisationContext.profile?.id} canManage={canViewCompliance} canPublish={['owner', 'principal'].includes(membershipRole)} /> : null}
 
         {activeTab === 'settings' ? (
           canManageBranch ? <section className="space-y-5">
-            <header className="flex flex-col gap-4 rounded-[20px] border border-[#dfe8f1] bg-white px-5 py-5 shadow-[0_10px_24px_rgba(24,45,68,0.04)] sm:flex-row sm:items-center sm:justify-between sm:px-6">
-              <div><p className="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Branch administration</p><h1 className="mt-1 text-2xl font-semibold tracking-[-0.04em] text-[#142132]">Branch settings</h1><p className="mt-2 text-sm leading-6 text-[#60758b]">Manage branch details, people, operating connections, and trading status.</p></div>
-              <ActionButton icon={Settings} onClick={() => setSettingsOpen(true)}>Edit branch details</ActionButton>
-            </header>
-            <section className="rounded-[22px] border border-[#dfe8f1] bg-white p-5 shadow-[0_12px_28px_rgba(24,45,68,0.05)] sm:p-6">
-              <SectionTitle eyebrow="Core setup" title="The essentials" copy="Keep the branch record, team access, and commercial configuration current." />
-              <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                <article className="rounded-[18px] border border-[#e4ebf4] bg-[#fbfdff] p-5"><p className="text-sm font-semibold text-[#1f3348]">Branch details</p><p className="mt-2 text-sm leading-6 text-[#6b7d93]">{branchLocation}<br />{branch?.email || 'No branch email'} · {branch?.phone || 'No branch phone'}</p><div className="mt-4"><ActionButton icon={Building2} onClick={() => setSettingsOpen(true)}>Edit details</ActionButton></div></article>
-                <article className="rounded-[18px] border border-[#e4ebf4] bg-[#fbfdff] p-5"><p className="text-sm font-semibold text-[#1f3348]">People and access</p><p className="mt-2 text-sm leading-6 text-[#6b7d93]">{branchStaffRows.filter((member) => !member.isPendingInvite).length} active staff · {pendingInvites.length} invitation{pendingInvites.length === 1 ? '' : 's'} awaiting acceptance.</p><div className="mt-4 flex flex-wrap gap-2"><ActionButton icon={UserPlus} onClick={openBranchAgentInvite}>Invite staff</ActionButton><ActionButton onClick={() => navigateToTab('staff')}>Manage team</ActionButton></div></article>
-                <article className="rounded-[18px] border border-[#e4ebf4] bg-[#fbfdff] p-5"><p className="text-sm font-semibold text-[#1f3348]">Commission configuration</p><p className="mt-2 text-sm leading-6 text-[#6b7d93]">{canViewFinancials ? `${commissionStructures.length} active structure${commissionStructures.length === 1 ? '' : 's'} available for branch staff.` : 'Commission configuration is restricted to authorised financial roles.'}</p>{canViewFinancials ? <div className="mt-4"><ActionButton onClick={() => navigate('/agency/commission')}>Manage commission</ActionButton></div> : null}</article>
-              </div>
-            </section>
+            <BranchSettingsForm branch={branch} onSaved={handleBranchSaved} />
 
             <section className="rounded-[22px] border border-[#dfe8f1] bg-white p-5 shadow-[0_12px_28px_rgba(24,45,68,0.05)] sm:p-6">
               <SectionTitle eyebrow="Connections and partners" title="Organisation services available to this branch" copy="Connections remain organisation-managed; this branch view shows only the available configuration, not credentials." />
@@ -1560,12 +1392,6 @@ export default function AgencyBranchWorkspacePage() {
           } catch (saveError) { setActionError(saveError.message || 'Unable to change branch status.') }
           finally { setArchiveSaving(false) }
         }} />
-      <BranchSettingsModal
-        open={settingsOpen}
-        branch={branch}
-        onClose={() => setSettingsOpen(false)}
-        onSaved={handleBranchSaved}
-      />
       <BranchInviteDetailModal
         open={Boolean(selectedAgentRow)}
         invite={selectedAgentRow}

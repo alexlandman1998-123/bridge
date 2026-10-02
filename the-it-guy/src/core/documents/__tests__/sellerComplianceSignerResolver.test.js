@@ -179,3 +179,39 @@ test('preserves existing signer state when recalculating the required roster', (
   assert.equal(resolved.signers[1].status, 'pending')
   assert.equal(resolved.signingState.nextSigner.id, 'spouse')
 })
+
+test('changing a signer cannot inherit a signature or authority approval from the previous person', () => {
+  const old = resolveSellerComplianceRequiredSigners(factsFor()).signers[0]
+  const resolved = resolveSellerComplianceRequiredSigners(factsFor({ sellerFirstName: 'Different', email: 'different@example.com' }), {
+    existingSigners: [{ ...old, status: 'signed', signedAt: '2026-10-01T09:00:00Z', signature: 'old signature' }],
+  })
+  assert.equal(resolved.signers[0].name, 'Different Seller')
+  assert.equal(resolved.signers[0].status, 'pending')
+  assert.equal(resolved.signingState.signedCount, 0)
+})
+
+test('foreign companies and trusts use representatives, not the legal entity or contact as signer', () => {
+  for (const type of ['foreign_company', 'foreign_trust']) {
+    const resolved = resolveSellerComplianceRequiredSigners(factsFor({
+      ownerEntityType: 'foreign', ownerStructureType: type, ownershipType: type,
+      authorisedSignatoryName: 'Pat Director', authorisedSignatoryEmail: 'pat@example.com',
+      authorisedTrusteeName: 'Sam Trustee', authorisedTrusteeEmail: 'sam@example.com',
+    }))
+    assert.equal(resolved.signers[0].name, type === 'foreign_company' ? 'Pat Director' : 'Sam Trustee')
+    assert.equal(resolved.signers[0].authorityRequired, true)
+  }
+})
+
+test('marital dropdown values and explicit spouse consent keep the capture and signing rules aligned', () => {
+  for (const [maritalStatus, spouseConsentRequired, expected] of [
+    ['married_in_community', false, 2],
+    ['married_out_of_community', false, 1],
+    ['married_out_of_community', true, 2],
+  ]) {
+    const result = resolveSellerComplianceRequiredSigners(factsFor({
+      ownershipType: 'married', ownerStructureType: 'married', maritalStatus,
+      maritalRegime: maritalStatus, spouseConsentRequired, spouseName: 'Sam Spouse',
+    }))
+    assert.equal(result.signerCount, expected)
+  }
+})

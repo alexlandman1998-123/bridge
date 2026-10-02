@@ -1,0 +1,134 @@
+{
+  "verifiedAtUtc": "2026-10-01T10:55:05.468986+00:00",
+  "scope": "Listing updates from this chat only; existing deployed source was preserved.",
+  "supabaseProjectRef": "isdowlnollckzvltkasn",
+  "recoveryStatus": "RECOVERY_LOCKED",
+  "migration": {
+    "version": "20261001104037",
+    "name": "independent_kingdom_listing_publication",
+    "applied": true,
+    "ledgerVerified": true,
+    "rpcDefinitionsVerified": true,
+    "privilegesPreserved": true
+  },
+  "excludedPendingMigration": "20261001092739_seller_onboarding_access_enforcement.sql (other task)",
+  "app": {
+    "id": "dpl_5sYAeeLqgTJHBio13QfzkEGDiEnh",
+    "url": "bridge-1npqpw7us-alexs-projects-f5496a21.vercel.app",
+    "state": "READY",
+    "aliases": [
+      "app.arch9.co.za",
+      "bridgenine.co.za",
+      "app.bridgenine.co.za",
+      "bridge-alexs-projects-f5496a21.vercel.app"
+    ],
+    "readyAt": 1790852016831,
+    "productionVerified": true
+  },
+  "website": {
+    "id": "dpl_DGD67rs5AhBy6FkaRfN3TaANs92Y",
+    "url": "arch9-websites-production-9tcelo193-alexs-projects-f5496a21.vercel.app",
+    "state": "READY",
+    "aliases": [
+      "arch9-websites-production.vercel.app",
+      "arch9-websites-production-alexs-projects-f5496a21.vercel.app"
+    ],
+    "sourceHash": "52e44de69cd80a990f3165b993116d600c5127ee",
+    "productionVerified": true
+  },
+  "appSourceVerification": {
+    "id": "dpl_5sYAeeLqgTJHBio13QfzkEGDiEnh",
+    "files": [
+      {
+        "path": "the-it-guy/server/services/privatePropertyListingMapper.js",
+        "sha1": "636e69f9b3c32ea1d847f5c6f5b8176c9b8c0e76"
+      },
+      {
+        "path": "the-it-guy/server/services/property24Client.js",
+        "sha1": "1bca58f0247ab2d15e44f44095f91a00341e469f"
+      },
+      {
+        "path": "the-it-guy/src/lib/directListingIntakeModel.js",
+        "sha1": "1c83541410ece8167f7f76a3c015b49e57ea817b"
+      },
+      {
+        "path": "the-it-guy/src/lib/listingPropertySaveVerification.js",
+        "sha1": "6f5102a23ea2a75a80e74e2c4ffc474150aa0d4f"
+      },
+      {
+        "path": "the-it-guy/src/pages/AgentListings.jsx",
+        "sha1": "ff0005dd9fef4f8cf9ae661af2e50167686be9cb"
+      },
+      {
+        "path": "the-it-guy/src/services/listings/listingChannelUpdateState.js",
+        "sha1": "2e197497d8bc8a1c020b9ca8d393001d6de3f4a9"
+      },
+      {
+        "path": "the-it-guy/src/services/listings/listingSellerHistoricalNormalizationModel.js",
+        "sha1": "d9fd00af1e890e5b43709466b5450ea06f0d2cae"
+      },
+      {
+        "path": "the-it-guy/src/components/listings/KingdomWebsitePublicationChannel.jsx",
+        "sha1": "d5d4c2e6e4c5281dfff36a774e7a745e0b6a88c9"
+      },
+      {
+        "path": "the-it-guy/src/pages/AgentListingDetail.jsx",
+        "sha1": "e8b9e653106e4925a0285abaeadb796a2c4a82cd"
+      },
+      {
+        "path": "the-it-guy/src/services/privateListingService.js",
+        "sha1": "2d4ee7586a560eee94d77fc81cce6890a7eea7bf"
+      },
+      {
+        "path": "the-it-guy/src/services/listings/__tests__/listingEditorSellerOwnership.test.js",
+        "sha1": "ce42f2b64a3354365e1a77a7a9333b42138735e4"
+      },
+      {
+        "path": "the-it-guy/src/services/listings/__tests__/listingPortalError.test.js",
+        "sha1": "31600ee3b641754b5e662338c2811837965fcd03"
+      }
+    ]
+  },
+  "includedChanges": [
+    "Optional property address save verification",
+    "Seller identity, mandate dates and commission persisted on New Listing drafts",
+    "Private Property SOAP feature enum mapping",
+    "Property24 validation detail retention",
+    "Bounded readable portal errors and collapsed technical details",
+    "Separate Arch9 saved and failed portal submission timestamps",
+    "Visible publish action and working publish/update retries",
+    "Seller ownership conflict guard before listing edits",
+    "Kingdom publication, public display and enquiries independent of Arch9 catalogue publication"
+  ],
+  "checks": {
+    "appProductionBuild": "passed locally and on Vercel",
+    "websiteTypecheck": "passed",
+    "websiteTests": "33 passed",
+    "websiteProductionBuild": "passed locally with webpack and on Vercel",
+    "privatePropertyPreviewContract": "passed",
+    "property24PublishUiContract": "passed",
+    "kingdomDatabaseAndUiPreparation": "passed",
+    "sellerOwnershipAndPortalErrorTests": "7 passed",
+    "directListingIntake": "9 passed",
+    "focusedRetryRuntime": "passed for both portals and publish/update actions",
+    "optionalAddressPersistence": "passed; price mismatches still block",
+    "productionBrowser": "new deployment sign-in page loaded"
+  },
+  "remainingVerification": [
+    "Signed-in listing workflow and portal acceptance require a fresh submission; no listings were submitted during this release.",
+    "Two older source-text contracts still fail on pre-existing description and awaiting-verification wording assertions. Focused behavior checks passed."
+  ],
+  "securityAdvisors": {
+    "run": true,
+    "warnings": 1700,
+    "changedRPCNotices": [
+      "Existing authenticated SECURITY DEFINER status RPC; anonymous execute denied and active organisation membership check preserved."
+    ]
+  },
+  "rollback": {
+    "appDeployment": "dpl_AzTU1eMPS4Egzr63Kwfpc6igyofU",
+    "websiteDeployment": "dpl_FBnZCa7Ax3mtTZbH1qForHKL4RSr",
+    "databaseFile": "docs/listing-portal-recovery-production-rollback-20261001.sql"
+  },
+  "sharedWorkingTree": "Unrelated modifications were neither reverted nor included as new changes in the release."
+}

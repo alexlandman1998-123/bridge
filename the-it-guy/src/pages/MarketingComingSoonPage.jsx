@@ -32,15 +32,18 @@ export default function MarketingComingSoonPage() {
   }
 
   if (section === 'email') {
-    const openOverview = () => setSearchParams({ section: 'email' })
-    const openCreateCampaign = (id) => setSearchParams({ section: 'email', view: 'create', ...(typeof id === 'string' ? { id } : {}) })
-    const rememberDraft = (id) => { if (searchParams.get('id') !== id) setSearchParams({ section: 'email', view: 'create', id }, { replace: true }) }
-    const openCampaign = (id) => setSearchParams({ section: 'email', view: 'detail', id })
+    const emailTab = ['overview', 'past', 'audiences', 'settings'].includes(searchParams.get('tab')) ? searchParams.get('tab') : 'overview'
+    const emailParams = { section: 'email', ...(emailTab !== 'overview' ? { tab: emailTab } : {}) }
+    const openOverview = () => setSearchParams(emailParams)
+    const openEmailTab = (tab) => setSearchParams({ section: 'email', ...(tab !== 'overview' ? { tab } : {}) })
+    const openCreateCampaign = (id) => setSearchParams({ ...emailParams, view: 'create', ...(typeof id === 'string' ? { id } : {}) })
+    const rememberDraft = (id) => { if (searchParams.get('id') !== id) setSearchParams({ ...emailParams, view: 'create', id }, { replace: true }) }
+    const openCampaign = (id) => setSearchParams({ ...emailParams, view: 'detail', id })
     return campaignView === 'create'
       ? <CreateEmailCampaign onBack={openOverview} campaignId={searchParams.get('id')} onDraftCreated={rememberDraft} />
       : campaignView === 'detail'
         ? <EmailCampaignDetail campaignId={searchParams.get('id')} onBack={openOverview} onEdit={openCreateCampaign} />
-        : <EmailCampaignOverview onCreateCampaign={openCreateCampaign} onOpenCampaign={openCampaign} />
+        : <EmailCampaignOverview selectedView={emailTab} onViewChange={openEmailTab} onCreateCampaign={openCreateCampaign} onOpenCampaign={openCampaign} />
   }
 
   if (section === 'whatsapp') {

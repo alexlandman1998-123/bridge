@@ -8,3 +8,9 @@ test('requirements are generated per buyer and honour reusable FICA documents', 
   assert.ok(result.requirements.some((item) => item.key === 'trust_authority'))
   assert.ok(result.requirements.some((item) => item.key === 'bond_application'))
 })
+
+test('recognised mixed-finance imports require both routes while uncertain scan values do not infer a route',()=>{
+ const requirements=type=>buildDealSetupDocumentRequirements({setup:{finance:{type}}}).requirements.map(r=>r.key)
+ assert.deepEqual(requirements(' Combination '),['proof_of_funds','bond_application'])
+ assert.deepEqual(requirements('not cash - check scan'),[])
+})

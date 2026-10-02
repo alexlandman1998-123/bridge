@@ -15,6 +15,7 @@ import {
   listReusableBuyerProfileTransactionIds,
 } from '../../services/buyerProfileReuseService'
 import { syncDealSetupDownstream } from '../../services/dealSetupService'
+import { getPrimaryDealSetupBuyer } from '../../core/transactions/dealSetupContract.js'
 
 const displayName = (party = {}) => party.participant_name || party.participant_email || 'Client / Buyer'
 const BUYER_PROFILE_FIELDS = {
@@ -62,7 +63,7 @@ export default function TransactionBuyerPartiesPanel({ transactionId, organisati
   const [error, setError] = useState('')
   const [editingProfile, setEditingProfile] = useState(null)
   const [profileNotice, setProfileNotice] = useState('')
-  const primaryBuyer = useMemo(() => parties.find((party) => party.is_primary_buyer) || null, [parties])
+  const primaryBuyer = useMemo(() => getPrimaryDealSetupBuyer(parties), [parties])
   const normalizedPurchaserType = BUYER_PROFILE_FIELDS[purchaserType] ? purchaserType : 'individual'
   const profileFields = BUYER_PROFILE_FIELDS[normalizedPurchaserType]
 
@@ -177,7 +178,7 @@ export default function TransactionBuyerPartiesPanel({ transactionId, organisati
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div><h4 className="font-semibold text-textStrong">{displayName(party)}</h4><p className="mt-1 text-sm text-textMuted">{party.participant_email || party.participant_phone || 'Contact details still needed'}</p><p className="mt-2 text-xs text-textMuted">{buyerStatus(party)}{party.signing_required === false ? ' · Signature not required' : ' · Signature required'}</p></div>
           <div className="flex flex-wrap gap-2">
-            {party.is_primary_buyer ? <span className="rounded-full bg-successSoft px-3 py-1.5 text-xs font-semibold text-success">Primary buyer</span> : canEdit ? <Button type="button" size="sm" variant="secondary" disabled={busy} onClick={() => assignPrimary(party)}>Make primary</Button> : null}
+            {party.is_primary_buyer && primaryBuyer ? <span className="rounded-full bg-successSoft px-3 py-1.5 text-xs font-semibold text-success">Primary buyer</span> : canEdit ? <Button type="button" size="sm" variant="secondary" disabled={busy} onClick={() => assignPrimary(party)}>Make primary</Button> : null}
             {party.buyer_party_id && canEdit ? <Button type="button" size="sm" variant="secondary" disabled={busy} onClick={() => editProfile(party.buyer_party_id)}>Edit profile</Button> : null}
             {canEdit && !party.is_primary_buyer ? <Button type="button" size="sm" variant="secondary" disabled={busy} onClick={() => remove(party)}>Remove</Button> : null}
           </div>

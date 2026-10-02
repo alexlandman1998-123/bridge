@@ -214,7 +214,30 @@ function FinanceMixCard({ section = {} }) {
 
 export default function PartnerBusinessDistributionPanel({ distribution = {}, scope = 'principal', className = '' }) {
   const totalTransactions = toNumber(distribution?.meta?.totalTransactions || distribution?.financeMix?.totalDeals)
-  const scopeLabel = scope === 'agent' ? 'Agent' : 'Company'
+  if (scope === 'agent') {
+    return (
+      <section className={`min-w-0 rounded-2xl border border-[#dfe7f0] bg-white p-4 shadow-sm sm:p-5 ${className}`}>
+        <h2 className="text-lg font-semibold tracking-[-0.025em] text-[#10243a]">Partner Business Distribution</h2>
+        <div className="mt-4 grid min-w-0 gap-4 xl:grid-cols-3">
+          {totalTransactions ? <>
+            <PartnerDistributionCard title="Attorney distribution" icon={BriefcaseBusiness} section={distribution?.attorneys} />
+            <PartnerDistributionCard title="Bond originator distribution" icon={Landmark} section={distribution?.bondOriginators} />
+            <FinanceMixCard section={distribution?.financeMix} />
+          </> : [
+            ['Attorney distribution', BriefcaseBusiness],
+            ['Bond originator distribution', Landmark],
+            ['Finance mix', WalletCards],
+          ].map(([title, Icon]) => (
+            <article key={title} className="min-w-0 rounded-xl border border-[#e3ebf5] p-4">
+              <h3 className="flex items-center gap-2 text-sm font-semibold text-[#20364d]"><Icon size={18} className="shrink-0" />{title}</h3>
+              <p className="mt-4 rounded-lg bg-[#f8fafc] px-3 py-4 text-center text-sm text-[#647a92]">No deals yet</p>
+            </article>
+          ))}
+        </div>
+      </section>
+    )
+  }
+  const scopeLabel = 'Company'
   const attorneyUnassigned = toNumber(distribution?.attorneys?.unassignedDeals)
   const originatorUnassigned = toNumber(distribution?.bondOriginators?.unassignedDeals)
 

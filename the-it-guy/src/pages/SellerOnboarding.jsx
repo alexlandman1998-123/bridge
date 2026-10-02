@@ -30,6 +30,7 @@ import PremiumOnboardingLanding from '../components/onboarding/PremiumOnboarding
 import SellerFicaQuestions from '../components/onboarding/SellerFicaQuestions'
 import Button from '../components/ui/Button'
 import { MOCK_DATA_ENABLED } from '../lib/mockData'
+import { resolveSellerBondStatus, sellerBondDeclaration } from '../lib/sellerBondStatus'
 import {
   getOnboardingBrandInitials,
   hasResolvedOnboardingBrandingValue,
@@ -1370,7 +1371,9 @@ function normalizeFormData(listing) {
   }
   const canonicalFacts = getCanonicalSellerFacts(listing)
   const flow = getFlowContract(existing, listing, canonicalFacts)
-  const split = splitName(existing.fullName || seller.name || '')
+  const contactBranch = getOwnershipBranch(existing.ownershipType || flow?.seller_branch || '')
+  const naturalContact = ['individual', 'married', 'foreign_individual'].includes(contactBranch)
+  const split = splitName(existing.primaryContactName || existing.contactName || canonicalFacts?.seller?.contact?.name || (naturalContact ? existing.fullName || seller.name : '') || '')
   const sellerBranch = String(flow?.seller_branch || '').toLowerCase()
   const companyDirectors = normalizePersonCollectionForForm(
     existing.companyDirectors || existing.company_directors || canonicalFacts?.seller?.company?.directors || existing.company?.directors || existing.directors || [],
@@ -1644,7 +1647,7 @@ function normalizeFormData(listing) {
     spousePhone: ownershipBranch === 'married' ? (existing.spousePhone || canonicalFacts?.seller?.spouse?.phone || '') : '',
 
     companyName: existing.companyName || existing.company_name || canonicalFacts?.seller?.company?.name || existing.company?.name || existing.company?.companyName || existing.company?.company_name || existing.entityName || '',
-    companyRegistrationNumber: existing.companyRegistrationNumber || existing.company_registration_number || canonicalFacts?.seller?.company?.registration_number || existing.company?.registrationNumber || existing.company?.registration_number || existing.entityRegistrationNumber || '',
+    companyRegistrationNumber: existing.companyRegistrationNumber || existing.company_registration_number || (existing.ownerStructureType === 'foreign_company' ? existing.foreignRegistrationNumber : '') || canonicalFacts?.seller?.company?.registration_number || existing.company?.registrationNumber || existing.company?.registration_number || existing.entityRegistrationNumber || '',
     companyDirectors,
     companyBeneficialOwners,
     companyDirectorName: existing.companyDirectorName || companyDirectors[0]?.name || canonicalFacts?.seller?.company?.director_name || canonicalFacts?.seller?.company?.authorised_signatory?.name || existing.entityRepresentative || '',
@@ -1662,7 +1665,7 @@ function normalizeFormData(listing) {
     companyAuthorityBasis: existing.companyAuthorityBasis || existing.company_authority_basis || canonicalFacts?.seller?.company?.authority_basis || existing.company?.authorityBasis || existing.company?.authority_basis || '',
 
     trustName: existing.trustName || existing.trust_name || canonicalFacts?.seller?.trust?.name || existing.trust?.name || existing.trust?.trustName || existing.trust?.trust_name || existing.entityName || '',
-    trustRegistrationNumber: existing.trustRegistrationNumber || existing.trust_registration_number || canonicalFacts?.seller?.trust?.registration_number || existing.trust?.registrationNumber || existing.trust?.registration_number || existing.entityRegistrationNumber || '',
+    trustRegistrationNumber: existing.trustRegistrationNumber || existing.trust_registration_number || (existing.ownerStructureType === 'foreign_trust' ? existing.foreignRegistrationNumber : '') || canonicalFacts?.seller?.trust?.registration_number || existing.trust?.registrationNumber || existing.trust?.registration_number || existing.entityRegistrationNumber || '',
     trustees: trustTrustees,
     trustFounders,
     trustBeneficiaries,
@@ -1684,7 +1687,8 @@ function normalizeFormData(listing) {
     executorName: existing.executorName || estateExecutors[0]?.name || canonicalFacts?.seller?.deceased_estate?.executor_name || '',
     executorEmail: existing.executorEmail || estateExecutors[0]?.email || canonicalFacts?.seller?.deceased_estate?.executor_email || '',
     executorPhone: existing.executorPhone || estateExecutors[0]?.phone || canonicalFacts?.seller?.deceased_estate?.executor_phone || '',
-    estateReference: existing.estateReference || canonicalFacts?.seller?.deceased_estate?.estate_reference || '',
+    deceasedEstateName: existing.deceasedEstateName || canonicalFacts?.seller?.deceased_estate?.name || '',
+    estateReference: existing.estateReferenceNumber || existing.estateReference || canonicalFacts?.seller?.deceased_estate?.estate_reference || '',
     executorAuthorityDetails: existing.executorAuthorityDetails || canonicalFacts?.seller?.deceased_estate?.authority_details || '',
 
     powerOfAttorneyRepresentatives: poaRepresentatives,
@@ -1841,7 +1845,8 @@ function normalizeFormData(listing) {
     viewingNoticePeriod: existing.viewingNoticePeriod || existing.viewing_notice_period || canonicalFacts?.occupancy?.viewing_notice_period || '',
     viewingNoticeRequired: Boolean(existing.viewingNoticeRequired || existing.viewing_notice_required || canonicalFacts?.occupancy?.viewing_notice_required),
 
-    existingBond: Boolean(existing.existingBond || existing.sellerHasExistingBond || existing.bondedProperty),
+    bondStatus: resolveSellerBondStatus(existing.bondStatus, existing.propertyBondStatus, existing.existingBond, existing.sellerHasExistingBond, existing.bondedProperty),
+    existingBond: sellerBondDeclaration(resolveSellerBondStatus(existing.bondStatus, existing.propertyBondStatus, existing.existingBond, existing.sellerHasExistingBond, existing.bondedProperty)),
     bondBank: existing.bondBank || existing.currentBondBank || '',
     bondAccountReference: existing.bondAccountReference || existing.currentBondAccountNumber || '',
     multipleBonds: Boolean(existing.multipleBonds),
@@ -3070,6 +3075,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
           let nextListing = found
           if (onboardingStatus === SELLER_ONBOARDING_STATUS.NOT_STARTED) {
             const progressUpdate = await updateSellerOnboardingProgress(token, {
+              listingSnapshot: found,
               status: SELLER_ONBOARDING_STATUS.IN_PROGRESS,
               currentStep: nextStep,
             })
@@ -3359,6 +3365,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       const nextStatus = String(candidate?.sellerOnboarding?.status || '').trim().toLowerCase() || SELLER_ONBOARDING_STATUS.IN_PROGRESS
       const nextStep = Number(candidate?.sellerOnboarding?.currentStep || currentStep || 0)
       const progressUpdate = await updateSellerOnboardingProgress(token, {
+        listingSnapshot: candidate,
         status: nextStatus,
         currentStep: nextStep,
         formData: (candidate?.sellerOnboarding?.formData && typeof candidate.sellerOnboarding.formData === 'object')
@@ -3390,6 +3397,16 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     }
     setForm((previous) => {
       const next = { ...(previous || {}), [key]: value }
+      if (key === 'sellerFirstName' || key === 'sellerSurname') {
+        next.primaryContactName = [next.sellerFirstName, next.sellerSurname].filter(Boolean).join(' ')
+        next.contactName = next.primaryContactName
+      }
+      if (key === 'bondStatus') {
+        next.existingBond = sellerBondDeclaration(value)
+        next.propertyBondStatus = value
+        next.sellerHasExistingBond = next.existingBond
+        next.bondedProperty = next.existingBond
+      }
       if (next.primaryContactIsOwnerOne && ['sellerFirstName', 'sellerSurname', 'email', 'phone', 'dateOfBirth', 'nationality'].includes(key)) {
         const owners = Array.isArray(next.multipleOwners) ? [...next.multipleOwners] : []
         if (owners[0]) {
@@ -4182,7 +4199,6 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       const ownershipBranch = getOwnershipBranch(ownershipType)
       const isForeignOwner = isForeignOwnerModel(form.ownerEntityType, form.ownerStructureType)
       const isNaturalPersonSeller =
-        form.ownerEntityType === 'natural_person' ||
         form.ownerStructureType === 'foreign_individual' ||
         ownershipBranch === 'individual' ||
         ownershipBranch === 'married'
@@ -4204,7 +4220,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       }
 
       if (ownershipBranch === 'individual' || ownershipBranch === 'married' || form.ownerStructureType === 'foreign_individual') {
-        if (!form.idNumber) {
+        if (!form.idNumber && !(isForeignOwner && form.foreignPassportNumber)) {
           return 'Please provide ID number / passport details.'
         }
         if (!resolveSellerResidentialAddress(form)) {
@@ -4253,6 +4269,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         if (!form.executorName) {
           return 'Executor details are required for a deceased estate seller.'
         }
+        if (!form.deceasedEstateName) return 'Please provide the legal estate name.'
         if (!form.estateReference) {
           return 'Estate reference is required for a deceased estate seller.'
         }
@@ -4370,7 +4387,6 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       const ownershipBranch = getOwnershipBranch(ownershipType)
       const isForeignOwner = isForeignOwnerModel(form.ownerEntityType, form.ownerStructureType)
       const isNaturalPersonSeller =
-        form.ownerEntityType === 'natural_person' ||
         form.ownerStructureType === 'foreign_individual' ||
         ownershipBranch === 'individual' ||
         ownershipBranch === 'married'
@@ -4406,7 +4422,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
             return 'Please provide the seller nationality before continuing.'
           }
         }
-        if ((ownershipBranch === 'individual' || ownershipBranch === 'married' || form.ownerStructureType === 'foreign_individual') && !form.idNumber) {
+        if ((ownershipBranch === 'individual' || ownershipBranch === 'married' || form.ownerStructureType === 'foreign_individual') && !form.idNumber && !(isForeignOwner && form.foreignPassportNumber)) {
           return 'Please provide ID number / passport details.'
         }
         if ((ownershipBranch === 'individual' || ownershipBranch === 'married') && !resolveSellerResidentialAddress(form)) {
@@ -4442,8 +4458,8 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
             return 'Authorised trustee capacity and authority basis are required for trust mandate generation.'
           }
         }
-        if (ownershipBranch === 'deceased_estate' && (!form.executorName || !form.estateReference || !form.executorAuthorityDetails)) {
-          return 'Executor, estate reference, and authority details are required for a deceased estate seller.'
+        if (ownershipBranch === 'deceased_estate' && (!form.deceasedEstateName || !form.executorName || !form.estateReference || !form.executorAuthorityDetails)) {
+          return 'Legal estate name, executor, estate reference, and authority details are required for a deceased estate seller.'
         }
         if (ownershipBranch === 'power_of_attorney' && (!form.powerOfAttorneyName || !form.powerOfAttorneyPrincipalName || !form.powerOfAttorneyPrincipalIdNumber || !form.powerOfAttorneyAuthorityDetails)) {
           return 'Representative, principal, and authority details are required for a power of attorney seller.'
@@ -4704,7 +4720,6 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     const submissionOwnershipBranch = getOwnershipBranch(submissionForm.ownershipType)
     const submissionIsForeignOwner = isForeignOwnerModel(submissionForm.ownerEntityType, submissionForm.ownerStructureType)
     const submissionIsNaturalPersonSeller =
-      submissionForm.ownerEntityType === 'natural_person' ||
       submissionForm.ownerStructureType === 'foreign_individual' ||
       submissionOwnershipBranch === 'individual' ||
       submissionOwnershipBranch === 'married'
@@ -5084,7 +5099,6 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   const ownerStructureOptions = OWNER_STRUCTURE_TYPES_BY_ENTITY[ownerEntityType] || OWNER_STRUCTURE_TYPES_BY_ENTITY.natural_person
   const isForeignOwner = isForeignOwnerModel(ownerEntityType, ownerStructureType)
   const isNaturalPersonSeller =
-    ownerEntityType === 'natural_person' ||
     ownerStructureType === 'foreign_individual' ||
     ownershipBranch === 'individual' ||
     ownershipBranch === 'married'
@@ -5471,12 +5485,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                           <input className={DETAIL_INPUT_CLASS} value={form.foreignResidencyStatus} onChange={(event) => handleFormUpdate('foreignResidencyStatus', event.target.value)} placeholder="Non-resident, SA resident, signing abroad, etc." />
                         </label>
                       </>
-                    ) : (
-                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                        Foreign registration / authority number
-                        <input className={DETAIL_INPUT_CLASS} value={form.foreignRegistrationNumber} onChange={(event) => handleFormUpdate('foreignRegistrationNumber', event.target.value)} />
-                      </label>
-                    )}
+                    ) : null}
                   </div>
                 ) : null}
 
@@ -5522,7 +5531,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                     </>
                   ) : null}
 
-                  {!['company', 'trust', 'deceased_estate', 'power_of_attorney', 'multiple_owners'].includes(ownershipBranch) ? (
+                  {isNaturalPersonSeller && ownerStructureType !== 'foreign_individual' ? (
                     <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                       {ownershipFieldLabels.idNumber}{isNaturalPersonSeller ? ' *' : ''}
                       <input required={isNaturalPersonSeller} className={DETAIL_INPUT_CLASS} value={form.idNumber} onChange={(event) => handleFormUpdate('idNumber', event.target.value)} />
@@ -5840,8 +5849,12 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                 {isDeceasedEstateOwnership ? (
                   <div className="mt-4 space-y-4">
                     <article className="rounded-[14px] border border-[#dce6f2] bg-[#f8fbff] p-4">
-                      <h3 className="text-sm font-semibold text-[#22364a]">Executor details</h3>
+                      <h3 className="text-sm font-semibold text-[#22364a]">Estate and executor details</h3>
                       <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                        <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                          Legal estate name
+                          <input className={DETAIL_INPUT_CLASS} value={form.deceasedEstateName || ''} onChange={(event) => handleFormUpdate('deceasedEstateName', event.target.value)} />
+                        </label>
                         <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                           Full name
                           <input className={DETAIL_INPUT_CLASS} value={form.executorName} onChange={(event) => handleFormUpdate('executorName', event.target.value)} />
@@ -6793,9 +6806,13 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                     </div>
 
                     <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                      <label className="flex min-h-[52px] items-center gap-2 rounded-[12px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm font-medium text-[#2a4057]">
-                        <input type="checkbox" checked={Boolean(form.existingBond)} onChange={(event) => handleFormUpdate('existingBond', event.target.checked)} />
+                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                         Existing bond on the property
+                        <select className={DETAIL_INPUT_CLASS} value={form.bondStatus || 'unknown'} onChange={(event) => handleFormUpdate('bondStatus', event.target.value)}>
+                          <option value="unknown">Unknown / not confirmed</option>
+                          <option value="bonded">Yes</option>
+                          <option value="no_bond">No</option>
+                        </select>
                       </label>
                       {form.existingBond ? (
                         <>
@@ -6915,8 +6932,8 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                   items={[
                     { label: 'Occupancy', value: formatValue(form.occupancyStatus) },
                     { label: 'Lease', value: form.leaseExists ? `Exists${form.leaseExpiryDate ? ` until ${form.leaseExpiryDate}` : ''}` : 'Not indicated' },
-                    { label: 'Existing Bond', value: form.existingBond ? `Yes${form.bondBank ? ` - ${form.bondBank}` : ''}` : 'No' },
-                    { label: 'Cancellation', value: form.existingBond ? (form.cancellationRequired ? 'Required' : 'Not indicated') : 'Not applicable' },
+                    { label: 'Existing Bond', value: form.existingBond === null ? 'Unknown / not confirmed' : form.existingBond ? `Yes${form.bondBank ? ` - ${form.bondBank}` : ''}` : 'No' },
+                    { label: 'Cancellation', value: form.existingBond === null ? 'Not confirmed' : form.existingBond ? (form.cancellationRequired ? 'Required' : 'Not indicated') : 'Not applicable' },
                   ]}
                 />
                 <ReviewCard

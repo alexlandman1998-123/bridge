@@ -36,8 +36,7 @@ function fullName(person = {}) {
   return firstText(
     person.full_name,
     person.fullName,
-    person.name,
-    [person.first_name || person.firstName, person.surname || person.last_name || person.lastName].filter(Boolean).join(' '),
+    [person.first_name || person.firstName || person.name, person.surname || person.last_name || person.lastName].filter(Boolean).join(' '),
   )
 }
 
@@ -77,6 +76,7 @@ function signerFromPerson({
   return normalizeSellerComplianceSigner({
     id,
     name: fullName(person) || text(fallbackName),
+    identityCaptured: Boolean(fullName(person)),
     email: emailOf(person),
     mobile: phoneOf(person),
     capacity: text(person.capacity || person.role_capacity || person.roleCapacity || person.role_title || person.roleTitle),
@@ -104,12 +104,22 @@ function authorityRequirement({ key: requirementKey = '', reason = '', label = '
 function mergeExistingState(resolvedSigners = [], existingSigners = []) {
   const existing = normalizeSellerComplianceSigners(existingSigners)
   return resolvedSigners.map((signer, index) => {
-    const match = existing.find((candidate) =>
-      candidate.id === signer.id ||
-      (candidate.email && candidate.email === signer.email) ||
-      (candidate.role === signer.role && candidate.order === signer.order),
+    const identityMatch = signer.identityCaptured && existing.find((candidate) =>
+      key(candidate.name) === key(signer.name) &&
+      (!candidate.email || !signer.email || candidate.email === signer.email) &&
+      (candidate.id === signer.id || candidate.role === signer.role || (candidate.email && candidate.email === signer.email)),
     )
+    // An unnamed legacy upload can remain pending review, but cannot carry
+    // a completed signature or approved authority to a replacement signer.
+    const match = identityMatch || existing.find((candidate) => candidate.id === signer.id && !candidate.identityCaptured && candidate.status === 'authority_uploaded')
     if (!match) return normalizeSellerComplianceSigner(signer, index)
+    if (!identityMatch) {
+      return normalizeSellerComplianceSigner({
+        ...signer,
+        status: 'authority_uploaded',
+        authority: { ...match.authority, reviewedAt: '', reviewedBy: '', reviewStatus: 'pending' },
+      }, index)
+    }
     return normalizeSellerComplianceSigner({
       ...signer,
       status: match.status,
@@ -117,21 +127,24 @@ function mergeExistingState(resolvedSigners = [], existingSigners = []) {
       signature: match.signature,
       audit: match.audit,
       authority: match.authority,
+      acceptedDocuments: match.acceptedDocuments,
+      acknowledgements: match.acknowledgements,
     }, index)
   })
 }
 
 function resolveSellerBranch(facts = {}) {
   const seller = facts.seller || {}
-  return key(
-    facts.seller_branch ||
+  const branch = key(
+    seller.owner_structure_type ||
+      facts.seller_branch ||
       seller.branch ||
-      seller.owner_structure_type ||
       seller.ownership_type ||
       seller.legal_type ||
       seller.legacy_type ||
       'individual',
   )
+  return ({ married_cop: 'married', married_anc: 'married', foreign_individual: 'individual', foreign_company: 'company', close_corporation: 'company', foreign_trust: 'trust' })[branch] || branch
 }
 
 function resolveIndividualSigners(seller = {}) {
@@ -143,7 +156,7 @@ function resolveIndividualSigners(seller = {}) {
     fallbackName: 'Seller 1',
     source: 'seller',
   })
-  const spouseInvolved = bool(seller.spouse_involved) || ['married', 'in_community', 'out_of_community', 'anc', 'foreign_marriage'].includes(key(seller.marital_regime))
+  const spouseInvolved = bool(seller.spouse_involved) || bool(seller.spouse_consent_required) || ['married', 'in_community', 'foreign_marriage'].includes(key(seller.marital_regime))
   if (!spouseInvolved) return [primary]
   return [
     primary,
@@ -159,8 +172,8 @@ function resolveIndividualSigners(seller = {}) {
 }
 
 function resolveMultipleOwnerSigners(seller = {}) {
-  const owners = array(seller.owners)
-  if (!owners.length) return resolveIndividualSigners(seller)
+  const owners = [...array(seller.owners)]
+  while (owners.length < Math.max(2, Number(seller.number_of_owners) || 0)) owners.push({})
   return owners.map((owner, index) => signerFromPerson({
     id: `seller-${index + 1}`,
     role: index === 0 ? SELLER_COMPLIANCE_SIGNER_ROLES.seller1 : `seller_${index + 1}`,
@@ -292,14 +305,17 @@ export function resolveSellerComplianceRequiredSigners(input = {}, options = {})
 
   if (branch === 'multiple_owners' || branch === 'multiple_individuals') {
     resolved = { signers: resolveMultipleOwnerSigners(seller), authorityRequirements: [] }
-  } else if (branch === 'company') {
+  } else if (['company', 'close_corporation', 'foreign_company'].includes(branch)) {
     resolved = resolveCompanySigners(seller)
-  } else if (branch === 'trust') {
+  } else if (['trust', 'foreign_trust'].includes(branch)) {
     resolved = resolveTrustSigners(seller)
   } else if (branch === 'deceased_estate') {
     resolved = resolveDeceasedEstateSigners(seller)
   } else if (branch === 'power_of_attorney') {
     resolved = resolvePowerOfAttorneySigners(seller)
+  } else if (branch === 'other') {
+    const requirement = authorityRequirement({ key: 'signing_authority', reason: 'other_entity', label: 'Legal entity signing authority', signerId: 'entity-representative' })
+    resolved = { signers: [signerFromPerson({ id: 'entity-representative', role: SELLER_COMPLIANCE_SIGNER_ROLES.representative, order: 1, person: seller.contact || {}, fallbackName: 'Authorised representative', source: 'seller.contact', authorityRequirement: requirement })], authorityRequirements: [requirement] }
   } else {
     resolved = { signers: resolveIndividualSigners(seller), authorityRequirements: [] }
   }

@@ -2819,8 +2819,8 @@ function Dashboard() {
   }, [agentDashboardPipelineRows, currentOrganisationId, isAgentRole, loading])
   const sharedDashboardRows = useMemo(() => (isAgentRole ? roleScopedRows : rows), [isAgentRole, roleScopedRows, rows])
   const activeTransactionCards = useMemo(
-    () => selectActiveTransactions(isAgentRole ? agentDashboardPipelineRows : isBondRole ? roleScopedRows : rows),
-    [agentDashboardPipelineRows, isAgentRole, isBondRole, roleScopedRows, rows],
+    () => selectActiveTransactions(isAgentRole ? getScopedDashboardTransactions(agentDashboardPipelineRows, { organisationId: currentOrganisationId }) : isBondRole ? roleScopedRows : rows),
+    [agentDashboardPipelineRows, currentOrganisationId, isAgentRole, isBondRole, roleScopedRows, rows],
   )
   const developerCommandCenterModel = useMemo(
     () => (isDeveloperRole
@@ -4407,7 +4407,7 @@ function Dashboard() {
     if (!isAgentRole || isPrincipalAgentView) return null
     const sharedDashboard = agentSharedData?.dashboard || {}
     const listingCount = Number(sharedDashboard.listingCount ?? agentPerformanceMetrics.listingCount) || 0
-    const activeDeals = Number(sharedDashboard.activeDealCount ?? agentPerformanceMetrics.openDeals) || 0
+    const activeDeals = activeTransactionCards.length
     const registeredCount = Number(sharedDashboard.registeredCount ?? agentPerformanceMetrics.registeredDeals) || 0
     const expectedCommission = Number(sharedDashboard.commissionEarned ?? sharedDashboard.estimatedCommission ?? agentPerformanceMetrics.commissionEarned) || 0
     const sellerFunnel = agentPerformanceMetrics.conversionFunnel?.seller || []
@@ -4431,7 +4431,7 @@ function Dashboard() {
       return (stage === 'ATTY' || stage === 'XFER') && getDaysSinceRowUpdate(row) >= 7
     }).length
     const rowByTransactionId = new Map(agentDashboardPipelineRows.map((row) => [row?.transaction?.id, row]))
-    const recentTransactions = activeTransactionCards.slice(0, 6).map((item) => {
+    const recentTransactions = activeTransactionCards.map((item) => {
       const sourceRow = rowByTransactionId.get(item.transactionId) || null
       const daysInStage = sourceRow ? getDaysSinceRowUpdate(sourceRow) : 0
       const missing = Number(item.missingCount || sourceRow?.documentSummary?.missingCount || 0)
@@ -4458,7 +4458,7 @@ function Dashboard() {
         {
           key: 'active_transactions',
           label: 'My Active Transactions',
-          value: formatKpiCount(activeDeals || AGENT_SUMMARY.activeTransactions),
+          value: formatKpiCount(activeDeals),
           trend: null,
           icon: ArrowRightLeft,
           tone: 'blue',
@@ -4493,8 +4493,8 @@ function Dashboard() {
         },
       ],
       health: {
-        total: activeDeals || AGENT_SUMMARY.activeTransactions,
-        movingNormally: Math.max(0, (activeDeals || AGENT_SUMMARY.activeTransactions) - attentionCount),
+        total: activeDeals,
+        movingNormally: Math.max(0, activeDeals - attentionCount),
         attentionRequired: attentionCount,
         criticalDelays: AGENT_FOLLOW_UPS_DUE,
         averageRegistrationTime: averageDaysToNextStage,
@@ -4578,7 +4578,7 @@ function Dashboard() {
       currentUserId: profile?.id || profile?.userId || '',
       source: {
         kpis: {
-          activeTransactions: Number(agentPremiumModel.health?.total || agentPerformanceMetrics.openDeals || AGENT_SUMMARY.activeTransactions || 0),
+          activeTransactions: agentPremiumModel.recentTransactions.length,
           activeListings: activeListingCount,
           mandates: activeListingCount,
           pipelineValue,
@@ -4614,7 +4614,7 @@ function Dashboard() {
           },
         },
         transactions: {
-          totalActive: agentPerformanceMetrics.openDeals || 0,
+          totalActive: agentPremiumModel.recentTransactions.length,
           flow: agentPremiumModel.flow,
           health: agentPremiumModel.health,
         },

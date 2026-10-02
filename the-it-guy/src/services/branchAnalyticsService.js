@@ -27,13 +27,13 @@ export async function getBranchPerformance(branchId) {
     activeTransactions: toNumber(branch.kpis?.activeTransactions),
     registeredDeals: toNumber(branch.kpis?.registeredDeals),
     pipelineValue: toNumber(branch.kpis?.pipelineValue),
-    conversionRate: toNumber(branch.kpis?.conversionRate),
+    conversionRate: branch.kpis?.conversionRate ?? null,
   }
 }
 
 export async function getBranchConversionRate(branchId) {
   const branch = await getBranch(branchId)
-  return toNumber(branch?.kpis?.conversionRate)
+  return branch?.kpis?.conversionRate ?? null
 }
 
 function buildMemberKeys(member = {}) {
@@ -90,7 +90,7 @@ export async function getPortfolioLeaderboard() {
       branchName: branch.name,
       pipelineValue: toNumber(branch.kpis?.pipelineValue),
       activeTransactions: toNumber(branch.kpis?.activeTransactions),
-      conversionRate: toNumber(branch.kpis?.conversionRate),
+      conversionRate: branch.kpis?.conversionRate ?? null,
     }))
     .sort((left, right) => right.pipelineValue - left.pipelineValue)
 }

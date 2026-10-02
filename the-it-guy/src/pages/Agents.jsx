@@ -53,7 +53,7 @@ import { canAccessAgentsModule, canManageAgentOrganisations } from '../lib/roles
 import { saveTransaction } from '../lib/api'
 import { invokeEdgeFunction, isSupabaseConfigured } from '../lib/supabaseClient'
 import { isUnsafeFallbackAllowed } from '../lib/envValidation'
-import { loadAgencyAgentCardInsights, loadAgencyAgentCardLink } from '../lib/dashboardSecondaryApi'
+import { loadAgencyAgentCardInsights, loadAgencyAgentCardLink, saveAgencyAgentCardLink } from '../lib/dashboardSecondaryApi'
 import { createProfileAvatarFile, getProfileAvatarErrorMessage } from '../lib/profileAvatarImage'
 import {
   deactivateOrganisationUser,
@@ -1596,28 +1596,30 @@ function buildAgentDigitalCardUrl(slug = '') {
   return `${host.replace(/\/+$/, '')}/card/${encodeURIComponent(safeSlug)}`
 }
 
-function AgentDigitalCardOverview({ cardState, agentName = '', onCopyLink = () => {} }) {
+function AgentDigitalCardOverview({ cardState, agentName = '', canActivate = false, onActivate, onRetry, onCopyLink = () => {} }) {
   const link = cardState?.link
   const shareUrl = link?.status === 'active' ? buildAgentDigitalCardUrl(link.slug) : ''
   const insights = cardState?.insights?.summary || {}
+  const hasInsights = Boolean(cardState?.insights && cardState.insights.schemaReady !== false)
+  const metricValue = (value) => hasInsights ? (value || 0) : '—'
   const hasActiveCard = Boolean(shareUrl)
   const metrics = [
-    ['Views', insights.views || 0],
-    ['Contact clicks', insights.contactClicks || 0],
-    ['Leads captured', insights.totalLeads || 0],
-    ['Shares', (insights.shareClicks || 0) + (insights.copyLinkClicks || 0)],
+    ['Views', metricValue(insights.views)],
+    ['Contact clicks', metricValue(insights.contactClicks)],
+    ['Leads captured', metricValue(insights.totalLeads)],
+    ['Shares', metricValue((insights.shareClicks || 0) + (insights.copyLinkClicks || 0))],
   ]
 
   return (
     <section className="overflow-hidden rounded-2xl border border-[#dce7f2] bg-white shadow-[0_12px_30px_rgba(15,23,42,0.04)]" aria-label="Digital business card">
-      <div className="grid min-w-0 gap-4 p-4 lg:grid-cols-[minmax(0,1.25fr)_minmax(360px,0.75fr)] lg:items-center lg:p-5">
+      <div className={`grid min-w-0 gap-4 p-4 lg:items-center lg:p-5 ${hasActiveCard ? 'lg:grid-cols-[minmax(0,1.25fr)_minmax(360px,0.75fr)]' : ''}`}>
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <span className="inline-flex items-center gap-2 rounded-full border border-[#cfe6dc] bg-[#effaf4] px-3 py-1 text-[0.7rem] font-semibold uppercase tracking-[0.12em] text-[#24724c]">
               <IdCard size={14} /> Digital business card
             </span>
             <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${hasActiveCard ? 'border-[#cce8d8] bg-[#f1fbf5] text-[#24724c]' : 'border-[#e0e7ef] bg-[#f7f9fc] text-[#647a92]'}`}>
-              {cardState?.loading ? 'Checking card…' : hasActiveCard ? 'Active' : 'Not active'}
+              {cardState?.loading ? 'Checking card…' : cardState?.error ? 'Unavailable' : hasActiveCard ? 'Active' : 'Not active'}
             </span>
           </div>
           <h2 className="mt-3 text-[1.08rem] font-semibold tracking-[-0.03em] text-[#10243a]">{agentName || 'Agent'}’s share card</h2>
@@ -1627,25 +1629,30 @@ function AgentDigitalCardOverview({ cardState, agentName = '', onCopyLink = () =
                 {shareUrl}
               </a>
               <div className="flex shrink-0 gap-2">
-                <button type="button" onClick={() => onCopyLink(shareUrl)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-[#d9e4ef] bg-white px-3 text-sm font-semibold text-[#17344d] hover:bg-[#f7fafc]"><Copy size={15} /> Copy</button>
+                <button type="button" onClick={() => onCopyLink(shareUrl)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-[#d9e4ef] bg-white px-3 text-sm font-semibold text-[#17344d] hover:bg-[#f7fafc]"><Copy size={15} /> Copy link</button>
                 <a href={shareUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-[#147a55] px-3 text-sm font-semibold text-white hover:bg-[#0f6847]"><ExternalLink size={15} /> View card</a>
               </div>
             </div>
           ) : (
-            <p className="mt-2 text-sm leading-6 text-[#647a92]">No active card is available for this agent yet. Once it is activated, its public link and engagement results will appear here.</p>
+            <div className="mt-2 flex flex-wrap items-center gap-3">
+              <p className="text-sm leading-6 text-[#647a92]">{cardState?.loading ? 'Checking the public card link…' : cardState?.error ? 'The card could not be loaded. Please try again.' : 'Generate a public card to share this agent’s contact details and listings.'}</p>
+              {canActivate && !cardState?.loading && !cardState?.error ? <button type="button" onClick={onActivate} disabled={cardState?.saving} className="rounded-xl bg-[#147a55] px-3 py-2 text-sm font-semibold text-white disabled:opacity-60">{cardState?.saving ? 'Saving…' : link ? 'Activate card' : 'Generate card'}</button> : null}
+            </div>
           )}
-          {cardState?.error ? <p className="mt-3 text-sm text-[#b42318]">{cardState.error}</p> : null}
+          {cardState?.error ? <div role="alert" className="mt-3 flex flex-wrap items-center gap-3 text-sm text-[#b42318]"><p>{cardState.error}</p><button type="button" onClick={onRetry} className="font-semibold underline">Retry</button></div> : null}
           {cardState?.copyFeedback ? <p className="mt-3 text-sm font-medium text-[#24724c]">{cardState.copyFeedback}</p> : null}
         </div>
-        <div className="grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-2 xl:grid-cols-4">
-          {metrics.map(([label, value]) => (
-            <div key={label} className="min-w-0 rounded-xl border border-[#e1eaf3] bg-[#f8fbfe] px-3 py-3">
-              <p className="truncate text-[0.65rem] font-semibold uppercase tracking-[0.1em] text-[#7388a0]">{label}</p>
-              <p className="mt-1 text-xl font-semibold tracking-[-0.03em] text-[#10243a]">{value}</p>
-              <p className="mt-1 text-xs text-[#6d8197]">Last 30 days</p>
-            </div>
-          ))}
-        </div>
+        {hasActiveCard ? <div className="min-w-0">
+          <div className="grid min-w-0 grid-cols-2 gap-3 sm:grid-cols-4">
+            {metrics.map(([label, value]) => (
+              <div key={label} className="min-w-0 border-l border-[#e1eaf3] pl-3">
+                <p className="text-xl font-semibold text-[#10243a]">{value}</p>
+                <p className="mt-1 text-xs leading-5 text-[#7388a0]">{label}</p>
+              </div>
+            ))}
+          </div>
+          <p className="mt-3 text-center text-xs text-[#6d8197]">{hasInsights ? 'Last 30 days' : 'Engagement statistics unavailable'}</p>
+        </div> : null}
       </div>
     </section>
   )
@@ -4064,10 +4071,9 @@ function buildWorkspaceListingStatuses(listings) {
 
 function MonthSummaryMetric({ label, value }) {
   return (
-    <div className="min-w-0 border-t border-[#e8eff7] pt-4 first:border-t-0 first:pt-0 sm:border-l sm:border-t-0 sm:pl-5 sm:pt-0 sm:first:border-l-0 sm:first:pl-0">
+    <div className="min-w-0 rounded-xl bg-[#f8fafc] p-4">
       <p className="truncate text-[1.45rem] font-semibold tracking-[-0.04em] text-[#10243a]" title={String(value ?? '—')}>{value ?? '—'}</p>
-      <p className="mt-1 truncate text-sm font-semibold text-[#526981]">{label}</p>
-      <p className="mt-2 text-xs font-semibold text-[#6f839a]">vs last month <span className="text-[#10243a]">—</span></p>
+      <p className="mt-1 text-sm leading-5 text-[#526981]">{label}</p>
     </div>
   )
 }
@@ -4255,7 +4261,7 @@ function isTaskDone(row = {}) {
   return String(row.status || '').toLowerCase().includes('complete')
 }
 
-function AgentWorkspace({ agent, canManageSettings = false, commissionStructures = [], workspaceSnapshot = {}, branchOptions = [], onRefresh }) {
+export function AgentWorkspace({ agent, canManageSettings = false, commissionStructures = [], workspaceSnapshot = {}, branchOptions = [], onRefresh }) {
   const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState('overview')
   const [editMenuOpen, setEditMenuOpen] = useState(false)
@@ -4278,6 +4284,8 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
   const [permissionsForm, setPermissionsForm] = useState({ role: '' })
   const [permissionsSaving, setPermissionsSaving] = useState(false)
   const [permissionsError, setPermissionsError] = useState('')
+  const [cardRefreshKey, setCardRefreshKey] = useState(0)
+  const [showAllAgentTasks, setShowAllAgentTasks] = useState(false)
   const [agentDigitalCardState, setAgentDigitalCardState] = useState({
     loading: false,
     error: '',
@@ -4397,6 +4405,7 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
           organisationId: agentCardOrganisationId,
           agentUserId: agentCardUserId,
         })
+        if (result?.schemaReady === false) throw new Error('Digital business cards are not available in this workspace yet.')
         const insights = result?.link?.id
           ? await loadAgencyAgentCardInsights({
               organisationId: agentCardOrganisationId,
@@ -4429,7 +4438,7 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
     return () => {
       cancelled = true
     }
-  }, [agentCardOrganisationId, agentCardUserId])
+  }, [agentCardOrganisationId, agentCardUserId, cardRefreshKey])
 
   const {
     branches = [],
@@ -4500,6 +4509,9 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
     typeof value === 'number' && label !== 'Average Response Time' ? formatCurrency(value) : value || '—',
   ])
   const monthSummary = commandCentre?.monthlyPerformance?.metrics || []
+  const overviewMonthSummary = monthSummary.filter((metric) => !['pipelineValue', 'dealsClosed'].includes(metric.key))
+  const monthLabel = new Intl.DateTimeFormat('en-ZA', { month: 'long', year: 'numeric' }).format(new Date())
+  const agentCalendarUrl = `/pipeline/calendar?agent=${encodeURIComponent(agentCardUserId || agent.email || '')}`
   const monthSummaryMetricMap = new Map(monthSummary.map((metric) => [metric.key, metric]))
   const getMonthSummaryValue = (key, fallback = '—') => {
     const metric = monthSummaryMetricMap.get(key)
@@ -4515,8 +4527,7 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
 
   const contactRows = [
     ['Email', getWorkspaceDisplayValue(agent.email)],
-    ['Phone', getWorkspaceDisplayValue(agent.phone)],
-    ['Mobile', getWorkspaceDisplayValue(agent.mobile || agent.phone)],
+    ['Phone', getWorkspaceDisplayValue(agent.mobile || agent.phone)],
     ['Branch', getWorkspaceDisplayValue(branchName)],
     ['Joined', getWorkspaceDisplayValue(joinedDate, formatDate)],
     ['Role / Title', getWorkspaceDisplayValue(agentRoleTitle)],
@@ -4743,12 +4754,12 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
     { label: 'Compliance %', value: compliancePercent === null || compliancePercent === undefined ? '—' : `${compliancePercent}%`, icon: ShieldCheck, helper: 'Task completion' },
   ]
   const kpiCards = [
-    { label: 'Active Transactions', value: activeDealCount, helper: 'Locked to agent', icon: BriefcaseBusiness },
-    { label: 'Active Listings', value: activeListingStatusCount ?? allListings.length, helper: 'Current stock', icon: Building2 },
-    { label: 'Buyer Leads', value: buyerLeadRows.length, helper: 'Assigned leads', icon: Users },
-    { label: 'Seller Leads', value: sellerLeadRows.length, helper: 'Assigned leads', icon: Users },
-    { label: 'Pipeline Value', value: formatCompactCurrency(pipelineHealthValue), helper: 'Open value', icon: DollarSign },
-    { label: 'Projected Commission', value: formatCompactCurrency(projectedCommission), helper: 'Forecast', icon: Trophy },
+    { label: 'Active Transactions', value: activeDealCount, helper: '', icon: BriefcaseBusiness },
+    { label: 'Active Listings', value: activeListingStatusCount ?? allListings.length, helper: '', icon: Building2 },
+    { label: 'Buyer Leads', value: buyerLeadRows.length, helper: '', icon: Users },
+    { label: 'Seller Leads', value: sellerLeadRows.length, helper: '', icon: Users },
+    { label: 'Pipeline Value', value: formatCompactCurrency(pipelineHealthValue), helper: '', icon: DollarSign },
+    { label: 'Projected Commission', value: formatCompactCurrency(projectedCommission), helper: 'Estimate at 3%', icon: Trophy },
   ]
   const otpStageCount = pipelineStageMap.get('otp') || 0
   const registrationStageCount = pipelineStageMap.get('registration') || 0
@@ -4764,7 +4775,7 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
   function handleWorkspaceAction(key) {
     setEditMenuOpen(false)
     if (key === 'calendar') {
-      navigate('/pipeline/calendar')
+      navigate(agentCalendarUrl)
       return
     }
     if (['transactions', 'listings', 'leads', 'prospecting', 'performance'].includes(key)) {
@@ -4785,6 +4796,32 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
     }
     const transactionId = row?.transaction?.id || row?.id
     navigate(transactionId ? `/transactions/${transactionId}` : '/transactions')
+  }
+
+  async function handleActivateDigitalCard() {
+    if (!canManageSettings || agentDigitalCardState.loading || agentDigitalCardState.saving) return
+    setAgentDigitalCardState((current) => ({ ...current, saving: true, error: '' }))
+    try {
+      const result = await saveAgencyAgentCardLink({
+        ...agentDigitalCardState.link,
+        organisationId: agentCardOrganisationId,
+        agentUserId: agentCardUserId,
+        organisationName: agent.organisationName,
+        defaultBranchId: agent.branchId,
+        status: 'active',
+        agentName: agentDisplayName,
+        agentEmail: agent.email,
+        agentPhone: agent.mobile || agent.phone,
+        agentWhatsApp: agent.mobile || agent.phone,
+        agentJobTitle: agentRoleTitle,
+        agentAvatarUrl: agent.avatarUrl,
+      })
+      if (!result?.link || result.schemaReady === false) throw new Error('This workspace cannot generate digital cards yet.')
+      const insights = await loadAgencyAgentCardInsights({ organisationId: agentCardOrganisationId, intakeLinkId: result.link.id, windowDays: 30 }).catch(() => null)
+      setAgentDigitalCardState({ loading: false, saving: false, error: '', link: result.link, insights, copyFeedback: '' })
+    } catch (error) {
+      setAgentDigitalCardState((current) => ({ ...current, saving: false, error: error?.message || 'Unable to activate this card.' }))
+    }
   }
 
   async function handleCopyDigitalCardLink(link) {
@@ -4817,7 +4854,7 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
         </div>
       ) : null}
 
-      <section className="min-w-0 border-b border-[#dde6f1] bg-white px-4 py-5 sm:px-6 lg:px-8">
+      <section className="min-w-0 rounded-2xl border border-[#dde6f1] bg-white p-4 sm:p-5">
         <div className="mb-4 flex min-w-0 flex-wrap items-center gap-2 text-xs font-semibold text-[#6f839a]">
           <button type="button" className="hover:text-[#10243a]" onClick={() => navigate('/agency')}>Agency</button>
           <span>/</span>
@@ -4829,20 +4866,19 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
           <div className="flex min-w-0 items-center gap-3 2xl:gap-4">
             <span className="relative inline-flex h-16 w-16 shrink-0 sm:h-20 sm:w-20 2xl:h-24 2xl:w-24">
               <AgentAvatar agent={agent} className="h-full w-full border border-[#d7e2ef] bg-[linear-gradient(135deg,#f8fbff,#e7eef7)] text-2xl font-semibold text-[#2f5578]" />
-              <span className="absolute bottom-1 right-1 h-4 w-4 rounded-full border-2 border-white bg-[#16a365]" />
             </span>
             <div className="min-w-0">
               <h1 className="min-w-0 truncate text-[1.35rem] font-semibold tracking-[-0.045em] text-[#10243a] 2xl:text-[1.65rem]">{agentDisplayName}</h1>
               <p className="mt-1 truncate text-sm font-semibold text-[#536b84]">{agentRoleTitle}</p>
+              <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-[#60758d]">
+                {agent.email ? <a href={`mailto:${agent.email}`} className="inline-flex min-w-0 items-center gap-2 hover:underline"><Mail size={14} className="shrink-0" /><span className="break-all">{agent.email}</span></a> : null}
+                {agent.mobile || agent.phone ? <a href={`tel:${String(agent.mobile || agent.phone).replace(/[^+\d]/g, '')}`} className="inline-flex items-center gap-2 hover:underline"><Phone size={14} />{agent.mobile || agent.phone}</a> : null}
+              </div>
               <div className="mt-3 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-[#61778f]">
                 <StatusBadge agent={agent} />
                 <span>·</span>
                 <span className="truncate">{branchName}</span>
-                <span>·</span>
-                <span className="inline-flex items-center gap-1">
-                  <Clock3 size={14} />
-                  Last activity {lastActivity ? formatRelativeActivity(lastActivity) : '—'}
-                </span>
+                {lastActivity ? <><span>·</span><span className="inline-flex items-center gap-1"><Clock3 size={14} />Last activity {formatRelativeActivity(lastActivity)}</span></> : null}
                 {joinedDate ? (
                   <>
                     <span>·</span>
@@ -4854,31 +4890,13 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
           </div>
 
           <div className="flex min-w-0 flex-wrap items-center gap-2 xl:justify-end">
-            {headerActionPermissions.canMessage ? (
-              <button
-                type="button"
-                className="hidden min-h-10 items-center justify-center gap-2 rounded-xl border border-[#d9e3ef] bg-white px-3 text-sm font-semibold text-[#0f2742] shadow-sm transition hover:bg-[#f7fafc] md:inline-flex 2xl:px-4"
-                disabled
-                title="Unavailable — messaging is not connected for agent management yet"
-              >
-                <MessageCircle size={16} />
-                Message
-              </button>
-            ) : null}
-            <button
-              type="button"
-              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-[#d9e3ef] bg-white px-3 text-sm font-semibold text-[#0f2742] shadow-sm transition hover:bg-[#f7fafc] 2xl:px-4"
-              disabled
-              title="Unavailable — calling is not connected for agent management yet"
-            >
-              <Phone size={16} />
-              Call
-            </button>
+            {agent.email ? <a href={`mailto:${agent.email}`} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-[#d9e3ef] bg-white px-3 text-sm font-semibold text-[#0f2742] hover:bg-[#f7fafc]"><Mail size={16} /> Email</a> : null}
+            {agent.mobile || agent.phone ? <a href={`tel:${String(agent.mobile || agent.phone).replace(/[^+\d]/g, '')}`} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-[#d9e3ef] bg-white px-3 text-sm font-semibold text-[#0f2742] hover:bg-[#f7fafc]"><Phone size={16} /> Call</a> : null}
             {headerActionPermissions.canViewCalendar ? (
               <button
                 type="button"
                 className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-[#d9e3ef] bg-white px-3 text-sm font-semibold text-[#0f2742] shadow-sm transition hover:bg-[#f7fafc] 2xl:px-4"
-                onClick={() => navigate('/pipeline/calendar')}
+                onClick={() => navigate(agentCalendarUrl)}
               >
                 <CalendarDays size={16} />
                 View Calendar
@@ -4940,41 +4958,16 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
             ))}
           </div>
 
-          <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(280px,0.8fr)_minmax(0,1.2fr)]">
-            <WorkspaceCard title="Follow-Up Compliance">
-              {commandCentre?.followUpCompliance?.hasSignals ? (
-                <div className="grid min-w-0 gap-3 sm:grid-cols-2">
-                  {commandCentre.followUpCompliance.tasksCompletedPercent !== null ? (
-                    <AgentMetricCard label="Tasks Completed %" value={`${commandCentre.followUpCompliance.tasksCompletedPercent}%`} helper="This month" />
-                  ) : null}
-                  <AgentMetricCard label="Overdue Tasks" value={commandCentre.followUpCompliance.overdueTasks} helper="Needs action" />
-                  <AgentMetricCard label="Average Response Time" value={commandCentre.followUpCompliance.averageResponseTimeLabel} helper="Lead response" />
-                  <AgentMetricCard label="Follow-ups Due Today" value={commandCentre.followUpCompliance.dueToday} helper="Today" />
-                </div>
-              ) : (
-                <div className="rounded-2xl border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-5 py-6 text-sm text-[#647a92]">
-                  No follow-up pressure is showing for this agent right now.
-                </div>
-              )}
-            </WorkspaceCard>
+          <WorkspaceCard title="This month" actionLabel={monthLabel}>
+            <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {overviewMonthSummary.map((metric) => (
+                <MonthSummaryMetric key={metric.key || metric.label} label={metric.label} value={metric.key === 'conversionRate' && !buyerLeadRows.length && !sellerLeadRows.length ? '—' : formatSummaryMetricValue(metric)} />
+              ))}
+            </div>
+          </WorkspaceCard>
 
-            <WorkspaceCard title="This Month Summary" actionLabel="This Month">
-              <div className="grid min-w-0 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                {monthSummary.map((metric) => (
-                  <MonthSummaryMetric key={metric.key || metric.label} label={metric.label} value={formatSummaryMetricValue(metric)} />
-                ))}
-              </div>
-            </WorkspaceCard>
-          </div>
-
-          <div className="grid min-w-0 gap-4 lg:grid-cols-3 2xl:gap-5">
-            <DealsByStageCard stages={dealStages} />
-            <ListingsOverviewCard statuses={listingStatuses} total={allListings.length} />
-            <FinancialPerformanceCard rows={financialRows} />
-          </div>
-
-          <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-            <WorkspaceCard title="Top Transactions" actionLabel="View all">
+          <div className="grid min-w-0 gap-4 xl:grid-cols-2">
+            <WorkspaceCard title="Active transactions" actionLabel="View all" onAction={() => setActiveTab('transactions')}>
               {topTransactions.length ? (
                 <div className="space-y-2">
                   {topTransactions.map((row) => (
@@ -4998,10 +4991,10 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
               )}
             </WorkspaceCard>
 
-            <WorkspaceCard title="Tasks & Reminders" actionLabel="View all">
+            <WorkspaceCard title="Tasks & reminders" actionLabel={agentTasks.length > 6 ? (showAllAgentTasks ? 'Show less' : 'View all') : ''} onAction={() => setShowAllAgentTasks((value) => !value)}>
               {agentTasks.length ? (
                 <div className="space-y-3">
-                  {agentTasks.slice(0, 6).map((task) => (
+                  {(showAllAgentTasks ? agentTasks : agentTasks.slice(0, 6)).map((task) => (
                     <div key={task.id || task.taskId || task.title} className="flex min-w-0 items-start gap-3">
                       <span className={`mt-0.5 h-5 w-5 shrink-0 rounded-full border ${isTaskDone(task) ? 'border-[#16894f] bg-[#16894f]' : 'border-[#c6d3e1] bg-white'}`} />
                       <div className="min-w-0 flex-1">
@@ -5021,10 +5014,14 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
           <AgentDigitalCardOverview
             cardState={agentDigitalCardState}
             agentName={agentDisplayName}
+            canActivate={canManageSettings}
+            onActivate={handleActivateDigitalCard}
+            onRetry={() => setCardRefreshKey((value) => value + 1)}
             onCopyLink={handleCopyDigitalCardLink}
           />
 
           <AppointmentDashboardSection
+            variant="agent-overview"
             module="agent"
             organisationId={String(agent?.organisationId || '').trim()}
             appointmentRows={workspaceSnapshot?.appointments || []}
@@ -5032,11 +5029,11 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
             userId={agent?.userId || agent?.id || ''}
             userEmail={agent?.email || ''}
             includeAll={false}
-            onViewCalendar={() => navigate('/pipeline/calendar')}
-            onOpenCalendar={() => navigate('/pipeline/calendar')}
-            onManageAppointment={() => navigate('/pipeline/calendar')}
-            onOpenAppointment={() => navigate('/pipeline/calendar')}
-            onScheduleAppointment={() => navigate('/pipeline/calendar')}
+            onViewCalendar={() => navigate(agentCalendarUrl)}
+            onOpenCalendar={() => navigate(agentCalendarUrl)}
+            onManageAppointment={() => navigate(agentCalendarUrl)}
+            onOpenAppointment={() => navigate(agentCalendarUrl)}
+            onScheduleAppointment={() => navigate(`${agentCalendarUrl}&schedule=1`)}
             refreshKey={`${(workspaceSnapshot?.appointments || []).length}:${agent?.id || agent?.email || ''}`}
           />
 
@@ -5162,11 +5159,11 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
                 userId={agent?.userId || agent?.id || ''}
                 userEmail={agent?.email || ''}
                 includeAll={false}
-                onViewCalendar={() => navigate('/pipeline/calendar')}
-                onOpenCalendar={() => navigate('/pipeline/calendar')}
-                onManageAppointment={() => navigate('/pipeline/calendar')}
-                onOpenAppointment={() => navigate('/pipeline/calendar')}
-                onScheduleAppointment={() => navigate('/pipeline/calendar')}
+                onViewCalendar={() => navigate(agentCalendarUrl)}
+                onOpenCalendar={() => navigate(agentCalendarUrl)}
+                onManageAppointment={() => navigate(agentCalendarUrl)}
+                onOpenAppointment={() => navigate(agentCalendarUrl)}
+                onScheduleAppointment={() => navigate(`${agentCalendarUrl}&schedule=1`)}
                 refreshKey={`${(workspaceSnapshot?.appointments || []).length}:${agent?.id || agent?.email || ''}`}
               />
             </div>
@@ -5189,6 +5186,11 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
         <section className="min-w-0 space-y-4">
           <LockedAgentFilterChip label={agentDisplayName} />
           <PrincipalAgentTabShell title="Performance" description="Analytics, commission assignment and operational settings for this agent.">
+            <div className="mb-5 grid min-w-0 gap-4 lg:grid-cols-3">
+              <DealsByStageCard stages={dealStages} />
+              <ListingsOverviewCard statuses={listingStatuses} total={allListings.length} />
+              <FinancialPerformanceCard rows={financialRows} />
+            </div>
             <div className="grid min-w-0 gap-4 sm:grid-cols-2 xl:grid-cols-3">
               {performanceOverviewRows.map(([label, value]) => (
                 <AgentWorkspaceKpiCard key={label} label={label} value={value} icon={Trophy} />

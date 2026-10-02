@@ -58,7 +58,6 @@ import {
   buildSellerResolverInputFromFacts,
   validateSellerOnboardingFacts,
 } from './documents/sellerOnboardingFactTransformer'
-import { buildSellerOnboardingPublicationDraft, mergePublicationDraft } from './sellerListingPublicationMapper'
 import {
   buildSellerDocumentRequirementReconciliationReport,
   summarizeSellerDocumentRequirementReconciliationReport,
@@ -1309,10 +1308,6 @@ function deferSellerOnboardingFollowUp(label, task) {
     .catch((error) => {
       console.warn(`[Private Listings] ${label} skipped`, error)
     })
-}
-
-function isMissingPrivateListingActivityError(error) {
-  return isMissingTableError(error, 'private_listing_activity')
 }
 
 function isRecoverableDeleteSchemaError(error, tableName = '', columnName = '') {
@@ -3172,6 +3167,7 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
           completedAt: onboarding.submitted_at || null,
           currentStep: Number(onboarding?.form_data?.currentStep || 0),
           formData: onboarding.form_data || {},
+          storedCanonicalFacts: onboarding.canonical_facts_json || null,
           canonicalFacts: canonicalSellerFacts,
           canonicalFactReadiness: canonicalSellerFactReadiness,
         }
@@ -4179,46 +4175,6 @@ async function fetchSellerOnboardingCoreApiPayload(token, options = {}) {
 
   const payload = await response.json().catch(() => null)
   return mapSellerClientPortalCorePayload(payload)
-}
-
-async function fetchSellerOnboardingProgressFallbackContext(client, token) {
-  const normalizedToken = normalizeText(token)
-  if (!normalizedToken) return null
-  const phase2Columns = 'id, private_listing_id, token, token_expires_at, seller_portal_token, seller_portal_invite_created_at, seller_portal_invite_expires_at, seller_portal_invite_consumed_at, seller_portal_activation_source, seller_portal_status, seller_portal_invitation_sent_at, seller_portal_invitation_last_sent_at, seller_portal_invitation_cancelled_at, seller_portal_activated_at, seller_portal_terms_accepted_at, seller_portal_terms_version, seller_portal_terms_acceptance_id, seller_type, ownership_structure, marital_regime, form_data, status, submitted_at, created_at, updated_at'
-  const legacyColumns = 'id, private_listing_id, token, token_expires_at, seller_type, ownership_structure, marital_regime, form_data, status, submitted_at, created_at, updated_at'
-  let query = await client
-    .from('private_listing_seller_onboarding')
-    .select(phase2Columns)
-    .eq('token', normalizedToken)
-    .maybeSingle()
-  if (query.error && isMissingSchemaError(query.error)) {
-    query = await client
-      .from('private_listing_seller_onboarding')
-      .select(legacyColumns)
-      .eq('token', normalizedToken)
-      .maybeSingle()
-  }
-  if (query.error) throw query.error
-  if (!query.data?.id || !query.data?.private_listing_id) return null
-
-  const apiPayload = await fetchSellerOnboardingCoreApiPayload(normalizedToken, {
-    onboardingId: query.data.id,
-    listingId: query.data.private_listing_id,
-  }).catch((apiError) => {
-    console.warn('[Private Listings] seller onboarding progress fallback context API lookup failed', {
-      reason: buildSupabaseErrorSummary(apiError),
-    })
-    return null
-  })
-
-  if (!apiPayload?.listing) return null
-  return {
-    ...apiPayload,
-    onboarding: {
-      ...(apiPayload.onboarding || {}),
-      ...query.data,
-    },
-  }
 }
 
 function getSellerClientPortalEmail(listing = {}, onboarding = {}, formData = {}) {
@@ -6007,6 +5963,17 @@ export async function savePrivateListingSellerCanonicalUpdate(update = {}, optio
     throw result.error
   }
 
+  const receipt = result.data
+  if (!receipt?.listing?.id || receipt.listing.id !== listingId || !receipt?.onboarding?.id) {
+    const error = new Error('The seller save returned no confirmation. Reload the listing before retrying; the save may have completed.')
+    error.code = 'SELLER_SAVE_UNCONFIRMED'
+    throw error
+  }
+  const committedListing = mapPrivateListingRow(receipt.listing, new Map([[listingId, receipt.onboarding]]))
+  const postCommitError = (message, code, cause, listing = committedListing) => Object.assign(new Error(message), {
+    code, committed: true, recoverable: true, mutationId, cause, listing,
+  })
+
   let requirementSyncResult = null
   if (update.requirementsAffected && options.syncRequirements !== false) {
     try {
@@ -6023,14 +5990,20 @@ export async function savePrivateListingSellerCanonicalUpdate(update = {}, optio
       syncError.cause = error
       syncError.listing = await getPrivateListingById(listingId, {
         includeRequirementsAndDocuments: true,
-      }).catch(() => null)
+      }).catch(() => committedListing)
       throw syncError
     }
   }
 
-  const listing = requirementSyncResult?.listing || await getPrivateListingById(listingId, {
-    includeRequirementsAndDocuments: options.includeRequirementsAndDocuments !== false,
-  })
+  let listing
+  try {
+    listing = requirementSyncResult?.listing || await getPrivateListingById(listingId, {
+      includeRequirementsAndDocuments: options.includeRequirementsAndDocuments !== false,
+    })
+    if (!listing) throw new Error('The committed listing could not be read back.')
+  } catch (error) {
+    throw postCommitError('Seller details were saved, but the refreshed listing could not be loaded. Reload before sending documents.', 'SELLER_READBACK_FAILED', error)
+  }
 
   return {
     receipt: result.data || {},
@@ -6222,69 +6195,6 @@ function mapPublicationRowToDraft(row = {}) {
     amenities: Array.isArray(row.amenities) ? row.amenities : [],
     status: row.status,
   }
-}
-
-function mapPublicationDraftToRow(listingId, draft = {}) {
-  return {
-    listing_id: listingId,
-    title: normalizeNullableText(draft.title),
-    address: normalizeNullableText(draft.address),
-    suburb: normalizeNullableText(draft.suburb),
-    province: normalizeNullableText(draft.province),
-    property_type: normalizeNullableText(draft.propertyType),
-    listing_type: normalizeText(draft.listingType) === 'Rental' ? 'Rental' : 'Sale',
-    asking_price: normalizeNumber(draft.askingPrice),
-    bedrooms: normalizeNumber(draft.bedrooms),
-    bathrooms: normalizeNumber(draft.bathrooms),
-    garages: normalizeNumber(draft.garages),
-    parking_bays: normalizeNumber(draft.parkingBays),
-    floor_size: normalizeNumber(draft.floorSize),
-    erf_size: normalizeNumber(draft.erfSize),
-    rates_taxes: normalizeNumber(draft.ratesTaxes),
-    levies: normalizeNumber(draft.levies),
-    description: normalizeNullableText(draft.description),
-    features: Array.isArray(draft.features) ? draft.features : [],
-    amenities: Array.isArray(draft.amenities) ? draft.amenities : [],
-    status: ['Draft', 'Ready', 'Published', 'Archived'].includes(normalizeText(draft.status))
-      ? normalizeText(draft.status)
-      : 'Draft',
-  }
-}
-
-async function syncSellerOnboardingPublicationDraft(client, { listing = {}, formData = {} } = {}) {
-  const listingId = normalizeUuid(listing?.id)
-  if (!listingId) return { skipped: true, reason: 'listing_id_missing' }
-  const { facts } = getCanonicalSellerPayloadFromFormData(formData, listing, {
-    contextType: 'private_listing',
-    contextId: listingId,
-    listingId,
-    source: 'seller_onboarding',
-  })
-  const draft = buildSellerOnboardingPublicationDraft({
-    listing,
-    formData,
-    canonicalFacts: facts || listing?.sellerCanonicalFacts || listing?.canonicalFacts || {},
-  })
-
-  const existing = await client
-    .from('listing_publication_data')
-    .select('title, address, suburb, province, property_type, listing_type, asking_price, bedrooms, bathrooms, garages, parking_bays, floor_size, erf_size, rates_taxes, levies, description, features, amenities, status')
-    .eq('listing_id', listingId)
-    .maybeSingle()
-  if (existing.error && !isMissingTableError(existing.error, 'listing_publication_data')) throw existing.error
-  if (isMissingTableError(existing.error, 'listing_publication_data')) return { skipped: true, reason: 'distribution_tables_missing' }
-
-  const merged = mergePublicationDraft(mapPublicationRowToDraft(existing.data || {}), draft)
-  const upsert = await client
-    .from('listing_publication_data')
-    .upsert(mapPublicationDraftToRow(listingId, merged), { onConflict: 'listing_id' })
-    .select('*')
-    .single()
-  if (upsert.error) {
-    if (isMissingTableError(upsert.error, 'listing_publication_data')) return { skipped: true, reason: 'distribution_tables_missing' }
-    throw upsert.error
-  }
-  return { skipped: false, publication: upsert.data }
 }
 
 export async function getPrivateListing(listingId, options = {}) {
@@ -7954,8 +7864,26 @@ export async function markSellerOnboardingSent(
   }
 }
 
+async function fetchSellerOnboardingFormByToken(client, token) {
+  const result = await client.rpc('bridge_get_private_listing_seller_onboarding_form', { p_token: token })
+  if (result.error) {
+    if (isMissingRpcError(result.error, 'bridge_get_private_listing_seller_onboarding_form')) {
+      const context = await fetchSellerOnboardingCoreApiPayload(token)
+      if (context?.onboarding) return context.onboarding
+      throw new Error('Seller onboarding could not be loaded securely. Please try again shortly.')
+    }
+    throw result.error
+  }
+  return result.data
+}
+
+async function canManageSellerOnboardingProjections(client, listingId) {
+  if (!listingId) return false
+  const result = await client.rpc('bridge_can_access_private_listing', { target_listing_id: listingId })
+  return !result.error && result.data === true
+}
+
 export async function getSellerOnboardingByToken(token, options = {}) {
-  const includeRequirementsAndDocuments = options?.includeRequirementsAndDocuments !== false
   const client = requireClient()
   const normalizedToken = normalizeText(token)
   if (!normalizedToken) throw new Error('Onboarding token is required.')
@@ -7976,7 +7904,7 @@ export async function getSellerOnboardingByToken(token, options = {}) {
   if (portalPayload?.listing) {
     const persistedOnboarding = options?.requirePortalAccess === true
       ? null
-      : await fetchSellerPortalOnboardingRowByToken(client, normalizedToken, portalPayload.listing.id)
+      : await fetchSellerOnboardingFormByToken(client, normalizedToken)
     const hydratedPortalPayload = mergeSellerPortalOnboardingFormData(portalPayload, persistedOnboarding)
     const [initialBranding, hydratedBranding, mediaByListingId] = await Promise.all([
       resolveSellerOnboardingBrandingSnapshot(client, normalizedToken, portalPayload.listing),
@@ -8018,41 +7946,8 @@ export async function getSellerOnboardingByToken(token, options = {}) {
     throw new Error('The secure seller portal is temporarily unavailable. Please try again shortly.')
   }
 
-  const query = await client
-    .from('private_listing_seller_onboarding')
-    .select('*')
-    .eq('token', normalizedToken)
-    .maybeSingle()
-  if (query.error) {
-    if (isMissingTableError(query.error, 'private_listing_seller_onboarding')) return null
-    throw query.error
-  }
-  if (!query.data) {
-    const apiPayload = await fetchSellerOnboardingCoreApiPayload(normalizedToken)
-    const attachedApiPayload = await attachSellerOnboardingPayloadContext(apiPayload)
-    return attachedApiPayload?.listing ? attachedApiPayload : null
-  }
-  const apiPayload = await fetchSellerOnboardingCoreApiPayload(normalizedToken, {
-    onboardingId: query.data.id,
-    listingId: query.data.private_listing_id,
-  })
-  const attachedApiPayload = await attachSellerOnboardingPayloadContext(apiPayload)
-  if (attachedApiPayload?.listing) return attachedApiPayload
-
-  const rawListing = await getPrivateListingById(query.data.private_listing_id, {
-    includeRequirementsAndDocuments,
-  })
-  const rawMandatePacket = rawListing?.mandatePacket && typeof rawListing.mandatePacket === 'object'
-    ? rawListing.mandatePacket
-    : rawListing?.mandate_packet && typeof rawListing.mandate_packet === 'object'
-      ? rawListing.mandate_packet
-      : null
-  const listing = sanitizeSellerPortalListingFinalArtifacts(rawListing, rawMandatePacket)
-  const branding = await resolveSellerOnboardingBrandingSnapshot(client, normalizedToken, listing)
-  return {
-    onboarding: query.data,
-    listing: attachBrandingToListing(listing, branding),
-  }
+  const apiPayload = await fetchSellerOnboardingCoreApiPayload(normalizedToken)
+  return attachSellerOnboardingPayloadContext(apiPayload)
 }
 
 async function maybeResolveCanonicalSellerRequirements({ listing, formData, client = supabase, reason = 'seller_onboarding_progress', force = false } = {}) {
@@ -8114,6 +8009,7 @@ function enqueueSellerOnboardingProgressProjection(client, {
 } = {}) {
   const listingId = normalizeText(listing?.id)
   return enqueueKeyedOperation(sellerOnboardingProjectionQueues, listingId, async () => {
+    if (!await canManageSellerOnboardingProjections(client, listingId)) return null
     await persistCanonicalSellerFactPayload(client, {
       listingId,
       onboardingId,
@@ -8205,11 +8101,7 @@ export async function submitSellerOnboarding(token, payload = {}) {
   } finally {
     timeout.clear()
   }
-  const useClientFallback =
-    rpc.error &&
-    (isMissingRpcError(rpc.error, 'bridge_complete_private_listing_seller_onboarding') ||
-      isMissingPrivateListingActivityError(rpc.error))
-  if (rpc.error && !useClientFallback) {
+  if (rpc.error) {
     if (isSellerOnboardingCompletionTimeoutError(rpc.error)) {
       const recoveredContext = await recoverSellerOnboardingSubmitAfterTimeout(client, normalizedToken, rpc.error, {
         formData,
@@ -8234,6 +8126,7 @@ export async function submitSellerOnboarding(token, payload = {}) {
       listingSnapshot: payload.listingSnapshot,
     })
     deferSellerOnboardingFollowUp('seller requirements sync after onboarding submit', async () => {
+      if (!await canManageSellerOnboardingProjections(client, rpcContext.listing?.id)) return null
       const requirementSync = await syncPrivateListingRequirements(rpcContext.listing, {
         emitActivity: true,
         reason: completionMode === 'agent_assisted' ? 'agent_assisted_onboarding_completed' : 'onboarding_completed',
@@ -8246,164 +8139,16 @@ export async function submitSellerOnboarding(token, payload = {}) {
         formData,
       })
     })
-    deferSellerOnboardingFollowUp('canonical seller requirement resolution after onboarding submit', () => maybeResolveCanonicalSellerRequirements({
-      listing: rpcContext.listing,
-      formData: rpcFormData,
-      client,
-      reason: 'seller_onboarding_completed',
-    }))
-    return rpcContext
-  }
-  if (isMissingPrivateListingActivityError(rpc.error)) {
-    console.warn('[Private Listings] seller onboarding RPC activity table missing; using client fallback', rpc.error)
-  }
-
-  const context = await fetchSellerOnboardingProgressFallbackContext(client, normalizedToken) ||
-    await getSellerOnboardingByToken(token, { includeRequirementsAndDocuments: false })
-  if (!context?.onboarding?.id || !context?.listing?.id) {
-    throw new Error('Seller onboarding link is invalid or inactive.')
-  }
-
-  const nowIso = new Date().toISOString()
-  const existingFormData =
-    context.onboarding.form_data && typeof context.onboarding.form_data === 'object' ? context.onboarding.form_data : {}
-  const nextFormData = {
-    ...existingFormData,
-    ...formData,
-  }
-  const sanitizedNextFormData = sanitizeSellerOnboardingCompletionFormData(nextFormData)
-
-  const sellerTypeFromPayload =
-    normalizeNullableText(payload.sellerType) ||
-    normalizeNullableText(nextFormData.ownershipType) ||
-    normalizeNullableText(nextFormData.sellerType)
-
-  const updateOnboarding = await client
-    .from('private_listing_seller_onboarding')
-    .update({
-      status: normalizeStatus(payload.status || 'completed', SELLER_ONBOARDING_STATUSES, 'completed'),
-      form_data: sanitizedNextFormData,
-      submitted_at: nowIso,
-      seller_type: normalizeNullableText(payload.sellerType || context.onboarding.seller_type),
-      ownership_structure: normalizeNullableText(payload.ownershipStructure || context.onboarding.ownership_structure),
-      marital_regime: normalizeNullableText(payload.maritalRegime || context.onboarding.marital_regime),
+    deferSellerOnboardingFollowUp('canonical seller requirement resolution after onboarding submit', async () => {
+      if (!await canManageSellerOnboardingProjections(client, rpcContext.listing?.id)) return null
+      return maybeResolveCanonicalSellerRequirements({
+        listing: rpcContext.listing,
+        formData: rpcFormData,
+        client,
+        reason: 'seller_onboarding_completed',
+      })
     })
-    .eq('id', context.onboarding.id)
-    .select('*')
-    .single()
-  if (updateOnboarding.error) throw updateOnboarding.error
-
-  const fallbackListing = {
-    ...context.listing,
-    listingStatus:
-      context.listing.listingStatus === 'seller_lead' || context.listing.listingStatus === 'onboarding_sent'
-        ? 'onboarding_completed'
-        : context.listing.listingStatus,
-    sellerType: sellerTypeFromPayload || context.listing.sellerType,
-    sellerOnboardingStatus: 'completed',
-    sellerOnboarding: {
-      ...(context.listing.sellerOnboarding || {}),
-      status: 'completed',
-      submittedAt: nowIso,
-      completedAt: nowIso,
-      currentStep: Number(sanitizedNextFormData.currentStep || 3),
-      formData: sanitizedNextFormData,
-    },
-  }
-
-  const transitionResult = await transitionPrivateListingStatus(context.listing.id, 'onboarding_completed', {
-    metadata: {
-      onboardingId: context.onboarding.id,
-      submittedAt: nowIso,
-      onboardingStatus: 'completed',
-      onboardingFormData: sanitizedNextFormData,
-    },
-    patch: {
-      sellerType: sellerTypeFromPayload,
-      sellerOnboardingStatus: 'completed',
-    },
-    allowOverride: false,
-    includeRequirementsAndDocuments: false,
-  }).catch((transitionError) => {
-    console.warn('[Private Listings] listing status transition skipped after seller onboarding submit', transitionError)
-    return null
-  })
-
-  const requirementSync = await syncPrivateListingRequirements(transitionResult?.listing || fallbackListing, {
-    emitActivity: true,
-    reason: completionMode === 'agent_assisted' ? 'agent_assisted_onboarding_completed' : 'onboarding_completed',
-    formData: sanitizedNextFormData,
-  }).catch((requirementsError) => {
-    console.error('[Private Listings] seller requirements sync failed after onboarding submit', requirementsError)
-    return null
-  })
-  const leadOrganisationId = normalizeText(context.listing?.organisationId)
-  const rawLeadIds = [
-    normalizeText(context.listing?.sellerLeadId),
-    normalizeText(context.listing?.originatingCrmLeadId),
-  ]
-  const listingIdForLeadSync = normalizeText(context.listing?.id)
-  const leadTokenForLeadSync = normalizeText(context.onboarding?.token || context.listing?.sellerOnboarding?.token)
-  const leadIdsToSync = new Set(rawLeadIds.filter(Boolean))
-  for (const rawLeadId of rawLeadIds) {
-    if (isUuidLike(rawLeadId)) continue
-    const normalizedLeadId = normalizeUuid(rawLeadId)
-    if (normalizedLeadId) leadIdsToSync.add(normalizedLeadId)
-  }
-
-  await syncSellerJourneyLeadStage(client, {
-    organisationId: leadOrganisationId,
-    leadIds: Array.from(leadIdsToSync),
-    onboardingToken: leadTokenForLeadSync,
-    listingId: listingIdForLeadSync,
-    targetStage: 'Seller Onboarding Submitted',
-    targetStatus: 'Submitted',
-    extraPayload: {
-      seller_onboarding_status: 'completed',
-      seller_onboarding_token: normalizeNullableText(context.onboarding?.token || context.listing?.sellerOnboarding?.token || ''),
-      listing_id: listingIdForLeadSync || null,
-      updated_at: nowIso,
-    },
-  }).catch(() => false)
-
-  const listingForContext = requirementSync?.listing || transitionResult?.listing || fallbackListing
-  await ensureSellerClientPortalContext(client, {
-    listing: listingForContext,
-    onboarding: updateOnboarding.data,
-    formData: sanitizedNextFormData,
-  }).catch((contextError) => {
-    console.warn('[Private Listings] seller client portal context sync skipped after onboarding fallback submit', contextError)
-    return null
-  })
-  await persistCanonicalSellerFactPayload(client, {
-    listingId: listingForContext?.id || context.listing.id,
-    onboardingId: updateOnboarding.data?.id,
-    formData: sanitizedNextFormData,
-    listing: listingForContext,
-    draft: false,
-  }).catch((factError) => {
-    console.warn('[Private Listings] canonical seller facts persistence skipped after onboarding fallback submit', factError)
-    return null
-  })
-  await syncSellerOnboardingPublicationDraft(client, {
-    listing: listingForContext,
-    formData: sanitizedNextFormData,
-  }).catch((publicationError) => {
-    console.warn('[Private Listings] seller onboarding publication draft sync skipped after onboarding fallback submit', publicationError)
-    return null
-  })
-  void maybeResolveCanonicalSellerRequirements({
-    listing: listingForContext,
-    formData: sanitizedNextFormData,
-    client,
-    reason: 'seller_onboarding_completed',
-  }).catch((canonicalError) => {
-    console.warn('[Private Listings] canonical seller requirement resolution skipped after onboarding fallback submit', canonicalError)
-  })
-
-  return {
-    onboarding: updateOnboarding.data,
-    listing: listingForContext,
+    return rpcContext
   }
 }
 
@@ -8416,21 +8161,29 @@ async function updateSellerOnboardingProgressInternal(token, payload = {}) {
     ...(payload.currentStep !== undefined ? { currentStep: Number(payload.currentStep || 0) } : {}),
   }
 
+  // Build the same canonical draft that used to be projected after the save,
+  // but send it through the token-checked transaction rather than browser writes.
+  const { facts, readiness } = hasRawSellerOnboardingFields(formData) || getCanonicalFactsCandidate(formData)
+    ? getCanonicalSellerPayloadFromFormData(formData, payload.listingSnapshot || {}, {
+      draft: true,
+      source: 'seller_onboarding_progress',
+    })
+    : { facts: null, readiness: null }
+  const rpcFormData = {
+    ...formData,
+    ...(facts ? { canonicalSellerFacts: facts, canonicalSellerFactReadiness: readiness || {} } : {}),
+  }
+
   const rpc = await client.rpc('bridge_update_private_listing_seller_onboarding_progress', {
     p_token: normalizedToken,
     p_status: normalizeStatus(payload.status || 'in_progress', SELLER_ONBOARDING_STATUSES, 'in_progress'),
-    p_form_data: formData,
+    p_form_data: rpcFormData,
     p_seller_type: normalizeNullableText(payload.sellerType),
     p_ownership_structure: normalizeNullableText(payload.ownershipStructure),
     p_marital_regime: normalizeNullableText(payload.maritalRegime),
   })
-  if (
-    rpc.error &&
-    !isMissingRpcError(rpc.error, 'bridge_update_private_listing_seller_onboarding_progress') &&
-    !isStatementTimeoutError(rpc.error)
-  ) {
-    throw rpc.error
-  }
+  // Fail closed: missing or timed-out RPCs must not become direct table writes.
+  if (rpc.error) throw rpc.error
   if (!rpc.error) {
     let rpcContext = mapSellerClientPortalPayload(rpc.data)
     if (!rpcContext?.listing) {
@@ -8452,69 +8205,6 @@ async function updateSellerOnboardingProgressInternal(token, payload = {}) {
     return rpcContext
   }
 
-  const context = await getSellerOnboardingByToken(token, {
-    includeRequirementsAndDocuments: false,
-    corePayload: true,
-  })
-  if (!context?.onboarding?.id) {
-    throw new Error('Seller onboarding link is invalid or inactive.')
-  }
-
-  const existingFormData =
-    context.onboarding.form_data && typeof context.onboarding.form_data === 'object' ? context.onboarding.form_data : {}
-  const nextFormData = stripSellerOnboardingTransferAttorneyFields({
-    ...existingFormData,
-    ...formData,
-  })
-
-  const nextStatus = normalizeStatus(payload.status || 'in_progress', SELLER_ONBOARDING_STATUSES, 'in_progress')
-  const updateQuery = await client
-    .from('private_listing_seller_onboarding')
-    .update({
-      status: nextStatus,
-      form_data: nextFormData,
-      seller_type: normalizeNullableText(payload.sellerType || context.onboarding.seller_type),
-      ownership_structure: normalizeNullableText(payload.ownershipStructure || context.onboarding.ownership_structure),
-      marital_regime: normalizeNullableText(payload.maritalRegime || context.onboarding.marital_regime),
-    })
-    .eq('id', context.onboarding.id)
-    .select('*')
-    .single()
-  if (updateQuery.error) throw updateQuery.error
-
-  if (nextStatus === 'in_progress') {
-    await updatePrivateListing(
-      context.listing.id,
-      {
-        sellerOnboardingStatus: 'in_progress',
-        listingStatus: context.listing.listingStatus === 'seller_lead' ? 'onboarding_sent' : context.listing.listingStatus,
-      },
-      { includeRequirementsAndDocuments: false },
-    ).catch(() => {})
-  }
-
-  const refreshedListing = await getPrivateListing(context.listing.id, { includeRequirementsAndDocuments: false })
-    .catch((listingError) => {
-      console.warn('[Private Listings] seller onboarding progress fallback listing refresh skipped', {
-        reason: buildSupabaseErrorSummary(listingError),
-      })
-      return null
-    })
-  const listingForProgress = refreshedListing || context.listing
-  void enqueueSellerOnboardingProgressProjection(client, {
-    listing: listingForProgress,
-    onboardingId: updateQuery.data?.id,
-    formData: nextFormData,
-    draft: true,
-    reason: 'seller_onboarding_progress_fallback',
-  }).catch((projectionError) => {
-    console.warn('[Private Listings] seller onboarding fallback progress projection queue failed', projectionError)
-  })
-
-  return {
-    onboarding: updateQuery.data,
-    listing: listingForProgress,
-  }
 }
 
 export async function updateSellerOnboardingProgress(token, payload = {}) {

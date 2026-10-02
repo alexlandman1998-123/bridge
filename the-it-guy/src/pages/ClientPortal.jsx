@@ -39,6 +39,7 @@ import {
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { downloadHtmlDocumentPdf } from '../lib/htmlDocumentPdf'
+import { DOCUMENT_UPLOAD_MAX_BYTES } from '../lib/documentUploadPolicy.js'
 import '../App.css'
 import { normalizePortalWorkspaceCategory, resolvePortalDocumentMetadata } from '../core/documents/portalDocumentMetadata'
 import { normalizeFinanceManagedBy, normalizeFinanceType } from '../core/transactions/financeType'
@@ -4083,7 +4084,7 @@ function BuyerMobilePortal({
       return
     }
 
-    const maxUploadBytes = 25 * 1024 * 1024
+    const maxUploadBytes = DOCUMENT_UPLOAD_MAX_BYTES
     setSelectedBuyerUploadFile({
       file,
       name: file.name || (sourceLabel === 'photo' ? 'Camera photo' : 'Selected file'),
@@ -4094,7 +4095,7 @@ function BuyerMobilePortal({
     if (file.size > maxUploadBytes) {
       setBuyerUploadFeedback({
         tone: 'error',
-        message: 'This file is larger than 25 MB. Please upload a smaller file.',
+        message: `This file is larger than ${DOCUMENT_UPLOAD_MAX_BYTES / (1024 * 1024)} MB. Please upload a smaller file.`,
       })
       return
     }
@@ -4160,7 +4161,7 @@ function BuyerMobilePortal({
   function handleBuyerFinanceSelectedFile(file, sourceLabel = 'file') {
     if (!file) return
 
-    const maxUploadBytes = 25 * 1024 * 1024
+    const maxUploadBytes = DOCUMENT_UPLOAD_MAX_BYTES
     setSelectedBuyerFinanceFile({
       file,
       name: file.name || (sourceLabel === 'photo' ? 'Payment photo' : 'Selected file'),
@@ -4171,7 +4172,7 @@ function BuyerMobilePortal({
     if (file.size > maxUploadBytes) {
       setBuyerFinanceFeedback({
         tone: 'error',
-        message: 'This file is larger than 25 MB. Please upload a smaller file.',
+        message: `This file is larger than ${DOCUMENT_UPLOAD_MAX_BYTES / (1024 * 1024)} MB. Please upload a smaller file.`,
       })
       return
     }
@@ -6416,7 +6417,7 @@ function SellerMobilePortal({
       return
     }
 
-    const maxUploadBytes = 25 * 1024 * 1024
+    const maxUploadBytes = DOCUMENT_UPLOAD_MAX_BYTES
     setSelectedUploadFile({
       file,
       name: file.name || (sourceLabel === 'photo' ? 'Camera photo' : 'Selected file'),
@@ -6427,7 +6428,7 @@ function SellerMobilePortal({
     if (file.size > maxUploadBytes) {
       setMobileUploadFeedback({
         tone: 'error',
-        message: 'This file is larger than 25 MB. Please upload a smaller file.',
+        message: `This file is larger than ${DOCUMENT_UPLOAD_MAX_BYTES / (1024 * 1024)} MB. Please upload a smaller file.`,
       })
       return
     }

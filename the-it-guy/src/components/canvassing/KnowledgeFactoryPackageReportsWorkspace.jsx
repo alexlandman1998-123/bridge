@@ -18,6 +18,7 @@ import {
 } from "../../services/propertyIntelligence/knowledgeFactoryReportConversionService";
 import Field from "../ui/Field";
 import Modal from "../ui/Modal";
+import { reportMoney as money, suppliedNumber, ownerDetails, financeIndicator, transferScope } from '../../services/propertyIntelligence/knowledgeFactoryReportDisplay.js';
 
 function text(value = "") {
   return String(value || "").trim();
@@ -30,12 +31,6 @@ function formatDate(value) {
         dateStyle: "medium",
         timeStyle: "short",
       }).format(date);
-}
-function money(value) {
-  const amount = Number(value);
-  return Number.isFinite(amount)
-    ? `R${amount.toLocaleString("en-ZA")}`
-    : "Not supplied";
 }
 
 function reportDate(value) {
@@ -95,7 +90,7 @@ function ReportReviewModal({ report, downloading, onClose, onDownload }) {
             <DetailRow label="Package" value={definition.name || report.product_id?.replace(/_/g, " ")} />
             <DetailRow label="Generated" value={formatDate(report.executed_at)} />
             <DetailRow label="Business purpose" value={context.requestPurpose} />
-            <DetailRow label="Supplier credits used" value={Number.isFinite(Number(report.credits_consumed)) ? report.credits_consumed : "Not supplied"} />
+            <DetailRow label="Supplier credits used" value={suppliedNumber(report.credits_consumed) ? report.credits_consumed : "Not supplied"} />
           </dl>
         </section>
         <section>
@@ -105,17 +100,17 @@ function ReportReviewModal({ report, downloading, onClose, onDownload }) {
             <DetailRow label="Address" value={property.address} />
             <DetailRow label="Suburb / town" value={[property.suburb, property.town]} />
             <DetailRow label="Province / postal code" value={[property.province, property.postalCode]} />
-            <DetailRow label="Property type / extent" value={[property.type, property.extent ? `${property.extent} sqm` : ""]} />
+            <DetailRow label="Property type / extent" value={[property.type, suppliedNumber(property.extent) ? `Extent ${property.extent} (supplier units)` : ""]} />
           </dl>
         </section>
         <section>
           <h3 className="text-sm font-semibold text-slate-900">Current ownership</h3>
           <dl className="mt-2">
             {owners.length ? owners.map((owner, index) => (
-              <DetailRow key={`${owner?.name || "owner"}-${index}`} label={`Owner ${index + 1}`} value={[owner?.name, owner?.type, owner?.share ? `Share: ${owner.share}` : ""]} />
+              <DetailRow key={`${owner?.name || "owner"}-${index}`} label={`Owner ${index + 1}`} value={ownerDetails(owner)} />
             )) : <DetailRow label="Owner record" value="No current owner record was supplied in this saved snapshot." />}
-            <DetailRow label="Ownership registered" value={reportDate(signals.ownershipRegisteredAt)} />
-            <DetailRow label="Approximate tenure" value={Number.isFinite(Number(signals.ownershipTenureYears)) ? `${signals.ownershipTenureYears} years` : "Not supplied"} />
+            <DetailRow label="Ownership registered" value={reportDate(signals.ownershipRegisteredAt || report.report_data?.ownership?.registeredAt)} />
+            <DetailRow label="Approximate tenure" value={suppliedNumber(signals.ownershipTenureYears) ? `${signals.ownershipTenureYears} years` : "Not supplied"} />
           </dl>
         </section>
         {isFull ? <>
@@ -129,10 +124,12 @@ function ReportReviewModal({ report, downloading, onClose, onDownload }) {
           </section>
           <section>
             <h3 className="text-sm font-semibold text-slate-900">Transfer and finance indicators</h3>
+            <p className="mt-2 text-sm text-slate-600">{transferScope(report.report_data)}</p>
             <dl className="mt-2">
-              {transactions.length ? transactions.map((transaction, index) => <DetailRow key={`${transaction?.registeredAt || "transfer"}-${index}`} label={`Transfer ${index + 1}`} value={[transaction?.registeredAt ? `Registered ${reportDate(transaction.registeredAt)}` : "", Number.isFinite(Number(transaction?.purchaseAmount)) ? money(transaction.purchaseAmount) : "", transaction?.isCurrentOwner ? "Current ownership record" : ""]} />) : <DetailRow label="Transfer history" value="No transfer timeline was supplied in this saved snapshot." />}
-              <DetailRow label="Current finance indicator" value={finance.hasCurrentBond === true ? "Recorded" : "No record supplied"} />
-              <DetailRow label="Current bond count" value={finance.currentBondCount} />
+              {transactions.length ? transactions.map((transaction, index) => <DetailRow key={`${transaction?.registeredAt || "transfer"}-${index}`} label={`Transfer ${index + 1}`} value={[transaction?.registeredAt ? `Registered ${reportDate(transaction.registeredAt)}` : "", transaction?.purchasedAt ? `Purchased ${reportDate(transaction.purchasedAt)}` : "", `Purchase amount: ${money(transaction?.purchaseAmount)}`, transaction?.isCurrentOwner ? "Current ownership record" : ""]} />) : <DetailRow label="Transfer history" value="No transfer timeline was supplied in this saved snapshot." />}
+              <DetailRow label="Current finance indicator" value={financeIndicator(finance.hasCurrentBond)} />
+              <DetailRow label="Current bonds in returned records" value={finance.currentBondCount} />
+              {finance.hasMoreBondRecords === true ? <DetailRow label="Bond coverage" value="Further bond records exist; this is not a total count." /> : null}
             </dl>
           </section>
         </> : null}

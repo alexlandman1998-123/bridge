@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { createListingSellerProfileBuilderDraft, buildListingSellerProfileFormPatch, selectListingSellerProfileBranch } from '../src/lib/listingSellerProfileBuilderModel.js'
 import { readFile } from 'node:fs/promises'
 
 import {
@@ -7,6 +8,13 @@ import {
   LISTING_SELLER_CANONICAL_UPDATE_VERSION,
 } from '../src/services/listings/listingSellerCanonicalUpdateModel.js'
 import { limitSellerCanonicalSaveWait, saveListingSellerCanonicalUpdate } from '../src/services/listings/listingSellerCanonicalUpdateService.js'
+import { buildSellerLeadSigningPackTermsPatch, createSellerLeadAgentOnboardingDraft } from '../src/lib/sellerLeadManualCaptureModel.js'
+import { buildSellerOnboardingSigningPackSnapshot } from '../src/core/documents/sellerOnboardingSigningPackSnapshot.js'
+import { buildSellerPostOnboardingDrafts } from '../src/core/documents/sellerPostOnboardingDrafts.js'
+import { createSellerOnboardingManualSigningPack, createSellerOnboardingSigningCopyPack } from '../src/core/documents/sellerOnboardingManualSigningPack.js'
+import { createSellerReviewedDocumentVersions, buildSellerReviewedDocumentVersionIndex, verifySellerReviewedDocumentVersion } from '../src/core/documents/sellerReviewedDocumentVersions.js'
+import { createSellerOnboardingFormalPackApproval } from '../src/core/documents/sellerOnboardingFormalPackApproval.js'
+import { requireSellerMandateWording } from '../src/core/documents/sellerMandateDocumentMarkup.js'
 
 function test(name, fn) {
   return Promise.resolve()
@@ -174,3 +182,184 @@ await test('wires listing seller editors to the canonical service and an atomic 
 })
 
 console.log('listing seller canonical update checks passed.')
+
+// Execute the actual React action with its closure supplied explicitly. Real
+// payload, document and save models run; remote writes and dispatch are fixtures.
+const leadPageSource = await readFile(new URL('../src/pages/agency/AgencyPipelinePage.jsx', import.meta.url), 'utf8')
+const leadPreparationAction = leadPageSource.slice(
+  leadPageSource.indexOf('  async function sendSellerLeadSigningPack() {'),
+  leadPageSource.indexOf('  function handleSellerJourneyAction(', leadPageSource.indexOf('  async function sendSellerLeadSigningPack() {')),
+)
+
+async function runLeadPreparation({ mandateType = 'dual', digital = false, saveError = null, warning = null, priorListing = null, askingPrice = '2000000' } = {}) {
+  const events = { saves: [], sends: [], errors: [], listingWrites: [] }
+  const originalForm = { ...listing.sellerOnboarding.formData, otherAgencyName: 'Old Agency', coAgencyName: 'Old Agency',
+    askingPrice: '1000000', mandateType: 'sole', propertyDisclosure: { comments: 'Retain this explanation.' } }
+  const currentListing = priorListing || { ...listing, sellerOnboarding: { status: 'completed', formData: originalForm } }
+  const scope = {
+    selectedLeadLinkedListingId: listing.id, selectedLeadLinkedListing: currentListing,
+    selectedLead: { leadId: 'lead-1', sellerOnboarding: { formData: { ...originalForm, sellerSurname: 'Stale CRM' } } },
+    sellerSigningPackSaving: false, SELLER_PORTAL_SIGNING_ENABLED: true,
+    sellerSigningPackTerms: { mandateType, otherAgencyName: mandateType === 'dual' ? 'Updated Agency' : '',
+      askingPrice, startDate: '2026-10-01', endDate: '2026-12-01', protectionPeriod: '0', protectionPeriodDays: '30',
+      commissionBasis: 'fixed', commissionPercentage: '5', commissionAmount: '75000', vatHandling: 'inclusive' },
+    sellerOnboardingDocumentRoutes: Object.fromEntries(['signed_mandate', 'signed_fica_declaration', 'signed_disclosure_form'].map(key => [key, digital ? 'digital_pack' : 'manual_upload'])),
+    currentAgent: { id: '33333333-3333-4333-8333-333333333333', fullName: 'Test Agent' },
+    currentWorkspace: { branding: { organisationName: 'Test Agency' } }, organisationId: listing.organisationId,
+    normalizeText: value => String(value ?? '').trim(), isValidEmail: value => String(value).includes('@'),
+    getLeadSellerOnboardingFormData: lead => lead.sellerOnboarding.formData,
+    getSellerLeadReviewFormData: (lead, row) => ({ ...lead.sellerOnboarding.formData, ...row.sellerOnboarding.formData }),
+    hasCompletedOnboardingDisclosureSignature: () => false,
+    readSellerOnboardingReview: () => ({ status: 'approved' }), SELLER_ONBOARDING_REVIEW_STATUS: { approved: 'approved' },
+    getSellerLeadOnboardingReviewChecklist: () => ({ ready: true }),
+    getSellerLeadSigningRecipients: () => [{ id: 'owner-1', name: 'Old Owner', email: 'owner@example.test', role: 'Seller' }],
+    requireSellerMandateWording, buildSellerLeadSigningPackTermsPatch, buildListingSellerCanonicalUpdate,
+    buildSellerOnboardingSigningPackSnapshot, buildSellerPostOnboardingDrafts, createSellerOnboardingFormalPackApproval,
+    createSellerOnboardingManualSigningPack, createSellerOnboardingSigningCopyPack,
+    createSellerReviewedDocumentVersions, buildSellerReviewedDocumentVersionIndex,
+    resolveOnboardingBranding: () => ({ organisationName: 'Test Agency' }),
+    createSellerOnboardingSigningLifecycle: value => value,
+    SELLER_ONBOARDING_SIGNING_STAGES: { packPrepared: 'pack_prepared', manualAwaitingUpload: 'manual_awaiting_upload' },
+    getPrivateListing: async () => { throw new Error('Unexpected fallback read') },
+    persistSellerProfileOnboardingFormData: async () => { throw new Error('Preparation used a split onboarding write') },
+    saveListingSellerCanonicalUpdate: async input => saveListingSellerCanonicalUpdate(input, {
+      savePrivateListingSellerCanonicalUpdate: async update => {
+        events.saves.push(update)
+        if (saveError) throw saveError
+        events.committed = applyListingSellerCanonicalUpdateSnapshot(currentListing, update)
+        if (warning) throw Object.assign(new Error(warning), { committed: true, code: 'SELLER_READBACK_FAILED', listing: events.committed })
+        return { listing: events.committed, receipt: { committed: true }, syncedRequirements: [] }
+      },
+    }),
+    setSelectedLeadHydratedListing: row => { events.hydrated = row },
+    sendSellerDocumentForSignature: async (_id, key) => { events.sends.push(key); return { sentCount: 1 } },
+    listSellerPortalSigningRequests: async () => ({ documents: [] }), setSellerPortalSigningRequests: () => {},
+    updatePrivateListing: async (_id, patch) => { events.listingWrites.push(patch) },
+    updateAgencyCrmLeadRecord: async () => {}, patchSelectedLeadRecord: () => {},
+    setSellerSigningPackError: message => { if (message) events.errors.push(message) },
+    setSellerSigningPackSaving: () => {}, setSellerSigningPackModalOpen: () => {},
+    setMessage: () => {}, scheduleRecordsReload: () => {},
+  }
+  await Function(...Object.keys(scope), `${leadPreparationAction}\nreturn sendSellerLeadSigningPack()`)(...Object.values(scope))
+  return events
+}
+
+for (const mandateType of ['sole', 'open', 'dual']) {
+  for (const digital of [false, true]) {
+    await test(`actual lead preparation saves matching ${mandateType} terms before ${digital ? 'digital dispatch' : 'manual download'}`, async () => {
+      const events = await runLeadPreparation({ mandateType, digital })
+      assert.deepEqual(events.errors, [])
+      assert.equal(events.saves.length, 1)
+      assert.deepEqual(events.listingWrites, [{ mandateStatus: 'generated' }])
+      assert.equal(events.sends.length, digital ? 3 : 0)
+      const update = events.saves[0]
+      assert.equal(update.expectedUpdatedAt, listing.updatedAt)
+      assert.equal(update.canonicalFacts.transaction.asking_price, 2000000)
+      assert.equal(update.canonicalFacts.transaction.mandate_type, mandateType)
+      assert.equal(update.canonicalFacts.transaction.mandate_start_date, '2026-10-01')
+      assert.equal(update.nextFormData.commissionPercentage, '')
+      assert.equal(update.nextFormData.commissionAmount, '75000')
+      assert.equal(update.nextFormData.protectionPeriodDays, '0')
+      assert.equal(update.nextFormData.sellerSurname, 'Owner', 'Current saved listing wins over lagging CRM')
+      assert.equal(update.nextFormData.propertyDisclosure.comments, 'Retain this explanation.')
+      const reopenedLead = createSellerLeadAgentOnboardingDraft({ formData: events.committed.sellerOnboarding.formData })
+      const reopenedListing = createListingSellerProfileBuilderDraft(events.hydrated)
+      assert.equal(reopenedLead.otherAgencyName, mandateType === 'dual' ? 'Updated Agency' : '')
+      assert.equal(reopenedListing.otherAgencyName, reopenedLead.otherAgencyName)
+      assert.equal(events.committed.askingPrice, '2000000')
+      const pack = update.nextFormData.sellerOnboardingManualSigningPack
+      const mandate = pack.documents.find(document => document.key === 'signed_mandate')
+      assert.equal(mandate.mandateTerms.otherAgencyName, reopenedLead.otherAgencyName)
+      assert.equal(mandate.mandateTerms.askingPrice, '2000000')
+      if (mandateType === 'dual') assert.ok(mandate.generatedHtml.includes('Updated Agency'))
+      for (const document of pack.documents) assert.equal(await verifySellerReviewedDocumentVersion(document), true)
+    })
+  }
+}
+
+for (const message of ['Database write failed', 'This seller record changed after you opened it.']) {
+  await test(`actual preparation stops before dispatch or local success when ${message}`, async () => {
+    const events = await runLeadPreparation({ digital: true, saveError: new Error(message) })
+    assert.deepEqual(events.errors, [message])
+    assert.equal(events.committed, undefined)
+    assert.equal(events.hydrated, undefined)
+    assert.deepEqual(events.sends, [])
+    assert.deepEqual(events.listingWrites, [])
+  })
+}
+
+await test('actual preparation preserves a committed save but blocks dispatch until readback warning is resolved', async () => {
+  const events = await runLeadPreparation({ digital: true, warning: 'Reload before sending documents.' })
+  assert.deepEqual(events.errors, ['Reload before sending documents.'])
+  assert.equal(events.hydrated.askingPrice, '2000000')
+  assert.deepEqual(events.sends, [])
+  assert.deepEqual(events.listingWrites, [])
+})
+
+await test('preparing amended terms retains the previous frozen copies unchanged', async () => {
+  const first = await runLeadPreparation()
+  const originals = structuredClone(first.committed.sellerOnboarding.formData.sellerOnboardingManualSigningPack.documents)
+  const amended = await runLeadPreparation({ priorListing: first.committed, askingPrice: '3000000' })
+  assert.deepEqual(amended.errors, [])
+  const pack = amended.committed.sellerOnboarding.formData.sellerOnboardingManualSigningPack
+  assert.deepEqual(pack.versionHistory.at(-1).documents, originals)
+  const current = pack.documents.find(document => document.key === 'signed_mandate')
+  assert.equal(current.mandateTerms.askingPrice, '3000000')
+  assert.notEqual(current.versionId, originals.find(document => document.key === 'signed_mandate').versionId)
+  for (const original of pack.versionHistory.at(-1).documents) assert.equal(await verifySellerReviewedDocumentVersion(original), true)
+})
+
+await test('partial edits regenerate complete facts and synchronize every reopened form alias', () => {
+  const current = { ...listing, sellerEmail: 'old@example.com', sellerOnboardingFormData: { sellerFirstName: 'Stale' },
+    sellerOnboarding: { form_data: { sellerFirstName: 'Stale' }, formData: { ...listing.sellerOnboarding.formData, fullName: 'Old Owner', sellerName: 'Old Owner', sellerEmail: 'old@example.com', incomeTaxNumber: 'TAX-123', propertyDisclosure: { answers: { roof: 'good' } } } } }
+  const update = buildListingSellerCanonicalUpdate({ listing: current, formPatch: { sellerFirstName: 'Latest', email: '' }, suppliedCanonicalFacts: { seller: { first_name: 'Partial' } } })
+  assert.equal(update.canonicalFacts.seller.name, 'Latest Owner')
+  assert.equal(update.canonicalFacts.seller.tax_number, 'TAX-123')
+  assert.equal(update.canonicalFacts.seller.email, '')
+  assert.equal(update.contact.email, '')
+  assert.equal(update.nextFormData.sellerEmail, '')
+  assert.equal(update.nextFormData.canonicalSellerFacts.seller.name, 'Latest Owner')
+  assert.deepEqual(update.nextFormData.propertyDisclosure, { answers: { roof: 'good' } })
+  const snapshot = applyListingSellerCanonicalUpdateSnapshot(current, update)
+  assert.equal(createListingSellerProfileBuilderDraft(snapshot).sellerFirstName, 'Latest')
+  assert.equal(createListingSellerProfileBuilderDraft(snapshot).email, '')
+  assert.equal(snapshot.sellerOnboardingFormData.sellerFirstName, 'Latest')
+  assert.equal(snapshot.seller_onboarding.form_data.sellerFirstName, 'Latest')
+})
+
+await test('changing company ownership clears retired fields and keeps the contact separate', async () => {
+  const company = { ...listing, sellerOnboarding: { formData: {
+    ownerEntityType: 'company', ownerStructureType: 'company', companyName: 'Old Holdings',
+    companyRegistrationNumber: 'CO-123', companyAuthorityBasis: 'Old resolution', companyDirectors: [{ name: 'Old', surname: 'Director' }],
+    authorisedSignatoryName: 'Old Director', primaryContactName: 'Pat Contact', email: 'pat@example.com', propertyAddress: '10 Example Road',
+  } } }
+  const draft = selectListingSellerProfileBranch(createListingSellerProfileBuilderDraft(company), 'trust')
+  Object.assign(draft, { trustName: 'New Trust', trustRegistrationNumber: 'IT-456', authorisedTrusteeName: 'Sam Trustee', trustees: [{ name: 'Sam', surname: 'Trustee' }] })
+  const update = buildListingSellerCanonicalUpdate({ listing: company, formPatch: buildListingSellerProfileFormPatch(draft) })
+  assert.equal(update.listingPatch.sellerName, 'New Trust')
+  assert.equal(update.contact.fullName, 'Pat Contact')
+  assert.equal(update.nextFormData.companyName, '')
+  assert.deepEqual(update.nextFormData.companyDirectors, [])
+  const reopened = createListingSellerProfileBuilderDraft(applyListingSellerCanonicalUpdateSnapshot(company, update))
+  assert.equal(reopened.branch, 'trust')
+  assert.equal(reopened.companyName, '')
+  assert.equal(reopened.companyAuthorityBasis, '')
+  assert.equal(reopened.primaryContactName, 'Pat Contact')
+  let capturedContact
+  let contactUpdate
+  await saveListingSellerCanonicalUpdate({ listing: { ...company, sellerLeadId: 'lead-1' }, organisationId: listing.organisationId,
+    formPatch: { primaryContactName: 'New Contact' } }, {
+    savePrivateListingSellerCanonicalUpdate: async (value) => {
+      contactUpdate = value
+      return { listing: applyListingSellerCanonicalUpdateSnapshot(company, value), receipt: {} }
+    },
+    fetchAgencyCrmLeadWorkspace: async () => ({ contacts: [{ contactId: 'contact-1' }] }),
+    updateAgencyCrmContactRecord: async (_org, _id, value) => { capturedContact = value },
+  })
+  assert.equal(capturedContact.firstName, 'New')
+  assert.equal(capturedContact.lastName, 'Contact')
+  assert.equal(contactUpdate.canonicalFacts.seller.name, 'Old Holdings')
+  assert.equal(contactUpdate.nextFormData.sellerFirstName, 'New')
+  assert.equal(contactUpdate.nextFormData.sellerSurname, 'Contact')
+  assert.equal(createListingSellerProfileBuilderDraft(applyListingSellerCanonicalUpdateSnapshot(company, contactUpdate)).primaryContactName, 'New Contact')
+})

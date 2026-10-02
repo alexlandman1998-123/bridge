@@ -1,3 +1,4 @@
+import { resolveSellerBondStatus, sellerBondDeclaration } from '../../lib/sellerBondStatus.js'
 import { getPropertyCategoryLabel, normalizePropertyCategory, normalizePropertyStructureType } from '../../lib/propertyTaxonomy.js'
 import {
   resolvePropertyBranch as resolvePropertyBranchFromContract,
@@ -197,8 +198,12 @@ function splitFullName(fullName = '') {
 function normalizePersonRecord(entry = {}, index = 0, { defaultRoleTitle = '' } = {}) {
   const fullName = normalizeText(entry.full_name || entry.fullName || entry.name || entry.contact_name || '')
   const split = splitFullName(fullName)
-  const firstName = normalizeText(entry.first_name || entry.firstName || split.first_name)
-  const surname = normalizeText(entry.surname || entry.last_name || entry.lastName || split.surname)
+  const explicitSurname = normalizeText(entry.surname || entry.last_name || entry.lastName)
+  const suppliedGivenName = explicitSurname && fullName
+    ? (fullName.endsWith(` ${explicitSurname}`) ? fullName.slice(0, -(explicitSurname.length + 1)) : fullName)
+    : split.first_name
+  const firstName = normalizeText(entry.first_name || entry.firstName || suppliedGivenName)
+  const surname = explicitSurname || split.surname
   const record = {
     index: index + 1,
     full_name: normalizeText([firstName, surname].filter(Boolean).join(' ') || fullName),
@@ -259,8 +264,9 @@ export function normalizeProvince(value = '') {
 export function normalizeSellerLegalType(form = {}) {
   const ownerEntityType = normalizeKey(form.ownerEntityType || form.owner_entity_type)
   const ownerStructureType = normalizeKey(form.ownerStructureType || form.owner_structure_type)
-  if (ownerStructureType === 'foreign_company' || ownerStructureType === 'company' || ownerEntityType === 'company') return 'company'
+  if (['company', 'close_corporation', 'foreign_company'].includes(ownerStructureType) || ['company', 'close_corporation'].includes(ownerEntityType)) return 'company'
   if (ownerStructureType === 'foreign_trust' || ownerStructureType === 'trust' || ownerEntityType === 'trust') return 'trust'
+  if (ownerStructureType === 'foreign_individual') return 'individual'
   if (ownerStructureType === 'multiple_owners') return 'multiple_owners'
   if (ownerStructureType === 'deceased_estate') return 'deceased_estate'
   if (ownerStructureType === 'power_of_attorney') return 'power_of_attorney'
@@ -275,16 +281,16 @@ export function normalizeSellerLegalType(form = {}) {
 }
 
 export function normalizeMaritalRegime(form = {}) {
-  const explicit = normalizeKey(form.maritalRegime || form.marriageRegime)
-  if (explicit === 'married_cop' || explicit === 'cop' || explicit === 'community_of_property') return 'in_community'
+  const explicit = normalizeKey(form.maritalRegime || form.marriageRegime || form.maritalStatus)
+  if (['in_community', 'married_cop', 'cop', 'community_of_property', 'married_in_community', 'married_in_community_of_property'].includes(explicit)) return 'in_community'
   if (explicit === 'married_anc' || explicit === 'anc') return 'anc'
-  if (explicit === 'out_of_community' || explicit === 'out_of_community_without_accrual' || explicit === 'out_of_community_with_accrual') return 'out_of_community'
+  if (['out_of_community', 'out_of_community_without_accrual', 'out_of_community_with_accrual', 'married_out_of_community', 'married_out_of_community_of_property'].includes(explicit)) return 'out_of_community'
   if (explicit === 'foreign' || explicit === 'foreign_marriage') return 'foreign_marriage'
 
   const ownershipType = normalizeKey(form.ownerStructureType || form.owner_structure_type || form.ownershipType)
   if (ownershipType === 'married_cop') return 'in_community'
   if (ownershipType === 'married_anc') return 'anc'
-  if (ownershipType === 'foreign_individual') return 'foreign_marriage'
+  if (ownershipType === 'foreign_individual' && normalizeKey(form.maritalStatus).startsWith('married')) return 'foreign_marriage'
 
   const maritalStatus = normalizeKey(form.maritalStatus)
   if (!maritalStatus || ['single', 'unmarried', 'divorced', 'widowed'].includes(maritalStatus)) return 'not_applicable'
@@ -347,6 +353,17 @@ function buildPropertyAddressFacts(form = {}, listing = {}) {
   })
 }
 
+function resolveLegalOwnerName(form, branch) {
+  const structure = normalizeKey(form.ownerStructureType || form.ownershipType || branch)
+  if (structure.includes('company') || structure === 'close_corporation' || branch === 'company') return normalizeText(form.companyName)
+  if (structure.includes('trust') || branch === 'trust') return normalizeText(form.trustName)
+  if (structure === 'deceased_estate' || branch === 'deceased_estate') return normalizeText(form.deceasedEstateName || form.deceased_estate?.name)
+  if (structure === 'power_of_attorney' || branch === 'power_of_attorney') return normalizeText(form.powerOfAttorneyPrincipalName || form.principalName)
+  if (structure === 'other') return normalizeText(form.otherEntityName || form.other_entity?.name)
+  if (structure === 'multiple_owners') return buildOwnerFacts(form).map((owner) => owner.full_name || owner.name).filter(Boolean).join(', ')
+  return normalizeText([form.sellerFirstName, form.sellerSurname].filter(Boolean).join(' ') || form.sellerName)
+}
+
 export function transformSellerOnboardingToFacts(form = {}, listing = {}, options = {}) {
   const listingSource = listing && typeof listing === 'object' ? listing : {}
   const flow = resolveSellerOnboardingFlow(form, listingSource)
@@ -364,7 +381,7 @@ export function transformSellerOnboardingToFacts(form = {}, listing = {}, option
   const shareBlock = normalizeBoolean(form.shareBlock, false) || propertyType === 'share_block'
   const commercialProperty = normalizeBoolean(form.commercialProperty, false) || ['commercial', 'industrial', 'mixed_use'].includes(propertyType)
   const bodyCorporate = normalizeBoolean(form.bodyCorporate, false) || sectionalTitle || shareBlock
-  const existingBond = normalizeBoolean(form.existingBond ?? form.sellerHasExistingBond ?? form.bondedProperty, false)
+  const existingBond = sellerBondDeclaration(resolveSellerBondStatus(form.bondStatus, form.propertyBondStatus, form.existingBond, form.sellerHasExistingBond, form.bondedProperty, form.bondExists))
   const gasInstallation =
     normalizeBoolean(form.gasInstallation ?? form.gas_installation, false) ||
     normalizeBoolean(form.gasGeyser ?? form.gas_geyser, false) ||
@@ -499,10 +516,16 @@ export function transformSellerOnboardingToFacts(form = {}, listing = {}, option
       },
       multiple_owner_capture_mode: multipleOwnerCaptureMode,
       number_of_owners: flow.seller_branch === 'multiple_owners' ? Math.max(buildOwnerFacts(form).length, 1) : normalizeNumber(form.numberOfOwners) || 1,
+      name: resolveLegalOwnerName(form, flow.seller_branch),
+      contact: {
+        name: normalizeText(form.primaryContactName || form.contactName || [form.sellerFirstName, form.sellerSurname].filter(Boolean).join(' ')),
+        email: normalizeText(form.email ?? form.sellerEmail),
+        phone: normalizeText(form.phone ?? form.sellerPhone ?? form.mobile),
+      },
       first_name: normalizeText(form.sellerFirstName),
       surname: normalizeText(form.sellerSurname),
-      email: normalizeText(form.email),
-      phone: normalizeText(form.phone),
+      email: normalizeText(form.email ?? form.sellerEmail),
+      phone: normalizeText(form.phone ?? form.sellerPhone ?? form.mobile),
       alternative_number: normalizeText(form.alternativeNumber || form.alternative_number || form.alternatePhone || form.alternate_phone),
       id_number: normalizeText(form.idNumber),
       date_of_birth: normalizeDate(form.dateOfBirth || form.date_of_birth || form.birthDate),
@@ -527,7 +550,7 @@ export function transformSellerOnboardingToFacts(form = {}, listing = {}, option
       existing_bond: existingBond,
       marital_status: normalizeKey(form.maritalStatus || (maritalRegime === 'not_applicable' ? 'not_married' : 'married')),
       marital_regime: maritalRegime,
-      spouse_involved: normalizeBoolean(form.spouseInvolved, maritalRegime !== 'not_applicable' && maritalRegime !== 'unknown'),
+      spouse_involved: normalizeBoolean(form.spouseConsentRequired ?? form.spouseInvolved, ['in_community', 'foreign_marriage'].includes(maritalRegime)),
       spouse: {
         name: normalizeText(form.spouseName),
         id_number: normalizeText(form.spouseIdNumber),
@@ -536,7 +559,7 @@ export function transformSellerOnboardingToFacts(form = {}, listing = {}, option
       },
       company: {
         name: normalizeText(form.companyName),
-        registration_number: normalizeText(form.companyRegistrationNumber),
+        registration_number: normalizeText(form.companyRegistrationNumber || (foreignOwner ? form.foreignRegistrationNumber : '')),
         director_name: normalizeText(form.companyDirectorName),
         director_email: normalizeText(form.companyDirectorEmail),
         director_phone: normalizeText(form.companyDirectorPhone),
@@ -564,7 +587,7 @@ export function transformSellerOnboardingToFacts(form = {}, listing = {}, option
       },
       trust: {
         name: normalizeText(form.trustName),
-        registration_number: normalizeText(form.trustRegistrationNumber),
+        registration_number: normalizeText(form.trustRegistrationNumber || (foreignOwner ? form.foreignRegistrationNumber : '')),
         trustee_name: normalizeText(form.trusteeName),
         trustee_email: normalizeText(form.trusteeEmail),
         trustee_phone: normalizeText(form.trusteePhone),
@@ -591,11 +614,18 @@ export function transformSellerOnboardingToFacts(form = {}, listing = {}, option
         founders: normalizePeopleCollection(form.trustFounders || [], null, { defaultRoleTitle: 'Founder' }),
         beneficiary_class: normalizeText(form.trustBeneficiaryClass),
       },
+      other_entity: {
+        name: normalizeText(form.otherEntityName || form.other_entity?.name),
+        registration_number: normalizeText(form.otherEntityRegistrationNumber || form.other_entity?.registration_number),
+        authority_details: normalizeText(form.otherAuthorityDetails || form.other_entity?.authority_details),
+      },
       deceased_estate: {
+        name: normalizeText(form.deceasedEstateName || form.deceased_estate?.name),
+        reference_number: normalizeText(form.estateReferenceNumber || form.estateReference || form.deceased_estate?.reference_number),
         executor_name: normalizeText(form.executorName),
         executor_email: normalizeText(form.executorEmail),
         executor_phone: normalizeText(form.executorPhone),
-        estate_reference: normalizeText(form.estateReference),
+        estate_reference: normalizeText(form.estateReferenceNumber || form.estateReference),
         authority_details: normalizeText(form.executorAuthorityDetails),
         executors,
       },
@@ -820,8 +850,10 @@ function resolvePropertyBranch(facts = {}) {
 function resolveSellerBranchForValidation(facts = {}) {
   const ownerStructureType = normalizeKey(facts.seller?.owner_structure_type || facts.seller?.ownerStructureType)
   const ownerEntityType = normalizeKey(facts.seller?.owner_entity_type || facts.seller?.ownerEntityType)
-  if (ownerStructureType === 'foreign_company' || ownerStructureType === 'company' || ownerEntityType === 'company') return 'company'
+  if (['company', 'close_corporation', 'foreign_company'].includes(ownerStructureType) || ['company', 'close_corporation'].includes(ownerEntityType)) return 'company'
   if (ownerStructureType === 'foreign_trust' || ownerStructureType === 'trust' || ownerEntityType === 'trust') return 'trust'
+  if (ownerStructureType === 'foreign_individual') return 'individual'
+  if (ownerStructureType === 'other' || ownerEntityType === 'other') return 'other'
   if (ownerStructureType === 'multiple_owners') return 'multiple_owners'
   if (ownerStructureType === 'deceased_estate') return 'deceased_estate'
   if (ownerStructureType === 'power_of_attorney') return 'power_of_attorney'
@@ -843,7 +875,7 @@ function resolveSellerBranchForValidation(facts = {}) {
   return resolveSellerBranch(facts)
 }
 
-export function validateSellerOnboardingFacts(facts = {}, { draft = false } = {}) {
+export function validateSellerOnboardingFacts(facts = {}, { draft = false, requireEmail = false } = {}) {
   const required = []
   const recommended = []
   const push = (items) => {
@@ -855,10 +887,14 @@ export function validateSellerOnboardingFacts(facts = {}, { draft = false } = {}
 
   const sellerBranch = resolveSellerBranchForValidation(facts)
   const propertyBranch = resolvePropertyBranch(facts)
+  const naturalPerson = ['individual', 'married'].includes(sellerBranch)
+  const foreignPerson = naturalPerson && (facts.seller?.foreign_owner || facts.seller?.owner_structure_type === 'foreign_individual')
 
-  push(missingIf(!facts.seller?.first_name, 'seller_first_name_missing', 'Seller name is required.'))
-  push(missingIf(!facts.seller?.surname, 'seller_surname_missing', 'Seller surname is required.'))
-  push(missingIf(!facts.seller?.email, 'seller_email_missing', 'Seller email is required.'))
+  push(missingIf(naturalPerson && !facts.seller?.first_name, 'seller_first_name_missing', 'Seller name is required.'))
+  push(missingIf(naturalPerson && !facts.seller?.surname, 'seller_surname_missing', 'Seller surname is required.'))
+  push(missingIf(requireEmail && !facts.seller?.email, 'seller_email_missing', 'Seller email is required.'))
+  push(missingIf(foreignPerson && !hasValue(facts.seller?.foreign?.passport_number || facts.seller?.id_number), 'seller_passport_missing', 'Passport number is required for a foreign individual.'))
+  push(missingIf(Boolean(facts.seller?.email) && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(facts.seller.email), 'seller_email_invalid', 'Add a valid seller email address.'))
   push(missingIf(!facts.seller?.phone, 'seller_phone_missing', 'Seller phone is required.'))
   push(missingIf(!facts.seller?.tax_number, 'seller_tax_number_missing', 'Seller tax number is required.'))
   push(missingIf(!hasValue(facts.seller?.sa_resident || facts.seller?.tax_resident), 'seller_tax_residency_missing', 'Seller SA residency status is required.'))
@@ -866,7 +902,7 @@ export function validateSellerOnboardingFacts(facts = {}, { draft = false } = {}
   push(missingIf(!hasValue(facts.seller?.owner_entity_type), 'owner_entity_type_missing', 'Owner entity type is required.'))
   push(missingIf(!hasValue(facts.seller?.owner_structure_type), 'owner_structure_type_missing', 'Owner structure type is required.'))
   push(missingIf(facts.seller?.foreign_owner && !hasValue(facts.seller?.foreign_owner_country || facts.seller?.foreign?.country), 'foreign_owner_country_missing', 'Foreign owner country or jurisdiction is required.'))
-  push(missingIf((sellerBranch === 'individual' || sellerBranch === 'married') && !facts.seller?.id_number, 'seller_id_number_missing', 'ID number is required for individual and married sellers.'))
+  push(missingIf(naturalPerson && !foreignPerson && !facts.seller?.id_number, 'seller_id_number_missing', 'ID number is required for individual and married sellers.'))
   push(missingIf((sellerBranch === 'individual' || sellerBranch === 'married') && !facts.seller?.date_of_birth, 'seller_date_of_birth_missing', 'Date of birth is required for individual and married sellers.'))
   push(missingIf((sellerBranch === 'individual' || sellerBranch === 'married') && !facts.seller?.nationality, 'seller_nationality_missing', 'Nationality is required for individual and married sellers.'))
   push(missingIf((sellerBranch === 'individual' || sellerBranch === 'married') && !facts.seller?.residential_address, 'seller_residential_address_missing', 'Residential address is required for individual and married sellers.'))
@@ -874,7 +910,7 @@ export function validateSellerOnboardingFacts(facts = {}, { draft = false } = {}
   push(missingIf(sellerBranch === 'married' && !facts.seller?.marital_regime, 'marital_regime_missing', 'Marital regime is required for married sellers.'))
   push(missingIf(sellerBranch === 'married' && !facts.seller?.spouse?.name, 'spouse_name_missing', 'Spouse name is required for married sellers.'))
   push(missingIf(sellerBranch === 'married' && !facts.seller?.spouse?.id_number, 'spouse_id_missing', 'Spouse ID number is required for married sellers.'))
-  push(missingIf(sellerBranch === 'married' && facts.seller?.marital_regime === 'in_community' && !facts.seller?.spouse?.email, 'spouse_email_missing', 'Spouse email is required when spouse consent is required.'))
+  push(missingIf(requireEmail && sellerBranch === 'married' && facts.seller?.marital_regime === 'in_community' && !facts.seller?.spouse?.email, 'spouse_email_missing', 'Spouse email is required when spouse consent is required.'))
   push(missingIf(sellerBranch === 'company' && !facts.seller?.company?.name, 'company_name_missing', 'Company name is required for company sellers.'))
   push(missingIf(sellerBranch === 'company' && !facts.seller?.company?.registration_number, 'company_registration_missing', 'Company registration number is required for company sellers.'))
   push(missingIf(sellerBranch === 'company' && !facts.seller?.company?.registered_address, 'company_registered_address_missing', 'Company registered address is required for company sellers.'))
@@ -890,6 +926,12 @@ export function validateSellerOnboardingFacts(facts = {}, { draft = false } = {}
   push(missingIf(sellerBranch === 'trust' && !hasValue(facts.seller?.trust?.authorised_trustee?.name || facts.seller?.trust?.trustee_name), 'trust_authority_missing', 'Primary trustee details are required for trust sellers.'))
   push(missingIf(sellerBranch === 'trust' && !hasValue(facts.seller?.trust?.authorised_trustee?.capacity), 'trustee_capacity_missing', 'Authorised trustee capacity is required for trust sellers.'))
   push(missingIf(sellerBranch === 'trust' && !hasValue(facts.seller?.trust?.authority_basis), 'trust_authority_basis_missing', 'Trust authority basis is required for trust sellers.'))
+  push(missingIf(sellerBranch === 'deceased_estate' && !facts.seller?.deceased_estate?.name, 'estate_name_missing', 'Estate name is required.'))
+  push(missingIf(sellerBranch === 'deceased_estate' && !hasValue(facts.seller?.deceased_estate?.reference_number || facts.seller?.deceased_estate?.estate_reference), 'estate_reference_missing', 'Estate reference is required.'))
+  push(missingIf(sellerBranch === 'power_of_attorney' && !facts.seller?.power_of_attorney?.principal?.name, 'principal_name_missing', 'Principal / legal owner name is required.'))
+  push(missingIf(sellerBranch === 'power_of_attorney' && !facts.seller?.power_of_attorney?.principal?.id_number, 'principal_identity_missing', 'Principal ID / passport is required.'))
+  push(missingIf(sellerBranch === 'other' && !facts.seller?.other_entity?.name, 'other_entity_name_missing', 'Legal entity name is required.'))
+  push(missingIf(sellerBranch === 'other' && !facts.seller?.other_entity?.authority_details, 'other_authority_missing', 'Record the authority details for manual review of this legal entity.'))
   push(missingIf(sellerBranch === 'deceased_estate' && !facts.seller?.deceased_estate?.executor_name, 'executor_details_missing', 'Executor details are required for deceased estate sellers.'))
   push(missingIf(sellerBranch === 'deceased_estate' && !facts.seller?.deceased_estate?.authority_details, 'deceased_estate_authority_missing', 'Authority details are required for deceased estate sellers.'))
   push(missingIf(sellerBranch === 'power_of_attorney' && !facts.seller?.power_of_attorney?.representative_name, 'power_of_attorney_missing', 'Representative details are required for power of attorney sellers.'))
@@ -910,7 +952,7 @@ export function validateSellerOnboardingFacts(facts = {}, { draft = false } = {}
   push(missingIf(!hasValue(facts.property?.address_details?.province || facts.property?.province), 'province_missing', 'Province is required for property classification.'))
   push(missingIf(!hasValue(facts.property?.property_category), 'property_category_missing', 'Property category is required.'))
   push(missingIf(!hasValue(facts.property?.property_title_type || facts.property?.property_structure_type), 'property_title_type_missing', 'Property title type is required.'))
-  push(missingIf(!hasValue(facts.property?.rates_taxes), 'rates_taxes_missing', 'Rates and taxes are required.'))
+  push(missingIf(!Number.isFinite(facts.property?.rates_taxes), 'rates_taxes_missing', 'Rates and taxes are required.'))
   push(missingIf(!hasValue(facts.property?.levies) && !facts.property?.levies_not_applicable, 'levies_missing', 'Levies are required, or must be marked not applicable.'))
   push(missingIf(!hasValue(facts.property?.utilities?.water_billing_type || facts.property?.water_billing_type), 'water_billing_type_missing', 'Water billing type is required.'))
   push(missingIf(!hasValue(facts.transaction?.mandate_type), 'mandate_type_missing', 'Mandate type is required.'))
@@ -953,9 +995,11 @@ function sectionScore(items = []) {
   }
 }
 
-export function calculateSellerFactReadiness(facts = {}) {
+export function calculateSellerFactReadiness(facts = {}, { requireEmail = false } = {}) {
   const sellerBranch = resolveSellerBranchForValidation(facts)
   const propertyBranch = resolvePropertyBranch(facts)
+  const naturalPerson = ['individual', 'married'].includes(sellerBranch)
+  const foreignPerson = naturalPerson && (facts.seller?.foreign_owner || facts.seller?.owner_structure_type === 'foreign_individual')
 
   const sections = {
     seller_identity: sectionScore([
@@ -963,14 +1007,14 @@ export function calculateSellerFactReadiness(facts = {}) {
       facts.seller?.owner_entity_type,
       facts.seller?.owner_structure_type,
       facts.seller?.foreign_owner ? (facts.seller?.foreign_owner_country || facts.seller?.foreign?.country) : true,
-      facts.seller?.first_name,
-      facts.seller?.surname,
-      facts.seller?.email,
+      naturalPerson ? facts.seller?.first_name : true,
+      naturalPerson ? facts.seller?.surname : true,
+      requireEmail ? facts.seller?.email : true,
       facts.seller?.phone,
       facts.seller?.tax_number,
       facts.seller?.sa_resident || facts.seller?.tax_resident,
       facts.seller?.popi_consent_accepted,
-      sellerBranch === 'individual' || sellerBranch === 'married' ? facts.seller?.id_number : true,
+      naturalPerson ? (foreignPerson ? facts.seller?.foreign?.passport_number || facts.seller?.id_number : facts.seller?.id_number) : true,
       sellerBranch === 'individual' || sellerBranch === 'married' ? facts.seller?.date_of_birth : true,
       sellerBranch === 'individual' || sellerBranch === 'married' ? facts.seller?.nationality : true,
       sellerBranch === 'individual' || sellerBranch === 'married' ? facts.seller?.residential_address : true,
@@ -982,6 +1026,10 @@ export function calculateSellerFactReadiness(facts = {}) {
       sellerBranch === 'trust' ? facts.seller?.trust?.registration_number : true,
       sellerBranch === 'trust' ? facts.seller?.trust?.registered_address : true,
       sellerBranch === 'trust' ? Boolean(facts.seller?.trust?.trustees?.length) : true,
+      sellerBranch === 'deceased_estate' ? facts.seller?.deceased_estate?.name : true,
+      sellerBranch === 'deceased_estate' ? facts.seller?.deceased_estate?.reference_number || facts.seller?.deceased_estate?.estate_reference : true,
+      sellerBranch === 'other' ? facts.seller?.other_entity?.name : true,
+      sellerBranch === 'other' ? facts.seller?.other_entity?.authority_details : true,
       sellerBranch === 'deceased_estate' ? facts.seller?.deceased_estate?.executor_name : true,
       sellerBranch === 'deceased_estate' ? facts.seller?.deceased_estate?.authority_details : true,
       sellerBranch === 'power_of_attorney' ? facts.seller?.power_of_attorney?.representative_name : true,
@@ -991,13 +1039,17 @@ export function calculateSellerFactReadiness(facts = {}) {
     ]),
     seller_authority: sectionScore([
       sellerBranch,
-      facts.seller?.marital_regime,
+      sellerBranch === 'married' ? facts.seller?.marital_regime : true,
       sellerBranch === 'married' ? facts.seller?.spouse?.name : true,
       sellerBranch === 'married' ? facts.seller?.spouse?.id_number : true,
       sellerBranch === 'company' ? facts.seller?.company?.authorised_signatory?.name || facts.seller?.company?.director_name : true,
       sellerBranch === 'company' ? Boolean(facts.seller?.company?.directors?.length) : true,
       sellerBranch === 'trust' ? facts.seller?.trust?.authorised_trustee?.name || facts.seller?.trust?.trustee_name : true,
       sellerBranch === 'trust' ? Boolean(facts.seller?.trust?.trustees?.length) : true,
+      sellerBranch === 'deceased_estate' ? facts.seller?.deceased_estate?.name : true,
+      sellerBranch === 'deceased_estate' ? facts.seller?.deceased_estate?.reference_number || facts.seller?.deceased_estate?.estate_reference : true,
+      sellerBranch === 'other' ? facts.seller?.other_entity?.name : true,
+      sellerBranch === 'other' ? facts.seller?.other_entity?.authority_details : true,
       sellerBranch === 'deceased_estate' ? facts.seller?.deceased_estate?.executor_name : true,
       sellerBranch === 'deceased_estate' ? facts.seller?.deceased_estate?.authority_details : true,
       sellerBranch === 'power_of_attorney' ? facts.seller?.power_of_attorney?.representative_name : true,
@@ -1053,8 +1105,8 @@ export function calculateSellerFactReadiness(facts = {}) {
 
 export function buildCanonicalSellerOnboardingPayload(form = {}, listing = {}, options = {}) {
   const facts = transformSellerOnboardingToFacts(form, listing, options)
-  const validation = validateSellerOnboardingFacts(facts, { draft: Boolean(options.draft) })
-  const readiness = calculateSellerFactReadiness(facts)
+  const validation = validateSellerOnboardingFacts(facts, { draft: Boolean(options.draft), requireEmail: Boolean(options.requireEmail) })
+  const readiness = calculateSellerFactReadiness(facts, { requireEmail: Boolean(options.requireEmail) })
   return {
     canonicalSellerFacts: facts,
     canonicalSellerFactReadiness: {

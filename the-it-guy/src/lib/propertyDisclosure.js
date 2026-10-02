@@ -693,7 +693,7 @@ function renderSellerComplianceSignerPage(compliancePack = {}, branding = {}, pa
         <p>Document reference: ${escapeHtml(documentReference)}</p>
       </section>
       <section class="doc-body compliance-body">
-        <p class="intro compliance-intro">Signature evidence for the combined FICA and property disclosure pack.</p>
+        <p class="intro compliance-intro">Signature evidence for this property disclosure. FICA and the mandate are signed separately.</p>
         <div class="compliance-summary">
           <span>Status</span>
           <strong>${escapeHtml(summary.statusLabel || summary.progressLabel || 'Pending signatures')}</strong>
@@ -743,7 +743,7 @@ export function buildPropertyDisclosureDocumentMarkup(disclosure = {}, context =
   const sellerIdNumber = normalizeText(context.sellerIdNumber || snapshot.sellerIdNumber)
   const propertyAddress = normalizeText(context.propertyAddress)
   const sellerDeclarationOpening = sellerIdNumber
-    ? `I/We, ${escapeHtml(sellerName)}, holder(s) of ID/passport number ${escapeHtml(sellerIdNumber)}, declare that the information and disclosures in this Annexure A${propertyAddress ? ` relating to ${escapeHtml(propertyAddress)}` : ''} are true, accurate and complete to the best of my/our knowledge. I/We confirm that all known material defects and relevant property information have been disclosed.`
+    ? `I/We, ${escapeHtml(sellerName)}, holder(s) of ${escapeHtml(context.sellerIdentityLabel || 'ID/passport number')} ${escapeHtml(sellerIdNumber)}, declare that the information and disclosures in this Annexure A${propertyAddress ? ` relating to ${escapeHtml(propertyAddress)}` : ''} are true, accurate and complete to the best of my/our knowledge. I/We confirm that all known material defects and relevant property information have been disclosed.`
     : `I/We, ${escapeHtml(sellerName)}, declare that the information and disclosures in this Annexure A${propertyAddress ? ` relating to ${escapeHtml(propertyAddress)}` : ''} are true, accurate and complete to the best of my/our knowledge. I/We confirm that all known material defects and relevant property information have been disclosed.`
   const documentReference = firstNonEmpty(context.documentReference, context.listingReference, context.listingId, propertyAddress, snapshot.title)
   const documentTitle = compliancePack?.title || snapshot.title
@@ -753,7 +753,20 @@ export function buildPropertyDisclosureDocumentMarkup(disclosure = {}, context =
     ? `<img class="signature-image" src="${escapeHtml(snapshot.sellerSignature)}" alt="Seller signature" />`
     : (escapeHtml(snapshot.sellerSignature) || '&nbsp;')
   const answerCell = (answer, value) => (answer === value ? '<span class="answer-mark">&#10003;</span>' : '&nbsp;')
-  const pageTotal = 3 + (hasComplianceFicaPage ? 1 : 0) + (hasComplianceSignerPage ? 1 : 0)
+  const signerGroups = []
+  if (hasComplianceSignerPage) for (let index = 0; index < compliancePack.signers.length; index += 4) signerGroups.push(compliancePack.signers.slice(index, index + 4))
+  const detailLines = snapshot.answers.filter((item) => item.note).flatMap((item) => [`Question ${item.number}:`, ...String(item.note).split('\n')])
+  if (snapshot.comments) detailLines.push('21. Comments or explanation', ...String(snapshot.comments).split('\n'))
+  const detailPages = []
+  let detailPage = []
+  for (const paragraph of detailLines) {
+    const lines = paragraph.match(/.{1,95}(?:\s|$)|\S{1,95}/g) || ['']
+    if (detailPage.length && detailPage.length + lines.length > 32) { detailPages.push(detailPage.join('\n')); detailPage = [] }
+    while (lines.length > 32) detailPages.push(lines.splice(0, 32).join('\n'))
+    detailPage.push(...lines)
+  }
+  if (detailPage.length) detailPages.push(detailPage.join('\n'))
+  const pageTotal = 3 + detailPages.length + (hasComplianceFicaPage ? 1 : 0) + signerGroups.length
   let pageNumber = 1
   const nextFooter = () => renderDisclosureFooter(branding, pageNumber++, pageTotal)
   const renderRows = (items) => items.map((item) => `
@@ -762,16 +775,16 @@ export function buildPropertyDisclosureDocumentMarkup(disclosure = {}, context =
         <span class="question-number">${item.number}.</span>
         <span class="question-text">${escapeHtml(item.question)}</span>
         ${item.extraLabel ? `<span class="question-extra">${escapeHtml(item.extraLabel)}: ${escapeHtml(item.extraValue)}</span>` : ''}
-        ${item.note ? `<span class="question-note"><strong>Details:</strong> ${escapeHtml(item.note).replace(/\n/g, '<br />')}</span>` : ''}
+        ${item.note ? `<span class="question-note"><strong>Details:</strong> See the disclosure details continuation.</span>` : ''}
       </td>
       <td class="answer-cell">${answerCell(item.answer, PROPERTY_DISCLOSURE_ANSWER.yes)}</td>
       <td class="answer-cell">${answerCell(item.answer, PROPERTY_DISCLOSURE_ANSWER.no)}</td>
       <td class="answer-cell">${answerCell(item.answer, PROPERTY_DISCLOSURE_ANSWER.unsure)}</td>
     </tr>
   `).join('')
-  const pageOneRows = renderRows(snapshot.answers.filter((item) => Number(item.number) <= 10))
-  const pageTwoRows = renderRows(snapshot.answers.filter((item) => Number(item.number) > 10))
-  const comments = escapeHtml(snapshot.comments).replace(/\n/g, '<br />')
+  const pageOneRows = renderRows(snapshot.answers.filter((item) => Number(item.number) <= 8))
+  const pageTwoRows = renderRows(snapshot.answers.filter((item) => Number(item.number) > 8))
+  const comments = detailPages.length ? 'See the disclosure details continuation for the supplied explanations.' : ''
   const renderTitle = (subtitle = '') => `
     <section class="doc-title">
       <h1>Declaration by Seller - Annexure A</h1>
@@ -862,6 +875,7 @@ export function buildPropertyDisclosureDocumentMarkup(disclosure = {}, context =
     .question-note { display: block; margin-top: 1.5mm; padding-left: 5mm; color: #7c3f13; font-size: 8.8pt; line-height: 1.35; }
     .answer-cell { text-align: center; vertical-align: middle; color: #111827; }
     .answer-mark { display: inline-block; font-size: 12pt; font-weight: 700; line-height: 1; }
+    .disclosure-details { white-space:pre-wrap; overflow-wrap:anywhere; font-size:10pt; line-height:1.5; }
     .comments-title { color: #111827; font-weight: 700; text-transform: uppercase; }
     .comments-box { min-height: 32mm; color: #1f2937; line-height: 1.45; }
     .signature-section { margin-top: 5mm; color: #1f2937; font-size: 10.5pt; line-height: 1.5; }
@@ -912,6 +926,7 @@ export function buildPropertyDisclosureDocumentMarkup(disclosure = {}, context =
       </section>
       ${nextFooter()}
     </section>
+    ${detailPages.map((details) => `<section class="property-disclosure-page">${renderDisclosureHeader(branding)}${renderTitle('Disclosure details continuation')}<section class="doc-body"><p class="disclosure-details">${escapeHtml(details)}</p></section>${nextFooter()}</section>`).join('')}
     <section class="property-disclosure-page">
       ${renderDisclosureHeader(branding)}
       ${renderTitle('Signature section')}
@@ -925,7 +940,7 @@ export function buildPropertyDisclosureDocumentMarkup(disclosure = {}, context =
               <span class="execution-value">${escapeHtml(sellerName)}</span>
             </div>
             <div class="execution-field">
-              <span class="execution-label">ID / passport number</span>
+              <span class="execution-label">${escapeHtml(context.sellerIdentityLabel || "ID / passport number")}</span>
               <span class="execution-value">${escapeHtml(sellerIdNumber) || '&nbsp;'}</span>
             </div>
             <div class="execution-field">
@@ -945,7 +960,7 @@ export function buildPropertyDisclosureDocumentMarkup(disclosure = {}, context =
       </section>
       ${nextFooter()}
     </section>
-    ${hasComplianceSignerPage ? renderSellerComplianceSignerPage(compliancePack, branding, pageNumber++, pageTotal, documentReference) : ''}
+    ${signerGroups.map((signers) => renderSellerComplianceSignerPage({ ...compliancePack, signers }, branding, pageNumber++, pageTotal, documentReference)).join('')}
   </main>
 </body>
 </html>`

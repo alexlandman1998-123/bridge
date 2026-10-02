@@ -4,7 +4,7 @@ import { Grid2X2, ShieldCheck } from 'lucide-react'
 export function DetailInfoRow({ label, value }) {
   return (
     <div className="grid min-w-0 grid-cols-[minmax(86px,0.42fr)_minmax(0,1fr)] gap-3 border-b border-[#edf2f7] py-2.5 last:border-0 sm:grid-cols-[118px_minmax(0,1fr)]">
-      <span className="min-w-0 truncate text-xs font-semibold text-[#6f839a]">{label}</span>
+      <span className="min-w-0 text-xs font-medium text-[#6f839a]">{label}</span>
       <span className="min-w-0 truncate text-sm font-semibold text-[#20364d]" title={String(value || '—')}>{value || '—'}</span>
     </div>
   )
@@ -45,12 +45,12 @@ export function PrincipalAgentTabShell({ title, description, actionLabel, onActi
   )
 }
 
-export function WorkspaceCard({ title, actionLabel = '', children, className = '' }) {
+export function WorkspaceCard({ title, actionLabel = '', onAction, children, className = '' }) {
   return (
     <article className={`min-w-0 overflow-hidden rounded-2xl border border-[#dde6f1] bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.04)] sm:p-5 ${className}`}>
       <div className="flex min-w-0 items-start justify-between gap-3">
-        <h3 className="min-w-0 truncate text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[#6b7f97]">{title}</h3>
-        {actionLabel ? <span className="shrink-0 text-xs font-semibold text-[#1769d1]">{actionLabel}</span> : null}
+        <h3 className="min-w-0 text-lg font-semibold tracking-[-0.025em] text-[#10243a]">{title}</h3>
+        {actionLabel && onAction ? <button type="button" onClick={onAction} className="shrink-0 text-sm font-semibold text-[#1769d1] hover:underline">{actionLabel}</button> : actionLabel ? <span className="shrink-0 text-xs font-medium text-[#60758d]">{actionLabel}</span> : null}
       </div>
       <div className="mt-4">{children}</div>
     </article>
@@ -62,9 +62,9 @@ export function AgentWorkspaceKpiCard({ label, value, helper = '', icon = Grid2X
     <article className="min-w-0 rounded-2xl border border-[#dfe7f1] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
       <div className="flex min-w-0 items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="truncate text-[0.74rem] font-semibold text-[#526981]" title={label}>{label}</p>
+          <p className="text-[0.8rem] leading-5 font-semibold text-[#526981]" title={label}>{label}</p>
           <p className="mt-2 truncate text-[1.45rem] font-semibold tracking-[-0.035em] text-[#10243a]" title={String(value ?? '—')}>{value ?? '—'}</p>
-          {helper ? <p className="mt-1 truncate text-xs font-semibold text-[#60758d]" title={helper}>{helper}</p> : null}
+          {helper ? <p className="mt-1 text-xs font-medium text-[#60758d]" title={helper}>{helper}</p> : null}
         </div>
         <span className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${tone}`}>{createElement(icon, { size: 18 })}</span>
       </div>

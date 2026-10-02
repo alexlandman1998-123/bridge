@@ -549,6 +549,16 @@ function requestedFromRole(instance = {}) {
   return role
 }
 
+function transactionRequiredFromRole(instance = {}) {
+  const role = requestedFromRole(instance)
+  // The compatibility table accepts the general attorney role; canonical
+  // instances and document requests retain the specific attorney assignment.
+  if (['transfer_attorney', 'transferring_attorney', 'bond_attorney', 'cancellation_attorney'].includes(role)) {
+    return 'attorney'
+  }
+  return role
+}
+
 export function canonicalInstanceToPrivateListingRequirement(instance = {}, existing = null) {
   const listingId = instance.listing_id || instance.context_id
   const incomingStatus = canonicalStatusToPrivateListingStatus(instance.status)
@@ -599,7 +609,7 @@ export function canonicalInstanceToTransactionRequiredDocument(instance = {}, ex
     group_key: instance.pack_key,
     group_label: PACK_LABELS[instance.pack_key] || instance.pack_key,
     description: getDefinitionDescription(instance),
-    required_from_role: requestedFromRole(instance),
+    required_from_role: transactionRequiredFromRole(instance),
     visibility_scope: transactionVisibility(instance),
     allow_multiple: false,
     canonical_requirement_instance_id: instance.id || null,

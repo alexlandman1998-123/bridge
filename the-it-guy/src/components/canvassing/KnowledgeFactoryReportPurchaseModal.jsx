@@ -143,7 +143,7 @@ export default function KnowledgeFactoryReportPurchaseModal({
               {state.saved.status === "confirmed_pending_execution" ? "Report quote confirmed" : "UAT cost estimate ready"}
             </p>
             <p className="mt-2 text-sm leading-6">
-              {state.saved.product_name} costs {money(state.saved.customer_price_cents)} to the customer. The fixed package query was estimated at {recordedCredits(state.saved.quoted_supplier_credits) ? `${state.saved.quoted_supplier_credits} supplier credits` : "an unavailable supplier cost"}. No supplier report data has been requested or charged in this step.
+              {state.saved.product_name} costs {money(state.saved.customer_price_cents)} to the customer. The fixed package query has a conservative maximum estimate of {recordedCredits(state.saved.quoted_supplier_credits) ? `${state.saved.quoted_supplier_credits} supplier credits` : "an unavailable supplier cost"}, not a supplier-confirmed bill. No supplier report data has been requested or charged in this step.
             </p>
             <p className="mt-2 text-xs">Quote expires {state.saved.quote_expires_at ? new Intl.DateTimeFormat("en-ZA", { dateStyle: "medium", timeStyle: "short" }).format(new Date(state.saved.quote_expires_at)) : "soon"}.</p>
           </div>

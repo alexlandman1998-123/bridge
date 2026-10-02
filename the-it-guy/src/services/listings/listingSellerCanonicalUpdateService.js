@@ -3,7 +3,7 @@ import {
   buildListingSellerCanonicalUpdate,
 } from './listingSellerCanonicalUpdateModel.js'
 
-const CONTACT_FIELD_PATTERN = /^(?:firstName|lastName|fullName|sellerName|sellerFirstName|sellerSurname|email|sellerEmail|phone|sellerPhone|mobile)$/
+const CONTACT_FIELD_PATTERN = /^(?:primaryContactName|contactName|firstName|lastName|fullName|sellerName|sellerFirstName|sellerSurname|email|sellerEmail|phone|sellerPhone|mobile)$/
 
 export function limitSellerCanonicalSaveWait(savePromise, timeoutMs = 40000) {
   let timeoutId
@@ -37,8 +37,8 @@ async function syncCrmContact(update, listing, organisationId, dependencies) {
   if (!contact?.contactId) return null
   const name = splitName(update.contact.fullName)
   return dependencies.updateAgencyCrmContactRecord(organisationId, contact.contactId, {
-    firstName: text(update.nextFormData.sellerFirstName || update.nextFormData.firstName || name.firstName),
-    lastName: text(update.nextFormData.sellerSurname || update.nextFormData.lastName || name.lastName),
+    firstName: name.firstName,
+    lastName: name.lastName,
     email: update.contact.email,
     phone: update.contact.phone,
     contactType: 'Seller',

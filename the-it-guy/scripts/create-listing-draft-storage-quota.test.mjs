@@ -52,3 +52,8 @@ assert.match(
 )
 
 console.log('Create listing draft storage quota guard checks passed.')
+
+const draftSave = source.slice(source.indexOf('async function saveCreateListingDraft()'), source.indexOf('function buildContextualInitialListingLeadForm'))
+assert.match(draftSave, /await persistSellerProfileOnboardingFormData\(\{\s*listingId,\s*formData: directListingPersistence\.sellerOnboardingFormData/)
+assert.match(draftSave, /if \(!savedOnboarding\?\.id\) throw new Error/)
+assert.match(draftSave, /mandateStatus: draftMandateStatus/)

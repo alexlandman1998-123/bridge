@@ -1,0 +1,269 @@
+{
+  "capturedAt": "2026-10-01T10:35:00.716Z",
+  "environment": "Arch9 SaaS",
+  "projectRef": "isdowlnollckzvltkasn",
+  "mode": "read_only",
+  "status": "manual_review_candidates_not_confirmed_corruption",
+  "query": "scripts/sql/seller-mvp-acceptance-audit.sql",
+  "records": [
+    {
+      "listing_id": "023ac881-0d5a-4f2b-85fb-e8d2adc84f89",
+      "onboarding_id": "3f7baa2f-eef3-4e80-88f5-8018bb6d6f34",
+      "review_reasons": [
+        "captured_form_without_canonical_owner"
+      ]
+    },
+    {
+      "listing_id": "02d98ac3-3471-4e73-bbd0-2c49bb6993d8",
+      "onboarding_id": "a91716c0-4a2b-4ee1-8fd8-ac6ec8255d9c",
+      "review_reasons": [
+        "captured_form_without_canonical_owner"
+      ]
+    },
+    {
+      "listing_id": "03c78d9a-c676-4aa3-836a-d27f5528a5a6",
+      "onboarding_id": "2a9d6e94-2a0f-43d2-8d20-756b6e746084",
+      "review_reasons": [
+        "canonical_facts_differ"
+      ]
+    },
+    {
+      "listing_id": "04c47943-0691-4dda-84d7-7a5251db5636",
+      "onboarding_id": "162aaf01-a00f-431b-be0a-265d5d55d455",
+      "review_reasons": [
+        "canonical_facts_differ"
+      ]
+    },
+    {
+      "listing_id": "08080a97-b727-4522-9381-d26029902df1",
+      "onboarding_id": "1a976678-bb93-4b1f-98c9-5a00485717b5",
+      "review_reasons": [
+        "canonical_facts_differ"
+      ]
+    },
+    {
+      "listing_id": "0e85cebc-9e6f-4a8f-8031-debf6b8025f0",
+      "onboarding_id": "ca13a9c1-ae16-4123-8100-891ec77dafd5",
+      "review_reasons": [
+        "canonical_facts_differ"
+      ]
+    },
+    {
+      "listing_id": "1343062b-cde8-4cd6-bf6a-9ee0ec4fe907",
+      "onboarding_id": "668522a0-e347-422b-a36b-193f2271af9f",
+      "review_reasons": [
+        "captured_form_without_canonical_owner"
+      ]
+    },
+    {
+      "listing_id": "177d74f6-47dd-4373-bc76-88f4f1366049",
+      "onboarding_id": "859859e1-5f52-4440-b56c-dec91f129609",
+      "review_reasons": [
+        "canonical_facts_differ"
+      ]
+    },
+    {
+      "listing_id": "21a09ec5-9a90-4664-8e87-965ab688b1aa",
+      "onboarding_id": "c229643d-a12a-4aa1-ad81-100a4ad3b83e",
+      "review_reasons": [
+        "captured_form_without_canonical_owner"
+      ]
+    },
+    {
+      "listing_id": "255aabbc-7cb2-4f9e-b9b5-241a88aa5a86",
+      "onboarding_id": "d0edbeef-d0f6-4352-8297-38635a78865f",
+      "review_reasons": [
+        "canonical_facts_differ"
+      ]
+    },
+    {
+      "listing_id": "2984d91c-1866-4002-b02e-9709e8b50626",
+      "onboarding_id": "9e0b1ff5-2ed2-462e-853a-dafa71f3876d",
+      "review_reasons": [
+        "canonical_facts_differ"
+      ]
+    },
+    {
+      "listing_id": "3e9e3b9a-3798-472c-bcf6-f15dc15f9ad4",
+      "onboarding_id": "c10edfde-8774-4f34-987d-7ba6a969c53f",
+      "review_reasons": [
+        "canonical_facts_differ"
+      ]
+    },
+    {
+      "listing_id": "404b46b9-98e0-42c1-ae6e-b4898fe656cf",
+      "onboarding_id": "f5832076-6924-4505-96f2-ef3a86f3b071",
+      "review_reasons": [
+        "canonical_facts_differ"
+      ]
+    },
+    {
+      "listing_id": "47bedf1b-49a8-4700-81c6-87d7c6cc9e67",
+      "onboarding_id": "52c0069b-7b0e-437a-b2fe-db9bea3626fe",
+      "review_reasons": [
+        "canonical_facts_differ"
+      ]
+    },
+    {
+      "listing_id": "609b2f26-d88d-4dde-9011-6714c9fd2157",
+      "onboarding_id": "b4fd1a0e-6503-47fc-af84-ffaed9e4d949",
+      "review_reasons": [
+        "captured_form_without_canonical_owner"
+      ]
+    },
+    {
+      "listing_id": "64e43fe8-657e-4b8f-9baa-b76fa8e7c175",
+      "onboarding_id": "10d72aa6-47a9-428f-ac1b-975ccaf01be1",
+      "review_reasons": [
+        "canonical_facts_differ"
+      ]
+    },
+    {
+      "listing_id": "660bde03-4c89-4624-8d5a-9134a550c1c3",
+      "onboarding_id": "abf1bc9f-a33e-45df-918c-235eb72c8bf0",
+      "review_reasons": [
+        "canonical_facts_differ"
+      ]
+    },
+    {
+      "listing_id": "6d158f67-b80a-411b-b603-eb4d4d1ecf0f",
+      "onboarding_id": "7afe35af-f7ae-4398-a3a6-c9fe5deb9719",
+      "review_reasons": [
+        "canonical_facts_differ"
+      ]
+    },
+    {
+      "listing_id": "74f427f3-6d33-4202-8cd5-1c3ff28e4905",
+      "onboarding_id": "ab995443-f7b2-4766-9ed8-d75f8ed54e40",
+      "review_reasons": [
+        "captured_form_without_canonical_owner"
+      ]
+    },
+    {
+      "listing_id": "7c0444ca-6b19-4c3b-98aa-9393e5588d3b",
+      "onboarding_id": "f274c94c-226f-42d6-8116-ca78fb01ea12",
+      "review_reasons": [
+        "canonical_facts_differ"
+      ]
+    },
+    {
+      "listing_id": "9772e759-97c1-4dfb-bda5-8a21a3995779",
+      "onboarding_id": "403198c6-5fab-46f0-a3e6-8ea31e399a5a",
+      "review_reasons": [
+        "canonical_facts_differ"
+      ]
+    },
+    {
+      "listing_id": "97cb4b54-487b-4237-9d94-c2e3f497f875",
+      "onboarding_id": "9eeb1d83-7287-4769-a5a5-1c455efb5cf2",
+      "review_reasons": [
+        "canonical_facts_differ"
+      ]
+    },
+    {
+      "listing_id": "9dade278-4111-4679-b71c-6fc78f2c0383",
+      "onboarding_id": "92fe05e4-4a35-4dad-aeed-ff05220f564d",
+      "review_reasons": [
+        "canonical_facts_differ"
+      ]
+    },
+    {
+      "listing_id": "a6357aec-5cee-44bf-a3d5-b07e36539f38",
+      "onboarding_id": "ef99c603-f81c-4ef7-9d53-879685ae7d00",
+      "review_reasons": [
+        "captured_form_without_canonical_owner"
+      ]
+    },
+    {
+      "listing_id": "b43935bb-72d1-4666-9cb1-c48fcd8ac6cc",
+      "onboarding_id": "cbc20c4d-0717-45f5-818c-d0d8127ba2a0",
+      "review_reasons": [
+        "captured_form_without_canonical_owner"
+      ]
+    },
+    {
+      "listing_id": "b7304703-3485-4c17-afb0-9a797c83bd9f",
+      "onboarding_id": "63cdd526-5147-45b8-ac73-d9889398f58f",
+      "review_reasons": [
+        "captured_form_without_canonical_owner"
+      ]
+    },
+    {
+      "listing_id": "b7adc1d0-a77c-493f-9daf-ab2db43b2ffb",
+      "onboarding_id": "e2bcd5ef-3d2c-405b-9a49-59704b835355",
+      "review_reasons": [
+        "canonical_facts_differ"
+      ]
+    },
+    {
+      "listing_id": "bad61d21-f8ed-49a8-92f6-8346e48bc705",
+      "onboarding_id": "be1b00a2-08ce-494b-8f00-3241a254aca6",
+      "review_reasons": [
+        "canonical_facts_differ"
+      ]
+    },
+    {
+      "listing_id": "c0430f27-f750-4197-954a-bcb0fb81dd00",
+      "onboarding_id": "619d4fb3-97aa-4554-90f1-5753ee1a37c7",
+      "review_reasons": [
+        "captured_form_without_canonical_owner"
+      ]
+    },
+    {
+      "listing_id": "c564059f-9e9d-48e6-a6de-bf69d70f637b",
+      "onboarding_id": "fb834b53-bfcd-4ba1-a44c-f566c8e0975c",
+      "review_reasons": [
+        "captured_form_without_canonical_owner"
+      ]
+    },
+    {
+      "listing_id": "c722d767-b11f-4c9b-9e99-4524547b4d70",
+      "onboarding_id": "cec9fc44-6c48-4188-ae12-0cd0cb6a5864",
+      "review_reasons": [
+        "canonical_facts_differ"
+      ]
+    },
+    {
+      "listing_id": "c7c000d7-e35a-4671-9aab-acc21407d849",
+      "onboarding_id": "19700772-1301-424c-966f-ec15fbf8fc07",
+      "review_reasons": [
+        "canonical_facts_differ"
+      ]
+    },
+    {
+      "listing_id": "d8c01acb-a4ca-422f-b11a-d4a4fe0c3c45",
+      "onboarding_id": "4b8ed9d5-a936-45f5-976a-dc4cc9716662",
+      "review_reasons": [
+        "canonical_facts_differ"
+      ]
+    },
+    {
+      "listing_id": "ddaac795-9915-4ac3-a842-6faf91b883a3",
+      "onboarding_id": "5a738d83-38a4-4d59-8278-135a6dfab4b3",
+      "review_reasons": [
+        "captured_form_without_canonical_owner"
+      ]
+    },
+    {
+      "listing_id": "de41f746-67d9-49f6-84b1-8cf906c41c34",
+      "onboarding_id": "c3a219ab-8288-4e95-96b3-5e97a63a205a",
+      "review_reasons": [
+        "captured_form_without_canonical_owner"
+      ]
+    },
+    {
+      "listing_id": "ecb56d4c-464c-4e56-842c-b88f52600c44",
+      "onboarding_id": "f15feb22-9776-476f-8470-73eacbba1111",
+      "review_reasons": [
+        "canonical_facts_differ"
+      ]
+    },
+    {
+      "listing_id": "f35d8916-2ae9-4364-b364-fc279e260fa7",
+      "onboarding_id": "71b84d9f-3328-4eda-b73e-6cb496084ff1",
+      "review_reasons": [
+        "canonical_facts_differ"
+      ]
+    }
+  ]
+}

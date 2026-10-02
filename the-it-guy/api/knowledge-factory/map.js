@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
-import { KNOWLEDGE_FACTORY_UAT_V0_1_ENDPOINT } from './supplier-endpoint.js'
+import { KNOWLEDGE_FACTORY_UAT_V1_ENDPOINT } from './supplier-endpoint.js'
+import { supplierCosts } from './supplier-costs.js'
 
 const SOUTH_AFRICA = { west: 16.45, south: -34.833, east: 32.95, north: -22.125 }
 const MAX_BOUNDS_WIDTH = 0.5
@@ -128,7 +129,7 @@ export async function probeSupplierUat(fetcher = fetch) {
     }
   }
   const [graphql, portal] = await Promise.all([
-    describe(KNOWLEDGE_FACTORY_UAT_V0_1_ENDPOINT, request),
+    describe(KNOWLEDGE_FACTORY_UAT_V1_ENDPOINT, request),
     describe(SUPPLIER_PORTAL_URL, { method: 'GET', signal: AbortSignal.timeout(8_000) }),
   ])
   return { environment: 'uat', costMode: 'validate', graphql, portal }
@@ -248,19 +249,13 @@ function pointPolygon(latitude, longitude) {
 }
 
 function costs(body) {
-  const extension = body?.extensions && typeof body.extensions === 'object' ? body.extensions : {}
-  const cost = extension.cost && typeof extension.cost === 'object' ? extension.cost : extension
-  const metric = (value) => {
-    const parsed = typeof value === 'number' ? value : Number(value)
-    return Number.isFinite(parsed) && parsed >= 0 ? Math.round(parsed) : null
-  }
-  return { fieldCost: metric(cost.fieldCost || cost.field_cost), typeCost: metric(cost.typeCost || cost.type_cost), surcharge: metric(cost.priceSurcharge || cost.price_surcharge), credits: metric(cost.creditsConsumed || cost.credits_consumed) }
+  return supplierCosts(body)
 }
 
 async function searchMap(config, bounds) {
   const response = await fetch(config.endpoint, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', authorization: `Bearer ${await supplierToken(config)}`, 'GraphQL-Cost': 'report' },
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${await supplierToken(config)}`, 'GraphQL-Cost': 'report', 'GraphQL-Billing': 'report' },
     body: JSON.stringify({
       operationName: 'MapProperties',
       query: 'query MapProperties($minX: Decimal!, $maxX: Decimal!, $minY: Decimal!, $maxY: Decimal!) { properties(where: { x: { gt: $minX, lt: $maxX }, y: { gt: $minY, lt: $maxY } }, first: 25) { nodes { propertyId x y wkt erf portion suburb { suburbId } } } }',

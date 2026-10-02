@@ -281,6 +281,7 @@ export function buildSellerProfileCanonicalPayload(form = {}, listing = {}, opti
     listingId: options.listingId || listing?.id || '',
     source: options.source || 'seller_profile_capture',
     draft: Boolean(options.draft),
+    requireEmail: Boolean(options.requireEmail),
   })
 }
 

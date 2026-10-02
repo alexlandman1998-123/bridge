@@ -485,6 +485,13 @@ export function buildDirectListingOnboardingFormData(form = {}, context = {}) {
   return compactObject({
     ...partyFacts,
     ...propertyFacts,
+    mandateType: normalizeMandateType(form.mandateType),
+    mandateStartDate: normalizeText(form.mandateStartDate),
+    mandateEndDate: normalizeText(form.mandateEndDate),
+    commissionType: normalizeText(form.commissionType),
+    commissionValue: normalizeText(form.commissionValue),
+    commissionPercentage: normalizeText(form.commissionType) === 'percentage' ? normalizeText(form.commissionValue) : undefined,
+    commissionAmount: normalizeText(form.commissionType) === 'fixed' ? normalizeText(form.commissionValue) : undefined,
     complianceDeclarations,
     compliance_declarations: complianceDeclarations,
     sellerPortalInviteRequested: sellerPortalAccessIntent === 'send_now' && sellerPortalInviteRequested,

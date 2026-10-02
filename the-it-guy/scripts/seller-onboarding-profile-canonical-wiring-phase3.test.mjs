@@ -8,7 +8,7 @@ const agencyPipelinePage = await readFile(
 
 assert.match(
   agencyPipelinePage,
-  /import \{[\s\S]*?persistSellerProfileOnboardingFormData[\s\S]*?\} from '..\/..\/services\/privateListingService'/,
+  /import \{ saveListingSellerCanonicalUpdate \} from '..\/..\/services\/listings\/listingSellerCanonicalUpdateService.js'/,
   'Agency pipeline should import seller profile canonical persistence helper.',
 )
 
@@ -30,8 +30,13 @@ assert.match(
 )
 assert.match(
   handlerSource,
-  /const persistedSellerProfileOnboarding = isSupabaseConfigured && \(sellerProfileListingId \|\| sellerProfileOnboardingToken\)[\s\S]*?persistSellerProfileOnboardingFormData\(\{/,
-  'Seller profile save should write to the canonical seller onboarding row when Supabase context exists.',
+  /if \(!sellerOnboardingReplacementRequired && isSupabaseConfigured && sellerProfileListingId\)[\s\S]*?saveListingSellerCanonicalUpdate\(\{/,
+  'Linked seller profiles must save listing and onboarding through the shared atomic service.',
+)
+assert.match(
+  handlerSource,
+  /else if \(!sellerOnboardingReplacementRequired && isSupabaseConfigured && sellerProfileOnboardingToken\)[\s\S]*?persistSellerProfileOnboardingFormData\(\{/,
+  'The token-only route retains canonical onboarding persistence.',
 )
 assert.ok(
   handlerSource.indexOf('persistSellerProfileOnboardingFormData({') < handlerSource.indexOf('await updateAgencyCrmLeadRecord'),
@@ -39,7 +44,7 @@ assert.ok(
 )
 assert.match(
   handlerSource,
-  /const canonicalSellerProfileFormData = isPlainObject\(persistedSellerProfileOnboarding\?\.form_data\)[\s\S]*?persistedSellerProfileOnboarding\.form_data[\s\S]*?: \{/,
+  /const canonicalSellerProfileFormData = sellerOnboardingReplacementRequired[\s\S]*?isPlainObject\(persistedSellerProfileOnboarding\?\.form_data\)[\s\S]*?persistedSellerProfileOnboarding\.form_data[\s\S]*?: \{/,
   'Seller profile save should prefer the canonical returned form_data and fall back to the local merge.',
 )
 assert.match(
@@ -59,3 +64,12 @@ assert.match(
 )
 
 console.log('Seller onboarding profile canonical wiring Phase 3 contract passed.')
+
+assert.ok(
+  handlerSource.indexOf('canonicalSaveResult = await saveListingSellerCanonicalUpdate(') < handlerSource.indexOf('await updateAgencyCrmLeadRecord'),
+  'The linked listing save must complete before updating the CRM projection.',
+)
+const listingPage = await readFile(new URL('../src/pages/AgentListingDetail.jsx', import.meta.url), 'utf8')
+const profileSave = listingPage.slice(listingPage.indexOf('async function handleSaveSellerProfileBuilder'), listingPage.indexOf('function handleSellerProfileBuilderSubmit'))
+assert.equal((profileSave.match(/saveListingSellerCanonicalUpdate\(/g) || []).length, 1)
+assert.doesNotMatch(profileSave, /remoteListingMissing|remote: false/, 'A failed remote profile save must not silently become a local-only save.')

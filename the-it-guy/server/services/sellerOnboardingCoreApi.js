@@ -208,7 +208,11 @@ function resolveTokenKind(onboarding = {}, token = '') {
 }
 
 function isTokenValid(onboarding = {}, tokenKind = 'unknown') {
-  if (tokenKind !== 'invite') return tokenKind === 'legacy' || tokenKind === 'stable'
+  if (tokenKind === 'legacy') {
+    const expiresAt = Date.parse(normalizeText(onboarding.token_expires_at))
+    return !onboarding.token_expires_at || (Number.isFinite(expiresAt) && expiresAt > Date.now())
+  }
+  if (tokenKind !== 'invite') return tokenKind === 'stable'
   const inviteExpiresAt = Date.parse(normalizeText(onboarding.seller_portal_invite_expires_at))
   return !onboarding.seller_portal_invite_consumed_at && Number.isFinite(inviteExpiresAt) && inviteExpiresAt > Date.now()
 }
@@ -234,7 +238,7 @@ async function resolveSellerOnboarding(client, token = '', { onboardingId = '', 
   }
 
   const legacy = await maybeSingle(client, 'private_listing_seller_onboarding', ONBOARDING_CORE_COLUMNS, 'token', normalizedToken)
-  if (legacy) return { onboarding: legacy, tokenKind: 'legacy', tokenValid: true }
+  if (legacy) return { onboarding: legacy, tokenKind: 'legacy', tokenValid: isTokenValid(legacy, 'legacy') }
 
   const stable = await maybeSingle(client, 'private_listing_seller_onboarding', ONBOARDING_CORE_COLUMNS, 'seller_portal_token', normalizedToken)
   if (stable) return { onboarding: stable, tokenKind: 'stable', tokenValid: true }

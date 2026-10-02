@@ -11,6 +11,19 @@ const listing = '00000000-0000-4000-8000-000000000201'
 const otherListing = '00000000-0000-4000-8000-000000000202'
 const media = '00000000-0000-4000-8000-000000000301'
 
+const listingPage = readFileSync(new URL('../src/pages/AgentListingDetail.jsx', import.meta.url), 'utf8')
+const kingdomComponent = listingPage.slice(listingPage.indexOf('<KingdomWebsitePublicationChannel'), listingPage.indexOf('/>', listingPage.indexOf('<KingdomWebsitePublicationChannel')))
+const prepareSource = kingdomComponent.match(/onPrepare=\{(.*)\}/)[1]
+const draft = { publicationStatus: 'Draft', bridgeListingStatus: 'not_published', headline: 'Saved draft' }
+let preparedDraft
+const prepare = new Function('saveMarketingDraft', 'marketingDraft', `return (${prepareSource})`)(async (value) => {
+  preparedDraft = value
+  return { ok: true }
+}, draft)
+assert.deepEqual(await prepare(), { ok: true })
+assert.equal(preparedDraft, draft)
+assert.equal(draft.publicationStatus, 'Draft')
+
 await db.exec(`
 create role anon; create role authenticated; create role service_role;
 create schema auth;
@@ -42,10 +55,14 @@ insert into public.listing_media values ('${media}', '${listing}', 'image', 'htt
 
 const migration = readFileSync(new URL('../../supabase/migrations/20260929105311_kingdom_isell_listing_channel.sql', import.meta.url), 'utf8')
 await db.exec(migration)
+await db.exec(readFileSync(new URL('../../supabase/migrations/20261001104037_independent_kingdom_listing_publication.sql', import.meta.url), 'utf8'))
+// A saved draft can publish directly to Kingdom without publishing in Arch9.
+await db.exec("update public.listing_publication_data set status = 'Draft'")
 const status = (await db.query('select public.website_get_partner_listing_status($1) as result', [listing])).rows[0].result
 assert.equal(status.available, true)
 assert.equal(status.eligible, true)
 assert.equal(status.hostname, 'www.kingdomrealestate.co.za')
+assert.equal(status.projectionStatus, 'Draft')
 
 const storagePath = `organisations/${isell}/websites/${site}/listings/${listing}/${media}/sha256.jpg`
 const assets = [{ source_media_id: media, storage_path: storagePath, public_url: `https://example.supabase.co/storage/v1/object/public/listing-media/${storagePath}`, content_type: 'image/jpeg' }]
@@ -54,6 +71,23 @@ const channel = (await db.query('select status, publication_json, media_json fro
 assert.equal(channel.status, 'published')
 assert.equal(channel.publication_json.consultant_name, 'I Sell')
 assert.equal(channel.media_json[0].file_url, assets[0].public_url)
+assert.equal((await db.query('select status from public.listing_publication_data where listing_id=$1', [listing])).rows[0].status, 'Draft')
+
+// Updates take the latest saved content, but retain the independent channel status.
+await db.exec("update public.listing_publication_data set title = 'Updated saved home', status = 'Paused', updated_at = now() + interval '1 second'")
+assert.equal((await db.query('select public.website_get_partner_listing_status($1) as result', [listing])).rows[0].result.stale, true)
+await db.query('select public.website_commit_partner_listing_publication($1,$2,$3,$4,$5,$6)', [listing, site, 'update', actor, 'agent@example.test', JSON.stringify(assets)])
+assert.equal((await db.query('select publication_json from public.website_partner_listing_publications where listing_id=$1', [listing])).rows[0].publication_json.title, 'Updated saved home')
+assert.equal((await db.query('select status from public.listing_publication_data where listing_id=$1', [listing])).rows[0].status, 'Paused')
+
+// Channel-specific required details still block incomplete submissions.
+await db.exec("update public.listing_publication_data set title = ''")
+assert.equal((await db.query('select public.website_get_partner_listing_status($1) as result', [listing])).rows[0].result.eligible, false)
+await assert.rejects(
+  db.query('select public.website_commit_partner_listing_publication($1,$2,$3,$4,$5,$6)', [listing, site, 'update', actor, 'agent@example.test', JSON.stringify(assets)]),
+  /Save the completed listing details/,
+)
+await db.exec("update public.listing_publication_data set title = 'Updated saved home'")
 
 await assert.rejects(
   db.query('insert into public.website_partner_listing_publications(grant_id,website_site_id,listing_id,status) select id,$1,$2,$3 from public.website_partner_listing_grants limit 1', [site, otherListing, 'published']),

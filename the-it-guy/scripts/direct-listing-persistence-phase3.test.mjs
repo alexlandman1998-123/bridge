@@ -78,7 +78,8 @@ test('listing description is persisted and rehydrated through shared aliases', (
   assert.match(agentListingsSource, /if \(!saved\) \{\s*\n\s*setIsListingSaving\(false\)\s*\n\s*return\s*\n\s*\}/)
   assert.match(agentListingDetailSource, /onboardingFormData\.listingDescription/)
   assert.match(agentListingDetailSource, /propertyDescription: String\(draft\.description/)
-  assert.match(agentListingDetailSource, /listingPreviewDescription: String\(draft\.listingPreviewDescription \|\| draft\.description/)
+  assert.match(agentListingDetailSource, /listingPreviewDescription: String\(draft\.listingPreviewDescription \?\? ''\)/)
+  assert.match(agentListingDetailSource, /listingPreviewDescription: resolveMarketingDraftText\([\s\S]*?'listingPreviewDescription'/)
   assert.match(agentListingDetailSource, /listingDescription: nextDraft\.description\.trim\(\)/)
   assert.match(agentListingDetailSource, /description: value,\s*\n\s*listingPreviewDescription: shouldSyncPreview \? value : previous\.listingPreviewDescription/)
   assert.match(privateListingServiceSource, /onboardingFormData\.listingDescription/)
@@ -176,7 +177,6 @@ test('listing editor verifies durable property details before navigating away', 
   })
   assert.equal(staleOnboardingCopy.ready, false)
   assert.deepEqual(staleOnboardingCopy.mismatches.map((item) => item.label), [
-    'property address (onboarding)',
     'ownership scheme (onboarding)',
     'listing price (onboarding)',
   ])
@@ -213,6 +213,31 @@ test('listing editor verifies durable property details before navigating away', 
     },
   })
   assert.equal(deployedSchemaCopies.ready, true)
+
+  const fullAddress = '395 Paul Kruger St, Capital Park, Pretoria, 0084, South Africa'
+  const editCopies = {
+    form: { propertyAddress: fullAddress, streetAddress: '395 Paul Kruger Street', formattedAddress: fullAddress },
+    listing: { addressLine1: fullAddress, streetAddress: '395 Paul Kruger Street' },
+    onboarding: { form_data: { propertyAddress: fullAddress } },
+    publication: { address: fullAddress },
+  }
+  assert.equal(verifyListingPropertyPersistenceCopies(editCopies).ready, true)
+  const wrongStreet = verifyListingPropertyPersistenceCopies({
+    ...editCopies,
+    listing: { ...editCopies.listing, streetAddress: '999 Wrong Road' },
+  })
+  assert.equal(wrongStreet.ready, true)
+  assert.equal(verifyListingPropertyPersistenceCopies({
+    ...editCopies,
+    listing: {},
+    onboarding: {},
+    publication: {},
+  }).ready, true)
+  assert.equal(verifyListingPropertySave({ propertyAddress: fullAddress }, {}).ready, true)
+  assert.equal(verifyListingPropertyPersistenceCopies({
+    ...editCopies,
+    form: { propertyAddress: fullAddress },
+  }).ready, true)
 
   const recoveredFacts = recoverStructuredPropertyFactsFromMarketingCopy(
     'Spacious 5-Bedroom Property',
@@ -295,12 +320,12 @@ test('approved listings publish their selected agency-website channel after the 
   assert.match(agentListingsSource, /setWebsiteListingPublication\(listingId, 'publish'\)/)
 })
 
-test('blank marketing drafts do not erase persisted listing content', () => {
+test('missing marketing fields preserve saved content while explicit drafts use the shared resolver', () => {
   assert.match(agentListingsSource, /LISTING_MARKETING_DRAFT_STORAGE_KEY = 'itg:listing-marketing-draft:v1'/)
   assert.match(agentListingsSource, /writeListingMarketingDraftStorage\(editListingId,\s*\{\s*\n\s*description: normalizeText\(value\)/)
   assert.match(agentListingsSource, /const effectiveListingDescription = normalizeText\(form\.listingDescription\) \|\| normalizeText\(/)
   assert.match(agentListingsSource, /const effectiveKeySellingPoints = keySellingPoints\.length \? keySellingPoints : existingKeySellingPoints/)
-  assert.match(agentListingDetailSource, /const effectiveDescription = draftDescription \|\| existingDescription/)
+  assert.match(agentListingDetailSource, /const effectiveDescription = resolveMarketingDraftText\(draft, 'description', existingDescription\)/)
   assert.match(agentListingDetailSource, /(?:const|let) effectiveDraft = \{\s*\n\s*\.\.\.draft,\s*\n\s*description: effectiveDescription,/)
   assert.match(privateListingServiceSource, /if \(nextDescription \|\| options\?\.allowBlankDescription === true\)/)
   assert.match(privateListingServiceSource, /if \(!publicationPayload\.description && existingPublicationData\.description\)/)

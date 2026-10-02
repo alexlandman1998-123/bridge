@@ -11,3 +11,5 @@ supabase/.temp/
 .vercel
 migration-evidence/**/backups/
 output/imports/
+.playwright-cli/
+output/previews/

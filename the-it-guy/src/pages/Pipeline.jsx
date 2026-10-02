@@ -278,7 +278,7 @@ function Pipeline({ initialAgentViewMode = 'pipeline' } = {}) {
       ? 'overview'
       : initialAgentViewMode
 
-  if (role === 'agent') {
+  if (role === 'agent' || (resolvedAgentViewMode === 'calendar' && new URLSearchParams(location.search).has('agent'))) {
     return <AgencyPipelinePage key={`${resolvedAgentViewMode}:${location.pathname}`} initialViewMode={resolvedAgentViewMode} />
   }
 

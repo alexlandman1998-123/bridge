@@ -21,7 +21,7 @@ export async function loadCanonicalDealSetup({ transactionId, client = supabase 
   if (!text(transactionId)) throw new Error('Transaction is required.')
   if (!client) throw new Error('Supabase is not configured.')
   const [transactionResult, buyerParties] = await Promise.all([
-    client.from('transactions').select('id, buyer_id, development_id, unit_id, transaction_type, property_address_line_1, seller_name, purchaser_type, purchase_price, sales_price, deposit_amount, reservation_required, reservation_amount, finance_type, finance_managed_by, cash_amount, bond_amount, bank, bond_originator, updated_at').eq('id', text(transactionId)).single(),
+    client.from('transactions').select('id, transaction_reference, transaction_origin_source, comment, seller_type, buyer_id, primary_buyer_participant_id, buyer_parties_model_version, development_id, unit_id, transaction_type, property_address_line_1, seller_name, purchaser_type, purchase_price, sales_price, deposit_amount, reservation_required, reservation_amount, finance_type, finance_managed_by, cash_amount, bond_amount, bank, bond_originator, updated_at').eq('id', text(transactionId)).single(),
     listTransactionBuyerParties({ transactionId, client }),
   ])
   if (transactionResult.error) throw transactionResult.error
@@ -104,9 +104,7 @@ export async function syncDealSetupAttorneyHandoff({ transactionId, client = sup
 // authorised migration/backfill writes to production transactions.
 export async function auditDealSetupCompatibility({ transactionId, client = supabase } = {}) {
   const deal = await loadCanonicalDealSetup({ transactionId, client })
-  const transactionResult = await client.from('transactions').select('id, buyer_id, purchaser_type, finance_type, buyer_parties_model_version').eq('id', text(transactionId)).single()
-  if (transactionResult.error) throw transactionResult.error
-  return auditDealSetupCompatibilityModel({ transaction: transactionResult.data, buyerParties: deal.buyerParties })
+  return auditDealSetupCompatibilityModel({ transaction: deal.transaction, buyerParties: deal.buyerParties })
 }
 
 export async function saveCanonicalDealTerms({ transactionId, terms = {}, finance = {}, client = supabase } = {}) {

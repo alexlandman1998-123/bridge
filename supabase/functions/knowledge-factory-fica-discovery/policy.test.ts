@@ -28,7 +28,7 @@ Deno.test("schema discovery accepts only fixed, metadata-only actions", () => {
   assertEquals(parseDiscoveryAction({ action: "report" }), null);
   assertEquals(
     UAT_GRAPHQL_ENDPOINT,
-    "https://propinfoapi.co.za/uat/v0_1/graphql/",
+    "https://propinfoapi.co.za/uat/v1/graphql/",
   );
 });
 

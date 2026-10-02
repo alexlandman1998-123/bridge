@@ -83,11 +83,6 @@ assert.match(
   /void enqueueSellerOnboardingProgressProjection\(client, \{[\s\S]*?listing: rpcContext\.listing,[\s\S]*?reason: 'seller_onboarding_progress'/,
   'seller onboarding draft saves should queue projection work after the RPC returns',
 )
-assert.match(
-  privateListingService,
-  /void enqueueSellerOnboardingProgressProjection\(client, \{[\s\S]*?listing: listingForProgress,[\s\S]*?reason: 'seller_onboarding_progress_fallback'/,
-  'seller onboarding fallback draft saves should queue projection work after the direct update returns',
-)
 assert.match(privateListingService, /SELLER_ONBOARDING_COMPLETION_TIMEOUT_MS = 12_000[\s\S]*?bridge_complete_private_listing_seller_onboarding[\s\S]*?\.abortSignal\(timeout\.signal\)/, 'completion RPC should have a 12-second client timeout')
 assert.match(privateListingService, /SELLER_ONBOARDING_RECOVERY_TIMEOUT_MS = 3_000[\s\S]*?fetchSellerOnboardingCompletionReceipt[\s\S]*?bridge_get_private_listing_seller_onboarding_completion/, 'timeout recovery should use the lightweight completion receipt')
 assert.match(privateListingService, /sanitizeSellerOnboardingCompletionFormData[\s\S]*?delete sanitized\[key\]/, 'client should sanitize completion form data before transport')
@@ -100,26 +95,6 @@ assert.match(
   privateListingService,
   /function isRecoverableSellerPortalPayloadRpcError\(error\)[\s\S]*?isStatementTimeoutError\(error\)/,
   'seller onboarding payload lookups should treat statement timeouts as recoverable and fall back to the lightweight lookup',
-)
-assert.match(
-  privateListingService,
-  /bridge_update_private_listing_seller_onboarding_progress[\s\S]*?!isStatementTimeoutError\(rpc\.error\)[\s\S]*?throw rpc\.error/,
-  'seller onboarding progress should fall back to the direct update path when the progress RPC times out',
-)
-assert.match(
-  privateListingService,
-  /function fetchSellerOnboardingProgressFallbackContext\(client, token\)[\s\S]*?fetchSellerOnboardingCoreApiPayload\(normalizedToken, \{[\s\S]*?onboardingId: query\.data\.id[\s\S]*?listingId: query\.data\.private_listing_id/,
-  'seller onboarding progress fallback should use the fast token-scoped API context before heavy portal payload lookups',
-)
-assert.match(
-  privateListingService,
-  /fetchSellerOnboardingProgressFallbackContext\(client, normalizedToken\) \|\|[\s\S]*?getSellerOnboardingByToken\(token, \{ includeRequirementsAndDocuments: false \}\)/,
-  'seller onboarding progress should only use the heavier onboarding lookup if the fast context is unavailable',
-)
-assert.match(
-  privateListingService,
-  /getPrivateListing\(context\.listing\.id, \{ includeRequirementsAndDocuments: false \}\)[\s\S]*?catch\(\(listingError\)/,
-  'seller onboarding progress fallback should not fail a saved draft when listing refresh enrichment fails',
 )
 assert.match(
   privateListingService,
@@ -150,8 +125,8 @@ assert.match(
 )
 assert.match(
   privateListingService,
-  /fetchSellerOnboardingCoreApiPayload\(normalizedToken, \{[\s\S]*?onboardingId: query\.data\.id[\s\S]*?listingId: query\.data\.private_listing_id/,
-  'seller onboarding should use the Vercel core API fallback with token-scoped onboarding identifiers',
+  /fetchSellerOnboardingCoreApiPayload\(normalizedToken\)/,
+  'seller onboarding should call the token-checked API without first reading the protected table',
 )
 assert.match(
   privateListingService,
@@ -175,3 +150,6 @@ assert.match(
 )
 
 console.log('seller onboarding submit fast-return contract ok')
+
+const secureSubmit = privateListingService.slice(privateListingService.indexOf('export async function submitSellerOnboarding('), privateListingService.indexOf('export async function updateSellerOnboardingProgress('))
+assert.doesNotMatch(secureSubmit, /\.from\(/, 'token submit and progress must never fall back to direct table writes')

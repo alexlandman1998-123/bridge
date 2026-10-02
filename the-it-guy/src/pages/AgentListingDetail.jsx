@@ -66,7 +66,7 @@ import {
   ListingViewingRequestModal,
 } from '../components/listings/ListingBuyerActionModals'
 import LeadCreateDialog from '../components/leads/LeadCreateDialog'
-import { deriveListingChannelUpdateStates } from '../services/listings/listingChannelUpdateState'
+import { deriveListingChannelUpdateStates, summarizeListingPortalError } from '../services/listings/listingChannelUpdateState'
 import { isQuickListingPortalUpdateAccepted } from '../services/listings/listingQuickActionDelivery'
 import {
   getPendingListingMediaUploads,
@@ -193,6 +193,7 @@ import {
   buildListingSellerDocumentReadiness,
   buildListingSellerProfileRequirementProjection,
   createListingSellerProfileBuilderDraft,
+  getListingSellerFormData,
   hasListingSellerProfileBranchDetailsToDiscard,
   isListingSellerOwnershipUnidentified,
   removeListingSellerProfileDraftPerson,
@@ -1152,12 +1153,34 @@ function formatProperty24Blocker(value = '') {
     .replace(/\bproperty24\b/g, 'Property24')
 }
 
+function getProperty24ValidationDetails(response = {}) {
+  const details = []
+  function collect(value, field = '') {
+    if (typeof value === 'string' && value.trim()) {
+      details.push(field ? `${field}: ${value.trim()}` : value.trim())
+    } else if (Array.isArray(value)) {
+      value.forEach((item) => collect(item, field))
+    } else if (value && typeof value === 'object') {
+      const message = value.message || value.errorMessage || value.Message || value.ErrorMessage
+      if (typeof message === 'string') {
+        collect(message, value.propertyName || value.field || value.PropertyName || field)
+      } else {
+        Object.entries(value).forEach(([key, item]) => collect(item, key))
+      }
+    }
+  }
+  collect(response.errors || response.Errors || response.validationErrors || response.modelState || response.ModelState)
+  return [...new Set(details)].join('; ')
+}
+
 function getProperty24ApiMessage(payload = {}, fallback = 'Property24 request failed.') {
   const missing = Array.isArray(payload?.missingConfiguration) ? payload.missingConfiguration : []
   if (missing.length) return `Property24 setup is incomplete: ${missing.join(', ')}.`
   const workflowError = payload?.report?.error || payload?.error
-  const upstreamMessage = workflowError?.response?.sample?.message || workflowError?.response?.sample?.errorMessage || ''
-  if (upstreamMessage) return `Property24 rejected this request: ${upstreamMessage}`
+  const upstreamResponse = workflowError?.response?.sample || payload?.response?.sample || {}
+  const upstreamMessage = upstreamResponse.message || upstreamResponse.errorMessage || ''
+  const validationDetails = getProperty24ValidationDetails(upstreamResponse)
+  if (upstreamMessage || validationDetails) return `Property24 rejected this request: ${[upstreamMessage, validationDetails].filter(Boolean).join('. ')}`
   if (workflowError?.message) return workflowError.message
   const dataBlockers = payload?.preview?.dataBlockers || payload?.report?.preview?.dataBlockers || []
   const technicalBlockers = payload?.preview?.technicalBlockers || payload?.report?.preview?.technicalBlockers || []
@@ -1364,31 +1387,6 @@ function isValidEmail(value) {
   const text = toCleanText(value)
   if (!text) return false
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text)
-}
-
-function getListingSellerFormData(listing = {}) {
-  const mergeObjects = (...sources) => sources.reduce((accumulator, source) => {
-    if (!source || typeof source !== 'object' || Array.isArray(source)) return accumulator
-    return {
-      ...accumulator,
-      ...source,
-    }
-  }, {})
-
-  const onboarding = listing?.sellerOnboarding || listing?.seller_onboarding || {}
-  const canonicalFacts = listing?.sellerCanonicalFacts || listing?.seller_canonical_facts_json || {}
-  const sellerFacts = canonicalFacts?.seller && typeof canonicalFacts.seller === 'object' ? canonicalFacts.seller : {}
-  const propertyFacts = canonicalFacts?.property && typeof canonicalFacts.property === 'object' ? canonicalFacts.property : {}
-
-  return mergeObjects(
-    sellerFacts,
-    propertyFacts,
-    canonicalFacts,
-    onboarding.formData,
-    onboarding.form_data,
-    listing?.sellerOnboardingFormData,
-    listing?.seller_onboarding_form_data,
-  )
 }
 
 function isRemoteListingMissingError(error) {
@@ -1757,32 +1755,32 @@ function getSellerDocumentDeliveryPresentation(delivery = null) {
 
 function resolveSellerEmailFromListing(listing = {}) {
   const formData = getListingSellerFormData(listing)
-  const canonicalFacts = listing?.sellerCanonicalFacts || listing?.seller_canonical_facts_json || {}
+  const canonicalFacts = listing?.sellerCanonicalFacts ?? listing?.seller_canonical_facts_json ?? {}
   return toCleanText(
-    formData.sellerEmail ||
-      formData.email ||
-      formData.contactEmail ||
-      canonicalFacts.email ||
-      canonicalFacts.sellerEmail ||
-      listing?.sellerEmail ||
-      listing?.seller_email ||
+    formData.sellerEmail ??
+      formData.email ??
+      formData.contactEmail ??
+      canonicalFacts.email ??
+      canonicalFacts.sellerEmail ??
+      listing?.sellerEmail ??
+      listing?.seller_email ??
       listing?.seller?.email,
   ).toLowerCase()
 }
 
 function resolveSellerPhoneFromListing(listing = {}) {
   const formData = getListingSellerFormData(listing)
-  const canonicalFacts = listing?.sellerCanonicalFacts || listing?.seller_canonical_facts_json || {}
+  const canonicalFacts = listing?.sellerCanonicalFacts ?? listing?.seller_canonical_facts_json ?? {}
   return toCleanText(
-    formData.sellerPhone ||
-      formData.phone ||
-      formData.contactNumber ||
-      formData.mobile ||
-      canonicalFacts.phone ||
-      canonicalFacts.sellerPhone ||
-      canonicalFacts.mobile ||
-      listing?.sellerPhone ||
-      listing?.seller_phone ||
+    formData.sellerPhone ??
+      formData.phone ??
+      formData.contactNumber ??
+      formData.mobile ??
+      canonicalFacts.phone ??
+      canonicalFacts.sellerPhone ??
+      canonicalFacts.mobile ??
+      listing?.sellerPhone ??
+      listing?.seller_phone ??
       listing?.seller?.phone,
   )
 }
@@ -2390,7 +2388,7 @@ function DistributionChannel({
       : syncing
         ? 'text-[#2f6fb3]'
         : 'text-[#526a82]'
-  const manageActions = [primaryAction, secondaryAction, ...menuActions].filter(Boolean)
+  const manageActions = [secondaryAction, ...menuActions].filter(Boolean)
   const displayReference = normalizeListingChannelReference(reference)
   const safePublicUrl = normalizeListingChannelPublicUrl(publicUrl || publicationState?.publicUrl)
   return (
@@ -2401,7 +2399,13 @@ function DistributionChannel({
           <p className="truncate text-sm font-semibold leading-5 text-[#142132]">{name}</p>
           {subtitle ? <p className="truncate text-xs leading-5 text-[#607387]">{subtitle}</p> : null}
           {contextTitle ? <p className="mt-1 text-xs font-semibold leading-5 text-[#8a5b13]">{contextTitle}</p> : null}
-          {contextDetail ? <p className="mt-0.5 text-xs leading-5 text-[#607387]">{contextDetail}</p> : null}
+          {contextDetail ? <p className="mt-0.5 break-words text-xs leading-5 text-[#607387]">{summarizeListingPortalError(contextDetail)}</p> : null}
+          {contextDetail && summarizeListingPortalError(contextDetail) !== contextDetail ? (
+            <details className="mt-1 min-w-0 text-xs text-[#607387]">
+              <summary className="cursor-pointer font-semibold">Technical details</summary>
+              <pre className="mt-2 max-h-48 max-w-full overflow-auto whitespace-pre-wrap break-words rounded-lg bg-[#f7fbff] p-2 text-[0.65rem] [overflow-wrap:anywhere]">{contextDetail}</pre>
+            </details>
+          ) : null}
         </div>
       </div>
       <div className="min-w-0">
@@ -2435,14 +2439,16 @@ function DistributionChannel({
       <div className="min-w-0">
         <div className="grid gap-1 text-[0.68rem] text-[#607387]">
           {savedAt ? <p><span className="font-semibold uppercase tracking-[0.06em] text-[#8294aa]">Arch9 saved</span> · {savedAt}</p> : null}
-          {publicationState?.submittedAt ? <p><span className="font-semibold uppercase tracking-[0.06em] text-[#8294aa]">Submitted</span> · {formatRelativeTime(publicationState.submittedAt)}</p> : null}
+          {publicationState?.stage === 'failed' && publicationState.failedAt ? <p className="font-semibold text-[#9a5b13]">Portal submission failed · {formatRelativeTime(publicationState.failedAt)}</p> : null}
+          {publicationState?.submittedAt ? <p><span className="font-semibold uppercase tracking-[0.06em] text-[#8294aa]">Sent to portal</span> · {formatRelativeTime(publicationState.submittedAt)}</p> : null}
           {publicationState?.acceptedAt ? <p><span className="font-semibold uppercase tracking-[0.06em] text-[#8294aa]">Accepted</span> · {formatRelativeTime(publicationState.acceptedAt)}</p> : null}
           {publicationState?.verifiedAt ? <p><span className="font-semibold uppercase tracking-[0.06em] text-[#8294aa]">Verified</span> · {formatRelativeTime(publicationState.verifiedAt)}</p> : null}
           {publicationState?.withdrawnAt ? <p><span className="font-semibold uppercase tracking-[0.06em] text-[#8294aa]">Withdrawn</span> · {formatRelativeTime(publicationState.withdrawnAt)}</p> : null}
           {!savedAt && !publicationState?.submittedAt && lastSynced ? <p><span className="font-semibold uppercase tracking-[0.06em] text-[#8294aa]">Last synced</span> · {lastSynced}</p> : null}
         </div>
       </div>
-      <div className="flex justify-start lg:justify-end">
+      <div className="flex flex-wrap items-center justify-start gap-2 lg:justify-end">
+        {primaryAction}
         {manageActions.length ? (
           <details className="relative open:z-40">
             <summary className="inline-flex min-h-9 cursor-pointer list-none items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-sm font-semibold text-[#35546c] transition hover:border-[#b7c8db] hover:bg-[#f7fbff] [&::-webkit-details-marker]:hidden">
@@ -5289,7 +5295,18 @@ function AgentListingDetail() {
   }
 
   async function retryListingChannelUpdate(channel, action) {
-    if (!['Property24', 'Private Property'].includes(channel) || !['under_offer', 'sold', 'price_reduction'].includes(action) || !listingRecord?.id) return
+    if (!listingRecord?.id) {
+      setDetailError('Reload this listing before retrying the portal update.')
+      return
+    }
+    if (['publish', 'update'].includes(action)) {
+      if (channel === 'Property24') return publishProperty24Listing()
+      if (channel === 'Private Property') return publishPrivatePropertyListing()
+    }
+    if (!['Property24', 'Private Property'].includes(channel) || !['under_offer', 'sold', 'price_reduction'].includes(action)) {
+      setDetailError('This portal action cannot be retried here. Open Manage to review the channel.')
+      return
+    }
     setQuickListingBusy(true)
     setQuickListingResultAction(action)
     setDetailError('')
@@ -10700,10 +10717,11 @@ function AgentListingDetail() {
 
   function handleEditSellerProfile() {
     const canonicalFacts = listingRecord?.sellerCanonicalFacts || listingRecord?.seller_canonical_facts_json || {}
-    const nameParts = resolveSellerNameFromListing(listingRecord).split(/\s+/).filter(Boolean)
+    const contactName = sellerFormData?.primaryContactName ?? sellerFormData?.contactName ?? canonicalFacts.seller?.contact?.name
+    const nameParts = toCleanText(contactName ?? resolveSellerNameFromListing(listingRecord)).split(/\s+/).filter(Boolean)
     setSellerContactDraft({
-      firstName: toCleanText(canonicalFacts.firstName || sellerFormData?.sellerFirstName || sellerFormData?.firstName || nameParts[0]),
-      lastName: toCleanText(canonicalFacts.lastName || sellerFormData?.sellerSurname || sellerFormData?.lastName || nameParts.slice(1).join(' ')),
+      firstName: toCleanText(contactName != null ? nameParts[0] : sellerFormData?.sellerFirstName ?? sellerFormData?.firstName ?? canonicalFacts.firstName ?? nameParts[0]),
+      lastName: toCleanText(contactName != null ? nameParts.slice(1).join(' ') : sellerFormData?.sellerSurname ?? sellerFormData?.lastName ?? canonicalFacts.lastName ?? nameParts.slice(1).join(' ')),
       email: resolveSellerEmailFromListing(listingRecord),
       phone: resolveSellerPhoneFromListing(listingRecord),
     })
@@ -10845,40 +10863,19 @@ function AgentListingDetail() {
     setDetailError('')
     setDetailMessage('')
     try {
-      let remoteListingMissing = false
-      let result = null
-      if (isSupabaseConfigured && isUuidLike(listingRecord.id)) {
-        try {
-          result = await limitSellerCanonicalSaveWait(saveListingSellerCanonicalUpdate({
-            listing: listingRecord,
-            formPatch: canonicalFormPatch,
-            suppliedCanonicalFacts: canonicalSellerFacts,
-            mutationType: 'seller_profile_capture',
-            source: 'agent_listing_seller_profile_builder',
-            organisationId: listingOrganisationId,
-            remote: true,
-            requireIdentifiedSeller: true,
-            syncRequirements: true,
-            requirementSyncReason: 'listing_seller_profile_capture',
-          }))
-        } catch (remoteError) {
-          if (!isRemoteListingMissingError(remoteError)) throw remoteError
-          remoteListingMissing = true
-          console.warn('[AgentListingDetail] seller profile saved locally because remote listing row is missing', remoteError)
-        }
-      }
-      if (!isSupabaseConfigured || !isUuidLike(listingRecord.id) || remoteListingMissing) {
-        result = await saveListingSellerCanonicalUpdate({
-          listing: listingRecord,
-          formPatch: canonicalFormPatch,
-          suppliedCanonicalFacts: canonicalSellerFacts,
-          mutationType: 'seller_profile_capture',
-          source: 'agent_listing_seller_profile_builder',
-          organisationId: listingOrganisationId,
-          remote: false,
-          requireIdentifiedSeller: true,
-        })
-      }
+      const remote = isSupabaseConfigured && isUuidLike(listingRecord.id)
+      const result = await limitSellerCanonicalSaveWait(saveListingSellerCanonicalUpdate({
+        listing: listingRecord,
+        formPatch: canonicalFormPatch,
+        suppliedCanonicalFacts: canonicalSellerFacts,
+        mutationType: 'seller_profile_capture',
+        source: 'agent_listing_seller_profile_builder',
+        organisationId: listingOrganisationId,
+        remote,
+        requireIdentifiedSeller: true,
+        syncRequirements: true,
+        requirementSyncReason: 'listing_seller_profile_capture',
+      }))
       const remoteRequirements = normalizeDocumentRequirements(result?.syncedRequirements)
       const listingRequirements = normalizeDocumentRequirements(result?.listing?.documentRequirements)
       const documentRequirements = remoteRequirements.length
@@ -10901,9 +10898,7 @@ function AgentListingDetail() {
       setSellerInformationEditorOpen(false)
       setSellerProfileBuilderReturnToDocuments(false)
       const crmWarning = result?.warnings?.[0]?.message
-      setDetailMessage(crmWarning || (remoteListingMissing
-        ? 'Seller profile captured locally. Document requirements have been recalculated for this imported listing.'
-        : informationEditor
+      setDetailMessage(crmWarning || (informationEditor
           ? 'Seller information updated. The saved ownership model and document requirements are now in sync.'
           : 'Seller profile captured. Document requirements have been recalculated from the saved seller model.'))
       if (returnToDocuments) {
@@ -10964,6 +10959,8 @@ function AgentListingDetail() {
           firstName,
           sellerSurname: lastName,
           lastName,
+          primaryContactName: fullName,
+          contactName: fullName,
           sellerName: fullName,
           fullName,
           sellerEmail: email,
@@ -12615,7 +12612,7 @@ function AgentListingDetail() {
     const property24ChannelLabel = overviewPublishedChannels[0].statusLabel
     const property24ContextTitle = property24IntentionallyInactive ? 'Removed through the Arch9 withdrawal workflow'
       : property24HasUnpublishedChanges ? `${listingPublicationStates.property24.changeCount} saved Arch9 change${listingPublicationStates.property24.changeCount === 1 ? '' : 's'} not published`
-      : property24Update?.status === 'needs_attention' ? property24Update.retriable === false ? 'No confirmed live Property24 listing to update' : 'Latest portal update needs attention'
+      : property24Update?.status === 'needs_attention' ? property24Update.retriable === false ? 'No confirmed live Property24 listing to update' : 'Portal submission failed'
       : property24MonitoringIssue ? 'Update history unavailable; channel currency cannot be confirmed'
       : property24Update?.status === 'awaiting_verification' ? 'Update accepted; check the public page'
       : property24Update?.status === 'current' ? 'Latest update verified on the public page'
@@ -12637,7 +12634,7 @@ function AgentListingDetail() {
     const privatePropertyContextTitle = privatePropertyIntentionallyInactive ? 'Removed through the Arch9 withdrawal workflow'
       : privatePropertyRecoveredPreflight ? 'Ready to publish'
       : privatePropertyHasUnpublishedChanges ? `${listingPublicationStates.private_property.changeCount} saved Arch9 change${listingPublicationStates.private_property.changeCount === 1 ? '' : 's'} not published`
-      : privatePropertyUpdate?.status === 'needs_attention' ? privatePropertyUpdate.retriable === false ? 'No confirmed live Private Property listing to update' : 'Latest portal update needs attention'
+      : privatePropertyUpdate?.status === 'needs_attention' ? privatePropertyUpdate.retriable === false ? 'No confirmed live Private Property listing to update' : 'Portal submission failed'
       : privatePropertyMonitoringIssue ? 'Update history unavailable; channel currency cannot be confirmed'
       : privatePropertyUpdate?.status === 'awaiting_verification' ? 'Update accepted; check the public page'
       : privatePropertyUpdate?.status === 'current' ? 'Latest update verified on the public page'
@@ -12661,6 +12658,7 @@ function AgentListingDetail() {
         publicUrl: getListingChannelViewUrl('property24', property24Url),
         status: property24ChannelStatus,
         statusLabel: property24ChannelLabel,
+        live: overviewPublishedChannels[0].live,
         contextTitle: property24ContextTitle,
         contextDetail: property24Update?.status === 'needs_attention' ? property24Update.detail : property24MonitoringIssue ? 'Refresh monitoring or contact support before treating this channel as current.' : property24Update?.detail || property24IssueDetail,
         lastSynced: property24LastSyncedAt ? formatRelativeTime(property24LastSyncedAt) : '',
@@ -12675,7 +12673,7 @@ function AgentListingDetail() {
         ) : property24Update?.status === 'needs_attention' ? (
           property24Update.retriable === false
             ? <Button type="button" size="sm" variant="secondary" onClick={() => setProperty24ManageOpen(true)}><CircleAlert size={15} />Review channel</Button>
-            : <Button type="button" size="sm" variant="secondary" onClick={() => void retryListingChannelUpdate('Property24', property24Update.action)} disabled={quickListingBusy}><RefreshCw size={15} />Retry update</Button>
+            : <Button type="button" size="sm" variant="secondary" onClick={() => void retryListingChannelUpdate('Property24', property24Update.action)} disabled={quickListingBusy}><RefreshCw size={15} />Retry submission</Button>
         ) : property24Update?.status === 'awaiting_verification' && !property24Url ? (
           <Button type="button" size="sm" variant="secondary" onClick={() => setProperty24ManageOpen(true)}><Link2 size={15} />Add live link</Button>
         ) : (property24Published || property24Update?.status === 'awaiting_verification' || property24Update?.status === 'current') && property24Url ? (
@@ -12730,6 +12728,7 @@ function AgentListingDetail() {
         publicUrl: getListingChannelViewUrl('private_property', privatePropertyUrl),
         status: privatePropertyChannelStatus,
         statusLabel: privatePropertyChannelLabel,
+        live: overviewPublishedChannels[1].live,
         contextTitle: privatePropertyContextTitle,
         contextDetail: privatePropertyUpdate?.status === 'needs_attention' ? privatePropertyUpdate.detail : privatePropertyMonitoringIssue ? 'Refresh monitoring or contact support before treating this channel as current.' : privatePropertyUpdate?.detail || privatePropertyIssueDetail,
         lastSynced: privatePropertyLastSyncedAt ? formatRelativeTime(privatePropertyLastSyncedAt) : '',
@@ -12744,7 +12743,7 @@ function AgentListingDetail() {
         ) : privatePropertyUpdate?.status === 'needs_attention' ? (
           privatePropertyUpdate.retriable === false
             ? <Button type="button" size="sm" variant="secondary" onClick={reviewPrivatePropertyIssues}><CircleAlert size={15} />Review channel</Button>
-            : <Button type="button" size="sm" variant="secondary" onClick={() => void retryListingChannelUpdate('Private Property', privatePropertyUpdate.action)} disabled={quickListingBusy}><RefreshCw size={15} />Retry update</Button>
+            : <Button type="button" size="sm" variant="secondary" onClick={() => void retryListingChannelUpdate('Private Property', privatePropertyUpdate.action)} disabled={quickListingBusy}><RefreshCw size={15} />Retry submission</Button>
         ) : privatePropertyUpdate?.status === 'awaiting_verification' && !privatePropertyUrl ? (
           <Button type="button" size="sm" variant="secondary" onClick={() => setPrivatePropertyManageOpen(true)}><Link2 size={15} />Add live link</Button>
         ) : (privatePropertyLive || privatePropertyUpdate?.status === 'awaiting_verification' || privatePropertyUpdate?.status === 'current') && privatePropertyUrl ? (
@@ -12799,9 +12798,8 @@ function AgentListingDetail() {
       agencyWebsitePublication?.projectionStatus === 'Published'
     const kingdomWebsiteAvailable = kingdomWebsitePublication?.available === true
     const kingdomWebsiteLive = kingdomWebsitePublication?.status === 'published' &&
-      kingdomWebsitePublication?.websiteStatus === 'published' &&
-      kingdomWebsitePublication?.projectionStatus === 'Published'
-    const marketingLiveChannelCount = channelRows.filter((channel) => normalizeKey(channel.status) === 'live').length + (agencyWebsiteLive ? 1 : 0) + (kingdomWebsiteLive ? 1 : 0)
+      kingdomWebsitePublication?.websiteStatus === 'published'
+    const marketingLiveChannelCount = channelRows.filter((channel) => channel.live).length + (agencyWebsiteLive ? 1 : 0) + (kingdomWebsiteLive ? 1 : 0)
     const marketingChannelCount = channelRows.length + (agencyWebsiteConnected ? 1 : 0) + (kingdomWebsiteAvailable ? 1 : 0)
     const channelCountLabel = marketingChannelCount ? `${marketingLiveChannelCount} / ${marketingChannelCount}` : String(marketingLiveChannelCount)
     const remainingReadinessCount = incompleteReadinessItems.length
@@ -13042,7 +13040,7 @@ function AgentListingDetail() {
             listingId={listingRecord?.id}
             listingTitle={marketingDraft.headline || listingRecord?.listingTitle || listingRecord?.title}
             listingReference={listingRecord?.arch9Reference || listingRecord?.listingReference || listingRecord?.listingCode || ''}
-            onPrepare={() => prepareAgencyWebsiteListing('Kingdom website')}
+            onPrepare={() => saveMarketingDraft(marketingDraft, { successMessage: '' })}
             onStatusChange={setKingdomWebsitePublication}
             savedAt={formatRelativeTime(listingRecord?.updatedAt || listingRecord?.updated_at)}
           />

@@ -36,7 +36,6 @@ export function verifyListingPropertySave(form = {}, listing = {}) {
   const details = listing?.propertyDetails && typeof listing.propertyDetails === 'object' ? listing.propertyDetails : {}
   const canonical = canonicalProperty(listing)
   const checks = [
-    textCheck('propertyAddress', 'property address', form.propertyAddress, firstDefined(listing.addressLine1, details.addressLine1)),
     textCheck('streetNumber', 'street number', form.streetNumber, firstDefined(listing.streetNumber, details.streetNumber)),
     textCheck('streetName', 'street name', form.streetName || form.route, firstDefined(listing.streetName, details.streetName)),
     textCheck('suburb', 'suburb', form.suburb, firstDefined(listing.suburb, details.suburb)),
@@ -74,20 +73,19 @@ export function verifyListingPropertyPersistenceCopies({ form = {}, listing = {}
   // onboarding. Verify each value against the record that can actually own it.
   const listingVerificationForm = {
     ...form,
-    propertyAddress: firstDefined(form.streetAddress, form.propertyAddress),
     propertyStructureType: '',
     parkingCount: '',
   }
   const checks = [
+    // Address copies may use different formats and are optional on portals.
+    // Continue saving them, but do not make their verification a save gate.
     ...verifyListingPropertySave(listingVerificationForm, listing).mismatches,
-    textCheck('propertyAddress', 'property address (onboarding)', form.propertyAddress, firstDefined(onboardingForm.propertyAddress, onboardingForm.streetAddress, onboardingForm.formattedAddress)),
     textCheck('propertyType', 'property type (onboarding)', form.propertyType, onboardingForm.propertyType),
     textCheck('propertyStructureType', 'ownership scheme (onboarding)', form.propertyStructureType, firstDefined(onboardingForm.propertyStructureType, onboardingForm.ownershipStructure)),
     numberCheck('listingPrice', 'listing price (onboarding)', form.listingPrice, onboardingForm.askingPrice),
     numberCheck('parkingCount', 'parking (onboarding)', form.parkingCount, firstDefined(onboardingForm.parkingCount, onboardingForm.parkingCovered, onboardingForm.parkingBays)),
     numberCheck('ratesTaxes', 'rates and taxes (onboarding)', form.ratesTaxes, onboardingForm.ratesTaxes),
     numberCheck('levies', 'levies (onboarding)', form.levies, onboardingForm.levies),
-    textCheck('propertyAddress', 'property address (publication)', firstDefined(form.formattedAddress, form.propertyAddress), publication.address),
     textCheck('propertyType', 'property type (publication)', form.propertyType, firstDefined(publication.property_type, publication.propertyType)),
     numberCheck('listingPrice', 'listing price (publication)', form.listingPrice, firstDefined(publication.asking_price, publication.askingPrice)),
     numberCheck('parkingCount', 'parking (publication)', form.parkingCount, firstDefined(publication.parking_bays, publication.parkingBays)),

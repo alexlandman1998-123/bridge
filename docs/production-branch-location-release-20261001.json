@@ -1,0 +1,25 @@
+{
+  "releasedAt": "2026-10-01T20:00:23.709Z",
+  "product": "Primary Arch9 workspace",
+  "url": "https://app.arch9.co.za",
+  "deployment": "dpl_CEd1n3tsVWGecGbVFsNPkeF6vK5Y",
+  "baseline": "dpl_7ehCUvw8Sxf25rjAPdQnfvCqdimq",
+  "changedFiles": [
+    {
+      "file": "the-it-guy/src/services/agencyBranchService.js",
+      "before": "e65740d41be573a60e4d7438fd8c49a2e073794c",
+      "after": "6230d9ef807be9ca9a12bf241d42dc7f33fdfcf6"
+    }
+  ],
+  "preservedFiles": 11468,
+  "verification": {
+    "ready": true,
+    "productionAlias": true,
+    "exactSourceScope": true,
+    "focusedChecks": "passed: stored placeholder with saved city/province, address-only fallback, missing address, custom labels and settings persistence",
+    "productionAddressRead": "confirmed Cape Town and Western Cape are saved alongside a stale Location pending label",
+    "productionDataWrites": false,
+    "authenticatedBrowserVerification": "not performed"
+  },
+  "rollbackCommand": "vercel promote dpl_7ehCUvw8Sxf25rjAPdQnfvCqdimq --yes"
+}

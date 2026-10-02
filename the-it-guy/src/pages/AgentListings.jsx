@@ -28,6 +28,7 @@ import { isUnconvertedSellerLeadIntake, isUnpublishedDraftListing } from '../lib
 import { assessListingSellerLink, assessSellerLeadPersistence } from '../lib/listingDataIntegrity'
 import { preferSavedPropertyFact, recoverStructuredPropertyFactsFromMarketingCopy } from '../lib/listingMarketingPropertyFactRecovery'
 import { listingPropertySaveErrorMessage, verifyListingPropertyPersistenceCopies } from '../lib/listingPropertySaveVerification'
+import { assertListingEditorSellerOwnership } from '../services/listings/listingSellerHistoricalNormalizationModel'
 import { buildListingSellerLeadPayload } from '../lib/listingSellerLeadPayload'
 import { normalizeOrganisationMembershipRole } from '../lib/organisationAccess'
 import {
@@ -1282,8 +1283,8 @@ function buildListingEditorFormFromListing(listing = {}, profile = {}, workspace
   return {
     ...base,
     quickAddIntent: hasSignedMandate ? 'signed_mandate' : 'draft',
-    sellerName,
-    sellerSurname: '',
+    sellerName: normalizeText(onboardingFormData.sellerName || canonicalFacts.firstName || sellerName),
+    sellerSurname: normalizeText(onboardingFormData.sellerSurname || canonicalFacts.lastName),
     sellerEmail: normalizeText(listing.sellerEmail || canonicalFacts.email || canonicalFacts.sellerEmail || canonicalSeller.email || seller.email),
     sellerPhone: normalizeText(listing.sellerPhone || canonicalFacts.phone || canonicalFacts.sellerPhone || canonicalFacts.mobile || canonicalSeller.phone || seller.phone),
     sellerType: DIRECT_LISTING_SELLER_TYPE_OPTIONS.some((option) => option.value === sellerType) ? sellerType : 'unknown',
@@ -4658,7 +4659,14 @@ function AgentListings({ initialTab = null } = {}) {
     const sellerEmail = normalizeText(form.sellerEmail)
     const sellerPhone = normalizeText(form.sellerPhone)
     const listingTitle = normalizeText(form.listingTitle) || [normalizeText(form.propertyType), normalizeText(form.suburb)].filter(Boolean).join(' - ') || propertyAddress || 'Untitled listing draft'
+    const draftMandateStatus = getQuickListingMandateStatus(form)
+    const directListingPersistence = buildQuickAddDirectListingPersistencePayload(form, {
+      capturedBy: profile?.id || profile?.email || '',
+      listingStatus: 'seller_lead',
+      mandateStatus: draftMandateStatus,
+    })
     const draftFacts = {
+      ...directListingPersistence.sellerCanonicalFacts,
       ...buildListingPropertyCanonicalFacts(form),
       sellerName,
       name: sellerName,
@@ -4681,7 +4689,7 @@ function AgentListings({ initialTab = null } = {}) {
         assignedAgentEmail: form.assignedAgentEmail || profile?.email || null,
         listingStatus: 'seller_lead',
         sellerOnboardingStatus: 'not_started',
-        mandateStatus: 'not_started',
+        mandateStatus: draftMandateStatus,
         listingVisibility: 'internal',
         title: listingTitle,
         propertyCategory: normalizePropertyCategory(form.propertyCategory, { fallback: 'residential' }),
@@ -4722,6 +4730,15 @@ function AgentListings({ initialTab = null } = {}) {
       }, { includeRequirementsAndDocuments: false, syncRequirements: false })
       const listingId = normalizeText(created?.listing?.id)
       if (!listingId) throw new Error('Unable to save this listing draft.')
+
+      const savedOnboarding = await persistSellerProfileOnboardingFormData({
+        listingId,
+        formData: directListingPersistence.sellerOnboardingFormData,
+        status: 'not_started',
+        sellerType: directListingPersistence.seller?.sellerLegalType || form.sellerType,
+        ownershipStructure: directListingPersistence.seller?.ownerStructureType || form.sellerType,
+      })
+      if (!savedOnboarding?.id) throw new Error('The listing was created, but seller and mandate details could not be saved. Your browser copy has been kept.')
 
       // Move the full in-progress form to the record-specific key before
       // redirecting. The database is the durable source; this preserves
@@ -4785,7 +4802,7 @@ function AgentListings({ initialTab = null } = {}) {
       throw new Error('This production listing could not be connected to the database. Nothing was saved; please retry after the connection is restored.')
     }
 
-    const sellerName = normalizeText(form.sellerName)
+    const sellerName = getQuickAddSellerDisplayName(form)
     const sellerEmail = normalizeText(form.sellerEmail)
     const sellerPhone = normalizeText(form.sellerPhone)
     const propertyAddressValue = buildListingAddressValueFromForm(form)
@@ -4965,6 +4982,9 @@ function AgentListings({ initialTab = null } = {}) {
     let websitePublication = null
 
     if (isSupabaseConfigured && isUuidLike(listingId)) {
+      const currentSellerListing = await getPrivateListing(listingId, { includeRequirementsAndDocuments: false })
+      if (!currentSellerListing?.id) throw new Error('The saved Seller record could not be checked. Reload the listing before saving.')
+      assertListingEditorSellerOwnership(form, currentSellerListing)
       const databaseListingPatch = { ...listingPatch }
       delete databaseListingPatch.assignedAgentId
       const savedListing = await updatePrivateListing(listingId, databaseListingPatch, { includeRequirementsAndDocuments: false })

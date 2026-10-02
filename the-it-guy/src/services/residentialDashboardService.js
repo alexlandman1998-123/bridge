@@ -40,6 +40,16 @@ function getFirstNumber(...values) {
   return 0
 }
 
+// An explicit zero is authoritative; health totals and card previews are fallbacks.
+function getActiveTransactionCount(source = {}) {
+  for (const value of [source.transactions?.totalActive, source.kpis?.activeTransactions, source.transactionHealth?.total, source.transactions?.health?.total, source.health?.total]) {
+    if (value === null || value === undefined || value === '') continue
+    const count = Number(value)
+    if (Number.isFinite(count) && count >= 0) return count
+  }
+  return getFirstArray(source.activeTransactions, source.recentTransactions, source.transactions?.activeTransactions).length
+}
+
 function getFirstArray(...values) {
   for (const value of values) {
     if (Array.isArray(value) && value.length) return value
@@ -453,14 +463,18 @@ function getNewLeadsLabel({ scope = 'principal' } = {}) {
 }
 
 function deriveListingsCount(source = {}) {
+  // Stock totals are authoritative; mandate funnel activity can cover a
+  // different period and must not replace a known count (including zero).
+  for (const value of [source.activeListings, source.listingCount, source.kpis?.activeListings]) {
+    if (value === null || value === undefined || value === '') continue
+    const numeric = Number(value)
+    if (Number.isFinite(numeric) && numeric >= 0) return numeric
+  }
   return getFirstNumber(
-    source.activeListings,
-    source.listingCount,
     source.pipeline?.mandateInsights?.active_mandates,
     source.pipeline?.mandateInsights?.unsigned_mandates,
     source.pipeline?.funnel?.find?.((item) => normalizeText(item?.key || item?.label).toLowerCase().includes('mandate'))?.count,
     source.transactions?.flow?.find?.((item) => normalizeText(item?.key || item?.label).toLowerCase().includes('mandate'))?.count,
-    source.kpis?.activeListings,
     source.kpis?.mandates,
   )
 }
@@ -596,7 +610,7 @@ function deriveTransactionHealth(source = {}, { mode = 'sales' } = {}) {
 
   return {
     title: 'Transaction Health',
-    total: getFirstNumber(healthSource.total, source.kpis?.activeTransactions, source.transactions?.totalActive, source.activeTransactions?.length),
+    total: getActiveTransactionCount(source),
     movingNormally: getFirstNumber(healthSource.movingNormally),
     attentionRequired: getFirstNumber(healthSource.attentionRequired, source.attentionRequired?.stuckTransactions),
     criticalDelays: getFirstNumber(healthSource.criticalDelays, source.attentionRequired?.attorneyDelays),
@@ -657,7 +671,8 @@ function deriveResidentialTransactionFlow(source = {}, { mode = 'sales', scope =
   const activeRows = getFirstArray(source.activeTransactions, source.recentTransactions, source.transactions?.activeTransactions)
   const developerRowsCount = activeRows.filter(isDeveloperTransactionRow).length
   const developerContext = activeRows.length > 0 && developerRowsCount >= Math.ceil(activeRows.length / 2)
-  const totalCount = getFirstNumber(source.transactions?.totalActive, source.kpis?.activeTransactions, activeRows.length)
+  const totalCount = getActiveTransactionCount(source)
+  if (totalCount === 0) return serializeResidentialTransactionFlowBuckets(new Map(), { scope, totalCount: 0, totalValue: 0, developerContext })
   const totalValue = getFirstNumber(
     derivePipelineValue(source),
     source.transactions?.pipelineSnapshot?.value,
@@ -823,7 +838,8 @@ export function deriveResidentialDashboardMetrics({
   const leasingMode = !salesMode
   const emptyLeasing = leasingMode && !source.leasing?.enabled && !source.leasing?.isReady && !source.leasingAvailable
 
-  const activeTransactions = getFirstNumber(source.kpis?.activeTransactions, source.health?.total, source.transactions?.totalActive, source.activeTransactions?.length)
+  const activeTransactions = getActiveTransactionCount(source)
+  const activeRows = activeTransactions === 0 ? [] : getFirstArray(source.activeTransactions, source.recentTransactions, source.transactions?.activeTransactions)
   const activeListings = deriveListingsCount(source)
   const pipelineValue = derivePipelineValue(source)
   const commissionForecast = deriveCommissionForecast(source)
@@ -892,7 +908,7 @@ export function deriveResidentialDashboardMetrics({
     transactionFlow: deriveResidentialTransactionFlow(source, { mode, scope }),
     activeTransactions: {
       title: getTransactionLabel({ scope }),
-      rows: getFirstArray(source.activeTransactions, source.recentTransactions, source.transactions?.activeTransactions).map((row, index) => {
+      rows: activeRows.map((row, index) => {
         const valueRaw = getFirstNumber(row?.value, row?.dealValue, row?.transactionValue, row?.price, row?.salesPrice, row?.sales_price, row?.purchase_price)
         const developerReadiness = buildDeveloperTransactionReadinessProfileFromRow(row)
         const developerHealth = developerReadiness
@@ -929,7 +945,7 @@ export function deriveResidentialDashboardMetrics({
           health: developerHealth || row?.health || null,
         }
       }),
-      emptyState: emptyLeasing || !getFirstArray(source.activeTransactions, source.recentTransactions, source.transactions?.activeTransactions).length,
+      emptyState: emptyLeasing || !activeRows.length,
       emptyCopy: scope === 'agent'
         ? 'No active transactions yet. Transactions will appear here once offers are accepted and deals move into progress.'
         : 'No active transactions yet. Transactions will appear here once offers are accepted and deals move into progress.',

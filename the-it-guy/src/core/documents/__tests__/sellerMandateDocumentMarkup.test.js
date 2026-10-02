@@ -80,3 +80,19 @@ test('mandate preparation refuses an unknown agency rather than printing platfor
     signingPack: { ...base.signingPack, branding: {} },
   }), /agency name/)
 })
+
+test('every owner gets a signature and agency details repeat on continuation pages', () => {
+  const signers = Array.from({ length: 6 }, (_, i) => ({ name: `Owner ${i + 1} Sample`, role: `Owner ${i + 1}` }))
+  const signingPack = { ...base.signingPack, signers,
+    practitioner: { name: 'Pat Practitioner', ffcNumber: 'P-FFC-123' },
+    branding: { ...base.signingPack.branding, businessFfcNumber: 'B-FFC-123' },
+    seller: { legalOwnerName: signers[0].name, parties: signers.map((p, i) => ({ ...p, role: 'Seller', idNumber: `ID-${i + 1}` })) } }
+  const html = buildSellerMandateDocumentMarkup({ ...base, signingPack })
+  for (const signer of signers) assert.match(html, new RegExp(signer.name))
+  assert.equal((html.match(/class="signature"/g) || []).length, 6)
+  assert.equal((html.match(/class="header"/g) || []).length, (html.match(/class="page"/g) || []).length)
+  assert.match(html, /Pat Practitioner/)
+  assert.match(html, /P-FFC-123/)
+  assert.match(html, /B-FFC-123/)
+  assert.throws(() => buildSellerMandateDocumentMarkup({ ...base, signingPack: { ...signingPack, signers: [...signers, { name: '', role: 'Owner 7' }] } }), /required seller signer/)
+})

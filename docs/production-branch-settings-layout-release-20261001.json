@@ -1,0 +1,26 @@
+{
+  "releasedAt": "2026-10-01T20:09:25.324Z",
+  "product": "Primary Arch9 workspace",
+  "url": "https://app.arch9.co.za",
+  "deployment": "dpl_G585LMoMhKaXrdp7SRHkn5WwdgGa",
+  "baseline": "dpl_CEd1n3tsVWGecGbVFsNPkeF6vK5Y",
+  "changedFiles": [
+    {
+      "file": "the-it-guy/src/pages/agency/AgencyBranchWorkspacePage.jsx",
+      "before": "3349eac93b6604c5726e06bdcd6549d97eceda6b",
+      "after": "284abecc61109897111f11aabcea1beeb40ee4f1"
+    }
+  ],
+  "preservedFiles": 11468,
+  "verification": {
+    "ready": true,
+    "productionAlias": true,
+    "exactSourceScope": true,
+    "focusedLint": "passed",
+    "saveReopenChecks": "passed",
+    "desktopLayout": "1280px: cover left, fields right, aligned top, no horizontal overflow",
+    "mobileLayout": "375px: stacked, no horizontal overflow",
+    "productionBuild": "passed"
+  },
+  "rollbackCommand": "vercel promote dpl_CEd1n3tsVWGecGbVFsNPkeF6vK5Y --yes"
+}

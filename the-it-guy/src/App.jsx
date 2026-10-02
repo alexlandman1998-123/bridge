@@ -3493,13 +3493,7 @@ function AppRoutes() {
               />
               <Route
                 path="/pipeline/canvassing/operations"
-                element={
-                  <SalesWorkspaceGuard>
-                    <RoleRoute allowedRoles={['agent']}>
-                      <PipelineCanvassingPage />
-                    </RoleRoute>
-                  </SalesWorkspaceGuard>
-                }
+                element={<Navigate to="/pipeline/canvassing/property-reports" replace />}
               />
               <Route
                 path="/pipeline/canvassing/prospects/:prospectId"

@@ -16,6 +16,7 @@ import { buildListingSellerSetupState } from '../src/services/listings/listingSe
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const root = path.resolve(appRoot, '..')
 const templatePath = path.join(appRoot, 'docs/listing-seller-phase10-controlled-manual-test.template.json')
+const requiredManualChecks = Object.keys(JSON.parse(await readFile(templatePath, 'utf8')).checks)
 const MANUAL_CONTRACT = 'listing-seller-phase10-controlled-manual-test-v1'
 
 function arg(name) {
@@ -34,7 +35,7 @@ function validateManualObservation(observation, { template = false } = {}) {
   assert.equal(observation.contract, MANUAL_CONTRACT)
   assert.ok(['staging', 'authorised_test'].includes(observation.environment))
   assert.equal(typeof observation.checks, 'object')
-  assert.ok(Object.keys(observation.checks).length >= 24)
+  assert.deepEqual(Object.keys(observation.checks).sort(), [...requiredManualChecks].sort(), 'Evidence must include every named acceptance check; arbitrary true flags cannot substitute.')
   for (const [name, passed] of Object.entries(observation.checks)) {
     assert.equal(typeof passed, 'boolean', `${name} must be recorded as a boolean`)
     if (!template) assert.equal(passed, true, `${name} did not pass`)
@@ -119,6 +120,15 @@ test('multiple owners and trustees remain separate collaboration participants', 
   ] })
   assert.equal(workspace.participants.length, 4)
   assert.equal(new Set(workspace.participants.map((participant) => participant.id)).size, 4)
+})
+
+test('legacy contact aliases reach signing without restoring deliberately cleared details', () => {
+  const form = { sellerName: 'Foreign Owner', sellerEmail: 'foreign@example.test', sellerPhone: '0123456789' }
+  assert.equal(buildSellerSigningPlan({ sellerType: 'foreign_individual', form }).ready, true)
+  const cleared = buildSellerSigningPlan({ sellerType: 'foreign_individual', form: { ...form, email: '' } })
+  assert.equal(cleared.ready, false)
+  assert.equal(cleared.manualReady, true)
+  assert.equal(cleared.recipients[0].email, '')
 })
 
 test('changing the seller entity creates a requirement-affecting canonical update without overwriting the source snapshot', () => {
@@ -217,4 +227,12 @@ test('manual listing evidence template is safe and release remains blocked until
   }
   const observation = JSON.parse(await readFile(path.resolve(observationPath), 'utf8'))
   validateManualObservation(observation)
+})
+
+test('manual evidence cannot omit a failed check or replace it with unrelated true flags', async () => {
+  const template = JSON.parse(await readFile(templatePath, 'utf8'))
+  const incomplete = structuredClone(template)
+  delete incomplete.checks.permissionsAndVisibility
+  incomplete.checks.unrelatedSuccess = true
+  assert.throws(() => validateManualObservation(incomplete, { template: true }), /every named acceptance check/)
 })

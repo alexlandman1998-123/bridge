@@ -6,7 +6,7 @@ function Input({ label, field, draft, onChange, type = 'text' }) {
   return (
     <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
       {label}
-      <Field type={type} value={draft[field] || ''} onChange={(event) => onChange(field, event.target.value)} />
+      <Field type={type} value={draft[field] ?? ''} onChange={(event) => onChange(field, event.target.value)} />
     </label>
   )
 }
@@ -20,7 +20,7 @@ export default function SellerLeadAgentOnboardingEditor({
   onRemovePerson,
   onSubmit,
 }) {
-  const company = ['company', 'foreign_company'].includes(draft.branch)
+  const company = ['company', 'close_corporation', 'foreign_company'].includes(draft.branch)
   const trust = ['trust', 'foreign_trust'].includes(draft.branch)
   const naturalPerson = ['individual', 'married', 'foreign_individual'].includes(draft.branch)
 
@@ -53,20 +53,15 @@ export default function SellerLeadAgentOnboardingEditor({
           </Field>
         </label>
         {company ? <>
-          <Input label="Company resolution date" field="companyResolutionDate" type="date" draft={draft} onChange={onChange} />
-          <Input label="Company authority basis" field="companyAuthorityBasis" draft={draft} onChange={onChange} />
           <Input label="Signatory ID / passport (if not listed above)" field="authorisedSignatoryIdNumber" draft={draft} onChange={onChange} />
           <Input label="Signatory nationality (if not listed above)" field="authorisedSignatoryNationality" draft={draft} onChange={onChange} />
           <Input label="Signatory residential address (if not listed above)" field="authorisedSignatoryAddress" draft={draft} onChange={onChange} />
         </> : null}
         {trust ? <>
-          <Input label="Trust authority basis" field="trustAuthorityBasis" draft={draft} onChange={onChange} />
           <Input label="Authorised trustee ID / passport (if not listed above)" field="authorisedTrusteeIdNumber" draft={draft} onChange={onChange} />
           <Input label="Authorised trustee nationality (if not listed above)" field="authorisedTrusteeNationality" draft={draft} onChange={onChange} />
           <Input label="Authorised trustee residential address (if not listed above)" field="authorisedTrusteeAddress" draft={draft} onChange={onChange} />
         </> : null}
-        {draft.branch === 'deceased_estate' ? <Input label="Executor authority details" field="executorAuthorityDetails" draft={draft} onChange={onChange} /> : null}
-        {draft.branch === 'power_of_attorney' ? <Input label="Power of attorney authority details" field="powerOfAttorneyAuthorityDetails" draft={draft} onChange={onChange} /> : null}
       </section>
       <SellerFicaQuestions form={draft} onChange={onChange} onAddPerson={onAddPerson} onUpdatePerson={onUpdatePerson} onRemovePerson={onRemovePerson} />
       <section className="grid gap-4 rounded-[18px] border border-[#dce6f2] bg-white p-4 sm:grid-cols-2">
@@ -89,9 +84,10 @@ export default function SellerLeadAgentOnboardingEditor({
         <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
           Mandate type
           <Field as="select" value={draft.mandateType || ''} onChange={(event) => onChange('mandateType', event.target.value)}>
-            <option value="">Select</option><option value="sole">Sole</option><option value="open">Open</option>
+            <option value="">Select</option><option value="sole">Sole</option><option value="open">Open</option><option value="dual">Dual</option>
           </Field>
         </label>
+        {draft.mandateType === 'dual' ? <Input label="Second agency name" field="otherAgencyName" draft={draft} onChange={onChange} /> : null}
         <Input label="Estimated asking price" field="askingPrice" type="number" draft={draft} onChange={onChange} />
         <label className="flex items-center gap-2 text-sm font-semibold text-[#2d445e] sm:col-span-2">
           <input type="checkbox" checked={Boolean(draft.leaseExists)} onChange={(event) => onChange('leaseExists', event.target.checked)} />A lease exists

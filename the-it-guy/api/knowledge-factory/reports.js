@@ -1,4 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
+import { supplierCosts, supplierMetric } from './supplier-costs.js'
+import { propertyReportQuery, supplierProperty } from './supplier-contract.js'
 
 const REPORT_QUOTES_PER_MINUTE = 6
 const REPORT_REQUESTS_PER_HOUR = 8
@@ -63,7 +65,7 @@ function assertReportTypesAllowed(policy, reportTypes) {
 }
 
 async function assertCreditCaps(db, organisationId, policy, estimatedCredits) {
-  if (!Number.isFinite(Number(estimatedCredits))) { const failure = new Error('The supplier did not return a usable credit estimate.'); failure.status = 409; throw failure }
+  if (supplierMetric(estimatedCredits) === null) { const failure = new Error('The supplier did not return a usable credit estimate.'); failure.status = 409; throw failure }
   if (Number(estimatedCredits) > Number(policy.per_report_credit_cap)) { const failure = new Error('This quote exceeds the organisation per-report credit cap.'); failure.status = 409; throw failure }
   const monthStart = new Date(); monthStart.setUTCDate(1); monthStart.setUTCHours(0, 0, 0, 0)
   const { data, error } = await db.from('knowledge_factory_audit_log').select('credits_consumed').eq('organisation_id', organisationId).eq('outcome', 'completed').gte('created_at', monthStart.toISOString())
@@ -96,19 +98,18 @@ async function supplierToken(config) {
   supplierSession = { token, expiresAt }; return token
 }
 
-function metric(value) { const parsed = typeof value === 'number' ? value : Number(value); return Number.isFinite(parsed) && parsed >= 0 ? Math.round(parsed) : null }
-function costs(body) { const extension = body?.extensions && typeof body.extensions === 'object' ? body.extensions : {}; const cost = extension.cost && typeof extension.cost === 'object' ? extension.cost : extension; return { fieldCost: metric(cost.fieldCost || cost.field_cost), typeCost: metric(cost.typeCost || cost.type_cost), surcharge: metric(cost.priceSurcharge || cost.price_surcharge), credits: metric(cost.creditsConsumed || cost.credits_consumed) } }
+function costs(body) { return supplierCosts(body) }
 function validatePropertyId(value) { const id = scalarText(value, 30); if (!/^[1-9]\d{0,14}$/.test(id) || !Number.isSafeInteger(Number(id))) throw new Error('A valid property is required.'); return Number(id) }
 function validateReportTypes(value) { const types = [...new Set((Array.isArray(value) ? value : []).map((item) => text(item, 80)).filter(Boolean))]; if (!types.length || types.some((type) => !REPORT_TYPES.has(type))) throw new Error('Select one or more supported property report sections.'); return types }
-function reportQuery() { return 'query PropertyReport($id: Int!) { propertyById(id: $id) { propertyId erf extent propertyType propertyName propertyNumber propertyYear valuationDate valuationMunicipality valuationValue valuationZoning streetAddress { address isMaster streetName streetNumber streetType x y } suburb { postCode suburbId suburbName town province { provinceName } } } }' }
+function reportQuery() { return propertyReportQuery("propertyId erf extent propertyType propertyName propertyNumber propertyYear valuationDate valuationMunicipality valuationValue valuationZoning streetAddress { address isMaster streetName streetNumber streetType x y } suburb { postCode suburbId suburbName town province { provinceName } }", "PropertyReport") }
 async function supplierReport(config, propertyId, costMode) {
-  const response = await fetch(config.endpoint, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${await supplierToken(config)}`, 'GraphQL-Cost': costMode }, body: JSON.stringify({ operationName: 'PropertyReport', query: reportQuery(), variables: { id: propertyId } }) })
+  const response = await fetch(config.endpoint, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${await supplierToken(config)}`, 'GraphQL-Cost': costMode, 'GraphQL-Billing': 'report' }, body: JSON.stringify({ operationName: 'PropertyReport', query: reportQuery(), variables: { id: propertyId } }) })
   const body = await response.json().catch(() => ({}))
   if (!response.ok || (Array.isArray(body.errors) && body.errors.length)) throw new Error(vendorError(body, costMode === 'validate' ? 'Knowledge Factory could not validate this property report.' : 'Knowledge Factory could not return this property report.'))
   return { body, costs: costs(body), vendorRequestId: text(response.headers.get('x-request-id'), 200) || null }
 }
 function reportSummary(body, requestedTypes) {
-  const property = body?.data?.propertyById || {}; const addresses = Array.isArray(property.streetAddress) ? property.streetAddress : []; const street = addresses.find((item) => item?.isMaster === true) || addresses[0] || {}; const suburb = property.suburb || {}; const province = suburb.province || {}
+  const property = supplierProperty(body); if (!property) throw new Error('The supplier returned no property for this report.'); const addresses = Array.isArray(property.streetAddress) ? property.streetAddress : []; const street = addresses.find((item) => item?.isMaster === true) || addresses[0] || {}; const suburb = property.suburb || {}; const province = suburb.province || {}
   const address = text(street.address, 500) || [text(street.streetNumber, 40), text(street.streetName, 200), text(street.streetType, 80)].filter(Boolean).join(' ')
   return { propertyId: scalarText(property.propertyId, 100), address: address || null, erf: number(property.erf), extent: number(property.extent), propertyType: text(property.propertyType, 120) || null, propertyName: text(property.propertyName, 250) || null, suburb: text(suburb.suburbName, 160) || null, town: text(suburb.town, 160) || null, province: text(province.provinceName, 160) || null, postalCode: text(suburb.postCode, 30) || null, municipalValuation: requestedTypes.includes('municipal_valuation') ? { value: number(property.valuationValue), date: text(property.valuationDate, 80) || null, municipality: text(property.valuationMunicipality, 200) || null, zoning: text(property.valuationZoning, 160) || null } : null }
 }

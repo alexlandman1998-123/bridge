@@ -141,8 +141,8 @@ assert.match(
 );
 assert.match(
   appSource,
-  /path="\/pipeline\/canvassing\/operations"/,
-  "residential canvassing should expose the operations workspace route",
+  /path="\/pipeline\/canvassing\/operations"\s+element=\{<Navigate to="\/pipeline\/canvassing\/property-reports" replace \/>\}/,
+  "legacy operations links should redirect to client reports",
 );
 assert.match(
   canvassingWorkspaceTabsSource,
@@ -189,11 +189,12 @@ assert.match(
   /activeCanvassingWorkspace === 'property-reports'/,
   "canvassing should resolve and render the property reports workspace from its URL",
 );
-assert.match(
+assert.doesNotMatch(
   canvassingPageSource,
-  /activeCanvassingWorkspace === 'operations'/,
-  "canvassing should resolve and render the operations workspace from its URL",
+  /KnowledgeFactoryOperationsWorkspace|activeCanvassingWorkspace === 'operations'/,
+  "client canvassing must not mount internal supplier operations",
 );
+assert.doesNotMatch(canvassingWorkspaceTabsSource, /label: 'Operations'/, 'client navigation must not expose internal operations');
 assert.match(
   canvassingPageSource,
   /activeCanvassingWorkspace === 'prospects'[\s\S]*Buyer Prospects[\s\S]*Seller Prospects/,

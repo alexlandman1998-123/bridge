@@ -1,0 +1,200 @@
+{
+  "approval": "User explicitly approved updating GitHub and releasing to production in the current task on 2 October 2026.",
+  "target": "isdowlnollckzvltkasn",
+  "guard": "passed; no duplicate local migration versions",
+  "recovery": "RECOVERY_LOCKED",
+  "dryRun": {
+    "upToDate": false,
+    "dryRun": true,
+    "migrations": [
+      "20261001185738_imported_transaction_detail_review.sql",
+      "20261001191425_imported_transaction_review_status.sql",
+      "20261001195834_imported_transaction_funding_review.sql",
+      "20261001201355_imported_transaction_funding_validation.sql",
+      "20261001202026_branch_fic_training_compliance.sql"
+    ],
+    "seeds": [],
+    "roles": [],
+    "message": "Finished supabase db push."
+  },
+  "rollback": "Roll back corresponding app deployments to captured Vercel baseline. Preserve new review/training tables, columns and history; disable new RPC and table grants if necessary. Do not drop customer data or replay migrations. Physical recovery evidence remains in docs/supabase-production-recovery-evidence.json.",
+  "vercelBaseline": [
+    {
+      "projectId": "prj_rbfXykMU6mU1eECbc0lJS9sPspmp",
+      "deployments": [
+        {
+          "uid": "dpl_G585LMoMhKaXrdp7SRHkn5WwdgGa",
+          "name": "bridge",
+          "url": "bridge-hhhq7ezru-alexs-projects-f5496a21.vercel.app",
+          "state": "READY",
+          "created": 1790885079951,
+          "target": "production",
+          "meta": {
+            "arch9ReleaseScope": "Branch settings two-column cover upload and profile fields layout",
+            "arch9BaselineDeployment": "dpl_CEd1n3tsVWGecGbVFsNPkeF6vK5Y",
+            "lambdaRuntimeStats": "{\"nodejs\":91}"
+          }
+        },
+        {
+          "uid": "dpl_CEd1n3tsVWGecGbVFsNPkeF6vK5Y",
+          "name": "bridge",
+          "url": "bridge-ais727zyx-alexs-projects-f5496a21.vercel.app",
+          "state": "READY",
+          "created": 1790884601458,
+          "target": "production",
+          "meta": {
+            "arch9ReleaseScope": "Use saved branch address instead of stale Location pending placeholder",
+            "arch9BaselineDeployment": "dpl_7ehCUvw8Sxf25rjAPdQnfvCqdimq",
+            "lambdaRuntimeStats": "{\"nodejs\":91}"
+          }
+        },
+        {
+          "uid": "dpl_7ehCUvw8Sxf25rjAPdQnfvCqdimq",
+          "name": "bridge",
+          "url": "bridge-242bsz82i-alexs-projects-f5496a21.vercel.app",
+          "state": "READY",
+          "created": 1790884215252,
+          "target": "production",
+          "meta": {
+            "arch9ReleaseScope": "Inline branch settings with saved cover, profile, address and selected manager",
+            "arch9BaselineDeployment": "dpl_5NFi2UXfxtRX77moeh7Qex3k3VEq",
+            "lambdaRuntimeStats": "{\"nodejs\":91}"
+          }
+        }
+      ]
+    },
+    {
+      "projectId": "prj_UBUboNzbfFH5vNfaWgKE6heEgrK7",
+      "deployments": [
+        {
+          "uid": "dpl_FLzXtG5zDh5UAGoV16zTAuRpXVJv",
+          "name": "bridge-admin",
+          "url": "bridge-admin-heqaz9q3s-alexs-projects-f5496a21.vercel.app",
+          "state": "READY",
+          "created": 1790852237509,
+          "target": "production",
+          "meta": {
+            "gitCommitAuthorName": "Alexander Landman",
+            "gitCommitAuthorEmail": "alexlandman1998@gmail.com",
+            "gitCommitMessage": "Add query-bound v1 maximum report estimates and fresh execution preflight",
+            "gitCommitRef": "codex/kf-login-diagnostic",
+            "gitCommitSha": "af305840250d2b7e4f49b76c6ca93b19f8e6a494"
+          }
+        },
+        {
+          "uid": "dpl_HSbCMXvs2MAejBBeAA5ZHCffTBaF",
+          "name": "bridge-admin",
+          "url": "bridge-admin-jeh1lfmyu-alexs-projects-f5496a21.vercel.app",
+          "state": "READY",
+          "created": 1790849080168,
+          "target": "production",
+          "meta": {
+            "gitCommitAuthorName": "Alexander Landman",
+            "gitCommitAuthorEmail": "alexlandman1998@gmail.com",
+            "gitCommitMessage": "Add approved one-use internal Knowledge Factory v1 UAT report diagnostic",
+            "gitCommitRef": "codex/kf-login-diagnostic",
+            "gitCommitSha": "56633a178a7badf2032ef1552775cdc1c27caac1"
+          }
+        },
+        {
+          "uid": "dpl_54EPxoPae2AJkcCoHatLL2qNRKAA",
+          "name": "bridge-admin",
+          "url": "bridge-admin-1c8zs981m-alexs-projects-f5496a21.vercel.app",
+          "state": "READY",
+          "created": 1790846976678,
+          "target": "production",
+          "meta": {
+            "gitCommitAuthorName": "Alexander Landman",
+            "gitCommitAuthorEmail": "alexlandman1998@gmail.com",
+            "gitCommitMessage": "Use v1 billing metadata across property map and report diagnostics",
+            "gitCommitRef": "codex/kf-login-diagnostic",
+            "gitCommitSha": "de49616161cdae4780aaaa0ad9e2c9f0631c93d2"
+          }
+        }
+      ]
+    },
+    {
+      "projectId": "prj_f6mDRM087y82S97FfEJ6s2vnAhRh",
+      "deployments": [
+        {
+          "uid": "dpl_DGD67rs5AhBy6FkaRfN3TaANs92Y",
+          "name": "arch9-websites-production",
+          "url": "arch9-websites-production-9tcelo193-alexs-projects-f5496a21.vercel.app",
+          "state": "READY",
+          "created": 1790851832246,
+          "target": "production",
+          "meta": {
+            "gitCommitAuthorName": "Codex",
+            "gitCommitAuthorEmail": "codex@openai.com",
+            "gitCommitMessage": "Release listing portal recovery, seller saving and independent Kingdom publication",
+            "gitCommitRef": "main",
+            "gitCommitSha": "8f01daf7281bf317e795eaf130ef1d3bccf3a33c",
+            "gitDirty": "1",
+            "listingRelease": "8f01daf7281bf317e795eaf130ef1d3bccf3a33c",
+            "lambdaRuntimeStats": "{\"nodejs\":2}",
+            "bundler": "turbopack"
+          }
+        },
+        {
+          "uid": "dpl_FBnZCa7Ax3mtTZbH1qForHKL4RSr",
+          "name": "arch9-websites-production",
+          "url": "arch9-websites-production-hsbfulsex-alexs-projects-f5496a21.vercel.app",
+          "state": "READY",
+          "created": 1790766185844,
+          "target": "production",
+          "meta": {
+            "gitCommitAuthorName": "Alexander Landman",
+            "gitCommitAuthorEmail": "alexlandman1998@gmail.com",
+            "gitCommitMessage": "Release attorney workflow and rental listing fixes",
+            "gitCommitRef": "codex/september-30-production-release",
+            "gitCommitSha": "87313278ae78f1b76b0f8191851d593da21a36fd",
+            "releaseCommit": "87313278ae78f1b76b0f8191851d593da21a36fd",
+            "lambdaRuntimeStats": "{\"nodejs\":2}",
+            "bundler": "turbopack"
+          }
+        },
+        {
+          "uid": "dpl_Ee9FPT73cpFgSVxg3MQe5AZjGRbF",
+          "name": "arch9-websites-production",
+          "url": "arch9-websites-production-lnvn4hcum-alexs-projects-f5496a21.vercel.app",
+          "state": "READY",
+          "created": 1790709740349,
+          "target": "production",
+          "meta": {
+            "gitCommitAuthorName": "Alexander Landman",
+            "gitCommitAuthorEmail": "alexlandman1998@gmail.com",
+            "gitCommitMessage": "Sync agency icon logo to public website branding",
+            "gitCommitRef": "codex/isell-kingdom-chat-release",
+            "gitCommitSha": "784ae0ce6552981953697acd54e017232c063424",
+            "lambdaRuntimeStats": "{\"nodejs\":2}",
+            "bundler": "turbopack"
+          }
+        }
+      ]
+    }
+  ],
+  "databaseDependencies": [
+    {
+      "documents_present": true,
+      "fic_bucket_present": false,
+      "participants_present": true,
+      "review_schema_present": false,
+      "transaction_org_access": true,
+      "transaction_permission_check": true,
+      "transaction_spine_access": true,
+      "transactions_present": true
+    }
+  ],
+  "focusedRegressionRepairs": "10 tests passed across the two repaired regression files and existing marketing-draft/compliance behavior suites. Existing code behavior preserved.",
+  "lint": "PASS: normal lint command, 0 errors and 559 warnings, with generated output now excluded.",
+  "migrationApplication": "Completed successfully for the five exact reviewed migration files before application deployment.",
+  "finalDatabaseDryRun": {
+    "upToDate": true,
+    "dryRun": true,
+    "migrations": [],
+    "seeds": [],
+    "roles": [],
+    "message": "Remote database is up to date."
+  },
+  "edgeFunctions": "knowledge-factory-graphql and knowledge-factory-fica-discovery deployed with JWT verification enabled; post-deployment verification follows."
+}

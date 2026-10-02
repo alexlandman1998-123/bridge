@@ -210,8 +210,8 @@ const baseLead = {
   }
   const readiness = getSellerReadiness(args)
   assert.equal(readiness.readinessStatus, 'action_required')
-  assert.equal(readiness.nextAction.id, 'record_hard_copy_mandate')
-  assert.equal(readiness.blockers.find((item) => item.id === 'mandate_signature_outstanding').label, 'Signed Mandate Outstanding')
+  assert.equal(readiness.nextAction.id, 'open_documents')
+  assert.equal(readiness.blockers.find((item) => item.id === 'mandate_signature_outstanding').label, 'Mandate Signature Outstanding')
 }
 
 {

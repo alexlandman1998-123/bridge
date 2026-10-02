@@ -3,7 +3,10 @@ import {
   PACKAGE_COST_RECIPE_IDS,
   packageReportQuery,
 } from "./package-report-recipes.js";
-import { isKnowledgeFactoryV0_1UatEndpoint } from "./supplier-endpoint.js";
+import { isKnowledgeFactoryV1UatEndpoint } from "./supplier-endpoint.js";
+import { supplierCosts, supplierBilling } from "./supplier-costs.js";
+import { packageCostEnvelope } from "./package-cost-envelope.js";
+import { propertyReportQuery, supplierQueryFingerprint } from "./supplier-contract.js";
 
 const ADMIN_ROLES = new Set([
   "principal",
@@ -13,31 +16,31 @@ const ADMIN_ROLES = new Set([
   "super_admin",
   "agency_admin",
 ]);
-const RECIPES = {
+export const RECIPES = {
   snapshot_core: {
     label: "Minimal property snapshot",
     query:
-      "query CostMatrix($id: Int!) { propertyById(id: $id) { propertyId erf portion extent propertyType propertyName propertyNumber propertyYear streetAddress { address isMaster streetName streetNumber streetType } suburb { postCode suburbId suburbName town province { provinceName } } } }",
+      propertyReportQuery("propertyId erf portion extent propertyType propertyName propertyNumber propertyYear streetAddress { address isMaster streetName streetNumber streetType } suburb { postCode suburbId suburbName town province { provinceName } }", "CostMatrix"),
   },
   snapshot_valuation: {
     label: "Property snapshot with municipal valuation",
     query:
-      "query CostMatrix($id: Int!) { propertyById(id: $id) { propertyId erf portion extent propertyType streetAddress { address isMaster } suburb { suburbName town province { provinceName } } valuationDate valuationMunicipality valuationValue valuationZoning } }",
+      propertyReportQuery("propertyId erf portion extent propertyType streetAddress { address isMaster } suburb { suburbName town province { provinceName } } valuationDate valuationMunicipality valuationValue valuationZoning", "CostMatrix"),
   },
   owner_current_transfer: {
     label: "Current-owner signal",
     query:
-      "query CostMatrix($id: Int!) { propertyById(id: $id) { propertyId transfers(first: 5) { nodes { isCurrentOwner buyers { buyerName buyerNameFix buyerType share } } } } }",
+      propertyReportQuery("propertyId transfers(first: 1, where: { isCurrentOwner: { eq: true } }) { nodes { isCurrentOwner buyers(first: 20) { nodes { buyerName buyerNameFix buyerType share } } } }", "CostMatrix"),
   },
   transaction_history_recent: {
     label: "Three most recent transfers",
     query:
-      "query CostMatrix($id: Int!) { propertyById(id: $id) { propertyId transfers(first: 3) { nodes { datePurchase dateRegister purchaseAmount titleDeedNoNew titleDeedNoOld isCurrentOwner buyers { buyerName buyerNameFix buyerType share } sellers { sellerName sellerNameFix sellerType } } } } }",
+      propertyReportQuery("propertyId transfers(first: 3) { nodes { datePurchase dateRegister purchaseAmount titleDeedNoNew titleDeedNoOld isCurrentOwner buyers(first: 20) { nodes { buyerName buyerNameFix buyerType share } } sellers(first: 20) { nodes { sellerName sellerNameFix sellerType } } } }", "CostMatrix"),
   },
   finance_current_bonds: {
     label: "Current-bond indicators",
     query:
-      "query CostMatrix($id: Int!) { propertyById(id: $id) { propertyId transfers(first: 1) { nodes { hasBond bonds(first: 5) { nodes { bondAmount bondDateRegister bondHolder bondInd bondNumber isCurrentBond purchaseAmount } } } } } }",
+      propertyReportQuery("propertyId transfers(first: 1) { nodes { hasBond bonds(first: 5) { nodes { bondAmount bondDateRegister bondHolder bondInd bondNumber isCurrentBond purchaseAmount } } } }", "CostMatrix"),
   },
   package_basic_v1: {
     label: "Basic package - exact query",
@@ -68,12 +71,6 @@ function json(response, status, body) {
     .setHeader("Content-Type", "application/json; charset=utf-8");
   response.setHeader("Cache-Control", "no-store");
   response.end(JSON.stringify(body));
-}
-function metric(value) {
-  if (value === null || value === undefined || String(value).trim() === "")
-    return null;
-  const number = typeof value === "number" ? value : Number(value);
-  return Number.isFinite(number) && number >= 0 ? Math.round(number) : null;
 }
 
 async function body(request) {
@@ -134,24 +131,7 @@ function propertyId(value) {
   return Number(id);
 }
 export function costs(payload) {
-  const extension =
-    payload?.extensions && typeof payload.extensions === "object"
-      ? payload.extensions
-      : {};
-  const cost =
-    extension.operationCost && typeof extension.operationCost === "object"
-      ? extension.operationCost
-      : extension.cost && typeof extension.cost === "object"
-        ? extension.cost
-        : extension;
-  return {
-    fieldCost: metric(cost.fieldCost ?? cost.field_cost),
-    typeCost: metric(cost.typeCost ?? cost.type_cost),
-    surcharge: metric(cost.priceSurcharge ?? cost.price_surcharge ??
-      extension.priceSurcharge ?? extension.price_surcharge),
-    credits: metric(cost.creditsConsumed ?? cost.credits_consumed ??
-      extension.creditsConsumed ?? extension.credits_consumed),
-  };
+  return supplierCosts(payload);
 }
 
 export function mayUseStagedBasicCostMatrix({
@@ -292,13 +272,14 @@ async function supplierToken(runtime) {
   return token;
 }
 
-async function validate(runtime, recipe, id) {
+export async function validateSupplierRecipe(runtime, recipe, id) {
   const response = await fetch(runtime.endpoint, {
     method: "POST",
     headers: {
       "content-type": "application/json",
       authorization: `Bearer ${await supplierToken(runtime)}`,
       "GraphQL-Cost": "validate",
+      "GraphQL-Billing": "report",
     },
     body: JSON.stringify({
       query: recipe.query,
@@ -312,20 +293,43 @@ async function validate(runtime, recipe, id) {
         `Knowledge Factory could not validate this recipe (HTTP ${response.status}).`,
     );
   const quote = costs(payload);
+  const productId = Object.entries(PACKAGE_COST_RECIPE_IDS).find(([, id]) => RECIPES[id].query === recipe.query)?.[0];
+  if (productId) return {
+    costs: quote, billing: supplierBilling(payload),
+    estimate: packageCostEnvelope({ endpoint: runtime.endpoint, productId, query: recipe.query, payload }),
+    vendorRequestId: text(response.headers.get("x-request-id"), 200) || null,
+  };
   const missing = [
     ["field cost", quote.fieldCost],
     ["type cost", quote.typeCost],
+    ["surcharge", quote.surcharge],
     ["credit cost", quote.credits],
   ].filter(([, value]) => value === null).map(([name]) => name);
-  if (missing.length)
+  if (missing.length) {
+    // Cost-validation metadata only: never log property data, tokens or credentials.
+    const extensions = payload?.extensions && typeof payload.extensions === "object" ? payload.extensions : {};
+    const metricNames = /^(fieldCost|typeCost|priceSurcharge|creditsConsumed|field_cost|type_cost|price_surcharge|credits_consumed|complexity|rootSurcharge|fieldSurcharge|surcharge|credits|amountDeducted|discountMultiplier|rootFieldCount|totalCost|totalCredits)$/;
+    const safeShape = (value) => {
+      if (!value || typeof value !== "object" || Array.isArray(value)) return { kind: typeof value };
+      return {
+        keys: Object.keys(value).slice(0, 40),
+        metrics: Object.fromEntries(Object.entries(value).filter(([key, item]) => metricNames.test(key) && typeof item === "number" && Number.isFinite(item))),
+      };
+    };
+    console.warn("KF_COST_VALIDATION_METADATA", JSON.stringify({
+      extensionKeys: Object.keys(extensions).slice(0, 40),
+      metadata: Object.fromEntries(Object.entries(extensions).slice(0, 40).map(([key, value]) => [key, safeShape(value)])),
+    }));
     throw new Error(`The supplier did not return ${missing.join(", ")}. This recipe is not validated.`);
+  }
   return {
     costs: quote,
+    billing: supplierBilling(payload),
     vendorRequestId: text(response.headers.get("x-request-id"), 200) || null,
   };
 }
 
-export default async function handler(request, response) {
+export async function handleCostMatrix(request, response, { authorize = administrator } = {}) {
   if (request.method !== "POST")
     return json(response, 405, { error: "Method not allowed." });
   try {
@@ -340,16 +344,17 @@ export default async function handler(request, response) {
     const db = createClient(runtime.url, runtime.key, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
-    const actor = await administrator(
+    const actor = await authorize(
       request, db, organisationId, action, text(input.recipeId, 80),
     );
     if (action === "list") {
       let query = db
         .from("knowledge_factory_cost_validations")
         .select(
-          "id, property_id, recipe_id, request_purpose, field_cost, type_cost, price_surcharge, credits_consumed, outcome, error_code, created_at",
+          "id, property_id, recipe_id, request_purpose, field_cost, type_cost, price_surcharge, credits_consumed, outcome, error_code, supplier_api_version, supplier_query_sha256, created_at",
         )
-        .eq("organisation_id", organisationId);
+        .eq("organisation_id", organisationId)
+        .eq("supplier_api_version", "v1");
       if (actor.stagedAccess) query = query.eq("recipe_id", "package_basic_v1");
       const { data, error } = await query
         .order("created_at", { ascending: false })
@@ -378,31 +383,41 @@ export default async function handler(request, response) {
       return json(response, 400, {
         error: "Provide a UAT purpose of at least 10 characters.",
       });
-    if (!isKnowledgeFactoryV0_1UatEndpoint(runtime.endpoint))
+    if (!isKnowledgeFactoryV1UatEndpoint(runtime.endpoint))
       return json(response, 409, {
         error: "Cost-only validation is restricted to the UAT supplier endpoint.",
       });
     const existing = await db
       .from("knowledge_factory_cost_validations")
-      .select("id, field_cost, type_cost, credits_consumed")
+      .select("id, field_cost, type_cost, price_surcharge, credits_consumed")
       .eq("organisation_id", organisationId)
       .eq("property_id", id)
       .eq("recipe_id", recipeId)
+      .eq("supplier_api_version", "v1")
+      .eq("supplier_query_sha256", supplierQueryFingerprint(recipe.query))
       .eq("outcome", "validated")
       .maybeSingle();
     if (existing.error)
       throw new Error("The cost-matrix history could not be checked.");
     if (existing.data && existing.data.field_cost !== null &&
-        existing.data.type_cost !== null && existing.data.credits_consumed !== null)
+        existing.data.type_cost !== null && existing.data.price_surcharge !== null && existing.data.credits_consumed !== null)
       return json(response, 409, {
         error:
           "This recipe has already been validated for this property. Choose another UAT property to rerun it.",
       });
     try {
-      const result = await validate(runtime, recipe, id);
+      const result = await validateSupplierRecipe(runtime, recipe, id);
+      // A local maximum is not supplier-validated billing and must never enter
+      // the validated-evidence table or accidentally satisfy product readiness.
+      if (result.estimate) return json(response, 200, {
+        estimate: { ...result.estimate, propertyId: id }, billing: result.billing,
+        message: "Conservative maximum estimate only. No report executed, no validated billing evidence saved, and no product approved.",
+      });
       let write = db.from("knowledge_factory_cost_validations");
       write = existing.data
         ? write.update({
+          supplier_api_version: "v1",
+          supplier_query_sha256: supplierQueryFingerprint(recipe.query),
           actor_id: actor.userId,
           request_purpose: purpose,
           field_cost: result.costs.fieldCost,
@@ -413,6 +428,8 @@ export default async function handler(request, response) {
           error_code: null,
         }).eq("id", existing.data.id)
         : write.insert({
+          supplier_api_version: "v1",
+          supplier_query_sha256: supplierQueryFingerprint(recipe.query),
           organisation_id: organisationId,
           actor_id: actor.userId,
           property_id: id,
@@ -427,14 +444,16 @@ export default async function handler(request, response) {
         });
       const { data, error } = await write
         .select(
-          "id, property_id, recipe_id, request_purpose, field_cost, type_cost, price_surcharge, credits_consumed, outcome, created_at",
+          "id, property_id, recipe_id, request_purpose, field_cost, type_cost, price_surcharge, credits_consumed, outcome, supplier_api_version, supplier_query_sha256, created_at",
         )
         .single();
       if (error || !data)
         throw new Error("The supplier cost validation could not be recorded.");
-      return json(response, 201, { item: data });
+      return json(response, 201, { item: data, billing: result.billing });
     } catch (error) {
       await db.from("knowledge_factory_cost_validations").insert({
+        supplier_api_version: "v1",
+        supplier_query_sha256: supplierQueryFingerprint(recipe.query),
         organisation_id: organisationId,
         actor_id: actor.userId,
         property_id: id,
@@ -451,3 +470,5 @@ export default async function handler(request, response) {
     });
   }
 }
+
+export default handleCostMatrix;

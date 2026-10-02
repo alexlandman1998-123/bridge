@@ -1,0 +1,167 @@
+{
+  "date": "2026-10-01",
+  "projectId": "isdowlnollckzvltkasn",
+  "projectName": "Arch9 SaaS",
+  "recovery": "RECOVERY_LOCKED",
+  "applied": [
+    "20261001092739_seller_onboarding_access_enforcement",
+    "20261001105246_document_upload_limit_35mb"
+  ],
+  "alreadyApplied": [
+    "20261001091343_knowledge_factory_v1_cost_provenance",
+    "20261001092313_knowledge_factory_versioned_cost_uniqueness",
+    "20261001092402_seller_onboarding_access_scope",
+    "20261001104037_independent_kingdom_listing_publication"
+  ],
+  "postchecks": {
+    "rls": true,
+    "policies": [
+      {
+        "name": "private_listing_seller_onboarding_member_access",
+        "check": "bridge_can_access_private_listing(private_listing_id)",
+        "roles": [
+          "authenticated"
+        ],
+        "using": "bridge_can_access_private_listing(private_listing_id)"
+      }
+    ],
+    "read_rpc": true,
+    "anon_select": false,
+    "anon_update": false,
+    "today_migrations": [
+      {
+        "name": "knowledge_factory_v1_cost_provenance",
+        "version": "20261001091343"
+      },
+      {
+        "name": "knowledge_factory_versioned_cost_uniqueness",
+        "version": "20261001092313"
+      },
+      {
+        "name": "seller_onboarding_access_scope",
+        "version": "20261001092402"
+      },
+      {
+        "name": "seller_onboarding_access_enforcement",
+        "version": "20261001092739"
+      },
+      {
+        "name": "independent_kingdom_listing_publication",
+        "version": "20261001104037"
+      },
+      {
+        "name": "document_upload_limit_35mb",
+        "version": "20261001105246"
+      }
+    ],
+    "document_limit_bytes": 36700160,
+    "private_resolver_anon": false
+  },
+  "finalDryRun": {
+    "upToDate": true,
+    "migrations": [],
+    "seeds": [],
+    "roles": []
+  },
+  "app": {
+    "baseline": "dpl_Acm98yAm9r1pmqEgsujUQuVZMrmz",
+    "deployment": "dpl_Gkaasu4FefTsPbYaRZg9JBqRtP5N",
+    "url": "https://app.arch9.co.za",
+    "status": "READY",
+    "changedFiles": [
+      "the-it-guy/src/services/privateListingService.js"
+    ],
+    "sourceSha1": "2bd4b08d2062f539013e5c1be678cf1273f61da5",
+    "preservedSourceFiles": 11464,
+    "scope": "Token-scoped onboarding read, atomic draft facts, permission-gated projections, fail-closed progress/submit; other deployed source preserved."
+  },
+  "tests": {
+    "sellerOnboardingAccess": {
+      "passed": 21,
+      "failed": 0
+    },
+    "documentUploadPolicy": "passed",
+    "liveSqlRollbackPreflight": "passed; no changes retained",
+    "liveAnonymousInvalidTokenReadsAndSaves": "rejected",
+    "liveBrowserInvalidLink": "handled",
+    "liveRouteStatus": 200,
+    "sourceAndProductionAlias": "verified"
+  },
+  "securityAdvisor": {
+    "errors": 0,
+    "expectedNewWarnings": [
+      {
+        "name": "anon_security_definer_function_executable",
+        "level": "WARN",
+        "remediation": "https://supabase.com/docs/guides/database/database-linter?lint=0028_anon_security_definer_function_executable",
+        "detail": "Function `public.bridge_get_private_listing_seller_onboarding_form(p_token text)` can be executed by the `anon` role as a `SECURITY DEFINER` function via `/rest/v1/rpc/bridge_get_private_listing_seller_onboarding_form`. Revoke `EXECUTE` or switch it to `SECURITY INVOKER` if that is not intentional."
+      },
+      {
+        "name": "authenticated_security_definer_function_executable",
+        "level": "WARN",
+        "remediation": "https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable",
+        "detail": "Function `public.bridge_get_private_listing_seller_onboarding_form(p_token text)` can be executed by the `authenticated` role as a `SECURITY DEFINER` function via `/rest/v1/rpc/bridge_get_private_listing_seller_onboarding_form`. Revoke `EXECUTE` or switch it to `SECURITY INVOKER` if that is not intentional."
+      }
+    ],
+    "decision": "The new RPC intentionally supports anonymous onboarding capability tokens. It requires an exact unexpired token and active listing link, excludes stored portal credential hashes, and does not restore anonymous table access. Other advisory categories and counts remain unchanged.",
+    "baselineCounts": [
+      {
+        "name": "rls_enabled_no_policy",
+        "count": 86
+      },
+      {
+        "name": "function_search_path_mutable",
+        "count": 170
+      },
+      {
+        "name": "materialized_view_in_api",
+        "count": 2
+      },
+      {
+        "name": "anon_security_definer_function_executable",
+        "count": 578
+      },
+      {
+        "name": "authenticated_security_definer_function_executable",
+        "count": 949
+      },
+      {
+        "name": "auth_leaked_password_protection",
+        "count": 1
+      }
+    ],
+    "afterCounts": [
+      {
+        "name": "rls_enabled_no_policy",
+        "count": 86
+      },
+      {
+        "name": "function_search_path_mutable",
+        "count": 170
+      },
+      {
+        "name": "materialized_view_in_api",
+        "count": 2
+      },
+      {
+        "name": "anon_security_definer_function_executable",
+        "count": 579
+      },
+      {
+        "name": "authenticated_security_definer_function_executable",
+        "count": 950
+      },
+      {
+        "name": "auth_leaked_password_protection",
+        "count": 1
+      }
+    ]
+  },
+  "limits": [
+    "Live customer data was not created or edited for smoke testing. Valid seller scenarios and persistence were checked with isolated database fixtures."
+  ],
+  "recoveryFiles": [
+    "production-migrations-20261001-prechange.json",
+    "production-migrations-20261001-rollback.sql"
+  ]
+}

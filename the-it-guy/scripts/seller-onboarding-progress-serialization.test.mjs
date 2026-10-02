@@ -25,16 +25,9 @@ assert.match(
   /void enqueueSellerOnboardingProgressProjection\(client, \{[\s\S]*?reason: 'seller_onboarding_progress',[\s\S]*?\}\)/,
   'progress saves must schedule projections through the keyed queue',
 )
-assert.match(
-  serviceSource,
-  /const context = await getSellerOnboardingByToken\(token, \{[\s\S]*?includeRequirementsAndDocuments: false,[\s\S]*?corePayload: true,[\s\S]*?\}\)/,
-  'RPC-missing progress fallback must use the lightweight core onboarding context',
-)
-assert.match(
-  serviceSource,
-  /const listingForProgress = refreshedListing \|\| context\.listing[\s\S]*?void enqueueSellerOnboardingProgressProjection\(client, \{[\s\S]*?reason: 'seller_onboarding_progress_fallback'/,
-  'RPC-missing progress fallback must queue derived projections without blocking',
-)
+const progressSave = serviceSource.slice(serviceSource.indexOf('async function updateSellerOnboardingProgressInternal('), serviceSource.indexOf('export async function updateSellerOnboardingProgress('))
+assert.doesNotMatch(progressSave, /\.from\(/, 'token progress must not fall back to direct table writes')
+assert.match(progressSave, /if \(rpc\.error\) throw rpc\.error/, 'a failed secure save must remain a failed save')
 assert.match(
   onboardingSource,
   /setSaving\(true\)[\s\S]*?finally \{[\s\S]*?setSaving\(false\)/,
@@ -102,8 +95,13 @@ assert.match(
 )
 assert.match(
   pipelineSource,
-  /if \(listingId && sellerJourney\.listingCreated && !hasTimelineSignal/,
-  'seller lead timeline must only synthesize listing-created activity from journey evidence',
+  /if \(listingId && sellerTimelineComplianceStatus\.listingDraftExists && !hasTimelineSignal/,
+  'seller lead timeline must require a linked listing draft before synthesizing a listing milestone',
+)
+assert.match(
+  pipelineSource,
+  /const listingLive = sellerTimelineComplianceStatus\.canTreatListingAsLive[\s\S]*?const listingCreated = sellerTimelineComplianceStatus\.canTreatListingAsCreated/,
+  'created and live timeline labels must use the compliance evidence gates',
 )
 
 console.log('seller onboarding progress serialization contract passed')

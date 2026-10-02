@@ -1,0 +1,196 @@
+{
+  "databaseVerification": {
+    "rpcs": [
+      {
+        "name": "bridge_get_imported_transaction_review_status",
+        "anonExecute": false,
+        "authenticatedExecute": true
+      },
+      {
+        "name": "bridge_get_transaction_detail_review",
+        "anonExecute": false,
+        "authenticatedExecute": true
+      },
+      {
+        "name": "bridge_save_transaction_detail_review",
+        "anonExecute": false,
+        "authenticatedExecute": true
+      },
+      {
+        "name": "fic_acknowledge_policy",
+        "anonExecute": false,
+        "authenticatedExecute": true
+      },
+      {
+        "name": "fic_assign_branch_training",
+        "anonExecute": false,
+        "authenticatedExecute": true
+      },
+      {
+        "name": "fic_branch_access",
+        "anonExecute": false,
+        "authenticatedExecute": true
+      },
+      {
+        "name": "fic_org_access",
+        "anonExecute": false,
+        "authenticatedExecute": true
+      },
+      {
+        "name": "fic_publish_policy",
+        "anonExecute": false,
+        "authenticatedExecute": true
+      },
+      {
+        "name": "fic_save_lesson",
+        "anonExecute": false,
+        "authenticatedExecute": true
+      },
+      {
+        "name": "fic_submit_assessment",
+        "anonExecute": false,
+        "authenticatedExecute": true
+      }
+    ],
+    "tables": [
+      {
+        "rls": true,
+        "name": "sections",
+        "schema": "deal_review_private",
+        "anonSelect": false
+      },
+      {
+        "rls": true,
+        "name": "events",
+        "schema": "deal_review_private",
+        "anonSelect": false
+      },
+      {
+        "rls": true,
+        "name": "branch_fic_training_progress",
+        "schema": "public",
+        "anonSelect": false
+      },
+      {
+        "rls": true,
+        "name": "branch_fic_training_attempts",
+        "schema": "public",
+        "anonSelect": false
+      },
+      {
+        "rls": true,
+        "name": "organisation_fic_policies",
+        "schema": "public",
+        "anonSelect": false
+      },
+      {
+        "rls": true,
+        "name": "branch_fic_policy_acknowledgements",
+        "schema": "public",
+        "anonSelect": false
+      }
+    ],
+    "migrations": [
+      {
+        "name": "imported_transaction_detail_review",
+        "version": "20261001185738"
+      },
+      {
+        "name": "imported_transaction_review_status",
+        "version": "20261001191425"
+      },
+      {
+        "name": "imported_transaction_funding_review",
+        "version": "20261001195834"
+      },
+      {
+        "name": "imported_transaction_funding_validation",
+        "version": "20261001201355"
+      },
+      {
+        "name": "branch_fic_training_compliance",
+        "version": "20261001202026"
+      }
+    ],
+    "noIdentityOrgAccess": false,
+    "privateHelpersExposed": 0,
+    "noIdentityBranchAccess": false
+  },
+  "securityBefore": [
+    {
+      "name": "rls_enabled_no_policy",
+      "level": "INFO",
+      "count": 86,
+      "remediation": "https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy"
+    },
+    {
+      "name": "function_search_path_mutable",
+      "level": "WARN",
+      "count": 170,
+      "remediation": "https://supabase.com/docs/guides/database/database-linter?lint=0011_function_search_path_mutable"
+    },
+    {
+      "name": "materialized_view_in_api",
+      "level": "WARN",
+      "count": 2,
+      "remediation": "https://supabase.com/docs/guides/database/database-linter?lint=0016_materialized_view_in_api"
+    },
+    {
+      "name": "anon_security_definer_function_executable",
+      "level": "WARN",
+      "count": 579,
+      "remediation": "https://supabase.com/docs/guides/database/database-linter?lint=0028_anon_security_definer_function_executable"
+    },
+    {
+      "name": "authenticated_security_definer_function_executable",
+      "level": "WARN",
+      "count": 950,
+      "remediation": "https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable"
+    },
+    {
+      "name": "auth_leaked_password_protection",
+      "level": "WARN",
+      "count": 1,
+      "remediation": "https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection"
+    }
+  ],
+  "securityAfter": [
+    {
+      "name": "rls_enabled_no_policy",
+      "level": "INFO",
+      "count": 88,
+      "remediation": "https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy"
+    },
+    {
+      "name": "function_search_path_mutable",
+      "level": "WARN",
+      "count": 170,
+      "remediation": "https://supabase.com/docs/guides/database/database-linter?lint=0011_function_search_path_mutable"
+    },
+    {
+      "name": "materialized_view_in_api",
+      "level": "WARN",
+      "count": 2,
+      "remediation": "https://supabase.com/docs/guides/database/database-linter?lint=0016_materialized_view_in_api"
+    },
+    {
+      "name": "anon_security_definer_function_executable",
+      "level": "WARN",
+      "count": 579,
+      "remediation": "https://supabase.com/docs/guides/database/database-linter?lint=0028_anon_security_definer_function_executable"
+    },
+    {
+      "name": "authenticated_security_definer_function_executable",
+      "level": "WARN",
+      "count": 960,
+      "remediation": "https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable"
+    },
+    {
+      "name": "auth_leaked_password_protection",
+      "level": "WARN",
+      "count": 1,
+      "remediation": "https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection"
+    }
+  ],
+  "securityDecision": "No ERROR advisories. Two added INFO notices are for inaccessible RLS tables in deal_review_private; ten added authenticated SECURITY DEFINER warnings correspond to intended authenticated, access-scoped review/FIC RPCs. No new anonymous function exposure. Other advisory counts unchanged."
+}

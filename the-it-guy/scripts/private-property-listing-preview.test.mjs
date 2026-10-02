@@ -8,11 +8,19 @@ import {
 } from '../server/services/privatePropertyListingPreviewService.js'
 import {
   createPrivatePropertyListingPlan,
+  PRIVATE_PROPERTY_FEATURE_ATTRIBUTES,
   resolvePrivatePropertyCategory,
   resolvePrivatePropertyMandateType,
   resolvePrivatePropertyProvince,
 } from '../server/services/privatePropertyListingMapper.js'
 import { LISTING_FEATURE_CATALOG } from '../src/services/listings/listingFeatureCatalog.js'
+
+// Independent SOAP schema snapshot: catches invalid identifiers even when
+// a mapper and its expected feature mapping make the same spelling mistake.
+const soapAttributeTypes = new Set(JSON.parse(fs.readFileSync(new URL('./fixtures/private-property-attribute-types.json', import.meta.url), 'utf8')).attributeTypes)
+for (const attribute of Object.values(PRIVATE_PROPERTY_FEATURE_ATTRIBUTES)) {
+  assert.ok(soapAttributeTypes.has(attribute), `Private Property rejects AttributeType ${attribute}`)
+}
 
 function read(path) {
   return fs.readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
@@ -277,12 +285,12 @@ const residentialNativeFeatureAttributes = {
   built_in_cupboards: 'BuiltInCupboards', wheelchair_accessible: 'HandicapAvailable',
   balcony: 'Balcony', deck: 'Deck', access_gate: 'AccessGate', security_post: 'SecurityPost',
   tennis_court: 'TennisCourt', squash_court: 'SquashCourt', clubhouse: 'Clubhouse', gym: 'Gym',
-  golf: 'Golf', jacuzzi: 'Jacuzzi', patio: 'Patio', storage: 'Storage', fence: 'Fence',
-  laundry: 'Laundry', kitchen: 'Kitchen', lapa: 'Lapa', electric_fence: 'Electric Fencing',
-  built_in_braai: 'Built-in-Braai', fireplace: 'Fireplace', garden_cottage: 'Garden Cottage',
-  jetty_berth: 'Jetty Berth', scullery: 'Scullery', pantry: 'Pantry', guest_toilet: 'Guest Toilet',
-  entrance_hall: 'Entrance hall', irrigation_system: 'Irrigation System', paving: 'Paving',
-  intercom: 'Intercom', family_tv_room: 'Family/TV Room', garden: 'Garden', pet_friendly: 'PetsAllowed',
+  golf: 'Golf', jacuzzi: 'Jaccuzzi', patio: 'Patio', storage: 'Storage', fence: 'Fence',
+  laundry: 'Laundry', kitchen: 'Kitchen', lapa: 'Lapa', electric_fence: 'Electric_Fencing',
+  built_in_braai: 'Built_in_Braai', fireplace: 'Fireplace', garden_cottage: 'Garden_Cottage',
+  jetty_berth: 'Jetty_Berth', scullery: 'Scullery', pantry: 'Pantry', guest_toilet: 'Guest_Toilet',
+  entrance_hall: 'Entrance_hall', irrigation_system: 'Irrigation_System', paving: 'Paving',
+  intercom: 'Intercom', family_tv_room: 'Family_TV_Room', garden: 'Garden', pet_friendly: 'PetsAllowed',
 }
 const featureJourneyListing = {
   id: 'pp-feature-journey', listing_reference: 'PP-JOURNEY-001', listing_status: 'active',
@@ -303,12 +311,38 @@ for (const feature of LISTING_FEATURE_CATALOG.filter((item) => item.listingTypes
     options: { branchGuid: 'CA167B18-C6DC-49AD-B018-2B72B187918F', suburbId: '309' },
   })
   assert.equal(plan.canPreview, true, `${feature.key}: ${JSON.stringify(plan.dataBlockers)}`)
+  for (const attribute of plan.payload.attributes) {
+    assert.ok(soapAttributeTypes.has(attribute.attributeType), `Unsupported portal attribute: ${attribute.attributeType}`)
+  }
+  if (feature.key === 'jacuzzi') {
+    assert.doesNotMatch(plan.listingXml, /<AttributeType>Jacuzzi<\/AttributeType>/)
+    assert.match(plan.listingXml, /<AttributeType>Jaccuzzi<\/AttributeType><Value>Yes<\/Value>/)
+  }
+  if (feature.key === 'electric_fence') {
+    assert.doesNotMatch(plan.listingXml, /<AttributeType>Electric Fencing<\/AttributeType>/)
+    assert.match(plan.listingXml, /<AttributeType>Electric_Fencing<\/AttributeType><Value>Yes<\/Value>/)
+  }
   const attribute = residentialNativeFeatureAttributes[feature.key]
   if (attribute) {
     assert.ok(plan.payload.attributes.some((item) => item.attributeType === attribute && item.value === String(value === true ? 'Yes' : value)), `${feature.key} must map to ${attribute}`)
   } else {
     assert.ok(plan.payload.description.toLowerCase().includes(feature.key === 'borehole' ? 'borehole' : feature.label.toLowerCase()), `${feature.key} must have a description fallback`)
   }
+}
+
+// Older listing/publication records store display labels rather than typed facts.
+const legacyElectricFencePlan = createPrivatePropertyListingPlan({
+  listing: featureJourneyListing,
+  publication: { ...featureJourneyPublication, features: ['Electric Fencing', 'Jacuzzi'] },
+  media: [1, 2, 3].map((index) => ({ media_type: 'image', file_url: `https://cdn.example.com/legacy-${index}.jpg` })),
+  agentMapping: { agentIds: 'ARCH9-SANDBOX-USER-1' },
+  options: { branchGuid: 'CA167B18-C6DC-49AD-B018-2B72B187918F', suburbId: '309' },
+})
+assert.equal(legacyElectricFencePlan.canPreview, true)
+assert.match(legacyElectricFencePlan.listingXml, /<AttributeType>Electric_Fencing<\/AttributeType><Value>Yes<\/Value>/)
+assert.match(legacyElectricFencePlan.listingXml, /<AttributeType>Jaccuzzi<\/AttributeType><Value>Yes<\/Value>/)
+for (const attribute of legacyElectricFencePlan.payload.attributes) {
+  assert.ok(soapAttributeTypes.has(attribute.attributeType), `Unsupported legacy portal attribute: ${attribute.attributeType}`)
 }
 
 const studiesCountPlan = createPrivatePropertyListingPlan({

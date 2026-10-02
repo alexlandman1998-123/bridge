@@ -74,7 +74,7 @@ function addPeopleRows(rows, label, people = []) {
   if (!Array.isArray(people) || !people.length) return
   const normalizedPeople = people
     .map((person, index) => {
-      const name = firstText(person?.full_name, person?.name, `Person ${index + 1}`)
+      const name = firstText(person?.full_name, person?.fullName, fullName(person?.first_name || person?.firstName || person?.name, person?.surname || person?.lastName), `Person ${index + 1}`)
       const idNumber = text(person?.id_number || person?.idNumber)
       const email = text(person?.email)
       const phone = text(person?.phone || person?.mobile)
@@ -101,33 +101,17 @@ function addPeopleRows(rows, label, people = []) {
 function buildSellerSection(facts = {}, formData = {}) {
   const seller = facts.seller || {}
   const rows = []
-  const primarySellerKeys = new Set([
-    key(firstText(fullName(seller.first_name, seller.surname), formData.sellerName)),
-    key(seller.email),
-    key(seller.phone),
-    key(seller.id_number),
-  ].filter(Boolean))
-  const additionalOwners = Array.isArray(seller.owners)
-    ? seller.owners.filter((owner) => {
-      const ownerKeys = [
-        key(firstText(owner?.full_name, owner?.name)),
-        key(owner?.email),
-        key(owner?.phone || owner?.mobile),
-        key(owner?.id_number || owner?.idNumber),
-      ].filter(Boolean)
-      return !ownerKeys.some((ownerKey) => primarySellerKeys.has(ownerKey))
-    })
-    : []
-  const entityClient = ['company', 'close_corporation', 'foreign_company', 'trust', 'foreign_trust'].includes(key(seller.legal_type))
-  addRow(rows, entityClient ? 'Primary contact' : 'Seller name', firstText(fullName(seller.first_name, seller.surname), formData.sellerName))
+  const additionalOwners = Array.isArray(seller.owners) ? seller.owners : []
+  const entityClient = ['company', 'close_corporation', 'foreign_company', 'trust', 'foreign_trust', 'deceased_estate', 'power_of_attorney', 'other', 'multiple_owners'].includes(key(seller.owner_structure_type || seller.legal_type))
+  addRow(rows, entityClient ? 'Primary contact' : 'Seller name', firstText(seller.contact?.name, formData.primaryContactName, fullName(seller.first_name, seller.surname), formData.sellerName))
   addRow(rows, 'Owner type', firstText(seller.branch_label, humanize(seller.owner_structure_type), humanize(seller.legal_type)))
   addRow(rows, 'Owner entity', humanize(seller.owner_entity_type))
   addRow(rows, 'Mobile', seller.phone)
   addRow(rows, 'Email', seller.email)
+  if (!entityClient) {
   addRow(rows, 'ID / passport number', firstText(seller.id_number, seller.foreign?.passport_number))
   addRow(rows, 'Date of birth', seller.date_of_birth)
   addRow(rows, 'Nationality', seller.nationality)
-  if (!entityClient) {
     addRow(rows, 'Marital status', humanize(seller.marital_status))
     addRow(rows, 'Marital regime', humanize(seller.marital_regime))
     addRow(rows, 'Spouse name', seller.spouse?.name)
@@ -135,7 +119,7 @@ function buildSellerSection(facts = {}, formData = {}) {
     addRow(rows, 'Spouse email', seller.spouse?.email)
   }
   addRow(rows, 'Residential address', seller.residential_address)
-  addPeopleRows(rows, 'Additional owners', additionalOwners)
+  addPeopleRows(rows, 'Owners', additionalOwners)
   return { title: 'Seller', rows }
 }
 
@@ -143,18 +127,24 @@ function buildEntitySection(facts = {}) {
   const seller = facts.seller || {}
   const rows = []
 
-  if (seller.legal_type === 'company' || seller.owner_entity_type === 'company') {
+  if (['company', 'close_corporation', 'foreign_company'].includes(seller.owner_structure_type || seller.legal_type) || seller.owner_entity_type === 'company') {
     addRow(rows, 'Company name', seller.company?.name)
     addRow(rows, 'Registration number', seller.company?.registration_number)
+    addRow(rows, 'Registered address', seller.company?.registered_address)
+    addRow(rows, 'Signatory ID / passport', seller.company?.authorised_signatory?.id_number)
+    addRow(rows, 'Signatory capacity', seller.company?.authorised_signatory?.capacity)
     addRow(rows, 'Authorised signatory', firstText(seller.company?.authorised_signatory?.name, seller.company?.director_name))
     addRow(rows, 'Authority basis', seller.company?.authority_basis)
     addPeopleRows(rows, 'Directors', seller.company?.directors)
     addPeopleRows(rows, 'Beneficial owners / controllers', seller.company?.beneficial_owners)
   }
 
-  if (seller.legal_type === 'trust' || seller.owner_entity_type === 'trust') {
+  if (['trust', 'foreign_trust'].includes(seller.owner_structure_type || seller.legal_type) || seller.owner_entity_type === 'trust') {
     addRow(rows, 'Trust name', seller.trust?.name)
     addRow(rows, 'Registration number', seller.trust?.registration_number)
+    addRow(rows, 'Registered address', seller.trust?.registered_address)
+    addRow(rows, 'Trustee ID / passport', seller.trust?.authorised_trustee?.id_number)
+    addRow(rows, 'Trustee capacity', seller.trust?.authorised_trustee?.capacity)
     addRow(rows, 'Authorised trustee', firstText(seller.trust?.authorised_trustee?.name, seller.trust?.trustee_name))
     addRow(rows, 'Authority basis', seller.trust?.authority_basis)
     addPeopleRows(rows, 'Trustees', seller.trust?.trustees)
@@ -163,18 +153,26 @@ function buildEntitySection(facts = {}) {
     addRow(rows, 'Beneficiary class', seller.trust?.beneficiary_class)
   }
 
-  if (seller.legal_type === 'deceased_estate') {
+  if ((seller.owner_structure_type || seller.legal_type) === 'deceased_estate') {
+    addRow(rows, 'Estate name', seller.deceased_estate?.name || seller.name)
     addRow(rows, 'Executor', seller.deceased_estate?.executor_name)
     addRow(rows, 'Estate reference', seller.deceased_estate?.estate_reference)
     addRow(rows, 'Authority details', seller.deceased_estate?.authority_details)
   }
 
-  if (seller.legal_type === 'power_of_attorney') {
+  if ((seller.owner_structure_type || seller.legal_type) === 'power_of_attorney') {
     addRow(rows, 'Representative', seller.power_of_attorney?.representative_name)
     addRow(rows, 'Principal', seller.power_of_attorney?.principal?.name)
+    addRow(rows, 'Principal ID / passport', seller.power_of_attorney?.principal?.id_number)
     addRow(rows, 'Authority reference', seller.power_of_attorney?.reference)
   }
 
+  if ((seller.owner_structure_type || seller.legal_type) === 'other') {
+    addRow(rows, 'Entity name', seller.other_entity?.name || seller.name)
+    addRow(rows, 'Registration number', seller.other_entity?.registration_number)
+    addRow(rows, 'Authority basis', seller.other_entity?.authority_details)
+    addRow(rows, 'Review', 'Manual authority review required')
+  }
   return rows.length ? { title: 'Entity / Authority', rows } : null
 }
 

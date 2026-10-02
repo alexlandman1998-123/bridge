@@ -1,5 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 
 import {
   buildListingChannelPublicationDisplay,
@@ -49,4 +50,26 @@ test('channel references are displayed without a duplicated Ref label', () => {
   assert.equal(normalizeListingChannelReference('Ref: P24-123'), 'P24-123')
   assert.equal(normalizeListingChannelReference('Reference: PP-456'), 'PP-456')
   assert.equal(normalizeListingChannelReference('ARCH9-789'), 'ARCH9-789')
+})
+
+test('marketing live count follows publication visibility independently of update currency', () => {
+  const page = readFileSync(new URL('../../../pages/AgentListingDetail.jsx', import.meta.url), 'utf8')
+  const countExpression = page.match(/const marketingLiveChannelCount = (.+)/)?.[1]
+  assert.ok(countExpression, 'the marketing summary must expose its live count')
+  assert.match(page, /live: overviewPublishedChannels\[0\]\.live/)
+  assert.match(page, /live: overviewPublishedChannels\[1\]\.live/)
+  const countLive = new Function('channelRows', 'agencyWebsiteLive', 'kingdomWebsiteLive', `return ${countExpression}`)
+  const portal = (live, updateStatus, publicationState = {}) => buildListingChannelPublicationDisplay({
+    key: 'property24', live, updateState: { status: updateStatus }, publicationState,
+  })
+  const current = portal(true, 'current')
+  const awaiting = portal(true, 'awaiting_verification')
+  assert.equal(current.statusLabel, 'Current')
+  assert.equal(awaiting.statusLabel, 'Awaiting verification')
+  assert.equal(countLive([current, awaiting], false, true), 3, 'both active portals and Kingdom count as live')
+  assert.equal(countLive([current, portal(false, 'needs_attention')], false, true), 2)
+  assert.equal(countLive([portal(false, 'awaiting_verification'), portal(false, '')], false, true), 1, 'acceptance without activation is not live')
+  assert.equal(countLive([portal(false, 'current'), portal(false, '')], false, false), 0, 'old verification does not make an inactive portal live')
+  assert.equal(countLive([portal(true, 'needs_attention'), portal(true, '', { changeCount: 2 })], true, false), 3, 'failed or unpublished updates do not remove an existing live listing')
+  assert.equal(countLive([portal(false, '', { stage: 'withdrawn' }), portal(false, '')], false, false), 0)
 })

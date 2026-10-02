@@ -222,19 +222,15 @@ async function getPublishedPartnerListings(
   if (!approvedSources.size) return []
 
   const listingIds = channels.data.map((row) => String(row.listing_id))
-  const [listings, projections] = await Promise.all([
-    supabase.from('private_listings').select('id, organisation_id, arch9_reference').in('id', listingIds),
-    supabase.from('listing_publication_data').select('listing_id, status').in('listing_id', listingIds),
-  ])
+  const listings = await supabase.from('private_listings')
+    .select('id, organisation_id, arch9_reference').in('id', listingIds)
   if (listings.error) throw listings.error
-  if (projections.error) throw projections.error
   const byId = new Map((listings.data || []).map((listing) => [String(listing.id), listing]))
-  const publishedIds = new Set((projections.data || []).filter((row) => row.status === 'Published').map((row) => String(row.listing_id)))
 
   return channels.data.flatMap((channel) => {
     const listingId = String(channel.listing_id)
     const listing = byId.get(listingId)
-    if (!listing || !publishedIds.has(listingId) ||
+    if (!listing ||
       approvedSources.get(String(channel.grant_id)) !== String(listing.organisation_id) ||
       String(listing.organisation_id) === site.organisationId ||
       !channel.publication_json || typeof channel.publication_json !== 'object' || Array.isArray(channel.publication_json)) return []

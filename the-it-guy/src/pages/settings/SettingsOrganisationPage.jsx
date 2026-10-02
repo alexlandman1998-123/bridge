@@ -2490,7 +2490,7 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
   }
 
   async function handleLogoUpload(file, targetKey) {
-    if (!file || !canEdit || !state || uploadingLogoTarget) return
+    if (!file || !canEdit || !state || uploadingLogoTarget || saving) return
     const validationError = validateBrandAssetFile(file)
     if (validationError) {
       setError(validationError)
@@ -2579,7 +2579,7 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
 
   async function handleSave(event) {
     event?.preventDefault?.()
-    if (!canEdit || !state) return
+    if (!canEdit || !state || saving || uploadingLogoTarget) return
 
     try {
       setSaving(true)
@@ -2587,13 +2587,13 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
       setMessage('')
       const stateToSave = synchronizeAgencyBusinessLines(state)
 
-      const [organisationResponse, onboardingResponse] = await Promise.all([
-        updateOrganisationSettings(stateToSave.organisation),
-        saveAgencyOnboardingDraft({
-          ...stateToSave.onboarding,
-          organisationType: isBondOriginator ? 'bond_originator' : stateToSave.onboarding?.organisationType,
-        }, { syncCommercialAccess: true }),
-      ])
+      // These writes share branding triggers. Match the logo-upload order and
+      // finish the first transaction before starting the next to avoid deadlocks.
+      const onboardingResponse = await saveAgencyOnboardingDraft({
+        ...stateToSave.onboarding,
+        organisationType: isBondOriginator ? 'bond_originator' : stateToSave.onboarding?.organisationType,
+      }, { syncCommercialAccess: true })
+      const organisationResponse = await updateOrganisationSettings(stateToSave.organisation)
 
       await upsertAreaFromAddress(buildOrganisationAddressValue(stateToSave.organisation, stateToSave.onboarding), { incrementListingCount: false })
 

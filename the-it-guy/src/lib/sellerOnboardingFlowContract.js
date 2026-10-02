@@ -218,7 +218,7 @@ const SELLER_BRANCH_RULES = Object.freeze({
   }),
   company: Object.freeze({
     label: 'Company',
-    aliases: Object.freeze(['company', 'pty', 'pty_ltd', 'corporate']),
+    aliases: Object.freeze(['company', 'close_corporation', 'cc', 'pty', 'pty_ltd', 'corporate']),
     sellerFacingQuestions: Object.freeze([
       'seller.company.name',
       'seller.company.registration_number',
@@ -738,7 +738,7 @@ function sellerRequiresSpouseEmailForMandate(ownershipModel = {}, form = {}, sou
     maritalRegime === 'in_community' ||
     maritalRegime === 'community_of_property' ||
     maritalRegime.includes('in_community') ||
-    maritalRegime.includes('community_of_property') ||
+    maritalRegime === 'married_in_community_of_property' ||
     spouseConsentRequired
   )
 }
@@ -803,7 +803,7 @@ function mapPropertyBranchToLegacyPropertyType(branch, category = '', structureT
 function normalizeOwnerEntityType(value, { fallback = '' } = {}) {
   const normalized = normalizeKey(value)
   if (!normalized) return fallback
-  if (['company', 'pty', 'pty_ltd', 'corporate'].includes(normalized)) return 'company'
+  if (['company', 'close_corporation', 'cc', 'pty', 'pty_ltd', 'corporate'].includes(normalized)) return 'company'
   if (['trust', 'family_trust'].includes(normalized)) return 'trust'
   if (['foreign', 'foreign_owner', 'foreign_individual', 'foreign_company', 'foreign_trust', 'non_resident'].includes(normalized)) return 'foreign'
   if (['other', 'other_legal_entity', 'legal_entity'].includes(normalized)) return 'other'
@@ -829,7 +829,7 @@ function normalizeOwnerEntityType(value, { fallback = '' } = {}) {
 
 function normalizeOwnerStructureType(value, ownerEntityType = 'natural_person', { fallback = '' } = {}) {
   const normalized = normalizeKey(value)
-  if (ownerEntityType === 'company') return normalized === 'foreign_company' ? 'foreign_company' : 'company'
+  if (ownerEntityType === 'company') return ['foreign_company', 'close_corporation'].includes(normalized) ? normalized : normalized === 'cc' ? 'close_corporation' : 'company'
   if (ownerEntityType === 'trust') return normalized === 'foreign_trust' ? 'foreign_trust' : 'trust'
   if (ownerEntityType === 'foreign') {
     if (['foreign_company', 'company'].includes(normalized)) return 'foreign_company'
@@ -860,7 +860,7 @@ function normalizeOwnerStructureType(value, ownerEntityType = 'natural_person', 
 }
 
 function resolveSellerBranchFromOwnerFields(ownerEntityType = '', ownerStructureType = '') {
-  if (ownerStructureType === 'foreign_company' || ownerStructureType === 'company' || ownerEntityType === 'company') return 'company'
+  if (['company', 'close_corporation', 'foreign_company'].includes(ownerStructureType) || ownerEntityType === 'company') return 'company'
   if (ownerStructureType === 'foreign_trust' || ownerStructureType === 'trust' || ownerEntityType === 'trust') return 'trust'
   if (ownerStructureType === 'multiple_owners') return 'multiple_owners'
   if (ownerStructureType === 'deceased_estate') return 'deceased_estate'

@@ -48,8 +48,8 @@ assert.equal(deriveListingChannelUpdateStates([]).Property24, null)
 
 const page = readFileSync(new URL('../src/pages/AgentListingDetail.jsx', import.meta.url), 'utf8')
 assert.match(page, /getPrivateListingActivity\(listingId, \{ requireAvailable: true \}\)/)
-assert.match(page, /property24Update\?\.status === 'needs_attention' \? 'Needs attention'/)
-assert.match(page, /privatePropertyUpdate\?\.status === 'awaiting_verification' \? 'Awaiting verification'/)
+assert.match(page, /property24Update\?\.status === 'needs_attention' \? property24Update\.retriable === false \? 'No confirmed live Property24 listing to update' : 'Portal submission failed'/)
+assert.match(page, /privatePropertyUpdate\?\.status === 'awaiting_verification' \? '(?:Awaiting verification|Update accepted; check the public page)'/)
 assert.match(page, /retryListingChannelUpdate\('Property24', property24Update.action\)/)
 assert.match(page, /retryListingChannelUpdate\('Private Property', privatePropertyUpdate.action\)/)
 assert.match(page, /confirmListingChannelCurrent\('Property24'/)
@@ -57,5 +57,45 @@ assert.match(page, /confirmListingChannelCurrent\('Private Property'/)
 assert.match(page, /channelActivityUnavailable && property24HasReference/)
 assert.match(page, /channelUpdateStates\.Property24\?\.status === 'current' && \['expired', 'removed', 'withdrawn'\]\.includes\(property24StatusKey\)/)
 assert.match(page, /channelUpdateStates\['Private Property'\]\?\.status === 'current' && \['expired', 'removed', 'withdrawn'\]\.includes\(privatePropertyStatusKey\)/)
+
+const retrySource = page.slice(page.indexOf('async function retryListingChannelUpdate('), page.indexOf('async function confirmListingChannelCurrent('))
+const calls = []
+const retry = new Function('listingRecord', 'publishProperty24Listing', 'publishPrivatePropertyListing', 'setDetailError', `${retrySource}; return retryListingChannelUpdate;`)(
+  { id: 'listing-1' },
+  async () => { calls.push('Property24'); return 'p24-result' },
+  async () => { calls.push('Private Property'); return 'pp-result' },
+  (message) => calls.push(message),
+)
+for (const action of ['publish', 'update']) {
+  assert.equal(await retry('Property24', action), 'p24-result')
+  assert.equal(await retry('Private Property', action), 'pp-result')
+}
+assert.deepEqual(calls, ['Property24', 'Private Property', 'Property24', 'Private Property'])
+await retry('Private Property', 'unknown')
+assert.match(calls.at(-1), /cannot be retried/)
+
+// Drive retries from the same failed-publication activity used by channel cards.
+// A missing action on older failures defaults to publish, rather than a status update.
+for (const channel of ['Property24', 'Private Property']) {
+  for (const action of [undefined, 'publish', 'update']) {
+    const failedPublication = event('listing_channel_publication_failed', '2026-10-01T07:10:43Z', {
+      channel, action, error: 'Supplier rejected the previous request.',
+    })
+    const channelState = deriveListingChannelUpdateStates([failedPublication])[channel]
+    assert.equal(channelState.status, 'needs_attention')
+    assert.equal(await retry(channel, channelState.action), channel === 'Property24' ? 'p24-result' : 'pp-result')
+    assert.equal(calls.at(-1), channel)
+  }
+}
+
+const missingListingErrors = []
+const retryWithoutListing = new Function('listingRecord', 'publishProperty24Listing', 'publishPrivatePropertyListing', 'setDetailError', `${retrySource}; return retryListingChannelUpdate;`)(
+  null,
+  async () => assert.fail('A missing listing must not be submitted'),
+  async () => assert.fail('A missing listing must not be submitted'),
+  (message) => missingListingErrors.push(message),
+)
+await retryWithoutListing('Private Property', 'publish')
+assert.match(missingListingErrors.at(-1), /Reload this listing/)
 
 console.log('Listing channel update state contract passed')

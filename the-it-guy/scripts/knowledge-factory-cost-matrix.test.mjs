@@ -237,7 +237,7 @@ assert.match(
 );
 assert.match(
   purchaseApi,
-  /\["list_products", "confirm", "execute"\][\s\S]*status", "uat_validated"/,
+  /\["list_products", "quote", "confirm", "execute"\][\s\S]*status", "uat_validated"/,
   "Only UAT-ready server-owned packages may be confirmed.",
 );
 assert.match(
@@ -252,12 +252,12 @@ assert.match(
 );
 assert.match(
   purchaseApi,
-  /Report selection confirmed\. No supplier data has been requested yet/,
+  /Report quote confirmed\. No supplier report data has been requested yet/,
   "Phase 2 confirmation must remain a no-charge action.",
 );
 assert.match(
   purchasePanel,
-  /No supplier data has been requested or charged in\s+this step/,
+  /No supplier report data has been requested or charged in\s+this step/,
   "The purchase confirmation must clearly state its no-charge scope.",
 );
 assert.match(
@@ -282,7 +282,7 @@ assert.match(
 );
 assert.match(
   purchaseApi,
-  /report_data: reportData\(result\.property, intent\.product_id\)/,
+  /savedReportData = reportData\(result\.property, intent\.product_id\)[\s\S]*report_data: savedReportData/,
   "Phase 3 must save a server-shaped report result rather than a raw supplier payload.",
 );
 assert.match(
