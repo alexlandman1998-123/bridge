@@ -10,8 +10,9 @@ const [appSource, moduleSource, loadersSource, boundarySource, apiSource, docsSo
   fs.readFile('docs/rentals-phase2-module-boundary.md', 'utf8'),
 ])
 
-assert.match(appSource, /from '\.\/modules\/rentals'/)
-assert.doesNotMatch(appSource, /lazy\(\(\) => import\('\.\/pages\/rentals\//)
+assert.match(appSource, /from '\.\/modules\/rentals\/shell\/rentalRouteLoaders'/)
+assert.deepEqual([...appSource.matchAll(/lazy\(\(\) => import\('\.\/pages\/rentals\/([^']+)'/g)].map((match) => match[1]), ['RentalApplicantJourneyPage', 'RentalApplicationWorkspacePage', 'RentalApplicationDetailPage'])
+assert.match(appSource, /const RentalModuleBoundary = lazy\(\(\) => import\('\.\/modules\/rentals\/shell\/RentalModuleBoundary'/)
 assert.match(appSource, /<RentalModuleBoundary>\{children\}<\/RentalModuleBoundary>/)
 assert.match(moduleSource, /rentalModuleRegistry/)
 assert.match(moduleSource, /rentalRouteLoaders/)

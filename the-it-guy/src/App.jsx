@@ -32,7 +32,6 @@ import {
   isCommercialProfessionalMember,
 } from './lib/commercialAccess'
 import { BUSINESS_WORKSPACES, resolveBusinessWorkspaceRoute } from './lib/businessWorkspaceAccess'
-import { RentalModuleBoundary } from './modules/rentals/shell/RentalModuleBoundary'
 import { isWorkspaceExtensionFeatureEnabled, REVO_EXTENSION_KEY } from './modules/revo/revoExtensionRegistry'
 import {
   RentalTenantPortalPage,
@@ -328,6 +327,7 @@ const BuyerViewingPreferencesPage = lazy(() => import('./pages/BuyerViewingPrefe
 const SellerViewingCoordinationPage = lazy(() => import('./pages/SellerViewingCoordinationPage'))
 const PublicAgencyIntakePage = lazy(() => import('./pages/PublicAgencyIntakePage'))
 const PublicAgentDigitalCardPage = lazy(() => import('./pages/PublicAgentDigitalCardPage'))
+const RentalModuleBoundary = lazy(() => import('./modules/rentals/shell/RentalModuleBoundary').then((module) => ({ default: module.RentalModuleBoundary })))
 const RentalApplicantJourneyPage = lazy(() => import('./pages/rentals/RentalApplicantJourneyPage'))
 const RentalApplicationWorkspacePage = lazy(() => import('./pages/rentals/RentalApplicationWorkspacePage'))
 const RentalApplicationDetailPage = lazy(() => import('./pages/rentals/RentalApplicationDetailPage'))
