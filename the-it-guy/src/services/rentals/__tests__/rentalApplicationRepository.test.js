@@ -27,12 +27,13 @@ assert.equal(calls[0].table, 'rental_applications')
 assert.equal(calls[1].payload.lead_id, 'lead-1')
 assert.equal(application.leadId, 'lead-1')
 
+let tenancySelection = ""
 const listCalls = []
 const listClient = {
   from(table) {
     listCalls.push({ table })
     const query = {
-      select() { return query },
+      select(selection) { if (table === "rental_tenancies") tenancySelection = selection; return query },
       eq(column, value) { listCalls.push({ column, value }); return query },
       order() { return query },
       limit() { return Promise.resolve({ data: [], error: null }) },
@@ -45,4 +46,5 @@ assert.deepEqual(listCalls.slice(1, 3), [{ column: 'organisation_id', value: 'or
 await listPersistedRentalTenancies('org-1', { client: listClient })
 assert.equal(listCalls[3].table, 'rental_tenancies')
 
+assert.match(tenancySelection, /rental_lease_signers\(signer_role, signer_name\)/)
 console.log('Rental application repository linkage checks passed.')

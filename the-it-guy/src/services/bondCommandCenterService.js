@@ -1,3 +1,5 @@
+import { buildBondDashboardPerformance } from './bondDashboardPerformanceModel'
+import { readBondDashboardPerformance } from './bondDashboardPerformanceData'
 import { getAttorneyTransferStage, stageLabelFromAttorneyKey } from '../core/transactions/attorneySelectors'
 import { buildBondDemoRows } from '../core/transactions/attorneyMockData'
 import { getBondApplicationStage } from '../core/transactions/bondSelectors'
@@ -3725,6 +3727,34 @@ export async function getBondCommandCenterSnapshot(user = {}, workspaceId = '', 
   const filteredRows = filterRowsByDevelopment(dateRows, options.developmentId)
   const scopedRows = filterRowsByDevelopment(allRows, options.developmentId)
   const previousRows = filterRowsByDevelopment(filterRowsByPreviousDateRange(allRows, rangeKey), options.developmentId)
+  const performanceData = options.performanceData || (options.rows || options.transactions || options.fetchRows || includeDemoRows
+    ? { submissions: scopedRows.flatMap((row) => getBankSubmissionRows(row).map((record) => ({ ...record, transaction_id: row.transaction.id }))), commissions: [], bankAvailable: true, commissionAvailable: true }
+    : await readBondDashboardPerformance(scopedRows.map((row) => row.transaction.id), workspaceId))
+  const dashboardPerformance = buildBondDashboardPerformance({ rows: scopedRows, reportingScope, ...performanceData })
+  const activeRows = scopedRows.filter((row) => !['registered', 'lost'].includes(deriveManagementPipelineStage(row)) && row.transaction.is_active !== false && !row.transaction.archived_at && !row.transaction.deleted_at)
+  const dashboardApplications = [...activeRows].sort((a, b) => getTimestamp(getUpdatedAt(b)) - getTimestamp(getUpdatedAt(a))).map((row) => {
+    const tx = row.transaction
+    const assignment = resolveEffectiveBondAssignment(tx)
+    const stageKey = deriveManagementPipelineStage(row)
+    const stageLabels = { application: 'Application', at_banks: 'At banks', accepted: 'Approved', lodged: 'Lodged', registered: 'Registered' }
+    const stageKeys = Object.keys(stageLabels)
+    const stageItems = stageKeys.map((key, index) => ({ key, state: index < stageKeys.indexOf(stageKey) ? 'complete' : key === stageKey ? 'active' : 'pending' }))
+    const submissions = dashboardPerformance.bankRecords.filter((record) => record.transaction_id === tx.id)
+    return {
+      id: tx.id,
+      reference: tx.transaction_reference || tx.matter_number || 'Application',
+      buyerName: getBuyerName(row) || 'Buyer pending',
+      propertyLabel: getPropertyLabel(row),
+      developmentName: getDevelopmentName(row),
+      consultantName: getDisplayNameFromAssignment(assignment, row, 'consultant') || 'Unassigned originator',
+      bondValue: tx.bond_amount != null ? formatCurrency(tx.bond_amount) : '—',
+      currentStage: stageLabels[stageKey], stageItems,
+      updatedLabel: getTimestamp(tx.updated_at) ? new Intl.DateTimeFormat('en-ZA', { day: 'numeric', month: 'short', timeZone: 'Africa/Johannesburg' }).format(new Date(tx.updated_at)) : 'not recorded',
+      submittedBanks: dashboardPerformance.bankAvailable ? submissions.length : null,
+      approvedBanks: dashboardPerformance.bankAvailable ? submissions.filter((record) => ['approved', 'buyer_approved'].includes(record.status)).length : null,
+      href: getApplicationHref(row),
+    }
+  })
   const queues = resolveBondOperationalQueues(user, filteredRows)
   const priorityActions = buildPriorityActions(filteredRows)
   const focus = getRoleFocus(reportingScope)
@@ -3753,6 +3783,8 @@ export async function getBondCommandCenterSnapshot(user = {}, workspaceId = '', 
     heroSummary: executiveAnalytics.heroSummary,
     heroKpis: executiveAnalytics.heroKpis,
     activeApplications: buildActiveApplications(filteredRows),
+    dashboardApplications,
+    dashboardPerformance,
     bankBreakdown,
     bankLeadTimes,
     pipelineFlow,

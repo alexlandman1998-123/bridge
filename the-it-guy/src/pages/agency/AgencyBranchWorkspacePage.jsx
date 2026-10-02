@@ -27,7 +27,10 @@ import AddressAutocomplete from '../../components/location/AddressAutocomplete'
 import BranchExecutiveOverview, { BranchOverviewSkeleton } from '../../components/agency/BranchExecutiveOverview'
 import BranchCoverImage from '../../components/agency/BranchCoverImage'
 import BranchFicTraining from '../../components/agency/BranchFicTraining'
+import BranchTopPerformers from '../../components/agency/BranchTopPerformers'
 import AgentTransactionsTable from '../../components/AgentTransactionsTable'
+import { LeadSourceBrand, PropertyThumbnail, StagePill } from './LeadListPage'
+import { getPropertyImageUrl } from './agencyLeadListModel'
 import Button from '../../components/ui/Button'
 import Field from '../../components/ui/Field'
 import Modal from '../../components/ui/Modal'
@@ -46,7 +49,7 @@ import {
 import { upsertAreaFromAddress } from '../../lib/location/upsertArea'
 import { isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
 import { createWorkspaceUserInvite, resendWorkspaceUserInvite } from '../../services/workspaceUserInviteService'
-import { getBranchOptions, updateBranch } from '../../services/agencyBranchService'
+import { updateBranch } from '../../services/agencyBranchService'
 import { getBranchDashboardData } from '../../services/branchDashboardDataService'
 import { buildBranchDashboard, BRANCH_REPORTING_PERIODS, isOpenBranchTransaction } from '../../services/branchDashboardModel'
 import { buildBranchWorkspacePerformance } from '../../services/branchWorkspacePerformanceService'
@@ -289,56 +292,39 @@ function StatusPill({ children, tone = 'slate' }) {
   )
 }
 
-function leadStageTone(label = '') {
-  const value = normalizeLower(label)
-  if (value.includes('lost') || value.includes('overdue')) return 'border-[#f1cdc8] bg-[#fff5f4] text-[#9f3028]'
-  if (value.includes('qualified') || value.includes('converted') || value.includes('signed') || value.includes('live')) return 'border-[#cfe8dc] bg-[#effaf3] text-[#26724c]'
-  if (value.includes('pending') || value.includes('view')) return 'border-[#efdcb7] bg-[#fff9ec] text-[#8a641d]'
-  return 'border-[#dbe6f1] bg-[#f8fbff] text-[#4d6782]'
-}
-
-function BranchLeadsTable({ leads, onOpenLead, assignedAgentName, canViewFinancials = false }) {
+export function BranchLeadsTable({ leads, listings = [], onOpenLead, assignedAgentName, canViewFinancials = false }) {
+  const listingById = new Map(listings.map((listing) => [listing.id, listing]))
+  const rows = leads.map((lead) => {
+    const listing = listingById.get(lead.enquired_listing_id || lead.listing_id) || {}
+    return {
+      id: lead.lead_id || lead.id,
+      name: lead.name || lead.full_name || [lead.first_name, lead.last_name].filter(Boolean).join(' ') || 'Unnamed lead',
+      contact: lead.phone || lead.mobile || lead.email || 'No contact details',
+      propertyTitle: lead.enquired_property_title || listing.title || lead.seller_property_address || lead.property_interest || 'No property address yet',
+      propertySubtitle: lead.enquired_property_address || listing.formatted_address || listing.address || lead.area_interest || 'Property details pending',
+      propertyImageUrl: getPropertyImageUrl(lead) || getPropertyImageUrl(listing),
+      source: lead.lead_source || lead.source || 'Unknown source',
+      stage: String(lead.stage || lead.status || 'New').replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase()),
+      agent: assignedAgentName(lead),
+      updated: formatDateShort(lead.updated_at || lead.created_at),
+      value: lead.budget || lead.estimated_value || 0,
+    }
+  })
   return (
     <article className="overflow-hidden rounded-[18px] border border-[rgba(15,23,42,0.06)] bg-white shadow-[0_16px_42px_rgba(15,23,42,0.045)]">
       <header className="border-b border-[rgba(15,23,42,0.06)] bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)] px-4 py-4 sm:px-5 sm:py-5">
-        <div className="flex items-center gap-2">
-          <h2 className="text-[1.45rem] font-semibold tracking-[-0.04em] text-[#142132]">Branch leads</h2>
-          <span className="rounded-full border border-[#dce7f2] bg-[#f8fbff] px-3 py-1 text-sm font-semibold text-[#35546c]">{leads.length}</span>
-        </div>
-        <p className="mt-1.5 text-sm font-medium text-[#60758b]">Leads currently assigned to this branch.</p>
+        <div className="flex items-center gap-2"><h2 className="text-[1.45rem] font-medium tracking-[-0.04em] text-[#142132]">Branch leads</h2><span className="rounded-full border border-[#dce7f2] bg-[#f8fbff] px-3 py-1 text-sm font-medium text-[#35546c]">{leads.length}</span></div>
+        <p className="mt-1.5 text-sm text-[#60758b]">Leads currently assigned to this branch.</p>
       </header>
-
       <div className="hidden overflow-x-auto lg:block">
-        {leads.length ? (
-          <table className="w-full min-w-[900px] table-fixed text-left">
-            <thead className="bg-[#fbfdff] text-[0.68rem] uppercase tracking-[0.08em] text-[#7890a8]">
-              <tr><th className="w-[26%] px-5 py-3">Lead</th><th className="w-[15%] px-4 py-3">Category</th><th className="w-[18%] px-4 py-3">Stage</th><th className="w-[23%] px-4 py-3">Assigned agent</th>{canViewFinancials ? <th className="w-[10%] px-4 py-3">Value</th> : null}<th className="w-[12%] px-4 py-3">Updated</th></tr>
-            </thead>
-            <tbody>
-              {leads.map((lead) => {
-                const leadId = lead.lead_id || lead.id
-                const stage = lead.stage || lead.status || 'New'
-                return <tr key={leadId} tabIndex={0} className="cursor-pointer border-t border-[#edf2f7] hover:bg-[#fbfdff]" onClick={() => onOpenLead(leadId)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onOpenLead(leadId) } }}>
-                  <td className="px-5 py-4"><div className="truncate font-semibold text-[#142132]">{lead.name || lead.full_name || leadId}</div><div className="mt-1 truncate text-xs text-[#60758b]">{lead.email || lead.phone || 'Lead record'}</div></td>
-                  <td className="px-4 py-4"><span className="inline-flex rounded-full border border-[#dbe6f1] bg-white px-2.5 py-1 text-[0.7rem] font-semibold text-[#4d6782]">{lead.lead_category || 'Lead'}</span></td>
-                  <td className="px-4 py-4"><span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${leadStageTone(stage)}`}>{stage}</span></td>
-                  <td className="px-4 py-4"><span className="truncate font-semibold text-[#20364c]">{assignedAgentName(lead)}</span></td>
-                  {canViewFinancials ? <td className="px-4 py-4 font-semibold text-[#20364c]">{formatCurrency(lead.budget || lead.estimated_value || 0)}</td> : null}
-                  <td className="px-4 py-4 text-sm font-medium text-[#60758b]">{formatDateShort(lead.updated_at || lead.created_at)}</td>
-                </tr>
-              })}
-            </tbody>
-          </table>
-        ) : <EmptyState title="No leads match these filters" copy="Try clearing a filter to show the leads assigned to this branch." icon={Users} />}
+        {rows.length ? <table className="w-full min-w-[1000px] table-fixed text-left"><thead className="h-11 bg-[#fbfdff] text-[0.7rem] font-semibold uppercase tracking-[0.04em] text-[#7890a8]"><tr><th className="w-[25%] px-5 py-3">Property</th><th className="w-[20%] px-4 py-3">Lead</th><th className="w-[13%] px-4 py-3">Source</th><th className="w-[16%] px-4 py-3">Stage</th><th className="w-[16%] px-4 py-3">Assigned agent</th>{canViewFinancials ? <th className="w-[10%] px-4 py-3">Value</th> : null}<th className="w-[12%] px-4 py-3">Updated</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id} tabIndex={0} aria-label={`Open lead ${row.name}`} className="cursor-pointer border-t border-[#edf2f7] transition-colors duration-150 hover:bg-[#f8fbfe] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#176b50]" onClick={() => onOpenLead(row.id)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onOpenLead(row.id) } }}>
+          <td className="px-5 py-3"><div className="flex min-w-0 items-center gap-3"><PropertyThumbnail row={row} /><div className="min-w-0"><div className="truncate text-sm font-semibold text-[#142132]" title={row.propertyTitle}>{row.propertyTitle}</div><div className="mt-1 truncate text-xs text-[#60758b]">{row.propertySubtitle}</div></div></div></td>
+          <td className="px-4 py-3"><div className="truncate text-sm font-semibold text-[#142132]">{row.name}</div><div className="mt-1 truncate text-xs text-[#60758b]">{row.contact}</div></td>
+          <td className="px-4 py-3"><LeadSourceBrand source={row.source} /></td><td className="px-4 py-3"><StagePill stage={row.stage} /></td><td className="px-4 py-3"><div className="truncate text-sm font-medium text-[#20364c]">{row.agent}</div></td>
+          {canViewFinancials ? <td className="px-4 py-3 text-sm font-medium text-[#20364c]">{formatCurrency(row.value)}</td> : null}<td className="px-4 py-3 text-sm text-[#60758b]">{row.updated}<ArrowRight size={14} className="mt-1 text-[#7890a8]" /></td>
+        </tr>)}</tbody></table> : <EmptyState title="No leads match these filters" copy="Try clearing a filter to show the leads assigned to this branch." icon={Users} />}
       </div>
-
-      <div className="space-y-3 p-4 lg:hidden">
-        {leads.length ? leads.map((lead) => {
-          const leadId = lead.lead_id || lead.id
-          const stage = lead.stage || lead.status || 'New'
-          return <button key={leadId} type="button" className="w-full rounded-[18px] border border-[#e1e8f0] bg-white p-4 text-left shadow-sm" onClick={() => onOpenLead(leadId)}><div className="flex items-start justify-between gap-3"><div className="min-w-0"><h3 className="truncate font-semibold text-[#142132]">{lead.name || lead.full_name || leadId}</h3><p className="mt-1 truncate text-sm text-[#60758b]">{lead.lead_category || 'Lead'} · {assignedAgentName(lead)}</p></div><span className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold ${leadStageTone(stage)}`}>{stage}</span></div><div className="mt-3 flex items-center justify-between border-t border-[#edf2f7] pt-3 text-sm">{canViewFinancials ? <span className="font-semibold text-[#20364c]">{formatCurrency(lead.budget || lead.estimated_value || 0)}</span> : <span />}<span className="text-[#60758b]">{formatDateShort(lead.updated_at || lead.created_at)}</span></div></button>
-        }) : <EmptyState title="No leads match these filters" copy="Try clearing a filter to show the leads assigned to this branch." icon={Users} />}
-      </div>
+      <div className="space-y-3 p-4 lg:hidden">{rows.length ? rows.map((row) => <button key={row.id} type="button" className="w-full rounded-[18px] border border-[#e1e8f0] bg-white p-4 text-left shadow-sm hover:bg-[#f8fbfe]" onClick={() => onOpenLead(row.id)}><div className="flex items-start justify-between gap-3"><div className="min-w-0"><h3 className="truncate font-semibold text-[#142132]">{row.name}</h3><p className="mt-1 truncate text-sm text-[#60758b]">{row.contact}</p></div><StagePill stage={row.stage} /></div><div className="mt-4 flex min-w-0 items-center gap-3"><PropertyThumbnail row={row} /><div className="min-w-0"><strong className="block truncate text-sm text-[#142132]">{row.propertyTitle}</strong><span className="mt-1 block truncate text-xs text-[#60758b]">{row.propertySubtitle}</span></div></div><div className="mt-4 flex items-center justify-between gap-3 border-t border-[#edf2f7] pt-3"><LeadSourceBrand source={row.source} /><span className="truncate text-xs text-[#60758b]">{row.agent}</span></div><div className="mt-3 flex items-center justify-between text-xs text-[#60758b]">{canViewFinancials ? <span>{formatCurrency(row.value)}</span> : <span />}<span>{row.updated}</span><ArrowRight size={15} /></div></button>) : <EmptyState title="No leads match these filters" copy="Try clearing a filter to show the leads assigned to this branch." icon={Users} />}</div>
     </article>
   )
 }
@@ -417,7 +403,7 @@ function ActionButton({ children, icon, variant = 'default', ...props }) {
   )
 }
 
-function BranchSettingsForm({ branch, onSaved }) {
+export function BranchSettingsForm({ branch, onSaved }) {
   const [coverFile, setCoverFile] = useState(null)
   const [coverPreview, setCoverPreview] = useState('')
   const [form, setForm] = useState({
@@ -610,7 +596,7 @@ function BranchSettingsForm({ branch, onSaved }) {
   )
 }
 
-function BranchAgentInviteModal({
+export function BranchAgentInviteModal({
   open,
   branch,
   organisation,
@@ -968,7 +954,6 @@ export default function AgencyBranchWorkspacePage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [branch, setBranch] = useState(null)
   const loadRequestRef = useRef(0)
-  const [accessibleBranches, setAccessibleBranches] = useState([])
   const [branchTransactions, setBranchTransactions] = useState([])
   const [branchListings, setBranchListings] = useState([])
   const [leaderboard, setLeaderboard] = useState([])
@@ -1020,27 +1005,14 @@ export default function AgencyBranchWorkspacePage() {
     setSearchParams(nextSearch)
   }
 
-  function switchBranch(nextBranchId) {
-    const nextId = normalizeText(nextBranchId)
-    if (!nextId || nextId === branchId) return
-    navigate({
-      pathname: activeTab === 'overview' ? `/agency/branches/${encodeURIComponent(nextId)}` : `/agency/branches/${encodeURIComponent(nextId)}/${activeTab}`,
-      search: '',
-    }, { state: { returnTo: location.state?.returnTo || '/agency/branches' } })
-  }
-
   const loadWorkspace = useCallback(async () => {
     const request = ++loadRequestRef.current
     setLoading(true)
     setError('')
     try {
-      const [branchRow, branches] = await Promise.all([
-        getBranchDashboardData(branchId),
-        getBranchOptions(),
-      ])
+      const branchRow = await getBranchDashboardData(branchId)
       if (request !== loadRequestRef.current) return
       setBranch(branchRow)
-      setAccessibleBranches(Array.isArray(branches) ? branches.filter((item) => item?.isActive !== false) : [])
       setBranchTransactions(branchRow.transactions)
       setBranchListings(branchRow.listings)
       const agents = buildBranchDashboard(branchRow).agents
@@ -1183,7 +1155,7 @@ export default function AgencyBranchWorkspacePage() {
 
   const filteredLeads = useMemo(() => branchLeads.filter((lead) => {
     const stage = normalizeLower(lead.stage || lead.status)
-    const haystack = normalizeLower(`${lead.lead_id || ''} ${lead.lead_category || ''} ${lead.assigned_agent_id || ''} ${lead.status || ''} ${lead.stage || ''}`)
+    const haystack = normalizeLower(`${lead.lead_id || ''} ${lead.name || lead.full_name || ''} ${lead.phone || ''} ${lead.email || ''} ${lead.enquired_property_title || lead.seller_property_address || lead.property_interest || ''} ${lead.lead_source || ''} ${lead.lead_category || ''} ${lead.assigned_agent_id || ''} ${lead.status || ''} ${lead.stage || ''}`)
     return (!leadSearch || haystack.includes(leadSearch))
       && (!leadStage || stage.includes(leadStage))
       && (!leadAttention || !normalizeText(lead.assigned_agent_id))
@@ -1237,17 +1209,17 @@ export default function AgencyBranchWorkspacePage() {
         <span aria-hidden="true">/</span>
         <span className="truncate font-semibold text-[#142132]" aria-current="page">{branchName}</span>
       </nav>
-      <header className="relative min-h-[200px] overflow-hidden rounded-2xl bg-[#123d36]">
+      <header className="relative min-h-[240px] sm:min-h-[260px] overflow-hidden rounded-2xl bg-[#123d36]">
         <BranchCoverImage src={branch?.coverImageUrl} name={branchName} position="absolute" className="inset-0 h-full w-full" />
         <div className="absolute inset-0 bg-gradient-to-r from-[#071d2c]/85 via-[#071d2c]/45 to-[#071d2c]/10" />
         <div className="absolute inset-0 bg-gradient-to-t from-[#071d2c]/65 to-transparent" />
-        <div className="relative flex min-h-[200px] flex-col justify-between gap-5 p-5 sm:p-6">
+        <div className="relative flex min-h-[240px] sm:min-h-[260px] flex-col justify-between gap-5 p-5 sm:p-6">
           <div className="flex flex-wrap items-start justify-between gap-3">
-            {accessibleBranches.length > 1 ? <label className="inline-flex items-center gap-2 text-xs text-white/80"><span className="sr-only">Switch branch</span><select aria-label="Switch branch" value={branchId} onChange={(event) => switchBranch(event.target.value)} className="max-w-[220px] rounded-lg border border-white/25 bg-white/95 px-2.5 py-2 text-xs font-medium text-[#263f58]"><option value={branchId}>{branchName}</option>{accessibleBranches.filter((item) => item.id !== branchId).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label> : <span />}
+
             {canManageBranch ? <div className="ml-auto flex flex-wrap gap-2"><button type="button" onClick={openBranchAgentInvite} className="inline-flex items-center gap-2 rounded-lg border border-white/50 bg-white/95 px-3.5 py-2.5 text-sm font-semibold text-[#163247]"><UserPlus size={16} />Add Staff</button><button type="button" onClick={() => navigateToTab('settings')} className="inline-flex items-center gap-2 rounded-lg border border-white/20 bg-[#087b55] px-3.5 py-2.5 text-sm font-semibold text-white"><Settings size={16} />Edit Branch</button></div> : null}
           </div>
           <div className="min-w-0 text-white">
-            <h1 className="text-2xl font-semibold leading-tight tracking-[-0.035em] text-white sm:text-[2rem]">{branchName}{branch?.city && !branchName.toLowerCase().includes(branch.city.toLowerCase()) ? ` — ${branch.city}` : ''}</h1>
+            <h1 className="text-3xl font-medium leading-tight tracking-[-0.025em] text-white sm:text-[2.25rem]">{branchName}{branch?.city && !branchName.toLowerCase().includes(branch.city.toLowerCase()) ? ` — ${branch.city}` : ''}</h1>
             <p className="mt-1 text-base font-medium text-white/95">{branchLocation}</p>
             <p className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs font-medium text-white/85"><span>Branch Manager: {branchManager}</span><span>· {activeSalesAgents} agents</span><span>· {workspaceOverview.portfolio.active ?? '—'} active listings</span>{branch?.isActive === false ? <span>· Suspended</span> : null}</p>
           </div>
@@ -1278,7 +1250,7 @@ export default function AgencyBranchWorkspacePage() {
       </nav>
 
       <section>
-        {activeTab === 'overview' ? <BranchExecutiveOverview data={workspaceOverview} period={period} onPeriodChange={(value) => updateTabFilters({ period: value })} financialMonths={financialMonths} onFinancialMonthsChange={setFinancialMonths} canViewFinancials={canViewFinancials} onViewAgents={() => navigateToTab('performance')} onOpenAgent={(agent) => handleAgentRowClick({ ...agent, routeId: agent.id })} /> : null}
+        {activeTab === 'overview' ? <BranchExecutiveOverview data={workspaceOverview} financialMonths={financialMonths} onFinancialMonthsChange={setFinancialMonths} canViewFinancials={canViewFinancials} onViewAgents={() => navigateToTab('performance')} onOpenAgent={(agent) => handleAgentRowClick({ ...agent, routeId: agent.id })} /> : null}
 
         {activeTab === 'staff' ? (
           <section className="space-y-4">
@@ -1319,7 +1291,7 @@ export default function AgencyBranchWorkspacePage() {
                 <select value={searchParams.get('leadStage') || searchParams.get('stage') || ''} onChange={(event) => updateTabFilters({ leadStage: event.target.value, stage: '' })} className="min-h-[38px] rounded-[12px] border border-[#dbe6f1] bg-white px-3 text-[0.82rem] font-semibold text-[#2b4056]"><option value="">All stages</option><option value="new">New</option><option value="qualified">Qualified</option><option value="view">Viewings</option></select>
               </div>
             </div>
-            <BranchLeadsTable leads={filteredLeads} canViewFinancials={canViewFinancials} assignedAgentName={getLeadAssignedAgent} onOpenLead={(leadId) => navigate(`/pipeline/leads/${encodeURIComponent(leadId)}`, { state: { returnTo: `${location.pathname}${location.search}` } })} />
+            <BranchLeadsTable leads={filteredLeads} listings={branch?.listings || []} canViewFinancials={canViewFinancials} assignedAgentName={getLeadAssignedAgent} onOpenLead={(leadId) => navigate(`/pipeline/leads/${encodeURIComponent(leadId)}`, { state: { returnTo: `${location.pathname}${location.search}` } })} />
           </section>
         ) : null}
 
@@ -1335,6 +1307,8 @@ export default function AgencyBranchWorkspacePage() {
                 })}
               </div>
             </section>
+
+            <BranchTopPerformers agents={workspacePerformance?.agentPerformance || []} canViewFinancials={canViewFinancials} onOpenAgent={handleAgentRowClick} />
 
             <section className="rounded-[22px] border border-[#dfe8f1] bg-white p-5 shadow-[0_12px_28px_rgba(24,45,68,0.05)] sm:p-6">
               <SectionTitle eyebrow="Conversion funnel" title="From enquiry to registration" copy="Each stage follows the canonical lead and transaction lifecycle values already recorded for this branch." />

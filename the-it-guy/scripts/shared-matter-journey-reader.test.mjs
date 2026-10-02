@@ -52,6 +52,29 @@ await db.exec(migration('20260910092527_shared_journey_safe_tax_milestones.sql')
 await db.exec(migration('20260910094209_transfer_tax_cross_role_safe_reader_phase7.sql'))
 await db.exec(migration('20260910153146_reconcile_attorney_journey_catalogue.sql'))
 await db.exec(migration('20260910153517_reconcile_shared_journey_reader_contract.sql'))
+// Later task additions are part of the current catalogue contract. Exercise
+// their real catalogue statements without installing unrelated readiness gates.
+for (const name of [
+  '20260926135022_attorney_phase2_party_capacity.sql',
+  '20260926140934_attorney_phase3_funding_handoffs.sql',
+  '20260926142602_attorney_phase4_tax_clearance_conditions.sql',
+  '20260926145234_attorney_phase5_specialist_routes.sql',
+]) {
+  const sql = migration(name)
+  const start = sql.indexOf('insert into journey_private.task_catalog')
+  const end = sql.indexOf(';', start)
+  assert.ok(start >= 0 && end > start, `${name} contains a catalogue statement`)
+  await db.exec(sql.slice(start, end + 1))
+}
+const closureSql = migration('20260926191847_attorney_stage6_closure_audience_gates.sql')
+const closureStart = closureSql.indexOf('update journey_private.task_catalog')
+const closureEnd = closureSql.indexOf('create function journey_private.enforce_stage_six_closure')
+assert.ok(closureStart >= 0 && closureEnd > closureStart)
+await db.exec(closureSql.slice(closureStart, closureEnd))
+await db.exec(migration('20260926194845_reconcile_attorney_workbench_catalogue.sql'))
+await db.exec(migration('20261002081358_reconcile_municipal_clearance_journey_copy.sql'))
+await db.exec(migration('20261002081455_reconcile_attorney_journey_task_order.sql'))
+await db.exec(migration('20261002081455_reconcile_attorney_journey_task_order.sql'))
 // Exercise the real SQL migrations in isolated PostgreSQL with scoped permission fixtures.
 for (const [route, financeKeys] of Object.entries({ cash: ['proof_of_funds_reviewed','cash_confirmation_approved'],
   bond: ['quote_approved','instruction_sent'], hybrid: ['cash_portion_confirmed','quote_approved','instruction_sent'] })) {

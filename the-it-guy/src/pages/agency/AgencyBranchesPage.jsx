@@ -16,7 +16,7 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import BranchCoverImage from '../../components/agency/BranchCoverImage'
 import AddressAutocomplete from '../../components/location/AddressAutocomplete'
 import Button from '../../components/ui/Button'
@@ -321,17 +321,24 @@ function BranchActionMenu({ branch, onView, onManageAgents, onDelete }) {
 }
 
 function BranchCardGrid({ rows, onView, onManageAgents, onDelete }) {
+  const location = useLocation()
   return (
     <div className="grid items-start gap-5 sm:grid-cols-2 xl:grid-cols-3">
       {rows.map((branch) => (
-        <article key={branch.id} className="overflow-hidden rounded-2xl border border-[#e2e8f0] bg-white shadow-[0_8px_24px_rgba(15,23,42,0.04)] transition hover:shadow-[0_12px_32px_rgba(15,23,42,0.08)]">
+        <article key={branch.id} className="relative isolate overflow-hidden rounded-2xl border border-[#e2e8f0] bg-white shadow-[0_8px_24px_rgba(15,23,42,0.04)] transition hover:shadow-[0_12px_32px_rgba(15,23,42,0.08)]">
+          <Link
+            to={`/agency/branches/${encodeURIComponent(branch.id)}`}
+            state={{ returnTo: `${location.pathname}${location.search}` }}
+            aria-label={`Open ${branch.name} branch`}
+            className="absolute inset-0 z-10 rounded-2xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-[#176b50]"
+          />
           <div className="relative">
             <BranchCoverImage src={branch.coverImageUrl} name={branch.name} className="aspect-[16/9] w-full" />
             <div className="absolute left-4 top-4 flex flex-wrap gap-2">
               <span className="rounded-full bg-white/95 px-2.5 py-1 text-xs font-semibold text-[#334155]">#{branch.rank}</span>
               {branch.isHeadOffice ? <span className="rounded-full bg-white/95 px-2.5 py-1 text-xs font-semibold text-[#176b50]">Head office</span> : null}
             </div>
-            <div className="absolute right-4 top-4">
+            <div className="absolute right-4 top-4 z-20">
               <BranchActionMenu branch={branch} onView={() => onView(branch.id)} onManageAgents={() => onManageAgents(branch.id)} onDelete={() => onDelete(branch)} />
             </div>
           </div>
@@ -362,7 +369,7 @@ function BranchCardGrid({ rows, onView, onManageAgents, onDelete }) {
                 </div>
               ))}
             </dl>
-            <Button variant="secondary" size="sm" className="mt-5 w-full" onClick={() => onView(branch.id)}>View Branch <ArrowRight size={15} /></Button>
+            <Button variant="secondary" size="sm" className="relative z-20 mt-5 w-full" onClick={() => onView(branch.id)}>View Branch <ArrowRight size={15} /></Button>
           </div>
         </article>
       ))}

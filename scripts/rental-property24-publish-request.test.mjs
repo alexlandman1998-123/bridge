@@ -82,6 +82,7 @@ assert.equal(blockedRequest.liveWriteEnabled, false)
 assert.equal(blockedRequest.requestPayload, null)
 assert.equal(blockedRequest.activity.activityType, 'property24_rental_publish_blocked')
 assert.ok(blockedRequest.blockers.some((blocker) => blocker.key === 'agencyId'))
-assert.ok(blockedRequest.blockers.some((blocker) => blocker.key === 'mandateStatus'))
+assert.ok(!blockedRequest.blockers.some((blocker) => blocker.key === 'mandateStatus'))
+assert.ok(blockedRequest.readiness.warnings.some((warning) => warning.key === 'mandateStatus'))
 
 console.log('rental Property24 publish request tests passed')

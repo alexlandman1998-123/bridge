@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { createPrivatePropertyListingPlan, resolvePrivatePropertyCategory } from '../server/services/privatePropertyListingMapper.js'
 import {
   buildProperty24CategoryPayload,
   createProperty24ListingPlan,
@@ -41,7 +42,7 @@ const cases = [
     type: 'vacant_stand',
     typeId: 8,
     facts: { erfSize: '1800', zoning: 'Residential 2' },
-    expected: { erf: 1800, zoneType: 'Residential 2', description: 'Erf / land size: 1800 m². Zoning: Residential 2.' },
+    expected: { erf: 1800, description: 'Erf / land size: 1800 m². Zoning: Residential 2.' },
   },
 ]
 
@@ -69,7 +70,11 @@ for (const entry of cases) {
   assert.equal(plan.summary.categoryPayload.mappedPropertyInfo.floorArea?.size, entry.expected.floorArea)
   assert.equal(plan.summary.categoryPayload.mappedPropertyInfo.erf?.size, entry.expected.erf)
   assert.equal(plan.summary.categoryPayload.mappedPropertyInfo.zoneType, entry.expected.zoneType)
-  if (entry.category === 'commercial') {
+  if (entry.category === 'vacant_land') {
+    assert.equal(plan.canSubmit, true)
+    assert.equal(plan.previewPayload.propertyInfo.erf.size, 1800)
+    assert.equal(plan.previewPayload.propertyInfo.zoneType, undefined)
+  } else if (entry.category === 'commercial') {
     assert.equal(plan.canPreview, true)
     assert.equal(plan.canSubmit, true)
     assert.equal(plan.summary.categoryPayload.mappedCommercialInfo.grossLettableAreaSqm, 1250)
@@ -79,6 +84,49 @@ for (const entry of cases) {
   } else {
     assert.ok(plan.dataBlockers.includes(`property24_${entry.category === 'vacant_land' ? 'land' : entry.category}_mapping_not_verified`))
   }
+}
+
+for (const measurement of [
+  { erfSize: 21.516, erfSizeUnit: 'ha', expected: 215160 },
+  { erfSize: 215160, erfSizeUnit: 'm²', expected: 215160 },
+  { erf_size_sqm: 215160, erfSize: 21.516, expected: 215160 },
+  { erfSize: 2, erfSizeUnit: 'Acres', expected: 8093.712845 },
+  { erfSize: 0, expectedError: 'land_area_positive_number_required' },
+  { erfSize: -1, expectedError: 'land_area_positive_number_required' },
+  { erfSize: 21.516, erfSizeUnit: 'unknown', expectedError: 'land_area_unit_unsupported' },
+  { expectedError: 'land_area_required' },
+]) {
+  const listing = { ...base, address_line_1: 'PORTION 86 OF KLIPDRIFT 90 JR MORETELE LOCAL MUNICIPALITY GAUTENG', property_type: 'vacant_land', property_category: 'vacant_land', ...measurement,
+    seller_canonical_facts_json: { property: { specialistFacts: { zoning: 'Agricultural' } } } }
+  const publication = { listing_type: 'Sale', description: 'Dinokeng vacant bushveld land.' }
+  const p24 = createProperty24ListingPlan({ listing, publication,
+    media: [{ media_type: 'image', bytes: 'base64-image-data' }],
+    agentMapping: { property24AgentId: 77959 }, catalogMapping: { suburbId: 11544 },
+    options: { agencyId: 31382, expiryDate: '2027-12-31', environment: 'production' } })
+  const pp = createPrivatePropertyListingPlan({ listing, publication,
+    media: [1, 2, 3].map((i) => ({ media_type: 'image', file_url: `https://cdn.example.com/${i}.jpg` })),
+    agentMapping: { agentIds: 'test-agent' }, options: { branchGuid: 'CA167B18-C6DC-49AD-B018-2B72B187918F', suburbId: '12345' } })
+  assert.equal(p24.summary.propertyTypeId, 8)
+  assert.equal(pp.summary.category, 'Land')
+  if (measurement.expectedError) {
+    assert.equal(p24.canSubmit, false)
+    assert.ok(p24.dataBlockers.includes(`property24_${measurement.expectedError}`))
+    assert.ok(pp.dataBlockers.includes(`private_property_${measurement.expectedError}`))
+  } else {
+    assert.equal(pp.canPreview, true)
+    assert.match(pp.listingXml, /<StreetNumber>Ptn 86<\/StreetNumber>/)
+    assert.match(pp.listingXml, /<StreetName>KLIPDRIFT 90 JR MORETELE LOCAL MUNICIPALITY GAUTENG<\/StreetName>/)
+    assert.equal(p24.canSubmit, true)
+    assert.deepEqual(p24.previewPayload.propertyInfo.erf, { size: measurement.expected, areaUnit: 'SquareMetres' })
+    assert.equal(p24.previewPayload.propertyInfo.zoneType, 'Agricultural')
+    assert.ok(pp.listingXml.includes(`<AttributeType>LandArea</AttributeType><Value>${measurement.expected}</Value>`))
+    assert.match(pp.listingXml, /<AttributeType>LandType<\/AttributeType><Value>Residential Land<\/Value>/)
+  }
+}
+
+for (const type of ['vacant_land', 'Vacant Land / Plot', 'vacant_stand']) {
+  assert.equal(resolveProperty24PropertyTypeId(type), 8)
+  assert.equal(resolvePrivatePropertyCategory(type), 'Land')
 }
 
 console.log('Property24 specialist sales mapping phase 4 checks passed')

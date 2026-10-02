@@ -16,7 +16,6 @@ import { getFeatureFlags } from '../lib/envValidation'
 import {
   RENTAL_OPERATING_MODES,
   normalizeRentalOperatingMode,
-  resolveRentalOperatingModeAvailability,
 } from '../services/rentals/shortTermRentalFoundation'
 import { RENTAL_CAPABILITIES, canUseRentalCapability } from '../modules/rentals/shared/permissions/rentalCapabilities'
 import {
@@ -32,7 +31,6 @@ export { useWorkspace } from './WorkspaceContextBase'
 
 const AGENCY_WORKFLOW_MODE_STORAGE_KEY = 'itg:agency-workflow-mode:v1'
 const BUSINESS_WORKSPACE_STORAGE_KEY = 'arch9:business-workspace:v1'
-const RENTAL_OPERATING_MODE_STORAGE_KEY = 'arch9:rental-operating-mode:v1'
 const DEFAULT_AGENCY_WORKFLOW_MODE = 'agent'
 const UNRESOLVED_WORKSPACE = { id: '', name: 'Workspace setup required', type: '' }
 const EMPTY_PROFILE_PATCH = {}
@@ -122,25 +120,6 @@ function writeStoredBusinessWorkspace(storageKey = '', workspace = BUSINESS_WORK
       workspace: normalizeBusinessWorkspace(workspace, BUSINESS_WORKSPACES.sales),
     }),
   )
-}
-
-function readStoredRentalOperatingMode(storageKey = '') {
-  if (typeof window === 'undefined' || !storageKey) return RENTAL_OPERATING_MODES.longTerm
-  try {
-    const stored = JSON.parse(window.localStorage.getItem(RENTAL_OPERATING_MODE_STORAGE_KEY) || '{}')
-    if (stored?.key !== storageKey) return RENTAL_OPERATING_MODES.longTerm
-    return normalizeRentalOperatingMode(stored?.mode)
-  } catch {
-    return RENTAL_OPERATING_MODES.longTerm
-  }
-}
-
-function writeStoredRentalOperatingMode(storageKey = '', mode = RENTAL_OPERATING_MODES.longTerm) {
-  if (typeof window === 'undefined' || !storageKey) return
-  window.localStorage.setItem(RENTAL_OPERATING_MODE_STORAGE_KEY, JSON.stringify({
-    key: storageKey,
-    mode: normalizeRentalOperatingMode(mode),
-  }))
 }
 
 export function WorkspaceProvider({ children }) {
@@ -240,10 +219,6 @@ export function WorkspaceProvider({ children }) {
     key: '',
     workspace: BUSINESS_WORKSPACES.sales,
   })
-  const [rentalOperatingModePreferenceState, setRentalOperatingModePreferenceState] = useState({
-    key: '',
-    mode: RENTAL_OPERATING_MODES.longTerm,
-  })
   const businessWorkspaceRolloutAccess = useMemo(
     () => resolveBusinessWorkspaceRolloutAccess({
       enabled: featureFlags.salesRentalsWorkspaceSplitEnabled,
@@ -274,7 +249,7 @@ export function WorkspaceProvider({ children }) {
   const businessWorkspacePreference =
     businessWorkspacePreferenceState.key === businessWorkspaceStorageKey
       ? businessWorkspacePreferenceState.workspace
-      : BUSINESS_WORKSPACES.sales
+      : readStoredBusinessWorkspace(businessWorkspaceStorageKey)
   const businessWorkspaceState = useMemo(
     () => resolveBusinessWorkspaceState({
       enabled: businessWorkspaceSplitEnabled,
@@ -296,26 +271,16 @@ export function WorkspaceProvider({ children }) {
       organisationMembershipRole,
     ],
   )
-  const rentalOperatingModeStorageKey = useMemo(() => {
-    if (!businessWorkspaceSplitEnabled || !userId || !workspace.id || workspace.id === 'all' || !isAgentBaseRole) return ''
-    return `${userId}:${workspace.id}`
-  }, [businessWorkspaceSplitEnabled, isAgentBaseRole, userId, workspace.id])
-  const rentalOperatingModeAvailability = useMemo(
-    () => resolveRentalOperatingModeAvailability(featureFlags),
-    [featureFlags],
-  )
+  // The business line is the single source of truth for rental navigation.
   const availableRentalOperatingModeIds = useMemo(() => {
-    const canUseShortTerm = canUseRentalCapability(RENTAL_CAPABILITIES.shortTermView, permissionContext)
-    return Object.values(RENTAL_OPERATING_MODES).filter((mode) => (
-      rentalOperatingModeAvailability[mode] && (mode !== RENTAL_OPERATING_MODES.shortTerm || canUseShortTerm)
-    ))
-  }, [permissionContext, rentalOperatingModeAvailability])
-  const rentalOperatingModePreference = rentalOperatingModePreferenceState.key === rentalOperatingModeStorageKey
-    ? rentalOperatingModePreferenceState.mode
+    const modes = []
+    if (businessWorkspaceState.availableIds.includes(BUSINESS_WORKSPACES.rentals)) modes.push(RENTAL_OPERATING_MODES.longTerm)
+    if (businessWorkspaceState.availableIds.includes(BUSINESS_WORKSPACES.shortTermRentals) && canUseRentalCapability(RENTAL_CAPABILITIES.shortTermView, permissionContext)) modes.push(RENTAL_OPERATING_MODES.shortTerm)
+    return modes
+  }, [businessWorkspaceState.availableIds, permissionContext])
+  const rentalOperatingMode = businessWorkspaceState.currentId === BUSINESS_WORKSPACES.shortTermRentals
+    ? RENTAL_OPERATING_MODES.shortTerm
     : RENTAL_OPERATING_MODES.longTerm
-  const rentalOperatingMode = availableRentalOperatingModeIds.includes(rentalOperatingModePreference)
-    ? rentalOperatingModePreference
-    : availableRentalOperatingModeIds[0] || RENTAL_OPERATING_MODES.longTerm
 
   useEffect(() => {
     if (!businessWorkspaceStorageKey) {
@@ -334,27 +299,6 @@ export function WorkspaceProvider({ children }) {
       }
     })
   }, [businessWorkspaceStorageKey])
-
-  useEffect(() => {
-    if (!rentalOperatingModeStorageKey) {
-      setRentalOperatingModePreferenceState((previous) => previous.key || previous.mode !== RENTAL_OPERATING_MODES.longTerm
-        ? { key: '', mode: RENTAL_OPERATING_MODES.longTerm }
-        : previous)
-      return
-    }
-    setRentalOperatingModePreferenceState((previous) => previous.key === rentalOperatingModeStorageKey
-      ? previous
-      : { key: rentalOperatingModeStorageKey, mode: readStoredRentalOperatingMode(rentalOperatingModeStorageKey) })
-  }, [rentalOperatingModeStorageKey])
-
-  useEffect(() => {
-    if (!rentalOperatingModeStorageKey || rentalOperatingModePreferenceState.key !== rentalOperatingModeStorageKey) return
-    if (rentalOperatingModePreferenceState.mode !== rentalOperatingMode) {
-      setRentalOperatingModePreferenceState({ key: rentalOperatingModeStorageKey, mode: rentalOperatingMode })
-      return
-    }
-    writeStoredRentalOperatingMode(rentalOperatingModeStorageKey, rentalOperatingMode)
-  }, [rentalOperatingMode, rentalOperatingModePreferenceState, rentalOperatingModeStorageKey])
 
   useEffect(() => {
     if (!businessWorkspaceStorageKey || businessWorkspacePreferenceState.key !== businessWorkspaceStorageKey) return
@@ -409,13 +353,12 @@ export function WorkspaceProvider({ children }) {
   const setBusinessWorkspace = useCallback(
     (nextWorkspace) => {
       if (!businessWorkspaceStorageKey || !businessWorkspaceSplitEnabled || baseRole !== 'agent') return
-      setBusinessWorkspacePreferenceState((previous) => {
-        const previousWorkspace = previous.key === businessWorkspaceStorageKey ? previous.workspace : businessWorkspaceState.currentId
-        const requested = typeof nextWorkspace === 'function' ? nextWorkspace(previousWorkspace) : nextWorkspace
-        const normalized = normalizeBusinessWorkspace(requested, previousWorkspace)
-        const next = businessWorkspaceState.availableIds.includes(normalized) ? normalized : businessWorkspaceState.currentId
-        return { key: businessWorkspaceStorageKey, workspace: next }
-      })
+      const previousWorkspace = businessWorkspaceState.currentId
+      const requested = typeof nextWorkspace === 'function' ? nextWorkspace(previousWorkspace) : nextWorkspace
+      const normalized = normalizeBusinessWorkspace(requested, previousWorkspace)
+      const next = businessWorkspaceState.availableIds.includes(normalized) ? normalized : previousWorkspace
+      writeStoredBusinessWorkspace(businessWorkspaceStorageKey, next)
+      setBusinessWorkspacePreferenceState({ key: businessWorkspaceStorageKey, workspace: next })
     },
     [
       baseRole,
@@ -427,15 +370,11 @@ export function WorkspaceProvider({ children }) {
   )
 
   const setRentalOperatingMode = useCallback((nextMode) => {
-    if (!rentalOperatingModeStorageKey || baseRole !== 'agent') return
-    setRentalOperatingModePreferenceState((previous) => {
-      const current = previous.key === rentalOperatingModeStorageKey ? previous.mode : rentalOperatingMode
-      const requested = typeof nextMode === 'function' ? nextMode(current) : nextMode
-      const normalized = normalizeRentalOperatingMode(requested, current)
-      const mode = availableRentalOperatingModeIds.includes(normalized) ? normalized : rentalOperatingMode
-      return { key: rentalOperatingModeStorageKey, mode }
-    })
-  }, [availableRentalOperatingModeIds, baseRole, rentalOperatingMode, rentalOperatingModeStorageKey])
+    const requested = typeof nextMode === 'function' ? nextMode(rentalOperatingMode) : nextMode
+    const mode = normalizeRentalOperatingMode(requested, rentalOperatingMode)
+    if (!availableRentalOperatingModeIds.includes(mode)) return
+    setBusinessWorkspace(mode === RENTAL_OPERATING_MODES.shortTerm ? BUSINESS_WORKSPACES.shortTermRentals : BUSINESS_WORKSPACES.rentals)
+  }, [availableRentalOperatingModeIds, rentalOperatingMode, setBusinessWorkspace])
 
   const refreshProfile = useCallback(async () => {
     authState.refreshAuthState?.()

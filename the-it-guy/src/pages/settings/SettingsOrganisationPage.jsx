@@ -1883,6 +1883,12 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
   const attorneyModuleState = useAttorneyModuleSettings({ enabled: isAttorneyWorkspace })
 
   useEffect(() => {
+    if (loading || !isBondOriginator || location.hash !== '#targets') return undefined
+    const frame = window.requestAnimationFrame(() => document.getElementById('targets')?.scrollIntoView({ block: 'start' }))
+    return () => window.cancelAnimationFrame(frame)
+  }, [loading, isBondOriginator, location.hash])
+
+  useEffect(() => {
     let active = true
 
     async function load() {
@@ -2838,7 +2844,7 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
                 <p className="text-sm font-semibold uppercase tracking-[0.14em] text-[#60758d]">Workspace Setup</p>
                 <h1 className="mt-2 text-[1.65rem] font-semibold leading-tight text-[#17233a]">Business Lines</h1>
                 <p className="mt-2 max-w-3xl text-sm leading-6 text-[#60758d]">
-                  Configure whether this agency operates Sales, Rentals, or both. Team access is assigned in Users after the organisation lines are saved.
+                  Configure whether this agency operates Sales, Rentals, and Short-term rentals. Team access is assigned in Users after the organisation lines are saved.
                 </p>
               </div>
               <Link
@@ -2870,7 +2876,7 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
                 </Link>
               }
             >
-              <div className="grid gap-3 md:grid-cols-2">
+              <div className="grid gap-3 md:grid-cols-3">
                 {AGENCY_BUSINESS_LINE_OPTIONS.map((option) => (
                   <BusinessLineOption
                     key={option.value}
@@ -2884,7 +2890,7 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
               <div className="mt-5 rounded-[18px] border border-[#e4ecf5] bg-[#fbfdff] p-4 text-sm leading-6 text-[#60758d]">
                 <p className="font-semibold text-[#17233a]">How this affects the app</p>
                 <p className="mt-1">
-                  Principals and managers can inherit all enabled business lines. Agents can be set to Sales only, Rentals only, or Sales & Rentals from Users once both agency lines are enabled.
+                  Principals and managers can inherit all enabled business lines. Assign each team member any combination of enabled lines from Users.
                 </p>
               </div>
             </OrganisationCard>
@@ -2984,6 +2990,37 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
               </div>
             </div>
           </section>
+        ) : null}
+
+        {!showBrandingOnly && !isAttorneyWorkspace && !isBondOriginator && role === 'agent' ? (
+            <OrganisationCard
+              title="Agency Business Lines"
+              description="Enable the operating lines this agency runs. At least one line must remain enabled."
+              actions={
+                <Link to="/settings/users" className="inline-flex h-10 items-center justify-center gap-2 rounded-[12px] border border-[#d9e3ef] bg-white px-3 text-sm font-semibold text-[#24364b] transition hover:bg-[#f7fafc]">
+                  <UsersRound className="h-4 w-4" strokeWidth={2} />
+                  Assign agents
+                </Link>
+              }
+            >
+              <div className="grid gap-3 md:grid-cols-3">
+                {AGENCY_BUSINESS_LINE_OPTIONS.map((option) => (
+                  <BusinessLineOption
+                    key={option.value}
+                    option={option}
+                    checked={agencyBusinessLines.includes(option.value)}
+                    disabled={!canEdit}
+                    onChange={updateAgencyBusinessLine}
+                  />
+                ))}
+              </div>
+              <div className="mt-5 rounded-[18px] border border-[#e4ecf5] bg-[#fbfdff] p-4 text-sm leading-6 text-[#60758d]">
+                <p className="font-semibold text-[#17233a]">How this affects the app</p>
+                <p className="mt-1">
+                  Principals and managers can inherit all enabled business lines. Assign each team member any combination of enabled lines from Users.
+                </p>
+              </div>
+            </OrganisationCard>
         ) : null}
 
         <div className="w-full space-y-6">
@@ -3209,6 +3246,12 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
                   <section id="targets" className="scroll-mt-24">
                     <OrganisationCard title="Targets" description="Dashboard targets for the bond originator command centre.">
                       <div className="grid gap-4 md:grid-cols-3">
+                        <OrganisationField label="Monthly Registrations" id="organisation-target-registrations">
+                          <Field id="organisation-target-registrations" type="number" min="0" step="1" className={INPUT_CLASS} value={targets.monthlyRegistrations || ''} disabled={!canEdit} onChange={(event) => updateOrganisationTarget('monthlyRegistrations', event.target.value)} />
+                        </OrganisationField>
+                        <OrganisationField label="Monthly Registered Loan Value (R)" id="organisation-target-registered-loan-value">
+                          <Field id="organisation-target-registered-loan-value" type="number" min="0" step="10000" className={INPUT_CLASS} value={targets.monthlyRegisteredLoanValue || ''} disabled={!canEdit} onChange={(event) => updateOrganisationTarget('monthlyRegisteredLoanValue', event.target.value)} />
+                        </OrganisationField>
                         <OrganisationField label="Monthly Applications" id="organisation-target-applications">
                           <Field
                             id="organisation-target-applications"

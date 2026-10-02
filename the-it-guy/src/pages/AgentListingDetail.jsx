@@ -10102,7 +10102,7 @@ function AgentListingDetail() {
     : property24HasPreviewBlockers
     ? 'Fix the preview blockers before sending this listing to Property24.'
     : property24CanSubmit === true && !property24HasReference
-      ? 'Preview passed. This is ready for the first ExDev publish.'
+      ? 'Preview passed. This listing is ready for a test submission.'
       : property24HasReference
         ? 'This listing already has a Property24 reference. Future publishes update the same listing.'
         : 'Start with Preview. Arch9 will save the listing first, then check Property24 readiness.'
@@ -12177,7 +12177,7 @@ function AgentListingDetail() {
         message: hadFallback ? 'Images saved locally. Storage upload needs attention.' : 'Images uploaded and saved.',
       })
       if (hadFallback) {
-        setDetailError('One or more images could not be uploaded to Supabase Storage, so they were kept as local previews. Try uploading again after checking storage permissions.')
+        setDetailError('Some images could not finish uploading after retrying. Successful uploads were saved; the remaining images are local previews. Please try those images again.')
       }
     } finally {
       setGallerySaving(false)

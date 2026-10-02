@@ -1,5 +1,13 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { createElement, useCallback, useEffect, useMemo, useState } from "react";
 import {
+  ArrowUpRight,
+  Columns3,
+  Filter,
+  RefreshCw,
+  Table2,
+  TrendingUp,
+  UserRound,
+  X,
   Building2,
   ChevronRight,
   Download,
@@ -9,7 +17,7 @@ import {
   Upload,
   Users,
 } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useWorkspace } from "../../context/WorkspaceContext";
 import { resolveRentalWorkspaceScope } from "../../services/rentals/rentalWorkspaceScope";
 import {
@@ -18,6 +26,7 @@ import {
   listRentalLeads,
 } from "../../services/rentals/rentalLeadService";
 import {
+  getRentalLeadPipelineStages,
   getNextRentalLeadStage,
   getRentalLeadStageLabel,
   resolveRentalLeadRole,
@@ -29,6 +38,10 @@ import {
   buildRentalLeadImportPreview,
   createRentalLeadImportTemplateCsv,
 } from "../../services/rentals/rentalLeadImportModel";
+
+import { LeadSourceBrand, PropertyThumbnail, StagePill } from "../agency/LeadListPage";
+
+import { filterRentalLeadList, rentalLeadListSummary } from "../../services/rentals/rentalLeadListModel";
 
 const INITIAL_FORM = Object.freeze({
   role: "landlord",
@@ -95,33 +108,12 @@ function rentalProfile(lead) {
       ].join(" · ");
 }
 
-function LeadRoleButton({ role, active, onClick }) {
-  const Icon = role === "landlord" ? Building2 : Users;
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`flex min-h-[78px] min-w-0 items-center gap-3 rounded-[12px] border px-4 text-left transition ${active ? "border-[#1f4f78] bg-[#1f4f78] text-white shadow-[0_8px_16px_rgba(31,79,120,0.2)]" : "border-[#dce6f2] bg-white text-[#20364d] hover:border-[#b9cade]"}`}
-    >
-      <span
-        className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[9px] ${active ? "bg-white/15" : "bg-[#f4f8fc] text-[#1f4f78]"}`}
-      >
-        <Icon size={18} aria-hidden="true" />
-      </span>
-      <span className="min-w-0">
-        <span className="block text-sm font-semibold">
-          {role === "landlord" ? "Landlord Leads" : "Tenant Leads"}
-        </span>
-        <span
-          className={`mt-1 block text-xs ${active ? "text-white/80" : "text-[#6d8095]"}`}
-        >
-          {role === "landlord"
-            ? "Acquisition, appraisal, mandate"
-            : "Enquiry, viewing, application"}
-        </span>
-      </span>
-    </button>
-  );
+function LeadRoleButton({ role, active, count, onClick }) {
+  const Icon = role === "landlord" ? Building2 : role === "tenant" ? Users : X;
+  return <button type="button" data-rental-control="lead-category" aria-pressed={active} onClick={onClick} className={`flex min-h-[48px] min-w-0 items-center gap-3 rounded-[12px] px-4 text-left text-sm font-semibold ${active ? "border border-[#e4ebf2] bg-white text-[#20364d] shadow-sm" : "text-[#60758b]"}`}><Icon size={18} aria-hidden="true" /><span className="flex-1">{role === "landlord" ? "Landlord Leads" : role === "tenant" ? "Tenant Leads" : "Closed Leads"}</span><span className="rounded-full bg-[#edf5ff] px-2.5 py-1 text-xs">{count}</span></button>
+}
+function RentalLeadMetric({ label, value, detail, compare, icon: Icon, tone }) {
+  return <article className="min-w-0 rounded-[14px] border border-[#e4ebf2] bg-white/90 px-3 py-2.5 shadow-[0_10px_24px_rgba(24,45,68,0.045)]"><div className="flex items-center justify-between gap-2"><span className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">{label}</span><span className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-[10px] ${tone}`}>{createElement(Icon, { size: 14, "aria-hidden": true })}</span></div><div className="mt-2 flex min-w-0 items-end justify-between gap-3"><strong className="block min-w-0 truncate text-[1.55rem] font-semibold leading-none tracking-[-0.04em] text-[#102236]" title={String(value)}>{value}</strong><span className="truncate text-[0.68rem] font-semibold text-[#6f8398]">{compare}</span></div><p className="mt-1 truncate text-[0.74rem] font-medium text-[#667b92]">{detail}</p></article>
 }
 
 function RentalLeadAction({
@@ -143,6 +135,7 @@ function RentalLeadAction({
   return (
     <button
       type="button"
+      data-rental-control="lead-stage-action"
       disabled={advancing}
       onClick={(event) => {
         event.stopPropagation();
@@ -525,6 +518,10 @@ export default function RentalLeadsPage() {
   const [role, setRole] = useState("landlord");
   const [query, setQuery] = useState("");
   const [ownerFilter, setOwnerFilter] = useState("all");
+  const [sourceFilter, setSourceFilter] = useState("all");
+  const [stageFilter, setStageFilter] = useState("all");
+  const [sort, setSort] = useState("newest");
+  const [viewMode, setViewMode] = useState("table");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState({ ...INITIAL_FORM });
   const [saving, setSaving] = useState(false);
@@ -560,6 +557,7 @@ export default function RentalLeadsPage() {
           assignedAgentId: scope.assignedAgentId,
           branchId: scope.branchId,
           scopeLevel: scope.scopeLevel,
+          includeClosed: true,
           includeAllOrganisationLeads: scope.scopeLevel === "organisation",
         }),
       );
@@ -578,19 +576,14 @@ export default function RentalLeadsPage() {
   useEffect(() => {
     void loadLeads();
   }, [loadLeads]);
-  const roleLeads = useMemo(
-    () =>
-      leads.filter(
-        (lead) =>
-          lead.role === role &&
-          (ownerFilter === "all" || (ownerFilter === "unassigned" ? !lead.assignedAgentId : lead.assignedAgentId === scope.assignedAgentId)) &&
-          [lead.name, lead.focus, lead.phone, lead.email, lead.source]
-            .join(" ")
-            .toLowerCase()
-            .includes(query.trim().toLowerCase()),
-      ),
-    [leads, query, role, ownerFilter, scope.assignedAgentId],
-  );
+  const summary = useMemo(() => rentalLeadListSummary(leads), [leads]);
+  const sources = useMemo(() => [...new Set(leads.map((lead) => lead.source || 'Manual'))].sort(), [leads]);
+  const agents = useMemo(() => [...new Map(leads.filter((lead) => lead.assignedAgentId).map((lead) => [lead.assignedAgentId, lead.assignedAgentName || 'Assigned agent'])).entries()], [leads]);
+  const stages = role === 'closed' ? [...new Set(leads.filter((lead) => lead.outcome?.status && lead.outcome.status !== 'open').map((lead) => lead.stage))] : getRentalLeadPipelineStages(role);
+  const roleLeads = useMemo(() => filterRentalLeadList(leads, { role, query, owner: ownerFilter, source: sourceFilter, stage: stageFilter, sort, assignedAgentId: scope.assignedAgentId }), [leads, query, role, ownerFilter, sourceFilter, stageFilter, sort, scope.assignedAgentId]);
+  function changeRole(next) { setRole(next); setStageFilter('all'); }
+  const roleTitle = role === 'landlord' ? 'Landlord Leads' : role === 'tenant' ? 'Tenant Leads' : 'Closed Leads';
+  const filterClass = 'min-h-[38px] min-w-0 rounded-[12px] border border-[#dbe6f1] bg-white px-3 text-[0.82rem] font-semibold text-[#2b4056]';
   function updateForm(name, value) {
     setForm((current) => ({ ...current, [name]: value }));
     setError("");
@@ -743,21 +736,39 @@ export default function RentalLeadsPage() {
   return (
     <section className="page-content">
       <div className="ui-section-stack">
-        <section className="rounded-[16px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <p className="text-xs font-semibold uppercase text-[#607891]">
-                Rental pipeline
-              </p>
-              <h1 className="mt-1 text-2xl font-semibold text-[#18324b]">
-                Rental Leads
-              </h1>
-              <p className="mt-2 text-sm text-[#607387]">
-                Manage landlord acquisition and tenant placement from one clear
-                lead table.
-              </p>
+        <section className="grid min-w-0 gap-2 sm:grid-cols-2 xl:grid-cols-4" aria-label="Rental lead summary">
+          <RentalLeadMetric label="New Leads" value={summary.newLeads} detail={`${summary.active} active leads`} compare="Awaiting progress" icon={UserRound} tone="bg-[#edf5ff] text-[#315f8f]" />
+          <RentalLeadMetric label="Converted MTD" value={summary.converted} detail={`${summary.convertedTenants} tenant leads · ${summary.convertedLandlords} landlord leads`} compare="Month to date" icon={TrendingUp} tone="bg-[#effaf3] text-[#26724c]" />
+          <RentalLeadMetric label="Top Source" value={summary.topSource} detail={`${summary.topSourceCount} leads`} compare="All captured leads" icon={ArrowUpRight} tone="bg-[#f5f8fc] text-[#405b75]" />
+          <RentalLeadMetric label="Lost Rate" value={`${summary.lostRate}%`} detail={`${summary.lost} lost or withdrawn`} compare={`${summary.total} total leads`} icon={X} tone="bg-[#fff5f4] text-[#9a4038]" />
+        </section>
+        <section className="min-w-0 rounded-[16px] border border-[#e4ebf2] bg-white/90 p-2.5 shadow-[0_10px_26px_rgba(24,45,68,0.045)]" aria-label="Rental lead filters">
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:flex xl:justify-end">
+            <select aria-label="Source filter" className={filterClass} value={sourceFilter} onChange={(event) => setSourceFilter(event.target.value)}><option value="all">All Sources</option>{sources.map((source) => <option key={source}>{source}</option>)}</select>
+            <select aria-label="Stage filter" className={filterClass} value={stageFilter} onChange={(event) => setStageFilter(event.target.value)}><option value="all">All Stages</option>{stages.map((stage) => <option key={stage} value={stage}>{getRentalLeadStageLabel(stage, role === 'closed' ? leads.find((lead) => lead.stage === stage)?.role : role)}</option>)}</select>
+            <select aria-label="Agent filter" className={filterClass} value={ownerFilter} onChange={(event) => setOwnerFilter(event.target.value)}><option value="all">All Agents</option><option value="mine">Assigned to me</option><option value="unassigned">Unassigned</option>{agents.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select>
+            <select aria-label="Sort leads" className={filterClass} value={sort} onChange={(event) => setSort(event.target.value)}><option value="newest">Sort: Newest</option><option value="oldest">Sort: Oldest</option><option value="stage">Sort: Stage</option></select>
+            <button type="button" data-rental-control="reset-filters" className={`${filterClass} inline-flex items-center justify-center gap-2`} onClick={() => { setSourceFilter('all'); setStageFilter('all'); setOwnerFilter('all'); setSort('newest'); setQuery(''); }}><Filter size={15} />Reset</button>
+          </div>
+        </section>
+        {error ? (
+          <p className="rounded-[12px] border border-[#f2c6c6] bg-[#fff7f7] px-4 py-3 text-sm font-semibold text-[#9f3131]">
+            {error}
+          </p>
+        ) : null}
+        <section className="overflow-hidden rounded-[18px] border border-[rgba(15,23,42,0.06)] bg-white shadow-[0_16px_42px_rgba(15,23,42,0.045)]">
+          <header className="border-b border-[rgba(15,23,42,0.06)] bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)] px-4 py-4 sm:px-5 sm:py-5">
+            <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+              <div><div className="flex items-center gap-2"><h1 className="text-[1.45rem] font-semibold tracking-[-0.04em] text-[#142132]">{roleTitle}</h1><span className="rounded-full border border-[#dce7f2] bg-[#f8fbff] px-3 py-1 text-sm font-semibold text-[#35546c]">{roleLeads.length}</span></div><p className="mt-1.5 text-sm font-medium text-[#60758b]">Track and manage your landlord and tenant leads.</p></div>
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="inline-flex rounded-[14px] border border-[#dbe4ee] bg-[#f6f9fc] p-0.5" role="group" aria-label="Preferred lead view">{[['table', Table2, 'Table'], ['kanban', Columns3, 'Kanban']].map(([mode, Icon, label]) => <button key={mode} type="button" aria-pressed={viewMode === mode} data-rental-control="lead-view" className={`inline-flex min-h-[34px] items-center gap-1.5 rounded-[12px] px-3 text-xs font-semibold ${viewMode === mode ? 'bg-white text-[#163247] shadow' : 'text-[#51667f]'}`} onClick={() => setViewMode(mode)}>{createElement(Icon, { size: 13 })}{label}</button>)}</div>
+                <button type="button" data-rental-control="lead-refresh" disabled={loading} className="inline-flex min-h-[42px] items-center gap-2 rounded-[14px] border border-[#dbe4ee] bg-white px-4 text-sm font-semibold text-[#405b75] disabled:opacity-60" onClick={() => void loadLeads()}><RefreshCw size={16} className={loading ? 'animate-spin' : ''} />Refresh</button>
+                {role !== 'closed' ? <button type="button" className="ui-pill-button ui-pill-button-active" onClick={() => { setForm((current) => ({ ...current, role })); setDialogOpen(true); }}><Plus size={16} />Add {role === 'landlord' ? 'Landlord' : 'Tenant'} Lead</button> : null}
+              </div>
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="mt-4 grid gap-1 rounded-[14px] border border-[#dbe6f1] bg-[#f8fbff] p-1 sm:grid-cols-3">{['tenant', 'landlord', 'closed'].map((key) => <LeadRoleButton key={key} role={key} count={summary[key]} active={role === key} onClick={() => changeRole(key)} />)}</div>
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3"><label className="flex h-10 w-full max-w-md items-center gap-2 rounded-[12px] border border-[#dce6f2] bg-white px-3"><Search size={15} className="shrink-0 text-[#7b8ca2]" aria-hidden="true" /><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} aria-label="Search rental leads" className="min-w-0 flex-1 border-0 bg-transparent p-0 text-sm text-[#142132] outline-none" placeholder="Search leads, addresses or names..." /></label><div className="flex flex-wrap items-center gap-2">
+              <Link to="/agent/rentals/applications" className="ui-pill-button">Review applications</Link>
               <button
                 type="button"
                 className="ui-pill-button"
@@ -776,159 +787,35 @@ export default function RentalLeadsPage() {
                   onChange={handleImportFile}
                 />
               </label>
-              <button
-                type="button"
-                className="ui-pill-button ui-pill-button-active"
-                onClick={() => {
-                  setForm((current) => ({ ...current, role }));
-                  setDialogOpen(true);
-                }}
-              >
-                <Plus size={16} aria-hidden="true" />
-                Create Rental Lead
-              </button>
-            </div>
-          </div>
-          <div className="mt-5 grid gap-3 md:grid-cols-2">
-            <LeadRoleButton
-              role="landlord"
-              active={role === "landlord"}
-              onClick={() => setRole("landlord")}
-            />
-            <LeadRoleButton
-              role="tenant"
-              active={role === "tenant"}
-              onClick={() => setRole("tenant")}
-            />
-          </div>
-        </section>
-        {error ? (
-          <p className="rounded-[12px] border border-[#f2c6c6] bg-[#fff7f7] px-4 py-3 text-sm font-semibold text-[#9f3131]">
-            {error}
-          </p>
-        ) : null}
-        <section className="overflow-hidden rounded-[18px] border border-[rgba(15,23,42,0.06)] bg-white shadow-[0_16px_42px_rgba(15,23,42,0.045)]">
-          <header className="flex flex-col gap-4 border-b border-[rgba(15,23,42,0.06)] bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)] px-5 py-5 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-xl font-semibold tracking-[-0.03em] text-[#142132]">
-                  {role === "landlord" ? "Landlord Leads" : "Tenant Leads"}
-                </h2>
-                <span className="rounded-full border border-[#dce7f2] bg-[#f8fbff] px-3 py-1 text-sm font-semibold text-[#35546c]">
-                  {roleLeads.length}
-                </span>
-              </div>
-              <p className="mt-1.5 text-sm text-[#60758b]">
-                The rental pipeline is separate from Sales, with fields tailored
-                to rentals.
-              </p>
-            </div>
-            <label className="sr-only" htmlFor="rental-lead-owner-filter">Owner filter</label>
-            <select id="rental-lead-owner-filter" className="h-10 rounded-[12px] border border-[#dce6f2] bg-white px-3 text-sm" value={ownerFilter} onChange={(event) => setOwnerFilter(event.target.value)}><option value="all">All visible leads</option><option value="unassigned">Unassigned</option><option value="mine">Assigned to me</option></select>
-            <label className="flex h-10 w-full max-w-md items-center gap-2 rounded-[12px] border border-[#dce6f2] bg-white px-3">
-              <Search size={15} className="text-[#7b8ca2]" aria-hidden="true" />
-              <input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                className="w-full border-0 bg-transparent p-0 text-sm text-[#142132] outline-none"
-                placeholder={`Search ${role} leads...`}
-              />
-            </label>
+</div></div>
           </header>
+          {viewMode === 'kanban' ? <div className="overflow-x-auto p-4"><div className="flex min-w-max items-start gap-4">{stages.map((stage) => { const cards = roleLeads.filter((lead) => lead.stage === stage); return <section key={stage} className="w-64 rounded-[16px] border border-[#e0e8f1] bg-[#f8fbff] p-3"><h2 className="flex items-center justify-between text-sm font-semibold text-[#20364d]"><span>{getRentalLeadStageLabel(stage, role === 'closed' ? cards[0]?.role : role)}</span><span>{cards.length}</span></h2><div className="mt-3 space-y-3">{cards.map((lead) => <button key={lead.id} type="button" data-rental-control="lead-kanban-card" onClick={() => openLeadWorkspace(lead)} className="block w-full rounded-[14px] border border-[#dfe8f3] bg-white p-3 text-left shadow-sm"><span className="block truncate text-sm font-semibold text-[#142132]">{lead.name}</span><span className="mt-2 block line-clamp-2 text-xs text-[#60758b]">{lead.focus}</span><span className="mt-3 block truncate text-xs text-[#60758b]">{lead.assignedAgentName || 'Unassigned'}</span></button>)}</div></section>; })}</div>{loading ? <p className="mt-3 text-sm text-[#60758b]">Loading rental leads…</p> : null}</div> : <>
           <div className="hidden overflow-x-auto lg:block">
-            <table className="w-full min-w-[1020px] table-fixed text-left">
-              <thead className="bg-[#fbfdff] text-[0.68rem] uppercase tracking-[0.08em] text-[#7890a8]">
+            <table className="w-full min-w-[900px] table-fixed text-left" aria-label={roleTitle}>
+              <thead className="h-11 bg-[#fbfdff] text-[0.7rem] font-semibold uppercase tracking-[0.04em] text-[#7890a8]">
                 <tr>
-                  <th className="w-[20%] px-5 py-3">Lead</th>
-                  <th className="w-[12%] px-4 py-3">Source</th>
-                  <th className="w-[23%] px-4 py-3">Rental requirement</th>
-                  <th className="w-[13%] px-4 py-3">Owner</th>
-                  <th className="w-[12%] px-4 py-3">Stage</th>
-                  <th className="w-[20%] px-4 py-3">Next action</th>
+                  <th scope="col" className="w-[25%] px-5 py-3">{role === "landlord" ? "Property" : "Rental requirement"}</th>
+                  <th scope="col" className="w-[18%] px-4 py-3">Lead</th>
+                  <th scope="col" className="w-[12%] px-4 py-3">Source</th>
+                  <th scope="col" className="w-[17%] px-4 py-3">Stage</th>
+                  <th scope="col" className="w-[22%] px-4 py-3">Next action / agent</th>
+                  <th scope="col" className="w-[6%] px-3 py-3">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {loading ? (
-                  <tr>
-                    <td
-                      colSpan="6"
-                      className="px-5 py-12 text-center text-sm text-[#60758b]"
-                    >
-                      <span className="inline-flex items-center gap-2">
-                        <Loader2 size={16} className="animate-spin" />
-                        Loading rental leads…
-                      </span>
-                    </td>
+                {loading ? <tr><td colSpan="6" className="px-5 py-12 text-center text-sm text-[#60758b]"><span className="inline-flex items-center gap-2"><Loader2 size={16} className="animate-spin" />Loading rental leads…</span></td></tr> : roleLeads.length ? roleLeads.map((lead) => (
+                  <tr key={lead.id} className="border-t border-[#edf2f7] transition-colors duration-150 hover:bg-[#f8fbfe]">
+                    <td className="px-5 py-3"><div className="flex min-w-0 items-center gap-3"><PropertyThumbnail row={{ propertyImageUrl: lead.propertyImageUrl }} /><div className="min-w-0 flex-1">
+                      <button type="button" data-rental-control="lead-property" onClick={() => openLeadWorkspace(lead)} title={lead.focus} className="block max-w-full truncate text-left text-sm font-semibold text-[#142132] hover:text-[#1f4f78] hover:underline">{lead.focus}</button>
+                      <p title={rentalProfile(lead)} className="mt-1 truncate text-xs text-[#60758b]">{rentalProfile(lead)}</p>
+                    </div></div></td>
+                    <td className="px-4 py-3"><button type="button" data-rental-control="lead-contact" onClick={() => openLeadWorkspace(lead)} title={lead.name} className="block max-w-full truncate text-left text-sm font-semibold text-[#142132] hover:text-[#1f4f78] hover:underline">{lead.name}</button><p title={lead.phone || lead.email} className="mt-1 truncate text-xs text-[#60758b]">{lead.phone || lead.email || "No contact details"}</p></td>
+                    <td className="px-4 py-3"><LeadSourceBrand source={lead.source || "Manual"} /></td>
+                    <td className="px-4 py-3"><div className="max-w-full overflow-hidden" title={lead.stageLabel}><StagePill stage={lead.stageLabel} /></div></td>
+                    <td className="px-4 py-3"><p title={lead.nextAction} className="truncate text-sm font-semibold text-[#142132]">{role === "closed" ? `Outcome: ${lead.outcome?.status || "closed"}` : lead.nextAction}</p><p title={lead.assignedAgentName} className="mt-1 truncate text-xs text-[#60758b]">{lead.assignedAgentName || "Unassigned"}</p></td>
+                    <td className="px-3 py-3"><button type="button" data-rental-control="lead-open" onClick={() => openLeadWorkspace(lead)} aria-label={`Open ${lead.name}`} title="Open lead workspace" className="inline-flex h-10 w-10 items-center justify-center rounded-[12px] border border-[#dbe4ee] bg-white text-[#5b7289] hover:bg-[#f5f9fc]"><ArrowUpRight size={17} aria-hidden="true" /></button></td>
                   </tr>
-                ) : roleLeads.length ? (
-                  roleLeads.map((lead) => (
-                    <tr
-                      key={lead.id}
-                      className="border-t border-[#edf2f7] hover:bg-[#fbfdff]"
-                    >
-                      <td className="px-5 py-4">
-                        <button type="button" onClick={() => openLeadWorkspace(lead)} className="font-semibold text-[#142132] transition hover:text-[#1f4f78] hover:underline">{lead.name}</button>
-                        <div className="mt-1 truncate text-xs text-[#60758b]">
-                          {lead.phone || lead.email || "No contact details"}
-                        </div>
-                      </td>
-                      <td className="px-4 py-4">
-                        <span className="inline-flex rounded-full border border-[#dbe6f1] bg-white px-2.5 py-1 text-[0.7rem] font-semibold text-[#4d6782]">
-                          {lead.source || "Manual"}
-                        </span>
-                      </td>
-                      <td className="px-4 py-4">
-                        <div className="truncate font-semibold text-[#20364c]">
-                          {lead.focus}
-                        </div>
-                        <div className="mt-1 truncate text-xs text-[#60758b]">
-                          {rentalProfile(lead)}
-                        </div>
-                      </td>
-                      <td className="px-4 py-4">
-                        <div className="font-semibold text-[#142132]">
-                          {lead.assignedAgentName}
-                        </div>
-                        <div className="mt-1 text-xs text-[#60758b]">
-                          {lead.role === "landlord"
-                            ? "Landlord acquisition"
-                            : "Tenant placement"}
-                        </div>
-                      </td>
-                      <td className="px-4 py-4">
-                        <span
-                          className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${stageTone(lead.stage)}`}
-                        >
-                          {lead.stageLabel}
-                        </span>
-                      </td>
-                      <td className="px-4 py-4">
-                        <p className="mb-2 text-xs font-medium text-[#60758b]">
-                          {lead.nextAction}
-                        </p>
-                        <RentalLeadAction
-                          lead={lead}
-                          onAdvance={handleAdvance}
-                          advancing={advancingId === lead.id}
-                          onTerminalAction={terminalAction}
-                          compact
-                        />
-                      </td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan="6" className="px-5 py-14 text-center">
-                      <p className="font-semibold text-[#20364d]">
-                        No {role} leads yet
-                      </p>
-                      <p className="mt-1 text-sm text-[#60758b]">
-                        Create a lead or adjust your search to populate this
-                        rental pipeline.
-                      </p>
-                    </td>
-                  </tr>
-                )}
+                )) : <tr><td colSpan="6" className="px-5 py-14 text-center"><p className="font-semibold text-[#20364d]">No {role} leads yet</p><p className="mt-1 text-sm text-[#60758b]">Create a lead or adjust your search to populate this rental pipeline.</p></td></tr>}
               </tbody>
             </table>
           </div>
@@ -945,7 +832,7 @@ export default function RentalLeadsPage() {
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <button type="button" onClick={() => openLeadWorkspace(lead)} className="block max-w-full truncate text-left font-semibold text-[#142132] transition hover:text-[#1f4f78] hover:underline">{lead.name}</button>
+                      <button type="button" onClick={() => openLeadWorkspace(lead)} data-rental-control="lead-contact" className="block max-w-full truncate text-left font-semibold text-[#142132] transition hover:text-[#1f4f78] hover:underline">{lead.name}</button>
                       <p className="mt-1 truncate text-sm text-[#60758b]">
                         {lead.phone || lead.email || "No contact details"}
                       </p>
@@ -962,22 +849,22 @@ export default function RentalLeadsPage() {
                       {rentalProfile(lead)} · {lead.source}
                     </p>
                   </div>
-                  <div className="mt-3 flex items-center justify-between gap-3">
-                    <div>
+                  <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                    <div className="min-w-0 flex-1">
                       <p className="text-xs text-[#60758b]">
-                        {lead.nextAction}
+                        {role === "closed" ? `Outcome: ${lead.outcome?.status || "closed"}` : lead.nextAction}
                       </p>
-                      <p className="mt-1 text-xs font-semibold text-[#142132]">
+                      <p title={lead.assignedAgentName} className="mt-1 truncate text-xs font-semibold text-[#142132]">
                         {lead.assignedAgentName}
                       </p>
                     </div>
-                    <RentalLeadAction
+                    {role !== "closed" ? <RentalLeadAction
                       lead={lead}
                       onAdvance={handleAdvance}
                       advancing={advancingId === lead.id}
                       onTerminalAction={terminalAction}
                       compact
-                    />
+                    /> : null}
                   </div>
                 </article>
               ))
@@ -987,6 +874,7 @@ export default function RentalLeadsPage() {
               </p>
             )}
           </div>
+          </>}
         </section>
       </div>
       {dialogOpen ? (

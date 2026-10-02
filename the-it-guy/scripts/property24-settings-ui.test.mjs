@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import {
   createSuggestedProperty24AgentMappings,
+  formatProperty24DisplayText,
   getCanonicalArch9AgentProfile,
   getProperty24ListingStatusOptions,
   normalizeProperty24Settings,
@@ -160,10 +161,10 @@ assert.match(settingsPageSource, /async function persistProperty24Settings/)
 assert.match(settingsPageSource, /Save connection/)
 assert.match(settingsPageSource, /Property24 is connected/)
 assert.match(settingsPageSource, /Agency connected/)
-assert.match(settingsPageSource, /ExDev sandbox/)
+assert.match(settingsPageSource, /Test connection/)
 assert.match(settingsPageSource, /Agent IDs pending/)
-assert.match(settingsPageSource, /Do not enter fake IDs/)
-assert.match(settingsPageSource, /sandbox limitation/)
+assert.doesNotMatch(settingsPageSource, /\b(?:ExDev|XDev|Xdev)\b/)
+assert.match(settingsPageSource, /has not supplied IDs/)
 assert.match(settingsPageSource, /Connect Agents/)
 assert.match(settingsPageSource, /Sync Status/)
 assert.match(settingsPageSource, /Advanced settings/)
@@ -183,7 +184,7 @@ assert.match(settingsPageSource, /selectableProperty24Agents/)
 assert.match(settingsPageSource, /Property24 returned/)
 assert.match(settingsPageSource, /No Property24 profiles with IDs synced/)
 assert.match(settingsPageSource, /Can't find this agent\? Create on Property24/)
-assert.match(settingsPageSource, /Agent names, email addresses, phone numbers and photos are owned by the Arch9 Agent Profile/)
+assert.match(settingsPageSource, /Manage names, contact details and photos in the Arch9 Agent Profile/)
 assert.match(settingsPageSource, /serializeProperty24SettingsForPersistence/)
 assert.match(settingsPageSource, /arch9UserId: agent\.userId/)
 assert.match(settingsPageSource, /arch9MembershipId: agent\.id/)
@@ -217,3 +218,8 @@ assert.match(connectionApiSource, /fetchOrganisationProperty24Connection/)
 assert.match(connectionApiSource, /upsertOrganisationProperty24Connection/)
 
 console.log('Property24 settings UI contract passed')
+
+assert.equal(formatProperty24DisplayText('ExDev returned no agent IDs'), 'test connection returned no agent IDs')
+assert.equal(formatProperty24DisplayText('Xdev checks pending'), 'test connection checks pending')
+assert.equal(formatProperty24DisplayText('EXDEV_APPROVED'), 'TEST_APPROVED')
+assert.equal(formatProperty24DisplayText('Live connection'), 'Live connection')

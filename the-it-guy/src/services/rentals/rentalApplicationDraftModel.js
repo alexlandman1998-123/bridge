@@ -2,6 +2,7 @@ export const RENTAL_APPLICATION_CAPTURE_VERSION = 'arch9_rental_application_capt
 
 export const RENTAL_APPLICATION_INITIAL_FORM = Object.freeze({
   listingId: '',
+  tenantLeadId: '',
   tenantName: '',
   tenantEmail: '',
   tenantPhone: '',
@@ -148,6 +149,7 @@ export function buildRentalApplicationActivityMetadata(form = {}, listing = {}, 
     captureVersion: RENTAL_APPLICATION_CAPTURE_VERSION,
     applicationReference: buildRentalApplicationReference(form, { nowIso }),
     listingId: normalizeText(form.listingId),
+    tenantLeadId: normalizeText(form.tenantLeadId || options.tenantLeadId),
     listingTitle: normalizeText(listing.listingTitle || listing.title || listing.listingPublicationData?.title),
     tenant: {
       name: normalizeText(form.tenantName),
@@ -205,6 +207,7 @@ export function mapRentalApplicationActivity(activity = {}, listing = {}) {
   return {
     id: normalizeText(activity.id || metadata.applicationReference),
     listingId: normalizeText(activity.private_listing_id || metadata.listingId),
+    tenantLeadId: normalizeText(metadata.tenantLeadId || metadata.tenant_lead_id),
     listingTitle: normalizeText(metadata.listingTitle || listing.listingTitle || listing.title),
     reference: normalizeText(metadata.applicationReference),
     tenantName: normalizeText(tenant.name),

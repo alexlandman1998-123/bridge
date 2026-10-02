@@ -1,0 +1,17 @@
+.rental-property-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}
+.rental-property-card{display:flex;flex-direction:column;min-width:0;overflow:hidden;border:1px solid #dfe7f0;border-radius:18px;background:#fff;color:#142132;transition:box-shadow .2s,border-color .2s,transform .2s}
+.rental-property-card:hover{border-color:#97c6b2;box-shadow:0 12px 28px #10223612;transform:translateY(-2px)}
+.rental-property-card:focus-visible{outline:2px solid #16894f;outline-offset:3px}
+.rental-property-cover{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;height:150px;background:linear-gradient(135deg,#eaf4f0,#f2f6fa);color:#78988b;border-bottom:1px solid #e5eeea}
+.rental-property-type{position:absolute;left:14px;top:14px;padding:4px 9px;border-radius:6px;background:#ffffffc9;font-size:.68rem;color:#526b61;font-weight:500}
+.rental-property-photo-note{font-size:.7rem;color:#879c94}
+.rental-property-status{position:absolute;bottom:12px;right:12px;border-radius:7px;padding:4px 9px;font-size:.68rem;font-weight:500}
+.rental-property-content{padding:18px;display:flex;flex-direction:column;flex:1}
+.rental-property-rent{display:flex;align-items:baseline;gap:5px}.rental-property-rent strong{font-size:1.22rem;font-weight:600;letter-spacing:-.02em;color:#143b2e}.rental-property-rent>span{font-size:.74rem;color:#839287}
+.rental-property-rent-label{font-size:.68rem;color:#819287;margin-top:3px}
+.rental-property-content h3{font-size:1rem;font-weight:600;line-height:1.4;margin-top:14px;color:#203247}
+.rental-property-location{display:flex;align-items:flex-start;gap:6px;font-size:.78rem;line-height:1.5;color:#7b8ca2;margin-top:6px;min-height:36px}.rental-property-location svg{flex-shrink:0;margin-top:2px}
+.rental-property-facts{display:flex;flex-wrap:wrap;gap:15px;padding:14px 0;font-size:.77rem;color:#60758b;margin-top:auto}.rental-property-facts>span{display:flex;align-items:center;gap:6px}
+.rental-property-footer{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;border-top:1px solid #edf2f7;padding-top:13px;font-size:.7rem;color:#7b8ca2}.rental-property-footer>span:first-child{display:flex;align-items:center;gap:7px}.rental-property-footer b{font-size:.66rem;font-weight:500;padding:3px 7px;border-radius:5px}.rental-property-open{display:flex;align-items:center;gap:4px;color:#087a55;font-weight:500}
+@media(max-width:1100px){.rental-property-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:650px){.rental-property-grid{grid-template-columns:1fr}.rental-property-cover{height:170px}}

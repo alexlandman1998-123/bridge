@@ -14,7 +14,7 @@ import {
   normalizeDocumentPartyEntityType,
 } from '../../core/documents/documentPartyClassification.js'
 import { getApplicableAttorneyTaskDefinitions, getAttorneyTaskSuggestion } from './matterWorkflowPlanService.js'
-import { isAttorneyTaskResolved, isAttorneyTaskCompleted, summarizeAttorneyTaskOutcomes } from '../../core/transactions/attorneyTaskOutcomes.js'
+import { isAttorneyTaskResolved, isAttorneyTaskCompleted, getAttorneyPhaseStatus } from '../../core/transactions/attorneyTaskOutcomes.js'
 import { isAttorneyAttestedMilestone, requiresAttorneyEvidenceDecision } from '../../core/transactions/attorneyTaskOperationalContract.js'
 import { evaluateTransferTaxLodgementReadiness } from './transferTaxLodgementGate.js'
 import { buildStageThreeFinancialReview } from './stageThreeFinancialReview.js'
@@ -23,6 +23,8 @@ import { buildStageFiveLodgementReview } from './stageFiveLodgementReview.js'
 import { buildStageSixClosureReview } from './stageSixClosureReview.js'
 import { documentBelongsToParty, ficaDocumentAppliesToParty } from '../../core/transactions/stageTwoPartyEvidence.js'
 import { resolveMatterScenarioProfile, partyCapacityReviewReady, partyCapacityReviewStale, partyCapacityCheckRequirements, partyCapacityFacts } from '../matterScenarioProfile.js'
+import { buildLegalTaskWorkbenchModel, getLegalTaskChecklistProgress } from '../../core/transactions/legalTaskWorkbenchModel.js'
+import { readTaskConfirmations } from '../../core/transactions/legalTaskConfirmations.js'
 
 export const TRANSFER_WORKSPACE_PHASES = Object.freeze(getAttorneyJourneyPhasesForLane('transfer'))
 
@@ -833,8 +835,13 @@ function buildWorkflowTasks({ workflowKey = 'transfer', lane = null, workflow = 
   const snapshotTasks = Array.isArray(sharedJourneyTasks)
     ? new Map(sharedJourneyTasks.map(task => [task.key, task]))
     : null
+  const definitionsByKey = snapshotTasks
+    ? new Map(getAttorneyStageDefinitionsForLane(workflowKey).map(definition => [definition.key, definition]))
+    : null
   const definitions = (snapshotTasks
-    ? getAttorneyStageDefinitionsForLane(workflowKey).filter(definition => snapshotTasks.has(definition.key))
+    ? [...snapshotTasks.values()].map(task => definitionsByKey.get(task.key) || {
+      key: task.key, label: task.label || titleize(task.key),
+    })
     : getApplicableAttorneyTaskDefinitions({ laneKey: workflowKey, workflowPlan: workflow?.workflowPlan, facts: workflow?.facts || {} }))
     .map((definition) => applyTransferScenarioToTask(definition, scenario, partyProfile))
   const laneSteps = Array.isArray(lane?.steps) ? lane.steps : []
@@ -846,7 +853,8 @@ function buildWorkflowTasks({ workflowKey = 'transfer', lane = null, workflow = 
       storedStepMap.set(taskKey, { ...(storedStepMap.get(taskKey) || {}), stepKey: taskKey, status: task.status })
     }
   }
-  const currentKey = getCurrentStepKey(lane || {}, workflowKey)
+  // A fresh saved journey outranks the lane's older current-stage pointer.
+  const currentKey = snapshotTasks ? '' : getCurrentStepKey(lane || {}, workflowKey)
   let currentIndex = definitions.findIndex((definition) => definition.key === currentKey)
 
   if (currentIndex < 0) {
@@ -855,7 +863,7 @@ function buildWorkflowTasks({ workflowKey = 'transfer', lane = null, workflow = 
       return !isAttorneyTaskResolved(normalizePersistedStatus(storedStep?.status))
     })
   }
-  if (currentIndex < 0 && definitions.length) currentIndex = definitions.length - 1
+  if (currentIndex < 0 && definitions.length && !snapshotTasks) currentIndex = definitions.length - 1
 
   return definitions.map((definition, index) => {
     const storedStep = storedStepMap.get(definition.key) || null
@@ -866,7 +874,9 @@ function buildWorkflowTasks({ workflowKey = 'transfer', lane = null, workflow = 
       displayStatus = 'not_started'
     }
 
-    const phase = findPhaseForTask(definition.key, workflowKey)
+    const savedTask = snapshotTasks?.get(definition.key)
+    const phase = getLegalWorkspacePhases(workflowKey).find(phase => phase.key === savedTask?.phaseKey)
+      || findPhaseForTask(definition.key, workflowKey)
 
     const derivedCompletion = buildFicaTaskDerivedCompletion(definition.key, documents)
     const partyRole = definition.key.startsWith('buyer_') ? 'buyer' : definition.key.startsWith('seller_') ? 'seller' : ''
@@ -931,7 +941,7 @@ function buildWorkflowTasks({ workflowKey = 'transfer', lane = null, workflow = 
   }).map((task) => ({ ...task, searchText: buildTaskSearchText(task) }))
 }
 
-function buildPhases(tasks = [], workflowKey = 'transfer') {
+function buildPhases(tasks = [], workflowKey = 'transfer', useSavedJourney = false) {
   return getLegalWorkspacePhases(workflowKey).map((phase, index) => {
     const phaseTasks = tasks.filter((task) => task.phaseKey === phase.key)
     const completed = phaseTasks.filter((task) => isAttorneyTaskCompleted(task.status)).length
@@ -941,8 +951,8 @@ function buildPhases(tasks = [], workflowKey = 'transfer') {
     const missingDocuments = phaseTasks.filter((task) => task.missingDocumentCount > 0).length
     const active = phaseTasks.filter((task) => task.isCurrent || task.displayStatus === 'in_progress').length
     const total = phaseTasks.filter(task => task.status !== 'not_applicable').length
-    const currentTask = phaseTasks.find((task) => task.isCurrent) || phaseTasks.find((task) => !isAttorneyTaskResolved(task.status)) || phaseTasks.at(-1) || null
-    const status = !total
+    const currentTask = phaseTasks.find((task) => task.isCurrent) || phaseTasks.find((task) => !isAttorneyTaskResolved(task.status)) || (useSavedJourney ? null : phaseTasks.at(-1)) || null
+    const status = useSavedJourney ? getAttorneyPhaseStatus(phaseTasks) : !total
       ? 'not_applicable'
       : completed === total
         ? 'completed'
@@ -2229,13 +2239,17 @@ export function buildTransferWorkspaceViewModel({
     }
     return {
       ...taskWithDocuments,
+      checklistProgress: getLegalTaskChecklistProgress(buildLegalTaskWorkbenchModel({
+        task: taskWithDocuments,
+        taskContext: { checklistItems: buildChecklistItems(taskWithDocuments), relatedDocuments },
+      }).confirmationRows, taskWithDocuments.taskConfirmations ?? readTaskConfirmations(activityFeed, workflowKey, taskWithDocuments.key)),
       completionReadiness: buildCompletionReadiness(taskWithDocuments),
     }
   }).map((task, index, allTasks) => ({
     ...task,
     dependencySummary: buildDependencySummary(allTasks, task),
   }))
-  const phases = buildPhases(tasks, workflowKey)
+  const phases = buildPhases(tasks, workflowKey, Array.isArray(sharedJourneyTasks))
   const selectedTask = resolveSelectedTask(tasks, selectedTaskKey, workflowKey)
   const visibleTasks = filterTasks(tasks, { ...filters, search })
   const completed = tasks.filter((task) => isAttorneyTaskCompleted(task.status)).length

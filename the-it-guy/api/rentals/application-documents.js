@@ -1,0 +1,2 @@
+import { handleRentalAgentDocumentUpload } from '../../server/services/rentalApplicationAgentDocumentApi.js'
+export default async function handler(request, response) { const result = await handleRentalAgentDocumentUpload({ method: request.method, headers: request.headers, body: request.method === 'GET' ? request.query : request.body }); response.setHeader('Cache-Control', 'private, no-store'); response.status(result.status).json(result.body) }

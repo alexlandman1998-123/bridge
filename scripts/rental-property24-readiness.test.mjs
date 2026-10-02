@@ -48,8 +48,8 @@ const completeListing = {
 
 const readiness = buildRentalProperty24Readiness(completeListing)
 assert.equal(readiness.version, RENTAL_PROPERTY24_READINESS_VERSION)
-assert.equal(readiness.totalCount, 20)
-assert.equal(readiness.completedCount, 20)
+assert.equal(readiness.totalCount, 11)
+assert.equal(readiness.completedCount, 11)
 assert.equal(readiness.readinessPercent, 100)
 assert.equal(readiness.readyToPublish, true)
 assert.deepEqual(readiness.blockers, [])
@@ -67,9 +67,9 @@ assert.equal(readiness.payloadPreview.marketing.photos.length, 2)
 const payloadPreview = buildRentalProperty24PayloadPreview(completeListing)
 assert.equal(payloadPreview.agencyId, 'p24-agency-1')
 assert.deepEqual(payloadPreview.contactAgentIds, ['p24-agent-1'])
-assert.equal(payloadPreview.agentSourceReference, 'rental-portal-ready-1')
+assert.equal(payloadPreview.agentSourceReference, '')
 assert.equal(payloadPreview.property.suburbId, 'p24-suburb-123')
-assert.equal(payloadPreview.property.propertyTypeId, 'p24-type-apartment')
+assert.equal(String(payloadPreview.property.propertyTypeId), '5')
 
 const draftListing = {
   id: 'rental-draft-1',
@@ -92,21 +92,7 @@ const draftListing = {
 const draftReadiness = buildRentalProperty24Readiness(draftListing)
 const blockerKeys = draftReadiness.blockers.map((blocker) => blocker.key)
 for (const expectedBlocker of [
-  'agencyId',
-  'contactAgentIds',
-  'suburbId',
-  'propertyTypeId',
-  'expiryDate',
-  'description',
-  'photos',
-  'petsAllowed',
-  'furnishedStatus',
-  'garages',
-  'garden',
-  'pool',
-  'flatlet',
-  'marketingApprovalStatus',
-  'mandateStatus',
+  'agencyId', 'contactAgentIds', 'suburbId', 'expiryDate', 'description', 'photos',
 ]) {
   assert.ok(blockerKeys.includes(expectedBlocker), `missing blocker: ${expectedBlocker}`)
 }

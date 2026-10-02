@@ -1,3 +1,4 @@
+import { resolveRentalPortalType } from './rentalPortalFieldContract.js'
 import {
   PROPERTY24_RENTAL_READINESS_FIELDS,
 } from './rentalListingArchitecture.js'
@@ -9,6 +10,10 @@ import {
 } from './rentalListingIndexModel.js'
 
 export const RENTAL_PROPERTY24_READINESS_VERSION = 'arch9_rental_property24_readiness_v1'
+
+// Missing optional capture must not veto an otherwise valid portal payload.
+export const PROPERTY24_RENTAL_ADVISORY_FIELDS = Object.freeze(['agentSourceReference', 'depositPolicy', 'availableFrom', 'petsAllowed', 'furnishedStatus', 'garages', 'garden', 'pool', 'flatlet', 'marketingApprovalStatus', 'mandateStatus'])
+const advisoryFields = new Set(PROPERTY24_RENTAL_ADVISORY_FIELDS)
 
 const MANDATE_READY_STATUSES = new Set(['signed', 'signed_uploaded'])
 const MARKETING_READY_STATUSES = new Set(['approved', 'ready'])
@@ -128,7 +133,7 @@ function resolvePetsAllowed(value) {
   if (['not_allowed', 'no_pets', 'no', 'false'].includes(normalized)) {
     return { captured: true, value: false, detail: 'Pets not allowed' }
   }
-  return { captured: true, value: normalized.includes('allow'), detail: normalizeText(value) }
+  return { captured: normalized === 'subject_to_approval', value: null, detail: normalizeText(value) }
 }
 
 function addItem(items, key, label, complete, detail, blocker, options = {}) {
@@ -139,6 +144,8 @@ function addItem(items, key, label, complete, detail, blocker, options = {}) {
     detail: normalizeText(detail),
     blocker: complete ? '' : blocker || label,
     backendResolved: Boolean(options.backendResolved),
+    blocksPublish: !complete && !advisoryFields.has(key),
+    requiredForPublish: !advisoryFields.has(key),
   })
 }
 
@@ -184,7 +191,7 @@ export function buildRentalProperty24PayloadPreview(listing = {}, options = {}) 
     agentSourceReference: firstText(resolution.agentSourceReference, resolution.agent_source_reference, listing.property24AgentSourceReference, listing.property24_agent_source_reference),
     property: {
       suburbId: firstText(resolution.suburbId, resolution.suburb_id, listing.property24SuburbId, listing.property24_suburb_id, listing.suburbId, listing.suburb_id, facts.property24SuburbId, facts.property24_suburb_id, rentalInfo.property24SuburbId, rentalInfo.property24_suburb_id),
-      propertyTypeId: firstText(resolution.propertyTypeId, resolution.property_type_id, listing.property24PropertyTypeId, listing.property24_property_type_id, listing.propertyTypeId, listing.property_type_id),
+      propertyTypeId: firstText(resolution.propertyTypeId, resolution.property_type_id, resolveRentalPortalType(listing.propertyCategory || listing.property_category || facts.propertyProfile?.propertyCategory || 'residential', row.propertyType)?.property24TypeId, listing.property24PropertyTypeId, listing.property24_property_type_id, listing.propertyTypeId, listing.property_type_id),
       address: row.address,
       suburb: row.suburb,
       city: row.city,
@@ -205,7 +212,7 @@ export function buildRentalProperty24PayloadPreview(listing = {}, options = {}) 
     },
     rentalInfo: {
       monthlyRent: row.monthlyRent,
-      rentalPriceFrequency: row.rentalPriceFrequency,
+      rentalPriceFrequency: row.rentalPriceFrequency || 'monthly',
       depositAmount: row.depositAmount,
       depositPolicy: row.depositPolicy,
       depositRequirement: row.depositRequirement,
@@ -263,7 +270,7 @@ export function buildRentalProperty24Readiness(listing = {}, options = {}) {
   const items = []
 
   addItem(items, 'listingType', 'Listing type', payloadPreview.listingType === 'Rental', 'Rental', 'Listing type must be Rental')
-  addItem(items, 'rentalInfo', 'Rental info object', Boolean(row.monthlyRent && row.availableFrom), 'Rent and availability included', 'Capture rentalInfo with rent and availability')
+  addItem(items, 'rentalInfo', 'Rental info object', Boolean(row.monthlyRent), 'Rental amount included; availability is optional', 'Capture the rental amount')
   addItem(
     items,
     'agencyId',
@@ -294,7 +301,7 @@ export function buildRentalProperty24Readiness(listing = {}, options = {}) {
   addItem(items, 'suburbId', 'Property24 suburb', Boolean(payloadPreview.property.suburbId), payloadPreview.property.suburbId || row.location || 'Address could not be matched to a Property24 suburb', 'Check the property address and suburb, then run the Property24 check again')
   addItem(items, 'propertyTypeId', 'Property24 property type', Boolean(payloadPreview.property.propertyTypeId), payloadPreview.property.propertyTypeId || row.propertyType || 'Missing Property24 property type id', 'Resolve the Property24 property type id')
   addItem(items, 'monthlyRent', 'Monthly rent', Boolean(row.monthlyRent), row.monthlyRent ? `R${row.monthlyRent}` : 'Missing monthly rent', 'Capture monthly rent')
-  addItem(items, 'rentalPriceFrequency', 'Rental price frequency', Boolean(row.rentalPriceFrequency), row.rentalPriceFrequency || 'Missing rental price frequency', 'Capture the rental price frequency')
+  addItem(items, 'rentalPriceFrequency', 'Rental price frequency', true, row.rentalPriceFrequency || 'Monthly (portal default)', 'Capture the rental price frequency')
   addItem(items, 'depositPolicy', 'Deposit policy', Boolean(row.depositPolicy && normalizeKey(row.depositPolicy) !== 'not_captured'), row.depositPolicy || 'Deposit policy not captured', 'Choose whether a deposit is required or not required')
   addItem(items, 'availableFrom', 'Available from', Boolean(row.availableFrom), row.availableFrom || 'Missing availability date', 'Capture availability date')
   addItem(items, 'expiryDate', 'Listing expiry', Boolean(payloadPreview.expiryDate), payloadPreview.expiryDate || 'Missing mandate end date', 'Capture mandate end / expiry date')
@@ -312,8 +319,9 @@ export function buildRentalProperty24Readiness(listing = {}, options = {}) {
   const contractFields = new Set(PROPERTY24_RENTAL_READINESS_FIELDS)
   const missingContractFields = PROPERTY24_RENTAL_READINESS_FIELDS.filter((field) => !items.some((item) => item.key === field))
   const readinessItems = items.filter((item) => contractFields.has(item.key))
-  const completedCount = readinessItems.filter((item) => item.complete).length
-  const blockers = readinessItems.filter((item) => !item.complete).map((item) => ({
+  const requiredItems = readinessItems.filter((item) => item.requiredForPublish)
+  const completedCount = requiredItems.filter((item) => item.complete).length
+  const blockers = readinessItems.filter((item) => item.blocksPublish).map((item) => ({
     key: item.key,
     label: item.label,
     detail: item.blocker,
@@ -324,9 +332,10 @@ export function buildRentalProperty24Readiness(listing = {}, options = {}) {
     items: readinessItems,
     blockers,
     missingContractFields,
+    warnings: readinessItems.filter((item) => !item.complete && !item.requiredForPublish).map((item) => ({ key: item.key, label: item.label, detail: item.blocker })),
     completedCount,
-    totalCount: readinessItems.length,
-    readinessPercent: readinessItems.length ? Math.round((completedCount / readinessItems.length) * 100) : 0,
+    totalCount: requiredItems.length,
+    readinessPercent: requiredItems.length ? Math.round((completedCount / requiredItems.length) * 100) : 0,
     readyToPublish: blockers.length === 0 && missingContractFields.length === 0,
     payloadPreview,
   }

@@ -6,6 +6,7 @@ import {
   CalendarDays,
   Check,
   ClipboardList,
+  ContactRound,
   FileCheck2,
   FileBarChart2,
   FileText,
@@ -32,7 +33,7 @@ import {
   Wrench,
   Workflow,
 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useOrganisation } from '../context/OrganisationContext'
 import { useWorkspace } from '../context/WorkspaceContext'
@@ -57,6 +58,7 @@ const ICON_BY_KEY = {
   listings_private: Building2,
   listings_developments: Building2,
   rental_dashboard: LayoutDashboard,
+  rental_leads: Users,
   short_term_dashboard: LayoutDashboard,
   short_term_calendar: CalendarDays,
   short_term_bookings: ClipboardList,
@@ -77,7 +79,7 @@ const ICON_BY_KEY = {
   rental_agency_people: BriefcaseBusiness,
   rental_agency_partners: Handshake,
   rental_agency_commission: Wallet,
-  rental_clients: Users,
+  rental_clients: ContactRound,
   rental_reports: FileBarChart2,
   agents: BriefcaseBusiness,
   transactions: SwitchCamera,
@@ -306,110 +308,13 @@ function isParentNavActive(item, location) {
   )
 }
 
-function BusinessWorkspaceSwitcher({
-  currentWorkspace = null,
-  workspaces = [],
-  onChange,
-  visible = false,
-}) {
+function BusinessWorkspaceSwitcher({ currentWorkspace = null, workspaces = [], visible = false, onChange }) {
   const [open, setOpen] = useState(false)
   const switcherRef = useRef(null)
-  const currentId = currentWorkspace?.id || 'sales'
-  const currentLabel = currentWorkspace?.label || 'Sales'
-
-  useEffect(() => {
-    if (!open || typeof document === 'undefined') return undefined
-    const handlePointerDown = (event) => {
-      if (!switcherRef.current || switcherRef.current.contains(event.target)) return
-      setOpen(false)
-    }
-    document.addEventListener('pointerdown', handlePointerDown)
-    return () => document.removeEventListener('pointerdown', handlePointerDown)
-  }, [open])
-
-  if (!visible || !Array.isArray(workspaces) || workspaces.length < 2) return null
-
-  return (
-    <div ref={switcherRef} className="ui-business-workspace-switcher" aria-label="Business line">
-      <button
-        type="button"
-        className={`ui-business-workspace-trigger ${open ? 'ui-business-workspace-trigger-open' : ''}`.trim()}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={() => setOpen((current) => !current)}
-      >
-        <span className="ui-business-workspace-current">{currentLabel}</span>
-        <ChevronDown size={15} className={`ui-business-workspace-chevron ${open ? 'ui-business-workspace-chevron-open' : ''}`} aria-hidden="true" />
-      </button>
-      {open ? (
-        <div className="ui-business-workspace-menu" role="menu" aria-label="Switch business line">
-          <p className="ui-business-workspace-menu-heading">Switch</p>
-          {workspaces.map((workspace) => {
-            const active = workspace.id === currentId
-            return (
-              <button
-                key={workspace.id}
-                type="button"
-                role="menuitemradio"
-                aria-checked={active}
-                className={`ui-business-workspace-option ${active ? 'ui-business-workspace-option-active' : ''}`.trim()}
-                onClick={() => {
-                  setOpen(false)
-                  if (!active) onChange?.(workspace.id)
-                }}
-              >
-                <span className="ui-business-workspace-option-check" aria-hidden="true">
-                  {active ? <Check size={14} /> : null}
-                </span>
-                <span className="ui-business-workspace-option-label">{workspace.label}</span>
-              </button>
-            )
-          })}
-        </div>
-      ) : null}
-    </div>
-  )
-}
-
-function getOrganisationWorkspaceId(membership = null) {
-  return String(
-    membership?.workspaceId ||
-      membership?.workspace_id ||
-      membership?.workspace?.id ||
-      membership?.raw?.organisation_id ||
-      membership?.raw?.organization_id ||
-      '',
-  ).trim()
-}
-
-function getOrganisationWorkspaceLabel(membership = null) {
-  return String(
-    membership?.workspace?.name ||
-      membership?.workspaceName ||
-      membership?.workspace_name ||
-      membership?.organisationName ||
-      membership?.organisation_name ||
-      membership?.raw?.organisation_name ||
-      'Organisation',
-  ).trim()
-}
-
-function OrganisationWorkspaceSwitcher({ currentWorkspace = null, memberships = [], onChange }) {
-  const [open, setOpen] = useState(false)
-  const switcherRef = useRef(null)
-  const workspaces = useMemo(() => {
-    const uniqueWorkspaces = new Map()
-    memberships.forEach((membership) => {
-      const id = getOrganisationWorkspaceId(membership)
-      if (!id || uniqueWorkspaces.has(id)) return
-      uniqueWorkspaces.set(id, { id, label: getOrganisationWorkspaceLabel(membership) })
-    })
-    return [...uniqueWorkspaces.values()].sort((left, right) => left.label.localeCompare(right.label))
-  }, [memberships])
   const currentId = String(currentWorkspace?.id || '').trim()
   const currentLabel =
     workspaces.find((workspace) => workspace.id === currentId)?.label ||
-    String(currentWorkspace?.name || 'Organisation').trim()
+    String(currentWorkspace?.label || 'Sales').trim()
 
   useEffect(() => {
     if (!open || typeof document === 'undefined') return undefined
@@ -421,11 +326,11 @@ function OrganisationWorkspaceSwitcher({ currentWorkspace = null, memberships = 
     return () => document.removeEventListener('pointerdown', handlePointerDown)
   }, [open])
 
-  if (workspaces.length < 2) return null
+  if (!visible || workspaces.length < 1) return null
 
   return (
-    <div ref={switcherRef} className="ui-organisation-workspace-switcher" aria-label="Business switcher">
-      <p className="ui-organisation-workspace-heading">Business</p>
+    <div ref={switcherRef} className="ui-organisation-workspace-switcher" aria-label="Business line">
+
       <button
         type="button"
         className={`ui-organisation-workspace-trigger ${open ? 'ui-organisation-workspace-trigger-open' : ''}`.trim()}
@@ -438,8 +343,8 @@ function OrganisationWorkspaceSwitcher({ currentWorkspace = null, memberships = 
         <ChevronDown size={15} className={`ui-organisation-workspace-chevron ${open ? 'ui-organisation-workspace-chevron-open' : ''}`} aria-hidden="true" />
       </button>
       {open ? (
-        <div className="ui-organisation-workspace-menu" role="menu" aria-label="Switch business">
-          <p className="ui-organisation-workspace-menu-heading">Switch business</p>
+        <div className="ui-organisation-workspace-menu" role="menu" aria-label="Switch business line">
+          <p className="ui-organisation-workspace-menu-heading">Switch business line</p>
           {workspaces.map((workspace) => {
             const active = workspace.id === currentId
             return (
@@ -479,19 +384,6 @@ function Sidebar() {
   const attorneyModuleState = useAttorneyModuleSettings({ enabled: role === 'attorney' })
   const location = useLocation()
   const navigate = useNavigate()
-  const handleBusinessWorkspaceChange = useCallback((nextWorkspaceId) => {
-    workspaceContext.setBusinessWorkspace?.(nextWorkspaceId)
-    const nextRoute = resolveBusinessWorkspaceRoute({
-      pathname: location.pathname,
-      search: location.search,
-      hash: location.hash,
-      targetWorkspace: nextWorkspaceId,
-    })
-    const currentRoute = `${location.pathname}${location.search}${location.hash}`
-    if (nextRoute && nextRoute !== currentRoute) {
-      navigate(nextRoute)
-    }
-  }, [location.hash, location.pathname, location.search, navigate, workspaceContext])
   const inferredRoleWorkspaceType = inferWorkspaceTypeFromAppRole(role)
   const navWorkspaceType =
     inferredRoleWorkspaceType && workspaceContext.currentWorkspace?.type !== inferredRoleWorkspaceType
@@ -597,7 +489,7 @@ function Sidebar() {
     () => roleNavItems.filter((item) => item.navSection === 'secondary'),
     [roleNavItems],
   )
-  const isRentalsBusinessLine = role === 'agent' && workspaceContext.businessWorkspaceId === BUSINESS_WORKSPACES.rentals
+  const isRentalsBusinessLine = role === 'agent' && [BUSINESS_WORKSPACES.rentals, BUSINESS_WORKSPACES.shortTermRentals].includes(workspaceContext.businessWorkspaceId)
   const primaryNavItems = useMemo(
     () => {
       if (role === 'attorney') return roleNavItems.filter((item) => !ATTORNEY_SECONDARY_KEYS.has(item.key))
@@ -809,17 +701,20 @@ function Sidebar() {
               <p className="ui-sidebar-brand-copy">{BRIDGE_BRAND_SUBTITLE}</p>
             </>
           )}
-          <BusinessWorkspaceSwitcher
-            currentWorkspace={workspaceContext.businessWorkspace}
-            workspaces={workspaceContext.availableBusinessWorkspaces}
-            visible={workspaceContext.showBusinessWorkspaceSwitcher}
-            onChange={handleBusinessWorkspaceChange}
-          />
-          <OrganisationWorkspaceSwitcher
-            currentWorkspace={workspaceContext.currentWorkspace}
-            memberships={workspaceContext.activeMemberships}
-            onChange={(workspaceId) => workspaceContext.setWorkspace({ id: workspaceId })}
-          />
+          {role !== 'bond_originator' ? (
+            <>
+              <BusinessWorkspaceSwitcher
+                currentWorkspace={workspaceContext.businessWorkspace}
+                workspaces={workspaceContext.availableBusinessWorkspaces}
+                visible={workspaceContext.showBusinessWorkspaceSwitcher}
+                onChange={(workspaceId) => {
+                  workspaceContext.setBusinessWorkspace?.(workspaceId)
+                  const route = resolveBusinessWorkspaceRoute({ pathname: location.pathname, search: location.search, hash: location.hash, targetWorkspace: workspaceId })
+                  if (route) navigate(route)
+                }}
+              />
+            </>
+          ) : null}
         </div>
       </div>
 

@@ -220,13 +220,14 @@ function buildConfirmationRows({ confirmations, requirements, actions, documents
       ? relevantLegalTaskDocuments(documents, documentAction)
       : []
     const attachedDocuments = relatedDocuments.filter(document => document.missing !== true && (
-      document.ready || document.fileUrl || document.file_url || document.url || document.uploadedAt || document.uploaded_at
+      document.ready || document.fileUrl || document.file_url || document.signedUrl || document.signed_url || document.url || document.uploadedAt || document.uploaded_at
     ))
     return {
       ...row,
       authoritative: requirement.type === 'party',
       authoritativeAnswer: requirement.type === 'party' ? (requirement.complete ? 'yes' : '') : undefined,
       action: documentAction || action,
+      documents: attachedDocuments,
       documentStatus: documentAction ? {
         attached: attachedDocuments.length,
         approved: attachedDocuments.filter(document => ['approved', 'accepted'].includes(text(document.status).toLowerCase())).length,
@@ -354,6 +355,15 @@ function isTransferPostRegistrationTask(task = {}) {
     'post_registration_closeout_review',
     'matter_closed',
   ].includes(text(task.key))
+}
+
+export function getLegalTaskChecklistProgress(items = [], saved = {}) {
+  const answerFor = item => item.authoritative ? item.authoritativeAnswer : saved?.[item.id]?.answer
+  return {
+    total: items.length,
+    completed: items.filter(item => answerFor(item) === 'yes').length,
+    answered: items.filter(item => Boolean(answerFor(item))).length,
+  }
 }
 
 export function buildLegalTaskWorkbenchModel({

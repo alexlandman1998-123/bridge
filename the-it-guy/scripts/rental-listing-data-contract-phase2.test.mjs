@@ -28,6 +28,7 @@ assert.deepEqual(RETIREMENT_ACCOMMODATION_OPTIONS, ['not_captured', 'yes', 'no']
 const form = {
   ...RENTAL_LISTING_INITIAL_FORM,
   title: 'Retirement house share',
+  landlordName: 'Test Owner',
   propertyAddress: '509 30th Avenue, Villieria, Pretoria, 0186, South Africa',
   streetNumber: '509',
   streetName: '30th Avenue',

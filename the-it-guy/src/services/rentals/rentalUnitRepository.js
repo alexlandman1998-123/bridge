@@ -6,9 +6,10 @@ const text = (value) => String(value ?? '').trim()
 function requireClient(client = supabase) { if (!isSupabaseConfigured || !client) throw new Error('Rental units require Supabase configuration.'); return client }
 function unavailable(error = {}) { const missing = ['42P01', 'PGRST204', 'PGRST205'].includes(String(error.code || '').toUpperCase()); return new Error(missing ? 'Rental unit foundation is not yet applied to this environment.' : (error.message || 'Rental unit request failed.')) }
 
-export async function listRentalUnits({ propertyId = '', organisationId = '', branchId = '', limit = 100 } = {}, { client = supabase } = {}) {
+export async function listRentalUnits({ propertyId = '', organisationId = '', branchId = '', limit = 100, offset } = {}, { client = supabase } = {}) {
   if (!text(propertyId) && !text(organisationId)) return []
   let query = requireClient(client).from('rental_units').select(SELECT_FIELDS).order('unit_label').limit(Math.min(Math.max(Number(limit) || 100, 1), 500))
+  if (offset !== undefined) query = query.order('id').range(offset, offset + Math.min(Math.max(Number(limit) || 100, 1), 500) - 1)
   if (text(propertyId)) query = query.eq('property_id', text(propertyId))
   else query = query.eq('organisation_id', text(organisationId))
   if (text(branchId)) query = query.eq('branch_id', text(branchId))

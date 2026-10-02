@@ -1,3 +1,4 @@
+import { RENTAL_PORTAL_FIELDS, rentalListingPortalFacts, rentalFieldApplies, rentalFieldValue } from '../../src/services/rentals/rentalPortalFieldContract.js'
 import {
   LISTING_FEATURE_CATALOG,
   normalizeListingFeatureFacts,
@@ -155,8 +156,15 @@ export function normalizeListingPortalFeatures({ listing = {}, publication = {} 
     propertyProfile.selectedFeatures,
     propertyProfile.amenities,
   )
+  const legacyFacts = Object.fromEntries(DESCRIPTIVE_PORTAL_FLAGS.flatMap(([key, label]) => {
+    const feature = resolveListingFeature(label)
+    const value = boolean(portalFeatures[key])
+    return feature && value !== null ? [[feature.key, value]] : []
+  }))
+  const rental = rentalListingPortalFacts(listing)
+  const rentalFacts = Object.fromEntries(RENTAL_PORTAL_FIELDS.filter((field) => field.featureKey && rentalFieldApplies(field, rental.category, rental.answers) && Object.hasOwn(rental.answers, field.key)).map((field) => [field.featureKey, rentalFieldValue(field, rental.answers[field.key])]))
   const featureFacts = normalizeListingFeatureFacts(
-    publication.featureFacts || publication.feature_facts || listing.featureFacts || listing.feature_facts || listing.sellerOnboarding?.formData?.featureFacts || {},
+    { ...legacyFacts, ...(canonicalFacts.featureFacts || propertyProfile.featureFacts || {}), ...(publication.featureFacts || publication.feature_facts || listing.featureFacts || listing.feature_facts || listing.sellerOnboarding?.formData?.featureFacts || {}), ...rentalFacts },
     labels,
   )
   const selectedKeys = labels.map(normalizeListingFeatureKey)

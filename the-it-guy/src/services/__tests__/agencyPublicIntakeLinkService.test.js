@@ -134,6 +134,29 @@ assert.equal(agentCardPayload.default_assigned_agent_id, '33333333-3333-4333-833
 assert.equal(agentCardPayload.lead_source_label, 'Agent Digital Card')
 assert.equal(agentCardPayload.metadata_json.surface, AGENT_DIGITAL_CARD_SURFACE)
 
+// Dashboard edits retain the existing public configuration, but allow optional
+// contact details and a photo to be explicitly removed.
+const editedCardPayload = buildAgentCardPayload({
+  organisationId: 'org-1', agentUserId: 'agent-1',
+  metadataJson: { custom: 'retained', agentDigitalCard: {
+    agent: { name: 'Existing name', email: 'old@example.test', phone: '0821234567', avatarUrl: 'https://example.test/old.jpg' },
+    features: { qr: false, listings: false },
+    profile: { serviceAreas: ['Sea Point'], featuredListingIds: ['listing-1'] },
+    rollout: { stage: 'pilot' },
+  } },
+  agentName: 'Updated name', agentEmail: '', agentPhone: '', agentAvatarUrl: '',
+})
+assert.equal(editedCardPayload.metadata_json.agentDigitalCard.agent.name, 'Updated name')
+assert.equal(editedCardPayload.metadata_json.agentDigitalCard.agent.email, '')
+assert.equal(editedCardPayload.metadata_json.agentDigitalCard.agent.phone, '')
+assert.equal(editedCardPayload.metadata_json.agentDigitalCard.agent.avatarUrl, '')
+assert.equal(editedCardPayload.metadata_json.agentDigitalCard.features.qr, false)
+assert.equal(editedCardPayload.metadata_json.agentDigitalCard.features.listings, false)
+assert.deepEqual(editedCardPayload.metadata_json.agentDigitalCard.profile.serviceAreas, ['Sea Point'])
+assert.deepEqual(editedCardPayload.metadata_json.agentDigitalCard.profile.featuredListingIds, ['listing-1'])
+assert.equal(editedCardPayload.metadata_json.agentDigitalCard.rollout.stage, 'pilot')
+assert.equal(editedCardPayload.metadata_json.custom, 'retained')
+
 function createFakeClient() {
   const calls = []
   let savedPayload = null

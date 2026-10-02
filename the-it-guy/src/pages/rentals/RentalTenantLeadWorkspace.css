@@ -1,0 +1,48 @@
+.rental-tenant-workspace .tenant-card {
+  min-width: 0;
+  border: 1px solid #dce7f2;
+  border-radius: 20px;
+  background: white;
+  padding: 20px;
+  box-shadow: 0 12px 34px rgba(31, 54, 78, 0.045);
+}
+.rental-tenant-workspace .tenant-eyebrow {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #6d839b;
+}
+.rental-tenant-workspace .tenant-next {
+  border-color: #17364d;
+  background: #102033;
+  color: white;
+}
+.rental-tenant-workspace .tenant-next .tenant-eyebrow {
+  color: #a8bfd3;
+}
+.rental-tenant-workspace .tenant-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: #29435d;
+}
+.rental-tenant-workspace .tenant-answer {
+  flex: 1;
+  border: 1px solid #dbe7f2;
+  border-radius: 12px;
+  padding: 10px 12px;
+  color: #29435d;
+  background: white;
+  font-size: 14px;
+  font-weight: 600;
+}
+.rental-tenant-workspace .tenant-answer-selected {
+  border-color: #157aaf;
+  background: #eaf5fb;
+  color: #135e89;
+}
+@media (max-width: 639px) {
+  .rental-tenant-workspace .tenant-card {
+    padding: 16px;
+  }
+}

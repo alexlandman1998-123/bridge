@@ -27,6 +27,7 @@ import {
 } from '../../lib/settingsApi'
 import {
   createSuggestedProperty24SourceReference,
+  formatProperty24DisplayText,
   getCanonicalArch9AgentProfile,
   normalizeProperty24AgentRow,
   normalizeProperty24Settings,
@@ -338,7 +339,7 @@ function AgentProfileReadiness({ agent }) {
           }`}
         >
           {check.ready ? <CheckCircle2 className="h-3 w-3" /> : <CircleAlert className="h-3 w-3" />}
-          {check.label} {check.ready ? 'ready' : 'missing'}
+          {formatProperty24DisplayText(check.label)} {check.ready ? 'ready' : 'missing'}
         </span>
       ))}
     </span>
@@ -535,7 +536,7 @@ export default function SettingsProperty24Page() {
   const connectionReady = Boolean(settings.enabled && settings.agencyId)
   const latestSyncAt = healthSummary.latestListingSyncAt || healthSummary.latestLeadImportAt || property24Health?.generatedAt
   const isSandboxEnvironment = settings.environment !== 'production'
-  const environmentLabel = isSandboxEnvironment ? 'ExDev sandbox' : 'Production'
+  const environmentLabel = isSandboxEnvironment ? 'Test connection' : 'Live connection'
   const usableProperty24AgentCount = selectableProperty24Agents.length
   const sandboxAgentIdsPending = isSandboxEnvironment && property24AgentsMissingIds.length > 0
   const agentIdStatusValue = sandboxAgentIdsPending
@@ -544,12 +545,12 @@ export default function SettingsProperty24Page() {
       ? `${usableProperty24AgentCount} usable profile${usableProperty24AgentCount === 1 ? '' : 's'}`
       : 'Sync agents to check IDs'
   const agentIdStatusDescription = sandboxAgentIdsPending
-    ? 'ExDev returned agent data without usable IDs. Do not enter fake IDs.'
+    ? 'Property24 has not supplied IDs for these profiles yet.'
     : usableProperty24AgentCount
       ? 'Profiles with IDs can be connected to Arch9 agents.'
-      : 'This does not block sandbox listing payload checks.'
+      : 'Load Property24 profiles to check which agent IDs are available.'
   const agentConnectionLabel = isSandboxEnvironment && !readiness.mappingsReady
-    ? 'Agent IDs pending in sandbox'
+    ? 'Agent connections pending'
     : `${readiness.mappedCount} of ${readiness.candidateCount} agents connected`
 
   function updateSettings(patch) {
@@ -1133,7 +1134,7 @@ export default function SettingsProperty24Page() {
 
   return (
     <div className={`${settingsPageClass} space-y-5`}>
-      {error ? <SettingsBanner>{error}</SettingsBanner> : null}
+      {error ? <SettingsBanner>{formatProperty24DisplayText(error)}</SettingsBanner> : null}
       {success ? <SettingsBanner tone="success">{success}</SettingsBanner> : null}
 
       <section className="rounded-[16px] border border-[#e1e8ef] bg-white p-5 shadow-[0_10px_28px_rgba(15,23,42,0.035)]">
@@ -1237,12 +1238,10 @@ export default function SettingsProperty24Page() {
           <div>
             <h2 className="text-lg font-semibold text-[#17233a]">Connect Agents</h2>
             <p className="mt-1 text-sm leading-6 text-[#6b7d93]">
-              {isSandboxEnvironment
-                ? 'In ExDev, Property24 may not return usable agent IDs yet. Sync agents to check what Property24 provides, but do not enter fake IDs.'
-                : 'Connect each Arch9 agent to their Property24 profile. This determines which agent listings are published under.'}
+              Connect each Arch9 agent to their Property24 profile. Listings will publish under the connected agent.
             </p>
             <p className="mt-2 text-sm leading-6 text-[#40546b]">
-              Agent names, email addresses, phone numbers and photos are owned by the Arch9 Agent Profile. Property24 settings only stores the external ID and sync reference.
+              Manage names, contact details and photos in the Arch9 Agent Profile. This page links that profile to Property24.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -1257,21 +1256,21 @@ export default function SettingsProperty24Page() {
             </span>
             <button type="button" className={SECONDARY_BUTTON_CLASS} onClick={loadProperty24AgentRoster} disabled={saving || syncing || loadingAgentRoster || !settings.agencyId}>
               <RefreshCw className="h-4 w-4" />
-              {loadingAgentRoster ? 'Loading profiles...' : 'Load Property24 profiles'}
+              {loadingAgentRoster ? 'Loading profiles...' : 'Load profiles'}
             </button>
             <button type="button" className={SECONDARY_BUTTON_CLASS} onClick={syncProperty24Agents} disabled={saving || syncing || loadingAgentRoster || !settings.agencyId} title="May update matched agents' profiles on Property24">
               <Wand2 className="h-4 w-4" />
-              {syncing ? 'Syncing profiles...' : 'Sync profiles & auto-match'}
+              {syncing ? 'Syncing profiles...' : 'Sync & match'}
             </button>
           </div>
         </div>
-        <p className="mt-2 text-sm leading-6 text-[#6b7d93]">Load Property24 profiles to review existing agents without changing their Property24 profiles. Sync profiles & auto-match may update matched agents on Property24.</p>
+        <p className="mt-2 text-sm leading-6 text-[#6b7d93]">Load profiles to view agents already on Property24. Sync & match also updates matched Property24 profiles using their Arch9 details.</p>
 
         {property24AgentsMissingIds.length ? (
           <div className="mt-4">
             {isSandboxEnvironment ? (
               <div className="rounded-[14px] border border-[#cfe0f3] bg-[#f5f9ff] px-4 py-3 text-sm leading-6 text-[#27527a]">
-                Property24 ExDev returned {property24AgentsMissingIds.length} agent{property24AgentsMissingIds.length === 1 ? '' : 's'} without a usable Property24 ID. This is a sandbox limitation, not something the agency principal must fix. Do not enter fake IDs; continue with agency and listing-payload testing while Property24 confirms the agent ID flow.
+                Property24 has not supplied IDs for {property24AgentsMissingIds.length} agent profile{property24AgentsMissingIds.length === 1 ? '' : 's'}. These profiles can be connected once their IDs are available.
               </div>
             ) : (
               <SettingsBanner>
@@ -1419,7 +1418,7 @@ export default function SettingsProperty24Page() {
           </button>
         </div>
 
-        {healthError ? <div className="mt-4"><SettingsBanner>{healthError}</SettingsBanner></div> : null}
+        {healthError ? <div className="mt-4"><SettingsBanner>{formatProperty24DisplayText(healthError)}</SettingsBanner></div> : null}
         {(healthSummary.failedLeadImportCount || healthSummary.failedListingSyncCount) ? (
           <div className="mt-4"><SettingsBanner>Listing sync requires attention.</SettingsBanner></div>
         ) : null}
@@ -1469,7 +1468,7 @@ export default function SettingsProperty24Page() {
               </button>
             </div>
           </div>
-          {statisticsError ? <div className="mt-4"><SettingsBanner>{statisticsError}</SettingsBanner></div> : null}
+          {statisticsError ? <div className="mt-4"><SettingsBanner>{formatProperty24DisplayText(statisticsError)}</SettingsBanner></div> : null}
           {latestStatisticsRun ? (
             <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <HealthMetric label="Latest status" value={latestStatisticsRun.status.replace(/_/g, ' ')} />
@@ -1508,7 +1507,7 @@ export default function SettingsProperty24Page() {
             </button>
           </div>
 
-          {reconciliationError ? <div className="mt-4"><SettingsBanner>{reconciliationError}</SettingsBanner></div> : null}
+          {reconciliationError ? <div className="mt-4"><SettingsBanner>{formatProperty24DisplayText(reconciliationError)}</SettingsBanner></div> : null}
           {reconciliationView ? (
             <div className="mt-4 space-y-4">
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
@@ -1584,7 +1583,7 @@ export default function SettingsProperty24Page() {
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <div className="flex flex-wrap items-center gap-2">
-                <h3 className="text-sm font-semibold text-[#17233a]">ExDev vetting pack</h3>
+                <h3 className="text-sm font-semibold text-[#17233a]">Connection readiness report</h3>
                 <span className="rounded-full border border-[#cfe0f3] bg-white px-2 py-0.5 text-[0.68rem] font-semibold uppercase tracking-[0.05em] text-[#27527a]">Phase 6</span>
                 <span className="rounded-full border border-[#cfe0f3] bg-white px-2 py-0.5 text-[0.68rem] font-semibold uppercase tracking-[0.05em] text-[#27527a]">Read only</span>
                 {vettingPackView ? (
@@ -1608,7 +1607,7 @@ export default function SettingsProperty24Page() {
                 className={SECONDARY_BUTTON_CLASS}
                 onClick={generateProperty24VettingPack}
                 disabled={vettingPackLoading || !connectionReady || !isSandboxEnvironment}
-                title={isSandboxEnvironment ? '' : 'The vetting pack is only available for an ExDev connection.'}
+                title={isSandboxEnvironment ? '' : 'The vetting pack is only available for a test connection.'}
               >
                 <RefreshCw className={`h-4 w-4 ${vettingPackLoading ? 'animate-spin' : ''}`} />
                 {vettingPackLoading ? 'Generating...' : vettingPackView ? 'Generate again' : 'Generate pack'}
@@ -1616,16 +1615,16 @@ export default function SettingsProperty24Page() {
             </div>
           </div>
 
-          {vettingPackError ? <div className="mt-4"><SettingsBanner>{vettingPackError}</SettingsBanner></div> : null}
+          {vettingPackError ? <div className="mt-4"><SettingsBanner>{formatProperty24DisplayText(vettingPackError)}</SettingsBanner></div> : null}
           {!isSandboxEnvironment ? (
             <p className="mt-4 rounded-[12px] border border-[#f3d9a8] bg-[#fff8ec] px-4 py-3 text-sm text-[#8a5710]">
-              Phase 6 evidence is locked to ExDev. Production readiness uses the separate live-cutover gate.
+              This report checks the test connection. Live readiness is checked separately.
             </p>
           ) : vettingPackView ? (
             <div className="mt-4 space-y-4">
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 <HealthMetric label="Passed" value={vettingPackView.summary.passed} />
-                <HealthMetric label="Manual ExDev" value={vettingPackView.summary.manual} />
+                <HealthMetric label="Manual checks" value={vettingPackView.summary.manual} />
                 <HealthMetric label="Needs evidence" value={vettingPackView.summary.blockers} />
                 <HealthMetric label="Total checks" value={vettingPackView.summary.total} />
               </div>
@@ -1634,8 +1633,8 @@ export default function SettingsProperty24Page() {
                   <div key={item.id} className="border-b border-[#edf2f7] px-4 py-3 last:border-0">
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                       <span className="min-w-0">
-                        <span className="block text-sm font-semibold text-[#17233a]">{item.label}</span>
-                        {item.nextStep ? <span className="mt-1 block text-xs leading-5 text-[#60758b]">Next: {item.nextStep}</span> : null}
+                        <span className="block text-sm font-semibold text-[#17233a]">{formatProperty24DisplayText(item.label)}</span>
+                        {item.nextStep ? <span className="mt-1 block text-xs leading-5 text-[#60758b]">Next: {formatProperty24DisplayText(item.nextStep)}</span> : null}
                       </span>
                       <span className={`shrink-0 rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.04em] ${getVettingEvidenceTone(item.status)}`}>
                         {item.status.replace(/_/g, ' ')}
@@ -1651,7 +1650,7 @@ export default function SettingsProperty24Page() {
             </div>
           ) : (
             <p className="mt-4 rounded-[12px] border border-dashed border-[#d7e2ee] bg-white px-4 py-4 text-sm text-[#6b7d93]">
-              Generate this after the listing, agent, update and status workflows have been exercised in ExDev.
+              Generate this after the listing, agent, update and status workflows have been checked on the test connection.
             </p>
           )}
           </div>
@@ -1667,12 +1666,12 @@ export default function SettingsProperty24Page() {
                   <span className={`rounded-full border px-2 py-0.5 text-[0.68rem] font-semibold uppercase tracking-[0.05em] ${getHealthTone(
                     liveCutoverView.status === 'live' ? 'OK' : liveCutoverView.status === 'paused' || liveCutoverView.status === 'blocked' ? 'BLOCKED' : 'WARNING'
                   )}`}>
-                    {liveCutoverView.status}
+                    {formatProperty24DisplayText(liveCutoverView.status)}
                   </span>
                 ) : null}
               </div>
               <p className="mt-1 max-w-3xl text-sm leading-6 text-[#6b7d93]">
-                Approve completed ExDev evidence, open a maximum three-listing production pilot, verify it, and only then promote the agency to live.
+                Approve completed connection checks, open a maximum three-listing production pilot, verify it, and only then promote the agency to live.
               </p>
             </div>
             <button
@@ -1686,11 +1685,11 @@ export default function SettingsProperty24Page() {
             </button>
           </div>
 
-          {liveCutoverError ? <div className="mt-4"><SettingsBanner>{liveCutoverError}</SettingsBanner></div> : null}
+          {liveCutoverError ? <div className="mt-4"><SettingsBanner>{formatProperty24DisplayText(liveCutoverError)}</SettingsBanner></div> : null}
           {liveCutoverView ? (
             <div className="mt-4 space-y-4">
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                <HealthMetric label="Gate state" value={liveCutoverView.status} />
+                <HealthMetric label="Gate state" value={formatProperty24DisplayText(liveCutoverView.status)} />
                 <HealthMetric label="Pilot listings" value={`${liveCutoverView.evidenceSummary?.trackedListingCount || 0}/${liveCutoverView.safety?.pilotListingLimit || 3}`} />
                 <HealthMetric label="On portal" value={liveCutoverView.evidenceSummary?.onPortalListingCount || 0} />
                 <HealthMetric label="Recent failures" value={liveCutoverView.evidenceSummary?.failedAttemptCount || 0} />
@@ -1700,8 +1699,8 @@ export default function SettingsProperty24Page() {
                 {(liveCutoverView.checks || []).map((check) => (
                   <div key={check.key} className="flex flex-col gap-2 border-b border-[#edf2f7] px-4 py-3 last:border-0 sm:flex-row sm:items-start sm:justify-between">
                     <span className="min-w-0">
-                      <span className="block text-sm font-semibold text-[#17233a]">{check.label}</span>
-                      <span className="mt-1 block text-xs leading-5 text-[#60758b]">{check.detail}</span>
+                      <span className="block text-sm font-semibold text-[#17233a]">{formatProperty24DisplayText(check.label)}</span>
+                      <span className="mt-1 block text-xs leading-5 text-[#60758b]">{formatProperty24DisplayText(check.detail)}</span>
                     </span>
                     <span className={`shrink-0 rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.04em] ${getHealthTone(check.ready ? 'OK' : 'BLOCKED')}`}>
                       {check.ready ? 'Ready' : 'Blocked'}
@@ -1728,7 +1727,7 @@ export default function SettingsProperty24Page() {
                 <div className="flex flex-wrap gap-2">
                   {liveCutoverView.availableActions?.approveExDev ? (
                     <button type="button" className={SECONDARY_BUTTON_CLASS} disabled={liveCutoverReason.trim().length < 10 || Boolean(liveCutoverAction)} onClick={() => runLiveCutoverAction('approve_exdev')}>
-                      {liveCutoverAction === 'approve_exdev' ? 'Checking ExDev...' : 'Approve ExDev evidence'}
+                      {liveCutoverAction === 'approve_exdev' ? 'Checking connection...' : 'Approve connection checks'}
                     </button>
                   ) : null}
                   {liveCutoverView.availableActions?.startPilot ? (
@@ -1823,8 +1822,8 @@ export default function SettingsProperty24Page() {
             <div className="grid gap-4 md:grid-cols-2">
               <Field label="Environment">
                 <select className={INPUT_CLASS} value={settings.environment} onChange={(event) => updateSettings({ environment: event.target.value })}>
-                  <option value="exdev">ExDev</option>
-                  <option value="production">Production</option>
+                  <option value="exdev">Test connection</option>
+                  <option value="production">Live connection</option>
                 </select>
               </Field>
               <Field label="Source Reference Prefix">
@@ -1932,8 +1931,8 @@ export default function SettingsProperty24Page() {
                       {check.status === 'ok' ? <CheckCircle2 className="h-3.5 w-3.5" /> : <CircleAlert className="h-3.5 w-3.5" />}
                     </span>
                     <span className="min-w-0">
-                      <span className="block text-sm font-semibold text-[#17233a]">{check.label}</span>
-                      <span className="mt-1 block text-sm leading-5 text-[#6b7d93]">{check.detail}</span>
+                      <span className="block text-sm font-semibold text-[#17233a]">{formatProperty24DisplayText(check.label)}</span>
+                      <span className="mt-1 block text-sm leading-5 text-[#6b7d93]">{formatProperty24DisplayText(check.detail)}</span>
                     </span>
                   </div>
                 )) : (

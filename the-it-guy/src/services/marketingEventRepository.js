@@ -20,6 +20,13 @@ export function mapMarketingEvent(row = {}) {
   const hostName = text(row.metadata?.hostName)
   return {
     id: row.id,
+    metadata: row.metadata || {},
+    checklist: row.metadata?.checklist || null,
+    hostAvatarUrl: text(row.metadata?.hostAvatarUrl),
+    contactNumber: text(row.metadata?.contactNumber),
+    email: text(row.metadata?.email),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
     type,
     title: row.title,
     development: row.subject_type === 'development' || row.subject_type === 'phase' ? text(row.subject_label) : '',

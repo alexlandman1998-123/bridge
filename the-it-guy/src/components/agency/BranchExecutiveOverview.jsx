@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { ArrowDownRight, ArrowRight, ArrowUpRight, Banknote, ChartNoAxesCombined, CheckCircle2, Target, Users } from 'lucide-react'
-import { BRANCH_REPORTING_PERIODS } from '../../services/branchDashboardModel'
 
 const COLORS = ['#087b55', '#55bfa0', '#397ef4', '#8b5cf6', '#c78b31', '#94a3b8']
 const PANEL = 'min-w-0 rounded-xl border border-[#e2e8f0] bg-white p-4 shadow-[0_3px_14px_rgba(15,23,42,0.025)] sm:p-5'
@@ -78,12 +77,12 @@ function Portfolio({ portfolio, periodLabel }) {
 export function BranchOverviewSkeleton() {
   return <div aria-label="Loading branch dashboard" aria-busy="true" className="space-y-4"><div className="h-[200px] animate-pulse rounded-xl bg-[#e5ece9]" /><div className="h-12 animate-pulse rounded-xl bg-[#edf2f7]" /><div className="grid grid-cols-2 gap-3 xl:grid-cols-5">{[0, 1, 2, 3, 4].map((index) => <div key={index} className="h-24 animate-pulse rounded-xl bg-[#edf2f7]" />)}</div>{[180, 100, 240].map((height) => <div key={height} className="animate-pulse rounded-xl bg-[#edf2f7]" style={{ height }} />)}<div className="grid gap-4 lg:grid-cols-2"><div className="h-64 animate-pulse rounded-xl bg-[#edf2f7]" /><div className="h-64 animate-pulse rounded-xl bg-[#edf2f7]" /></div></div>
 }
-export default function BranchExecutiveOverview({ data, period, onPeriodChange, financialMonths, onFinancialMonthsChange, canViewFinancials, onViewAgents, onOpenAgent }) {
+export default function BranchExecutiveOverview({ data, financialMonths, onFinancialMonthsChange, canViewFinancials, onViewAgents, onOpenAgent }) {
   const [financialMetric, setFinancialMetric] = useState('gross')
   const icons = [ChartNoAxesCombined, Users, Banknote, CheckCircle2, Target]
   const ranked = data.agents.filter((agent) => agent.deals > 0 && agent.salesValue !== null).slice(0, 3)
   return <div className="min-w-0 space-y-4">
-    <div className="flex flex-wrap items-center justify-end gap-2"><label className="inline-flex items-center gap-2 text-xs text-[#64748b]">Reporting period<select value={period} onChange={(event) => onPeriodChange(event.target.value)} className="rounded-lg border border-[#dbe4ee] bg-white px-3 py-2 text-sm font-medium text-[#334155]">{BRANCH_REPORTING_PERIODS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label></div>
+
     <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5" aria-label="Executive branch metrics">
       {data.kpis.map((metric, index) => { const Icon = icons[index]; const restricted = metric.currency && !canViewFinancials; return <article key={metric.key} className={`${PANEL} flex items-start gap-3 sm:p-4`}><span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[#edf9f3] text-[#087b55]"><Icon size={21} /></span><div className="min-w-0"><p className="text-[10px] font-medium uppercase tracking-[0.04em] text-[#718198]">{metric.label}</p><strong className="mt-1 block text-2xl font-semibold tracking-tight text-[#0f172a] tabular-nums">{restricted ? '—' : dashboardNumber(metric.value, metric)}</strong>{!restricted ? <Change value={metric.change} unit={metric.changeUnit || '%'} /> : null}<p className="mt-1 text-[11px] text-[#718198]">{restricted ? 'Restricted' : metric.context}</p></div></article> })}
     </section>

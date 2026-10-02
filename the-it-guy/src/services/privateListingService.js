@@ -43,6 +43,7 @@ import { hasSignedMandateEvidence } from '../core/clientAccess/clientAccessPolic
 import { resolveSellerPortalFinalSignedArtifactAccess } from '../core/documents/finalSignedArtifactAccess'
 import { fetchOrganisationSettings } from '../lib/settingsApi'
 import { uploadToStorageCandidateBuckets } from '../lib/storageFallbacks'
+import { queueListingMediaUpload, retryStorageOperation } from '../lib/listingMediaUploads.js'
 import { sanitizeDocumentFileName, validateDocumentUploadFile } from '../lib/documentUploadPolicy'
 import {
   normalizeListingSource,
@@ -1475,10 +1476,12 @@ function isStorageBucketNotFoundError(error) {
   return status === 404 || message.includes('bucket not found') || message.includes('not found')
 }
 
-async function uploadToPrivateListingDocumentsBucket(client, filePath, file, options = undefined) {
+async function uploadToPrivateListingDocumentsBucket(client, filePath, file, options = undefined, retryTemporaryErrors = false) {
   const { bucket } = await uploadToStorageCandidateBuckets({
     bucketCandidates: DOCUMENTS_BUCKET_CANDIDATES,
-    upload: (bucketName) => client.storage.from(bucketName).upload(filePath, file, options),
+    upload: (bucketName) => retryTemporaryErrors
+      ? retryStorageOperation(() => client.storage.from(bucketName).upload(filePath, file, options))
+      : client.storage.from(bucketName).upload(filePath, file, options),
     missingBucketMessage: `Storage bucket not found for seller document upload. Checked: ${DOCUMENTS_BUCKET_CANDIDATES.join(', ')}.`,
     accessDeniedMessage: 'Seller document storage is not ready yet. Please retry after storage access is refreshed.',
     accessDeniedCode: 'seller_document_storage_access_not_ready',
@@ -1503,7 +1506,7 @@ async function removePrivateListingDocumentObject(client, filePath, preferredBuc
   return false
 }
 
-async function createPrivateListingDocumentSignedUrl(client, filePath, expiresInSeconds = 120, preferredBucket = '') {
+async function createPrivateListingDocumentSignedUrl(client, filePath, expiresInSeconds = 120, preferredBucket = '', retryTemporaryErrors = false) {
   if (!filePath) return ''
   const bucketCandidates = [
     normalizeText(preferredBucket),
@@ -1513,14 +1516,35 @@ async function createPrivateListingDocumentSignedUrl(client, filePath, expiresIn
   for (const bucketName of bucketCandidates) {
     if (checked.has(bucketName)) continue
     checked.add(bucketName)
-    const { data, error } = await client.storage.from(bucketName).createSignedUrl(filePath, expiresInSeconds)
+    const operation = () => client.storage.from(bucketName).createSignedUrl(filePath, expiresInSeconds)
+    const { data, error } = retryTemporaryErrors
+      ? await retryStorageOperation(operation).catch((error) => ({ error }))
+      : await operation()
     if (!error && data?.signedUrl) return data.signedUrl
     if (error && isStorageBucketNotFoundError(error)) continue
   }
   return ''
 }
 
-export async function uploadPrivateListingMediaAsset(file, { listingId = '', type = 'gallery' } = {}) {
+export async function signPrivateListingMediaAsset(asset = {}, retryTemporaryErrors = false) {
+  const client = requireClient()
+  const operation = () => client.storage.from(asset.bucket).createSignedUrl(asset.path, 60 * 60 * 24 * 30)
+  const result = await (retryTemporaryErrors ? retryStorageOperation(operation) : operation()).catch((error) => ({ error }))
+  const signedUrl = result.error ? '' : normalizeText(result.data?.signedUrl)
+  if (!signedUrl) {
+    const error = new Error(`The photo is uploaded, but storage could not prepare its viewing link. ${result.error?.message || 'Retry saving to finish it.'}`)
+    error.savedAsset = asset
+    error.cause = result.error
+    throw error
+  }
+  return { ...asset, url: signedUrl, signedUrl }
+}
+
+export function uploadPrivateListingMediaAsset(file, options = {}) {
+  return queueListingMediaUpload(() => uploadPrivateListingMediaAssetNow(file, options))
+}
+
+async function uploadPrivateListingMediaAssetNow(file, { listingId = '', type = 'gallery', upsert = true, requireSignedUrl = false } = {}) {
   const client = requireClient()
   const selectedFile = typeof File !== 'undefined' && file instanceof File ? file : null
   const normalizedListingId = normalizeUuid(listingId)
@@ -1529,13 +1553,17 @@ export async function uploadPrivateListingMediaAsset(file, { listingId = '', typ
 
   const safeType = normalizeStorageSafeName(type || 'gallery', 'gallery')
   const safeName = normalizeStorageSafeName(selectedFile.name || 'listing-image', 'listing-image')
-  const objectPath = `private-listings/${normalizedListingId}/${safeType}/${Date.now()}-${safeName}`
+  const objectKey = globalThis.crypto.randomUUID()
+  const objectPath = `private-listings/${normalizedListingId}/${safeType}/${objectKey}-${safeName}`
   const uploadedBucket = await uploadToPrivateListingDocumentsBucket(client, objectPath, selectedFile, {
-    upsert: true,
+    upsert,
     cacheControl: '3600',
     contentType: selectedFile.type || 'application/octet-stream',
-  })
-  const signedUrl = await createPrivateListingDocumentSignedUrl(client, objectPath, 60 * 60 * 24 * 30)
+  }, upsert)
+  if (requireSignedUrl) {
+    return signPrivateListingMediaAsset({ bucket: uploadedBucket, path: objectPath, fileName: selectedFile.name, contentType: selectedFile.type || '', size: selectedFile.size || 0 }, true)
+  }
+  const signedUrl = await createPrivateListingDocumentSignedUrl(client, objectPath, 60 * 60 * 24 * 30, uploadedBucket, true)
   const { data: publicUrlData } = client.storage.from(uploadedBucket).getPublicUrl(objectPath)
   const publicUrl = normalizeText(publicUrlData?.publicUrl)
 
@@ -5689,6 +5717,9 @@ export async function updatePrivateListing(listingId, payload = {}, options = {}
   if (payload.internalListingNotes !== undefined) patch.internal_listing_notes = normalizeNullableText(payload.internalListingNotes)
 
   let updateQuery = await client.from('private_listings').update(patch).eq('id', normalizedId).select('*').single()
+  if (isRentalPrivateListingPayload(payload) && isMissingColumnError(updateQuery.error)) {
+    throw new Error(`Rental changes were not saved because the database rejected a listing field. No rental fields were discarded. (${buildSupabaseErrorSummary(updateQuery.error)})`)
+  }
   if (updateQuery.error && isMissingColumnError(updateQuery.error)) {
     // Schema compatibility must be surgical. A missing legacy field such as
     // street_number must not discard supported fields such as

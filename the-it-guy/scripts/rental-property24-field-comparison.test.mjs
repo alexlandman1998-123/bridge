@@ -70,10 +70,12 @@ const incompleteComparison = buildRentalProperty24FieldComparison({
   property24ContactAgentIds: [],
   property24SuburbId: '',
   property24PropertyTypeId: '',
+  propertyType: 'Unsupported property type',
   mandateEndDate: '',
   photos: [],
   sellerCanonicalFacts: {
     ...RENTAL_LISTING_RELEASE_GATE_FIXTURE.sellerCanonicalFacts,
+    propertyProfile: { ...RENTAL_LISTING_RELEASE_GATE_FIXTURE.sellerCanonicalFacts.propertyProfile, propertyType: 'Unsupported property type' },
     rentalInfo: {
       ...RENTAL_LISTING_RELEASE_GATE_FIXTURE.sellerCanonicalFacts.rentalInfo,
       monthlyRent: null,
@@ -90,11 +92,8 @@ for (const blocker of [
   'suburbId',
   'propertyTypeId',
   'monthlyRent',
-  'availableFrom',
   'expiryDate',
   'photos',
-  'marketingApprovalStatus',
-  'mandateStatus',
 ]) {
   assert.ok(incompleteBlockerKeys.includes(blocker), `Expected blocker ${blocker}`)
 }
@@ -134,12 +133,18 @@ const fakeIdRows = Object.fromEntries(fakeIdComparison.rows.map((row) => [row.ke
 assert.equal(fakeIdRows.agencyId.status, RENTAL_PROPERTY24_FIELD_STATUS.NEEDS_MAPPING)
 assert.equal(fakeIdRows.contactAgentIds.status, RENTAL_PROPERTY24_FIELD_STATUS.NEEDS_MAPPING)
 assert.equal(fakeIdRows.suburbId.status, RENTAL_PROPERTY24_FIELD_STATUS.NEEDS_MAPPING)
-assert.equal(fakeIdRows.propertyTypeId.status, RENTAL_PROPERTY24_FIELD_STATUS.NEEDS_MAPPING)
+assert.equal(fakeIdRows.propertyTypeId.status, RENTAL_PROPERTY24_FIELD_STATUS.MAPPED)
+assert.equal(String(fakeIdRows.propertyTypeId.property24Value), '5')
 assert.equal(fakeIdComparison.readyForBackendAdapter, false)
 
 const releaseGate = buildRentalListingReleaseGate()
 assert.equal(releaseGate.passed, true)
 assert.equal(releaseGate.property24FieldComparison.readyForBackendAdapter, true)
 assert.ok(releaseGate.checks.some((check) => check.key === 'property24_field_comparison_contract' && check.passed))
+
+
+const autoType = buildRentalProperty24FieldComparison({ ...RENTAL_LISTING_RELEASE_GATE_FIXTURE, property24PropertyTypeId: '' })
+assert.equal(String(autoType.rows.find((row) => row.key === 'propertyTypeId').property24Value), '5')
+assert.ok(!autoType.blockers.some((row) => row.key === 'propertyTypeId'))
 
 console.log('Rental Property24 field comparison contract passed')

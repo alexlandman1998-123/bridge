@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { MobileDashboardShell } from '../../components/dashboard/PremiumDashboard'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { listShortTermBookings } from '../../services/rentals/rentalShortTermBookingRepository.js'
 import { buildShortTermRentalDashboard } from '../../services/rentals/shortTermRentalDashboardModel.js'
@@ -72,13 +73,13 @@ export default function ShortTermRentalDashboardPage() {
   const dashboard = useMemo(() => buildShortTermRentalDashboard({ ...source, rangeDays: rangeDays(dateRange) }), [dateRange, source])
   const selectedRangeDays = rangeDays(dateRange)
 
-  return <main className="mx-auto w-full max-w-[1600px] px-1.5 py-3 sm:px-2.5 lg:px-3.5"><div className="space-y-4 pb-8">
+  return <MobileDashboardShell><div className="space-y-3">
     {isRevoDemo && source.units.some((unit) => unit.id.startsWith('revo-demo-')) ? <p className="rounded-xl border border-[#cfe8dc] bg-[#f3fbf6] px-3 py-2 text-xs font-medium text-[#26724c]">Showing Revo Property Group demo operations for 9 September 2026.</p> : null}
     {error ? <p className="rounded-xl border border-[#f2c6c6] bg-[#fff7f7] p-3 text-sm text-[#9f3131]">{error}</p> : null}
     {!scope.organisationId ? <p className="rounded-xl border border-[#f4d7a9] bg-[#fffaf0] p-3 text-sm text-[#7a4b05]">Choose an agency workspace to load Short-Term Rentals.</p> : null}
     <Metrics dashboard={dashboard} loading={loading} rangeDays={selectedRangeDays} />
-    <section className="grid gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(330px,1fr)]"><TodayTimeline dashboard={dashboard} loading={loading} /><AttentionPanel dashboard={dashboard} loading={loading} /></section>
+    <section className="grid items-start gap-3 lg:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]"><TodayTimeline dashboard={dashboard} loading={loading} /><AttentionPanel dashboard={dashboard} loading={loading} /></section>
     <DailyGuestLists dashboard={dashboard} loading={loading} />
     <OccupancyForecast dashboard={dashboard} />
-  </div></main>
+  </div></MobileDashboardShell>
 }

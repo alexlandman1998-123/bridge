@@ -1,13 +1,7 @@
 import { supabase } from '../lib/supabaseClient'
 
-export const HOME_SEEKERS_FIC_TRAINING_TABLE = 'home_seekers_fic_training_results'
-
-export function isHomeSeekersOrganisation(organisation = {}) {
-  const name = String(
-    organisation?.name || organisation?.organisationName || organisation?.organisation_name || organisation?.companyName || '',
-  ).trim().toLowerCase()
-  return name === 'home seekers'
-}
+// Keep the existing storage name so Home Seekers training history is retained.
+export const FIC_TRAINING_TABLE = 'home_seekers_fic_training_results'
 
 function requireClient() {
   if (!supabase) throw new Error('Training is unavailable until the secure data connection is configured.')
@@ -27,11 +21,11 @@ function normaliseResult(row = {}) {
   }
 }
 
-export async function getHomeSeekersFicTrainingResult({ organisationId, userId }) {
+export async function getFicTrainingResult({ organisationId, userId }) {
   if (!organisationId || !userId) return null
   const client = requireClient()
   const { data, error } = await client
-    .from(HOME_SEEKERS_FIC_TRAINING_TABLE)
+    .from(FIC_TRAINING_TABLE)
     .select('id, organisation_id, user_id, score, total_questions, answers, completed_at, updated_at')
     .eq('organisation_id', organisationId)
     .eq('user_id', userId)
@@ -40,11 +34,11 @@ export async function getHomeSeekersFicTrainingResult({ organisationId, userId }
   return data ? normaliseResult(data) : null
 }
 
-export async function saveHomeSeekersFicTrainingResult({ organisationId, userId, score, totalQuestions, answers }) {
+export async function saveFicTrainingResult({ organisationId, userId, score, totalQuestions, answers }) {
   if (!organisationId || !userId) throw new Error('Your organisation and user identity are required to save training.')
   const client = requireClient()
   const { data, error } = await client
-    .from(HOME_SEEKERS_FIC_TRAINING_TABLE)
+    .from(FIC_TRAINING_TABLE)
     .upsert({
       organisation_id: organisationId,
       user_id: userId,
@@ -59,11 +53,11 @@ export async function saveHomeSeekersFicTrainingResult({ organisationId, userId,
   return normaliseResult(data)
 }
 
-export async function listHomeSeekersFicTrainingResults({ organisationId }) {
+export async function listFicTrainingResults({ organisationId }) {
   if (!organisationId) return []
   const client = requireClient()
   const { data, error } = await client
-    .from(HOME_SEEKERS_FIC_TRAINING_TABLE)
+    .from(FIC_TRAINING_TABLE)
     .select('id, organisation_id, user_id, score, total_questions, completed_at, updated_at')
     .eq('organisation_id', organisationId)
     .order('completed_at', { ascending: false })
@@ -71,7 +65,7 @@ export async function listHomeSeekersFicTrainingResults({ organisationId }) {
   return (data || []).map(normaliseResult)
 }
 
-export async function listHomeSeekersAgents({ organisationId }) {
+export async function listFicTrainingAgents({ organisationId }) {
   if (!organisationId) return []
   const client = requireClient()
   const { data, error } = await client

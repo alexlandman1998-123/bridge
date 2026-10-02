@@ -27,6 +27,7 @@ export const AGENCY_BUSINESS_FOCUS_OPTIONS = [
 export const AGENCY_BUSINESS_LINE_OPTIONS = [
   { value: 'sales', label: 'Sales', description: 'Seller leads, sale listings, mandates, offers, and transactions.' },
   { value: 'rentals', label: 'Rentals', description: 'Landlord leads, rental listings, tenant applications, leases, and tenancies.' },
+  { value: 'short_term_rentals', label: 'Short-term rentals', description: 'Holiday properties, bookings, guest stays, and turnovers.' },
 ]
 
 const AGENCY_BUSINESS_LINE_VALUES = new Set(AGENCY_BUSINESS_LINE_OPTIONS.map((option) => option.value))
@@ -34,12 +35,17 @@ const AGENCY_BUSINESS_LINE_VALUES = new Set(AGENCY_BUSINESS_LINE_OPTIONS.map((op
 export function normalizeAgencyBusinessLines(value = null, fallback = ['sales']) {
   const lines = new Set()
   const addLine = (candidate) => {
+    if (String(candidate || '').includes('+')) {
+      String(candidate).split('+').forEach(addLine)
+      return
+    }
     const normalized = normalizeText(candidate).toLowerCase().replace(/[\s-]+/g, '_')
     if (normalized === 'sales_rentals' || normalized === 'sales_and_rentals' || normalized === 'both' || normalized === 'all') {
       lines.add('sales')
       lines.add('rentals')
       return
     }
+    if (['short_term', 'shortterm', 'short_term_rental'].includes(normalized)) { lines.add('short_term_rentals'); return }
     if (normalized === 'rental' || normalized === 'rent' || normalized === 'letting' || normalized === 'lettings' || normalized === 'leasing') {
       lines.add('rentals')
       return
@@ -71,6 +77,7 @@ export function normalizeAgencyBusinessLines(value = null, fallback = ['sales'])
 
 export function getAgencyBusinessFocusFromLines(value = null) {
   const lines = normalizeAgencyBusinessLines(value, ['sales'])
+  if (lines.includes('short_term_rentals')) return lines.join('+')
   if (lines.includes('sales') && lines.includes('rentals')) return 'sales_rentals'
   if (lines.includes('rentals')) return 'rentals'
   return 'sales'

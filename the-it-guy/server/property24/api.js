@@ -543,6 +543,11 @@ function normalizeProperty24CatalogKey(value = '') {
 // intentionally narrow and still require exactly one live catalogue result.
 const PROPERTY24_PROPERTY_TYPE_ALIASES = {
   apartment: ['apartment flat'],
+  'vacant land': ['vacant land plot'],
+  'vacant stand': ['vacant land plot'],
+  land: ['vacant land plot'],
+  plot: ['vacant land plot'],
+  stand: ['vacant land plot'],
 }
 
 function property24CatalogItems(response = {}) {

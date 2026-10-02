@@ -138,7 +138,7 @@ function parseRecord(value) {
   }
 }
 
-function getPropertyImageUrl(lead = {}) {
+export function getPropertyImageUrl(lead = {}) {
   const raw = parseRecord(lead?.rawEnquiryPayload || lead?.raw_enquiry_payload)
   const property = parseRecord(raw?.property || raw?.listing || raw?.enquiry?.property || raw?.enquiry?.listing)
   const candidates = [

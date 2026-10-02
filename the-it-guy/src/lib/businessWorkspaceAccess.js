@@ -1,6 +1,7 @@
 export const BUSINESS_WORKSPACES = Object.freeze({
   sales: 'sales',
   rentals: 'rentals',
+  shortTermRentals: 'short_term_rentals',
 })
 
 export const BUSINESS_WORKSPACE_OPTIONS = Object.freeze([
@@ -14,10 +15,12 @@ export const BUSINESS_WORKSPACE_OPTIONS = Object.freeze([
     label: 'Rentals',
     description: 'Leads and tenancies',
   },
+  { id: BUSINESS_WORKSPACES.shortTermRentals, label: 'Short-term rentals', description: 'Bookings, stays and turnovers' },
 ])
 
 const BUSINESS_WORKSPACE_SET = new Set(Object.values(BUSINESS_WORKSPACES))
-const DEFAULT_BUSINESS_WORKSPACE_ORDER = Object.freeze([BUSINESS_WORKSPACES.sales, BUSINESS_WORKSPACES.rentals])
+const DEFAULT_BUSINESS_WORKSPACE_ORDER = Object.freeze(Object.values(BUSINESS_WORKSPACES))
+const LEGACY_BUSINESS_WORKSPACE_ORDER = [BUSINESS_WORKSPACES.sales, BUSINESS_WORKSPACES.rentals]
 
 const MANAGEMENT_ROLES = new Set([
   'owner',
@@ -70,6 +73,7 @@ function normalizeText(value = '') {
 
 export function normalizeBusinessWorkspace(value = '', fallback = BUSINESS_WORKSPACES.sales) {
   const key = normalizeText(value).toLowerCase().replace(/[\s-]+/g, '_')
+  if (['short_term', 'shortterm', 'short_term_rental', 'short_term_rentals'].includes(key)) return BUSINESS_WORKSPACES.shortTermRentals
   if (['sale', 'sales', 'residential_sales'].includes(key)) return BUSINESS_WORKSPACES.sales
   if (['rental', 'rentals', 'rent', 'letting', 'lettings', 'leasing', 'lease', 'residential_rentals'].includes(key)) {
     return BUSINESS_WORKSPACES.rentals
@@ -136,6 +140,10 @@ function addWorkspacesFromValue(target, value) {
     return
   }
 
+  if (String(value).includes('+')) {
+    String(value).split('+').forEach((item) => addWorkspacesFromValue(target, item))
+    return
+  }
   const key = normalizeKey(value)
   if (['both', 'all', 'sales_rentals', 'sales_and_rentals', 'residential'].includes(key)) {
     target.add(BUSINESS_WORKSPACES.sales)
@@ -275,7 +283,7 @@ export function resolveMembershipDepartmentBusinessWorkspaces(membership = {}) {
   )
 }
 
-export function resolveOrganisationBusinessWorkspaces({ currentWorkspace = null, currentMembership = null } = {}) {
+export function resolveOrganisationBusinessWorkspaces({ currentWorkspace = null, currentMembership = null, explicitOnly = false } = {}) {
   const membership = currentMembership && typeof currentMembership === 'object' ? currentMembership : {}
   const workspace = currentWorkspace && typeof currentWorkspace === 'object'
     ? currentWorkspace
@@ -313,6 +321,14 @@ export function resolveOrganisationBusinessWorkspaces({ currentWorkspace = null,
     ...asObject(rawWorkspace.agency_information),
   }
 
+  // Explicit organisation lines take precedence over legacy business-focus labels.
+  for (const source of [workspaceSettings, agencyInformation, workspace, rawWorkspace]) {
+    const lines = source.businessLines ?? source.business_lines
+    if (lines != null) return normalizeBusinessWorkspaceList(lines, [])
+  }
+
+  if (explicitOnly) return []
+
   return collectWorkspacesFromSources(
     workspace.businessLines,
     workspace.business_lines,
@@ -347,7 +363,9 @@ function collectMarkerWorkspaces(...values) {
     const key = normalizeKey(value)
     if (!key) continue
     if (SALES_ROLE_MARKERS.has(key) || key.includes('sales')) workspaces.add(BUSINESS_WORKSPACES.sales)
-    if (RENTAL_ROLE_MARKERS.has(key) || key.includes('rental') || key.includes('letting') || key.includes('leasing')) {
+    if (key.includes('short_term') || key.includes('shortterm')) {
+      workspaces.add(BUSINESS_WORKSPACES.shortTermRentals)
+    } else if (RENTAL_ROLE_MARKERS.has(key) || key.includes('rental') || key.includes('letting') || key.includes('leasing')) {
       workspaces.add(BUSINESS_WORKSPACES.rentals)
     }
   }
@@ -440,17 +458,14 @@ export function resolveBusinessWorkspaceRolloutAccess({
   profile = null,
   user = null,
 } = {}) {
+  // Saved rental-line selections are manual activation. Default Sales and legacy
+  // business-focus labels must not make the selector appear for every agency.
+  const explicitLines = resolveOrganisationBusinessWorkspaces({ currentWorkspace, currentMembership, explicitOnly: true })
+  if (explicitLines.some((line) => line !== BUSINESS_WORKSPACES.sales)) {
+    return { enabled: true, reason: 'workspace_business_lines_enabled', workspaceBusinessWorkspaces: explicitLines }
+  }
   if (!enabled) return { enabled: false, reason: 'feature_disabled' }
   if (!requiresAllowlist) return { enabled: true, reason: 'allowlist_not_required' }
-
-  const organisationWorkspaces = resolveOrganisationBusinessWorkspaces({ currentWorkspace, currentMembership })
-  if (organisationWorkspaces.includes(BUSINESS_WORKSPACES.rentals)) {
-    return {
-      enabled: true,
-      reason: 'workspace_business_lines_enabled',
-      workspaceBusinessWorkspaces: organisationWorkspaces,
-    }
-  }
 
   const identifiers = collectBusinessWorkspaceRolloutIdentifiers({
     currentWorkspace,
@@ -510,15 +525,23 @@ export function resolveAvailableBusinessWorkspaces({
   const organisationWorkspaces = resolveOrganisationBusinessWorkspaces({ currentWorkspace, currentMembership })
   const allowedOrganisationWorkspaces = organisationWorkspaces.length
     ? organisationWorkspaces
-    : DEFAULT_BUSINESS_WORKSPACE_ORDER
+    : LEGACY_BUSINESS_WORKSPACE_ORDER
 
   if (MANAGEMENT_ROLES.has(role)) {
     return allowedOrganisationWorkspaces
   }
 
+  const explicitAssignment = [membership.moduleMetadata, membership.module_metadata, membership.metadata, membership.raw?.moduleMetadata, membership.raw?.module_metadata, membership.raw?.metadata]
+    .map(asObject).map((metadata) => metadata.businessWorkspaces ?? metadata.business_workspaces)
+    .find((value) => value != null)
+  if (explicitAssignment != null) {
+    const assigned = normalizeBusinessWorkspaceList(explicitAssignment, [])
+    return allowedOrganisationWorkspaces.filter((id) => assigned.includes(id))
+  }
+
   if (explicitWorkspaces.size) {
     const explicitAllowed = allowedOrganisationWorkspaces.filter((id) => explicitWorkspaces.has(id))
-    return explicitAllowed.length ? explicitAllowed : [allowedOrganisationWorkspaces[0] || BUSINESS_WORKSPACES.sales]
+    return explicitAllowed
   }
 
   if (departmentWorkspaces.length) {
@@ -528,7 +551,7 @@ export function resolveAvailableBusinessWorkspaces({
 
   if (normalizeKey(workspaceType) !== 'agency') return [BUSINESS_WORKSPACES.sales]
   if (organisationWorkspaces.length === 1) return organisationWorkspaces
-  return [BUSINESS_WORKSPACES.sales]
+  return allowedOrganisationWorkspaces.includes(BUSINESS_WORKSPACES.sales) ? [BUSINESS_WORKSPACES.sales] : []
 }
 
 export function resolveBusinessWorkspaceState({
@@ -559,7 +582,7 @@ export function resolveBusinessWorkspaceState({
     currentId,
     available: availableWorkspaces,
     availableIds: availableWorkspaceIds,
-    showSwitcher: Boolean(enabled && normalizeKey(appRole) === 'agent' && availableWorkspaces.length > 1),
+    showSwitcher: Boolean(enabled && normalizeKey(appRole) === 'agent' && (availableWorkspaces.length > 1 || availableWorkspaceIds.some((id) => id !== BUSINESS_WORKSPACES.sales))),
   }
 }
 
@@ -583,7 +606,16 @@ export function resolveBusinessWorkspaceRoute({
   const path = normalizeText(pathname) || '/'
   const target = normalizeBusinessWorkspace(targetWorkspace, BUSINESS_WORKSPACES.sales)
 
+  if (target === BUSINESS_WORKSPACES.shortTermRentals) {
+    if (routeStartsWith(path, '/agent/rentals/short-term')) return appendRouteSuffix(path, search, hash, true)
+    if (path === '/calendar' || path.includes('/calendar')) return '/agent/rentals/short-term/calendar'
+    if (routeStartsWith(path, '/listings') || routeStartsWith(path, '/agent/listings') || routeStartsWith(path, '/agent/rentals/listings')) return '/agent/rentals/short-term/properties'
+    if (path === '/' || routeStartsWith(path, '/dashboard') || routeStartsWith(path, '/agent/rentals') || routeStartsWith(path, '/pipeline') || routeStartsWith(path, '/transactions')) return '/agent/rentals/short-term/dashboard'
+    return appendRouteSuffix(path, search, hash, true)
+  }
+
   if (target === BUSINESS_WORKSPACES.rentals) {
+    if (routeStartsWith(path, '/agent/rentals/short-term')) return '/agent/rentals/long-term/dashboard'
     if (routeStartsWith(path, '/agent/rentals')) return appendRouteSuffix(path, search, hash, true)
     if (path === '/' || routeStartsWith(path, '/dashboard')) return '/agent/rentals/dashboard'
     if (routeStartsWith(path, '/transactions') || routeStartsWith(path, '/units')) return '/agent/rentals/tenancies'

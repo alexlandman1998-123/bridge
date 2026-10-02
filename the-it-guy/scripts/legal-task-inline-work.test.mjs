@@ -5,7 +5,7 @@ import { JSDOM } from 'jsdom'
 import { normalizeTaskConfirmations, readTaskConfirmations } from '../src/core/transactions/legalTaskConfirmations.js'
 import { normalizeAttorneyWorkflowWorkPacket } from '../src/constants/attorneyWorkflowUsability.js'
 import { buildTransferWorkspaceViewModel } from '../src/services/attorneyWorkflow/transferWorkspaceViewModel.js'
-import { buildLegalTaskWorkbenchModel } from '../src/core/transactions/legalTaskWorkbenchModel.js'
+import { buildLegalTaskWorkbenchModel, getLegalTaskChecklistProgress } from '../src/core/transactions/legalTaskWorkbenchModel.js'
 
 const dom = new JSDOM('<div id="root"></div>', { url: 'https://test.invalid' })
 globalThis.window = dom.window
@@ -73,6 +73,11 @@ const doc = { id: 'document-1', displayName: 'Signed OTP', requiredDocumentKey: 
 const vm = buildTransferWorkspaceViewModel({ workflowKey: 'transfer', selectedTaskKey: 'instruction_received', documents: [doc], workflow: { title: 'Transfer', lane: { laneKey: 'transfer', permissions: { canUpdateStage: true }, steps: [{ id: 'step-1', stepKey: 'instruction_received', status: 'in_progress' }] } } })
 const model = buildLegalTaskWorkbenchModel({ task: vm.selectedTask, taskContext: vm.selectedTaskContext, workActions: vm.selectedTaskContext.workActions, statusActions: vm.availableActions.primary })
 assert.equal(model.transferInstructionTask, true)
+assert.deepEqual(vm.selectedTask.checklistProgress, { total: model.confirmationRows.length, completed: 0, answered: 0 }, 'overview counts the same checklist as the task workspace')
+assert.deepEqual(getLegalTaskChecklistProgress([
+  { id: 'manual' }, { id: 'negative' }, { id: 'party', authoritative: true, authoritativeAnswer: 'yes' },
+], { manual: { answer: 'yes' }, negative: { answer: 'no' }, party: { answer: 'no' }, retired: { answer: 'yes' } }),
+{ total: 3, completed: 2, answered: 3 }, 'count current saved and authoritative items, without counting retired answers or treating No as confirmed')
 assert.deepEqual(model.confirmationRequirements.map(item => [item.id, item.answers, item.allowNote]), [
   ['transfer_instruction_received', ['yes', 'no'], false],
   ['otp_received_and_reviewed', ['yes', 'no'], false],
@@ -84,10 +89,12 @@ let reviews = [], reviewFails = true
 const uploads = []
 const statusActions = []
 const seenStatusActions = []
-let nextTaskKey = ''
-await render(React.createElement(Workbench, { model, phases: vm.phases, selectedTaskKey: vm.selectedTask.key, selectedPhaseKey: vm.selectedTask.phaseKey, focusedStage: true, onSelectTask: taskKey => { nextTaskKey = taskKey }, onSaveConfirmations: async () => true, onRunAction: action => { statusActions.push(action.id); seenStatusActions.push(action) }, onOpenDocuments: (...args) => uploads.push(args), onReviewDocument: async (...args) => { reviews.push(args); if (reviewFails) throw new Error('Review unavailable'); return { message: 'Document approved.' } } }))
+let nextTaskKey = '', backToStages = 0
+await render(React.createElement(Workbench, { model, phases: vm.phases, selectedTaskKey: vm.selectedTask.key, selectedPhaseKey: vm.selectedTask.phaseKey, focusedStage: true, onBackToStages: () => { backToStages++ }, onSelectTask: taskKey => { nextTaskKey = taskKey }, onSaveConfirmations: async () => true, onRunAction: action => { statusActions.push(action.id); seenStatusActions.push(action) }, onOpenDocuments: (...args) => uploads.push(args), onReviewDocument: async (...args) => { reviews.push(args); if (reviewFails) throw new Error('Review unavailable'); return { message: 'Document approved.' } } }))
 assert.equal(document.querySelector('[aria-label="Transfer stages"]'), null, 'focused workspace must not show the old stage rail')
 assert.ok(document.querySelector('[aria-label="Task sections"]'), 'focused task has internal tabs')
+assert.match(document.body.textContent, /Task 1 of 5 in this stage/)
+assert.match(document.body.textContent, /Checklist · 0 of 4 items confirmed/)
 const documentsTab = [...document.querySelectorAll('[aria-label="Task sections"] button')].find(node => node.textContent.startsWith('Documents ('))
 assert.ok(documentsTab)
 await act(async () => documentsTab.click())
@@ -100,7 +107,12 @@ Object.defineProperty(dropEvent, 'dataTransfer', { value: { files: [droppedFile]
 await act(async () => dropZone.dispatchEvent(dropEvent))
 assert.equal(uploads[0][2].name, 'sample.pdf')
 await click('Checklist')
-assert.ok(document.querySelector('[aria-label="Task context"]'), 'task context stays beside the working area')
+assert.ok(document.querySelector('a[href="https://test.invalid/otp.pdf"]'), 'the OTP is accessible directly from its review card')
+await click('All stages')
+assert.equal(backToStages, 1, 'the task provides a visible return to all stages')
+assert.equal(document.querySelector('[aria-label="Task context"]'), null, 'task work has no duplicate context sidebar')
+assert.ok(document.querySelector('[aria-label="Task status and owner"]'), 'task context remains in the header')
+assert.ok(document.querySelector('.legal-task-continuation'), 'next task is available below the working area')
 await click('Go to next task')
 assert.equal(nextTaskKey, vm.phases.find(phase => phase.key === vm.selectedTask.phaseKey).tasks[1].key)
 const completeTaskButton = button('Complete task')
@@ -109,6 +121,11 @@ assert.ok(completeTaskButton)
 await click('Yes')
 assert.equal(completeTaskButton.disabled, true, 'unsaved answers must block task completion')
 assert.equal(nextTaskButton.disabled, true, 'unsaved answers must block Next task')
+assert.equal(button('All stages').disabled, true, 'returning to stages preserves the unsaved-answer guard')
+await click('Details')
+await click('Checklist')
+assert.equal(button('Yes').getAttribute('aria-pressed'), 'true', 'switching sections retains the draft answer')
+assert.equal(nextTaskButton.disabled, true, 'switching sections cannot bypass the unsaved-answer guard')
 await click('Save answers')
 assert.equal(completeTaskButton.disabled, false, 'completion is available again after answers save')
 assert.equal(nextTaskButton.disabled, false, 'Next task is available again after answers save')
@@ -119,7 +136,7 @@ await click('Mark complete manually')
 assert.equal(seenStatusActions.at(-1).manualOverride, true, 'manual completion is identified for the audit packet')
 assert.doesNotMatch(document.querySelector('[aria-label="Transfer instruction received from the instructing party."]').textContent, /Not applicable/, 'Stage 1 confirmations are strictly Yes/No')
 assert.doesNotMatch(document.body.textContent, /Current task|Required action/, 'duplicate task and action cards are removed')
-assert.ok(document.body.textContent.indexOf('Confirmations') < document.body.textContent.indexOf('Supporting documents'), 'editable confirmations lead Stage 1 work')
+assert.ok(document.body.textContent.indexOf('Instruction record') < document.body.textContent.indexOf('Supporting documents'), 'editable confirmations lead Stage 1 work')
 await click('Review OTP')
 assert.match(document.body.textContent, /Signed OTP/)
 await click('Approve document')

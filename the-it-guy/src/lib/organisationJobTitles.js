@@ -37,3 +37,14 @@ export function normalizeOrganisationJobTitle(value = '') {
 export function getOrganisationJobTitleLabel(value = '', fallback = '') {
   return JOB_TITLE_LABEL_BY_VALUE.get(normalizeOrganisationJobTitle(value)) || fallback
 }
+
+// A separately assigned title takes precedence; otherwise use the membership role.
+export function getOrganisationMemberJobTitleLabel(member = {}) {
+  const explicitTitle = normalizeOrganisationJobTitle(member.jobTitle || member.job_title)
+  if (explicitTitle) return getOrganisationJobTitleLabel(explicitTitle)
+  const role = String(member.role || member.workspaceRole || 'viewer').trim().toLowerCase()
+  const roleTitle = { owner: 'organisation_owner', admin: 'administrator', team_leader: 'team_lead' }[role] || role
+  return normalizeOrganisationJobTitle(roleTitle)
+    ? getOrganisationJobTitleLabel(roleTitle)
+    : role.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
+}

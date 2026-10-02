@@ -1,0 +1,35 @@
+{
+  "approval": "User explicitly requested releasing all outstanding edits from 2\u20133 October 2026 to production and updating main in this task.",
+  "databaseProject": "isdowlnollckzvltkasn",
+  "guard": "Passed: no duplicate migration timestamps",
+  "recovery": "RECOVERY_LOCKED",
+  "migrations": [
+    "20261002070559_global_agency_fic_training.sql",
+    "20261002075626_automatic_agent_digital_cards.sql",
+    "20261002081358_reconcile_municipal_clearance_journey_copy.sql",
+    "20261002081455_reconcile_attorney_journey_task_order.sql",
+    "20261002213625_rental_application_review_and_handoff.sql"
+  ],
+  "worktreesInspected": 26,
+  "additionalRecentWorktreeChanges": 0,
+  "vercelBaseline": {
+    "id": "dpl_RoJ6dEU4Tz4CzVEtZ1sHfZv6TLb1",
+    "url": "bridge-jxa1simmk-alexs-projects-f5496a21.vercel.app",
+    "readyState": "READY",
+    "target": "production",
+    "alias": [
+      "app.arch9.co.za",
+      "bridgenine.co.za",
+      "app.bridgenine.co.za",
+      "bridge-alexs-projects-f5496a21.vercel.app"
+    ],
+    "meta": {
+      "releaseScope": "property24-vacant-land-mapping",
+      "baselineCommit": "1d67d44f1a8c3c8640ccf4d45c619bcb931f889e",
+      "lambdaRuntimeStats": "{\"nodejs\":92}"
+    },
+    "createdAt": 1790946358464,
+    "projectId": "prj_rbfXykMU6mU1eECbc0lJS9sPspmp"
+  },
+  "recoverySql": "october-3-production-rollback.sql"
+}

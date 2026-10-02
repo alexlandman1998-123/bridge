@@ -1409,34 +1409,27 @@ function RentalWorkspaceGuard({ children }) {
     setBusinessWorkspace,
   } = useWorkspace()
   const location = useLocation()
-  const hasRentalAccess = availableBusinessWorkspaceIds.includes(BUSINESS_WORKSPACES.rentals)
-  const hasSalesAccess = availableBusinessWorkspaceIds.includes(BUSINESS_WORKSPACES.sales)
-  const isRentalWorkspace = businessWorkspaceId === BUSINESS_WORKSPACES.rentals
+  const targetLine = location.pathname.startsWith('/agent/rentals/short-term')
+    ? BUSINESS_WORKSPACES.shortTermRentals
+    : location.pathname === '/agent/rentals' || location.pathname === '/agent/rentals/dashboard'
+      ? (businessWorkspaceId === BUSINESS_WORKSPACES.shortTermRentals || !availableBusinessWorkspaceIds.includes(BUSINESS_WORKSPACES.rentals) ? BUSINESS_WORKSPACES.shortTermRentals : BUSINESS_WORKSPACES.rentals)
+      : BUSINESS_WORKSPACES.rentals
+  const hasRentalAccess = availableBusinessWorkspaceIds.includes(targetLine)
+  const fallbackLine = availableBusinessWorkspaceIds[0]
+  const isRentalWorkspace = businessWorkspaceId === targetLine
 
   useEffect(() => {
     if (!businessWorkspaceSplitEnabled || !hasRentalAccess || isRentalWorkspace) return
-    setBusinessWorkspace?.(BUSINESS_WORKSPACES.rentals)
-  }, [businessWorkspaceSplitEnabled, hasRentalAccess, isRentalWorkspace, setBusinessWorkspace])
+    setBusinessWorkspace?.(targetLine)
+  }, [businessWorkspaceSplitEnabled, hasRentalAccess, isRentalWorkspace, setBusinessWorkspace, targetLine])
 
   if (!businessWorkspaceSplitEnabled) {
     return <AccessDenied message="Rentals workspace navigation is not enabled for this workspace." />
   }
 
   if (!hasRentalAccess) {
-    if (hasSalesAccess) {
-      return (
-        <Navigate
-          to={resolveBusinessWorkspaceRoute({
-            pathname: location.pathname,
-            search: location.search,
-            hash: location.hash,
-            targetWorkspace: BUSINESS_WORKSPACES.sales,
-          })}
-          replace
-        />
-      )
-    }
-    return <AccessDenied message="Your Arch9 access is not enabled for Rentals." />
+    if (fallbackLine) return <Navigate to={resolveBusinessWorkspaceRoute({ pathname: '/dashboard', targetWorkspace: fallbackLine })} replace />
+    return <AccessDenied message="Your organisation has not assigned you access to an enabled business line." />
   }
 
   if (!isRentalWorkspace) {
@@ -1463,7 +1456,7 @@ function SalesWorkspaceGuard({ children }) {
   } = useWorkspace()
   const location = useLocation()
   const hasSalesAccess = availableBusinessWorkspaceIds.includes(BUSINESS_WORKSPACES.sales)
-  const hasRentalAccess = availableBusinessWorkspaceIds.includes(BUSINESS_WORKSPACES.rentals)
+  const rentalLine = availableBusinessWorkspaceIds.find((id) => id !== BUSINESS_WORKSPACES.sales)
   const isSalesWorkspace = businessWorkspaceId === BUSINESS_WORKSPACES.sales
 
   useEffect(() => {
@@ -1476,14 +1469,14 @@ function SalesWorkspaceGuard({ children }) {
   }
 
   if (!hasSalesAccess) {
-    if (hasRentalAccess) {
+    if (rentalLine) {
       return (
         <Navigate
           to={resolveBusinessWorkspaceRoute({
             pathname: location.pathname,
             search: location.search,
             hash: location.hash,
-            targetWorkspace: BUSINESS_WORKSPACES.rentals,
+            targetWorkspace: rentalLine,
           })}
           replace
         />
@@ -1531,12 +1524,14 @@ function RentalOperatingModeGuard({ mode = RENTAL_OPERATING_MODES.longTerm, chil
     if (allowed && rentalOperatingMode !== mode) setRentalOperatingMode?.(mode)
   }, [allowed, mode, rentalOperatingMode, setRentalOperatingMode])
 
-  if (!allowed) return <Navigate to={getRentalOperatingModeHomeRoute(rentalOperatingMode)} replace />
+  if (!allowed) return <AccessDenied message="Your access is not enabled for this rental business line." />
   return children
 }
 
 function RentalModuleGate({ moduleId = RENTAL_MODULES.dashboard, children }) {
-  const availability = resolveRentalModuleAvailability(getFeatureFlags(), moduleId)
+  const { businessWorkspaceSplitEnabled, availableBusinessWorkspaceIds = [] } = useWorkspace()
+  const flags = getFeatureFlags()
+  const availability = resolveRentalModuleAvailability({ ...flags, rentalsEnabled: flags.rentalsEnabled || (businessWorkspaceSplitEnabled && availableBusinessWorkspaceIds.includes(BUSINESS_WORKSPACES.rentals)) }, moduleId)
   if (availability.enabled) return <RentalModuleBoundary>{children}</RentalModuleBoundary>
   return (
     <RentalWorkspacePlaceholder
@@ -3948,7 +3943,7 @@ function AppRoutes() {
                   element={
                     <OrganisationSettingsManageRoute>
                       <RoleRoute allowedRoles={['agent', 'developer']}>
-                        <SettingsLeadCapturePage section="email" />
+                        <Navigate to="/settings/integrations" replace />
                       </RoleRoute>
                     </OrganisationSettingsManageRoute>
                   }

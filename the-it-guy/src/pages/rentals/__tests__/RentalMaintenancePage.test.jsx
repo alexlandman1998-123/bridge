@@ -1,0 +1,72 @@
+// @vitest-environment jsdom
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
+import RentalMaintenancePage from '../RentalMaintenancePage'
+const mocks = vi.hoisted(() => ({ jobs: vi.fn(), create: vi.fn(), acknowledge: vi.fn() }))
+vi.mock('../../../context/WorkspaceContext', () => ({ useWorkspace: () => ({}) }))
+vi.mock('../../../services/rentals/rentalWorkspaceScope', () => ({ resolveRentalWorkspaceScope: () => ({ organisationId: 'org-1', branchId: 'branch-1' }) }))
+vi.mock('../../../services/rentals/rentalMaintenanceRepository.js', () => ({ listRentalMaintenanceRequests: mocks.jobs, createRentalMaintenanceRequest: mocks.create, acknowledgeRentalMaintenanceRequest: mocks.acknowledge }))
+vi.mock('../../../services/rentals/rentalApplicationRepository.js', () => ({ listPersistedRentalTenancies: async () => [{ id: 'tenancy-1', propertyId: 'property-1', unitId: 'unit-1', status: 'active', tenant: { identity: { name: 'Test Tenant' } }, lease: { rental_lease_versions: [{ is_current: true, rental_lease_signers: [{ signer_role: 'landlord', signer_name: 'Test Landlord' }] }] } }, { id: 'outside-branch', propertyId: 'outside-property', status: 'active' }] }))
+vi.mock('../../../services/rentals/rentalPropertyRepository.js', () => ({ listRentalProperties: async () => [{ id: 'property-1', name: 'River Edge', address: { city: 'Pretoria' } }] }))
+vi.mock('../../../services/rentals/rentalUnitRepository.js', () => ({ listRentalUnits: async () => [{ id: 'unit-1', unitLabel: '12' }] }))
+beforeEach(() => { mocks.jobs.mockResolvedValue([]); mocks.create.mockResolvedValue({ request_id: 'job-1' }) })
+afterEach(() => { cleanup(); vi.resetAllMocks() })
+async function openForm() {
+  render(<MemoryRouter><RentalMaintenancePage /></MemoryRouter>)
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Log issue' }).disabled).toBe(false))
+  fireEvent.click(screen.getByRole('button', { name: 'Log issue' }))
+  const dialog = within(screen.getByRole('dialog', { name: 'Log maintenance issue' }))
+  fireEvent.change(dialog.getByLabelText('Select tenancy *'), { target: { value: 'tenancy-1' } })
+  fireEvent.change(dialog.getByLabelText('Issue type *'), { target: { value: 'plumbing' } })
+  fireEvent.change(dialog.getByLabelText('Priority *'), { target: { value: 'urgent' } })
+  fireEvent.change(dialog.getByLabelText('Issue description *'), { target: { value: 'Leaking kitchen tap needs repair.' } })
+  return dialog
+}
+it('pulls both parties from the tenancy, scopes choices to the branch and saves all captured fields', async () => {
+  const dialog = await openForm()
+  expect(dialog.getByText('Test Tenant')).toBeTruthy()
+  expect(dialog.getByText('Test Landlord')).toBeTruthy()
+  expect(dialog.getAllByRole('option').some((item) => item.value === 'outside-branch')).toBe(false)
+  fireEvent.change(dialog.getByLabelText('Photo or evidence link (optional)'), { target: { value: 'https://example.test/tap.jpg' } })
+  mocks.jobs.mockResolvedValue([{ request_id: 'job-1', tenancy_id: 'tenancy-1', category: 'plumbing', priority: 'urgent', description: 'Leaking kitchen tap needs repair.', status: 'submitted' }])
+  fireEvent.click(dialog.getByRole('button', { name: 'Save issue' }))
+  await waitFor(() => expect(mocks.create).toHaveBeenCalledWith({ tenancyId: 'tenancy-1', category: 'plumbing', priority: 'urgent', description: 'Leaking kitchen tap needs repair.', media: [{ media_link: 'https://example.test/tap.jpg', caption: 'Issue evidence' }] }))
+  await screen.findByRole('heading', { name: 'Plumbing issue' })
+  expect(screen.queryByRole('dialog')).toBeNull()
+  expect(mocks.jobs).toHaveBeenCalledWith({ organisationId: 'org-1', branchId: 'branch-1', offset: 0 })
+})
+it('keeps the draft on save failure and prevents concurrent submissions', async () => {
+  let reject
+  mocks.create.mockImplementation(() => new Promise((resolve, fail) => { reject = fail }))
+  const dialog = await openForm()
+  const submit = dialog.getByRole('button', { name: 'Save issue' })
+  fireEvent.click(submit)
+  fireEvent.submit(submit.closest('form'))
+  expect(mocks.create).toHaveBeenCalledTimes(1)
+  reject(new Error('Save unavailable'))
+  expect((await screen.findByRole('alert')).textContent).toContain('Save unavailable')
+  expect(dialog.getByLabelText('Issue description *').value).toBe('Leaking kitchen tap needs repair.')
+  mocks.create.mockResolvedValue({ request_id: 'job-1' })
+  fireEvent.click(dialog.getByRole('button', { name: 'Save issue' }))
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+})
+it('renders real descriptions, parties and resolved jobs with search and stage filtering', async () => {
+  mocks.jobs.mockResolvedValue([{ request_id: 'job-2', tenancy_id: 'tenancy-1', category: 'electrical', priority: 'routine', description: 'Replace faulty kitchen light.', status: 'resolved' }])
+  render(<MemoryRouter><RentalMaintenancePage /></MemoryRouter>)
+  await screen.findByText('Replace faulty kitchen light.')
+  expect(screen.queryByText('Live triage')).toBeNull()
+  expect(screen.queryByText('SLA at risk')).toBeNull()
+  fireEvent.change(screen.getByRole('textbox', { name: 'Search maintenance' }), { target: { value: 'test landlord' } })
+  expect(screen.getByRole('heading', { name: 'Electrical issue' })).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'New' }))
+  expect(screen.getByText('No jobs match this view.')).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Resolved' }))
+  expect(screen.getByText('Replace faulty kitchen light.')).toBeTruthy()
+})
+it('shows load failures instead of suggesting the job register is empty', async () => {
+  mocks.jobs.mockRejectedValue(new Error('Job register unavailable'))
+  render(<MemoryRouter><RentalMaintenancePage /></MemoryRouter>)
+  expect((await screen.findByRole('alert')).textContent).toContain('Job register unavailable')
+  expect(screen.queryByText(/No maintenance jobs yet/)).toBeNull()
+})

@@ -43,7 +43,7 @@ function normalizedSource(source = '') {
   return String(source || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '')
 }
 
-function LeadSourceBrand({ source = '' }) {
+export function LeadSourceBrand({ source = '' }) {
   const sourceKey = normalizedSource(source)
   const asset = sourceKey.includes('property24')
     ? { src: '/lead-sources/property24.png', alt: 'Property24' }
@@ -56,7 +56,7 @@ function LeadSourceBrand({ source = '' }) {
   ) : <span className="text-[0.8rem] font-semibold text-[#4d6782]">{source || 'Unknown source'}</span>
 }
 
-function PropertyThumbnail({ row }) {
+export function PropertyThumbnail({ row }) {
   const [failed, setFailed] = useState(false)
   const imageUrl = row.propertyImageUrl
   return imageUrl && !failed ? (
@@ -66,7 +66,7 @@ function PropertyThumbnail({ row }) {
   )
 }
 
-function StagePill({ stage = '' }) {
+export function StagePill({ stage = '' }) {
   const value = String(stage).toLowerCase()
   const dot = value.includes('lost') || value.includes('overdue') ? 'bg-[#c74b43]' : value.includes('converted') || value.includes('signed') || value.includes('live') || value.includes('qualified') ? 'bg-[#21a365]' : value.includes('attention') || value.includes('pending') ? 'bg-[#c6902d]' : 'bg-[#3978d6]'
   return <span className={`inline-flex h-[30px] items-center gap-2 rounded-full border px-3 text-xs font-medium ${stageTone(stage)}`}><span className={`h-2 w-2 rounded-full ${dot}`} />{stage}</span>

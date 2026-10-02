@@ -1,4 +1,5 @@
 import { buildSharedMatterJourney, presentSharedMatterJourney } from '../core/transactions/sharedMatterJourneyContract.js'
+import { getAttorneyPhaseStatus } from '../core/transactions/attorneyTaskOutcomes.js'
 
 export function projectSharedMatterJourneyRead(source, { audience = 'buyer' } = {}) {
   if (source?.schemaVersion !== 1) throw new Error('Unsupported shared journey')
@@ -98,10 +99,7 @@ export function sharedJourneyHeaderPhases(result, laneKey) {
     const currentTask = outstanding[0] || null
     const hasCurrentTask = Boolean(currentTask && !foundCurrent)
     if (currentTask) foundCurrent = true
-    const status = !phase.progress.applicableCount ? 'not_applicable' : !outstanding.length ? 'completed'
-      : outstanding.some(task => task.status === 'blocked') ? 'blocked'
-        : outstanding.some(task => task.status === 'waiting') ? 'waiting'
-          : phase.tasks.some(task => ['in_progress', 'completed', 'completed_externally'].includes(task.status)) ? 'in_progress' : 'not_started'
+    const status = getAttorneyPhaseStatus(phase.tasks)
     return { ...phase, status, currentTask, hasCurrentTask, completed: phase.progress.completedCount,
       total: phase.progress.applicableCount, notApplicable: phase.progress.notApplicableCount }
   })
@@ -112,7 +110,8 @@ export function sharedJourneyHeaderPhases(result, laneKey) {
 export function sharedJourneyLaneTasks(result, laneKey) {
   if (result?.status !== 'ready') return null
   const lane = result.snapshot?.lanes?.find(item => item.key === laneKey)
-  return lane ? lane.phases.flatMap(phase => phase.tasks.map(task => ({ key: task.key, status: task.status }))) : null
+  return lane ? lane.phases.flatMap(phase => phase.tasks.map(task => ({ key: task.key, status: task.status,
+    label: task.label, phaseKey: phase.key, phaseLabel: phase.label }))) : null
 }
 
 export function alignWorkStepsWithSharedJourney(steps, laneRows, result, plan) {

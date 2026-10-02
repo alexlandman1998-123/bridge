@@ -1,0 +1,95 @@
+.bond-dashboard {
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.bond-dashboard h2 {
+  margin-top: 0;
+  font-family: inherit;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: normal;
+}
+
+.bond-dashboard .bond-dashboard-metric-value {
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.025em;
+  font-variant-numeric: tabular-nums;
+}
+
+.bond-dashboard button {
+  font-family: inherit;
+}
+
+.bond-dashboard .text-sm {
+  font-size: 13px;
+}
+
+.bond-dashboard .text-lg {
+  font-size: 16px;
+}
+
+.bond-dashboard .text-xl {
+  font-size: 18px;
+}
+.bond-performance-panel { min-width:0;padding:22px;border:1px solid #e3e9ee;border-radius:16px;box-shadow:0 5px 18px #152b3c04; }
+.bond-target-panel { background:linear-gradient(125deg,#fff 40%,#f3f9f6); }
+.bond-panel-caption { margin:6px 0 22px;color:#768697;font-size:11px; }
+.bond-panel-link { display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;color:#24518a; }
+.bond-panel-footnote { margin:20px 0 0;padding-top:14px;border-top:1px solid #e9eef1;color:#7c8996;font-size:11px;line-height:1.6; }
+.bond-target-list { display:grid;gap:22px; }
+.bond-target-label { display:flex;justify-content:space-between;gap:12px;font-size:12px;font-weight:600;color:#384d60; }
+.bond-target-label span:last-child { color:#758798;font-size:11px;font-weight:400; }
+.bond-target-total { display:flex;align-items:baseline;gap:10px;margin:7px 0 10px;font-variant-numeric:tabular-nums; }
+.bond-target-total strong { color:#162b3e;font-size:23px;font-weight:600;letter-spacing:-.5px; }
+.bond-target-total > span { color:#7c8996;font-size:12px; }
+.bond-progress-track { height:6px;overflow:hidden;border-radius:4px;background:#e4ece8; }
+.bond-progress-track > span { display:block;height:100%;background:#19835e;border-radius:inherit;transition:width .3s; }
+.bond-conversion-steps { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px;padding:5px 0; }
+.bond-step-heading { display:flex;align-items:center;justify-content:space-between;color:#b3c0cb; }
+.bond-step-number { color:#728494;font-size:10px;font-weight:600;letter-spacing:1px; }
+.bond-conversion-step > strong { display:block;margin-top:12px;color:#172e42;font-size:28px;font-weight:600;line-height:1.2;font-variant-numeric:tabular-nums; }
+.bond-step-label { display:block;margin-top:8px;color:#3b5266;font-size:12px;font-weight:600; }
+.bond-conversion-bar { height:4px;margin:16px 0 9px;overflow:hidden;background:#e9eef1;border-radius:3px; }
+.bond-conversion-bar span { display:block;height:100%;background:#19835e; }
+.bond-step-rate { color:#788c9c;font-size:10px; }
+.bond-data-message { padding:25px 18px;background:#f6f8fa;border-radius:10px;color:#6e8294;font-size:12px;line-height:1.7; }
+.bond-data-message strong { color:#334b60;font-weight:600; }
+.bond-data-message p { margin-top:6px; }
+.bond-bank-table-wrap { overflow-x:auto; }
+.bond-bank-table { width:100%;min-width:420px;text-align:left;font-size:12px;color:#364d61;font-variant-numeric:tabular-nums; }
+.bond-bank-table th { font-size:10px;color:#7e8e9d;font-weight:500;padding:0 10px 10px 0; }
+.bond-bank-table td { padding:13px 10px 13px 0;border-top:1px solid #edf1f4; }
+.bond-bank-table small { display:block;color:#8b99a6;font-size:10px;margin-top:3px; }
+.bond-bank-name { display:flex;align-items:center;gap:9px; }
+.bond-bank-name > span { display:grid;width:29px;height:29px;flex-shrink:0;place-items:center;border-radius:8px;background:#edf3f6;color:#527081;font-size:10px;font-weight:600; }
+.bond-commission-grid { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px; }
+.bond-commission-item { display:flex;flex-direction:column;gap:7px;background:#f7f9fb;border:1px solid #eef1f4;border-radius:10px;padding:16px; }
+.bond-commission-label { display:flex;align-items:center;gap:7px;font-size:11px;color:#4e6579; }
+.bond-commission-label i { width:5px;height:5px;border-radius:50%;background:#a5b1ba; }
+.bond-commission-confirmed i { background:#4b7295; }.bond-commission-awaiting i { background:#ba9862; }
+.bond-commission-paid { background:#f0f7f3;border-color:#e1eee6; }.bond-commission-paid i { background:#19835e; }
+.bond-commission-item > strong { color:#1e3548;font-size:21px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-.4px; }
+.bond-commission-item > span:last-child { color:#8a98a4;font-size:10px; }
+.bond-application-filters { display:flex;gap:5px;margin-bottom:18px; }
+.bond-application-filters button { padding:5px 12px;border-radius:6px;font-size:11px;color:#758797;background:#f4f7f9; }
+.bond-application-filters button[aria-pressed=true] { color:#fff;background:#203c50; }
+.bond-application-card { display:flex;width:285px;max-width:84vw;flex-shrink:0;flex-direction:column;padding:18px;border:1px solid #e2e9ee;border-radius:12px;background:#fff;transition:border-color .2s,box-shadow .2s;scroll-snap-align:start; }
+.bond-application-card:hover { border-color:#91b7a7;box-shadow:0 6px 20px #183b2c0a; }
+.bond-application-card:focus-visible,.bond-application-filters button:focus-visible,.bond-panel-link:focus-visible { outline:2px solid #19835e;outline-offset:3px; }
+.bond-application-meta { display:flex;justify-content:space-between;gap:12px;color:#8294a4;font-size:10px; }
+.bond-application-meta > span { overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.bond-applicant { display:flex;align-items:center;gap:10px;margin-top:18px; }
+.bond-applicant-avatar { display:grid;width:34px;height:34px;flex-shrink:0;place-items:center;border-radius:50%;color:#40705c;background:#edf5f0;font-size:11px;font-weight:600; }
+.bond-applicant > div { min-width:0; }.bond-applicant h3 { margin:0;font-size:13px;font-weight:600;color:#21384b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }.bond-applicant p { font-size:10px;color:#8192a0;margin:3px 0 0; }
+.bond-application-property { display:flex;flex-direction:column;gap:3px;margin-top:18px;min-height:38px; }.bond-application-property strong { font-size:12px;font-weight:500;color:#4d6577; }.bond-application-property > span { font-size:10px;color:#8b99a6; }
+.bond-application-loan { display:flex;flex-direction:column;gap:4px;margin-top:14px; }.bond-application-loan > span { font-size:10px;color:#8b99a6; }.bond-application-loan > strong { font-size:21px;font-weight:600;color:#21384b;letter-spacing:-.5px; }
+.bond-application-stage { margin-top:17px; }.bond-application-stage > span { font-size:11px;font-weight:500;color:#40705c; }.bond-application-stage-bars { display:flex;gap:4px;margin-top:7px; }.bond-application-stage-bars i { height:4px;flex:1;background:#e5ecef;border-radius:2px; }.bond-application-stage-bars i[data-state=complete] { background:#7fae96; }.bond-application-stage-bars i[data-state=active] { background:#19835e; }
+.bond-application-outcomes { display:flex;gap:15px;font-size:10px;color:#8192a0;margin-top:13px; }.bond-application-outcomes strong { font-weight:600;color:#4d6577; }
+.bond-application-footer { display:flex;justify-content:space-between;gap:10px;border-top:1px solid #edf1f4;padding-top:12px;margin-top:16px;color:#8b99a6;font-size:10px; }.bond-application-footer strong { display:flex;gap:5px;align-items:center;font-weight:500;color:#40705c; }
+@media(max-width:640px) { .bond-performance-panel { padding:17px; }.bond-conversion-steps { gap:12px; }.bond-commission-item { padding:12px; }.bond-target-total strong { font-size:21px; } }
+@media(prefers-reduced-motion:reduce) { .bond-progress-track > span,.bond-application-card { transition:none; } }

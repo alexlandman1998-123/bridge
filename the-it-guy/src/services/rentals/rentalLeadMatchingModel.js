@@ -6,8 +6,12 @@ const number = (value) => Number(value || 0) || 0
 
 export const RENTAL_LEAD_MATCHING_VERSION = 'arch9_rental_lead_matching_v1'
 
+export function isRentalMonthlyRate(listing = {}) {
+  return ['', 'monthly'].includes(lower(listing.rentalPriceFrequency))
+}
+
 function locationText(listing = {}) {
-  return [listing.propertyAddress, listing.formattedAddress, listing.streetAddress, listing.suburb, listing.city, listing.title, listing.listingTitle].map(lower).join(' ')
+  return [listing.address, listing.propertyAddress, listing.formattedAddress, listing.streetAddress, listing.suburb, listing.city, listing.title, listing.listingTitle].map(lower).join(' ')
 }
 
 export function scoreRentalLeadListingMatch(lead = {}, listing = {}) {
@@ -16,14 +20,15 @@ export function scoreRentalLeadListingMatch(lead = {}, listing = {}) {
   const budget = number(lead.monthlyBudget)
   const bedrooms = number(lead.bedrooms)
   const monthlyRent = number(row.monthlyRent)
-  const locationMatch = Boolean(desiredArea && locationText({ ...listing, ...row }).includes(desiredArea))
-  const budgetMatch = !budget || !monthlyRent || monthlyRent <= budget
-  const budgetNearMatch = !budget || !monthlyRent || monthlyRent <= budget * 1.1
-  const bedroomMatch = !bedrooms || !row.bedrooms || row.bedrooms >= bedrooms
+  const areas = desiredArea.split(/[,;\n]+/).map(text).filter(Boolean)
+  const locationMatch = areas.some((area) => locationText(row).includes(area))
+  const budgetMatch = isRentalMonthlyRate(row) && budget > 0 && monthlyRent > 0 && monthlyRent <= budget
+  const budgetNearMatch = isRentalMonthlyRate(row) && budget > 0 && monthlyRent > 0 && monthlyRent <= budget * 1.1
+  const bedroomMatch = !bedrooms || (row.bedrooms !== null && row.bedrooms >= bedrooms)
   const score = (locationMatch ? 50 : 0) + (budgetMatch ? 30 : budgetNearMatch ? 15 : 0) + (bedroomMatch ? 20 : 0)
   return {
     listing: row, score, locationMatch, budgetMatch, budgetNearMatch, bedroomMatch,
-    recommendation: score >= 80 ? 'strong_match' : score >= 50 ? 'possible_match' : 'review',
+    recommendation: score >= 80 && budgetMatch && bedroomMatch ? 'strong_match' : score >= 50 ? 'possible_match' : 'review',
   }
 }
 

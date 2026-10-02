@@ -1,0 +1,60 @@
+/* Match the Sales Listing wizard's shared primary Button, within Rentals. */
+.rental-module {
+  display: contents;
+}
+
+.rental-module :is(button, [role="button"], a.ui-pill-button, a.ui-button-primary, a.ui-button-secondary, a[class*="inline-flex"], label:has(input[type="file"])):not(:where(nav *, [role="tab"], [aria-pressed], [aria-selected], [data-rental-control], .rental-tenancy-stats *, button:has(> strong))) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 44px;
+  padding: 0.5rem 1.25rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  background-color: var(--color-primary);
+  color: var(--color-text-inverse);
+  font-weight: 600;
+  text-decoration: none;
+  box-shadow: var(--shadow-surface);
+  transition: background-color 200ms, box-shadow 200ms, transform 200ms;
+}
+
+.rental-module :is(button, [role="button"], a.ui-pill-button, a.ui-button-primary, a.ui-button-secondary, a[class*="inline-flex"], label:has(input[type="file"])):not(:where(nav *, [role="tab"], [aria-pressed], [aria-selected], [data-rental-control], .rental-tenancy-stats *, button:has(> strong))):hover:not(:disabled) {
+  background-color: var(--color-primary-hover);
+  color: var(--color-text-inverse);
+  transform: translateY(-2px);
+}
+
+.rental-module :is(button, a, label):focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 3px;
+}
+
+.rental-module :is(nav button, nav a):is([aria-pressed="true"], [aria-selected="true"], [class*="text-white"]):not([data-rental-control]),
+.rental-module button[aria-pressed="true"]:not(:where([data-rental-control], .rental-tenancy-stats *, button:has(> strong), [class*="min-h-[108px]"], [class*="min-h-32"], [class*="min-h-11"])) {
+  background-color: var(--color-primary);
+  color: var(--color-text-inverse);
+  border-color: var(--color-primary);
+}
+
+.rental-module button:disabled,
+.rental-module fieldset:disabled button {
+  cursor: not-allowed;
+  opacity: 0.5;
+  transform: none;
+}
+
+.rental-module button:has(> svg:only-child):not(:where(nav *, [aria-pressed], [data-rental-control])) {
+  padding: 0.5rem;
+}
+
+.rental-module :is(button, [role="button"]):is([class*="text-red"], [class*="bg-red"], [class*="text-[#b42318]"], [class*="text-[#9f3131]"], [class*="text-[#b91c1c]"]) {
+  background-color: var(--color-danger);
+  color: var(--color-text-inverse);
+}
+
+.rental-module :is(button, [role="button"]):is([class*="text-red"], [class*="bg-red"], [class*="text-[#b42318]"], [class*="text-[#9f3131]"], [class*="text-[#b91c1c]"]):hover:not(:disabled) {
+  background-color: var(--color-danger);
+  filter: brightness(0.9);
+}

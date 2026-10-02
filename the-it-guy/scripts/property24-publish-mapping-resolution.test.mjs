@@ -20,6 +20,11 @@ class FakeSupabaseQuery {
     return this
   }
 
+  insert(row) {
+    this.rows.push(row)
+    return Promise.resolve({ data: null, error: null })
+  }
+
   eq(column, value) {
     this.filters.push({ column, value })
     return this
@@ -575,6 +580,83 @@ assert.equal(productionStatusConfig.agencyId, '40067')
 assert.equal(productionStatusConfig.property24Username, 'agency-production-user@example.test')
 assert.equal(productionStatusConfig.property24UserGroupId, '40067-group')
 assert.equal(productionStatusConfig.property24SendUserGroupHeader, true)
+
+// Exercise the production catalogue lookup without supplying a property type ID
+// or a saved mapping. All external services and writes stay in memory.
+const portalTypes = [
+  { id: 4, description: 'House' },
+  { id: 5, description: 'Apartment / Flat' },
+  { id: 6, description: 'Townhouse' },
+  { id: 8, description: 'Vacant Land / Plot' },
+  { id: 10, description: 'Farm' },
+  { id: 11, description: 'Commercial Property' },
+  { id: 12, description: 'Industrial Property' },
+]
+
+async function previewCatalogueType(propertyType, types = portalTypes) {
+  const mappings = []
+  let previewArgs = null
+  const response = await createProperty24ApiResponse({
+    method: 'POST',
+    url: `/api/property24/listings/${listingId}/preview`,
+    headers: { authorization: 'Bearer test-token' },
+    body: '{}',
+    env: {
+      PROPERTY24_API_INTERNAL_TOKEN: 'test-token',
+      PROPERTY24_ENVIRONMENT: 'production',
+      SUPABASE_URL: 'https://example.supabase.co',
+      SUPABASE_SERVICE_ROLE_KEY: 'service-role',
+    },
+    dependencies: {
+      createSupabase: () => createFakeSupabase({
+        ...baseTables,
+        private_listings: [{ ...baseTables.private_listings[0], listing_type: 'sale', property_type: propertyType }],
+        property24_catalog_mappings: mappings,
+      }),
+      resolvePublishConfig: async ({ config }) => ({
+        ...config,
+        organisationId,
+        agencyId: '31382',
+        agentId: '77959',
+        agentSourceReference: 'ARCH9-AGENT-001',
+      }),
+      resolveListingLocation: async () => ({ ...resolvedLocation, country: 'South Africa' }),
+      createProperty24: () => ({
+        fetchCountries: async () => ({ data: [{ id: 1, name: 'South Africa' }] }),
+        fetchPropertyTypes: async (countryId) => {
+          assert.equal(countryId, '1')
+          return { data: types }
+        },
+      }),
+      buildSubmitPlan: async (args) => {
+        previewArgs = args
+        return { canSubmit: true, summary: {}, payload: { photos: [] } }
+      },
+    },
+  })
+  return { response, mappings, previewArgs }
+}
+
+for (const [localType, expectedId] of [['vacant_land', 8], ['vacant_stand', 8], ['land', 8], ['plot', 8], ['stand', 8], ['Vacant Land', 8], ['Vacant Land / Plot', 8], ['apartment', 5], ['house', 4]]) {
+  const { response, mappings, previewArgs } = await previewCatalogueType(localType)
+  assert.equal(response.status, 200, response.body.message)
+  assert.equal(previewArgs.propertyTypeId, String(expectedId))
+  assert.equal(mappings.length, 1)
+  assert.equal(mappings[0].property24_id, expectedId)
+  if (localType === 'vacant_land') {
+    assert.equal(mappings[0].local_key, 'vacant land')
+    assert.equal(mappings[0].property24_label, 'Vacant Land / Plot')
+    assert.equal(mappings[0].match_type, 'property24_catalog_semantic_alias')
+  }
+}
+
+for (const types of [portalTypes.filter((type) => type.id !== 8), [...portalTypes, { id: 88, description: 'Vacant Land / Plot' }]]) {
+  const { response, mappings, previewArgs } = await previewCatalogueType('vacant_land', types)
+  assert.equal(response.status, 422)
+  assert.equal(response.body.error, 'property24_property_type_mapping_unresolved')
+  assert.equal(previewArgs, null)
+  assert.equal(mappings.length, 0)
+}
 
 const apiSource = read('server/property24/api.js')
 assert.match(apiSource, /resolveProperty24ListingPublishConfiguration/)

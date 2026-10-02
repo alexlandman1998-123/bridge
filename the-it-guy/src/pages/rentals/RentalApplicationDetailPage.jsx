@@ -20,6 +20,11 @@ import {
 } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import { useWorkspace } from "../../context/WorkspaceContext";
+import RentalApplicationWizard from "../../modules/rentals/shared/applications/RentalApplicationWizard.jsx";
+import RentalApplicationDocumentReviewPanel from "../../modules/rentals/shared/applications/RentalApplicationDocumentReviewPanel.jsx";
+import { rentalApplicationDocumentSlots } from "../../services/rentals/rentalApplicationWizardModel.js";
+import { rentalReviewDocument, rentalApplicationApprovalReadiness, RENTAL_REVIEW_CHECKS, rentalReviewSubjects, rentalReviewResultPassed } from "../../services/rentals/rentalApplicationReviewModel.js";
+import { getRentalApplicationTenancyConversion, listRentalApplicationEvents, listRentalApplicationScreeningChecks } from "../../services/rentals/rentalApplicationRepository.js";
 import RentalApplicationDecisionPanel from "../../modules/rentals/shared/applications/RentalApplicationDecisionPanel.jsx";
 import RentalApplicationScreeningPanel from "../../modules/rentals/shared/applications/RentalApplicationScreeningPanel.jsx";
 import RentalApplicationTenancyConversionPanel from "../../modules/rentals/shared/applications/RentalApplicationTenancyConversionPanel.jsx";
@@ -100,37 +105,10 @@ const consentLabel = (value) =>
     identity_verification: "Identity verification consent",
   })[value] || title(value);
 function documentStats(application = {}) {
-  const documents = application.documents?.length
-    ? application.documents
-    : application.data?.documents || {};
-  const uploaded = Array.isArray(documents)
-    ? documents.filter(Boolean).length
-    : Object.values(documents).filter(Boolean).length;
-  const requirements =
-    application.data?.documentRequirements ||
-    application.data?.requiredDocuments ||
-    [];
-  const required = Array.isArray(requirements) ? requirements.length : 0;
-  return {
-    uploaded,
-    required,
-    progress: required
-      ? Math.min(100, Math.round((uploaded / required) * 100))
-      : 0,
-  };
-}
-function applicationProgress(status) {
-  return (
-    {
-      draft: 20,
-      submitted: 42,
-      under_review: 62,
-      screening: 72,
-      approved: 100,
-      declined: 100,
-      withdrawn: 100,
-    }[text(status)] || 30
-  );
+  const slots = rentalApplicationDocumentSlots(application.data).filter((slot) => slot.required);
+  const uploaded = slots.filter((slot) => rentalReviewDocument(slot, application)?.status === 'accepted').length;
+  const required = slots.length;
+  return { uploaded, required, progress: required ? Math.round(uploaded / required * 100) : 0 };
 }
 function nextAction(status) {
   return (
@@ -202,19 +180,26 @@ export default function RentalApplicationDetailPage() {
     [workspace],
   );
   const [application, setApplication] = useState(null);
+  const [screeningChecks, setScreeningChecks] = useState([]);
+  const [conversion, setConversion] = useState(null);
+  const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [tab, setTab] = useState("Overview");
-  const load = useCallback(async () => {
+  const load = useCallback(async (silent = false) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       setError("");
-      const next = await getRentalApplicationReview(applicationId);
+      const [next, nextConversion, nextEvents, nextChecks] = await Promise.all([getRentalApplicationReview(applicationId), getRentalApplicationTenancyConversion(applicationId), listRentalApplicationEvents(applicationId), listRentalApplicationScreeningChecks(applicationId)]);
+      setScreeningChecks(nextChecks);
+      setConversion(nextConversion);
+      setEvents(nextEvents);
       setApplication(next);
       if (!next)
         setError("This application is unavailable in your current workspace.");
     } catch (reason) {
       setError(reason?.message || "Unable to load this application.");
+      if (silent) throw reason;
     } finally {
       setLoading(false);
     }
@@ -248,13 +233,13 @@ export default function RentalApplicationDetailPage() {
     );
 
   const identity = application.data?.identity || {};
-  const contact = application.data?.contact || {};
+  const contact = application.data?.contacts || {};
   const employment = application.data?.employment || {};
   const income = application.data?.income || {};
   const property = application.data?.property || {};
   const documents = documentStats(application);
   const consents = Array.isArray(application.consents)
-    ? application.consents
+    ? application.consents.filter((item) => item.source === "applicant" && item.evidence?.accepted === true && item.evidence?.submitted_at && Date.parse(item.evidence.submitted_at) === Date.parse(application.submittedAt))
     : [];
   const acceptedConsentTypes = new Set(consents.map((item) => item.type));
   const missingConsents = REQUIRED_CONSENT_TYPES.filter(
@@ -276,7 +261,11 @@ export default function RentalApplicationDetailPage() {
       application.data?.monthlyRent ||
       0,
   );
-  const progress = applicationProgress(application.status);
+  const screeningSubjects = RENTAL_REVIEW_CHECKS.flatMap((kind) => rentalReviewSubjects(application.data, kind).map((subject) => ({ kind, subject })));
+  const passedChecks = screeningSubjects.filter(({ kind, subject }) => rentalReviewResultPassed(screeningChecks.find((check) => check.checkType === kind)?.result?.subjects?.[subject.id], application.submittedAt)).length;
+  const readiness = rentalApplicationApprovalReadiness(application, screeningChecks);
+  const totalRequirements = documents.required + 3 + screeningSubjects.length + 2;
+  const progress = ["approved", "declined", "withdrawn"].includes(application.status) ? 100 : Math.max(0, Math.round((totalRequirements - readiness.blockers.length) / totalRequirements * 100));
   const [actionTitle, actionDetail] = nextAction(application.status);
   const journey = [
     ["Application", "Captured"],
@@ -288,9 +277,7 @@ export default function RentalApplicationDetailPage() {
     ],
     [
       "Screening",
-      ["under_review", "screening", "approved"].includes(application.status)
-        ? "In review"
-        : "Pending",
+      passedChecks === screeningSubjects.length ? "Complete" : `${passedChecks}/${screeningSubjects.length} passed`,
     ],
     [
       "Decision",
@@ -300,10 +287,10 @@ export default function RentalApplicationDetailPage() {
           ? "Declined"
           : "Pending",
     ],
-    ["Tenancy", "Lease signed"],
+    ["Tenancy", conversion ? `Lease ${(Array.isArray(conversion.rental_leases) ? conversion.rental_leases[0] : conversion.rental_leases)?.status || "draft"}` : "Not prepared"],
   ];
   const currentJourney =
-    application.status === "approved" || application.status === "declined"
+    conversion ? 4 : application.status === "approved" || application.status === "declined"
       ? 3
       : ["under_review", "screening"].includes(application.status)
         ? 2
@@ -368,7 +355,7 @@ export default function RentalApplicationDetailPage() {
                 onClick={() =>
                   setTab(
                     application.status === "approved"
-                      ? "Decision"
+                      ? "Lease"
                       : application.status === "draft"
                         ? "Overview"
                         : application.status === "submitted"
@@ -395,7 +382,7 @@ export default function RentalApplicationDetailPage() {
                 label="Monthly income"
                 value={income.monthlyIncome ? money(income.monthlyIncome) : ""}
               />
-              <Field label="Move-in" value={property.occupationDate} />
+              <Field label="Move-in" value={application.data?.household?.intendedOccupationDate || property.occupationDate} />
               <Field label="Submitted" value={date(application.submittedAt)} />
             </div>
           </section>
@@ -428,9 +415,9 @@ export default function RentalApplicationDetailPage() {
             <p className="text-xs font-semibold text-[#344a62]">Documents</p>
             <p className="mt-1 text-xs text-[#718399]">
               {documents.required
-                ? `${documents.uploaded} of ${documents.required} required documents uploaded`
+                ? `${documents.uploaded} of ${documents.required} required documents accepted`
                 : documents.uploaded
-                  ? `${documents.uploaded} documents uploaded`
+                  ? `${documents.uploaded} documents accepted`
                   : "Document requirements not configured"}
             </p>
             {documents.required ? (
@@ -454,22 +441,7 @@ export default function RentalApplicationDetailPage() {
         <h2 className="text-lg font-semibold text-[#142132]">
           Applicants and affordability
         </h2>
-        <p className="mt-1 text-sm text-[#60758b]">
-          Primary applicant details captured for this application.
-        </p>
-        <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <Field label="Applicant" value={applicant} />
-          <Field
-            label="Employment"
-            value={employment.employer || employment.status}
-          />
-          <Field
-            label="Monthly income"
-            value={income.monthlyIncome ? money(income.monthlyIncome) : ""}
-          />
-          <Field label="Proposed rent" value={money(rent)} />
-          <Field label="Move-in date" value={property.occupationDate} />
-        </div>
+        <div className="mt-5"><RentalApplicationWizard data={application.data} readOnly agent /></div>
       </section>
     ) : tab === "Documents" ? (
       <section className="rounded-[18px] border border-[#dfe7f0] bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,.045)]">
@@ -480,21 +452,7 @@ export default function RentalApplicationDetailPage() {
           Review the submitted documents and the applicant’s recorded
           permissions before approving.
         </p>
-        <div className="mt-5 grid gap-3 sm:grid-cols-2">
-          {application.documents?.length ? (
-            application.documents.map((document) => (
-              <Field
-                key={document.id}
-                label={document.type}
-                value={title(document.status)}
-              />
-            ))
-          ) : (
-            <p className="text-sm text-[#60758b]">
-              No documents have been attached yet.
-            </p>
-          )}
-        </div>
+        <RentalApplicationDocumentReviewPanel application={application} onSaved={() => load(true)} />
         <div className="mt-6 border-t border-[#edf2f7] pt-5">
           <div className="flex items-center justify-between gap-3">
             <h3 className="text-sm font-semibold text-[#142132]">
@@ -503,7 +461,7 @@ export default function RentalApplicationDetailPage() {
             <span
               className={`rounded-full px-2.5 py-1 text-xs font-semibold ${missingConsents.length ? "bg-amber-50 text-amber-800" : "bg-emerald-50 text-emerald-800"}`}
             >
-              {consents.length}/3 recorded
+              {acceptedConsentTypes.size}/3 current
             </span>
           </div>
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
@@ -528,18 +486,19 @@ export default function RentalApplicationDetailPage() {
       <RentalApplicationScreeningPanel
         application={application}
         organisationId={organisationId}
+        onSaved={() => load(true)}
       />
     ) : tab === "Decision" ? (
       <>
         <RentalApplicationDecisionPanel
           application={application}
-          onDecision={() => void load()}
-        />
-        <RentalApplicationTenancyConversionPanel
-          application={application}
-          onConverted={() => void load()}
+          onDecision={() => load(true)}
         />
       </>
+    ) : tab === "Lease" ? (
+      <RentalApplicationTenancyConversionPanel application={application} onConverted={() => load(true)} />
+    ) : tab === "Activity" ? (
+      <section className="rounded-2xl border bg-white p-5"><h2 className="text-lg font-semibold">Review activity</h2>{events.length ? events.map((event) => <div key={event.id} className="mt-3 rounded-xl bg-[#f8fbfe] p-4"><p className="font-semibold">{title(event.event_type.replace(/^rental_application_/, ""))}</p><p className="mt-1 text-xs text-[#60758b]">{new Date(event.occurred_at).toLocaleString()} · Revision {event.aggregate_version}</p><p className="mt-2 text-sm text-[#29435d]">{event.payload_json?.message || event.payload_json?.note || event.payload_json?.evidenceNote || event.payload_json?.reason}</p></div>) : <p className="mt-3 text-sm text-[#60758b]">No review activity recorded yet.</p>}</section>
     ) : (
       <section className="rounded-[18px] border border-[#dfe7f0] bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,.045)]">
         <h2 className="text-lg font-semibold text-[#142132]">{tab}</h2>
@@ -552,6 +511,7 @@ export default function RentalApplicationDetailPage() {
   return (
     <main className="mx-auto w-full max-w-[1600px] py-2">
       <section className="space-y-4 pb-6">
+        {error ? <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}<button type="button" onClick={() => void load()} className="ml-3 font-semibold underline">Refresh application</button></div> : null}
         <Link
           to="/agent/rentals/applications"
           className="inline-flex items-center gap-1 text-sm font-semibold text-[#36516e]"
@@ -656,13 +616,7 @@ export default function RentalApplicationDetailPage() {
                   <Signal
                     icon={ShieldCheck}
                     label="Screening"
-                    value={
-                      ["under_review", "screening", "approved"].includes(
-                        application.status,
-                      )
-                        ? "Started"
-                        : "Pending"
-                    }
+                    value={`${passedChecks}/${screeningSubjects.length} passed`}
                     detail="Application review"
                   />
                   <Signal

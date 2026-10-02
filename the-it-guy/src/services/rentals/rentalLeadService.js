@@ -5,6 +5,7 @@ import {
   listAgencyCrmLeadContacts,
   updateAgencyCrmLeadRecord,
 } from '../../lib/agencyCrmRepository'
+import { normalizeTenantQualification } from './rentalTenantWorkspaceModel'
 import { getRentalLeadMetadata, isRentalLead } from './rentalLeadClassificationModel'
 import { createRentalCrmLeadMetadata, patchRentalCrmLeadMetadata } from './rentalCrmLeadModel'
 import { listOrganisationUsersForWorkspace } from '../../lib/settingsApi'
@@ -83,7 +84,8 @@ export function buildRentalLeadView(lead = {}, contact = {}) {
     name: contactName(contact), email: text(contact.email || lead.sellerEmail), phone: text(contact.phone || lead.sellerPhone),
     source: text(lead.leadSource) || 'Manual', assignedAgentId: text(lead.assignedAgentId || lead.assignedUserId), assignedAgentName: text(lead.assignedAgentName || lead.assignedAgentEmail) || 'Unassigned',
     propertyAddress, propertyType: text(metadata.propertyType), expectedMonthlyRent: numberOrNull(metadata.expectedMonthlyRent),
-    desiredArea, monthlyBudget: numberOrNull(metadata.monthlyBudget || lead.budget), bedrooms: numberOrNull(metadata.bedrooms),
+    qualification: metadata.qualification || {},
+    desiredArea, monthlyBudget: numberOrNull(metadata.monthlyBudget ?? lead.budget), bedrooms: numberOrNull(metadata.bedrooms),
     occupationDate: text(metadata.occupationDate), pets: text(metadata.pets),
     campaign: text(metadata.campaign), relationships: metadata.relationships, consents: metadata.consents, ingestion: metadata.ingestion || {}, workflow: metadata.workflow || {}, outcome: getRentalLeadOutcome(lead),
     focus: isLandlord ? propertyAddress || 'Property details pending' : desiredArea || 'Rental requirement pending',
@@ -126,10 +128,11 @@ export async function updateRentalLeadQualification(leadId, values = {}, context
   }
   const qualification = landlord
     ? { propertyAddress: required, propertyType: text(values.propertyType), expectedMonthlyRent: numeric(values.expectedMonthlyRent, 'Expected rent') }
-    : { desiredArea: required, monthlyBudget: numeric(values.monthlyBudget, 'Monthly budget'), bedrooms: numeric(values.bedrooms, 'Bedrooms'), occupationDate: text(values.occupationDate), pets: text(values.pets) }
+    : normalizeTenantQualification(values, { ...lead, ...lead.qualification })
   if (!landlord && qualification.bedrooms !== null && !Number.isInteger(qualification.bedrooms)) throw new Error('Bedrooms must be a whole number.')
   if (!landlord && qualification.occupationDate && Number.isNaN(new Date(qualification.occupationDate).getTime())) throw new Error('Occupation date must be valid.')
-  const metadata = patchRentalCrmLeadMetadata(lead.raw, { ...qualification, qualification })
+  const consentPatch = !landlord && qualification.screeningConsent ? { consents: { screening: qualification.screeningConsent === 'Yes' ? 'granted' : 'declined' } } : {}
+  const metadata = patchRentalCrmLeadMetadata(lead.raw, { ...qualification, qualification, ...consentPatch })
   const patch = landlord
     ? { sellerPropertyAddress: required, formattedAddress: required, rawEnquiryPayload: metadata }
     : { areaInterest: required, budget: qualification.monthlyBudget || 0, rawEnquiryPayload: metadata }

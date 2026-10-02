@@ -7,28 +7,23 @@ import {
   CalendarDays,
   CheckCircle2,
   CircleDollarSign,
-  Copy,
-  Download,
-  ExternalLink,
   FileCheck2,
   Home,
-  IdCard,
   LandPlot,
   Layers3,
-  Link2,
   MapPin,
-  MessageCircle,
   PieChart,
-  QrCode,
   ShieldCheck,
   TrendingUp,
   Users,
 } from 'lucide-react'
 import { Fragment, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
+import AgentDigitalCardPanel from '../components/dashboard/AgentDigitalCardPanel'
+import { canManageOrganisationSettings } from '../lib/organisationAccess'
 import LoadingSkeleton from '../components/LoadingSkeleton'
 import SummaryCards from '../components/SummaryCards'
-import HomeSeekersFicTrainingPanel from '../components/training/HomeSeekersFicTrainingPanel'
+import FicTrainingPanel from '../components/training/FicTrainingPanel'
 import { PillToggle } from '../components/ui/FilterBar'
 import '../styles/developerCommand.css'
 import {
@@ -85,6 +80,7 @@ import {
   listOrganisationUserAssignmentAliases,
   loadAgencyAgentCardInsights,
   loadAgencyAgentCardLink,
+  saveAgencyAgentCardLink,
 } from '../lib/dashboardSecondaryApi'
 import { deriveResidentialDashboardMetrics } from '../services/residentialDashboardService'
 import {
@@ -106,7 +102,6 @@ import {
   normalizePropertyStructureType,
 } from '../lib/propertyTaxonomy'
 import { buildAgencyAgentCardUrls } from '../services/agencyPublicIntakeLinkService'
-import { isHomeSeekersOrganisation } from '../services/homeSeekersFicTrainingService'
 import {
   buildAgentDigitalCardFileBaseName,
   buildAgentDigitalCardShareText,
@@ -392,188 +387,6 @@ function getAgentDigitalCardIdentityCandidates({ profile = {}, currentMembership
     .filter((value, index, rows) => rows.indexOf(value) === index)
 }
 
-function AgentDigitalCardPanel({
-  loading = false,
-  error = '',
-  link = null,
-  agent = {},
-  organisationName = '',
-  shareUrl = '',
-  urls = {},
-  insights = null,
-  feedback = '',
-  busyAction = '',
-  onCopy = () => {},
-  onOpenPreview = () => {},
-  onShareWhatsApp = () => {},
-  onDownloadVcard = () => {},
-  onDownloadQr = () => {},
-  onManageCard = () => {},
-}) {
-  const hasActiveCard = Boolean(link?.id && link.status === 'active' && shareUrl)
-  const displayName = normalizeDashboardText(agent.name) || 'Agent'
-  const displayRole = normalizeDashboardText(agent.jobTitle) || 'Property Practitioner'
-  const displayAgency = normalizeDashboardText(organisationName) || 'Agency'
-  const insightSummary = insights?.summary || {}
-  const insightRows = [
-    { label: 'Views', value: insightSummary.views || 0 },
-    { label: 'Contact clicks', value: insightSummary.contactClicks || 0 },
-    { label: 'WhatsApp', value: insightSummary.whatsappClicks || 0 },
-    { label: 'Buyer leads', value: insightSummary.buyerLeads || 0 },
-    { label: 'Seller leads', value: insightSummary.sellerLeads || 0 },
-    { label: 'Listing clicks', value: insightSummary.listingClicks || 0 },
-  ]
-
-  return (
-    <section className={`mt-6 ${DASHBOARD_PANEL_CLASS}`}>
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.05fr)_minmax(320px,0.95fr)]">
-        <article className="min-w-0 rounded-[18px] border border-[#dce6f2] bg-[linear-gradient(145deg,#102236_0%,#21445f_58%,#f5b83c_160%)] p-5 text-white">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-            <div className="min-w-0">
-              <span className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[0.75rem] font-semibold text-white/90">
-                <IdCard size={14} /> My Digital Card
-              </span>
-              <h3 className="mt-4 truncate text-[1.32rem] font-semibold tracking-[-0.03em] text-white">{displayName}</h3>
-              <p className="mt-1 text-sm font-medium text-white/90">{displayRole}</p>
-              <p className="mt-0.5 text-sm text-white/75">{displayAgency}</p>
-            </div>
-            <span className={`inline-flex shrink-0 items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${
-              hasActiveCard ? 'border-[#bce8cf] bg-[#ecfbf2] text-[#1f7a45]' : 'border-white/20 bg-white/10 text-white/90'
-            }`}>
-              {loading ? 'Loading' : hasActiveCard ? 'Active' : 'Not Active'}
-            </span>
-          </div>
-
-          {hasActiveCard ? (
-            <div className="mt-5 rounded-[14px] border border-white/20 bg-white/10 p-3">
-              <p className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-white/70">Share Link</p>
-              <p className="mt-1 break-all text-[0.88rem] font-medium text-white">{shareUrl}</p>
-            </div>
-          ) : (
-            <div className="mt-5 rounded-[14px] border border-white/20 bg-white/10 p-4">
-              <p className="text-sm font-semibold text-white">Your card is not ready yet.</p>
-              <p className="mt-1 text-sm leading-6 text-white/80">
-                A principal or admin can generate and activate it from Settings, then this panel becomes your copy-and-share hub.
-              </p>
-            </div>
-          )}
-        </article>
-
-        <article className="min-w-0 rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-5">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div className="min-w-0">
-              <h3 className="text-[1rem] font-semibold tracking-[-0.02em] text-[#142132]">
-                {hasActiveCard ? 'Copy & Share' : 'Set Up & Share'}
-              </h3>
-              <p className="mt-1 text-[0.88rem] leading-6 text-[#6b7d93]">
-                {hasActiveCard
-                  ? 'Share this card wherever buyers and sellers already contact you.'
-                  : 'Activate your digital card before sharing it with buyers and sellers.'}
-              </p>
-            </div>
-            {feedback ? (
-              <span className="inline-flex shrink-0 rounded-full border border-[#ccead8] bg-[#f2fbf5] px-3 py-1 text-xs font-semibold text-[#1f7a45]">
-                {feedback}
-              </span>
-            ) : null}
-          </div>
-
-          {error ? (
-            <p className="mt-4 rounded-[14px] border border-[#f3d2cc] bg-[#fef3f2] px-4 py-3 text-sm text-[#b42318]">{error}</p>
-          ) : null}
-
-          {hasActiveCard ? (
-            <div className="mt-4 grid gap-2 sm:grid-cols-2">
-              <button
-                type="button"
-                className={DASHBOARD_ACTION_SECONDARY_CLASS}
-                onClick={() => onCopy(shareUrl, 'Card link copied')}
-              >
-                <Copy size={16} className="mr-2" /> Copy Link
-              </button>
-              <button
-                type="button"
-                className={DASHBOARD_ACTION_SECONDARY_CLASS}
-                onClick={onOpenPreview}
-              >
-                <ExternalLink size={16} className="mr-2" /> Open Preview
-              </button>
-              <button
-                type="button"
-                className={DASHBOARD_ACTION_SECONDARY_CLASS}
-                onClick={onShareWhatsApp}
-              >
-                <MessageCircle size={16} className="mr-2" /> WhatsApp
-              </button>
-              <button
-                type="button"
-                className={DASHBOARD_ACTION_SECONDARY_CLASS}
-                disabled={busyAction === 'qr'}
-                onClick={onDownloadQr}
-              >
-                <QrCode size={16} className="mr-2" /> {busyAction === 'qr' ? 'Preparing' : 'QR PNG'}
-              </button>
-              <button
-                type="button"
-                className={`${DASHBOARD_ACTION_SECONDARY_CLASS} sm:col-span-2`}
-                onClick={onDownloadVcard}
-              >
-                <Download size={16} className="mr-2" /> Download .vcf Contact
-              </button>
-            </div>
-          ) : (
-            <div className="mt-4 rounded-[14px] border border-[#dce6f2] bg-white p-4">
-              <p className="text-[0.88rem] font-medium leading-6 text-[#5f738a]">
-                Share actions will unlock as soon as the card is generated and marked active.
-              </p>
-              <button
-                type="button"
-                className={`${DASHBOARD_ACTION_SECONDARY_CLASS} mt-3 w-full`}
-                onClick={onManageCard}
-              >
-                <IdCard size={16} className="mr-2" /> Open Digital Card Settings
-              </button>
-            </div>
-          )}
-
-          {hasActiveCard && urls?.buyerUrl && urls?.sellerUrl ? (
-            <div className="mt-4 grid gap-2 text-[0.78rem] font-medium text-[#62778f] sm:grid-cols-2">
-              <div className="rounded-[12px] border border-[#e2eaf4] bg-white px-3 py-2">
-                <span className="inline-flex items-center gap-1.5 font-semibold text-[#22374d]"><Home size={13} /> Buyer CTA</span>
-                <p className="mt-1 break-all">{urls.buyerUrl}</p>
-              </div>
-              <div className="rounded-[12px] border border-[#e2eaf4] bg-white px-3 py-2">
-                <span className="inline-flex items-center gap-1.5 font-semibold text-[#22374d]"><Link2 size={13} /> Seller CTA</span>
-                <p className="mt-1 break-all">{urls.sellerUrl}</p>
-              </div>
-            </div>
-          ) : null}
-
-          {hasActiveCard ? (
-            <div className="mt-4 rounded-[14px] border border-[#dce6f2] bg-white p-3">
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#71849b]">Card Insights</p>
-                <span className="text-[0.72rem] font-semibold text-[#8a9aab]">Last {insights?.windowDays || 30} days</span>
-              </div>
-              {insights?.missingSchema ? (
-                <p className="mt-2 text-sm text-[#7a5a1b]">Insights will appear after the card events migration is applied.</p>
-              ) : (
-                <div className="mt-3 grid gap-2 sm:grid-cols-3">
-                  {insightRows.map((item) => (
-                    <div key={item.label} className="rounded-[12px] border border-[#edf2f7] bg-[#f8fbfe] px-3 py-2">
-                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8da6]">{item.label}</p>
-                      <p className="mt-1 text-lg font-semibold tabular-nums text-[#162334]">{formatKpiCount(item.value)}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          ) : null}
-        </article>
-      </div>
-    </section>
-  )
-}
 
 function formatDateTime(value) {
   const date = new Date(value || 0)
@@ -2008,7 +1821,9 @@ function Dashboard() {
     membershipRole: hydratedMembershipRole,
   } = useOrganisation()
   const currentOrganisationId = String(organisation?.id || '').trim()
-  const isHomeSeekersTrainingWorkspace = isHomeSeekersOrganisation(organisation)
+  const digitalCardScope = `${currentOrganisationId}:${currentMembership?.userId || profile?.userId || profile?.id || ''}`
+  const digitalCardScopeRef = useRef(digitalCardScope)
+  digitalCardScopeRef.current = digitalCardScope
   const isDevAuthBypassWorkspace = String(currentMembership?.source || '').trim() === 'dev_auth_bypass'
   const developerDashboardOrganisationId = role === 'developer' && isDevAuthBypassWorkspace ? null : currentOrganisationId
   // `workspace.id` is an organisation workspace ID, not a development ID.
@@ -2687,7 +2502,8 @@ function Dashboard() {
     [isAgentRole, isBondRole, rows, transactionScope],
   )
   const profileIdentitySet = useMemo(() => getProfileIdentitySet(profile), [profile])
-  const agentDigitalCardLink = agentDigitalCardState.link?.status === 'active' ? agentDigitalCardState.link : null
+  const agentDigitalCardLink = agentDigitalCardState.link
+  const canManageDigitalCard = canManageOrganisationSettings({ appRole: role, membershipRole: hydratedMembershipRole || organisationMembershipRole, workspaceType: organisation?.type || workspace?.type })
   const agentDigitalCardUrls = useMemo(
     () => buildAgencyAgentCardUrls({
       slug: agentDigitalCardLink?.slug || '',
@@ -2699,16 +2515,42 @@ function Dashboard() {
     const cardAgent = agentDigitalCardLink?.agentDigitalCard?.agent || {}
     return {
       name: normalizeDashboardText(cardAgent.name) || getDashboardProfileName(profile),
-      email: normalizeDashboardText(cardAgent.email) || getDashboardProfileEmail(profile),
-      phone: normalizeDashboardText(cardAgent.phone || cardAgent.whatsapp) || getDashboardProfilePhone(profile),
+      email: normalizeDashboardText(cardAgent.email ?? getDashboardProfileEmail(profile)),
+      phone: normalizeDashboardText(cardAgent.phone ?? getDashboardProfilePhone(profile)),
       jobTitle: normalizeDashboardText(cardAgent.jobTitle) || getDashboardProfileJobTitle(profile),
+      avatarUrl: normalizeDashboardText(cardAgent.avatarUrl ?? profile?.avatarUrl ?? profile?.avatar_url),
+      whatsapp: normalizeDashboardText(cardAgent.whatsapp ?? getDashboardProfilePhone(profile)),
     }
   }, [agentDigitalCardLink, profile])
   const agentDigitalCardOrganisationName = useMemo(
     () => getDashboardOrganisationName(organisation, profile),
     [organisation, profile],
   )
-  const agentDigitalCardShareUrl = agentDigitalCardLink ? (agentDigitalCardUrls.cardUrl || agentDigitalCardUrls.intakeUrl || '') : ''
+  const agentDigitalCardShareUrl = agentDigitalCardLink?.status === 'active' ? (agentDigitalCardUrls.cardUrl || agentDigitalCardUrls.intakeUrl || '') : ''
+  async function saveDashboardDigitalCard(draft, status) {
+    if (!canManageDigitalCard || agentDigitalCardState.loading || agentDigitalCardState.missingSchema) throw new Error('Card setup is unavailable for this workspace.')
+    const card = agentDigitalCardLink
+    const agentUserId = card?.defaultAssignedAgentId || currentMembership?.userId || currentMembership?.user_id || profile?.userId || profile?.user_id || profile?.id
+    if (!agentUserId || !currentOrganisationId) throw new Error('Your agent profile is not ready. Refresh and try again.')
+    const savedScope = digitalCardScope
+    const result = await saveAgencyAgentCardLink({
+      ...card,
+      organisationId: currentOrganisationId,
+      organisationName: agentDigitalCardOrganisationName,
+      agentUserId, status,
+      defaultBranchId: card?.defaultBranchId || currentMembership?.branchId || currentMembership?.branch_id,
+      agentName: draft.name, agentJobTitle: draft.jobTitle,
+      agentEmail: draft.email, agentPhone: draft.phone,
+      agentWhatsApp: draft.whatsapp, agentAvatarUrl: draft.avatarUrl,
+      heading: draft.heading, introduction: draft.introduction,
+      buyerCtaLabel: draft.buyerCtaLabel, sellerCtaLabel: draft.sellerCtaLabel,
+      enabledIntents: [draft.buyEnabled ? 'buy' : '', draft.sellEnabled ? 'sell' : ''].filter(Boolean),
+    }, { organisationName: agentDigitalCardOrganisationName })
+    if (!result?.link || result.missingSchema) throw new Error('Your card could not be saved. Please try again.')
+    if (digitalCardScopeRef.current !== savedScope) return
+    setAgentDigitalCardState((current) => ({ ...current, link: result.link, error: '', loading: false }))
+    showAgentDigitalCardFeedback(status === 'active' ? 'Card saved and active' : 'Draft saved')
+  }
   const agentDigitalCardFileBaseName = useMemo(
     () => buildAgentDigitalCardFileBaseName({
       agentName: agentDigitalCardAgent.name,
@@ -5278,37 +5120,43 @@ function renderActiveTransactionsBlock({
     )
   }
 
+  const digitalCardPanel = (
+    <AgentDigitalCardPanel
+    key={digitalCardScope}
+    loading={agentDigitalCardState.loading}
+    error={agentDigitalCardState.missingSchema ? 'Digital card setup is waiting for the latest database migration.' : agentDigitalCardState.error}
+    link={agentDigitalCardLink}
+    agent={agentDigitalCardAgent}
+    organisationName={agentDigitalCardOrganisationName}
+    shareUrl={agentDigitalCardShareUrl}
+    urls={agentDigitalCardUrls}
+    insights={{
+      ...(agentDigitalCardState.insights || {}),
+      missingSchema: agentDigitalCardState.insightsMissingSchema,
+    }}
+    feedback={agentDigitalCardFeedback}
+    busyAction={agentDigitalCardBusyAction}
+    onCopy={copyAgentDigitalCardText}
+    onOpenPreview={openAgentDigitalCardPreview}
+    onShareWhatsApp={shareAgentDigitalCardWhatsApp}
+    onDownloadVcard={downloadAgentDigitalCardVcard}
+    onDownloadQr={downloadAgentDigitalCardQr}
+    canManage={canManageDigitalCard && !agentDigitalCardState.missingSchema}
+    onSave={saveDashboardDigitalCard}
+        />
+  )
+
   if (isPrincipalAgentView) {
     return (
       <section className="flex flex-col">
         <Suspense fallback={<LoadingSkeleton lines={8} className="rounded-[22px] border border-[#dde4ee] bg-white shadow-[0_12px_28px_rgba(15,23,42,0.06)]" />}>
           <PrincipalDashboard
             agencyId={currentOrganisationId}
+            digitalCardPanel={digitalCardPanel}
             canViewAllTransactions={isPrincipalAgentView}
           />
         </Suspense>
 
-        <AgentDigitalCardPanel
-          loading={agentDigitalCardState.loading}
-          error={agentDigitalCardState.missingSchema ? 'Digital card setup is waiting for the latest database migration.' : agentDigitalCardState.error}
-          link={agentDigitalCardLink}
-          agent={agentDigitalCardAgent}
-          organisationName={agentDigitalCardOrganisationName}
-          shareUrl={agentDigitalCardShareUrl}
-          urls={agentDigitalCardUrls}
-          insights={{
-            ...(agentDigitalCardState.insights || {}),
-            missingSchema: agentDigitalCardState.insightsMissingSchema,
-          }}
-          feedback={agentDigitalCardFeedback}
-          busyAction={agentDigitalCardBusyAction}
-          onCopy={copyAgentDigitalCardText}
-          onOpenPreview={openAgentDigitalCardPreview}
-          onShareWhatsApp={shareAgentDigitalCardWhatsApp}
-          onDownloadVcard={downloadAgentDigitalCardVcard}
-          onDownloadQr={downloadAgentDigitalCardQr}
-          onManageCard={() => navigate('/settings/integrations/digital-cards')}
-        />
       </section>
     )
   }
@@ -5413,6 +5261,7 @@ function renderActiveTransactionsBlock({
                     <Suspense fallback={<DashboardWidgetFallback lines={6} />}>
                       <ResidentialCommandCenterGrid
                         model={agentResidentialModel}
+                        digitalCardPanel={digitalCardPanel}
                         scope="agent"
                         mode={residentialMode}
                         kpiIcons={[ArrowRightLeft, Building2, Banknote, TrendingUp, Users]}
@@ -5423,12 +5272,13 @@ function renderActiveTransactionsBlock({
                         canManageAppointments={false}
                         appointmentRefreshKey={`${organisationIdForAppointments}:${String(profile?.id || profile?.email || '').trim()}:${agentAppointmentSummary.rows.length}:${residentialMode}:${residentialDateRange}`}
                         commissionTracker={agentCommissionTracker}
-                        trainingPanel={isHomeSeekersTrainingWorkspace ? (
-                          <HomeSeekersFicTrainingPanel
+                        trainingPanel={(
+                          <FicTrainingPanel
+                            key={currentOrganisationId}
                             organisationId={currentOrganisationId}
                             userId={String(currentMembership?.userId || currentMembership?.user_id || profile?.userId || profile?.id || '').trim()}
                           />
-                        ) : null}
+                        )}
                         onViewTransactions={() => navigate('/transactions')}
                         onOpenTransaction={(record) => {
                           if (record?.id) navigate(`/transactions/${record.id}`)
@@ -6395,27 +6245,7 @@ function renderActiveTransactionsBlock({
                 </section>
               ) : null}
 
-              <AgentDigitalCardPanel
-                loading={agentDigitalCardState.loading}
-                error={agentDigitalCardState.missingSchema ? 'Digital card setup is waiting for the latest database migration.' : agentDigitalCardState.error}
-                link={agentDigitalCardLink}
-                agent={agentDigitalCardAgent}
-                organisationName={agentDigitalCardOrganisationName}
-                shareUrl={agentDigitalCardShareUrl}
-                urls={agentDigitalCardUrls}
-                insights={{
-                  ...(agentDigitalCardState.insights || {}),
-                  missingSchema: agentDigitalCardState.insightsMissingSchema,
-                }}
-                feedback={agentDigitalCardFeedback}
-                busyAction={agentDigitalCardBusyAction}
-                onCopy={copyAgentDigitalCardText}
-                onOpenPreview={openAgentDigitalCardPreview}
-                onShareWhatsApp={shareAgentDigitalCardWhatsApp}
-                onDownloadVcard={downloadAgentDigitalCardVcard}
-                onDownloadQr={downloadAgentDigitalCardQr}
-                onManageCard={() => navigate('/settings/integrations/digital-cards')}
-              />
+              {!agentResidentialModel ? digitalCardPanel : null}
             </>
           ) : isAttorneyRole ? (
             <Suspense fallback={<DashboardWidgetFallback lines={6} className="mt-6" />}>

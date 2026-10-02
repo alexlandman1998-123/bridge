@@ -657,9 +657,9 @@ export default function EmailCampaignBuilder({
                   140,
                 )}
                 <label className="eb-field">
-                  Send permission{" "}
-                  <span title="Consent is checked for this category before delivery.">
-                    ⓘ
+                  <span className="eb-field-heading">
+                    Send permission
+                    <span title="Consent is checked for this category before delivery.">ⓘ</span>
                   </span>
                   <select
                     value={draft.subscriptionTypeId}

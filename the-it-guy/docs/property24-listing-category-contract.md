@@ -2,7 +2,7 @@
 
 Version: `arch9_property24_listing_category_contract_v3`
 
-The category contract prevents a specialist listing from silently using residential fields. Commercial sales have a dedicated v53/v55 schema-backed mapper and can pass local submission readiness on the organisation's configured Property24 connection. Commercial rentals and the other specialist categories stay blocked.
+The category contract prevents a specialist listing from silently using residential fields. Commercial sales and vacant-land sales have schema-backed mappers and can pass local submission readiness on the organisation's configured Property24 connection. Commercial/land rentals and the remaining specialist categories stay blocked. Land uses type ID 8, a positive erf area normalised to square metres, and only documented v55 zoning enum values; free-text zoning stays in the description.
 
 ## Evidence boundary
 
@@ -32,3 +32,13 @@ The category contract prevents a specialist listing from silently using resident
 3. Add a category-specific Arch9-to-Property24 mapper—do not extend the residential feature object by guesswork.
 4. Add create, update, photo, reassignment, lifecycle and reconciliation contract tests.
 5. Verify the intended organisation and Property24 environment before a controlled submission, and retain the redacted portal response.
+
+## Rental publishing requirements and recommendations
+
+Rental syndication does not depend on tenant onboarding, FICA/screening, application consent, a recorded landlord application decision, lease signing or a tenancy. Those checks belong to reviewing a particular tenant application.
+
+Local P24 readiness and the backend adapter now treat missing availability, internal mandate/marketing approval, deposit comments, agent source references and uncaptured feature flags as recommendations. Required feature values still use the existing backend serialization defaults; missing capture does not veto a valid payload. A missing rental frequency uses the supported monthly default. These recommendations remain visible and do not replace the agent's responsibility to confirm permission and listing accuracy before publishing.
+
+PP's Agency Feed Service Rev 4.7 marks AvailableFrom and RentalPriceType optional. Rental availability is omitted when unknown rather than filled with today's date. PP still requires a known non-negative deposit amount (including an explicitly captured zero or no-deposit policy), valid agency/agent/address/category data and at least three rental photos. An omitted Arch9 deposit-policy selection is not an extra blocker when the actual deposit amount is known. Internal mandate and marketing status remain recommendations, consistent with the P24 adapter.
+
+Backend account/mapping, supported category/type, future P24 listing expiry, real media, invalid captured portal fields and duplicate submission guards remain in force. These changes prepare payloads locally; acceptance and publication require an explicitly authorised portal submission.

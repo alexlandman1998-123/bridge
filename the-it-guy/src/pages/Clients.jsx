@@ -15,6 +15,7 @@ import {
   SlidersHorizontal,
   Tag,
   Trash2,
+  Upload,
   User2,
   UserRoundSearch,
   Users,
@@ -30,6 +31,8 @@ import ConfirmDialog from '../components/ui/ConfirmDialog'
 import SearchInput from '../components/ui/SearchInput'
 import DataTable, { DataTableInner } from '../components/ui/DataTable'
 import ClientAudiences from '../components/clients/ClientAudiences'
+import RentalClientImportModal from '../components/clients/RentalClientImportModal'
+import { BUSINESS_WORKSPACES } from '../lib/businessWorkspaceAccess'
 import {
   loadAgentClientDirectory,
 } from '../core/clients/agentClientDirectory'
@@ -228,6 +231,7 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{1
 const UUID_IN_TEXT_PATTERN = /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}\b/gi
 
 const ROLE_META = {
+  landlord: { label: 'Landlord', pluralLabel: 'Landlords', accent: '#15a35d', chip: 'border-[#ccefdc] bg-[#ecfbf2] text-[#08723b]', soft: 'bg-[#ecfbf2] text-[#08723b]', icon: Home, cardAccent: 'border-l-[#15a35d]' },
   buyer: {
     label: 'Buyer',
     pluralLabel: 'Buyers',
@@ -500,7 +504,7 @@ function getClientRoleKeys(client = {}) {
   const explicitRoleKeys = Array.isArray(client.roleKeys) ? client.roleKeys : []
   for (const roleKey of explicitRoleKeys) {
     const normalized = String(roleKey || '').trim()
-    if (['buyer', 'seller', 'investor', 'tenant', 'prospect'].includes(normalized)) {
+    if (['buyer', 'seller', 'investor', 'tenant', 'landlord', 'prospect'].includes(normalized)) {
       keys.add(normalized)
     }
   }
@@ -511,6 +515,7 @@ function getClientRoleKeys(client = {}) {
   if (typeKeys.some((key) => ['prospects', 'compliance'].includes(key)) || labels.some((label) => label.includes('prospect') || label.includes('compliance'))) keys.add('prospect')
   if (typeKeys.some((key) => ['representatives', 'representative'].includes(key)) || labels.some((label) => label.includes('investor') || label.includes('investment') || label.includes('representative'))) keys.add('investor')
   if (typeKeys.some((key) => ['organisations', 'organizations', 'companies'].includes(key)) || labels.some((label) => label.includes('tenant') || label.includes('rental') || label.includes('rent') || label.includes('organisation') || label.includes('organization') || label.includes('company') || label.includes('bank'))) keys.add('tenant')
+  if (labels.some((label) => label.includes('landlord'))) keys.add('landlord')
   if (!keys.size) keys.add('prospect')
   return [...keys]
 }
@@ -518,8 +523,8 @@ function getClientRoleKeys(client = {}) {
 function getPrimaryRoleKey(client = {}) {
   const roles = getClientRoleKeys(client)
   const priority = Number(client.activeTransactions || 0) > 0
-    ? ['seller', 'buyer', 'investor', 'tenant', 'prospect']
-    : ['seller', 'buyer', 'investor', 'tenant', 'prospect']
+    ? ['seller', 'buyer', 'investor', 'landlord', 'tenant', 'prospect']
+    : ['seller', 'buyer', 'investor', 'landlord', 'tenant', 'prospect']
   return priority.find((roleKey) => roles.includes(roleKey)) || roles[0] || 'prospect'
 }
 
@@ -983,7 +988,7 @@ function Clients() {
   const navigate = useNavigate()
   const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
-  const { profile, role, workspace, currentMembership } = useWorkspace()
+  const { profile, role, workspace, currentMembership, businessWorkspaceId } = useWorkspace()
   const { organisation } = useOrganisation()
   const [rows, setRows] = useState([])
   const [agentFilters, setAgentFilters] = useState({ sources: [], assignedAgents: [] })
@@ -1004,6 +1009,7 @@ function Clients() {
   const [deleteClientTarget, setDeleteClientTarget] = useState(null)
   const [deletingClient, setDeletingClient] = useState(false)
   const [showAddModal, setShowAddModal] = useState(false)
+  const [showRentalImport, setShowRentalImport] = useState(false)
   const [directoryTab, setDirectoryTab] = useState('clients')
   const [selectedAgentClient, setSelectedAgentClient] = useState(null)
   const [marketingState, setMarketingState] = useState({ loading: false, error: '', marketingContact: null, savedAudiences: [] })
@@ -1012,12 +1018,13 @@ function Clients() {
     performanceBaselineRef.current = createAgentRoutePerformanceBaseline({ surface: 'clients', route: '/clients' })
   }
   const isAgentClientDirectory = role === 'agent'
+  const isRentalClientsDirectory = isAgentClientDirectory && businessWorkspaceId === BUSINESS_WORKSPACES.rentals
   const isPrimaryAgentClientsRoute = isAgentClientDirectory && location.pathname === '/clients'
   const isAttorneyClientDirectory = role === 'attorney'
   const isBondClientsRoute = role === 'bond_originator' || location.pathname.startsWith('/bond/clients')
   const directoryCopy = isAttorneyClientDirectory ? ATTORNEY_CLIENT_DIRECTORY_COPY : DEFAULT_CLIENT_DIRECTORY_COPY
   const directorySegments = isAttorneyClientDirectory ? ATTORNEY_CLIENT_SEGMENTS : CLIENT_SEGMENTS
-  const directoryRoleOptions = isAttorneyClientDirectory ? ATTORNEY_CLIENT_ROLE_OPTIONS : CLIENT_ROLE_OPTIONS
+  const directoryRoleOptions = isAttorneyClientDirectory ? ATTORNEY_CLIENT_ROLE_OPTIONS : isRentalClientsDirectory ? [...CLIENT_ROLE_OPTIONS, { key: 'landlord', label: 'Landlords' }] : CLIENT_ROLE_OPTIONS
   const directoryStatusFilters = isAttorneyClientDirectory ? ATTORNEY_STATUS_FILTERS : AGENT_STATUS_FILTERS
   const selectedDevelopmentId = searchParams.get('developmentId') || 'all'
   const activeOrganisationId = String(
@@ -1437,6 +1444,7 @@ function Clients() {
       data-performance-core-ready={isPrimaryAgentClientsRoute ? (loading ? 'false' : 'true') : undefined}
       data-performance-settled={isPrimaryAgentClientsRoute ? (loading ? 'false' : 'true') : undefined}
     >
+      {showRentalImport && isRentalClientsDirectory ? <RentalClientImportModal key={activeOrganisationId} organisationId={activeOrganisationId} actorId={profile?.id} existingClients={clients} onClose={() => setShowRentalImport(false)} onImported={loadData} /> : null}
       <section className="grid gap-4 xl:grid-cols-4">
         {[
           isAttorneyClientDirectory
@@ -1474,8 +1482,8 @@ function Clients() {
         {isAgentClientDirectory ? <div className="flex gap-2 border-b border-[#e6edf5] bg-[#fbfdff] px-4 pt-3"><button type="button" className={`rounded-t-xl px-4 py-3 text-sm font-semibold ${directoryTab === 'clients' ? 'bg-white text-[#0f63c7] shadow-[0_-2px_10px_rgba(15,23,42,0.04)]' : 'text-[#62778e]'}`} onClick={() => setDirectoryTab('clients')}>Clients</button><button type="button" className={`rounded-t-xl px-4 py-3 text-sm font-semibold ${directoryTab === 'audiences' ? 'bg-white text-[#0f63c7] shadow-[0_-2px_10px_rgba(15,23,42,0.04)]' : 'text-[#62778e]'}`} onClick={() => setDirectoryTab('audiences')}>Audiences</button></div> : null}
         {isAgentClientDirectory && directoryTab === 'audiences' ? <ClientAudiences organisationId={activeOrganisationId} userId={profile?.id} /> : null}
         <div className={isAgentClientDirectory && directoryTab !== 'clients' ? 'hidden' : ''}>
-        <div className="flex items-stretch gap-3 border-b border-[#e6edf5] bg-[#fbfdff] px-3 py-3">
-          <div className="grid min-w-0 flex-1 grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
+        <div className={`flex ${isRentalClientsDirectory ? 'flex-wrap' : ''} items-stretch gap-3 border-b border-[#e6edf5] bg-[#fbfdff] px-3 py-3`}>
+          <div className={`grid min-w-0 flex-1 ${isRentalClientsDirectory ? 'basis-full lg:basis-0' : ''} grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6`}>
             {directorySegments.map((segment) => {
               const Icon = segment.icon
               const active = activeFilter === segment.key
@@ -1499,6 +1507,7 @@ function Clients() {
               )
             })}
           </div>
+          {isRentalClientsDirectory ? <Button type="button" variant="secondary" className="self-center" disabled={loading || !activeOrganisationId} onClick={() => setShowRentalImport(true)}><Upload size={16} />Import clients</Button> : null}
           <button
             type="button"
             className="ml-auto hidden min-h-[54px] shrink-0 items-center justify-center gap-2 rounded-[18px] border border-[#dbe5ef] bg-white/80 px-4 text-sm font-semibold text-[#4f647d] shadow-[0_8px_18px_rgba(15,23,42,0.05)] transition hover:bg-white hover:text-[#10243a] lg:inline-flex"

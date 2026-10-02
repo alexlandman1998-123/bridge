@@ -121,7 +121,8 @@ const featureParityPlan = createPrivatePropertyRentalListingPlan({
 assert.match(featureParityPlan.listingXml, /<AttributeType>Parking<\/AttributeType><Value>16<\/Value>/)
 assert.match(featureParityPlan.listingXml, /<AttributeType>Flatlet<\/AttributeType><Value>Yes<\/Value>/)
 assert.match(featureParityPlan.listingXml, /<AttributeType>StaffQuarters<\/AttributeType><Value>Yes<\/Value>/)
-assert.match(featureParityPlan.listingXml, /Additional features include fibre connectivity, Security and Alarm\./)
+assert.match(featureParityPlan.listingXml, /Additional features include fibre connectivity and Security\./)
+assert.match(featureParityPlan.listingXml, /<AttributeType>Alarm<\/AttributeType><Value>Yes<\/Value>/)
 assert.match(featureParityPlan.listingXml, /<HideStreetName>true<\/HideStreetName>/)
 assert.match(featureParityPlan.listingXml, /<HideStreetNo>true<\/HideStreetNo>/)
 
@@ -157,12 +158,14 @@ const blocked = createPrivatePropertyRentalListingPlan({
     propertyId: 'PRV-RENTAL-BLOCKED-1',
   },
 })
-assert.equal(blocked.status, 'BLOCKED')
-assert.equal(blocked.canPreview, false)
+assert.equal(blocked.status, 'PREVIEW_READY')
+assert.equal(blocked.canPreview, true)
 assert.ok(!blocked.dataBlockers.includes('missing_private_property_suburb_id'))
-assert.ok(blocked.dataBlockers.includes('rental_mandate_not_signed'))
-assert.ok(blocked.dataBlockers.includes('rental_marketing_not_approved'))
-assert.equal(blocked.listingXml, '')
+assert.ok(blocked.qualityWarnings.includes('rental_mandate_not_signed'))
+assert.ok(!blocked.dataBlockers.includes('rental_mandate_not_signed'))
+assert.ok(blocked.qualityWarnings.includes('rental_marketing_not_approved'))
+assert.ok(!blocked.dataBlockers.includes('rental_marketing_not_approved'))
+assert.match(blocked.listingXml, /<ListingType>Rental<\/ListingType>/)
 
 const previewServiceSource = read('server/services/privatePropertyListingPreviewService.js')
 assert.match(previewServiceSource, /createPrivatePropertyRentalListingPlan/)

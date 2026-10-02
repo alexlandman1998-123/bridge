@@ -1,10 +1,11 @@
+import { mergeRentalApplicationData } from './rentalApplicationFieldContract.js'
 import { isSupabaseConfigured, supabase } from '../../lib/supabaseClient.js'
 import { createRentalApplicantAccess } from './rentalApplicantAccessModel.js'
 
 const text = (value) => String(value ?? '').trim()
-const fields = 'id, organisation_id, lead_id, vacancy_id, unit_id, applicant_party_id, status, version, application_data, created_at, updated_at'
+const fields = 'id, organisation_id, lead_id, vacancy_id, unit_id, applicant_party_id, status, version, application_data, created_at, updated_at, submitted_at'
 const client = (value = supabase) => { if (!value || (!isSupabaseConfigured && value === supabase)) throw new Error('Rental applications require Supabase configuration.'); return value }
-const map = (row = {}) => ({ id: text(row.id), organisationId: text(row.organisation_id), leadId: text(row.lead_id), vacancyId: text(row.vacancy_id), unitId: text(row.unit_id), applicantPartyId: text(row.applicant_party_id), status: text(row.status), version: Number(row.version || 1), data: row.application_data || {}, updatedAt: row.updated_at || null })
+const map = (row = {}) => ({ id: text(row.id), organisationId: text(row.organisation_id), leadId: text(row.lead_id), vacancyId: text(row.vacancy_id), unitId: text(row.unit_id), applicantPartyId: text(row.applicant_party_id), status: text(row.status), version: Number(row.version || 1), data: row.application_data || {}, submittedAt: row.submitted_at || null, updatedAt: row.updated_at || null })
 
 export async function createPersistedRentalApplication(values = {}, { client: db = supabase } = {}) {
   const payload = { organisation_id: text(values.organisationId), lead_id: text(values.leadId) || null, vacancy_id: text(values.vacancyId), unit_id: text(values.unitId), applicant_party_id: text(values.applicantPartyId) || null, application_data: values.data && typeof values.data === 'object' ? values.data : {}, created_by: text(values.createdBy) || null }
@@ -12,22 +13,28 @@ export async function createPersistedRentalApplication(values = {}, { client: db
   const result = await client(db).from('rental_applications').insert(payload).select(fields).single(); if (result.error) throw result.error; return map(result.data)
 }
 export async function savePersistedRentalApplication(application, patch = {}, { client: db = supabase } = {}) {
-  const result = await client(db).from('rental_applications').update({ application_data: { ...(application.data || {}), ...(patch || {}) }, version: Number(application.version) + 1 }).eq('id', application.id).eq('version', application.version).select(fields).maybeSingle(); if (result.error) throw result.error; if (!result.data) throw new Error('Application changed elsewhere. Refresh and try again.'); return map(result.data)
+  if (application?.status !== 'draft') throw new Error('Only draft applications can be edited.');
+  const result = await client(db).from('rental_applications').update({ application_data: mergeRentalApplicationData(application.data, patch), version: Number(application.version) + 1 }).eq('id', application.id).eq('version', application.version).eq('status', 'draft').select(fields).maybeSingle(); if (result.error) throw result.error; if (!result.data) throw new Error('Application changed elsewhere. Refresh and try again.'); return map(result.data)
 }
 export async function createPersistedRentalApplicantAccess(applicationId, { expiresInMinutes = 10080, createdBy = '', client: db = supabase } = {}) {
   const access = await createRentalApplicantAccess({ applicationId, expiresInMinutes }); const result = await client(db).from('rental_application_access_tokens').insert({ application_id: access.applicationId, token_hash: access.tokenHash, expires_at: access.expiresAt, created_by: text(createdBy) || null }).select('id, expires_at').single(); if (result.error) throw result.error; return { ...access, id: result.data.id, expiresAt: result.data.expires_at }
 }
 export async function listPersistedRentalApplications(organisationId, { client: db = supabase } = {}) { const result = await client(db).from('rental_applications').select(fields).eq('organisation_id', text(organisationId)).order('updated_at', { ascending: false }).limit(100); if (result.error) throw result.error; return (result.data || []).map(map) }
 export async function listPersistedRentalApplicationsForLead(organisationId, leadId, { client: db = supabase } = {}) { const result = await client(db).from('rental_applications').select(fields).eq('organisation_id', text(organisationId)).eq('lead_id', text(leadId)).order('updated_at', { ascending: false }).limit(100); if (result.error) throw result.error; return (result.data || []).map(map) }
-const tenancyFields = 'id, organisation_id, property_id, unit_id, source_application_id, status, intended_occupation_date, tenant_snapshot_json, created_at, updated_at, rental_leases(id, status, terms_json, created_at)'
+const tenancyFields = 'id, organisation_id, property_id, unit_id, source_application_id, status, intended_occupation_date, tenant_snapshot_json, created_at, updated_at, rental_leases(id, status, terms_json, created_at, rental_lease_versions(id, status, is_current, monthly_rent, effective_start_date, effective_end_date, occupation_date, rental_lease_signers(signer_role, signer_name)))'
 const mapTenancy = (row = {}) => ({ id: text(row.id), organisationId: text(row.organisation_id), propertyId: text(row.property_id), unitId: text(row.unit_id), sourceApplicationId: text(row.source_application_id), status: text(row.status), intendedOccupationDate: row.intended_occupation_date || null, tenant: row.tenant_snapshot_json || {}, lease: Array.isArray(row.rental_leases) ? row.rental_leases[0] || null : row.rental_leases || null, createdAt: row.created_at || null, updatedAt: row.updated_at || null })
-export async function listPersistedRentalTenancies(organisationId, { client: db = supabase } = {}) { const result = await client(db).from('rental_tenancies').select(tenancyFields).eq('organisation_id', text(organisationId)).order('updated_at', { ascending: false }).limit(100); if (result.error) throw result.error; return (result.data || []).map(mapTenancy) }
+export async function listPersistedRentalTenancies(organisationId, { client: db = supabase, offset } = {}) { let query = client(db).from('rental_tenancies').select(tenancyFields).eq('organisation_id', text(organisationId)).order('updated_at', { ascending: false }).order('id'); query = offset === undefined ? query.limit(100) : query.range(offset, offset + 99); const result = await query; if (result.error) throw result.error; return (result.data || []).map(mapTenancy) }
 export async function getPersistedRentalTenancy(organisationId, tenancyId, { client: db = supabase } = {}) { const result = await client(db).from('rental_tenancies').select(tenancyFields).eq('organisation_id', text(organisationId)).eq('id', text(tenancyId)).maybeSingle(); if (result.error) throw result.error; return result.data ? mapTenancy(result.data) : null }
-export async function getRentalApplicationReview(applicationId, { client: db = supabase } = {}) { const result = await client(db).from('rental_application_review_summaries').select('id, status, version, application_data, submitted_at, updated_at, documents, consents').eq('id', text(applicationId)).maybeSingle(); if (result.error) throw result.error; return result.data ? { id: result.data.id, status: result.data.status, version: result.data.version, data: result.data.application_data || {}, submittedAt: result.data.submitted_at, updatedAt: result.data.updated_at, documents: result.data.documents || [], consents: result.data.consents || [] } : null }
+export async function getRentalApplicationReview(applicationId, { client: db = supabase } = {}) { const result = await client(db).from('rental_application_review_summaries').select('id, organisation_id, lead_id, status, version, application_data, submitted_snapshot_json, submitted_at, updated_at, documents, consents').eq('id', text(applicationId)).maybeSingle(); if (result.error) throw result.error; return result.data ? { id: result.data.id, organisationId: result.data.organisation_id, leadId: result.data.lead_id, submittedSnapshot: result.data.submitted_snapshot_json, status: result.data.status, version: result.data.version, data: result.data.application_data || {}, submittedAt: result.data.submitted_at, updatedAt: result.data.updated_at, documents: result.data.documents || [], consents: result.data.consents || [] } : null }
 const screeningFields = 'id, application_id, organisation_id, check_type, status, result_json, evidence_note, expires_at, reviewed_by, reviewed_at, updated_at'
 const mapScreening = (row = {}) => ({ id: text(row.id), applicationId: text(row.application_id), organisationId: text(row.organisation_id), checkType: text(row.check_type), status: text(row.status), result: row.result_json || {}, evidenceNote: text(row.evidence_note), expiresAt: row.expires_at || null, reviewedBy: text(row.reviewed_by), reviewedAt: row.reviewed_at || null, updatedAt: row.updated_at || null })
 export async function listRentalApplicationScreeningChecks(applicationId, { client: db = supabase } = {}) { const result = await client(db).from('rental_application_screening_checks').select(screeningFields).eq('application_id', text(applicationId)).order('check_type'); if (result.error) throw result.error; return (result.data || []).map(mapScreening) }
-export async function saveRentalApplicationScreeningCheck(values = {}, { client: db = supabase } = {}) { const payload = { application_id: text(values.applicationId), organisation_id: text(values.organisationId), check_type: text(values.checkType), status: text(values.status) || 'not_started', result_json: values.result && typeof values.result === 'object' ? values.result : {}, evidence_note: text(values.evidenceNote) || null, expires_at: values.expiresAt || null, reviewed_by: text(values.reviewedBy) || null, reviewed_at: values.reviewedAt || null }; if (!payload.application_id || !payload.organisation_id || !payload.check_type) throw new Error('Application, organisation and screening type are required.'); const result = await client(db).from('rental_application_screening_checks').upsert(payload, { onConflict: 'application_id,check_type' }).select(screeningFields).single(); if (result.error) throw result.error; return mapScreening(result.data) }
+export async function saveRentalApplicationScreeningCheck(values = {}, options = {}) {
+  if (!Number.isInteger(values.expectedVersion)) throw new Error('The current application version is required for screening.')
+  await recordRentalApplicationReview({ applicationId: values.applicationId, expectedVersion: values.expectedVersion, command: 'screening', payload: { checkType: values.checkType, subjectId: values.subjectId || 'primary', status: values.status, evidenceNote: values.evidenceNote, expiresAt: values.expiresAt } }, options)
+  return (await listRentalApplicationScreeningChecks(values.applicationId, options)).find((item) => item.checkType === values.checkType)
+}
+
 const decisionFields = 'id, decision, reason, evidence_json, target_version, decided_by, decided_at'
 const notificationFields = 'id, application_event_id, notification_type, delivery_status, retry_count, next_attempt_at, last_error, updated_at'
 export async function listRentalApplicationDecisions(applicationId, { client: db = supabase } = {}) { const result = await client(db).from('rental_application_decisions').select(decisionFields).eq('application_id', text(applicationId)).order('decided_at', { ascending: false }); if (result.error) throw result.error; return result.data || [] }
@@ -37,3 +44,28 @@ export async function retryRentalApplicationNotification(outboxId, { client: db 
 export async function getRentalApplicationTenancyConversion(applicationId, { client: db = supabase } = {}) { const result = await client(db).from('rental_tenancies').select('id, status, intended_occupation_date, created_at, rental_leases(id, status, created_at)').eq('source_application_id', text(applicationId)).maybeSingle(); if (result.error) throw result.error; return result.data || null }
 export async function convertRentalApplicationToTenancy({ applicationId, expectedVersion } = {}, { client: db = supabase } = {}) { const result = await client(db).rpc('rental_convert_application_to_tenancy', { p_application_id: text(applicationId), p_expected_version: Number(expectedVersion) }); if (result.error) throw result.error; return result.data }
 export async function revokePersistedRentalApplicantAccess(accessId, { client: db = supabase } = {}) { const result = await client(db).from('rental_application_access_tokens').update({ revoked_at: new Date().toISOString() }).eq('id', text(accessId)).select('id, expires_at, revoked_at').single(); if (result.error) throw result.error; return result.data }
+
+export async function listPersistedRentalApplicantAccess(applicationId, { client: db = supabase } = {}) {
+  const result = await client(db).from('rental_application_access_tokens').select('id, expires_at, revoked_at, created_at, last_accessed_at').eq('application_id', text(applicationId)).order('created_at', { ascending: false })
+  if (result.error) throw result.error
+  return result.data || []
+}
+
+export async function recordRentalApplicationReview({ applicationId, expectedVersion, command, payload = {} }, { client: db = supabase } = {}) {
+  const result = await client(db).rpc('rental_record_application_review', { p_application_id: text(applicationId), p_expected_version: Number(expectedVersion), p_command: command, p_payload: payload })
+  if (result.error) throw result.error
+  return result.data
+}
+export async function listRentalApplicationEvents(applicationId, { client: db = supabase } = {}) {
+  const result = await client(db).from('rental_application_events').select('id,event_type,aggregate_version,payload_json,occurred_by,occurred_at').eq('application_id', text(applicationId)).order('occurred_at', { ascending: false })
+  if (result.error) throw result.error
+  return result.data || []
+}
+export async function getRentalApplicationDocumentUrl(applicationId, documentId) {
+  const { data, error } = await supabase.auth.getSession()
+  if (error || !data.session?.access_token) throw new Error('Sign in to view application evidence.')
+  const response = await fetch(`/api/rentals/application-documents?applicationId=${encodeURIComponent(applicationId)}&documentId=${encodeURIComponent(documentId)}`, { headers: { Authorization: `Bearer ${data.session.access_token}` } })
+  const result = await response.json()
+  if (!response.ok) throw new Error(result.error || 'Unable to open application evidence.')
+  return result.url
+}

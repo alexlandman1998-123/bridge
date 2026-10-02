@@ -1,22 +1,17 @@
 import {
-  AlertCircle,
-  BarChart3,
   CheckCircle2,
   Copy,
   Download,
   ExternalLink,
-  Inbox,
-  IdCard,
   Mail,
   Pencil,
   Plus,
   QrCode,
+  Radio,
   RefreshCw,
   Save,
   Search,
   UserRound,
-  UsersRound,
-  Wrench,
   X,
   XCircle,
 } from 'lucide-react'
@@ -40,21 +35,6 @@ import {
 } from '../../services/agentDigitalCardShareService'
 import { resolveAgencyPublicCardListings } from '../../services/agencyPublicIntakeService'
 import {
-  buildLeadCaptureReviewQueueRows,
-  buildLeadCaptureRepairDraft,
-  filterLeadCaptureReviewQueueRows,
-  ignoreLeadCaptureReviewItem,
-  LEAD_CAPTURE_CONFIDENCE_FILTERS,
-  LEAD_CAPTURE_REVIEW_STATUSES,
-  LEAD_CAPTURE_SOURCES,
-  listInboundLeadEmails,
-  listLeadCaptureAliases,
-  listLeadParseFailures,
-  linkLeadCaptureReviewItem,
-  repairLeadCaptureReviewItem,
-  resolveLeadCaptureReviewItem,
-} from '../../services/leadEmailCaptureService'
-import {
   completeMetaLeadAdsAuthorization,
   connectMetaLeadAdsPage,
   listMetaLeadAdsConnections,
@@ -71,7 +51,6 @@ import {
   SettingsLoadingState,
   SettingsPageHeader,
   SettingsSectionCard,
-  settingsCardClass,
   settingsPageClass,
 } from './settingsUi'
 
@@ -87,11 +66,6 @@ function formatDateTime(value) {
     dateStyle: 'medium',
     timeStyle: 'short',
   }).format(date)
-}
-
-function formatConfidence(value) {
-  if (value === null || value === undefined || Number.isNaN(Number(value))) return 'Not scored'
-  return `${Math.round(Number(value) * 100)}%`
 }
 
 function getUserId(user = {}) {
@@ -195,123 +169,6 @@ function SecondaryButton({ children, onClick, disabled = false, icon: Icon = nul
   )
 }
 
-function MetricCard({ label, value, icon: Icon }) {
-  const icon = Icon ? createElement(Icon, { size: 19 }) : null
-  return (
-    <div className={settingsCardClass}>
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7b8da6]">{label}</p>
-          <p className="mt-2 text-2xl font-semibold text-[#162334]">{value}</p>
-        </div>
-        <span className="inline-flex h-11 w-11 items-center justify-center rounded-[14px] border border-[#d9e4ef] bg-white text-[#35546c]">
-          {icon}
-        </span>
-      </div>
-    </div>
-  )
-}
-
-function formatPercentage(value = 0, total = 0) {
-  if (!total) return '0%'
-  return `${Math.round((Number(value || 0) / Number(total || 1)) * 100)}%`
-}
-
-function AgentDigitalCardPerformanceOverview({ insights = null }) {
-  const summary = insights?.summary || {}
-  const sourceRows = Object.entries(summary.bySourceChannel || {})
-    .map(([source, metrics]) => ({ source, ...metrics }))
-    .sort((left, right) => (right.totalLeads - left.totalLeads) || (right.contactClicks - left.contactClicks) || (right.views - left.views))
-    .slice(0, 6)
-  const campaignRows = Object.entries(summary.byCampaignCode || {})
-    .filter(([campaign]) => campaign !== 'unattributed')
-    .map(([campaign, metrics]) => ({ campaign, ...metrics }))
-    .sort((left, right) => (right.totalLeads - left.totalLeads) || (right.views - left.views))
-    .slice(0, 3)
-
-  return (
-    <div className="mb-5 rounded-[18px] border border-[#dbe7f1] bg-[#f8fbfe] p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-[#54728f]"><BarChart3 size={14} /> Digital-card funnel</p>
-          <h3 className="mt-1 text-lg font-semibold text-[#162334]">What turns card views into enquiries</h3>
-          <p className="mt-1 text-sm text-[#60758d]">Last {insights?.windowDays || 30} days across all agent cards.</p>
-        </div>
-        <span className="rounded-full border border-[#d7e5f1] bg-white px-3 py-1 text-xs font-semibold text-[#54728f]">{summary.views || 0} visits tracked</span>
-      </div>
-
-      <div className="mt-4 grid gap-2 sm:grid-cols-4">
-        {[
-          ['Views', summary.views || 0, 'Reach'],
-          ['Contact actions', summary.contactClicks || 0, formatPercentage(summary.contactClicks, summary.views)],
-          ['Property interest', summary.listingClicks || 0, formatPercentage(summary.listingClicks, summary.views)],
-          ['Enquiries', summary.totalLeads || 0, formatPercentage(summary.totalLeads, summary.views)],
-        ].map(([label, value, detail]) => (
-          <div key={label} className="rounded-[12px] border border-[#dce7f1] bg-white px-3 py-3">
-            <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#71849a]">{label}</p>
-            <p className="mt-1 text-xl font-semibold text-[#162334]">{value}</p>
-            <p className="mt-1 text-xs text-[#71849a]">{detail}</p>
-          </div>
-        ))}
-      </div>
-
-      {sourceRows.length ? (
-        <div className="mt-4 overflow-hidden rounded-[12px] border border-[#dce7f1] bg-white">
-          <table className="min-w-full text-left text-sm">
-            <thead className="bg-[#f4f8fc] text-xs font-semibold uppercase tracking-[0.1em] text-[#71849a]">
-              <tr><th className="px-3 py-2">Source</th><th className="px-3 py-2">Views</th><th className="px-3 py-2">Contact</th><th className="px-3 py-2">Enquiries</th><th className="px-3 py-2">Conversion</th></tr>
-            </thead>
-            <tbody>
-              {sourceRows.map((row) => (
-                <tr key={row.source} className="border-t border-[#e8eef5] text-[#526981]">
-                  <td className="px-3 py-2.5 font-semibold capitalize text-[#263c52]">{row.source}</td><td className="px-3 py-2.5">{row.views || 0}</td><td className="px-3 py-2.5">{row.contactClicks || 0}</td><td className="px-3 py-2.5">{row.totalLeads || 0}</td><td className="px-3 py-2.5 font-semibold">{formatPercentage(row.totalLeads, row.views)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : <p className="mt-4 rounded-[12px] border border-dashed border-[#cfdeeb] bg-white px-3 py-4 text-sm text-[#71849a]">Source performance will appear after visitors use a card link or submit an enquiry.</p>}
-
-      {campaignRows.length ? <p className="mt-3 text-xs text-[#60758d]">Top campaigns: {campaignRows.map((row) => `${row.campaign} (${row.totalLeads || 0} enquiries)`).join(' · ')}</p> : null}
-    </div>
-  )
-}
-
-function addCardMetrics(total, summary = {}) {
-  for (const key of ['views', 'contactClicks', 'listingClicks', 'totalLeads']) total[key] += Number(summary[key] || 0)
-  total.cards += 1
-  return total
-}
-
-function AgentCardRolloutOverview({ rows = [] }) {
-  const cohorts = rows.reduce((result, row) => {
-    if (!row.card || row.card.status !== 'active') return result
-    const stage = row.card.agentDigitalCard?.rollout?.stage === 'pilot' ? 'pilot' : 'standard'
-    addCardMetrics(result[stage], row.insights?.summary || {})
-    return result
-  }, {
-    pilot: { cards: 0, views: 0, contactClicks: 0, listingClicks: 0, totalLeads: 0 },
-    standard: { cards: 0, views: 0, contactClicks: 0, listingClicks: 0, totalLeads: 0 },
-  })
-  const pilotReady = cohorts.pilot.cards > 0 && cohorts.pilot.views >= 20 && cohorts.pilot.totalLeads > 0
-
-  return (
-    <div className="mb-5 rounded-[18px] border border-[#dbe7f1] bg-white p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div><p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#54728f]">Controlled rollout</p><h3 className="mt-1 text-lg font-semibold text-[#162334]">Pilot before broad distribution</h3><p className="mt-1 text-sm text-[#60758d]">Keep a small cohort tagged as Pilot, review its real engagement, then move cards to Standard when ready.</p></div>
-        <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${pilotReady ? statusToneClass('success') : statusToneClass('warning')}`}>{pilotReady ? 'Pilot has lead evidence' : 'Collect pilot evidence'}</span>
-      </div>
-      <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        {['pilot', 'standard'].map((stage) => {
-          const cohort = cohorts[stage]
-          return <div key={stage} className="rounded-[12px] border border-[#e0e8f1] bg-[#f8fbfe] p-3"><p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#71849a]">{stage === 'pilot' ? 'Pilot cohort' : 'Standard rollout'}</p><p className="mt-1 text-xl font-semibold capitalize text-[#162334]">{cohort.cards} {cohort.cards === 1 ? 'card' : 'cards'}</p><p className="mt-2 text-sm text-[#526981]">{cohort.views} views · {cohort.contactClicks} contact actions · {cohort.totalLeads} enquiries</p></div>
-        })}
-      </div>
-      <p className="mt-3 text-xs leading-5 text-[#71849a]">Recommended gate: review at least 20 pilot visits and one genuine enquiry before expanding QR, WhatsApp, email-signature, and social distribution.</p>
-    </div>
-  )
-}
-
 function AgentCardManagementRow({
   user,
   card,
@@ -335,7 +192,6 @@ function AgentCardManagementRow({
   const summary = insights?.summary || {}
   const rowDisabled = saving || Boolean(assetBusy)
   const features = card?.agentDigitalCard?.features || {}
-  const rolloutStage = card?.agentDigitalCard?.rollout?.stage === 'pilot' ? 'pilot' : 'standard'
   return (
     <tr className="border-t border-[#e8eef5] align-top">
       <td className="px-4 py-4">
@@ -360,7 +216,6 @@ function AgentCardManagementRow({
                 30d: {summary.views || 0} views · {summary.totalLeads || 0} leads
               </span>
             ) : null}
-            {card ? <span className={`inline-flex w-fit items-center rounded-full border px-2 py-1 text-xs font-semibold ${rolloutStage === 'pilot' ? statusToneClass('warning') : statusToneClass('blue')}`}>{rolloutStage === 'pilot' ? 'Pilot cohort' : 'Standard rollout'}</span> : null}
           </div>
         ) : (
           <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${statusToneClass('slate')}`}>
@@ -535,250 +390,18 @@ function AgentCardEditorDialog({ editor, listingOptions = [], listingLoading = f
   )
 }
 
-function formatMatchedFields(fields = {}) {
-  return Object.entries(fields || {})
-    .filter(([, value]) => value !== null && value !== undefined && String(value).trim())
-    .slice(0, 6)
-}
-
-function ReviewQueueItem({ item, onRepair, onResolve, onIgnore, saving = false }) {
-  const matchedFields = formatMatchedFields(item.matchedFields)
-  return (
-    <div className="rounded-[14px] border border-[#f3d9a8] bg-[#fffaf1] p-4">
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-full border border-[#f0d492] bg-white px-2.5 py-1 text-xs font-semibold text-[#7a5a1b]">{item.source || 'Unknown source'}</span>
-            <span className="rounded-full border border-[#f0d492] bg-white px-2.5 py-1 text-xs font-semibold text-[#7a5a1b]">{formatConfidence(item.parseConfidence)}</span>
-            <span className="text-xs font-semibold uppercase tracking-[0.12em] text-[#9a7a35]">{item.kind === 'failure' ? 'Parse Failure' : 'Low Confidence'}</span>
-          </div>
-          <p className="mt-3 font-semibold text-[#162334]">{item.reason || 'Parser review required'}</p>
-          <p className="mt-1 text-sm text-[#7a5a1b]">
-            {item.subject || item.fromEmail || 'Inbound lead email'} · {item.parserName || 'parser pending'} · {formatDateTime(item.receivedAt)}
-          </p>
-          {item.parseWarnings?.length ? <p className="mt-2 text-xs text-[#9a6408]">{item.parseWarnings.join(', ')}</p> : null}
-          {matchedFields.length ? (
-            <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-              {matchedFields.map(([field, value]) => (
-                <div key={field} className="min-w-0 rounded-[10px] border border-[#f0dfb5] bg-white px-3 py-2">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#9a7a35]">{field}</p>
-                  <p className="mt-1 truncate text-sm text-[#35546c]">{String(value)}</p>
-                </div>
-              ))}
-            </div>
-          ) : null}
-        </div>
-        <div className="flex flex-wrap gap-2 lg:justify-end">
-          <SecondaryButton icon={Wrench} onClick={() => onRepair(item)} disabled={saving}>Repair</SecondaryButton>
-          <SecondaryButton icon={CheckCircle2} onClick={() => onResolve(item)} disabled={saving}>Resolve</SecondaryButton>
-          <SecondaryButton icon={XCircle} onClick={() => onIgnore(item)} disabled={saving}>Ignore</SecondaryButton>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function RepairField({ label, value, onChange, placeholder = '', type = 'text' }) {
-  return (
-    <label className="grid gap-1.5">
-      <span className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b8da6]">{label}</span>
-      <input
-        type={type}
-        value={value || ''}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder={placeholder}
-        className="min-h-10 rounded-[12px] border border-[#d7e2ee] bg-white px-3 text-sm text-[#162334] outline-none transition focus:border-[#274e7a] focus:ring-2 focus:ring-[#d9e8f6]"
-      />
-    </label>
-  )
-}
-
-function RepairSelect({ label, value, onChange, options = [] }) {
-  return (
-    <label className="grid gap-1.5">
-      <span className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b8da6]">{label}</span>
-      <select
-        value={value || ''}
-        onChange={(event) => onChange(event.target.value)}
-        className="min-h-10 rounded-[12px] border border-[#d7e2ee] bg-white px-3 text-sm text-[#162334] outline-none transition focus:border-[#274e7a] focus:ring-2 focus:ring-[#d9e8f6]"
-      >
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>{option.label}</option>
-        ))}
-      </select>
-    </label>
-  )
-}
-
-function RepairDrawer({ item, draft, users = [], onChange, onClose, onCreateLead, onLinkLead, saving = false }) {
-  if (!item) return null
-  const matchedFields = formatMatchedFields(item.matchedFields)
-  const rawPreview = JSON.stringify(item.raw?.payload || item.raw || {}, null, 2)
-  const update = (field) => (value) => onChange({ ...draft, [field]: value })
-  const agentOptions = [
-    { value: '', label: 'No assigned agent' },
-    ...users.map((user) => {
-      const userId = normalizeText(user.userId || user.id)
-      return {
-        value: userId,
-        label: normalizeText(user.fullName || [user.firstName, user.lastName].filter(Boolean).join(' ')) || user.email || userId,
-      }
-    }).filter((option) => option.value),
-  ]
-  return (
-    <aside className="fixed inset-y-0 right-0 z-50 flex w-full max-w-3xl flex-col border-l border-[#d7e2ee] bg-white shadow-2xl">
-      <header className="flex items-start justify-between gap-4 border-b border-[#e3ebf3] p-5">
-        <div className="min-w-0">
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7b8da6]">Lead Capture Repair</p>
-          <h2 className="mt-1 text-2xl font-semibold text-[#162334]">{item.source || 'Inbound'} review</h2>
-          <p className="mt-2 text-sm text-[#6b7d93]">{item.reason || 'Review required'} · {formatConfidence(item.parseConfidence)}</p>
-        </div>
-        <IconButton label="Close repair drawer" icon={X} onClick={onClose} disabled={saving} />
-      </header>
-      <div className="flex-1 space-y-5 overflow-y-auto p-5">
-        <section className="grid gap-3 rounded-[14px] border border-[#e3ebf3] bg-[#f8fbfe] p-4 sm:grid-cols-2">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b8da6]">Parser</p>
-            <p className="mt-1 text-sm text-[#35546c]">{item.parserName || 'parser pending'}</p>
-          </div>
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b8da6]">Received</p>
-            <p className="mt-1 text-sm text-[#35546c]">{formatDateTime(item.receivedAt)}</p>
-          </div>
-          <div className="sm:col-span-2">
-            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b8da6]">Original Email</p>
-            <p className="mt-1 break-words text-sm text-[#35546c]">{item.subject || item.fromEmail || 'No subject captured'}</p>
-          </div>
-        </section>
-
-        {matchedFields.length ? (
-          <section className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-            {matchedFields.map(([field, value]) => (
-              <div key={field} className="min-w-0 rounded-[10px] border border-[#e3ebf3] bg-white px-3 py-2">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#7b8da6]">{field}</p>
-                <p className="mt-1 truncate text-sm text-[#35546c]">{String(value)}</p>
-              </div>
-            ))}
-          </section>
-        ) : null}
-
-        <section className="space-y-3 rounded-[14px] border border-[#e3ebf3] p-4">
-          <h3 className="text-sm font-semibold text-[#162334]">Create Lead From Repaired Fields</h3>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <RepairField label="Name" value={draft.name} onChange={update('name')} placeholder="Lead name" />
-            <RepairField label="Email" value={draft.email} onChange={update('email')} placeholder="lead@example.com" />
-            <RepairField label="Phone" value={draft.phone} onChange={update('phone')} placeholder="+27..." />
-            <RepairField label="Source" value={draft.source} onChange={update('source')} placeholder="Property24" />
-            <RepairField label="Listing Id" value={draft.listingId} onChange={update('listingId')} placeholder="Optional listing UUID" />
-            <RepairField label="Listing Reference" value={draft.listingReference} onChange={update('listingReference')} placeholder="Portal reference" />
-            <RepairField label="Budget" value={draft.budget} onChange={update('budget')} type="number" placeholder="0" />
-            <RepairField label="Area" value={draft.areaInterest} onChange={update('areaInterest')} placeholder="Suburb or area" />
-            <RepairField label="Property Type" value={draft.propertyType} onChange={update('propertyType')} placeholder="Apartment, house..." />
-            <RepairSelect label="Assigned Agent" value={draft.assignedAgentId} onChange={update('assignedAgentId')} options={agentOptions} />
-            <RepairField label="External Reference" value={draft.externalReference} onChange={update('externalReference')} placeholder="Provider message/reference" />
-            <RepairField label="Review Note" value={draft.reviewNote} onChange={update('reviewNote')} placeholder="What was repaired" />
-          </div>
-          <label className="grid gap-1.5">
-            <span className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b8da6]">Message</span>
-            <textarea
-              value={draft.message || ''}
-              onChange={(event) => update('message')(event.target.value)}
-              className="min-h-28 rounded-[12px] border border-[#d7e2ee] bg-white px-3 py-2 text-sm text-[#162334] outline-none transition focus:border-[#274e7a] focus:ring-2 focus:ring-[#d9e8f6]"
-              placeholder="Lead message"
-            />
-          </label>
-          <PrimaryButton icon={ExternalLink} onClick={onCreateLead} disabled={saving || (!draft.email && !draft.phone && !draft.name)}>
-            Create Lead
-          </PrimaryButton>
-        </section>
-
-        <section className="space-y-3 rounded-[14px] border border-[#e3ebf3] p-4">
-          <h3 className="text-sm font-semibold text-[#162334]">Link Existing Lead</h3>
-          <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
-            <RepairField label="Lead Id" value={draft.leadId} onChange={update('leadId')} placeholder="Existing lead UUID" />
-            <RepairField label="Contact Id" value={draft.contactId} onChange={update('contactId')} placeholder="Optional contact UUID" />
-            <SecondaryButton icon={ExternalLink} onClick={onLinkLead} disabled={saving || !draft.leadId}>Link Lead</SecondaryButton>
-          </div>
-        </section>
-
-        <details className="rounded-[14px] border border-[#e3ebf3] bg-[#f8fbfe] p-4">
-          <summary className="cursor-pointer text-sm font-semibold text-[#162334]">Raw review payload</summary>
-          <pre className="mt-3 max-h-72 overflow-auto rounded-[12px] bg-[#162334] p-3 text-xs text-white">{rawPreview}</pre>
-        </details>
-      </div>
-    </aside>
-  )
-}
-
-function ReviewQueueFilters({ filters, setFilters, sources = [], users = [], total = 0, visible = 0 }) {
-  const sourceOptions = ['all', ...new Set([...sources, 'Other'].filter(Boolean))]
-  const agentOptions = [
-    { value: 'all', label: 'All agents' },
-    { value: 'unassigned', label: 'Unassigned' },
-    ...users.map((user) => {
-      const userId = normalizeText(user.userId || user.id)
-      return {
-        value: userId,
-        label: normalizeText(user.fullName || [user.firstName, user.lastName].filter(Boolean).join(' ')) || user.email || userId,
-      }
-    }).filter((option) => option.value),
-  ]
-  const update = (field) => (value) => setFilters((previous) => ({ ...previous, [field]: value }))
-  return (
-    <div className="grid gap-3 rounded-[14px] border border-[#e3ebf3] bg-[#f8fbfe] p-4">
-      <div className="grid gap-3 lg:grid-cols-[minmax(220px,1.5fr)_repeat(4,minmax(150px,1fr))]">
-        <label className="relative block">
-          <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#7b8da6]" size={15} />
-          <input
-            value={filters.search}
-            onChange={(event) => update('search')(event.target.value)}
-            className="min-h-10 w-full rounded-[12px] border border-[#d7e2ee] bg-white pl-9 pr-3 text-sm text-[#162334] outline-none transition focus:border-[#274e7a] focus:ring-2 focus:ring-[#d9e8f6]"
-            placeholder="Search review queue"
-          />
-        </label>
-        <select value={filters.status} onChange={(event) => update('status')(event.target.value)} className="min-h-10 rounded-[12px] border border-[#d7e2ee] bg-white px-3 text-sm text-[#162334]">
-          <option value="all">All statuses</option>
-          {LEAD_CAPTURE_REVIEW_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
-        </select>
-        <select value={filters.source} onChange={(event) => update('source')(event.target.value)} className="min-h-10 rounded-[12px] border border-[#d7e2ee] bg-white px-3 text-sm text-[#162334]">
-          {sourceOptions.map((source) => <option key={source} value={source}>{source === 'all' ? 'All sources' : source}</option>)}
-        </select>
-        <select value={filters.confidence} onChange={(event) => update('confidence')(event.target.value)} className="min-h-10 rounded-[12px] border border-[#d7e2ee] bg-white px-3 text-sm text-[#162334]">
-          {LEAD_CAPTURE_CONFIDENCE_FILTERS.map((confidence) => <option key={confidence} value={confidence}>{confidence === 'all' ? 'All confidence' : confidence}</option>)}
-        </select>
-        <select value={filters.assignedAgentId} onChange={(event) => update('assignedAgentId')(event.target.value)} className="min-h-10 rounded-[12px] border border-[#d7e2ee] bg-white px-3 text-sm text-[#162334]">
-          {agentOptions.map((option) => <option key={option.value || 'unassigned'} value={option.value}>{option.label}</option>)}
-        </select>
-      </div>
-      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b8da6]">{visible} of {total} reviews shown</p>
-    </div>
-  )
-}
-
 export default function SettingsLeadCapturePage({ section = 'meta' }) {
-  const { profile, role, currentWorkspace, workspaceType } = useWorkspace()
+  const { role, currentWorkspace, workspaceType } = useWorkspace()
   const [context, setContext] = useState(null)
   const [users, setUsers] = useState([])
-  const [aliases, setAliases] = useState([])
   const [agentCardLinks, setAgentCardLinks] = useState([])
   const [agentCardInsights, setAgentCardInsights] = useState(null)
   const [agentCardAssetBusy, setAgentCardAssetBusy] = useState('')
   const [agentCardEditor, setAgentCardEditor] = useState(null)
   const [agentCardListingOptions, setAgentCardListingOptions] = useState([])
   const [agentCardListingsLoading, setAgentCardListingsLoading] = useState(false)
-  const [inboundEmails, setInboundEmails] = useState([])
-  const [reviewItems, setReviewItems] = useState([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [selectedRepairItem, setSelectedRepairItem] = useState(null)
-  const [repairDraft, setRepairDraft] = useState({})
-  const [reviewFilters, setReviewFilters] = useState({
-    search: '',
-    status: 'open',
-    source: 'all',
-    confidence: 'all',
-    assignedAgentId: 'all',
-  })
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [metaConnections, setMetaConnections] = useState([])
@@ -792,7 +415,6 @@ export default function SettingsLeadCapturePage({ section = 'meta' }) {
   const [metaImportPreview, setMetaImportPreview] = useState(null)
   const showMeta = section === 'meta'
   const showDigitalCards = section === 'digital-cards'
-  const showEmail = section === 'email'
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -803,19 +425,12 @@ export default function SettingsLeadCapturePage({ section = 'meta' }) {
       if (!organisationId) {
         setContext(nextContext)
         setUsers([])
-        setAliases([])
         setAgentCardLinks([])
         setAgentCardInsights(null)
-        setInboundEmails([])
-        setReviewItems([])
         return
       }
-      const [nextUsers, nextAliases, nextAgentCardLinksResult, nextAgentCardInsightsResult, nextInboundEmails, nextFailures] = await Promise.all([
+      const [nextUsers, nextAgentCardLinksResult, nextAgentCardInsightsResult] = await Promise.all([
         listOrganisationUsers().catch(() => []),
-        listLeadCaptureAliases(organisationId).catch((aliasError) => {
-          if (String(aliasError?.message || '').toLowerCase().includes('lead_capture_aliases')) return []
-          throw aliasError
-        }),
         listAgencyAgentCardLinks({ organisationId, status: 'all' }).catch((cardError) => {
           if (String(cardError?.message || '').toLowerCase().includes('agency_public_intake_links')) return { links: [] }
           throw cardError
@@ -824,27 +439,11 @@ export default function SettingsLeadCapturePage({ section = 'meta' }) {
           if (String(insightError?.message || '').toLowerCase().includes('agency_agent_card_events')) return null
           throw insightError
         }),
-        listInboundLeadEmails(organisationId, { limit: 200 }).catch((emailError) => {
-          if (String(emailError?.message || '').toLowerCase().includes('inbound_lead_emails')) return []
-          throw emailError
-        }),
-        listLeadParseFailures(organisationId, { limit: 200, status: '' }).catch((failureError) => {
-          if (String(failureError?.message || '').toLowerCase().includes('lead_parse_failures')) return []
-          if (String(failureError?.message || '').toLowerCase().includes('review_status')) return []
-          throw failureError
-        }),
       ])
       setContext(nextContext)
       setUsers(nextUsers)
-      setAliases(nextAliases)
       setAgentCardLinks(nextAgentCardLinksResult?.links || [])
       setAgentCardInsights(nextAgentCardInsightsResult)
-      setInboundEmails(nextInboundEmails)
-      setReviewItems(buildLeadCaptureReviewQueueRows({
-        failures: nextFailures,
-        inboundEmails: nextInboundEmails,
-        status: 'all',
-      }))
       if (showMeta) {
         const meta = await listMetaLeadAdsConnections(organisationId).catch(() => ({ connections: [] }))
         const connections = meta.connections || []
@@ -975,27 +574,8 @@ export default function SettingsLeadCapturePage({ section = 'meta' }) {
         }
       })
   }, [agentCardInsights, agentCardLinks, users])
-  const reviewItemsWithAssignment = useMemo(() => {
-    const aliasesById = new Map(aliases.map((alias) => [alias.aliasId, alias]))
-    return reviewItems.map((item) => {
-      const alias = aliasesById.get(item.captureAliasId)
-      return {
-        ...item,
-        assignedAgentId: item.assignedAgentId || alias?.agentUserId || '',
-      }
-    })
-  }, [aliases, reviewItems])
-  const filteredReviewItems = useMemo(
-    () => filterLeadCaptureReviewQueueRows(reviewItemsWithAssignment, reviewFilters),
-    [reviewFilters, reviewItemsWithAssignment],
-  )
-  const activeAgentCount = users.filter(isActiveAgentUser).length
-  const activeCardCount = agentCardLinks.filter((card) => card.status === 'active').length
-  const cardViewCount = agentCardInsights?.summary?.views || 0
   const missingAgentCardRows = agentCardRows.filter(({ card }) => !card)
   const exportableAgentCardRows = agentCardRows.filter(({ card, urls }) => card?.status === 'active' && urls?.cardUrl)
-  const receivedCount = inboundEmails.length
-  const failureCount = reviewItemsWithAssignment.filter((item) => item.status === 'open').length
   async function copyAddress(value) {
     try {
       await navigator.clipboard.writeText(value)
@@ -1284,125 +864,25 @@ export default function SettingsLeadCapturePage({ section = 'meta' }) {
     setNotice(downloaded ? `Exported ${exportableAgentCardRows.length} agent card ${exportableAgentCardRows.length === 1 ? 'row' : 'rows'}.` : 'CSV export is not available in this browser.')
   }
 
-  async function updateReviewItem(item, action) {
-    setSaving(true)
-    setError('')
-    setNotice('')
-    try {
-      if (action === 'ignore') {
-        await ignoreLeadCaptureReviewItem(item, { actor: profile })
-        setNotice('Lead capture review ignored.')
-      } else {
-        await resolveLeadCaptureReviewItem(item, { actor: profile })
-        setNotice('Lead capture review resolved.')
-      }
-      await load()
-    } catch (reviewError) {
-      setError(reviewError?.message || 'Lead capture review could not be updated.')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  function openRepairItem(item) {
-    setError('')
-    setNotice('')
-    setSelectedRepairItem(item)
-    setRepairDraft(buildLeadCaptureRepairDraft(item))
-  }
-
-  async function createLeadFromRepair() {
-    if (!selectedRepairItem) return
-    setSaving(true)
-    setError('')
-    setNotice('')
-    try {
-      const result = await repairLeadCaptureReviewItem(selectedRepairItem, repairDraft, { actor: profile })
-      setSelectedRepairItem(null)
-      setRepairDraft({})
-      setNotice(result?.result?.reusedLead ? 'Existing lead updated from repaired capture.' : 'Lead created from repaired capture.')
-      await load()
-    } catch (repairError) {
-      setError(repairError?.message || 'Lead capture repair could not create a lead.')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  async function linkExistingLeadFromRepair() {
-    if (!selectedRepairItem) return
-    setSaving(true)
-    setError('')
-    setNotice('')
-    try {
-      await linkLeadCaptureReviewItem(selectedRepairItem, repairDraft, { actor: profile })
-      setSelectedRepairItem(null)
-      setRepairDraft({})
-      setNotice('Lead capture review linked to existing lead.')
-      await load()
-    } catch (repairError) {
-      setError(repairError?.message || 'Lead capture review could not be linked.')
-    } finally {
-      setSaving(false)
-    }
-  }
-
   if (loading) {
-    return <SettingsLoadingState label={showMeta ? 'Loading Meta Lead Ads...' : showEmail ? 'Loading archived lead emails...' : 'Loading digital cards...'} />
+    return <SettingsLoadingState label={showMeta ? 'Loading Meta Lead Ads...' : 'Loading digital cards...'} />
   }
 
   return (
     <div className={settingsPageClass}>
-      <SettingsPageHeader
+      {!showDigitalCards ? <SettingsPageHeader
         kicker="Integrations"
-        title={showMeta ? 'Meta Lead Ads' : showEmail ? 'Archived Lead Emails' : 'Digital Cards'}
+        title={showMeta ? 'Meta Lead Ads' : 'Digital Cards'}
         description={showMeta
           ? 'Connect Facebook and Instagram forms, then route enquiries to the right team or agent.'
-          : showEmail ? 'Review historical emails and resolve enquiries that still need attention. Inbound email capture is retired.'
           : 'Create shareable agent cards, QR codes, and enquiry links for your team.'}
         actions={
           <SecondaryButton icon={RefreshCw} onClick={load} disabled={saving}>Refresh</SecondaryButton>
         }
-      />
+      /> : null}
 
       {error ? <SettingsBanner tone="error">{error}</SettingsBanner> : null}
       {notice ? <SettingsBanner tone="success">{notice}</SettingsBanner> : null}
-
-      {showEmail ? (
-        <>
-          <SettingsBanner tone="warning">
-            Inbound email capture has been retired. These messages are kept for historical review; new emails sent to old capture addresses will not create leads.
-          </SettingsBanner>
-          <section className="grid gap-4 md:grid-cols-2">
-            <MetricCard label="Archived emails" value={receivedCount} icon={Inbox} />
-            <MetricCard label="Open reviews" value={failureCount} icon={AlertCircle} />
-          </section>
-          <SettingsSectionCard title="Archived Emails" description="Historical messages received before email capture was retired.">
-            <div className="grid gap-2">
-              {inboundEmails.slice(0, 10).map((email) => <div key={email.emailId} className="flex flex-wrap items-center justify-between gap-2 rounded-[12px] border border-[#e3ebf3] bg-white p-3 text-sm"><span className="font-medium text-[#162334]">{email.subject || email.source || 'Inbound enquiry'}</span><span className="text-[#60758d]">{email.status} · {formatDateTime(email.receivedAt)}</span></div>)}
-              {!inboundEmails.length ? <SettingsEmptyState title="No archived emails" description="This organisation has no historical inbound email messages." /> : null}
-            </div>
-          </SettingsSectionCard>
-          {canManage ? (
-            <SettingsSectionCard title="Historical Review Queue" description="Repair or link enquiries received before email capture was retired.">
-              <ReviewQueueFilters filters={reviewFilters} setFilters={setReviewFilters} sources={LEAD_CAPTURE_SOURCES} users={users} total={reviewItemsWithAssignment.length} visible={filteredReviewItems.length} />
-              <div className="mt-4 grid gap-3">
-                {filteredReviewItems.map((item) => <ReviewQueueItem key={`${item.kind}-${item.id}`} item={item} onRepair={openRepairItem} onResolve={(entry) => updateReviewItem(entry, 'resolve')} onIgnore={(entry) => updateReviewItem(entry, 'ignore')} saving={saving} />)}
-                {!filteredReviewItems.length ? <SettingsEmptyState title="No enquiries need review" description="There are no open historical email reviews for these filters." /> : null}
-              </div>
-            </SettingsSectionCard>
-          ) : null}
-          <RepairDrawer item={selectedRepairItem} draft={repairDraft} users={users} onChange={setRepairDraft} onClose={() => setSelectedRepairItem(null)} onCreateLead={createLeadFromRepair} onLinkLead={linkExistingLeadFromRepair} saving={saving} />
-        </>
-      ) : null}
-
-      {showDigitalCards ? (
-        <section className="grid gap-4 md:grid-cols-3">
-          <MetricCard label="Active Agents" value={activeAgentCount} icon={UsersRound} />
-          <MetricCard label="Digital Cards" value={activeCardCount} icon={IdCard} />
-          <MetricCard label="Card Views" value={cardViewCount} icon={QrCode} />
-        </section>
-      ) : null}
 
       {showMeta && canManage ? (
         <SettingsSectionCard title="Facebook & Instagram Lead Ads" description="Authorise a Meta Page, choose the forms you want to receive, and set their routing.">
@@ -1445,20 +925,16 @@ export default function SettingsLeadCapturePage({ section = 'meta' }) {
 
       {showDigitalCards && canManage ? (
         <SettingsSectionCard
-          title="Agent Digital Cards"
-          description="Create and manage public agent card links. Leads from these links route to the selected agent through the existing public intake flow."
+          title="Agent card links"
           actions={(
             <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-2 rounded-full border border-[#dce6f0] bg-[#f8fbfe] px-3 py-1 text-xs font-semibold text-[#60758d]"><QrCode size={14} /> QR-ready links</span>
               <SecondaryButton icon={Download} onClick={exportAgentCardRolloutCsv} disabled={saving || !exportableAgentCardRows.length}>Export CSV</SecondaryButton>
               <PrimaryButton icon={Plus} onClick={generateMissingAgentCards} disabled={saving || !missingAgentCardRows.length || !organisationId}>Generate Missing</PrimaryButton>
             </div>
           )}
         >
-          <AgentCardRolloutOverview rows={agentCardRows} />
-          <AgentDigitalCardPerformanceOverview insights={agentCardInsights} />
           {agentCardRows.length ? (
-            <div className="overflow-hidden rounded-[18px] border border-[#e3eaf2] bg-white">
+            <div className="overflow-x-auto rounded-[18px] border border-[#e3eaf2] bg-white">
               <table className="min-w-full divide-y divide-[#e8eef5] text-left">
                 <thead className="bg-[#f8fbfe]">
                   <tr className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b8da6]">

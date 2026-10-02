@@ -287,43 +287,51 @@ export function ReferralRulesCard({ rules = [], onEdit }) {
 }
 
 export function CompanyTargetTracker({ tracker = {}, onEdit, compact = false }) {
+  const earned = toNumber(tracker.currentAmount)
+  const target = toNumber(tracker.targetAmount)
+  const progress = Math.max(0, toNumber(tracker.progressPercent ?? tracker.percentageAchieved))
+  const remaining = Math.max(0, target - earned)
+  const reached = target > 0 && earned >= target
+  const metrics = [
+    ['Projected', formatCurrency(tracker.projectedCommission, { compact: true })],
+    ['Pending', formatCurrency(tracker.pendingAmount, { compact: true })],
+    ['Registered / paid', formatCurrency(tracker.registeredPaidAmount, { compact: true })],
+    ['Active deals', tracker.activeDealsCount || 0],
+  ]
+
   return (
-    <section className={`rounded-[16px] border border-[#dfe7f0] bg-white shadow-[0_12px_30px_rgba(15,23,42,0.045)] ${compact ? 'p-4' : 'p-4 sm:p-5'}`}>
-      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-        <div className="flex items-start gap-3">
-          <span className={`grid ${compact ? 'h-10 w-10 rounded-[13px]' : 'h-11 w-11 rounded-[15px]'} place-items-center bg-[#fff4e5] text-[#d87907]`}>
-            <Target size={compact ? 18 : 20} />
-          </span>
-          <div>
-            <h3 className="text-base font-semibold text-[#101828]">{tracker.title || 'Commission Target'}</h3>
-            <p className={`${compact ? 'mt-0.5 text-[0.82rem] leading-5' : 'mt-1 text-sm leading-6'} text-[#667085]`}>Monthly minimum company commission target.</p>
-          </div>
-        </div>
-        <CommissionStatusBadge status={tracker.statusLabel || 'No target'} tone={tracker.statusTone || 'slate'} />
-      </div>
-      <div className={`${compact ? 'mt-3 gap-3 lg:grid-cols-[minmax(0,1fr)_220px]' : 'mt-4 gap-4 lg:grid-cols-[minmax(0,1fr)_260px]'} grid`}>
+    <section aria-label="Company commission target" className={`flex min-w-0 flex-col rounded-[16px] border border-[#dfe7f0] bg-[linear-gradient(135deg,#ffffff_45%,#f2faf6_100%)] shadow-[0_12px_30px_rgba(15,23,42,0.045)] ${compact ? 'p-4' : 'p-4 sm:p-5'}`}>
+      <header className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="flex items-center gap-2 text-base font-medium text-[#101828]"><Target size={18} className="text-[#16894f]" />{tracker.title || 'Commission Target'}</h3>
+        <span className="text-xs text-[#7b8a9b]">{tracker.daysLeftInMonth ?? 0} days left this month</span>
+      </header>
+
+      <div className="my-3">
         <div className="min-w-0">
-          <p className={`${compact ? 'text-[1.35rem]' : 'text-[1.6rem]'} font-semibold leading-none text-[#0f7f4f]`}>
-            {formatCurrency(tracker.currentAmount || 0)} <span className="text-[#8a9aac]">/ {formatCurrency(tracker.targetAmount || 0)}</span>
-          </p>
-          <p className={`${compact ? 'mt-1.5 text-[0.82rem]' : 'mt-2 text-sm'} text-[#52657a]`}>Company commission earned this month</p>
-          <div className={compact ? 'mt-3' : 'mt-4'}>
-            <CommissionProgressBar value={tracker.progressPercent || tracker.percentageAchieved || 0} tone={tracker.statusTone || 'green'} label={`${tracker.percentageAchieved || 0}% of monthly target`} />
-          </div>
-          <p className={`${compact ? 'mt-2' : 'mt-3'} text-xs text-[#667085]`}>{tracker.daysLeftInMonth ?? 0} days left in month</p>
-        </div>
-        <div className={`${compact ? 'gap-1.5 p-2.5' : 'gap-2 p-3'} grid rounded-[14px] border border-[#e4edf6] bg-[#fbfdff]`}>
-          <Metric label="Projected" value={formatCurrency(tracker.projectedCommission || 0, { compact: true })} />
-          <Metric label="Pending" value={formatCurrency(tracker.pendingAmount || 0, { compact: true })} />
-          <Metric label="Registered / paid" value={formatCurrency(tracker.registeredPaidAmount || 0, { compact: true })} />
-          <Metric label="Active deals" value={tracker.activeDealsCount || 0} />
-          {onEdit ? (
-            <button type="button" onClick={onEdit} className="mt-1 rounded-[10px] border border-[#d9e3ef] bg-white px-3 py-2 text-sm font-semibold text-[#24364b]">
-              Edit target
-            </button>
-          ) : null}
+          <p className="text-[2rem] font-medium leading-none tracking-tight text-[#143b2c] sm:text-[2.25rem]">{formatCurrency(earned)}</p>
+          <p className="mt-1 text-xs text-[#718198]">Earned this month</p>
         </div>
       </div>
+
+      <div className="mb-3">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs">
+          <span className="font-medium text-[#16894f]">{formatPercent(progress)} achieved</span>
+          <span className="text-[#718198]">{reached ? 'Target reached' : target > 0 ? `${formatCurrency(remaining, { compact: true })} to goal` : 'Set your monthly goal'}</span>
+        </div>
+        <div role="progressbar" aria-label="Monthly commission target progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(100, progress)} aria-valuetext={`${formatPercent(progress)} of monthly target`} className="h-2 overflow-hidden rounded-full bg-[#e4eee8]">
+          <div className="h-full rounded-full bg-[#16894f] transition-[width] duration-300" style={{ width: `${Math.min(100, progress)}%` }} />
+        </div>
+      </div>
+
+      <dl className="mt-auto grid grid-cols-2 gap-x-4 gap-y-3 border-t border-[#e4eae7] pt-3 sm:grid-cols-4">
+        {metrics.map(([label, value]) => (
+          <div key={label} className="min-w-0">
+            <dt className="text-[0.68rem] text-[#7b8a9b]">{label}</dt>
+            <dd className="mt-1 text-sm font-medium tabular-nums text-[#344054]">{value}</dd>
+          </div>
+        ))}
+      </dl>
+      {onEdit ? <button type="button" onClick={onEdit} className="mt-4 w-fit text-xs font-medium text-[#16894f] hover:underline">Edit target</button> : null}
       {!compact && tracker.topContributors?.length ? (
         <div className="mt-4 grid gap-2">
           <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Top contributing agents</p>

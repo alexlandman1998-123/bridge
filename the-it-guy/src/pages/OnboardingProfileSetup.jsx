@@ -1,7 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
 import { useEffect, useMemo, useState } from 'react'
 import './onboarding-profile-setup.css'
-import { ArrowRight, BriefcaseBusiness, Building2, CheckCircle2, LogOut, Route, ShieldCheck, UserRound } from 'lucide-react'
+import { ArrowRight, Building2, Check, CheckCircle2, HandCoins, House, Landmark, Layers3, Scale, UserRound } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthSession } from '../context/AuthSessionContext'
 import { useWorkspace } from '../context/WorkspaceContext'
@@ -13,6 +13,16 @@ import { buildSignupIntent, persistSignupIntent, resolveSignupIntentRoute } from
 
 const PROFILE_BOOTSTRAP_TIMEOUT_MS = 12000
 const PENDING_ORG_INVITE_TOKEN_STORAGE_KEY = 'itg:pending-org-invite-token'
+
+const BUSINESS_PRESENTATION = {
+  agency: { icon: House, title: 'Residential agency', detail: 'Property sales & rentals' },
+  commercial_brokerage: { icon: Building2, title: 'Commercial brokerage', detail: 'Commercial property & leasing' },
+  mixed_agency: { icon: Layers3, title: 'Residential + commercial', detail: 'Both sides of the property market' },
+  developer: { icon: Landmark, title: 'Developer', detail: 'Developments & project sales' },
+  attorney: { icon: Scale, title: 'Attorney / conveyancer', detail: 'Property law & transfers' },
+  bond_originator: { icon: HandCoins, title: 'Bond originator', detail: 'Home finance & applications' },
+  client: { icon: UserRound, title: 'Buyer / seller', detail: 'Your personal property transaction' },
+}
 
 function resolveOnboardingPathForRole(role) {
   const normalizedRole = normalizeAppRole(role)
@@ -151,30 +161,29 @@ function OnboardingProfileSetup() {
     pendingInviteToken,
   })
   const showCompanyName = !isExistingWorkspaceJoin
-  const cardTitle = isPrincipalClaimIntent
-    ? 'Before We Claim the Workspace'
-    : isExistingWorkspaceJoin
-      ? 'Before You Join'
-      : 'Before We Continue'
   const cardDescription = isPrincipalClaimIntent
-    ? 'We found a principal claim. Confirm your profile details before Arch9 captures the workspace as yours.'
+    ? 'Confirm your details before claiming your organisation’s workspace.'
     : isExistingWorkspaceJoin
-      ? 'Your invite is accepted. Confirm your personal details before opening the agency workspace.'
-      : signupIntent
-        ? 'We found your signup path. Confirm your profile details before workspace setup.'
-        : 'Confirm your business type and position so Arch9 can recover the correct onboarding path.'
+      ? 'Confirm your details to continue to your workspace.'
+      : needsIntentRecovery
+        ? 'Add your details and choose the business you work in.'
+        : 'Confirm your details before setting up your workspace.'
   const selectedBusinessTypeLabel = BUSINESS_TYPE_OPTIONS.find((option) => option.value === recoveryBusinessType)?.label || ''
-  const selectedPositionLabel = recoveryPositionOptions.find((option) => option.value === recoveryPosition)?.label || ''
   const pathSummary = isExistingWorkspaceJoin
-    ? 'Joining existing workspace'
+    ? 'Existing workspace'
     : signupIntent
-      ? `${APP_ROLE_LABELS[signupIntent.app_role] || 'Workspace'} setup`
-      : selectedPositionLabel || selectedBusinessTypeLabel || 'Choose your workspace path'
-  const setupSteps = [
-    { label: 'Profile details', done: profileComplete },
-    { label: 'Workspace path', done: roleSelected },
-    { label: isExistingWorkspaceJoin ? 'Open workspace' : 'Start setup', done: false },
-  ]
+      ? APP_ROLE_LABELS[signupIntent.app_role] || 'Workspace'
+      : selectedBusinessTypeLabel
+
+  const previewName = [firstName.trim(), lastName.trim()].filter(Boolean).join(' ')
+  const previewInitials = [firstName.trim()[0], lastName.trim()[0]].filter(Boolean).join('').toUpperCase()
+  const previewRole = recoveryPositionOptions.find((option) => option.value === recoveryPosition)?.label
+    || (roleSelected ? APP_ROLE_LABELS[effectiveAppRole] : '')
+  const continuationHint = !profileComplete
+    ? 'Add your first and last name to continue.'
+    : !roleSelected
+      ? recoveryBusinessType ? 'Choose your role below to continue.' : 'Choose your business and role to continue.'
+      : 'Your profile is ready to continue.'
 
   async function handleSignOut() {
     console.debug('[AUTH] onboarding-profile:signout')
@@ -330,94 +339,78 @@ function OnboardingProfileSetup() {
     <div className="auth-page onboarding-page profile-setup-page">
       <main className="profile-setup-shell">
         <aside className="profile-setup-rail" aria-label="Onboarding progress">
-          <div className="profile-setup-brand-row">
-            <span className="profile-setup-logo">Arch9</span>
-            <span className="profile-setup-secure"><ShieldCheck size={15} /> Secure setup</span>
+          <span className="profile-setup-logo">arch9</span>
+          <div className="profile-setup-rail-content">
+            <p className="profile-setup-kicker">Account setup</p>
+            <ol className="profile-setup-steps">
+              <li className="active" aria-current="step"><span>01</span><strong>Your profile</strong></li>
+              <li><span>02</span><strong>{isExistingWorkspaceJoin ? 'Open workspace' : 'Your workspace'}</strong></li>
+            </ol>
+            {pathSummary ? (
+              <p className="profile-setup-path-summary">{pathSummary}</p>
+            ) : null}
           </div>
-
-          <div className="profile-setup-rail-copy">
-            <span className="profile-setup-kicker">Workspace onboarding</span>
-            <h1>Let’s get your profile pointed in the right direction.</h1>
-            <p>
-              Confirm who you are, then Arch9 will open the setup path that matches your business and role.
-            </p>
-          </div>
-
-          <section className="profile-setup-path-card" aria-label="Selected setup path">
-            <span className="profile-setup-path-icon"><Route size={18} /></span>
-            <div>
-              <span>Current path</span>
-              <strong>{pathSummary}</strong>
+          <div className={`profile-setup-preview ${previewName ? 'has-name' : ''}`}>
+            <span className="profile-setup-preview-label">Your profile, at a glance</span>
+            <div className="profile-setup-avatar" aria-hidden="true">{previewInitials || <UserRound size={26} strokeWidth={1.5} />}</div>
+            <strong className="profile-setup-preview-name">{previewName || 'Your name'}</strong>
+            {showCompanyName && companyName.trim() ? <span className="profile-setup-preview-company">{companyName.trim()}</span> : null}
+            <span className="profile-setup-preview-role">{previewRole || pathSummary || 'Choose a business to get started'}</span>
+            <div className="profile-setup-preview-status">
+              <span className={profileComplete ? 'done' : ''}>{profileComplete ? <Check size={14} /> : <span className="profile-setup-status-dot" />} Personal details</span>
+              <span className={roleSelected ? 'done' : ''}>{roleSelected ? <Check size={14} /> : <span className="profile-setup-status-dot" />} Business & role</span>
             </div>
-          </section>
-
-          <ol className="profile-setup-steps">
-            {setupSteps.map((step, index) => (
-              <li key={step.label} className={step.done ? 'complete' : index === setupSteps.findIndex((item) => !item.done) ? 'active' : ''}>
-                <span>{step.done ? <CheckCircle2 size={16} /> : index + 1}</span>
-                <strong>{step.label}</strong>
-              </li>
-            ))}
-          </ol>
-
-          <div className="profile-setup-rail-note">
-            <Building2 size={18} />
-            <p>{isExistingWorkspaceJoin ? 'Your organisation details are already linked from the invite.' : 'Company details can be refined during the next workspace setup step.'}</p>
           </div>
         </aside>
 
         <section className="profile-setup-panel">
           <header className="profile-setup-panel-head">
-            <span className="profile-setup-kicker">Profile setup</span>
-            <h2>{cardTitle}</h2>
+            <span className="profile-setup-overline">Welcome to Arch9</span>
+            <h1>Let’s set up your profile.</h1>
             <p>{cardDescription}</p>
           </header>
 
           <form className="profile-setup-form" onSubmit={handleContinue}>
             <section className="profile-setup-section">
               <div className="profile-setup-section-head">
-                <span><UserRound size={17} /></span>
-                <div>
-                  <h3>Your details</h3>
-                  <p>This is the personal profile your workspace will recognise.</p>
-                </div>
+                <div className="profile-setup-heading-row"><h2><span>01</span> Personal details</h2>{profileComplete ? <span className="profile-setup-section-status"><Check size={14} /> Added</span> : null}</div>
+                <p>Start with your name. Company and phone details are optional.</p>
               </div>
 
               <div className="profile-setup-field-grid">
                 <label>
-                  First name
-                  <input type="text" value={firstName} onChange={(event) => setFirstName(event.target.value)} />
+                  First name *
+                  <input type="text" autoComplete="given-name" required value={firstName} onChange={(event) => setFirstName(event.target.value)} />
                 </label>
                 <label>
-                  Last name
-                  <input type="text" value={lastName} onChange={(event) => setLastName(event.target.value)} />
+                  Last name *
+                  <input type="text" autoComplete="family-name" required value={lastName} onChange={(event) => setLastName(event.target.value)} />
                 </label>
                 {showCompanyName ? (
-                  <label className="profile-setup-span-2">
-                    Company name
-                    <input type="text" value={companyName} onChange={(event) => setCompanyName(event.target.value)} />
+                  <label>
+                    <span>Company name <em>Optional</em></span>
+                    <input type="text" autoComplete="organization" value={companyName} onChange={(event) => setCompanyName(event.target.value)} />
                   </label>
                 ) : null}
-                <label className={showCompanyName ? 'profile-setup-span-2' : ''}>
-                  Phone number
-                  <input type="text" value={phoneNumber} onChange={(event) => setPhoneNumber(event.target.value)} />
+                <label>
+                  <span>Phone number <em>Optional</em></span>
+                  <input type="tel" autoComplete="tel" value={phoneNumber} onChange={(event) => setPhoneNumber(event.target.value)} />
                 </label>
               </div>
             </section>
 
             {isExistingWorkspaceJoin ? (
               <section className="profile-setup-info-band">
-                <CheckCircle2 size={18} />
-                <p>Arch9 will use the agency details from your accepted invite. You only need to confirm your own profile.</p>
+                <p>Your organisation details are linked to your workspace.</p>
               </section>
             ) : signupIntent ? (
               <section className="profile-setup-info-band">
-                <CheckCircle2 size={18} />
                 <p>
-                  Arch9 will continue with {APP_ROLE_LABELS[signupIntent.app_role] || 'workspace'} setup.
-                  {signupIntent.workspace_action === 'create_workspace'
-                    ? ' You will create the workspace in the next step.'
-                    : ' You will join by invite or request access in the next step.'}
+                  {isPrincipalClaimIntent
+                    ? 'Next: claim your organisation’s workspace.'
+                    : signupIntent.workspace_action === 'create_workspace'
+                      ? 'Next: set up your organisation’s workspace.'
+                      : 'Next: join a workspace by invitation or request access.'}
                 </p>
               </section>
             ) : null}
@@ -425,34 +418,39 @@ function OnboardingProfileSetup() {
             {needsIntentRecovery ? (
               <section className="profile-setup-section">
                 <div className="profile-setup-section-head">
-                  <span><BriefcaseBusiness size={17} /></span>
-                  <div>
-                    <h3>Workspace path</h3>
-                    <p>Choose the setup route that best matches the business.</p>
-                  </div>
+                  <div className="profile-setup-heading-row"><h2><span>02</span> Your business</h2>{roleSelected ? <span className="profile-setup-section-status"><Check size={14} /> Selected</span> : null}</div>
+                  <p>Which of these best describes what you do?</p>
                 </div>
 
-                <div className="profile-setup-choice-group" aria-label="Business type">
-                  {BUSINESS_TYPE_OPTIONS.map((option) => (
-                    <button
-                      key={option.value}
-                      type="button"
-                      className={`profile-setup-choice ${recoveryBusinessType === option.value ? 'selected' : ''}`}
-                      aria-pressed={recoveryBusinessType === option.value}
-                      onClick={() => {
-                        setRecoveryBusinessType(option.value)
-                        setRecoveryPosition('')
-                      }}
-                    >
-                      <span>{option.label}</span>
-                      {recoveryBusinessType === option.value ? <CheckCircle2 size={17} /> : null}
-                    </button>
-                  ))}
+                <div className="profile-setup-choice-group" role="group" aria-label="Business type">
+                  {BUSINESS_TYPE_OPTIONS.map((option) => {
+                    const presentation = BUSINESS_PRESENTATION[option.value]
+                    const BusinessIcon = presentation.icon
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        className={`profile-setup-choice ${recoveryBusinessType === option.value ? 'selected' : ''}`}
+                        aria-pressed={recoveryBusinessType === option.value}
+                        aria-label={option.label}
+                        onClick={() => {
+                          if (recoveryBusinessType !== option.value) {
+                            setRecoveryBusinessType(option.value)
+                            setRecoveryPosition('')
+                          }
+                        }}
+                      >
+                        <BusinessIcon className="profile-setup-business-icon" size={22} strokeWidth={1.5} aria-hidden="true" />
+                        <span className="profile-setup-choice-copy"><strong>{presentation.title}</strong><small>{presentation.detail}</small></span>
+                        <span className="profile-setup-selection-mark" aria-hidden="true">{recoveryBusinessType === option.value ? <Check size={12} /> : null}</span>
+                      </button>
+                    )
+                  })}
                 </div>
 
                 {recoveryBusinessType ? (
-                  <div className="profile-setup-position-group" aria-label="Position">
-                    <span className="profile-setup-mini-label">Position</span>
+                  <div key={recoveryBusinessType} className="profile-setup-position-group" role="group" aria-label="Position">
+                    <span className="profile-setup-mini-label">How do you work in this business?</span>
                     {recoveryPositionOptions.map((option) => (
                       <button
                         key={option.value}
@@ -476,9 +474,9 @@ function OnboardingProfileSetup() {
             {activeProfileError ? <p className="auth-form-error">{activeProfileError}</p> : null}
             {error ? <p className="auth-form-error">{error}</p> : null}
 
+            <p className={`profile-setup-continuation-hint ${profileComplete && roleSelected ? 'ready' : ''}`} role="status">{profileComplete && roleSelected ? <CheckCircle2 size={16} /> : null}{continuationHint}</p>
             <div className="profile-setup-actions">
               <button type="button" className="profile-setup-secondary" onClick={handleSignOut} disabled={saving}>
-                <LogOut size={17} />
                 Sign out
               </button>
               <button type="submit" className="profile-setup-primary" disabled={saving || !profileComplete || !roleSelected}>
@@ -486,8 +484,8 @@ function OnboardingProfileSetup() {
                   {saving
                     ? 'Saving...'
                     : isExistingWorkspaceJoin
-                      ? 'Continue to Dashboard'
-                      : `Continue to ${APP_ROLE_LABELS[effectiveAppRole] || 'Workspace'} Setup`}
+                      ? 'Open workspace'
+                      : 'Continue'}
                 </span>
                 <ArrowRight size={17} />
               </button>

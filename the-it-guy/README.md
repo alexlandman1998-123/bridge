@@ -625,6 +625,21 @@ and its expanded evidence template for the authorised hosted run. Leave unobserv
 checks false. Passing local checks never substitutes for that live evidence or
 provides deployment approval. Buyer readiness is outside this seller sign-off.
 
+## Dashboard FIC foundation training
+
+Every agency's company and agent dashboard shows Commission Target and FIC
+training side by side on desktop, stacking on smaller screens. Agents complete
+the existing six-question foundation quiz; principals review their team's
+completion and scores, and can preview the quiz without recording a result.
+
+Apply `20261002070559_global_agency_fic_training.sql` to enable result saves
+outside Home Seekers. Existing results remain in the original
+`home_seekers_fic_training_results` table. Active agency membership is required;
+agents save only their own results and principals read only their agency's team.
+
+Focused checks: `node scripts/global-fic-training.test.mjs` and
+`npx vitest run src/components/training/__tests__/FicTrainingPanel.test.jsx`.
+
 ## Branch FIC training
 
 The primary workspace's branch **FIC Training** tab provides six foundation lessons,
@@ -651,3 +666,86 @@ RMCP. Source starting points: [FIC obligations](https://www.fic.gov.za/complianc
 and [FIC estate-agent guidance](https://www.fic.gov.za/accountable-institut/estate-agents/).
 Regulatory reporting and actual sanctions screening use the organisation's approved
 processes; this module records learning and policy acknowledgement.
+
+## Agency business lines
+
+Organisation setup and Settings → Organisation offer Sales, Rentals, and
+Short-term rentals independently. Save the organisation lines, then assign members
+any combination in Roles & Permissions. Principals and managers inherit enabled
+organisation lines. Existing Sales & Rentals assignments retain their original two
+lines; short-term access requires an explicit assignment or management role.
+
+The sidebar organisation (Business) dropdown is removed. The separate business-line
+selector shows Sales, Rentals and Short-term rentals according to saved organisation
+settings and member access. Manually enabling a rental line activates it; Sales-only
+setups do not show it automatically. The selection is saved per account and
+organisation and restored before route guards run on refresh. Individual module
+release gates and action permissions continue to apply.
+
+Focused checks: `npx vitest run src/lib/__tests__/threeBusinessLines.test.js
+src/lib/__tests__/businessWorkspaceAccess.test.js
+src/lib/__tests__/rentalOperatingModeNavigation.test.js
+src/pages/settings/__tests__/SettingsUsersPage.test.jsx`.
+
+## Show day creation
+
+Marketing → Events → Show Days → Create uses Property & timing, Guest experience,
+and Review steps, with a linked property preview and publishing checklist. A draft
+can be saved after selecting a listing; publication requires valid future/current
+dates, a host, and an active listing for public events. Changing the property resets
+the host to its assigned agent. Custom host names clear the linked user ID.
+
+Registration links become shareable from the published event workspace. Local-only
+storage cannot publish a public registration page. Disabling registration also
+disables automatic lead creation for registrations. No invitations are sent by the
+builder itself.
+
+Focused checks: `npx vitest run src/components/marketing/__tests__/ShowDayCreate.test.jsx
+src/components/marketing/__tests__/ShowDayWorkspace.test.jsx`,
+`npm run test:show-day-phase5`, and `npm run test:listing-show-day-capture`.
+
+## Revo inbox workspace
+
+Revo's inbox selector uses existing connected email/WhatsApp address records.
+Search, ownership/status views, channel filters and sorting combine in one scope;
+the reader never retains a conversation excluded by those filters. Navigation
+and contact details can collapse, and small screens open a reader with a back action.
+Email pop-out opens a separate reader window and retains the original conversation;
+closing the parent inbox closes its pop-out. No messages or credentials are copied
+into a URL or browser storage. Unsaved reply/note text stays separate per conversation
+while the page is open. Save draft/Save note use the existing private message ledger;
+reply drafts are explicitly unsent. Assignment supports claiming/unassigning yourself
+and preserving an existing team owner. Manage inboxes opens existing connection setup.
+Named team queues, outbound sending and attachments are outside this first pass.
+
+Focused checks: `npx vitest run src/pages/revo/__tests__/RevoSharedInboxPage.test.jsx`,
+`npm run test:revo-shared-inbox-operations` and `npm run test:revo-inbox-connection-core`.
+
+## Show Days landing page
+
+The event landing page has a separate header, five summary cards, equal status tabs
+including Draft, search/sorting, and larger property rows with working open actions.
+Shared mode loads only the selected organisation's persisted events; sample events
+are not substituted while loading or on failure. Registration records provide the
+same metrics used by the event workspace. If those records cannot load, the page
+explicitly identifies its saved-total fallback. Local planning starts empty when
+there are no saved events. Past events still marked Upcoming receive a review hint;
+the landing page does not silently change their status or write any records.
+
+Focused checks: `npx vitest run src/components/marketing/__tests__/ShowDaysLanding.test.jsx
+src/components/marketing/__tests__/ShowDayWorkspace.test.jsx
+src/components/marketing/__tests__/ShowDayCreate.test.jsx`.
+
+## Rental tenancy register
+
+Tenancies is the main long-term rental navigation item, alongside Leads and
+Listings. Applications remain accessible from Leads and the tenancy register.
+The register loads persisted tenancy, property and unit records in batches,
+then presents 15 rows per page with search and lifecycle filters. Each row opens
+the existing tenancy workspace. Rent and dates prefer the current lease version,
+with legacy lease terms used only when needed. Missing values remain explicit.
+
+Focused checks: the RentalTenanciesPage, rentalTenancyRegisterModel and
+rentalOperatingModeNavigation Vitest tests, application-handoff and tenancy-move-in
+checks, scoped ESLint, and the Vite production build. The separate lease-signing
+check currently fails its existing maintenance/inspection context assertions.

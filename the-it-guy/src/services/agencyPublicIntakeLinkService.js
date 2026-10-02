@@ -169,12 +169,12 @@ function buildAgentDigitalCardMetadata(input = {}, defaults = {}) {
   const previousProfile = normalizeObject(previousCard.profile)
   const agent = normalizeObject(input.agent || input.agentProfile || defaults.agent || previousCard.agent)
   const agentUserId = normalizeText(input.agentUserId || input.agent_user_id || input.defaultAssignedAgentId || input.default_assigned_agent_id || defaults.agentUserId || defaults.defaultAssignedAgentId)
-  const agentEmail = normalizeText(input.agentEmail || input.agent_email || agent.email || previousCard.agent?.email)
-  const agentName = normalizeText(input.agentName || input.agent_name || agent.fullName || agent.full_name || agent.name || previousCard.agent?.name)
-  const agentPhone = normalizeText(input.agentPhone || input.agent_phone || agent.phone || agent.phoneNumber || agent.phone_number || previousCard.agent?.phone)
-  const agentWhatsApp = normalizeText(input.agentWhatsApp || input.agent_whatsapp || agent.whatsapp || agent.whatsApp || previousCard.agent?.whatsapp)
-  const agentJobTitle = normalizeText(input.agentJobTitle || input.agent_job_title || agent.jobTitle || agent.job_title || previousCard.agent?.jobTitle)
-  const agentAvatarUrl = normalizeText(input.agentAvatarUrl || input.agent_avatar_url || agent.avatarUrl || agent.avatar_url || previousCard.agent?.avatarUrl)
+  const agentEmail = normalizeText(input.agentEmail ?? input.agent_email ?? agent.email ?? previousCard.agent?.email)
+  const agentName = normalizeText(input.agentName ?? input.agent_name ?? agent.fullName ?? agent.full_name ?? agent.name ?? previousCard.agent?.name)
+  const agentPhone = normalizeText(input.agentPhone ?? input.agent_phone ?? agent.phone ?? agent.phoneNumber ?? agent.phone_number ?? previousCard.agent?.phone)
+  const agentWhatsApp = normalizeText(input.agentWhatsApp ?? input.agent_whatsapp ?? agent.whatsapp ?? agent.whatsApp ?? previousCard.agent?.whatsapp)
+  const agentJobTitle = normalizeText(input.agentJobTitle ?? input.agent_job_title ?? agent.jobTitle ?? agent.job_title ?? previousCard.agent?.jobTitle)
+  const agentAvatarUrl = normalizeText(input.agentAvatarUrl ?? input.agent_avatar_url ?? agent.avatarUrl ?? agent.avatar_url ?? previousCard.agent?.avatarUrl)
 
   return {
     ...previousMetadata,
@@ -185,12 +185,12 @@ function buildAgentDigitalCardMetadata(input = {}, defaults = {}) {
       agent: {
         ...normalizeObject(previousCard.agent),
         userId: agentUserId || normalizeText(previousCard.agent?.userId),
-        name: agentName || normalizeText(previousCard.agent?.name),
-        email: agentEmail || normalizeText(previousCard.agent?.email),
-        phone: agentPhone || normalizeText(previousCard.agent?.phone),
-        whatsapp: agentWhatsApp || normalizeText(previousCard.agent?.whatsapp),
-        jobTitle: agentJobTitle || normalizeText(previousCard.agent?.jobTitle),
-        avatarUrl: agentAvatarUrl || normalizeText(previousCard.agent?.avatarUrl),
+        name: agentName,
+        email: agentEmail,
+        phone: agentPhone,
+        whatsapp: agentWhatsApp,
+        jobTitle: agentJobTitle,
+        avatarUrl: agentAvatarUrl,
       },
       features: {
         vcf: input.vcfEnabled ?? previousCard.features?.vcf ?? true,

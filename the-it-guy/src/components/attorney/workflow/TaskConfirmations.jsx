@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
-import { CheckCircle2, Circle, FileText, MessageSquarePlus } from 'lucide-react'
+import { CheckCircle2, Circle, FileText, MessageSquarePlus, Download } from 'lucide-react'
 import Button from '../../ui/Button.jsx'
 import Field from '../../ui/Field.jsx'
+import { getLegalTaskChecklistProgress } from '../../../core/transactions/legalTaskWorkbenchModel.js'
 
 function ConfirmationRow({ item, response, noteOpen, disabled, busy, error, onChange, onToggleNote, onRunAction, details }) {
   const answer = item.authoritative ? item.authoritativeAnswer || '' : response?.answer || ''
   const documentStatus = item.documentStatus
-  return <div className="space-y-2 py-3.5">
+  const linkedFiles = (item.documents || []).filter(document => document.fileUrl || document.file_url || document.signedUrl || document.signed_url || document.url)
+  return <div className={`legal-task-confirmation space-y-3 ${details ? 'has-details' : ''} ${answer === 'yes' ? 'is-confirmed' : ''}`}>
     <div className="flex flex-wrap items-start justify-between gap-3">
       <span className="flex min-w-0 flex-1 items-start gap-3">
         {answer === 'yes' ? <CheckCircle2 size={20} className="mt-0.5 shrink-0 text-emerald-700" /> : <Circle size={20} className={`mt-0.5 shrink-0 ${answer ? 'text-amber-600' : 'text-slate-400'}`} />}
@@ -34,6 +36,7 @@ function ConfirmationRow({ item, response, noteOpen, disabled, busy, error, onCh
             : item.requirement?.partyId ? `No document linked to ${item.requirement.partyName}` : 'Document outstanding'}</span>
       {item.action ? <button type="button" disabled={busy || item.action.disabled} className="font-semibold text-emerald-800 hover:underline disabled:opacity-50" onClick={() => onRunAction?.(item.action)}>{item.action.label}</button> : null}
     </div> : item.action ? <div className="ml-8"><button type="button" disabled={busy || item.action.disabled} className="text-xs font-semibold text-emerald-800 hover:underline disabled:opacity-50" onClick={() => onRunAction?.(item.action)}>{item.action.label}</button></div> : null}
+    {linkedFiles.length ? <div className="legal-task-linked-files" aria-label={`Files for ${item.label}`}>{linkedFiles.map((document, index) => <a key={document.id || document.key || index} href={document.fileUrl || document.file_url || document.signedUrl || document.signed_url || document.url} target="_blank" rel="noreferrer" className="legal-task-file-link"><FileText size={18} aria-hidden="true" /><span><strong>{document.displayName || document.label || document.name || 'Supporting document'}</strong><span>Open / download</span></span><Download size={17} aria-hidden="true" /></a>)}</div> : null}
     {item.additionalAction ? <div className="ml-8"><button type="button" disabled={busy || item.additionalAction.disabled} className="text-xs font-semibold text-emerald-800 hover:underline disabled:opacity-50" onClick={() => onRunAction?.(item.additionalAction)}>{item.additionalAction.label}</button></div> : null}
     {item.requirement && !documentStatus ? <p className={`ml-8 text-xs ${item.requirement.complete ? 'text-emerald-800' : 'text-amber-800'}`}>{item.requirement.complete ? 'Requirement present' : 'Requirement still outstanding'}</p> : null}
     {details ? <div className="ml-8 rounded-lg border border-slate-200 bg-slate-50/60 p-3">{details}</div> : null}
@@ -43,7 +46,7 @@ function ConfirmationRow({ item, response, noteOpen, disabled, busy, error, onCh
   </div>
 }
 
-export default function TaskConfirmations({ taskKey, items, saved = {}, disabled, compact = false, onSave, onDirtyChange, onRunAction, renderRowDetails }) {
+export default function TaskConfirmations({ taskKey, items, saved = {}, disabled, compact = false, title = 'Task checklist', onSave, onDirtyChange, onRunAction, renderRowDetails }) {
   const [draft, setDraft] = useState(saved)
   const [notes, setNotes] = useState({})
   const [dirty, setDirty] = useState(false)
@@ -113,12 +116,11 @@ export default function TaskConfirmations({ taskKey, items, saved = {}, disabled
     }
   }
   if (!items.length) return null
-  const answeredCount = items.filter(item => item.authoritative ? item.authoritativeAnswer : draft[item.id]?.answer).length
-  const completedCount = items.filter(item => (item.authoritative ? item.authoritativeAnswer : draft[item.id]?.answer) === 'yes').length
-  return <section className={`${compact ? 'rounded-xl border border-slate-200 px-4 py-4' : 'mt-5 rounded-xl border border-slate-200 px-5 py-4'}`}>
-    <div className="flex flex-wrap items-center justify-between gap-2"><div><h3 className="text-base font-semibold text-slate-950">Confirmations</h3><p className="mt-0.5 text-sm text-slate-500">Record the current status of each confirmation.</p></div><span className="text-xs font-medium text-slate-500">{compact ? completedCount : answeredCount} of {items.length} {compact ? 'completed' : 'answered'}</span></div>
-    <div className="mt-4 divide-y divide-slate-200">{items.map(item => <ConfirmationRow key={item.id} item={item} response={draft[item.id]} noteOpen={notes[item.id]} disabled={disabled} busy={busy} error={rowErrors[item.id]} onChange={patch => change(item.id, patch)} onToggleNote={() => setNotes(previous => ({ ...previous, [item.id]: !previous[item.id] }))} onRunAction={onRunAction} details={renderRowDetails?.(item)} />)}</div>
+  const { answered: answeredCount, completed: completedCount } = getLegalTaskChecklistProgress(items, draft)
+  return <section className={`legal-task-confirmations ${compact ? '' : 'mt-5'}`}>
+    <div className="legal-task-checklist-heading"><div><h3 className="text-base font-semibold text-slate-950">{title}</h3><p className="mt-1 text-sm text-slate-500">Review the evidence and record your findings for this task.</p></div><div className="legal-task-checklist-progress"><span className="text-xs font-medium text-slate-600">Checklist · {compact ? completedCount : answeredCount} of {items.length} items {compact ? 'confirmed' : 'answered'}</span><div className="legal-task-progress-track" role="progressbar" aria-label="Task checklist progress" aria-valuemin={0} aria-valuemax={items.length} aria-valuenow={compact ? completedCount : answeredCount}><span style={{ width: `${((compact ? completedCount : answeredCount) / items.length) * 100}%` }} /></div></div></div>
+    <div className="legal-task-confirmation-list">{items.map(item => <ConfirmationRow key={item.id} item={item} response={draft[item.id]} noteOpen={notes[item.id]} disabled={disabled} busy={busy} error={rowErrors[item.id]} onChange={patch => change(item.id, patch)} onToggleNote={() => setNotes(previous => ({ ...previous, [item.id]: !previous[item.id] }))} onRunAction={onRunAction} details={renderRowDetails?.(item)} />)}</div>
     {error ? <p role="alert" className="text-sm text-red-700">{error}</p> : null}
-    <div className="mt-3 flex items-center justify-between gap-3">{dirty ? <span role="status" className="text-xs font-medium text-amber-800">Unsaved answers</span> : savedMessage ? <span role="status" className="text-xs font-medium text-emerald-800">Answers saved</span> : <span />}<Button type="button" variant="secondary" size="sm" disabled={disabled || busy || !dirty} onClick={save}>{busy ? 'Saving…' : 'Save answers'}</Button></div>
+    <div className="legal-task-save-row flex flex-wrap items-center justify-between gap-3">{dirty ? <span role="status" className="text-xs font-medium text-amber-800">Unsaved answers</span> : savedMessage ? <span role="status" className="text-xs font-medium text-emerald-800">Answers saved</span> : <span className="text-xs text-slate-500">{disabled ? 'Saved confirmations' : 'Save your answers when you’re ready.'}</span>}<Button type="button" variant={dirty ? 'primary' : 'secondary'} size="sm" disabled={disabled || busy || !dirty} onClick={save}>{busy ? 'Saving…' : 'Save answers'}</Button></div>
   </section>
 }

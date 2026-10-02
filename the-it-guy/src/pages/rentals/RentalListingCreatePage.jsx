@@ -1,8 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Building2, CheckCircle2, ChevronLeft, ChevronRight, Globe2, ImagePlus, Landmark, Loader2, Minus, Plus, Save, Trash2, UserRound, Users, X } from 'lucide-react'
+import { Blocks, Building2, CalendarDays, CheckCircle2, ClipboardCheck, ChevronLeft, ChevronRight, Coins, FileText, Globe2, House, ImagePlus, Landmark, LandPlot, Loader2, Minus, Plus, Save, ShieldCheck, Sprout, Store, Trash2, UserRound, Users, Wallet, Warehouse, X } from 'lucide-react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import AddressAutocomplete from '../../components/location/AddressAutocomplete'
+import Button from '../../components/ui/Button'
+import RentalCategoryFields from '../../components/listings/RentalCategoryFields'
+import { rentalFeatureAnswerLabels, restoreRentalFeatureSelections } from '../../services/rentals/rentalFeatureCaptureModel'
+import { RENTAL_CATEGORY_TYPES, RENTAL_PORTAL_FIELDS } from '../../services/rentals/rentalPortalFieldContract'
 import { createRentalListingDraft, getRentalListingForAgent, updateRentalListingDraft } from '../../services/rentals/rentalListingDraftService'
 import {
   buildRentalListingTitle,
@@ -15,9 +19,12 @@ import {
 import { buildRentalListingEditForm } from '../../services/rentals/rentalListingEditModel'
 import { resolveRentalWorkspaceScope } from '../../services/rentals/rentalWorkspaceScope'
 import { listRentalLeads } from '../../services/rentals/rentalLeadService'
+import { listRentalPropertyMandates } from '../../services/rentals/rentalLandlordMandateRepository'
+import { findLeadMandate } from '../../services/rentals/rentalLeadHandoffModel'
+import { landlordListingPrefill, landlordWorkspace } from '../../services/rentals/rentalLandlordWorkspaceModel'
 import { linkRentalLandlordLeadToListing } from '../../services/rentals/rentalLandlordListingHandoffService'
 
-const PROPERTY_TYPE_OPTIONS = Object.freeze([
+const LEGACY_PROPERTY_TYPE_OPTIONS = Object.freeze([
   { value: 'Apartment', label: 'Apartment' },
   { value: 'House', label: 'House' },
   { value: 'Townhouse', label: 'Townhouse' },
@@ -33,13 +40,13 @@ const PROPERTY_TYPE_OPTIONS = Object.freeze([
 ])
 
 const PROPERTY_CATEGORY_OPTIONS = Object.freeze([
-  { value: 'residential', label: 'Residential' },
-  { value: 'commercial', label: 'Commercial' },
-  { value: 'industrial', label: 'Industrial' },
-  { value: 'retail', label: 'Retail' },
-  { value: 'agricultural', label: 'Farm / agricultural' },
-  { value: 'vacant_land', label: 'Vacant land' },
-  { value: 'mixed_use', label: 'Mixed use' },
+  { value: 'residential', label: 'Residential', icon: House },
+  { value: 'commercial', label: 'Commercial', icon: Building2 },
+  { value: 'industrial', label: 'Industrial', icon: Warehouse },
+  { value: 'retail', label: 'Retail', icon: Store },
+  { value: 'agricultural', label: 'Farm / agricultural', icon: Sprout },
+  { value: 'vacant_land', label: 'Vacant land', icon: LandPlot },
+  { value: 'mixed_use', label: 'Mixed use', icon: Blocks },
 ])
 
 const PER_SQUARE_METRE_RENTAL_CATEGORIES = new Set(['commercial', 'industrial', 'retail', 'vacant_land', 'mixed_use'])
@@ -50,18 +57,10 @@ function rentalPriceFrequencyOptions(propertyCategory) {
   ))
 }
 
-const SELLING_POINT_OPTIONS = Object.freeze([
-  ['Pool', 'pool'], ['Garden', 'garden'], ['Security', 'securityPost'], ['Electric fence', 'electricFencing'],
-  ['Solar', 'solarBackup'], ['Backup water', 'backupWater'], ['Borehole', 'borehole'], ['Fibre', 'fibreInternet'],
-  ['Pet friendly', null], ['Study', null], ['Staff quarters', null], ['Entertainment area', null],
-  ['Open-plan living', null], ['Balcony', 'balcony'], ['Patio', 'patio'], ['Built-in braai', 'builtInBraai'],
-  ['Flatlet', 'flatlet'], ['Clubhouse', 'clubhouse'], ['Gym', 'gym'], ['Scenic view', 'scenicView'],
-  ['Prepaid electricity', 'prepaidElectricity'], ['Prepaid water', 'prepaidWater'], ['Access gate', 'accessGate'], ['Alarm', 'alarm'],
-])
-
 const CREATE_STEPS = Object.freeze([
   { key: 'landlord', label: 'Landlord & Mandate', description: 'Owner & mandate details' },
-  { key: 'property', label: 'Property', description: 'Add property details' },
+  { key: 'property', label: 'Property details', description: '' },
+  { key: 'features', label: 'Additional property details', description: 'Features & facilities' },
   { key: 'terms', label: 'Rental terms', description: 'Price & lease' },
   { key: 'marketing', label: 'Marketing', description: 'Photos & description' },
   { key: 'syndication', label: 'Syndication', description: 'Choose publication channels' },
@@ -90,6 +89,7 @@ function formField(name, value, onChange) {
 function createInitialFormState() {
   return {
     ...RENTAL_LISTING_INITIAL_FORM,
+    rentalPortalFacts: {},
     selectedFeatures: [...RENTAL_LISTING_INITIAL_FORM.selectedFeatures],
     amenities: [...RENTAL_LISTING_INITIAL_FORM.amenities],
     galleryImages: [...RENTAL_LISTING_INITIAL_FORM.galleryImages],
@@ -144,20 +144,12 @@ async function buildGalleryDrafts(files = []) {
   )
 }
 
-function toggleArrayValue(values, nextValue) {
-  const normalized = String(nextValue || '').trim()
-  const current = Array.isArray(values) ? values : []
-  if (!normalized) return current
-  return current.includes(normalized)
-    ? current.filter((value) => value !== normalized)
-    : [...current, normalized]
-}
-
 function SelectField({ label, name, value, options, onChange }) {
   return (
     <label className="form-field">
       <span>{label}</span>
       <select {...formField(name, value, onChange)}>
+        {value && !options.some((option) => option.value === value) ? <option value={value}>{String(value).replaceAll('_', ' ')} (existing value)</option> : null}
         {options.map((option) => (
           <option key={option.value} value={option.value}>{option.label}</option>
         ))}
@@ -169,12 +161,25 @@ function SelectField({ label, name, value, options, onChange }) {
 function FormSection({ eyebrow, title, description = '', children }) {
   return (
     <section className="ui-panel ui-panel-body grid w-full min-w-0 max-w-full gap-4 overflow-hidden">
-      <div>
-        <p className="text-xs font-semibold uppercase text-[#607891]">{eyebrow}</p>
-        <h2 className="text-lg font-semibold text-[#18324b]">{title}</h2>
+      {eyebrow || title || description ? <div>
+        {eyebrow ? <p className="text-xs font-semibold uppercase text-[#607891]">{eyebrow}</p> : null}
+        {title ? <h2 className="text-lg font-semibold text-[#18324b]">{title}</h2> : null}
         {description ? <p className="mt-1 text-sm text-[#607891]">{description}</p> : null}
-      </div>
+      </div> : null}
       {children}
+    </section>
+  )
+}
+
+function RentalTermsCard({ title, icon, children }) {
+  const Icon = icon
+  return (
+    <section className="min-w-0 rounded-2xl border border-[#dbe6f2] bg-white p-4 sm:p-5">
+      <div className="mb-5 flex items-center gap-3">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#eef4fa] text-[#315f80]"><Icon size={18} aria-hidden="true" /></span>
+        <h3 className="text-sm font-semibold text-[#18324b]">{title}</h3>
+      </div>
+      <div className="grid min-w-0 gap-4 sm:grid-cols-2">{children}</div>
     </section>
   )
 }
@@ -215,11 +220,11 @@ function PropertyCounter({ label, value, onChange, step = 1 }) {
     <div className="grid gap-2">
       <span className="text-sm font-semibold text-[#2d445e]">{label}</span>
       <div className="grid min-h-12 grid-cols-[3rem_1fr_3rem] overflow-hidden rounded-xl border border-[#dbe6f2] bg-white">
-        <button type="button" aria-label={`Decrease ${label}`} disabled={safeValue <= 0} onClick={() => changeValue(safeValue - step)} className="inline-flex items-center justify-center border-r border-[#e6edf5] text-lg font-semibold text-[#1f4f78] transition hover:bg-[#f4f8fc] disabled:cursor-not-allowed disabled:text-[#b5c3d1]">
+        <button data-rental-control type="button" aria-label={`Decrease ${label}`} disabled={safeValue <= 0} onClick={() => changeValue(safeValue - step)} className="inline-flex items-center justify-center border-r border-[#e6edf5] bg-white text-lg font-semibold text-[#1f4f78] transition hover:bg-[#f4f8fc] disabled:cursor-not-allowed disabled:text-[#b5c3d1]">
           <Minus size={17} aria-hidden="true" />
         </button>
         <output className="flex items-center justify-center text-sm font-semibold text-[#18324b]">{safeValue}</output>
-        <button type="button" aria-label={`Increase ${label}`} onClick={() => changeValue(safeValue + step)} className="inline-flex items-center justify-center border-l border-[#e6edf5] text-lg font-semibold text-[#1f4f78] transition hover:bg-[#f4f8fc]">
+        <button data-rental-control type="button" aria-label={`Increase ${label}`} onClick={() => changeValue(safeValue + step)} className="inline-flex items-center justify-center border-l border-[#e6edf5] bg-white text-lg font-semibold text-[#1f4f78] transition hover:bg-[#f4f8fc]">
           <Plus size={17} aria-hidden="true" />
         </button>
       </div>
@@ -227,24 +232,11 @@ function PropertyCounter({ label, value, onChange, step = 1 }) {
   )
 }
 
-function SellingPointTile({ label, active, onClick }) {
-  return (
-    <button
-      type="button"
-      aria-pressed={active}
-      onClick={onClick}
-      className={`flex min-h-11 items-center justify-between rounded-lg border px-3 text-left text-sm font-semibold transition focus:outline-none focus:ring-2 focus:ring-[#286b43] focus:ring-offset-2 ${
-        active
-          ? 'border-[#79bf95] bg-[#eef9f1] text-[#286b43]'
-          : 'border-[#dbe6f2] bg-white text-[#42617f] hover:border-[#9fc5ae] hover:text-[#286b43]'
-      }`}
-    >
-      <span>{label}</span>
-      <span className={`inline-flex h-4 w-4 items-center justify-center rounded-full border ${active ? 'border-[#286b43] bg-[#286b43] text-white' : 'border-[#aebfd0] bg-white text-transparent'}`}>
-        <CheckCircle2 size={11} aria-hidden="true" />
-      </span>
-    </button>
-  )
+function PropertyChoiceCard({ label, active, onClick, icon: Icon }) {
+  return <button type="button" data-rental-control aria-pressed={active} onClick={onClick} className={`flex min-h-16 items-center justify-between gap-3 rounded-xl border px-4 py-3 text-left text-sm font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#274c69] ${active ? 'border-[#274c69] bg-[#eef4f8] text-[#274c69]' : 'border-[#dbe6f2] bg-white text-[#42617f] hover:border-[#9aafbf]'}`}>
+    <span className="flex min-w-0 items-center gap-3">{Icon ? <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${active ? 'bg-white' : 'bg-[#f4f8fc]'}`}><Icon size={19} strokeWidth={1.75} aria-hidden="true" /></span> : null}<span>{label}</span></span>
+    <span aria-hidden="true" className={`flex h-5 w-5 items-center justify-center rounded-full border ${active ? 'border-[#274c69] bg-[#274c69] text-white' : 'border-[#c8d6e5] text-transparent'}`}><CheckCircle2 size={13} /></span>
+  </button>
 }
 
 function ReviewSummaryCard({ title, details, onEdit }) {
@@ -262,51 +254,57 @@ function ReviewSummaryCard({ title, details, onEdit }) {
 }
 
 function DistributionChannelCard({ channel, selected, needsAttention, onToggle }) {
-  const state = !selected
-    ? { label: 'Not selected', detail: 'This channel will not be prepared after saving.', classes: 'border-[#dbe6f2] bg-white text-[#607891]' }
-    : needsAttention
-      ? { label: 'Needs attention', detail: needsAttention, classes: 'border-[#f1d4a6] bg-[#fffaf0] text-[#8a5a12]' }
-      : { label: 'Selected', detail: 'This channel will be prepared after the rental is saved.', classes: 'border-[#b8ddc4] bg-[#f2fbf5] text-[#286b43]' }
+  const Icon = channel.key === 'agency_website' ? Globe2 : channel.key === 'property24' ? Building2 : House
   return (
     <button
       type="button"
+      data-rental-control="distribution-channel"
       aria-pressed={selected}
+      aria-label={channel.label}
       onClick={() => onToggle(channel.key)}
-      className={`flex min-h-32 flex-col items-start rounded-[12px] border p-4 text-left transition focus:outline-none focus:ring-2 focus:ring-[#286b43] focus:ring-offset-2 ${state.classes}`}
+      className={`flex min-h-44 min-w-0 flex-col items-start rounded-2xl border p-5 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#274c69] ${selected ? 'border-[#91abc0] bg-[#f4f8fc]' : 'border-[#dbe6f2] bg-white hover:border-[#91abc0]'}`}
     >
-      <span className="flex w-full items-start justify-between gap-3"><span className="font-semibold text-[#18324b]">{channel.label}</span><span className="rounded-full border border-current/20 px-2 py-1 text-[0.7rem] font-bold">{state.label}</span></span>
-      <span className="mt-3 text-xs font-medium leading-5">{state.detail}</span>
+      <span className="flex w-full items-center justify-between gap-3">
+        <span className={`flex h-11 w-11 items-center justify-center rounded-xl text-[#315f80] ${selected ? 'bg-white' : 'bg-[#eef4fa]'}`}><Icon size={22} aria-hidden="true" /></span>
+        <span aria-hidden="true" className={`flex h-6 w-6 items-center justify-center rounded-full border ${selected ? 'border-[#274c69] bg-[#274c69] text-white' : 'border-[#c8d6e5] bg-white text-transparent'}`}><CheckCircle2 size={15} /></span>
+      </span>
+      <span className="mt-5 text-base font-semibold text-[#18324b]">{channel.label}</span>
+      <span className={`mt-2 text-xs font-semibold ${selected && needsAttention ? 'text-[#8a5a12]' : 'text-[#607891]'}`}>{selected ? needsAttention ? 'Needs attention' : 'Selected' : 'Not selected'}</span>
+      {selected && needsAttention ? <span className="mt-3 text-xs leading-5 text-[#8a5a12]">{needsAttention}</span> : null}
     </button>
   )
 }
 
 function stepForValidationError(error = '') {
   const normalized = String(error).toLowerCase()
-  if (normalized.includes('landlord')) return 'landlord'
+  if (normalized.includes('landlord') || normalized.includes('mandate') || normalized.includes('marketing approval')) return 'landlord'
   if (normalized.includes('property address')) return 'property'
   if (normalized.includes('rental amount') || normalized.includes('rental price frequency') || normalized.includes('deposit') || normalized.includes('available from') || normalized.includes('occupation date')) return 'terms'
+  if (normalized.startsWith('enter a valid ') && !normalized.includes('landlord')) return 'features'
   if (normalized.includes('public rental description')) return 'marketing'
   return 'review'
 }
 
 function RentalCreateProgressNav({ activeStep, onStepClick }) {
   const activeIndex = CREATE_STEPS.findIndex((step) => step.key === activeStep)
+  const compactLabels = ['Landlord', 'Property', 'Features', 'Terms', 'Marketing', 'Portals', 'Review']
   return (
-    <nav className="overflow-x-auto rounded-[16px] border border-[#dde6ef] bg-white px-4 py-3 shadow-[0_10px_24px_rgba(15,23,42,0.035)]" aria-label="Create rental listing progress">
-      <div className="flex min-w-[780px] items-center gap-3">
+    <nav className="rounded-[16px] border border-[#dde6ef] bg-white px-2 py-3 sm:px-4 shadow-[0_10px_24px_rgba(15,23,42,0.035)]" aria-label="Create rental listing progress">
+      <div className="grid grid-cols-7 gap-1 sm:gap-2">
         {CREATE_STEPS.map((step, index) => {
           const complete = index < activeIndex
           const active = index === activeIndex
           return (
-            <div key={step.key} className="flex flex-1 items-center gap-3">
-              <button type="button" onClick={() => onStepClick(step.key)} className={`flex min-w-0 items-center gap-3 rounded-[10px] px-2 py-2 text-left ${active ? 'text-[#142132]' : 'text-[#607387]'}`}>
-                <span className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-bold ${active || complete ? 'bg-[#1f7d44] text-white' : 'bg-[#eef2f6] text-[#6b7d93]'}`}>
-                  {complete ? <CheckCircle2 size={16} aria-hidden="true" /> : index + 1}
-                </span>
-                <span className="min-w-0"><span className="block truncate text-sm font-bold">{step.label}</span><span className="block truncate text-xs text-[#60758c]">{step.description}</span>{active ? <span className="mt-2 block h-0.5 w-12 rounded-full bg-[#1f7d44]" /> : null}</span>
-              </button>
-              {index < CREATE_STEPS.length - 1 ? <span className={`h-px flex-1 ${complete ? 'bg-[#1f7d44]' : 'bg-[#d6e0eb]'}`} /> : null}
-            </div>
+            <button key={step.key} type="button" onClick={() => onStepClick(step.key)} aria-current={active ? 'step' : undefined} aria-label={`Step ${index + 1}: ${step.label}`} title={step.label} className={`relative flex min-w-0 flex-col items-center gap-2 rounded-[10px] px-0.5 pb-3 pt-2 text-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1f7d44] ${active ? 'text-[#142132]' : 'text-[#607387]'}`}>
+              <span className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold sm:h-8 sm:w-8 sm:text-sm ${active || complete ? 'bg-[#1f7d44] text-white' : 'bg-[#eef2f6] text-[#6b7d93]'}`}>
+                {complete ? <CheckCircle2 size={16} aria-hidden="true" /> : index + 1}
+              </span>
+              <span className="w-full break-words text-[10px] font-bold leading-tight sm:text-xs lg:text-sm">
+                <span className="sm:hidden">{compactLabels[index]}</span>
+                <span className="hidden sm:block">{step.label}</span>
+              </span>
+              {active ? <span className="absolute bottom-0 left-1/4 right-1/4 h-0.5 rounded-full bg-[#1f7d44]" aria-hidden="true" /> : null}
+            </button>
           )
         })}
       </div>
@@ -325,10 +323,14 @@ export default function RentalListingCreatePage() {
   const assignedAgentId = rentalScope.assignedAgentId
   const editListingId = String(params.listingId || '').trim()
   const isEditing = Boolean(editListingId)
+  const portfolioPropertyId = String(searchParams.get('portfolioPropertyId') || '').trim()
+  const draftStorageKey = searchParams.get('leadId') ? `${RENTAL_CREATE_SESSION_DRAFT_KEY}:${searchParams.get('leadId')}:${portfolioPropertyId || 'primary'}` : RENTAL_CREATE_SESSION_DRAFT_KEY
   const [form, setForm] = useState(createInitialFormState)
   const [activeStep, setActiveStep] = useState('landlord')
   const galleryImagesRef = useRef(form.galleryImages)
   const [saving, setSaving] = useState(false)
+  const savingRef = useRef(false)
+  const [saveProgress, setSaveProgress] = useState('')
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [linkedLandlordLead, setLinkedLandlordLead] = useState(null)
@@ -345,25 +347,25 @@ export default function RentalListingCreatePage() {
     return rent * multiplier
   }, [form.depositMultiplier, form.monthlyRent])
   const selectedSellingPoints = useMemo(
-    () => [...new Set([...(form.selectedFeatures || []), ...(form.amenities || [])])],
-    [form.amenities, form.selectedFeatures],
+    () => rentalFeatureAnswerLabels(form),
+    [form],
   )
   const selectedDistributionChannels = useMemo(
     () => normalizeRentalDistributionChannels(form.selectedSyndicationChannels),
     [form.selectedSyndicationChannels],
   )
-  const canSubmit = validationErrors.length === 0 && !saving
+  const canSubmit = validationErrors.length === 0 && !saving && (!searchParams.get('leadId') || Boolean(linkedLandlordLead))
   const activeStepIndex = CREATE_STEPS.findIndex((step) => step.key === activeStep)
   const priceFrequencyOptions = rentalPriceFrequencyOptions(form.propertyCategory)
 
   useEffect(() => {
     try {
       if (isEditing) return
-      const storedDraft = window.sessionStorage.getItem(RENTAL_CREATE_SESSION_DRAFT_KEY)
+      const storedDraft = window.sessionStorage.getItem(draftStorageKey)
       if (!storedDraft) return
       const parsedDraft = JSON.parse(storedDraft)
       if (!parsedDraft || typeof parsedDraft !== 'object') return
-      setForm((current) => ({
+      setForm((current) => restoreRentalFeatureSelections({
         ...current,
         ...parsedDraft.form,
         selectedFeatures: Array.isArray(parsedDraft.form?.selectedFeatures) ? parsedDraft.form.selectedFeatures : current.selectedFeatures,
@@ -374,9 +376,9 @@ export default function RentalListingCreatePage() {
       if (CREATE_STEPS.some((step) => step.key === parsedDraft.activeStep)) setActiveStep(parsedDraft.activeStep)
       setNotice('Your saved rental draft was restored for this browser session.')
     } catch {
-      window.sessionStorage.removeItem(RENTAL_CREATE_SESSION_DRAFT_KEY)
+      window.sessionStorage.removeItem(draftStorageKey)
     }
-  }, [isEditing])
+  }, [isEditing, draftStorageKey])
 
   useEffect(() => {
     if (!isEditing || !organisationId) return
@@ -390,7 +392,7 @@ export default function RentalListingCreatePage() {
     }).then((existingListing) => {
       if (cancelled) return
       if (!existingListing) throw new Error('Rental listing not found.')
-      setForm(buildRentalListingEditForm(existingListing))
+      setForm(restoreRentalFeatureSelections(buildRentalListingEditForm(existingListing)))
       setNotice('Editing this rental in the same guided capture flow used for new listings.')
     }).catch((loadError) => {
       if (!cancelled) setError(loadError?.message || 'Unable to load the rental listing for editing.')
@@ -408,12 +410,20 @@ export default function RentalListingCreatePage() {
     const leadId = searchParams.get('leadId')
     if (!leadId || !organisationId) { setLinkedLandlordLead(null); return }
     const options = { assignedAgentId, branchId, scopeLevel: rentalScope.scopeLevel, includeAllOrganisationLeads: rentalScope.scopeLevel === 'organisation' }
-    void listRentalLeads(organisationId, options).then((leads) => {
-      const lead = leads.find((item) => item.id === leadId && item.role === 'landlord' && item.stage === 'listing_ready') || null
+    void listRentalLeads(organisationId, options).then(async (leads) => {
+      const lead = leads.find((item) => item.id === leadId && item.role === 'landlord' && (item.stage === 'listing_ready' || (portfolioPropertyId && item.stage === 'listing_created'))) || null
+      if (lead && portfolioPropertyId) {
+        const property = landlordWorkspace(lead).portfolio.find(item => item.id === portfolioPropertyId)
+        if (!property) throw new Error('This landlord portfolio property is not available.')
+        if (property.listingId) throw new Error('This portfolio property already has a rental listing. Open that listing to edit it.')
+        const mandates = property.canonicalPropertyId ? await listRentalPropertyMandates(property.canonicalPropertyId) : []
+        if (!findLeadMandate(lead, mandates, property.canonicalPropertyId, organisationId)) throw new Error('Record a signed mandate for this portfolio property before creating its rental listing.')
+        if (!window.sessionStorage.getItem(draftStorageKey)) setForm(current => ({ ...current, ...Object.fromEntries(Object.entries(landlordListingPrefill(lead, portfolioPropertyId)).filter(([, value]) => value !== undefined)) }))
+      }
       setLinkedLandlordLead(lead)
       if (!lead) setError('The requested landlord lead is not available at Listing ready in your current scope.')
     }).catch((loadError) => setError(loadError?.message || 'Unable to validate linked landlord lead.'))
-  }, [assignedAgentId, branchId, organisationId, rentalScope.scopeLevel, searchParams])
+  }, [assignedAgentId, branchId, organisationId, rentalScope.scopeLevel, searchParams, portfolioPropertyId, draftStorageKey])
 
   useEffect(() => () => {
     for (const image of galleryImagesRef.current) {
@@ -430,29 +440,18 @@ export default function RentalListingCreatePage() {
   }
 
   function updatePropertyAddress(address) {
-    if (!address) return
     setForm((current) => ({
       ...current,
-      propertyAddress: address.formattedAddress || current.propertyAddress,
-      streetNumber: address.streetNumber || current.streetNumber,
-      streetName: address.streetName || address.route || current.streetName,
-      suburb: address.suburb || current.suburb,
-      city: address.city || current.city,
-      province: address.province || current.province,
-      postalCode: address.postalCode || current.postalCode,
-    }))
-    setError('')
-    setNotice('')
-  }
-
-  function toggleSellingPoint(value, portalField) {
-    setForm((current) => ({
-      ...current,
-      selectedFeatures: toggleArrayValue([...(current.selectedFeatures || []), ...(current.amenities || [])], value),
-      amenities: [],
-      ...(portalField
-        ? { [portalField]: toggleArrayValue([...(current.selectedFeatures || []), ...(current.amenities || [])], value).includes(value) ? 'yes' : '' }
-        : {}),
+      propertyAddress: address?.formattedAddress || '',
+      streetNumber: address?.streetNumber || '',
+      streetName: address?.streetName || address?.route || '',
+      suburb: address?.suburb || '',
+      city: address?.city || '',
+      province: address?.province || '',
+      postalCode: address?.postalCode || '',
+      latitude: address?.latitude ?? '',
+      longitude: address?.longitude ?? '',
+      googlePlaceId: address?.googlePlaceId || address?.placeId || '',
     }))
     setError('')
     setNotice('')
@@ -561,7 +560,7 @@ export default function RentalListingCreatePage() {
         galleryImages: [],
         coverImageId: '',
       }
-      window.sessionStorage.setItem(RENTAL_CREATE_SESSION_DRAFT_KEY, JSON.stringify({
+      window.sessionStorage.setItem(draftStorageKey, JSON.stringify({
         activeStep,
         form: serializableForm,
       }))
@@ -574,6 +573,7 @@ export default function RentalListingCreatePage() {
 
   async function handleSubmit(event) {
     event.preventDefault()
+    if (savingRef.current) return
     if (activeStep !== 'review') {
       goToNextStep()
       return
@@ -583,18 +583,24 @@ export default function RentalListingCreatePage() {
       return
     }
     try {
+      savingRef.current = true
       setSaving(true)
+      setSaveProgress(pendingListingId || isEditing ? 'Saving rental details…' : 'Creating rental draft…')
       setError('')
-      const context = { organisationId, branchId, assignedAgentId, performedBy: assignedAgentId }
-      const result = isEditing
-        ? await updateRentalListingDraft(editListingId, form, context)
-        : pendingListingId ? { listing: { id: pendingListingId } } : await createRentalListingDraft(form, context)
+      const context = {
+        organisationId, branchId, assignedAgentId, performedBy: assignedAgentId,
+        onListingCreated: setPendingListingId,
+        onUploadProgress: ({ completed, total, phase }) => setSaveProgress(phase === 'saving' ? 'Saving rental marketing…' : `Saving photos: ${completed} of ${total}…`),
+      }
+      const result = isEditing || pendingListingId
+        ? await updateRentalListingDraft(editListingId || pendingListingId, form, context)
+        : await createRentalListingDraft(form, context)
       const listingId = result?.listing?.id
       if (listingId) {
         if (linkedLandlordLead && !isEditing) {
           setPendingListingId(listingId)
           try {
-            await linkRentalLandlordLeadToListing(linkedLandlordLead, listingId, { organisationId, actor: { id: assignedAgentId, userId: assignedAgentId }, scope: { ...rentalScope, assignedAgentId, branchId, includeAllOrganisationLeads: rentalScope.scopeLevel === 'organisation' } })
+            await linkRentalLandlordLeadToListing(linkedLandlordLead, listingId, { organisationId, actor: { id: assignedAgentId, userId: assignedAgentId }, scope: { ...rentalScope, assignedAgentId, branchId, includeAllOrganisationLeads: rentalScope.scopeLevel === 'organisation' }, portfolioPropertyId })
             setPendingListingId('')
           } catch (linkError) {
             setError(`Listing ${listingId} was created, but it was not linked to the landlord lead: ${linkError?.message || 'unknown link failure'}`)
@@ -613,33 +619,40 @@ export default function RentalListingCreatePage() {
         state: { [isEditing ? 'rentalListingUpdatedTitle' : 'rentalListingCreatedTitle']: buildRentalListingTitle(form) },
       })
     } catch (saveError) {
+      if (!isEditing && saveError.listingId) setPendingListingId(saveError.listingId)
+      if (Array.isArray(saveError.galleryImages)) {
+        setForm((current) => ({ ...current, galleryImages: saveError.galleryImages }))
+      }
       setError(saveError?.message || `Unable to ${isEditing ? 'update' : 'create'} the rental listing draft.`)
     } finally {
+      savingRef.current = false
       setSaving(false)
+      setSaveProgress('')
     }
   }
 
   return (
     <section className="page-content w-full min-w-0 max-w-full overflow-x-hidden">
       <form onSubmit={handleSubmit} className="ui-section-stack w-full min-w-0 max-w-full">
-        <header className="flex flex-wrap items-start justify-between gap-4 px-1 pt-1">
-          <div>
-            <p className="text-sm font-semibold text-[#607891]">Listings <span aria-hidden="true">→</span> {isEditing ? 'Edit listing' : 'New listing'} (rentals)</p>
-            <h1 className="mt-3 text-[1.8rem] font-semibold tracking-[-0.03em] text-[#18324b]">{isEditing ? 'Edit rental listing' : 'New listing'}</h1>
-            <p className="mt-1 text-base text-[#607891]">
-              {isEditing ? 'Update the rental in the guided multi-step editor.' : 'Capture the rental listing details.'}
-            </p>
+        <header className="flex items-stretch gap-3">
+          <div className="flex min-w-0 flex-1 items-center rounded-[16px] border border-[#dde6ef] bg-white px-5 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.035)]">
+            <h1 className="text-[1.8rem] font-semibold tracking-[-0.03em] text-[#18324b]">{isEditing ? 'Edit rental listing' : 'Create new listing'}</h1>
           </div>
+          <div className="flex shrink-0 items-center justify-center rounded-[16px] border border-[#dde6ef] bg-white p-3 shadow-[0_10px_24px_rgba(15,23,42,0.035)]">
           <button
             type="button"
-            className="inline-flex h-12 w-12 items-center justify-center rounded-xl border border-[#dbe6f2] bg-white text-[#607891] transition hover:border-[#9fc5ae] hover:text-[#286b43]"
+            disabled={saving}
+            className="inline-flex h-12 w-12 items-center justify-center rounded-xl text-[#607891] transition hover:bg-[#f4f8fc] hover:text-[#286b43] disabled:opacity-50"
             onClick={() => navigate(isEditing ? `/agent/rentals/listings/${encodeURIComponent(editListingId)}` : '/agent/rentals/listings')}
             aria-label={isEditing ? 'Close rental listing editor' : 'Close new rental listing'}
           >
             <X size={21} aria-hidden="true" />
           </button>
+          </div>
         </header>
 
+        {saving && saveProgress ? <p role="status" className="px-4 py-3 text-sm font-semibold text-[#607891]">{saveProgress}</p> : null}
+        {pendingListingId && error ? <p className="px-4 text-sm text-[#607891]">Your rental draft already exists. Retry saving here to finish its photos and marketing without creating another listing.</p> : null}
         {error ? (
           <p className="rounded-[8px] border border-[#f2c6c6] bg-[#fff7f7] px-4 py-3 text-sm font-semibold text-[#9f3131]">{error}</p>
         ) : null}
@@ -647,30 +660,32 @@ export default function RentalListingCreatePage() {
           <p className="rounded-[8px] border border-[#cfe8dc] bg-[#f2fbf5] px-4 py-3 text-sm font-semibold text-[#286b43]">{notice}</p>
         ) : null}
 
+        <fieldset disabled={saving} className="m-0 min-w-0 space-y-6 border-0 p-0">
         <RentalCreateProgressNav activeStep={activeStep} onStepClick={goToStep} />
 
         <div className="grid w-full min-w-0 max-w-full gap-6">
           {linkedLandlordLead ? <p className="rounded-[8px] border border-[#cfe8dc] bg-[#f2fbf5] px-4 py-3 text-sm font-semibold text-[#286b43]">Creating this listing for landlord lead {linkedLandlordLead.name}. The listing will be linked after it is created.</p> : null}
-          {activeStep === 'property' ? <FormSection
-            eyebrow="Step 2 of 6"
-            title="Property"
-            description="Add the property details."
-          >
+          {activeStep === 'property' ? <FormSection>
             <section>
-              <h3 className="text-sm font-semibold text-[#18324b]">1. Property category</h3>
-              <p className="mt-1 text-sm text-[#607891]">Choose the market this rental belongs to before adding its address and property type.</p>
-              <div className="mt-4 max-w-md">
-                <SelectField label="Property category" name="propertyCategory" value={form.propertyCategory} onChange={updateForm} options={PROPERTY_CATEGORY_OPTIONS} />
+              <h3 id="rental-property-category-label" className="text-sm font-semibold text-[#18324b]">Property category</h3>
+              <div role="group" aria-labelledby="rental-property-category-label" className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {PROPERTY_CATEGORY_OPTIONS.filter((option) => option.value !== 'mixed_use' || form.propertyCategory === 'mixed_use').map((option) => <PropertyChoiceCard key={option.value} label={option.label} icon={option.icon} active={form.propertyCategory === option.value} onClick={() => { updateForm('propertyCategory', option.value); if (!RENTAL_CATEGORY_TYPES[option.value]?.includes(form.propertyType)) updateForm('propertyType', RENTAL_CATEGORY_TYPES[option.value]?.[0] || 'Apartment') }} />)}
+              </div>
+            </section>
+            <section className="border-t border-[#e6edf5] pt-6">
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                <SelectField label="Ownership / title type" name="rentalTitleType" value={form.rentalPortalFacts?.['propertyInfo.propertyDescription.propertyDescriptionType'] || ''} onChange={(_, value) => updateForm('rentalPortalFacts', { ...form.rentalPortalFacts, ['propertyInfo.propertyDescription.propertyDescriptionType']: value })} options={[{ value: '', label: 'Not captured' }, ...RENTAL_PORTAL_FIELDS.find((field) => field.key === 'propertyInfo.propertyDescription.propertyDescriptionType').options.map((value) => ({ value, label: ({ Erf: 'Freehold / erf', Unit: 'Sectional title', ExclusiveUseArea: 'Sectional title — exclusive use area', AgriculturalHolding: 'Agricultural holding' })[value] || value }))]} />
+                <SelectField label="Property type" name="propertyType" value={form.propertyType} onChange={updateForm} options={[...(RENTAL_CATEGORY_TYPES[form.propertyCategory] || []).map((value) => ({ value, label: value })), ...(!RENTAL_CATEGORY_TYPES[form.propertyCategory]?.includes(form.propertyType) ? [{ value: form.propertyType, label: LEGACY_PROPERTY_TYPE_OPTIONS.find((option) => option.value === form.propertyType)?.label || form.propertyType }] : [])]} />
+                {['residential', 'agricultural'].includes(form.propertyCategory) ? <div role="group" aria-labelledby="rental-retirement-label"><p id="rental-retirement-label" className="text-sm font-semibold text-[#2d445e]">Retirement accommodation</p><div className="mt-2 grid grid-cols-2 gap-3">{['yes', 'no'].map((value) => <PropertyChoiceCard key={value} label={value === 'yes' ? 'Yes' : 'No'} active={form.retirementAccommodation === value} onClick={() => updateForm('retirementAccommodation', value)} />)}</div></div> : null}
               </div>
             </section>
             <section>
-              <h3 className="text-sm font-semibold text-[#18324b]">2. Property address</h3>
-              <div className="mt-4">
+              <div>
                 <AddressAutocomplete
                   label="Property address"
-                  value={{ formattedAddress: form.propertyAddress, streetNumber: form.streetNumber, streetName: form.streetName, suburb: form.suburb, city: form.city, province: form.province, postalCode: form.postalCode }}
+                  value={{ formattedAddress: form.propertyAddress, streetNumber: form.streetNumber, streetName: form.streetName, suburb: form.suburb, city: form.city, province: form.province, postalCode: form.postalCode, latitude: form.latitude, longitude: form.longitude, googlePlaceId: form.googlePlaceId }}
                   onChange={updatePropertyAddress}
-                  onInputValueChange={(value) => updateForm('propertyAddress', value)}
+                  onInputValueChange={(value) => updatePropertyAddress({ formattedAddress: value })}
                   predictionTypes={['address']}
                   placeholder="Search for the property address..."
                   hideUnavailableMessage
@@ -679,8 +694,8 @@ export default function RentalListingCreatePage() {
               <details className="mt-4 rounded-xl border border-[#dbe6f2] bg-[#fbfdff] p-4">
                 <summary className="cursor-pointer text-sm font-semibold text-[#1f4f78]">Address details and portal display</summary>
                 <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                  <label className="form-field"><span>Unit number</span><input {...formField('unitNumber', form.unitNumber, updateForm)} placeholder="Unit 12" /></label>
-                  <label className="form-field"><span>Complex / building</span><input {...formField('complexName', form.complexName, updateForm)} placeholder="The Atrium" /></label>
+                  {['Unit', 'ExclusiveUseArea'].includes(form.rentalPortalFacts?.['propertyInfo.propertyDescription.propertyDescriptionType']) ? <><label className="form-field"><span>Unit number</span><input {...formField('unitNumber', form.unitNumber, updateForm)} placeholder="Unit 12" /></label>
+                  <label className="form-field"><span>Complex / building</span><input {...formField('complexName', form.complexName, updateForm)} placeholder="The Atrium" /></label></> : null}
                   <label className="form-field"><span>Street number</span><input {...formField('streetNumber', form.streetNumber, updateForm)} placeholder="10" /></label>
                   <label className="form-field"><span>Street name</span><input {...formField('streetName', form.streetName, updateForm)} placeholder="Beach Road" /></label>
                   <label className="form-field"><span>Suburb</span><input {...formField('suburb', form.suburb, updateForm)} placeholder="Suburb" /></label>
@@ -693,26 +708,18 @@ export default function RentalListingCreatePage() {
             </section>
 
             <section className="border-t border-[#e6edf5] pt-6">
-              <h3 className="text-sm font-semibold text-[#18324b]">3. Listing basics</h3>
-              <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                <SelectField label="Property type" name="propertyType" value={form.propertyType} onChange={updateForm} options={PROPERTY_TYPE_OPTIONS} />
-                <SelectField label="Retirement accommodation (optional)" name="retirementAccommodation" value={form.retirementAccommodation} onChange={updateForm} options={RENTAL_SELECT_OPTIONS.retirementAccommodation} />
-              </div>
-            </section>
-
-            <section className="border-t border-[#e6edf5] pt-6">
-              <h3 className="text-sm font-semibold text-[#18324b]">4. Property specifications</h3>
+              <h3 className="text-sm font-semibold text-[#18324b]">Property specifications</h3>
               <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                <PropertyCounter label="Bedrooms" value={form.bedrooms} onChange={(value) => updateForm('bedrooms', value)} />
-                <PropertyCounter label="Bathrooms" value={form.bathrooms} onChange={(value) => updateForm('bathrooms', value)} />
-                <PropertyCounter label="Garages" value={form.garages} onChange={(value) => updateForm('garages', value)} />
+                {['residential', 'agricultural', 'commercial', 'industrial', 'retail', 'mixed_use'].includes(form.propertyCategory) ? <PropertyCounter label="Bedrooms" value={form.bedrooms} onChange={(value) => updateForm('bedrooms', value)} /> : null}
+                {form.propertyCategory !== 'vacant_land' ? <PropertyCounter label="Bathrooms" value={form.bathrooms} onChange={(value) => updateForm('bathrooms', value)} /> : null}
+                {['residential', 'agricultural'].includes(form.propertyCategory) ? <PropertyCounter label="Garages" value={form.garages} onChange={(value) => updateForm('garages', value)} /> : null}
                 <PropertyCounter label="Parking" value={form.parkingBays} onChange={(value) => updateForm('parkingBays', value)} />
               </div>
               <div className="mt-4 grid gap-4 md:grid-cols-2">
                 <label className="form-field"><span>Floor size (m²)</span><input type="number" min="0" step="0.1" {...formField('floorSize', form.floorSize, updateForm)} placeholder="120" /></label>
                 <label className="form-field"><span>Erf size (m²)</span><input type="number" min="0" step="0.1" {...formField('erfSize', form.erfSize, updateForm)} placeholder="350" /></label>
               </div>
-              <details className="mt-5 rounded-xl border border-[#dbe6f2] bg-[#fbfdff] p-4">
+              {['residential', 'agricultural'].includes(form.propertyCategory) ? <details className="mt-5 rounded-xl border border-[#dbe6f2] bg-[#fbfdff] p-4">
                 <summary className="cursor-pointer text-sm font-semibold text-[#1f4f78]">More specifications</summary>
                 <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                   <PropertyCounter label="Covered parking" value={form.coveredParking} onChange={(value) => updateForm('coveredParking', value)} />
@@ -726,11 +733,13 @@ export default function RentalListingCreatePage() {
                   <PropertyCounter label="Storerooms" value={form.storerooms} onChange={(value) => updateForm('storerooms', value)} />
                   <PropertyCounter label="Staff rooms" value={form.staffRooms} onChange={(value) => updateForm('staffRooms', value)} />
                 </div>
-              </details>
+              </details> : null}
             </section>
           </FormSection> : null}
 
-          {activeStep === 'landlord' ? <FormSection eyebrow="Step 1 of 6" title="Landlord & Mandate" description="Add the property owner and confirm the rental mandate.">
+          {activeStep === 'features' ? <FormSection><RentalCategoryFields form={form} onChange={updateForm} disabled={saving} /></FormSection> : null}
+
+          {activeStep === 'landlord' ? <FormSection>
             <section>
               <h3 className="text-sm font-semibold text-[#18324b]">Landlord type</h3>
               <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -750,7 +759,7 @@ export default function RentalListingCreatePage() {
               <div className="mt-4 grid gap-4 md:grid-cols-3">
                 <label className="form-field">
                   <span>{form.landlordType === 'company' ? 'Company name *' : form.landlordType === 'trust' ? 'Trust name *' : form.landlordType === 'multiple_owners' ? 'Primary owner full name *' : form.landlordType === 'foreign_owner' ? 'Owner or entity name *' : form.landlordType === 'individual' ? 'Full name *' : 'Entity name *'}</span>
-                  <input {...formField('landlordName', form.landlordName, updateForm)} placeholder={form.landlordType === 'individual' ? 'Landlord full name' : 'Registered entity name'} />
+                  <input required {...formField('landlordName', form.landlordName, updateForm)} placeholder={form.landlordType === 'individual' ? 'Landlord full name' : 'Registered entity name'} />
                 </label>
                 <label className="form-field">
                   <span>Mobile</span>
@@ -781,46 +790,50 @@ export default function RentalListingCreatePage() {
             </section>
           </FormSection> : null}
 
-          {activeStep === 'terms' ? <FormSection eyebrow="Step 3 of 6" title="Rental Terms" description="Set the rental amount, lease conditions, deposits, fees, and availability.">
-            <section>
-              <h3 className="text-sm font-semibold text-[#18324b]">Price & availability</h3>
-              <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                <label className="form-field"><span>Rental amount</span><input type="number" min="0" {...formField('monthlyRent', form.monthlyRent, updateForm)} placeholder="18500" /></label>
+          {activeStep === 'terms' ? <FormSection title="Rental terms">
+            <div className="grid min-w-0 items-start gap-4 xl:grid-cols-2">
+              <RentalTermsCard title="Rent" icon={Coins}>
+                <label className="form-field"><span>Rental amount</span><input type="number" min="0" {...formField('monthlyRent', form.monthlyRent, updateForm)} placeholder="Amount in rand" /></label>
                 <SelectField label="Rental price frequency" name="rentalPriceFrequency" value={form.rentalPriceFrequency} onChange={updateForm} options={priceFrequencyOptions} />
+                <div className="sm:col-span-2"><SelectField label="Furnished" name="furnishedStatus" value={form.furnishedStatus} onChange={updateForm} options={RENTAL_SELECT_OPTIONS.furnishedStatus} /></div>
+              </RentalTermsCard>
+
+              <RentalTermsCard title="Availability & lease" icon={CalendarDays}>
                 <label className="form-field"><span>Available from</span><input type="date" {...formField('availableFrom', form.availableFrom, updateForm)} /></label>
                 <label className="form-field"><span>Occupation date</span><input type="date" {...formField('occupationDate', form.occupationDate, updateForm)} /></label>
-                <SelectField label="Furnished" name="furnishedStatus" value={form.furnishedStatus} onChange={updateForm} options={RENTAL_SELECT_OPTIONS.furnishedStatus} />
-              </div>
-            </section>
-
-            <section className="border-t border-[#e6edf5] pt-6">
-              <h3 className="text-sm font-semibold text-[#18324b]">Lease</h3>
-              <div className="mt-4 grid gap-4 md:grid-cols-3">
                 <label className="form-field"><span>Lease period (months)</span><input type="number" min="1" {...formField('leasePeriodMonths', form.leasePeriodMonths, updateForm)} /></label>
                 <SelectField label="Lease period type" name="leasePeriodType" value={form.leasePeriodType} onChange={updateForm} options={RENTAL_SELECT_OPTIONS.leasePeriodType} />
-                <SelectField label="Pets" name="petsPolicy" value={form.petsPolicy} onChange={updateForm} options={RENTAL_SELECT_OPTIONS.petsPolicy} />
-                <SelectField label="Rental type" name="rentalMandateType" value={form.rentalMandateType} onChange={updateForm} options={RENTAL_SELECT_OPTIONS.rentalMandateType} />
-              </div>
-            </section>
+                <div className="sm:col-span-2"><SelectField label="Rental type" name="rentalMandateType" value={form.rentalMandateType} onChange={updateForm} options={RENTAL_SELECT_OPTIONS.rentalMandateType} /></div>
+              </RentalTermsCard>
 
-            <section className="border-t border-[#e6edf5] pt-6">
-              <h3 className="text-sm font-semibold text-[#18324b]">Deposits & fees</h3>
-              <p className="mt-1 text-sm text-[#607891]">Choose whether a deposit is required. Where it is, use either an amount or a multiplier; the amount is what tenants will see and takes precedence when both are supplied.</p>
-              <div className="mt-4 grid gap-4 md:grid-cols-3">
-                <SelectField label="Deposit policy" name="depositPolicy" value={form.depositPolicy} onChange={updateForm} options={RENTAL_SELECT_OPTIONS.depositPolicy} />
-                {form.depositPolicy !== 'no_deposit' ? <label className="form-field"><span>Deposit amount</span><input type="number" min="0" {...formField('depositAmount', form.depositAmount, updateForm)} placeholder="37000" /></label> : null}
-                {form.depositPolicy !== 'no_deposit' ? <label className="form-field"><span>Deposit multiplier</span><input type="number" min="0" step="0.5" {...formField('depositMultiplier', form.depositMultiplier, updateForm)} placeholder="1.5" /></label> : null}
-                {form.depositPolicy !== 'no_deposit' ? <label className="form-field"><span>Deposit requirements</span><input {...formField('depositRequirement', form.depositRequirement, updateForm)} placeholder="One and a half months deposit" /></label> : <p className="self-end rounded-xl border border-[#d8eddf] bg-[#f4fbf6] px-4 py-3 text-sm text-[#286b43]">This rental will be marked as having no deposit.</p>}
-              </div>
-              {suggestedDepositAmount ? (
-                <div className="mt-3 flex flex-wrap items-center gap-3 rounded-xl border border-[#d8eddf] bg-[#f4fbf6] px-4 py-3 text-sm text-[#286b43]">
-                  <span>Suggested deposit: <strong>R {suggestedDepositAmount.toLocaleString('en-ZA')}</strong></span>
-                  <button type="button" className="font-semibold underline underline-offset-2" onClick={() => updateForm('depositAmount', String(suggestedDepositAmount))}>Use calculated amount</button>
-                </div>
-              ) : null}
-              <details className="mt-5 rounded-xl border border-[#dbe6f2] bg-[#fbfdff] p-4">
-                <summary className="cursor-pointer text-sm font-semibold text-[#1f4f78]">Optional deposits and fees</summary>
-                <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              <RentalTermsCard title="Deposit" icon={ShieldCheck}>
+                <div className="sm:col-span-2"><SelectField label="Deposit policy" name="depositPolicy" value={form.depositPolicy} onChange={updateForm} options={RENTAL_SELECT_OPTIONS.depositPolicy} /></div>
+                {form.depositPolicy !== 'no_deposit' ? <>
+                  <label className="form-field"><span>Deposit amount</span><input type="number" min="0" {...formField('depositAmount', form.depositAmount, updateForm)} placeholder="Amount in rand" /></label>
+                  <label className="form-field"><span>Deposit multiplier</span><input type="number" min="0" step="0.5" {...formField('depositMultiplier', form.depositMultiplier, updateForm)} placeholder="e.g. 1.5" /></label>
+                  <label className="form-field sm:col-span-2"><span>Deposit requirements</span><input {...formField('depositRequirement', form.depositRequirement, updateForm)} placeholder="e.g. One and a half months’ rent" /></label>
+                  <p className="text-xs text-[#607891] sm:col-span-2">The entered amount takes priority over the multiplier.</p>
+                  {suggestedDepositAmount ? <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-[#f4f8fc] px-3 py-3 text-sm text-[#315f80] sm:col-span-2">
+                    <span>Calculated deposit <strong className="ml-1 text-[#18324b]">R {suggestedDepositAmount.toLocaleString('en-ZA')}</strong></span>
+                    <button type="button" data-rental-control="deposit-calculation" className="font-semibold underline underline-offset-2" onClick={() => updateForm('depositAmount', String(suggestedDepositAmount))}>Use calculated amount</button>
+                  </div> : null}
+                </> : null}
+              </RentalTermsCard>
+
+              <RentalTermsCard title="Utilities" icon={Wallet}>
+                <div className="sm:col-span-2"><SelectField label="Utilities" name="utilitiesPolicy" value={form.utilitiesPolicy} onChange={updateForm} options={RENTAL_SELECT_OPTIONS.utilitiesPolicy} /></div>
+                <label className="form-field sm:col-span-2"><span>Rental includes</span><input {...formField('rentalIncludes', form.rentalIncludes, updateForm)} placeholder="Water, Wi-Fi, garden service" /></label>
+                <label className="form-field sm:col-span-2"><span>Rental excludes</span><input {...formField('rentalExcludes', form.rentalExcludes, updateForm)} placeholder="Electricity, refuse, sewerage" /></label>
+              </RentalTermsCard>
+
+              <RentalTermsCard title="Inspection" icon={ClipboardCheck}>
+                <div className="sm:col-span-2"><SelectField label="Inspection" name="inspectionStatus" value={form.inspectionStatus} onChange={updateForm} options={RENTAL_SELECT_OPTIONS.inspectionStatus} /></div>
+                <label className="form-field sm:col-span-2"><span>Inspection notes</span><textarea rows={3} {...formField('inspectionNotes', form.inspectionNotes, updateForm)} placeholder="Repairs, access or inspection arrangements" /></label>
+              </RentalTermsCard>
+
+              <details className="min-w-0 rounded-2xl border border-[#dbe6f2] bg-white p-4 sm:p-5">
+                <summary className="cursor-pointer text-sm font-semibold text-[#18324b]"><span className="inline-flex items-center gap-3 align-middle"><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#eef4fa] text-[#315f80]"><FileText size={18} aria-hidden="true" /></span>Additional deposits & fees</span></summary>
+                <div className="mt-5 grid min-w-0 gap-4 sm:grid-cols-2">
                   <label className="form-field"><span>Application fee</span><input type="number" min="0" {...formField('applicationFee', form.applicationFee, updateForm)} /></label>
                   <label className="form-field"><span>Lease admin fee</span><input type="number" min="0" {...formField('leaseAdminFee', form.leaseAdminFee, updateForm)} /></label>
                   <label className="form-field"><span>Credit check fee</span><input type="number" min="0" {...formField('creditCheckFee', form.creditCheckFee, updateForm)} /></label>
@@ -828,72 +841,98 @@ export default function RentalListingCreatePage() {
                   <label className="form-field"><span>Utility deposit</span><input type="number" min="0" {...formField('utilityDepositAmount', form.utilityDepositAmount, updateForm)} /></label>
                 </div>
               </details>
-            </section>
-
-            <section className="border-t border-[#e6edf5] pt-6">
-              <h3 className="text-sm font-semibold text-[#18324b]">Utilities & inspection</h3>
-              <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                <SelectField label="Utilities" name="utilitiesPolicy" value={form.utilitiesPolicy} onChange={updateForm} options={RENTAL_SELECT_OPTIONS.utilitiesPolicy} />
-                <SelectField label="Inspection" name="inspectionStatus" value={form.inspectionStatus} onChange={updateForm} options={RENTAL_SELECT_OPTIONS.inspectionStatus} />
-                <label className="form-field xl:col-span-3"><span>Rental includes</span><input {...formField('rentalIncludes', form.rentalIncludes, updateForm)} placeholder="Water, Wi-Fi, garden service" /></label>
-                <label className="form-field xl:col-span-3"><span>Rental excludes</span><input {...formField('rentalExcludes', form.rentalExcludes, updateForm)} placeholder="Prepaid electricity, refuse, sewerage" /></label>
-                <label className="form-field xl:col-span-3"><span>Inspection notes</span><textarea rows={4} {...formField('inspectionNotes', form.inspectionNotes, updateForm)} placeholder="Inspection checklist status, repairs, access notes" /></label>
-              </div>
-            </section>
+            </div>
           </FormSection> : null}
 
-          {activeStep === 'marketing' ? <FormSection eyebrow="Step 4 of 6" title="Marketing" description="Add photos, public listing copy, and the key selling points tenants will see.">
-            <section className="w-full min-w-0 max-w-full">
-              <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0"><h3 className="text-sm font-semibold text-[#18324b]">Photos</h3><p className="mt-1 text-sm text-[#607891]">{form.galleryImages.length} image{form.galleryImages.length === 1 ? '' : 's'} selected</p></div>
-                <label className="inline-flex cursor-pointer items-center gap-2 rounded-[10px] border border-[#1f7d44] bg-[#1f7d44] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#176338]"><ImagePlus size={16} aria-hidden="true" />Upload images<input type="file" accept="image/*" multiple className="hidden" onChange={handleGalleryUpload} /></label>
+          {activeStep === 'marketing' ? <FormSection title="Marketing">
+            <section className="min-w-0 rounded-2xl border border-[#dbe6f2] bg-white p-4 sm:p-5">
+              <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#eef4fa] text-[#315f80]"><ImagePlus size={18} aria-hidden="true" /></span>
+                  <h3 className="text-sm font-semibold text-[#18324b]">Photos</h3>
+                  <span className="rounded-full bg-[#eef4fa] px-2.5 py-1 text-xs font-semibold text-[#526f88]">{form.galleryImages.length}</span>
+                </div>
+                <label className="inline-flex cursor-pointer items-center gap-2 rounded-[10px] border border-[#1f7d44] bg-[#1f7d44] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#176338] focus-within:ring-2 focus-within:ring-[#286b43] focus-within:ring-offset-2"><ImagePlus size={16} aria-hidden="true" />Upload photos<input type="file" accept="image/*" multiple className="sr-only" onChange={handleGalleryUpload} aria-label="Upload listing photos" /></label>
               </div>
-              {form.galleryImages.length ? <div className="mt-4 flex w-full min-w-0 max-w-full gap-4 overflow-x-auto pb-3 snap-x snap-mandatory">
+              {form.galleryImages.length ? <div className="mt-5 grid max-h-[30rem] min-w-0 grid-cols-1 gap-3 overflow-y-auto pr-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                 {form.galleryImages.map((image, index) => {
                   const isCover = String(form.coverImageId) === String(image.id)
-                  return <div key={image.id} className="w-72 max-w-full shrink-0 snap-start overflow-hidden rounded-[12px] border border-[#dbe6f2] bg-white">
-                    <div className="relative aspect-[4/3] max-w-full bg-[#eef4fa]"><img src={image.url} alt={image.name} className="block h-full w-full max-w-full object-cover" />{isCover ? <span className="absolute left-2 top-2 rounded-full bg-[#286b43] px-2.5 py-1 text-[0.72rem] font-semibold text-white">Cover</span> : null}</div>
-                    <div className="p-3"><p className="truncate text-sm font-semibold text-[#18324b]">{image.name}</p><div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={() => setCoverImage(image.id)} disabled={isCover} className={`rounded-lg border px-3 py-2 text-xs font-semibold ${isCover ? 'border-[#d8eddf] bg-[#ecfaf1] text-[#286b43]' : 'border-[#dbe6f2] bg-white text-[#42617f]'}`}>{isCover ? 'Cover' : 'Set cover'}</button><button type="button" aria-label={`Move ${image.name} earlier`} disabled={index === 0} onClick={() => moveGalleryImage(image.id, -1)} className="rounded-lg border border-[#dbe6f2] px-3 py-2 text-xs font-semibold disabled:opacity-40">←</button><button type="button" aria-label={`Move ${image.name} later`} disabled={index === form.galleryImages.length - 1} onClick={() => moveGalleryImage(image.id, 1)} className="rounded-lg border border-[#dbe6f2] px-3 py-2 text-xs font-semibold disabled:opacity-40">→</button><button type="button" aria-label={`Remove ${image.name}`} onClick={() => removeGalleryImage(image.id)} className="rounded-lg border border-[#f1c8c8] px-3 py-2 text-xs font-semibold text-[#b42318]"><Trash2 size={13} aria-hidden="true" /></button></div></div>
-                  </div>
+                  return <article key={image.id} className={`min-w-0 overflow-hidden rounded-xl border ${isCover ? 'border-[#91abc0]' : 'border-[#dbe6f2]'} bg-white`}>
+                    <div className="relative aspect-[16/10] bg-[#eef4fa]">
+                      <img src={image.url} alt={image.name} className="block h-full w-full object-cover" loading="lazy" />
+                      <span className="absolute left-2 top-2 flex h-6 min-w-6 items-center justify-center rounded-md bg-white/95 px-1.5 text-xs font-semibold text-[#18324b]">{index + 1}</span>
+                      {isCover ? <span className="absolute right-2 top-2 rounded-md bg-[#18324b] px-2 py-1 text-xs font-semibold text-white">Cover</span> : null}
+                    </div>
+                    <div className="min-w-0 p-3">
+                      <p className="truncate text-xs font-medium text-[#526f88]" title={image.name}>{image.name}</p>
+                      <div className="mt-3 flex items-center justify-between gap-2">
+                        <button type="button" data-rental-control="photo-cover" onClick={() => setCoverImage(image.id)} disabled={isCover} className={`min-h-8 rounded-lg border px-2.5 text-xs font-semibold ${isCover ? 'border-[#dbe6f2] bg-[#eef4fa] text-[#315f80]' : 'border-[#dbe6f2] bg-white text-[#42617f] hover:bg-[#f4f8fc]'}`}>{isCover ? 'Cover photo' : 'Set cover'}</button>
+                        <div className="flex items-center gap-1">
+                          <button type="button" data-rental-control="photo-order" aria-label={`Move ${image.name} earlier`} title="Move earlier" disabled={index === 0} onClick={() => moveGalleryImage(image.id, -1)} className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#dbe6f2] text-[#526f88] hover:bg-[#f4f8fc] disabled:opacity-30"><ChevronLeft size={14} aria-hidden="true" /></button>
+                          <button type="button" data-rental-control="photo-order" aria-label={`Move ${image.name} later`} title="Move later" disabled={index === form.galleryImages.length - 1} onClick={() => moveGalleryImage(image.id, 1)} className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#dbe6f2] text-[#526f88] hover:bg-[#f4f8fc] disabled:opacity-30"><ChevronRight size={14} aria-hidden="true" /></button>
+                          <button type="button" data-rental-control="photo-remove" aria-label={`Remove ${image.name}`} title="Remove photo" onClick={() => removeGalleryImage(image.id)} className="flex h-8 w-8 items-center justify-center rounded-lg text-[#b42318] hover:bg-[#fff4f2]"><Trash2 size={14} aria-hidden="true" /></button>
+                        </div>
+                      </div>
+                    </div>
+                  </article>
                 })}
-              </div> : <div className="mt-4 rounded-[12px] border border-dashed border-[#cddaea] bg-white px-4 py-10 text-center"><p className="text-sm font-semibold text-[#18324b]">No images added yet</p><p className="mt-2 text-sm text-[#607891]">Upload gallery images to prepare this rental for marketing.</p></div>}
+              </div> : <div className="mt-5 flex min-h-36 flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-[#cddaea] bg-[#f7fafc] px-4 py-6 text-center"><ImagePlus size={28} className="text-[#91abc0]" aria-hidden="true" /><p className="text-sm text-[#607891]">Add property photos</p></div>}
             </section>
-            <section className="border-t border-[#e6edf5] pt-6"><div className="grid gap-4"><label className="form-field"><span>Listing title</span><input {...formField('title', form.title, updateForm)} placeholder="2 bedroom apartment in Green Point" /></label><label className="form-field"><span>Listing description</span><textarea rows={6} {...formField('description', form.description, updateForm)} placeholder="Describe the property, layout, views, lifestyle, and standout rental value." /></label></div></section>
-            <section className="min-w-0 border-t border-[#e6edf5] pt-6"><h3 className="text-sm font-semibold text-[#18324b]">Key selling points</h3><p className="mt-1 text-sm text-[#607891]">Choose the features that can be shared with Property24, Private Property, and the agency website.</p><div className="mt-4 grid min-w-0 gap-2 sm:grid-cols-2 xl:grid-cols-3">{SELLING_POINT_OPTIONS.map(([label, portalField]) => <SellingPointTile key={label} label={label} active={selectedSellingPoints.includes(label)} onClick={() => toggleSellingPoint(label, portalField)} />)}</div></section>
-            <details className="border-t border-[#e6edf5] pt-6"><summary className="cursor-pointer text-sm font-semibold text-[#1f4f78]">Internal notes</summary><label className="form-field mt-4"><span>Internal notes</span><textarea rows={4} {...formField('internalNotes', form.internalNotes, updateForm)} placeholder="Landlord preferences, tenant profile, follow-ups, and team notes" /></label></details>
+
+            <div className="grid min-w-0 items-start gap-4 xl:grid-cols-3">
+              <section className="min-w-0 rounded-2xl border border-[#dbe6f2] bg-white p-4 sm:p-5 xl:col-span-2">
+                <div className="mb-5 flex items-center gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#eef4fa] text-[#315f80]"><FileText size={18} aria-hidden="true" /></span><h3 className="text-sm font-semibold text-[#18324b]">Listing copy</h3></div>
+                <div className="grid min-w-0 gap-4">
+                  <label className="form-field"><span>Listing title</span><input {...formField('title', form.title, updateForm)} placeholder="e.g. Bright two-bedroom apartment in Green Point" /></label>
+                  <label className="form-field"><span>Listing description</span><textarea rows={8} {...formField('description', form.description, updateForm)} placeholder="Describe the home and what makes it stand out" /></label>
+                </div>
+              </section>
+
+              <div className="grid min-w-0 gap-4">
+                <section className="min-w-0 rounded-2xl border border-[#dbe6f2] bg-white p-4 sm:p-5">
+                  <div className="flex flex-wrap items-center justify-between gap-3"><div className="flex items-center gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#eef4fa] text-[#315f80]"><CheckCircle2 size={18} aria-hidden="true" /></span><h3 className="text-sm font-semibold text-[#18324b]">Confirmed features</h3></div><button type="button" data-rental-control="edit-features" className="text-xs font-semibold text-[#315f80] underline underline-offset-2" onClick={() => goToStep('features')}>Edit features</button></div>
+                  <div className="mt-5 flex flex-wrap gap-2">{selectedSellingPoints.length ? selectedSellingPoints.map((label) => <span key={label} className="rounded-lg border border-[#dbe6f2] bg-[#f5f9fc] px-2.5 py-1.5 text-xs text-[#315f80]">{label}</span>) : <p className="text-sm text-[#607891]">No features selected</p>}</div>
+                </section>
+                <details className="min-w-0 rounded-2xl border border-[#dbe6f2] bg-white p-4 sm:p-5">
+                  <summary className="cursor-pointer text-sm font-semibold text-[#18324b]">Internal notes</summary>
+                  <label className="form-field mt-4"><span>Internal notes</span><textarea rows={4} {...formField('internalNotes', form.internalNotes, updateForm)} placeholder="Notes for your team" /></label>
+                </details>
+              </div>
+            </div>
           </FormSection> : null}
 
-          {activeStep === 'syndication' ? <FormSection eyebrow="Step 5 of 6" title="Syndication" description="Choose where this rental should be prepared for publication. It is saved privately first; selected channels can then be checked and published from Marketing.">
-            <section className="rounded-[12px] border border-[#dbe6f2] bg-[#fbfdff] p-4">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <p className="text-sm font-semibold text-[#18324b]">Distribution</p>
-                  <p className="mt-1 max-w-3xl text-sm text-[#607891]">Select each portal you want to prepare. Nothing is published until readiness is confirmed after the rental has been saved.</p>
-                </div>
-                <span className="rounded-full bg-white px-3 py-1 text-xs font-bold text-[#42617f]">{selectedDistributionChannels.length} selected</span>
-              </div>
-              <div className="mt-4 grid gap-3 md:grid-cols-3">
-                {RENTAL_DISTRIBUTION_CHANNELS.map((channel) => {
-                  const selected = selectedDistributionChannels.includes(channel.key)
-                  const needsAttention = channel.key === 'private_property' && form.galleryImages.length < 3
-                    ? 'Private Property requires at least 3 listing photos.'
-                    : channel.key === 'agency_website' && form.galleryImages.length < 1
-                      ? 'Add at least 1 photo before preparing the website listing.'
-                      : ''
-                  return <DistributionChannelCard key={channel.key} channel={channel} selected={selected} needsAttention={needsAttention} onToggle={toggleDistributionChannel} />
-                })}
-              </div>
-            </section>
+          {activeStep === 'syndication' ? <FormSection title="Syndication">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h3 className="text-sm font-semibold text-[#18324b]">Publication channels</h3>
+              <span className="rounded-full bg-[#eef4fa] px-3 py-1 text-xs font-semibold text-[#526f88]">{selectedDistributionChannels.length} selected</span>
+            </div>
+            <div className="grid min-w-0 gap-4 md:grid-cols-3">
+              {RENTAL_DISTRIBUTION_CHANNELS.map((channel) => {
+                const selected = selectedDistributionChannels.includes(channel.key)
+                const needsAttention = channel.key === 'private_property' && form.galleryImages.length < 3
+                  ? `Add ${3 - form.galleryImages.length} more photo${3 - form.galleryImages.length === 1 ? '' : 's'} (minimum 3).`
+                  : channel.key === 'agency_website' && form.galleryImages.length < 1
+                    ? 'Add at least 1 photo.'
+                    : ''
+                return <DistributionChannelCard key={channel.key} channel={channel} selected={selected} needsAttention={needsAttention} onToggle={toggleDistributionChannel} />
+              })}
+            </div>
+            {selectedDistributionChannels.some((key) => (key === 'private_property' && form.galleryImages.length < 3) || (key === 'agency_website' && form.galleryImages.length < 1)) ? <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#f1d4a6] bg-[#fffaf0] px-4 py-3 text-sm text-[#8a5a12]">
+              <span>Selected channels need more photos.</span>
+              <button type="button" data-rental-control="syndication-photos" className="font-semibold underline underline-offset-2" onClick={() => goToStep('marketing')}>Add photos</button>
+            </div> : null}
+            <p className="text-xs leading-5 text-[#607891]">Saved as a draft. Publish after the listing passes readiness checks.</p>
           </FormSection> : null}
 
           {activeStep === 'review' ? <section className="ui-panel ui-panel-body grid gap-6">
             <div className="flex flex-col gap-4 border-b border-[#e6edf5] pb-5 md:flex-row md:items-start md:justify-between">
-              <div><p className="text-xs font-semibold uppercase text-[#607891]">Step 6 of 6</p><h2 className="text-2xl font-semibold text-[#18324b]">Review rental listing</h2><p className="mt-1 text-sm text-[#607891]">Check the capture is complete, then {isEditing ? 'save the rental changes.' : 'create the rental draft.'}</p></div>
+              <div><p className="text-xs font-semibold uppercase text-[#607891]">Step 7 of 7</p><h2 className="text-2xl font-semibold text-[#18324b]">Review rental listing</h2><p className="mt-1 text-sm text-[#607891]">Check the capture is complete, then {isEditing ? 'save the rental changes.' : 'create the rental draft.'}</p></div>
               <span className={`rounded-full px-3 py-1 text-xs font-bold ${validationErrors.length ? 'bg-[#fff5e5] text-[#a76a12]' : 'bg-[#eef9f1] text-[#286b43]'}`}>{validationErrors.length ? `${validationErrors.length} items still needed` : isEditing ? 'Ready to save' : 'Ready to create'}</span>
             </div>
             <div className="grid gap-4 md:grid-cols-2">
               <ReviewSummaryCard title="Landlord & mandate" onEdit={() => goToStep('landlord')} details={[{ label: 'Landlord', value: form.landlordName || 'Not added' }, { label: 'Contact', value: form.landlordEmail || form.landlordPhone || 'Not added' }, { label: 'Mandate', value: RENTAL_SELECT_OPTIONS.mandateStatus.find((option) => option.value === form.mandateStatus)?.label || 'Not captured' }]} />
               <ReviewSummaryCard title="Property" onEdit={() => goToStep('property')} details={[{ label: 'Listing', value: buildRentalListingTitle(form) || 'Untitled rental listing' }, { label: 'Address', value: form.propertyAddress || 'Not added' }, { label: 'Type', value: form.propertyType || 'Not captured' }]} />
+              <ReviewSummaryCard title="Additional property details" onEdit={() => goToStep('features')} details={[{ label: 'Confirmed features', value: `${selectedSellingPoints.length} confirmed` }, { label: 'Pet friendly', value: form.petsPolicy === 'allowed' ? 'Yes' : form.petsPolicy === 'not_allowed' ? 'No' : 'Subject to approval' }]} />
               <ReviewSummaryCard title="Rental terms" onEdit={() => goToStep('terms')} details={[{ label: 'Rental amount', value: form.monthlyRent ? `R ${Number(form.monthlyRent).toLocaleString('en-ZA')}` : 'Not added' }, { label: 'Frequency', value: RENTAL_SELECT_OPTIONS.rentalPriceFrequency.find((option) => option.value === form.rentalPriceFrequency)?.label || 'Not captured' }, { label: 'Available', value: form.availableFrom || 'Not added' }, { label: 'Lease', value: form.leasePeriodMonths ? `${form.leasePeriodMonths} months` : 'Not captured' }]} />
               <ReviewSummaryCard title="Marketing" onEdit={() => goToStep('marketing')} details={[{ label: 'Photos', value: `${form.galleryImages.length} selected` }, { label: 'Description', value: form.description ? 'Added' : 'Not added' }, { label: 'Selling points', value: `${selectedSellingPoints.length} selected` }]} />
             </div>
@@ -903,26 +942,26 @@ export default function RentalListingCreatePage() {
           <footer className="ui-panel ui-panel-body flex flex-wrap items-center justify-between gap-3">
             <div>
               {activeStepIndex > 0 ? (
-                <button type="button" className="ui-pill-button" onClick={goToPreviousStep}>
+                <Button type="button" onClick={goToPreviousStep}>
                   <ChevronLeft size={16} aria-hidden="true" />
                   Back
-                </button>
+                </Button>
               ) : null}
             </div>
             <div className="flex flex-wrap gap-2">
-              <button type="button" className="ui-pill-button" onClick={saveDraftForSession}>Save draft</button>
-              <button
+              <Button type="button" onClick={saveDraftForSession}>Save draft</Button>
+              <Button
                 type={activeStep === 'review' ? 'submit' : 'button'}
                 onClick={activeStep === 'review' ? undefined : goToNextStep}
-                className="ui-pill-button ui-pill-button-active"
                 disabled={activeStep === 'review' ? !canSubmit : false}
               >
                 {activeStep === 'review' && saving ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : activeStep === 'review' ? <Save size={16} aria-hidden="true" /> : <ChevronRight size={16} aria-hidden="true" />}
-                {activeStep === 'review' ? (isEditing ? 'Save rental changes' : 'Create rental listing') : 'Continue'}
-              </button>
+                {activeStep === 'review' ? (saving ? 'Saving rental…' : isEditing ? 'Save rental changes' : pendingListingId ? 'Retry saving rental' : 'Create rental listing') : 'Continue'}
+              </Button>
             </div>
           </footer>
         </div>
+        </fieldset>
       </form>
     </section>
   )

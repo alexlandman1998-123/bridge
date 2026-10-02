@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Archive, CalendarDays, CheckCircle2, ChevronDown, ChevronRight, Clock3, FileText, Inbox, Mail, MapPin, MessageCircle, MoreHorizontal, Paperclip, Plus, Search, Send, SlidersHorizontal, UserRound } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { ExternalLink, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, ArrowLeft, RefreshCw, CalendarDays, CheckCircle2, Clock3, FileText, Inbox, Mail, MessageCircle, Search, SlidersHorizontal } from 'lucide-react'
 import { useAuthSession } from '../../context/AuthSessionContext'
 import { useOrganisation } from '../../context/OrganisationContext'
 import { Link } from 'react-router-dom'
 import { isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
-import { createRevoInboxWorkflowRequest, isSharedInboxSchemaUnavailable, loadRevoInbox, markRevoInboxConversationRead, saveRevoInboxPrivateMessage, updateRevoInboxConversation } from '../../modules/revo/sharedInbox/revoSharedInboxService'
+import { createRevoInboxWorkflowRequest, isSharedInboxSchemaUnavailable, loadRevoInbox, loadRevoInboxChannels, markRevoInboxConversationRead, saveRevoInboxPrivateMessage, updateRevoInboxConversation } from '../../modules/revo/sharedInbox/revoSharedInboxService'
 import './RevoSharedInboxPage.css'
 
 const PREVIEW_CONVERSATIONS = Object.freeze([
@@ -53,21 +54,34 @@ export default function RevoSharedInboxPage() {
   const [view, setView] = useState('all')
   const [query, setQuery] = useState('')
   const [composerMode, setComposerMode] = useState('draft')
-  const [draft, setDraft] = useState('')
+  const [work, setWork] = useState({})
+  const [inboxId, setInboxId] = useState('all')
+  const [channels, setChannels] = useState([])
+  const [channelFilter, setChannelFilter] = useState('all')
+  const [sort, setSort] = useState('latest')
+  const [navigationCollapsed, setNavigationCollapsed] = useState(() => window.innerWidth < 1150)
+  const [mobileReader, setMobileReader] = useState(false)
+  const [popup, setPopup] = useState(null)
+  const [popupConversationId, setPopupConversationId] = useState('')
+  const requestVersion = useRef(0)
+  const saveLock = useRef(false)
   const [notice, setNotice] = useState('')
   const [saving, setSaving] = useState(false)
-  const [detailsCollapsed, setDetailsCollapsed] = useState(false)
-  const agentName = text(profile?.fullName || profile?.full_name || profile?.name || user?.user_metadata?.full_name || user?.user_metadata?.name || user?.email?.split('@')[0]) || 'Agent'
+  const [detailsCollapsed, setDetailsCollapsed] = useState(() => window.innerWidth < 1450)
+  const agentName = text(profile?.fullName || profile?.full_name || user?.email) || 'You'
 
   const load = useCallback(async () => {
     if (!organisation?.id) return
-    setMode('loading')
+    const version = ++requestVersion.current
     try {
-      const next = await loadRevoInbox(organisation.id)
+      const [next, nextChannels] = await Promise.all([loadRevoInbox(organisation.id), loadRevoInboxChannels(organisation.id)])
+      if (version !== requestVersion.current) return
+      setChannels(nextChannels)
       setData(next)
       setSelectedId((current) => current || next.conversations[0]?.id || '')
       setMode('live')
     } catch (error) {
+      if (version !== requestVersion.current) return
       if (isSharedInboxSchemaUnavailable(error) || /not configured/i.test(text(error?.message))) {
         setMode('preview')
         setSelectedId((current) => current || PREVIEW_CONVERSATIONS[0].id)
@@ -78,7 +92,13 @@ export default function RevoSharedInboxPage() {
     }
   }, [organisation?.id])
 
-  useEffect(() => { void load() }, [load])
+  useEffect(() => { setMode('loading'); setData({ conversations: [], messages: [], activity: [], associations: [] }); setChannels([]); setSelectedId(''); setWork({}); setInboxId('all'); setNotice(''); void load(); return () => { requestVersion.current += 1 } }, [load])
+  useEffect(() => {
+    if (!popup) return undefined
+    const onClose = () => setPopup(null)
+    popup.addEventListener('beforeunload', onClose)
+    return () => { popup.removeEventListener('beforeunload', onClose); if (!popup.closed) popup.close() }
+  }, [popup])
 
   useEffect(() => {
     if (!isSupabaseConfigured || !supabase || !organisation?.id) return undefined
@@ -103,34 +123,48 @@ export default function RevoSharedInboxPage() {
       messages: data.messages.filter((message) => message.conversationId === item.id),
     }))
   }, [data, mode, user?.id])
-  const visible = useMemo(() => conversations.filter((item) => matchesView(item, view, user?.id) && `${item.name} ${item.address} ${item.subject} ${item.preview}`.toLowerCase().includes(query.trim().toLowerCase())), [conversations, query, user?.id, view])
-  const selected = conversations.find((item) => item.id === selectedId) || visible[0] || null
-  const countFor = (key) => conversations.filter((item) => matchesView(item, key, user?.id)).length
-  const selectedActivity = data.activity.filter((item) => item.conversationId === selected?.id)
+  const inboxes = useMemo(() => mode === 'preview' ? [
+    { id: 'preview-email', address: 'inbox@revo.example', displayName: 'Email preview', connectionStatus: 'preview' },
+    { id: 'preview-whatsapp', address: '+27 11 555 0100', displayName: 'WhatsApp preview', connectionStatus: 'preview' },
+  ] : channels, [channels, mode])
+  const scoped = useMemo(() => conversations.filter((item) => inboxId === 'all' || (mode === 'preview' ? item.channelAddress === inboxes.find((channel) => channel.id === inboxId)?.address : item.channelId === inboxId)), [conversations, inboxId, inboxes, mode])
+  const visible = useMemo(() => scoped.filter((item) => matchesView(item, view, user?.id)
+    && (channelFilter === 'all' || item.channel === channelFilter)
+    && `${item.name} ${item.address} ${item.subject} ${item.preview}`.toLowerCase().includes(query.trim().toLowerCase()))
+    .sort((a, b) => sort === 'name' ? a.name.localeCompare(b.name) : sort === 'unread' ? (b.unreadCount || Number(b.unread)) - (a.unreadCount || Number(a.unread)) : sort === 'oldest' ? (Date.parse(a.lastMessageAt) || 0) - (Date.parse(b.lastMessageAt) || 0) : (Date.parse(b.lastMessageAt) || 0) - (Date.parse(a.lastMessageAt) || 0)), [scoped, query, user?.id, view, channelFilter, sort])
+  const selected = visible.find((item) => item.id === selectedId) || visible[0] || null
+  const draftKey = `${organisation?.id}:${selected?.id}:${composerMode}`
+  const draft = work[draftKey] || ''
+  const countFor = (key) => scoped.filter((item) => matchesView(item, key, user?.id)).length
   const selectedAssociations = data.associations.filter((item) => item.conversationId === selected?.id)
   const isLive = mode === 'live'
 
-  const performUpdate = async (patch, successMessage) => {
-    if (!selected || !isLive) { setNotice('This preview becomes operational after the Revo inbox migration is applied.'); return }
+  const performUpdate = async (patch, successMessage, selectedConversation = selected) => {
+    if (!selectedConversation || !isLive) { setNotice('This preview becomes operational after the Revo inbox migration is applied.'); return }
+    if (saveLock.current) return
+    saveLock.current = true
     setSaving(true)
     try {
-      await updateRevoInboxConversation({ organisationId: organisation.id, conversationId: selected.id, ...patch })
+      await updateRevoInboxConversation({ organisationId: organisation.id, conversationId: selectedConversation.id, ...patch })
       await load()
       setNotice(successMessage)
-    } catch (error) { setNotice(text(error?.message) || 'The conversation could not be updated.') } finally { setSaving(false) }
+    } catch (error) { setNotice(text(error?.message) || 'The conversation could not be updated.') } finally { saveLock.current = false; setSaving(false) }
   }
-  const savePrivateWork = async () => {
-    if (!selected || !isLive) { setNotice('This preview becomes operational after the Revo inbox migration is applied.'); return }
+  const savePrivateWork = async (selectedConversation = selected, body = draft, type = composerMode, workKey = draftKey) => {
+    if (!selectedConversation || !isLive) { setNotice('This preview becomes operational after the Revo inbox migration is applied.'); return }
+    if (saveLock.current) return
+    saveLock.current = true
     setSaving(true)
     try {
-      await saveRevoInboxPrivateMessage({ organisationId: organisation.id, conversation: selected, actorUserId: user?.id, bodyText: draft, type: composerMode })
-      setDraft('')
+      await saveRevoInboxPrivateMessage({ organisationId: organisation.id, conversation: selectedConversation, actorUserId: user?.id, bodyText: body, type })
+      setWork((current) => ({ ...current, [workKey]: '' }))
       await load()
-      setNotice(composerMode === 'note' ? 'Internal note saved.' : 'Draft saved. It has not been sent.')
-    } catch (error) { setNotice(text(error?.message) || 'The private inbox item could not be saved.') } finally { setSaving(false) }
+      setNotice(type === 'note' ? 'Internal note saved.' : 'Draft saved. It has not been sent.')
+    } catch (error) { setNotice(text(error?.message) || 'The private inbox item could not be saved.') } finally { saveLock.current = false; setSaving(false) }
   }
   const selectConversation = async (conversationId) => {
     setSelectedId(conversationId)
+    setMobileReader(true)
     setNotice('')
     const conversation = conversations.find((item) => item.id === conversationId)
     if (!isLive || !conversation?.unreadCount) return
@@ -145,20 +179,51 @@ export default function RevoSharedInboxPage() {
     if (!selected || !isLive) return setNotice('Connect a live Revo inbox before using workflow actions.')
     const listingId = selectedAssociations.find((item) => item.entityType === 'listing')?.entityId || null
     const leadId = selectedAssociations.find((item) => item.entityType === 'lead')?.entityId || null
+    if (saveLock.current) return
+    saveLock.current = true
     setSaving(true)
     try {
       await createRevoInboxWorkflowRequest({ organisationId: organisation.id, conversationId: selected.id, actionType, listingId, leadId, requestedBy: user?.id })
       setNotice(actionType === 'create_viewing' ? 'Viewing request created.' : 'Transaction handoff created; Arch9 will check for duplicates before creating a transaction.')
-    } catch (error) { setNotice(text(error?.message) || 'The workflow action could not be created.') } finally { setSaving(false) }
+    } catch (error) { setNotice(text(error?.message) || 'The workflow action could not be created.') } finally { saveLock.current = false; setSaving(false) }
   }
 
+  const openPopout = () => {
+    if (popup && !popup.closed) { popup.focus(); return }
+    const next = window.open('', '', 'popup,width=1050,height=850')
+    if (!next) { setNotice('Allow pop-ups for Arch9 to open the email reader.'); return }
+    next.document.title = 'Revo inbox — email reader'
+    for (const style of document.querySelectorAll('link[rel="stylesheet"], style')) next.document.head.appendChild(style.cloneNode(true))
+    next.document.body.className = 'revo-popout-body'
+    setPopupConversationId(selected.id)
+    setPopup(next)
+  }
+  const renderReader = (selected) => {
+    const readerKey = `${organisation?.id}:${selected?.id}:${composerMode}`
+    const draft = work[readerKey] || ''
+    const setDraft = (value) => setWork((current) => ({ ...current, [readerKey]: value }))
+    const selectedActivity = data.activity.filter((item) => item.conversationId === selected?.id)
+    return selected ? <section className={`revo-thread ${selected.channel === 'email' ? 'revo-email-reader' : ''}`} aria-label="Conversation reader">
+    <header><div><button className="revo-icon revo-mobile-back" type="button" aria-label="Back to conversations" onClick={() => setMobileReader(false)}><ArrowLeft size={18} /></button><div className="revo-avatar revo-avatar-small">{selected.name.slice(0, 2).toUpperCase()}</div><div><h2>{selected.subject || selected.name}</h2><p>{selected.name} · {selected.channelAddress}</p></div></div><div>
+      {selected.channel === 'email' ? <button className="revo-icon" type="button" onClick={openPopout} aria-label="Pop out email"><ExternalLink size={18} /></button> : null}
+      <button className="revo-icon" type="button" disabled={saving || !isLive} aria-label={selected.status === 'closed' ? 'Reopen conversation' : 'Close conversation'} onClick={() => void performUpdate({ status: selected.status === 'closed' ? 'open' : 'closed' }, selected.status === 'closed' ? 'Conversation reopened.' : 'Conversation closed.', selected)}><CheckCircle2 size={18} /></button>
+      <button className="revo-icon" type="button" aria-expanded={!detailsCollapsed} aria-label={detailsCollapsed ? 'Expand contact panel' : 'Collapse contact panel'} onClick={() => setDetailsCollapsed((current) => !current)}>{detailsCollapsed ? <PanelRightOpen size={18} /> : <PanelRightClose size={18} />}</button>
+    </div></header>
+    <div className="revo-history">{selected.messages.map((message) => <article className={message.messageType === 'note' ? 'note' : message.direction} key={message.id}><b>{message.messageType === 'note' ? 'N' : message.direction === 'inbound' ? selected.name.slice(0, 1) : 'R'}</b><div><header><strong>{message.messageType === 'note' ? 'Internal note' : message.messageType === 'draft' ? 'Unsent draft' : message.direction === 'inbound' ? selected.name : 'Revo Property'}</strong><time>{formatTime(message.occurredAt)}</time></header>{selected.channel === 'email' && message.messageType !== 'note' ? <small>From: {message.senderAddress || (message.direction === 'inbound' ? selected.address : selected.channelAddress)} · To: {message.recipientAddresses?.join(', ') || (message.direction === 'inbound' ? selected.channelAddress : selected.address)}</small> : null}<p>{message.bodyText}</p></div></article>)}{!selected.messages.length ? <p className="revo-empty">No messages in this conversation yet.</p> : null}{selectedActivity.map((item) => <p className="revo-activity" key={item.id}>{activityCopy(item)} · {formatTime(item.createdAt)}</p>)}</div>
+    <div className="revo-composer"><header><button type="button" disabled={saving} className={composerMode === 'draft' ? 'active' : ''} onClick={() => setComposerMode('draft')}>Reply draft</button><button type="button" disabled={saving} className={composerMode === 'note' ? 'active' : ''} onClick={() => setComposerMode('note')}>Internal note</button><span>{composerMode === 'note' ? 'Only your team can see this' : 'Saved privately • not sent'}</span></header><textarea value={draft} disabled={saving} onChange={(event) => setDraft(event.target.value)} placeholder={composerMode === 'note' ? 'Leave context for your team…' : 'Write your reply…'} aria-label={composerMode === 'note' ? 'Internal note' : 'Reply draft'} /><footer><small>{composerMode === 'note' ? 'Private team note' : `To: ${selected.address}`}</small><button type="button" disabled={saving || !isLive || !draft.trim()} onClick={() => void savePrivateWork(selected, draft, composerMode, readerKey)}><FileText size={15} /> {saving ? 'Saving…' : composerMode === 'note' ? 'Save note' : 'Save draft'}</button></footer></div>
+  </section> : <section className="revo-thread revo-reader-empty"><Inbox size={32} /><h2>Your conversations, in one place</h2><p>Select a conversation or adjust your filters.</p></section>
+  }
+  const reader = renderReader(selected)
   return <main className="revo-inbox-page">
-    <header className="revo-inbox-topbar"><div className="revo-title"><h1>Inbox</h1><span /><p>{agentName}</p></div><div><Link className="revo-icon" to="/revo/inbox/settings" aria-label="Channel setup"><SlidersHorizontal size={18} /></Link><button className="revo-compose" type="button" onClick={() => setNotice('New conversations will be created when a Revo channel is connected.')}><Plus size={18} /> New message</button></div></header>
-    <section className={`revo-inbox-shell ${detailsCollapsed ? 'revo-details-collapsed' : ''}`} aria-label="Revo shared inbox">
-      <aside className="revo-views"><label><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search" aria-label="Search conversations" /></label><nav><small>INBOX</small>{VIEWS.map((item) => <button type="button" className={view === item.key ? 'active' : ''} key={item.key} onClick={() => setView(item.key)}><span>{item.label}</span><b>{countFor(item.key)}</b></button>)}</nav><nav><small>CHANNELS</small><button type="button"><span><Mail size={16} /> Email</span><b>{conversations.filter((item) => item.channel === 'email').length}</b></button><button type="button"><span><MessageCircle size={16} /> WhatsApp</span><b>{conversations.filter((item) => item.channel === 'whatsapp').length}</b></button></nav><p className="revo-connection"><Clock3 size={15} /> {isLive ? 'Channels can connect when Revo is ready.' : 'Preview data — no channel is connected.'}</p></aside>
-      <section className="revo-list"><header><div><strong>{VIEWS.find((item) => item.key === view)?.label}</strong><span>{visible.length} conversations</span></div><button className="revo-sort" type="button" aria-label="Sort conversations">Latest first <ChevronDown size={15} /></button></header><div>{mode === 'loading' ? <p className="revo-empty"><Clock3 size={22} /> Loading conversations</p> : visible.map((item) => <button type="button" className={`revo-row ${item.id === selected?.id ? 'selected' : ''}`} key={item.id} onClick={() => void selectConversation(item.id)}><span className={`revo-channel ${item.channel}`}><ChannelIcon channel={item.channel} /></span><span><span><strong>{item.name}</strong><time>{item.updated}</time></span><em>{item.subject}</em><small>{item.preview}</small></span>{item.unreadCount || item.unread ? <i aria-label={`${item.unreadCount || 1} unread messages`}>{item.unreadCount || 1}</i> : null}</button>)}{mode !== 'loading' && !visible.length ? <p className="revo-empty"><Inbox size={22} /> No conversations found</p> : null}</div></section>
-      {selected ? <section className="revo-thread"><header><div><div className="revo-avatar revo-avatar-small">{selected.name.split(' ').map((part) => part[0]).join('').slice(0, 2)}</div><div><h2>{selected.name}</h2><p>{selected.subject || selected.address}</p></div><button type="button" className="revo-lead-pill"><UserRound size={15} /> Buyer lead <ChevronDown size={15} /></button></div><div><button className="revo-icon" type="button" aria-label="Close conversation" disabled={saving} onClick={() => performUpdate({ status: selected.status === 'closed' ? 'open' : 'closed' }, selected.status === 'closed' ? 'Conversation reopened.' : 'Conversation closed.')}><CheckCircle2 size={19} /></button><button className="revo-icon" type="button" aria-label="Archive conversation"><Archive size={18} /></button><button className="revo-icon" type="button" aria-label="More options"><MoreHorizontal size={19} /></button></div></header><div className="revo-history"><span>Today</span>{selected.messages.map((message) => <article className={message.messageType === 'note' ? 'note' : message.direction} key={message.id}><b>{message.messageType === 'note' ? 'N' : message.direction === 'inbound' ? selected.name.slice(0, 1) : 'R'}</b><div><header><strong>{message.messageType === 'note' ? 'Internal note' : message.direction === 'inbound' ? selected.name : 'Revo Property'}</strong><time>{formatTime(message.occurredAt)}</time></header><p>{message.bodyText}</p></div></article>)}{selectedActivity.map((item) => <p className="revo-activity" key={item.id}>{activityCopy(item)} · {formatTime(item.createdAt)}</p>)}</div><div className="revo-composer"><header><button type="button" className={composerMode === 'draft' ? 'active' : ''} onClick={() => setComposerMode('draft')}>Reply</button><button type="button" className={composerMode === 'note' ? 'active' : ''} onClick={() => setComposerMode('note')}>Add internal note</button><span>{composerMode === 'note' ? 'Internal only' : selected.channel === 'whatsapp' ? 'WhatsApp' : 'Email'}</span></header><textarea value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={composerMode === 'note' ? `Add an internal note about ${selected.name}…` : `Type a message…`} aria-label={composerMode === 'note' ? 'Internal note' : 'Reply draft'} /><footer><span><Paperclip size={16} /> Attachments</span><button type="button" disabled={saving} onClick={() => void savePrivateWork()}><Send size={15} /> {saving ? 'Saving…' : composerMode === 'note' ? 'Save note' : 'Save draft'}</button></footer>{notice ? <p>{notice}</p> : null}</div></section> : null}
-      {selected ? <aside className={`revo-details ${detailsCollapsed ? 'collapsed' : ''}`}><div className="revo-details-heading"><strong>Contact</strong><button className="revo-details-toggle" type="button" onClick={() => setDetailsCollapsed((current) => !current)} aria-label={detailsCollapsed ? 'Expand contact panel' : 'Collapse contact panel'} aria-expanded={!detailsCollapsed}><ChevronRight size={18} /></button><button className="revo-details-edit" type="button">Edit</button></div><div className="revo-details-content"><div className="revo-contact"><div className="revo-avatar">{selected.name.split(' ').map((part) => part[0]).join('').slice(0, 2)}</div><div><h2>{selected.name}</h2><p><Mail size={14} /> {selected.address}</p><p><MapPin size={14} /> Contact location not added</p></div></div><dl><div><dt>Lead owner</dt><dd><button className="revo-assignment" type="button" disabled={saving} onClick={() => void performUpdate({ assignedUserId: selected.assignedUserId ? null : user?.id }, selected.assignedUserId ? 'Conversation unassigned.' : 'Conversation assigned to you.')}>{selected.assignedTo} <ChevronDown size={14} /></button></dd></div><div><dt>Buyer qualification <span>0 of 3</span></dt><dd className="revo-progress"><i /><i /><i /></dd></div><div><dt>Status</dt><dd><select aria-label="Conversation status" value={selected.status} disabled={saving} onChange={(event) => void performUpdate({ status: event.target.value }, 'Conversation status updated.')}><option value="open">Open</option><option value="waiting_on_us">Waiting on us</option><option value="waiting_on_client">Waiting on client</option><option value="closed">Closed</option><option value="spam">Spam</option></select></dd></div></dl><section><div className="revo-section-heading"><strong>Linked records</strong><button type="button">Edit</button></div>{selectedAssociations.length ? <ul>{selectedAssociations.map((association) => <li key={association.id}><FileText size={15} /> {association.isPrimary ? 'Primary ' : ''}{association.entityType}</li>)}</ul> : <p>No listing or transaction linked yet.</p>}</section><section><strong>Quick actions</strong><div className="revo-quick-actions"><button type="button" disabled={saving} onClick={() => void requestWorkflowAction('create_viewing')}><CalendarDays size={15} /> Create viewing</button><button type="button" disabled={saving} onClick={() => void requestWorkflowAction('create_transaction')}><FileText size={15} /> Create transaction</button></div></section></div></aside> : null}
+    <header className="revo-inbox-topbar"><div className="revo-title"><h1>Inbox</h1><label className="revo-inbox-selector"><span>Connected address</span><select aria-label="Select inbox" value={inboxId} onChange={(event) => { setInboxId(event.target.value); setMobileReader(false) }}><option value="all">All inboxes</option>{inboxes.map((item) => <option key={item.id} value={item.id}>{item.displayName || item.address} · {item.address} ({item.connectionStatus})</option>)}</select></label></div><div><button className="revo-icon" type="button" onClick={() => void load()} aria-label="Refresh inbox"><RefreshCw size={17} /></button><Link className="revo-compose" to="/revo/inbox/settings"><SlidersHorizontal size={16} /> Manage inboxes</Link></div></header>
+    {notice ? <p className="revo-notice" role="status">{notice}</p> : null}
+    {mode === 'preview' ? <p className="revo-notice">Preview conversations — connect your inbox to start working with real messages.</p> : null}
+    <section className={`revo-inbox-shell ${navigationCollapsed ? 'revo-navigation-collapsed' : ''} ${detailsCollapsed ? 'revo-details-collapsed' : ''} ${mobileReader ? 'revo-mobile-reader' : ''}`} aria-label="Revo shared inbox">
+      <aside className="revo-views"><header><strong>Views</strong><button className="revo-icon" type="button" aria-label={navigationCollapsed ? 'Expand inbox navigation' : 'Collapse inbox navigation'} aria-expanded={!navigationCollapsed} onClick={() => setNavigationCollapsed((current) => !current)}>{navigationCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}</button></header><div className="revo-navigation-content"><nav><small>CONVERSATIONS</small>{VIEWS.map((item) => <button type="button" className={view === item.key ? 'active' : ''} aria-pressed={view === item.key} key={item.key} onClick={() => { setView(item.key); setMobileReader(false) }}><span>{item.label}</span><b>{countFor(item.key)}</b></button>)}</nav><nav><small>CHANNEL</small>{[['all','All channels'],['email','Email'],['whatsapp','WhatsApp']].map(([key,label]) => <button type="button" key={key} aria-label={label} aria-pressed={channelFilter === key} className={channelFilter === key ? 'active' : ''} onClick={() => { setChannelFilter(key); setMobileReader(false) }}><span>{key === 'all' ? <Inbox size={16} /> : <ChannelIcon channel={key} />}{label}</span></button>)}</nav><p className="revo-connection">{isLive ? `${channels.filter((item) => item.connectionStatus === 'connected').length} connected addresses` : mode === 'loading' ? 'Loading inbox…' : 'Preview only'}</p></div></aside>
+      <section className="revo-list"><header><div><strong>{VIEWS.find((item) => item.key === view)?.label}</strong><span>{visible.length} conversations</span></div><select aria-label="Sort conversations" value={sort} onChange={(event) => setSort(event.target.value)}><option value="latest">Latest first</option><option value="oldest">Oldest first</option><option value="unread">Unread first</option><option value="name">Name A–Z</option></select><label className="revo-search"><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search conversations" aria-label="Search conversations" /></label></header><div>{mode === 'loading' ? <p className="revo-empty"><Clock3 size={22} />Loading conversations</p> : visible.map((item) => <button type="button" className={`revo-row ${item.id === selected?.id ? 'selected' : ''}`} aria-pressed={item.id === selected?.id} key={item.id} onClick={() => void selectConversation(item.id)}><span className={`revo-channel ${item.channel}`}><ChannelIcon channel={item.channel} /></span><span><span><strong>{item.name}</strong><time>{item.updated}</time></span><em>{item.subject || 'No subject'}</em><small>{item.preview || 'No message preview'}</small><small className="revo-row-meta">{item.assignedTo} · {item.status.replaceAll('_', ' ')}</small></span>{item.unreadCount || item.unread ? <i aria-label={`${item.unreadCount || 1} unread messages`}>{item.unreadCount || 1}</i> : null}</button>)}{mode !== 'loading' && !visible.length ? <p className="revo-empty"><Inbox size={22} />{mode === 'error' ? 'Inbox could not be loaded. Try refreshing.' : 'No conversations match these filters.'}</p> : null}</div></section>
+      {reader}
+      {selected && !detailsCollapsed ? <aside className="revo-details"><div className="revo-details-heading"><strong>Contact details</strong><button type="button" className="revo-icon" aria-label="Hide contact details" onClick={() => setDetailsCollapsed(true)}><PanelRightClose size={17} /></button></div><div className="revo-contact"><div className="revo-avatar">{selected.name.slice(0, 2).toUpperCase()}</div><h2>{selected.name}</h2><p>{selected.address}</p></div><dl><div><dt>Conversation owner</dt><dd><select aria-label="Conversation owner" value={selected.assignedUserId || ''} disabled={saving || !isLive} onChange={(event) => void performUpdate({ assignedUserId: event.target.value || null }, 'Conversation owner updated.')}><option value="">Unassigned</option><option value={user?.id || 'me'}>{agentName} (you)</option>{selected.assignedUserId && selected.assignedUserId !== user?.id ? <option value={selected.assignedUserId}>Assigned team member</option> : null}</select></dd></div><div><dt>Status</dt><dd><select aria-label="Conversation status" value={selected.status} disabled={saving || !isLive} onChange={(event) => void performUpdate({ status: event.target.value }, 'Conversation status updated.')}><option value="open">Open</option><option value="waiting_on_us">Waiting on us</option><option value="waiting_on_client">Waiting on client</option><option value="closed">Closed</option><option value="spam">Spam</option></select></dd></div></dl><section><strong>Linked records</strong>{selectedAssociations.length ? <ul>{selectedAssociations.map((item) => <li key={item.id}><FileText size={15} />{item.isPrimary ? 'Primary ' : ''}{item.entityType}</li>)}</ul> : <p>No linked records yet.</p>}</section><section><strong>Workflow requests</strong><div className="revo-quick-actions"><button type="button" disabled={saving || !isLive} onClick={() => void requestWorkflowAction('create_viewing')}><CalendarDays size={15} />Request viewing</button><button type="button" disabled={saving || !isLive} onClick={() => void requestWorkflowAction('create_transaction')}><FileText size={15} />Request transaction</button></div></section></aside> : null}
     </section>
+    {popup && !popup.closed ? createPortal(<main className="revo-inbox-page revo-popout"><header className="revo-inbox-topbar"><h1>Email reader</h1><button type="button" className="revo-icon" aria-label="Close email window" onClick={() => setPopup(null)}><ArrowLeft size={18} /></button></header>{notice ? <p className="revo-notice" role="status">{notice}</p> : null}{renderReader(conversations.find((item) => item.id === popupConversationId))}</main>, popup.document.body) : null}
   </main>
 }

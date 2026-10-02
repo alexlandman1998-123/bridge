@@ -40,6 +40,13 @@ function firstText(...values) {
   return values.map(normalizeText).find(Boolean) || ''
 }
 
+function capturedText(source, keys, ...fallbacks) {
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(source, key)) return normalizeText(source[key])
+  }
+  return firstText(...fallbacks)
+}
+
 function firstNumber(...values) {
   for (const value of values) {
     const parsed = normalizeNumber(value)
@@ -200,13 +207,16 @@ export function buildRentalListingIndexRow(listing = {}) {
     flatlet: portalFeatures.flatlet ?? listing.flatlet ?? publication.flatlet,
     portalFeatures,
     inspectionStatus: firstText(rentalInfo.inspectionStatus, rentalInfo.inspection_status, listing.inspectionStatus, listing.inspection_status),
-    landlordName: firstText(facts.landlordName, facts.landlord_name, listing.landlordName, listing.landlord_name, listing.sellerName, listing.seller_name),
-    landlordEmail: firstText(facts.landlordEmail, facts.landlord_email, listing.landlordEmail, listing.landlord_email, listing.sellerEmail, listing.seller_email),
-    landlordPhone: firstText(facts.landlordPhone, facts.landlord_phone, listing.landlordPhone, listing.landlord_phone, listing.sellerPhone, listing.seller_phone),
+    landlordType: capturedText(facts, ['landlordType', 'landlord_type'], listing.sellerType, listing.seller_type, 'individual'),
+    landlordName: capturedText(facts, ['landlordName', 'landlord_name'], listing.landlordName, listing.landlord_name, listing.sellerName, listing.seller_name),
+    landlordEmail: capturedText(facts, ['landlordEmail', 'landlord_email'], listing.landlordEmail, listing.landlord_email, listing.sellerEmail, listing.seller_email),
+    landlordPhone: capturedText(facts, ['landlordPhone', 'landlord_phone'], listing.landlordPhone, listing.landlord_phone, listing.sellerPhone, listing.seller_phone),
     assignedAgentName: firstText(listing.assignedAgentName, listing.assigned_agent_name, listing.agentName, listing.agent_name),
-    mandateStatus: firstText(rentalInfo.mandateStatus, rentalInfo.mandate_status, listing.mandateStatus, listing.mandate_status, 'not_started'),
-    mandateStartDate: firstText(rentalInfo.mandateStartDate, rentalInfo.mandate_start_date, listing.mandateStartDate, listing.mandate_start_date),
-    mandateEndDate: firstText(rentalInfo.mandateEndDate, rentalInfo.mandate_end_date, listing.mandateEndDate, listing.mandate_end_date, listing.expiryDate, listing.expiry_date),
+    assignedAgentEmail: firstText(listing.assignedAgentEmail, listing.assigned_agent_email, listing.agentEmail, listing.agent_email),
+    assignedAgentPhone: firstText(listing.assignedAgentPhone, listing.assigned_agent_phone, listing.agentPhone, listing.agent_phone),
+    mandateStatus: firstText(listing.mandateStatus, listing.mandate_status, rentalInfo.mandateStatus, rentalInfo.mandate_status, 'not_started'),
+    mandateStartDate: capturedText(rentalInfo, ['mandateStartDate', 'mandate_start_date'], listing.mandateStartDate, listing.mandate_start_date),
+    mandateEndDate: capturedText(rentalInfo, ['mandateEndDate', 'mandate_end_date'], listing.mandateEndDate, listing.mandate_end_date, listing.expiryDate, listing.expiry_date),
     marketingApprovalStatus: firstText(rentalInfo.marketingApprovalStatus, rentalInfo.marketing_approval_status, listing.marketingApprovalStatus, listing.marketing_approval_status, publication.status, 'draft'),
     property24Status: firstText(listing.property24Status, listing.property24_status, publication.property24Status, publication.property24_status, 'not_published'),
     privatePropertyStatus: firstText(listing.privatePropertyStatus, listing.private_property_status, publication.privatePropertyStatus, publication.private_property_status, 'not_published'),
@@ -215,8 +225,22 @@ export function buildRentalListingIndexRow(listing = {}) {
     applicationCount: Number(firstNumber(listing.applicationCount, listing.application_count, listing.rentalApplicationCount, listing.rental_application_count, 0) || 0),
     imageUrl: firstText(listing.imageUrl, listing.image_url, listing.heroImageUrl, listing.hero_image_url, publication.imageUrl, publication.heroImageUrl),
   }
+  // Captured rental details are authoritative. The shared listing mapper can
+  // supply legacy/default zero counts and onboarding addresses; those must not
+  // replace saved values or resurrect fields explicitly cleared in Rentals.
+  row.address = capturedText(facts, ['propertyAddress', 'property_address'], row.address)
+  for (const field of ['unitNumber', 'complexName', 'streetNumber', 'streetName', 'suburb', 'city', 'province', 'postalCode', 'exactAddressVisibility']) {
+    const snakeCase = field.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`)
+    row[field] = capturedText(addressProfile, [field, snakeCase], row[field])
+  }
+  for (const field of ['bedrooms', 'bathrooms', 'enSuiteBathrooms', 'lounges', 'diningRooms', 'kitchens', 'studies', 'storerooms', 'staffRooms', 'parkingBays', 'garages', 'coveredParking', 'openParking', 'carports', 'floorSize', 'erfSize']) {
+    const snakeCase = field.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`)
+    const key = [field, snakeCase].find((candidate) => Object.prototype.hasOwnProperty.call(propertyProfile, candidate))
+    if (key !== undefined) row[field] = normalizeNumber(propertyProfile[key])
+  }
   row.location = joinNonEmpty([row.suburb, row.city])
   row.landlordContact = joinNonEmpty([row.landlordEmail, row.landlordPhone], ' / ')
+  row.assignedAgentContact = joinNonEmpty([row.assignedAgentEmail, row.assignedAgentPhone], ' / ')
   row.statusGroup = resolveStatusGroup(row)
   row.nextAction = resolveNextAction(row)
   return row

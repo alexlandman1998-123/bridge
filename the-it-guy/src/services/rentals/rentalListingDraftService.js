@@ -4,6 +4,7 @@ import {
   getAgentPrivateListings,
   getPrivateListing,
   syncPrivateListingDistributionData,
+  signPrivateListingMediaAsset,
   uploadPrivateListingMediaAsset,
   updatePrivateListing,
 } from '../privateListingService'
@@ -55,23 +56,38 @@ function stripUploadOnlyFields(item = {}) {
   return nextImage
 }
 
-function getRentalCoverGalleryItem(galleryImages = [], coverImageId = '') {
+export async function uploadRentalGalleryImages(galleryImages = [], listingId, { onUploadProgress } = {}) {
   const normalizedImages = normalizeGalleryItems(galleryImages)
-  const normalizedCoverImageId = normalizeText(coverImageId)
-  return normalizedImages.find((item) => normalizeText(item.id) === normalizedCoverImageId) || normalizedImages[0] || null
-}
-
-async function uploadRentalGalleryImages(galleryImages = [], listingId) {
-  const normalizedImages = normalizeGalleryItems(galleryImages)
-  const uploadedImages = await Promise.all(
-    normalizedImages.map(async (item, index) => {
-      if (!item.file) return item
+  const uploadedImages = [...normalizedImages]
+  let nextIndex = 0
+  let completed = 0
+  let failure = null
+  const reportProgress = () => onUploadProgress?.({ completed, total: normalizedImages.length })
+  reportProgress()
+  // Storage permission checks use database connections too. Keep large photo
+  // galleries from flooding the pool, and stop queuing work after a failure.
+  async function uploadNext() {
+    while (!failure && nextIndex < normalizedImages.length) {
+      const index = nextIndex++
+      const item = normalizedImages[index]
       try {
-        const asset = await uploadPrivateListingMediaAsset(item.file, { listingId, type: 'gallery' })
-        return {
-          id: asset.path || item.id,
+        if (!item.file) {
+          if (!isPersistableMediaUrl(item.url || item.signedUrl || item.publicUrl)) {
+            throw new Error('Select the original photo again before saving.')
+          }
+          completed += 1
+          reportProgress()
+          continue
+        }
+        const asset = item.path && item.bucket
+          ? await signPrivateListingMediaAsset({ path: item.path, bucket: item.bucket, fileName: item.name, contentType: item.contentType, size: item.size })
+          : await uploadPrivateListingMediaAsset(item.file, { listingId, type: 'gallery', upsert: false, requireSignedUrl: true })
+        const url = asset.url || asset.signedUrl || asset.publicUrl
+        if (!isPersistableMediaUrl(url)) throw new Error('Storage did not return a saved photo URL.')
+        uploadedImages[index] = {
+          id: item.id,
           name: asset.fileName || item.name,
-          url: asset.url || asset.signedUrl || asset.publicUrl || item.url,
+          url,
           signedUrl: asset.signedUrl || '',
           publicUrl: asset.publicUrl || '',
           path: asset.path || '',
@@ -79,23 +95,25 @@ async function uploadRentalGalleryImages(galleryImages = [], listingId) {
           contentType: asset.contentType || item.contentType || '',
           size: asset.size || item.size || 0,
         }
+        completed += 1
+        reportProgress()
       } catch (error) {
-        const fallbackUrl = isPersistableMediaUrl(item.url) ? item.url : ''
-        return {
-          ...item,
-          id: item.id || `gallery-${index + 1}`,
-          url: fallbackUrl,
-          uploadWarning: error?.message || 'Storage upload failed.',
+        if (error.savedAsset) {
+          uploadedImages[index] = { ...item, path: error.savedAsset.path, bucket: error.savedAsset.bucket }
         }
+        failure ||= error
       }
-    }),
-  )
-
-  const failedUploads = uploadedImages.filter((item) => item.uploadWarning)
-  if (failedUploads.length) {
-    throw new Error(`Could not save ${failedUploads.length} rental image${failedUploads.length === 1 ? '' : 's'} to the listing. Please retry the upload; no images were silently discarded.`)
+    }
   }
-  return uploadedImages.map(stripUploadOnlyFields).filter((item) => isPersistableMediaUrl(item.url || item.signedUrl || item.publicUrl))
+  await Promise.all(Array.from({ length: Math.min(2, normalizedImages.length) }, uploadNext))
+  if (failure) {
+    const remaining = normalizedImages.length - completed
+    const error = new Error(`Could not save ${remaining} rental image${remaining === 1 ? '' : 's'} to the listing. ${failure?.message || 'Storage upload failed.'} Retry saving to continue on the same listing; your selected photos and successful uploads are retained.`)
+    error.galleryImages = uploadedImages
+    error.cause = failure
+    throw error
+  }
+  return uploadedImages.map(stripUploadOnlyFields)
 }
 
 function buildRentalListingMediaPayload(form = {}, uploadedGalleryImages = []) {
@@ -110,25 +128,25 @@ function buildRentalListingMediaPayload(form = {}, uploadedGalleryImages = []) {
   }
 }
 
-async function finalizeRentalListingGalleryUploads({ listingId, form, publicationData, uploadedCoverImages = [] } = {}) {
-  const coverSource = getRentalCoverGalleryItem(form.galleryImages, form.coverImageId)
-  const coverSourceId = normalizeText(coverSource?.id)
-  const remainingImages = normalizeGalleryItems(form.galleryImages).filter((item) => normalizeText(item.id) !== coverSourceId)
-  if (!remainingImages.length) return null
-
-  const uploadedRemainingImages = await uploadRentalGalleryImages(remainingImages, listingId)
-  const uploadedGalleryImages = [...uploadedCoverImages, ...uploadedRemainingImages]
-  if (!uploadedGalleryImages.length) return null
-
-  const coverImageId = normalizeText(uploadedCoverImages[0]?.id) || normalizeText(form.coverImageId)
-  return syncPrivateListingDistributionData(listingId, {
-    publicationData,
-    media: buildRentalListingMediaPayload({ ...form, coverImageId }, uploadedGalleryImages),
-    externalLinks: [],
-  }).catch((error) => {
-    console.warn('[Rentals] Background rental gallery upload failed.', error)
-    return null
-  })
+async function saveRentalListingMedia(listingId, form, publicationData, context) {
+  let galleryImages = form.galleryImages
+  try {
+    galleryImages = await uploadRentalGalleryImages(galleryImages, listingId, context)
+    context.onUploadProgress?.({ completed: galleryImages.length, total: galleryImages.length, phase: 'saving' })
+    const result = await syncPrivateListingDistributionData(listingId, {
+      publicationData,
+      media: buildRentalListingMediaPayload(form, galleryImages),
+      externalLinks: [],
+    })
+    if (result?.skipped) throw new Error('Rental marketing storage is unavailable. Retry saving after the listing distribution tables are restored.')
+    return result
+  } catch (error) {
+    const saveError = new Error(`Rental draft ${listingId} is saved, but its marketing save is incomplete. ${error?.message || 'Please retry saving.'}`)
+    saveError.listingId = listingId
+    saveError.galleryImages = error.galleryImages || galleryImages
+    saveError.cause = error
+    throw saveError
+  }
 }
 
 function formatProperty24Blocker(value = '') {
@@ -218,14 +236,9 @@ export async function createRentalListingDraft(form = {}, context = {}) {
   })
   const listingId = created?.listing?.id
   if (!listingId) throw new Error('Unable to create the rental listing draft.')
-
-  const uploadedGalleryImages = await uploadRentalGalleryImages(form.galleryImages, listingId)
+  context.onListingCreated?.(listingId)
   const publicationData = buildRentalPublicationDraft(form)
-  const publicationResult = await syncPrivateListingDistributionData(listingId, {
-    publicationData,
-    media: buildRentalListingMediaPayload(form, uploadedGalleryImages),
-    externalLinks: [],
-  })
+  const publicationResult = await saveRentalListingMedia(listingId, form, publicationData, context)
 
   void createPrivateListingActivity({
     privateListingId: listingId,
@@ -257,23 +270,20 @@ export async function updateRentalListingDraft(listingId, form = {}, context = {
     throw error
   }
 
-  const listingPayload = buildRentalListingUpdatePayload(form)
+  const existingListing = await getPrivateListing(listingId, { includeRequirementsAndDocuments: false })
+  if (!existingListing || !isRentalListingRecord(existingListing)) throw new Error('Rental listing not found. Reload before saving changes.')
+  const listingPayload = buildRentalListingUpdatePayload(form, existingListing)
   const listing = await updatePrivateListing(listingId, listingPayload, {
     includeRequirementsAndDocuments: false,
   })
 
-  const uploadedGalleryImages = await uploadRentalGalleryImages(form.galleryImages, listingId)
   const publicationData = {
     ...buildRentalListingEditPublicationDraft(form),
     ...(normalizeText(context.publicationStatus) ? { status: normalizeText(context.publicationStatus) } : {}),
   }
-  const publicationResult = await syncPrivateListingDistributionData(listingId, {
-    publicationData,
-    media: buildRentalListingMediaPayload(form, uploadedGalleryImages),
-    externalLinks: [],
-  })
+  const publicationResult = await saveRentalListingMedia(listingId, form, publicationData, context)
 
-  const activity = await createPrivateListingActivity({
+  void createPrivateListingActivity({
     privateListingId: listingId,
     activityType: 'rental_listing_updated',
     activityTitle: 'Rental listing updated',
@@ -290,7 +300,7 @@ export async function updateRentalListingDraft(listingId, form = {}, context = {
   return {
     listing,
     publicationResult,
-    activity,
+    activity: null,
   }
 }
 

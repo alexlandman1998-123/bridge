@@ -234,7 +234,7 @@ for (const path of [
 assert.match(read('api/property24/settings/vetting-pack.js'), /auth\.getUser\(token\)/)
 assert.match(read('api/property24/settings/vetting-pack.js'), /fetchOrganisationProperty24Connection/)
 assert.match(read('api/property24/settings/vetting-pack.js'), /connection\.environment !== 'exdev'/)
-assert.match(read('src/pages/settings/SettingsProperty24Page.jsx'), /ExDev vetting pack/)
+assert.match(read('src/pages/settings/SettingsProperty24Page.jsx'), /Connection readiness report/)
 assert.match(read('src/pages/settings/SettingsProperty24Page.jsx'), /Download report/)
 const packageJson = JSON.parse(read('package.json'))
 assert.equal(packageJson.scripts['property24:vetting-pack'], 'node scripts/property24-vetting-pack.mjs')

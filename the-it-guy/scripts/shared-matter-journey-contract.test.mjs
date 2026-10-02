@@ -13,10 +13,17 @@ assert.equal(journey.lanes[1].progress.percent, null, 'all-N/A is not zero or 10
 assert.equal(journey.lanes[0].phases[0].tasks[0].outstandingEvidenceCount, 2)
 assert.notEqual(journeyTaskId('matter', 'transfer', 'instruction_received'), journeyTaskId('matter', 'bond', 'instruction_received'))
 assert.notEqual(journeyTaskId('a:b', 'transfer', 'c'), journeyTaskId('a', 'transfer', 'b:c'))
-const semantics = view => view.lanes.flatMap(l => l.phases.flatMap(p => p.tasks.map(t => [t.id, t.phaseKey, t.status, t.revision])))
+const semantics = view => view.lanes.flatMap(l => l.phases.flatMap(p => p.tasks.map(t => [l.key, t.phaseKey, t.status, t.revision])))
 for (const audience of JOURNEY_AUDIENCES) {
   const view = presentSharedMatterJourney(journey, audience)
   assert.deepEqual(semantics(view), semantics(journey))
+  const client = ['buyer', 'seller'].includes(audience)
+  for (const lane of view.lanes) for (const phase of lane.phases) for (const [index, task] of phase.tasks.entries()) {
+    const sourceTask = journey.lanes.find(item => item.key === lane.key).phases.find(item => item.key === phase.key).tasks[index]
+    assert.equal(task.id, client ? `client:${input.transactionId}:${lane.key}:${phase.key}:${index}` : sourceTask.id)
+    assert.equal(task.key, client ? `task_${index + 1}` : sourceTask.key)
+    if (client) assert.notEqual(task.id, sourceTask.id, 'client identifiers must not reveal professional task keys')
+  }
   assert.deepEqual(view.legalProgress, journey.legalProgress)
   assert.equal(view.revision, 4)
   assert.doesNotMatch(JSON.stringify(view), /PRIVATE|outstandingEvidenceCount|clientLabel/)

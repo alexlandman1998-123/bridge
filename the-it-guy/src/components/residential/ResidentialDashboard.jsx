@@ -653,6 +653,8 @@ export function ResidentialCommandCenterGrid({
   commissionTracker = null,
   trainingPanel = null,
   afterActiveTransactions = null,
+  digitalCardPanel = null,
+  partnerDistributionPanel = null,
   onViewTransactions,
   onOpenTransaction,
   onViewCalendar,
@@ -718,6 +720,10 @@ export function ResidentialCommandCenterGrid({
         {showTopPerformers ? <ResidentialTopPerformers data={model.topPerformers} scope={scope} /> : null}
         <ResidentialCommissionForecast data={model.commissionForecast} scope={scope} />
       </div>
+
+      {partnerDistributionPanel ? <div className="[&>section]:mt-0">{partnerDistributionPanel}</div> : null}
+
+      {digitalCardPanel ? <div className="[&>section]:mt-0">{digitalCardPanel}</div> : null}
 
       <div className="min-w-0">
         <ResidentialAppointments

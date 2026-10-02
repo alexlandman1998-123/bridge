@@ -12,11 +12,13 @@ function ModuleLaneButton({ lane, onNavigate }) {
   return (
     <button
       type="button"
+      data-rental-control
+      aria-pressed={Boolean(lane.active)}
       onClick={() => onNavigate?.(lane.indexPath)}
       className={joinClassNames(
         'flex min-h-[82px] min-w-0 flex-1 items-center justify-between gap-3 rounded-[16px] border px-4 py-3 text-left transition',
         lane.active
-          ? 'border-[#1f4f78] bg-[#f4f8fc] text-[#142132] shadow-[0_8px_18px_rgba(31,79,120,0.08)]'
+          ? 'border-[#1f4f78] bg-white text-[#142132] shadow-[0_8px_18px_rgba(31,79,120,0.08)]'
           : 'border-[#dce6f2] bg-white text-[#31465f] hover:border-[#b9cade] hover:bg-[#fbfdff]',
       )}
     >

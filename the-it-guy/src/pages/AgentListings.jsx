@@ -47,6 +47,7 @@ import {
   writeAgentPrivateListings,
 } from '../lib/agentListingStorage'
 import { MOCK_DATA_ENABLED } from '../lib/mockData'
+import { settleListingImageUploads } from '../lib/listingMediaUploads.js'
 import { assertMvpPilotCreationAllowed, resolveMvpPilotCreationFreeze } from '../lib/mvpPilotCreationFreeze'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 import { DOCUMENT_UPLOAD_ACCEPT } from '../lib/documentUploadPolicy'
@@ -1051,8 +1052,8 @@ async function buildQuickListingImageDrafts(files = []) {
   )
 }
 
-async function uploadQuickListingImages(listingId = '', images = []) {
-  const uploaded = await Promise.all((Array.isArray(images) ? images : []).map(async (image, index) => {
+async function uploadQuickListingImages(listingId = '', images = [], onUploaded) {
+  const uploaded = await settleListingImageUploads(Array.isArray(images) ? images : [], async (image, index) => {
     const file = typeof File !== 'undefined' && image?.file instanceof File ? image.file : null
     if (!file) {
       if (isUnstorableCreateListingImageUrl(image?.url)) {
@@ -1063,7 +1064,7 @@ async function uploadQuickListingImages(listingId = '', images = []) {
     try {
       const asset = await uploadPrivateListingMediaAsset(file, { listingId, type: 'gallery' })
       return {
-        id: asset.path || image.id || `listing-image-${index + 1}`,
+        id: image.id || asset.path || `listing-image-${index + 1}`,
         name: asset.fileName || image.name || `Image ${index + 1}`,
         url: asset.url || asset.signedUrl || asset.publicUrl || image.url || '',
         signedUrl: asset.signedUrl || '',
@@ -1076,7 +1077,7 @@ async function uploadQuickListingImages(listingId = '', images = []) {
     } catch (error) {
       throw new Error(`Image ${image.name || index + 1} could not be uploaded: ${error?.message || 'upload failed'}`)
     }
-  }))
+  }, onUploaded)
 
   return uploaded.map((image, index) => ({
     id: String(image.id || image.path || `listing-image-${index + 1}`),
@@ -1092,11 +1093,19 @@ async function uploadQuickListingImages(listingId = '', images = []) {
 }
 
 async function syncQuickListingDistributionData(listingId = '', form = {}, context = {}) {
-  const uploadedImages = await uploadQuickListingImages(listingId, form.listingImages)
+  let uploadError = null
+  let uploadedImages
+  try {
+    uploadedImages = await uploadQuickListingImages(listingId, form.listingImages, context.onImageUploaded)
+  } catch (error) {
+    if (!Array.isArray(error.uploadedImages)) throw error
+    uploadError = error
+    uploadedImages = error.uploadedImages
+  }
   const description = normalizeText(form.listingDescription)
   const keySellingPoints = Array.isArray(form.keySellingPoints) ? form.keySellingPoints.map(normalizeText).filter(Boolean) : []
   const publicationFeatures = buildQuickListingPublicationFeatures(form, keySellingPoints)
-  return syncPrivateListingDistributionData(listingId, {
+  const saved = await syncPrivateListingDistributionData(listingId, {
     publicationData: {
       title: normalizeText(form.listingTitle) || context.title || 'Listing draft',
       address: normalizeText(context.address || form.formattedAddress || form.propertyAddress),
@@ -1120,12 +1129,14 @@ async function syncQuickListingDistributionData(listingId = '', form = {}, conte
     },
     media: {
       galleryImages: uploadedImages,
-      coverImageId: normalizeText(form.coverImageId) || normalizeText(uploadedImages[0]?.id),
+      coverImageId: uploadedImages.some((image) => image.id === form.coverImageId) ? form.coverImageId : normalizeText(uploadedImages[0]?.id),
     },
     externalLinks: normalizeText(form.externalListingLink)
       ? [{ platform: 'External', url: normalizeText(form.externalListingLink), status: 'Draft', visibleToSeller: false }]
       : [],
   })
+  if (uploadError) throw uploadError
+  return saved
 }
 
 function serializeCreateListingDraftForm(form = {}) {
@@ -4596,6 +4607,13 @@ function AgentListings({ initialTab = null } = {}) {
     })
   }
 
+  function retainUploadedListingImage(uploaded, original) {
+    setForm((previous) => ({
+      ...previous,
+      listingImages: previous.listingImages.map((image) => image.id === original.id ? uploaded : image),
+    }))
+  }
+
   async function handleCreateListingImageUpload(event) {
     const files = Array.from(event.target.files || [])
     if (!files.length) return
@@ -4852,7 +4870,7 @@ function AgentListings({ initialTab = null } = {}) {
         listing.listingPreviewDescription,
     )
     const uploadedImages = isSupabaseConfigured && isUuidLike(listingId)
-      ? await uploadQuickListingImages(listingId, form.listingImages)
+      ? await uploadQuickListingImages(listingId, form.listingImages, retainUploadedListingImage)
       : (Array.isArray(form.listingImages) ? form.listingImages : []).map((image) => {
         const safeImage = { ...image }
         delete safeImage.file
@@ -6256,6 +6274,7 @@ function AgentListings({ initialTab = null } = {}) {
           })
           if (!savedOnboarding?.id) throw new Error('Seller and property details were not saved.')
           listingDistributionSync = await syncQuickListingDistributionData(createdListingId, form, {
+            onImageUploaded: retainUploadedListingImage,
             title: listingTitle,
             address: formattedAddress || propertyAddress,
             listingStatus: resolvedListingStatus,

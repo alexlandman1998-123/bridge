@@ -14,6 +14,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ClipboardCheck,
+  List,
   Clock3,
   Filter,
   Loader2,
@@ -25,6 +26,8 @@ import {
   listRentalInspectionSchedules,
   startRentalInspection,
 } from "../../services/rentals/rentalInspectionRepository.js";
+
+import { MobileDashboardShell } from "../../components/dashboard/PremiumDashboard";
 
 const DAY = 86400000;
 const label = (value) =>
@@ -236,29 +239,26 @@ export default function RentalInspectionsPage() {
     ["completed", "Completed"],
   ];
   return (
-    <main className="mx-auto w-full max-w-[1600px] px-3 py-3 sm:px-5 lg:px-7">
-      <section className="space-y-4 pb-8">
-        <header className="flex flex-wrap items-end justify-between gap-4">
+    <main className="mx-auto w-full max-w-[1600px] py-2">
+      <MobileDashboardShell>
+        <header className="flex flex-col gap-4 rounded-[20px] border border-[#dfe7f0] bg-white p-5 sm:p-6 xl:flex-row xl:items-center xl:justify-between">
           <div>
             <h1 className="text-2xl font-semibold text-[#142132]">
               Inspections
             </h1>
-            <p className="mt-1 text-sm text-[#60758b]">
-              Schedule inspections, capture condition evidence and resolve every
-              finding.
-            </p>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <label className="flex h-10 min-w-64 items-center gap-2 rounded-xl border border-[#dbe4ee] bg-white px-3">
+          <div className="flex min-w-0 flex-wrap gap-2">
+            <label className="flex h-11 w-full min-w-0 items-center gap-2 rounded-xl border border-[#dbe4ee] bg-white px-3 sm:w-72">
               <Search size={15} className="text-[#7b8ca2]" />
               <input
                 value={query}
                 onChange={(event) => update({ q: event.target.value })}
                 className="min-w-0 flex-1 border-0 bg-transparent p-0 text-sm outline-none"
+                aria-label="Search inspections"
                 placeholder="Search inspections or tenancies"
               />
             </label>
-            <button className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#dbe4ee] bg-white px-3 text-sm font-semibold text-[#35546c]">
+            <button type="button" data-rental-control="inspection-filters" className="inline-flex h-11 items-center gap-2 rounded-xl border border-[#dbe4ee] bg-white px-3 text-sm font-semibold text-[#35546c] hover:bg-[#f5f8fb]">
               <Filter size={15} />
               Filters
             </button>
@@ -307,23 +307,28 @@ export default function RentalInspectionsPage() {
             {tabs.map(([key, text]) => (
               <button
                 key={key}
+                type="button"
+                data-rental-control="inspection-type"
+                aria-pressed={selectedType === key}
                 onClick={() => update({ type: key === "all" ? "" : key })}
-                className={`shrink-0 rounded-lg px-4 py-2.5 text-sm font-semibold ${selectedType === key ? "bg-[#0f2743] text-white" : "text-[#60758b]"}`}
+                className={`shrink-0 rounded-lg px-4 py-2.5 text-sm font-semibold ${selectedType === key ? "bg-[#edf3fa] text-[#20364c]" : "text-[#60758b] hover:bg-[#f8fafc]"}`}
               >
                 {text}
               </button>
             ))}
           </nav>
           <div className="flex gap-1">
-            <button className="rounded-lg border border-[#dbe4ee] px-3 py-2 text-sm font-semibold text-[#35546c]">
+            <button type="button" data-rental-control="inspection-properties" className="inline-flex items-center gap-2 rounded-lg border border-[#dbe4ee] bg-white px-3 py-2 text-sm font-semibold text-[#35546c] hover:bg-[#f5f8fb]">
               All properties
             </button>
-            <button className="rounded-lg border border-[#dbe4ee] px-3 py-2 text-sm font-semibold text-[#35546c]">
-              Calendar
-            </button>
-            <button className="rounded-lg bg-[#eaf8f0] px-3 py-2 text-sm font-semibold text-[#087a55]">
-              List
-            </button>
+            <div className="flex gap-1 rounded-lg border border-[#dbe4ee] bg-[#f8fafc] p-1">
+              <button type="button" data-rental-control="inspection-calendar" className="inline-flex items-center gap-2 rounded-md px-3 py-1 text-sm font-semibold text-[#60758b] hover:bg-white">
+                <CalendarDays size={15} aria-hidden="true" /> Calendar
+              </button>
+              <button type="button" data-rental-control="inspection-list" aria-pressed="true" className="inline-flex items-center gap-2 rounded-md bg-white px-3 py-1 text-sm font-semibold text-[#20364c] shadow-sm">
+                <List size={15} aria-hidden="true" /> List
+              </button>
+            </div>
           </div>
         </section>
         {error ? (
@@ -342,6 +347,8 @@ export default function RentalInspectionsPage() {
               </h2>
               <div className="flex gap-1">
                 <button
+                  type="button"
+                  data-rental-control="inspection-rail"
                   onClick={() =>
                     rail.current?.scrollBy({ left: -350, behavior: "smooth" })
                   }
@@ -350,6 +357,8 @@ export default function RentalInspectionsPage() {
                   <ChevronLeft size={16} />
                 </button>
                 <button
+                  type="button"
+                  data-rental-control="inspection-rail"
                   onClick={() =>
                     rail.current?.scrollBy({ left: 350, behavior: "smooth" })
                   }
@@ -387,7 +396,7 @@ export default function RentalInspectionsPage() {
             <section className="rounded-2xl border border-[#e1e8f0] bg-white p-4">
               <div className="flex items-center justify-between">
                 <h2 className="font-semibold text-[#142132]">Today</h2>
-                <button className="text-sm font-semibold text-[#087a55]">
+                <button type="button" data-rental-control="inspection-calendar-link" className="text-sm font-semibold text-[#35546c]">
                   Open calendar
                 </button>
               </div>
@@ -395,6 +404,7 @@ export default function RentalInspectionsPage() {
                 {dayRows.map((item) => (
                   <button
                     key={item.id}
+                    data-rental-control="inspection-today"
                     onClick={() =>
                       item.status === "scheduled" && void start(item.id)
                     }
@@ -423,20 +433,6 @@ export default function RentalInspectionsPage() {
                   </p>
                 ) : null}
               </div>
-            </section>
-            <section className="rounded-2xl border border-[#e1e8f0] bg-white p-4">
-              <div className="flex items-center justify-between">
-                <h2 className="font-semibold text-[#142132]">
-                  Findings requiring action
-                </h2>
-                <button className="text-sm font-semibold text-[#087a55]">
-                  View all
-                </button>
-              </div>
-              <p className="mt-3 text-sm text-[#60758b]">
-                Findings will appear here when inspection evidence is marked for
-                review.
-              </p>
             </section>
           </aside>
         </section>
@@ -529,7 +525,7 @@ export default function RentalInspectionsPage() {
             </table>
           </div>
         </section>
-      </section>
+      </MobileDashboardShell>
     </main>
   );
 }

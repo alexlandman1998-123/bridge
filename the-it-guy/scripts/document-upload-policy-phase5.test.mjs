@@ -22,6 +22,7 @@ try {
   assert.match(migration, /file_size_limit = 25 \* 1024 \* 1024/)
   assert.match(migration, /rental-application-documents/)
   assert.match(rentalApi, /validateRentalDocumentUpload/)
-  assert.match(rentalApi, /\.remove\(\[path\]\)/)
+  const rentalUpload = await readFile(new URL('../server/services/rentalApplicationDocumentUpload.js', import.meta.url), 'utf8')
+  assert.match(rentalUpload, /\.remove\(\[path\]\)/)
   console.log('document upload policy phase 5 tests passed')
 } finally { await server.close() }

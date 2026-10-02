@@ -19,7 +19,7 @@ const approvalGuard = await readRepository('supabase/migrations/20260913120000_r
 for (const token of ['leadId: lead.id', 'createPersistedRentalApplicantAccess', 'Create secure application link']) {
   assert.ok(leadWorkspace.includes(token), `Lead-to-application handoff is missing: ${token}`)
 }
-const inviteAction = leadWorkspace.split('const createApplicationInvite = async () => {')[1]?.split('const copyApplicationLink')[0]
+const inviteAction = leadWorkspace.split('const createApplicationInvite = async (' )[1]?.split('const copyApplicationLink')[0]
 assert.ok(inviteAction, 'The tenant lead must create an applicant link.')
 assert.ok(!inviteAction.includes('advanceRentalLead'), 'Creating an applicant link must leave the lead at Application pending.')
 assert.ok(leadHandoffModel.includes('findSubmittedLeadApplication'), 'Submission must be checked against a saved application.')

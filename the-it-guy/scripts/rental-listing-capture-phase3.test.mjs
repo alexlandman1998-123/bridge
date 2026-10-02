@@ -15,8 +15,8 @@ for (const source of [createPage, detailPage]) {
 }
 
 assert.match(createPage, /Rental amount/)
-assert.match(createPage, /Retirement accommodation \(optional\)/)
-assert.match(createPage, /This rental will be marked as having no deposit\./)
+assert.match(createPage, /Retirement accommodation/)
+assert.match(createPage, /formField\('depositAmount', form\.depositAmount, updateForm\)/)
 assert.match(detailPage, /Listing Service v55/)
 assert.doesNotMatch(detailPage, /Listing Service v53/)
 

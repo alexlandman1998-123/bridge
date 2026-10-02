@@ -3,10 +3,8 @@ import {
   ArrowRight,
   CalendarDays,
   CheckCircle2,
-  Home,
   Loader2,
   Plus,
-  Search,
 } from 'lucide-react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useWorkspace } from '../../context/WorkspaceContext'
@@ -68,7 +66,7 @@ function rentalDotClass(statusGroup = '') {
 
 function RentalAgentAvatar({ row = {} }) {
   const name = row.assignedAgentName || ''
-  const source = name || row.landlordName || 'Rental'
+  const source = name || 'Rental'
   const initials = source
     .split(/[\s.@_-]+/)
     .filter(Boolean)
@@ -130,8 +128,8 @@ function RentalListingIndexCard({ row, onOpen }) {
         <div className="mt-auto flex min-w-0 items-center gap-3 border-t border-[#eef3f8] pt-3">
           <RentalAgentAvatar row={row} />
           <div className="min-w-0">
-            <p className="truncate text-[0.84rem] font-semibold text-[#20364d]">{row.assignedAgentName || row.landlordName || 'Unassigned'}</p>
-            <p className="mt-0.5 truncate text-[0.72rem] text-[#6d8095]">{row.landlordContact || row.location || row.nextAction}</p>
+            <p className="truncate text-[0.84rem] font-semibold text-[#20364d]">{row.assignedAgentName || 'Unassigned'}</p>
+            <p className="mt-0.5 truncate text-[0.72rem] text-[#6d8095]">{row.assignedAgentContact || 'Agent contact not captured'}</p>
           </div>
         </div>
 
@@ -162,7 +160,6 @@ export default function RentalListingsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
-  const [query, setQuery] = useState('')
   const [statusTab, setStatusTab] = useState('all')
 
   const rentalRows = useMemo(() => buildRentalListingIndexRows(listings), [listings])
@@ -177,8 +174,8 @@ export default function RentalListingsPage() {
     [summary.total],
   )
   const filteredRows = useMemo(
-    () => filterRentalListingIndexRows(rentalRows, { query, status: statusTab }),
-    [query, rentalRows, statusTab],
+    () => filterRentalListingIndexRows(rentalRows, { status: statusTab }),
+    [rentalRows, statusTab],
   )
 
   const loadListings = useCallback(async () => {
@@ -227,44 +224,6 @@ export default function RentalListingsPage() {
           onNavigate={(path) => path && navigate(path)}
         />
 
-        <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-            <div className="grid flex-1 gap-3 md:grid-cols-1 xl:max-w-[460px]">
-              <label className="grid gap-2">
-                <span className="text-[0.72rem] font-semibold uppercase text-[#7b8ca2]">Search</span>
-                <div className="flex h-[44px] items-center gap-2 rounded-[14px] border border-[#dce6f2] bg-white px-3">
-                  <Search size={15} className="text-[#7b8ca2]" aria-hidden="true" />
-                  <input
-                    value={query}
-                    onChange={(event) => setQuery(event.target.value)}
-                    className="w-full border-0 bg-transparent p-0 text-sm text-[#142132] outline-none"
-                    placeholder="Search rental, landlord, suburb..."
-                  />
-                </div>
-              </label>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2 xl:justify-end">
-              <button
-                type="button"
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-[14px] border border-[#dce6f2] bg-white px-5 text-sm font-semibold text-[#35546c] transition hover:border-[#b8c9dc] hover:bg-[#f8fbff]"
-                onClick={() => navigate('/agent/rentals/vacancies')}
-              >
-                <Home size={16} aria-hidden="true" />
-                Vacancy workspace
-              </button>
-              <button
-                type="button"
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-[14px] border border-[#dce6f2] bg-white px-5 text-sm font-semibold text-[#142132] shadow-[0_8px_18px_rgba(15,23,42,0.04)] transition hover:border-[#b8c9dc] hover:bg-[#f8fbff]"
-                onClick={() => navigate('/agent/rentals/listings/new')}
-              >
-                <Plus size={16} aria-hidden="true" />
-                Quick Add Rental
-              </button>
-            </div>
-          </div>
-        </section>
-
         {error ? <p className="rounded-[8px] border border-[#f2c6c6] bg-[#fff7f7] px-4 py-3 text-sm font-semibold text-[#9f3131]">{error}</p> : null}
         {successMessage ? (
           <p className="inline-flex items-center gap-2 rounded-[8px] border border-[#cfe8dc] bg-[#f2fbf5] px-4 py-3 text-sm font-semibold text-[#286b43]">
@@ -290,6 +249,7 @@ export default function RentalListingsPage() {
                   <button
                     key={tab.key}
                     type="button"
+                    aria-pressed={active}
                     onClick={() => setStatusTab(tab.key)}
                     className={`min-w-0 w-full rounded-[12px] border px-2.5 py-2 text-left transition ${
                       active

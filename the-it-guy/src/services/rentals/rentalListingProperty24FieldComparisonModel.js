@@ -8,6 +8,7 @@ import {
 } from './rentalListingIndexModel.js'
 import {
   buildRentalProperty24Readiness,
+  PROPERTY24_RENTAL_ADVISORY_FIELDS,
 } from './rentalListingProperty24ReadinessModel.js'
 
 // The authenticated production catalogue was retrieved from Listing Service
@@ -65,7 +66,7 @@ const PROPERTY24_RENTAL_FIELD_CONTRACT = Object.freeze([
     key: 'agentSourceReference',
     arch9Field: 'Property24 agent mapping source reference',
     property24Field: 'internal mapping only',
-    requirement: 'Arch9 required before backend submit',
+    requirement: 'Internal mapping reference; optional for Property24',
     severity: RENTAL_PROPERTY24_FIELD_SEVERITY.BLOCKER,
     readinessKey: 'agentSourceReference',
   },
@@ -105,7 +106,7 @@ const PROPERTY24_RENTAL_FIELD_CONTRACT = Object.freeze([
     key: 'depositPolicy',
     arch9Field: 'rentalInfo.depositPolicy',
     property24Field: 'rentalInfo.depositRequirementsComments',
-    requirement: 'Arch9 must explicitly record whether a deposit is required',
+    requirement: 'Property24 deposit comments are optional',
     severity: RENTAL_PROPERTY24_FIELD_SEVERITY.BLOCKER,
     readinessKey: 'depositPolicy',
   },
@@ -113,7 +114,7 @@ const PROPERTY24_RENTAL_FIELD_CONTRACT = Object.freeze([
     key: 'availableFrom',
     arch9Field: 'rentalInfo.availableFrom',
     property24Field: 'occupationDate',
-    requirement: 'Property24 optional, Arch9 rental readiness required',
+    requirement: 'Property24 optional',
     severity: RENTAL_PROPERTY24_FIELD_SEVERITY.BLOCKER,
     readinessKey: 'availableFrom',
   },
@@ -191,7 +192,7 @@ const PROPERTY24_RENTAL_FIELD_CONTRACT = Object.freeze([
     key: 'garages',
     arch9Field: 'garages / parkingBays',
     property24Field: 'propertyFeatures.garages',
-    requirement: 'Property24 propertyFeatures required',
+    requirement: 'Required in payload; backend supplies defaults if capture is missing',
     severity: RENTAL_PROPERTY24_FIELD_SEVERITY.BLOCKER,
     readinessKey: 'garages',
   },
@@ -206,7 +207,7 @@ const PROPERTY24_RENTAL_FIELD_CONTRACT = Object.freeze([
     key: 'garden',
     arch9Field: 'garden',
     property24Field: 'propertyFeatures.garden',
-    requirement: 'Property24 propertyFeatures required',
+    requirement: 'Required in payload; backend supplies defaults if capture is missing',
     severity: RENTAL_PROPERTY24_FIELD_SEVERITY.BLOCKER,
     readinessKey: 'garden',
   },
@@ -214,7 +215,7 @@ const PROPERTY24_RENTAL_FIELD_CONTRACT = Object.freeze([
     key: 'pool',
     arch9Field: 'pool',
     property24Field: 'propertyFeatures.pool',
-    requirement: 'Property24 propertyFeatures required',
+    requirement: 'Required in payload; backend supplies defaults if capture is missing',
     severity: RENTAL_PROPERTY24_FIELD_SEVERITY.BLOCKER,
     readinessKey: 'pool',
   },
@@ -222,7 +223,7 @@ const PROPERTY24_RENTAL_FIELD_CONTRACT = Object.freeze([
     key: 'flatlet',
     arch9Field: 'flatlet',
     property24Field: 'propertyFeatures.flatlet',
-    requirement: 'Property24 propertyFeatures required',
+    requirement: 'Required in payload; backend supplies defaults if capture is missing',
     severity: RENTAL_PROPERTY24_FIELD_SEVERITY.BLOCKER,
     readinessKey: 'flatlet',
   },
@@ -267,7 +268,7 @@ const PROPERTY24_RENTAL_FIELD_CONTRACT = Object.freeze([
     key: 'marketingApprovalStatus',
     arch9Field: 'rentalInfo.marketingApprovalStatus',
     property24Field: 'internal publish gate',
-    requirement: 'Arch9 required before publishing',
+    requirement: 'Internal workflow recommendation; not a portal requirement',
     severity: RENTAL_PROPERTY24_FIELD_SEVERITY.BLOCKER,
     readinessKey: 'marketingApprovalStatus',
   },
@@ -275,7 +276,7 @@ const PROPERTY24_RENTAL_FIELD_CONTRACT = Object.freeze([
     key: 'mandateStatus',
     arch9Field: 'rentalInfo.mandateStatus',
     property24Field: 'internal publish gate',
-    requirement: 'Arch9 required before publishing',
+    requirement: 'Internal workflow recommendation; not a portal requirement',
     severity: RENTAL_PROPERTY24_FIELD_SEVERITY.BLOCKER,
     readinessKey: 'mandateStatus',
   },
@@ -344,7 +345,7 @@ function getValueForField(key, { listing, row, publication, rentalInfo, payloadP
     case 'depositPolicy':
       return payloadPreview.rentalInfo?.depositPolicy
     case 'availableFrom':
-      return payloadPreview.rentalInfo?.availableFrom
+      return payloadPreview.rentalInfo?.occupationDate || payloadPreview.rentalInfo?.availableFrom
     case 'expiryDate':
       return firstText(listing.expiryDate, listing.expiry_date, listing.mandateEndDate, listing.mandate_end_date, row.mandateEndDate, rentalInfo.mandateEndDate, rentalInfo.mandate_end_date)
     case 'description':
@@ -479,9 +480,10 @@ export function buildRentalProperty24FieldComparison(listing = {}, options = {})
   const rows = PROPERTY24_RENTAL_FIELD_CONTRACT.map((definition) => {
     const value = getValueForField(definition.key, { listing, row, publication, rentalInfo, payloadPreview })
     const status = resolveStatus(definition, value, readinessByKey)
-    const blocksPublish = definition.severity === RENTAL_PROPERTY24_FIELD_SEVERITY.BLOCKER &&
+    const severity = PROPERTY24_RENTAL_ADVISORY_FIELDS.includes(definition.key) ? RENTAL_PROPERTY24_FIELD_SEVERITY.WARNING : definition.severity
+    const blocksPublish = severity === RENTAL_PROPERTY24_FIELD_SEVERITY.BLOCKER &&
       [RENTAL_PROPERTY24_FIELD_STATUS.NEEDS_CAPTURE, RENTAL_PROPERTY24_FIELD_STATUS.NEEDS_MAPPING].includes(status)
-    const warnsBeforePublish = definition.severity === RENTAL_PROPERTY24_FIELD_SEVERITY.WARNING &&
+    const warnsBeforePublish = severity === RENTAL_PROPERTY24_FIELD_SEVERITY.WARNING &&
       [RENTAL_PROPERTY24_FIELD_STATUS.NEEDS_CAPTURE, RENTAL_PROPERTY24_FIELD_STATUS.NEEDS_MAPPING, RENTAL_PROPERTY24_FIELD_STATUS.OPTIONAL].includes(status)
 
     return {
@@ -489,7 +491,7 @@ export function buildRentalProperty24FieldComparison(listing = {}, options = {})
       arch9Field: definition.arch9Field,
       property24Field: definition.property24Field,
       requirement: definition.requirement,
-      severity: definition.severity,
+      severity,
       status,
       valuePresent: hasValidContractValue(definition, value) || [
         RENTAL_PROPERTY24_FIELD_STATUS.DEFAULTED,

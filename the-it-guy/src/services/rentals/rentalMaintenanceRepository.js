@@ -13,3 +13,21 @@ export async function decideRentalMaintenanceQuote({ quoteId, decision, landlord
 export async function listRentalMaintenanceWorkEvents(requestId, { client = supabase } = {}) { const result = await requireClient(client).from('rental_maintenance_work_events').select('id, event_type, note, evidence_link, actual_cost, recorded_at').eq('request_id', text(requestId)).order('recorded_at', { ascending: true }); if (result.error) throw result.error; return result.data || [] }
 export async function recordRentalMaintenanceWorkEvent({ requestId, eventType, note = '', evidenceLink = '', actualCost = null } = {}, { client = supabase } = {}) { const result = await requireClient(client).rpc('rental_record_maintenance_work_event', { x: text(requestId), e: text(eventType), n: text(note) || null, ev: text(evidenceLink) || null, c: actualCost === '' || actualCost === null ? null : Number(actualCost) }); if (result.error) throw result.error; return result.data }
 export async function reopenRentalMaintenanceRequest(requestId, reason, { client = supabase } = {}) { const result = await requireClient(client).rpc('rental_reopen_maintenance_request', { p_request_id: text(requestId), p_reason: text(reason) }); if (result.error) throw result.error; return result.data }
+
+// Read the complete scoped register, including resolved jobs. The triage RPC
+// intentionally returns only open requests and cannot supply job descriptions.
+export async function listRentalMaintenanceRequests({ organisationId, branchId = '', offset = 0, limit = 100 } = {}, { client = supabase } = {}) {
+  if (!text(organisationId)) return []
+  const size = Math.min(Math.max(Number(limit) || 100, 1), 100)
+  let query = requireClient(client).from('rental_maintenance_requests')
+    .select('id, organisation_id, property_id, unit_id, tenancy_id, category, priority, description, status, reported_at, rental_properties!inner(organisation_id, branch_id), rental_maintenance_assignments(assignee_name, status)')
+    .eq('organisation_id', text(organisationId)).eq('rental_properties.organisation_id', text(organisationId))
+    .order('reported_at', { ascending: false }).order('id').range(offset, offset + size - 1)
+  if (text(branchId)) query = query.eq('rental_properties.branch_id', text(branchId))
+  const result = await query
+  if (result.error) throw result.error
+  return (result.data || []).map((row) => {
+    const assignment = Array.isArray(row.rental_maintenance_assignments) ? row.rental_maintenance_assignments[0] : row.rental_maintenance_assignments
+    return { ...row, request_id: row.id, assignee_name: assignment?.assignee_name || '', status: row.status === 'assigned' && assignment?.status === 'in_progress' ? 'in_progress' : row.status }
+  })
+}

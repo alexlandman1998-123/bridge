@@ -13,8 +13,8 @@ export function buildRentalProperty24Phase6CutoverGate(input = {}) {
   const phase5Accepted = phase5.status === 'ACCEPTED_FOR_PHASE6'
   const pilotSubmitted = pilot.status === 'SUBMITTED' && Boolean(pilot.listingNumber)
   const checks = [
-    check('phase5_acceptance', 'Phase 5 ExDev acceptance completed', phase5Accepted, 'Production is unavailable until controlled ExDev acceptance is complete.'),
-    check('separate_production_credentials', 'Separate production credentials configured', production.credentialsReady === true && production.environment === 'production' && production.productionAccessAuditStatus === 'READY', 'Production credentials must be separate from ExDev and pass the read-only access audit.'),
+    check('phase5_acceptance', 'Rental connection checks completed', phase5Accepted, 'Production is unavailable until the required connection checks is complete.'),
+    check('separate_production_credentials', 'Separate production credentials configured', production.credentialsReady === true && production.environment === 'production' && production.productionAccessAuditStatus === 'READY', 'Production credentials must be separate from the test connection and pass the read-only access audit.'),
     check('agency_allowlist', 'Single agency allowlisted', agencyAllowlist.length === 1 && agencyAllowlist[0] === String(production.agencyId || '').trim(), 'Start with exactly one approved agency.'),
     check('explicit_approval', 'Pilot approval recorded', Boolean(approvalId), 'Record a specific production pilot approval before enabling rental publishing.'),
     check('single_pilot_listing', 'Single pilot listing selected', Boolean(pilotListingId) && pilotListingId === requestedListingId, 'Production publishing is limited to the one approved pilot listing.'),

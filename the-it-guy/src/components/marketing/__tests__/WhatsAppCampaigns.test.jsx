@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { CreateWhatsAppCampaign, WhatsAppCampaignOverview } from '../WhatsAppCampaigns'
 const mocks = vi.hoisted(() => ({ request: vi.fn(), org: 'org-one' }))
@@ -78,4 +78,64 @@ it('clears the previous organisation data when switching workspaces even if the 
   view.rerender(<WhatsAppCampaignOverview onCreateCampaign={vi.fn()} onOpenCampaign={vi.fn()} />)
   await screen.findByText('Workspace unavailable')
   expect(screen.queryByText('Private old campaign')).toBeNull()
+})
+
+it('keeps all-time stats independent of list filters and connects the workspace menu', async () => {
+  const campaign = { id: 'sent-one', name: 'October update', display_status: 'sent', status: 'sent', template, contact_ids: [], recipients: 10, delivered: 8, read: 4, failed: 2, skipped: 0, sent_at: new Date().toISOString() }
+  mocks.request.mockResolvedValue({ ...emptyWorkspace, campaigns: [campaign, { ...campaign, id: 'draft-two', name: 'Next update', status: 'draft', display_status: 'draft', sent_at: null, recipients: 0, delivered: 0, read: 0, failed: 0 }] })
+  const create = vi.fn()
+  render(<WhatsAppCampaignOverview onCreateCampaign={create} onOpenCampaign={vi.fn()} />)
+  await screen.findByText('October update')
+  expect(screen.getByText('Delivery rate').closest('article').textContent).toContain('80.0%')
+  expect(screen.getByText('Read rate').closest('article').textContent).toContain('50.0%')
+  fireEvent.change(screen.getByRole('searchbox', { name: 'Search campaigns' }), { target: { value: 'Next' } })
+  expect(screen.getByText('Delivery rate').closest('article').textContent).toContain('80.0%')
+  const menu = within(screen.getByRole('navigation', { name: 'WhatsApp workspace' }))
+  fireEvent.click(menu.getByRole('button', { name: 'Past campaigns' }))
+  expect(screen.getByText('October update')).toBeTruthy()
+  expect(screen.queryByText('Next update')).toBeNull()
+  fireEvent.click(menu.getByRole('button', { name: 'Audiences' }))
+  expect(screen.getByRole('heading', { name: 'WhatsApp contacts & permission' })).toBeTruthy()
+  fireEvent.click(menu.getByRole('button', { name: 'Settings' }))
+  expect(screen.getByRole('heading', { name: 'WhatsApp Business connected' })).toBeTruthy()
+  fireEvent.click(menu.getByRole('button', { name: 'Overview' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Read', exact: true }))
+  expect(screen.getByRole('img', { name: /Read messages grouped by campaign send date/ })).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: /Create campaign/ }))
+  expect(create).toHaveBeenCalledTimes(1)
+  expect(mocks.request.mock.calls.every((call) => call[1] === 'workspace')).toBe(true)
+})
+
+it('allows saving a draft without a sender and keeps delivery readiness pending', async () => {
+  mocks.request.mockImplementation(async (_org, action, data) => {
+    if (action === 'workspace') return { campaigns: [], contacts: [], senders: [] }
+    if (action === 'save') return { campaign: { ...data.campaign, id: 'offline-draft', revision: 1 } }
+    throw new Error(`Unexpected ${action}`)
+  })
+  render(<CreateWhatsAppCampaign onBack={vi.fn()} />)
+  fireEvent.change(await screen.findByLabelText('Campaign name'), { target: { value: 'New homes' } })
+  expect(screen.getByRole('heading', { name: 'New homes' })).toBeTruthy()
+  expect(screen.getByRole('link', { name: 'Set up connection' }).getAttribute('href')).toBe('/settings/integrations/meta')
+  expect(screen.getAllByText('Pending')).toHaveLength(5)
+  fireEvent.click(screen.getByRole('button', { name: 'Save draft' }))
+  await screen.findByText('Draft saved.')
+  fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+  expect(screen.getByRole('button', { name: 'Next' }).disabled).toBe(true)
+  expect(mocks.request.mock.calls.some((call) => ['prepare', 'dispatch'].includes(call[1]))).toBe(false)
+})
+
+it('uses Meta template metadata and blocks incomplete variables before review', async () => {
+  render(<CreateWhatsAppCampaign onBack={vi.fn()} />)
+  fireEvent.change(await screen.findByLabelText('Campaign name'), { target: { value: 'New homes' } })
+  fireEvent.change(screen.getByLabelText('WhatsApp sender'), { target: { value: 'sender-one' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+  fireEvent.click(screen.getByRole('checkbox', { name: /Alex Buyer/ }))
+  fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+  await screen.findByRole('option', { name: /new_listing/ })
+  fireEvent.change(screen.getByLabelText('Approved template & language'), { target: { value: 'template-one' } })
+  expect(screen.getByText('Category').nextElementSibling.textContent).toBe('MARKETING')
+  expect(screen.getByText('Language').nextElementSibling.textContent).toBe('en_US')
+  expect(screen.getByRole('button', { name: 'Next' }).disabled).toBe(true)
+  fireEvent.change(screen.getByLabelText('Body · 1 value source'), { target: { value: 'first_name' } })
+  expect(screen.getByRole('button', { name: 'Next' }).disabled).toBe(false)
 })

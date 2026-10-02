@@ -1,4 +1,5 @@
-import { ChevronRight, IdCard, Mail, MessageCircle, PlugZap, Radio } from 'lucide-react'
+import { ChevronRight, IdCard, MessageCircle, PlugZap, Radio } from 'lucide-react'
+import { createElement } from 'react'
 import { Link } from 'react-router-dom'
 import { settingsPageClass } from './settingsUi'
 
@@ -17,14 +18,6 @@ const INTEGRATION_CARDS = [
     icon: Radio,
     brandLabel: 'Meta',
     brandClassName: 'text-[#1877f2]',
-  },
-  {
-    to: '/settings/integrations/lead-capture',
-    label: 'Archived Lead Emails',
-    description: 'Review historical email enquiries and resolve any that still need attention.',
-    icon: Mail,
-    brandLabel: 'Email archive',
-    brandClassName: 'text-[#35546c]',
   },
   {
     to: '/settings/integrations/digital-cards',
@@ -49,7 +42,7 @@ function IntegrationCard({ to, label, description, logoSrc, logoAlt, icon: Icon 
     <>
       <div className="flex items-start justify-between gap-4">
         <div className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-[#eef7f2] text-[#0f7f4f]">
-          <Icon className="h-5 w-5" />
+          {createElement(Icon, { className: 'h-5 w-5' })}
         </div>
         {to ? <ChevronRight className="mt-1 h-5 w-5 shrink-0 text-[#8292a7] transition group-hover:translate-x-0.5 group-hover:text-[#0f7f4f]" /> : null}
       </div>
@@ -64,7 +57,7 @@ function IntegrationCard({ to, label, description, logoSrc, logoAlt, icon: Icon 
             />
           ) : (
             <span className={`inline-flex items-center gap-2 text-2xl font-semibold tracking-[-0.05em] ${brandClassName}`}>
-              <Icon className="h-7 w-7" strokeWidth={2.2} />
+              {createElement(Icon, { className: 'h-7 w-7', strokeWidth: 2.2 })}
               {brandLabel}
             </span>
           )}

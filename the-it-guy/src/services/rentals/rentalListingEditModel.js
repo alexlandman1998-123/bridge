@@ -10,7 +10,7 @@ import {
   RENTAL_LISTING_INITIAL_FORM,
   validateRentalListingDraftForm,
 } from './rentalListingDraftModel.js'
-import { buildRentalListingIndexRow } from './rentalListingIndexModel.js'
+import { buildRentalListingIndexRow, getRentalListingFacts } from './rentalListingIndexModel.js'
 
 export const RENTAL_LISTING_EDIT_VERSION = 'arch9_rental_listing_edit_v1'
 
@@ -33,7 +33,8 @@ function booleanChoiceValue(value) {
 export function buildRentalListingEditForm(listing = {}) {
   const row = buildRentalListingIndexRow(listing)
   const raw = row.raw || listing
-  const facts = raw.sellerCanonicalFacts && typeof raw.sellerCanonicalFacts === 'object' ? raw.sellerCanonicalFacts : {}
+  const facts = getRentalListingFacts(raw)
+  const addressProfile = facts.addressProfile || facts.address_profile || {}
   const rentalInfo = facts.rentalInfo && typeof facts.rentalInfo === 'object' ? facts.rentalInfo : {}
   const propertyProfile = facts.propertyProfile && typeof facts.propertyProfile === 'object' ? facts.propertyProfile : {}
   const publication =
@@ -86,11 +87,12 @@ export function buildRentalListingEditForm(listing = {}) {
 
   return {
     ...RENTAL_LISTING_INITIAL_FORM,
+    rentalPortalFacts: { ...facts.rentalPortalFacts },
     title: normalizeText(row.title === 'Rental listing' ? '' : row.title),
     landlordName: normalizeText(row.landlordName),
     landlordEmail: normalizeText(row.landlordEmail),
     landlordPhone: normalizeText(row.landlordPhone),
-    landlordType: normalizeText(facts.landlordType || facts.landlord_type || raw.sellerType || raw.seller_type) || RENTAL_LISTING_INITIAL_FORM.landlordType,
+    landlordType: normalizeText(row.landlordType) || RENTAL_LISTING_INITIAL_FORM.landlordType,
     propertyAddress: normalizeText(row.address),
     unitNumber: normalizeText(row.unitNumber),
     complexName: normalizeText(row.complexName),
@@ -100,6 +102,9 @@ export function buildRentalListingEditForm(listing = {}) {
     city: normalizeText(row.city),
     province: normalizeText(row.province),
     postalCode: normalizeText(row.postalCode),
+    latitude: addressProfile.latitude !== undefined ? addressProfile.latitude ?? '' : raw.latitude ?? '',
+    longitude: addressProfile.longitude !== undefined ? addressProfile.longitude ?? '' : raw.longitude ?? '',
+    googlePlaceId: normalizeText(addressProfile.googlePlaceId ?? addressProfile.google_place_id ?? raw.googlePlaceId ?? raw.google_place_id),
     exactAddressVisibility: normalizeText(row.exactAddressVisibility) || RENTAL_LISTING_INITIAL_FORM.exactAddressVisibility,
     propertyCategory: normalizeText(raw.propertyCategory || raw.property_category || propertyProfile.propertyCategory || propertyProfile.property_category) || RENTAL_LISTING_INITIAL_FORM.propertyCategory,
     propertyType: normalizeText(row.propertyType) || RENTAL_LISTING_INITIAL_FORM.propertyType,
@@ -117,8 +122,8 @@ export function buildRentalListingEditForm(listing = {}) {
     coveredParking: formValue(row.coveredParking),
     openParking: formValue(row.openParking),
     carports: formValue(row.carports),
-    floorSize: formValue(row.floorSize || publication.floorSize || publication.floor_size || propertyProfile.floorSize || propertyProfile.floor_size),
-    erfSize: formValue(row.erfSize || publication.erfSize || publication.erf_size || propertyProfile.erfSize || propertyProfile.erf_size),
+    floorSize: formValue(row.floorSize),
+    erfSize: formValue(row.erfSize),
     monthlyRent: formValue(row.monthlyRent),
     rentalPriceFrequency: normalizeText(rentalInfo.rentalPriceFrequency || rentalInfo.rental_price_frequency) || RENTAL_LISTING_INITIAL_FORM.rentalPriceFrequency,
     depositAmount: formValue(row.depositAmount),
@@ -199,9 +204,15 @@ export function validateRentalListingEditForm(form = {}, context = {}) {
   return validateRentalListingDraftForm(form, context)
 }
 
-export function buildRentalListingUpdatePayload(form = {}) {
+export function buildRentalListingUpdatePayload(form = {}, existingListing = {}) {
   const title = buildRentalListingTitle(form)
-  const canonicalFacts = buildRentalCanonicalFacts(form)
+  const existingFacts = getRentalListingFacts(existingListing)
+  const capturedFacts = buildRentalCanonicalFacts(form)
+  const canonicalFacts = { ...existingFacts, ...capturedFacts }
+  for (const section of ['addressProfile', 'propertyProfile', 'rentalInfo', 'distribution']) {
+    canonicalFacts[section] = { ...existingFacts[section], ...capturedFacts[section] }
+  }
+  canonicalFacts.propertyProfile.portalFeatures = { ...existingFacts.propertyProfile?.portalFeatures, ...capturedFacts.propertyProfile.portalFeatures }
   return {
     title,
     propertyCategory: normalizeText(form.propertyCategory) || 'residential',
@@ -221,6 +232,9 @@ export function buildRentalListingUpdatePayload(form = {}) {
     province: normalizeText(form.province),
     postalCode: normalizeText(form.postalCode),
     country: 'South Africa',
+    latitude: form.latitude === '' || form.latitude === undefined || form.latitude === null ? null : Number(form.latitude),
+    longitude: form.longitude === '' || form.longitude === undefined || form.longitude === null ? null : Number(form.longitude),
+    googlePlaceId: normalizeText(form.googlePlaceId),
     description: normalizeText(form.description),
     internalListingNotes: buildRentalListingNotes(form),
     listingPreviewDescription: normalizeText(form.description) || buildRentalListingNotes(form),
@@ -231,7 +245,7 @@ export function buildRentalListingUpdatePayload(form = {}) {
     mandateEndDate: normalizeText(form.mandateEndDate),
     expiryDate: normalizeText(form.property24ExpiryDate) || normalizeText(form.mandateEndDate),
     sellerCanonicalFacts: canonicalFacts,
-    sellerCanonicalFactReadiness: buildRentalCanonicalFactReadiness(form),
+    sellerCanonicalFactReadiness: { ...existingListing.sellerCanonicalFactReadiness, ...buildRentalCanonicalFactReadiness(form) },
     sellerCanonicalFactsUpdatedAt: new Date().toISOString(),
   }
 }

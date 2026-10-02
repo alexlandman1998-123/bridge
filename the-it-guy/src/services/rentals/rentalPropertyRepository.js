@@ -22,6 +22,7 @@ export async function listRentalProperties(input = {}, { client = supabase } = {
   const queryOptions = buildRentalPropertyListQuery(input)
   if (!queryOptions.organisationId) return []
   let query = requireClient(client).from('rental_properties').select(SELECT_FIELDS).eq('organisation_id', queryOptions.organisationId).order('updated_at', { ascending: false }).limit(queryOptions.limit)
+  if (input.offset !== undefined) query = query.order('id').range(input.offset, input.offset + queryOptions.limit - 1)
   if (queryOptions.branchId) query = query.eq('branch_id', queryOptions.branchId)
   if (queryOptions.status && queryOptions.status !== 'all') query = query.eq('status', queryOptions.status)
   const search = sanitizePostgrestSearchTerm(queryOptions.search)

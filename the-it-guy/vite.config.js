@@ -1,3 +1,5 @@
+import { handlePublicRentalApplication } from './server/services/publicRentalApplicationApi.js'
+import { handleRentalAgentDocumentUpload } from './server/services/rentalApplicationAgentDocumentApi.js'
 import { defineConfig, loadEnv } from 'vite'
 import { execFileSync } from 'node:child_process'
 import { access, readFile, writeFile } from 'node:fs/promises'
@@ -181,6 +183,23 @@ function missionControlApiPlugin() {
   return {
     name: 'mission-control-api',
     configureServer(server) {
+      for (const [path, handler] of [['/api/public/rental-application', handlePublicRentalApplication], ['/api/rentals/application-documents', handleRentalAgentDocumentUpload]]) {
+        server.middlewares.use(path, async (request, response) => {
+          response.setHeader('Content-Type', 'application/json; charset=utf-8')
+          response.setHeader('Cache-Control', 'private, no-store')
+          const env = { ...loadEnv(server.config.mode, server.config.root, ''), ...process.env }
+          try {
+            const chunks = []; let size = 0
+            for await (const chunk of request) {
+              size += chunk.length
+              if (size > 12 * 1024 * 1024) { writeNodeJsonResponse(response, { status: 413, body: { error: 'Upload is too large.' } }); return }
+              chunks.push(chunk)
+            }
+            const body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {}
+            writeNodeJsonResponse(response, await handler({ method: request.method, headers: request.headers, body: request.method === 'GET' ? Object.fromEntries(new URL(request.url, 'http://localhost').searchParams) : body, env }))
+          } catch { writeNodeJsonResponse(response, { status: 400, body: { error: 'Invalid application request.' } }) }
+        })
+      }
       server.middlewares.use('/api/hq/mission-control', async (request, response) => {
         const payload = await createMissionControlResponse({
           method: request.method,

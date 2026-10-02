@@ -15,7 +15,13 @@ let visible = 'visible', online = true
 Object.defineProperty(document, 'visibilityState', { get: () => visible })
 Object.defineProperty(navigator, 'onLine', { get: () => online })
 const intervals = new Map()
+const timeouts = new Map()
+const realNow = Date.now
+let now = realNow()
+Date.now = () => now
 let counter = 0, channels = 0, queries = 0, removed = 0
+window.setTimeout = (callback, delay = 0) => { const id = ++counter; timeouts.set(id, { callback, due: now + delay }); return id }
+window.clearTimeout = id => timeouts.delete(id)
 window.setInterval = callback => { const id = ++counter; intervals.set(id, callback); return id }
 window.clearInterval = id => intervals.delete(id)
 const handlers = new Map()
@@ -40,15 +46,29 @@ let state, reads = 0, succeed = true
 const refresh = async () => { reads++; return succeed }
 function Probe(props) { state = useLive({ transactionId: 'matter', onRefresh: refresh, debounceMs: 0, ...props }); return null }
 const root = createRoot(document.getElementById('root'))
-const flush = async(action = () => {}) => act(async () => { action(); await new Promise(r => setTimeout(r, 15)) })
+// Advance the hook's clock explicitly: mount jitter, debounce and retry backoff
+// should be verified without depending on wall-clock sleeps or machine speed.
+const flush = async(action = () => {}, elapsed = 0) => act(async () => {
+  now += elapsed
+  action()
+  for (let turn = 0; turn < 20; turn++) {
+    for (const [id, timer] of [...timeouts]) if (timer.due <= now) {
+      timeouts.delete(id)
+      timer.callback()
+    }
+    await Promise.resolve()
+  }
+})
+const poll = (elapsed = 30_000) => flush(() => [...intervals.values()].forEach(fn => fn()), elapsed)
 await flush(() => root.render(React.createElement(Probe, { realtime: false, scopeKey: 'portal-a' })))
-await flush()
+assert.equal(reads, 0, 'mount polling must respect its initial jitter')
+await flush(undefined, 3_000)
 assert.equal(channels, 0)
 assert.equal(queries, 0)
 assert.equal(reads, 1)
 assert.equal(state.connectionState, 'polling')
 visible = 'hidden'
-await flush(() => [...intervals.values()].forEach(fn => fn()))
+await poll()
 assert.equal(reads, 1)
 visible = 'visible'
 await flush(() => document.dispatchEvent(new window.Event('visibilitychange')))
@@ -56,23 +76,26 @@ assert.equal(reads, 2)
 online = false
 await flush(() => window.dispatchEvent(new window.Event('offline')))
 assert.equal(state.connectionState, 'offline')
-await flush(() => [...intervals.values()].forEach(fn => fn()))
+await poll()
 assert.equal(reads, 2)
 online = true
 await flush(() => window.dispatchEvent(new window.Event('online')))
 assert.equal(reads, 3)
 succeed = false
-await flush(() => [...intervals.values()].forEach(fn => fn()))
+await poll()
 assert.ok(state.lastErrorAt)
+const failedReads = reads
+await poll(0)
+assert.equal(reads, failedReads, 'failed reads must respect retry backoff')
 succeed = true
-await flush(() => [...intervals.values()].forEach(fn => fn()))
+await poll(60_000)
 assert.equal(state.lastErrorAt, null)
 await flush(() => root.render(React.createElement(Probe, { realtime: true, scopeKey: 'professional' })))
-await flush()
+await flush(undefined, 3_000)
 assert.equal(channels, 1)
 await flush(() => subscribe('SUBSCRIBED'))
 assert.equal(state.connectionState, 'live')
-await flush(() => [...intervals.values()].forEach(fn => fn())) // acknowledge 4
+await poll() // acknowledge 4
 const before = reads
 await flush(() => handlers.get('transaction_refresh_signals')({ new: { version: revision } }))
 assert.equal(reads, before)
@@ -81,19 +104,21 @@ succeed = false
 await flush(() => handlers.get('transaction_refresh_signals')({ new: { version: revision } }))
 assert.ok(state.lastErrorAt)
 succeed = true
-await flush(() => [...intervals.values()].forEach(fn => fn()))
+await poll(60_000)
 assert.equal(state.lastErrorAt, null)
 const recovered = reads
 queryError = true
-await flush(() => [...intervals.values()].forEach(fn => fn()))
+await poll()
 assert.equal(reads, recovered + 1)
 await flush(() => subscribe('CLOSED'))
 assert.equal(state.connectionState, 'polling')
 await flush(() => root.unmount())
 assert.equal(intervals.size, 0)
+assert.equal(timeouts.size, 0)
 assert.equal(removed, 1)
 const stopped = reads
 await flush(() => window.dispatchEvent(new window.Event('focus')))
 assert.equal(reads, stopped)
 dom.window.close()
+Date.now = realNow
 console.log('Live hook: authorised portal polling, visibility/offline recovery, signal retry, fallback and cleanup passed.')

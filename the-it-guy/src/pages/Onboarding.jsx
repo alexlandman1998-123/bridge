@@ -14,7 +14,9 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { useWorkspace } from '../context/WorkspaceContext'
 import {
-  AGENCY_BUSINESS_FOCUS_OPTIONS,
+  AGENCY_BUSINESS_LINE_OPTIONS,
+  normalizeAgencyBusinessLines,
+  getAgencyBusinessFocusFromLines,
   AGENCY_INVITE_ROLE_OPTIONS,
   AGENCY_ORGANISATION_TYPE_OPTIONS,
   AGENCY_TYPE_OPTIONS,
@@ -767,22 +769,22 @@ function Onboarding() {
                     ))}
                   </select>
                 </label>
-                <label>
-                  Business Focus
-                  <select
-                    value={draft.agencyInformation.businessFocus}
-                    onChange={(event) => updateDraft({
-                      agencyInformation: {
-                        ...draft.agencyInformation,
-                        businessFocus: event.target.value,
-                      },
+                <fieldset className="col-span-full">
+                  <legend>Business lines</legend>
+                  <div className="mt-3 grid gap-3 md:grid-cols-3">
+                    {AGENCY_BUSINESS_LINE_OPTIONS.map((option) => {
+                      const lines = normalizeAgencyBusinessLines(draft.agencyInformation.businessLines || draft.agencyInformation.businessFocus)
+                      const checked = lines.includes(option.value)
+                      return <label key={option.value} className="flex items-start gap-3 rounded-xl border border-slate-200 bg-white p-4">
+                        <input type="checkbox" checked={checked} disabled={checked && lines.length === 1} onChange={(event) => {
+                          const next = normalizeAgencyBusinessLines(event.target.checked ? [...lines, option.value] : lines.filter((line) => line !== option.value))
+                          updateDraft({ agencyInformation: { ...draft.agencyInformation, businessLines: next, businessFocus: getAgencyBusinessFocusFromLines(next) } })
+                        }} />
+                        <span><strong>{option.label}</strong><span className="mt-1 block text-sm text-slate-500">{option.description}</span></span>
+                      </label>
                     })}
-                  >
-                    {AGENCY_BUSINESS_FOCUS_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>{option.label}</option>
-                    ))}
-                  </select>
-                </label>
+                  </div>
+                </fieldset>
                 <label>
                   Company Registration Number
                   <input
@@ -1161,7 +1163,7 @@ function Onboarding() {
                 <article>
                   <h3>Organisation Structure</h3>
                   <p>{draft.agencyInformation.agencyName || 'Agency name pending'}</p>
-                  <small>{draft.agencyInformation.agencyType} • {draft.agencyInformation.businessFocus}</small>
+                  <small>{draft.agencyInformation.agencyType} • {normalizeAgencyBusinessLines(draft.agencyInformation.businessLines || draft.agencyInformation.businessFocus).map((line) => AGENCY_BUSINESS_LINE_OPTIONS.find((option) => option.value === line)?.label).join(', ')}</small>
                 </article>
                 <article>
                   <h3>Principal Ownership</h3>

@@ -1,0 +1,102 @@
+{
+  "directConsentInsert": false,
+  "directDocumentUpdate": false,
+  "directScreeningUpdate": false,
+  "functions": [
+    {
+      "anonymousExecute": false,
+      "authenticatedExecute": true,
+      "name": "home_seekers_fic_training_is_enabled",
+      "securityDefiner": false
+    },
+    {
+      "anonymousExecute": false,
+      "authenticatedExecute": true,
+      "name": "rental_record_application_review",
+      "securityDefiner": true
+    },
+    {
+      "anonymousExecute": false,
+      "authenticatedExecute": false,
+      "name": "ensure_agent_digital_card",
+      "securityDefiner": true
+    },
+    {
+      "anonymousExecute": false,
+      "authenticatedExecute": false,
+      "name": "provision_agent_digital_card",
+      "securityDefiner": true
+    },
+    {
+      "anonymousExecute": false,
+      "authenticatedExecute": true,
+      "name": "rental_review_subjects",
+      "securityDefiner": false
+    },
+    {
+      "anonymousExecute": false,
+      "authenticatedExecute": true,
+      "name": "rental_review_document_slots",
+      "securityDefiner": false
+    },
+    {
+      "anonymousExecute": false,
+      "authenticatedExecute": true,
+      "name": "rental_convert_application_to_tenancy",
+      "securityDefiner": true
+    }
+  ],
+  "journeyOrder": [
+    {
+      "lane": "transfer",
+      "phase": "financial_preparation",
+      "phaseOrder": 2,
+      "step": "municipal_rates_clearance_review",
+      "taskOrder": 13
+    },
+    {
+      "lane": "bond",
+      "phase": "bond_documents",
+      "phaseOrder": 2,
+      "step": "bond_documents_prepared",
+      "taskOrder": 0
+    },
+    {
+      "lane": "cancellation",
+      "phase": "cancellation_registration",
+      "phaseOrder": 3,
+      "step": "cancellation_close_out_complete",
+      "taskOrder": 5
+    }
+  ],
+  "migrationVersions": [
+    "20261002070559",
+    "20261002075626",
+    "20261002081358",
+    "20261002081455",
+    "20261002213625"
+  ],
+  "municipalCopy": "Review rates figures, payment evidence, and the municipal certificate issuer, reference and validity dates.",
+  "reviewViewSecurity": [
+    "security_invoker=true"
+  ],
+  "triggers": [
+    {
+      "enabled": "O",
+      "name": "provision_agent_digital_card"
+    },
+    {
+      "enabled": "O",
+      "name": "trg_rental_application_draft_intake_guard"
+    },
+    {
+      "enabled": "O",
+      "name": "trg_rental_application_review_integrity"
+    },
+    {
+      "enabled": "O",
+      "name": "trg_rental_application_document_intake_guard"
+    }
+  ],
+  "unprovisionedAgents": 0
+}

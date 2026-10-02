@@ -1,30 +1,70 @@
-import { CheckCircle2, Loader2, Save, Send, Upload } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Loader2 } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { isRentalApplicantPortalReadyToSubmit } from '../../services/rentals/rentalApplicantPortalModel'
-
-const sections = [['identity', 'About you', [['firstName', 'First name'], ['lastName', 'Last name'], ['email', 'Email'], ['phone', 'Phone']]], ['employment', 'Employment', [['employer', 'Employer'], ['role', 'Role'], ['employmentType', 'Employment type']]], ['income', 'Income', [['monthlyIncome', 'Monthly income'], ['otherIncome', 'Other monthly income']]], ['rentalHistory', 'Rental history', [['currentAddress', 'Current address'], ['landlordName', 'Current landlord'], ['reasonForMoving', 'Reason for moving']]]]
-const documentTypes = [['identity', 'Identity document'], ['proof_of_income', 'Proof of income'], ['bank_statement', 'Bank statement'], ['reference', 'Reference'], ['other', 'Other']]
-const consentTypes = [['privacy', 'I consent to Arch9 processing my personal information for this rental application.'], ['credit_check', 'I consent to the required credit and affordability checks.'], ['identity_verification', 'I consent to identity verification for this application.']]
-const dataObject = (value) => value && typeof value === 'object' && !Array.isArray(value) ? value : {}
-const outcomeCopy = { submitted: ['Application submitted', 'Your application is with the Arch9 rentals team for review.'], under_review: ['Application under review', 'Your application is currently being reviewed.'], approved: ['Application approved', 'Your application has been approved. The rentals team will contact you about the next steps.'], declined: ['Application outcome', 'Thank you for your application. Unfortunately, it was not successful on this occasion.'], withdrawn: ['Application withdrawn', 'This application has been withdrawn.'] }
-const fileBase64 = async (file) => { const bytes = new Uint8Array(await file.arrayBuffer()); let result = ''; bytes.forEach((byte) => { result += String.fromCharCode(byte) }); return btoa(result) }
-
+import Button from '../../components/ui/Button'
+import { isRentalApplicantPortalReadyToSubmit } from '../../services/rentals/rentalApplicantPortalModel.js'
+import { initialiseRentalApplicationWizard, isRentalEntityApplicant } from '../../services/rentals/rentalApplicationWizardModel.js'
+import { uploadRentalApplicationFile } from '../../services/rentals/rentalApplicationFileUpload.js'
+import RentalApplicationWizard from '../../modules/rentals/shared/applications/RentalApplicationWizard.jsx'
+import RentalApplicationDocuments from '../../modules/rentals/shared/applications/RentalApplicationDocuments.jsx'
+const consentTypes = [['privacy', 'I consent to processing my personal information for this rental application.'], ['credit_check', 'I consent to credit and affordability checks on me.'], ['identity_verification', 'I consent to verification of my identity.']]
+const outcomes = { submitted: ['Application submitted', 'The rentals team will review your application.'], under_review: ['Application under review', 'The rentals team is reviewing your application.'], approved: ['Application approved', 'The rentals team will contact you about the next steps.'], declined: ['Application outcome', 'Unfortunately, your application was not successful on this occasion.'], withdrawn: ['Application withdrawn', 'This application has been withdrawn.'] }
 export default function RentalApplicantJourneyPage() {
   const { token = '' } = useParams()
-  const [application, setApplication] = useState(null); const [documents, setDocuments] = useState([]); const [consents, setConsents] = useState({ privacy: false, credit_check: false, identity_verification: false }); const [loading, setLoading] = useState(true); const [saving, setSaving] = useState(false); const [uploading, setUploading] = useState(false); const [error, setError] = useState(''); const [notice, setNotice] = useState('')
-  const load = useCallback(async () => { try { setLoading(true); const response = await fetch('/api/public/rental-application', { headers: { Authorization: `Bearer ${token}` } }); const payload = await response.json(); if (!response.ok) throw new Error(payload.error); setApplication(payload.application); setDocuments(payload.documents || []) } catch (cause) { setError(cause?.message || 'Unable to open application.') } finally { setLoading(false) } }, [token])
-  useEffect(() => { void load() }, [load])
-  const complete = useMemo(() => sections.filter(([key]) => Object.keys(dataObject(application?.data?.[key])).length).length, [application])
-  const readyToSubmit = useMemo(() => isRentalApplicantPortalReadyToSubmit({ data: application?.data, documents, consents }), [application?.data, consents, documents])
-  const update = (section, key, value) => setApplication((current) => ({ ...current, data: { ...current.data, [section]: { ...dataObject(current.data?.[section]), [key]: value } } }))
-  const saveDraft = async () => { const response = await fetch('/api/public/rental-application', { method: 'PATCH', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ version: application.version, patch: application.data }) }); const payload = await response.json(); if (!response.ok) throw new Error(payload.error); setApplication(payload.application); return payload.application }
-  const save = async () => { try { setSaving(true); setError(''); setNotice(''); await saveDraft(); setNotice('Draft saved.') } catch (cause) { setError(cause?.message || 'Unable to save application.') } finally { setSaving(false) } }
-  const uploadDocument = async (event) => { const file = event.target.files?.[0]; event.target.value = ''; const type = event.target.dataset.documentType; if (!file || !type) return; try { setUploading(true); setError(''); setNotice(''); if (file.size > 8 * 1024 * 1024) throw new Error('Documents must be 8 MB or smaller.'); const response = await fetch('/api/public/rental-application', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ documentType: type, fileName: file.name, mimeType: file.type, contentBase64: await fileBase64(file) }) }); const payload = await response.json(); if (!response.ok) throw new Error(payload.error); setDocuments((current) => [payload.document, ...current]); setNotice(`${file.name} uploaded.`) } catch (cause) { setError(cause?.message || 'Unable to upload document.') } finally { setUploading(false) } }
-  const submit = async () => { try { setSaving(true); setError(''); setNotice(''); await saveDraft(); const response = await fetch('/api/public/rental-application', { method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ action: 'submit', consents: Object.entries(consents).filter(([, accepted]) => accepted).map(([type]) => type) }) }); const payload = await response.json(); if (!response.ok) throw new Error(payload.error); setApplication(payload.application); setNotice('Application submitted.') } catch (cause) { setError(cause?.message || 'Unable to submit application.') } finally { setSaving(false) } }
-  if (loading) return <main className="mx-auto flex min-h-screen max-w-xl items-center justify-center p-6"><Loader2 className="h-6 w-6 animate-spin" /></main>
-  if (error && !application) return <main className="mx-auto max-w-xl p-6"><h1 className="text-xl font-bold">Application unavailable</h1><p className="mt-2 text-slate-600">{error}</p></main>
-  if (!application) return <main className="mx-auto max-w-xl p-6"><h1 className="text-xl font-bold">Application unavailable</h1></main>
-  if (application.status !== 'draft') { const [heading, message] = outcomeCopy[application.status] || ['Application update', 'Your application is no longer available for editing.']; return <main className="mx-auto max-w-xl p-6"><p className="text-sm font-semibold text-sky-700">Arch9 Rentals</p><h1 className="mt-1 text-2xl font-bold">{heading}</h1><p className="mt-2 text-slate-600">{message}</p></main> }
-  return <main className="mx-auto max-w-xl space-y-5 p-4 pb-36"><header><p className="text-sm font-semibold text-sky-700">Arch9 Rentals</p><h1 className="text-2xl font-bold">Rental application</h1><p className="mt-1 text-sm text-slate-600">{complete} of {sections.length} sections started. Save your draft at any time; submit when complete.</p></header>{sections.map(([section, title, fields]) => <section key={section} className="rounded-xl border bg-white p-4 shadow-sm"><h2 className="font-semibold">{title}</h2><div className="mt-3 grid gap-3">{fields.map(([key, fieldLabel]) => <label key={key} className="text-sm font-medium text-slate-700">{fieldLabel}<input value={application.data?.[section]?.[key] || ''} onChange={(event) => update(section, key, event.target.value)} className="mt-1 w-full rounded-lg border px-3 py-2 font-normal" /></label>)}</div></section>)}<section className="rounded-xl border bg-white p-4 shadow-sm"><h2 className="font-semibold">Supporting documents</h2><p className="mt-1 text-sm text-slate-600">Identity document and proof of income are required. Maximum file size: 8 MB.</p><div className="mt-4 grid gap-3">{documentTypes.map(([type, label]) => { const uploaded = documents.find((item) => item.document_type === type && ['uploaded', 'accepted'].includes(item.status)); return <label key={type} className="flex items-center justify-between gap-3 rounded-lg border p-3 text-sm"><span><strong>{label}</strong><span className="mt-1 block text-xs text-slate-500">{uploaded ? `${uploaded.file_name} · ${uploaded.status}` : 'Not uploaded'}</span></span><span className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-lg border px-3 py-2 font-semibold text-sky-700"><Upload size={15} />{uploaded ? 'Replace' : 'Upload'}<input type="file" className="sr-only" data-document-type={type} onChange={(event) => void uploadDocument(event)} disabled={uploading} /></span></label> })}</div></section><section className="rounded-xl border bg-white p-4 shadow-sm"><h2 className="font-semibold">Required consents</h2><div className="mt-3 grid gap-3">{consentTypes.map(([type, label]) => <label key={type} className="flex gap-3 text-sm text-slate-700"><input type="checkbox" checked={consents[type]} onChange={(event) => setConsents((current) => ({ ...current, [type]: event.target.checked }))} className="mt-0.5" /><span>{label}</span></label>)}</div></section>{error ? <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p> : null}{notice ? <p className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-700">{notice}</p> : null}<div className="fixed inset-x-0 bottom-0 border-t bg-white p-3"><div className="mx-auto flex w-full max-w-xl gap-3"><button disabled={saving || uploading} onClick={() => void save()} className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-sky-700 px-4 py-3 font-semibold text-sky-700 disabled:opacity-60"><Save className="h-4 w-4" />Save draft</button><button disabled={saving || uploading || !readyToSubmit} onClick={() => void submit()} className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-sky-700 px-4 py-3 font-semibold text-white disabled:opacity-60">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}Submit application</button></div><p className="mx-auto mt-2 flex max-w-xl items-center gap-1 text-xs text-slate-500"><CheckCircle2 size={13} />Submission requires all sections, ID, proof of income, and every consent.</p></div></main>
+  const [application, setApplication] = useState(null); const [documents, setDocuments] = useState([])
+  const [loading, setLoading] = useState(true); const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(''); const [notice, setNotice] = useState(''); const [expiresAt, setExpiresAt] = useState('')
+  const [requestedChanges, setRequestedChanges] = useState('')
+  const [dirty, setDirty] = useState(false)
+  useEffect(() => {
+    if (!dirty) return
+    const warn = (event) => { event.preventDefault(); event.returnValue = '' }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [dirty])
+  const [consents, setConsents] = useState({}); const [declaration, setDeclaration] = useState(false)
+  const guard = useRef(false)
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true); setApplication(null); setError(''); setConsents({}); setDeclaration(false); setDirty(false)
+    fetch('/api/public/rental-application', { headers: { Authorization: `Bearer ${token}` } }).then(async (response) => {
+      const result = await response.json(); if (!response.ok) throw new Error(result.error || 'Unable to open application.')
+      if (!cancelled) { setApplication(result.application.status === 'draft' ? { ...result.application, data: initialiseRentalApplicationWizard(result.application.data) } : result.application); setDocuments(result.documents || []); setExpiresAt(result.expiresAt || ''); setRequestedChanges(result.requestedChanges || '') }
+    }).catch((cause) => { if (!cancelled) setError(cause.message) }).finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [token])
+  async function request(method, body) {
+    const response = await fetch('/api/public/rental-application', { method, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(body) })
+    const result = await response.json(); if (!response.ok) throw new Error(result.error || 'Unable to save application.'); return result
+  }
+  async function persist() {
+    const result = await request('PATCH', { version: application.version, patch: application.data, upgradeSchema: true })
+    setApplication(result.application); setDirty(false); return result.application
+  }
+  async function run(action) {
+    if (guard.current) return false
+    guard.current = true; setBusy(true); setError(''); setNotice('')
+    try { await action(); return true } catch (cause) { setError(cause.message || 'Unable to save application. Your changes are retained.'); return false }
+    finally { guard.current = false; setBusy(false) }
+  }
+  const save = () => run(async () => { await persist(); setNotice('Draft saved. You can return using the same link before it expires.') })
+  const upload = (file, slot) => run(async () => {
+    const current = await persist()
+    const result = await uploadRentalApplicationFile(file, slot, current.version, (body) => request('POST', body))
+    setApplication(result.application); setDocuments((items) => [result.document, ...items]); setNotice(`${file.name} uploaded.`)
+  })
+  const submit = () => run(async () => {
+    const current = await persist()
+    const result = await request('PUT', { action: 'submit', version: current.version, declarationAccepted: declaration, consents: Object.keys(consents).filter((key) => consents[key]) })
+    setApplication(result.application)
+  })
+  if (loading) return <main className="mx-auto flex min-h-screen max-w-xl items-center justify-center p-6"><Loader2 className="h-6 w-6 animate-spin" /><span className="sr-only">Loading application</span></main>
+  if (!application) return <main className="mx-auto max-w-xl p-6"><h1 className="text-xl font-bold">Application unavailable</h1><p className="mt-2 text-slate-600">{error}</p><p className="mt-4 text-sm text-slate-500">Contact your agent for a new link if this one has expired.</p></main>
+  if (application.status !== 'draft') { const [title, message] = outcomes[application.status] || ['Application update', 'This application is no longer available for editing.']; return <main className="mx-auto max-w-xl p-6"><p className="text-sm font-semibold text-[#18704f]">Arch9 Rentals</p><h1 className="mt-2 text-2xl font-bold">{title}</h1><p className="mt-3 text-slate-600">{message}</p></main> }
+  const ready = declaration && isRentalApplicantPortalReadyToSubmit({ data: application.data, documents, consents })
+  return <main className="mx-auto min-h-screen max-w-6xl space-y-5 bg-[#f5f8fb] p-4 sm:p-6"><header className="rounded-2xl bg-[#102d4a] p-5 text-white"><p className="text-xs font-semibold uppercase tracking-wider text-white/70">Arch9 Rentals</p><h1 className="mt-2 text-2xl font-semibold text-white">Rental application</h1><p className="mt-2 text-sm text-white/80">{application.data.property?.title || application.data.property?.address || 'Complete your application for the selected property.'}</p>{expiresAt ? <p className="mt-3 text-xs text-white/70">Link expires {new Date(expiresAt).toLocaleDateString('en-ZA')}. Save before leaving to resume later.</p> : null}</header>
+    {requestedChanges ? <section className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"><h2 className="font-semibold">Changes requested by your agent</h2><p className="mt-2 whitespace-pre-wrap">{requestedChanges}</p><p className="mt-2">Update your application and submit again for a fresh review.</p></section> : null}
+    {error ? <p role="alert" className="rounded-xl bg-red-50 p-4 text-sm text-red-700">{error}</p> : null}{notice ? <p role="status" className="rounded-xl bg-emerald-50 p-4 text-sm text-emerald-700">{notice}</p> : null}
+    <RentalApplicationWizard data={application.data} busy={busy} onChange={(data) => { setApplication((current) => ({ ...current, data })); setNotice(''); setDirty(true) }} onSave={save} documentsContent={<RentalApplicationDocuments data={application.data} documents={documents} disabled={busy} onUpload={upload} />} declarationsContent={<div className="space-y-4 rounded-xl border border-[#dce7f2] p-4"><h4 className="font-semibold text-[#29435d]">Your declarations</h4>{consentTypes.map(([key, title]) => <label key={key} className="flex items-start gap-3 text-sm text-[#526b83]"><input type="checkbox" disabled={busy} checked={Boolean(consents[key])} onChange={(event) => setConsents((current) => ({ ...current, [key]: event.target.checked }))} className="mt-1" />{key === 'credit_check' && isRentalEntityApplicant(application.data) ? 'I am authorised to consent to credit and affordability checks on this entity for its rental application.' : title}</label>)}<label className="flex items-start gap-3 text-sm text-[#526b83]"><input type="checkbox" disabled={busy} checked={declaration} onChange={(event) => setDeclaration(event.target.checked)} className="mt-1" />I confirm that these details are accurate, I am the primary applicant or authorised entity representative, and I have authority to submit this application. Each additional person’s consent evidence is supplied separately.</label><p className="text-xs text-[#60758b]">Submission locks this draft for review. Complete every required document and answer before submitting.</p><Button type="button" disabled={busy || !ready} onClick={() => void submit()}>Submit application</Button></div>} />
+  </main>
 }

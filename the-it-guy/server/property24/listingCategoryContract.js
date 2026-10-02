@@ -69,9 +69,10 @@ export const PROPERTY24_LISTING_CATEGORY_FIELD_MATRIX = Object.freeze({
     requiredArch9FieldsBeforePublish: ['farmSize', 'waterSupplyOrRights', 'agriculturalUse'],
   },
   [PROPERTY24_LISTING_CATEGORIES.LAND]: {
-    publishingStatus: 'blocked_pending_property24_v55_payload',
-    transactionTypes: ['Sale', 'Rental'],
-    verifiedProperty24Fields: ['propertyInfo.propertyTypeId', 'propertyInfo.erf', 'propertyInfo.zoneType'],
+    publishingStatus: 'supported',
+    transactionTypes: ['Sale'],
+    verifiedProperty24Fields: [],
+    documentedProperty24Fields: ['propertyInfo.propertyTypeId', 'propertyInfo.erf', 'propertyInfo.zoneType'],
     requiredArch9FieldsBeforePublish: ['erfSize', 'zoning'],
   },
   [PROPERTY24_LISTING_CATEGORIES.UNKNOWN]: {

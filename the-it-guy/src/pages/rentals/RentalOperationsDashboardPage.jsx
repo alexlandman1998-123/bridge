@@ -2,11 +2,12 @@ import { createElement, useCallback, useEffect, useMemo, useState } from 'react'
 import { ArrowRight, CheckCircle2, CircleDollarSign, ClipboardList, FileText, Home, KeyRound, Megaphone, ShieldCheck, ToolCase, UsersRound, Wrench } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useWorkspace } from '../../context/WorkspaceContext'
-import { DashboardKpiCard, MobileDashboardShell } from '../../components/dashboard/PremiumDashboard'
+import { MobileDashboardShell } from '../../components/dashboard/PremiumDashboard'
 import { getRentalManagementDashboard, getRentalManagementDashboardBottomHalf } from '../../services/rentals/rentalOperationsDashboardRepository.js'
 import { listPersistedRentalTenancies } from '../../services/rentals/rentalApplicationRepository.js'
 import { listRentalProperties } from '../../services/rentals/rentalPropertyRepository.js'
 import { resolveRentalWorkspaceScope } from '../../services/rentals/rentalWorkspaceScope'
+import './RentalOperationsDashboardPage.css'
 
 const DATE_OPTIONS = [
   { value: 'last_7_days', label: 'Last 7 Days', days: 7 },
@@ -32,11 +33,6 @@ function formatRent(value) {
   return `R ${amount.toLocaleString('en-ZA', { maximumFractionDigits: 0 })}`
 }
 function rangeDays(value) { return DATE_OPTIONS.find((option) => option.value === value)?.days || 30 }
-function kpiSparkline(current, previous = null) {
-  const value = asNumber(current)
-  const baseline = previous === null || previous === undefined ? value : asNumber(previous)
-  return [baseline, baseline, value, value]
-}
 function relativeDate(value) {
   if (!value) return 'Recently'
   const diff = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 86400000))
@@ -47,6 +43,31 @@ function shortDate(value) { return value ? new Intl.DateTimeFormat('en-ZA', { da
 
 function OverviewCard({ title, subtitle, href, children }) {
   return <section className="rounded-[20px] border border-[#dfe7f0] bg-white p-4 shadow-[0_16px_36px_rgba(15,23,42,0.055)] sm:p-5"><div className="flex items-start justify-between gap-3"><div><h2 className="text-[1.02rem] font-semibold text-[#101828]">{title}</h2><p className="mt-1 text-sm text-[#667085]">{subtitle}</p></div><Link to={href} className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-[#1769d1]">View all <ArrowRight size={14} /></Link></div><div className="mt-5">{children}</div></section>
+}
+
+function RentalDistributionCard({ title, subtitle, centre, centreLabel, segments, footer, href, action, loading }) {
+  const total = segments.reduce((sum, segment) => sum + Math.max(0, asNumber(segment.value)), 0)
+  let offset = 0
+  const rings = segments.map((segment) => {
+    const share = total > 0 ? Math.max(0, asNumber(segment.value)) / total * 100 : 0
+    const ring = { ...segment, share, offset }
+    offset += share
+    return ring
+  })
+  return <article className="rental-distribution-card">
+    <header><h2>{title}</h2><p>{subtitle}</p></header>
+    <div className="rental-distribution-body">
+      <div className="rental-distribution-chart" role="img" aria-label={loading ? `${title}: loading` : `${title}: ${segments.map((segment) => `${segment.label} ${formatCount(segment.value)}`).join(', ')}`}>
+        <svg viewBox="0 0 120 120" aria-hidden="true">
+          <circle cx="60" cy="60" r="48" fill="none" stroke="#edf2f6" strokeWidth="12" />
+          {!loading && rings.map((ring) => ring.share > 0 ? <circle key={ring.label} cx="60" cy="60" r="48" fill="none" stroke={ring.colour} strokeWidth="12" pathLength="100" strokeDasharray={`${ring.share} ${100 - ring.share}`} strokeDashoffset={-ring.offset} transform="rotate(-90 60 60)" /> : null)}
+        </svg>
+        <div><strong>{centre}</strong><span>{centreLabel}</span></div>
+      </div>
+      <dl>{segments.map((segment) => <div key={segment.label}><dt><i style={{ background: segment.colour }} />{segment.label}</dt><dd>{loading ? '—' : formatCount(segment.value)}</dd></div>)}{!loading && total === 0 ? <p>No data in this scope yet.</p> : null}</dl>
+    </div>
+    <footer><span>{loading ? 'Loading rental data…' : footer}</span><Link to={href}>{action}<ArrowRight size={14} /></Link></footer>
+  </article>
 }
 
 function ActiveApplicationCard({ application = {} }) {
@@ -144,20 +165,36 @@ export default function RentalOperationsDashboardPage() {
   const metrics = snapshot?.metrics || {}; const occupancy = snapshot?.occupancy || {}; const applications = snapshot?.applications || []
   const portfolio = bottomSnapshot?.portfolio_health || {}; const vacancy = bottomSnapshot?.vacancy_letting || {}; const renewals = bottomSnapshot?.renewals || {}; const collections = bottomSnapshot?.collections || {}; const maintenance = bottomSnapshot?.maintenance || {}; const recentActivity = bottomSnapshot?.recent_activity || []
   const upcomingRenewals = useMemo(() => { const propertyById = new Map((renewalData.properties || []).map((property) => [property.id, property])); const cutoff = new Date(); cutoff.setDate(cutoff.getDate() + 90); return (renewalData.tenancies || []).map((tenancy) => ({ tenancy, dueDate: renewalDueDate(tenancy), property: propertyById.get(tenancy.propertyId) })).filter(({ tenancy, dueDate, property }) => tenancy.status === 'active' && property && dueDate && dueDate >= new Date() && dueDate <= cutoff).sort((left, right) => left.dueDate - right.dueDate) }, [renewalData])
-  const leadDelta = asNumber(metrics.new_leads) - asNumber(metrics.new_leads_previous_period)
   const kpis = [
-    { key: 'applications', icon: ClipboardList, label: 'Active Applications', value: formatCount(metrics.active_applications), tone: 'blue', trend: null, trendLabel: 'Current review queue', sparkline: kpiSparkline(metrics.active_applications) },
-    { key: 'mandates', icon: FileText, label: 'Active Mandates', value: formatCount(metrics.active_mandates), tone: 'green', trend: null, trendLabel: 'Under management', sparkline: kpiSparkline(metrics.active_mandates) },
-    { key: 'occupancy', icon: Home, label: 'Occupancy Rate', value: formatPercent(metrics.occupancy_rate), tone: 'orange', trend: null, trendLabel: 'Managed rentable units', sparkline: kpiSparkline(metrics.occupancy_rate) },
-    { key: 'rent', icon: CircleDollarSign, label: 'Monthly Rent Roll', value: formatRent(metrics.monthly_rent_roll), tone: 'purple', trend: null, trendLabel: 'Current contractual rent', sparkline: kpiSparkline(metrics.monthly_rent_roll) },
-    { key: 'leads', icon: UsersRound, label: 'New Leads', value: formatCount(metrics.new_leads), tone: 'slate', trend: leadDelta, trendLabel: `vs previous ${rangeDays(dateRange)} days`, sparkline: kpiSparkline(metrics.new_leads, metrics.new_leads_previous_period) },
+    { key: 'applications', icon: ClipboardList, label: 'Active Applications', value: formatCount(metrics.active_applications), tone: 'blue', trend: null, trendLabel: 'Current review queue' },
+    { key: 'mandates', icon: FileText, label: 'Active Mandates', value: formatCount(metrics.active_mandates), tone: 'green', trend: null, trendLabel: 'Under management' },
+    { key: 'occupancy', icon: Home, label: 'Occupancy Rate', value: formatPercent(metrics.occupancy_rate), tone: 'orange', trend: null, trendLabel: 'Managed rentable units' },
+    { key: 'rent', icon: CircleDollarSign, label: 'Monthly Rent Roll', value: formatRent(metrics.monthly_rent_roll), tone: 'purple', trend: null, trendLabel: 'Current contractual rent' },
+    { key: 'leads', icon: UsersRound, label: 'New Leads', value: formatCount(metrics.new_leads), tone: 'slate', trend: null, trendLabel: `Received in the last ${rangeDays(dateRange)} days` },
   ]
 
   return <main className="mx-auto w-full max-w-[1600px] py-2"><MobileDashboardShell>
     {error ? <section className="rounded-2xl border border-[#f7c9c9] bg-[#fff5f5] p-4 text-sm text-[#b42318]">{error}</section> : null}
     {!rentalScope.organisationId ? <section className="rounded-2xl border border-[#f4d7a9] bg-[#fffaf0] p-4 text-sm text-[#7a4b05]">Choose an agency workspace to load the Rentals dashboard.</section> : null}
-    <section className="-mx-2 flex snap-x gap-3 overflow-x-auto px-2 pb-1 sm:mx-0 sm:grid sm:grid-cols-2 sm:overflow-visible sm:px-0 xl:grid-cols-5">{kpis.map((item) => <Link key={item.key} to={item.key === 'applications' ? '/agent/rentals/applications' : item.key === 'mandates' || item.key === 'occupancy' || item.key === 'rent' ? '/agent/rentals/portfolio/properties' : '/agent/rentals/pipeline/leads'} className="contents"><DashboardKpiCard {...item} /></Link>)}</section>
-    <section className="rounded-[20px] border border-[#dfe7f0] bg-white p-4 shadow-[0_16px_36px_rgba(15,23,42,0.055)] sm:p-5"><div className="flex flex-wrap items-start justify-between gap-4"><div><div className="flex items-center gap-2"><span className="grid h-9 w-9 place-items-center rounded-full bg-[#fff4e5] text-[#df7b14]"><Home size={17} /></span><div><h2 className="text-[1.02rem] font-semibold text-[#101828]">Occupancy Rate</h2><p className="text-sm text-[#667085]">Current overall portfolio occupancy.</p></div></div><p className="mt-5 text-3xl font-semibold tabular-nums text-[#16894f]">{loading ? '—' : formatPercent(occupancy.occupancy_rate)}</p></div><dl className="min-w-[230px] rounded-xl border border-[#e3eaf2] bg-[#fbfdff] px-4 py-3 text-sm"><div className="flex justify-between gap-6 py-1"><dt className="text-[#667085]">Occupied units</dt><dd className="font-semibold">{formatCount(occupancy.occupied_units)}</dd></div><div className="flex justify-between gap-6 py-1"><dt className="text-[#667085]">Vacant units</dt><dd className="font-semibold">{formatCount(occupancy.vacant_units)}</dd></div><div className="flex justify-between gap-6 py-1"><dt className="text-[#667085]">Total managed units</dt><dd className="font-semibold">{formatCount(occupancy.total_units)}</dd></div></dl></div><div className="mt-5 h-2 overflow-hidden rounded-full bg-[#eaf0f5]"><div className="h-full rounded-full bg-[#16894f] transition-[width]" style={{ width: `${Math.max(0, Math.min(100, asNumber(occupancy.occupancy_rate)))}%` }} /></div><p className="mt-2 text-xs text-[#667085]">Based on units under an active, confirmed management mandate.</p></section>
+    <section className="rental-summary-cards" aria-label="Rental summary">
+      {kpis.map(({ key, icon: Icon, label, value, tone, trendLabel }) => <Link key={key} to={key === 'applications' ? '/agent/rentals/applications' : key === 'leads' ? '/agent/rentals/pipeline/leads' : '/agent/rentals/portfolio/properties'} className={`rental-summary-card rental-summary-card--${tone}`}>
+        <div className="rental-summary-heading">{createElement(Icon, { size: 19 })}<span>{label}</span></div>
+        <strong>{loading ? '—' : value}</strong>
+        <p>{trendLabel}</p>
+        <span className="rental-summary-rule" aria-hidden="true" />
+      </Link>)}
+    </section>
+    <section className="rental-insight-row" aria-label="Occupancy and lease renewals">
+      <RentalDistributionCard title="Occupancy rate" subtitle="Your managed rental portfolio, at a glance." centre={loading ? '—' : asNumber(occupancy.total_units) > 0 ? formatPercent(occupancy.occupancy_rate) : '—'} centreLabel="Occupied" loading={loading} segments={[
+        { label: 'Occupied units', value: occupancy.occupied_units, colour: '#16894f' },
+        { label: 'Vacant units', value: occupancy.vacant_units, colour: '#efb45b' },
+      ]} footer={`${formatCount(occupancy.total_units)} managed units · Active, confirmed management mandates`} href="/agent/rentals/portfolio/properties" action="View portfolio" />
+      <RentalDistributionCard title="Lease renewals" subtitle="Upcoming lease expiries over the next 90 days." centre={loading ? '—' : formatCount(['next_30', 'days_31_60', 'days_61_90'].reduce((sum, key) => sum + asNumber(renewals.buckets?.[key]?.expiring), 0))} centreLabel="Leases ending" loading={loading} segments={[
+        { label: 'Within 30 days', value: renewals.buckets?.next_30?.expiring, colour: '#5d8df2' },
+        { label: '31–60 days', value: renewals.buckets?.days_31_60?.expiring, colour: '#8b70db' },
+        { label: '61–90 days', value: renewals.buckets?.days_61_90?.expiring, colour: '#4bb79c' },
+      ]} footer={`${formatCount(renewals.requires_action)} leases require renewal action`} href="/agent/rentals/portfolio/properties" action="View leases" />
+    </section>
     <section className="rounded-[20px] border border-[#dfe7f0] bg-white p-4 shadow-[0_16px_36px_rgba(15,23,42,0.055)] sm:p-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
@@ -167,7 +204,7 @@ export default function RentalOperationsDashboardPage() {
         <Link to="/agent/rentals/applications" className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-[#1769d1]">View all <ArrowRight size={14} /></Link>
       </div>
       {loading ? <p className="py-10 text-sm text-[#667085]">Loading applications…</p> : applications.length === 0 ? <div className="mt-5 rounded-2xl border border-dashed border-[#d3ddea] bg-[#fbfdff] p-8 text-center text-sm text-[#667085]">No active rental applications in this scope.</div> : (
-        <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className="rental-application-row mt-5" role="region" aria-label="Active rental applications" tabIndex={0}>
           {applications.map((application) => <ActiveApplicationCard key={application.id} application={application} />)}
         </div>
       )}

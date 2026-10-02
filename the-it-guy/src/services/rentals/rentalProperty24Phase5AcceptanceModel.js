@@ -48,11 +48,11 @@ export function buildRentalProperty24Phase5Acceptance(evidence = {}) {
   const publish = evidence.publish || {}
   const summary = summarizeEvidence(evidence)
   const checks = [
-    check('exdev_only', 'Controlled ExDev scope', summary.environment === 'exdev' && !summary.customerDataIncluded && summary.submissionCount > 0 && summary.submissionCount <= RENTAL_PROPERTY24_PHASE5_MAXIMUM_EXDEV_LISTINGS, `Use ExDev only, no customer data, and no more than ${RENTAL_PROPERTY24_PHASE5_MAXIMUM_EXDEV_LISTINGS} listings.`),
-    check('exdev_publish', 'ExDev rental submitted', key(publish.status) === 'submitted' && Boolean(summary.listingNumber), 'Requires a returned Property24 listing number from an ExDev submission.'),
+    check('exdev_only', 'Controlled test scope', summary.environment === 'exdev' && !summary.customerDataIncluded && summary.submissionCount > 0 && summary.submissionCount <= RENTAL_PROPERTY24_PHASE5_MAXIMUM_EXDEV_LISTINGS, `Use the test connection only, no customer data, and no more than ${RENTAL_PROPERTY24_PHASE5_MAXIMUM_EXDEV_LISTINGS} listings.`),
+    check('exdev_publish', 'Rental test submission completed', key(publish.status) === 'submitted' && Boolean(summary.listingNumber), 'Requires a returned Property24 listing number from a test submission.'),
     check('field_rendering', 'Property24 rendered rental fields verified', Object.values(summary.rendered).every(Boolean), 'Verify rental amount, frequency, deposit policy, availability, agent, and photos on Property24.'),
     check('negative_guards', 'Invalid and duplicate submissions guarded', Object.values(summary.negative).every(Boolean), 'Record missing-photo, invalid-agent, duplicate-retry, and unsupported-house-share outcomes.'),
-    check('reconciliation', 'Reconciliation matches rental', summary.reconciliation.status === 'ok' && summary.reconciliation.matchedCount > 0, 'Run reconciliation after the ExDev publish.'),
+    check('reconciliation', 'Reconciliation matches rental', summary.reconciliation.status === 'ok' && summary.reconciliation.matchedCount > 0, 'Run reconciliation after the test submission.'),
   ]
   const failedChecks = checks.filter((item) => !item.passed)
   return {

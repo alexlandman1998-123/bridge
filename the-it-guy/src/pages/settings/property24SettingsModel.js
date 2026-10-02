@@ -272,3 +272,8 @@ export function summarizeProperty24SettingsReadiness({ settings = {}, arch9Agent
     unmappedCount: Math.max(candidates.length - mapped.length, 0),
   }
 }
+
+// Keep transport identifiers unchanged while presenting readable integration wording.
+export function formatProperty24DisplayText(value = '') {
+  return String(value ?? '').replace(/\b(?:exdev|xdev)\b/gi, 'test connection').replace(/(^|_)(?:EXDEV|XDEV)(?=_|$)/gi, '$1TEST')
+}

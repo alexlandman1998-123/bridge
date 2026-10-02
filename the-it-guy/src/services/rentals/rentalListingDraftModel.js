@@ -1,3 +1,5 @@
+import { captureRentalPortalFacts, validateRentalPortalFacts } from './rentalPortalFieldContract.js'
+
 export const RENTAL_LISTING_CAPTURE_VERSION = 'arch9_rental_listing_capture_v1'
 
 export const RENTAL_PRICE_FREQUENCIES = Object.freeze([
@@ -46,9 +48,13 @@ export const RENTAL_LISTING_INITIAL_FORM = Object.freeze({
   city: '',
   province: '',
   postalCode: '',
+  latitude: '',
+  longitude: '',
+  googlePlaceId: '',
   exactAddressVisibility: 'hide_street_number',
   propertyCategory: 'residential',
   propertyType: 'Apartment',
+  rentalPortalFacts: {},
   bedrooms: '',
   bathrooms: '',
   enSuiteBathrooms: '',
@@ -313,12 +319,30 @@ export function buildRentalListingTitle(form = {}) {
 export function validateRentalListingDraftForm(form = {}, context = {}) {
   const errors = []
   if (!normalizeText(context.organisationId)) errors.push('Organisation context is required.')
+  if (!normalizeText(form.landlordName)) errors.push('Landlord or entity name is required.')
+  const landlordType = normalizeText(form.landlordType) || 'individual'
+  if (!RENTAL_SELECT_OPTIONS.landlordType.some((option) => option.value === landlordType)) errors.push('Choose a supported landlord type.')
+  const landlordEmail = normalizeText(form.landlordEmail)
+  if (landlordEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(landlordEmail)) errors.push('Enter a valid landlord email address.')
+  const mandateStatus = normalizeText(form.mandateStatus) || 'not_started'
+  const persistedMandateStatuses = ['ready', 'generated', 'viewed', 'signed_external_pending_upload', 'rejected', 'expired']
+  if (!RENTAL_SELECT_OPTIONS.mandateStatus.some((option) => option.value === mandateStatus) && !persistedMandateStatuses.includes(mandateStatus)) errors.push('Choose a supported rental mandate status.')
+  const marketingApproval = normalizeText(form.marketingApprovalStatus) || 'draft'
+  if (!RENTAL_SELECT_OPTIONS.marketingApprovalStatus.some((option) => option.value === marketingApproval)) errors.push('Choose a supported marketing approval status.')
+  for (const [field, label] of [['mandateStartDate', 'Mandate start date'], ['mandateEndDate', 'Mandate end date']]) {
+    const value = normalizeText(form[field])
+    if (!value) continue
+    const parsed = new Date(`${value}T00:00:00Z`)
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || !Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value) errors.push(`${label} must be a valid date.`)
+  }
+  if (form.mandateStartDate && form.mandateEndDate && form.mandateEndDate < form.mandateStartDate) errors.push('Mandate end date cannot be before its start date.')
   if (!normalizeText(form.propertyAddress)) errors.push('Property address is required.')
   if (!normalizeNumber(form.monthlyRent)) errors.push('Rental amount is required.')
   if (!normalizeText(form.rentalPriceFrequency)) errors.push('Rental price frequency is required.')
   if (normalizeRentalDepositPolicy(form.depositPolicy) === 'not_captured') errors.push('Choose whether a deposit is required.')
   if (!normalizeText(form.availableFrom) && !normalizeText(form.occupationDate)) errors.push('Available from or occupation date is required.')
   if (!normalizeText(form.description)) errors.push('Public rental description is required.')
+  errors.push(...validateRentalPortalFacts(form))
   return errors
 }
 
@@ -353,6 +377,7 @@ export function buildRentalCanonicalFacts(form = {}) {
 
   return {
     captureVersion: RENTAL_LISTING_CAPTURE_VERSION,
+    rentalPortalFacts: captureRentalPortalFacts(form),
     listingType: 'Rental',
     landlordName: normalizeText(form.landlordName),
     landlordEmail: normalizeText(form.landlordEmail),
@@ -368,6 +393,9 @@ export function buildRentalCanonicalFacts(form = {}) {
       city: normalizeText(form.city),
       province: normalizeText(form.province),
       postalCode: normalizeText(form.postalCode),
+      latitude: normalizeNumber(form.latitude),
+      longitude: normalizeNumber(form.longitude),
+      googlePlaceId: normalizeText(form.googlePlaceId),
       exactAddressVisibility: normalizeText(form.exactAddressVisibility) || 'hide_street_number',
     },
     suburb: normalizeText(form.suburb),
@@ -587,6 +615,9 @@ export function buildRentalPrivateListingPayload(form = {}, context = {}) {
     province: normalizeText(form.province),
     postalCode: normalizeText(form.postalCode),
     country: 'South Africa',
+    latitude: normalizeNumber(form.latitude),
+    longitude: normalizeNumber(form.longitude),
+    googlePlaceId: normalizeText(form.googlePlaceId),
     description: normalizeText(form.description),
     internalListingNotes: notes,
     listingPreviewDescription: normalizeText(form.description) || notes,

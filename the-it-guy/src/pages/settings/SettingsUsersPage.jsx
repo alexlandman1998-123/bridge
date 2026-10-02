@@ -29,7 +29,7 @@ import {
   updateOrganisationUserJobTitle,
   updateOrganisationUserRole,
 } from '../../lib/settingsApi'
-import { getOrganisationJobTitleLabel, ORGANISATION_JOB_TITLE_OPTIONS } from '../../lib/organisationJobTitles'
+import { getOrganisationMemberJobTitleLabel, getOrganisationJobTitleLabel, ORGANISATION_JOB_TITLE_OPTIONS } from '../../lib/organisationJobTitles'
 import {
   canGovernOrganisationRoleChange,
   getOrganisationRoleOptions,
@@ -69,13 +69,7 @@ import {
   settingsPageClass,
   settingsTableClass,
 } from './settingsUi'
-import {
-  listCommercialAccessManagementState,
-  listCommercialAccessRequests,
-  reviewCommercialAccessRequest,
-  setCommercialOrganisationModuleEnabled,
-  setCommercialUserAccess,
-} from '../../modules/commercial/services/commercialApi'
+
 
 function resolveInviteRole(value = '', fallback = 'agent', roleOptions = []) {
   const normalized = String(value || '').trim().toLowerCase()
@@ -152,12 +146,10 @@ function isBusinessAccessManagedByRole(role = '') {
 
 function getBusinessWorkspaceAccessOptions(organisationWorkspaceIds = []) {
   const organisationIds = normalizeBusinessWorkspaceList(organisationWorkspaceIds, [BUSINESS_WORKSPACES.sales])
-  const options = BUSINESS_WORKSPACE_OPTIONS
-    .filter((option) => organisationIds.includes(option.id))
-    .map((option) => ({ value: option.id, label: option.label }))
-
-  if (organisationIds.includes(BUSINESS_WORKSPACES.sales) && organisationIds.includes(BUSINESS_WORKSPACES.rentals)) {
-    options.push({ value: 'sales_rentals', label: 'Sales & Rentals' })
+  const options = []
+  for (let mask = 1; mask < (1 << organisationIds.length); mask += 1) {
+    const ids = organisationIds.filter((_, index) => mask & (1 << index))
+    options.push({ value: toBusinessWorkspaceAccessValue(ids), label: ids.map((id) => BUSINESS_WORKSPACE_OPTIONS.find((item) => item.id === id)?.label).join(' & ') })
   }
   return options
 }
@@ -167,13 +159,8 @@ function resolveUserBusinessWorkspaceIds(userRow = {}, organisationWorkspaceIds 
   if (isBusinessAccessManagedByRole(userRow.role || userRow.workspaceRole || userRow.organisationRole)) {
     return organisationIds
   }
-  const explicitIds = normalizeBusinessWorkspaceList(
-    userRow.explicitBusinessWorkspaces ||
-      userRow.moduleMetadata?.businessWorkspaces ||
-      userRow.moduleMetadata?.business_workspaces,
-    [],
-  ).filter((id) => organisationIds.includes(id))
-  if (explicitIds.length) return explicitIds
+  const assignment = userRow.moduleMetadata?.businessWorkspaces ?? userRow.moduleMetadata?.business_workspaces ?? (userRow.explicitBusinessWorkspaces?.length ? userRow.explicitBusinessWorkspaces : null)
+  if (assignment != null) return normalizeBusinessWorkspaceList(assignment, []).filter((id) => organisationIds.includes(id))
   const departmentIds = normalizeBusinessWorkspaceList(
     userRow.departmentBusinessWorkspaces ||
       userRow.businessWorkspaces,
@@ -195,8 +182,7 @@ function getUserBusinessWorkspaceSourceLabel(userRow = {}) {
 
 function toBusinessWorkspaceAccessValue(workspaceIds = []) {
   const ids = normalizeBusinessWorkspaceList(workspaceIds, [])
-  if (ids.includes(BUSINESS_WORKSPACES.sales) && ids.includes(BUSINESS_WORKSPACES.rentals)) return 'sales_rentals'
-  return ids[0] || BUSINESS_WORKSPACES.sales
+  return ids.join('+')
 }
 
 function readInviteNavigationState(state = {}) {
@@ -210,8 +196,8 @@ function isPrincipalInviteRole(role = '') {
 function formatUserStatusLabel(userRow = {}) {
   if (userRow.isPrincipalClaim) {
     if (userRow.status === 'active') return 'Principal active'
-    if (userRow.status === 'pending') return 'Principal claim pending'
-    if (userRow.status === 'invited') return 'Principal claim sent'
+    if (userRow.status === 'pending') return 'Principal invitation pending'
+    if (userRow.status === 'invited') return 'Principal invitation sent'
   }
   return String(userRow.status || 'invited').replaceAll('_', ' ')
 }
@@ -250,6 +236,7 @@ function TeamAccessTable({
   onRoleChange,
   onJobTitleChange,
 }) {
+  const [view, setView] = useState('users')
   const visibleUsers = users.filter((user) => {
     const query = search.trim().toLowerCase()
     const matchesSearch = !query || [user.fullName, user.email].some((value) => String(value || '').toLowerCase().includes(query))
@@ -258,18 +245,19 @@ function TeamAccessTable({
 
   return (
     <section className="overflow-hidden rounded-[18px] border border-[#e1e8ef] bg-white shadow-[0_12px_34px_rgba(15,35,55,0.05)]">
-      <div className="border-b border-[#e7edf4] px-5 pt-5">
-        <div className="flex items-center gap-8">
-          <span className="inline-flex border-b-2 border-[#168451] pb-4 text-sm font-semibold text-[#162334]"><Users size={18} className="mr-2" />Users</span>
-          <span className="inline-flex pb-4 text-sm font-semibold text-[#718198]"><ShieldCheck size={18} className="mr-2" />Roles & permissions</span>
-        </div>
+      <div className="p-5 pb-0"><h2 className="text-lg font-medium text-[#162334]">Your team <span className="ml-2 text-sm font-normal text-[#718198]">{loading ? '' : `${users.length} members`}</span></h2><p className="mt-1 text-sm text-[#718198]">Select a member to manage their role, job title and access.</p></div>
+      <div className="mx-5 mt-5 grid grid-cols-2 gap-2 rounded-xl bg-[#f4f7fa] p-1.5" aria-label="Team sections">
+        {[['users', 'Team members'], ['roles', 'Roles & permissions']].map(([id, label]) => (
+          <button key={id} type="button" aria-pressed={view === id} onClick={() => setView(id)} className={`flex items-center justify-center gap-2 rounded-lg px-3 py-3 text-sm font-medium transition ${view === id ? 'bg-white text-[#167653] shadow-sm' : 'text-[#718198] hover:bg-white/60'}`}>{id === 'users' ? <Users size={18} /> : <ShieldCheck size={18} />}{label}</button>
+        ))}
       </div>
+      {view === 'roles' ? <div className="grid gap-4 p-5 md:grid-cols-2 xl:grid-cols-3">{roleOptions.map((option) => <div key={option.value} className="rounded-xl border border-[#e3eaf1] p-5"><h3 className="text-base font-medium text-[#162334]">{option.label}</h3><RolePermissionSummary role={option.value} workspaceType={workspaceType} /></div>)}</div> : <>
       <div className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
         <label className="flex w-full max-w-md items-center gap-3 rounded-xl border border-[#dfe7ef] px-3.5 py-2.5 text-[#718198]">
           <Search size={19} />
-          <input value={search} onChange={(event) => onSearchChange(event.target.value)} className="w-full bg-transparent text-sm text-[#162334] outline-none placeholder:text-[#93a1b5]" placeholder="Search team members" />
+          <input aria-label="Search team members" value={search} onChange={(event) => onSearchChange(event.target.value)} className="w-full bg-transparent text-sm text-[#162334] outline-none placeholder:text-[#93a1b5]" placeholder="Search team members" />
         </label>
-        <select value={roleFilter} onChange={(event) => onRoleFilterChange(event.target.value)} className="rounded-xl border border-[#dfe7ef] bg-white px-3.5 py-2.5 text-sm font-medium text-[#344054] outline-none">
+        <select aria-label="Filter by role" value={roleFilter} onChange={(event) => onRoleFilterChange(event.target.value)} className="rounded-xl border border-[#dfe7ef] bg-white px-3.5 py-2.5 text-sm font-medium text-[#344054] outline-none">
           <option value="">All roles</option>
           {roleOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
         </select>
@@ -286,8 +274,13 @@ function TeamAccessTable({
               {visibleUsers.map((user) => {
                 const summary = getOrganisationRolePermissionSummary(user.role, workspaceType)
                 return (
-                  <button key={user.id} type="button" onClick={() => onSelectUser(user)} className="grid w-full grid-cols-[1.45fr_0.72fr_1fr_0.72fr_36px] items-center gap-4 px-4 py-4 text-left transition hover:bg-[#f8fbfa] focus:bg-[#f8fbfa] focus:outline-none">
-                    <span className="min-w-0"><strong className="block truncate text-sm text-[#162334]">{user.fullName || user.email}</strong><span className="block truncate pt-0.5 text-sm text-[#718198]">{user.email}</span></span>
+                  <button key={user.id} type="button" onClick={() => onSelectUser(user)} className="grid w-full grid-cols-[1.45fr_0.72fr_1fr_0.72fr_36px] items-center gap-4 px-4 py-5 text-left transition hover:bg-[#f8fbfa] focus:bg-[#f8fbfa] focus:outline-none">
+                    <span className="flex min-w-0 items-center gap-3">
+                      <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-[#edf6f1] text-sm font-medium text-[#167653]">
+                        {user.avatarUrl ? <img src={user.avatarUrl} alt="" className="h-full w-full object-cover" /> : (user.fullName || user.email || '?').split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase()}
+                      </span>
+                      <span className="min-w-0"><strong className="block truncate text-sm font-medium text-[#162334]">{user.fullName || user.email}</strong><span className="block truncate pt-0.5 text-sm text-[#718198]">{user.email}</span>{user.jobTitle ? <span className="block pt-1 text-xs text-[#718198]">{getOrganisationMemberJobTitleLabel(user)}</span> : null}</span>
+                    </span>
                     <span><span className="inline-flex rounded-full border border-[#d9e4ef] bg-[#f7f9fb] px-2.5 py-1 text-xs font-semibold capitalize text-[#51657b]">{String(user.role || 'viewer').replaceAll('_', ' ')}</span></span>
                     <span className="text-sm text-[#637793]">{summary.scopeLabels.join(' · ') || 'No access'}</span>
                     <span><span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold capitalize ${user.status === 'active' ? 'border-[#ccead8] bg-[#f2fbf5] text-[#1f7a45]' : 'border-[#f3d9a8] bg-[#fff8ec] text-[#a16207]'}`}>{formatUserStatusLabel(user)}</span></span>
@@ -299,6 +292,7 @@ function TeamAccessTable({
           </div>
         </div>
       ) : null}
+      </>}
       {selectedUser ? (
         <div className="fixed inset-0 z-50 flex justify-end bg-[#132338]/20" role="presentation" onMouseDown={onCloseUser}>
           <aside className="h-full w-full max-w-[430px] overflow-y-auto bg-white p-6 shadow-[-20px_0_45px_rgba(15,35,55,0.16)]" role="dialog" aria-modal="true" aria-label={`${selectedUser.fullName || selectedUser.email} access`} onMouseDown={(event) => event.stopPropagation()}>
@@ -306,7 +300,7 @@ function TeamAccessTable({
             <div className="mt-7 space-y-5">
               <label className="grid gap-2 text-sm font-semibold text-[#51657b]"><span>Role</span>{canEdit ? <Field as="select" value={selectedUser.role} disabled={savingRoleUserId === selectedUser.id} onChange={(event) => onRoleChange(selectedUser.id, event.target.value)}>{roleOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</Field> : <span className="capitalize text-[#162334]">{String(selectedUser.role || '').replaceAll('_', ' ')}</span>}</label>
               <div className="rounded-xl border border-[#dfe9e3] bg-[#f7fbf8] p-4"><p className="text-sm font-semibold text-[#162334]">Permissions</p><RolePermissionSummary role={selectedUser.role} workspaceType={workspaceType} /></div>
-              <label className="grid gap-2 text-sm font-semibold text-[#51657b]"><span>Job title</span>{canManageJobTitles ? <Field as="select" value={selectedUser.jobTitle || ''} disabled={savingJobTitleUserId === selectedUser.id} onChange={(event) => onJobTitleChange(selectedUser.id, event.target.value)}>{ORGANISATION_JOB_TITLE_OPTIONS.map((option) => <option key={option.value || 'unassigned'} value={option.value}>{option.label}</option>)}</Field> : <span className="text-[#162334]">{getOrganisationJobTitleLabel(selectedUser.jobTitle, 'Not assigned')}</span>}</label>
+              <label className="grid gap-2 text-sm font-semibold text-[#51657b]"><span>Job title</span>{canManageJobTitles ? <Field as="select" value={selectedUser.jobTitle || ''} disabled={savingJobTitleUserId === selectedUser.id} onChange={(event) => onJobTitleChange(selectedUser.id, event.target.value)}>{ORGANISATION_JOB_TITLE_OPTIONS.map((option) => <option key={option.value || 'unassigned'} value={option.value}>{option.value ? option.label : `Use role title (${getOrganisationMemberJobTitleLabel({ role: selectedUser.role })})`}</option>)}</Field> : <span className="text-[#162334]">{getOrganisationMemberJobTitleLabel(selectedUser)}</span>}<span className="text-xs font-normal text-[#718198]">Uses their role when no separate title is set. Job titles do not change permissions.</span></label>
               <div className="rounded-xl bg-[#f4f7fa] p-4"><p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#718198]">Status</p><p className="mt-1 text-sm font-semibold capitalize text-[#162334]">{formatUserStatusLabel(selectedUser)}</p></div>
             </div>
           </aside>
@@ -325,11 +319,11 @@ function formatInviteDate(value = '') {
 
 function formatPrincipalClaimStatusLabel(invite = {}) {
   const status = String(invite?.status || '').trim()
-  if (status === 'active') return 'Claim completed'
-  if (status === 'pending_invite') return 'Claim pending'
-  if (status === 'revoked') return 'Claim revoked'
-  if (status === 'expired') return 'Claim expired'
-  return status ? status.replaceAll('_', ' ') : 'Principal claim'
+  if (status === 'active') return 'Accepted'
+  if (status === 'pending_invite') return 'Awaiting acceptance'
+  if (status === 'revoked') return 'Revoked'
+  if (status === 'expired') return 'Expired'
+  return status ? status.replaceAll('_', ' ') : 'Principal invitation'
 }
 
 function formatPrincipalClaimEventLabel(invite = {}) {
@@ -345,26 +339,6 @@ function getPrincipalClaimStatusClasses(status = '') {
   if (status === 'pending_invite') return 'border-[#f3d9a8] bg-[#fff8ec] text-[#a16207]'
   if (status === 'expired') return 'border-[#d7e3ef] bg-[#f8fbff] text-[#51657b]'
   return 'border-[#f6d4d4] bg-[#fff5f5] text-[#b42318]'
-}
-
-function formatCommercialAuditAction(action = '') {
-  const label = String(action || '')
-    .replace(/^commercial_/, '')
-    .replaceAll('_', ' ')
-    .trim()
-  return label ? label.charAt(0).toUpperCase() + label.slice(1) : 'Commercial access update'
-}
-
-function getCommercialAuditSubject(event = {}) {
-  const metadata = event.metadata || {}
-  return (
-    metadata.targetEmail ||
-    metadata.requesterEmail ||
-    metadata.targetUserId ||
-    metadata.requesterUserId ||
-    event.targetId ||
-    'Commercial workspace'
-  )
 }
 
 export default function SettingsUsersPage() {
@@ -407,16 +381,11 @@ export default function SettingsUsersPage() {
   const [commissionProfiles, setCommissionProfiles] = useState([])
   const [pendingPrincipalClaimInvites, setPendingPrincipalClaimInvites] = useState([])
   const [principalClaimInviteHistory, setPrincipalClaimInviteHistory] = useState([])
-  const [commercialAccessRequests, setCommercialAccessRequests] = useState([])
-  const [commercialAccessManagement, setCommercialAccessManagement] = useState({ organisationModuleStatus: null, users: [], auditEvents: [] })
   const [inviteForm, setInviteForm] = useState({ firstName: '', lastName: '', email: '', role: initialInviteRole, commissionStructureId: '', businessWorkspaces: [BUSINESS_WORKSPACES.sales] })
   const [organisationBusinessWorkspaceIds, setOrganisationBusinessWorkspaceIds] = useState([BUSINESS_WORKSPACES.sales])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [claimInviteBusyId, setClaimInviteBusyId] = useState('')
-  const [reviewingRequestId, setReviewingRequestId] = useState('')
-  const [savingCommercialModule, setSavingCommercialModule] = useState(false)
-  const [savingCommercialUserId, setSavingCommercialUserId] = useState('')
   const [savingRoleUserId, setSavingRoleUserId] = useState('')
   const [savingJobTitleUserId, setSavingJobTitleUserId] = useState('')
   const [savingBusinessAccessUserId, setSavingBusinessAccessUserId] = useState('')
@@ -481,7 +450,7 @@ export default function SettingsUsersPage() {
   )
   const showBusinessWorkspaceAccessControls = Boolean(
     usesAgencyGovernance &&
-      organisationBusinessWorkspaceIds.length > 1,
+      organisationBusinessWorkspaceIds.length > 0,
   )
 
   const loadOwnershipRemediationReport = useCallback(async () => {
@@ -544,14 +513,12 @@ export default function SettingsUsersPage() {
   const loadUsers = useCallback(async () => {
     try {
       setLoading(true)
-      const [response, context, structureRows, profileRows, principalClaimInvites, commercialRequests, commercialManagement, ownershipHealthReport] = await Promise.all([
+      const [response, context, structureRows, profileRows, principalClaimInvites, ownershipHealthReport] = await Promise.all([
         listOrganisationUsers(),
         fetchOrganisationSettings(),
         listOrganisationCommissionStructures(),
         listOrganisationUserCommissionProfiles(),
         canEdit ? listWorkspaceUserInvites({ includeInactive: true }).catch(() => []) : Promise.resolve([]),
-        listCommercialAccessRequests({ status: 'pending' }).catch(() => []),
-        listCommercialAccessManagementState().catch(() => ({ organisationModuleStatus: null, users: [], auditEvents: [] })),
         getOrganisationOwnershipHealthReport(currentWorkspace?.id).catch(() => null),
       ])
       setUsers(response)
@@ -575,8 +542,6 @@ export default function SettingsUsersPage() {
         .filter((invite) => invite?.isPrincipalClaimInvite)
       setPrincipalClaimInviteHistory(principalClaimInviteRows)
       setPendingPrincipalClaimInvites(principalClaimInviteRows.filter((invite) => invite.status === 'pending_invite'))
-      setCommercialAccessRequests(Array.isArray(commercialRequests) ? commercialRequests : [])
-      setCommercialAccessManagement(commercialManagement || { organisationModuleStatus: null, users: [], auditEvents: [] })
     } catch (loadError) {
       setError(loadError.message)
     } finally {
@@ -625,7 +590,7 @@ export default function SettingsUsersPage() {
       const currentIds = normalizeBusinessWorkspaceList(previous.businessWorkspaces, [])
         .filter((id) => organisationBusinessWorkspaceIds.includes(id))
       if (currentIds.length) return previous
-      return { ...previous, businessWorkspaces: [BUSINESS_WORKSPACES.sales] }
+      return { ...previous, businessWorkspaces: [organisationBusinessWorkspaceIds[0] || BUSINESS_WORKSPACES.sales] }
     })
   }, [organisationBusinessWorkspaceIds, showBusinessWorkspaceAccessControls])
 
@@ -661,15 +626,15 @@ export default function SettingsUsersPage() {
             branchName: inviteNavigationState.branchName || '',
             commissionStructureId: selectedCommissionStructure?.id || '',
             commissionStructureName: selectedCommissionStructure?.name || '',
-            businessWorkspaces: selectedBusinessWorkspaces.length ? selectedBusinessWorkspaces : [BUSINESS_WORKSPACES.sales],
+            businessWorkspaces: selectedBusinessWorkspaces.length ? selectedBusinessWorkspaces : [organisationBusinessWorkspaceIds[0] || BUSINESS_WORKSPACES.sales],
             source: inviteNavigationState.inviteSource || 'settings_users_invite',
           })
       setInviteForm({ firstName: '', lastName: '', email: '', role: 'agent', commissionStructureId: '', businessWorkspaces: [BUSINESS_WORKSPACES.sales] })
       await loadUsers()
       setMessage(
         inviteResult.reusedExistingInvite
-          ? principalInviteSelected ? 'Existing principal claim invite resent.' : 'Existing pending invite resent.'
-          : principalInviteSelected ? 'Principal claim invite sent.' : 'User invite sent.',
+          ? principalInviteSelected ? 'Existing principal invitation resent.' : 'Existing pending invite resent.'
+          : principalInviteSelected ? 'Principal invitation sent.' : 'User invite sent.',
       )
     } catch (saveError) {
       setError(saveError.message)
@@ -832,77 +797,18 @@ export default function SettingsUsersPage() {
     }
   }
 
-  async function handleCommercialAccessReview(requestId, decision) {
-    if (!canEdit) return
-    try {
-      setReviewingRequestId(requestId)
-      setError('')
-      const result = await reviewCommercialAccessRequest(requestId, { decision })
-      await loadUsers()
-      const requesterNotified = Number(result?.notificationResult?.notificationCount || 0) > 0
-      const requesterEmailed = Number(result?.notificationResult?.emailCount || 0) > 0
-      setMessage(
-        requesterEmailed
-          ? decision === 'approved'
-            ? 'Commercial access approved and requester emailed.'
-            : 'Commercial access request rejected and requester emailed.'
-          : requesterNotified
-          ? decision === 'approved'
-            ? 'Commercial access approved and requester notified.'
-            : 'Commercial access request rejected and requester notified.'
-          : decision === 'approved'
-            ? 'Commercial access approved.'
-            : 'Commercial access request rejected.',
-      )
-    } catch (saveError) {
-      setError(saveError.message)
-    } finally {
-      setReviewingRequestId('')
-    }
-  }
-
-  async function handleCommercialModuleToggle(enabled) {
-    if (!canEdit) return
-    try {
-      setSavingCommercialModule(true)
-      setError('')
-      await setCommercialOrganisationModuleEnabled(enabled)
-      await loadUsers()
-      setMessage(enabled ? 'Commercial module enabled for this organisation.' : 'Commercial module disabled for this organisation.')
-    } catch (saveError) {
-      setError(saveError.message)
-    } finally {
-      setSavingCommercialModule(false)
-    }
-  }
-
-  async function handleCommercialUserAccessChange(organisationUserId, enabled) {
-    if (!canEdit) return
-    try {
-      setSavingCommercialUserId(organisationUserId)
-      setError('')
-      await setCommercialUserAccess(organisationUserId, enabled)
-      await loadUsers()
-      setMessage(enabled ? 'Commercial access granted.' : 'Commercial access removed.')
-    } catch (saveError) {
-      setError(saveError.message)
-    } finally {
-      setSavingCommercialUserId('')
-    }
-  }
-
   async function handleCopyPrincipalClaimLink(invite) {
     const inviteLink = invite?.inviteLink || invite?.onboardingUrl || ''
     if (!inviteLink) {
-      setError('Principal claim link is not available for this invite.')
+      setError('Principal invitation link is not available for this invite.')
       return
     }
     try {
       await navigator.clipboard.writeText(inviteLink)
       setError('')
-      setMessage(`Principal claim link copied for ${invite.email}.`)
+      setMessage(`Principal invitation link copied for ${invite.email}.`)
     } catch {
-      setError('Unable to copy the principal claim link from this browser.')
+      setError('Unable to copy the principal invitation link from this browser.')
     }
   }
 
@@ -914,9 +820,9 @@ export default function SettingsUsersPage() {
       setMessage('')
       await resendWorkspaceUserInvite(invite)
       await loadUsers()
-      setMessage(`Principal claim resent to ${invite.email}.`)
+      setMessage(`Principal invitation resent to ${invite.email}.`)
     } catch (resendError) {
-      setError(resendError?.message || 'Unable to resend this principal claim.')
+      setError(resendError?.message || 'Unable to resend this principal invitation.')
     } finally {
       setClaimInviteBusyId('')
     }
@@ -924,7 +830,7 @@ export default function SettingsUsersPage() {
 
   async function handleRevokePrincipalClaimInvite(invite) {
     if (!canEdit || !invite?.id) return
-    const confirmed = window.confirm(`Revoke the pending principal claim for ${invite.email}?`)
+    const confirmed = window.confirm(`Revoke the pending principal invitation for ${invite.email}?`)
     if (!confirmed) return
     try {
       setClaimInviteBusyId(invite.id)
@@ -932,31 +838,20 @@ export default function SettingsUsersPage() {
       setMessage('')
       await revokeWorkspaceUserInvite(invite)
       await loadUsers()
-      setMessage(`Principal claim revoked for ${invite.email}.`)
+      setMessage(`Principal invitation revoked for ${invite.email}.`)
     } catch (revokeError) {
-      setError(revokeError?.message || 'Unable to revoke this principal claim.')
+      setError(revokeError?.message || 'Unable to revoke this principal invitation.')
     } finally {
       setClaimInviteBusyId('')
     }
   }
 
-  const commercialAccessByUserId = useMemo(() => {
-    const map = new Map()
-    for (const row of commercialAccessManagement.users || []) {
-      if (row.organisationUserId) map.set(row.organisationUserId, row)
-    }
-    return map
-  }, [commercialAccessManagement.users])
-
-  const commercialModuleActive = commercialAccessManagement.organisationModuleStatus?.enabled === true
-  const commercialAuditEvents = commercialAccessManagement.auditEvents || []
-
   return (
     <div className={settingsPageClass}>
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+      <div className="flex flex-col gap-4 rounded-[18px] border border-[#e1e8ef] bg-white p-6 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <p className="text-sm font-medium text-[#718198]">Settings / Team & access</p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-[-0.035em] text-[#142132]">Team & access</h1>
+          <p className="text-sm text-[#718198]">Organisation settings</p>
+          <h1 className="mt-2 text-2xl font-medium tracking-[-0.025em] text-[#142132]">Team & access</h1>
           <p className="mt-1 text-base text-[#6b7d93]">Invite your team and manage the access they need.</p>
         </div>
         {canEdit ? <Button type="button" onClick={() => setShowInvitePanel(true)}><UserPlus size={18} className="mr-2" />Invite user</Button> : null}
@@ -972,12 +867,12 @@ export default function SettingsUsersPage() {
       <SettingsSectionCard>
         {isPrincipalClaimInviteMode ? (
           <SettingsBanner tone="success">
-            Principal claim selected from Residential. This sends a claim link for the principal to start organisation onboarding, without granting principal access automatically.
+            Principal invitation selected from Residential. This sends an invitation link for the principal to start organisation onboarding, without granting principal access automatically.
           </SettingsBanner>
         ) : null}
         {!isPrincipalClaimInviteMode && usesAgencyGovernance && isPrincipalInviteRole(inviteForm.role) ? (
           <SettingsBanner tone="success">
-            Principal selected. Arch9 will send a principal claim link instead of granting principal access immediately.
+            Principal selected. Arch9 will send a principal invitation link instead of granting principal access immediately.
           </SettingsBanner>
         ) : null}
         <form className={settingsGridClass} onSubmit={handleInvite}>
@@ -1009,9 +904,9 @@ export default function SettingsUsersPage() {
             <span className="text-sm font-medium text-[#51657b]">Role</span>
             {principalInviteSelected ? (
               <>
-                <Field value="Principal claim invite" disabled />
+                <Field value="Principal invitation" disabled />
                 <span className="text-xs font-medium text-[#51657b]">
-                  The invited principal claims/onboards the organisation first; access approval happens in the claim flow.
+                  The invited principal invitations/onboards the organisation first; access approval happens in the claim flow.
                 </span>
               </>
             ) : (
@@ -1081,7 +976,7 @@ export default function SettingsUsersPage() {
             ) : null}
             {principalInviteSelected ? (
               <span className="text-xs font-medium text-[#51657b]">
-                Commission is assigned after the principal claim is completed and the membership is active.
+                Commission is assigned after the principal invitation is completed and the membership is active.
               </span>
             ) : null}
           </label>
@@ -1102,41 +997,38 @@ export default function SettingsUsersPage() {
       </SettingsSectionCard>
       </div></div> : null}
 
-      {canEdit && usesAgencyGovernance ? (
-        <SettingsSectionCard
-          title="Principal Claim Lifecycle"
-          description="Track claim links before acceptance, and keep completed claims visible after the principal finishes onboarding."
-        >
-          <div className="grid gap-3 sm:grid-cols-3">
-            <div className="rounded-2xl border border-[#e4ebf3] bg-white px-4 py-3">
-              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#8da0b6]">Pending</p>
-              <p className="mt-1 text-2xl font-semibold text-[#162334]">{pendingPrincipalClaimInvites.length}</p>
-            </div>
-            <div className="rounded-2xl border border-[#e4ebf3] bg-white px-4 py-3">
-              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#8da0b6]">Completed</p>
-              <p className="mt-1 text-2xl font-semibold text-[#162334]">
-                {principalClaimInviteHistory.filter((invite) => invite.status === 'active').length}
-              </p>
-            </div>
-            <div className="rounded-2xl border border-[#e4ebf3] bg-white px-4 py-3">
-              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#8da0b6]">Closed</p>
-              <p className="mt-1 text-2xl font-semibold text-[#162334]">
-                {principalClaimInviteHistory.filter((invite) => ['revoked', 'expired'].includes(invite.status)).length}
-              </p>
-            </div>
-          </div>
+      <TeamAccessTable
+        users={users}
+        loading={loading}
+        search={teamSearch}
+        onSearchChange={setTeamSearch}
+        roleFilter={teamRoleFilter}
+        onRoleFilterChange={setTeamRoleFilter}
+        roleOptions={workspaceRoleOptions}
+        selectedUser={users.find((user) => user.id === selectedTeamUser?.id) || null}
+        onSelectUser={setSelectedTeamUser}
+        onCloseUser={() => setSelectedTeamUser(null)}
+        workspaceType={resolvedWorkspaceType}
+        canEdit={canEdit}
+        canManageJobTitles={canManageJobTitles}
+        savingRoleUserId={savingRoleUserId}
+        savingJobTitleUserId={savingJobTitleUserId}
+        onRoleChange={handleRoleChange}
+        onJobTitleChange={handleJobTitleChange}
+      />
 
+      {canEdit && usesAgencyGovernance ? (
+        <details className="rounded-[18px] border border-[#e1e8ef] bg-white p-5">
+          <summary className="cursor-pointer text-base font-medium text-[#162334]">Principal invitations <span className="ml-2 text-sm font-normal text-[#718198]">{pendingPrincipalClaimInvites.length} pending · {principalClaimInviteHistory.length} total</span></summary>
+          <div className="mt-5 space-y-4">
           {principalClaimInviteHistory.some((invite) => invite.status === 'active') ? (
             <SettingsBanner tone="success">
-              A principal claim has been completed. The principal now appears as an active workspace user and commission setup can continue.
+              A principal has accepted their invitation. The principal now appears as an active workspace user and commission setup can continue.
             </SettingsBanner>
           ) : null}
 
           {!principalClaimInviteHistory.length ? (
-            <SettingsEmptyState
-              title="No principal claim lifecycle yet"
-              description="When you invite a principal, the claim link and its completion history will appear here."
-            />
+            <p className="text-sm text-[#718198]">No principal invitations yet. Invite a principal to track their onboarding here.</p>
           ) : (
             <div className="divide-y divide-[#e9eff5] overflow-hidden rounded-2xl border border-[#e4ebf3] bg-white">
               {principalClaimInviteHistory.map((invite) => {
@@ -1200,8 +1092,8 @@ export default function SettingsUsersPage() {
                       ) : (
                         <span className="text-sm text-[#8da0b6]">
                           {invite.status === 'active'
-                            ? 'Claim completed and linked to the active principal membership.'
-                            : 'Claim closed.'}
+                            ? 'Accepted and linked to the active principal membership.'
+                            : 'Invitation closed.'}
                         </span>
                       )}
                     </div>
@@ -1210,139 +1102,8 @@ export default function SettingsUsersPage() {
               })}
             </div>
           )}
-        </SettingsSectionCard>
-      ) : null}
-
-      {canEdit && commercialAccessRequests.length ? (
-        <SettingsSectionCard
-          title="Commercial access requests"
-          description="Approve agents who asked to use the Commercial workspace. Approval enables Commercial for the organisation if it is not active yet."
-        >
-          <div className="divide-y divide-[#e9eff5] overflow-hidden rounded-2xl border border-[#e4ebf3] bg-white">
-            {commercialAccessRequests.map((request) => (
-              <div key={request.id} className="grid gap-3 px-5 py-4 lg:grid-cols-[1.2fr_1.2fr_1fr] lg:items-center">
-                <div className="space-y-1">
-                  <p className="text-sm font-semibold text-[#162334]">{request.requesterName || request.requesterEmail}</p>
-                  <p className="text-sm text-[#51657b]">{request.requesterEmail}</p>
-                </div>
-                <div className="space-y-1">
-                  <span className="inline-flex rounded-full border border-[#f3d9a8] bg-[#fff8ec] px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#a16207]">
-                    Pending Commercial access
-                  </span>
-                  <p className="text-xs text-[#7b8da6]">
-                    Requested {request.createdAt ? new Date(request.createdAt).toLocaleDateString() : 'recently'}
-                  </p>
-                  {request.metadata?.last_nudged_at ? (
-                    <p className="text-xs text-[#7b8da6]">
-                      Last reminded {new Date(request.metadata.last_nudged_at).toLocaleDateString()}
-                      {request.metadata?.nudge_count ? ` · ${request.metadata.nudge_count} reminder${Number(request.metadata.nudge_count) === 1 ? '' : 's'}` : ''}
-                    </p>
-                  ) : null}
-                </div>
-                <div className="flex flex-wrap gap-2 lg:justify-end">
-                  <Button
-                    type="button"
-                    onClick={() => handleCommercialAccessReview(request.id, 'approved')}
-                    disabled={reviewingRequestId === request.id}
-                  >
-                    {reviewingRequestId === request.id ? 'Reviewing…' : 'Approve'}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={() => handleCommercialAccessReview(request.id, 'rejected')}
-                    disabled={reviewingRequestId === request.id}
-                  >
-                    Reject
-                  </Button>
-                </div>
-              </div>
-            ))}
           </div>
-        </SettingsSectionCard>
-      ) : null}
-
-      {canEdit ? (
-        <SettingsSectionCard
-          title="Commercial module access"
-          description="Control whether Commercial is enabled for the organisation and which users can open the Commercial workspace."
-        >
-          <div className="rounded-2xl border border-[#e4ebf3] bg-white px-5">
-            <SettingsToggleRow
-              title="Enable Commercial for this organisation"
-              description="When disabled, no user can open Commercial even if they have an assigned Commercial membership."
-              checked={commercialModuleActive}
-              disabled={savingCommercialModule}
-              onChange={handleCommercialModuleToggle}
-            />
-          </div>
-
-          <div className="divide-y divide-[#e9eff5] overflow-hidden rounded-2xl border border-[#e4ebf3] bg-white">
-            {(users || []).map((userRow) => {
-              const commercialAccess = commercialAccessByUserId.get(userRow.id)
-              const hasCommercialAccess = Boolean(commercialAccess?.hasCommercialAccess)
-              const savingUser = savingCommercialUserId === userRow.id
-              return (
-                <div key={`commercial-${userRow.id}`} className="grid gap-3 px-5 py-4 lg:grid-cols-[1.2fr_1fr_1fr] lg:items-center">
-                  <div className="space-y-1">
-                    <p className="text-sm font-semibold text-[#162334]">{userRow.fullName || userRow.email}</p>
-                    <p className="text-sm text-[#51657b]">{userRow.email}</p>
-                  </div>
-                  <div className="space-y-1">
-                    <span className={[
-                      'inline-flex rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.08em]',
-                      hasCommercialAccess ? 'border-[#ccead8] bg-[#f2fbf5] text-[#1f7a45]' : 'border-[#d7e3ef] bg-white text-[#51657b]',
-                    ].join(' ')}>
-                      {hasCommercialAccess ? 'Commercial assigned' : 'No Commercial access'}
-                    </span>
-                    {commercialAccess?.source ? (
-                      <p className="text-xs text-[#7b8da6]">Source: {commercialAccess.source.replaceAll('_', ' ')}</p>
-                    ) : null}
-                  </div>
-                  <div className="flex flex-wrap gap-2 lg:justify-end">
-                    <Button
-                      type="button"
-                      variant={hasCommercialAccess ? 'ghost' : 'secondary'}
-                      disabled={savingUser || userRow.status === 'deactivated'}
-                      onClick={() => handleCommercialUserAccessChange(userRow.id, !hasCommercialAccess)}
-                    >
-                      {savingUser ? 'Saving…' : hasCommercialAccess ? 'Remove Commercial' : 'Grant Commercial'}
-                    </Button>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-
-          <div className="overflow-hidden rounded-2xl border border-[#e4ebf3] bg-white">
-            <div className="border-b border-[#e9eff5] px-5 py-4">
-              <h3 className="text-sm font-semibold text-[#162334]">Recent Commercial access history</h3>
-              <p className="mt-1 text-sm text-[#51657b]">A short audit trail of Commercial requests, approvals, and manual access changes.</p>
-            </div>
-            {commercialAuditEvents.length ? (
-              <div className="divide-y divide-[#e9eff5]">
-                {commercialAuditEvents.map((event) => (
-                  <div key={event.id || `${event.action}-${event.createdAt}`} className="grid gap-2 px-5 py-4 lg:grid-cols-[1.1fr_1fr_0.8fr] lg:items-center">
-                    <div className="space-y-1">
-                      <p className="text-sm font-semibold text-[#162334]">{formatCommercialAuditAction(event.action)}</p>
-                      <p className="text-sm text-[#51657b]">{getCommercialAuditSubject(event)}</p>
-                    </div>
-                    <p className="text-sm text-[#51657b]">
-                      {event.metadata?.source ? `Source: ${String(event.metadata.source).replaceAll('_', ' ')}` : event.targetType?.replaceAll('_', ' ') || 'Commercial access'}
-                    </p>
-                    <p className="text-sm text-[#7b8da6] lg:text-right">
-                      {event.createdAt ? new Date(event.createdAt).toLocaleString() : 'Recently'}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="px-5 py-5">
-                <p className="text-sm text-[#51657b]">No Commercial access history yet.</p>
-              </div>
-            )}
-          </div>
-        </SettingsSectionCard>
+        </details>
       ) : null}
 
       {canManageOwnershipRemediation ? (
@@ -1449,25 +1210,7 @@ export default function SettingsUsersPage() {
         </SettingsSectionCard>
       ) : null}
 
-      <TeamAccessTable
-        users={users}
-        loading={loading}
-        search={teamSearch}
-        onSearchChange={setTeamSearch}
-        roleFilter={teamRoleFilter}
-        onRoleFilterChange={setTeamRoleFilter}
-        roleOptions={workspaceRoleOptions}
-        selectedUser={selectedTeamUser}
-        onSelectUser={setSelectedTeamUser}
-        onCloseUser={() => setSelectedTeamUser(null)}
-        workspaceType={resolvedWorkspaceType}
-        canEdit={canEdit}
-        canManageJobTitles={canManageJobTitles}
-        savingRoleUserId={savingRoleUserId}
-        savingJobTitleUserId={savingJobTitleUserId}
-        onRoleChange={handleRoleChange}
-        onJobTitleChange={handleJobTitleChange}
-      />
+
 
       <SettingsSectionCard className="hidden" title="Users" description="Manage role access for the current organisation workspace.">
         {loading ? <SettingsLoadingState label="Loading users…" compact /> : null}
@@ -1636,6 +1379,7 @@ export default function SettingsUsersPage() {
                         aria-label={`Business lines for ${userRow.fullName}`}
                         onChange={(event) => handleBusinessWorkspaceAccessChange(userRow, event.target.value)}
                       >
+                        {!businessWorkspaceIds.length ? <option value="" disabled>No enabled lines</option> : null}
                         {businessWorkspaceAccessOptions.map((option) => (
                           <option key={option.value} value={option.value}>
                             {option.label}
@@ -1646,7 +1390,7 @@ export default function SettingsUsersPage() {
                       <span className="text-sm text-[#51657b]">
                         {businessWorkspaceIds
                           .map((id) => BUSINESS_WORKSPACE_OPTIONS.find((option) => option.id === id)?.label || id)
-                          .join(' & ') || 'Sales'}
+                          .join(' & ') || 'No enabled lines'}
                       </span>
                     )}
                     {businessAccessSourceLabel && showBusinessWorkspaceAccessControls ? (
@@ -1702,7 +1446,7 @@ export default function SettingsUsersPage() {
                       {formatUserStatusLabel(userRow)}
                     </span>
                     {userRow.isPrincipalClaim ? (
-                      <span className="block text-xs font-medium text-[#7b8da6]">Principal claim flow</span>
+                      <span className="block text-xs font-medium text-[#7b8da6]">Principal invitation flow</span>
                     ) : null}
                   </div>
                   <div className="space-y-1">

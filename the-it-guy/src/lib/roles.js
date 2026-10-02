@@ -81,16 +81,17 @@ function createAgentPipelineNav() {
 const RENTAL_NAV = Object.freeze({
   [RENTAL_OPERATING_MODES.longTerm]: ({ canManageOrganisation = false, isBranchManager = false } = {}) => [
     { key: 'rental_dashboard', label: 'Dashboard', to: '/agent/rentals/long-term/dashboard', activeMatch: ['/agent/rentals/dashboard', '/agent/rentals/long-term/dashboard'] },
-    { key: 'rental_properties', label: 'Properties & units', to: '/agent/rentals/portfolio/properties', activeMatch: ['/agent/rentals/portfolio', '/agent/rentals/properties'] },
+    { key: 'rental_leads', label: 'Leads', to: '/agent/rentals/pipeline/leads', activeMatch: ['/agent/rentals/pipeline', '/agent/rentals/applications'] },
     { key: 'rental_listings', label: 'Listings', to: '/agent/rentals/listings', activeMatch: ['/agent/rentals/vacancies', '/agent/rentals/listings'] },
-    { key: 'rental_leads', label: 'Leads', to: '/agent/rentals/pipeline/leads', activeMatch: ['/agent/rentals/pipeline'] },
-    { key: 'rental_applications', label: 'Applications', to: '/agent/rentals/applications', activeMatch: ['/agent/rentals/applications'] },
+    { key: 'rental_clients', label: 'Clients', to: '/clients', activeMatch: ['/clients'] },
+    { key: 'rental_tenancies', label: 'Tenancies', to: '/agent/rentals/tenancies', activeMatch: ['/agent/rentals/tenancies'] },
     {
       key: 'rental_operations',
       label: 'Operations',
       to: '/agent/rentals/maintenance',
-      activeMatch: ['/agent/rentals/maintenance', '/agent/rentals/inspections', '/agent/rentals/financial-reconciliation', '/agent/rentals/reports'],
+      activeMatch: ['/agent/rentals/portfolio', '/agent/rentals/properties', '/agent/rentals/maintenance', '/agent/rentals/inspections', '/agent/rentals/financial-reconciliation', '/agent/rentals/reports'],
       children: [
+        { key: 'rental_properties', label: 'Properties & units', to: '/agent/rentals/portfolio/properties', activeMatch: ['/agent/rentals/portfolio', '/agent/rentals/properties'] },
         { key: 'rental_maintenance', label: 'Maintenance', to: '/agent/rentals/maintenance' },
         { key: 'rental_inspections', label: 'Inspections', to: '/agent/rentals/inspections' },
       ],
@@ -465,7 +466,7 @@ export function canManageAgentOrganisations({ role, baseRole = null, profile = n
   return hasOpenAgencyOperations({ appRole: normalizedRole, membershipRole, membershipStatus: membershipRole ? 'active' : '' })
 }
 
-export function getRoleNavItems(role, { baseRole = null, profile = null, membershipRole = null, currentMembership = null, businessWorkspace = BUSINESS_WORKSPACES.sales, rentalOperatingMode = RENTAL_OPERATING_MODES.longTerm } = {}) {
+export function getRoleNavItems(role, { baseRole = null, profile = null, membershipRole = null, currentMembership = null, businessWorkspace = BUSINESS_WORKSPACES.sales } = {}) {
   const items = getNavItemsForRole(role)
   const hqContext = { profile, membershipRole, currentMembership }
   const normalizedRole = normalizeAppRole(role || baseRole || '')
@@ -551,8 +552,8 @@ export function getRoleNavItems(role, { baseRole = null, profile = null, members
   const canManageOrganisation = canManageAgentOrganisations({ role, baseRole, profile, membershipRole })
   const isBranchManager = normalizedMembershipRole === 'branch_manager'
 
-  if (businessWorkspaceId === BUSINESS_WORKSPACES.rentals) {
-    return withHQNavItem(createAgentRentalsNavItems({ canManageOrganisation, isBranchManager, rentalOperatingMode }), hqContext)
+  if ([BUSINESS_WORKSPACES.rentals, BUSINESS_WORKSPACES.shortTermRentals].includes(businessWorkspaceId)) {
+    return withHQNavItem(createAgentRentalsNavItems({ canManageOrganisation, isBranchManager, rentalOperatingMode: businessWorkspaceId === BUSINESS_WORKSPACES.shortTermRentals ? 'short_term' : 'long_term' }), hqContext)
   }
 
   if (SUPPORT_MEMBERSHIP_ROLES.has(normalizedMembershipRole)) {

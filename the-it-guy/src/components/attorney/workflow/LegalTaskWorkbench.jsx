@@ -1,16 +1,21 @@
 import {
   AlertTriangle,
   ArrowRight,
+  ArrowLeft,
   CheckCircle2,
   ChevronRight,
   Circle,
   FileText,
+  ListChecks,
+  Info,
+  MessageSquare,
+  History,
   PanelLeftClose,
   PanelLeftOpen,
   Paperclip,
   MoreHorizontal,
 } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { createElement, useEffect, useMemo, useRef, useState } from 'react'
 import Button from '../../ui/Button.jsx'
 import Field from '../../ui/Field.jsx'
 import Modal from '../../ui/Modal.jsx'
@@ -177,6 +182,7 @@ export default function LegalTaskWorkbench({
   error = '',
   successMessage = '',
   onSelectTask,
+  onBackToStages,
   onRunAction,
   onOpenDocuments,
   onOpenDocumentLibrary,
@@ -610,15 +616,17 @@ export default function LegalTaskWorkbench({
       /> : null}
 
       <main
-        className="min-h-[560px] rounded-2xl border border-slate-200 bg-white shadow-[0_12px_28px_rgba(15,23,42,0.035)]"
+        className="legal-task-shell min-w-0 bg-white"
         aria-busy={saving}
       >
         <div className="flex min-h-[560px] flex-col">
-          <header className="flex shrink-0 flex-wrap items-center justify-between gap-4 px-5 pb-5 pt-6 lg:px-7">
+          <header className="legal-task-header flex shrink-0 flex-wrap items-center justify-between gap-5">
             <div className="min-w-0 flex-1">
-              <span className="text-xs font-bold uppercase tracking-[0.08em] text-slate-500">{focusedStage ? `Task ${taskIndex + 1} of ${activePhase?.tasks?.length || 1}` : `Stage ${phases.findIndex((phase) => phase.key === selectedPhaseKey) + 1} · ${activePhase?.label || model.phaseLabel}`}</span>
+              {onBackToStages ? <button type="button" className="legal-task-back" disabled={saving || answersDirty} title={answersDirty ? 'Save answers before returning to all stages' : undefined} onClick={onBackToStages}><ArrowLeft size={16} aria-hidden="true" /> All stages</button> : null}
+              <div className="legal-task-eyebrow"><ListChecks size={15} aria-hidden="true" /><span>{activePhase?.label || model.phaseLabel || model.workflowLabel}</span>{focusedStage ? <span className="legal-task-order">Task {taskIndex + 1} of {activePhase?.tasks?.length || 1} in this stage</span> : null}</div>
               <h2 className="mt-2 min-w-0 text-2xl font-semibold leading-tight tracking-[-0.025em] text-slate-950 sm:text-3xl">{model.taskLabel}</h2>
-              {!focusedStage && model.taskDescription ? <p className="mt-2 max-w-2xl text-sm leading-5 text-slate-600">{model.taskDescription}</p> : null}
+              {model.taskDescription ? <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">{model.taskDescription}</p> : null}
+              <div className="legal-task-meta" aria-label="Task status and owner"><span className={`legal-task-status ${model.taskResolved ? 'is-resolved' : ''}`}><span aria-hidden="true" />{model.statusLabel || String(model.status || 'Not started').replaceAll('_', ' ')}</span>{model.ownerLabel ? <span>{model.ownerLabel}</span> : null}</div>
             </div>
             {focusedStage ? <div className="flex flex-wrap items-center gap-2">
               {onPublishJourneyUpdate ? <Button type="button" variant="secondary" size="sm" disabled={!canPublishJourneyUpdate || !journeyStageKey} onClick={openJourneyPublisher}>Add stage update</Button> : null}
@@ -634,13 +642,14 @@ export default function LegalTaskWorkbench({
             {focusedStage && answersDirty ? <p role="status" className="w-full text-xs text-amber-800">Save your confirmation answers before changing task status or moving to another task.</p> : null}
           </header>
 
-          <div className={focusedStage ? 'grid flex-1 lg:grid-cols-[minmax(0,1fr)_320px]' : 'flex-1'}>
+          <div className="flex-1 min-w-0">
           <div className="min-w-0">
-          {focusedStage ? <nav className="flex gap-1 overflow-x-auto border-y border-slate-200 px-5 lg:px-7" aria-label="Task sections">{[
-            ['checklist', 'Checklist'], ['details', 'Details'], ['documents', `Documents (${model.documents.length})`], ['notes', `Notes (${model.notes.length})`], ['activity', 'Activity'],
-          ].map(([key, label]) => <button key={key} type="button" aria-current={activeTab === key ? 'page' : undefined} onClick={() => setActiveTab(key)} className={`min-h-11 shrink-0 border-b-2 px-3 text-sm font-medium transition ${activeTab === key ? 'border-emerald-700 text-emerald-800' : 'border-transparent text-slate-600 hover:text-slate-950'}`}>{label}</button>)}</nav> : null}
-          <div className="min-h-0 flex-1 px-5 py-5 lg:px-7">
+          {focusedStage ? <nav className="legal-task-tabs" aria-label="Task sections">{[
+            ['checklist', 'Checklist', ListChecks], ['details', 'Details', Info], ['documents', 'Documents', Paperclip, model.documents.length], ['notes', 'Notes', MessageSquare, model.notes.length], ['activity', 'Activity', History],
+          ].map(([key, label, Icon, count]) => <button key={key} type="button" aria-label={count === undefined ? label : `${label} (${count})`} aria-current={activeTab === key ? 'page' : undefined} onClick={() => setActiveTab(key)} className={`legal-task-tab ${activeTab === key ? 'is-active' : ''}`}>{createElement(Icon, { size: 16, 'aria-hidden': true })}<span>{label}{count !== undefined ? <> <span className="legal-task-tab-count">({count})</span></> : null}</span></button>)}</nav> : null}
+          <div className="legal-task-content min-h-0 flex-1">
             <div hidden={focusedStage && activeTab !== 'details'} className="space-y-4">
+            {taskMeta?.completedByName || taskMeta?.completedAt ? <div className="rounded-xl border border-emerald-100 bg-emerald-50/50 p-4 text-sm text-emerald-900"><CheckCircle2 size={17} className="mr-2 inline" aria-hidden="true" />Completed{taskMeta.completedByName ? ` by ${taskMeta.completedByName}` : ''}{taskMeta.completedAt ? ` · ${new Date(taskMeta.completedAt).toLocaleString('en-ZA')}` : ''}</div> : null}
             {model.stageTwoParties?.length ? <section className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3" aria-label="Parties in this task">
               <div className="flex flex-wrap items-center justify-between gap-2"><div><h3 className="text-sm font-semibold text-slate-900">People and entities in this review</h3><p className="mt-0.5 text-xs text-slate-600">Evidence and capacity decisions must belong to the named party.</p></div><Button type="button" variant="secondary" size="sm" onClick={() => onOpenRoutingProfile?.()} disabled={!onOpenRoutingProfile}>Review party details</Button></div>
               <div className="mt-3 grid gap-2 sm:grid-cols-2">{model.stageTwoParties.map(party => <div key={party.id} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"><strong className="block text-slate-900">{party.name}</strong><span className="text-xs capitalize text-slate-600">{party.entityType.replaceAll('_', ' ')} · {party.status}</span>{party.signatories.length ? <span className="mt-1 block text-xs text-slate-600">Signatories: {party.signatories.join(', ')}</span> : null}{party.staleApproval ? <span role="alert" className="mt-1 block text-xs font-semibold text-amber-800">Previous approval is stale after a party or signatory change. Review again.</span> : party.specialistHold ? <span role="alert" className="mt-1 block text-xs font-semibold text-amber-800">Specialist capacity hold and attorney review required.</span> : null}</div>)}</div>
@@ -696,12 +705,13 @@ export default function LegalTaskWorkbench({
             {!model.stageTwoParties?.length && !model.financialPreparation && !model.securityReview && !model.lodgementReview && !model.closureReview && !model.contextualActions?.length ? <p className="text-sm text-slate-500">Task details and related matter facts appear here when available.</p> : null}
             </div>
             <div hidden={focusedStage && activeTab !== 'checklist'}>
-            {onSaveConfirmations ? <TaskConfirmations key={`${model.lane || ''}:${model.taskKey}`} taskKey={model.taskKey} items={confirmationItems} saved={model.confirmations || {}} compact={focusedStage} disabled={!canEdit || model.taskResolved} onSave={saveConfirmationRows} onDirtyChange={handleAnswersDirtyChange} onRunAction={action => runAction(action, 'confirmation')} renderRowDetails={renderConfirmationRowDetails} /> : null}
+            {focusedStage && !confirmationItems.length && !isBondCancellationConfirmation ? <div className="legal-task-empty"><ListChecks size={28} aria-hidden="true" /><h3>No confirmations for this task</h3><p>Review the task details and supporting documents to continue.</p><Button type="button" variant="secondary" size="sm" onClick={() => setActiveTab('details')}>View task details</Button></div> : null}
+            {onSaveConfirmations ? <TaskConfirmations key={`${model.lane || ''}:${model.taskKey}`} taskKey={model.taskKey} items={confirmationItems} saved={model.confirmations || {}} compact={focusedStage} title={model.transferInstructionTask ? 'Instruction record' : model.transferOtpSourceTask ? 'Source document review' : model.transferMatterOpeningTask ? 'Matter setup' : 'Task checklist'} disabled={!canEdit || model.taskResolved} onSave={saveConfirmationRows} onDirtyChange={handleAnswersDirtyChange} onRunAction={action => runAction(action, 'confirmation')} renderRowDetails={renderConfirmationRowDetails} /> : null}
             {!onSaveConfirmations && isBondCancellationConfirmation ? <section className="rounded-xl border border-slate-200 p-4"><h3 className="text-lg font-semibold text-slate-950">Confirmations</h3>{[['existingBond', 'Existing bond confirmed'], ['cancellationInstruction', 'Cancellation instructions confirmed']].map(([key, label]) => <div key={key} className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-3"><span className="text-sm text-slate-800">{label}</span><div className="flex gap-2">{[['yes', 'Yes'], ['no', 'No'], ['not_applicable', 'Not applicable']].map(([value, choice]) => <Button key={value} type="button" variant={taskResponses[key] === value ? 'primary' : 'secondary'} size="sm" disabled={!canEdit} onClick={() => void saveTaskResponses({ ...taskResponses, [key]: value })}>{choice}</Button>)}</div></div>)}</section> : null}
             </div>
 
             <div hidden={focusedStage && activeTab !== 'documents'}>
-            <section className="mt-4 overflow-hidden rounded-xl border border-slate-200">
+            <section className="legal-task-document-panel overflow-hidden rounded-xl border border-slate-200 bg-white">
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
                 <h3 className="text-lg font-semibold text-slate-950">Supporting documents</h3>
                 <div className="flex flex-wrap gap-2">
@@ -716,8 +726,8 @@ export default function LegalTaskWorkbench({
               </div>
             </section>
             </div>
-            {focusedStage ? <div hidden={activeTab !== 'notes'} className="space-y-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-base font-semibold text-slate-950">Task notes</h3><p className="mt-1 text-sm text-slate-500">Notes about this task stay with the matter history.</p></div>{!model.readOnly ? <Button type="button" variant="secondary" size="sm" onClick={() => runAction({ id: 'add_note' }, 'task')}>Add note</Button> : null}</div>{model.notes.length ? model.notes.map((note, index) => <article key={note.id || index} className="border-t border-slate-200 py-3 text-sm"><p className="text-slate-800">{note.message || note.body || note.text || note.title || 'Task note'}</p><p className="mt-1 text-xs text-slate-500">{note.actorName || note.createdByName || note.author || 'Matter team'}{note.createdAt || note.timestamp ? ` · ${new Date(note.createdAt || note.timestamp).toLocaleString('en-ZA')}` : ''}</p></article>) : <p className="text-sm text-slate-500">No task notes yet.</p>}</div> : null}
-            {focusedStage ? <div hidden={activeTab !== 'activity'} className="space-y-3"><h3 className="text-base font-semibold text-slate-950">Task activity</h3>{model.activity.length ? model.activity.map((event, index) => <article key={event.id || index} className="border-t border-slate-200 py-3 text-sm"><strong className="text-slate-900">{event.title || event.action || event.eventType || 'Matter update'}</strong><p className="mt-1 text-slate-600">{event.message || event.body || ''}</p><p className="mt-1 text-xs text-slate-500">{event.actorName || event.createdByName || event.author || 'Matter team'}{event.createdAt || event.timestamp ? ` · ${new Date(event.createdAt || event.timestamp).toLocaleString('en-ZA')}` : ''}</p></article>) : <p className="text-sm text-slate-500">No task activity recorded yet.</p>}</div> : null}
+            {focusedStage ? <div hidden={activeTab !== 'notes'} className="legal-task-records space-y-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-base font-semibold text-slate-950">Task notes</h3><p className="mt-1 text-sm text-slate-500">Notes about this task stay with the matter history.</p></div>{!model.readOnly ? <Button type="button" variant="secondary" size="sm" onClick={() => runAction({ id: 'add_note' }, 'task')}>Add note</Button> : null}</div>{model.notes.length ? model.notes.map((note, index) => <article key={note.id || index} className="border-t border-slate-200 py-3 text-sm"><p className="text-slate-800">{note.message || note.body || note.text || note.title || 'Task note'}</p><p className="mt-1 text-xs text-slate-500">{note.actorName || note.createdByName || note.author || 'Matter team'}{note.createdAt || note.timestamp ? ` · ${new Date(note.createdAt || note.timestamp).toLocaleString('en-ZA')}` : ''}</p></article>) : <div className="legal-task-empty"><MessageSquare size={28} aria-hidden="true" /><h4>No task notes yet</h4><p>Keep useful context and follow-ups together here.</p></div>}</div> : null}
+            {focusedStage ? <div hidden={activeTab !== 'activity'} className="legal-task-records space-y-3"><h3 className="text-base font-semibold text-slate-950">Task activity</h3>{model.activity.length ? model.activity.map((event, index) => <article key={event.id || index} className="border-t border-slate-200 py-3 text-sm"><strong className="text-slate-900">{event.title || event.action || event.eventType || 'Matter update'}</strong><p className="mt-1 text-slate-600">{event.message || event.body || ''}</p><p className="mt-1 text-xs text-slate-500">{event.actorName || event.createdByName || event.author || 'Matter team'}{event.createdAt || event.timestamp ? ` · ${new Date(event.createdAt || event.timestamp).toLocaleString('en-ZA')}` : ''}</p></article>) : <div className="legal-task-empty"><History size={28} aria-hidden="true" /><h4>No task activity recorded yet</h4><p>Task updates will appear here as work progresses.</p></div>}</div> : null}
           </div>
 
           {!focusedStage ? <footer className="shrink-0 border-t border-slate-200 bg-slate-50/75 px-5 py-3.5 lg:px-6">
@@ -768,11 +778,10 @@ export default function LegalTaskWorkbench({
             </div> : null}
           </footer> : null}
           </div>
-          {focusedStage ? <aside className="space-y-4 border-t border-slate-200 bg-slate-50/30 p-4 lg:border-l lg:border-t-0" aria-label="Task context">
-            <section className="rounded-xl border border-slate-200 bg-white p-4"><h3 className="text-sm font-semibold text-slate-950">Task information</h3><dl className="mt-4 grid grid-cols-[100px_1fr] gap-x-3 gap-y-3 text-xs"><dt className="text-slate-500">Stage</dt><dd className="font-medium text-slate-800">{activePhase?.label || model.phaseLabel}</dd><dt className="text-slate-500">Task order</dt><dd className="font-medium text-slate-800">{taskIndex + 1} of {activePhase?.tasks?.length || 1}</dd><dt className="text-slate-500">Status</dt><dd className="font-medium text-slate-800">{model.statusLabel || model.status}</dd>{taskMeta?.completedByName ? <><dt className="text-slate-500">Completed by</dt><dd className="font-medium text-slate-800">{taskMeta.completedByName}</dd></> : null}{taskMeta?.completedAt ? <><dt className="text-slate-500">Completed on</dt><dd className="font-medium text-slate-800">{new Date(taskMeta.completedAt).toLocaleString('en-ZA')}</dd></> : null}{model.ownerLabel ? <><dt className="text-slate-500">Assigned role</dt><dd className="font-medium text-slate-800">{model.ownerLabel}</dd></> : null}</dl></section>
-            {model.taskDescription ? <section className="rounded-xl border border-emerald-100 bg-emerald-50/70 p-4"><h3 className="text-sm font-semibold text-slate-950">Task guidance</h3><p className="mt-2 text-sm leading-6 text-slate-600">{model.taskDescription}</p></section> : null}
-            {followingPhase || nextStageTask ? <section className="rounded-xl border border-slate-200 bg-white p-4"><h3 className="text-sm font-semibold text-slate-950">Next step</h3><p className="mt-3 text-sm font-semibold text-slate-900">{nextStageTask?.label || followingPhase?.label}</p><p className="mt-1 text-xs text-slate-500">{nextStageTask ? 'Continue to the next task in this stage.' : activePhase?.status === 'completed' ? 'Continue to the next stage.' : 'Complete this stage to continue.'}</p><Button type="button" variant="accent" size="sm" className="mt-4 w-full" disabled={!continuationTask || saving || answersDirty} title={answersDirty ? 'Save answers before continuing' : undefined} onClick={() => onSelectTask?.(continuationTask.key)}>Go to next task <ArrowRight size={15} /></Button></section> : null}
-          </aside> : null}
+          {focusedStage && (nextStageTask || followingPhase) ? <footer className="legal-task-continuation">
+            <div className="min-w-0"><span className="legal-task-eyebrow">{nextStageTask ? 'Up next in this stage' : 'Next stage'}</span><p className="mt-1 text-sm font-semibold text-slate-900">{nextStageTask?.label || followingPhase?.label}</p>{answersDirty ? <p className="mt-1 text-xs text-amber-800">Save your answers before continuing.</p> : !continuationTask ? <p className="mt-1 text-xs text-slate-500">Complete this stage to continue.</p> : null}</div>
+            <Button type="button" variant="secondary" size="sm" disabled={!continuationTask || saving || answersDirty} title={answersDirty ? 'Save answers before continuing' : undefined} onClick={() => onSelectTask?.(continuationTask.key)}>Go to next task <ArrowRight size={15} /></Button>
+          </footer> : null}
           </div>
         </div>
       </main>

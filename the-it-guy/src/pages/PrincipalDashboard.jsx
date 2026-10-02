@@ -16,7 +16,6 @@ import {
   Landmark,
   LayoutGrid,
   LineChart,
-  Loader2,
   MoreHorizontal,
   ShieldAlert,
   ShieldCheck,
@@ -35,16 +34,14 @@ import {
   ResidentialCommandCenterGrid,
   ResidentialDashboardModeToggle,
 } from '../components/residential/ResidentialDashboard'
-import HomeSeekersFicTrainingPanel from '../components/training/HomeSeekersFicTrainingPanel'
+import FicTrainingPanel from '../components/training/FicTrainingPanel'
 import PartnerBusinessDistributionPanel from '../components/dashboard/PartnerBusinessDistributionPanel'
-import { useOrganisation } from '../context/OrganisationContext'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { canAccessPrincipalExperience } from '../lib/organisationAccess'
 import { fetchOrganisationSettings } from '../lib/settingsApi'
 import { getPrincipalDashboardData, PRINCIPAL_DASHBOARD_DATE_PRESETS } from '../services/principalDashboardService'
 import { deriveResidentialDashboardMetrics } from '../services/residentialDashboardService'
 import { resolveWorkspaceRole } from '../services/roleResolutionService'
-import { isHomeSeekersOrganisation } from '../services/homeSeekersFicTrainingService'
 import {
   DASHBOARD_PERFORMANCE_METRICS,
   createDashboardPerformanceTrace,
@@ -2259,7 +2256,7 @@ function TransactionsAwaitingReview({ rows = [], total = 0, onViewAll, onOpenTra
   )
 }
 
-function PrincipalPremiumCommandCenter({ data, mode = 'sales', dataScope = 'company', profile, dateRange = 'last_30_days', branchId = '', trainingPanel = null, onViewTransactions, onOpenTransaction, onViewCalendar, onOpenCalendar, onManageAppointment, onOpenAppointment, onScheduleAppointment }) {
+function PrincipalPremiumCommandCenter({ data, mode = 'sales', dataScope = 'company', profile, dateRange = 'last_30_days', branchId = '', trainingPanel = null, digitalCardPanel = null, onViewTransactions, onOpenTransaction, onViewCalendar, onOpenCalendar, onManageAppointment, onOpenAppointment, onScheduleAppointment }) {
   const dashboardScope = dataScope === 'agent' ? 'agent' : 'principal'
   const commissionTracker = (() => {
     const tracker = dashboardScope === 'agent'
@@ -2301,6 +2298,8 @@ function PrincipalPremiumCommandCenter({ data, mode = 'sales', dataScope = 'comp
         appointmentRefreshKey={`${data?.meta?.agencyId || ''}:${dateRange}:${mode}:${branchId}:${dashboardScope}`}
         commissionTracker={commissionTracker}
         trainingPanel={trainingPanel}
+        digitalCardPanel={digitalCardPanel}
+        partnerDistributionPanel={dashboardScope !== 'agent' ? <PartnerBusinessDistributionPanel distribution={data?.partnerBusinessDistribution} scope="principal" /> : null}
         onViewTransactions={onViewTransactions}
         onOpenTransaction={onOpenTransaction}
         afterActiveTransactions={
@@ -2317,12 +2316,11 @@ function PrincipalPremiumCommandCenter({ data, mode = 'sales', dataScope = 'comp
         onOpenAppointment={onOpenAppointment}
         onScheduleAppointment={onScheduleAppointment}
       />
-      {dashboardScope !== 'agent' ? <PartnerBusinessDistributionPanel distribution={data?.partnerBusinessDistribution} scope="principal" /> : null}
     </>
   )
 }
 
-function PrincipalDashboard({ agencyId = '', workspaceId = '', canViewAllTransactions: canViewAllTransactionsOverride }) {
+function PrincipalDashboard({ agencyId = '', workspaceId = '', digitalCardPanel = null, canViewAllTransactions: canViewAllTransactionsOverride }) {
   const {
     profile,
     currentMembership,
@@ -2332,7 +2330,6 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '', canViewAllTransac
     workspaceDegradedMessage,
     retryWorkspaceBootstrap,
   } = useWorkspace()
-  const { organisation } = useOrganisation()
   const navigate = useNavigate()
   const location = useLocation()
   const [dateRange, setDateRange] = useState('last_30_days')
@@ -2532,7 +2529,6 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '', canViewAllTransac
     ],
     [],
   )
-  const lastUpdated = useMemo(() => formatTimestamp(data?.meta?.lastUpdatedAt), [data?.meta?.lastUpdatedAt])
   const isInitialLoading = loading && !data
   const isRefreshing = loading && data
 
@@ -2634,13 +2630,15 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '', canViewAllTransac
               profile={profile}
               dateRange={dateRange}
               branchId={selectedWorkspaceId}
-              trainingPanel={isHomeSeekersOrganisation(organisation) ? (
-                <HomeSeekersFicTrainingPanel
+              digitalCardPanel={digitalCardPanel}
+              trainingPanel={(
+                <FicTrainingPanel
+                  key={resolvedAgencyId}
                   organisationId={resolvedAgencyId}
                   userId={String(currentMembership?.userId || currentMembership?.user_id || profile?.userId || profile?.id || '').trim()}
                   isPrincipal
                 />
-              ) : null}
+              )}
               onViewTransactions={() => navigate('/transactions')}
               onOpenTransaction={(record) => {
                 if (record?.id) navigate(`/transactions/${record.id}`)
@@ -2651,10 +2649,6 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '', canViewAllTransac
               onOpenAppointment={() => navigate('/pipeline/calendar')}
               onScheduleAppointment={() => navigate('/pipeline/calendar')}
             />
-            <p className="pb-2 text-center text-xs text-[#667085]">
-              <Loader2 size={12} className="mr-1 inline-block" />
-              Data last updated: {lastUpdated || 'just now'}
-            </p>
           </div>
         ) : null}
       </div>

@@ -1,3 +1,4 @@
+import { buildRentalPortalMapping, appendRentalPortalDescription, rentalListingPortalFacts } from '../../src/services/rentals/rentalPortalFieldContract.js'
 import {
   escapePrivatePropertyXml,
   normalizePrivatePropertyText,
@@ -10,6 +11,7 @@ import {
 import { buildListingAddressFingerprint } from './listingPortalAddressProtectionService.js'
 import { resolveListingPortalVideo } from './listingPortalVideo.js'
 import { resolveListingFeature } from '../../src/services/listings/listingFeatureCatalog.js'
+import { resolveListingLandArea } from './listingLandArea.js'
 
 export function normalizePrivatePropertyListingKey(value = '') {
   return normalizePrivatePropertyText(value)
@@ -134,7 +136,7 @@ export function resolvePrivatePropertyCategory(value = '') {
   const key = normalizePrivatePropertyListingKey(value)
   if (['commercial', 'commercial_property', 'office', 'offices', 'retail', 'industrial', 'warehouse', 'factory', 'shop', 'mixed_use'].includes(key)) return 'Commercial'
   if (['farm', 'farms', 'agricultural', 'agriculture', 'smallholding', 'small_holding', 'farm_with_house', 'farm_land', 'agricultural_holding', 'commercial_farm', 'game_farm'].includes(key)) return 'Farms'
-  if (['land', 'vacant_land', 'plot', 'stand', 'residential_land', 'commercial_land'].includes(key)) return 'Land'
+  if (['land', 'vacant_land', 'vacant_land_plot', 'vacant_stand', 'plot', 'stand', 'residential_land', 'commercial_land'].includes(key)) return 'Land'
   return 'Residential'
 }
 
@@ -295,7 +297,7 @@ function resolvePrivatePropertySpecialistCategory(listing = {}, publication = {}
   const key = normalizePrivatePropertyListingKey(value)
   if (['industrial', 'warehouse', 'factory'].includes(key)) return 'industrial'
   if (['farm', 'farms', 'agricultural', 'agriculture', 'smallholding', 'small_holding', 'farm_with_house', 'farm_land', 'agricultural_holding', 'commercial_farm', 'game_farm'].includes(key)) return 'agricultural'
-  if (['land', 'vacant_land', 'plot', 'stand', 'residential_land', 'commercial_land'].includes(key)) return 'land'
+  if (['land', 'vacant_land', 'vacant_land_plot', 'vacant_stand', 'plot', 'stand', 'residential_land', 'commercial_land'].includes(key)) return 'land'
   if (['commercial', 'commercial_property', 'office', 'offices', 'retail', 'shop', 'mixed_use'].includes(key)) return 'commercial'
   return ''
 }
@@ -356,6 +358,10 @@ function splitStreetAddress(address = '') {
   const text = normalizePrivatePropertyText(address)
   if (!text) return { streetNumber: '', streetName: '' }
   const line = text.split(',')[0].trim()
+  // Rural portions do not have a conventional street number. Preserve the
+  // supplied portion identifier for PP's mandatory StreetNumber field.
+  const portion = line.match(/^(?:portion|ptn)\s+(\d+[A-Za-z]?)\s+(?:of\s+)?(.+)$/i)
+  if (portion) return { streetNumber: `Ptn ${portion[1]}`, streetName: portion[2] }
   const match = line.match(/^(\d+[A-Za-z]?(?:[-/]\d+[A-Za-z]?)?)\s+(.+)$/)
   if (!match) return { streetNumber: '', streetName: line }
   return {
@@ -493,6 +499,9 @@ function resolveBusinessType(value = '') {
     offices: 'Offices',
     commercial: 'Commercial',
     industrial: 'Industrial',
+    warehouse: 'Industrial',
+    factory: 'Industrial',
+    showroom: 'Retail',
     retail: 'Retail',
     shop: 'Retail',
     hotel: 'Hotel',
@@ -511,6 +520,7 @@ function resolveFarmType(value = '') {
   const key = normalizePrivatePropertyListingKey(value)
   const map = {
     small_holding: 'Small Holding',
+    smallholding: 'Small Holding',
     farm_with_house: 'Farm with house',
     farm_land: 'Farm Land',
     agricultural_holding: 'Agricultural Holding',
@@ -561,8 +571,11 @@ function buildAttributes({ listing = {}, publication = {}, category = 'Residenti
     addAttribute(attributes, 'Bedrooms', features.bedrooms)
     addAttribute(attributes, 'Bathrooms', features.bathrooms)
   }
-  if (category === 'Residential' || category === 'Farms') {
-    addAttribute(attributes, 'HomeType', resolveHomeType(propertyType))
+  if (category === 'Residential') addAttribute(attributes, 'HomeType', resolveHomeType(propertyType))
+  // A farm's dwelling type is independent of FarmType; never send 'Farm' as HomeType.
+  if (category === 'Farms') {
+    const homeType = resolveHomeType(propertyType)
+    if (['Duplex', 'Apartment', 'House', 'Cluster', 'Simplex', 'Garden Cottage', 'Duet', 'Townhouse', 'Flat', 'Bachelor Apartment', 'Loft', 'Penthouse', 'Studio Apartment'].includes(homeType)) addAttribute(attributes, 'HomeType', homeType)
   }
 
   if (category === 'Commercial') {
@@ -587,7 +600,7 @@ function buildAttributes({ listing = {}, publication = {}, category = 'Residenti
     specialistCategory === 'commercial' ? specialistFacts.grossLettableArea : null,
     specialistCategory === 'industrial' ? specialistFacts.warehouseOrFactoryArea : null,
   ))
-  addAttribute(attributes, 'LandArea', firstNumber(
+  addAttribute(attributes, 'LandArea', category === 'Land' ? resolveListingLandArea({ listing, publication, specialistFacts }).squareMetres : firstNumber(
     publication.erf_size,
     publication.erfSize,
     publication.land_size,
@@ -680,7 +693,7 @@ export function buildPrivatePropertyListingXml(plan = {}) {
     rentalPriceTypeXml,
     `<ListingDate>${escapePrivatePropertyXml(toPrivatePropertyDateTime(payload.listingDate))}</ListingDate>`,
     `<ExpiryDate>${escapePrivatePropertyXml(toPrivatePropertyDateTime(payload.expiryDate))}</ExpiryDate>`,
-    `<AvailableFrom>${escapePrivatePropertyXml(toPrivatePropertyDateTime(payload.availableFrom))}</AvailableFrom>`,
+    payload.availableFrom ? `<AvailableFrom>${escapePrivatePropertyXml(toPrivatePropertyDateTime(payload.availableFrom))}</AvailableFrom>` : '',
     `<AgentId>${escapePrivatePropertyXml(payload.agentIds.join(','))}</AgentId>`,
     photoUrlsXml,
     `<OwnerID>${escapePrivatePropertyXml(payload.ownerId)}</OwnerID>`,
@@ -746,13 +759,23 @@ export function createPrivatePropertyListingPlan({
   )
   const specialistFacts = resolveSpecialistFacts(listing, publication, options)
   const specialistCategory = resolvePrivatePropertySpecialistCategory(listing, publication, options)
-  const description = appendSpecialistDescription(resolveDescription(listing, publication, category), specialistFacts, specialistCategory)
+  const rentalMapping = buildRentalPortalMapping(listing)
+  const description = appendRentalPortalDescription(appendSpecialistDescription(resolveDescription(listing, publication, category), specialistFacts, specialistCategory), rentalMapping.privatePropertyDescription)
   const headline = resolveHeadline(listing, publication)
   const listingDate = resolveListingDate(listing, publication, options)
   const availableFrom = resolveAvailableFrom(listing, publication, options) || listingDate
   const expiryDate = toDateOnly(firstText(options.expiryDate, publication.expiry_date, publication.expiryDate, listing.expiry_date, listing.expiryDate)) || addDaysToDateOnly(listingDate, 180)
   const address = resolveAddress(listing, publication, options)
   const attributes = buildAttributes({ listing, publication, category, options })
+  for (const field of rentalMapping.clearedFields) {
+    const previous = field.pp && (!field.ppCategories || field.ppCategories.includes(rentalListingPortalFacts(listing).category)) ? attributes.findIndex((item) => item.attributeType === field.pp) : -1
+    if (previous !== -1) attributes.splice(previous, 1)
+  }
+  for (const attribute of rentalMapping.privateProperty.attributes) {
+    const previous = attributes.findIndex((item) => item.attributeType === attribute.attributeType)
+    if (previous === -1) attributes.push(attribute)
+    else attributes[previous] = attribute
+  }
   const mediaRows = normalizeMediaRows(media)
   const video = resolveListingPortalVideo(mediaRows)
   const imageRows = mediaRows.filter((item) => item.mediaType === 'image')
@@ -781,11 +804,17 @@ export function createPrivatePropertyListingPlan({
     if (!attributes.some((item) => item.attributeType === 'HomeType')) dataBlockers.push('missing_home_type_attribute')
   }
   if (category === 'Land' && !attributes.some((item) => item.attributeType === 'LandArea')) dataBlockers.push('missing_land_area_attribute')
+  if (category === 'Land') {
+    const area = resolveListingLandArea({ listing, publication, specialistFacts: resolveSpecialistFacts(listing, publication, options) })
+    if (area.error) dataBlockers.push(`private_property_${area.error}`)
+  }
   if (category === 'Commercial' && !attributes.some((item) => item.attributeType === 'BusinessType')) dataBlockers.push('missing_business_type_attribute')
   if (category === 'Farms' && !attributes.some((item) => item.attributeType === 'FarmType')) dataBlockers.push('missing_farm_type_attribute')
   if (soleMandateExclusiveDays && (listingType !== 'Sale' || mandateType !== 'FullMandate')) dataBlockers.push('exclusive_days_requires_sale_full_mandate')
   if (soleMandateExclusiveDays && (soleMandateExclusiveDays < 1 || soleMandateExclusiveDays > 92)) dataBlockers.push('exclusive_days_must_be_between_1_and_92')
   dataBlockers.push(...validateDescription(description))
+  dataBlockers.push(...rentalMapping.privatePropertyBlockers)
+  dataBlockers.push(...rentalMapping.invalidFields.map((key) => `invalid_rental_field:${key}`))
 
   const payload = {
     propertyId,

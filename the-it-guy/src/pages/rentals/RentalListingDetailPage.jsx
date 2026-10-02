@@ -373,7 +373,7 @@ function ReadinessCard({ item }) {
   return (
     <div className="rounded-[8px] border border-[#edf2f7] bg-[#fbfdff] p-3">
       <div className="flex items-center justify-between gap-3">
-        <p className="text-sm font-semibold text-[#18324b]">{item.label}</p>
+        <p className="text-sm font-semibold text-[#18324b]">{item.label}{!item.complete && item.requiredForPublish === false ? <span className="ml-2 text-xs font-normal text-[#607891]">Recommendation</span> : null}</p>
         <span className={`inline-flex h-7 w-7 items-center justify-center rounded-full border ${item.complete ? 'border-[#cfe8dc] bg-[#f2fbf5] text-[#286b43]' : 'border-[#dbe6f2] bg-white text-[#8aa0b5]'}`}>
           {item.complete ? <CheckCircle2 size={15} aria-hidden="true" /> : <ShieldCheck size={15} aria-hidden="true" />}
         </span>
@@ -475,7 +475,7 @@ function getProperty24PreviewIssues(preview = null) {
       key: `technical:${item}`,
       label: item === 'sandbox_property24_agent_id_required_before_submit' ? 'Property24 agent ID needed for real publishing' : formatProperty24PreviewBlocker(item),
       detail: item === 'sandbox_property24_agent_id_required_before_submit'
-        ? 'This is expected in the ExDev sandbox when Property24 has not returned a real agent ID yet.'
+        ? 'Property24 has not returned an agent ID yet. Connect the agent once their ID is available.'
         : 'This setup item must be resolved before a live submit.',
     })),
   ]
@@ -501,7 +501,7 @@ function getProperty24ReadinessStatus(preview = null) {
     return {
       label: 'Sandbox review ready',
       tone: 'warning',
-      detail: 'The rental payload is safe to review in ExDev. Real publishing still needs Property24 agent IDs.',
+      detail: 'The rental listing is ready for review. Publishing requires a valid Property24 agent ID.',
     }
   }
   if (details.technicalBlockers.length) {
@@ -532,7 +532,7 @@ function Property24ReadinessItem({ item }) {
         {item.complete ? <CheckCircle2 size={15} aria-hidden="true" /> : <ShieldCheck size={15} aria-hidden="true" />}
       </span>
       <div className="min-w-0">
-        <p className="text-sm font-semibold text-[#18324b]">{item.label}</p>
+        <p className="text-sm font-semibold text-[#18324b]">{item.label}{!item.complete && item.requiredForPublish === false ? <span className="ml-2 text-xs font-normal text-[#607891]">Recommendation</span> : null}</p>
         <p className="mt-1 text-xs font-semibold text-[#607891]">{item.detail || item.blocker}</p>
       </div>
     </div>
@@ -721,6 +721,7 @@ function SelectField({ label, name, value, options, onChange }) {
     <label className="form-field">
       <span>{label}</span>
       <select {...formField(name, value, onChange)}>
+        {value && !options.some((option) => option.value === value) ? <option value={value}>{String(value).replaceAll('_', ' ')} (existing value)</option> : null}
         {options.map((option) => (
           <option key={option.value} value={option.value}>{option.label}</option>
         ))}
@@ -807,8 +808,8 @@ function RentalListingEditPanel({ form, onChange, onCancel, onSubmit, saving, ca
 
       <div className="grid gap-4 md:grid-cols-3">
         <label className="form-field">
-          <span>Landlord name</span>
-          <input {...formField('landlordName', form.landlordName, onChange)} />
+          <span>Landlord name *</span>
+          <input required {...formField('landlordName', form.landlordName, onChange)} />
         </label>
         <label className="form-field">
           <span>Landlord email</span>
@@ -1092,7 +1093,7 @@ function RentalTabContent({
           <button type="submit" className="ui-pill-button ui-pill-button-active" disabled={savingLandlord}>{savingLandlord ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}Save landlord details</button>
         </div>
         <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          <label className="form-field"><span>Landlord name</span><input value={landlordForm.landlordName || ''} onChange={(event) => onLandlordChange('landlordName', event.target.value)} /></label>
+          <label className="form-field"><span>Landlord name *</span><input required value={landlordForm.landlordName || ''} onChange={(event) => onLandlordChange('landlordName', event.target.value)} /></label>
           <label className="form-field"><span>Landlord email</span><input type="email" value={landlordForm.landlordEmail || ''} onChange={(event) => onLandlordChange('landlordEmail', event.target.value)} /></label>
           <label className="form-field"><span>Landlord phone</span><input value={landlordForm.landlordPhone || ''} onChange={(event) => onLandlordChange('landlordPhone', event.target.value)} /></label>
           <SelectField label="Landlord type" name="landlordType" value={landlordForm.landlordType || ''} onChange={(name, value) => onLandlordChange(name, value)} options={RENTAL_SELECT_OPTIONS.landlordType} />
@@ -1150,7 +1151,7 @@ function RentalTabContent({
     const channelMenuItemClass = 'flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#243d56] transition hover:bg-[#f7fbff] disabled:cursor-not-allowed disabled:opacity-50'
     return (
       <section className="space-y-5">
-        <section className="overflow-hidden rounded-[22px] border border-[#dde4ee] bg-white shadow-[0_12px_28px_rgba(15,23,42,0.055)]"><div className="grid sm:grid-cols-3"><div className="border-b border-[#edf2f7] p-5 sm:border-b-0 sm:border-r"><p className="text-2xl font-semibold text-[#142132]">{readinessPercent}%</p><p className="text-sm font-semibold text-[#607387]">Listing readiness</p><button type="button" onClick={onOpenEdit} className="mt-1 text-xs font-semibold text-[#1f4f78]">Open multi-step editor</button></div><div className="border-b border-[#edf2f7] p-5 sm:border-b-0 sm:border-r"><p className="text-2xl font-semibold text-[#142132]">{detail.liveChannelCount} / {detail.channelCount}</p><p className="text-sm font-semibold text-[#607387]">Channels live</p><button type="button" onClick={onCheckProperty24} className="mt-1 text-xs font-semibold text-[#1f4f78]">View channels</button></div><div className="p-5"><p className="text-xl font-semibold text-[#142132]">{formatDateTime(detail.lastUpdatedAt)}</p><p className="text-sm font-semibold text-[#607387]">Last listing update</p></div></div>{remainingReadinessCount ? <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#edf2f7] bg-[#fffaf0] px-5 py-3 text-sm font-semibold text-[#8a5b13]"><span>Complete {remainingReadinessCount} remaining item{remainingReadinessCount === 1 ? '' : 's'} before publishing.</span><button type="button" onClick={onOpenEdit} className="rounded-lg border border-[#f1dfb8] bg-white px-3 py-2 text-xs font-semibold">Open multi-step editor</button></div> : null}</section>
+        <section className="overflow-hidden rounded-[22px] border border-[#dde4ee] bg-white shadow-[0_12px_28px_rgba(15,23,42,0.055)]"><div className="grid sm:grid-cols-3"><div className="border-b border-[#edf2f7] p-5 sm:border-b-0 sm:border-r"><p className="text-2xl font-semibold text-[#142132]">{readinessPercent}%</p><p className="text-sm font-semibold text-[#607387]">Listing readiness</p><button type="button" onClick={onOpenEdit} className="mt-1 text-xs font-semibold text-[#1f4f78]">Open multi-step editor</button></div><div className="border-b border-[#edf2f7] p-5 sm:border-b-0 sm:border-r"><p className="text-2xl font-semibold text-[#142132]">{detail.liveChannelCount} / {detail.channelCount}</p><p className="text-sm font-semibold text-[#607387]">Channels live</p><button type="button" onClick={onCheckProperty24} className="mt-1 text-xs font-semibold text-[#1f4f78]">View channels</button></div><div className="p-5"><p className="text-xl font-semibold text-[#142132]">{formatDateTime(detail.lastUpdatedAt)}</p><p className="text-sm font-semibold text-[#607387]">Last listing update</p></div></div>{remainingReadinessCount ? <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#edf2f7] bg-[#fffaf0] px-5 py-3 text-sm font-semibold text-[#8a5b13]"><span>Review {remainingReadinessCount} remaining listing detail{remainingReadinessCount === 1 ? '' : 's'}. Each portal check determines publish readiness.</span><button type="button" onClick={onOpenEdit} className="rounded-lg border border-[#f1dfb8] bg-white px-3 py-2 text-xs font-semibold">Open multi-step editor</button></div> : null}</section>
         <RentalMarketingOverview detail={detail} row={row} galleryImages={galleryImages} onOpenEdit={onOpenEdit} />
         <article id="listing-distribution-channels" className="overflow-visible rounded-[22px] border border-[#dde4ee] bg-white shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
           <div className="border-b border-[#edf2f7] p-5"><h3 className="text-base font-semibold text-[#142132]">Listing Channels</h3><p className="mt-1 text-sm text-[#607387]">Manage where this rental is advertised.</p></div>

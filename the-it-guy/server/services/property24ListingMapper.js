@@ -1,5 +1,7 @@
+import { buildRentalPortalMapping, appendRentalPortalDescription, applyRentalProperty24Answers, resolveRentalPortalType } from '../../src/services/rentals/rentalPortalFieldContract.js'
 import { evaluateProperty24ListingCategoryContract } from '../property24/listingCategoryContract.js'
 import { evaluateProperty24ListingCategoryModel } from '../property24/listingCategoryModel.js'
+import { resolveListingLandArea } from './listingLandArea.js'
 import {
   appendPortalDescriptionFeatures,
   normalizeListingPortalFeatures,
@@ -508,16 +510,22 @@ export function buildProperty24CategoryPayload({ listing = {}, publication = {},
   }
   if (category === 'agricultural') {
     const farmSizeHectares = toProperty24Number(facts.farmSize)
-    // The v55 area object is square metres. Arch9 captures farms in hectares,
-    // so convert explicitly rather than mislabelling the unit.
+    // Arch9 captures farms in hectares. Normalise the outbound area to square
+    // metres explicitly rather than mislabelling the captured number.
     const erf = farmSizeHectares === null ? undefined : buildArea(farmSizeHectares * 10_000)
     if (erf) propertyInfo.erf = erf
   }
   if (category === 'land') {
-    const erf = buildArea(facts.erfSize)
+    const area = resolveListingLandArea({ listing, publication, specialistFacts: facts })
+    const erf = buildArea(area.squareMetres)
     if (erf) propertyInfo.erf = erf
-    const zoneType = normalizeProperty24ListingText(facts.zoning)
+    // v55 ZoneType is an enum. Keep local descriptions such as "Farm" or
+    // "Residential 2" in the advert rather than submitting an invalid enum.
+    const zoningKey = normalizeProperty24ListingKey(facts.zoning).replace(/_/g, '')
+    const zoneType = ['SingleResidential', 'GeneralResidential', 'LocalBusiness', 'GeneralBusiness', 'GeneralIndustrial', 'HeavyIndustrial', 'Agricultural', 'Rural', 'MixedUse']
+      .find((value) => value.toLowerCase() === zoningKey)
     if (zoneType) propertyInfo.zoneType = zoneType
+    facts.erfSize = area.squareMetres
   }
 
   return {
@@ -545,7 +553,7 @@ function buildPropertyInfo({ listing, publication, suburbId, propertyTypeId, cat
     listing.formattedAddress,
   )
   const inferredStreetAddress = splitProperty24StreetAddress(combinedStreetAddress)
-  const erf = buildArea(firstNumber(publication.erf_size, publication.erfSize, listing.erfSize, listing.propertyDetails?.erfSize)) || categoryPayload.propertyInfo.erf
+  const erf = category === 'land' ? categoryPayload.propertyInfo.erf : buildArea(firstNumber(publication.erf_size, publication.erfSize, listing.erfSize, listing.propertyDetails?.erfSize)) || categoryPayload.propertyInfo.erf
   const floorArea = buildArea(firstNumber(publication.floor_size, publication.floorSize, listing.floorSize, listing.propertyDetails?.floorSize)) || categoryPayload.propertyInfo.floorArea
   const municipalRatesAndTaxes = buildFee(firstNumber(publication.rates_taxes, publication.ratesTaxes, listing.ratesTaxes, listing.propertyDetails?.ratesTaxes))
   const monthlyLevy = buildFee(firstNumber(publication.levies, listing.levies, listing.propertyDetails?.levies))
@@ -633,7 +641,8 @@ export function createProperty24ListingPlan({
     listing.property_type,
     listing.propertyType,
   )
-  const propertyTypeId = resolveProperty24CategoryPropertyTypeId(propertyTypeValue, categoryContract.category, propertyTypeMappings)
+  const rentalType = listingType === 'Rental' ? resolveRentalPortalType(listing.propertyCategory || listing.property_category, propertyTypeValue) : null
+  const propertyTypeId = resolveProperty24CategoryPropertyTypeId(propertyTypeValue, categoryContract.category, propertyTypeMappings) || rentalType?.property24TypeId
   const categoryPayload = buildProperty24CategoryPayload({
     listing,
     publication,
@@ -641,11 +650,12 @@ export function createProperty24ListingPlan({
     propertyTypeId,
     options,
   })
-  const description = resolveSpecialistProperty24Description(
+  const rentalMapping = buildRentalPortalMapping(listing)
+  const description = appendRentalPortalDescription(resolveSpecialistProperty24Description(
     resolveDescription(listing, publication),
     categoryPayload.specialistFacts,
     categoryContract.category,
-  )
+  ), rentalMapping.property24Description)
   const suburbId = resolveSuburbId(catalogMapping, listing, publication, options)
   const { property24AgentId, sourceReference } = resolveAgentMapping(agentMapping, listing, options)
   const mediaRows = normalizeMediaRows(media)
@@ -658,7 +668,7 @@ export function createProperty24ListingPlan({
   const expectedPhotoPayloadCount = options.expectedPhotoPayloadCount === null || options.expectedPhotoPayloadCount === undefined
     ? imageRows.length
     : Math.max(0, toProperty24Integer(options.expectedPhotoPayloadCount) || 0)
-  const propertyFeatures = buildPropertyFeatures(listing, publication, { category: categoryContract.category })
+  const propertyFeatures = applyRentalProperty24Answers(buildPropertyFeatures(listing, publication, { category: categoryContract.category }), rentalMapping, 'propertyFeatures')
   const featureFacts = normalizeListingPortalFeatures({ listing, publication }).featureFacts
   const tags = categoryContract.category === 'residential'
     ? Object.entries(RESIDENTIAL_LISTING_TAGS)
@@ -674,7 +684,8 @@ export function createProperty24ListingPlan({
         .filter(([key]) => featureFacts[key] === true)
         .map(([, featureType]) => ({ featureType })))
     : []
-  const propertyInfo = buildPropertyInfo({ listing, publication, suburbId, propertyTypeId, category: categoryContract.category, options })
+  const propertyInfo = applyRentalProperty24Answers(buildPropertyInfo({ listing, publication, suburbId, propertyTypeId, category: categoryContract.category, options }), rentalMapping, 'propertyInfo')
+  categoryPayload.commercialInfo = applyRentalProperty24Answers(categoryPayload.commercialInfo, rentalMapping, 'commercialInfo')
   const categoryModel = evaluateProperty24ListingCategoryModel({
     listing,
     publication,
@@ -693,7 +704,12 @@ export function createProperty24ListingPlan({
   qualityWarnings.push(...video.warnings)
 
   dataBlockers.push(...categoryContract.blockers)
+  dataBlockers.push(...rentalMapping.invalidFields.map((key) => `invalid_rental_field:${key}`))
   dataBlockers.push(...categoryModel.blockers)
+  if (categoryContract.category === 'land') {
+    const area = resolveListingLandArea({ listing, publication, specialistFacts: resolveSpecialistFacts(listing, publication, options) })
+    if (area.error) dataBlockers.push(`property24_${area.error}`)
+  }
   if (categoryContract.category === 'commercial' && listingType === 'Sale') {
     dataBlockers.push(...evaluateProperty24CommercialSaleFacts({ listing, publication, options }).blockers)
   }
@@ -787,6 +803,8 @@ export function createProperty24ListingPlan({
       listingType,
       categoryContract,
       categoryModel,
+      rentalFieldMappings: rentalMapping.fields,
+      rentalPortalPayload: rentalMapping.property24,
       categoryPayload: {
         category: categoryPayload.category,
         mappedPropertyInfo: categoryPayload.propertyInfo,

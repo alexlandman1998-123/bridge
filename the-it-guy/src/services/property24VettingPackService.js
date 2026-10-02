@@ -74,7 +74,7 @@ export function downloadProperty24VettingPackMarkdown(result = {}) {
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement('a')
   anchor.href = url
-  anchor.download = `property24-exdev-vetting-pack-${new Date().toISOString().slice(0, 10)}.md`
+  anchor.download = `property24-connection-readiness-${new Date().toISOString().slice(0, 10)}.md`
   document.body.appendChild(anchor)
   anchor.click()
   anchor.remove()

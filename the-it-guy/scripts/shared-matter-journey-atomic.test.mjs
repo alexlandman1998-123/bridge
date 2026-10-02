@@ -4,6 +4,8 @@ import { randomUUID } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import { commitSharedJourneyTask } from '../src/services/attorneyWorkflow/sharedJourneyCommandService.js'
 import { getAttorneyStageDefinitionsForLane } from '../src/constants/attorneyWorkflowStages.js'
+import { projectSharedMatterJourneyRead, sharedJourneyHeaderPhases, sharedJourneyLaneTasks } from '../src/services/sharedMatterJourneyReader.js'
+import { buildTransferWorkspaceViewModel } from '../src/services/attorneyWorkflow/transferWorkspaceViewModel.js'
 const { PGlite } = await import(process.env.PGLITE_MODULE || '@electric-sql/pglite')
 const db = new PGlite()
 const actor = '00000000-0000-0000-0000-000000000001'
@@ -33,10 +35,19 @@ await db.exec(legacy.slice(legacy.indexOf('create or replace function public.bri
 const refresh = migration('20260908121455_transaction_attorney_refresh_contract_repair.sql')
 await db.exec(refresh.slice(refresh.indexOf('create or replace function'), refresh.indexOf('-- A changed routing')))
 await db.exec(migration('20260908144636_shared_matter_journey_atomic_commands.sql'))
-// The later catalogue update writes phase columns introduced by the reader
-// migration. Load its actual schema/catalogue prelude, not a hand-built schema.
+// Load the real reader as well as its phase schema so command results can be
+// checked against a fresh read, the workspace and the top journey.
 const reader = migration('20260908150256_shared_matter_journey_reader.sql')
-await db.exec(reader.slice(reader.indexOf('-- Static phase'), reader.indexOf('create or replace function')))
+await db.exec(`
+alter table transactions add column finance_type text;
+create table transaction_workflow_instances(id uuid primary key,transaction_id uuid,workflow_key text);
+create table transaction_workflow_steps(workflow_instance_id uuid,transaction_id uuid,workflow_key text,step_key text,status text);
+create function bridge_has_client_portal_token_transaction_access(uuid) returns boolean language sql as $$select false$$;
+create function bridge_has_onboarding_token_transaction_access(uuid) returns boolean language sql as $$select false$$;
+`)
+await db.exec(reader)
+await db.exec(migration('20260910094209_transfer_tax_cross_role_safe_reader_phase7.sql'))
+await db.exec(migration('20260910153517_reconcile_shared_journey_reader_contract.sql'))
 const laneSecurity = migration('202607230008_attorney_three_lane_transaction_spine.sql')
 await db.exec(laneSecurity.slice(laneSecurity.indexOf('create or replace function public.bridge_attorney_lane_role'), laneSecurity.indexOf('create or replace function public.bridge_can_mutate_attorney_lane')))
 await db.exec(migration('20260909144454_attorney_task_confirmation_state.sql'))
@@ -70,6 +81,20 @@ assert.ok(firstClosureUpdate >= 0 && closureTrigger > firstClosureUpdate)
 await db.exec(closureSql.slice(firstClosureUpdate, closureTrigger))
 await db.exec(migration('20260926194845_reconcile_attorney_workbench_catalogue.sql'))
 await db.exec(migration('20260926194845_reconcile_attorney_workbench_catalogue.sql'))
+const savedBeforeReconciliation = {
+  steps: (await db.query('select * from transaction_subprocess_steps order by id')).rows,
+  plans: (await db.query('select id,routing_profile_json from transactions order by id')).rows,
+  visibility: (await db.query("select lane_key,step_key,definition->'client' client,definition->'clientVisibleAllowed' allowed from journey_private.task_catalog order by lane_key,step_key")).rows,
+}
+await db.exec(migration('20261002081358_reconcile_municipal_clearance_journey_copy.sql'))
+await db.exec(migration('20261002081358_reconcile_municipal_clearance_journey_copy.sql'))
+await db.exec(migration('20261002081455_reconcile_attorney_journey_task_order.sql'))
+await db.exec(migration('20261002081455_reconcile_attorney_journey_task_order.sql'))
+assert.deepEqual({
+  steps: (await db.query('select * from transaction_subprocess_steps order by id')).rows,
+  plans: (await db.query('select id,routing_profile_json from transactions order by id')).rows,
+  visibility: (await db.query("select lane_key,step_key,definition->'client' client,definition->'clientVisibleAllowed' allowed from journey_private.task_catalog order by lane_key,step_key")).rows,
+}, savedBeforeReconciliation, 'reconciliation must preserve saved tasks, active plans, historical keys and client visibility')
 const catalogueComparisons = []
 for (const key of ['transfer','bond','cancellation']) {
   const rows = (await db.query('select step_key,definition from journey_private.task_catalog where lane_key=$1 order by step_key',[key])).rows
@@ -79,13 +104,29 @@ for (const key of ['transfer','bond','cancellation']) {
   const activeRows = rows.filter((row) => expected.some((item) => item.step_key === row.step_key))
   catalogueComparisons.push({ lane: key, activeRows, expected })
 }
-const update = async (status, command = randomUUID(), expected = undefined, note = '', packet = null) => {
-  if (expected === undefined) expected = (await db.query('select updated_at from transaction_subprocess_steps where id=$1',[step])).rows[0].updated_at
+const update = async (status, command = randomUUID(), expected = undefined, note = '', packet = null, targetStep = step) => {
+  if (expected === undefined) expected = (await db.query('select updated_at from transaction_subprocess_steps where id=$1',[targetStep])).rows[0].updated_at
   return (await db.query('select bridge_update_attorney_workflow_step_v4($1,$2,$3,$4,$5,$6,$7,$8,$9) result',
-    [matter,'transfer',step,status,command,expected,note,'internal',packet])).rows[0].result
+    [matter,'transfer',targetStep,status,command,expected,note,'internal',packet])).rows[0].result
+}
+const verifySavedJourney = async (saved, taskKey = 'instruction_received') => {
+  const source = (await db.query('select bridge_read_professional_matter_journey($1) result', [matter])).rows[0].result
+  assert.equal(source.revision, saved.revision, 'fresh journey read must observe the committed revision')
+  const journey = { status: 'ready', snapshot: projectSharedMatterJourneyRead(source, { audience: 'attorney' }) }
+  const header = sharedJourneyHeaderPhases(journey, 'transfer')
+  const work = buildTransferWorkspaceViewModel({ sharedJourneyTasks: sharedJourneyLaneTasks(journey, 'transfer'),
+    workflow: { lane: { currentStage: 'instruction_received', steps: [] } } })
+  const summary = phase => ({ key: phase.key, completed: phase.completed, total: phase.total, status: phase.status,
+    current: phase.currentTask?.key || null, hasCurrentTask: phase.hasCurrentTask })
+  // The isolated plan contains only its instruction phase; the workspace also
+  // includes the other empty phases as navigation destinations.
+  assert.deepEqual(work.phases.filter(phase => header.some(item => item.key === phase.key)).map(summary), header.map(summary))
+  assert.equal(work.tasks.find(task => task.key === taskKey).status, saved.stepStatus)
+  return header
 }
 const id = randomUUID()
 let result = await update('completed',id,null,'Private note')
+assert.equal((await verifySavedJourney(result))[0].currentTask.key, 'matter_opened')
 assert.equal(result.completionPercent,50)
 assert.deepEqual(result.committedSnapshot.legalProgress,{applicableCount:2,completedCount:1,notApplicableCount:0,percent:50})
 assert.equal(result.committedSnapshot.laneSnapshots.transfer.steps[0].status,'completed')
@@ -97,6 +138,7 @@ await assert.rejects(update('blocked',randomUUID(),null),/changed/)
 assert.equal((await db.query('select count(*)::int n from journey_private.task_events')).rows[0].n,1)
 assert.equal((await db.query('select status from transaction_shared_progress')).rows[0].status,'completed')
 result = await update('not_started')
+assert.equal((await verifySavedJourney(result))[0].currentTask.key, 'instruction_received')
 assert.equal(result.matterStage,'instruction')
 assert.equal(result.completionPercent,0)
 for (const status of ['in_progress','waiting','blocked','completed_externally','not_applicable']) {
@@ -106,8 +148,24 @@ for (const status of ['in_progress','waiting','blocked','completed_externally','
   assert.equal(reloaded.status, status, 'a fresh database read must retain the saved outcome')
   assert.equal(reloaded.comment, 'Reason', 'the outcome reason must survive a fresh read')
   assert.ok(next.revision > result.revision)
+  await verifySavedJourney(next)
   result = next
 }
+// Complete a whole phase through the real save RPC, refresh its persisted
+// journey, then reopen it. A stale lane pointer must not keep the header back.
+await db.exec('begin')
+const openedStep = randomUUID(), ficaStep = randomUUID()
+await db.query("update transactions set routing_profile_json=jsonb_set(routing_profile_json,'{workflowPlan,lanes,0,stepKeys}','[\"instruction_received\",\"matter_opened\",\"buyer_fica_review\"]') where id=$1", [matter])
+await db.query("insert into transaction_subprocess_steps(id,subprocess_id,transaction_id,step_key,status,sort_order) values($1,$3,$4,'matter_opened','not_started',1),($2,$3,$4,'buyer_fica_review','not_started',2)", [openedStep, ficaStep, lane, matter])
+await update('completed')
+const phaseDone = await update('completed', randomUUID(), undefined, '', null, openedStep)
+const advanced = await verifySavedJourney(phaseDone, 'matter_opened')
+assert.equal(advanced[0].status, 'completed')
+assert.equal(advanced[0].hasCurrentTask, false)
+assert.equal(advanced[1].currentTask.key, 'buyer_fica_review')
+assert.equal(advanced[1].hasCurrentTask, true)
+assert.equal((await verifySavedJourney(await update('not_started')))[0].hasCurrentTask, true)
+await db.exec('rollback')
 await assert.rejects(update('not_applicable'),/reason/)
 await db.query("update transactions set routing_profile_json = jsonb_set(routing_profile_json,'{workflowPlan,lanes,0,stepKeys}','[\"instruction_received\"]') where id=$1",[matter])
 result = await update('not_applicable',randomUUID(),undefined,'Not relevant')

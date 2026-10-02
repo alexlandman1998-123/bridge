@@ -3,11 +3,9 @@
   --eb-ink: #14243e;
   --eb-border: #e4eaf0;
   color: var(--eb-ink);
-  padding: 24px 26px 0;
-  background: #f8fafc;
-  height: calc(100vh - 70px);
-  min-height: 620px;
-  overflow: hidden;
+  padding: 24px 0;
+  background: transparent;
+  min-height: calc(100dvh - 96px);
   display: flex;
   flex-direction: column;
   font-size: 14px;
@@ -65,12 +63,14 @@
   margin: 0;
 }
 .eb-builder h1 {
-  font-size: 27px;
+  font-size: 24px;
+  font-weight: 500;
   letter-spacing: -0.6px;
   margin: 10px 0;
 }
 .eb-builder h2 {
   font-size: 17px;
+  font-weight: 500;
   letter-spacing: -0.3px;
 }
 .eb-builder h3 {
@@ -81,7 +81,12 @@
   justify-content: space-between;
   align-items: center;
   gap: 20px;
-  padding-bottom: 20px;
+  padding: 20px 24px;
+  border: 1px solid var(--eb-border);
+  border-radius: 18px;
+  background: white;
+  box-shadow: 0 8px 24px #14243e04;
+  margin-bottom: 16px;
 }
 .eb-header .eb-back {
   padding: 0;
@@ -100,8 +105,8 @@
 }
 .eb-title-row > input {
   font-family: inherit;
-  font-size: 26px;
-  font-weight: 650;
+  font-size: 24px;
+  font-weight: 500;
   letter-spacing: -0.5px;
   border: 0;
   background: transparent;
@@ -131,12 +136,13 @@
   justify-content: flex-end;
 }
 .eb-stepper {
-  display: flex;
-  border-block: 1px solid var(--eb-border);
-  padding: 14px 0;
-  margin-bottom: 24px;
-  gap: 22px;
-  overflow-x: auto;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border: 1px solid var(--eb-border);
+  border-radius: 16px;
+  background: white;
+  padding: 8px;
+  gap: 8px;
 }
 .eb-stepper > button {
   flex: 1;
@@ -144,16 +150,14 @@
   gap: 12px;
   border: 0;
   background: none;
-  min-width: 170px;
+  min-width: 0;
   text-align: left;
-  padding: 0 12px;
+  padding: 12px 16px;
+  border-radius: 11px;
 }
-.eb-stepper > button:not(:last-child):after {
-  content: "";
-  height: 1px;
-  background: var(--eb-border);
-  width: 20%;
-  margin-left: auto;
+.eb-stepper > button[aria-current="step"] {
+  background: #eef7f2;
+  box-shadow: inset 0 0 0 1px #d6e9df;
 }
 .eb-step-number {
   display: grid;
@@ -177,6 +181,7 @@
   display: block;
   font-size: 12px;
 }
+.eb-stepper strong { font-weight: 500; font-size: 13px; }
 .eb-stepper small {
   margin-top: 5px;
   color: #8390a6;
@@ -187,33 +192,29 @@
 }
 .eb-details-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1.9fr) minmax(350px, 0.9fr);
+  grid-template-columns: minmax(0, 1.9fr) minmax(280px, 0.9fr);
   gap: 20px;
   min-height: 0;
-  height: 100%;
-  align-items: stretch;
+  align-items: start;
 }
 .eb-stage {
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  overflow: auto;
-  padding: 24px 0;
-  scrollbar-gutter: stable;
+  padding: 20px 0;
 }
 .eb-details-layout > .eb-basics,
 .eb-details-layout > .eb-context {
   min-height: 0;
-  overflow-y: auto;
-  scrollbar-gutter: stable;
+  overflow: visible;
 }
 .eb-basics,
 .eb-context > section {
   border: 1px solid var(--eb-border);
-  border-radius: 11px;
+  border-radius: 18px;
   background: white;
-  padding: 30px;
+  padding: 24px;
 }
 .eb-eyebrow {
   font-size: 10px;
@@ -225,7 +226,7 @@
   line-height: 1.6;
   color: #7a8799;
   font-size: 13px;
-  margin-bottom: 28px !important;
+  margin-bottom: 24px !important;
 }
 .eb-field {
   display: flex;
@@ -233,13 +234,14 @@
   gap: 8px;
   margin: 20px 0;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 500;
 }
 .eb-field > span {
   display: flex;
   justify-content: space-between;
   gap: 10px;
 }
+.eb-field > .eb-field-heading { justify-content: flex-start; gap: 6px; }
 .eb-field input,
 .eb-field select,
 .eb-field textarea,
@@ -431,12 +433,17 @@
   z-index: 5;
   background: #ffffffed;
   backdrop-filter: blur(8px);
-  border-top: 1px solid var(--eb-border);
-  padding: 15px 0;
+  position: sticky;
+  bottom: 16px;
+  border: 1px solid var(--eb-border);
+  border-radius: 16px;
+  box-shadow: 0 8px 24px #14243e08;
+  padding: 16px 20px;
   display: flex;
   justify-content: space-between;
   gap: 15px;
   margin-top: 0;
+  flex-wrap: wrap;
 }
 .eb-bottom > div {
   display: flex;
@@ -913,7 +920,7 @@
     font-size: 11px;
   }
   .eb-builder {
-    padding: 18px 16px 0;
+    padding: 18px 0;
   }
   .eb-canvas-heading {
     flex-wrap: wrap;
@@ -925,9 +932,7 @@
 }
 @media (max-width: 900px) {
   .eb-builder {
-    height: auto;
-    min-height: calc(100vh - 70px);
-    overflow: visible;
+    min-height: 0;
   }
   .eb-stage {
     display: block;
@@ -974,10 +979,11 @@
     display: none;
   }
   .eb-stepper {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 5px;
   }
   .eb-stepper > button {
-    min-width: 145px;
+    min-width: 0;
   }
   .eb-modal-backdrop {
     padding: 12px;
@@ -985,7 +991,7 @@
 }
 @media (max-width: 560px) {
   .eb-builder {
-    padding: 14px 10px 0;
+    padding: 14px 0;
   }
   .eb-title-row > input {
     width: 230px;
@@ -1026,7 +1032,8 @@
     padding: 20px;
   }
   .eb-bottom {
-    padding: 12px 0;
+    padding: 12px;
+    bottom: 8px;
   }
   .eb-bottom button {
     font-size: 11px;
@@ -1047,6 +1054,8 @@
   .eb-header-actions {
     gap: 5px;
   }
+  .eb-header { padding: 18px; }
+  .eb-stepper > button { padding: 10px 8px; gap: 8px; }
 }
 .eb-rich-text {
   margin: 20px 0;

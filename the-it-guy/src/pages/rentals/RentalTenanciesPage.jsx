@@ -1,19 +1,78 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { CalendarDays, FileSignature, Loader2, Search } from 'lucide-react'
+import { createElement, useEffect, useMemo, useState } from 'react'
+import { ArrowUpRight, Building2, FileSignature, KeyRound, Loader2, Search, UserRound, UsersRound } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useWorkspace } from '../../context/WorkspaceContext'
+import { MobileDashboardShell } from '../../components/dashboard/PremiumDashboard'
 import { listPersistedRentalTenancies } from '../../services/rentals/rentalApplicationRepository.js'
+import { listRentalProperties } from '../../services/rentals/rentalPropertyRepository.js'
+import { listRentalUnits } from '../../services/rentals/rentalUnitRepository.js'
 import { resolveRentalWorkspaceScope } from '../../services/rentals/rentalWorkspaceScope'
+import { TENANCY_STAGES, tenancyRegisterRow } from '../../services/rentals/rentalTenancyRegisterModel'
+import './RentalTenanciesPage.css'
 
-const text = (value) => String(value ?? '').trim()
-const label = (value) => text(value).replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
-const date = (value) => value ? new Date(value).toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Not captured'
-const money = (value) => Number(value || 0) > 0 ? `R ${Number(value).toLocaleString('en-ZA', { maximumFractionDigits: 0 })}` : 'Not captured'
+async function loadRegisterPages(loadPage) {
+  const records = []
+  for (let offset = 0; ; offset += 100) {
+    const batch = await loadPage(offset)
+    records.push(...batch)
+    if (batch.length < 100) return records
+  }
+}
+
+const PAGE_SIZE = 15
+const date = (value) => value && !Number.isNaN(new Date(value).getTime()) ? new Date(value).toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Not captured'
+const money = (value) => value !== null && value !== undefined && Number.isFinite(Number(value)) ? `R ${Number(value).toLocaleString('en-ZA', { maximumFractionDigits: 0 })}` : 'Not captured'
+const tabs = [['current', 'Current tenancies'], ['preparing', 'Lease & move-in'], ['active', 'Active'], ['ending', 'Move-out'], ['closed', 'Completed']]
+const matches = (row, filter) => filter === 'current' ? row.stage !== 5 : filter === 'preparing' ? row.stage < 3 : filter === 'active' ? row.stage === 3 : filter === 'ending' ? row.stage === 4 : row.stage === 5
 
 export default function RentalTenanciesPage() {
-  const workspace = useWorkspace(); const scope = useMemo(() => resolveRentalWorkspaceScope(workspace), [workspace]); const [items, setItems] = useState([]); const [loading, setLoading] = useState(true); const [error, setError] = useState(''); const [query, setQuery] = useState('')
-  const load = useCallback(async () => { if (!scope.organisationId) { setLoading(false); return } try { setLoading(true); setError(''); setItems(await listPersistedRentalTenancies(scope.organisationId)) } catch (cause) { setError(cause?.message || 'Unable to load canonical tenancies.'); setItems([]) } finally { setLoading(false) } }, [scope.organisationId])
-  useEffect(() => { void load() }, [load])
-  const visible = useMemo(() => items.filter((tenancy) => { const identity = tenancy.tenant?.identity || {}; const tenant = [identity.firstName, identity.lastName].filter(Boolean).join(' ') || identity.name || ''; return [tenant, tenancy.propertyId, tenancy.unitId, tenancy.status].join(' ').toLowerCase().includes(query.toLowerCase()) }), [items, query])
-  return <main className="mx-auto w-full max-w-[1600px] py-2"><section className="space-y-4 pb-6"><header className="flex flex-col gap-3 rounded-[18px] border border-[#dfe7f0] bg-white p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between"><div><p className="text-xs font-semibold uppercase text-[#60758b]">Rental operations</p><h1 className="mt-1 text-2xl font-semibold text-[#142132]">Tenancies</h1><p className="mt-1 text-sm text-[#60758b]">Tenancies are created from approved rental applications.</p></div><Link to="/agent/rentals/applications" className="rounded-[12px] bg-[#0f2743] px-3 py-2 text-center text-sm font-semibold text-white">Review applications</Link></header><label className="flex h-10 items-center gap-2 rounded-[12px] border border-[#dbe4ee] bg-white px-3 sm:w-72"><Search size={15} className="text-[#7b8ca2]" /><input value={query} onChange={(event) => setQuery(event.target.value)} className="min-w-0 flex-1 border-0 bg-transparent p-0 text-sm outline-none" placeholder="Search tenant or unit" /></label>{error ? <p className="rounded-xl border border-[#f2c6c6] bg-[#fff7f7] p-3 text-sm text-[#9f3131]">{error}</p> : null}{loading ? <div className="grid min-h-56 place-items-center text-sm text-[#60758b]"><Loader2 size={16} className="animate-spin" />Loading tenancies…</div> : visible.length ? <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{visible.map((tenancy) => { const identity = tenancy.tenant?.identity || {}; const tenant = [identity.firstName, identity.lastName].filter(Boolean).join(' ') || identity.name || 'Tenant pending'; const terms = tenancy.lease?.terms_json || {}; return <Link key={tenancy.id} to={`/agent/rentals/tenancies/${tenancy.id}`} className="rounded-[16px] border border-[#dfe7f0] bg-white p-4 shadow-sm transition hover:border-[#b9cee4]"><div className="flex items-start justify-between gap-3"><span className="grid h-10 w-10 place-items-center rounded-xl bg-[#edf5ff] text-[#315f8f]"><FileSignature size={18} /></span><span className="rounded-full bg-[#eff6ff] px-2.5 py-1 text-xs font-semibold text-[#2563a4]">{label(tenancy.status)}</span></div><h2 className="mt-4 text-base font-semibold text-[#142132]">{tenant}</h2><p className="mt-1 text-sm text-[#60758b]">Unit {tenancy.unitId || 'pending'} · Property {tenancy.propertyId || 'pending'}</p><div className="mt-4 grid grid-cols-2 gap-3 border-t border-[#edf2f7] pt-3"><div><p className="text-xs text-[#718399]">Occupation</p><p className="mt-1 text-sm font-semibold text-[#344a62]">{date(tenancy.intendedOccupationDate)}</p></div><div><p className="text-xs text-[#718399]">Monthly rent</p><p className="mt-1 text-sm font-semibold text-[#344a62]">{money(terms.monthly_rent)}</p></div></div></Link> })}</section> : <section className="rounded-[18px] border border-dashed border-[#d8e4f0] bg-white p-10 text-center"><CalendarDays className="mx-auto text-[#7b8ca2]" size={28} /><p className="mt-3 font-semibold text-[#20364d]">No tenancies yet</p><p className="mt-1 text-sm text-[#60758b]">Approve an application and convert it to create the first tenancy.</p></section>}</section></main>
+  const workspace = useWorkspace()
+  const { organisationId, branchId } = useMemo(() => resolveRentalWorkspaceScope(workspace), [workspace])
+  const scopeKey = `${organisationId}:${branchId || ''}`
+  const [result, setResult] = useState({ key: '', rows: [], error: '' })
+  const [query, setQuery] = useState('')
+  const [filter, setFilter] = useState('current')
+  const [page, setPage] = useState(1)
+  useEffect(() => {
+    if (!organisationId) return undefined
+    let alive = true
+    Promise.all([
+      loadRegisterPages((offset) => listPersistedRentalTenancies(organisationId, { offset })),
+      loadRegisterPages((offset) => listRentalProperties({ organisationId, branchId, status: 'all', limit: 100, offset })),
+      loadRegisterPages((offset) => listRentalUnits({ organisationId, branchId, limit: 100, offset })),
+    ]).then(([tenancies, properties, units]) => {
+      if (!alive) return
+      const propertyMap = new Map(properties.map((item) => [item.id, item]))
+      const unitMap = new Map(units.map((item) => [item.id, item]))
+      const scoped = branchId ? tenancies.filter((item) => propertyMap.has(item.propertyId)) : tenancies
+      setResult({ key: scopeKey, rows: scoped.map((item) => tenancyRegisterRow(item, propertyMap.get(item.propertyId), unitMap.get(item.unitId))), error: '' })
+    }).catch((cause) => { if (alive) setResult({ key: scopeKey, rows: [], error: cause?.message || 'Unable to load tenancies.' }) })
+    return () => { alive = false }
+  }, [organisationId, branchId, scopeKey])
+  const loading = Boolean(organisationId && result.key !== scopeKey)
+  const rows = result.key === scopeKey ? result.rows : []
+  const error = result.key === scopeKey ? result.error : ''
+  const visible = rows.filter((row) => matches(row, filter) && [row.tenantName, row.landlordName, row.propertyName, row.unitLabel, row.location, row.status, TENANCY_STAGES[row.stage]].join(' ').toLowerCase().includes(query.toLowerCase()))
+  const pageCount = Math.max(1, Math.ceil(visible.length / PAGE_SIZE))
+  const currentPage = Math.min(page, pageCount)
+  const start = (currentPage - 1) * PAGE_SIZE
+  const changeFilter = (value) => { setFilter(value); setPage(1) }
+  const stats = [['Current tenancies', 'current', Building2], ['Lease & move-in', 'preparing', FileSignature], ['Active tenancies', 'active', KeyRound], ['Moving out', 'ending', UsersRound]]
+  return <main className="mx-auto w-full max-w-[1600px] py-2"><MobileDashboardShell>
+    <header className="rental-tenancy-header"><div><h1>Tenancies</h1><p>Track each rental agreement from lease preparation to move-out.</p></div><Link to="/agent/rentals/applications">Review applications <ArrowUpRight size={16} /></Link></header>
+    <section className="rental-tenancy-stats" aria-label="Tenancy summary">{stats.map(([label, key, Icon]) => <button key={key} type="button" onClick={() => changeFilter(key)} aria-pressed={filter === key}><span>{createElement(Icon, { size: 19 })}{label}</span><strong>{loading || error ? '—' : rows.filter((row) => matches(row, key)).length}</strong></button>)}</section>
+    <section className="rental-tenancy-register">
+      <nav className="rental-tenancy-tabs" aria-label="Tenancy stages">{tabs.map(([key, label]) => <button key={key} type="button" aria-pressed={filter === key} onClick={() => changeFilter(key)}>{label}<span>{rows.filter((row) => matches(row, key)).length}</span></button>)}</nav>
+      <label className="rental-tenancy-search"><Search size={17} /><input value={query} onChange={(event) => { setQuery(event.target.value); setPage(1) }} placeholder="Search property, tenant or landlord" aria-label="Search tenancies" /></label>
+      {error ? <p role="alert" className="rental-tenancy-empty">{error}</p> : loading ? <p className="rental-tenancy-empty"><Loader2 size={18} className="animate-spin" />Loading tenancies…</p> : !organisationId ? <p className="rental-tenancy-empty">Choose an organisation to view tenancies.</p> : !visible.length ? <div className="rental-tenancy-empty"><p>{rows.length ? 'No tenancies match this view.' : 'No tenancies yet. Approved applications can be converted into a tenancy.'}</p></div> : <div className="rental-tenancy-cards">{visible.slice(start, start + PAGE_SIZE).map((row) => <Link key={row.id} to={`/agent/rentals/tenancies/${row.id}`} className="rental-tenancy-card" aria-label={`Open tenancy for ${row.tenantName} at ${row.propertyName}`}>
+        <div className="rental-tenancy-card-heading"><span className="rental-tenancy-card-icon"><Building2 size={23} aria-hidden="true" /></span><span className="rental-tenancy-card-status">{TENANCY_STAGES[row.stage]}</span></div>
+        <div className="rental-tenancy-card-property"><h2>{row.propertyName}</h2><p>{row.unitLabel} · {row.location}</p></div>
+        <dl className="rental-tenancy-parties"><div><dt><UserRound size={14} aria-hidden="true" />Tenant</dt><dd>{row.tenantName}</dd></div><div><dt><UsersRound size={14} aria-hidden="true" />Landlord</dt><dd>{row.landlordName}</dd></div></dl>
+        <div className="rental-tenancy-card-progress"><div><strong>Tenancy progress</strong><span>Stage {row.stage + 1} of {TENANCY_STAGES.length}</span></div><div className="rental-tenancy-progress-track" role="progressbar" aria-label={`Tenancy progress for ${row.tenantName}`} aria-valuemin={0} aria-valuemax={TENANCY_STAGES.length - 1} aria-valuenow={row.stage} aria-valuetext={TENANCY_STAGES[row.stage]}><span style={{ width: `${row.stage / (TENANCY_STAGES.length - 1) * 100}%` }} /></div><div className="rental-tenancy-progress-endpoints"><span>Preparation</span><span>Closed</span></div><p>{row.action}</p></div>
+        <div className="rental-tenancy-card-footer"><div><strong>{money(row.monthlyRent)}<small> / month</small></strong><p>{date(row.startDate)} → {date(row.endDate)}</p></div><span>Open tenancy <ArrowUpRight size={15} aria-hidden="true" /></span></div>
+      </Link>)}</div>}
+
+      {!loading && !error && visible.length > 0 ? <footer className="rental-tenancy-pagination"><span>Showing {start + 1}–{Math.min(start + PAGE_SIZE, visible.length)} of {visible.length}</span><div><button type="button" data-rental-control="tenancy-pagination" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>Previous</button><span>Page {currentPage} of {pageCount}</span><button type="button" data-rental-control="tenancy-pagination" disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)}>Next</button></div></footer> : null}
+    </section>
+  </MobileDashboardShell></main>
 }

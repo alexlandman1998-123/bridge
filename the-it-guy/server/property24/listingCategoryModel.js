@@ -52,7 +52,7 @@ export const PROPERTY24_LISTING_CATEGORY_MODELS = Object.freeze({
     lifecycle: { Sale: SALE_LIFECYCLE, Rental: RENTAL_LIFECYCLE },
     requiredMeasurements: { 8: ['erfSize'] },
     supportedFeatures: ['zoning'],
-    payloadModel: 'vacant_land_pending_property24_v55_payload',
+    payloadModel: 'vacant_land_sale_v55',
   },
   [PROPERTY24_LISTING_CATEGORIES.UNKNOWN]: {
     property24TypeIds: [],

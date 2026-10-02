@@ -54,7 +54,7 @@ const property24Retirement = createProperty24RentalListingPlan({
   agentMapping: property24Agent,
 })
 assert.equal(property24Retirement.canPreview, true)
-assert.ok(property24Retirement.qualityWarnings.includes('property24_retirement_accommodation_not_mapped'))
+assert.ok(property24Retirement.qualityWarnings.includes('property24_retirement_accommodation_description_only'))
 
 const privateHouseShare = createPrivatePropertyRentalListingPlan({
   listing: withRentalTerms({ rentalPriceFrequency: 'daily', rentalMandateType: 'house_share', depositPolicy: 'no_deposit' }),
@@ -90,6 +90,6 @@ const privateRetirement = createPrivatePropertyRentalListingPlan({
   options: privatePropertyOptions,
 })
 assert.equal(privateRetirement.canPreview, true)
-assert.ok(privateRetirement.qualityWarnings.includes('private_property_retirement_accommodation_not_mapped'))
+assert.ok(privateRetirement.qualityWarnings.includes('private_property_retirement_accommodation_description_only'))
 
 console.log('Rental listing portal mapping phase 4 contract passed')

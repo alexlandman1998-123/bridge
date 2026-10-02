@@ -1,11 +1,11 @@
 import { CheckCircle2, ChevronLeft, ChevronRight, ClipboardCheck, Loader2, ShieldCheck, Users } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  getHomeSeekersFicTrainingResult,
-  listHomeSeekersAgents,
-  listHomeSeekersFicTrainingResults,
-  saveHomeSeekersFicTrainingResult,
-} from '../../services/homeSeekersFicTrainingService'
+  getFicTrainingResult,
+  listFicTrainingAgents,
+  listFicTrainingResults,
+  saveFicTrainingResult,
+} from '../../services/ficTrainingService'
 
 const QUESTIONS = [
   { id: 'risk-based-approach', prompt: 'What is a risk-based approach in a RMCP?', choices: ['Applying the same checks to all clients', 'Tailoring due diligence based on risk level', 'Ignoring low-risk clients completely'], answer: 1 },
@@ -55,7 +55,7 @@ function TrainingQuiz({ organisationId, userId, onCompleted, onClose, preview = 
       if (preview) {
         setResult({ score, totalQuestions: QUESTIONS.length })
       } else {
-        const saved = await saveHomeSeekersFicTrainingResult({ organisationId, userId, score, totalQuestions: QUESTIONS.length, answers })
+        const saved = await saveFicTrainingResult({ organisationId, userId, score, totalQuestions: QUESTIONS.length, answers })
         setResult(saved)
         onCompleted(saved)
       }
@@ -75,7 +75,7 @@ function TrainingQuiz({ organisationId, userId, onCompleted, onClose, preview = 
   }
 
   return <>
-    <div className="flex items-start justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#16894f]">Home Seekers · FIC training</p><h2 className="mt-1 text-xl font-semibold text-[#101828]">{preview ? 'Quiz preview · ' : ''}Question {step + 1} of {QUESTIONS.length}</h2></div><button type="button" onClick={onClose} className="text-sm font-semibold text-[#667085]">Close</button></div>
+    <div className="flex items-start justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#16894f]">FIC training</p><h2 className="mt-1 text-xl font-semibold text-[#101828]">{preview ? 'Quiz preview · ' : ''}Question {step + 1} of {QUESTIONS.length}</h2></div><button type="button" onClick={onClose} className="text-sm font-semibold text-[#667085]">Close</button></div>
     <div className="mt-5 h-1.5 overflow-hidden rounded-full bg-[#e8eef5]"><div className="h-full rounded-full bg-[#16894f] transition-all" style={{ width: `${((step + 1) / QUESTIONS.length) * 100}%` }} /></div>
     <p className="mt-7 text-lg font-semibold leading-7 text-[#172a3d]">{question.prompt}</p>
     <div className="mt-5 grid gap-2.5">{question.choices.map((choice, index) => <button key={choice} type="button" onClick={() => setAnswers((current) => ({ ...current, [question.id]: index }))} className={`rounded-xl border px-4 py-3 text-left text-sm font-medium transition ${selected === index ? 'border-[#16894f] bg-[#ecfdf3] text-[#125f39]' : 'border-[#dbe4ee] bg-white text-[#344054] hover:border-[#9bb6a7]'}`}><span className="mr-3 inline-flex h-6 w-6 items-center justify-center rounded-full border border-current text-xs">{String.fromCharCode(65 + index)}</span>{choice}</button>)}</div>
@@ -86,12 +86,12 @@ function TrainingQuiz({ organisationId, userId, onCompleted, onClose, preview = 
 
 function QuizReview({ onClose }) {
   return <>
-    <div className="flex items-start justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#16894f]">Home Seekers · FIC training</p><h2 className="mt-1 text-xl font-semibold text-[#101828]">Quiz reference</h2><p className="mt-1 text-sm text-[#667085]">The six questions and their correct answers.</p></div><button type="button" onClick={onClose} className="text-sm font-semibold text-[#667085]">Close</button></div>
+    <div className="flex items-start justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#16894f]">FIC training</p><h2 className="mt-1 text-xl font-semibold text-[#101828]">Quiz reference</h2><p className="mt-1 text-sm text-[#667085]">The six questions and their correct answers.</p></div><button type="button" onClick={onClose} className="text-sm font-semibold text-[#667085]">Close</button></div>
     <div className="mt-6 grid gap-3">{QUESTIONS.map((question, index) => <article key={question.id} className="rounded-xl border border-[#e1e8f0] bg-[#fbfdff] p-4"><p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#718198]">Question {index + 1}</p><h3 className="mt-1 text-sm font-semibold leading-6 text-[#172a3d]">{question.prompt}</h3><div className="mt-3 grid gap-2">{question.choices.map((choice, choiceIndex) => <div key={choice} className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 text-sm font-medium ${choiceIndex === question.answer ? 'border-[#a7eac3] bg-[#ecfdf3] text-[#137a43]' : 'border-[#e1e8f0] bg-white text-[#475467]'}`}><span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-current text-xs">{String.fromCharCode(65 + choiceIndex)}</span><span>{choice}</span>{choiceIndex === question.answer ? <span className="ml-auto text-xs font-semibold">Correct</span> : null}</div>)}</div></article>)}</div>
   </>
 }
 
-export default function HomeSeekersFicTrainingPanel({ organisationId, userId, isPrincipal = false }) {
+export default function FicTrainingPanel({ organisationId, userId, isPrincipal = false }) {
   const [result, setResult] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -105,14 +105,14 @@ export default function HomeSeekersFicTrainingPanel({ organisationId, userId, is
   const loadOwnResult = useCallback(async () => {
     if (!organisationId || !userId || isPrincipal) { setLoading(false); return }
     setLoading(true)
-    try { setResult(await getHomeSeekersFicTrainingResult({ organisationId, userId })); setError('') } catch (loadError) { setError(loadError?.message || 'Training progress could not be loaded.') } finally { setLoading(false) }
+    try { setResult(await getFicTrainingResult({ organisationId, userId })); setError('') } catch (loadError) { setError(loadError?.message || 'Training progress could not be loaded.') } finally { setLoading(false) }
   }, [isPrincipal, organisationId, userId])
   useEffect(() => { void loadOwnResult() }, [loadOwnResult])
 
   const openPrincipalView = async () => {
     setOpen(true); setTeamLoading(true); setError('')
     try {
-      const [members, results] = await Promise.all([listHomeSeekersAgents({ organisationId }), listHomeSeekersFicTrainingResults({ organisationId })])
+      const [members, results] = await Promise.all([listFicTrainingAgents({ organisationId }), listFicTrainingResults({ organisationId })])
       const byUserId = new Map(results.map((entry) => [entry.userId, entry]))
       setTeam(members.map((member) => ({ ...member, result: byUserId.get(member.userId) || null })))
     } catch (loadError) { setError(loadError?.message || 'Training results could not be loaded.') } finally { setTeamLoading(false) }
@@ -120,12 +120,12 @@ export default function HomeSeekersFicTrainingPanel({ organisationId, userId, is
 
   const completed = Boolean(result?.completedAt)
   return <section className="flex min-h-full flex-col justify-between rounded-[16px] bg-[#101828] p-4 text-white shadow-[0_12px_30px_rgba(15,23,42,0.16)]">
-    <div className="flex items-start gap-3"><span className="grid h-10 w-10 place-items-center rounded-[13px] bg-white/10 text-[#b7f7d0]"><ShieldCheck size={19} /></span><div><p className="text-xs font-semibold uppercase tracking-[0.12em] !text-slate-300">Compliance</p><h3 className="mt-1 text-base font-semibold !text-white">{isPrincipal ? 'FIC training progress' : 'Complete your training'}</h3><p className="mt-1 text-[0.82rem] leading-5 !text-slate-300">{isPrincipal ? 'See who has completed the Home Seekers FIC module and their score.' : completed ? `${formatCompletion(result.completedAt)} · ${result.score}/${result.totalQuestions}` : 'Complete the Home Seekers FIC module.'}</p></div></div>
+    <div className="flex items-start gap-3"><span className="grid h-10 w-10 place-items-center rounded-[13px] bg-white/10 text-[#b7f7d0]"><ShieldCheck size={19} /></span><div><p className="text-xs font-semibold uppercase tracking-[0.12em] !text-slate-300">Compliance</p><h3 className="mt-1 text-base font-semibold !text-white">FIC training</h3><p className="mt-1 text-[0.82rem] leading-5 !text-slate-300">{isPrincipal ? 'See who has completed the FIC foundation module and their score.' : completed ? `${formatCompletion(result.completedAt)} · ${result.score}/${result.totalQuestions}` : 'Complete the six-question FIC foundation module.'}</p></div></div>
     <div className="mt-4 flex flex-wrap gap-2">{loading ? <span className="inline-flex items-center gap-2 text-xs font-semibold text-white/60"><Loader2 size={14} className="animate-spin" />Loading training</span> : <><button type="button" onClick={() => { if (isPrincipal) void openPrincipalView(); else setOpen(true) }} className="inline-flex h-10 items-center gap-2 rounded-xl bg-white px-3.5 text-sm font-semibold text-[#101828]">{isPrincipal ? <Users size={16} /> : <ClipboardCheck size={16} />}{isPrincipal ? 'View team progress' : completed ? 'Review training' : 'Start training'}</button>{isPrincipal ? <button type="button" onClick={() => setQuizOpen(true)} className="inline-flex h-10 items-center gap-2 rounded-xl border border-white/25 bg-transparent px-3.5 text-sm font-semibold !text-white hover:bg-white/10"><ClipboardCheck size={16} />View quiz</button> : null}{isPrincipal ? <button type="button" onClick={() => setPreviewOpen(true)} className="inline-flex h-10 items-center gap-2 rounded-xl border border-white/25 bg-transparent px-3.5 text-sm font-semibold !text-white hover:bg-white/10"><ShieldCheck size={16} />Try quiz</button> : null}</>}</div>
     {error && !open ? <p className="mt-3 text-xs leading-5 text-[#fecaca]">{error}</p> : null}
-    {open && !isPrincipal ? <Dialog title="Home Seekers FIC training" onClose={() => setOpen(false)}><TrainingQuiz organisationId={organisationId} userId={userId} onCompleted={setResult} onClose={() => setOpen(false)} /></Dialog> : null}
-    {open && isPrincipal ? <Dialog title="Home Seekers FIC training progress" onClose={() => setOpen(false)}><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#16894f]">Home Seekers · FIC training</p><h2 className="mt-1 text-xl font-semibold text-[#101828]">Team completion</h2><p className="mt-1 text-sm text-[#667085]">{teamLoading ? 'Loading team results…' : `${completedCount} of ${team.length} active team members completed.`}</p></div><button type="button" onClick={() => setOpen(false)} className="text-sm font-semibold text-[#667085]">Close</button></div>{error ? <p className="mt-5 rounded-xl border border-[#f5c2c7] bg-[#fff5f5] px-3 py-2 text-sm text-[#b42318]">{error}</p> : null}{teamLoading ? <div className="mt-6 flex items-center gap-2 text-sm text-[#667085]"><Loader2 size={16} className="animate-spin" />Loading training records</div> : <div className="mt-6 overflow-hidden rounded-xl border border-[#e1e8f0]"><div className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-3 border-b border-[#e7edf4] bg-[#f8fafc] px-4 py-2.5 text-xs font-semibold uppercase tracking-[0.08em] text-[#708198]"><span>Agent</span><span>Status</span><span>Score</span></div>{team.map((member) => <div key={member.userId} className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 border-b border-[#eef2f6] px-4 py-3 last:border-0"><div className="min-w-0"><p className="truncate text-sm font-semibold text-[#172a3d]">{member.name}</p><p className="truncate text-xs text-[#718198]">{member.email || member.role}</p></div><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${member.result ? 'bg-[#ecfdf3] text-[#16894f]' : 'bg-[#f2f4f7] text-[#667085]'}`}>{member.result ? 'Completed' : 'Not started'}</span><span className="text-sm font-semibold text-[#344054]">{member.result ? `${member.result.score}/${member.result.totalQuestions}` : '—'}</span></div>)}{!team.length ? <p className="px-4 py-6 text-sm text-[#667085]">No active agents were found.</p> : null}</div>}</Dialog> : null}
-    {quizOpen && isPrincipal ? <Dialog title="Home Seekers FIC quiz" onClose={() => setQuizOpen(false)}><QuizReview onClose={() => setQuizOpen(false)} /></Dialog> : null}
-    {previewOpen && isPrincipal ? <Dialog title="Home Seekers FIC quiz preview" onClose={() => setPreviewOpen(false)}><TrainingQuiz organisationId={organisationId} userId={userId} preview onCompleted={() => {}} onClose={() => setPreviewOpen(false)} /></Dialog> : null}
+    {open && !isPrincipal ? <Dialog title="FIC training" onClose={() => setOpen(false)}><TrainingQuiz organisationId={organisationId} userId={userId} onCompleted={setResult} onClose={() => setOpen(false)} /></Dialog> : null}
+    {open && isPrincipal ? <Dialog title="FIC training progress" onClose={() => setOpen(false)}><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#16894f]">FIC training</p><h2 className="mt-1 text-xl font-semibold text-[#101828]">Team completion</h2><p className="mt-1 text-sm text-[#667085]">{teamLoading ? 'Loading team results…' : `${completedCount} of ${team.length} active team members completed.`}</p></div><button type="button" onClick={() => setOpen(false)} className="text-sm font-semibold text-[#667085]">Close</button></div>{error ? <p className="mt-5 rounded-xl border border-[#f5c2c7] bg-[#fff5f5] px-3 py-2 text-sm text-[#b42318]">{error}</p> : null}{teamLoading ? <div className="mt-6 flex items-center gap-2 text-sm text-[#667085]"><Loader2 size={16} className="animate-spin" />Loading training records</div> : <div className="mt-6 overflow-hidden rounded-xl border border-[#e1e8f0]"><div className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-3 border-b border-[#e7edf4] bg-[#f8fafc] px-4 py-2.5 text-xs font-semibold uppercase tracking-[0.08em] text-[#708198]"><span>Agent</span><span>Status</span><span>Score</span></div>{team.map((member) => <div key={member.userId} className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 border-b border-[#eef2f6] px-4 py-3 last:border-0"><div className="min-w-0"><p className="truncate text-sm font-semibold text-[#172a3d]">{member.name}</p><p className="truncate text-xs text-[#718198]">{member.email || member.role}</p></div><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${member.result ? 'bg-[#ecfdf3] text-[#16894f]' : 'bg-[#f2f4f7] text-[#667085]'}`}>{member.result ? 'Completed' : 'Not started'}</span><span className="text-sm font-semibold text-[#344054]">{member.result ? `${member.result.score}/${member.result.totalQuestions}` : '—'}</span></div>)}{!team.length ? <p className="px-4 py-6 text-sm text-[#667085]">No active agents were found.</p> : null}</div>}</Dialog> : null}
+    {quizOpen && isPrincipal ? <Dialog title="FIC quiz" onClose={() => setQuizOpen(false)}><QuizReview onClose={() => setQuizOpen(false)} /></Dialog> : null}
+    {previewOpen && isPrincipal ? <Dialog title="FIC quiz preview" onClose={() => setPreviewOpen(false)}><TrainingQuiz organisationId={organisationId} userId={userId} preview onCompleted={() => {}} onClose={() => setPreviewOpen(false)} /></Dialog> : null}
   </section>
 }

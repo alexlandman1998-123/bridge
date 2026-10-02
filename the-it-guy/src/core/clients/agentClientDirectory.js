@@ -137,6 +137,9 @@ function inferProspectTypeLabel(prospect = {}) {
 
 function inferContactTypeLabel(contact = {}) {
   const type = normalizeLower(contact?.contactType || contact?.contact_type)
+  if (type.includes('tenant')) return 'Tenant'
+  if (type.includes('landlord')) return 'Landlord'
+  if (type.includes('investor')) return 'Investor'
   if (type.includes('seller')) return 'Seller Lead'
   if (type.includes('buyer')) return 'Buyer Lead'
   if (type.includes('company')) return 'Company Contact'

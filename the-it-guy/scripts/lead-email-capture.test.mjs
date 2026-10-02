@@ -116,44 +116,30 @@ assert.doesNotMatch(phase5Runbook, /Set these on the Supabase Edge Function/)
 const appSource = await fs.readFile(new URL('../src/App.jsx', import.meta.url), 'utf8')
 assert.match(appSource, /SettingsLeadCapturePage/)
 assert.match(appSource, /path="integrations\/lead-capture"/)
-assert.match(appSource, /SettingsLeadCapturePage section="email"/)
+assert.doesNotMatch(appSource, /SettingsLeadCapturePage section="email"/)
+assert.match(appSource, /Navigate to="\/settings\/integrations" replace/)
 
 const integrationsSource = await fs.readFile(new URL('../src/pages/settings/SettingsSyndicationPage.jsx', import.meta.url), 'utf8')
-assert.match(integrationsSource, /\/settings\/integrations\/lead-capture/)
-assert.match(integrationsSource, /Archived Lead Emails/)
+assert.doesNotMatch(integrationsSource, /\/settings\/integrations\/lead-capture/)
+assert.doesNotMatch(integrationsSource, /Archived Lead Emails|Email archive/)
 
 const settingsLandingSource = await fs.readFile(new URL('../src/pages/settings/SettingsLanding.jsx', import.meta.url), 'utf8')
 assert.match(settingsLandingSource, /buildVisibleSettingsGroups/)
 assert.match(settingsLandingSource, /item\.description/)
 
 const leadCapturePageSource = await fs.readFile(new URL('../src/pages/settings/SettingsLeadCapturePage.jsx', import.meta.url), 'utf8')
-for (const copy of [
-  'Archived Lead Emails',
-  'Archived Emails',
-  'Historical Review Queue',
-  'Lead Capture Repair',
-  'Create Lead',
-  'Link Existing Lead',
-  'All statuses',
-  'All confidence',
-  'All agents',
-  'Repair',
-  'Resolve',
-  'Ignore',
-]) {
-  assert.match(leadCapturePageSource, new RegExp(copy), `lead capture page should render ${copy}`)
-}
+assert.doesNotMatch(leadCapturePageSource, /Archived Lead Emails|Archived Emails|Historical Review Queue|Inbound email capture has been retired/)
 assert.doesNotMatch(leadCapturePageSource, /Generate Agency Addresses|Generate My Addresses|Production Email Setup/)
-assert.match(leadCapturePageSource, /buildLeadCaptureReviewQueueRows/)
-assert.match(leadCapturePageSource, /listInboundLeadEmails/)
-assert.match(leadCapturePageSource, /listLeadParseFailures/)
-assert.match(leadCapturePageSource, /resolveLeadCaptureReviewItem/)
-assert.match(leadCapturePageSource, /ignoreLeadCaptureReviewItem/)
-assert.match(leadCapturePageSource, /repairLeadCaptureReviewItem/)
-assert.match(leadCapturePageSource, /linkLeadCaptureReviewItem/)
-assert.match(leadCapturePageSource, /ReviewQueueFilters/)
-assert.match(leadCapturePageSource, /section === 'email'/)
-assert.match(leadCapturePageSource, /<ReviewQueueFilters filters=\{reviewFilters\}/)
+assert.doesNotMatch(leadCapturePageSource, /buildLeadCaptureReviewQueueRows/)
+assert.doesNotMatch(leadCapturePageSource, /listInboundLeadEmails/)
+assert.doesNotMatch(leadCapturePageSource, /listLeadParseFailures/)
+assert.doesNotMatch(leadCapturePageSource, /resolveLeadCaptureReviewItem/)
+assert.doesNotMatch(leadCapturePageSource, /ignoreLeadCaptureReviewItem/)
+assert.doesNotMatch(leadCapturePageSource, /repairLeadCaptureReviewItem/)
+assert.doesNotMatch(leadCapturePageSource, /linkLeadCaptureReviewItem/)
+assert.doesNotMatch(leadCapturePageSource, /ReviewQueueFilters/)
+assert.doesNotMatch(leadCapturePageSource, /section === 'email'/)
+assert.doesNotMatch(leadCapturePageSource, /<ReviewQueueFilters filters=\{reviewFilters\}/)
 
 const server = await createServer({
   root: process.cwd(),
@@ -418,3 +404,6 @@ try {
 }
 
 console.log('archived lead email tests passed')
+
+assert.match(leadCapturePageSource, /title="Agent card links"/)
+assert.doesNotMatch(leadCapturePageSource, /Controlled rollout|QR-ready links|<AgentDigitalCardPerformanceOverview/)

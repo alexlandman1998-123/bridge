@@ -47,15 +47,18 @@ export default function MarketingComingSoonPage() {
   }
 
   if (section === 'whatsapp') {
-    const openOverview = () => setSearchParams({ section: 'whatsapp' })
-    const openCreateCampaign = (id) => setSearchParams({ section: 'whatsapp', view: 'create', ...(typeof id === 'string' ? { id } : {}) })
-    const openCampaign = (id) => setSearchParams({ section: 'whatsapp', view: 'detail', id })
-    const rememberDraft = (id) => setSearchParams({ section: 'whatsapp', view: 'create', id }, { replace: true })
+    const whatsappTab = ['overview', 'past', 'audiences', 'settings'].includes(searchParams.get('tab')) ? searchParams.get('tab') : 'overview'
+    const whatsappParams = { section: 'whatsapp', ...(whatsappTab === 'overview' ? {} : { tab: whatsappTab }) }
+    const openWhatsAppTab = (tab) => setSearchParams({ section: 'whatsapp', ...(tab === 'overview' ? {} : { tab }) })
+    const openOverview = () => openWhatsAppTab(whatsappTab)
+    const openCreateCampaign = (id) => setSearchParams({ ...whatsappParams, view: 'create', ...(typeof id === 'string' ? { id } : {}) })
+    const openCampaign = (id) => setSearchParams({ ...whatsappParams, view: 'detail', id })
+    const rememberDraft = (id) => setSearchParams({ ...whatsappParams, view: 'create', id }, { replace: true })
     return campaignView === 'create'
       ? <CreateWhatsAppCampaign onBack={openOverview} campaignId={searchParams.get('id')} onDraftCreated={rememberDraft} />
       : campaignView === 'detail'
         ? <WhatsAppCampaignDetail campaignId={searchParams.get('id')} onBack={openOverview} />
-        : <WhatsAppCampaignOverview onCreateCampaign={openCreateCampaign} onOpenCampaign={openCampaign} />
+        : <WhatsAppCampaignOverview selectedView={whatsappTab} onViewChange={openWhatsAppTab} onCreateCampaign={openCreateCampaign} onOpenCampaign={openCampaign} />
   }
 
   if (section === 'website') {

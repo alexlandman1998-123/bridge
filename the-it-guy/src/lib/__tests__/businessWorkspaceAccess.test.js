@@ -6,7 +6,7 @@ import {
 } from '../businessWorkspaceAccess'
 
 describe('business workspace access', () => {
-  it('allows production rollout access when an agency explicitly enables rentals in Business Lines', () => {
+  it('activates the switcher when Rentals is manually saved in organisation settings', () => {
     const access = resolveBusinessWorkspaceRolloutAccess({
       enabled: true,
       requiresAllowlist: true,
@@ -25,7 +25,7 @@ describe('business workspace access', () => {
     expect(access.reason).toBe('workspace_business_lines_enabled')
   })
 
-  it('keeps production rollout blocked for non-allowlisted agencies without rentals enabled', () => {
+  it('does not enable the switcher for a non-allowlisted sales organisation', () => {
     const access = resolveBusinessWorkspaceRolloutAccess({
       enabled: true,
       requiresAllowlist: true,
