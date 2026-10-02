@@ -1,0 +1,148 @@
+{
+  "releasedAt": "2026-10-02T08:42:23.697164+02:00",
+  "sourceCommit": "9b3858cc3149ddde240e70c32c4cbb1a747c1766",
+  "sourceFilesCommitted": 249,
+  "approval": "User approved updating GitHub and releasing to production in this task.",
+  "products": [
+    "Primary Arch9 transaction workspace",
+    "Internal admin console",
+    "Public website renderer",
+    "Shared Supabase migrations and Edge Functions"
+  ],
+  "git": {
+    "branch": "main",
+    "sourceCommitPushed": true,
+    "generatedOutputExcluded": true,
+    "credentialPatternScan": "No secret key/private key/service-role JWT candidates found in candidate source/docs."
+  },
+  "deployments": [
+    {
+      "id": "dpl_85yyyJqZtFtERU1WYjRGNXn2sbZU",
+      "url": "bridge-878ci18mn-alexs-projects-f5496a21.vercel.app",
+      "readyState": "READY",
+      "target": "production",
+      "alias": [
+        "app.arch9.co.za",
+        "bridgenine.co.za",
+        "app.bridgenine.co.za",
+        "bridge-alexs-projects-f5496a21.vercel.app",
+        "bridge-git-main-alexs-projects-f5496a21.vercel.app"
+      ],
+      "aliasAssigned": true,
+      "aliasError": null,
+      "product": "app",
+      "sourceCommit": "9b3858cc3149ddde240e70c32c4cbb1a747c1766"
+    },
+    {
+      "id": "dpl_Er7UvUe92TtzDG5Whath1MdRFeFK",
+      "url": "bridge-admin-di043qt08-alexs-projects-f5496a21.vercel.app",
+      "readyState": "READY",
+      "target": "production",
+      "alias": [
+        "admin.arch9.co.za",
+        "bridge-admin-liart.vercel.app",
+        "bridge-admin-alexs-projects-f5496a21.vercel.app",
+        "bridge-admin-git-main-alexs-projects-f5496a21.vercel.app"
+      ],
+      "aliasAssigned": true,
+      "aliasError": null,
+      "product": "admin",
+      "sourceCommit": "9b3858cc3149ddde240e70c32c4cbb1a747c1766"
+    },
+    {
+      "id": "dpl_5befw9DnhUHUNn3jnQHa3zkRFQJS",
+      "url": "arch9-websites-production-q1sz2mhs7-alexs-projects-f5496a21.vercel.app",
+      "readyState": "READY",
+      "target": "production",
+      "alias": [
+        "arch9-websites-production.vercel.app",
+        "arch9-websites-production-alexs-projects-f5496a21.vercel.app"
+      ],
+      "aliasAssigned": true,
+      "aliasError": null,
+      "product": "websites",
+      "sourceCommit": "9b3858cc3149ddde240e70c32c4cbb1a747c1766"
+    }
+  ],
+  "checks": {
+    "checkApp": "PASS: normal lint, established baseline tests, production build",
+    "checkWebsite": "PASS: typecheck, 33 tests, production build",
+    "checkAdmin": "PASS: production build",
+    "changedVitestFiles": 15,
+    "changedVitestTests": 94,
+    "changedNodeTestFiles": "All 61 pass across the initial 59 passing files, two repaired/retested files, and rechecked residential dashboard changes.",
+    "regressionRepairBehaviorChecks": "10 tests pass: marketing draft semantics, seller compliance gates, and repaired listing/seller source checks.",
+    "denoPolicyTests": 3,
+    "denoTypecheck": "Both changed Edge Function entrypoints pass.",
+    "deploymentGates": "Bundle budget, packaged server scripts and schema compatibility pass.",
+    "lintWarnings": 559,
+    "lintErrors": 0,
+    "githubWorkflows": "Certification and migration guard checks passed."
+  },
+  "database": {
+    "projectId": "isdowlnollckzvltkasn",
+    "recovery": "RECOVERY_LOCKED",
+    "appliedMigrations": [
+      "20261001185738_imported_transaction_detail_review.sql",
+      "20261001191425_imported_transaction_review_status.sql",
+      "20261001195834_imported_transaction_funding_review.sql",
+      "20261001201355_imported_transaction_funding_validation.sql",
+      "20261001202026_branch_fic_training_compliance.sql"
+    ],
+    "finalDryRun": {
+      "upToDate": true,
+      "dryRun": true,
+      "migrations": [],
+      "seeds": [],
+      "roles": [],
+      "message": "Remote database is up to date."
+    },
+    "localVersions": 1328,
+    "remoteVersions": 1328,
+    "pendingVersions": 0,
+    "remoteOnlyVersions": 0,
+    "verificationFile": "main-catchup-production-database-verification-20261002.json"
+  },
+  "edgeFunctions": [
+    {
+      "id": "1b2877af-6a16-4234-82d3-3ce05c07bf8a",
+      "slug": "knowledge-factory-graphql",
+      "version": 29,
+      "status": "ACTIVE",
+      "verify_jwt": true
+    },
+    {
+      "id": "905f8dc9-8920-4c97-9678-a75427115a4d",
+      "slug": "knowledge-factory-fica-discovery",
+      "version": 16,
+      "status": "ACTIVE",
+      "verify_jwt": true
+    }
+  ],
+  "liveBrowserChecks": {
+    "emailWorkspace": "Authenticated production page loads; Overview, Past campaigns, Audiences and Settings navigate and load successfully. Five statistic cards and empty-state/performance sections render. All four menu buttons measure 327px at the checked viewport; Overview aria-current=page. No recorded browser errors.",
+    "transactionImports": "Authenticated transactions list loads imported review badges and quick filters; no recorded browser errors. No transaction data saved or confirmed.",
+    "admin": "Operating Console sign-in page loads; no recorded browser errors.",
+    "edgeAuth": "Both changed deployed functions reject unauthenticated requests with HTTP 401.",
+    "publicWebsite": "Production deployment is READY and alias assigned. Default hostname renders the existing Website unavailable publishing/domain gate; no published tenant/domain connection was created."
+  },
+  "remainingIssues": [
+    {
+      "name": "Supabase automatic GitHub check",
+      "status": "Pre-existing failure retained",
+      "message": "Remote migration versions not found in local migrations directory.",
+      "baseline": "Same failure on previous main commit d1010dc57. Supabase main branch metadata shows MIGRATIONS_FAILED since July; production database is ACTIVE_HEALTHY and the exact live migration ledger/dry run is up to date. Historical integration reconciliation was not attempted."
+    },
+    {
+      "name": "Public website hostname",
+      "status": "Publishing/domain connection still needed",
+      "message": "Default arch9-websites-production.vercel.app hostname has no published tenant connection. The renderer was deployed, without changing site publication or domain configuration."
+    }
+  ],
+  "limits": "Verification did not send campaigns, create customer data, buy supplier reports, attach original PDFs, confirm imported deal details, upload compliance documents, or sign in to admin. Paid external supplier functionality was not exercised.",
+  "recoveryFiles": [
+    "main-catchup-production-preflight-20261002.json",
+    "main-catchup-production-rollback-20261002.sql"
+  ],
+  "evidenceNote": "This report describes the deployed application source commit. A later documentation-only commit retaining this evidence has identical application source."
+}
