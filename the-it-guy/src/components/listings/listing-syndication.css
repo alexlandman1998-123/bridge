@@ -1,0 +1,22 @@
+.listing-syndication-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: stretch; }
+.listing-syndication-card { min-width: 0; border: 1px solid #dbe6f2; border-radius: 16px; background: white; overflow: hidden; }
+.listing-syndication-card.is-selected { border-color: #91abc0; background: #f4f8fc; }
+.listing-syndication-card:hover { border-color: #91abc0; }
+.listing-syndication-card > button { display: flex; flex-direction: column; align-items: flex-start; width: 100%; min-height: 208px; padding: 20px; border: 0; border-radius: 16px; background: transparent; text-align: left; color: #18324b; }
+.listing-syndication-card > button[data-rental-control]:disabled { cursor: default; opacity: 1; }
+.listing-syndication-card > button:focus-visible { outline: 2px solid #274c69; outline-offset: -3px; }
+.listing-syndication-card-top { display: flex; align-items: center; justify-content: space-between; width: 100%; gap: 12px; }
+.listing-syndication-logo { display: flex; align-items: center; gap: 10px; width: 160px; max-width: calc(100% - 36px); height: 48px; color: #315f80; }
+.listing-syndication-logo img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.listing-syndication-logo.is-internal img { width: 42px; height: 42px; }
+.listing-syndication-logo.is-internal span { color: #071417; font-size: 24px; font-weight: 700; }
+.listing-syndication-check { display: flex; align-items: center; justify-content: center; flex-shrink: 0; width: 24px; height: 24px; border: 1px solid #c8d6e5; border-radius: 50%; background: white; }
+.is-selected .listing-syndication-check { background: #274c69; border-color: #274c69; color: white; }
+.listing-syndication-label { margin-top: 20px; font-size: 16px; font-weight: 600; }
+.listing-syndication-description { margin-top: 8px; font-size: 12px; line-height: 20px; color: #607891; }
+.listing-syndication-status { margin-top: 8px; font-size: 12px; font-weight: 600; color: #607891; }
+.listing-syndication-attention { margin-top: 8px; font-size: 12px; line-height: 20px; color: #8a5a12; }
+.listing-syndication-status.needs-attention { color: #8a5a12; }
+.listing-syndication-card-actions { padding: 0 20px 20px; }
+@media (min-width: 1280px) { .listing-syndication-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (max-width: 639px) { .listing-syndication-grid { grid-template-columns: minmax(0, 1fr); } }

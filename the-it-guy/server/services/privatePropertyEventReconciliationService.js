@@ -70,10 +70,20 @@ async function reconcileConfig({ client, config, secrets, createPrivateProperty 
   }
   const byPropertyId = new Map(syncRows.map((row) => [normalizePrivatePropertyText(row.property_id), row]))
   const results = []
+  let staleEventCount = 0
+  const latestByProperty = new Map()
   for (const event of events) {
+    const id = eventPropertyId(event)
+    const previous = latestByProperty.get(id)
+    if (!previous || (Date.parse(event.eventDate) || 0) > (Date.parse(previous.eventDate) || 0)) latestByProperty.set(id, event)
+  }
+  for (const event of latestByProperty.values()) {
     const propertyId = eventPropertyId(event)
     const sync = byPropertyId.get(propertyId)
     if (!sync) continue
+    // Replayed feed history cannot undo a newer status probe or event.
+    const observedAt = Math.max(Date.parse(sync.last_checked_at) || 0, Date.parse(sync.last_event_at) || 0)
+    if ((Date.parse(event.eventDate) || 0) <= observedAt) { staleEventCount += 1; continue }
     const externalStatus = resolvePrivatePropertyExternalStatus({ eventType: event.listingFeedEventType || event.eventType, eventStatus: event.eventStatus, fallback: sync.external_status || 'submitted' })
     const recorded = await recordPrivatePropertyListingSync({
       client,
@@ -90,9 +100,6 @@ async function reconcileConfig({ client, config, secrets, createPrivateProperty 
       eventDescription: event.eventDescription || '',
       eventAt: event.eventDate || '',
       continuationKey,
-      suburbId: sync.suburb_id,
-      agentIds: sync.agent_ids || [],
-      payloadSummary: sync.last_payload_summary || {},
       responseSummary: { eventFeed: response.summary || {} },
       eventSummary: event,
       activatedAt: externalStatus === 'active' ? event.eventDate || new Date().toISOString() : '',
@@ -100,7 +107,7 @@ async function reconcileConfig({ client, config, secrets, createPrivateProperty 
     results.push({ listingId: sync.private_listing_id, propertyId, externalStatus, syncId: recorded.sync?.id || null })
   }
   await updateCheckpoint({ client, config, continuationKey })
-  return { configId: config.id, branchGuid: guid, status: 'COMPLETE', checkpoint, continuationKey: continuationKey || checkpoint, eventCount: events.length, processed: results.length, unmatchedEventCount: events.length - results.length, results }
+  return { configId: config.id, branchGuid: guid, status: 'COMPLETE', checkpoint, continuationKey: continuationKey || checkpoint, eventCount: events.length, staleEventCount, processed: results.length, unmatchedEventCount: [...latestByProperty.keys()].filter((id) => !byPropertyId.has(id)).length, results }
 }
 
 export async function runPrivatePropertyEventReconciliation({ client, secrets = process.env, createPrivateProperty = createPrivatePropertyClient } = {}) {

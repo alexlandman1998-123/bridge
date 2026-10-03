@@ -200,3 +200,41 @@ export function buildListingOverviewPerformance({
     analyticsLoading: analytics?.loading === true,
   }
 }
+
+export function resolveListingOverviewMarketStartDate(listing = {}, draft = {}) {
+  return [draft?.listingDate, listing?.listingDate, listing?.publishedAt, listing?.published_at,
+    listing?.firstPublishedAt, listing?.first_published_at, listing?.marketedAt, listing?.marketed_at,
+    listing?.listedAt, listing?.listed_at].map(text).find(Boolean) || ''
+}
+
+export function getListingOverviewDaysOnMarket(marketStartDate, now = new Date()) {
+  const start = new Date(marketStartDate || '').getTime()
+  return Number.isFinite(start) ? Math.max(0, Math.floor((now.getTime() - start) / 86_400_000)) : 0
+}
+
+async function readSellerOverview(name, token, accessToken) {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 15_000)
+  try {
+    const request = supabase.rpc(name, { p_token: token, p_access_token: accessToken })
+    return await (typeof request.abortSignal === 'function' ? request.abortSignal(controller.signal) : request)
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+export async function getSellerListingOverviewPerformance({ token, accessToken, listingId }) {
+  if (!token || !accessToken || !listingId || !isSupabaseConfigured || !supabase) throw new Error('Listing performance unavailable.')
+  const result = await readSellerOverview('bridge_seller_listing_marketing_performance', token, accessToken)
+  if (result.error) throw result.error
+  if (String(result.data?.listingId || '') !== String(listingId)) throw new Error('Listing performance scope mismatch.')
+  return { ...result.data, available: true }
+}
+
+export async function getSellerListingOverviewContext({ token, accessToken, listingId }) {
+  if (!token || !accessToken || !listingId || !isSupabaseConfigured || !supabase) throw new Error('Listing context unavailable.')
+  const result = await readSellerOverview('bridge_seller_listing_overview_context', token, accessToken)
+  if (result.error) throw result.error
+  if (String(result.data?.listingId || '') !== String(listingId)) throw new Error('Listing context scope mismatch.')
+  return result.data
+}

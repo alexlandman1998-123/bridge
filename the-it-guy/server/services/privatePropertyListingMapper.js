@@ -221,9 +221,11 @@ function resolveAgentIds(agentMapping = {}, listing = {}, options = {}) {
     .filter(Boolean)
 }
 
-function resolvePropertyId(listing = {}, publication = {}, options = {}) {
+function resolvePropertyId(listing = {}, publication = {}, options = {}, existingSync = {}) {
   return firstText(
     options.propertyId,
+    existingSync.property_id,
+    existingSync.propertyId,
     publication.private_property_property_id,
     publication.privatePropertyPropertyId,
     publication.external_reference,
@@ -747,7 +749,7 @@ export function createPrivatePropertyListingPlan({
     value: firstText(options.status, publication.status, listing.listing_status, listing.listingStatus),
   })
   const branchId = firstText(options.branchGuid, options.branchId, existingSync.branch_guid, existingSync.branchGuid, listing.private_property_branch_guid, listing.privatePropertyBranchGuid)
-  const propertyId = resolvePropertyId(listing, publication, options)
+  const propertyId = resolvePropertyId(listing, publication, options, existingSync)
   const agentIds = resolveAgentIds(agentMapping, listing, options)
   const price = resolvePrice(listing, publication, options)
   const deposit = listingType === 'Rental'

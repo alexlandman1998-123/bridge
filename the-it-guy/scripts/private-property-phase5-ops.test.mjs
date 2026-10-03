@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { spawnSync } from 'node:child_process'
 import {
   createPrivatePropertyClient,
   createPrivatePropertyToken,
@@ -134,5 +137,25 @@ assert.equal(packageJson.scripts['private-property:active-listings'], 'node scri
 assert.equal(packageJson.scripts['private-property:event-feed'], 'node scripts/private-property-event-feed.mjs')
 assert.equal(packageJson.scripts['private-property:status-update'], 'node scripts/private-property-status-update.mjs')
 assert.equal(packageJson.scripts['test:private-property-phase5'], 'node scripts/private-property-phase5-ops.test.mjs')
+
+const cliDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'pp-status-guard-'))
+try {
+  for (const [environment, baseUrl, propertyStatus] of [
+    ['production', 'https://services.sandbox.pp.co.za/AgentImport/AgentImport.asmx', 'ForSale'],
+    ['sandbox', 'https://services.privateproperty.co.za/AgentImport/AgentImport.asmx', 'ToLet'],
+  ]) {
+    const output = path.join(cliDirectory, `${environment}.json`)
+    const result = spawnSync(process.execPath, [
+      '--import', 'data:text/javascript,globalThis.fetch=()=>{throw new Error("Unexpected network call")}',
+      new URL('./private-property-status-update.mjs', import.meta.url).pathname,
+      '--apply', '--property-id=fixture-property', '--branch-guid=CA167B18-C6DC-49AD-B018-2B72B187918F',
+      `--property-status=${propertyStatus}`, `--output=${output}`,
+    ], { encoding: 'utf8', env: { ...process.env, PRIVATE_PROPERTY_ENVIRONMENT: environment, PRIVATE_PROPERTY_BASE_URL: baseUrl, PRIVATE_PROPERTY_USERNAME: 'fixture-user', PRIVATE_PROPERTY_PASSWORD: 'fixture-password' } })
+    assert.equal(result.status, 1, result.stdout + result.stderr)
+    const report = JSON.parse(fs.readFileSync(output, 'utf8'))
+    assert.deepEqual(report.technicalBlockers, ['private_property_production_requires_verified_reactivation'])
+    assert.deepEqual(report.safety, { privatePropertyApiCalled: false, databaseWritten: false, listingStatusChanged: false })
+  }
+} finally { fs.rmSync(cliDirectory, { recursive: true, force: true }) }
 
 console.log('Private Property phase 5 operations contract passed')

@@ -1,3 +1,7 @@
+import SellerPortalAccessControls from '../components/client-portal/SellerPortalAccessControls.jsx'
+import '../components/listings/property24-manage.css'
+import ListingChannelManageMenu from '../components/listings/ListingChannelManageMenu'
+import ListingChannelTableHeader from '../components/listings/ListingChannelTableHeader'
 import {
   ArrowLeft,
   BarChart3,
@@ -80,6 +84,7 @@ import {
 } from '../services/listings/listingPublicationState'
 import {
   buildListingChannelPublicationDisplay,
+  getPrivatePropertyReadinessMessages,
   getListingChannelViewUrl,
   normalizeListingChannelPublicUrl,
   normalizeListingChannelReference,
@@ -93,6 +98,7 @@ import {
 import {
   buildListingOverviewPerformance,
   getListingOverviewViewingStatusLabel,
+  resolveListingOverviewMarketStartDate,
 } from '../services/listings/listingOverviewPerformanceService'
 import { buildListingOverviewPricePosition } from '../services/listings/listingOverviewPriceModel'
 import {
@@ -1028,6 +1034,7 @@ function buildListingSnapshotFormData(draft = {}) {
     parkingCovered: draft.coveredParking,
     parkingOpen: draft.openParking,
     erfSize: draft.erfSize,
+    erfSizeUnit: draft.erfSizeUnit,
     floorSize: draft.floorSize,
     askingPrice: Number(draft.price || 0) || 0,
     priceOnApplication,
@@ -1262,6 +1269,10 @@ function getPrivatePropertyApiMessage(payload = {}, fallback = 'Private Property
   if (payload?.route === 'listingStatus' && payload?.monitor?.apiError) {
     return `Private Property status check failed: ${payload.monitor.apiError.message || 'Please try again shortly.'}`
   }
+  const locationIssue = payload?.readiness?.locationResolution?.message || payload?.report?.locationResolution?.message
+  if (locationIssue) return locationIssue
+  const recoveryIssue = payload?.readiness?.recovery?.message || payload?.report?.recovery?.message
+  if (recoveryIssue) return recoveryIssue
   const preview = payload?.preview || payload?.readiness?.preview || payload?.report?.preview || {}
   const readinessBlockers = payload?.readiness?.blockers || payload?.report?.readiness?.blockers || payload?.report?.blockers || []
   const dataBlockers = Array.isArray(preview.dataBlockers) ? preview.dataBlockers : []
@@ -1292,25 +1303,6 @@ function getPrivatePropertyReadinessCounts(payload = {}) {
     technicalBlockers: Array.isArray(preview.technicalBlockers) ? preview.technicalBlockers.length : 0,
     readinessBlockers: Array.isArray(payload?.readiness?.blockers) ? payload.readiness.blockers.length : Array.isArray(payload?.report?.blockers) ? payload.report.blockers.length : 0,
   }
-}
-
-function getPrivatePropertyReadinessIssues(payload = {}) {
-  const preview = payload?.preview || payload?.readiness?.preview || payload?.report?.preview || {}
-  const missingConfiguration = Array.isArray(payload?.missingConfiguration) ? payload.missingConfiguration : []
-  const warnings = [
-    ...(Array.isArray(payload?.readiness?.warnings) ? payload.readiness.warnings : []),
-    ...(Array.isArray(payload?.report?.readiness?.warnings) ? payload.report.readiness.warnings : []),
-    ...(Array.isArray(payload?.report?.warnings) ? payload.report.warnings : []),
-  ]
-  const blockers = [
-    ...missingConfiguration.map((item) => `Setup: ${formatPrivatePropertyBlocker(item)}`),
-    ...(Array.isArray(preview.dataBlockers) ? preview.dataBlockers.map(formatPrivatePropertyBlocker) : []),
-    ...(Array.isArray(preview.technicalBlockers) ? preview.technicalBlockers.map(formatPrivatePropertyBlocker) : []),
-    ...(Array.isArray(payload?.readiness?.blockers) ? payload.readiness.blockers.map(formatPrivatePropertyBlocker) : []),
-    ...(Array.isArray(payload?.report?.blockers) ? payload.report.blockers.map(formatPrivatePropertyBlocker) : []),
-    ...warnings.map(formatPrivatePropertyBlocker),
-  ]
-  return [...new Set(blockers.filter(Boolean))]
 }
 
 function getPrivatePropertyStatusCheckedAt(statusResult = {}) {
@@ -2392,7 +2384,7 @@ function DistributionChannel({
   const displayReference = normalizeListingChannelReference(reference)
   const safePublicUrl = normalizeListingChannelPublicUrl(publicUrl || publicationState?.publicUrl)
   return (
-    <div className="grid gap-4 border-b border-[#edf2f7] px-4 py-4 last:border-b-0 lg:grid-cols-[minmax(210px,1fr)_minmax(145px,0.7fr)_minmax(170px,0.8fr)_minmax(150px,0.75fr)_auto] lg:items-center">
+    <div className="listing-channel-columns border-b border-[#edf2f7] last:border-b-0">
       <div className="flex min-w-0 items-center gap-3">
         <PlatformLogo src={logoSrc} icon={Icon} label={name} />
         <div className="min-w-0">
@@ -2437,35 +2429,29 @@ function DistributionChannel({
         ) : null}
       </div>
       <div className="min-w-0">
-        <div className="grid gap-1 text-[0.68rem] text-[#607387]">
-          {savedAt ? <p><span className="font-semibold uppercase tracking-[0.06em] text-[#8294aa]">Arch9 saved</span> · {savedAt}</p> : null}
+        <div className="listing-channel-activity grid gap-1">
+          {savedAt ? <p><span >Arch9 saved</span> · {savedAt}</p> : null}
           {publicationState?.stage === 'failed' && publicationState.failedAt ? <p className="font-semibold text-[#9a5b13]">Portal submission failed · {formatRelativeTime(publicationState.failedAt)}</p> : null}
-          {publicationState?.submittedAt ? <p><span className="font-semibold uppercase tracking-[0.06em] text-[#8294aa]">Sent to portal</span> · {formatRelativeTime(publicationState.submittedAt)}</p> : null}
-          {publicationState?.acceptedAt ? <p><span className="font-semibold uppercase tracking-[0.06em] text-[#8294aa]">Accepted</span> · {formatRelativeTime(publicationState.acceptedAt)}</p> : null}
-          {publicationState?.verifiedAt ? <p><span className="font-semibold uppercase tracking-[0.06em] text-[#8294aa]">Verified</span> · {formatRelativeTime(publicationState.verifiedAt)}</p> : null}
-          {publicationState?.withdrawnAt ? <p><span className="font-semibold uppercase tracking-[0.06em] text-[#8294aa]">Withdrawn</span> · {formatRelativeTime(publicationState.withdrawnAt)}</p> : null}
-          {!savedAt && !publicationState?.submittedAt && lastSynced ? <p><span className="font-semibold uppercase tracking-[0.06em] text-[#8294aa]">Last synced</span> · {lastSynced}</p> : null}
+          {publicationState?.submittedAt ? <p><span >Sent to portal</span> · {formatRelativeTime(publicationState.submittedAt)}</p> : null}
+          {publicationState?.acceptedAt ? <p><span >Accepted</span> · {formatRelativeTime(publicationState.acceptedAt)}</p> : null}
+          {publicationState?.verifiedAt ? <p><span >Verified</span> · {formatRelativeTime(publicationState.verifiedAt)}</p> : null}
+          {publicationState?.withdrawnAt ? <p><span >Withdrawn</span> · {formatRelativeTime(publicationState.withdrawnAt)}</p> : null}
+          {!savedAt && !publicationState?.submittedAt && lastSynced ? <p><span >Last synced</span> · {lastSynced}</p> : null}
         </div>
       </div>
       <div className="flex flex-wrap items-center justify-start gap-2 lg:justify-end">
         {primaryAction}
         {manageActions.length ? (
-          <details className="relative open:z-40">
-            <summary className="inline-flex min-h-9 cursor-pointer list-none items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-sm font-semibold text-[#35546c] transition hover:border-[#b7c8db] hover:bg-[#f7fbff] [&::-webkit-details-marker]:hidden">
-              <SlidersHorizontal size={15} />
-              Manage
-            </summary>
-            <div className="absolute right-0 z-30 mt-2 grid w-56 gap-1.5 overflow-hidden rounded-[16px] border border-[#dbe6f2] bg-white p-1.5 shadow-[0_18px_34px_rgba(15,23,42,0.14)]">
-              {manageActions.map((action, index) => <div key={action.key || `channel-action-${index}`}>{action}</div>)}
-            </div>
-          </details>
+          <ListingChannelManageMenu channelName={name}>
+            {manageActions.map((action, index) => <div key={action.key || `channel-action-${index}`}>{action}</div>)}
+          </ListingChannelManageMenu>
         ) : null}
       </div>
     </div>
   )
 }
 
-function InfoTile({ icon = Info, label, value, status = '' }) {
+function InfoTile({ icon = Info, label, value, status = '', statusLabel = '' }) {
   const Icon = icon
   return (
     <div className="flex min-w-0 items-start gap-3 rounded-[16px] border border-[#e1e9f2] bg-[#fbfdff] px-3.5 py-3">
@@ -2474,9 +2460,9 @@ function InfoTile({ icon = Info, label, value, status = '' }) {
       </span>
       <div className="min-w-0 flex-1">
         <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8294aa]">{label}</p>
-        <p className="mt-1 break-words text-sm font-semibold leading-5 text-[#243d56]" title={String(value || '—')}>{value || '—'}</p>
+        <p className="mt-1 break-words text-sm font-semibold leading-5 text-[#243d56]" title={String(value ?? '—')}>{value === 0 ? 0 : value || '—'}</p>
       </div>
-      {status ? <StatusPill status={status} /> : null}
+      {status ? <StatusPill status={status} label={statusLabel} /> : null}
     </div>
   )
 }
@@ -2986,18 +2972,7 @@ function getDaysOnMarket(createdAt) {
 }
 
 function getListingMarketStartDate(listing = {}, draft = {}) {
-  return firstDraftValue(
-    draft?.listingDate,
-    listing?.listingDate,
-    listing?.publishedAt,
-    listing?.published_at,
-    listing?.firstPublishedAt,
-    listing?.first_published_at,
-    listing?.marketedAt,
-    listing?.marketed_at,
-    listing?.listedAt,
-    listing?.listed_at,
-  )
+  return resolveListingOverviewMarketStartDate(listing, draft)
 }
 
 function getOfferAverage(offers = []) {
@@ -3371,6 +3346,7 @@ function buildPropertyDraft(listingRecord) {
     coveredParking: String(firstDraftValue(propertyDetails?.coveredParking, onboardingFormData.parkingCovered, onboardingFormData.coveredParking)).trim(),
     openParking: String(firstDraftValue(propertyDetails?.openParking, onboardingFormData.parkingOpen, onboardingFormData.openParking)).trim(),
     erfSize: String(firstDraftValue(propertyDetails?.erfSize, onboardingFormData.erfSize)).trim(),
+    erfSizeUnit: String(firstDraftValue(propertyDetails?.erfSizeUnit, propertyDetails?.erf_size_unit, listingRecord?.erfSizeUnit, listingRecord?.erf_size_unit, onboardingFormData.erfSizeUnit, onboardingFormData.erf_size_unit, 'm²')).trim(),
     floorSize: String(firstDraftValue(propertyDetails?.floorSize, onboardingFormData.floorSize)).trim(),
     price: String(firstDraftValue(propertyDetails?.price, listingRecord?.askingPrice, onboardingFormData.askingPrice)).trim(),
     pricePresentation: String(firstDraftValue(propertyDetails?.pricePresentation, onboardingFormData.pricePresentation, onboardingFormData.saleType === 'POA' ? 'Poa' : 'Standard')).trim(),
@@ -4806,6 +4782,7 @@ function AgentListingDetail() {
         coveredParking: nextDraft.coveredParking,
         openParking: nextDraft.openParking,
         erfSize: nextDraft.erfSize,
+        erfSizeUnit: nextDraft.erfSizeUnit,
         floorSize: nextDraft.floorSize,
         price: Number(nextDraft.price || 0),
         pricePresentation: nextDraft.pricePresentation,
@@ -4878,6 +4855,7 @@ function AgentListingDetail() {
         parkingBays: nextDraft.parkingBays,
         floorSize: nextDraft.floorSize,
         erfSize: nextDraft.erfSize,
+        erfSizeUnit: nextDraft.erfSizeUnit,
         ratesTaxes: nextDraft.ratesTaxesNotApplicable ? '' : nextDraft.ratesTaxes,
         levies: nextDraft.leviesNotApplicable ? '' : nextDraft.levies,
         description: nextDraft.description.trim(),
@@ -5104,6 +5082,7 @@ function AgentListingDetail() {
           parkingBays: effectiveDraft.parkingBays,
           floorSize: effectiveDraft.floorSize,
           erfSize: effectiveDraft.erfSize,
+          erfSizeUnit: effectiveDraft.erfSizeUnit,
           ratesTaxes: effectiveDraft.ratesTaxesNotApplicable ? null : effectiveDraft.ratesTaxes,
           levies: effectiveDraft.leviesNotApplicable ? null : effectiveDraft.levies,
           description: effectiveDraft.description.trim(),
@@ -5689,6 +5668,7 @@ function AgentListingDetail() {
         parkingBays: nextDraft.parkingBays,
         floorSize: nextDraft.floorSize,
         erfSize: nextDraft.erfSize,
+        erfSizeUnit: nextDraft.erfSizeUnit,
         ratesTaxes: nextDraft.ratesTaxesNotApplicable ? null : nextDraft.ratesTaxes,
         levies: nextDraft.leviesNotApplicable ? null : nextDraft.levies,
         description: nextDraft.description,
@@ -5957,7 +5937,7 @@ function AgentListingDetail() {
     setProperty24Action('preview')
     setProperty24Preview(null)
     setDetailError('')
-    setDetailMessage('Checking Property24 readiness...')
+    setDetailMessage('Checking Property24 listing requirements...')
     try {
       const saveResult = await saveMarketingDraft(marketingDraft, {
         successMessage: '',
@@ -6048,8 +6028,9 @@ function AgentListingDetail() {
     }
   }
 
-  async function callPrivatePropertyListingAction(action, body = {}, options = {}) {
-    if (!listingRecord?.id) throw new Error('Open a saved listing before using Private Property.')
+  const privatePropertyListingId = listingRecord?.id
+  const callPrivatePropertyListingAction = useCallback(async (action, body = {}, options = {}) => {
+    if (!privatePropertyListingId) throw new Error('Open a saved listing before using Private Property.')
     if (!isSupabaseConfigured || !supabase) throw new Error('Sign in before using Private Property publishing.')
     const sessionResult = await supabase.auth.getSession()
     const accessToken = sessionResult.data?.session?.access_token
@@ -6074,13 +6055,28 @@ function AgentListingDetail() {
         ...body,
       })
     }
-    const response = await fetch(`${PRIVATE_PROPERTY_LISTING_API_BASE_PATH}/${encodeURIComponent(listingRecord.id)}/${action}${query}`, requestOptions)
+    const response = await fetch(`${PRIVATE_PROPERTY_LISTING_API_BASE_PATH}/${encodeURIComponent(privatePropertyListingId)}/${action}${query}`, requestOptions)
     const payload = await response.json().catch(() => ({}))
     if (!response.ok) {
       throw new Error(getPrivatePropertyApiMessage(payload, options.fallbackMessage || 'Private Property request failed.'))
     }
     return payload
-  }
+  }, [privatePropertyListingId])
+
+  useEffect(() => {
+    if (!listingRecord?.id || !isSupabaseConfigured || !supabase) return undefined
+    let active = true
+    void callPrivatePropertyListingAction('status', {}, {
+      method: 'GET', query: new URLSearchParams({ cached: 'true' }),
+    }).then((payload) => {
+      if (!active) return
+      setPrivatePropertyStatusCheck((previous) => {
+        const oldTime = previous?.listingId === payload.listingId ? Date.parse(getPrivatePropertyStatusCheckedAt(previous)) || 0 : 0
+        return (Date.parse(getPrivatePropertyStatusCheckedAt(payload)) || 0) >= oldTime ? payload : previous
+      })
+    }).catch(() => { /* Keep the previous observation if the saved status is unavailable. */ })
+    return () => { active = false }
+  }, [callPrivatePropertyListingAction, listingRecord?.id, listingRecord?.updatedAt])
 
   async function openSyndicationReview({ requiredForChannel = '', showModal = true } = {}) {
     setSyndicationReviewLoading(true)
@@ -6139,14 +6135,19 @@ function AgentListingDetail() {
     setPrivatePropertyAction('preview')
     setPrivatePropertyPreview(null)
     setDetailError('')
-    setDetailMessage('Checking Private Property readiness...')
+    setDetailMessage('Checking Private Property listing requirements...')
     try {
-      const saveResult = await saveMarketingDraft(marketingDraft, {
-        successMessage: '',
-      })
-      if (saveResult?.ok === false) throw saveResult.error || new Error('Save the listing before checking Private Property readiness.')
+      if (marketingDraftDirtyRef.current) {
+        const saveResult = await saveMarketingDraft(marketingDraft, { successMessage: '' })
+        if (saveResult?.ok === false) throw saveResult.error || new Error('Save the listing before checking Private Property readiness.')
+      }
       const payload = await callPrivatePropertyListingAction('preview', {}, { fallbackMessage: 'Private Property preview failed.' })
       setPrivatePropertyPreview(payload)
+      const recovery = payload?.readiness?.recovery || payload?.report?.recovery
+      if (recovery?.externalStatus) setPrivatePropertyStatusCheck({
+        listingId: listingRecord?.id,
+        monitor: { externalStatus: recovery.externalStatus, generatedAt: recovery.checkedAt, statusProbe: { privatePropertyRef: recovery.reference } },
+      })
       const counts = getPrivatePropertyReadinessCounts(payload)
       setDetailError('')
       setDetailMessage(
@@ -6258,7 +6259,9 @@ function AgentListingDetail() {
       setDetailError('')
       setDetailMessage(payload?.monitor?.status === 'ACTIVATED'
         ? 'Private Property confirms this listing is active.'
-        : 'Private Property status checked. Poll again until activation completes.')
+        : payload?.monitor?.status === 'ATTENTION_REQUIRED'
+          ? `Private Property reports ${payload.monitor.externalStatus}. This listing is not live; review its channel settings.`
+          : 'Private Property status checked. Poll again until activation completes.')
       return payload
     } catch (error) {
       setDetailMessage('')
@@ -6269,20 +6272,54 @@ function AgentListingDetail() {
     }
   }
 
-  async function expirePrivatePropertyListing({ skipConfirmation = false } = {}) {
-    if (!skipConfirmation && !window.confirm('Set this listing to inactive on Private Property? It will no longer be advertised there.')) return null
-    setPrivatePropertyAction('expire')
+  async function reactivatePrivatePropertyListing() {
+    if (marketingDraftDirtyRef.current) {
+      setDetailError('Save the listing and check its requirements again before reactivation.')
+      return null
+    }
+    if (!window.confirm('Reactivate the existing Private Property listing at its verified stored address? Arch9 will check the address again and confirm whether Private Property makes it active.')) return null
+    setPrivatePropertyAction('reactivate')
     setDetailError('')
-    setDetailMessage('Expiring on Private Property...')
+    setDetailMessage('Requesting reactivation on Private Property...')
     try {
-      const payload = await callPrivatePropertyListingAction('status-update', { propertyStatus: 'Inactive' }, { fallbackMessage: 'Private Property expiry failed.' })
-      setMarketingDraft((previous) => ({ ...previous, privatePropertyStatus: 'inactive' }))
-      await loadListingData()
-      setDetailMessage('Expired on Private Property.')
+      const payload = await callPrivatePropertyListingAction('status-update', {
+        propertyStatus: (privatePropertyPreview?.readiness?.recovery || privatePropertyPreview?.report?.recovery)?.listingType === 'Rental' ? 'ToLet' : 'ForSale',
+        confirm: `PRIVATE_PROPERTY_REACTIVATE:${listingRecord?.id || ''}:production`,
+      }, { fallbackMessage: 'Private Property reactivation failed.' })
+      const update = payload.update || payload.report || {}
+      setPrivatePropertyPreview(null)
+      setPrivatePropertyStatusCheck({ listingId: listingRecord?.id, monitor: { externalStatus: update.externalStatus } })
+      await loadListingData({ showLoading: false })
+      if (update.confirmed) {
+        setDetailMessage(update.message || 'Private Property confirms this listing is active.')
+      } else {
+        setDetailMessage('')
+        setDetailError(update.message || 'Private Property has not confirmed activation. Refresh status before trying again.')
+      }
       return payload
     } catch (error) {
       setDetailMessage('')
-      setDetailError(error?.message || 'Private Property expiry failed.')
+      setDetailError(error?.message || 'Private Property reactivation failed.')
+      return null
+    } finally {
+      setPrivatePropertyAction('')
+    }
+  }
+
+  async function expirePrivatePropertyListing({ skipConfirmation = false } = {}) {
+    if (!skipConfirmation && !window.confirm('Withdraw this listing from Private Property? It will no longer be advertised there. The Arch9 listing and other channels will be kept.')) return null
+    setPrivatePropertyAction('expire')
+    setDetailError('')
+    setDetailMessage('Withdrawing from Private Property...')
+    try {
+      const payload = await callPrivatePropertyListingAction('status-update', { propertyStatus: 'Inactive' }, { fallbackMessage: 'Private Property withdrawal failed.' })
+      setMarketingDraft((previous) => ({ ...previous, privatePropertyStatus: 'inactive' }))
+      await loadListingData()
+      setDetailMessage('Withdrawn from Private Property.')
+      return payload
+    } catch (error) {
+      setDetailMessage('')
+      setDetailError(error?.message || 'Private Property withdrawal failed.')
       return null
     } finally {
       setPrivatePropertyAction('')
@@ -6436,7 +6473,7 @@ function AgentListingDetail() {
 
   async function withdrawProperty24Listing() {
     if (!property24Reference) return null
-    const confirmed = window.confirm('Withdraw this listing from Property24? This removes it from the portal lifecycle until you publish/update it again.')
+    const confirmed = window.confirm('Withdraw this listing from Property24? It will no longer be advertised there. The Arch9 listing and other channels will be kept.')
     if (!confirmed) return null
     setProperty24Action('withdraw')
     setDetailError('')
@@ -10114,18 +10151,20 @@ function AgentListingDetail() {
   const privatePropertyHasChannel = Boolean(marketingDraft.privatePropertyListingUrl || marketingDraft.privatePropertyReference || (privatePropertyStatusKey && privatePropertyStatusKey !== 'not_published'))
   const privatePropertyLink = externalListingLinks.find((link) => normalizeKey(link.platform).includes('private')) || null
   const privatePropertyPreviewCounts = getPrivatePropertyReadinessCounts(privatePropertyPreview)
-  const privatePropertyReadinessIssues = getPrivatePropertyReadinessIssues(privatePropertyPreview)
+  const { issues: privatePropertyReadinessIssues, warnings: privatePropertyReadinessWarnings } = getPrivatePropertyReadinessMessages(privatePropertyPreview)
   const privatePropertyCanSubmit = privatePropertyPreview?.ready ?? privatePropertyPreview?.readiness?.ready ?? privatePropertyPreview?.preview?.canSubmit ?? null
   const privatePropertyHasPreviewBlockers = privatePropertyPreviewCounts.dataBlockers > 0 ||
     privatePropertyPreviewCounts.technicalBlockers > 0 ||
     privatePropertyPreviewCounts.readinessBlockers > 0
-  const privatePropertyReadyForFirstPublish = privatePropertyCanSubmit === true &&
-    !privatePropertyHasPreviewBlockers && !privatePropertyHasChannel
+  const privatePropertyReadyForSubmission = privatePropertyCanSubmit === true && !privatePropertyHasPreviewBlockers
+  const privatePropertyReadyForFirstPublish = privatePropertyReadyForSubmission && !privatePropertyHasChannel
   const privatePropertyRecoveredPreflight = privatePropertyReadyForFirstPublish &&
     channelUpdateStates['Private Property']?.status === 'needs_attention' &&
     channelUpdateStates['Private Property']?.action === 'publish' &&
     channelUpdateStates['Private Property']?.detail?.startsWith('Private Property cannot publish yet:')
-  const privatePropertyExternalStatus = normalizeKey(privatePropertyStatusCheck?.monitor?.externalStatus || privatePropertyStatusCheck?.report?.externalStatus || '')
+  const privatePropertyExternalStatus = normalizeKey(privatePropertyStatusCheck?.listingId === listingRecord?.id
+    ? privatePropertyStatusCheck?.monitor?.externalStatus || privatePropertyStatusCheck?.report?.externalStatus || '' : '')
+  const privatePropertyObservedInactive = ['inactive', 'removed', 'paused', 'failed'].includes(privatePropertyExternalStatus)
   const currentPublicationSnapshot = useMemo(
     () => buildListingPublicationSnapshot(marketingDraft),
     [marketingDraft],
@@ -10205,7 +10244,7 @@ function AgentListingDetail() {
   )
   const privatePropertyPortalUrl = marketingDraft.privatePropertyListingUrl || privatePropertyLink?.url || ''
   const privatePropertyPortalReference = marketingDraft.privatePropertyReference || privatePropertyLink?.reference || ''
-  const privatePropertyPortalStatus = privatePropertyStatusKey || normalizeKey(privatePropertyLink?.status || 'not_published')
+  const privatePropertyPortalStatus = privatePropertyExternalStatus || privatePropertyStatusKey || normalizeKey(privatePropertyLink?.status || 'not_published')
   const privatePropertyPortalLive = ['published', 'live', 'active'].includes(privatePropertyPortalStatus)
   const salesPortalReadinessSummaries = useMemo(() => [
     buildListingWorkspacePortalSummary({
@@ -10238,7 +10277,7 @@ function AgentListingDetail() {
           : privatePropertyCanSubmit === true
             ? 'Private Property readiness passed. This listing can be submitted.'
             : 'Run Private Property readiness from the marketing console.',
-      actionLabel: privatePropertyCanSubmit === true ? 'Publish' : 'Check readiness',
+      actionLabel: privatePropertyCanSubmit === true ? 'Publish' : 'Check listing requirements',
       actionTarget: 'private_property',
     }),
   ], [
@@ -10335,7 +10374,7 @@ function AgentListingDetail() {
     marketingDraft.bathrooms ? `${marketingDraft.bathrooms} Baths` : '',
     marketingDraft.garages ? `${marketingDraft.garages} Garages` : '',
     marketingDraft.floorSize ? `${marketingDraft.floorSize} m² floor` : '',
-    marketingDraft.erfSize ? `${marketingDraft.erfSize} m² erf` : '',
+    marketingDraft.erfSize ? `${marketingDraft.erfSize} ${marketingDraft.erfSizeUnit || 'm²'} erf` : '',
   ].filter(Boolean), [marketingDraft])
 
   const viewingGroups = useMemo(() => ({
@@ -10365,7 +10404,7 @@ function AgentListingDetail() {
       marketingDraft.bathrooms ? `${marketingDraft.bathrooms} Baths` : '',
       marketingDraft.garages ? `${marketingDraft.garages} Garages` : '',
       marketingDraft.floorSize ? `${marketingDraft.floorSize} m² floor` : '',
-      marketingDraft.erfSize ? `${marketingDraft.erfSize} m² stand` : '',
+      marketingDraft.erfSize ? `${marketingDraft.erfSize} ${marketingDraft.erfSizeUnit || 'm²'} stand` : '',
     ].filter(Boolean)
     return {
       title: String(address || '').trim() || 'Address not captured',
@@ -10523,7 +10562,7 @@ function AgentListingDetail() {
       issueCount: Math.max(property24ReadinessIssues.length, property24SandboxAgentIdPending || property24HasPreviewBlockers ? 1 : 0),
     }),
     buildListingChannelPublicationDisplay({
-      key: 'private_property', label: 'Private Property', live: privatePropertyPortalLive,
+      key: 'private_property', label: 'Private Property', live: privatePropertyPortalLive, externalStatus: privatePropertyExternalStatus,
       reference: privatePropertyPortalReference,
       publicUrl: privatePropertyPortalUrl || listingRecord?.privatePropertyListingUrl || listingRecord?.private_property_listing_url,
       publicationState: privatePropertyRecoveredPreflight
@@ -10560,7 +10599,7 @@ function AgentListingDetail() {
       bedrooms ? `${bedrooms} bed` : '',
       bathrooms ? `${bathrooms} bath` : '',
       floorSize ? `${floorSize} m² floor` : '',
-      erfSize ? `${erfSize} m² erf` : '',
+      erfSize ? `${erfSize} ${firstDraftValue(property.erfSizeUnit, listingRecord?.erfSizeUnit, marketingDraft.erfSizeUnit, 'm²')} erf` : '',
       parkingBays ? `${parkingBays} parking` : '',
     ].filter(Boolean)
   }, [listingRecord, marketingDraft])
@@ -12329,162 +12368,85 @@ function AgentListingDetail() {
     const resolvedLocation = property24Preview?.preview?.summary?.property24Location || property24Preview?.report?.preview?.summary?.property24Location || null
     const video = property24Preview?.preview?.summary?.video || property24Preview?.report?.preview?.summary?.video || null
     return (
-      <Modal
-        open={property24ManageOpen}
-        onClose={() => setProperty24ManageOpen(false)}
-        title="Manage Property24"
-        subtitle="Use the existing Property24 publishing actions for this listing."
-        className="max-w-5xl"
+      <Modal open={property24ManageOpen} onClose={() => setProperty24ManageOpen(false)} title="Manage Property24" className="p24-manage-dialog"
+        footer={<div className="p24-manage-footer">
+          <div><Button type="button" size="sm" variant="ghost" onClick={() => setProperty24ManageOpen(false)}>Close</Button><Button type="button" size="sm" variant="secondary" className="border-[#f3c9c9] text-[#a43d35] hover:bg-[#fff5f5]" onClick={withdrawProperty24Listing} disabled={Boolean(property24Action) || !property24HasReference || ['removed', 'withdrawn', 'expired'].includes(property24StatusKey)}>{property24Action === 'withdraw' ? <Loader2 size={15} className="animate-spin" /> : <X size={15} />}Withdraw</Button></div>
+          <div>
+            <Button type="button" size="sm" variant="secondary" onClick={previewProperty24Listing} disabled={Boolean(property24Action)}>
+              {property24Action === 'preview' ? <Loader2 size={15} className="animate-spin" /> : <Eye size={15} />}Check listing requirements
+            </Button>
+            <Button type="button" size="sm" onClick={publishProperty24Listing} disabled={property24PublishDisabled}>
+              {property24Action === 'publish' ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}{property24HasReference ? 'Update listing' : 'Publish listing'}
+            </Button>
+          </div>
+        </div>}
       >
-        <div className="grid gap-5">
-          <section className="grid gap-3 md:grid-cols-3">
-            <InfoTile icon={Building2} label="Status" value={property24Published ? 'Live' : formatStatusLabel(property24StatusKey || 'not_published')} status={property24Published ? 'live' : property24StatusKey || 'pending'} />
-            <InfoTile icon={Link2} label="Property24 reference" value={property24Reference || 'Not assigned'} />
-            <InfoTile icon={RefreshCw} label="Last synced" value={formatRelativeTime(property24LastSyncedAt)} />
-          </section>
-
-          {video && (video.videoLinkPresent || video.virtualTourLinkPresent) ? (
-            <section className="rounded-[18px] border border-[#e1e9f2] bg-[#fbfdff] p-4">
-              <p className="text-sm font-semibold text-[#142132]">Video and 3D tour mapping</p>
-              {video.videoLinkPresent ? <p className="mt-2 text-sm text-[#607387]">YouTube video: {video.youTubeVideoId ? `Ready to send (ID ${video.youTubeVideoId})` : 'This link cannot be sent. Use a YouTube video link.'}</p> : null}
-              {video.virtualTourLinkPresent ? <p className="mt-2 text-sm text-[#607387]">3D tour: {video.matterportSpaceId ? `Ready to send (Matterport ID ${video.matterportSpaceId})` : 'This link cannot be sent. Use a Matterport share link.'}</p> : null}
-              <p className="mt-2 text-xs text-[#607387]">Ready IDs are included when you publish or update this Property24 listing.</p>
-            </section>
-          ) : null}
-
-          {(property24Published || channelUpdateStates.Property24?.status === 'awaiting_verification') && !listingRecord?.property24ListingUrl && !listingRecord?.property24_listing_url ? <section className="rounded-[18px] border border-[#f0d6a8] bg-[#fff9ed] p-4">
-            <p className="text-sm font-semibold text-[#8a5b13]">Live listing URL not yet confirmed</p>
-            <p className="mt-1 text-xs text-[#8a5b13]">Paste the exact URL from the public portal page so you can verify the latest update. Arch9 will not invent one from the reference.</p>
-            <div className="mt-3 flex flex-wrap gap-2"><Field value={marketingDraft.property24ListingUrl} onChange={(event) => setMarketingDraft((previous) => ({ ...previous, property24ListingUrl: event.target.value }))} placeholder="https://www.property24.com/for-sale/..." className="min-w-[280px] flex-1" /><Button type="button" size="sm" onClick={() => void saveConfirmedPortalLink('property24')}>Save live link</Button></div>
+        <div className="p24-manage">
+          {detailError ? <p role="alert" className="p24-manage-warning">{detailError}</p> : detailMessage ? <p role="status">{detailMessage}</p> : null}
+          <div className="p24-manage-summary">
+            <div><span>Portal status</span><strong>{property24Published ? 'Live' : formatStatusLabel(property24StatusKey || 'not_published')}</strong></div>
+            <div><span>Reference</span><strong>{property24Reference || 'Not assigned'}</strong></div>
+            <div><span>Last synced</span><strong>{formatRelativeTime(property24LastSyncedAt) || 'Not synced yet'}</strong></div>
+          </div>
+          {(property24Published || channelUpdateStates.Property24?.status === 'awaiting_verification') && !listingRecord?.property24ListingUrl && !listingRecord?.property24_listing_url ? <section className="p24-manage-section">
+            <h4>Public listing link</h4><p>Add the URL of the live Property24 listing.</p>
+            <div className="p24-manage-inline"><Field value={marketingDraft.property24ListingUrl} onChange={(event) => setMarketingDraft((previous) => ({ ...previous, property24ListingUrl: event.target.value }))} placeholder="https://www.property24.com/for-sale/..." /><Button type="button" size="sm" variant="secondary" onClick={() => void saveConfirmedPortalLink('property24')}>Save link</Button></div>
           </section> : null}
-
-          <section className="rounded-[18px] border border-[#e1e9f2] bg-[#fbfdff] p-4">
-            <p className="text-sm font-semibold text-[#142132]">Listing data status</p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {[
-                ['Price', Number(marketingDraft.price || listingRecord?.askingPrice || 0) > 0],
-                ['Description', Boolean(marketingDraft.description.trim())],
-                ['Photos', marketingDraft.galleryImages.length > 0],
-                ['Features', marketingDraft.selectedFeatures.length > 0 || marketingDraft.amenities.length > 0],
-                ['Agent', Boolean(listingActor.name || listingActor.email)],
-              ].map(([label, complete]) => (
-                <CompletionBadge key={label} complete={Boolean(complete)} label={`${label} ${complete ? 'ready' : 'missing'}`} />
-              ))}
-            </div>
-            <p className="mt-3 text-sm leading-6 text-[#607387]">{property24NextStep}</p>
-            {property24ReadinessIssues.length ? (
-              <div className="mt-4 rounded-[14px] border border-[#f0d6a8] bg-[#fff9ed] p-3">
-                <p className="text-sm font-semibold text-[#8a5b13]">Fix these before publishing</p>
-                <ul className="mt-2 grid gap-2">
-                  {property24ReadinessIssues.map((issue) => (
-                    <li key={issue} className="rounded-lg border border-[#f4dfb9] bg-white px-3 py-2 text-sm font-medium text-[#8a5b13]">{issue}</li>
-                  ))}
-                </ul>
+          <div className="p24-manage-grid">
+            <section className="p24-manage-section">
+              <h4>Listing requirements</h4>
+              <p>Check the details and photos before publishing. Your edits are saved first.</p>
+              <div className="p24-manage-requirements">
+                {[
+                  ['Price', Number(marketingDraft.price || listingRecord?.askingPrice || 0) > 0],
+                  ['Description', Boolean(marketingDraft.description.trim())],
+                  ['Photos', marketingDraft.galleryImages.length > 0],
+                  ['Features', marketingDraft.selectedFeatures.length > 0 || marketingDraft.amenities.length > 0],
+                  ['Agent', Boolean(listingActor.name || listingActor.email)],
+                ].map(([label, complete]) => <CompletionBadge key={label} complete={Boolean(complete)} label={label + (complete ? ' added' : ' not added')} />)}
               </div>
-            ) : null}
-          </section>
-
-          <section className="rounded-[18px] border border-[#cfe0ef] bg-[#f8fbff] p-4">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2 text-[#1f4f78]">
-                  <CalendarDays size={18} />
-                  <p className="text-sm font-semibold">Property24 expiry date</p>
-                </div>
-                <p className="mt-1 max-w-2xl text-sm leading-6 text-[#607387]">Set when this listing should be removed from Property24. This does not unpublish the Arch9 or agency-website listing, and is separate from the mandate expiry. Save it, then run Preview and Update Existing Listing to send a changed date to Property24.</p>
-              </div>
-              <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-end">
-                <label className="grid min-w-[210px] gap-1.5">
-                  <span className="text-xs font-semibold uppercase tracking-[0.08em] text-[#718198]">Expires on</span>
-                  <Field type="date" min={addDaysToDateInput('', 1)} value={property24ExpiryDate} onChange={(event) => setMarketingDraft((previous) => ({ ...previous, property24ExpiryDate: event.target.value }))} disabled={Boolean(property24Action)} />
-                </label>
-                <Button type="button" onClick={saveProperty24ExpiryDate} disabled={Boolean(property24Action)} className="justify-center">
-                  <CalendarDays size={15} />
-                  Save expiry
-                </Button>
-              </div>
-            </div>
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              {property24ExpiryDate && !property24ExpiryError ? <span className="inline-flex rounded-full border border-[#bfe5cf] bg-[#effbf4] px-2.5 py-1 text-xs font-semibold text-[#197849]">Property24 expiry: {formatDate(property24ExpiryDate)}</span> : <span className="inline-flex rounded-full border border-[#f0d6a8] bg-[#fff9ed] px-2.5 py-1 text-xs font-semibold text-[#8a5b13]">Expiry date required before publish or update</span>}
-              {canUseMandateExpiry && mandateExpiryDate !== property24ExpiryDate ? <button type="button" onClick={() => setMarketingDraft((previous) => ({ ...previous, property24ExpiryDate: mandateExpiryDate }))} disabled={Boolean(property24Action)} className="text-xs font-semibold text-[#1f4f78] underline underline-offset-2 disabled:opacity-50">Use future mandate end date ({formatDate(mandateExpiryDate)})</button> : null}
-            </div>
-            {property24ExpiryError ? <p className="mt-3 text-xs font-semibold text-[#b54708]">{property24ExpiryError}</p> : null}
-            <label className="mt-4 grid max-w-sm gap-1.5">
-              <span className="text-xs font-semibold uppercase tracking-[0.08em] text-[#718198]">Property24 suburb ID</span>
-              <Field inputMode="numeric" value={marketingDraft.property24SuburbId || ''} onChange={(event) => setMarketingDraft((previous) => ({ ...previous, property24SuburbId: event.target.value }))} disabled={Boolean(property24Action)} placeholder="Property24 suburb lookup ID" />
-            </label>
-            {resolvedLocation?.verified ? (
-              <p className="mt-3 rounded-[12px] border border-[#bfe5cf] bg-[#effbf4] px-3 py-2 text-sm font-semibold text-[#197849]">
-                Verified with Property24: {resolvedLocation.label} — suburb ID {resolvedLocation.suburbId}
-              </p>
-            ) : null}
-          </section>
-
-          <section className="grid gap-3 lg:grid-cols-4">
-            <div className="rounded-[16px] border border-[#e1e9f2] bg-white p-3">
-              <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">1. Check</p>
-              <Button type="button" size="sm" variant="secondary" className="mt-2 w-full justify-center" onClick={previewProperty24Listing} disabled={Boolean(property24Action)}>
-                {property24Action === 'preview' ? <Loader2 size={15} className="animate-spin" /> : <Eye size={15} />}
-                Preview Readiness
-              </Button>
-            </div>
-            <div className="rounded-[16px] border border-[#e1e9f2] bg-white p-3">
-              <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">2. Send</p>
-              <Button type="button" size="sm" className="mt-2 w-full justify-center" onClick={publishProperty24Listing} disabled={property24PublishDisabled}>
-                {property24Action === 'publish' ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
-                {property24PrimaryActionLabel}
-              </Button>
-            </div>
-            <div className="rounded-[16px] border border-[#e1e9f2] bg-white p-3">
-              <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">3. Status</p>
-              <Field as="select" value={property24StatusUpdate} onChange={(event) => setProperty24StatusUpdate(event.target.value)} disabled={Boolean(property24Action)} className="mt-2 min-h-9 text-sm">
-                {PROPERTY24_STATUS_UPDATE_OPTIONS.map((status) => <option key={status} value={status}>{status}</option>)}
-              </Field>
-              <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-1">
-                <Button type="button" size="sm" variant="secondary" onClick={updateProperty24ListingStatus} disabled={Boolean(property24Action) || !property24HasReference}>
-                  {property24Action === 'status-update' ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
-                  Update Status
-                </Button>
-                <Button type="button" size="sm" variant="secondary" onClick={refreshProperty24ListingStatus} disabled={Boolean(property24Action) || !property24HasReference}>
-                  {property24Action === 'status' ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
-                  Refresh Status
-                </Button>
-              </div>
-              {!property24HasReference ? <p className="mt-2 text-xs leading-5 text-[#8a5b13]">Status actions unlock after Property24 returns a listing reference.</p> : null}
-            </div>
-            <div className="rounded-[16px] border border-[#e1e9f2] bg-white p-3">
-              <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">4. Leads</p>
-              <div className="mt-2 grid gap-2">
-                <Button type="button" size="sm" variant="secondary" onClick={() => pullProperty24ListingLeads({ applyLeads: false })} disabled={Boolean(property24Action) || !property24HasReference}>
-                  {property24Action === 'lead-preview' ? <Loader2 size={15} className="animate-spin" /> : <MessageSquare size={15} />}
-                  Check Leads
-                </Button>
-                <Button type="button" size="sm" onClick={() => pullProperty24ListingLeads({ applyLeads: true })} disabled={Boolean(property24Action) || !property24HasReference}>
-                  {property24Action === 'lead-import' ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
-                  Import Leads
-                </Button>
-              </div>
-            </div>
-          </section>
-
-          {property24Preview ? (
-            <section className="grid gap-3 md:grid-cols-4">
-              <InfoTile label="Preview status" value={formatStatusLabel(property24Preview.status || 'preview')} />
-              <InfoTile label="Data blockers" value={property24PreviewCounts.dataBlockers} status={property24PreviewCounts.dataBlockers ? 'missing' : 'complete'} />
-              <InfoTile label="Images loaded" value={property24PreviewCounts.imagesLoaded} status={property24PreviewCounts.imagesLoaded ? 'complete' : 'pending'} />
-              <InfoTile label="Image errors" value={property24PreviewCounts.imagesFailed} status={property24PreviewCounts.imagesFailed ? 'missing' : 'complete'} />
+              {property24Preview ? <div className="p24-manage-result">
+                <strong>{property24CanSubmit === true && !property24HasPreviewBlockers ? 'Requirements passed' : 'Review check results'}</strong>
+                <p>{property24NextStep}</p>
+                <dl><div><dt>Photos loaded</dt><dd>{property24PreviewCounts.imagesLoaded}</dd></div><div><dt>Photo errors</dt><dd>{property24PreviewCounts.imagesFailed}</dd></div></dl>
+              </div> : null}
+              {property24ReadinessIssues.length ? <div className="p24-manage-issues"><strong>Before publishing</strong><ul>{property24ReadinessIssues.map((issue) => <li key={issue}>{issue}</li>)}</ul></div> : null}
             </section>
-          ) : null}
-
-          {property24LeadImport ? (
-            <section className="grid gap-3 md:grid-cols-5">
-              <InfoTile label="Leads found" value={property24LeadImportCounts.received} />
-              <InfoTile label="Imported" value={property24LeadImportCounts.imported} status="complete" />
-              <InfoTile label="Already in Arch9" value={property24LeadImportCounts.alreadyImported} />
-              <InfoTile label="Needs review" value={property24LeadImportCounts.needsReview} status={property24LeadImportCounts.needsReview ? 'missing' : 'complete'} />
-              <InfoTile label="Failed" value={property24LeadImportCounts.failed} status={property24LeadImportCounts.failed ? 'missing' : 'complete'} />
+            <section className="p24-manage-section">
+              <h4>Publication expiry</h4>
+              <p>Set when this listing should leave Property24.</p>
+              <label className="p24-manage-field"><span>Expiry date</span><Field type="date" min={addDaysToDateInput('', 1)} value={property24ExpiryDate} onChange={(event) => setMarketingDraft((previous) => ({ ...previous, property24ExpiryDate: event.target.value }))} disabled={Boolean(property24Action)} /></label>
+              <div className="p24-manage-inline"><Button type="button" size="sm" variant="secondary" onClick={saveProperty24ExpiryDate} disabled={Boolean(property24Action)}><CalendarDays size={15} />Save expiry</Button>{canUseMandateExpiry && mandateExpiryDate !== property24ExpiryDate ? <button type="button" onClick={() => setMarketingDraft((previous) => ({ ...previous, property24ExpiryDate: mandateExpiryDate }))} disabled={Boolean(property24Action)} className="p24-manage-link">Use mandate end date ({formatDate(mandateExpiryDate)})</button> : null}</div>
+              {property24ExpiryError ? <p className="p24-manage-warning">{property24ExpiryError}</p> : !property24ExpiryDate ? <p className="p24-manage-warning">Required before publishing or updating.</p> : <p>Expiry: {formatDate(property24ExpiryDate)}</p>}
+              <p className="p24-manage-note">Save the date, then update the listing to send changes to Property24.</p>
             </section>
-          ) : null}
+          </div>
+          <details className="p24-manage-disclosure">
+            <summary>Portal status</summary><div>
+              <p>Change the status of the existing Property24 listing.</p>
+              <div className="p24-manage-inline"><label className="p24-manage-field"><span>Listing status</span><Field as="select" value={property24StatusUpdate} onChange={(event) => setProperty24StatusUpdate(event.target.value)} disabled={Boolean(property24Action) || !property24HasReference}>{PROPERTY24_STATUS_UPDATE_OPTIONS.map((status) => <option key={status} value={status}>{status}</option>)}</Field></label><Button type="button" size="sm" variant="secondary" onClick={updateProperty24ListingStatus} disabled={Boolean(property24Action) || !property24HasReference}>{property24Action === 'status-update' ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}Update portal status</Button><Button type="button" size="sm" variant="secondary" onClick={refreshProperty24ListingStatus} disabled={Boolean(property24Action) || !property24HasReference}>{property24Action === 'status' ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}Refresh portal status</Button></div>
+              {!property24HasReference ? <p className="p24-manage-note">Available after Property24 assigns a listing reference.</p> : null}
+            </div>
+          </details>
+          <details className="p24-manage-disclosure">
+            <summary>Portal location</summary><div>
+              <label className="p24-manage-field"><span>Property24 suburb ID</span><Field inputMode="numeric" value={marketingDraft.property24SuburbId || ''} onChange={(event) => setMarketingDraft((previous) => ({ ...previous, property24SuburbId: event.target.value }))} disabled={Boolean(property24Action)} placeholder="Property24 suburb lookup ID" /></label>
+              {resolvedLocation?.verified ? <p>Verified: {resolvedLocation.label} · {resolvedLocation.suburbId}</p> : <p className="p24-manage-note">Use this if the listing check asks for a Property24 suburb ID.</p>}
+            </div>
+          </details>
+          {video && (video.videoLinkPresent || video.virtualTourLinkPresent) ? <details className="p24-manage-disclosure">
+            <summary>Video &amp; virtual tour</summary><div>
+              {video.videoLinkPresent ? <p>YouTube video: {video.youTubeVideoId ? 'Ready to send' : 'Use a valid YouTube link.'}</p> : null}
+              {video.virtualTourLinkPresent ? <p>Virtual tour: {video.matterportSpaceId ? 'Ready to send' : 'Use a Matterport share link.'}</p> : null}
+            </div>
+          </details> : null}
+          <details className="p24-manage-disclosure">
+            <summary>Portal leads</summary><div>
+              <div className="p24-manage-inline"><Button type="button" size="sm" variant="secondary" onClick={() => pullProperty24ListingLeads({ applyLeads: false })} disabled={Boolean(property24Action) || !property24HasReference}>{property24Action === 'lead-preview' ? <Loader2 size={15} className="animate-spin" /> : <MessageSquare size={15} />}Check portal leads</Button><Button type="button" size="sm" variant="secondary" onClick={() => pullProperty24ListingLeads({ applyLeads: true })} disabled={Boolean(property24Action) || !property24HasReference}>{property24Action === 'lead-import' ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}Import portal leads</Button></div>
+              {!property24HasReference ? <p className="p24-manage-note">Available after Property24 assigns a listing reference.</p> : null}
+              {property24LeadImport ? <dl className="p24-manage-lead-results">{[['Found',property24LeadImportCounts.received],['Imported',property24LeadImportCounts.imported],['Already in Arch9',property24LeadImportCounts.alreadyImported],['Needs review',property24LeadImportCounts.needsReview],['Failed',property24LeadImportCounts.failed]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl> : null}
+            </div>
+          </details>
         </div>
       </Modal>
     )
@@ -12492,43 +12454,60 @@ function AgentListingDetail() {
 
   function renderPrivatePropertyManagePanel() {
     const privatePropertyReferenceValue = String(marketingDraft.privatePropertyReference || privatePropertyLink?.reference || '').trim()
-    const privatePropertyLiveValue = ['published', 'live', 'active'].includes(privatePropertyStatusKey || normalizeKey(privatePropertyLink?.status || ''))
-    const status = privatePropertyLiveValue ? 'Live' : formatStatusLabel(privatePropertyStatusKey || 'not_published')
+    const privatePropertyLiveValue = privatePropertyPortalLive
+    const status = privatePropertyLiveValue ? 'Live' : formatStatusLabel(privatePropertyExternalStatus || privatePropertyStatusKey || 'not_published')
     const previewComplete = Boolean(privatePropertyPreview)
     const hasIssues = privatePropertyReadinessIssues.length > 0
     const video = privatePropertyPreview?.preview?.summary?.video || privatePropertyPreview?.readiness?.preview?.summary?.video || null
+    const recovery = privatePropertyPreview?.readiness?.recovery || privatePropertyPreview?.report?.recovery
     return (
       <Modal
         open={privatePropertyManageOpen}
         onClose={() => setPrivatePropertyManageOpen(false)}
-        title="Review Private Property"
+        title="Manage Private Property"
         subtitle="Check the listing requirements before submitting it to Private Property."
         className="max-w-3xl"
         footer={(
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <Button type="button" variant="secondary" onClick={() => setPrivatePropertyManageOpen(false)}>Close</Button>
+            <Button type="button" variant="secondary" className="border-[#f3c9c9] text-[#a43d35] hover:bg-[#fff5f5]" onClick={() => expirePrivatePropertyListing()} disabled={Boolean(privatePropertyAction) || !privatePropertyReferenceValue || ['inactive', 'expired', 'removed', 'withdrawn'].includes(privatePropertyStatusKey)}>{privatePropertyAction === 'expire' ? <Loader2 size={15} className="animate-spin" /> : <X size={15} />}Withdraw</Button>
             <Button type="button" onClick={previewPrivatePropertyListing} disabled={Boolean(privatePropertyAction)}>
               {privatePropertyAction === 'preview' ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
-              Run readiness check
+              Check listing requirements
             </Button>
-            {privatePropertyReadyForFirstPublish ? (
+            {privatePropertyReadyForSubmission ? (
               <Button type="button" onClick={() => {
                 setPrivatePropertyManageOpen(false)
                 void publishPrivatePropertyListing()
               }} disabled={Boolean(privatePropertyAction)}>
                 <Send size={15} />
-                Publish to Private Property
+                {privatePropertyHasChannel ? 'Send changes to Private Property' : 'Publish to Private Property'}
+              </Button>
+            ) : null}
+            {recovery?.canReactivate ? (
+              <Button type="button" onClick={reactivatePrivatePropertyListing} disabled={Boolean(privatePropertyAction) || marketingDraftDirty}>
+                {privatePropertyAction === 'reactivate' ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
+                Reactivate on Private Property
               </Button>
             ) : null}
           </div>
         )}
       >
         <div className="grid gap-5">
+          {detailError ? <p role="alert" className="text-sm text-[#a43d35]">{detailError}</p> : detailMessage ? <p role="status" className="text-sm text-[#425970]">{detailMessage}</p> : null}
           <section className="grid gap-3 sm:grid-cols-3">
-            <InfoTile icon={Home} label="Status" value={status} status={privatePropertyLiveValue ? 'live' : privatePropertyStatusKey || 'pending'} />
+            <InfoTile icon={Home} label="Status" value={status} status={privatePropertyPortalStatus || 'pending'} statusLabel={status} />
             <InfoTile icon={Link2} label="Private Property reference" value={privatePropertyReferenceValue || 'Not assigned'} />
-            <InfoTile icon={CircleAlert} label="Issues found" value={previewComplete ? privatePropertyReadinessIssues.length : 'Not checked'} status={hasIssues ? 'missing' : previewComplete ? 'complete' : 'pending'} />
+            <InfoTile icon={CircleAlert} label="Issues found" value={previewComplete ? privatePropertyReadinessIssues.length : 'Not checked'} status={hasIssues ? 'missing' : previewComplete ? 'complete' : 'pending'} statusLabel={hasIssues && recovery ? 'Needs action' : ''} />
           </section>
+
+          {recovery?.storedAddress ? (
+            <section className="rounded-[18px] border border-[#e1e9f2] bg-[#fbfdff] p-4">
+              <p className="text-sm font-semibold text-[#142132]">Address retained by Private Property</p>
+              <p className="mt-2 text-sm text-[#607387]">{[recovery.storedAddress.streetNumber, recovery.storedAddress.streetName, recovery.storedAddress.complexName, recovery.storedAddress.unitNumber, recovery.storedAddress.suburb, recovery.storedAddress.town, recovery.storedAddress.province].filter(Boolean).join(', ')}</p>
+              {recovery.addressLocked ? <p className="mt-2 text-xs text-[#607387]">Private Property locks the address after activation. Sending content changes does not replace it.</p> : null}
+            </section>
+          ) : null}
 
           {video && (video.videoLinkPresent || video.virtualTourLinkPresent) ? (
             <section className="rounded-[18px] border border-[#e1e9f2] bg-[#fbfdff] p-4">
@@ -12539,7 +12518,7 @@ function AgentListingDetail() {
             </section>
           ) : null}
 
-          {(privatePropertyLiveValue || channelUpdateStates['Private Property']?.status === 'awaiting_verification') && !listingRecord?.privatePropertyListingUrl && !listingRecord?.private_property_listing_url ? <section className="rounded-[18px] border border-[#f0d6a8] bg-[#fff9ed] p-4">
+          {!privatePropertyObservedInactive && (privatePropertyLiveValue || channelUpdateStates['Private Property']?.status === 'awaiting_verification') && !listingRecord?.privatePropertyListingUrl && !listingRecord?.private_property_listing_url ? <section className="rounded-[18px] border border-[#f0d6a8] bg-[#fff9ed] p-4">
             <p className="text-sm font-semibold text-[#8a5b13]">Live listing URL not yet confirmed</p>
             <p className="mt-1 text-xs text-[#8a5b13]">Paste the exact URL from the public portal page so you can verify the latest update.</p>
             <div className="mt-3 flex flex-wrap gap-2"><Field value={marketingDraft.privatePropertyListingUrl} onChange={(event) => setMarketingDraft((previous) => ({ ...previous, privatePropertyListingUrl: event.target.value }))} placeholder="https://www.privateproperty.co.za/for-sale/..." className="min-w-[280px] flex-1" /><Button type="button" size="sm" onClick={() => void saveConfirmedPortalLink('private_property')}>Save live link</Button></div>
@@ -12562,6 +12541,15 @@ function AgentListingDetail() {
               <p className="mt-3 text-sm leading-6 text-[#1f7d44]">No readiness issues were returned. This listing can be submitted to Private Property.</p>
             )}
           </section>
+
+          {privatePropertyReadinessWarnings.length > 0 ? (
+            <section className="rounded-[18px] border border-[#e1e9f2] bg-[#fbfdff] p-4">
+              <div className="flex items-center gap-2 text-[#425970]"><Info size={18} /><p className="text-sm font-semibold">Notes — do not prevent submission</p></div>
+              <ul className="mt-3 grid gap-2">
+                {privatePropertyReadinessWarnings.map((warning) => <li key={warning} className="text-sm leading-6 text-[#607387]">{warning}</li>)}
+              </ul>
+            </section>
+          ) : null}
         </div>
       </Modal>
     )
@@ -12586,7 +12574,7 @@ function AgentListingDetail() {
     const property24Url = marketingDraft.property24ListingUrl || listingRecord?.property24ListingUrl || listingRecord?.property24_listing_url || ''
     const privatePropertyUrl = marketingDraft.privatePropertyListingUrl || listingRecord?.privatePropertyListingUrl || listingRecord?.private_property_listing_url || privatePropertyLink?.url || ''
     const privatePropertyReference = marketingDraft.privatePropertyReference || privatePropertyLink?.reference || ''
-    const privatePropertyDistributionStatus = privatePropertyStatusKey || normalizeKey(privatePropertyLink?.status || 'not_published')
+    const privatePropertyDistributionStatus = privatePropertyExternalStatus || privatePropertyStatusKey || normalizeKey(privatePropertyLink?.status || 'not_published')
     const privatePropertyLive = ['published', 'live', 'active'].includes(privatePropertyDistributionStatus)
     const listingWithdrawn = normalizeKey(marketingDraft.listingStatus || listingRecord?.listingStatus || listingRecord?.status) === 'withdrawn'
     const property24IntentionallyInactive = listingWithdrawn && ['expired', 'inactive', 'removed', 'withdrawn'].includes(property24StatusKey)
@@ -12600,10 +12588,12 @@ function AgentListingDetail() {
       : channelUpdateStates.Property24
     const property24Update = property24BaseUpdate
     const property24HasUnpublishedChanges = listingPublicationStates.property24.changeCount > 0
-    const privatePropertyBaseUpdate = !privatePropertyIntentionallyInactive && channelUpdateStates['Private Property']?.status === 'current' && ['expired', 'removed', 'withdrawn'].includes(privatePropertyStatusKey)
+    const privatePropertyBaseUpdate = privatePropertyObservedInactive
+      ? { status: 'needs_attention', retriable: false, action: 'update', detail: `Private Property reports this listing as ${privatePropertyExternalStatus}. Review its location and channel settings before sending changes.` }
+      : !privatePropertyIntentionallyInactive && channelUpdateStates['Private Property']?.status === 'current' && ['expired', 'removed', 'withdrawn'].includes(privatePropertyStatusKey)
       ? { status: 'needs_attention', retriable: false, detail: 'The portal now reports this listing as inactive. Review its channel status before treating it as current.' }
       : channelUpdateStates['Private Property']
-    const privatePropertyUpdate = privatePropertyRecoveredPreflight ? null : privatePropertyBaseUpdate
+    const privatePropertyUpdate = privatePropertyRecoveredPreflight && !privatePropertyObservedInactive ? null : privatePropertyBaseUpdate
     const privatePropertyHasUnpublishedChanges = listingPublicationStates.private_property.changeCount > 0
     const property24MonitoringIssue = channelActivityUnavailable && property24HasReference
     const privatePropertyMonitoringIssue = channelActivityUnavailable && privatePropertyHasChannel
@@ -12624,7 +12614,7 @@ function AgentListingDetail() {
           ? `${property24IssueCount} issue${property24IssueCount === 1 ? '' : 's'} preventing publication`
         : property24CanSubmit === true
           ? 'Ready to publish'
-          : 'Run readiness check before publishing'
+          : 'Check listing requirements before publishing'
     const privatePropertyIssueCount = privatePropertyReadinessIssues.length
     const privatePropertyIssueDetail = privatePropertyReadinessIssues[0] || ''
     const privatePropertySubmitted = Boolean(privatePropertyReference || privatePropertyLink?.reference || privatePropertyExternalStatus)
@@ -12632,6 +12622,7 @@ function AgentListingDetail() {
     const privatePropertyChannelStatus = overviewPublishedChannels[1].status
     const privatePropertyChannelLabel = overviewPublishedChannels[1].statusLabel
     const privatePropertyContextTitle = privatePropertyIntentionallyInactive ? 'Removed through the Arch9 withdrawal workflow'
+      : privatePropertyObservedInactive ? `Private Property reports ${privatePropertyExternalStatus}; this listing is not live`
       : privatePropertyRecoveredPreflight ? 'Ready to publish'
       : privatePropertyHasUnpublishedChanges ? `${listingPublicationStates.private_property.changeCount} saved Arch9 change${listingPublicationStates.private_property.changeCount === 1 ? '' : 's'} not published`
       : privatePropertyUpdate?.status === 'needs_attention' ? privatePropertyUpdate.retriable === false ? 'No confirmed live Private Property listing to update' : 'Portal submission failed'
@@ -12646,7 +12637,7 @@ function AgentListingDetail() {
           ? `${privatePropertyIssueCount} issue${privatePropertyIssueCount === 1 ? '' : 's'} preventing publication`
           : privatePropertyCanSubmit === true
             ? 'Ready to publish'
-            : 'Run readiness check before publishing'
+            : 'Check listing requirements before publishing'
     const channelRows = [
       {
         key: 'property24',
@@ -12698,23 +12689,21 @@ function AgentListingDetail() {
         ),
         secondaryAction: property24Update?.status === 'awaiting_verification' && property24Url ? (
           <Button type="button" size="sm" variant="secondary" onClick={() => void confirmListingChannelCurrent('Property24', property24Update.action, property24Url)}>Confirm current</Button>
-        ) : property24Published || property24CanSubmit === true ? (
-          <Button type="button" size="sm" variant="secondary" onClick={() => setProperty24ManageOpen(true)} disabled={Boolean(property24Action)}>
-            Manage
-          </Button>
         ) : null,
         menuActions: [
-          <button key="check" type="button" onClick={previewProperty24Listing} disabled={Boolean(property24Action)} className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#243d56] transition hover:bg-[#f7fbff] disabled:cursor-not-allowed disabled:opacity-50">
+          <button key="check" type="button" title="Checks required listing details, photos and portal setup without publishing." onClick={() => { setProperty24ManageOpen(true); void previewProperty24Listing() }} disabled={Boolean(property24Action)} className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#243d56] transition hover:bg-[#f7fbff] disabled:cursor-not-allowed disabled:opacity-50">
             {property24Action === 'preview' ? <Loader2 size={15} className="animate-spin" /> : <Eye size={15} />}
-            Check readiness
+            Check listing requirements
           </button>,
+          property24HasReference ? <button key="status" type="button" onClick={refreshProperty24ListingStatus} disabled={Boolean(property24Action)} className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#243d56] hover:bg-[#f7fbff] disabled:opacity-50"><RefreshCw size={15} />Refresh portal status</button> : null,
           property24HasReference && !['expired', 'removed', 'withdrawn'].includes(property24StatusKey) ? <button key="expire" type="button" onClick={expireProperty24Listing} disabled={Boolean(property24Action)} className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#a43d35] transition hover:bg-[#fff5f5] disabled:cursor-not-allowed disabled:opacity-50">
             {property24Action === 'expire' ? <Loader2 size={15} className="animate-spin" /> : <CalendarDays size={15} />}
             Expire listing
           </button> : null,
+          property24HasReference && !['removed', 'withdrawn', 'expired'].includes(property24StatusKey) ? <button key="withdraw" type="button" onClick={withdrawProperty24Listing} disabled={Boolean(property24Action)} className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#a43d35] hover:bg-[#fff5f5] disabled:opacity-50"><X size={15} />Withdraw listing</button> : null,
           <button key="more" type="button" onClick={() => setProperty24ManageOpen(true)} className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#243d56] transition hover:bg-[#f7fbff]">
             <SlidersHorizontal size={15} />
-            More actions
+            Channel settings
           </button>,
         ],
       },
@@ -12765,30 +12754,22 @@ function AgentListingDetail() {
         ),
         secondaryAction: privatePropertyUpdate?.status === 'awaiting_verification' && privatePropertyUrl ? (
           <Button type="button" size="sm" variant="secondary" onClick={() => void confirmListingChannelCurrent('Private Property', privatePropertyUpdate.action, privatePropertyUrl)}>Confirm current</Button>
-        ) : privatePropertySubmitted || privatePropertyLive ? (
-          <Button type="button" size="sm" variant="secondary" onClick={refreshPrivatePropertyListingStatus} disabled={Boolean(privatePropertyAction)}>
-            {privatePropertyAction === 'status' ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
-            Status
-          </Button>
-        ) : (
-          <Button type="button" size="sm" variant="secondary" onClick={previewPrivatePropertyListing} disabled={Boolean(privatePropertyAction)}>
-            <Eye size={15} />
-            Check
-          </Button>
-        ),
+        ) : null,
         menuActions: [
-          <button key="check" type="button" onClick={previewPrivatePropertyListing} disabled={Boolean(privatePropertyAction)} className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#243d56] transition hover:bg-[#f7fbff] disabled:cursor-not-allowed disabled:opacity-50">
+          <button key="send-review" type="button" onClick={reviewPrivatePropertyIssues} disabled={Boolean(privatePropertyAction)} className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#243d56] transition hover:bg-[#f7fbff] disabled:cursor-not-allowed disabled:opacity-50"><Send size={15} />{privatePropertyHasChannel ? 'Review and send changes' : 'Review publication'}</button>,
+          <button key="check" type="button" title="Checks required listing details, photos and portal setup without publishing." onClick={reviewPrivatePropertyIssues} disabled={Boolean(privatePropertyAction)} className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#243d56] transition hover:bg-[#f7fbff] disabled:cursor-not-allowed disabled:opacity-50">
             {privatePropertyAction === 'preview' ? <Loader2 size={15} className="animate-spin" /> : <Eye size={15} />}
-            Check readiness
+            Check listing requirements
           </button>,
           privatePropertyHasChannel ? <button key="status" type="button" onClick={refreshPrivatePropertyListingStatus} disabled={Boolean(privatePropertyAction)} className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#243d56] transition hover:bg-[#f7fbff] disabled:cursor-not-allowed disabled:opacity-50">
             {privatePropertyAction === 'status' ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
-            Refresh status
+            Refresh portal status
           </button> : null,
           privatePropertyLive ? <button key="expire" type="button" onClick={() => expirePrivatePropertyListing()} disabled={Boolean(privatePropertyAction)} className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#a43d35] transition hover:bg-[#fff5f5] disabled:cursor-not-allowed disabled:opacity-50">
-            {privatePropertyAction === 'expire' ? <Loader2 size={15} className="animate-spin" /> : <CalendarDays size={15} />}
-            Expire listing
+            {privatePropertyAction === 'expire' ? <Loader2 size={15} className="animate-spin" /> : <X size={15} />}
+            Withdraw listing
           </button> : null,
+          <button key="settings" type="button" onClick={() => setPrivatePropertyManageOpen(true)} className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#243d56] hover:bg-[#f7fbff]"><SlidersHorizontal size={15} />Channel settings</button>,
         ],
       },
     ]
@@ -12992,13 +12973,7 @@ function AgentListingDetail() {
             </div>
           </div>
 
-          <div className="hidden grid-cols-[minmax(210px,1fr)_minmax(145px,0.7fr)_minmax(170px,0.8fr)_minmax(150px,0.75fr)_auto] gap-4 border-b border-[#edf2f7] bg-[#fbfdff] px-4 py-2.5 text-[0.65rem] font-semibold uppercase tracking-[0.08em] text-[#8294aa] lg:grid">
-            <span>Channel</span>
-            <span>Reference & public link</span>
-            <span>Status</span>
-            <span>Publication activity</span>
-            <span className="text-right">Actions</span>
-          </div>
+          <ListingChannelTableHeader />
 
           {channelRows.map((channel) => (
             <DistributionChannel
@@ -13047,6 +13022,7 @@ function AgentListingDetail() {
         </article>
 
         <ListingShowDaysPanel
+          key={`${listingOrganisationId}:${listingShowDaySnapshot.id}`}
           organisationId={listingOrganisationId}
           listing={listingShowDaySnapshot}
           publicListingReady={Boolean(arch9IsPublished || property24Published || privatePropertyPortalLive || agencyWebsiteLive || kingdomWebsiteLive)}
@@ -13154,10 +13130,20 @@ function AgentListingDetail() {
                       <div className="divide-y divide-[#edf2f7]">
                         {state.changes.map((change) => (
                           <div key={change.key} className="grid gap-2 px-4 py-3 text-sm md:grid-cols-[150px_minmax(0,1fr)_24px_minmax(0,1fr)] md:items-start">
-                            <div><p className="font-semibold text-[#243d56]">{change.label}</p><p className="text-[0.68rem] uppercase tracking-[0.08em] text-[#8294aa]">{change.group}</p></div>
-                            <p className="break-words rounded-[10px] bg-[#f6f8fb] px-3 py-2 text-[#607387]">{change.previousValue}</p>
+                            <div>
+                              <p className="font-semibold text-[#243d56]">{change.label}</p>
+                              <p className="text-[0.68rem] uppercase tracking-[0.08em] text-[#8294aa]">{change.group}</p>
+                              {change.previousValue.includes('(unit not recorded)') ? <p className="mt-2 text-xs text-[#607387]">Confirm the original units before treating this as a size change.</p> : null}
+                            </div>
+                            <div className="min-w-0 rounded-[10px] bg-[#f6f8fb] px-3 py-2 text-[#607387]">
+                              <p className="mb-2 text-xs font-semibold">Previously accepted</p>
+                              {change.previousItems?.length ? <ol className="max-h-48 list-decimal space-y-1 overflow-y-auto pl-5">{change.previousItems.map((name, index) => <li key={index} className="break-words">{name}</li>)}</ol> : <p className="break-words">{change.previousValue}</p>}
+                            </div>
                             <ChevronRight size={15} className="mt-2 hidden text-[#8294aa] md:block" />
-                            <p className="break-words rounded-[10px] bg-[#fff8e8] px-3 py-2 font-semibold text-[#8a641d]">{change.currentValue}</p>
+                            <div className="min-w-0 rounded-[10px] bg-[#fff8e8] px-3 py-2 font-semibold text-[#8a641d]">
+                              <p className="mb-2 text-xs">Current Arch9</p>
+                              {change.currentItems?.length ? <ol className="max-h-48 list-decimal space-y-1 overflow-y-auto pl-5">{change.currentItems.map((name, index) => <li key={index} className="break-words">{name}</li>)}</ol> : <p className="break-words">{change.currentValue}</p>}
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -14610,7 +14596,7 @@ function AgentListingDetail() {
                   ['garages', 'Garages'],
                   ['coveredParking', 'Covered Parking'],
                   ['openParking', 'Open Parking'],
-                  ['erfSize', 'Erf Size (m²)'],
+                  ['erfSize', `Erf Size (${marketingDraft.erfSizeUnit || 'm²'})`],
                   ['floorSize', 'Floor Size (m²)'],
                 ].map(([key, label]) => (
                   <label key={key} className="grid gap-2">
@@ -14780,7 +14766,7 @@ function AgentListingDetail() {
               <div className="mt-4">
                 <SnapshotRow label="Asking Price" value={formatCurrency(marketingDraft.price)} />
                 <SnapshotRow label="Property Type" value={marketingDraft.propertyType || '—'} />
-                <SnapshotRow label="Erf Size" value={marketingDraft.erfSize ? `${marketingDraft.erfSize} m²` : '—'} />
+                <SnapshotRow label="Erf Size" value={marketingDraft.erfSize ? `${marketingDraft.erfSize} ${marketingDraft.erfSizeUnit || 'm²'}` : '—'} />
                 <SnapshotRow label="Floor Size" value={marketingDraft.floorSize ? `${marketingDraft.floorSize} m²` : '—'} />
                 <SnapshotRow label="Bedrooms" value={marketingDraft.bedrooms || '—'} />
                 <SnapshotRow label="Bathrooms" value={marketingDraft.bathrooms || '—'} />
@@ -15011,7 +14997,7 @@ function AgentListingDetail() {
                   ['garages', 'Garages'],
                   ['coveredParking', 'Covered Parking'],
                   ['openParking', 'Open Parking'],
-                  ['erfSize', 'Erf Size (m²)'],
+                  ['erfSize', `Erf Size (${marketingDraft.erfSizeUnit || 'm²'})`],
                   ['floorSize', 'Floor Size (m²)'],
                 ].map(([key, label]) => (
                   <label key={key} className="grid gap-2">
@@ -17204,6 +17190,8 @@ function AgentListingDetail() {
                     </div>
                   </div>
                 </article>
+
+                <SellerPortalAccessControls token={resolveSellerPortalTokenFromListing(listingRecord)} accessState={sellerPortalAccessState} onStateChange={setSellerPortalAccessState} />
 
                 {!ONLINE_SIGNING_DISABLED && portalSignerRows.length ? (
                   <article className="rounded-[24px] border border-[#d8e6f2] bg-[#fbfdff] p-5 shadow-[0_12px_28px_rgba(15,23,42,0.04)]">

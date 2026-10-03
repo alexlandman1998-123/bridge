@@ -15,6 +15,7 @@ import {
 } from '../services/privatePropertyControlledPublishService.js'
 import {
   runPrivatePropertyPostSubmitMonitor,
+  readPrivatePropertyStoredStatus,
 } from '../services/privatePropertyPostSubmitMonitorService.js'
 import { updatePrivatePropertyListingStatus } from '../services/privatePropertyListingStatusUpdateService.js'
 import {
@@ -177,6 +178,7 @@ function buildPrivatePropertyApiConfig({ env = getRuntimeEnv(), requestUrl, payl
     startDateTime: normalizePrivatePropertyText(firstValue(payload.startDateTime, query.get('startDateTime'))),
     confirmation: normalizePrivatePropertyText(firstValue(payload.confirm, payload.confirmation, query.get('confirm'), query.get('confirmation'))),
     recordSync: normalizeBoolean(payload.recordSync ?? query.get('recordSync'), true),
+    cachedStatus: query.get('cached') === 'true',
     overrides: {
       agentIds: normalizePrivatePropertyText(firstValue(payload.agentIds, payload.agentId, query.get('agentIds'), query.get('agentId'))),
       propertyId: normalizePrivatePropertyText(firstValue(payload.propertyId, query.get('propertyId'))),
@@ -415,6 +417,7 @@ export async function createPrivatePropertyApiResponse({
         environment: config.environment,
         secrets: env || getRuntimeEnv(),
         overrides: config.overrides,
+        verifyLocation: config.environment === 'production',
       })
       return buildJsonResponse(200, {
         route: route.name,
@@ -465,6 +468,10 @@ export async function createPrivatePropertyApiResponse({
     }
 
     if (route.name === 'listingStatus') {
+      if (config.cachedStatus) {
+        const monitor = await readPrivatePropertyStoredStatus({ client: supabase, listingId: config.listingId, environment: config.environment })
+        return buildJsonResponse(200, { route: route.name, listingId: config.listingId, status: monitor.status, monitor })
+      }
       const monitor = await runPostSubmitMonitor({
         client: supabase,
         listingId: config.listingId,
@@ -490,6 +497,7 @@ export async function createPrivatePropertyApiResponse({
         listingId: config.listingId,
         environment: config.environment,
         propertyStatus: normalizePrivatePropertyText(payload.propertyStatus || 'Inactive') || 'Inactive',
+        confirmation: normalizePrivatePropertyText(payload.confirm),
         secrets: env || getRuntimeEnv(),
       })
       return buildJsonResponse(200, { route: route.name, listingId: config.listingId, update, report: update })

@@ -1,4 +1,6 @@
-import { normalizePrivatePropertyText } from './privatePropertyClient.js'
+import { createPrivatePropertyClient, normalizePrivatePropertyText } from './privatePropertyClient.js'
+import { resolvePrivatePropertyLocation } from './privatePropertyLocationService.js'
+import { inspectPrivatePropertyListingRecovery, applyPrivatePropertyRecoveryToReadiness } from './privatePropertyListingRecoveryService.js'
 import {
   resolvePrivatePropertyAgencyConfig,
   resolvePrivatePropertyCredentials,
@@ -206,6 +208,9 @@ export async function buildPrivatePropertyGoLiveReadinessReport({
   environment = 'sandbox',
   secrets = process.env,
   overrides = {},
+  verifyLocation = false,
+  privateProperty = null,
+  createPrivateProperty = createPrivatePropertyClient,
 } = {}) {
   if (!client) throw new Error('Supabase client is required.')
   const normalizedListingId = normalizePrivatePropertyText(listingId)
@@ -215,6 +220,7 @@ export async function buildPrivatePropertyGoLiveReadinessReport({
   const bundle = await fetchArch9ListingForPrivatePropertyPreview({
     client,
     listingId: normalizedListingId,
+    environment: normalizedEnvironment,
   })
   const [agencyConfigResolution, agentMappingResolution] = await Promise.all([
     resolvePrivatePropertyAgencyConfig({
@@ -234,7 +240,7 @@ export async function buildPrivatePropertyGoLiveReadinessReport({
     secrets,
   })
 
-  return createPrivatePropertyGoLiveReadinessReport({
+  const report = createPrivatePropertyGoLiveReadinessReport({
     listingId: normalizedListingId,
     environment: normalizedEnvironment,
     bundle,
@@ -243,4 +249,33 @@ export async function buildPrivatePropertyGoLiveReadinessReport({
     credentialResolution,
     overrides,
   })
+  const onlyAddressBlockers = report.blockers.every((blocker) => blocker.startsWith('private_property_activated_address_'))
+  if (!verifyLocation || (!report.ready && !onlyAddressBlockers)) return report
+  const portal = privateProperty || createPrivateProperty({
+    baseUrl: report.agencyConfig.baseUrl,
+    username: credentialResolution.username,
+    password: credentialResolution.password,
+  })
+  report.safety.privatePropertyApiCalled = true
+  try {
+    const location = await resolvePrivatePropertyLocation({ portal, address: report.preview.payloadPreview.address, country: bundle.listing.country || 'South Africa' })
+    const resolved = createPrivatePropertyGoLiveReadinessReport({
+      listingId: normalizedListingId, environment: normalizedEnvironment, bundle,
+      agencyConfigResolution, agentMappingResolution, credentialResolution,
+      overrides: { ...overrides, suburbId: location.suburbId },
+    })
+    resolved.safety.privatePropertyApiCalled = true
+    resolved.locationResolution = { ...location, addressFingerprint: resolved.preview.summary.addressFingerprint }
+    const recovery = await inspectPrivatePropertyListingRecovery({ portal, existingSync: bundle.existingSync, address: resolved.preview.payloadPreview.address })
+    return applyPrivatePropertyRecoveryToReadiness(resolved, recovery)
+  } catch (error) {
+    report.locationResolution = { verified: false, message: error.message }
+    report.ready = false
+    report.status = 'BLOCKED'
+    report.blockers.push('private_property_location_not_verified')
+    report.checks = report.checks.map((check) => check.name === 'location_resolution'
+      ? buildCheck('location_resolution', ['private_property_location_not_verified'], [], { message: error.message }) : check)
+    report.nextStep = error.message
+    return report
+  }
 }

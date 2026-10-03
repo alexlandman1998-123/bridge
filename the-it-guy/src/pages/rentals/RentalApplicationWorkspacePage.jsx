@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Building2, CheckCircle2, ClipboardList, FileText, Loader2, MoreHorizontal, Search, ShieldCheck, SlidersHorizontal } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useWorkspace } from '../../context/WorkspaceContext'
+import { rentalApplicationDocumentProgress } from '../../services/rentals/rentalApplicationWizardModel.js'
 import { listPersistedRentalApplications } from '../../services/rentals/rentalApplicationRepository.js'
 
 const text = (value) => String(value ?? '').trim()
@@ -15,7 +16,7 @@ const contactOf = (application = {}) => { const identity = application.data?.ide
 const referenceOf = (application = {}) => text(application.data?.reference || application.data?.applicationReference) || `APP-${text(application.id).replaceAll('-', '').slice(-4).toUpperCase()}`
 const updatedAt = (value) => value ? new Date(value).toLocaleDateString('en-ZA', { day: '2-digit', month: '2-digit', year: 'numeric' }) : 'Recently'
 const stageDetail = (status) => status === 'draft' ? 'Applicant pending' : status === 'approved' ? 'Decision made' : status === 'declined' ? 'Decision recorded' : status === 'submitted' ? 'Ready for review' : 'Review documents'
-function documentStats(application = {}) { const documents = application.data?.documents || {}; const uploaded = Array.isArray(documents) ? documents.filter(Boolean).length : Object.values(documents).filter(Boolean).length; const requirements = application.data?.documentRequirements || application.data?.requiredDocuments || []; const required = Array.isArray(requirements) ? requirements.length : 0; return { uploaded, required, progress: required ? Math.min(100, Math.round((uploaded / required) * 100)) : 0 } }
+const documentStats = rentalApplicationDocumentProgress
 function matchesFilter(application, filter) { const status = text(application.status); if (filter === 'all') return true; if (filter === 'draft') return status === 'draft'; if (filter === 'review') return !terminalStatuses.includes(status) && status !== 'draft'; return status === filter }
 
 function ApplicationRow({ application, onOpen }) {
@@ -28,7 +29,7 @@ function ApplicationRow({ application, onOpen }) {
 export default function RentalApplicationWorkspacePage() {
   const workspace = useWorkspace(); const navigate = useNavigate(); const organisationId = useMemo(() => text(workspace.workspace?.id || workspace.currentMembership?.organisation_id), [workspace])
   const [items, setItems] = useState([]); const [loading, setLoading] = useState(true); const [error, setError] = useState(''); const [query, setQuery] = useState(''); const [filter, setFilter] = useState('all'); const [filtersOpen, setFiltersOpen] = useState(false)
-  const load = useCallback(async () => { if (!organisationId) { setLoading(false); return } try { setLoading(true); setError(''); setItems(await listPersistedRentalApplications(organisationId)) } catch (reason) { setError(reason?.message || 'Unable to load rental applications.') } finally { setLoading(false) } }, [organisationId])
+  const load = useCallback(async () => { if (!organisationId) { setLoading(false); return } try { setLoading(true); setError(''); setItems(await listPersistedRentalApplications(organisationId, { includeEvidence: true })) } catch (reason) { setError(reason?.message || 'Unable to load rental applications.') } finally { setLoading(false) } }, [organisationId])
   useEffect(() => { void load() }, [load])
   const counts = useMemo(() => ({ all: items.length, submitted: items.filter((item) => item.status === 'submitted').length, review: items.filter((item) => matchesFilter(item, 'review')).length, approved: items.filter((item) => item.status === 'approved').length, draft: items.filter((item) => item.status === 'draft').length, declined: items.filter((item) => item.status === 'declined').length }), [items])
   const visible = useMemo(() => items.filter((item) => { const property = propertyOf(item); const haystack = [nameOf(item), contactOf(item), property.name, property.detail, referenceOf(item), item.status].join(' ').toLowerCase(); return matchesFilter(item, filter) && haystack.includes(query.toLowerCase()) }), [filter, items, query])

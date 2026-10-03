@@ -17,7 +17,8 @@ export const RENTAL_APPLICATION_FIELD_GROUPS = Object.freeze([
   { key: 'employment', title: 'Employment', scope: 'application', fields: [field('employer', 'Employer', 'text', true), field('role', 'Role', 'text', true), field('employmentType', 'Employment type', 'text', true), field('businessName', 'Business name'), field('institution', 'Institution'), field('incomeSource', 'Income source'), field('employerPhone', 'Employer phone', 'tel'), field('startDate', 'Employment start date', 'date')] },
   { key: 'income', title: 'Income & affordability', scope: 'application', fields: [field('monthlyIncome', 'Monthly income', 'number', true), field('otherIncome', 'Other monthly income', 'number', true), field('monthlyObligations', 'Monthly commitments', 'number'), field('incomeDescription', 'Other income source'), field('incomeSource', 'Entity income source'), field('depositAvailable', 'Deposit available', 'boolean')] },
   { key: 'rentalHistory', title: 'Rental history', scope: 'application', fields: [field('currentAddress', 'Current address', 'text', true), field('landlordName', 'Current landlord', 'text', true), field('reasonForMoving', 'Reason for moving', 'text', true), field('landlordPhone', 'Landlord phone', 'tel'), field('landlordEmail', 'Landlord email', 'email'), field('currentMonthlyRent', 'Current monthly rent', 'number'), field('housingSituation', 'Current housing situation')] },
-  { key: 'documentLinks', title: 'Document assignments', scope: 'application', readOnly: true, collection: true, fields: [field('documentId', 'Document reference'), field('subjectId', 'Document subject'), field('purpose', 'Evidence purpose')] },
+  { key: 'documentInvalidations', title: 'Stale document subjects', scope: 'application', readOnly: true, collection: true, fields: [field('subjectId', 'Document subject')] },
+  { key: 'documentLinks', title: 'Document assignments', scope: 'application', readOnly: true, collection: true, fields: [field('documentId', 'Document reference'), field('subjectId', 'Document subject'), field('purpose', 'Evidence purpose'), field('requirementId', 'Saved requirement reference'), field('generation', 'Requirement generation', 'number'), field('source', 'Evidence source'), field('invalidated', 'Assignment invalidated', 'boolean')] },
   { key: 'references', title: 'References', scope: 'application', collection: true, fields: [field('id', 'Reference ID'), field('type', 'Reference type'), field('name', 'Name'), field('phone', 'Phone', 'tel'), field('email', 'Email', 'email'), field('relationship', 'Relationship')] },
 ].map((group) => Object.freeze({ ...group, fields: Object.freeze(group.fields) })))
 export const RENTAL_APPLICATION_SETUP_STEPS = Object.freeze([
@@ -65,7 +66,7 @@ export function mergeRentalApplicationData(current = {}, patch = {}, { source = 
     const next = source === 'applicant' ? projectGroup(group, value) : clone(value)
     result[key] = next && typeof next === 'object' && !Array.isArray(next) ? { ...object(result[key]), ...next } : next
   }
-  return result
+  return invalidateRentalDocumentAssignments(current, result)
 }
 function projectGroup(group, value) {
   const project = (item) => Object.fromEntries(group.fields.filter(({ key }) => Object.hasOwn(object(item), key)).map(({ key }) => [key, clone(item[key])]))
@@ -104,6 +105,8 @@ export function validateRentalApplicationFields(data = {}, { fullSetup = data.sc
     if (data.household?.guarantorRequired === true && !people.some((person) => person?.role === 'guarantor')) errors.push('Add the guarantor.')
     if (new Set(people.map((person) => person?.id)).size !== people.length) errors.push('Additional people must have unique references.')
     for (const person of people) {
+      missing(person?.identityNumber, 'Additional person ID / passport number')
+      if (!text(person?.email) && !text(person?.phone)) errors.push('Each additional person needs an email or phone.')
       if (['primary', 'entity'].includes(person?.id)) errors.push('Additional people need their own unique references.')
       if (!text(person?.id) || !RENTAL_APPLICANT_ROLES.includes(person?.role) || !text(person?.firstName) || !text(person?.lastName)) errors.push('Each additional person needs a reference, role and full name.')
     }
@@ -129,4 +132,37 @@ export function validateRentalApplicationFields(data = {}, { fullSetup = data.sc
     }
   }
   return [...new Set(errors)]
+}
+
+// Changing a person or their authority preserves evidence as history, but requires
+// a new explicit upload assignment before that evidence can satisfy the checklist.
+export function invalidateRentalDocumentAssignments(previous = {}, next = {}) {
+  if (!Object.keys(previous).length) return next
+  const identityKeys = ['firstName', 'lastName', 'identityType', 'identityNumber', 'nationality', 'dateOfBirth', 'role', 'authorityBasis']
+  const entityKeys = ['type', 'legalName', 'registrationNumber', 'primaryContactRole']
+  const changed = (a, b, keys) => keys.some((key) => (a?.[key] ?? '') !== (b?.[key] ?? ''))
+  const stale = new Set((previous.documentInvalidations || []).map((item) => item.subjectId))
+  const affected = new Set()
+  if (Object.keys(previous.identity || {}).length && changed(previous.identity, next.identity, identityKeys)) affected.add('primary')
+  if (Object.keys(previous.entity || {}).length && changed(previous.entity, next.entity, entityKeys)) {
+    affected.add('primary'); affected.add('entity')
+    for (const person of previous.people || []) affected.add(person.id)
+  }
+  for (const person of previous.people || []) {
+    const current = (next.people || []).find((item) => item.id === person.id)
+    if (!current || changed(person, current, identityKeys)) {
+      affected.add(person.id)
+      if (['authorised_signatory', 'trustee'].includes(person.role) || ['authorised_signatory', 'trustee'].includes(current?.role)) affected.add('entity')
+    }
+  }
+  for (const person of next.people || []) {
+    if (['authorised_signatory', 'trustee'].includes(person.role) && !(previous.people || []).some((item) => item.id === person.id)) affected.add('entity')
+  }
+  const oldLinks = previous.documentLinks || []
+  const links = (next.documentLinks || []).map((link) => affected.has(link.subjectId) || oldLinks.some((old) => old.documentId === link.documentId && old.invalidated) ? { ...link, invalidated: true } : link)
+  for (const link of oldLinks) {
+    if ((link.invalidated || affected.has(link.subjectId)) && !links.some((item) => item.documentId === link.documentId)) links.push({ ...link, invalidated: true })
+  }
+  for (const subject of affected) stale.add(subject)
+  return { ...next, ...(links.length || next.documentLinks ? { documentLinks: links } : {}), ...(stale.size ? { documentInvalidations: [...stale].map((subjectId) => ({ subjectId })) } : {}) }
 }

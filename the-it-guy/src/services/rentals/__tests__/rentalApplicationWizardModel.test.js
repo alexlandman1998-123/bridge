@@ -17,7 +17,7 @@ it('reuses contact details without copying finances, roles, documents or private
   expect(result.identity).toEqual({ firstName: 'Previous', phone: '082' }); expect(result.income.monthlyIncome).toBe(20000); expect(result.people).toEqual([]); expect(result.documentLinks).toBeUndefined()
 })
 it('keeps evidence attached to the correct person and requires entity authority and other people consent', () => {
-  const data = { ...complete(), entity: { type: 'trust', legalName: 'Trust', registrationNumber: 'IT1', primaryContactRole: 'trustee' }, income: { monthlyIncome: 100000, incomeSource: 'Rental income' }, people: [{ id: 'g', role: 'guarantor', firstName: 'Sam', lastName: 'Person' }] }
+  const data = { ...complete(), entity: { type: 'trust', legalName: 'Trust', registrationNumber: 'IT1', primaryContactRole: 'trustee' }, income: { monthlyIncome: 100000, incomeSource: 'Rental income' }, people: [{ id: 'g', role: 'guarantor', firstName: 'Sam', identityNumber: 'support-id', email: 'sam@example.test', lastName: 'Person' }] }
   const slots = rentalApplicationDocumentSlots(data).filter((item) => item.required)
   expect(slots.map((item) => item.key)).toContain('entity:authority'); expect(slots.map((item) => item.key)).toContain('g:signed_consent')
   const documents = slots.map((slot, index) => ({ id: `d${index}`, document_type: slot.type, status: 'uploaded' }))
@@ -29,7 +29,7 @@ it('keeps evidence attached to the correct person and requires entity authority 
   expect(rentalApplicationDocumentForSlot(slots[0], [{ id: 'legacy', type: 'identity', name: 'ID.pdf', status: 'uploaded' }], {})).toBeTruthy()
 })
 it('shows financial questions for a guarantor and supports student sponsorship without inventing primary income', () => {
-  const person = { id: 'g', role: 'guarantor', firstName: 'Sam', lastName: 'Person', monthlyIncome: 40000 }
+  const person = { id: 'g', role: 'guarantor', firstName: 'Sam', identityNumber: 'support-id', email: 'sam@example.test', lastName: 'Person', monthlyIncome: 40000 }
   expect(rentalApplicationPersonFields(group('people'), person).map((item) => item.key)).toContain('monthlyIncome')
   expect(rentalApplicationPersonFields(group('people'), { role: 'beneficial_owner' }).map((item) => item.key)).not.toContain('monthlyIncome')
   const data = { ...complete(), employment: { employmentType: 'student', incomeSource: 'Guarantor support' }, income: { monthlyIncome: 0 }, people: [person] }

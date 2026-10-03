@@ -8,7 +8,7 @@ const rgba = (hex, alpha) => {
   return `rgba(${(value >> 16) & 255},${(value >> 8) & 255},${value & 255},${alpha})`
 }
 
-function StageCard({ stage, index, isLast, isCurrent, model, brand }) {
+function StageCard({ stage, index, isLast, isCurrent, model, brand, phase = 'transfer' }) {
   const [expanded, setExpanded] = useState(isCurrent)
   const [showWhy, setShowWhy] = useState(true)
   const completed = stage.status === 'completed'
@@ -16,10 +16,10 @@ function StageCard({ stage, index, isLast, isCurrent, model, brand }) {
   const update = stage.latestUpdate
   const date = update?.createdAt ? new Date(update.createdAt) : null
   const updateDate = date && !Number.isNaN(date.getTime())
-    ? new Intl.DateTimeFormat('en-ZA', { dateStyle: 'medium', timeStyle: 'short' }).format(date) : ''
+    ? new Intl.DateTimeFormat('en-ZA', { dateStyle: 'medium', timeStyle: 'short' }).format(date) : update?.timestampLabel || ''
   const number = String(index + 1).padStart(2, '0')
   const currentDetail = [
-    { label: 'Currently', value: stage.currentStatus, helper: stage.waitingOn ? `Waiting on ${stage.waitingOn}` : 'Your transfer team is handling this step.', Icon: Clock3 },
+    { label: 'Currently', value: stage.currentStatus, helper: stage.waitingOn ? `Waiting on ${stage.waitingOn}` : phase === 'listing' ? 'Your property team is handling this step.' : 'Your transfer team is handling this step.', Icon: Clock3 },
     { label: 'Usually takes', value: stage.duration || 'Timing to be confirmed', helper: 'A guide for this stage, not a deadline.', Icon: CalendarDays },
     { label: 'You need to do', value: model.clientAction, helper: model.clientActionDetail, Icon: UserRound },
   ]
@@ -63,7 +63,7 @@ function StageCard({ stage, index, isLast, isCurrent, model, brand }) {
             <div className="rounded-[16px] border border-[#e4ebf3] bg-white p-4">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                 <div className="flex items-start gap-3"><span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#eef5f2]" style={{ color: brand }}><UserRound size={21} /></span>
-                  <div><p className="text-sm font-semibold text-[#142132]">Latest update from your transferring attorney</p>
+                  <div><p className="text-sm font-semibold text-[#142132]">{phase === 'listing' ? `Latest update from ${update?.agentName || 'your agent'}` : 'Latest update from your transferring attorney'}</p>
                     {update ? <><p className="mt-1 text-xs font-medium text-[#667085]">{updateDate}{model.updateIsOld ? ' · Older update' : ''}</p>
                       <p className="mt-2 max-w-3xl text-sm leading-6 text-[#52657b]">{update.message}</p></>
                       : <p className="mt-2 text-sm leading-6 text-[#52657b]">No update has been published for this stage yet.</p>}</div>
@@ -83,27 +83,28 @@ function StageCard({ stage, index, isLast, isCurrent, model, brand }) {
 }
 
 export default function ClientTransferJourney({ model, audience = 'buyer', propertyTitle = '', propertyImageUrl = '',
-  partyName = '', priceLabel = '', attorneyName = '', attorneyFirm = '', brand = '#087955', accent = brand, heroOverlayStyle = null }) {
+  partyName = '', priceLabel = '', attorneyName = '', attorneyFirm = '', brand = '#087955', accent = brand, heroOverlayStyle = null, phase = 'transfer', compactMobile = false }) {
   const [guideOpen, setGuideOpen] = useState(false)
   if (model?.status !== 'ready') return <section className="rounded-[20px] border border-[#dbe5ef] bg-white p-6 text-sm text-[#52657b]">
     Your transfer journey will appear once the legal matter is ready. Refresh this page if you are expecting an update.
   </section>
   const current = model.currentStage
+  const isListing = phase === 'listing'
   const statusItems = [
-    { label: 'Transfer status', value: current?.title || 'Transfer complete', helper: current?.currentStatus || '', Icon: Scale },
-    { label: 'Transfer attorney', value: attorneyName || 'Transfer team', helper: attorneyFirm || '', Icon: UserRound },
+    { label: isListing ? 'Listing status' : 'Transfer status', value: current?.title || (isListing ? 'Listing complete' : 'Transfer complete'), helper: current?.currentStatus || '', Icon: Scale },
+    { label: isListing ? 'Your agent' : 'Transfer attorney', value: attorneyName || (isListing ? 'Your property team' : 'Transfer team'), helper: attorneyFirm || '', Icon: UserRound },
     { label: 'Currently waiting on', value: model.waitingOn, helper: '', Icon: Building2 },
-    { label: 'Estimated registration', value: model.estimatedRegistration, helper: '', Icon: CalendarDays },
+    { label: isListing ? 'Next milestone' : 'Estimated registration', value: isListing ? model.nextStage?.title || 'Awaiting next milestone' : model.estimatedRegistration, helper: '', Icon: CalendarDays },
   ]
   return <section data-client-transfer-journey={audience} className="space-y-5">
     <div className="relative isolate overflow-hidden rounded-[28px] border border-white/70 bg-slate-900 text-white shadow-[0_22px_54px_rgba(15,23,42,0.16)]">
       {propertyImageUrl ? <img src={propertyImageUrl} alt="" className="absolute inset-0 z-0 h-full w-full object-cover" /> : null}
       <div className="absolute inset-0 z-10" style={heroOverlayStyle || { background: 'linear-gradient(90deg,rgba(3,8,9,0.9),rgba(6,13,14,0.7) 60%,rgba(8,16,16,0.45))' }} />
       <div className="relative z-20 grid min-h-[310px] gap-6 p-6 lg:grid-cols-[minmax(0,1fr)_280px] lg:p-8">
-        <div className="flex flex-col justify-between"><div><p className="text-sm font-semibold uppercase tracking-[0.16em] text-white/75">Your {audience === 'seller' ? 'sale' : 'purchase'}</p>
-          <h1 className="mt-4 max-w-5xl text-[2.35rem] font-semibold leading-[0.98] tracking-[-0.06em] text-white lg:text-[3.5rem] 2xl:text-[4.15rem]">{propertyTitle || 'Your property transfer'}</h1></div>
-          <div className="mt-8 grid gap-3 sm:grid-cols-3">
-            {[[audience === 'seller' ? 'Seller' : 'Buyer', partyName || (audience === 'seller' ? 'Seller' : 'Buyer')], ['Purchase price', priceLabel || 'See sale agreement'], ['Current stage', current?.title || 'Transfer complete']].map(([label, value]) => <article key={label} className="rounded-[18px] border border-white/20 bg-white/10 px-4 py-3 backdrop-blur">
+        <div className="flex flex-col justify-between"><div><p className="text-sm font-semibold uppercase tracking-[0.16em] text-white/75">{audience === 'seller' ? 'Your Transaction' : `Your ${isListing ? 'listing' : 'purchase'}`}</p>
+          <h1 className={`mt-4 max-w-5xl ${audience === 'seller' ? 'text-[1.35rem] leading-snug sm:text-[1.65rem] lg:text-[2rem] 2xl:text-[2.25rem] tracking-[-0.035em]' : `${compactMobile ? 'text-[1.75rem] leading-tight sm:text-[2.35rem]' : 'text-[2.35rem] leading-[0.98]'} lg:text-[3.5rem] 2xl:text-[4.15rem] tracking-[-0.06em]`} font-semibold text-white`}>{propertyTitle || 'Your property transfer'}</h1></div>
+          <div className={`mt-8 grid gap-3 ${compactMobile ? 'grid-cols-2' : ''} sm:grid-cols-3`}>
+            {[[audience === 'seller' ? 'Seller' : 'Buyer', partyName || (audience === 'seller' ? 'Seller' : 'Buyer')], [isListing ? 'Asking price' : 'Purchase price', priceLabel || (isListing ? 'Price not yet shared' : 'See sale agreement')], ['Current stage', current?.title || (isListing ? 'Listing complete' : 'Transfer complete')]].map(([label, value]) => <article key={label} className={`rounded-[18px] border border-white/20 bg-white/10 px-4 py-3 backdrop-blur ${compactMobile && label === 'Current stage' ? 'hidden sm:block' : ''}`}>
               <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-white/70">{label}</span>
               <strong className="mt-1 block text-sm font-semibold text-white">{value}</strong>
             </article>)}
@@ -111,12 +112,13 @@ export default function ClientTransferJourney({ model, audience = 'buyer', prope
         </div>
         <div className="rounded-[24px] border border-white/20 bg-white/10 p-5 backdrop-blur">
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-white/70">Progress</p>
-          <div className="mt-5 flex items-center justify-center"><div className="relative flex h-36 w-36 items-center justify-center rounded-full" style={{ background: `conic-gradient(${accent} ${model.progressPercent * 3.6}deg,rgba(255,255,255,0.24) 0deg)` }}>
+          <div className={`mt-5 items-center justify-center ${compactMobile ? 'hidden sm:flex' : 'flex'}`}><div className="relative flex h-36 w-36 items-center justify-center rounded-full" style={{ background: `conic-gradient(${accent} ${model.progressPercent * 3.6}deg,rgba(255,255,255,0.24) 0deg)` }}>
             <span className="absolute inset-3 rounded-full bg-slate-950/70" />
             <span className="relative text-center"><strong className="block text-4xl tracking-[-0.05em]">{model.progressPercent}%</strong><span className="text-xs font-semibold uppercase tracking-[0.14em] text-white/70">Complete</span></span>
             </div>
           </div>
-          <p className="mt-5 text-sm leading-6 text-white/80">{model.nextStage ? `Next: ${model.nextStage.title}.` : 'Registration milestone reached.'}</p>
+          {compactMobile ? <div className="mt-3 sm:hidden"><p className="text-lg font-semibold text-white">{model.progressPercent}% complete</p><div role="progressbar" aria-label="Journey progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={model.progressPercent} className="mt-3 h-2 overflow-hidden rounded-full bg-white/20"><span className="block h-full rounded-full" style={{width: `${model.progressPercent}%`, backgroundColor: accent}} /></div></div> : null}
+          <p className={`mt-5 text-sm leading-6 text-white/80 ${compactMobile ? 'hidden sm:block' : ''}`}>{model.nextStage ? `Next: ${model.nextStage.title}.` : isListing ? 'Awaiting the next sale milestone.' : 'Registration milestone reached.'}</p>
         </div>
       </div>
     </div>
@@ -129,20 +131,20 @@ export default function ClientTransferJourney({ model, audience = 'buyer', prope
             {helper ? <p className="mt-1 text-xs font-semibold text-[#52657b]">{helper}</p> : null}</div>
         </article>)}
       </div>
-      <p className="mt-4 border-t border-[#e4ebf3] pt-3 text-xs leading-5 text-[#667085]">*Timelines are estimates and can change with banks, municipalities, attorneys and the Deeds Office.</p>
+      <p className="mt-4 border-t border-[#e4ebf3] pt-3 text-xs leading-5 text-[#667085]">{isListing ? 'Listing milestones follow your agent’s saved progress. Legal transfer begins after an accepted offer creates a transaction.' : '*Timelines are estimates and can change with banks, municipalities, attorneys and the Deeds Office.'}</p>
     </section>
     <section className="rounded-[24px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)] lg:p-6">
-      <h2 className="text-2xl font-semibold tracking-[-0.05em] text-[#142132]">The conveyancing process</h2>
-      <p className="mt-2 text-sm leading-6 text-[#52657b]">Step-by-step journey of how the property is being transferred{audience === 'buyer' ? ' into your name' : ''}.</p>
+      <h2 className="text-2xl font-semibold tracking-[-0.05em] text-[#142132]">{isListing ? 'The listing process' : 'The conveyancing process'}</h2>
+      <p className="mt-2 text-sm leading-6 text-[#52657b]">{isListing ? 'Step-by-step progress from seller onboarding to a ready listing.' : `Step-by-step journey of how the property is being transferred${audience === 'buyer' ? ' into your name' : ''}.`}</p>
       <div className="mt-6">{model.stages.map((stage, index) => <StageCard key={`${stage.key}:${current?.key === stage.key}`} stage={stage} index={index} isLast={index === model.stages.length - 1}
-        isCurrent={current?.key === stage.key} model={model} brand={brand} />)}</div>
+        isCurrent={current?.key === stage.key} model={model} brand={brand} phase={phase} />)}</div>
       <div className="mt-5 rounded-[18px] border p-4" style={{ borderColor: rgba(brand, 0.16), backgroundColor: rgba(brand, 0.04) }}>
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3"><span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white" style={{ color: brand }}><GraduationCap size={21} /></span>
             <div><h3 className="text-sm font-semibold text-[#142132]">Want to understand more about the process?</h3>
-              <p className="mt-1 text-sm leading-5 text-[#52657b]">Learn more about conveyancing and what happens at each stage.</p></div>
+              <p className="mt-1 text-sm leading-5 text-[#52657b]">{isListing ? 'Learn what each listing milestone means.' : 'Learn more about conveyancing and what happens at each stage.'}</p></div>
           </div>
-          <button type="button" aria-expanded={guideOpen} onClick={() => setGuideOpen(value => !value)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-[12px] border bg-white px-4 text-sm font-semibold text-[#142132]">{guideOpen ? 'Hide conveyancing guide' : 'View conveyancing guide'}<ChevronDown size={16} className={guideOpen ? 'rotate-180' : ''} /></button>
+          <button type="button" aria-expanded={guideOpen} onClick={() => setGuideOpen(value => !value)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-[12px] border bg-white px-4 text-sm font-semibold text-[#142132]">{guideOpen ? isListing ? 'Hide listing guide' : 'Hide conveyancing guide' : isListing ? 'View listing guide' : 'View conveyancing guide'}<ChevronDown size={16} className={guideOpen ? 'rotate-180' : ''} /></button>
         </div>
         {guideOpen ? <ol className="mt-4 grid gap-3 border-t border-[#dbe5ef] pt-4 md:grid-cols-2">
           {model.stages.map((stage, index) => <li key={stage.key} className="rounded-[12px] bg-white p-3 text-sm text-[#52657b]"><strong className="block text-[#142132]">{index + 1}. {stage.title}</strong><span className="mt-1 block leading-5">{stage.education}</span></li>)}

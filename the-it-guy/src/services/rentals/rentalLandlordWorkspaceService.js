@@ -1,3 +1,5 @@
+import { saveRentalLandlordDiscovery, linkRentalLandlordOnboardingProperty } from './rentalLandlordOnboardingService.js'
+import { rentalLandlordDiscovery } from './rentalLandlordOnboardingModel.js'
 import { updateAgencyCrmLeadRecord } from '../../lib/agencyCrmRepository'
 import { getRentalProperty } from './rentalPropertyRepository'
 import {
@@ -23,6 +25,11 @@ async function current(leadId, context) {
   return lead
 }
 async function save(lead, patch, context) {
+  if (patch.landlordProfile || patch.landlordPortfolio) {
+    const currentDiscovery = rentalLandlordDiscovery(lead.raw?.rawEnquiryPayload || lead.raw?.raw_enquiry_payload || {})
+    await saveRentalLandlordDiscovery(lead, { profile: patch.landlordProfile || currentDiscovery.profile, portfolio: patch.landlordPortfolio || currentDiscovery.portfolio }, context.expectedDiscovery || currentDiscovery)
+    return true
+  }
   await updateAgencyCrmLeadRecord(context.organisationId, lead.id, {
     rawEnquiryPayload: patchRentalCrmLeadMetadata(lead.raw, patch),
   })
@@ -160,15 +167,7 @@ export async function recordRentalLandlordPortfolioMandate(
       },
       createdBy: context.actor?.id,
     }))
-  await save(
-    lead,
-    {
-      landlordPortfolio: portfolio.map((item) =>
-        item.id === propertyId ? { ...item, mandateId: mandate.id } : item,
-      ),
-    },
-    context,
-  )
+  await linkRentalLandlordOnboardingProperty(lead,propertyId,{mandateId:mandate.id},context.expectedDiscovery)
   if (lead.stage === 'mandate_pending')
     await advanceRentalLead(lead, {
       ...context,

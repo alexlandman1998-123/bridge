@@ -8,6 +8,7 @@ const migration = await fs.readFile(
 const privateListingService = await fs.readFile(new URL('../src/services/privateListingService.js', import.meta.url), 'utf8')
 const workspaceService = await fs.readFile(new URL('../src/services/clientPortalWorkspaceService.js', import.meta.url), 'utf8')
 const clientPortalPage = await fs.readFile(new URL('../src/pages/ClientPortal.jsx', import.meta.url), 'utf8')
+const passwordGate = await fs.readFile(new URL('../src/components/client-portal/SellerPortalPasswordGate.jsx', import.meta.url), 'utf8')
 const api = await fs.readFile(new URL('../src/lib/api.js', import.meta.url), 'utf8')
 
 const payloadFunction = migration.match(
@@ -29,7 +30,7 @@ assert.doesNotMatch(privateListingService, /sessionExpired: Boolean\(rpc\.data\?
 assert.match(privateListingService, /sessionExpired: rpc\.data\?\.sessionExpired === true/, 'only the server may confirm seller-session expiry')
 assert.match(clientPortalPage, /const confirmedExpiry = Boolean\(sessionExpired \|\| portalAuth\?\.sessionExpired === true\)/, 'the page must retain a session unless expiry is explicit')
 assert.match(privateListingService, /isSellerPortalSessionExpiredError/, 'seller portal mutations should expose an explicit session-expiry classifier')
-assert.match(clientPortalPage, /Your secure session ended\.[\s\S]*your portal link is still active\./, 'session expiry copy should distinguish reauthentication from link expiry')
+assert.match(passwordGate, /authState.sessionExpired \? 'Your session has ended\. Sign in to pick up where you left off\.'/, 'session expiry copy should distinguish reauthentication from link expiry')
 assert.match(clientPortalPage, /isSellerPortalSessionExpiredError\(uploadError\)[\s\S]*setSellerPortalAuth\(\{[\s\S]*sessionExpired: true/, 'an expired upload session should return the seller to password reauthentication')
 assert.doesNotMatch(workspaceService, /getCanonicalRequirementsForContext/, 'public portals must not query protected canonical requirement tables directly')
 assert.match(workspaceService, /requirements already returned by their[\s\S]*token-scoped payload/, 'public portal requirements should come from the token-scoped payload')

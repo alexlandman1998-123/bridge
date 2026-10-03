@@ -2,8 +2,10 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import RentalTenantApplicationProfile from '../RentalTenantApplicationProfile'
-import { savePersistedRentalApplication } from '../../../services/rentals/rentalApplicationRepository.js'
-vi.mock('../../../services/rentals/rentalApplicationRepository.js', () => ({ savePersistedRentalApplication: vi.fn(), getRentalApplicationReview: vi.fn().mockResolvedValue({ documents: [] }) }))
+import { uploadRentalApplicationEvidence } from '../../../services/rentals/rentalApplicationEvidenceService.js'
+import { savePersistedRentalApplication, getRentalApplicationReview } from '../../../services/rentals/rentalApplicationRepository.js'
+vi.mock('../../../services/rentals/rentalApplicationRepository.js', () => ({ savePersistedRentalApplication: vi.fn(), getRentalApplicationReview: vi.fn().mockResolvedValue({ documents: [], version: 2, requirements: [] }) }))
+vi.mock('../../../services/rentals/rentalApplicationEvidenceService.js', () => ({ uploadRentalApplicationEvidence: vi.fn() }))
 afterEach(() => { cleanup(); vi.clearAllMocks() })
 const application = { id: 'app', status: 'draft', version: 2, vacancyId: 'vacancy', data: { identity: { firstName: 'Alex', email: 'a@example.test', customKey: 'retained' }, employment: { employer: 'Acme' }, income: { monthlyIncome: '20000' }, rentalHistory: { currentAddress: 'Saved address' }, property: { title: '12 Main Road' }, extra: { retained: true } } }
 const lead = { name: 'Alex Tenant', email: 'a@example.test' }
@@ -58,6 +60,7 @@ it('retains the draft when leaving the profile and blocks overwriting a newer ap
 })
 it('keeps a saved snapshot if reloading the workspace fails after the database accepted the save', async () => {
   const draftsRef = { current: new Map() }
+  getRentalApplicationReview.mockResolvedValue({ documents: [], version: 3, requirements: [] })
   savePersistedRentalApplication.mockImplementation(async (current, patch) => ({ ...current, version: current.version + 1, data: patch }))
   const first = render(<RentalTenantApplicationProfile draftsRef={draftsRef} lead={lead} applications={[application]} onReload={vi.fn().mockRejectedValue(new Error('Reload unavailable'))} />)
   fireEvent.click(screen.getByRole('button', { name: /People & contacts/ }))
@@ -70,4 +73,19 @@ it('keeps a saved snapshot if reloading the workspace fails after the database a
   fireEvent.change(screen.getByLabelText('Phone'), { target: { value: '0825550100' } })
   fireEvent.click(screen.getByRole('button', { name: 'Save application profile' }))
   await waitFor(() => expect(savePersistedRentalApplication.mock.calls[1][0].version).toBe(3))
+})
+
+it('uses the requirement generation returned after the agent saves discovery before uploading', async () => {
+  const requirements = [{ id: 'saved-identity', scopeKey: 'application', subjectId: 'primary', purpose: 'identity', active: true, required: true, mode: 'active', generation: 2, state: 'missing' }]
+  savePersistedRentalApplication.mockImplementation(async (current, patch) => ({ ...current, version: 3, data: patch }))
+  getRentalApplicationReview.mockResolvedValue({ version: 3, documents: [], requirements })
+  uploadRentalApplicationEvidence.mockImplementation(async (current) => ({ application: { ...current, version: 4, requirements: requirements.map((row) => ({ ...row, documentId: 'new', state: 'received' })) }, document: { id: 'new', file_name: 'agent.pdf', status: 'uploaded' } }))
+  render(<RentalTenantApplicationProfile lead={lead} applications={[application]} />)
+  fireEvent.click(screen.getByRole('button', { name: /People & contacts/ }))
+  fireEvent.change(screen.getByLabelText('First name'), { target: { value: 'Changed person' } })
+  fireEvent.click(screen.getByRole('button', { name: /Documents & FICA/ }))
+  const file = new File(['proof'], 'agent.pdf', { type: 'application/pdf' })
+  fireEvent.change(screen.getByLabelText('Upload Primary applicant identity'), { target: { files: [file] } })
+  await screen.findByText('agent.pdf uploaded.')
+  expect(uploadRentalApplicationEvidence).toHaveBeenCalledWith(expect.objectContaining({ version: 3 }), file, expect.objectContaining({ requirementId: 'saved-identity', generation: 2 }))
 })

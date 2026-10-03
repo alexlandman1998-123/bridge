@@ -38,7 +38,12 @@ export function resolvePrivatePropertyExternalStatus({
   const type = normalizeStatusKey(eventType)
   const event = normalizeStatusKey(eventStatus)
 
+  // A current status probe outranks historical activation/error events.
+  if (['inactive', 'removed', 'archived', 'paused'].includes(status)) return status === 'archived' ? 'removed' : status
+  if (['error', 'failed'].includes(status)) return 'failed'
+  if (['active', 'for_sale', 'forsale', 'to_let', 'tolet', 'live', 'published'].includes(status)) return 'active'
   if (type.includes('error') || event.includes('error') || event.includes('failed')) return 'failed'
+  if (['processing', 'pending', 'submitted', 'queued'].includes(status)) return 'submitted'
   if (['activated', 'active', 'for_sale', 'to_let', 'live', 'published'].includes(type) || ['active', 'for_sale', 'to_let'].includes(status) || event === 'active') return 'active'
   if (['deactivated', 'inactive'].includes(type) || status === 'inactive') return 'inactive'
   if (['removed', 'archived'].includes(type) || ['removed', 'archived'].includes(status)) return 'removed'
@@ -73,6 +78,12 @@ export function summarizePrivatePropertySyncPayload(payloadSummary = {}) {
     photoUrlPayloadCount: payload.photoUrlPayloadCount ?? null,
     attributeCount: payload.attributeCount ?? null,
     ...(addressFingerprint ? { addressFingerprint } : {}),
+    ...(payload.submission ? { submission: {
+      submittedAt: normalizePrivatePropertyText(payload.submission.submittedAt),
+      payloadDigest: normalizePrivatePropertyText(payload.submission.payloadDigest),
+      listingXmlDigest: normalizePrivatePropertyText(payload.submission.listingXmlDigest),
+      responseSummary: normalizeJsonObject(payload.submission.responseSummary),
+    } } : {}),
   }
 }
 
@@ -134,10 +145,10 @@ export async function recordPrivatePropertyListingSync({
   eventDescription = '',
   eventAt = '',
   continuationKey = '',
-  suburbId = null,
-  agentIds = [],
+  suburbId,
+  agentIds,
   responseSummary = {},
-  payloadSummary = {},
+  payloadSummary,
   eventSummary = {},
   submittedAt = '',
   activatedAt = '',
@@ -158,8 +169,8 @@ export async function recordPrivatePropertyListingSync({
     eventStatus,
     fallback: externalStatus || 'submitted',
   })
-  const syncExternalStatus = normalizeExternalStatus(externalStatus, eventDerivedStatus)
-  const portalStatus = Boolean(isOnPortal || syncExternalStatus === 'active')
+  const syncExternalStatus = normalizeExternalStatus(privatePropertyStatus ? eventDerivedStatus : externalStatus, eventDerivedStatus)
+  const portalStatus = syncExternalStatus === 'active' || Boolean(isOnPortal && !['inactive', 'removed', 'paused', 'failed'].includes(syncExternalStatus))
   const arch9Status = resolveArch9PrivatePropertyStatus({ externalStatus: syncExternalStatus, isOnPortal: portalStatus })
 
   if (!privateListingId) throw new Error('listingId is required.')
@@ -172,7 +183,7 @@ export async function recordPrivatePropertyListingSync({
     branch_guid: syncBranchGuid,
     property_id: syncPropertyId,
     listing_type: syncListingType,
-    private_property_ref: normalizePrivatePropertyText(privatePropertyRef) || null,
+    ...(normalizePrivatePropertyText(privatePropertyRef) ? { private_property_ref: normalizePrivatePropertyText(privatePropertyRef) } : {}),
     external_status: syncExternalStatus,
     is_on_portal: portalStatus,
     last_event_type: normalizePrivatePropertyText(eventType) || null,
@@ -180,15 +191,15 @@ export async function recordPrivatePropertyListingSync({
     last_event_description: normalizePrivatePropertyText(eventDescription) || null,
     last_event_at: normalizePrivatePropertyText(eventAt) || null,
     continuation_key: normalizePrivatePropertyText(continuationKey) || null,
-    suburb_id: Number(suburbId) || null,
-    agent_ids: normalizeJsonArray(agentIds).map(normalizePrivatePropertyText).filter(Boolean),
-    last_successful_sync_at: syncExternalStatus === 'failed' ? null : now,
-    submitted_at: normalizePrivatePropertyText(submittedAt) || null,
-    activated_at: normalizePrivatePropertyText(activatedAt) || (syncExternalStatus === 'active' ? now : null),
+    ...(suburbId !== undefined ? { suburb_id: Number(suburbId) || null } : {}),
+    ...(agentIds !== undefined ? { agent_ids: normalizeJsonArray(agentIds).map(normalizePrivatePropertyText).filter(Boolean) } : {}),
+    ...(syncExternalStatus === 'active' ? { last_successful_sync_at: now } : {}),
+    ...(normalizePrivatePropertyText(submittedAt) ? { submitted_at: normalizePrivatePropertyText(submittedAt) } : {}),
+    ...(normalizePrivatePropertyText(activatedAt) ? { activated_at: normalizePrivatePropertyText(activatedAt) } : {}),
     last_checked_at: now,
     last_error: normalizePrivatePropertyText(lastError) || null,
     last_response_summary: normalizeJsonObject(responseSummary),
-    last_payload_summary: summarizePrivatePropertySyncPayload(payloadSummary),
+    ...(payloadSummary !== undefined ? { last_payload_summary: summarizePrivatePropertySyncPayload(payloadSummary) } : {}),
     last_event_summary: normalizeJsonObject(eventSummary),
   }
 

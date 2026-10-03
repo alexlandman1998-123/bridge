@@ -44,6 +44,7 @@ function buildRentalLeadPayload(form = {}, role, context = {}, stage = 'new') {
     branchId: text(context.branchId),
     assignedAgentId: text(context.assignedAgent?.userId || context.assignedAgent?.id),
     relationships: {
+      listingId: text(form.listingId),
       portfolioId: text(form.portfolioId),
       propertyId: text(form.propertyId),
       unitId: text(form.unitId),

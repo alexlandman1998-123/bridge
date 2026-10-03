@@ -1,3 +1,7 @@
+import RentalLeadActionsMenu from './RentalLeadActionsMenu';
+import { recordRentalLeadOutcome } from '../../services/rentals/rentalLeadOutcomeService';
+import { RENTAL_LEAD_LOST_REASONS } from '../../services/rentals/rentalLeadOutcomeModel';
+import RentalLeadDialog, { INITIAL_RENTAL_LEAD_FORM as INITIAL_FORM, LeadRoleButton } from './RentalLeadDialog';
 import { createElement, useCallback, useEffect, useMemo, useState } from "react";
 import {
   ArrowUpRight,
@@ -17,9 +21,10 @@ import {
   Upload,
   Users,
 } from "lucide-react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useWorkspace } from "../../context/WorkspaceContext";
-import { resolveRentalWorkspaceScope } from "../../services/rentals/rentalWorkspaceScope";
+import { getRentalListingForAgent } from '../../services/rentals/rentalListingDraftService';
+import { buildRentalListingQueryOptions, resolveRentalWorkspaceScope } from "../../services/rentals/rentalWorkspaceScope";
 import {
   advanceRentalLead,
   createRentalLead,
@@ -29,7 +34,6 @@ import {
   getRentalLeadPipelineStages,
   getNextRentalLeadStage,
   getRentalLeadStageLabel,
-  resolveRentalLeadRole,
 } from "../../services/rentals/rentalLeadPipelineModel";
 import { getRentalLeadStageEvidenceRequirement } from "../../services/rentals/rentalLeadWorkflowEvidenceModel";
 import { mapCsvRowsToImportRows, parseCsvText } from "../../lib/csvImport";
@@ -43,23 +47,6 @@ import { LeadSourceBrand, PropertyThumbnail, StagePill } from "../agency/LeadLis
 
 import { filterRentalLeadList, rentalLeadListSummary } from "../../services/rentals/rentalLeadListModel";
 
-const INITIAL_FORM = Object.freeze({
-  role: "landlord",
-  firstName: "",
-  lastName: "",
-  email: "",
-  phone: "",
-  source: "Manual",
-  propertyAddress: "",
-  propertyType: "",
-  expectedMonthlyRent: "",
-  desiredArea: "",
-  monthlyBudget: "",
-  bedrooms: "",
-  occupationDate: "",
-  pets: "Not captured",
-  notes: "",
-});
 
 function formatCurrency(value) {
   const amount = Number(value || 0);
@@ -108,10 +95,6 @@ function rentalProfile(lead) {
       ].join(" · ");
 }
 
-function LeadRoleButton({ role, active, count, onClick }) {
-  const Icon = role === "landlord" ? Building2 : role === "tenant" ? Users : X;
-  return <button type="button" data-rental-control="lead-category" aria-pressed={active} onClick={onClick} className={`flex min-h-[48px] min-w-0 items-center gap-3 rounded-[12px] px-4 text-left text-sm font-semibold ${active ? "border border-[#e4ebf2] bg-white text-[#20364d] shadow-sm" : "text-[#60758b]"}`}><Icon size={18} aria-hidden="true" /><span className="flex-1">{role === "landlord" ? "Landlord Leads" : role === "tenant" ? "Tenant Leads" : "Closed Leads"}</span><span className="rounded-full bg-[#edf5ff] px-2.5 py-1 text-xs">{count}</span></button>
-}
 function RentalLeadMetric({ label, value, detail, compare, icon: Icon, tone }) {
   return <article className="min-w-0 rounded-[14px] border border-[#e4ebf2] bg-white/90 px-3 py-2.5 shadow-[0_10px_24px_rgba(24,45,68,0.045)]"><div className="flex items-center justify-between gap-2"><span className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">{label}</span><span className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-[10px] ${tone}`}>{createElement(Icon, { size: 14, "aria-hidden": true })}</span></div><div className="mt-2 flex min-w-0 items-end justify-between gap-3"><strong className="block min-w-0 truncate text-[1.55rem] font-semibold leading-none tracking-[-0.04em] text-[#102236]" title={String(value)}>{value}</strong><span className="truncate text-[0.68rem] font-semibold text-[#6f8398]">{compare}</span></div><p className="mt-1 truncate text-[0.74rem] font-medium text-[#667b92]">{detail}</p></article>
 }
@@ -152,218 +135,6 @@ function RentalLeadAction({
   );
 }
 
-function RentalLeadDialog({
-  form,
-  onChange,
-  onClose,
-  onSubmit,
-  saving,
-  error,
-}) {
-  const isLandlord = resolveRentalLeadRole(form.role) === "landlord";
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-end bg-[#0f1f2f]/35 p-4 sm:items-center sm:justify-center"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Create rental lead"
-    >
-      <form
-        onSubmit={onSubmit}
-        className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-[16px] border border-[#dce6f2] bg-white p-5 shadow-[0_24px_60px_rgba(15,23,42,0.22)]"
-      >
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-xs font-semibold uppercase text-[#607891]">
-              Rental lead
-            </p>
-            <h2 className="mt-1 text-xl font-semibold text-[#18324b]">
-              Capture {isLandlord ? "Landlord" : "Tenant"} Lead
-            </h2>
-          </div>
-          <button type="button" className="ui-pill-button" onClick={onClose}>
-            Cancel
-          </button>
-        </div>
-        <div className="mt-5 grid gap-3 sm:grid-cols-2">
-          <LeadRoleButton
-            role="landlord"
-            active={isLandlord}
-            onClick={() => onChange("role", "landlord")}
-          />
-          <LeadRoleButton
-            role="tenant"
-            active={!isLandlord}
-            onClick={() => onChange("role", "tenant")}
-          />
-        </div>
-        <div className="mt-5 grid gap-4 md:grid-cols-2">
-          <label className="form-field">
-            <span>First name</span>
-            <input
-              required
-              value={form.firstName}
-              onChange={(event) => onChange("firstName", event.target.value)}
-            />
-          </label>
-          <label className="form-field">
-            <span>Last name</span>
-            <input
-              value={form.lastName}
-              onChange={(event) => onChange("lastName", event.target.value)}
-            />
-          </label>
-          <label className="form-field">
-            <span>Phone</span>
-            <input
-              value={form.phone}
-              onChange={(event) => onChange("phone", event.target.value)}
-            />
-          </label>
-          <label className="form-field">
-            <span>Email</span>
-            <input
-              type="email"
-              value={form.email}
-              onChange={(event) => onChange("email", event.target.value)}
-            />
-          </label>
-          <label className="form-field">
-            <span>Source</span>
-            <select
-              value={form.source}
-              onChange={(event) => onChange("source", event.target.value)}
-            >
-              <option>Manual</option>
-              <option>Property24</option>
-              <option>Private Property</option>
-              <option>Website</option>
-              <option>Referral</option>
-              <option>WhatsApp</option>
-            </select>
-          </label>
-          {isLandlord ? (
-            <>
-              <label className="form-field">
-                <span>Property address</span>
-                <input
-                  required
-                  value={form.propertyAddress}
-                  onChange={(event) =>
-                    onChange("propertyAddress", event.target.value)
-                  }
-                />
-              </label>
-              <label className="form-field">
-                <span>Property type</span>
-                <input
-                  value={form.propertyType}
-                  onChange={(event) =>
-                    onChange("propertyType", event.target.value)
-                  }
-                  placeholder="Apartment, house..."
-                />
-              </label>
-              <label className="form-field">
-                <span>Expected monthly rent</span>
-                <input
-                  type="number"
-                  min="0"
-                  value={form.expectedMonthlyRent}
-                  onChange={(event) =>
-                    onChange("expectedMonthlyRent", event.target.value)
-                  }
-                />
-              </label>
-            </>
-          ) : (
-            <>
-              <label className="form-field">
-                <span>Desired area</span>
-                <input
-                  required
-                  value={form.desiredArea}
-                  onChange={(event) =>
-                    onChange("desiredArea", event.target.value)
-                  }
-                />
-              </label>
-              <label className="form-field">
-                <span>Monthly budget</span>
-                <input
-                  type="number"
-                  min="0"
-                  value={form.monthlyBudget}
-                  onChange={(event) =>
-                    onChange("monthlyBudget", event.target.value)
-                  }
-                />
-              </label>
-              <label className="form-field">
-                <span>Bedrooms</span>
-                <input
-                  type="number"
-                  min="0"
-                  value={form.bedrooms}
-                  onChange={(event) => onChange("bedrooms", event.target.value)}
-                />
-              </label>
-              <label className="form-field">
-                <span>Occupation date</span>
-                <input
-                  type="date"
-                  value={form.occupationDate}
-                  onChange={(event) =>
-                    onChange("occupationDate", event.target.value)
-                  }
-                />
-              </label>
-              <label className="form-field">
-                <span>Pets</span>
-                <select
-                  value={form.pets}
-                  onChange={(event) => onChange("pets", event.target.value)}
-                >
-                  <option>Not captured</option>
-                  <option>No pets</option>
-                  <option>Pets subject to approval</option>
-                  <option>Pet friendly required</option>
-                </select>
-              </label>
-            </>
-          )}
-        </div>
-        <label className="form-field mt-4">
-          <span>Internal note</span>
-          <textarea
-            rows={3}
-            value={form.notes}
-            onChange={(event) => onChange("notes", event.target.value)}
-          />
-        </label>
-        {error ? (
-          <p className="mt-4 rounded-[8px] border border-[#f2c6c6] bg-[#fff7f7] px-4 py-3 text-sm font-semibold text-[#9f3131]">
-            {error}
-          </p>
-        ) : null}
-        <div className="mt-5 flex justify-end">
-          <button
-            type="submit"
-            disabled={saving}
-            className="ui-pill-button ui-pill-button-active"
-          >
-            {saving ? (
-              <Loader2 size={16} className="animate-spin" aria-hidden="true" />
-            ) : (
-              <Plus size={16} aria-hidden="true" />
-            )}
-            Create Rental Lead
-          </button>
-        </div>
-      </form>
-    </div>
-  );
-}
 
 function RentalLeadImportDialog({ preview, importing, onClose, onImport }) {
   if (!preview) return null;
@@ -507,6 +278,10 @@ function RentalLeadImportDialog({ preview, importing, onClose, onImport }) {
 
 export default function RentalLeadsPage() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedListingId = searchParams.get('listingId') || '';
+  const requestedCreateRole = searchParams.get('create') || '';
+  const [linkedListing, setLinkedListing] = useState(null);
   const workspace = useWorkspace();
   const scope = useMemo(
     () => resolveRentalWorkspaceScope(workspace),
@@ -526,6 +301,10 @@ export default function RentalLeadsPage() {
   const [form, setForm] = useState({ ...INITIAL_FORM });
   const [saving, setSaving] = useState(false);
   const [advancingId, setAdvancingId] = useState("");
+  const [lostLead, setLostLead] = useState(null);
+  const [lostReason, setLostReason] = useState('');
+  const [outcomeSaving, setOutcomeSaving] = useState(false);
+  const [outcomeError, setOutcomeError] = useState('');
   const [importPreview, setImportPreview] = useState(null);
   const [importing, setImporting] = useState(false);
   const actor = useMemo(
@@ -576,6 +355,27 @@ export default function RentalLeadsPage() {
   useEffect(() => {
     void loadLeads();
   }, [loadLeads]);
+  useEffect(() => {
+    let cancelled = false;
+    if (requestedCreateRole !== 'tenant' || !requestedListingId || !scope.assignedAgentId || !scope.organisationId) return undefined;
+    setLinkedListing(null);
+    setDialogOpen(false);
+    void getRentalListingForAgent(requestedListingId, scope.assignedAgentId, buildRentalListingQueryOptions(scope)).then((listing) => {
+      if (cancelled) return;
+      if (!listing) throw new Error('The selected rental listing is unavailable.');
+      setLinkedListing(listing);
+      setRole('tenant');
+      setForm({ ...INITIAL_FORM, role: 'tenant', listingId: listing.id, desiredArea: listing.suburb || listing.city || '' });
+      setDialogOpen(true);
+    }).catch((loadError) => { if (!cancelled) setError(loadError.message || 'Unable to open the listing-linked lead form.'); });
+    return () => { cancelled = true; };
+  }, [requestedCreateRole, requestedListingId, scope]);
+  function closeCreateDialog() {
+    setDialogOpen(false);
+    setLinkedListing(null);
+    setForm({ ...INITIAL_FORM, role: role === 'tenant' ? 'tenant' : 'landlord' });
+    if (requestedCreateRole) setSearchParams({}, { replace: true });
+  }
   const summary = useMemo(() => rentalLeadListSummary(leads), [leads]);
   const sources = useMemo(() => [...new Set(leads.map((lead) => lead.source || 'Manual'))].sort(), [leads]);
   const agents = useMemo(() => [...new Map(leads.filter((lead) => lead.assignedAgentId).map((lead) => [lead.assignedAgentId, lead.assignedAgentName || 'Assigned agent'])).entries()], [leads]);
@@ -593,7 +393,7 @@ export default function RentalLeadsPage() {
     try {
       setSaving(true);
       setError("");
-      const created = await createRentalLead(form, {
+      const created = await createRentalLead({ ...form, listingId: form.role === 'tenant' ? linkedListing?.id || '' : '' }, {
         organisationId: scope.organisationId,
         branchId: scope.branchId,
         actor,
@@ -601,7 +401,7 @@ export default function RentalLeadsPage() {
       });
       setLeads((current) => [created, ...current]);
       setRole(created.role);
-      setDialogOpen(false);
+      closeCreateDialog();
       setForm({ ...INITIAL_FORM, role: created.role });
     } catch (createError) {
       setError(createError?.message || "Unable to create rental lead.");
@@ -730,6 +530,29 @@ export default function RentalLeadsPage() {
           : `/agent/rentals/listings/new?leadId=${encodeURIComponent(lead.id)}`
         : `/agent/rentals/pipeline/leads/${encodeURIComponent(lead.id)}`,
     );
+  function startMarkLost(lead) {
+    setLostLead(lead);
+    setLostReason('');
+    setOutcomeError('');
+  }
+  async function handleMarkLost(event) {
+    event.preventDefault();
+    try {
+      setOutcomeSaving(true);
+      setOutcomeError('');
+      const result = await recordRentalLeadOutcome(lostLead, { status: 'lost', reason: lostReason }, {
+        organisationId: scope.organisationId,
+        actor,
+        scope: { assignedAgentId: scope.assignedAgentId, branchId: scope.branchId, scopeLevel: scope.scopeLevel, includeAllOrganisationLeads: scope.scopeLevel === 'organisation' },
+      });
+      setLeads((current) => current.map((item) => item.id === lostLead.id ? { ...item, outcome: result.outcome } : item));
+      setLostLead(null);
+    } catch (saveError) {
+      setOutcomeError(saveError?.message || 'Unable to mark this lead as lost.');
+    } finally {
+      setOutcomeSaving(false);
+    }
+  }
   const openLeadWorkspace = (lead) => {
     navigate(`/agent/rentals/pipeline/leads/${encodeURIComponent(lead.id)}`);
   };
@@ -804,7 +627,14 @@ export default function RentalLeadsPage() {
               </thead>
               <tbody>
                 {loading ? <tr><td colSpan="6" className="px-5 py-12 text-center text-sm text-[#60758b]"><span className="inline-flex items-center gap-2"><Loader2 size={16} className="animate-spin" />Loading rental leads…</span></td></tr> : roleLeads.length ? roleLeads.map((lead) => (
-                  <tr key={lead.id} className="border-t border-[#edf2f7] transition-colors duration-150 hover:bg-[#f8fbfe]">
+                  <tr
+                    key={lead.id}
+                    onClick={(event) => {
+                      if (event.target.closest('button, a, input, select, textarea')) return;
+                      openLeadWorkspace(lead);
+                    }}
+                    className="cursor-pointer border-t border-[#edf2f7] transition-colors duration-150 hover:bg-[#f8fbfe]"
+                  >
                     <td className="px-5 py-3"><div className="flex min-w-0 items-center gap-3"><PropertyThumbnail row={{ propertyImageUrl: lead.propertyImageUrl }} /><div className="min-w-0 flex-1">
                       <button type="button" data-rental-control="lead-property" onClick={() => openLeadWorkspace(lead)} title={lead.focus} className="block max-w-full truncate text-left text-sm font-semibold text-[#142132] hover:text-[#1f4f78] hover:underline">{lead.focus}</button>
                       <p title={rentalProfile(lead)} className="mt-1 truncate text-xs text-[#60758b]">{rentalProfile(lead)}</p>
@@ -813,7 +643,7 @@ export default function RentalLeadsPage() {
                     <td className="px-4 py-3"><LeadSourceBrand source={lead.source || "Manual"} /></td>
                     <td className="px-4 py-3"><div className="max-w-full overflow-hidden" title={lead.stageLabel}><StagePill stage={lead.stageLabel} /></div></td>
                     <td className="px-4 py-3"><p title={lead.nextAction} className="truncate text-sm font-semibold text-[#142132]">{role === "closed" ? `Outcome: ${lead.outcome?.status || "closed"}` : lead.nextAction}</p><p title={lead.assignedAgentName} className="mt-1 truncate text-xs text-[#60758b]">{lead.assignedAgentName || "Unassigned"}</p></td>
-                    <td className="px-3 py-3"><button type="button" data-rental-control="lead-open" onClick={() => openLeadWorkspace(lead)} aria-label={`Open ${lead.name}`} title="Open lead workspace" className="inline-flex h-10 w-10 items-center justify-center rounded-[12px] border border-[#dbe4ee] bg-white text-[#5b7289] hover:bg-[#f5f9fc]"><ArrowUpRight size={17} aria-hidden="true" /></button></td>
+                    <td className="px-3 py-3"><RentalLeadActionsMenu lead={lead} onOpen={openLeadWorkspace} onLost={startMarkLost} disabled={outcomeSaving} /></td>
                   </tr>
                 )) : <tr><td colSpan="6" className="px-5 py-14 text-center"><p className="font-semibold text-[#20364d]">No {role} leads yet</p><p className="mt-1 text-sm text-[#60758b]">Create a lead or adjust your search to populate this rental pipeline.</p></td></tr>}
               </tbody>
@@ -828,7 +658,11 @@ export default function RentalLeadsPage() {
               roleLeads.map((lead) => (
                 <article
                   key={lead.id}
-                  className="rounded-[16px] border border-[#e1e8f0] bg-white p-4 shadow-sm transition hover:border-[#b9cade]"
+                  onClick={(event) => {
+                    if (event.target.closest('button, a, input, select, textarea')) return;
+                    openLeadWorkspace(lead);
+                  }}
+                  className="cursor-pointer rounded-[16px] border border-[#e1e8f0] bg-white p-4 shadow-sm transition hover:border-[#b9cade]"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
@@ -858,6 +692,7 @@ export default function RentalLeadsPage() {
                         {lead.assignedAgentName}
                       </p>
                     </div>
+                    <RentalLeadActionsMenu lead={lead} onOpen={openLeadWorkspace} onLost={startMarkLost} disabled={outcomeSaving} />
                     {role !== "closed" ? <RentalLeadAction
                       lead={lead}
                       onAdvance={handleAdvance}
@@ -877,11 +712,21 @@ export default function RentalLeadsPage() {
           </>}
         </section>
       </div>
+      {lostLead ? <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0f1f2f]/35 p-4" onClick={() => { if (!outcomeSaving) setLostLead(null); }} onKeyDown={(event) => { if (event.key === 'Escape' && !outcomeSaving) setLostLead(null); }}>
+        <form role="dialog" aria-modal="true" aria-label="Mark lead as lost" className="w-full max-w-md rounded-[20px] bg-white p-6 shadow-xl" onClick={(event) => event.stopPropagation()} onSubmit={handleMarkLost}>
+          <h2 className="text-lg font-semibold text-[#20364d]">Mark {lostLead.name} as lost</h2>
+          <p className="mt-2 text-sm text-[#60758b]">Choose a reason. The lead will move to Closed Leads and keep its history.</p>
+          <label className="mt-4 grid gap-2 text-sm font-semibold text-[#20364d]">Lost reason<select autoFocus required disabled={outcomeSaving} value={lostReason} onChange={(event) => setLostReason(event.target.value)} className={filterClass}><option value="">Choose a reason</option>{RENTAL_LEAD_LOST_REASONS.map((reason) => <option key={reason} value={reason}>{reason.replaceAll('_', ' ').replace(/^./, (letter) => letter.toUpperCase())}</option>)}</select></label>
+          {outcomeError ? <p role="alert" className="mt-3 text-sm text-[#9a4038]">{outcomeError}</p> : null}
+          <div className="mt-5 flex justify-end gap-2"><button type="button" disabled={outcomeSaving} className={filterClass} onClick={() => setLostLead(null)}>Cancel</button><button type="submit" disabled={outcomeSaving || !lostReason} className={`${filterClass} text-[#9a4038] disabled:opacity-50`}>{outcomeSaving ? 'Saving…' : 'Mark as lost'}</button></div>
+        </form>
+      </div> : null}
       {dialogOpen ? (
         <RentalLeadDialog
+          linkedListing={linkedListing}
           form={form}
           onChange={updateForm}
-          onClose={() => setDialogOpen(false)}
+          onClose={closeCreateDialog}
           onSubmit={handleCreate}
           saving={saving}
           error={error}

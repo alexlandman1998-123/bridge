@@ -813,6 +813,7 @@ function ClientDocumentCentre({
   if (isSelling) {
     return (
       <SellerDocumentWorkspace
+        checklistDocumentCenter={documentCenter}
         tabs={sellerDocumentTabs}
         activeTabKey={activeSellerDocumentSection.key}
         onTabChange={setActiveSellerDocumentTab}

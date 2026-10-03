@@ -1,3 +1,7 @@
+import { resolvePrivatePropertyLocation } from '../server/services/privatePropertyLocationService.js'
+import { inspectPrivatePropertyListingRecovery, comparePrivatePropertyStoredAddress } from '../server/services/privatePropertyListingRecoveryService.js'
+import { createRecoveryPortal } from './fixtures/private-property-recovery.mjs'
+import { createCataloguePortal } from './fixtures/private-property-location.mjs'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import {
@@ -295,6 +299,34 @@ assert.equal(branchlessListingReport.agentMapping.agentIds, 'ARCH9-SANDBOX-USER-
 assert.equal(branchlessListingReport.preview.payloadPreview.address.streetNumber, '99')
 assert.equal(branchlessListingReport.preview.payloadPreview.address.streetName, 'Ridge Road')
 
+const currentAddress = { suburb: 'Dinokeng Game Reserve', town: 'Wonderboom', province: 'Gauteng' }
+const catalogue = createCataloguePortal({ town: 'Wonderboom', suburb: 'Dinokeng Game Reserve', suburbId: 11544 })
+const location = await resolvePrivatePropertyLocation({ portal: catalogue, address: currentAddress })
+assert.equal(location.suburbId, 11544)
+assert.deepEqual(catalogue.catalogueCalls.at(-1), ['suburbs', { cityId: 2473 }])
+await assert.rejects(resolvePrivatePropertyLocation({ portal: catalogue, address: { ...currentAddress, suburb: 'JR (GAUTENG)' } }), /suburb was not found/)
+await assert.rejects(resolvePrivatePropertyLocation({ portal: catalogue, address: { ...currentAddress, town: 'Hammanskraal' } }), /town was not found/)
+await assert.rejects(resolvePrivatePropertyLocation({ portal: catalogue, address: { ...currentAddress, suburbId: 99 } }), /does not match/)
+await assert.rejects(resolvePrivatePropertyLocation({ portal: createCataloguePortal({ duplicateSuburb: true }), address: { suburb: 'Sandton', town: 'Johannesburg', province: 'Gauteng' } }), /ambiguous/)
+await assert.rejects(resolvePrivatePropertyLocation({ portal: catalogue, address: { ...currentAddress, province: '' } }), /current province/)
+
+const verified = await buildPrivatePropertyGoLiveReadinessReport({
+  client: createFakeClient(tables), listingId, secrets: { PRIVATE_PROPERTY_SANDBOX_USERNAME: 'test', PRIVATE_PROPERTY_SANDBOX_PASSWORD: 'test' },
+  verifyLocation: true, privateProperty: createCataloguePortal(),
+})
+assert.equal(verified.ready, true)
+assert.equal(verified.preview.summary.suburbId, 12345)
+assert.equal(verified.safety.privatePropertyApiCalled, true)
+assert.equal(verified.safety.databaseWritten, false)
+const invalidLocation = await buildPrivatePropertyGoLiveReadinessReport({
+  client: createFakeClient({ ...tables, private_listings: [{ ...listing, suburb: 'JR (GAUTENG)' }] }), listingId,
+  secrets: { PRIVATE_PROPERTY_SANDBOX_USERNAME: 'test', PRIVATE_PROPERTY_SANDBOX_PASSWORD: 'test' },
+  verifyLocation: true, privateProperty: createCataloguePortal(),
+})
+assert.equal(invalidLocation.ready, false)
+assert.ok(invalidLocation.blockers.includes('private_property_location_not_verified'))
+assert.match(invalidLocation.nextStep, /suburb was not found/)
+
 const serviceSource = read('server/services/privatePropertyGoLiveReadinessService.js')
 assert.match(serviceSource, /resolvePrivatePropertyAgencyConfig/)
 assert.match(serviceSource, /resolvePrivatePropertyAgentMapping/)
@@ -323,4 +355,32 @@ const packageJson = JSON.parse(read('package.json'))
 assert.equal(packageJson.scripts['private-property:go-live-readiness'], 'node scripts/private-property-go-live-readiness.mjs')
 assert.equal(packageJson.scripts['test:private-property-go-live-phase3-readiness'], 'node scripts/private-property-phase9-readiness.test.mjs')
 
+const retainedSync = { private_listing_id: listingId, environment: 'sandbox', property_id: 'PP-READY-001', branch_guid: agencyConfig.branch_guid, private_property_ref: 'T1234567' }
+const retainedAddress = verified.preview.payloadPreview.address
+const readyArgs = { client: createFakeClient({ ...tables, private_property_listing_syncs: [retainedSync] }), listingId, secrets: { PRIVATE_PROPERTY_SANDBOX_USERNAME: 'test', PRIVATE_PROPERTY_SANDBOX_PASSWORD: 'test' }, verifyLocation: true }
+const matchingInactivePortal = createRecoveryPortal({ propertyId: retainedSync.property_id, address: retainedAddress })
+const recoveryReady = await buildPrivatePropertyGoLiveReadinessReport({ ...readyArgs, privateProperty: matchingInactivePortal })
+assert.equal(recoveryReady.ready, false, 'content submission is not reactivation')
+assert.equal(recoveryReady.recovery.canReactivate, true)
+assert.deepEqual(recoveryReady.blockers, ['private_property_reactivation_required'])
+assert.equal(matchingInactivePortal.calls.some(([call]) => call === 'update' || call === 'status-update'), false)
+const oldAddressPortal = createRecoveryPortal({ propertyId: retainedSync.property_id, address: { ...retainedAddress, suburbId: null, suburb: 'JR (GAUTENG)', town: 'Hammanskraal' } })
+const wrongAddress = await buildPrivatePropertyGoLiveReadinessReport({ ...readyArgs, privateProperty: oldAddressPortal })
+assert.equal(wrongAddress.recovery.canReactivate, false)
+assert.ok(wrongAddress.blockers.includes('private_property_locked_address_mismatch'))
+assert.match(wrongAddress.nextStep, /address is locked/)
+assert.equal(wrongAddress.safety.databaseWritten, false)
+const matchingActive = await buildPrivatePropertyGoLiveReadinessReport({ ...readyArgs, privateProperty: createRecoveryPortal({ propertyId: retainedSync.property_id, address: retainedAddress, status: 'For Sale' }) })
+assert.equal(matchingActive.ready, true)
+assert.equal(matchingActive.recovery.externalStatus, 'active')
+const unreadable = await inspectPrivatePropertyListingRecovery({ portal: { async getListingStatus() { throw new Error('private authentication data must not be returned') }, async getListingsDetails() { throw new Error('unavailable') } }, existingSync: retainedSync, address: retainedAddress })
+assert.deepEqual(unreadable.blockers, ['private_property_existing_record_not_verified'])
+assert.doesNotMatch(JSON.stringify(unreadable), /authentication data/)
+assert.deepEqual(comparePrivatePropertyStoredAddress(retainedAddress, { ...retainedAddress, suburb: 'different display name' }), [], 'same catalogue ID establishes the same suburb')
+assert.ok(comparePrivatePropertyStoredAddress(retainedAddress, { ...retainedAddress, streetNumber: '99' }).includes('streetNumber'))
+assert.deepEqual(comparePrivatePropertyStoredAddress(retainedAddress, { ...retainedAddress, streetName: ' READINESS   ROAD ' }), [])
+const incomplete = await inspectPrivatePropertyListingRecovery({ portal: createRecoveryPortal({ propertyId: retainedSync.property_id, address: {} }), existingSync: retainedSync, address: retainedAddress })
+assert.deepEqual(incomplete.blockers, ['private_property_existing_record_not_verified'])
+const newRecord = await inspectPrivatePropertyListingRecovery({ portal: {}, existingSync: {}, address: retainedAddress })
+assert.equal(newRecord.checked, false, 'a first submission does not query a nonexistent record')
 console.log('Private Property go-live phase 3 readiness gate contract passed')

@@ -2,6 +2,35 @@ function text(value) {
   return String(value ?? '').trim()
 }
 
+export function getPrivatePropertyReadinessMessages(payload = {}) {
+  const preview = payload?.preview || payload?.readiness?.preview || payload?.report?.preview || {}
+  const list = (value) => Array.isArray(value) ? value : []
+  const format = (value) => text(value).replace(/^missing_/, 'missing ').replace(/^private_property_/, 'Private Property ').replace(/_/g, ' ')
+  const recovery = payload?.readiness?.recovery || payload?.report?.recovery
+  const formatBlocker = (value) => recovery?.message && list(recovery.blockers).includes(value) ? '' : format(value)
+  const issues = [
+    recovery?.message,
+    payload?.readiness?.locationResolution?.message || payload?.report?.locationResolution?.message,
+    ...list(payload?.missingConfiguration).map((item) => `Setup: ${format(item)}`),
+    ...list(preview.dataBlockers).map(formatBlocker),
+    ...list(preview.technicalBlockers).map(formatBlocker),
+    ...list(payload?.readiness?.blockers).map(formatBlocker),
+    ...list(payload?.report?.readiness?.blockers).map(formatBlocker),
+    ...list(payload?.report?.blockers).map(formatBlocker),
+  ]
+  const warnings = [
+    ...list(payload?.readiness?.warnings),
+    ...list(payload?.report?.readiness?.warnings),
+    ...list(payload?.report?.warnings),
+  ].map((value) => value === 'using_organisation_default_private_property_config'
+    ? 'Using your organisation’s Private Property connection. This does not prevent submission.'
+    : format(value))
+  return {
+    issues: [...new Set(issues.filter(Boolean))],
+    warnings: [...new Set(warnings.filter(Boolean))],
+  }
+}
+
 export function normalizeListingChannelPublicUrl(value = '') {
   const candidate = text(value)
   if (!candidate) return ''
@@ -47,9 +76,13 @@ export function buildListingChannelPublicationDisplay({
   key = '', label = '', live = false, reference = '', publicUrl = '',
   publicationState = {}, updateState = {}, activityAvailable = true,
   actionBusy = false, withdrawn = false, submitted = false, issueCount = 0,
+  externalStatus = '',
 } = {}) {
   const stage = text(publicationState?.stage).toLowerCase()
   const updateStatus = text(updateState?.status).toLowerCase()
+  const observedStatus = text(externalStatus).toLowerCase()
+  const inactive = ['inactive', 'removed', 'paused', 'failed'].includes(observedStatus)
+  if (inactive) live = false
   const tracked = Boolean(live || reference || publicUrl || (stage && stage !== 'not_published'))
   let status = 'not_published'
   let statusLabel = 'Not published'
@@ -58,6 +91,9 @@ export function buildListingChannelPublicationDisplay({
     statusLabel = live ? 'Still reported live' : 'Withdrawn'
   } else if (actionBusy) {
     status = 'syncing'; statusLabel = 'Syncing'
+  } else if (inactive) {
+    status = 'needs_attention'
+    statusLabel = { inactive: 'Inactive', removed: 'Removed', paused: 'Paused', failed: 'Failed' }[observedStatus]
   } else if (stage === 'failed' || stage === 'withdrawal_failed' || Number(publicationState?.changeCount || 0) > 0 || updateStatus === 'needs_attention' || (!activityAvailable && tracked)) {
     status = 'needs_attention'
     statusLabel = Number(publicationState?.changeCount || 0) > 0 ? 'Changes not published' : 'Needs attention'

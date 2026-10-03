@@ -43,6 +43,16 @@ async function run() {
     return
   }
 
+  const productionTarget = config.environment.toLowerCase() === 'production' || new URL(config.baseUrl).hostname === 'services.privateproperty.co.za'
+  if (productionTarget && ['forsale', 'tolet'].includes(String(options.propertyStatus).toLowerCase().replace(/\s+/g, ''))) {
+    report.technicalBlockers = ['private_property_production_requires_verified_reactivation']
+    report.nextStep = 'Use Reactivate in the Arch9 listing review. It verifies the retained PP address and confirms the resulting status.'
+    const output = writePrivatePropertyReport(report, options.output, 'private-property-status-update.json')
+    console.log(JSON.stringify({ status: report.status, output, technicalBlockers: report.technicalBlockers, nextStep: report.nextStep }, null, 2))
+    process.exitCode = 1
+    return
+  }
+
   const client = createPrivatePropertyCliClient(config)
   report.safety.privatePropertyApiCalled = true
   try {

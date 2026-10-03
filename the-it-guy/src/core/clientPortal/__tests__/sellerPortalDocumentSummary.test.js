@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { buildSellerPortalDocumentSummary } from '../sellerPortalDocumentSummary.js'
+import { buildSellerPortalDocumentSummary, isSellerTeamManagedDocument } from '../sellerPortalDocumentSummary.js'
 
 test('uses the document-centre totals for every seller-facing document count', () => {
   const summary = buildSellerPortalDocumentSummary({
@@ -44,4 +44,10 @@ test('keeps agent-managed seller-pack documents out of the seller action count',
   assert.equal(summary.total, 12)
   assert.equal(summary.actionRequired, 11)
   assert.equal(summary.reviewRequired, 1)
+})
+
+test('identifies managed workflow actions without excluding normal seller uploads', () => {
+  assert.equal(isSellerTeamManagedDocument({ title: 'Upload Signed Mandate' }), true)
+  assert.equal(isSellerTeamManagedDocument({ title: 'Prepare file', metadata: { requirementKey: 'signed_disclosure_form' } }), true)
+  assert.equal(isSellerTeamManagedDocument({ title: 'Upload identity document', metadata: { requirementKey: 'identity' } }), false)
 })

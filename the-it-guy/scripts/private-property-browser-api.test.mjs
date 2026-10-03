@@ -50,7 +50,7 @@ assert.match(listingDetail, /publishPrivatePropertyListing/)
 assert.match(listingDetail, /refreshPrivatePropertyListingStatus/)
 assert.match(listingDetail, /expirePrivatePropertyListing/)
 assert.match(listingDetail, /Submitting to Private Property/)
-assert.match(listingDetail, /Add manual link/)
+assert.match(listingDetail, /Add (?:manual|live) link/)
 assert.doesNotMatch(
   listingDetail,
   /name: 'Private Property'[\s\S]{0,900}onClick=\{\(\) => openExternalLinkPanel\(privatePropertyLink, 'Private Property'\)\}[\s\S]{0,120}<Send size=\{15\} \/>[\s\S]{0,80}Publish/,
@@ -195,5 +195,44 @@ const statusUpdateResponse = await createPrivatePropertyApiResponse({
 assert.equal(statusUpdateResponse.status, 200)
 assert.equal(statusUpdateResponse.body.update.status, 'UPDATED')
 assert.equal(statusUpdateArgs.propertyStatus, 'Inactive')
+
+let reactivationArgs
+const reactivationResponse = await createPrivatePropertyApiResponse({
+  method: 'POST', url: '/api/private-property/listings/listing-123/status-update', headers: authHeaders, env: baseEnv,
+  body: JSON.stringify({ environment: 'production', propertyStatus: 'ForSale', confirm: 'PRIVATE_PROPERTY_REACTIVATE:listing-123:production' }),
+  dependencies: {
+    createSupabase: () => ({ type: 'supabase' }),
+    updateListingStatus: async (args) => { reactivationArgs = args; return { status: 'NOT_CONFIRMED', confirmed: false, externalStatus: 'inactive' } },
+  },
+})
+assert.equal(reactivationResponse.status, 200)
+assert.equal(reactivationResponse.body.update.confirmed, false, 'HTTP acceptance must not become confirmed activation')
+assert.equal(reactivationArgs.confirmation, 'PRIVATE_PROPERTY_REACTIVATE:listing-123:production')
+assert.equal(reactivationArgs.environment, 'production')
+
+
+
+let monitorCalls = 0
+const cachedQueries = []
+const storedResponse = await createPrivatePropertyApiResponse({
+  method: 'GET', url: '/api/private-property/listings/listing-123/status?cached=true&environment=production',
+  headers: authHeaders, env: baseEnv,
+  dependencies: {
+    createSupabase: () => ({ from(table) {
+      cachedQueries.push(['table', table])
+      return { select(columns) { cachedQueries.push(['select', columns]); return this }, eq(column, value) { cachedQueries.push([column, value]); return this },
+        async maybeSingle() { return { data: { external_status: 'inactive', is_on_portal: false, private_property_ref: 'T5641227', last_checked_at: '2026-10-03T11:32:00Z' }, error: null } } }
+    } }),
+    runPostSubmitMonitor: async () => { monitorCalls++; throw new Error('cached status must not call PP or write database') },
+  },
+})
+assert.equal(storedResponse.status, 200)
+assert.equal(storedResponse.body.monitor.externalStatus, 'inactive')
+assert.equal(storedResponse.body.monitor.generatedAt, '2026-10-03T11:32:00Z')
+assert.equal(storedResponse.body.monitor.safety.databaseWritten, false)
+assert.equal(monitorCalls, 0)
+assert.ok(cachedQueries.some(([key, value]) => key === 'environment' && value === 'production'))
+assert.ok(cachedQueries.some(([key, value]) => key === 'private_listing_id' && value === 'listing-123'))
+assert.doesNotMatch(JSON.stringify(storedResponse.body), /service-role|test-token/)
 
 console.log('Private Property browser API contract passed')

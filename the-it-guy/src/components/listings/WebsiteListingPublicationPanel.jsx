@@ -1,3 +1,4 @@
+import './listing-channel-table.css'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { CalendarDays, CheckCircle2, ExternalLink, Globe2, Loader2, RefreshCw, Send, SlidersHorizontal } from 'lucide-react'
 import Button from '../ui/Button'
@@ -140,7 +141,7 @@ export default function WebsiteListingPublicationPanel({ listingId, listingTitle
 
     return (
       <>
-        <div className="grid gap-4 px-4 py-4 lg:grid-cols-[minmax(210px,1fr)_minmax(145px,0.7fr)_minmax(170px,0.8fr)_minmax(150px,0.75fr)_auto] lg:items-center">
+        <div className="listing-channel-columns">
           <div className="flex min-w-0 items-center gap-3">
             <span className="grid h-12 w-12 shrink-0 place-items-center rounded-[14px] border border-[#cfe4d8] bg-[#f2faf5] text-[#18713e]">
               <Globe2 size={21} />
@@ -170,13 +171,13 @@ export default function WebsiteListingPublicationPanel({ listingId, listingTitle
             {publicationState?.changeCount ? <button type="button" onClick={onReviewChanges} className="mt-1 inline-flex items-center gap-1 rounded-full border border-[#f1dfb8] bg-[#fff8e8] px-2 py-1 text-[0.68rem] font-semibold text-[#8a641d]">{publicationState.changeCount} unpublished change{publicationState.changeCount === 1 ? '' : 's'}</button> : publicationState?.stage === 'verified' ? <p className="mt-1 text-[0.68rem] font-semibold text-[#1f7d44]">Matches verified snapshot</p> : null}
           </div>
           <div className="min-w-0">
-            <div className="grid gap-1 text-[0.68rem] text-[#607387]">
-              {savedAt ? <p><span className="font-semibold uppercase tracking-[0.06em] text-[#8294aa]">Arch9 saved</span> · {savedAt}</p> : null}
-              {publicationState?.submittedAt ? <p><span className="font-semibold uppercase tracking-[0.06em] text-[#8294aa]">Submitted</span> · {new Date(publicationState.submittedAt).toLocaleString()}</p> : null}
-              {publicationState?.acceptedAt ? <p><span className="font-semibold uppercase tracking-[0.06em] text-[#8294aa]">Accepted</span> · {new Date(publicationState.acceptedAt).toLocaleString()}</p> : null}
-              {publicationState?.verifiedAt ? <p><span className="font-semibold uppercase tracking-[0.06em] text-[#8294aa]">Verified</span> · {new Date(publicationState.verifiedAt).toLocaleString()}</p> : null}
-              {publicationState?.withdrawnAt ? <p><span className="font-semibold uppercase tracking-[0.06em] text-[#8294aa]">Withdrawn</span> · {new Date(publicationState.withdrawnAt).toLocaleString()}</p> : null}
-              {!savedAt && !publicationState?.submittedAt && publication?.updatedAt ? <p><span className="font-semibold uppercase tracking-[0.06em] text-[#8294aa]">Last updated</span> · {new Date(publication.updatedAt).toLocaleDateString()}</p> : null}
+            <div className="listing-channel-activity grid gap-1">
+              {savedAt ? <p><span >Arch9 saved</span> · {savedAt}</p> : null}
+              {publicationState?.submittedAt ? <p><span >Submitted</span> · {new Date(publicationState.submittedAt).toLocaleString()}</p> : null}
+              {publicationState?.acceptedAt ? <p><span >Accepted</span> · {new Date(publicationState.acceptedAt).toLocaleString()}</p> : null}
+              {publicationState?.verifiedAt ? <p><span >Verified</span> · {new Date(publicationState.verifiedAt).toLocaleString()}</p> : null}
+              {publicationState?.withdrawnAt ? <p><span >Withdrawn</span> · {new Date(publicationState.withdrawnAt).toLocaleString()}</p> : null}
+              {!savedAt && !publicationState?.submittedAt && publication?.updatedAt ? <p><span >Last updated</span> · {new Date(publication.updatedAt).toLocaleDateString()}</p> : null}
             </div>
           </div>
           <div className="flex justify-start lg:justify-end">

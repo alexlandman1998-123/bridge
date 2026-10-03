@@ -13,9 +13,9 @@ const docSource = readFileSync(resolve(root, 'docs/rental-listing-workspace-phas
 
 assert.match(source, /ListingWorkspaceTabs/)
 assert.match(source, /from '\.\.\/\.\.\/components\/listings\/ListingWorkspaceShell'/)
-assert.match(source, /buildListingWorkspaceTabs/)
-assert.match(source, /resolveRentalListingWorkspaceTabFromDetailTab/)
-assert.match(source, /resolveRentalListingWorkspaceTarget/)
+assert.match(source, /RENTAL_OVERVIEW_TABS/)
+assert.match(source, /activeTab === 'applications' \? 'leads'/)
+assert.match(source, /navigate\(buildRentalListingDetailPath\(listingId, tabKey\)\)/)
 assert.match(source, /data-testid="rental-listing-shared-workspace-tabs"/)
 assert.match(source, /ariaLabel="Rental listing workspace sections"/)
 assert.match(source, /onTabChange=\{openRentalListingWorkspaceTab\}/)

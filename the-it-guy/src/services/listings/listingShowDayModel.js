@@ -54,12 +54,21 @@ export function buildListingShowDaySnapshot(listing = {}, draft = {}, agent = {}
   }
 }
 
-export function validateListingShowDayDraft(values = {}, { listing = {}, publicListingReady = false, publish = true } = {}) {
+export function showDayToday(now = new Date()) {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Johannesburg', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now)
+}
+
+export function validateListingShowDayDraft(values = {}, { listing = {}, publicListingReady = false, publish = true, today = showDayToday() } = {}) {
   const errors = []
   if (!text(listing.id)) errors.push('Save the listing before creating a show day.')
-  if (!text(values.date)) errors.push('Choose the show-day date.')
+  const date = text(values.date)
+  const parsedDate = new Date(`${date}T12:00:00Z`)
+  const validDate = /^\d{4}-\d{2}-\d{2}$/.test(date) && !Number.isNaN(parsedDate.valueOf()) && parsedDate.toISOString().slice(0, 10) === date
+  if (!date) errors.push('Choose the show-day date.')
+  else if (!validDate || date < today) errors.push('Choose a valid current or future show-day date.')
   if (!text(values.startTime)) errors.push('Choose a start time.')
   if (!text(values.endTime)) errors.push('Choose an end time.')
+  if ([values.startTime, values.endTime].some((value) => text(value) && !/^([01]\d|2[0-3]):[0-5]\d$/.test(value))) errors.push('Choose valid start and end times.')
   if (text(values.startTime) && text(values.endTime) && values.endTime <= values.startTime) errors.push('The end time must be after the start time.')
   if (!text(values.hostName)) errors.push('Add the host agent.')
   if (publish && !publicListingReady) errors.push('Publish the property on at least one listing channel before activating the public RSVP link.')
@@ -76,7 +85,7 @@ export function buildListingShowDayPayload(listing = {}, values = {}, { publish 
     startDate: text(values.date),
     startTime: text(values.startTime),
     endTime: text(values.endTime),
-    hostUserId: text(values.hostUserId || listing.agentId) || null,
+    hostUserId: text(Object.hasOwn(values, 'hostUserId') ? values.hostUserId : listing.agentId) || null,
     hostName: text(values.hostName || listing.agentName),
     visibility: text(values.visibility) || 'public',
     registrationEnabled: true,

@@ -1,3 +1,4 @@
+import { createCataloguePortal } from './fixtures/private-property-location.mjs'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import {
@@ -258,6 +259,7 @@ const applied = await runPrivatePropertyProductionLaunch({
   apply: true,
   confirmation: expectedConfirmation,
   privateProperty: {
+    ...createCataloguePortal(),
     updateListing: async (xml) => {
       updateListingCalls += 1
       assert.match(xml, /<ListingImport>/)
@@ -278,7 +280,7 @@ assert.equal(applied.ready, true)
 assert.equal(updateListingCalls, 1)
 assert.equal(applied.safety.privatePropertyApiCalled, true)
 assert.equal(applied.safety.databaseWritten, true)
-assert.equal(applied.safety.listingPublished, true)
+assert.equal(applied.safety.listingPublished, false)
 assert.equal(applied.productionSubmit.privatePropertyReference, propertyId)
 assert.ok(applyClient.operations.some((operation) => operation.table === 'private_property_listing_syncs' && operation.type === 'upsert'))
 assert.ok(applyClient.operations.some((operation) => operation.table === 'private_listings' && operation.type === 'update'))

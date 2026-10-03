@@ -28,18 +28,16 @@ assert.match(
 )
 assert.match(sellerBrandingResolver, /fetchOrganisationBrandingSnapshot\(client, resolveListingOrganisationId\(listing\)\)/, 'seller onboarding portal should fetch latest organisation branding through the shared resolver')
 assert.match(sellerOnboardingLoader, /resolveSellerOnboardingBrandingSnapshot\(client, normalizedToken, hydratedPortalPayload\.listing\)/, 'seller onboarding portal should hydrate latest branding for RPC payloads')
-assert.match(sellerOnboardingLoader, /resolveSellerOnboardingBrandingSnapshot\(client, normalizedToken, listing\)/, 'seller onboarding portal should hydrate latest branding for fallback listing payloads')
+assert.match(sellerOnboardingLoader, /resolveSellerOnboardingBrandingSnapshot\(client, normalizedToken, apiPayload\.listing\)/, 'seller onboarding portal should hydrate latest branding for fallback listing payloads')
 assert.doesNotMatch(sellerOnboardingLoader, /branding\?\.logoUrl[\s\S]*\?\s*null[\s\S]*fetchOrganisationBrandingSnapshot/, 'seller onboarding portal must not skip latest branding when a stale logo snapshot exists')
 
 const clientPortalSource = await fs.readFile(new URL('../src/pages/ClientPortal.jsx', import.meta.url), 'utf8')
 assert.match(clientPortalSource, /sharedSellerPortalJourney/)
 assert.match(clientPortalSource, /SellerPortalDashboard/)
 assert.match(clientPortalSource, /buildSellerPortalProgressModelFromSharedJourney/)
-assert.match(
-  clientPortalSource,
-  /const SELLER_PORTAL_MENU = \[[\s\S]*?key: 'overview'[\s\S]*?key: 'listing_marketing'[\s\S]*?key: 'progress'[\s\S]*?key: 'documents'[\s\S]*?key: 'offers'[\s\S]*?key: 'team'/,
-  'seller navigation should use the simplified portal menu and keep the listing, sale, documents, offers, and team workspaces reachable',
-)
+const sellerMenu = clientPortalSource.match(/const SELLER_PORTAL_MENU = \[([\s\S]*?)\n\]/)?.[1] || ''
+for (const key of ['overview', 'listing_marketing', 'progress', 'documents', 'team']) assert.ok(sellerMenu.includes(`key: '${key}'`))
+assert.doesNotMatch(sellerMenu, /key: 'offers'/, 'offers are no longer part of seller navigation')
 assert.match(
   clientPortalSource,
   /const SELLER_PORTAL_NAV_GROUPS = \[[\s\S]*?label: ''[\s\S]*?items: SELLER_PORTAL_MENU/,
@@ -55,7 +53,9 @@ assert.match(clientPortalSource, /SELLER_SALE_PROGRESS_STEPS[\s\S]*OTP[\s\S]*Fin
 assert.match(clientPortalSource, /function buildSellerSaleProgressModel/)
 assert.match(clientPortalSource, /SELLER_MOBILE_STAGE_INDEX_BY_KEY[\s\S]*listing_created:\s*2[\s\S]*listing_live:\s*2/, 'mobile seller journey must understand canonical listing-created/live stage keys')
 assert.match(clientPortalSource, /resolveSellerMobileJourneyIndex\([\s\S]*sharedSellerPortalJourney\?\.currentStage\?\.key[\s\S]*sellerStageMeta\?\.currentStageKey/, 'mobile seller journey must use the same shared journey and stage metadata as desktop')
-assert.match(clientPortalSource, /useEffect\(\(\) => \{[\s\S]*currentSellerJourneyStageKey[\s\S]*setExpandedStageKey/, 'mobile seller journey must resync the expanded card after full portal hydration')
+assert.match(clientPortalSource, /const sellerProgressPage = <SellerProgressPage/)
+assert.match(clientPortalSource, /sellerProgressPage=\{sellerProgressPage\}/, 'mobile must receive the shared Progress component')
+assert.match(clientPortalSource, /isProgress && effectiveWorkspace === 'seller' \? sellerProgressPage/, 'desktop must render the same Progress component')
 assert.match(
   clientPortalSource,
   /const sharedSellerListingProgressModel = buildSellerPortalProgressModelFromSharedJourney\(sharedSellerPortalJourney\)[\s\S]*const sellerSaleProgressModel = buildSellerSaleProgressModel\(/,
@@ -72,15 +72,8 @@ assert.match(
   'unscoped /client/:token routes should render the buyer workspace instead of sticking to the first available seller context',
 )
 
-const sidebarSource = await fs.readFile(new URL('../src/components/Sidebar.jsx', import.meta.url), 'utf8')
-assert.match(sidebarSource, /function isSellerPortalShellRoute/)
-assert.match(sidebarSource, /\^\\\/client\\\/\[\^\/\]\+\\\/selling/)
-assert.match(sidebarSource, /const usesPlatformPortalBranding = isSellerPortalShellRoute\(location\.pathname\)/)
-assert.match(
-  sidebarSource,
-  /const showOrganisationBranding = !usesPlatformPortalBranding && Boolean\(branding\.logoUrl\) && !logoLoadFailed/,
-  'desktop seller portal shell should keep Arch9 platform branding instead of replacing it with agency logos',
-)
+assert.match(clientPortalSource, /sellerAgencyLogoUrl/, 'seller shell must use agency branding')
+assert.match(clientPortalSource, /const sellerAgencyName = pickSellerBrandText\([\s\S]*?'Your agency'/, 'missing branding must use an agency-neutral fallback')
 
 const sellerOnboardingSource = await fs.readFile(new URL('../src/pages/SellerOnboarding.jsx', import.meta.url), 'utf8')
 assert.match(

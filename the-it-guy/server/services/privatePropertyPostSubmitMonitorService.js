@@ -68,7 +68,7 @@ function eventMatchesProperty(event = {}, propertyId = '') {
 
 function selectLatestEvent(events = [], propertyId = '') {
   const matches = events.filter((event) => eventMatchesProperty(event, propertyId))
-  return matches[0] || null
+  return matches.sort((left, right) => (Date.parse(right.eventDate) || 0) - (Date.parse(left.eventDate) || 0))[0] || null
 }
 
 function createBlockedReport({ listingId = '', environment = 'sandbox', blockers = [], readiness = null } = {}) {
@@ -129,11 +129,9 @@ export async function runPrivatePropertyPostSubmitMonitor({
   const propertyId = normalizePrivatePropertyText(readiness.preview?.summary?.propertyId)
   const branchGuid = normalizePrivatePropertyText(readiness.agencyConfig?.branchGuid)
   const listingType = normalizePrivatePropertyText(readiness.preview?.summary?.listingType) || 'Sale'
-  const agentIds = Array.isArray(readiness.preview?.summary?.agentIds) ? readiness.preview.summary.agentIds : []
-  const suburbId = readiness.preview?.summary?.suburbId ?? null
   const credentialResolution = await resolvePrivatePropertyCredentials({ client, config: readiness.agencyConfig, secrets })
   const blockers = unique([
-    ...(readiness.ready ? [] : readiness.blockers || []),
+    ...(readiness.checks?.find((check) => check.name === 'agency_config')?.blockers || []),
     ...(!propertyId ? ['missing_private_property_property_id'] : []),
     ...(!branchGuid ? ['missing_private_property_branch_guid'] : []),
     ...credentialResolution.missingSecrets.map((secretName) => `missing_runtime_secret:${secretName}`),
@@ -229,7 +227,7 @@ export async function runPrivatePropertyPostSubmitMonitor({
       events: matchingEvents,
       responseSummary: summarizeResponse(eventResponse, 'GetListingEventFeedByBranch'),
     }
-    report.status = externalStatus === 'failed' ? 'ATTENTION_REQUIRED' : activeMatch || externalStatus === 'active' ? 'ACTIVATED' : 'PENDING'
+    report.status = ['inactive', 'removed', 'paused', 'failed'].includes(externalStatus) ? 'ATTENTION_REQUIRED' : externalStatus === 'active' ? 'ACTIVATED' : 'PENDING'
     report.externalStatus = externalStatus
     report.checks = [
       { name: 'listing_status', status: privatePropertyStatus ? 'PASS' : 'BLOCKED' },
@@ -237,7 +235,7 @@ export async function runPrivatePropertyPostSubmitMonitor({
       { name: 'active_listing', status: activeMatch ? 'PASS' : 'PENDING' },
       { name: 'event_feed', status: matchingEvents.length ? 'PASS' : 'PENDING' },
     ]
-    report.blockers = report.status === 'ATTENTION_REQUIRED' ? ['private_property_listing_event_failed'] : []
+    report.blockers = report.status === 'ATTENTION_REQUIRED' ? [externalStatus === 'failed' ? 'private_property_listing_event_failed' : `private_property_listing_${externalStatus}`] : []
 
     if (recordSync) {
       const syncResult = await recordPrivatePropertyListingSync({
@@ -251,22 +249,20 @@ export async function runPrivatePropertyPostSubmitMonitor({
         privatePropertyListingUrl: activeMatch?.listingUrl || '',
         privatePropertyStatus,
         externalStatus,
-        isOnPortal: Boolean(activeMatch || externalStatus === 'active'),
+        isOnPortal: externalStatus === 'active',
         eventType: latestEvent?.listingFeedEventType || latestEvent?.eventType || '',
         eventStatus: latestEvent?.eventStatus || '',
         eventDescription: latestEvent?.eventDescription || '',
         eventAt: latestEvent?.eventDate || '',
         continuationKey: report.eventFeed.continuationKey,
-        suburbId,
-        agentIds,
         responseSummary: report.statusProbe.responseSummaries,
-        payloadSummary: readiness.preview?.summary || {},
         eventSummary: latestEvent || {},
-        activatedAt: externalStatus === 'active' ? latestEvent?.eventDate || report.generatedAt : '',
+        activatedAt: externalStatus === 'active' && ['activated', 'active'].includes(normalizeKey(latestEvent?.listingFeedEventType)) ? latestEvent?.eventDate || '' : '',
       })
       report.safety.databaseWritten = true
       report.syncResult = {
         arch9Status: syncResult.arch9Status,
+        lastCheckedAt: syncResult.sync?.last_checked_at || report.generatedAt,
         syncId: normalizePrivatePropertyText(syncResult.sync?.id),
         listingId: normalizePrivatePropertyText(syncResult.listing?.id),
         externalLinkWarning: syncResult.externalLinkWarning || null,
@@ -276,7 +272,7 @@ export async function runPrivatePropertyPostSubmitMonitor({
     report.nextStep = report.status === 'ACTIVATED'
       ? 'Private Property shows the listing as active. Keep polling event feed until image events settle, then close go-live evidence.'
       : report.status === 'ATTENTION_REQUIRED'
-        ? 'Investigate the Private Property event/status error before publishing more listings.'
+        ? `Private Property reports this listing as ${externalStatus}. Review the listing and its submitted location before retrying.`
         : 'Poll again with the returned continuation key until the listing is active or an error event appears.'
   } catch (error) {
     report.status = 'BLOCKED'
@@ -294,4 +290,19 @@ export async function runPrivatePropertyPostSubmitMonitor({
   }
 
   return report
+}
+
+
+export async function readPrivatePropertyStoredStatus({ client, listingId, environment = 'production' } = {}) {
+  const { data, error } = await client.from('private_property_listing_syncs')
+    .select('external_status,is_on_portal,private_property_ref,last_checked_at')
+    .eq('private_listing_id', listingId).eq('environment', normalizeEnvironment(environment)).maybeSingle()
+  if (error) throw error
+  const externalStatus = data?.external_status || ''
+  return {
+    cached: true, generatedAt: data?.last_checked_at || '', externalStatus,
+    status: ['inactive', 'removed', 'paused', 'failed'].includes(externalStatus) ? 'ATTENTION_REQUIRED' : externalStatus === 'active' ? 'ACTIVATED' : 'PENDING',
+    statusProbe: { privatePropertyRef: data?.private_property_ref || '' },
+    safety: { privatePropertyApiCalled: false, databaseWritten: false },
+  }
 }

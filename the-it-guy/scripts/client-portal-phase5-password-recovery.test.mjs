@@ -11,6 +11,7 @@ const edgeFunction = await fs.readFile(
 )
 const privateListingService = await fs.readFile(new URL('../src/services/privateListingService.js', import.meta.url), 'utf8')
 const clientPortalPage = await fs.readFile(new URL('../src/pages/ClientPortal.jsx', import.meta.url), 'utf8')
+const passwordGate = await fs.readFile(new URL('../src/components/client-portal/SellerPortalPasswordGate.jsx', import.meta.url), 'utf8')
 const listingDetail = await fs.readFile(new URL('../src/pages/AgentListingDetail.jsx', import.meta.url), 'utf8')
 
 assert.match(migration, /seller_portal_recovery_token_hash text/, 'recovery tokens must be stored as hashes')
@@ -28,9 +29,9 @@ assert.match(edgeFunction, /bridge_request_private_listing_seller_portal_recover
 assert.doesNotMatch(edgeFunction, /jsonResponse\([^)]*sellerEmail/, 'the Edge Function must not return the seller email')
 assert.match(privateListingService, /requestSellerPortalPasswordRecovery/, 'the client needs a recovery request service')
 assert.match(privateListingService, /completeSellerPortalPasswordRecovery/, 'the client needs a recovery completion service')
-assert.match(clientPortalPage, /Forgot your password\?/, 'the password gate should expose self-service recovery')
-assert.match(clientPortalPage, /tokenKind === 'recovery'/, 'recovery links should render password reset mode')
-assert.match(clientPortalPage, /Reset password and continue/, 'recovery mode should clearly describe its action')
+assert.match(passwordGate, /Forgot your password\?/, 'the password gate should expose self-service recovery')
+assert.match(passwordGate, /tokenKind === 'recovery'/, 'recovery links should render password reset mode')
+assert.match(passwordGate, /Save new password/, 'recovery mode should clearly describe its action')
 assert.match(listingDetail, /label="Recovery"/, 'agents should see recovery lifecycle status')
 
 console.log('Client portal Phase 5 password recovery checks passed.')

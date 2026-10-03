@@ -1,3 +1,5 @@
+import { linkRentalLandlordOnboardingProperty } from '../rentalLandlordOnboardingService.js'
+vi.mock('../rentalLandlordOnboardingService.js', () => ({ linkRentalLandlordOnboardingProperty: vi.fn() }))
 import { beforeEach, expect, it, vi } from 'vitest'
 import { linkRentalLandlordLeadToListing } from '../rentalLandlordListingHandoffService'
 import { getRentalLeadWorkspace, advanceRentalLead } from '../rentalLeadService'
@@ -48,6 +50,7 @@ beforeEach(() => {
       }),
     },
   }
+  linkRentalLandlordOnboardingProperty.mockImplementation(async (_lead,id,links) => {lead.raw.rawEnquiryPayload.landlordPortfolio=lead.raw.rawEnquiryPayload.landlordPortfolio.map((row) => row.id===id ? {...row,...links} : row)})
   getRentalLeadWorkspace.mockResolvedValue({ lead })
   getRentalListingForAgent.mockResolvedValue({
     id: 'second-listing',

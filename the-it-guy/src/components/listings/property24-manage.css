@@ -1,0 +1,43 @@
+.ui-modal.p24-manage-dialog { max-width: 880px; width: min(880px,calc(100vw - 32px)); }
+.p24-manage-dialog .ui-modal-head { padding: 20px 24px; }
+.p24-manage-dialog .ui-modal-body { padding: 20px 24px; }
+.p24-manage-dialog .ui-modal-footer { padding: 16px 24px; }
+.p24-manage { display: grid; gap: 16px; color: #243d56; }
+.p24-manage-summary { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 16px; padding-bottom: 16px; border-bottom: 1px solid #e5edf6; }
+.p24-manage-summary > div { display: grid; gap: 5px; min-width: 0; overflow-wrap: anywhere; }
+.p24-manage-summary span { font-size: 12px; color: #607387; }
+.p24-manage-summary strong { font-size: 14px; font-weight: 600; color: #142132; }
+.p24-manage-grid { display: grid; grid-template-columns: 1.2fr 1fr; gap: 16px; }
+.p24-manage-section { border: 1px solid #e1e9f2; border-radius: 14px; padding: 16px; min-width: 0; }
+.p24-manage h4 { font-size: 14px; font-weight: 600; color: #142132; }
+.p24-manage p { margin-top: 8px; font-size: 12px; line-height: 1.6; color: #607387; }
+.p24-manage-requirements { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.p24-manage-field { display: grid; gap: 6px; margin-top: 14px; min-width: 0; }
+.p24-manage-field > span { font-size: 12px; font-weight: 600; color: #425970; }
+.p24-manage-field input,.p24-manage-field select { width: 100%; min-width: 0; }
+.p24-manage-inline { display: flex; align-items: end; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+.p24-manage-inline > .p24-manage-field { flex: 1; min-width: 140px; margin-top: 0; }
+.p24-manage-inline > input { min-width: 0; flex: 1; }
+.p24-manage .p24-manage-warning { color: #8a5b13; }
+.p24-manage .p24-manage-note { font-size: 11px; }
+.p24-manage-link { font-size: 12px; font-weight: 600; color: #1f4f78; text-align: left; }
+.p24-manage-result,.p24-manage-issues { margin-top: 16px; padding-top: 12px; border-top: 1px solid #e5edf6; font-size: 12px; }
+.p24-manage-issues { color: #8a5b13; }
+.p24-manage-issues ul { display: grid; gap: 6px; list-style: disc; padding-left: 16px; margin-top: 8px; }
+.p24-manage-result dl,.p24-manage-lead-results { display: grid; gap: 12px; grid-template-columns: repeat(2,minmax(0,1fr)); margin-top: 12px; font-size: 12px; }
+.p24-manage dl dd { font-weight: 600; margin-top: 4px; }
+.p24-manage-disclosure { border: 1px solid #e1e9f2; border-radius: 12px; }
+.p24-manage-disclosure > summary { padding: 12px 16px; cursor: pointer; font-size: 13px; font-weight: 600; color: #425970; }
+.p24-manage-disclosure > div { padding: 0 16px 16px; }
+.p24-manage-disclosure .p24-manage-field { max-width: 320px; }
+.p24-manage-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.p24-manage-footer > div { display: flex; flex-wrap: wrap; justify-content: end; gap: 8px; }
+@media (max-width: 640px) {
+  .p24-manage-dialog .ui-modal-head,.p24-manage-dialog .ui-modal-body,.p24-manage-dialog .ui-modal-footer { padding: 16px; }
+  .p24-manage-grid { grid-template-columns: minmax(0,1fr); }
+  .p24-manage-summary { gap: 10px; }
+  .p24-manage-summary strong { font-size: 12px; }
+  .p24-manage-footer { align-items: stretch; }
+  .p24-manage-footer > div { flex-direction: column; min-width: 0; }
+  .p24-manage-footer button { white-space: normal; height: auto; min-height: 40px; font-size: 12px; }
+}

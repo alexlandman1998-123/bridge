@@ -420,6 +420,23 @@ export async function expireRentalProperty24Listing(listingId) {
   return payload
 }
 
+export async function withdrawRentalProperty24Listing(listingId) {
+  const normalizedListingId = normalizeText(listingId)
+  if (!normalizedListingId) throw new Error('Rental listing id is required.')
+  if (!isSupabaseConfigured || !supabase) throw new Error('Sign in before updating Property24.')
+  const sessionResult = await supabase.auth.getSession()
+  const accessToken = sessionResult.data?.session?.access_token
+  if (!accessToken) throw new Error('Sign in again before updating Property24.')
+  const response = await fetch(`/api/property24/rentals/${encodeURIComponent(normalizedListingId)}/withdraw`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  })
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(formatRentalProperty24ApiError(payload, 'Property24 rental withdrawal failed.'))
+  return payload
+}
+
 async function callPrivatePropertyRentalAction(listingId, action, body = {}, { method = 'POST' } = {}) {
   const normalizedListingId = normalizeText(listingId)
   if (!normalizedListingId) throw new Error('Rental listing id is required.')

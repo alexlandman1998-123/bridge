@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { spawnSync } from 'node:child_process'
 import {
   createPrivatePropertyClient,
   createPrivatePropertyToken,
@@ -77,6 +80,17 @@ assert.match(calls[0].options.body, /<UserName>Arch9User<\/UserName>/)
 assert.match(calls[0].options.body, /<UID>phase4uid<\/UID>/)
 assert.doesNotMatch(calls[0].options.body, /secret/)
 
+for (const result of ['', 'Failed: invalid suburb', 'Unsuccessful', `${'Queued '.repeat(3000)}Error: invalid listing`]) {
+  const rejectingClient = createPrivatePropertyClient({
+    username: 'Arch9User', password: 'secret',
+    fetchImpl: async () => ({
+      ok: true, status: 200, statusText: 'OK',
+      text: async () => `<UpdateListingResponse><UpdateListingResult>${result}</UpdateListingResult></UpdateListingResponse>`,
+    }),
+  })
+  await assert.rejects(rejectingClient.updateListing(preview.listingXml), /Private Property/)
+}
+
 const auctionPlan = createPrivatePropertyListingPlan({
   listing: {
     id: 'private-property-auction-1',
@@ -131,5 +145,26 @@ assert.doesNotMatch(scriptSource, /requestBody/)
 const packageJson = JSON.parse(read('package.json'))
 assert.equal(packageJson.scripts['private-property:publish-listing'], 'node scripts/private-property-publish-listing.mjs')
 assert.equal(packageJson.scripts['test:private-property-publish-listing'], 'node scripts/private-property-publish-listing.test.mjs')
+
+const cliDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'pp-publish-guard-'))
+try {
+  for (const [environment, baseUrl] of [
+    ['production', 'https://services.sandbox.pp.co.za/AgentImport/AgentImport.asmx'],
+    ['sandbox', 'https://services.privateproperty.co.za/AgentImport/AgentImport.asmx'],
+  ]) {
+    const output = path.join(cliDirectory, `${environment}.json`)
+    const result = spawnSync(process.execPath, [
+      '--import', 'data:text/javascript,globalThis.fetch=()=>{throw new Error("Unexpected network call")}',
+      new URL('./private-property-publish-listing.mjs', import.meta.url).pathname,
+      '--apply', '--fixture=rental-residential', '--branch-guid=CA167B18-C6DC-49AD-B018-2B72B187918F',
+      '--agent-id=ARCH9-SANDBOX-USER-1', '--suburb-id=12345', `--output=${output}`,
+    ], { encoding: 'utf8', env: { ...process.env, PRIVATE_PROPERTY_ENVIRONMENT: environment, PRIVATE_PROPERTY_BASE_URL: baseUrl, PRIVATE_PROPERTY_USERNAME: 'fixture-user', PRIVATE_PROPERTY_PASSWORD: 'fixture-password' } })
+    assert.equal(result.status, 1, result.stdout + result.stderr)
+    const report = JSON.parse(fs.readFileSync(output, 'utf8'))
+    assert.deepEqual(report.technicalBlockers, ['private_property_production_requires_controlled_publish'])
+    assert.equal(report.canSubmit, false)
+    assert.deepEqual(report.safety, { privatePropertyApiCalled: false, databaseWritten: false, listingPublished: false })
+  }
+} finally { fs.rmSync(cliDirectory, { recursive: true, force: true }) }
 
 console.log('Private Property phase 4 publish listing contract passed')

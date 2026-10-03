@@ -5,8 +5,8 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import RentalApplicationWizard from '../../../modules/rentals/shared/applications/RentalApplicationWizard.jsx'
 import { initialiseRentalApplicationWizard } from '../../../services/rentals/rentalApplicationWizardModel.js'
 afterEach(cleanup)
-function Harness({ onSave, readOnly }) {
-  const [data, setData] = useState(() => initialiseRentalApplicationWizard({ identity: { firstName: 'Primary' }, employment: { employmentType: 'employed', employer: 'Saved employer' } }))
+function Harness({ onSave, readOnly, initialData }) {
+  const [data, setData] = useState(() => initialiseRentalApplicationWizard(initialData || { identity: { firstName: 'Primary' }, employment: { employmentType: 'employed', employer: 'Saved employer' } }))
   return <><RentalApplicationWizard data={data} onChange={setData} onSave={onSave} readOnly={readOnly} /><output data-testid="data">{JSON.stringify(data)}</output></>
 }
 it('changes conditional employment questions without discarding hidden saved answers', () => {
@@ -52,4 +52,16 @@ it('prevents editing a submitted application while keeping the steps readable', 
   expect(screen.queryByRole('button', { name: 'Save draft' })).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: /People & contacts/ }))
   expect(screen.getByLabelText('First name').disabled).toBe(true)
+})
+
+it('invalidates the saved representative assignment when their identity is edited or they are removed', () => {
+  render(<Harness initialData={{ entity: { type: 'company' }, people: [{ id: 's', role: 'authorised_signatory', firstName: 'Sam', identityNumber: 'A' }], documentLinks: [{ documentId: 'signer', subjectId: 's', purpose: 'identity' }, { documentId: 'authority', subjectId: 'entity', purpose: 'authority' }] }} />)
+  fireEvent.click(screen.getByRole('button', { name: /People & contacts/ }))
+  fireEvent.change(screen.getAllByLabelText('ID / passport number')[1], { target: { value: 'B' } })
+  let data = JSON.parse(screen.getByTestId('data').textContent)
+  expect(data.documentLinks.every((link) => link.invalidated)).toBe(true)
+  fireEvent.click(screen.getByRole('button', { name: 'Remove person 1' }))
+  data = JSON.parse(screen.getByTestId('data').textContent)
+  expect(data.documentLinks.every((link) => link.invalidated)).toBe(true)
+  expect(data.people).toEqual([])
 })

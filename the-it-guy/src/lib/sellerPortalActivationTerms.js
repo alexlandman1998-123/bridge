@@ -1,52 +1,31 @@
 import { ARCH9_SELLER_TERMS_VERSION, getArch9SellerTermsConfig } from './arch9TermsAcceptance.js'
-import {
-  PLATFORM_FEE_AMOUNT,
-  PLATFORM_FEE_CHECKBOX_LABEL,
-  PLATFORM_FEE_CONSENT_TYPE,
-  PLATFORM_FEE_CURRENCY,
-} from './platformFeeConsent.js'
 
-export const SELLER_PORTAL_ACTIVATION_TERMS_VERSION = 'seller-platform-fee-v1'
+export const SELLER_PORTAL_ACTIVATION_TERMS_VERSION = 'seller-portal-terms-popi-v2'
 
 export function getSellerPortalActivationTermsConfig() {
-  const sellerTermsConfig = getArch9SellerTermsConfig()
+  const terms = getArch9SellerTermsConfig()
   return {
-    consentType: PLATFORM_FEE_CONSENT_TYPE,
+    consentType: 'seller_portal_terms_and_privacy',
     partyType: 'seller',
-    title: 'ARCH9 Transaction Platform Fee',
-    body:
-      'I acknowledge that this transaction is being facilitated through the ARCH9 platform. I authorise the transferring attorney to deduct the once-off ARCH9 Transaction Platform Fee of R750.00 from my proceeds on registration and to remit that amount to ARCH9.',
-    checkboxLabel: PLATFORM_FEE_CHECKBOX_LABEL,
-    feeAmount: PLATFORM_FEE_AMOUNT,
-    currency: PLATFORM_FEE_CURRENCY,
+    title: terms.title,
+    body: `${terms.body}\n\n${terms.popiBody}`,
+    checkboxLabel: 'I accept the Arch9 terms and conditions and consent to the processing of my personal information as described below.',
     wordingVersion: SELLER_PORTAL_ACTIVATION_TERMS_VERSION,
     privacyPolicyVersion: ARCH9_SELLER_TERMS_VERSION,
-    sellerTermsTitle: sellerTermsConfig.title,
-    sellerTermsBody: sellerTermsConfig.body,
-    popiBody: sellerTermsConfig.popiBody,
+    sellerTermsTitle: terms.title,
+    sellerTermsBody: terms.body,
+    popiBody: terms.popiBody,
   }
 }
 
-export function normalizeSellerPortalActivationTermsConfig(config = {}) {
-  const fallback = getSellerPortalActivationTermsConfig()
-  if (!config || typeof config !== 'object') return fallback
-
-  return {
-    ...fallback,
-    title: config.title || fallback.title,
-    body: config.body || fallback.body,
-    checkboxLabel: config.checkboxLabel || config.checkbox_label || fallback.checkboxLabel,
-    feeAmount: config.feeAmount ?? config.fee_amount ?? fallback.feeAmount,
-    currency: config.currency || fallback.currency,
-    wordingVersion: config.wordingVersion || config.wording_version || fallback.wordingVersion,
-    privacyPolicyVersion: config.privacyPolicyVersion || config.privacy_policy_version || fallback.privacyPolicyVersion,
-  }
+export function normalizeSellerPortalActivationTermsConfig() {
+  // Never mix published transaction fee wording into password setup.
+  return getSellerPortalActivationTermsConfig()
 }
 
 export function buildSellerPortalActivationTermsAcceptance(overrides = {}) {
-  const { termsConfig, ...acceptanceOverrides } = overrides || {}
-  const config = normalizeSellerPortalActivationTermsConfig(termsConfig)
-  const acceptedAt = acceptanceOverrides.acceptedAt || acceptanceOverrides.accepted_at || new Date().toISOString()
+  const config = getSellerPortalActivationTermsConfig()
+  const acceptedAt = overrides.acceptedAt || overrides.accepted_at || new Date().toISOString()
   return {
     consentType: config.consentType,
     consent_type: config.consentType,
@@ -55,9 +34,6 @@ export function buildSellerPortalActivationTermsAcceptance(overrides = {}) {
     accepted: true,
     acceptedAt,
     accepted_at: acceptedAt,
-    feeAmount: config.feeAmount,
-    fee_amount: config.feeAmount,
-    currency: config.currency,
     wordingVersion: config.wordingVersion,
     wording_version: config.wordingVersion,
     wordingSnapshot: config.body,
@@ -66,9 +42,9 @@ export function buildSellerPortalActivationTermsAcceptance(overrides = {}) {
     checkbox_label: config.checkboxLabel,
     privacyPolicyVersion: config.privacyPolicyVersion,
     privacy_policy_version: config.privacyPolicyVersion,
+    acceptedByEmail: overrides.acceptedByEmail || overrides.accepted_by_email || '',
     source: 'seller_portal_activation',
     popiConsentIncluded: true,
     popi_consent_included: true,
-    ...acceptanceOverrides,
   }
 }

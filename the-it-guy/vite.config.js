@@ -1,3 +1,5 @@
+import { createSellerOnboardingBrandingResponse } from './server/services/sellerOnboardingBrandingApi.js'
+import { handleRentalLandlordOnboarding, handlePublicRentalLandlordOnboarding } from './server/services/rentalLandlordOnboardingApi.js'
 import { handlePublicRentalApplication } from './server/services/publicRentalApplicationApi.js'
 import { handleRentalAgentDocumentUpload } from './server/services/rentalApplicationAgentDocumentApi.js'
 import { defineConfig, loadEnv } from 'vite'
@@ -183,7 +185,7 @@ function missionControlApiPlugin() {
   return {
     name: 'mission-control-api',
     configureServer(server) {
-      for (const [path, handler] of [['/api/public/rental-application', handlePublicRentalApplication], ['/api/rentals/application-documents', handleRentalAgentDocumentUpload]]) {
+      for (const [path, handler] of [['/api/public/rental-application', handlePublicRentalApplication], ['/api/rentals/application-documents', handleRentalAgentDocumentUpload], ['/api/rentals/landlord-onboarding', handleRentalLandlordOnboarding], ['/api/public/rental-landlord-onboarding', handlePublicRentalLandlordOnboarding]]) {
         server.middlewares.use(path, async (request, response) => {
           response.setHeader('Content-Type', 'application/json; charset=utf-8')
           response.setHeader('Cache-Control', 'private, no-store')
@@ -216,6 +218,16 @@ function missionControlApiPlugin() {
       })
       server.middlewares.use('/api/public/listings', async (request, response) => {
         const payload = await createPublicListingsResponse({
+          method: request.method,
+          url: request.url,
+          headers: request.headers,
+        })
+        writeNodeJsonResponse(response, payload)
+      })
+      server.middlewares.use('/api/public/seller-onboarding-branding', async (request, response) => {
+        const env = { ...loadEnv(server.config.mode, server.config.root, ''), ...process.env }
+        const payload = await createSellerOnboardingBrandingResponse({
+          env: { ...env, SUPABASE_URL: env.VITE_SUPABASE_URL },
           method: request.method,
           url: request.url,
           headers: request.headers,

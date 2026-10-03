@@ -32,7 +32,10 @@ const detailPage = readFileSync('src/pages/rentals/RentalListingDetailPage.jsx',
 
 assert.match(createPage, /Distribution/)
 assert.deepEqual(RENTAL_DISTRIBUTION_CHANNELS.map((channel) => channel.label), ['Property24', 'Private Property', 'Agency Website'])
-assert.match(createPage, /Needs attention/)
+const channelCard = readFileSync('src/components/listings/ListingSyndicationChannelCard.jsx', 'utf8')
+assert.match(channelCard, /Needs attention/)
+assert.match(createPage, /arch9_internal/)
+assert.deepEqual(normalizeRentalDistributionChannels(['arch9_internal']), [], 'Internal storage is not an external publishing destination')
 assert.match(createPage, /key: 'syndication'/)
 assert.match(createPage, /key: 'marketing'/)
 assert.match(createPage, /key: 'review'/)

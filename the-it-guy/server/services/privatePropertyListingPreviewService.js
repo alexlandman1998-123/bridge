@@ -69,7 +69,7 @@ async function fetchRequiredSingle(client, table, column, value) {
   return data
 }
 
-async function fetchOptionalSingle(client, table, column, value, { orderBy = 'updated_at' } = {}) {
+async function fetchOptionalSingle(client, table, column, value, { orderBy = 'updated_at', environment = '' } = {}) {
   const normalizedValue = normalizePrivatePropertyPreviewText(value)
   if (!normalizedValue) return null
   const query = client
@@ -79,6 +79,7 @@ async function fetchOptionalSingle(client, table, column, value, { orderBy = 'up
     .order(orderBy, { ascending: false })
     .limit(1)
 
+  if (environment) query.eq('environment', environment)
   const { data, error } = await query.maybeSingle()
   if (error && isMissingRelationError(error)) return null
   if (error) throw error
@@ -99,7 +100,7 @@ async function fetchRows(client, table, column, value, { orderBy = 'sort_order',
   return Array.isArray(data) ? data : []
 }
 
-export async function fetchArch9ListingForPrivatePropertyPreview({ client, listingId } = {}) {
+export async function fetchArch9ListingForPrivatePropertyPreview({ client, listingId, environment = '' } = {}) {
   if (!client) throw new Error('Supabase client is required.')
   const normalizedListingId = normalizePrivatePropertyPreviewText(listingId)
   if (!normalizedListingId) throw new Error('--listing-id is required.')
@@ -108,7 +109,7 @@ export async function fetchArch9ListingForPrivatePropertyPreview({ client, listi
   const [publication, media, existingSync, onboarding] = await Promise.all([
     fetchOptionalSingle(client, 'listing_publication_data', 'listing_id', normalizedListingId),
     fetchRows(client, 'listing_media', 'listing_id', normalizedListingId),
-    fetchOptionalSingle(client, 'private_property_listing_syncs', 'private_listing_id', normalizedListingId),
+    fetchOptionalSingle(client, 'private_property_listing_syncs', 'private_listing_id', normalizedListingId, { environment }),
     fetchOptionalSingle(client, 'private_listing_seller_onboarding', 'private_listing_id', normalizedListingId),
   ])
 

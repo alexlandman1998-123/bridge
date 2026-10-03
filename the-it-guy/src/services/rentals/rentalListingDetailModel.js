@@ -53,11 +53,14 @@ export function getRentalListingDetailTabs(listingId = '') {
 export function resolveRentalListingDetailTab(tabKey = '') {
   const normalized = normalizeKey(tabKey || 'overview')
   if (normalized === 'syndication') return 'marketing'
+  if (normalized === 'documents') return 'mandate'
+  if (['leads', 'commission'].includes(normalized)) return normalized
   return RENTAL_LISTING_DETAIL_TABS.some((tab) => tab.key === normalized) ? normalized : 'overview'
 }
 
 export function buildRentalListingDetailPath(listingId = '', tabKey = 'overview') {
   const normalizedTab = resolveRentalListingDetailTab(tabKey)
+  if (['leads', 'commission'].includes(normalizedTab)) return `${replaceListingId(RENTAL_LISTING_ROUTES.detail, listingId)}/${normalizedTab}`
   const tab = RENTAL_LISTING_DETAIL_TABS.find((item) => item.key === normalizedTab) || RENTAL_LISTING_DETAIL_TABS[0]
   return replaceListingId(RENTAL_LISTING_ROUTES[tab.routeKey], listingId)
 }

@@ -1,3 +1,13 @@
+import SellerChecklistSummary from '../components/client-portal/documents/SellerChecklistSummary.jsx'
+import { sellerContactEmail } from '../core/clientPortal/sellerContactDetails.js'
+import SellerTeamWorkspace from '../components/client-portal/team/SellerTeamWorkspace.jsx'
+import SellerProgressPage from '../components/client-portal/seller/SellerProgressPage.jsx'
+import SellerListingMarketingPage from '../components/client-portal/seller/SellerListingMarketingPage.jsx'
+import { buildListingOverviewPerformance, resolveListingOverviewMarketStartDate, getListingOverviewDaysOnMarket, getSellerListingOverviewPerformance, getSellerListingOverviewContext } from '../services/listings/listingOverviewPerformanceService.js'
+import { buildSellerTransactionHealth } from '../core/clientPortal/sellerTransactionHealth.js'
+import SellerPropertyGallery from '../components/client-portal/seller/SellerPropertyGallery.jsx'
+import { resolveListingPropertyImages } from '../components/client-portal/seller/listingPropertyImages.js'
+import SellerPortalPasswordGate from '../components/client-portal/SellerPortalPasswordGate.jsx'
 import {
   ArrowRight,
   ArrowUpDown,
@@ -19,6 +29,7 @@ import {
   KeyRound,
   LayoutDashboard,
   Loader2,
+  Mail,
   MapPin,
   Megaphone,
   MessageCircle,
@@ -95,7 +106,6 @@ import {
 import ClientDocumentCentre, { buildDocumentCentreSections } from '../components/client-portal/documents/ClientDocumentCentre'
 import BuyerDocumentWorkspace, { BuyerDocumentSummary } from '../components/client-portal/documents/BuyerDocumentWorkspace'
 import BuyerDevelopmentDeliveryPanel from '../components/client-portal/development/BuyerDevelopmentDeliveryPanel'
-import TransactionStageWorkspace, { resolveSellerTransactionStageKey } from '../components/client-portal/seller/TransactionStageWorkspace'
 import ProgressTimeline from '../components/ProgressTimeline'
 import MvpTransactionControlBoard from '../components/transaction/MvpTransactionControlBoard'
 import {
@@ -174,7 +184,7 @@ import {
   getMainStageIndex,
 } from '../lib/stages'
 import { getSellerPortalStageMeta } from '../lib/sellerPortalStageMapper'
-import { buildSellerPortalDocumentSummary } from '../core/clientPortal/sellerPortalDocumentSummary'
+import { buildSellerPortalDocumentSummary, isSellerTeamManagedDocument } from '../core/clientPortal/sellerPortalDocumentSummary'
 import { buildSellerPortalSaleJourneyGate } from '../core/clientPortal/sellerPortalSaleJourneyGate'
 import { buildSellerComplianceAgentStatus } from '../core/documents/sellerComplianceAgentStatusModel'
 import {
@@ -268,10 +278,9 @@ async function withClientPortalLoadTimeout(task, { phase = 'portal', timeoutMs =
 
 const SELLER_PORTAL_MENU = [
   { key: 'overview', label: 'Overview', icon: Home },
-  { key: 'listing_marketing', label: 'Listing & Marketing', icon: Megaphone, section: 'overview', hash: '#seller-marketing-activity' },
-  { key: 'progress', label: 'Sale Journey', icon: BarChart3 },
-  { key: 'documents', label: 'Your Documents', icon: FileText },
-  { key: 'offers', label: 'Offers', icon: HandCoins },
+  { key: 'listing_marketing', label: 'Listing & Marketing', icon: Megaphone },
+  { key: 'progress', label: 'Progress', icon: BarChart3 },
+  { key: 'documents', label: 'Documents', icon: FileText },
   { key: 'team', label: 'Your Team', icon: Users },
 ]
 
@@ -553,9 +562,11 @@ function buildSellerPortalProgressModel({
 }
 
 const SELLER_PROGRESS_PORTAL_KEY_BY_JOURNEY_KEY = {
+  new_lead: 'contacted',
   contacted: 'contacted',
   seller_onboarding_sent: 'onboarding',
   seller_onboarding_submitted: 'submitted',
+  mandate_sent: 'submitted',
   mandate_signed: 'mandate_signed',
   listing_created: 'listing_created',
   listing_live: 'listing_live',
@@ -1970,6 +1981,7 @@ function getPortalSectionFromRoute(pathname = '', routeSection = '') {
   const normalizedSection = String(section || '').trim().toLowerCase()
 
   if (normalizedSection === 'progress') return 'progress'
+  if (normalizedSection === 'listing_marketing' || normalizedSection === 'listing-marketing') return 'listing_marketing'
   if (normalizedSection === 'bond-application') return 'bond_application'
   if (normalizedSection === 'bond_application') return 'bond_application'
   if (normalizedSection === 'appointments') return 'appointments'
@@ -2689,6 +2701,7 @@ function buildClientJourneyFeedItem(item, index = 0) {
 
   return {
     id: item?.id || `update_${index}`,
+    eventType: item?.type || item?.activity_type || item?.event_type || item?.discussionType || '',
     authorName,
     authorRole,
     title: item?.title || formatted?.title || '',
@@ -2991,62 +3004,6 @@ function resolveSellerStatusLabel({
   return 'Sale In Progress'
 }
 
-function buildSellerTransactionHealth({
-  hasOnboardingSubmitted = false,
-  hasMandateSigned = false,
-  hasListingCreated = false,
-  hasDocumentsComplete = false,
-  documentsNeedingAttention = [],
-  sellerPrimaryNextAction = null,
-} = {}) {
-  const signals = [
-    { key: 'onboarding', complete: hasOnboardingSubmitted },
-    { key: 'mandate_signed', complete: hasMandateSigned },
-    { key: 'listing', complete: hasListingCreated },
-    { key: 'documents', complete: hasDocumentsComplete },
-  ]
-  const completed = signals.filter((signal) => signal.complete).length
-  const hasAnySignal = completed > 0 || documentsNeedingAttention.length > 0 || sellerPrimaryNextAction
-  // A document-focused next action describes the same blocker as the document
-  // list. Count it once so the health card cannot disagree with the document
-  // centre and navigation.
-  const blockerCount = documentsNeedingAttention.length || (sellerPrimaryNextAction?.blocking ? 1 : 0)
-
-  if (!hasAnySignal) {
-    return {
-      score: null,
-      label: 'On Track',
-      summary: 'Your team is setting up the next steps.',
-      detail: 'No immediate action is required from you right now.',
-      tone: 'neutral',
-    }
-  }
-
-  const rawScore = Math.round((completed / signals.length) * 100)
-  const score = Math.max(0, Math.min(100, rawScore - (blockerCount * 8)))
-  const label = score >= 90
-    ? 'Excellent'
-    : score >= 72
-      ? 'On Track'
-      : blockerCount
-        ? 'Needs Attention'
-        : 'Progressing'
-
-  const detail = blockerCount
-    ? `${blockerCount} item${blockerCount === 1 ? '' : 's'} need attention to keep your sale moving.`
-    : hasDocumentsComplete
-      ? 'Everything required has been received. No action required from you.'
-      : 'Your agent is moving the next step forward.'
-
-  return {
-    score,
-    label,
-    summary: blockerCount ? 'A few items still need attention.' : 'Your property sale is progressing smoothly.',
-    detail,
-    tone: blockerCount ? 'action' : 'success',
-  }
-}
-
 function buildSellerMarketingChannels(links = [], agencyLogoUrl = '') {
   const channels = new Map()
   for (const [index, link] of links.entries()) {
@@ -3072,14 +3029,21 @@ function buildSellerMarketingChannels(links = [], agencyLogoUrl = '') {
   return [...channels.values()]
 }
 
-function buildSellerAgentUpdate({ items = [], sellerAgentName = '', sellerAgencyName = '', sellerAgentAvatarUrl = '' } = {}) {
-  const update = items.find((item) => String(item?.message || '').trim())
+function buildSellerAgentUpdate({ items = [], sellerAgentName = '', sellerAgentAvatarUrl = '' } = {}) {
+  const update = items.find((item) => {
+    const type = normalizeSellerPortalKey(item?.eventType)
+    return item?.authorRole === 'Agent' &&
+      ['note_shared_with_client', 'comment', 'note', 'message'].includes(type) &&
+      String(item?.message || '').trim() &&
+      String(item?.authorName || '').trim() &&
+      !/^arch9(?: team)?$/i.test(String(item.authorName).trim())
+  })
   if (!update) return null
   return {
     message: update.message,
     timestampLabel: update.timestampLabel || 'Recently',
-    agentName: sellerAgentName || sellerAgencyName || 'Your agent',
-    avatarUrl: sellerAgentAvatarUrl,
+    agentName: update.authorName,
+    avatarUrl: update.authorName === sellerAgentName ? sellerAgentAvatarUrl : '',
   }
 }
 
@@ -3334,11 +3298,21 @@ function PortalProgressJourney({
   )
 }
 
-function SellerProgressJourney({ listingProgressModel, saleProgressModel, transactionJourneyModel, token, workspaceNavigationScope }) {
+function SellerProgressJourney({ listingProgressModel, saleProgressModel, transactionJourneyModel, token, workspaceNavigationScope, compact = false }) {
   const defaultWorkflowKey = saleProgressModel?.isStarted ? 'sale' : 'listing'
   const [activeWorkflowKey, setActiveWorkflowKey] = useState(defaultWorkflowKey)
   const progressModel = activeWorkflowKey === 'sale' ? saleProgressModel : listingProgressModel
   const steps = Array.isArray(progressModel?.steps) ? progressModel.steps : []
+
+  if (compact && activeWorkflowKey === 'listing') {
+    const current = steps.find((step) => step.state === 'current')
+    return <section className="rounded-[20px] border border-[#dbe5ef] bg-white p-5">
+      <div className="flex items-center justify-between gap-3"><h2 className="text-lg font-semibold text-[#142132]">Listing progress</h2><span className="text-sm font-semibold text-[#123f3a]">{progressModel?.percent || 0}%</span></div>
+      {current ? <p className="mt-3 text-sm font-semibold text-[#142132]">{current.label}</p> : null}
+      <p className="mt-2 text-sm leading-6 text-[#52657b]">{progressModel?.helperMessage}</p>
+      <Link to={getPortalWorkspacePath(token, workspaceNavigationScope, 'progress')} className="mt-3 inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-[#123f3a]">View progress<ArrowRight size={16} /></Link>
+    </section>
+  }
 
   if (activeWorkflowKey === 'sale' && transactionJourneyModel) {
     return (
@@ -3393,50 +3367,15 @@ function SellerProgressJourney({ listingProgressModel, saleProgressModel, transa
   )
 }
 
-function SellerSaleJourneyNotStarted({ gate, listingProgressModel, token, workspaceNavigationScope, agentEmail = '' }) {
-  const primaryPath = getPortalWorkspacePath(token, workspaceNavigationScope, gate?.primaryAction?.key || 'offers')
-  const marketingPath = `${getPortalWorkspacePath(token, workspaceNavigationScope, 'overview')}#seller-marketing-activity`
-
-  return (
-    <section className="space-y-5 pb-24 lg:pb-2">
-      <header className="rounded-[20px] border border-[#dce5ed] bg-[linear-gradient(135deg,#f0faf5_0%,#ffffff_72%)] p-6 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
-        <span className="text-[0.68rem] font-bold uppercase tracking-[0.14em] text-[#087955]">Listing stage</span>
-        <h1 className="mt-2 text-[2rem] font-semibold tracking-[-0.05em] text-[#102032]">{gate?.title || 'Your sale journey starts after an accepted offer'}</h1>
-        <p className="mt-3 max-w-3xl text-sm leading-6 text-[#52667c]">{gate?.description}</p>
-        <div className="mt-5 flex flex-wrap gap-3">
-          <Link to={primaryPath} className="inline-flex min-h-11 items-center gap-2 rounded-[11px] bg-[#087057] px-4 text-sm font-semibold text-white transition hover:bg-[#065d48]">
-            {gate?.primaryAction?.label || 'Review offers'}
-            <ArrowRight size={15} />
-          </Link>
-          <Link to={marketingPath} className="inline-flex min-h-11 items-center gap-2 rounded-[11px] border border-[#c9ddd4] bg-white px-4 text-sm font-semibold text-[#175444] transition hover:bg-[#f6fbf8]">
-            View listing activity
-          </Link>
-          {agentEmail ? (
-            <a href={`mailto:${agentEmail}`} className="inline-flex min-h-11 items-center gap-2 rounded-[11px] border border-[#d4dee9] bg-white px-4 text-sm font-semibold text-[#244159] transition hover:bg-[#f8fbfd]">
-              <MessageCircle size={15} /> Message agent
-            </a>
-          ) : null}
-        </div>
-      </header>
-
-      <SellerProgressJourney
-        listingProgressModel={listingProgressModel}
-        saleProgressModel={{ isStarted: false }}
-        transactionJourneyModel={null}
-        token={token}
-        workspaceNavigationScope={workspaceNavigationScope}
-      />
-    </section>
-  )
-}
-
-function SellerMyDetailsReadonlyPage({ sections = [] }) {
+function SellerMyDetailsReadonlyPage({ sections = [], onSignOut }) {
+  const signOutButton = onSignOut ? <button type="button" onClick={onSignOut} className="mt-4 inline-flex min-h-11 items-center rounded-xl border border-[#dbe5ef] px-4 text-sm font-semibold text-[#123f3a]">Sign out on this device</button> : null
   if (!sections.length) {
     return (
       <section className="space-y-5">
         <header className="rounded-[24px] border border-[#dbe5ef] bg-white px-6 py-6 shadow-[0_16px_34px_rgba(15,23,42,0.06)]">
           <h1 className="text-[1.5rem] font-semibold tracking-[-0.04em] text-[#142132]">My Details</h1>
           <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">The information you submitted during seller onboarding.</p>
+          {signOutButton}
         </header>
         <article className="rounded-[24px] border border-dashed border-[#d8e2ee] bg-white px-6 py-7 shadow-[0_12px_28px_rgba(15,23,42,0.04)]">
           <p className="text-base font-semibold text-[#142132]">No seller onboarding details have been submitted yet.</p>
@@ -3451,6 +3390,7 @@ function SellerMyDetailsReadonlyPage({ sections = [] }) {
       <header className="rounded-[24px] border border-[#dbe5ef] bg-white px-6 py-6 shadow-[0_16px_34px_rgba(15,23,42,0.06)]">
         <h1 className="text-[1.5rem] font-semibold tracking-[-0.04em] text-[#142132]">My Details</h1>
         <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">The information you submitted during seller onboarding.</p>
+        {signOutButton}
       </header>
 
       {sections.map((section) => (
@@ -5714,6 +5654,7 @@ function getSellerMobileDocumentState(item = {}) {
   if (['approved', 'completed'].includes(status)) return 'completed'
   if (['uploaded', 'under_review'].includes(status)) return 'review'
   if (['cancelled', 'not_applicable', 'archived'].includes(status)) return 'archived'
+  if (isSellerTeamManagedDocument(item)) return 'team'
   return 'upload'
 }
 
@@ -5722,6 +5663,7 @@ function getSellerMobileDocumentStatusLabel(item = {}) {
   if (state === 'completed') return 'Completed'
   if (state === 'review') return 'Awaiting review'
   if (state === 'archived') return 'Archived'
+  if (state === 'team') return 'Managed by your team'
   if (/mandate/i.test(`${item?.title || ''} ${item?.description || ''}`)) return 'Waiting for signature'
   return 'Required'
 }
@@ -5858,7 +5800,6 @@ function SellerMobileDocumentsPage({
   onSearchChange = null,
   onToggleActionOnly = null,
   onToggleSort = null,
-  onShowAllCategories = null,
   onOpenUploadPicker = null,
   onUploadItem = null,
   onOpenDocument = null,
@@ -5892,38 +5833,8 @@ function SellerMobileDocumentsPage({
     { key: 'completed', label: 'Completed', icon: CheckCircle2, count: activeItems.filter((item) => item.state === 'completed').length },
     { key: 'archived', label: 'Archived', icon: Archive, count: activeItems.filter((item) => item.state === 'archived').length },
   ]
-  const statCards = [
-    { key: 'total', label: 'Total documents', value: activeCategory ? activeCategory.total : model.stats.total, icon: FileText, tone: 'green', action: 'View all' },
-    { key: 'review', label: 'Awaiting review', value: activeCategory ? activeCategory.awaitingReview : model.stats.awaitingReview, icon: Clock3, tone: 'amber', action: 'Review now' },
-    { key: 'upload', label: 'To upload', value: activeCategory ? activeCategory.toUpload : model.stats.toUpload, icon: UploadCloud, tone: 'blue', action: 'Upload now' },
-    { key: 'completed', label: 'Completed', value: activeCategory ? activeCategory.completed : model.stats.completed, icon: CheckCircle2, tone: 'green', action: 'View completed' },
-  ]
   const setFilter = (key) => {
     if (typeof onFilterChange === 'function') onFilterChange(key)
-  }
-  const clearActionOnly = () => {
-    if (actionOnly && typeof onToggleActionOnly === 'function') onToggleActionOnly()
-  }
-  const handleStatCardAction = (key) => {
-    if (key === 'review') {
-      clearActionOnly()
-      setFilter('review')
-      return
-    }
-    if (key === 'completed') {
-      clearActionOnly()
-      setFilter('completed')
-      return
-    }
-    if (key === 'upload') {
-      setFilter('all')
-      if (!actionOnly && typeof onToggleActionOnly === 'function') onToggleActionOnly()
-      if (typeof onOpenUploadPicker === 'function') onOpenUploadPicker()
-      return
-    }
-    clearActionOnly()
-    setFilter('all')
-    if (typeof onSearchChange === 'function') onSearchChange('')
   }
   const renderTabs = () => (
     <div className="mt-4 grid grid-cols-4 overflow-hidden rounded-[14px] border border-[#e5e9ef] bg-white">
@@ -5947,12 +5858,13 @@ function SellerMobileDocumentsPage({
     </div>
   )
   const renderSearchControls = (placeholder) => (
-    <div className="mt-3 grid grid-cols-[minmax(0,1fr)_92px_76px] gap-2">
+    <div className="mt-3 grid grid-cols-[minmax(0,1fr)_auto_auto] gap-2">
       <label className="flex min-h-[48px] items-center gap-2 rounded-[14px] border border-[#e5e9ef] bg-white px-3 text-sm text-[#667085]">
         <Search size={17} className="shrink-0" />
         <input
           value={searchQuery}
           onChange={(event) => typeof onSearchChange === 'function' && onSearchChange(event.target.value)}
+          aria-label="Search documents"
           placeholder={placeholder}
           className="min-w-0 flex-1 bg-transparent text-sm text-[#101823] outline-none placeholder:text-[#98a2b3]"
         />
@@ -5960,10 +5872,11 @@ function SellerMobileDocumentsPage({
       <button
         type="button"
         onClick={onToggleActionOnly}
+        aria-pressed={actionOnly}
         className={`inline-flex min-h-[48px] items-center justify-center gap-2 rounded-[14px] border px-3 text-sm font-semibold ${actionOnly ? 'border-[#b8d8c6] bg-[#eff8f1] text-[#17653d]' : 'border-[#e5e9ef] bg-white text-[#344054]'}`}
       >
         <SlidersHorizontal size={16} />
-        <span>{actionOnly ? 'Action' : 'Filter'}</span>
+        <span className="sr-only">{actionOnly ? 'Show all documents' : 'Show action needed'}</span>
       </button>
       <button
         type="button"
@@ -5971,7 +5884,7 @@ function SellerMobileDocumentsPage({
         className="inline-flex min-h-[48px] items-center justify-center gap-2 rounded-[14px] border border-[#e5e9ef] bg-white px-3 text-sm font-semibold text-[#344054]"
       >
         <ArrowUpDown size={16} />
-        <span>{sortDirection === 'desc' ? 'Z-A' : 'Sort'}</span>
+        <span className="sr-only">{sortDirection === 'desc' ? 'Sort A to Z' : 'Sort Z to A'}</span>
       </button>
     </div>
   )
@@ -5979,7 +5892,7 @@ function SellerMobileDocumentsPage({
   if (activeCategory) {
     const Icon = activeCategory.icon
     const tone = sellerMobileToneClasses(activeCategory.tone)
-    const categoryComplete = activeCategory.toUpload === 0 && activeCategory.awaitingReview === 0
+    const categoryComplete = activeCategory.items.every((item) => item.state === 'completed' || item.state === 'archived')
     return (
       <section className="mt-4">
         <div className="flex items-center gap-3">
@@ -5994,25 +5907,7 @@ function SellerMobileDocumentsPage({
           <div className="min-w-0 flex-1">
             <h2 className="text-[1.55rem] font-semibold leading-tight text-[#101823]">{activeCategory.label}</h2>
             <p className="mt-1 text-sm font-medium text-[#667085]">{activeCategory.completed} of {activeCategory.total} complete</p>
-            <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[#e7eaef]">
-              <span className={`block h-full rounded-full ${tone.progress}`} style={{ width: `${activeCategory.progress}%` }} />
-            </div>
-            <span className={`mt-3 inline-flex rounded-full px-3 py-1 text-xs font-semibold ${tone.pill}`}>
-              {categoryComplete ? 'All documents complete' : `${activeCategory.toUpload} outstanding`}
-            </span>
           </div>
-        </div>
-        <div className="mt-5 grid grid-cols-4 rounded-[18px] border border-[#e5e9ef] bg-white py-4 shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
-          {statCards.map((card) => {
-            const CardIcon = card.icon
-            return (
-              <div key={card.key} className="border-r border-[#edf0f3] px-2 text-center last:border-r-0">
-                <span className={`mx-auto inline-flex h-10 w-10 items-center justify-center rounded-[12px] ${sellerMobileToneClasses(card.tone).icon}`}><CardIcon size={19} /></span>
-                <strong className="mt-3 block text-xl font-semibold text-[#101823]">{card.value}</strong>
-                <span className="mt-1 block text-[0.68rem] leading-4 text-[#667085]">{card.label}</span>
-              </div>
-            )
-          })}
         </div>
         {renderTabs()}
         {renderSearchControls(`Search ${activeCategory.label.toLowerCase()} documents...`)}
@@ -6038,8 +5933,8 @@ function SellerMobileDocumentsPage({
   }
 
   return (
-    <section className="mt-4 min-h-[calc(100dvh-7rem)]">
-      <div className="flex justify-end">
+    <section className="mt-6">
+      <div className="flex items-center justify-between gap-3"><h1 className="text-2xl font-semibold text-[#142132]">Documents</h1>
         <button
           type="button"
           onClick={() => typeof onOpenUploadPicker === 'function' && onOpenUploadPicker()}
@@ -6050,108 +5945,40 @@ function SellerMobileDocumentsPage({
           <span>Upload document</span>
         </button>
       </div>
-      <div className="mt-4 grid grid-cols-2 gap-3">
-        {statCards.map((card) => {
-          const Icon = card.icon
-          const tone = sellerMobileToneClasses(card.tone)
-          return (
-            <button
-              key={card.key}
-              type="button"
-              onClick={() => handleStatCardAction(card.key)}
-              className="min-h-[136px] rounded-[16px] border border-white/80 bg-white/95 p-4 text-left shadow-[0_10px_24px_rgba(15,23,42,0.055)]"
-            >
-              <span className={`inline-flex h-11 w-11 items-center justify-center rounded-[13px] ${tone.icon}`}>
-                <Icon size={21} />
-              </span>
-              <strong className="ml-3 inline-block align-middle text-[1.55rem] font-semibold text-[#101823]">{card.value}</strong>
-              <span className="ml-[58px] mt-1 block text-xs font-medium text-[#667085]">{card.label}</span>
-              <span className="mt-4 flex min-h-[38px] items-center justify-between rounded-[12px] border border-[#e5e9ef] px-3 text-xs font-semibold text-[#17653d]">
-                {card.action}
-                <ChevronRight size={15} />
-              </span>
-            </button>
-          )
-        })}
-      </div>
+      <SellerChecklistSummary documentCenter={documentCenter} />
       {renderTabs()}
       {renderSearchControls('Search documents...')}
-      <section className="mt-3 flex min-h-[calc(100dvh-17rem)] flex-col rounded-[16px] border border-[#e5e9ef] bg-white p-4">
-        <div className="flex items-center justify-between gap-3">
-          <h2 className="text-base font-semibold text-[#101823]">Document categories</h2>
-          <button
-            type="button"
-            onClick={() => {
-              clearActionOnly()
-              setFilter('all')
-              if (typeof onSearchChange === 'function') onSearchChange('')
-              if (typeof onShowAllCategories === 'function') onShowAllCategories()
-            }}
-            className="inline-flex items-center gap-1 text-xs font-semibold text-[#344054]"
-          >
-            View all categories
-            <ChevronRight size={15} />
-          </button>
-        </div>
-        <div className="mt-5 grid flex-1 content-start grid-cols-2 gap-3">
+      {normalizedQuery || actionOnly || activeFilter !== 'all' ? <MobileDocumentList title={`${filteredItems.length} document${filteredItems.length === 1 ? '' : 's'}`} items={filteredItems} uploadingDocumentKey={uploadingDocumentKey} openingDocumentPath={openingDocumentPath} onUploadItem={onUploadItem} onOpenDocument={onOpenDocument} /> : <section className="mt-4 rounded-[16px] border border-[#e5e9ef] bg-white p-4">
+        <h2 className="text-base font-semibold text-[#101823]">Document categories</h2>
+        <div className="mt-4 grid gap-3">
           {model.categories.map((category) => {
             const Icon = category.icon
             const tone = sellerMobileToneClasses(category.tone)
             const secondaryLabel = category.toUpload > 0
-              ? `${category.toUpload} Outstanding`
+              ? `${category.toUpload} awaiting files`
               : category.awaitingReview > 0
                 ? `${category.awaitingReview} Awaiting`
-                : 'Complete'
+                : category.items.some((item) => item.state === 'team') ? 'Managed by team' : 'Complete'
             return (
               <button
                 key={category.key}
                 type="button"
                 onClick={() => onSelectCategory?.(category.key)}
-                className="relative min-h-[174px] overflow-hidden rounded-[14px] border border-[#edf0f3] bg-white px-3 pb-3 pt-3 text-left shadow-[0_8px_18px_rgba(15,23,42,0.035)]"
+                className="flex min-h-[88px] items-center gap-3 rounded-[14px] border border-[#edf0f3] bg-white p-3 text-left"
               >
-                <span className="absolute right-3 top-3">
-                  <SellerMobileDocumentCategoryRing progress={category.progress} tone={category.tone} />
-                </span>
-                <div className="flex items-start justify-between gap-2 pr-[82px]">
-                  <span className={`inline-flex h-10 w-10 items-center justify-center rounded-[12px] ${tone.icon}`}><Icon size={20} /></span>
-                  <ChevronRight size={18} className="mt-2 text-[#98a2b3]" />
-                </div>
-                <h3 className="mt-8 text-sm font-semibold text-[#101823]">{category.label}</h3>
-                <p className="mt-0.5 text-[0.68rem] font-medium text-[#667085]">{category.completed} of {category.total} complete</p>
-                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#e7eaef]">
-                  <span className={`block h-full rounded-full ${tone.progress}`} style={{ width: `${category.progress}%` }} />
-                </div>
-                <span className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-[0.66rem] font-semibold ${tone.pill}`}>
-                  {secondaryLabel}
-                </span>
+                <span className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] ${tone.icon}`}><Icon size={20} /></span>
+                <div className="min-w-0 flex-1"><h3 className="text-sm font-semibold text-[#101823]">{category.label}</h3><p className="mt-1 text-xs text-[#667085]">{category.completed} of {category.total} complete · {secondaryLabel}</p></div>
+                <ChevronRight size={18} className="shrink-0 text-[#98a2b3]" />
               </button>
             )
           })}
           {!model.categories.length ? (
-            <p className="col-span-2 rounded-[14px] border border-dashed border-[#d9dee6] bg-[#fbfcfd] p-4 text-sm leading-6 text-[#667085]">
+            <p className="rounded-[14px] border border-dashed border-[#d9dee6] bg-[#fbfcfd] p-4 text-sm leading-6 text-[#667085]">
               Document categories will appear here once your property team shares requirements.
             </p>
           ) : null}
         </div>
-      </section>
-      <section className="mt-4 rounded-[16px] border border-[#e5e9ef] bg-white p-4">
-        <div className="flex items-center justify-between gap-3">
-          <h2 className="text-base font-semibold text-[#101823]">Things requiring your attention</h2>
-          <button type="button" onClick={onToggleActionOnly} className="inline-flex items-center gap-1 text-xs font-semibold text-[#344054]">
-            View all tasks
-            <ChevronRight size={15} />
-          </button>
-        </div>
-        <MobileDocumentList
-          items={model.attentionItems.slice(0, 4)}
-          emptyText="No documents need action from you right now."
-          compact
-          uploadingDocumentKey={uploadingDocumentKey}
-          openingDocumentPath={openingDocumentPath}
-          onUploadItem={onUploadItem}
-          onOpenDocument={onOpenDocument}
-        />
-      </section>
+      </section>}
     </section>
   )
 }
@@ -6187,7 +6014,7 @@ function MobileDocumentList({
           const openKey = getSellerMobileDocumentOpenKey(item)
           const isOpening = Boolean(openKey && openingDocumentPath === openKey)
           const canOpen = Boolean(linkedDocument && typeof onOpenDocument === 'function')
-          const canUpload = Boolean(item.uploadSpec || uploadTarget.requirementKey)
+          const canUpload = Boolean(state !== 'team' && (item.uploadSpec || uploadTarget.requirementKey))
           return (
             <article key={item.id || item.title} className="grid min-h-[78px] max-w-full grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-3 overflow-hidden rounded-[14px] border border-[#edf0f3] bg-white p-3 shadow-[0_6px_16px_rgba(15,23,42,0.025)]">
               <span className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[13px] ${state === 'review' ? 'bg-[#fff6e8] text-[#c87812]' : state === 'upload' ? 'bg-[#fff1eb] text-[#d05a25]' : 'bg-[#eef8f1] text-[#17653d]'}`}>
@@ -6224,10 +6051,6 @@ function MobileDocumentList({
                     <span>{isUploading ? 'Uploading' : compact ? 'Continue' : 'Upload'}</span>
                     <ChevronRight size={14} />
                   </button>
-                ) : !canOpen ? (
-                  <button type="button" className="inline-flex h-10 w-10 items-center justify-center rounded-[12px] text-[#667085]" aria-label="More document actions">
-                    <MoreVertical size={17} />
-                  </button>
                 ) : null}
               </div>
             </article>
@@ -6243,30 +6066,28 @@ function SellerMobilePortal({
   workspaceNavigationScope,
   activeSection,
   documentCenter = {},
+  sellerFirstName,
+  sellerAgentAvatarUrl,
   sellerAgencyName,
   sellerAgencyLogoUrl,
   sellerPropertyTitle,
-  sellerPropertyImageUrl,
-  sellerStatusLabel,
-  sellerProgressPercent,
-  sellerStepLabel,
-  sellerJourneyStages,
-  sellerWorkflow = 'listing',
-  sellerOffers = [],
-  sellerAskingPrice = 0,
-  sellerTransactionId = '',
-  sellerPropertyId = '',
-  sellerJourneyHref = '',
-  sellerCommentDraft = '',
-  sellerCommentSaving = false,
-  onSellerCommentDraftChange = null,
-  onSellerCommentSubmit = null,
-  sellerNextStep,
+  sellerPropertyImages = [],
   sellerAgentName,
   sellerAgentEmail,
   sellerAgentPhone,
-  sellerDocumentsNeedingAttention,
-  sellerDocumentTracker,
+  sellerHealth,
+  sellerListingPerformance,
+  sellerListingProgressModel,
+  sellerSaleProgressModel,
+  sellerTransactionJourneyModel,
+  sellerProgressPage,
+  sellerTeamModel,
+  sellerHasTransaction,
+  sellerDetailsSections,
+  onSignOut,
+  sellerAppointmentsPage,
+  sellerListingPreview,
+  sellerMarketingChannels,
   sellerActivityItems,
   uploadingDocumentKey = '',
   openingDocumentPath = '',
@@ -6274,12 +6095,6 @@ function SellerMobilePortal({
   onUploadDocumentCentre = null,
   onOpenSellerDocument = null,
 }) {
-  const currentSellerJourneyStageKey = sellerJourneyStages.find((stage) => stage.state === 'current')?.key ||
-    sellerJourneyStages[0]?.key ||
-    ''
-  const [expandedStageKey, setExpandedStageKey] = useState(() => {
-    return currentSellerJourneyStageKey
-  })
   const photoInputRef = useRef(null)
   const fileInputRef = useRef(null)
   const [selectedDocumentAction, setSelectedDocumentAction] = useState(null)
@@ -6293,32 +6108,11 @@ function SellerMobilePortal({
   const [mobileDocumentsActionOnly, setMobileDocumentsActionOnly] = useState(false)
   const [mobileDocumentSortDirection, setMobileDocumentSortDirection] = useState('asc')
   const requestedMobileSection = activeSection === 'progress' ? 'tasks' : activeSection
-  const mobileSection = ['overview', 'tasks', 'documents', 'offers', 'team'].includes(requestedMobileSection)
+  const mobileSection = ['overview', 'listing_marketing', 'tasks', 'documents', 'team', 'details', 'appointments'].includes(requestedMobileSection)
     ? requestedMobileSection
     : 'overview'
   const isOverviewSection = mobileSection === 'overview'
 
-  useEffect(() => {
-    if (!currentSellerJourneyStageKey) return
-    let cancelled = false
-    queueMicrotask(() => {
-      if (!cancelled) {
-        setExpandedStageKey((previous) => (previous === currentSellerJourneyStageKey ? previous : currentSellerJourneyStageKey))
-      }
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [currentSellerJourneyStageKey])
-
-  const currentStage = sellerJourneyStages.find((stage) => stage.state === 'current') ||
-    sellerJourneyStages[0]
-  const activeStage = sellerJourneyStages.find((stage) => stage.key === expandedStageKey) ||
-    currentStage
-  const safeProgress = Math.max(0, Math.min(100, Number(sellerProgressPercent) || 0))
-  const documentActionItems = Array.isArray(sellerDocumentsNeedingAttention)
-    ? sellerDocumentsNeedingAttention
-    : []
   const sellerMobileDocumentModel = useMemo(
     () => buildSellerMobileDocumentDashboardModel(documentCenter),
     [documentCenter],
@@ -6327,35 +6121,14 @@ function SellerMobilePortal({
     const uploadTarget = resolveSellerMobileDocumentUploadTarget(item)
     return Boolean(item?.uploadSpec || uploadTarget.requirementKey)
   })
-  const primaryDocumentAction = documentActionItems[0] || null
-  const previewDocuments = documentActionItems.slice(0, 4)
   const visibleActivity = sellerActivityItems.slice(0, 3)
   const bottomNavItems = [
     { key: 'overview', section: 'overview', label: 'Overview', icon: Home },
-    { key: 'tasks', section: 'progress', label: 'Journey', icon: CheckCircle2 },
+    { key: 'listing_marketing', section: 'listing_marketing', label: 'Listing', icon: Megaphone },
+    { key: 'tasks', section: 'progress', label: 'Progress', icon: CheckCircle2 },
     { key: 'documents', section: 'documents', label: 'Documents', icon: FileText },
-    { key: 'offers', section: 'offers', label: 'Offers', icon: HandCoins },
     { key: 'team', section: 'team', label: 'Team', icon: Users },
   ]
-  const nextActionHref = sellerNextStep?.href ||
-    getPortalWorkspacePath(token, workspaceNavigationScope, sellerNextStep?.to || 'documents')
-  const activeStageIsCurrent = activeStage?.key === currentStage?.key
-  const hasRequiredNextAction = Boolean(primaryDocumentAction || sellerNextStep?.tone === 'action')
-  const nextRequiredTitle = primaryDocumentAction?.label ||
-    primaryDocumentAction?.title ||
-    (sellerNextStep?.tone === 'action' ? sellerNextStep?.title : '') ||
-    'No further action from your side'
-  const nextRequiredDescription = primaryDocumentAction?.description ||
-    primaryDocumentAction?.message ||
-    (sellerNextStep?.tone === 'action' ? sellerNextStep?.description : '') ||
-    'Everything needed from you is currently up to date. Your property team will update this space when the next action is ready.'
-  const heroBackgroundStyle = sellerPropertyImageUrl
-    ? {
-        backgroundImage: `linear-gradient(90deg, rgba(5, 28, 34, 0.96) 0%, rgba(5, 28, 34, 0.78) 45%, rgba(5, 28, 34, 0.2) 100%), url("${sellerPropertyImageUrl}")`,
-      }
-    : {
-        backgroundImage: 'linear-gradient(135deg, #062b2b 0%, #15395a 58%, #5f7c67 100%)',
-      }
   const selectedUploadTarget = selectedDocumentAction
     ? resolveSellerMobileDocumentUploadTarget(selectedDocumentAction)
     : null
@@ -6496,179 +6269,55 @@ function SellerMobilePortal({
               </div>
             )}
           </div>
-          <div className="flex shrink-0 items-center gap-2">
-            {sellerAgentEmail ? (
-              <a href={`mailto:${sellerAgentEmail}`} aria-label="Message agent" className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-[#e1e5ea] bg-white/90 text-[#1f2937] shadow-[0_10px_24px_rgba(15,23,42,0.06)] backdrop-blur">
-                <MessageCircle size={18} />
-              </a>
-            ) : null}
-            {sellerAgentPhone ? (
-              <a href={`tel:${sellerAgentPhone}`} aria-label="Call agent" className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-[#e1e5ea] bg-white/90 text-[#1f2937] shadow-[0_10px_24px_rgba(15,23,42,0.06)] backdrop-blur">
-                <PhoneCall size={17} />
-              </a>
-            ) : null}
-            <span className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-[#e1e5ea] bg-white/90 text-[#1f2937] shadow-[0_10px_24px_rgba(15,23,42,0.06)] backdrop-blur">
-              <User size={18} />
-            </span>
-          </div>
+          <Link to={getPortalWorkspacePath(token, workspaceNavigationScope, 'details')} aria-label="My details" aria-current={mobileSection === 'details' ? 'page' : undefined} className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[#e1e5ea] bg-white text-[#1f2937]">
+            <User size={18} />
+          </Link>
         </header>
+        {mobileSection === 'listing_marketing' ? <div className="mt-6"><SellerListingMarketingPage listing={sellerListingPreview} channels={sellerMarketingChannels} channelLeads={sellerListingPerformance?.channelLeads} /></div> : null}
 
         {isOverviewSection ? (
           <>
-            <section
-              className="relative mt-6 min-h-[304px] overflow-hidden rounded-[18px] border border-white/70 bg-[#062b2b] bg-cover bg-center p-6 text-white shadow-[0_18px_48px_rgba(15,23,42,0.16)]"
-              style={heroBackgroundStyle}
-            >
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_86%_18%,rgba(255,255,255,0.2),transparent_26%),linear-gradient(180deg,rgba(5,28,34,0)_48%,rgba(5,28,34,0.68)_100%)]" aria-hidden="true" />
-              <div className="relative flex min-h-[256px] flex-col">
-                <p className="text-sm font-medium text-[#a5d8a7]">Seller Portal</p>
-                <h2 className="mt-4 max-w-[19rem] text-[2rem] font-semibold leading-[1.08] text-white">{sellerPropertyTitle || 'Property sale'}</h2>
-                <div className="mt-auto grid grid-cols-[minmax(0,1fr)_104px] items-end gap-4 border-t border-white/[0.22] pt-5">
-                  <div className="min-w-0">
-                    <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#d8e7e5]">Current status</p>
-                    <p className="mt-2 flex items-center gap-2 text-[1.12rem] font-semibold text-white">
-                      <span className="h-2 w-2 rounded-full bg-[#76d46f]" />
-                      <span className="min-w-0 truncate">{sellerStatusLabel || 'In progress'}</span>
-                    </p>
-                    <p className="mt-1 text-sm font-medium text-[#d8e7e5]">{sellerStepLabel}</p>
-                  </div>
-                  <div className="relative inline-flex h-[104px] w-[104px] shrink-0 items-center justify-center rounded-full shadow-[0_16px_30px_rgba(0,0,0,0.28)]" style={{ background: `conic-gradient(#74d46e ${safeProgress * 3.6}deg, rgba(255,255,255,0.2) 0deg)` }}>
-                    <span className="absolute inset-[9px] rounded-full bg-[#10243a]/[0.94] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]" />
-                    <span className="relative text-center">
-                      <span className="block text-[1.55rem] font-semibold leading-none text-white">{safeProgress}%</span>
-                      <span className="mt-1 block text-[0.62rem] font-semibold uppercase tracking-[0.12em] text-[#d8e7e5]">Complete</span>
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </section>
+            <div className="mt-6">
+              <SellerPropertyHero
+                sellerGreeting={getSellerDashboardGreeting()}
+                sellerFirstName={sellerFirstName}
+                sellerAgentName={sellerAgentName}
+                sellerAgentPhone={sellerAgentPhone}
+                sellerAgentEmail={sellerAgentEmail}
+                sellerAgentAvatarUrl={sellerAgentAvatarUrl}
+                sellerAgencyName={sellerAgencyName}
+                sellerPropertyTitle={sellerPropertyTitle}
+                sellerPropertyImages={sellerPropertyImages}
+                token={token}
+                workspaceNavigationScope={workspaceNavigationScope}
+              />
+            </div>
 
-            <section className="mt-4 rounded-[18px] border border-white/80 bg-white/95 p-5 shadow-[0_14px_36px_rgba(15,23,42,0.065)]">
-              <div className="mb-4 flex items-center justify-between gap-3">
-                <h3 className="text-[1.16rem] font-semibold text-[#101823]">Your sale journey</h3>
-                <span className="rounded-full bg-[#f2f4f7] px-3 py-1 text-xs font-semibold text-[#667085]">{sellerStepLabel}</span>
-              </div>
-              <ol className="-mx-1 flex gap-3 overflow-x-auto px-1 pb-3 [scrollbar-width:none]">
-                {sellerJourneyStages.map((stage, index) => {
-                  const isExpanded = activeStage?.key === stage.key
-                  const isCompleted = stage.state === 'completed'
-                  const isCurrent = stage.state === 'current'
-                  return (
-                    <li key={stage.key} className="relative min-w-[76px]">
-                      {index < sellerJourneyStages.length - 1 ? <span aria-hidden="true" className={`absolute left-[48px] top-[19px] h-px w-[62px] ${isCompleted ? 'bg-[#9dceb5]' : 'bg-[#dfe4ea]'}`} /> : null}
-                      <button
-                        type="button"
-                        onClick={() => setExpandedStageKey(stage.key)}
-                        className={`relative z-10 mx-auto flex h-10 w-10 items-center justify-center rounded-full border text-sm font-semibold transition ${
-                          isCompleted ? 'border-[#63ad73] bg-[#63ad73] text-white' : isCurrent ? 'border-[#063f34] bg-[#063f34] text-white' : 'border-[#d9dee6] bg-white text-[#87909d]'
-                        }`}
-                        aria-label={`View ${stage.label}`}
-                      >
-                        {isCompleted ? <CheckCircle2 size={18} /> : stage.number}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setExpandedStageKey(stage.key)}
-                        className="mt-2 block w-full text-center"
-                      >
-                        <span className={`block text-[0.69rem] font-semibold leading-4 ${isCurrent || isExpanded ? 'text-[#10213a]' : isCompleted ? 'text-[#344054]' : 'text-[#7b8491]'}`}>{stage.label}</span>
-                      </button>
-                    </li>
-                  )
-                })}
-              </ol>
-              <article className="mt-2 rounded-[16px] border border-[#dfe7ef] bg-[#fbfcfd] p-4">
-                <div className="flex items-start gap-4">
-                  <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-[14px] bg-[#063f34] text-white">
-                    <FileText size={22} />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-start justify-between gap-3">
-                      <h4 className="text-[1.25rem] font-semibold leading-tight text-[#101823]">{activeStage?.label || 'Current step'}</h4>
-                      <span className="shrink-0 rounded-full bg-[#edf7ed] px-2.5 py-1 text-[0.64rem] font-semibold uppercase tracking-[0.08em] text-[#4d8a48]">
-                        {activeStageIsCurrent ? 'Current step' : activeStage?.dateLabel || 'Overview'}
-                      </span>
-                    </div>
-                    <p className="mt-2 text-sm leading-5 text-[#344054]">{activeStage?.description || 'Your sale journey will update as the transaction progresses.'}</p>
-                    <p className="mt-3 flex flex-wrap items-center gap-2 text-xs font-medium text-[#7b8491]">
-                      <span>{activeStage?.owner || sellerAgentName || sellerAgencyName || 'Your property team'}</span>
-                      <span aria-hidden="true">.</span>
-                      <span>{activeStage?.dateLabel || 'Today'}</span>
-                    </p>
-                    {activeStageIsCurrent ? (
-                      <Link to={nextActionHref} className="mt-4 inline-flex min-h-[42px] w-full items-center justify-center gap-2 rounded-[12px] bg-[#063f34] px-4 text-sm font-semibold text-white">
-                        <span>{sellerNextStep?.label || 'Continue'}</span>
-                        <ChevronRight size={17} />
-                      </Link>
-                    ) : null}
-                  </div>
-                </div>
-              </article>
-            </section>
+            <div className="mt-4">
+              <SellerTransactionHealthCard health={sellerHealth} token={token} workspaceNavigationScope={workspaceNavigationScope} />
+            </div>
 
-            <section className="mt-4 overflow-hidden rounded-[18px] border border-[#1f6f52]/[0.4] bg-[#063f34] p-5 text-white shadow-[0_16px_34px_rgba(6,63,52,0.2)]">
-              <p className="text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[#9fe091]">Next required item</p>
-              <div className="mt-3 flex items-start gap-3">
-                <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[13px] border border-[#8bd985]/[0.45] bg-white/[0.1] text-[#a9ec9c]">
-                  <FileText size={20} />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <h3 className="text-[1.18rem] font-semibold leading-tight text-white">{nextRequiredTitle}</h3>
-                  <p className="mt-1 text-sm leading-5 text-[#d8efe3]">{nextRequiredDescription}</p>
-                </div>
-              </div>
-              {primaryDocumentAction ? (
-                <button
-                  type="button"
-                  onClick={() => setSelectedDocumentAction(primaryDocumentAction)}
-                  className="mt-4 flex min-h-[48px] w-full items-center justify-center gap-2 rounded-[14px] border border-[#8bd985]/[0.6] bg-[#0a4d40] px-4 text-sm font-semibold text-[#d8ffd2]"
-                >
-                  <span>Upload document</span>
-                  <UploadCloud size={18} />
-                </button>
-              ) : hasRequiredNextAction ? (
-                <Link to={nextActionHref} className="mt-4 flex min-h-[48px] w-full items-center justify-center gap-2 rounded-[14px] border border-[#8bd985]/[0.6] bg-[#0a4d40] px-4 text-sm font-semibold text-[#d8ffd2]">
-                  <span>{sellerNextStep?.label || 'Open next step'}</span>
-                  <ChevronRight size={18} />
-                </Link>
-              ) : (
-                <div className="mt-4 flex min-h-[48px] items-center justify-center rounded-[14px] border border-[#8bd985]/[0.45] bg-[#0a4d40]/[0.86] px-4 text-sm font-semibold text-[#d8ffd2]">
-                  All caught up
-                </div>
-              )}
-            </section>
-            <section className="mt-4 grid gap-3">
-              <div className="grid grid-cols-2 gap-3">
-                <Link to={getPortalWorkspacePath(token, workspaceNavigationScope, 'progress')} className="overflow-hidden rounded-[16px] border border-white/80 bg-white/95 shadow-[0_10px_26px_rgba(15,23,42,0.055)]">
-                  <div className="p-4">
-                    <span className="inline-flex h-10 w-10 items-center justify-center rounded-[12px] bg-[#eff8f1] text-[#347d43]"><BarChart3 size={20} /></span>
-                    <p className="mt-3 text-xs font-semibold uppercase tracking-[0.12em] text-[#8a94a3]">{sellerWorkflow === 'transaction' ? 'Sale' : 'Listing'}</p>
-                    <strong className="mt-1 block text-lg font-semibold text-[#101823]">{sellerWorkflow === 'transaction' ? 'Track progress' : 'Listing progress'}</strong>
-                    <span className="mt-1 block text-xs font-medium text-[#667085]">{sellerWorkflow === 'transaction' ? 'Signed OTP to registration' : 'Mandate to buyer interest'}</span>
-                  </div>
-                  <div className="flex min-h-[40px] items-center justify-between border-t border-[#edf0f3] px-4 text-xs font-semibold text-[#347d43]">
-                    <span>View progress</span>
-                    <ChevronRight size={15} />
-                  </div>
-                </Link>
-                <Link to={getPortalWorkspacePath(token, workspaceNavigationScope, 'documents')} className="overflow-hidden rounded-[16px] border border-white/80 bg-white/95 shadow-[0_10px_26px_rgba(15,23,42,0.055)]">
-                  <div className="p-4">
-                    <span className="inline-flex h-10 w-10 items-center justify-center rounded-[12px] bg-[#eff8f1] text-[#347d43]"><FileText size={20} /></span>
-                    <p className="mt-3 text-xs font-semibold uppercase tracking-[0.12em] text-[#8a94a3]">Documents</p>
-                    <strong className="mt-1 block text-2xl font-semibold text-[#101823]">{sellerDocumentTracker?.pending || 0}</strong>
-                    <span className="mt-1 block text-xs font-medium text-[#667085]">Need attention</span>
-                  </div>
-                  <div className="flex min-h-[40px] items-center justify-between border-t border-[#edf0f3] px-4 text-xs font-semibold text-[#347d43]">
-                    <span>View documents</span>
-                    <ChevronRight size={15} />
-                  </div>
-                </Link>
-              </div>
+            <div className="mt-4">
+              <SellerListingPerformance performance={sellerListingPerformance} />
+            </div>
+
+            <div className="mt-4">
+              <SellerProgressJourney
+                compact
+                listingProgressModel={sellerListingProgressModel}
+                saleProgressModel={sellerSaleProgressModel}
+                transactionJourneyModel={sellerTransactionJourneyModel}
+                token={token}
+                workspaceNavigationScope={workspaceNavigationScope}
+              />
+            </div>
+
+            <section className="mt-4">
               <article className="rounded-[22px] border border-white/80 bg-white/95 p-4 shadow-[0_10px_26px_rgba(15,23,42,0.055)]">
                 <h3 className="text-base font-semibold tracking-[-0.03em] text-[#101823]">Recent activity</h3>
                 <div className="mt-3 space-y-3">
                   {visibleActivity.length ? visibleActivity.map((item) => (
-                    <div key={item.id || item.message} className="grid grid-cols-[68px_minmax(0,1fr)] gap-3 text-sm">
+                    <div key={item.id || item.message} className="space-y-1 border-b border-[#edf0f3] pb-3 text-sm last:border-0 last:pb-0">
                       <span className="text-xs font-semibold text-[#98a2b3]">{item.timestampLabel || item.createdAt || 'Recent'}</span>
                       <p className="leading-5 text-[#344054]">{item.message || item.title || 'Your property team posted an update.'}</p>
                     </div>
@@ -6679,19 +6328,7 @@ function SellerMobilePortal({
           </>
         ) : null}
 
-        {mobileSection === 'tasks' ? (
-          <SellerMobileListCard
-            eyebrow="Tasks"
-            title={activeStage?.label || 'Current actions'}
-            emptyText="No immediate seller tasks are open."
-            items={[
-              sellerNextStep ? { id: 'next', title: sellerNextStep.title, description: sellerNextStep.description, to: sellerNextStep.to || 'documents' } : null,
-              ...previewDocuments.map((item) => ({ id: item.key || item.label, title: item.label || item.title || 'Requested document', description: item.description || 'Upload or review this seller document.', to: 'documents' })),
-            ].filter(Boolean)}
-            token={token}
-            workspaceNavigationScope={workspaceNavigationScope}
-          />
-        ) : null}
+        {mobileSection === 'tasks' ? <div className="mt-6">{sellerProgressPage}</div> : null}
 
         {mobileSection === 'documents' ? (
           <SellerMobileDocumentsPage
@@ -6732,39 +6369,10 @@ function SellerMobilePortal({
           />
         ) : null}
 
-        {mobileSection === 'team' ? (
-          <div className="mt-4 space-y-4">
-            <section className="rounded-[28px] border border-white/80 bg-white/95 p-5 shadow-[0_14px_36px_rgba(15,23,42,0.065)]">
-              <p className="text-[0.74rem] font-semibold uppercase tracking-[0.14em] text-[#7b8491]">Your Team</p>
-              <h3 className="mt-2 text-[1.4rem] font-semibold tracking-[-0.04em] text-[#101823]">{sellerAgentName || sellerAgencyName || 'Your property team'}</h3>
-              <p className="mt-1 text-sm leading-6 text-[#667085]">Your main contact for listing updates, offers, documents, and sale progress.</p>
-              <div className="mt-4 grid gap-3">
-                {sellerAgentEmail ? <a href={`mailto:${sellerAgentEmail}`} className="flex min-h-[52px] items-center justify-between rounded-[18px] border border-[#e5e9ef] bg-[#fbfcfd] px-4 text-sm font-semibold text-[#10213a]"><span>Message agent</span><MessageCircle size={18} /></a> : null}
-                {sellerAgentPhone ? <a href={`tel:${sellerAgentPhone}`} className="flex min-h-[52px] items-center justify-between rounded-[18px] border border-[#e5e9ef] bg-[#fbfcfd] px-4 text-sm font-semibold text-[#10213a]"><span>Call agent</span><PhoneCall size={18} /></a> : null}
-              </div>
-            </section>
-            <SellerConversationCard
-              updates={sellerActivityItems}
-              commentDraft={sellerCommentDraft}
-              saving={sellerCommentSaving}
-              onCommentDraftChange={onSellerCommentDraftChange}
-              onCommentSubmit={onSellerCommentSubmit}
-            />
-          </div>
-        ) : null}
+        {mobileSection === 'details' ? <div className="mt-6"><SellerMyDetailsReadonlyPage sections={sellerDetailsSections} onSignOut={onSignOut} /></div> : null}
+        {mobileSection === 'appointments' ? <div className="mt-6">{sellerAppointmentsPage}</div> : null}
+        {mobileSection === 'team' ? <div className="mt-6"><SellerTeamWorkspace model={sellerTeamModel} agencyName={sellerAgencyName} hasTransaction={sellerHasTransaction} /></div> : null}
 
-        {mobileSection === 'offers' ? (
-          <section className="mt-4">
-            <SellerOffersPage
-              offers={sellerOffers}
-              askingPrice={sellerAskingPrice}
-              agent={{ name: sellerAgentName, email: sellerAgentEmail, phone: sellerAgentPhone }}
-              transactionId={sellerTransactionId}
-              propertyId={sellerPropertyId}
-              journeyHref={sellerJourneyHref}
-            />
-          </section>
-        ) : null}
       </div>
 
       <input
@@ -7430,31 +7038,18 @@ function SellerPropertyHero({
   sellerAgentAvatarUrl,
   sellerAgencyName,
   sellerPropertyTitle,
-  sellerPropertyImageUrl,
+  sellerPropertyImages,
   sellerStatusLabel,
   sellerListingUrl,
   token,
   workspaceNavigationScope,
 }) {
-  const normalizedStatus = normalizeSellerPortalKey(sellerStatusLabel)
-  const isListingLive = normalizedStatus.includes('listing_live') || normalizedStatus === 'live'
-  const statusHeadline = isListingLive
-    ? 'Your property is live and everything is on track.'
-    : normalizedStatus.includes('offers_received')
-      ? 'Your property is attracting buyer interest and your agent is managing the next step.'
-      : normalizedStatus.includes('offer_accepted')
-        ? 'Your offer is accepted and the sale is moving forward.'
-        : normalizedStatus.includes('transfer')
-          ? 'Your property transfer is underway and on track.'
-          : normalizedStatus.includes('registered')
-            ? 'Your property sale is registered and complete.'
-            : 'Your property sale is moving forward and everything is on track.'
   const messageAction = sellerAgentEmail
     ? { label: 'Message Agent', href: `mailto:${sellerAgentEmail}` }
     : sellerAgentPhone
       ? { label: 'Call Agent', href: `tel:${sellerAgentPhone}` }
       : { label: 'Message Agent', disabled: true }
-  const scheduleAction = { label: 'Schedule Call', to: 'appointments' }
+  const scheduleAction = { label: 'View appointments', to: 'appointments' }
   const listingAction = sellerListingUrl
     ? { label: 'View Listing', href: sellerListingUrl }
     : null
@@ -7463,38 +7058,47 @@ function SellerPropertyHero({
   const agentName = sellerAgentName || sellerAgencyName || 'Your property team'
 
   return (
-    <section id="seller-property-hero" className="grid gap-5 xl:grid-cols-[minmax(520px,0.92fr)_minmax(0,1.08fr)] xl:items-stretch">
-      <div className="flex h-full min-w-0 flex-col">
-        <h1 className="text-[2.1rem] font-semibold leading-[1.08] tracking-[-0.045em] text-[#102a2b] sm:text-[2.55rem]">
+    <section id="seller-property-hero" className="space-y-4">
+      <div className="rounded-[18px] border border-[#dbe5ec] bg-white px-5 py-5 shadow-[0_8px_24px_rgba(15,23,42,0.035)] sm:px-6">
+        <h1 className="text-[1.6rem] font-semibold leading-tight tracking-[-0.035em] text-[#102a2b] sm:text-[2rem]">
           {sellerGreeting}, {sellerFirstName}.
         </h1>
-        <p className="mt-3 max-w-2xl text-lg font-medium leading-7 text-[#078449] sm:text-[1.3rem]">
-          {statusHeadline}
-        </p>
-        <p className="mt-3 max-w-xl text-sm leading-6 text-[#617187]">
-          We&apos;re actively marketing your property across leading platforms and we&apos;ll let you know whenever something important happens.
-        </p>
-
-        <div className="mt-6 flex flex-1">
-          <article className="flex min-h-[172px] w-full flex-col rounded-[20px] border border-[#dbe5ec] bg-white p-5 shadow-[0_14px_32px_rgba(15,23,42,0.055)]">
-            <p className="text-[0.67rem] font-semibold uppercase tracking-[0.13em] text-[#718196]">Your agent</p>
-            <div className="mt-3 flex min-w-0 items-center gap-4">
-              <span className="inline-flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-[16px] bg-[#e6f2ef] text-lg font-semibold text-[#063f37] ring-1 ring-[#d6e8e2]">
+      </div>
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)] xl:items-stretch">
+          <article className="flex min-w-0 w-full flex-col xl:min-h-[280px] overflow-hidden rounded-[20px] border border-[#dbe5ec] bg-white shadow-[0_14px_32px_rgba(15,23,42,0.055)]">
+            <div className="flex min-w-0 items-start gap-4 p-5 sm:p-6">
+              <span className="inline-flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-[16px] bg-[#e6f2ef] text-xl font-semibold text-[#063f37] ring-1 ring-[#d6e8e2] sm:h-[72px] sm:w-[72px]">
                 {sellerAgentAvatarUrl ? <img src={sellerAgentAvatarUrl} alt="" className="h-full w-full object-cover" /> : getSellerInitials(agentName)}
               </span>
               <div className="min-w-0">
-                <strong className="block truncate text-[1.05rem] font-semibold text-[#102032]">{agentName}</strong>
-                {sellerAgencyName && sellerAgencyName !== agentName ? <p className="mt-0.5 truncate text-sm text-[#64748b]">{sellerAgencyName}</p> : null}
-                <p className="mt-1.5 flex items-center gap-1.5 text-xs text-[#64748b]"><span className="h-1.5 w-1.5 rounded-full bg-[#16a466]" /> Here when you need us</p>
+                <p className="mb-1.5 text-[0.67rem] font-semibold uppercase tracking-[0.13em] text-[#718196]">{sellerAgentName ? 'Your agent' : 'Your property team'}</p>
+                <strong className="block break-words text-lg font-semibold leading-6 text-[#102032] sm:text-[1.15rem]">{agentName}</strong>
+                {sellerAgencyName && sellerAgencyName !== agentName ? <p className="mt-1 break-words text-sm leading-5 text-[#64748b]">{sellerAgencyName}</p> : null}
+                {sellerAgentPhone || sellerAgentEmail ? (
+                  <div className="mt-3 flex min-w-0 flex-col gap-2 text-sm text-[#52677b]">
+                    {sellerAgentPhone ? (
+                      <a href={`tel:${sellerAgentPhone}`} className="inline-flex min-w-0 items-center gap-2 rounded-sm hover:text-[#123f3a] hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#123f3a]">
+                        <PhoneCall size={14} className="shrink-0" aria-hidden="true" />
+                        <span className="break-words">{sellerAgentPhone}</span>
+                      </a>
+                    ) : null}
+                    {sellerAgentEmail ? (
+                      <a href={`mailto:${sellerAgentEmail}`} className="inline-flex min-w-0 items-center gap-2 rounded-sm hover:text-[#123f3a] hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#123f3a]">
+                        <Mail size={14} className="shrink-0" aria-hidden="true" />
+                        <span className="min-w-0 break-all">{sellerAgentEmail}</span>
+                      </a>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
             </div>
-            <div className="mt-4 flex flex-wrap gap-2 border-t border-[#e7edf2] pt-3">
+            <div className="mt-auto flex flex-wrap gap-2.5 border-t border-[#e7edf2] bg-[#f8fafb] px-5 py-4 sm:px-6">
               <SellerPortalAction action={messageAction} token={token} workspaceNavigationScope={workspaceNavigationScope} className={primaryButtonClass}>
                 {messageAction.label === 'Call Agent' ? <PhoneCall size={14} /> : <MessageCircle size={14} />}
                 <span>{messageAction.label === 'Call Agent' ? 'Call' : 'Message'}</span>
               </SellerPortalAction>
               <SellerPortalAction action={scheduleAction} token={token} workspaceNavigationScope={workspaceNavigationScope} className={secondaryButtonClass}>
-                <PhoneCall size={14} /><span>Schedule</span>
+                <PhoneCall size={14} /><span>View appointments</span>
               </SellerPortalAction>
               {listingAction ? (
                 <SellerPortalAction action={listingAction} token={token} workspaceNavigationScope={workspaceNavigationScope} className={secondaryButtonClass}>
@@ -7503,73 +7107,71 @@ function SellerPropertyHero({
               ) : null}
             </div>
           </article>
-        </div>
+      <div className="relative h-[240px] overflow-hidden rounded-[20px] border border-[#dbe5ef] bg-[#0b2e2a] shadow-[0_18px_38px_rgba(15,23,42,0.13)] xl:h-auto xl:min-h-[280px]">
+        <SellerPropertyGallery images={sellerPropertyImages} propertyTitle={sellerPropertyTitle} />
       </div>
-
-      <div className="relative min-h-[360px] overflow-hidden rounded-[20px] border border-[#dbe5ef] bg-[#0b2e2a] shadow-[0_18px_38px_rgba(15,23,42,0.13)] xl:min-h-[410px]">
-        {sellerPropertyImageUrl ? (
-          <img src={sellerPropertyImageUrl} alt={sellerPropertyTitle || 'Property listing'} className="absolute inset-0 h-full w-full object-cover" />
-        ) : (
-          <div className="absolute inset-0 grid place-items-center bg-[linear-gradient(135deg,#0b2e2a_0%,#173f55_58%,#f3f8f5_58%,#f3f8f5_100%)]">
-            <div className="rounded-[16px] border border-white/20 bg-white/85 px-4 py-3 text-center shadow-[0_12px_28px_rgba(15,23,42,0.16)]">
-              <Home size={26} className="mx-auto text-[#063f37]" />
-              <p className="mt-2 text-xs font-semibold uppercase tracking-[0.12em] text-[#41566c]">Property image pending</p>
-            </div>
-          </div>
-        )}
-        <div className="absolute left-4 top-4 rounded-[8px] bg-[#047857] px-3 py-1.5 text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-white shadow-[0_10px_22px_rgba(4,120,87,0.28)]">
-          {sellerStatusLabel}
-        </div>
-        {sellerPropertyImageUrl ? <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-[#071f22]/55 to-transparent" /> : null}
       </div>
     </section>
   )
 }
 
-function SellerTransactionHealthCard({ health }) {
-  const hasScore = Number.isFinite(Number(health?.score))
-  const score = hasScore ? Math.max(0, Math.min(100, Number(health.score))) : null
-  const ringColor = health?.tone === 'action' ? '#d97706' : '#047857'
+function SellerTransactionHealthCard({ health, token, workspaceNavigationScope }) {
+  const Icon = health?.tone === 'action' ? AlertTriangle : health?.tone === 'review' ? Clock3 : health?.tone === 'success' ? ShieldCheck : FileText
+  const toneClass = health?.tone === 'action'
+    ? 'bg-[#fff4e5] text-[#a85d08]'
+    : health?.tone === 'review' ? 'bg-[#edf3ff] text-[#315f9c]' : 'bg-[#e8f6f0] text-[#047857]'
 
   return (
-    <section className="rounded-[18px] border border-[#dbe5ef] bg-[linear-gradient(135deg,#f7fffb_0%,#ffffff_58%,#f7fbff_100%)] px-5 py-5 shadow-[0_14px_30px_rgba(15,23,42,0.05)]">
+    <section aria-label="Transaction Health" className="rounded-[18px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_30px_rgba(15,23,42,0.05)] sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-5">
-        <div className="flex min-w-0 items-center gap-5">
-          <div
-            className="grid h-24 w-24 shrink-0 place-items-center rounded-full"
-            style={{
-              background: hasScore ? `conic-gradient(${ringColor} ${score * 3.6}deg, #dbe5ef 0deg)` : '#e9f4f1',
-            }}
-          >
-            <div className="grid h-[76px] w-[76px] place-items-center rounded-full bg-white">
-              {hasScore ? (
-                <span className="text-[1.35rem] font-semibold text-[#123024]">{score}%</span>
-              ) : (
-                <ShieldCheck size={30} className="text-[#047857]" />
-              )}
-            </div>
-          </div>
+        <div className="flex min-w-0 flex-1 items-start gap-4">
+          <span className={`inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-[14px] ${toneClass}`}><Icon size={24} aria-hidden="true" /></span>
           <div className="min-w-0">
-            <p className="text-sm font-semibold text-[#26384d]">Transaction Health</p>
-            <h2 className="mt-1 text-[1.35rem] font-semibold tracking-[-0.03em] text-[#063f37]">{health?.label || 'On Track'}</h2>
-            <p className="mt-1 max-w-xl text-sm leading-6 text-[#52647a]">{health?.summary || 'Your sale is progressing.'}</p>
-            <p className="text-sm leading-6 text-[#52647a]">{health?.detail || 'No action required from you.'}</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#617187]">Transaction Health</p>
+            <h2 className="mt-1 text-xl font-semibold tracking-[-0.03em] text-[#102a2b]">{health?.label || 'Status unavailable'}</h2>
+            <p className="mt-1 max-w-xl text-sm leading-6 text-[#52647a]">{health?.summary}</p>
+            {health?.available ? (
+              <dl className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-sm">
+                <div className="flex gap-1.5"><dt className="order-2 text-[#52647a]">need action</dt><dd className="order-1 font-semibold text-[#a85d08]">{health.actionCount}</dd></div>
+                <div className="flex gap-1.5"><dt className="order-2 text-[#52647a]">awaiting review</dt><dd className="order-1 font-semibold text-[#315f9c]">{health.reviewCount}</dd></div>
+                <div className="flex gap-1.5"><dt className="order-2 text-[#52647a]">approved</dt><dd className="order-1 font-semibold text-[#047857]">{health.approvedCount}</dd></div>
+              </dl>
+            ) : null}
           </div>
         </div>
-        <span className="hidden h-20 w-20 items-center justify-center rounded-[22px] bg-[#e8f6f0] text-[#047857] md:inline-flex">
-          <ShieldCheck size={34} />
-        </span>
+        <SellerPortalAction action={{ label: 'View required items', to: 'documents' }} token={token} workspaceNavigationScope={workspaceNavigationScope} className="inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-[11px] bg-[#123f3a] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#0b312d] sm:w-auto" />
       </div>
     </section>
   )
 }
 
-function SellerMarketingActivity({ channels = [] }) {
+function SellerMarketingActivity({ channels = [], listing = {} }) {
+  const facts = [
+    [listing.bedrooms, 'bedrooms'],
+    [listing.bathrooms, 'bathrooms'],
+    [listing.parkingBays, 'parking bays'],
+    [listing.floorSize, 'm² floor area'],
+    [listing.erfSize, 'm² land area'],
+  ].filter(([value]) => Number(value) > 0)
   return (
     <article id="seller-marketing-activity" className="h-full rounded-[18px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_30px_rgba(15,23,42,0.05)]">
-      <SellerSectionHeading title="Marketing Activity" subtitle="Your property is shown only on channels shared by your agent." />
+      <SellerSectionHeading title="Marketing Activity" subtitle="Your listing preview and live property links." />
+      <div className="mt-5 overflow-hidden rounded-[14px] border border-[#e4ebf2] bg-white">
+        <div className="relative h-[180px] overflow-hidden sm:h-[210px]">
+          <SellerPropertyGallery images={listing.images || []} propertyTitle={listing.title} />
+        </div>
+        <div className="space-y-2 p-4">
+          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#718196]">Listing preview</p>
+          <p className="text-xl font-semibold tracking-[-0.03em] text-[#123f3a]">
+            {listing.priceOnApplication ? 'Price on application' : Number(listing.askingPrice) > 0 ? formatSellerPortalCurrency(listing.askingPrice) : 'Price not yet shared'}
+          </p>
+          <h3 className="text-base font-semibold leading-6 text-[#102032]">{listing.title || 'Your property'}</h3>
+          {facts.length ? <ul className="flex flex-wrap gap-x-4 gap-y-1 pt-1 text-xs leading-5 text-[#52647a]">{facts.map(([value, label]) => <li key={label}>{value} {label}</li>)}</ul> : null}
+        </div>
+      </div>
+      <h3 className="mt-5 text-sm font-semibold text-[#102032]">Live listing links</h3>
       {channels.length ? (
-        <div className="mt-5 space-y-2.5">
+        <div className="mt-3 space-y-2.5">
           {channels.map((channel) => (
             <div key={channel.id} className="flex items-center justify-between gap-3 rounded-[13px] border border-[#e4ebf2] bg-[#fbfdff] px-3 py-2.5">
               <div className="flex min-w-0 items-center gap-3">
@@ -7586,7 +7188,7 @@ function SellerMarketingActivity({ channels = [] }) {
                 </div>
               </div>
               {channel.href ? (
-                <a href={channel.href} target="_blank" rel="noreferrer" className="inline-flex min-h-[34px] shrink-0 items-center gap-1.5 rounded-[9px] bg-[#063f37] px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-[#052f2a]">
+                <a href={channel.href} aria-label={`View Listing on ${channel.label}`} target="_blank" rel="noreferrer" className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-[9px] bg-[#063f37] px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-[#052f2a]">
                   View Listing
                   <ExternalLink size={12} />
                 </a>
@@ -7595,8 +7197,8 @@ function SellerMarketingActivity({ channels = [] }) {
           ))}
         </div>
       ) : (
-        <div className="mt-5 rounded-[14px] border border-dashed border-[#d8e2ee] bg-[#fbfdff] px-4 py-5 text-sm leading-6 text-[#64748b]">
-          No seller-visible listing channels have been published to this portal yet.
+        <div className="mt-3 rounded-[14px] border border-dashed border-[#d8e2ee] bg-[#fbfdff] px-4 py-4 text-sm leading-6 text-[#64748b]">
+          Your agent has not shared a live listing link yet. Links will appear here once shared.
         </div>
       )}
     </article>
@@ -7606,48 +7208,38 @@ function SellerMarketingActivity({ channels = [] }) {
 function SellerListingPerformance({ performance = {} }) {
   const cards = [
     {
-      label: 'Views',
-      value: formatSellerPerformanceNumber(performance.totalViews),
-      helper: `${formatSellerPerformanceNumber(performance.portalViews)} portal / ${formatSellerPerformanceNumber(performance.bridgeViews)} Arch9`,
-      icon: BarChart3,
-    },
-    {
       label: 'Leads',
-      value: formatSellerPerformanceNumber(performance.leadCount),
-      helper: `${formatSellerPerformanceNumber(performance.newThisWeek)} new this week`,
+      value: performance.available ? formatSellerPerformanceNumber(performance.leadCount) : '—',
+      helper: performance.available ? `${formatSellerPerformanceNumber(performance.newThisWeek)} new this week` : 'Lead sync unavailable',
       icon: Users,
     },
     {
       label: 'Viewings',
-      value: formatSellerPerformanceNumber(performance.scheduledViewings),
-      helper: `${formatSellerPerformanceNumber(performance.completedViewings)} completed`,
+      value: performance.available ? formatSellerPerformanceNumber(performance.scheduledViewings) : '—',
+      helper: performance.available ? `${formatSellerPerformanceNumber(performance.upcomingViewings)} upcoming` : 'Viewing data unavailable',
       icon: CalendarClock,
     },
     {
-      label: 'Offers',
-      value: formatSellerPerformanceNumber(performance.offerCount),
-      helper: `${formatSellerPerformanceNumber(performance.pendingOffers)} active / pending`,
-      icon: HandCoins,
-    },
-    {
-      label: 'Days Mkt',
-      value: formatSellerPerformanceNumber(performance.daysOnMarket),
-      helper: performance.areaAverageDays ? `${formatSellerPerformanceNumber(performance.areaAverageDays)} day area avg` : 'Area average pending',
-      icon: Clock3,
+      label: 'Days on market',
+      value: performance.marketStartDate ? formatSellerPerformanceNumber(performance.daysOnMarket) : '—',
+      helper: !performance.marketStartDate ? 'Listing date unavailable' : performance.areaAverageDays
+        ? `Area avg. ${formatSellerPerformanceNumber(performance.areaAverageDays)}`
+        : `Listed ${formatShortPortalDate(performance.marketStartDate, '')}`,
+      icon: BarChart3,
     },
   ]
 
   return (
     <article className="rounded-[18px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_30px_rgba(15,23,42,0.05)]">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <SellerSectionHeading title="Listing Performance" subtitle="Buyer attention, viewings, and offer movement shared by your agent." />
+        <SellerSectionHeading title="Listing Performance" subtitle="Leads, viewings, and time on market from your listing overview." />
         {performance.updatedAt ? (
           <span className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-2.5 py-1 text-[0.68rem] font-semibold text-[#4f647b]">
             Updated {formatShortPortalDate(performance.updatedAt, 'recently')}
           </span>
         ) : null}
       </div>
-      <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="mt-5 grid gap-3 sm:grid-cols-3">
         {cards.map((card) => {
           const Icon = card.icon
           return (
@@ -7721,97 +7313,38 @@ function SellerJourneyTimeline({ items = [] }) {
   )
 }
 
-function SellerConversationCard({ updates = [], commentDraft = '', saving = false, onCommentDraftChange, onCommentSubmit }) {
-  const visibleUpdates = updates.slice(0, 3)
-
-  return (
-    <article className="flex h-full min-h-[390px] flex-col rounded-[18px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_30px_rgba(15,23,42,0.05)]">
-      <div className="flex items-start justify-between gap-3">
-        <SellerSectionHeading title="Ask Your Property Team" subtitle="Post a question or follow up on your latest updates." />
-        <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[11px] bg-[#e8f6f0] text-[#047857]">
-          <MessageCircle size={18} />
-        </span>
-      </div>
-
-      <div className="mt-4 max-h-[150px] space-y-2 overflow-y-auto pr-1">
-        {visibleUpdates.length ? visibleUpdates.map((update, index) => (
-          <div key={update.id || `seller-chat-update-${index}`} className="rounded-[12px] border border-[#dfeae6] bg-[#f3faf7] px-3.5 py-3">
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-xs font-semibold text-[#123f3a]">{update.authorName || update.agentName || 'Property team'}</span>
-              <span className="text-[0.68rem] text-[#7b8ca2]">{update.timestampLabel || 'Recently'}</span>
-            </div>
-            <p className="mt-1.5 line-clamp-2 text-sm leading-5 text-[#40566b]">{update.message || update.title || 'Your property team posted an update.'}</p>
-          </div>
-        )) : (
-          <div className="rounded-[12px] border border-dashed border-[#d8e2ee] bg-[#fbfdff] px-3.5 py-4 text-sm leading-6 text-[#64748b]">
-            Start a conversation with your agent or transaction team.
-          </div>
-        )}
-      </div>
-
-      <form onSubmit={onCommentSubmit} className="mt-auto border-t border-[#e5edf2] pt-4">
-        <label htmlFor="seller-team-question" className="text-xs font-semibold uppercase tracking-[0.1em] text-[#718196]">Your message</label>
-        <textarea
-          id="seller-team-question"
-          value={commentDraft}
-          onChange={(event) => onCommentDraftChange?.(event.target.value)}
-          rows={3}
-          placeholder="Ask a question or share an update..."
-          className="mt-2 w-full resize-none rounded-[12px] border border-[#dbe5ef] bg-[#fbfdff] px-3 py-2.5 text-sm leading-5 text-[#142132] outline-none transition placeholder:text-[#8ca0b8] focus:border-[#9dbbb2] focus:ring-2 focus:ring-[#dff0ea]"
-        />
-        <div className="mt-3 flex justify-end">
-          <button type="submit" disabled={saving || !String(commentDraft || '').trim()} className="inline-flex min-h-[38px] items-center gap-2 rounded-[10px] bg-[#063f37] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#052f2a] disabled:cursor-not-allowed disabled:opacity-50">
-            {saving ? 'Posting...' : 'Post message'}
-            <ArrowRight size={14} />
-          </button>
-        </div>
-      </form>
-    </article>
-  )
-}
-
 function SellerDocumentTracker({ tracker = {}, token, workspaceNavigationScope }) {
-  const percent = Math.max(0, Math.min(100, Number(tracker?.percent || 0)))
-  const total = Number(tracker?.total || 0)
-  const completed = Number(tracker?.completed || 0)
-  const pending = Number(tracker?.pending || 0)
-  const awaitingReview = Number(tracker?.awaitingReview || 0)
+  const cards = [
+    { label: 'Action needed', count: tracker.pending, icon: AlertTriangle, tone: 'bg-[#fff4e5] text-[#a85d08]', detail: 'Items requiring your attention' },
+    { label: 'Awaiting review', count: tracker.awaitingReview, icon: Clock3, tone: 'bg-[#edf3ff] text-[#315f9c]', detail: 'Submitted for your team to check' },
+    { label: 'Approved', count: tracker.completed, icon: CheckCircle2, tone: 'bg-[#e8f6f0] text-[#047857]', detail: 'Reviewed and accepted' },
+  ]
 
   return (
-    <article className="flex h-full min-h-[390px] flex-col rounded-[18px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_30px_rgba(15,23,42,0.05)]">
-      <SellerSectionHeading title="Document Tracker" subtitle="Approval progress is separate from files received for review." />
-      <div className="mt-7 flex flex-1 flex-col items-center justify-center gap-7 sm:flex-row">
-        <div className="relative grid h-36 w-36 shrink-0 place-items-center rounded-full" style={{ background: `conic-gradient(#078449 ${percent * 3.6}deg, #e4edf2 0deg)` }}>
-          <div className="grid h-[108px] w-[108px] place-items-center rounded-full bg-white text-center shadow-inner">
-            <div>
-              <strong className="block text-2xl font-semibold text-[#123f3a]">{percent}%</strong>
-              <span className="mt-0.5 block text-[0.67rem] font-semibold uppercase tracking-[0.1em] text-[#718196]">Approved</span>
-            </div>
-          </div>
-        </div>
-        <div className="w-full max-w-[260px] space-y-3">
-          <div className="flex items-center justify-between rounded-[12px] bg-[#f2faf6] px-3.5 py-3">
-            <span className="flex items-center gap-2 text-sm text-[#40566b]"><CheckCircle2 size={15} className="text-[#078449]" /> Approved</span>
-            <strong className="text-sm text-[#123f3a]">{completed}</strong>
-          </div>
-          <div className="flex items-center justify-between rounded-[12px] bg-[#f3f7fc] px-3.5 py-3">
-            <span className="flex items-center gap-2 text-sm text-[#40566b]"><Clock3 size={15} className="text-[#2f6fa4]" /> Awaiting review</span>
-            <strong className="text-sm text-[#244c6d]">{awaitingReview}</strong>
-          </div>
-          <div className="flex items-center justify-between rounded-[12px] bg-[#fff8ec] px-3.5 py-3">
-            <span className="flex items-center gap-2 text-sm text-[#40566b]"><AlertTriangle size={15} className="text-[#d97706]" /> Action needed</span>
-            <strong className="text-sm text-[#8a570f]">{pending}</strong>
-          </div>
-          <div className="flex items-center justify-between px-3.5 py-1 text-sm text-[#64748b]">
-            <span>Total tracked</span>
-            <strong className="text-[#274158]">{total}</strong>
-          </div>
-        </div>
+    <article className="rounded-[18px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_30px_rgba(15,23,42,0.05)] sm:p-6">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <SellerSectionHeading title="Document Tracker" subtitle={tracker.available ? `${Number(tracker.total || 0)} required items in your document checklist.` : 'Your document checklist is temporarily unavailable.'} />
+        <Link to={getPortalWorkspacePath(token, workspaceNavigationScope, 'documents')} className="inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-[11px] bg-[#123f3a] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#0b312d] sm:w-auto">
+          Open document centre
+          <ArrowRight size={15} aria-hidden="true" />
+        </Link>
       </div>
-      <Link to={getPortalWorkspacePath(token, workspaceNavigationScope, 'documents')} className="mt-6 inline-flex min-h-[40px] items-center justify-center gap-2 rounded-[10px] border border-[#cfe0da] bg-[#f3faf7] px-4 py-2 text-sm font-semibold text-[#047857] transition hover:bg-[#e9f6f0]">
-        Open document centre
-        <ArrowRight size={14} />
-      </Link>
+      {tracker.available ? (
+        <dl className="mt-5 grid gap-3 sm:grid-cols-3">
+          {cards.map(({ label, count, icon: Icon, tone, detail }) => (
+            <div key={label} className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] p-4">
+              <div className="flex items-center justify-between gap-3">
+                <dt className="text-sm font-semibold text-[#40566b]">{label}</dt>
+                <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-[10px] ${tone}`}><Icon size={18} aria-hidden="true" /></span>
+              </div>
+              <dd className="mt-2">
+                <span className="block text-3xl font-semibold tabular-nums tracking-[-0.04em] text-[#102a2b]">{Number(count || 0)}</span>
+                <span className="mt-1 block text-xs leading-5 text-[#64748b]">{detail}</span>
+              </dd>
+            </div>
+          ))}
+        </dl>
+      ) : null}
     </article>
   )
 }
@@ -7830,7 +7363,7 @@ function SellerSecureSupportFooter({ sellerAgentEmail }) {
           </span>
           <div>
             <p className="text-sm font-semibold text-[#102032]">Your information is secure and confidential.</p>
-            <p className="mt-0.5 text-xs leading-5 text-[#64748b]">Protected by bank-level security.</p>
+            <p className="mt-0.5 text-xs leading-5 text-[#64748b]">Access is protected by your seller portal password.</p>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-3">
@@ -7858,26 +7391,21 @@ function SellerPortalDashboard({
   sellerAgentAvatarUrl,
   sellerAgencyName,
   sellerPropertyTitle,
-  sellerPropertyImageUrl,
+  sellerPropertyImages,
   sellerStatusLabel,
   sellerHealth,
   sellerListingProgressModel,
   sellerSaleProgressModel,
   sellerTransactionJourneyModel,
   sellerListingPerformance,
+  sellerListingPreview,
   sellerMarketingChannels,
   sellerAgentUpdate,
   sellerTimelineItems,
-  sellerChatUpdates,
   sellerDocumentTracker,
-  sellerComplianceSigning,
   sellerListingUrl,
   latestAttorneyUpdate,
   legalProgress,
-  commentDraft,
-  savingComment,
-  onCommentDraftChange,
-  onCommentSubmit,
   token,
   workspaceNavigationScope,
 }) {
@@ -7894,13 +7422,13 @@ function SellerPortalDashboard({
         sellerAgentAvatarUrl={sellerAgentAvatarUrl}
         sellerAgencyName={sellerAgencyName}
         sellerPropertyTitle={sellerPropertyTitle}
-        sellerPropertyImageUrl={sellerPropertyImageUrl}
+        sellerPropertyImages={sellerPropertyImages}
         sellerStatusLabel={sellerStatusLabel}
         sellerListingUrl={sellerListingUrl}
         token={token}
         workspaceNavigationScope={workspaceNavigationScope}
       />
-      <SellerTransactionHealthCard health={sellerHealth} />
+      <SellerTransactionHealthCard health={sellerHealth} token={token} workspaceNavigationScope={workspaceNavigationScope} />
       {legalProgress?.available ? (
         <ClientLegalProgressCard model={legalProgress} />
       ) : (
@@ -7914,31 +7442,18 @@ function SellerPortalDashboard({
         workspaceNavigationScope={workspaceNavigationScope}
       />
       <SellerListingPerformance performance={sellerListingPerformance} />
-      <section className="grid gap-5 xl:grid-cols-3">
-        <SellerMarketingActivity channels={sellerMarketingChannels} />
+      <section className="grid items-stretch gap-5 xl:grid-cols-2">
+        <div className="xl:row-span-2">
+          <SellerMarketingActivity channels={sellerMarketingChannels} listing={sellerListingPreview} />
+        </div>
         <SellerAgentUpdate update={sellerAgentUpdate} />
         <SellerJourneyTimeline items={sellerTimelineItems} />
       </section>
-      <section className="grid items-stretch gap-5 xl:grid-cols-3">
-        <SellerConversationCard
-          updates={sellerChatUpdates}
-          commentDraft={commentDraft}
-          saving={savingComment}
-          onCommentDraftChange={onCommentDraftChange}
-          onCommentSubmit={onCommentSubmit}
-        />
-        <SellerCompliancePackCard
-          model={sellerComplianceSigning}
-          token={token}
-          workspaceNavigationScope={workspaceNavigationScope}
-          compact
-        />
         <SellerDocumentTracker
           tracker={sellerDocumentTracker}
           token={token}
           workspaceNavigationScope={workspaceNavigationScope}
         />
-      </section>
       <SellerSecureSupportFooter sellerAgentEmail={sellerAgentEmail} />
     </section>
   )
@@ -8546,141 +8061,6 @@ function BuyerPortalDashboard({
   )
 }
 
-function SellerPortalPasswordGate({
-  authState = {},
-  form,
-  feedback = '',
-  notice = '',
-  saving = false,
-  recoveryRequesting = false,
-  termsConfig = getSellerPortalActivationTermsConfig(),
-  onChange,
-  onRequestRecovery,
-  onSubmit,
-}) {
-  const passwordSet = Boolean(authState?.passwordSet)
-  const recoveryMode = authState?.tokenKind === 'recovery'
-  const sessionExpired = Boolean(authState?.sessionExpired)
-  const title = recoveryMode ? 'Reset your seller portal password' : passwordSet ? 'Enter your seller portal password' : 'Set your seller portal password'
-  const description = recoveryMode
-    ? 'Create a new password to secure your seller portal. This recovery link can only be used once.'
-    : passwordSet
-    ? sessionExpired
-      ? 'Your secure session ended. Enter your password to continue—your portal link is still active.'
-      : 'Use the password you created for this seller portal.'
-    : 'Create a password before opening your seller portal and document centre.'
-  const propertyTitle = String(authState?.propertyTitle || '').trim()
-  const sellerEmail = String(authState?.sellerEmail || '').trim()
-  const sellerTermsConfig = termsConfig || getSellerPortalActivationTermsConfig()
-
-  return (
-    <main className="min-h-screen bg-[#f3f6fb] px-5 py-8 md:px-8">
-      <section className="mx-auto max-w-[760px] rounded-[24px] border border-[#dbe5ef] bg-white px-6 py-7 shadow-[0_16px_34px_rgba(15,23,42,0.06)]">
-        <div className="flex items-start gap-4">
-          <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-[16px] bg-[#eaf2fb] text-[#2f5478]">
-            <KeyRound size={22} aria-hidden="true" />
-          </span>
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#6b7d93]">Seller portal</p>
-            <h1 className="mt-1 text-[1.35rem] font-semibold tracking-[-0.02em] text-[#142132]">{title}</h1>
-            <p className="mt-2 text-sm leading-6 text-[#5f7288]">{description}</p>
-          </div>
-        </div>
-
-        {propertyTitle || sellerEmail ? (
-          <div className="mt-5 rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4">
-            {propertyTitle ? <strong className="block text-sm font-semibold text-[#142132]">{propertyTitle}</strong> : null}
-            {sellerEmail ? <p className="mt-1 text-sm leading-6 text-[#6b7d93]">{sellerEmail}</p> : null}
-          </div>
-        ) : null}
-
-        <form className="mt-6 space-y-4" onSubmit={onSubmit}>
-          <label className="block">
-            <span className="text-sm font-semibold text-[#24364a]">Password</span>
-            <input
-              type="password"
-              value={form.password}
-              onChange={(event) => onChange('password', event.target.value)}
-              autoComplete={passwordSet && !recoveryMode ? 'current-password' : 'new-password'}
-              className="mt-2 h-12 w-full rounded-[14px] border border-[#dbe5ef] bg-white px-4 text-sm text-[#142132] outline-none transition focus:border-[#7ea1c4] focus:ring-4 focus:ring-[#d9e9f8]"
-              placeholder="At least 8 characters"
-            />
-          </label>
-
-          {!passwordSet || recoveryMode ? (
-            <label className="block">
-              <span className="text-sm font-semibold text-[#24364a]">Confirm password</span>
-              <input
-                type="password"
-                value={form.confirmPassword}
-                onChange={(event) => onChange('confirmPassword', event.target.value)}
-                autoComplete="new-password"
-                className="mt-2 h-12 w-full rounded-[14px] border border-[#dbe5ef] bg-white px-4 text-sm text-[#142132] outline-none transition focus:border-[#7ea1c4] focus:ring-4 focus:ring-[#d9e9f8]"
-                placeholder="Re-enter password"
-              />
-            </label>
-          ) : null}
-
-          {!passwordSet && !recoveryMode ? (
-            <label className="flex items-start gap-3 rounded-[16px] border border-[#dbe5ef] bg-[#fbfdff] px-4 py-4">
-              <input
-                type="checkbox"
-                checked={Boolean(form.termsAccepted)}
-                onChange={(event) => onChange('termsAccepted', event.target.checked)}
-                className="mt-1 h-4 w-4 rounded border-[#b8c7d8] text-[#2f5478] focus:ring-[#9eb9d4]"
-              />
-              <span className="text-sm leading-6 text-[#425970]">
-                <strong className="block text-[#142132]">{sellerTermsConfig.title}</strong>
-                {sellerTermsConfig.body}
-                <span className="mt-2 block font-semibold text-[#24364a]">{sellerTermsConfig.checkboxLabel}</span>
-                <span className="mt-3 block">
-                  <strong className="block text-[#142132]">{sellerTermsConfig.sellerTermsTitle}</strong>
-                  {sellerTermsConfig.sellerTermsBody}
-                </span>
-                <span className="mt-2 block">{sellerTermsConfig.popiBody}</span>
-                <span className="mt-2 block text-xs font-semibold text-[#64748b]">
-                  Version {sellerTermsConfig.wordingVersion}
-                </span>
-              </span>
-            </label>
-          ) : null}
-
-          {feedback ? (
-            <div className="flex items-start gap-2 rounded-[14px] border border-[#f1d4cf] bg-[#fff8f6] px-3 py-3 text-sm leading-6 text-[#b42318]">
-              <AlertTriangle size={17} className="mt-0.5 shrink-0" aria-hidden="true" />
-              <span>{feedback}</span>
-            </div>
-          ) : null}
-
-          {notice ? (
-            <div className="rounded-[14px] border border-[#cfe8d8] bg-[#f2fbf5] px-3 py-3 text-sm leading-6 text-[#1f7d44]">
-              {notice}
-            </div>
-          ) : null}
-
-          <button
-            type="submit"
-            disabled={saving}
-            className="inline-flex min-h-[44px] w-full items-center justify-center gap-2 rounded-[14px] bg-[#2f5478] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#244463] disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            <ShieldCheck size={18} aria-hidden="true" />
-            {saving ? 'Saving password...' : recoveryMode ? 'Reset password and continue' : passwordSet ? 'Open seller portal' : 'Set password and open portal'}
-          </button>
-          {passwordSet && !recoveryMode ? (
-            <button
-              type="button"
-              disabled={recoveryRequesting}
-              onClick={onRequestRecovery}
-              className="w-full text-center text-sm font-semibold text-[#2f5478] underline-offset-4 hover:underline disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {recoveryRequesting ? 'Requesting secure reset...' : 'Forgot your password?'}
-            </button>
-          ) : null}
-        </form>
-      </section>
-    </main>
-  )
-}
 
 function ClientPortal() {
   const { token = '', section: routeSection = '' } = useParams()
@@ -8760,6 +8140,7 @@ function ClientPortal() {
   })
   const portalContextsRef = useRef({ contexts: [], hasBuyingContext: true, hasSellingContext: false })
   const portalLoadRequestRef = useRef(0)
+  const [sellerOverviewStats, setSellerOverviewStats] = useState(null)
   const portalDetailsRefreshRef = useRef({ scope: null, at: 0 })
   const portalMessageRequestRef = useRef(null)
   const portalLoadScopeRef = useRef('')
@@ -8810,10 +8191,65 @@ function ClientPortal() {
     isDemo: isDemoRoute,
   })
 
+  const sellerPerformanceScope = `${token}:${sellerListingSyncId}:${sellerPortalAccessToken}`
+  const sellerPerformanceScopeRef = useRef(sellerPerformanceScope)
+  sellerPerformanceScopeRef.current = sellerPerformanceScope
+  const refreshSellerPerformance = useCallback(async () => {
+    const scope = sellerPerformanceScope
+    const args = { token, accessToken: sellerPortalAccessToken, listingId: sellerListingSyncId }
+    const [metrics, context] = await Promise.allSettled([
+      getSellerListingOverviewPerformance(args), getSellerListingOverviewContext(args),
+    ])
+    if (sellerPerformanceScopeRef.current === scope) setSellerOverviewStats({
+      ...(metrics.status === 'fulfilled' ? metrics.value : { available: false }),
+      context: context.status === 'fulfilled' ? context.value : null,
+      scope,
+    })
+    return metrics.status === 'fulfilled' && context.status === 'fulfilled'
+  }, [sellerPerformanceScope, token, sellerPortalAccessToken, sellerListingSyncId])
+  usePortalWorkspaceRefresh({
+    enabled: !isDemoRoute && Boolean(sellerPortalAccessToken && sellerListingSyncId),
+    onRefresh: refreshSellerPerformance,
+    pollingIntervalMs: 45_000,
+    refreshOnMount: true,
+    scopeKey: sellerPerformanceScope,
+  })
+
+  const sellerOverviewContext = sellerOverviewStats?.scope === sellerPerformanceScope ? sellerOverviewStats.context : null
+
   const requestedSection = useMemo(
     () => getPortalSectionFromRoute(location.pathname, routeSection),
     [location.pathname, routeSection],
   )
+
+  const handleSellerDeviceSignOut = useCallback(() => {
+    // Fence pending hydration before clearing private state.
+    portalLoadRequestRef.current += 1
+    clearSellerPortalAccessToken(token)
+    setSellerPortalAccessToken('')
+    setPortal(null)
+    setWorkspaceData(null)
+    setSellerOverviewStats(null)
+    setMyDetailsDraft({})
+    setCommentDraft('')
+    setSellerPortalPasswordForm({ password: '', confirmPassword: '', termsAccepted: false })
+    setSellerPortalPasswordFeedback('')
+    setSellerPortalRecoveryNotice('You have signed out on this device.')
+    setSellerPortalAuth({ authRequired: true, passwordSet: true })
+    setLoading(false)
+    setHydratingPortal(false)
+  }, [token])
+
+  useEffect(() => {
+    if (!isSellerPortalToken) return undefined
+    const onStorageChange = (event) => {
+      if ((event.key === null || event.key === `bridge:seller-portal-access:${token}`) && !getStoredSellerPortalAccessToken(token)) {
+        handleSellerDeviceSignOut()
+      }
+    }
+    window.addEventListener('storage', onStorageChange)
+    return () => window.removeEventListener('storage', onStorageChange)
+  }, [handleSellerDeviceSignOut, isSellerPortalToken, token])
 
   useEffect(() => {
     setSellerPortalAccessToken(getStoredSellerPortalAccessToken(token))
@@ -8911,10 +8347,9 @@ function ClientPortal() {
           isDemoRoute
             ? getProspectDemoClientPortalWorkspaceData(token, portalDataWorkspace)
             : getClientPortalWorkspaceData(token, portalDataWorkspace, {
-                // Background refreshes keep the journey and shell fresh. Deep
-                // document, activity, and branding hydration belongs to the
-                // workspace that explicitly asks for it.
-                mode: 'core',
+                // Seller overview cards need the complete authorised document
+                // and appointment snapshot on every reconciliation.
+                mode: isSellerPortalToken ? 'full' : 'core',
                 sellerPortalAccessToken: isSellerPortalToken ? effectiveSellerPortalAccessToken : '',
               }),
           { phase: 'background', timeoutMs: CLIENT_PORTAL_BACKGROUND_LOAD_TIMEOUT_MS },
@@ -8988,11 +8423,10 @@ function ClientPortal() {
         durationMs: Date.now() - startedAt,
       })
 
-      // Overview and progress render from the canonical journey in the core
-      // snapshot. Do not compete with that read by immediately loading every
-      // optional portal dataset. A direct document, account, or details route
-      // still requests the full workspace below.
-      if (['', 'overview', 'progress'].includes(String(requestedSection || '').toLowerCase())) {
+      // First paint stays fast. Seller cards then hydrate the complete secure
+      // workspace, so uploads and approvals are never inferred from core data.
+      // Buyer overview/progress retain their existing lightweight entry path.
+      if (!isSellerPortalToken && ['', 'overview', 'progress'].includes(String(requestedSection || '').toLowerCase())) {
         markRouteMilestone('interactive_ready')
         return coreData
       }
@@ -9113,7 +8547,7 @@ function ClientPortal() {
     }
 
     if (!passwordSet && !recoveryMode && !sellerPortalPasswordForm.termsAccepted) {
-      setSellerPortalPasswordFeedback('Accept the Seller Portal Terms and fee disclosure before activating your portal.')
+      setSellerPortalPasswordFeedback('Please accept the terms and privacy consent before continuing.')
       return
     }
 
@@ -9273,16 +8707,21 @@ function ClientPortal() {
               ...previous.transactionJourneySnapshot, legalJourney: snapshot.legalJourney,
             } } : previous)
           }
-          return false
+          // A matter may exist before its legal journey is available. Keep
+          // listing milestones and agent updates fresh through bounded reads
+          // of the same authorised workspace, even during that transition.
+          refreshDetails = shouldRefreshPortalDetails({ lastFullReadAt: portalDetailsRefreshRef.current.at })
+          if (!refreshDetails) return false
+        } else {
+          refreshDetails = shouldRefreshPortalDetails({
+            previousRevision: workspaceData?.transactionJourneySnapshot?.legalJourney?.snapshot?.revision,
+            revision: snapshot.legalJourney.snapshot.revision,
+            lastFullReadAt: portalDetailsRefreshRef.current.at,
+          })
+          setWorkspaceData(previous => previous?.legacyPortalData?.transaction?.id === snapshot?.transactionId
+            ? selectStablePortalWorkspace(previous, { ...previous, transactionJourneySnapshot: { ...previous.transactionJourneySnapshot, transactionId: snapshot.transactionId, legalJourney: snapshot.legalJourney } })
+            : previous)
         }
-        refreshDetails = shouldRefreshPortalDetails({
-          previousRevision: workspaceData?.transactionJourneySnapshot?.legalJourney?.snapshot?.revision,
-          revision: snapshot.legalJourney.snapshot.revision,
-          lastFullReadAt: portalDetailsRefreshRef.current.at,
-        })
-        setWorkspaceData(previous => previous?.legacyPortalData?.transaction?.id === snapshot?.transactionId
-          ? selectStablePortalWorkspace(previous, { ...previous, transactionJourneySnapshot: { ...previous.transactionJourneySnapshot, transactionId: snapshot.transactionId, legalJourney: snapshot.legalJourney } })
-          : previous)
       } catch {
         // Let the full loader enforce expired seller sessions/denied access at
         // the bounded reconciliation interval, not on every failing poll.
@@ -10688,6 +10127,7 @@ function ClientPortal() {
 
   const sectionEnabled = {
     overview: true,
+    listing_marketing: requestedWorkspace === 'seller',
     progress: true,
     appointments: true,
     offers: false,
@@ -10924,6 +10364,7 @@ function ClientPortal() {
   if (sellerPortalAuth?.authRequired) {
     return (
       <SellerPortalPasswordGate
+        token={token}
         authState={sellerPortalAuth}
         form={sellerPortalPasswordForm}
         feedback={sellerPortalPasswordFeedback}
@@ -10947,7 +10388,7 @@ function ClientPortal() {
             {error || 'Your portal link may be invalid, expired, or temporarily unavailable.'}
           </p>
           <p className="mt-1 text-sm leading-6 text-[#5f7288]">
-            Please retry now. If this continues, contact your property representative for a new secure link.
+            Please retry now. If loading continues to fail, contact your property representative for help. A temporary loading failure does not mean you need a new secure link.
           </p>
           <div className="mt-4 flex flex-wrap gap-2">
             <button
@@ -11065,6 +10506,7 @@ function ClientPortal() {
 
   const workspaceSection = activeSection
   const isOverview = workspaceSection === 'overview'
+  const isListingMarketing = effectiveWorkspace === 'seller' && workspaceSection === 'listing_marketing'
   const isProgress = workspaceSection === 'progress'
   const isOffers = workspaceSection === 'offers'
   const isAppointments = workspaceSection === 'appointments'
@@ -12542,11 +11984,7 @@ function ClientPortal() {
   }).length
   const sidebarStatusByKey = {
     documents: effectiveWorkspace === 'seller'
-      ? (sellerDocumentSummary.actionRequired > 0
-          ? `${sellerDocumentSummary.actionRequired} need attention`
-          : sellerDocumentSummary.reviewRequired > 0
-            ? `${sellerDocumentSummary.reviewRequired} in review`
-            : 'Ready')
+      ? null
       : (missingRequired > 0 ? `${missingRequired} required` : 'Ready'),
     account: matterAccountsState.loading
       ? 'Loading'
@@ -12676,7 +12114,7 @@ function ClientPortal() {
     portal?.branding?.agencyName,
     portal?.branding?.organisationName,
     portal?.unit?.development?.developer_company,
-    'Arch9',
+    'Your agency',
   )
   const sellerAgencyLogoUrl = pickFirstText(
     portal?.listing?.agencyLogoLightUrl,
@@ -12728,19 +12166,42 @@ function ClientPortal() {
     activeSellingContext?.agencyLogoUrl,
     activeSellingContext?.agency_logo_url,
   )
-  const sellerAgentName = pickFirstText(
+  // Use the logo intended for dark backgrounds in the sidebar.
+  const sellerAgencyLogoDarkUrl = pickFirstText(
+    portal?.listing?.agencyLogoDarkUrl,
+    portal?.listing?.agency_logo_dark_url,
+    portal?.listing?.organisationLogoDarkUrl,
+    portal?.listing?.organisation_logo_dark_url,
+    portal?.listing?.branding?.logoDarkUrl,
+    portal?.listing?.branding?.logoDark,
+    portal?.listing?.branding?.logo_dark_url,
+    activeSellingContext?.agencyLogoDarkUrl,
+    activeSellingContext?.agency_logo_dark_url,
+    activeSellingContext?.branding?.logoDarkUrl,
+    activeSellingContext?.branding?.logoDark,
+    activeSellingContext?.branding?.logo_dark_url,
+    portal?.branding?.logoDarkUrl,
+    portal?.branding?.logoDark,
+    portal?.branding?.logo_dark_url,
+    sellerAgencyLogoUrl,
+  )
+  const sellerAgentName = isSellerPortalToken ? String(sellerOverviewContext?.agent?.name || '').trim() : pickFirstText(
+    sellerOverviewContext?.agent?.name,
+    portal?.listing?.assignedAgentName,
     portal?.transaction?.assigned_agent,
     activeSellingContext?.assignedAgentName,
     activeSellingContext?.assigned_agent_name,
-    sellerAgencyName,
   )
-  const sellerAgentEmail = pickFirstText(
+  const sellerAgentEmail = sellerContactEmail(isSellerPortalToken ? String(sellerOverviewContext?.agent?.email || '').trim() : pickFirstText(
+    sellerOverviewContext?.agent?.email,
+    portal?.listing?.assignedAgentEmail,
     portal?.transaction?.assigned_agent_email,
     activeSellingContext?.assignedAgentEmail,
     activeSellingContext?.assigned_agent_email,
-    portal?.buyer?.email,
-  )
-  const sellerAgentPhone = pickFirstText(
+  ))
+  const sellerAgentPhone = isSellerPortalToken ? String(sellerOverviewContext?.agent?.phone || '').trim() : pickFirstText(
+    sellerOverviewContext?.agent?.phone,
+    portal?.listing?.assignedAgentPhone,
     portal?.transaction?.assigned_agent_phone,
     portal?.transaction?.agent_phone,
     activeSellingContext?.assignedAgentPhone,
@@ -12888,7 +12349,8 @@ function ClientPortal() {
     propertyAddress: sellerPropertyTitle,
     uploadedDocuments: sellerUploadedDocuments,
   })
-  const sellerPrimaryNextAction = workspaceNextActions.find((action) => action?.blocking) || workspaceNextActions[0] || null
+  const sellerClientNextActions = workspaceNextActions.filter((action) => !isSellerTeamManagedDocument(action))
+  const sellerPrimaryNextAction = sellerClientNextActions.find((action) => action?.blocking) || sellerClientNextActions[0] || null
   const pendingSellerAppointment = clientVisibleAppointments.find((appointment) => {
     const status = normalizePortalStatus(appointment?.status)
     return ['pending', 'proposed', 'awaiting_confirmation'].includes(status)
@@ -12957,59 +12419,51 @@ function ClientPortal() {
       tone: 'info',
     }
   })()
-  const safeSellerActivityItems = latestJourneyFeedItems
+  const safeSellerActivityItems = [
+    ...(sellerOverviewContext?.activity || []).map((item, index) => buildClientJourneyFeedItem(item, index)),
+    ...latestJourneyFeedItems,
+  ]
+    .filter((item, index, items) => items.findIndex((candidate) => candidate.id === item.id) === index)
     .filter((item) => {
       const haystack = `${item.message || ''} ${item.contextLabel || ''}`.toLowerCase()
       if (/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(haystack)) return false
+      if (/\b[a-z]+(?:_[a-z]+){2,}\b/i.test(haystack)) return false
       return !/(internal|system|admin|workflow|supabase|row id|debug|rls|stage key)/i.test(haystack)
     })
     .slice(0, 5)
-  const sellerActivityFallbackItems = [
-    ['Listed', 'Offers', 'Offer Accepted', 'Transfer', 'Registered'].includes(sellerCurrentStage)
-      ? {
-          id: 'seller-listed-activity',
-          message: 'Your property has been listed.',
-          timestampLabel: formatShortPortalDate(
-            activeSellingContext?.listingPublishedAt ||
-              activeSellingContext?.listing_published_at ||
-              activeSellingContext?.listingCreatedAt ||
-              activeSellingContext?.listing_created_at ||
-              portal?.unit?.published_at ||
-              portal?.unit?.created_at,
-            'Recently',
-          ),
-        }
-      : null,
-    sellerUploadedDocuments.length > 0
-      ? {
-          id: 'seller-documents-activity',
-          message: `${sellerUploadedDocuments.length} document${sellerUploadedDocuments.length === 1 ? '' : 's'} uploaded to your workspace.`,
-          timestampLabel: 'Recently',
-        }
-      : null,
-    upcomingAppointmentCount > 0
-      ? {
-          id: 'seller-appointment-activity',
-          message: 'Appointment scheduled with your agent.',
-          timestampLabel: 'Recently',
-        }
-      : null,
-  ].filter(Boolean)
-  const sellerActivityItems = safeSellerActivityItems.length ? safeSellerActivityItems : sellerActivityFallbackItems
+  const sellerActivityItems = safeSellerActivityItems
   const sellerPropertyImageUrl = resolveSellerPropertyImageUrl({
     portal,
     activeSellingContext,
     formData: sellerOnboardingFormData,
+  })
+  const sellerPropertyImages = resolveListingPropertyImages({
+    listing: portal?.listing,
+    activeSellingContext,
+    unit: portal?.unit,
+    formData: sellerOnboardingFormData,
+    coverImageUrl: sellerPropertyImageUrl,
   })
   const buyerPropertyImageUrl = resolveSellerPropertyImageUrl({
     portal,
     activeSellingContext,
     formData: portal?.onboardingFormData?.formData || {},
   })
-  const sellerAgentAvatarUrl = resolveSellerAgentAvatarUrl({ portal, activeSellingContext })
+  const sellerAgentAvatarUrl = isSellerPortalToken ? sellerOverviewContext?.agent?.avatarUrl || '' : resolveSellerAgentAvatarUrl({ portal, activeSellingContext })
   const sellerListingUrl = sellerVisibleListingLinks[0]?.url || ''
   const sellerMarketingChannels = buildSellerMarketingChannels(sellerVisibleListingLinks, sellerAgencyLogoUrl)
+  const sellerListingPreview = {
+    ...(portal?.listing?.propertyDetails || {}),
+    title: sellerPropertyTitle,
+    headline: portal?.listing?.propertyDetails?.headline || '',
+    listingDate: resolveListingOverviewMarketStartDate(portal?.listing || {}, portal?.listing?.propertyDetails || {}),
+    description: pickFirstText(portal?.listing?.marketing?.description, portal?.listing?.propertyDetails?.description, portal?.listing?.description),
+    images: sellerPropertyImages,
+    askingPrice: Number(portal?.listing?.askingPrice || activeSellingContext?.askingPrice || portal?.unit?.price || 0),
+    priceOnApplication: String(portal?.listing?.pricePresentation || portal?.listing?.propertyDetails?.pricePresentation || '').toLowerCase() === 'poa',
+  }
   const sellerDocumentTracker = {
+    available: Boolean(workspaceData?.documentCenter) && !workspaceData?.documentCenter?.loadError,
     total: sellerDocumentSummary.total,
     completed: sellerDocumentSummary.approved,
     pending: sellerDocumentSummary.actionRequired,
@@ -13024,22 +12478,24 @@ function ClientPortal() {
     ? { ...workspaceData?.legalProgress, sharedJourney: workspaceData?.transactionJourneySnapshot?.legalJourney }
     : null
   const sellerLatestAttorneyUpdate = hasLinkedSellerTransaction ? latestAttorneyUpdate : null
-  const sellerListingPerformance = normalizeSellerListingPerformancePayload(
-    portal?.listing?.listingPerformance,
-    portal?.listing?.listing_performance,
-    activeSellingContext?.listingPerformance,
-    activeSellingContext?.listing_performance,
-    portal?.activeSellingContext?.listingPerformance,
-    portal?.activeSellingContext?.listing_performance,
-  )
+  const sellerPerformanceData = sellerOverviewStats?.scope === sellerPerformanceScope ? sellerOverviewStats : null
+  const sellerMarketStartDate = resolveListingOverviewMarketStartDate(portal?.listing || {}, portal?.listing?.propertyDetails || {})
+  const sellerListingPerformance = {
+    ...buildListingOverviewPerformance({
+      leads: sellerPerformanceData?.leads || [],
+      viewings: sellerPerformanceData?.viewings || [],
+      marketStartDate: sellerMarketStartDate,
+      daysOnMarket: getListingOverviewDaysOnMarket(sellerMarketStartDate),
+      areaAverageDays: Number(portal?.listing?.market?.areaAverageDaysOnMarket || portal?.listing?.areaAverageDaysOnMarket || 0),
+    }),
+    available: sellerPerformanceData?.available === true,
+    updatedAt: sellerPerformanceData?.updatedAt || '',
+    channelLeads: sellerPerformanceData?.channelLeads || null,
+  }
   const sellerHealth = buildSellerTransactionHealth({
-    hasOnboardingSubmitted: hasSellerOnboardingSubmitted,
-    hasMandatePacket,
-    hasMandateSigned,
-    hasListingCreated,
-    hasDocumentsComplete,
-    documentsNeedingAttention: sellerDocumentsNeedingAttention,
-    sellerPrimaryNextAction,
+    documentSummary: sellerDocumentSummary,
+    available: Boolean(workspaceData?.documentCenter),
+    loadError: workspaceData?.documentCenter?.loadError || '',
   })
   const sellerDashboardStatusLabel = resolveSellerStatusLabel({
     sellerStageMeta,
@@ -13049,22 +12505,9 @@ function ClientPortal() {
   const sellerAgentUpdate = buildSellerAgentUpdate({
     items: sellerActivityItems,
     sellerAgentName,
-    sellerAgencyName,
     sellerAgentAvatarUrl,
   })
   const sellerTimelineItems = buildSellerJourneyTimelineItems(sellerActivityItems)
-  const sellerTransactionStageKey = resolveSellerTransactionStageKey(
-    workspaceData?.transactionJourneySnapshot?.currentMilestoneKey,
-    portal?.transaction?.stage,
-    portal?.transaction?.detailed_stage,
-    portal?.transaction?.current_stage,
-    portal?.transaction?.current_main_stage,
-    portal?.transaction?.currentMainStage,
-    sellerStageMeta?.currentStageKey,
-    sellerStageMeta?.currentStage?.key,
-    sellerSaleProgressModel?.currentKey,
-    mainStage,
-  )
   const sellerProgressParticipants = [
     sellerAgentName
       ? {
@@ -13092,6 +12535,7 @@ function ClientPortal() {
             transferAttorneyRolePlayer?.firm?.email,
             portal?.transaction?.assigned_attorney_email,
           ),
+          phone: pickFirstText(transferAttorneyRolePlayer?.attorneyUser?.phone, transferAttorneyRolePlayer?.primaryAttorney?.phone, transferAttorneyRolePlayer?.firm?.phone),
           avatarUrl: pickFirstText(
             transferAttorneyRolePlayer?.attorneyUser?.avatarUrl,
             transferAttorneyRolePlayer?.attorneyUser?.avatar_url,
@@ -13099,36 +12543,32 @@ function ClientPortal() {
           ),
         }
       : null,
-    hasLinkedSellerTransaction && (portal?.transaction?.bond_originator || portal?.transaction?.assigned_bond_originator_email)
-      ? {
-          role: 'Bond Originator',
-          name: pickFirstText(portal?.transaction?.bond_originator, 'Bond Originator'),
-          company: pickFirstText(portal?.transaction?.bond_originator_company),
-          email: pickFirstText(portal?.transaction?.assigned_bond_originator_email),
-          avatarUrl: pickFirstText(portal?.transaction?.bond_originator_avatar_url),
-        }
+    hasLinkedSellerTransaction && transferAttorneyRolePlayer?.secretary?.name
+      ? { role: 'Conveyancing Secretary', name: transferAttorneyRolePlayer.secretary.name,
+          company: transferAttorneyRolePlayer?.firm?.name || '',
+          email: transferAttorneyRolePlayer.secretary.email || '', phone: transferAttorneyRolePlayer.secretary.phone || '',
+          avatarUrl: transferAttorneyRolePlayer.secretary.avatarUrl || transferAttorneyRolePlayer.secretary.avatar_url || '' }
       : null,
   ].filter((participant) => participant?.name)
   const sellerTeamPresentationModel = buildBuyerTeamPresentationModel({
     source: 'seller',
-    members: sellerProgressParticipants.map((participant, index) => ({
+    members: sellerProgressParticipants.map((participant) => ({
       ...participant,
       id: `${participant.role}-${participant.email || participant.name}`,
-      isMainContact: index === 0,
-      isActive: index === 0,
+      isMainContact: participant.role === 'Estate Agent',
       description: participant.role === 'Estate Agent'
-        ? 'Coordinates listing activity, viewings, offers, and seller communication.'
+        ? 'Coordinates your listing, viewings, documents and sale progress.'
         : 'Supports the legal work once an offer is accepted and the sale progresses.',
     })),
     heading: 'Your property team',
-    description: 'The people supporting your listing, offers, documents, and sale journey.',
+    description: 'Your contacts for listing updates, documents and transfer.',
     contactTopic: 'property sale',
     messagePlaceholder: 'Ask about your listing, offers, documents, or sale journey...',
     currentProcess: {
       title: sellerCurrentStage || 'Listing progress',
       helper: sellerWorkflowProjection.isTransaction
         ? 'Your sale is progressing through the transaction milestones.'
-        : 'Your listing is live and your agent will share buyer interest and offers here.',
+        : sellerListingProgressModel?.helperMessage || 'Your agent will share the next listing update here.',
       status: sellerWorkflowProjection.isTransaction ? 'Transaction active' : 'Listing active',
     },
   })
@@ -13136,6 +12576,26 @@ function ClientPortal() {
     ...sellerNextStep,
     href: sellerNextStep?.href || getPortalWorkspacePath(token, workspaceNavigationScope, sellerNextStep?.to || 'documents'),
   }
+  const sellerProgressPage = <SellerProgressPage
+    isTransaction={hasLinkedSellerTransaction}
+    listingProgress={sellerListingProgressModel}
+    transactionJourney={sellerTransactionJourneyModel}
+    transferJourney={clientTransferJourneyModel}
+    propertyTitle={sellerPropertyTitle}
+    propertyImageUrl={sellerPropertyImageUrl}
+    partyName={sellerDisplayName}
+    askingPriceLabel={sellerListingPreview.priceOnApplication ? 'Price on application' : sellerListingPreview.askingPrice > 0 ? formatSellerPortalCurrency(sellerListingPreview.askingPrice) : 'Price not yet shared'}
+    salePriceLabel={purchasePriceLabel}
+    agentName={sellerAgentName}
+    attorneyName={pickFirstText(transferAttorneyRolePlayer?.attorneyUser?.name, transferAttorneyRolePlayer?.primaryAttorney?.name, portal?.transaction?.attorney)}
+    attorneyFirm={pickFirstText(transferAttorneyRolePlayer?.firm?.name, portal?.transaction?.attorney_firm)}
+    agentUpdate={sellerAgentUpdate}
+    nextAction={sellerProgressAction}
+    gate={sellerSaleJourneyGate}
+    documentsPath={getPortalWorkspacePath(token, workspaceNavigationScope, 'documents')}
+    marketingPath={getPortalWorkspacePath(token, workspaceNavigationScope, 'listing_marketing')}
+    theme={buyerPortalTheme}
+  />
   const sellerMobileResolvedIndex = shouldUseSharedSellerListingProgress
     ? resolveSellerMobileJourneyIndex(
         sharedSellerPortalJourney?.currentStage?.key,
@@ -13922,10 +13382,13 @@ function ClientPortal() {
             workspaceNavigationScope={workspaceNavigationScope}
             activeSection={activeSection}
             documentCenter={workspaceData?.documentCenter || {}}
+            sellerFirstName={sellerFirstName}
+            sellerAgentAvatarUrl={sellerAgentAvatarUrl}
             sellerAgencyName={sellerAgencyName}
             sellerAgencyLogoUrl={sellerAgencyLogoUrl}
             sellerPropertyTitle={sellerPropertyTitle}
             sellerPropertyImageUrl={sellerPropertyImageUrl}
+            sellerPropertyImages={sellerPropertyImages}
             sellerStatusLabel={sellerDashboardStatusLabel}
             sellerProgressPercent={sellerMobileProgressPercent}
             sellerStepLabel={sellerMobileStepLabel}
@@ -13946,6 +13409,19 @@ function ClientPortal() {
             sellerAgentPhone={sellerAgentPhone}
             sellerDocumentsNeedingAttention={sellerDocumentsNeedingAttention}
             sellerDocumentTracker={sellerDocumentTracker}
+            sellerHealth={sellerHealth}
+            sellerListingPerformance={sellerListingPerformance}
+            sellerListingProgressModel={sellerListingProgressModel}
+            sellerSaleProgressModel={sellerSaleProgressModel}
+            sellerTransactionJourneyModel={sellerTransactionJourneyModel}
+            sellerProgressPage={sellerProgressPage}
+            sellerTeamModel={sellerTeamPresentationModel}
+            sellerHasTransaction={hasLinkedSellerTransaction}
+            sellerDetailsSections={sellerDetailsSections}
+            onSignOut={isSellerPortalToken ? handleSellerDeviceSignOut : undefined}
+            sellerAppointmentsPage={<ClientAppointmentsSection appointments={clientVisibleAppointments} workspace="selling" documentCenter={workspaceData?.documentCenter || {}} pendingAction={appointmentActionPending} feedbackMessage={appointmentFeedback} onConfirmAppointment={(appointment) => { void handleRespondToAppointment(appointment, 'confirm') }} onDeclineAppointment={(appointment) => { void handleRespondToAppointment(appointment, 'decline') }} onRequestReschedule={(appointment, payload) => { void handleRespondToAppointment(appointment, 'reschedule', payload || {}) }} />}
+            sellerListingPreview={sellerListingPreview}
+            sellerMarketingChannels={sellerMarketingChannels}
             sellerActivityItems={sellerActivityItems}
             uploadingDocumentKey={uploadingDocumentKey}
             openingDocumentPath={openingDocumentPath}
@@ -14056,16 +13532,15 @@ function ClientPortal() {
           <div className={`border-b border-white/10 ${effectiveWorkspace === 'seller' ? 'pb-3 pt-[1.2rem]' : 'pb-5'}`}>
             {effectiveWorkspace === 'seller' ? (
               <div className="min-h-[72px]">
-                {sellerAgencyLogoUrl ? (
+                {sellerAgencyLogoDarkUrl ? (
                   <img
-                    src={sellerAgencyLogoUrl}
+                    src={sellerAgencyLogoDarkUrl}
                     alt={`${sellerAgencyName || 'Agency'} logo`}
-                    className="max-h-14 max-w-[210px] object-contain object-left"
+                    className="h-auto max-h-20 w-full object-contain object-left"
                   />
                 ) : (
                   <h1 className="text-[2rem] font-bold leading-tight tracking-[-0.04em] text-[#f8fbff]">{sellerAgencyName || 'Seller Portal'}</h1>
                 )}
-                <p className="mt-2 text-[0.82rem] tracking-[0.02em] text-[#c8d5e3]">Seller Portal</p>
               </div>
             ) : (
             <>
@@ -14142,6 +13617,7 @@ function ClientPortal() {
                       My Details
                     </Link>
                   ) : null}
+                  {isSellerPortalToken ? <button type="button" onClick={handleSellerDeviceSignOut} className="flex min-h-11 items-center rounded-[10px] px-3 py-2 text-left text-sm font-medium text-slate-300 transition hover:bg-white/5 hover:text-white">Sign out on this device</button> : null}
                   {hasLinkedSellerTransaction ? (
                     <Link
                       to={getPortalWorkspacePath(token, workspaceNavigationScope, 'account')}
@@ -14575,6 +14051,7 @@ function ClientPortal() {
 
             {error ? <p className="rounded-[18px] border border-[#f1cbc7] bg-[#fff5f4] px-4 py-3 text-sm text-[#b42318]">{error}</p> : null}
 
+            {isListingMarketing ? <SellerListingMarketingPage listing={sellerListingPreview} channels={sellerMarketingChannels} channelLeads={sellerListingPerformance.channelLeads} /> : null}
             {isOverview ? (
               effectiveWorkspace === 'seller' ? (
                 <section className="space-y-5">
@@ -14587,26 +14064,21 @@ function ClientPortal() {
                       sellerAgentAvatarUrl={sellerAgentAvatarUrl}
                       sellerAgencyName={sellerAgencyName}
                       sellerPropertyTitle={sellerPropertyTitle}
-                      sellerPropertyImageUrl={sellerPropertyImageUrl}
+                      sellerPropertyImages={sellerPropertyImages}
                       sellerStatusLabel={sellerDashboardStatusLabel}
                       sellerHealth={sellerHealth}
                       sellerListingProgressModel={sellerListingProgressModel}
                       sellerSaleProgressModel={sellerSaleProgressModel}
                       sellerTransactionJourneyModel={sellerTransactionJourneyModel}
                       sellerListingPerformance={sellerListingPerformance}
+                      sellerListingPreview={sellerListingPreview}
                       sellerMarketingChannels={sellerMarketingChannels}
                       sellerAgentUpdate={sellerAgentUpdate}
                       sellerTimelineItems={sellerTimelineItems}
-                      sellerChatUpdates={sellerActivityItems}
                       sellerDocumentTracker={sellerDocumentTracker}
-                      sellerComplianceSigning={sellerComplianceSigning}
                       sellerListingUrl={sellerListingUrl}
                       latestAttorneyUpdate={sellerLatestAttorneyUpdate}
                       legalProgress={sellerLegalProgress}
-                      commentDraft={commentDraft}
-                      savingComment={saving}
-                      onCommentDraftChange={setCommentDraft}
-                      onCommentSubmit={handleSubmitPortalComment}
                       token={token}
                       workspaceNavigationScope={workspaceNavigationScope}
                     />
@@ -14721,48 +14193,7 @@ function ClientPortal() {
               )
             ) : null}
 
-            {isProgress && effectiveWorkspace === 'seller' ? (
-              hasLinkedSellerTransaction ? (
-                clientTransferJourneyModel.status === 'ready' ? <ClientTransferJourney
-                  model={clientTransferJourneyModel}
-                  audience="seller"
-                  propertyTitle={sellerPropertyTitle}
-                  propertyImageUrl={sellerPropertyImageUrl}
-                  partyName={sellerDisplayName}
-                  priceLabel={purchasePriceLabel}
-                  attorneyName={pickFirstText(transferAttorneyRolePlayer?.attorneyUser?.name, transferAttorneyRolePlayer?.primaryAttorney?.name, portal?.transaction?.attorney)}
-                  attorneyFirm={pickFirstText(transferAttorneyRolePlayer?.firm?.name, portal?.transaction?.attorney_firm)}
-                  brand={buyerPortalTheme?.primary || '#087955'}
-                  accent={buyerPortalTheme?.accent}
-                  heroOverlayStyle={buyerPortalTheme?.heroOverlayStyle}
-                /> : <TransactionStageWorkspace
-                  key={sellerTransactionStageKey}
-                  journeyModel={workspaceData?.transactionJourneySnapshot ? sellerTransactionJourneyModel : null}
-                  currentStageKey={sellerTransactionStageKey}
-                  startedAt={
-                    portal?.transaction?.stage_updated_at ||
-                    portal?.transaction?.updated_at ||
-                    portal?.lastUpdated
-                  }
-                  completedAt={portal?.transaction?.completed_at || portal?.transaction?.registered_at}
-                  pendingAction={sellerProgressAction}
-                  activity={sellerActivityItems}
-                  participants={sellerProgressParticipants}
-                  overviewPath={getPortalWorkspacePath(token, workspaceNavigationScope, 'overview')}
-                  documentsPath={getPortalWorkspacePath(token, workspaceNavigationScope, 'documents')}
-                  listingUrl={sellerListingUrl}
-                  agentEmail={sellerAgentEmail}
-                />
-              ) : (
-                <SellerSaleJourneyNotStarted
-                  gate={sellerSaleJourneyGate}
-                  listingProgressModel={sellerListingProgressModel}
-                  token={token}
-                  workspaceNavigationScope={workspaceNavigationScope}
-                  agentEmail={sellerAgentEmail}
-                />
-              )
-            ) : null}
+            {isProgress && effectiveWorkspace === 'seller' ? sellerProgressPage : null}
 
             {isOffers && effectiveWorkspace === 'seller' ? (
               <SellerOffersPage
@@ -14832,7 +14263,7 @@ function ClientPortal() {
 
             {isDetails ? (
               effectiveWorkspace === 'seller' ? (
-                <SellerMyDetailsReadonlyPage sections={sellerDetailsSections} />
+                <SellerMyDetailsReadonlyPage sections={sellerDetailsSections} onSignOut={isSellerPortalToken ? handleSellerDeviceSignOut : undefined} />
               ) : (
               <section className="space-y-5">
                 <header className="rounded-[26px] border border-[#dbe5ef] bg-white px-6 py-6 shadow-[0_16px_34px_rgba(15,23,42,0.06)]">
@@ -17706,7 +17137,7 @@ function ClientPortal() {
         </section>
       ) : null}
 
-      {isTeam ? <BuyerTeamWorkspace model={effectiveWorkspace === 'seller' ? sellerTeamPresentationModel : buyerTeamPresentationModel} theme={buyerPortalTheme} onSendMessage={submitPortalMessage} saving={saving} /> : null}
+      {isTeam ? effectiveWorkspace === 'seller' ? <SellerTeamWorkspace model={sellerTeamPresentationModel} agencyName={sellerAgencyName} hasTransaction={hasLinkedSellerTransaction} /> : <BuyerTeamWorkspace model={buyerTeamPresentationModel} theme={buyerPortalTheme} onSendMessage={submitPortalMessage} saving={saving} /> : null}
 
       {isAlterations ? (
         <section className="client-portal-card">

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { CalendarDays, CheckCircle2, Clock3, Copy, ExternalLink, Loader2, MapPin, Plus, UserRound } from 'lucide-react'
 import Button from '../ui/Button'
@@ -13,6 +13,7 @@ import {
   buildListingShowDayPayload,
   buildListingShowDayRsvpPath,
   validateListingShowDayDraft,
+  showDayToday,
 } from '../../services/listings/listingShowDayModel'
 
 function initialValues(listing = {}) {
@@ -32,10 +33,12 @@ function formatEventDate(event = {}) {
   if (!event.startsAt) return event.date || 'Date to be confirmed'
   const date = new Date(event.startsAt)
   if (Number.isNaN(date.valueOf())) return event.date || 'Date to be confirmed'
-  return new Intl.DateTimeFormat('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' }).format(date)
+  return new Intl.DateTimeFormat('en-ZA', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Africa/Johannesburg' }).format(date)
 }
 
 export default function ListingShowDaysPanel({ organisationId = '', listing = {}, publicListingReady = false }) {
+  const saveLock = useRef(false)
+  const refreshVersion = useRef(0)
   const [events, setEvents] = useState([])
   const [loading, setLoading] = useState(false)
   const [loadError, setLoadError] = useState('')
@@ -51,19 +54,22 @@ export default function ListingShowDaysPanel({ organisationId = '', listing = {}
       setEvents([])
       return
     }
+    const version = ++refreshVersion.current
     setLoading(true)
     setLoadError('')
     try {
       const rows = await listMarketingEvents(organisationId, 'showDays')
+      if (version !== refreshVersion.current) return
       setEvents(rows.filter((event) => String(event.listingId || '') === String(listing.id)))
     } catch (refreshError) {
+      if (version !== refreshVersion.current) return
       setLoadError(refreshError?.message || 'Show days could not be loaded.')
     } finally {
-      setLoading(false)
+      if (version === refreshVersion.current) setLoading(false)
     }
   }, [listing.id, organisationId])
 
-  useEffect(() => { void refresh() }, [refresh])
+  useEffect(() => { void refresh(); return () => { refreshVersion.current += 1 } }, [refresh])
   useEffect(() => {
     if (!open) setValues(initialValues(listing))
   }, [listing, open])
@@ -89,10 +95,11 @@ export default function ListingShowDaysPanel({ organisationId = '', listing = {}
   }
 
   function update(field) {
-    return (event) => setValues((current) => ({ ...current, [field]: event.target.value }))
+    return (event) => setValues((current) => ({ ...current, [field]: event.target.value, ...(field === 'hostName' ? { hostUserId: '' } : {}) }))
   }
 
   async function save(publish) {
+    if (saveLock.current) return
     setError('')
     setNotice('')
     const errors = validateListingShowDayDraft(values, { listing, publicListingReady, publish })
@@ -104,6 +111,7 @@ export default function ListingShowDaysPanel({ organisationId = '', listing = {}
       setError('Shared show days are unavailable until this organisation is connected to Supabase.')
       return
     }
+    saveLock.current = true
     setSaving(publish ? 'publish' : 'draft')
     try {
       const event = await createMarketingEvent(
@@ -111,14 +119,16 @@ export default function ListingShowDaysPanel({ organisationId = '', listing = {}
         'showDays',
         buildListingShowDayPayload(listing, values, { publish }),
       )
+      if (!event?.id) throw new Error('The event could not be confirmed as saved. Please try again.')
       setCreatedEvent(event)
       setNotice(publish
-        ? 'Show day published. The RSVP link is ready to share.'
+        ? buildListingShowDayRsvpPath(event) ? 'Show day published. The RSVP link is ready to share.' : 'Show day saved, but its RSVP link is unavailable. Open the event in Show Days to review it.'
         : 'Draft saved. Open it from Marketing → Events → Show Days when you are ready to publish.')
       await refresh()
     } catch (saveError) {
       setError(saveError?.message || 'The show day could not be saved.')
     } finally {
+      saveLock.current = false
       setSaving('')
     }
   }
@@ -201,6 +211,7 @@ export default function ListingShowDaysPanel({ organisationId = '', listing = {}
       >
         {createdEvent ? (
           <div className="grid gap-4">
+            {error ? <p role="alert" className="text-sm text-[#a13b35]">{error}</p> : null}
             <div className="rounded-[16px] border border-[#cfe7d7] bg-[#eef9f2] p-4 text-sm text-[#257044]">
               <p className="inline-flex items-center gap-2 font-semibold"><CheckCircle2 size={17} /> {notice}</p>
             </div>
@@ -234,7 +245,7 @@ export default function ListingShowDaysPanel({ organisationId = '', listing = {}
             </section>
             <div className="grid gap-4 sm:grid-cols-2">
               <label className="grid gap-2 sm:col-span-2"><span className="text-sm font-semibold text-[#2d445e]">Event title</span><Field value={values.title} onChange={update('title')} /></label>
-              <label className="grid gap-2"><span className="text-sm font-semibold text-[#2d445e]">Date</span><Field type="date" min={new Date().toISOString().slice(0, 10)} value={values.date} onChange={update('date')} /></label>
+              <label className="grid gap-2"><span className="text-sm font-semibold text-[#2d445e]">Date</span><Field type="date" min={showDayToday()} value={values.date} onChange={update('date')} /></label>
               <label className="grid gap-2"><span className="text-sm font-semibold text-[#2d445e]">Host agent</span><Field value={values.hostName} onChange={update('hostName')} placeholder="Host agent" /></label>
               <label className="grid gap-2"><span className="text-sm font-semibold text-[#2d445e]">Start time</span><Field type="time" value={values.startTime} onChange={update('startTime')} /></label>
               <label className="grid gap-2"><span className="text-sm font-semibold text-[#2d445e]">End time</span><Field type="time" value={values.endTime} onChange={update('endTime')} /></label>

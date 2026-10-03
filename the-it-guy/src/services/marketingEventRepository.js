@@ -70,8 +70,8 @@ export async function createMarketingEvent(organisationId, kind, values) {
   const { data: authData } = await supabase.auth.getUser()
   const userId = authData?.user?.id
   if (!userId) throw new Error('Sign in before creating an event.')
-  const startsAt = text(values.startDate) ? new Date(`${values.startDate}T${text(values.startTime) || '10:00'}:00`).toISOString() : null
-  const endsAt = text(values.startDate) && text(values.endTime) ? new Date(`${values.startDate}T${text(values.endTime)}:00`).toISOString() : null
+  const startsAt = text(values.startDate) ? new Date(`${values.startDate}T${text(values.startTime) || '10:00'}:00+02:00`).toISOString() : null
+  const endsAt = text(values.startDate) && text(values.endTime) ? new Date(`${values.startDate}T${text(values.endTime)}:00+02:00`).toISOString() : null
   const metadata = {
     invited: values.invited || 0, registrations: values.registrations || 0, attending: values.attending || 0, leads: values.leads || 0,
     attendees: values.attendees || 0, confirmed: values.confirmed || 0, interestedLeads: values.interestedLeads || 0, attendanceRate: values.attendanceRate || '0%',
@@ -97,8 +97,8 @@ export async function createMarketingEvent(organisationId, kind, values) {
 }
 
 export async function updateMarketingEvent(eventId, values = {}) {
-  const startsAt = text(values.startDate) ? new Date(`${values.startDate}T${text(values.startTime) || '10:00'}:00`).toISOString() : undefined
-  const endsAt = text(values.startDate) && text(values.endTime) ? new Date(`${values.startDate}T${text(values.endTime)}:00`).toISOString() : undefined
+  const startsAt = text(values.startDate) ? new Date(`${values.startDate}T${text(values.startTime) || '10:00'}:00+02:00`).toISOString() : undefined
+  const endsAt = text(values.startDate) && text(values.endTime) ? new Date(`${values.startDate}T${text(values.endTime)}:00+02:00`).toISOString() : undefined
   const patch = {
     ...(values.title !== undefined ? { title: values.title } : {}),
     ...(values.status !== undefined ? { status: status(values.status) } : {}),

@@ -92,6 +92,22 @@ describe('seller token mutation boundary', () => {
     expect(client.from.mock.calls.some(([table]) => table === 'private_listing_seller_onboarding')).toBe(false)
   })
 
+  it.each([
+    { code: '57014', message: 'canceling statement due to statement timeout' },
+    { status: 503, message: 'server error' },
+  ])('secure core retries still call the authenticated reader after a temporary failure: $code $status', async (temporaryError) => {
+    client.rpc.mockReturnValueOnce(rpcResult(null, temporaryError))
+      .mockReturnValueOnce(rpcResult({ authRequired: true, passwordSet: true, sessionExpired: true }))
+    const options = { corePayload: true, requirePortalAccess: true, sellerPortalAccessToken: 'test-session' }
+    await expect(getSellerOnboardingByToken('stable-token', options)).rejects.toMatchObject({ portalAuth: { authRequired: true } })
+    expect(client.rpc).toHaveBeenCalledTimes(2)
+    expect(client.rpc).toHaveBeenLastCalledWith('bridge_private_listing_seller_portal_core_payload', {
+      p_token: 'stable-token', p_access_token: 'test-session', p_require_access: true,
+    })
+    expect(client.from).not.toHaveBeenCalled()
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
   it('secure workspace RPC failure never downgrades to the public API or tables', async () => {
     client.rpc.mockReturnValue(rpcResult(null, { code: 'PGRST202', message: 'bridge_private_listing_seller_portal_core_payload unavailable' }))
     await expect(getSellerOnboardingByToken('stable-token', { corePayload: true, requirePortalAccess: true })).rejects.toThrow('secure seller portal')

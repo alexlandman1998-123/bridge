@@ -48,14 +48,14 @@ describe('shared application fields', () => {
   })
   it.each(['individual', 'joint_individuals', 'company', 'close_corporation', 'trust'])('validates the %s scenario', (type) => {
     const data = complete(); data.entity = { type, legalName: 'Tenant entity', registrationNumber: 'reg' }; data.income.incomeSource = 'Trading income'
-    if (type !== 'individual') data.people = [{ id: 'person-2', firstName: 'Sam', lastName: 'Person', role: type === 'joint_individuals' ? 'co_tenant' : type === 'trust' ? 'trustee' : 'authorised_signatory' }]
+    if (type !== 'individual') data.people = [{ id: 'person-2', firstName: 'Sam', identityNumber: 'support-id', email: 'sam@example.test', lastName: 'Person', role: type === 'joint_individuals' ? 'co_tenant' : type === 'trust' ? 'trustee' : 'authorised_signatory' }]
     expect(validateRentalApplicationFields(data)).toEqual([])
     if (type !== 'individual') { data.people = []; expect(validateRentalApplicationFields(data).length).toBeGreaterThan(0) }
   })
   it('checks guarantors, conditional income evidence and meaningful completion', () => {
     const data = complete(); data.household.guarantorRequired = true
     expect(validateRentalApplicationFields(data)).toContain('Add the guarantor.')
-    data.people = [{ id: 'g', role: 'guarantor', firstName: 'Sam', lastName: 'Guarantor' }]
+    data.people = [{ id: 'g', role: 'guarantor', firstName: 'Sam', identityNumber: 'support-id', email: 'sam@example.test', lastName: 'Guarantor' }]
     expect(validateRentalApplicationFields(data)).toEqual([])
     data.employment = { employmentType: 'student' }
     expect(validateRentalApplicationFields(data)).toContain('Income source is required.')

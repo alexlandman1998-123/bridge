@@ -46,8 +46,60 @@ function normalizedList(value, { preserveOrder = false } = {}) {
   return preserveOrder ? list : [...new Set(list)].sort((left, right) => left.localeCompare(right))
 }
 
+// Historical snapshots may contain signed URLs instead of storage paths.
+// Strip only access parameters; keep external image transformations significant.
 function mediaIdentity(item = {}) {
-  return text(item.path || item.publicUrl || item.url || item.signedUrl || item.id || item.name)
+  const value = typeof item === 'string' ? item : item.path || item.publicUrl || item.url || item.signedUrl || item.id || item.name
+  const raw = text(value)
+  if (typeof item === 'object' && item.path && item.bucket && item.bucket !== 'documents') return `${item.bucket}/${raw}`
+  try {
+    const url = new URL(raw)
+    const storage = url.pathname.match(/^\/storage\/v1\/object\/(?:sign|public|authenticated)\/([^/]+)\/(.+)$/)
+    if (storage && /\.supabase\.co$/.test(url.hostname)) {
+      const bucket = decodeURIComponent(storage[1])
+      return `${bucket === 'documents' ? '' : `${bucket}/`}${decodeURIComponent(storage[2])}`
+    }
+    for (const key of [...url.searchParams.keys()]) {
+      if (/^(token|expires|signature|policy|key-pair-id|x-amz-.+)$/i.test(key)) url.searchParams.delete(key)
+    }
+    url.hash = ''
+    return url.toString()
+  } catch {
+    return raw
+  }
+}
+
+function mediaNames(value) {
+  const items = Array.isArray(value) ? value : value ? [value] : []
+  return items.map((item) => {
+    const identity = mediaIdentity(item).split(/[?#]/)[0]
+    const name = identity.split('/').pop()
+    try { return decodeURIComponent(name) || 'Image' } catch { return name || 'Image' }
+  })
+}
+
+function areaUnit(value) {
+  const unit = text(value).toLowerCase().replace(/²/g, '2').replace(/[\s_-]+/g, '')
+  if (['sqm', 'm2', 'squaremetres', 'squaremeters'].includes(unit)) return 'm²'
+  if (['ha', 'hectare', 'hectares'].includes(unit)) return 'ha'
+  if (['acre', 'acres'].includes(unit)) return 'acres'
+  return text(value)
+}
+
+function areaComparable(snapshot, key) {
+  const size = numberText(snapshot[key])
+  const unit = areaUnit(snapshot[`${key}Unit`])
+  const factor = { 'm²': 1, ha: 10000, acres: 4046.8564224 }[unit]
+  if (!size) return ''
+  return factor ? `${Number((Number(size) * factor).toFixed(6))} m²` : `${size}|${unit}`
+}
+
+function areaDisplay(snapshot, key) {
+  const size = numberText(snapshot[key])
+  if (!size) return 'Not set'
+  const unit = areaUnit(snapshot[`${key}Unit`])
+  const formatted = new Intl.NumberFormat('en-ZA', { maximumFractionDigits: 6 }).format(Number(size))
+  return `${formatted} ${unit || '(unit not recorded)'}`
 }
 
 function channelKey(value = '') {
@@ -76,7 +128,7 @@ export function buildListingPublicationSnapshot(draft = {}) {
   const floorplans = Array.isArray(draft.floorplans) ? draft.floorplans : []
   const cover = gallery.find((item) => text(item?.id) === text(draft.coverImageId)) || gallery[0] || null
   return {
-    version: 1,
+    version: 2,
     headline: text(draft.headline),
     description: text(draft.description),
     listingPreviewDescription: text(draft.listingPreviewDescription),
@@ -91,7 +143,9 @@ export function buildListingPublicationSnapshot(draft = {}) {
     garages: numberText(draft.garages),
     parkingBays: numberText(draft.parkingBays),
     erfSize: numberText(draft.erfSize),
+    erfSizeUnit: areaUnit(draft.erfSizeUnit || draft.erf_size_unit || 'm²'),
     floorSize: numberText(draft.floorSize),
+    floorSizeUnit: areaUnit(draft.floorSizeUnit || 'm²'),
     features: normalizedList(draft.selectedFeatures),
     amenities: normalizedList(draft.amenities),
     coverImage: mediaIdentity(cover || {}),
@@ -113,8 +167,22 @@ function displayValue(value) {
 
 export function diffListingPublicationSnapshots(current = {}, published = {}) {
   return SNAPSHOT_FIELDS.flatMap(([key, label, group]) => {
-    if (comparable(current[key]) === comparable(published[key])) return []
-    return [{ key, label, group, previousValue: displayValue(published[key]), currentValue: displayValue(current[key]) }]
+    const media = ['coverImage', 'gallery', 'floorplans'].includes(key)
+    const area = ['erfSize', 'floorSize'].includes(key)
+    // Adding unit metadata alone must not flag an unchanged historical value.
+    if (area && numberText(current[key]) === numberText(published[key]) &&
+      (!text(current[`${key}Unit`]) || !text(published[`${key}Unit`]))) return []
+    const normalize = (snapshot) => media
+      ? comparable(Array.isArray(snapshot[key]) ? snapshot[key].map(mediaIdentity) : mediaIdentity(snapshot[key] || ''))
+      : area ? areaComparable(snapshot, key) : comparable(snapshot[key])
+    if (normalize(current) === normalize(published)) return []
+    const previousItems = media ? mediaNames(published[key]) : undefined
+    const currentItems = media ? mediaNames(current[key]) : undefined
+    return [{ key, label, group,
+      previousValue: area ? areaDisplay(published, key) : displayValue(previousItems || published[key]),
+      currentValue: area ? areaDisplay(current, key) : displayValue(currentItems || current[key]),
+      ...(media ? { previousItems, currentItems } : {}),
+    }]
   })
 }
 

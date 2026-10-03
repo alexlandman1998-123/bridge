@@ -1,3 +1,6 @@
+import { runPrivatePropertyEventReconciliation } from '../server/services/privatePropertyEventReconciliationService.js'
+import { createRecoveryPortal } from './fixtures/private-property-recovery.mjs'
+import { updatePrivatePropertyListingStatus } from '../server/services/privatePropertyListingStatusUpdateService.js'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import {
@@ -29,6 +32,8 @@ class FakeQuery {
     return this
   }
 
+  in(column, values) { this.filters.push({ type: 'in', column, values }); return this }
+
   is(column, value) {
     this.filters.push({ type: 'is', column, value })
     return this
@@ -57,6 +62,7 @@ class FakeQuery {
 
   applyFilters() {
     let rows = this.rows.filter((row) => this.filters.every((filter) => {
+      if (filter.type === 'in') return filter.values.includes(row[filter.column])
       if (filter.type === 'is') return (row[filter.column] ?? null) === filter.value
       return String(row[filter.column] ?? '') === String(filter.value ?? '')
     }))
@@ -302,6 +308,117 @@ const blocked = await runPrivatePropertyPostSubmitMonitor({
 assert.equal(blocked.status, 'BLOCKED')
 assert.equal(blocked.safety.privatePropertyApiCalled, false)
 assert.ok(blocked.blockers.includes('missing_runtime_secret:PRIVATE_PROPERTY_SANDBOX_USERNAME'))
+
+const inactivePortal = createPortal({ active: true })
+inactivePortal.getListingStatus = async () => response('<GetListingStatusResult>Inactive</GetListingStatusResult>', 'GetListingStatus')
+inactivePortal.getListingStatusVerbose = async () => response('<GetListingStatusVerboseResult>Inactive</GetListingStatusVerboseResult>', 'GetListingStatusVerbose')
+const inactiveClient = createFakeClient(createTables())
+const inactive = await runPrivatePropertyPostSubmitMonitor({
+  client: inactiveClient, listingId, secrets, privateProperty: inactivePortal, recordSync: true,
+})
+assert.equal(inactive.status, 'ATTENTION_REQUIRED')
+assert.equal(inactive.externalStatus, 'inactive')
+assert.ok(inactive.blockers.includes('private_property_listing_inactive'))
+const inactiveWrite = inactiveClient.operations.find((o) => o.table === 'private_property_listing_syncs').payload
+assert.equal(inactiveWrite.is_on_portal, false, 'stale active-list membership cannot override a current inactive probe')
+assert.equal(Object.hasOwn(inactiveWrite, 'last_payload_summary'), false)
+assert.equal(Object.hasOwn(inactiveWrite, 'submitted_at'), false)
+assert.equal(Object.hasOwn(inactiveWrite, 'activated_at'), false)
+
+const missingListingFields = createFakeClient({ ...createTables(), listing_publication_data: [{ ...publication, bathrooms: null }] })
+const stillMonitorable = await runPrivatePropertyPostSubmitMonitor({ client: missingListingFields, listingId, secrets, privateProperty: inactivePortal })
+assert.equal(stillMonitorable.externalStatus, 'inactive', 'monitoring must work when a listing currently cannot be submitted')
+
+const sortedPortal = createPortal()
+sortedPortal.getListingEventFeedByBranch = async () => response(`<GetListingEventFeedByBranchResult>
+<ListingEventFeedData><PropertyId>${propertyId}</PropertyId><ListingFeedEventType>Activated</ListingFeedEventType><EventDate>2026-08-25T00:00:00Z</EventDate></ListingEventFeedData>
+<ListingEventFeedData><PropertyId>${propertyId}</PropertyId><ListingFeedEventType>Deactivated</ListingFeedEventType><EventDate>2026-08-26T00:00:00Z</EventDate></ListingEventFeedData>
+</GetListingEventFeedByBranchResult>`, 'GetListingEventFeedByBranch')
+const sorted = await runPrivatePropertyPostSubmitMonitor({ client: createFakeClient(createTables()), listingId, secrets, privateProperty: sortedPortal })
+assert.equal(sorted.eventFeed.latestEvent.listingFeedEventType, 'Deactivated')
+
+const statusTables = { ...createTables(), private_property_listing_syncs: [{
+  private_listing_id: listingId, environment: 'sandbox', property_id: propertyId, branch_guid: branchGuid,
+  listing_type: 'Sale', private_property_ref: 'T2870287',
+}] }
+const activationClient = createFakeClient(statusTables)
+const recoveryAddress = { streetName: 'Monitor Road', streetNumber: '12', suburbId: 12345, suburb: 'Sandton', town: 'Johannesburg', province: 'Gauteng' }
+const reactivationPortal = createRecoveryPortal({ propertyId, address: recoveryAddress })
+const activation = await updatePrivatePropertyListingStatus({
+  client: activationClient, listingId, environment: 'sandbox', propertyStatus: 'ForSale', secrets,
+  privateProperty: reactivationPortal,
+})
+assert.equal(activation.externalStatus, 'inactive')
+assert.equal(activation.status, 'NOT_CONFIRMED')
+assert.equal(activation.confirmed, false)
+assert.equal(reactivationPortal.calls.filter(([call]) => call === 'status-update').length, 1)
+const activationWrite = activationClient.operations.find((o) => o.table === 'private_property_listing_syncs').payload
+assert.equal(activationWrite.is_on_portal, false, 'acknowledged activation is not confirmed activation')
+assert.equal(activationWrite.last_event_type, null, 'do not invent an activation event')
+assert.equal(Object.hasOwn(activationWrite, 'activated_at'), false)
+assert.equal(Object.hasOwn(activationWrite, 'last_payload_summary'), false)
+const confirmedActivation = await updatePrivatePropertyListingStatus({
+  client: createFakeClient(statusTables), listingId, environment: 'sandbox', propertyStatus: 'ForSale', secrets,
+  privateProperty: createRecoveryPortal({ propertyId, address: recoveryAddress, afterStatus: 'For Sale' }),
+})
+assert.equal(confirmedActivation.confirmed, true)
+assert.equal(confirmedActivation.externalStatus, 'active')
+const failedProbePortal = createRecoveryPortal({ propertyId, address: recoveryAddress })
+const probeStatus = failedProbePortal.getListingStatus
+failedProbePortal.getListingStatus = async (args) => {
+  if (failedProbePortal.calls.some(([call]) => call === 'status-update')) throw new Error('observation unavailable')
+  return probeStatus(args)
+}
+const failedProbeClient = createFakeClient(statusTables)
+const failedProbeActivation = await updatePrivatePropertyListingStatus({ client: failedProbeClient, listingId, environment: 'sandbox', propertyStatus: 'ForSale', secrets, privateProperty: failedProbePortal })
+assert.equal(failedProbeActivation.confirmed, false)
+assert.equal(failedProbeActivation.status, 'NOT_CONFIRMED')
+const failedProbeWrite = failedProbeClient.operations.find((o) => o.table === 'private_property_listing_syncs').payload
+assert.equal(failedProbeWrite.is_on_portal, false)
+assert.equal(failedProbeWrite.last_response_summary.resultText, 'Successful', 'a failed observation retains the acknowledged request evidence')
+const mismatchedClient = createFakeClient(statusTables)
+const mismatchedPortal = createRecoveryPortal({ propertyId, address: { ...recoveryAddress, suburbId: 99 } })
+await assert.rejects(updatePrivatePropertyListingStatus({ client: mismatchedClient, listingId, environment: 'sandbox', propertyStatus: 'ForSale', secrets, privateProperty: mismatchedPortal }), /different address/)
+assert.equal(mismatchedPortal.calls.some(([call]) => call === 'status-update'), false)
+assert.deepEqual(mismatchedClient.operations, [])
+const unapprovedClient = createFakeClient(statusTables)
+await assert.rejects(updatePrivatePropertyListingStatus({ client: unapprovedClient, listingId, environment: 'production', propertyStatus: 'ForSale', secrets, privateProperty: {} }), /Confirm reactivation/)
+assert.deepEqual(unapprovedClient.operations, [])
+await assert.rejects(updatePrivatePropertyListingStatus({ client: createFakeClient(statusTables), listingId, environment: 'sandbox', propertyStatus: 'ToLet', secrets, privateProperty: {} }), /does not match/)
+const refusedClient = createFakeClient(statusTables)
+await assert.rejects(updatePrivatePropertyListingStatus({
+  client: refusedClient, listingId, environment: 'sandbox', propertyStatus: 'Inactive', secrets,
+  privateProperty: {
+    async listingStatusUpdate() { return response('<ListingStatusUpdateResult>Failed</ListingStatusUpdateResult>', 'ListingStatusUpdate') },
+    async getListingStatus() { throw new Error('must not record a failed request') },
+  },
+}), /did not acknowledge/)
+assert.deepEqual(refusedClient.operations, [])
+const pendingWithdrawalClient = createFakeClient(statusTables)
+await assert.rejects(updatePrivatePropertyListingStatus({
+  client: pendingWithdrawalClient, listingId, environment: 'sandbox', propertyStatus: 'Inactive', secrets,
+  privateProperty: {
+    async listingStatusUpdate() { return response('<ListingStatusUpdateResult>Successful</ListingStatusUpdateResult>', 'ListingStatusUpdate') },
+    async getListingStatus() { return response('<GetListingStatusResult>For Sale</GetListingStatusResult>', 'GetListingStatus') },
+  },
+}), /still reports/)
+assert.equal(pendingWithdrawalClient.operations.find((o) => o.table === 'private_property_listing_syncs').payload.is_on_portal, true)
+
+const cronTables = {
+  ...createTables(),
+  private_property_agency_configs: [{ ...agencyConfig, environment: 'production', status: 'active', go_live_approved_at: '2026-08-01' }],
+  private_property_listing_syncs: [{ private_listing_id: listingId, environment: 'production', property_id: propertyId, branch_guid: branchGuid, external_status: 'inactive', last_checked_at: '2026-08-27T00:00:00Z' }],
+}
+const replayClient = createFakeClient(cronTables)
+const replay = await runPrivatePropertyEventReconciliation({ client: replayClient, secrets, createPrivateProperty: () => createPortal({ active: true }) })
+assert.equal(replay.status, 'COMPLETE')
+assert.equal(replay.reports[0].staleEventCount, 1)
+assert.equal(replay.processedEventCount, 0)
+assert.equal(replayClient.operations.filter((o) => o.table === 'private_property_listing_syncs').length, 0)
+const newEventClient = createFakeClient({ ...cronTables, private_property_listing_syncs: [{ ...cronTables.private_property_listing_syncs[0], last_checked_at: '2026-08-25T00:00:00Z' }] })
+const newEvent = await runPrivatePropertyEventReconciliation({ client: newEventClient, secrets, createPrivateProperty: () => createPortal({ active: true }) })
+assert.equal(newEvent.processedEventCount, 1, 'a genuinely newer activation must still reconcile')
+assert.equal(Object.hasOwn(newEventClient.operations.find((o) => o.table === 'private_property_listing_syncs').payload, 'last_payload_summary'), false)
 
 const serviceSource = read('server/services/privatePropertyPostSubmitMonitorService.js')
 assert.match(serviceSource, /buildPrivatePropertyGoLiveReadinessReport/)

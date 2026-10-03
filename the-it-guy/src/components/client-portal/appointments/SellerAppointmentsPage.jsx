@@ -251,19 +251,19 @@ function SellerAppointmentKpiCards({ summary }) {
   }
 
   return (
-    <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+    <section className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
       {cards.map((card) => {
         const Icon = card.icon
         return (
-          <article key={card.label} className="min-h-[118px] rounded-[18px] border border-[#dbe5ef] bg-white p-5 shadow-[0_10px_26px_rgba(15,23,42,0.045)]">
-            <div className="flex items-center gap-4">
-              <span className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[15px] ${toneClasses[card.tone]}`}>
+          <article key={card.label} className="min-h-[118px] rounded-[18px] border border-[#dbe5ef] bg-white p-3 shadow-[0_10px_26px_rgba(15,23,42,0.045)] sm:p-5">
+            <div className="flex items-center gap-2 sm:gap-4">
+              <span className={`hidden h-11 w-11 shrink-0 items-center justify-center rounded-[15px] sm:inline-flex ${toneClasses[card.tone]}`}>
                 <Icon size={20} />
               </span>
               <div className="min-w-0">
                 <strong className="block text-[1.55rem] font-semibold leading-none text-[#142132]">{card.count}</strong>
                 <span className="mt-1 block text-sm font-medium text-[#4f647b]">{card.label}</span>
-                <span className="mt-1 block truncate text-xs font-semibold text-[#38536d]">{card.detail}</span>
+                <span className="mt-1 hidden truncate text-xs font-semibold text-[#38536d] sm:block">{card.detail}</span>
               </div>
             </div>
           </article>
@@ -446,7 +446,7 @@ function SellerReschedulePrompt({ nextAppointment, onReschedule }) {
   return (
     <section className="rounded-[18px] border border-[#dbe5ef] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 sm:gap-4">
           <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-[16px] bg-[#eef6ff] text-[#2563eb]">
             <RefreshCw size={21} />
           </span>

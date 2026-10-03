@@ -47,7 +47,7 @@ test('show-day publish validation protects time order and requires a live listin
   assert.ok(errors.some((error) => error.includes('listing channel')))
   assert.equal(validateListingShowDayDraft(
     { date: '2026-10-03', startTime: '10:00', endTime: '14:00', hostName: 'Alex Agent' },
-    { listing: { id: 'listing-1' }, publicListingReady: false, publish: false },
+    { listing: { id: 'listing-1' }, publicListingReady: false, publish: false, today: '2026-10-03' },
   ).length, 0)
 })
 
@@ -60,4 +60,13 @@ test('show-day payload links the canonical listing and creates the RSVP route', 
   assert.equal(payload.listingSnapshot.image, listing.image)
   assert.equal(buildListingShowDayRsvpPath({ publicToken: 'token-123' }), '/marketing/rsvp/token-123')
   assert.equal(buildListingShowDayRsvpPath(null), '')
+})
+
+test('show-day validation rejects invalid dates and times without attaching a custom host to the original agent', () => {
+  const options = { listing: { id: 'listing-1' }, publicListingReady: true, today: '2026-10-03' }
+  const valid = { date: '2026-10-04', startTime: '10:00', endTime: '14:00', hostName: 'Agent' }
+  for (const date of ['2026-10-02', '2026-02-30', 'invalid']) assert.ok(validateListingShowDayDraft({ ...valid, date }, options).length)
+  assert.ok(validateListingShowDayDraft({ ...valid, startTime: '25:00' }, options).some((error) => error.includes('valid start')))
+  assert.equal(validateListingShowDayDraft(valid, options).length, 0)
+  assert.equal(buildListingShowDayPayload({ id: 'listing-1', agentId: 'original-agent' }, { ...valid, hostUserId: '', hostName: 'Guest host' }).hostUserId, null)
 })

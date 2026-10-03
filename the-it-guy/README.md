@@ -749,3 +749,47 @@ Focused checks: the RentalTenanciesPage, rentalTenancyRegisterModel and
 rentalOperatingModeNavigation Vitest tests, application-handoff and tenancy-move-in
 checks, scoped ESLint, and the Vite production build. The separate lease-signing
 check currently fails its existing maintenance/inspection context assertions.
+
+## Rental onboarding discovery
+
+The [rental onboarding discovery and document contract](docs/rental-onboarding-discovery-and-document-contract.md)
+defines the landlord and tenant questions, conditional evidence matrix, document
+scopes and acceptance scenarios. Phase 2 fixes existing tenant evidence consistency;
+Phase 3 adds the shared definitions and saved checklist/revision/assignment
+foundation. Phase 4 connects saved requirement IDs/generations to tenant onboarding,
+uploads, progress, submission and approval, and displays the saved landlord matrix
+preview. Phase 5 adds versioned landlord discovery, secure onboarding links,
+agent/landlord file collection, per-property evidence review and the prescribed
+disclosure gate before new mandate acceptance. Phase 6 verifies local browser and
+database continuity, preserves submitted declarations/documents during property
+handoff, and isolates public forms when an onboarding link changes. It also
+prepares the scoped migration manifest and read-only release catalog checks.
+Hosted acceptance and deployment still require release approval. The broader landlord matrix retains
+preview policy mode; proposed agency policy values await confirmation. See the
+contract for migration order, release dependencies and verification.
+
+### Seller portal launch access pass — 3 October 2026
+
+The primary app now offers device sign-out on desktop and mobile, clears private
+portal state and fences pending reads on sign-out, rejects invalid stored session
+expiry values, and hides placeholder contact emails. Agent seller workspaces
+expose confirmed portal revoke/reactivate and session sign-out controls.
+
+Read-only production inspection confirmed seller onboarding direct-table access
+is fenced by listing membership and unavailable to anonymous visitors. However,
+the existing management, password-reset and diagnostics RPCs lack that membership
+check. The append-only migration
+`20261003145000_seller_portal_management_listing_access.sql` was subsequently
+approved and applied in the 3 October production release. A rollback-only live
+check allowed the Only Realty assigned agent and rejected an unrelated user
+across management, password-reset and diagnostics. This clears that database
+permission blocker. Recovery-email delivery and attorney-stage acceptance remain
+separate verification tasks.
+
+Use the existing access-stability, security-controls, password-recovery and
+upload-feedback checks, the focused SellerPortalAccessControls/SellerPhaseOne/
+SellerPortalPasswordGate/sellerAccess tests, and `npm run check:app`. Only Realty
+browser verification covers the current pre-transaction account; attorney-stage
+updates and real recovery-email delivery still require controlled acceptance.
+The saved placeholder agent email, absent listing photos/live links and lack of
+a linked transaction remain data/acceptance gaps, rather than fabricated content.

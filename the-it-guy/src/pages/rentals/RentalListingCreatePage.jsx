@@ -2,8 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Blocks, Building2, CalendarDays, CheckCircle2, ClipboardCheck, ChevronLeft, ChevronRight, Coins, FileText, Globe2, House, ImagePlus, Landmark, LandPlot, Loader2, Minus, Plus, Save, ShieldCheck, Sprout, Store, Trash2, UserRound, Users, Wallet, Warehouse, X } from 'lucide-react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useWorkspace } from '../../context/WorkspaceContext'
+import { useOptionalOrganisation } from '../../context/OrganisationContext'
+import './rental-listing-create.css'
 import AddressAutocomplete from '../../components/location/AddressAutocomplete'
 import Button from '../../components/ui/Button'
+import ListingSyndicationChannelCard from '../../components/listings/ListingSyndicationChannelCard'
 import RentalCategoryFields from '../../components/listings/RentalCategoryFields'
 import { rentalFeatureAnswerLabels, restoreRentalFeatureSelections } from '../../services/rentals/rentalFeatureCaptureModel'
 import { RENTAL_CATEGORY_TYPES, RENTAL_PORTAL_FIELDS } from '../../services/rentals/rentalPortalFieldContract'
@@ -253,28 +256,6 @@ function ReviewSummaryCard({ title, details, onEdit }) {
   )
 }
 
-function DistributionChannelCard({ channel, selected, needsAttention, onToggle }) {
-  const Icon = channel.key === 'agency_website' ? Globe2 : channel.key === 'property24' ? Building2 : House
-  return (
-    <button
-      type="button"
-      data-rental-control="distribution-channel"
-      aria-pressed={selected}
-      aria-label={channel.label}
-      onClick={() => onToggle(channel.key)}
-      className={`flex min-h-44 min-w-0 flex-col items-start rounded-2xl border p-5 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#274c69] ${selected ? 'border-[#91abc0] bg-[#f4f8fc]' : 'border-[#dbe6f2] bg-white hover:border-[#91abc0]'}`}
-    >
-      <span className="flex w-full items-center justify-between gap-3">
-        <span className={`flex h-11 w-11 items-center justify-center rounded-xl text-[#315f80] ${selected ? 'bg-white' : 'bg-[#eef4fa]'}`}><Icon size={22} aria-hidden="true" /></span>
-        <span aria-hidden="true" className={`flex h-6 w-6 items-center justify-center rounded-full border ${selected ? 'border-[#274c69] bg-[#274c69] text-white' : 'border-[#c8d6e5] bg-white text-transparent'}`}><CheckCircle2 size={15} /></span>
-      </span>
-      <span className="mt-5 text-base font-semibold text-[#18324b]">{channel.label}</span>
-      <span className={`mt-2 text-xs font-semibold ${selected && needsAttention ? 'text-[#8a5a12]' : 'text-[#607891]'}`}>{selected ? needsAttention ? 'Needs attention' : 'Selected' : 'Not selected'}</span>
-      {selected && needsAttention ? <span className="mt-3 text-xs leading-5 text-[#8a5a12]">{needsAttention}</span> : null}
-    </button>
-  )
-}
-
 function stepForValidationError(error = '') {
   const normalized = String(error).toLowerCase()
   if (normalized.includes('landlord') || normalized.includes('mandate') || normalized.includes('marketing approval')) return 'landlord'
@@ -289,21 +270,20 @@ function RentalCreateProgressNav({ activeStep, onStepClick }) {
   const activeIndex = CREATE_STEPS.findIndex((step) => step.key === activeStep)
   const compactLabels = ['Landlord', 'Property', 'Features', 'Terms', 'Marketing', 'Portals', 'Review']
   return (
-    <nav className="rounded-[16px] border border-[#dde6ef] bg-white px-2 py-3 sm:px-4 shadow-[0_10px_24px_rgba(15,23,42,0.035)]" aria-label="Create rental listing progress">
-      <div className="grid grid-cols-7 gap-1 sm:gap-2">
+    <nav className="rental-create-progress" aria-label="Create rental listing progress">
+      <div className="rental-create-progress-grid">
         {CREATE_STEPS.map((step, index) => {
           const complete = index < activeIndex
           const active = index === activeIndex
           return (
-            <button key={step.key} type="button" onClick={() => onStepClick(step.key)} aria-current={active ? 'step' : undefined} aria-label={`Step ${index + 1}: ${step.label}`} title={step.label} className={`relative flex min-w-0 flex-col items-center gap-2 rounded-[10px] px-0.5 pb-3 pt-2 text-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1f7d44] ${active ? 'text-[#142132]' : 'text-[#607387]'}`}>
-              <span className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold sm:h-8 sm:w-8 sm:text-sm ${active || complete ? 'bg-[#1f7d44] text-white' : 'bg-[#eef2f6] text-[#6b7d93]'}`}>
-                {complete ? <CheckCircle2 size={16} aria-hidden="true" /> : index + 1}
+            <button key={step.key} type="button" onClick={() => onStepClick(step.key)} aria-current={active ? 'step' : undefined} aria-label={`Step ${index + 1}: ${step.label}`} title={step.label} className={`rental-create-step ${complete ? 'is-visited' : ''} ${active ? 'is-current' : ''}`}>
+              <span className="rental-create-step-number">
+                {complete ? <CheckCircle2 size={17} aria-hidden="true" /> : index + 1}
               </span>
-              <span className="w-full break-words text-[10px] font-bold leading-tight sm:text-xs lg:text-sm">
-                <span className="sm:hidden">{compactLabels[index]}</span>
-                <span className="hidden sm:block">{step.label}</span>
+              <span className="rental-create-step-label">
+                <span className="rental-create-step-compact">{compactLabels[index]}</span>
+                <span className="rental-create-step-full">{step.label}</span>
               </span>
-              {active ? <span className="absolute bottom-0 left-1/4 right-1/4 h-0.5 rounded-full bg-[#1f7d44]" aria-hidden="true" /> : null}
             </button>
           )
         })}
@@ -317,6 +297,8 @@ export default function RentalListingCreatePage() {
   const params = useParams()
   const [searchParams] = useSearchParams()
   const workspaceContext = useWorkspace()
+  const organisationContext = useOptionalOrganisation()
+  const agencyLogo = organisationContext?.branding?.logoUrl || workspaceContext.currentWorkspace?.logoUrl || workspaceContext.currentWorkspace?.logo_url || ''
   const rentalScope = useMemo(() => resolveRentalWorkspaceScope(workspaceContext), [workspaceContext])
   const organisationId = rentalScope.organisationId
   const branchId = rentalScope.branchId
@@ -326,7 +308,7 @@ export default function RentalListingCreatePage() {
   const portfolioPropertyId = String(searchParams.get('portfolioPropertyId') || '').trim()
   const draftStorageKey = searchParams.get('leadId') ? `${RENTAL_CREATE_SESSION_DRAFT_KEY}:${searchParams.get('leadId')}:${portfolioPropertyId || 'primary'}` : RENTAL_CREATE_SESSION_DRAFT_KEY
   const [form, setForm] = useState(createInitialFormState)
-  const [activeStep, setActiveStep] = useState('landlord')
+  const [activeStep, setActiveStep] = useState(() => isEditing && CREATE_STEPS.some((step) => step.key === searchParams.get('step')) ? searchParams.get('step') : 'landlord')
   const galleryImagesRef = useRef(form.galleryImages)
   const [saving, setSaving] = useState(false)
   const savingRef = useRef(false)
@@ -904,9 +886,9 @@ export default function RentalListingCreatePage() {
           {activeStep === 'syndication' ? <FormSection title="Syndication">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <h3 className="text-sm font-semibold text-[#18324b]">Publication channels</h3>
-              <span className="rounded-full bg-[#eef4fa] px-3 py-1 text-xs font-semibold text-[#526f88]">{selectedDistributionChannels.length} selected</span>
+              <span className="rounded-full bg-[#eef4fa] px-3 py-1 text-xs font-semibold text-[#526f88]">{selectedDistributionChannels.length} external selected</span>
             </div>
-            <div className="grid min-w-0 gap-4 md:grid-cols-3">
+            <div className="listing-syndication-grid">
               {RENTAL_DISTRIBUTION_CHANNELS.map((channel) => {
                 const selected = selectedDistributionChannels.includes(channel.key)
                 const needsAttention = channel.key === 'private_property' && form.galleryImages.length < 3
@@ -914,14 +896,15 @@ export default function RentalListingCreatePage() {
                   : channel.key === 'agency_website' && form.galleryImages.length < 1
                     ? 'Add at least 1 photo.'
                     : ''
-                return <DistributionChannelCard key={channel.key} channel={channel} selected={selected} needsAttention={needsAttention} onToggle={toggleDistributionChannel} />
+                return <ListingSyndicationChannelCard key={channel.key} channel={channel} selected={selected} needsAttention={selected ? needsAttention : ''} onToggle={toggleDistributionChannel} agencyLogo={agencyLogo} />
               })}
+              <ListingSyndicationChannelCard channel={{ key: 'arch9_internal', label: 'Arch9 Platform', internalOnly: true }} selected />
             </div>
             {selectedDistributionChannels.some((key) => (key === 'private_property' && form.galleryImages.length < 3) || (key === 'agency_website' && form.galleryImages.length < 1)) ? <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#f1d4a6] bg-[#fffaf0] px-4 py-3 text-sm text-[#8a5a12]">
               <span>Selected channels need more photos.</span>
               <button type="button" data-rental-control="syndication-photos" className="font-semibold underline underline-offset-2" onClick={() => goToStep('marketing')}>Add photos</button>
             </div> : null}
-            <p className="text-xs leading-5 text-[#607891]">Saved as a draft. Publish after the listing passes readiness checks.</p>
+            <p className="text-xs leading-5 text-[#607891]">Choose where to publish this rental. Your selections are saved with the draft; publish to each channel from the listing workspace once its checks pass.</p>
           </FormSection> : null}
 
           {activeStep === 'review' ? <section className="ui-panel ui-panel-body grid gap-6">

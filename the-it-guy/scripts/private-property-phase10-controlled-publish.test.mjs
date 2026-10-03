@@ -1,3 +1,5 @@
+import { createCataloguePortal } from './fixtures/private-property-location.mjs'
+import { createRecoveryPortal } from './fixtures/private-property-recovery.mjs'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import {
@@ -238,7 +240,8 @@ const applied = await runPrivatePropertyControlledPublishRehearsal({
 assert.equal(applied.status, 'SUBMITTED')
 assert.equal(updateListingCalls, 1)
 assert.equal(applied.safety.privatePropertyApiCalled, true)
-assert.equal(applied.safety.listingPublished, true)
+assert.equal(applied.safety.listingPublished, false)
+assert.equal(applied.safety.listingSubmitted, true)
 assert.equal(applied.safety.databaseWritten, false)
 assert.equal(applied.apiResponse.privatePropertyReference, 'PP-CTRL-001')
 assert.deepEqual(applyClient.operations, [])
@@ -303,6 +306,71 @@ assert.equal(productionNoConfirm.status, 'BLOCKED')
 assert.equal(productionNoConfirm.safety.privatePropertyApiCalled, false)
 assert.ok(productionNoConfirm.blockers.includes('missing_production_publish_confirmation'))
 assert.equal(productionNoConfirm.expectedConfirmation, `PRIVATE_PROPERTY_PUBLISH:${listingId}:production`)
+
+for (const resultText of ['Failed: invalid suburb', '', 'not successful', 'Unknown response', 'Queued but rejected after validation', 'x'.repeat(300) + ' failed']) {
+  const rejectedClient = createFakeClient(createTables())
+  const rejected = await runPrivatePropertyControlledPublishRehearsal({
+    client: rejectedClient, listingId, secrets, apply: true, recordSync: true,
+    privateProperty: { async updateListing() { return { status: 200, data: `<UpdateListingResult>${resultText}</UpdateListingResult>` } } },
+  })
+  assert.equal(rejected.status, 'BLOCKED', resultText)
+  assert.equal(rejected.safety.listingPublished, false)
+  assert.deepEqual(rejectedClient.operations, [], 'an HTTP 200 business failure must never record an accepted submission')
+}
+const recordedPayload = recordClient.operations.find((o) => o.table === 'private_property_listing_syncs').payload
+assert.match(recordedPayload.last_payload_summary.submission.listingXmlDigest, /^[a-f0-9]{64}$/)
+assert.equal(recordedPayload.last_payload_summary.submission.responseSummary.resultText, 'Queued listing reference PP-CTRL-002')
+
+let productionXml = ''
+const productionTables = createTables('production', 'approved', '2026-08-26T08:00:00Z')
+productionTables.private_property_listing_syncs = [
+  { private_listing_id: listingId, environment: 'sandbox', property_id: 'WRONG-SANDBOX-ID' },
+  { private_listing_id: listingId, environment: 'production', property_id: 'ORIGINAL-PROD-ID', branch_guid: '22222222-2222-4222-8222-222222222222' },
+]
+const productionClient = createFakeClient(productionTables)
+const verifiedSubmission = await runPrivatePropertyControlledPublishRehearsal({
+  client: productionClient, listingId, environment: 'production', secrets, apply: true, recordSync: true,
+  confirmation: buildPrivatePropertyPublishConfirmation({ listingId, environment: 'production' }),
+  privateProperty: { ...createRecoveryPortal({ propertyId: 'ORIGINAL-PROD-ID', address: { streetName: 'Controlled Road', streetNumber: '12', suburbId: 12345 }, status: 'For Sale' }), async updateListing(xml) { productionXml = xml; return { status: 200, data: '<UpdateListingResult>Successful</UpdateListingResult>' } } },
+})
+assert.equal(verifiedSubmission.status, 'SUBMITTED')
+assert.match(productionXml, /<SuburbId>12345<\/SuburbId>/)
+assert.equal(verifiedSubmission.submitCandidate.propertyId, 'ORIGINAL-PROD-ID', 'updates retain the production feed ID even when a sandbox sync or changed listing reference exists')
+assert.match(productionXml, /<PropertyId>ORIGINAL-PROD-ID<\/PropertyId>/)
+const invalidProduction = createFakeClient(createTables('production', 'approved', '2026-08-26T08:00:00Z'))
+const blockedLocation = await runPrivatePropertyControlledPublishRehearsal({
+  client: invalidProduction, listingId, environment: 'production', secrets, apply: true, recordSync: true,
+  confirmation: buildPrivatePropertyPublishConfirmation({ listingId, environment: 'production' }), overrides: { suburbId: 99 },
+  privateProperty: { ...createCataloguePortal(), async updateListing() { throw new Error('must not send an unverified location') } },
+})
+assert.equal(blockedLocation.status, 'BLOCKED')
+assert.deepEqual(invalidProduction.operations, [])
+
+const missingAddressBaselineTables = structuredClone(productionTables)
+missingAddressBaselineTables.private_property_listing_syncs[1].activated_at = '2026-08-26T08:00:00Z'
+const missingAddressBaselinePortal = createRecoveryPortal({ propertyId: 'ORIGINAL-PROD-ID', address: { streetName: 'Controlled Road', streetNumber: '12', suburbId: 12345 }, status: 'For Sale' })
+const verifiedWithoutLocalBaseline = await runPrivatePropertyControlledPublishRehearsal({
+  client: createFakeClient(missingAddressBaselineTables), listingId, environment: 'production', secrets, apply: true,
+  confirmation: buildPrivatePropertyPublishConfirmation({ listingId, environment: 'production' }), privateProperty: missingAddressBaselinePortal,
+})
+assert.equal(verifiedWithoutLocalBaseline.status, 'SUBMITTED', 'the actual retained address supersedes a missing local fingerprint')
+assert.equal(missingAddressBaselinePortal.calls.filter(([call]) => call === 'update').length, 1)
+
+for (const address of [
+  { streetName: 'Controlled Road', streetNumber: '12', suburbId: 12345 },
+  { streetName: 'Old Road', streetNumber: '90', suburb: 'JR (GAUTENG)', town: 'Hammanskraal', province: 'Gauteng' },
+]) {
+  const recoveryClient = createFakeClient(productionTables)
+  const recoveryPortal = createRecoveryPortal({ propertyId: 'ORIGINAL-PROD-ID', address })
+  const rejectedUpdate = await runPrivatePropertyControlledPublishRehearsal({
+    client: recoveryClient, listingId, environment: 'production', secrets, apply: true, recordSync: true,
+    confirmation: buildPrivatePropertyPublishConfirmation({ listingId, environment: 'production' }), privateProperty: recoveryPortal,
+  })
+  assert.equal(rejectedUpdate.status, 'BLOCKED')
+  assert.ok(rejectedUpdate.recovery.blockers.length > 0)
+  assert.equal(recoveryPortal.calls.some(([call]) => call === 'update' || call === 'status-update'), false, 'direct production calls cannot bypass recovery checks')
+  assert.deepEqual(recoveryClient.operations, [], 'blocked recovery does not record submission evidence')
+}
 
 const serviceSource = read('server/services/privatePropertyControlledPublishService.js')
 assert.match(serviceSource, /buildPrivatePropertyGoLiveReadinessReport/)

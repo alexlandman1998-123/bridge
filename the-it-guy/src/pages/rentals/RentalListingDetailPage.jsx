@@ -1,4 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { getListingChannelViewUrl } from '../../services/listings/listingMarketingChannelPresentation'
+import { rentalChannelStatus } from '../../services/rentals/rentalChannelStatus'
+import ListingChannelTableHeader from '../../components/listings/ListingChannelTableHeader'
+import RentalDistributionChannel from './RentalDistributionChannel'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowLeft,
   BadgeCheck,
@@ -7,10 +11,10 @@ import {
   CircleAlert,
   Building2,
   Eye,
+  FileText,
   Home,
   Loader2,
   Pencil,
-  RefreshCw,
   Save,
   Send,
   ShieldCheck,
@@ -31,10 +35,9 @@ import {
   expirePrivatePropertyRentalListing,
   previewRentalProperty24Listing,
   publishRentalProperty24Listing,
-  expireRentalProperty24Listing,
+  withdrawRentalProperty24Listing,
   updateRentalListingDraft,
 } from '../../services/rentals/rentalListingDraftService'
-import { deletePrivateListing } from '../../services/privateListingService'
 import {
   RENTAL_LISTING_INITIAL_FORM,
   RENTAL_SELECT_OPTIONS,
@@ -45,17 +48,20 @@ import {
 } from '../../services/rentals/rentalListingEditModel'
 import {
   buildRentalListingDetailView,
+  buildRentalListingDetailPath,
   resolveRentalListingDetailTab,
 } from '../../services/rentals/rentalListingDetailModel'
 import {
   buildRentalListingQueryOptions,
   resolveRentalWorkspaceScope,
 } from '../../services/rentals/rentalWorkspaceScope'
-import {
-  buildListingWorkspaceTabs,
-  resolveRentalListingWorkspaceTabFromDetailTab,
-  resolveRentalListingWorkspaceTarget,
-} from '../../services/listings/listingWorkspaceUiModel'
+import RentalLeadDialog, { INITIAL_RENTAL_LEAD_FORM } from './RentalLeadDialog'
+import { createRentalLead } from '../../services/rentals/rentalLeadService'
+import RentalListingOverview from './RentalListingOverview'
+import RentalListingLandlordPanel from './RentalListingLandlordPanel'
+import RentalListingRelatedPanels from './RentalListingRelatedPanels'
+import { RENTAL_OVERVIEW_TABS } from '../../services/rentals/rentalListingOverviewModel'
+import { loadRentalListingOverview } from '../../services/rentals/rentalListingOverviewService'
 
 const PORTAL_FEATURE_FIELDS = Object.freeze([
   ['garden', 'Garden'],
@@ -156,53 +162,6 @@ function formatRelativeTime(value) {
   if (elapsedHours < 24) return `${elapsedHours}h ago`
   const elapsedDays = Math.round(elapsedHours / 24)
   return `${elapsedDays}d ago`
-}
-
-function RentalDistributionChannel({
-  icon = Building2,
-  logoSrc = '',
-  name,
-  subtitle = '',
-  reference = '',
-  status = 'not_published',
-  contextTitle = '',
-  lastSynced = '',
-  actions = [],
-}) {
-  const Icon = icon
-  const statusKey = String(status || '').trim().toLowerCase().replace(/[\s-]+/g, '_')
-  const live = ['live', 'published', 'active'].includes(statusKey)
-  const syncing = ['syncing', 'updating', 'publishing', 'submitted', 'pending'].includes(statusKey)
-  const attention = ['needs_attention', 'attention', 'warning', 'blocked', 'missing', 'failed', 'error'].includes(statusKey)
-  const dotClass = live ? 'bg-[#1f9d64]' : attention ? 'bg-[#d99321]' : syncing ? 'bg-[#2f6fb3]' : 'border border-[#aebdca] bg-white'
-  const statusTextClass = live ? 'text-[#18713e]' : attention ? 'text-[#9a5b13]' : syncing ? 'text-[#2f6fb3]' : 'text-[#526a82]'
-  const statusLabel = live ? 'Live' : attention ? 'Needs attention' : syncing ? 'Syncing' : 'Not published'
-
-  return (
-    <div className="grid gap-4 border-b border-[#edf2f7] px-4 py-4 last:border-b-0 lg:grid-cols-[minmax(250px,1fr)_minmax(170px,0.7fr)_minmax(130px,170px)_auto] lg:items-center">
-      <div className="flex min-w-0 items-center gap-3">
-        <span className="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-[10px] border border-[#dbe6f2] bg-white text-[#1f4f78]">
-          {logoSrc ? <img src={logoSrc} alt={`${name} logo`} className="max-h-7 max-w-8 object-contain" /> : <Icon size={18} />}
-        </span>
-        <div className="min-w-0">
-          <p className="truncate text-sm font-semibold leading-5 text-[#142132]">{name}</p>
-          {subtitle ? <p className="truncate text-xs leading-5 text-[#607387]">{subtitle}</p> : null}
-          {reference ? <span className="mt-1 inline-flex max-w-full rounded-full border border-[#dbe6f2] bg-[#f8fbfd] px-2 py-0.5 text-[0.68rem] font-semibold text-[#607387]"><span className="truncate">{reference}</span></span> : null}
-          {contextTitle ? <p className="mt-1 text-xs font-semibold leading-5 text-[#8a5b13]">{contextTitle}</p> : null}
-        </div>
-      </div>
-      <div className="min-w-0 md:justify-self-start"><p className={`inline-flex items-center gap-2 text-sm font-semibold ${statusTextClass}`}><span className={`h-2 w-2 rounded-full ${dotClass}`} />{statusLabel}</p></div>
-      <div className="min-w-0">
-        {lastSynced ? <><p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8294aa]">Last synced</p><p className="mt-0.5 text-xs font-semibold text-[#607387]">{lastSynced}</p></> : null}
-      </div>
-      <div className="flex justify-start lg:justify-end">
-        <details className="relative open:z-40">
-          <summary className="inline-flex min-h-9 cursor-pointer list-none items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-sm font-semibold text-[#35546c] transition hover:border-[#b7c8db] hover:bg-[#f7fbff] [&::-webkit-details-marker]:hidden"><SlidersHorizontal size={15} />Manage</summary>
-          <div className="absolute right-0 z-30 mt-2 grid w-56 gap-1.5 overflow-hidden rounded-[16px] border border-[#dbe6f2] bg-white p-1.5 shadow-[0_18px_34px_rgba(15,23,42,0.14)]">{actions}</div>
-        </details>
-      </div>
-    </div>
-  )
 }
 
 function RentalListingImage({ src, title }) {
@@ -396,37 +355,53 @@ function DetailPanel({ title, eyebrow, children }) {
 }
 
 function ListingDocumentsPanel({ documents = [] }) {
+  const [activeGroup, setActiveGroup] = useState('landlord')
   const documentRows = Array.isArray(documents) ? documents : []
   const tenantDocuments = documentRows.filter((document) => /tenant|applicant|application|fica|screening|lease/i.test(String(document.party || document.owner || document.category || document.document_type || document.type || document.name || document.file_name || '')))
   const landlordDocuments = documentRows.filter((document) => !tenantDocuments.includes(document))
-
-  const renderDocumentList = (rows, emptyMessage) => (
-    rows.length ? (
-      <div className="mt-4 divide-y divide-[#e7eef5] rounded-[14px] border border-[#dce6f2] bg-[#fbfdff] px-4">
-        {rows.map((document, index) => (
-          <div key={document.id || document.path || `${document.name || document.file_name || 'document'}-${index}`} className="py-3">
-            <p className="text-sm font-semibold text-[#22374d]">{document.name || document.file_name || document.label || document.document_type || 'Listing document'}</p>
-            <p className="mt-1 text-xs text-[#607387]">{document.status || document.created_at || document.createdAt || 'On file'}</p>
-          </div>
-        ))}
-      </div>
-    ) : <p className="mt-4 rounded-[14px] border border-dashed border-[#cbd9e7] bg-[#fbfdff] px-4 py-8 text-center text-sm text-[#607387]">{emptyMessage}</p>
-  )
-
+  const isComplete = (document) => ['approved', 'completed', 'accepted', 'signed'].includes(String(document.status || '').toLowerCase())
+  const complete = documentRows.filter(isComplete).length
+  const awaiting = documentRows.filter((document) => ['requested', 'sent', 'awaiting_upload'].includes(String(document.status || '').toLowerCase())).length
+  const review = documentRows.filter((document) => ['uploaded', 'submitted', 'under_review', 'agent_review'].includes(String(document.status || '').toLowerCase())).length
+  const groups = [
+    { key: 'landlord', label: 'Landlord', title: 'Landlord Documents', icon: ShieldCheck, description: 'Ownership, mandate, and landlord supporting documents.', rows: landlordDocuments },
+    { key: 'tenant', label: 'Tenant', title: 'Tenant Documents', icon: Users, description: 'Applications, screening, and tenancy documents.', rows: tenantDocuments },
+  ]
+  const group = groups.find((item) => item.key === activeGroup)
+  const percentage = documentRows.length ? Math.round(complete / documentRows.length * 100) : null
   return (
-    <section className="grid gap-5 xl:grid-cols-2">
-      <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
-        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#607891]">Landlord documents</p>
-        <h2 className="mt-1 text-lg font-semibold text-[#18324b]">Ownership and mandate</h2>
-        <p className="mt-1 text-sm text-[#607387]">Mandates, proof of ownership, and landlord supporting documents.</p>
-        {renderDocumentList(landlordDocuments, 'No landlord documents have been added to this listing yet.')}
-      </article>
-      <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
-        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#607891]">Tenant documents</p>
-        <h2 className="mt-1 text-lg font-semibold text-[#18324b]">Application and tenancy</h2>
-        <p className="mt-1 text-sm text-[#607387]">Tenant applications, screening records, and tenancy documents.</p>
-        {renderDocumentList(tenantDocuments, 'No tenant documents have been linked to this listing yet.')}
-      </article>
+    <section className="space-y-5">
+      <section className="overflow-hidden rounded-[24px] border border-[#dde4ee] bg-white shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+        <header className="flex items-start gap-3 border-b border-[#edf1f6] p-5">
+          <div className="rounded-[14px] bg-[#eef5fc] p-3 text-[#1f4f78]"><FileText size={22} aria-hidden="true" /></div>
+          <div><h2 className="text-xl font-semibold text-[#142132]">Rental Documents</h2><p className="mt-1 text-sm text-[#607387]">Documents linked to this rental listing.</p></div>
+        </header>
+        <div className="grid gap-3 p-5 sm:grid-cols-3">
+          <div className="flex items-center gap-3 rounded-[16px] border border-[#dce6f2] p-4">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-[#1f7d44]" style={{ background: percentage === null ? '#edf2f7' : `conic-gradient(#23834b ${percentage}%, #dce6f2 0)` }}><span className="flex h-9 w-9 items-center justify-center rounded-full bg-white">{percentage === null ? '—' : `${percentage}%`}</span></div>
+            <div><p className="text-lg font-semibold text-[#142132]">{complete} / {documentRows.length}</p><p className="text-sm text-[#607387]">complete</p></div>
+          </div>
+          {[{ icon: Send, value: awaiting, label: 'awaiting landlord or tenant', tone: 'bg-[#fff8eb] text-[#ac751f]' }, { icon: Eye, value: review, label: 'ready for review', tone: 'bg-[#eef6ff] text-[#306493]' }].map((metric) => <div key={metric.label} className="flex items-center gap-3 rounded-[16px] border border-[#dce6f2] p-4"><div className={`rounded-[14px] p-3 ${metric.tone}`}><metric.icon size={20} aria-hidden="true" /></div><div><p className="text-lg font-semibold text-[#142132]">{metric.value}</p><p className="text-sm text-[#607387]">{metric.label}</p></div></div>)}
+        </div>
+        <div className="flex border-t border-[#edf1f6] px-5" role="tablist" aria-label="Rental document groups">
+          {groups.map((item) => <button key={item.key} type="button" role="tab" id={`rental-documents-${item.key}-tab`} aria-controls="rental-documents-panel" aria-selected={activeGroup === item.key} onClick={() => setActiveGroup(item.key)} className={`flex items-center gap-2 border-b-2 px-3 py-4 text-sm font-semibold ${activeGroup === item.key ? 'border-[#3179a8] text-[#245377]' : 'border-transparent text-[#6b7d93] hover:text-[#245377]'}`}><span>{item.label}</span><span className="rounded-full bg-[#f0f5fa] px-2 py-1 text-xs text-[#6b7d93]">{item.rows.filter(isComplete).length}/{item.rows.length}</span></button>)}
+        </div>
+      </section>
+      <section id="rental-documents-panel" role="tabpanel" aria-labelledby={`rental-documents-${group.key}-tab`} className="overflow-hidden rounded-[24px] border border-[#dde4ee] bg-white shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+        <header className="flex flex-wrap items-center justify-between gap-3 p-5">
+          <div className="flex items-start gap-3"><div className="rounded-[14px] border border-[#dce6f2] bg-[#f7fbff] p-3 text-[#1f4f78]"><group.icon size={20} aria-hidden="true" /></div><div><h3 className="text-base font-semibold text-[#142132]">{group.title}</h3><p className="mt-1 text-sm text-[#607387]">{group.description}</p></div></div>
+          <span className="rounded-full border border-[#dce6f2] bg-[#f8fbff] px-3 py-1.5 text-xs font-semibold text-[#607891]">{group.rows.filter(isComplete).length} of {group.rows.length} complete</span>
+        </header>
+        <div className="overflow-x-auto">
+          <table className="w-full table-fixed text-left"><thead className="border-y border-[#edf1f6] bg-[#f6f9fc] text-xs font-semibold uppercase tracking-[0.06em] text-[#8195ac]"><tr><th scope="col" className="w-1/2 px-5 py-3">Document</th><th scope="col" className="w-1/4 px-5 py-3">Source</th><th scope="col" className="w-1/4 px-5 py-3">Status</th></tr></thead>
+            <tbody className="divide-y divide-[#edf1f6]">{group.rows.length ? group.rows.map((document, index) => <tr key={document.id || document.path || index}>
+              <td className="px-5 py-5"><div className="flex items-start gap-3"><div className="rounded-[12px] bg-[#eef5fc] p-2.5 text-[#306493]"><FileText size={18} aria-hidden="true" /></div><div className="min-w-0"><p className="break-words text-sm font-semibold text-[#22374d]">{document.name || document.file_name || document.label || document.document_type || 'Listing document'}</p>{document.file_name ? <p className="mt-1 break-words text-xs text-[#8195ac]">{document.file_name}</p> : null}</div></div></td>
+              <td className="break-words px-5 py-5 text-sm text-[#607387]">{document.source || 'Listing file'}</td>
+              <td className="px-5 py-5"><span className="inline-flex rounded-full border border-[#dbe4ef] bg-[#f8fbff] px-2.5 py-1 text-xs font-semibold text-[#48627f]">{String(document.status || 'On file').replace(/_/g, ' ')}</span></td>
+            </tr>) : <tr><td colSpan={3} className="px-5 py-10 text-center text-sm text-[#6b7d93]">No documents in this group yet.</td></tr>}</tbody>
+          </table>
+        </div>
+      </section>
     </section>
   )
 }
@@ -542,7 +517,7 @@ function Property24ReadinessItem({ item }) {
 function Property24SyndicationPanel({
   detail,
   onPublish,
-  onExpireProperty24,
+  onWithdrawProperty24,
   publishing,
   publishError,
   property24Preview,
@@ -555,7 +530,7 @@ function Property24SyndicationPanel({
   privatePropertyError,
   onCheckPrivateProperty,
   onPublishPrivateProperty,
-  onExpirePrivateProperty,
+  onWithdrawPrivateProperty,
 }) {
   const readiness = detail.property24Readiness
   const previewDetails = getProperty24PreviewDetails(property24Preview)
@@ -988,60 +963,8 @@ function RentalListingEditPanel({ form, onChange, onCancel, onSubmit, saving, ca
   )
 }
 
-function RentalOverview({ detail, onOpenMarketing }) {
-  const row = detail.row
-  const applicationCount = Number(row.applicationCount || 0)
-  const metrics = [
-    { label: 'Views', value: '0', meta: 'No analytics yet', icon: Eye, tone: 'border-t-[#76c6fb] bg-[#e8f4ff] text-[#2363a0]' },
-    { label: 'Applications', value: applicationCount, meta: applicationCount ? 'In the tenant queue' : 'No applications yet', icon: Users, tone: 'border-t-[#38d39f] bg-[#e4fbf3] text-[#0b9270]' },
-    { label: 'Viewings', value: '0', meta: '0 upcoming', icon: CalendarDays, tone: 'border-t-[#6e91ff] bg-[#edf1ff] text-[#365caf]' },
-    { label: 'Offers', value: '0', meta: '0 active', icon: BadgeCheck, tone: 'border-t-[#f9b528] bg-[#fff3d9] text-[#aa7416]' },
-    { label: 'Days listed', value: '—', meta: 'Rental draft', icon: Home, tone: 'border-t-[#9baabd] bg-[#f2f5f8] text-[#526b83]' },
-  ]
-  return (
-    <section className="space-y-5">
-      <section className="rounded-[28px] border border-[#e1e9f1] bg-white p-5 shadow-[0_14px_32px_rgba(15,23,42,0.055)] sm:p-7">
-        <div className="grid items-stretch gap-4 sm:grid-cols-2 lg:grid-cols-5">
-          {metrics.map((metric) => {
-            const Icon = metric.icon
-            return (
-              <article key={metric.label} className={`flex min-h-[184px] flex-col justify-between rounded-[16px] border border-[#e0e9f2] border-t-[4px] bg-gradient-to-br from-white to-[#fbfdff] p-4 ${metric.tone.split(' ').at(0)}`}>
-                <div className="flex items-start justify-between gap-3">
-                  <p className="text-[0.82rem] font-semibold text-[#637996]">{metric.label}</p>
-                  <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-[11px] ${metric.tone.split(' ').slice(1).join(' ')}`}><Icon size={17} /></span>
-                </div>
-                <p className="mt-4 text-[2.35rem] font-semibold leading-none tracking-[-0.05em] text-[#10243a]">{metric.value}</p>
-                <span className="mt-4 inline-flex w-fit rounded-[10px] bg-[#f3f6f8] px-2.5 py-1.5 text-xs font-semibold text-[#60758c]">{metric.meta}</span>
-              </article>
-            )
-          })}
-        </div>
-        <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
-          <span className="inline-flex min-h-9 items-center rounded-lg border border-[#dbe6f2] bg-[#f7fbff] px-3 text-xs font-semibold text-[#35546c]">Current listing period</span>
-        </div>
-      </section>
-
-      <section className="grid items-stretch gap-5 xl:grid-cols-2">
-        <article className="flex h-full flex-col rounded-[20px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
-          <div className="flex items-center justify-between gap-3"><h2 className="text-base font-semibold text-[#142132]">Latest Tenant Activity</h2><span className="text-xs font-semibold text-[#1f4f78]">View applications</span></div>
-          <div className="mt-4 flex-1 rounded-[14px] border border-dashed border-[#d3deea] bg-[#fbfcfe] px-4 py-6 text-sm text-[#607387]">No tenant activity yet.</div>
-        </article>
-        <article className="flex h-full flex-col rounded-[20px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
-          <div className="flex items-center justify-between gap-3"><h2 className="text-base font-semibold text-[#142132]">Upcoming Viewings</h2><span className="text-xs font-semibold text-[#1f4f78]">View all</span></div>
-          <div className="mt-4 flex-1 rounded-[14px] border border-dashed border-[#d3deea] bg-[#fbfcfe] px-4 py-6 text-sm text-[#607387]">No upcoming viewings.</div>
-        </article>
-      </section>
-
-      <section className="grid items-stretch gap-5 xl:grid-cols-3">
-        <article className="rounded-[20px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.045)]"><div className="flex items-center justify-between gap-3"><h2 className="text-base font-semibold text-[#142132]">Tenant</h2><span className="text-xs font-semibold text-[#1f4f78]">Open tenant</span></div><p className="mt-4 text-sm font-semibold text-[#142132]">No tenant placed</p><p className="mt-2 text-sm text-[#607387]">A tenant profile will appear here once an application is approved.</p></article>
-        <article className="rounded-[20px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.045)]"><div className="flex items-center justify-between gap-3"><h2 className="text-base font-semibold text-[#142132]">Marketing</h2><button type="button" onClick={onOpenMarketing} className="text-xs font-semibold text-[#1f4f78]">Open marketing</button></div><div className="mt-4 space-y-2 text-sm text-[#607387]"><div className="flex justify-between border-b border-[#edf2f7] py-2"><span>Property24</span><strong>{detail.property24StatusLabel}</strong></div><div className="flex justify-between py-2"><span>Readiness</span><strong>{detail.readinessPercent}%</strong></div></div></article>
-        <article className="rounded-[20px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.045)]"><h2 className="text-base font-semibold text-[#142132]">Rental Position</h2><div className="mt-4 grid gap-x-5 gap-y-3 sm:grid-cols-2"><div><p className="text-xs text-[#6b7d93]">Monthly rent</p><p className="mt-1 font-semibold text-[#142132]">{formatCurrency(row.monthlyRent)}</p></div><div><p className="text-xs text-[#6b7d93]">Available from</p><p className="mt-1 font-semibold text-[#142132]">{formatDate(row.availableFrom)}</p></div><div><p className="text-xs text-[#6b7d93]">Deposit</p><p className="mt-1 font-semibold text-[#142132]">{formatCurrency(row.depositAmount)}</p></div><div><p className="text-xs text-[#6b7d93]">Lease term</p><p className="mt-1 font-semibold text-[#142132]">{row.leasePeriodMonths ? `${row.leasePeriodMonths} months` : '—'}</p></div></div></article>
-      </section>
-    </section>
-  )
-}
-
 function RentalTabContent({
+  snapshot, agentPanel, onOpenTab, onNavigate, onAddLead, onScheduleViewing, onRefresh,
   activeTab,
   detail,
   onPublish,
@@ -1057,20 +980,15 @@ function RentalTabContent({
   privatePropertyError,
   onCheckPrivateProperty,
   onPublishPrivateProperty,
-  onExpireProperty24,
-  onExpirePrivateProperty,
-  onOpenMarketing,
+  onWithdrawProperty24,
+  onWithdrawPrivateProperty,
   onOpenEdit,
   property24ExpiryDate,
   onProperty24ExpiryChange,
   onSaveProperty24Expiry,
   savingProperty24Expiry,
   onPrepareWebsitePublication,
-  landlordForm,
-  onLandlordChange,
-  onSaveLandlord,
-  savingLandlord,
-  landlordError,
+  landlordPanel,
 }) {
   const row = detail.row
   if (activeTab === 'property') {
@@ -1085,23 +1003,7 @@ function RentalTabContent({
       </DetailPanel>
     )
   }
-  if (activeTab === 'landlord') {
-    return (
-      <form onSubmit={onSaveLandlord} className="ui-panel ui-panel-body">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div><p className="text-xs font-semibold uppercase text-[#607891]">Landlord</p><h2 className="text-lg font-semibold text-[#18324b]">Landlord Relationship</h2><p className="mt-1 text-sm text-[#607387]">Update the landlord contact details for this rental listing.</p></div>
-          <button type="submit" className="ui-pill-button ui-pill-button-active" disabled={savingLandlord}>{savingLandlord ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}Save landlord details</button>
-        </div>
-        <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          <label className="form-field"><span>Landlord name *</span><input required value={landlordForm.landlordName || ''} onChange={(event) => onLandlordChange('landlordName', event.target.value)} /></label>
-          <label className="form-field"><span>Landlord email</span><input type="email" value={landlordForm.landlordEmail || ''} onChange={(event) => onLandlordChange('landlordEmail', event.target.value)} /></label>
-          <label className="form-field"><span>Landlord phone</span><input value={landlordForm.landlordPhone || ''} onChange={(event) => onLandlordChange('landlordPhone', event.target.value)} /></label>
-          <SelectField label="Landlord type" name="landlordType" value={landlordForm.landlordType || ''} onChange={(name, value) => onLandlordChange(name, value)} options={RENTAL_SELECT_OPTIONS.landlordType} />
-        </div>
-        {landlordError ? <p className="mt-4 rounded-[8px] border border-[#f2c6c6] bg-[#fff7f7] px-4 py-3 text-sm font-semibold text-[#9f3131]">{landlordError}</p> : null}
-      </form>
-    )
-  }
+  if (activeTab === 'landlord') return landlordPanel
   if (activeTab === 'terms') {
     return (
       <DetailPanel eyebrow="Rental terms" title="Rent, Deposit, and Availability">
@@ -1116,7 +1018,7 @@ function RentalTabContent({
     )
   }
   if (activeTab === 'mandate') {
-    return <ListingDocumentsPanel documents={detail.listing?.documents} />
+    return snapshot?.issues.includes('Documents') ? <DetailPanel title="Documents"><p>Documents could not be loaded. Refresh to retry.</p></DetailPanel> : <ListingDocumentsPanel documents={snapshot?.documents || []} />
   }
   if (activeTab === 'inspection') {
     return (
@@ -1144,8 +1046,8 @@ function RentalTabContent({
     const privatePropertyStatus = privatePropertyChannel.status || 'not_published'
     const property24Reference = listing.property24Reference || listing.property24_reference || publication.property24Reference || publication.property24_reference || ''
     const privatePropertyReference = listing.privatePropertyReference || listing.private_property_reference || publication.privatePropertyReference || publication.private_property_reference || ''
-    const property24Url = listing.property24ListingUrl || listing.property24_listing_url || publication.property24ListingUrl || publication.property24_listing_url || ''
-    const privatePropertyUrl = listing.privatePropertyListingUrl || listing.private_property_listing_url || publication.privatePropertyListingUrl || publication.private_property_listing_url || ''
+    const property24Url = rentalChannelStatus(property24Status).live ? getListingChannelViewUrl('property24', listing.property24ListingUrl || listing.property24_listing_url || publication.property24ListingUrl || publication.property24_listing_url || '') : ''
+    const privatePropertyUrl = rentalChannelStatus(privatePropertyStatus).live ? getListingChannelViewUrl('private_property', listing.privatePropertyListingUrl || listing.private_property_listing_url || publication.privatePropertyListingUrl || publication.private_property_listing_url || '') : ''
     const property24LastSynced = formatRelativeTime(listing.property24LastSyncedAt || listing.property24_last_synced_at || publication.property24LastSyncedAt || publication.property24_last_synced_at)
     const privatePropertyLastSynced = formatRelativeTime(listing.privatePropertyLastSyncedAt || listing.private_property_last_synced_at || publication.privatePropertyLastSyncedAt || publication.private_property_last_synced_at)
     const channelMenuItemClass = 'flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#243d56] transition hover:bg-[#f7fbff] disabled:cursor-not-allowed disabled:opacity-50'
@@ -1155,38 +1057,45 @@ function RentalTabContent({
         <RentalMarketingOverview detail={detail} row={row} galleryImages={galleryImages} onOpenEdit={onOpenEdit} />
         <article id="listing-distribution-channels" className="overflow-visible rounded-[22px] border border-[#dde4ee] bg-white shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
           <div className="border-b border-[#edf2f7] p-5"><h3 className="text-base font-semibold text-[#142132]">Listing Channels</h3><p className="mt-1 text-sm text-[#607387]">Manage where this rental is advertised.</p></div>
+          <ListingChannelTableHeader />
           <RentalDistributionChannel
+            channelKey="property24"
+            publicUrl={property24Url}
+            savedAt={formatRelativeTime(detail.lastUpdatedAt)}
             logoSrc="/lead-sources/property24.png"
             name="Property24"
             subtitle="South Africa's property portal"
             reference={property24Reference ? `Ref: ${property24Reference}` : ''}
             status={property24Status}
-            contextTitle={['published', 'live', 'active'].includes(String(property24Status).toLowerCase()) ? 'Published and up to date' : previewStatus.label === 'Ready to publish' ? 'Ready to publish' : 'Run readiness check before publishing'}
+            contextTitle={rentalChannelStatus(property24Status).live ? 'Published' : previewStatus.label === 'Ready to publish' ? 'Ready to publish' : 'Check listing requirements before publishing'}
             lastSynced={property24LastSynced}
             actions={[
               property24Url ? <a key="view" href={property24Url} target="_blank" rel="noreferrer" className={channelMenuItemClass}><Eye size={15} />View live listing</a> : null,
-              <button key="check" type="button" onClick={onCheckProperty24} disabled={checkingProperty24 || publishing} className={channelMenuItemClass}>{checkingProperty24 ? <Loader2 size={15} className="animate-spin" /> : <Eye size={15} />}Check readiness</button>,
+              <button key="check" type="button" title="Checks the saved listing details, photos and portal setup without publishing." onClick={onCheckProperty24} disabled={checkingProperty24 || publishing} className={channelMenuItemClass}>{checkingProperty24 ? <Loader2 size={15} className="animate-spin" /> : <Eye size={15} />}Check listing requirements</button>,
               <button key="publish" type="button" onClick={onPublish} disabled={publishing || !getProperty24PreviewDetails(property24Preview).canSubmit} className={channelMenuItemClass}>{publishing ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}Publish</button>,
-              ['published', 'live', 'active'].includes(String(property24Status).toLowerCase()) ? <button key="expire" type="button" onClick={onExpireProperty24} disabled={publishing} className={`${channelMenuItemClass} text-[#a43d35] hover:bg-[#fff5f5]`}>{publishing ? <Loader2 size={15} className="animate-spin" /> : <CalendarDays size={15} />}Expire listing</button> : null,
+              property24Reference && !['not_published', 'expired', 'removed', 'withdrawn'].includes(property24Status) ? <button key="withdraw" type="button" onClick={onWithdrawProperty24} disabled={publishing} className={`${channelMenuItemClass} text-[#a43d35] hover:bg-[#fff5f5]`}>{publishing ? <Loader2 size={15} className="animate-spin" /> : <CalendarDays size={15} />}Withdraw listing</button> : null,
             ].filter(Boolean)}
           />
           <RentalDistributionChannel
+            channelKey="private_property"
+            publicUrl={privatePropertyUrl}
+            savedAt={formatRelativeTime(detail.lastUpdatedAt)}
             icon={Home}
             logoSrc="/lead-sources/private-property.jpeg"
             name="Private Property"
             subtitle="Property portal"
             reference={privatePropertyReference ? `Ref: ${privatePropertyReference}` : ''}
             status={privatePropertyStatus}
-            contextTitle={['published', 'live', 'active'].includes(String(privatePropertyStatus).toLowerCase()) ? 'Published and up to date' : privatePropertyPreview?.ready ? 'Ready to publish' : 'Run readiness check before publishing'}
+            contextTitle={rentalChannelStatus(privatePropertyStatus).live ? 'Published' : privatePropertyPreview?.ready ? 'Ready to publish' : 'Check listing requirements before publishing'}
             lastSynced={privatePropertyLastSynced}
             actions={[
               privatePropertyUrl ? <a key="view" href={privatePropertyUrl} target="_blank" rel="noreferrer" className={channelMenuItemClass}><Eye size={15} />View live listing</a> : null,
-              <button key="check" type="button" onClick={onCheckPrivateProperty} disabled={checkingPrivateProperty || publishingPrivateProperty} className={channelMenuItemClass}>{checkingPrivateProperty ? <Loader2 size={15} className="animate-spin" /> : <Eye size={15} />}Check readiness</button>,
+              <button key="check" type="button" title="Checks the saved listing details, photos and portal setup without publishing." onClick={onCheckPrivateProperty} disabled={checkingPrivateProperty || publishingPrivateProperty} className={channelMenuItemClass}>{checkingPrivateProperty ? <Loader2 size={15} className="animate-spin" /> : <Eye size={15} />}Check listing requirements</button>,
               <button key="publish" type="button" onClick={onPublishPrivateProperty} disabled={!privatePropertyPreview?.ready || publishingPrivateProperty} className={channelMenuItemClass}>{publishingPrivateProperty ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}Publish</button>,
-              ['published', 'live', 'active'].includes(String(privatePropertyStatus).toLowerCase()) ? <button key="expire" type="button" onClick={onExpirePrivateProperty} disabled={publishingPrivateProperty} className={`${channelMenuItemClass} text-[#a43d35] hover:bg-[#fff5f5]`}>{publishingPrivateProperty ? <Loader2 size={15} className="animate-spin" /> : <CalendarDays size={15} />}Expire listing</button> : null,
+              privatePropertyReference && !['not_published', 'inactive', 'expired', 'removed', 'withdrawn'].includes(privatePropertyStatus) ? <button key="withdraw" type="button" onClick={onWithdrawPrivateProperty} disabled={publishingPrivateProperty} className={`${channelMenuItemClass} text-[#a43d35] hover:bg-[#fff5f5]`}>{publishingPrivateProperty ? <Loader2 size={15} className="animate-spin" /> : <CalendarDays size={15} />}Withdraw listing</button> : null,
             ].filter(Boolean)}
           />
-          <WebsiteListingPublicationPanel variant="channel" listingId={detail.listing?.id || row.id} listingTitle={row.title} onPrepare={onPrepareWebsitePublication} />
+          <WebsiteListingPublicationPanel variant="channel" listingId={detail.listing?.id || row.id} listingTitle={row.title} listingReference={listing.arch9Reference || listing.listingReference || listing.listingCode || ''} savedAt={formatRelativeTime(detail.lastUpdatedAt)} onPrepare={onPrepareWebsitePublication} />
         </article>
         {property24Preview && getProperty24PreviewIssues(property24Preview).length ? (
           <section className="rounded-[18px] border border-[#f1dfb8] bg-[#fffaf0] p-4">
@@ -1227,23 +1136,10 @@ function RentalTabContent({
       />
     )
   }
-  if (activeTab === 'applications') {
-    return (
-      <DetailPanel eyebrow="Applications" title="Tenant Applications">
-        <DetailRow label="Application count" value={row.applicationCount} />
-        <DetailRow label="Latest application" value="No application activity" />
-      </DetailPanel>
-    )
+  if (['leads', 'applications', 'commission', 'activity'].includes(activeTab)) {
+    return <RentalListingRelatedPanels activeTab={activeTab} snapshot={snapshot} onNavigate={onNavigate} onAddLead={onAddLead} />
   }
-  if (activeTab === 'activity') {
-    return (
-      <DetailPanel eyebrow="Activity" title="Activity Timeline">
-        <DetailRow label="Next action" value={row.nextAction} />
-        <DetailRow label="Timeline" value="No activity captured" />
-      </DetailPanel>
-    )
-  }
-  return <RentalOverview detail={detail} onOpenMarketing={onOpenMarketing} />
+  return <RentalListingOverview detail={detail} snapshot={snapshot} agentPanel={agentPanel} onOpenTab={onOpenTab} onOpenEdit={onOpenEdit} onRefresh={onRefresh} onNavigate={onNavigate} onAddLead={onAddLead} onScheduleViewing={onScheduleViewing} />
 }
 
 export default function RentalListingDetailPage() {
@@ -1257,6 +1153,15 @@ export default function RentalListingDetailPage() {
   const organisationId = rentalScope.organisationId
   const assignedAgentId = rentalScope.assignedAgentId
   const [listing, setListing] = useState(null)
+  const [overviewSnapshot, setOverviewSnapshot] = useState(null)
+  const [tenantLeadOpen, setTenantLeadOpen] = useState(false)
+  const [tenantLeadForm, setTenantLeadForm] = useState(() => ({ ...INITIAL_RENTAL_LEAD_FORM, role: 'tenant' }))
+  const [tenantLeadSaving, setTenantLeadSaving] = useState(false)
+  const [tenantLeadError, setTenantLeadError] = useState('')
+  const tenantLeadSavingRef = useRef(false)
+  const tenantLeadContextRef = useRef('')
+  tenantLeadContextRef.current = `${organisationId}:${listingId}`
+  useEffect(() => { setTenantLeadOpen(false); setTenantLeadError('') }, [organisationId, listingId])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [editOpen, setEditOpen] = useState(false)
@@ -1275,16 +1180,10 @@ export default function RentalListingDetailPage() {
   const [successMessage, setSuccessMessage] = useState('')
   const [property24ExpiryDate, setProperty24ExpiryDate] = useState('')
   const [savingProperty24Expiry, setSavingProperty24Expiry] = useState(false)
-  const [deletingListing, setDeletingListing] = useState(false)
 
   const detail = useMemo(() => (listing ? buildRentalListingDetailView(listing) : null), [listing])
-  const rentalWorkspaceTabs = useMemo(() => buildListingWorkspaceTabs('rentals', {
-    hiddenTabs: ['property', 'features', 'media', 'syndication'],
-  }).map((tab) => tab.key === 'mandate' ? { ...tab, label: 'Documents', shortLabel: 'Documents' } : tab), [])
-  const activeRentalWorkspaceTab = useMemo(
-    () => resolveRentalListingWorkspaceTabFromDetailTab(activeTab),
-    [activeTab],
-  )
+  const rentalWorkspaceTabs = RENTAL_OVERVIEW_TABS
+  const activeRentalWorkspaceTab = activeTab === 'applications' ? 'leads' : activeTab
   const editValidationErrors = useMemo(
     () => validateRentalListingEditForm(editForm, { organisationId }),
     [editForm, organisationId],
@@ -1331,8 +1230,53 @@ export default function RentalListingDetailPage() {
     setActiveTab(routeTab)
   }, [routeTab])
 
-  function openEditPanel() {
-    navigate(`/agent/rentals/listings/${encodeURIComponent(listingId)}/edit`)
+  useEffect(() => {
+    let cancelled = false
+    setOverviewSnapshot(null)
+    if (!listing || !organisationId) return () => { cancelled = true }
+    void loadRentalListingOverview(listing, rentalScope, {
+      ...rentalScope, includeAllOrganisationLeads: rentalScope.scopeLevel === 'organisation',
+    }).then((snapshot) => { if (!cancelled) setOverviewSnapshot(snapshot) }).catch(() => {
+      if (!cancelled) setOverviewSnapshot({ issues: ['Leads', 'Applications', 'Viewings & activity', 'Documents', 'Document requirements', 'Tenant', 'Commission'], leads: [], applications: [], upcoming: [], documents: [], activity: [], mandates: [], newLeadCount: 0 })
+    })
+    return () => { cancelled = true }
+  }, [listing, organisationId, rentalScope])
+
+  function openTenantLeadDialog() {
+    setTenantLeadForm({ ...INITIAL_RENTAL_LEAD_FORM, role: 'tenant', desiredArea: listing?.suburb || listing?.city || detail?.row?.location || '' })
+    setTenantLeadError('')
+    setTenantLeadOpen(true)
+  }
+
+  async function saveTenantLead(event) {
+    event.preventDefault()
+    if (tenantLeadSavingRef.current) return
+    const savingContext = tenantLeadContextRef.current
+    tenantLeadSavingRef.current = true
+    setTenantLeadSaving(true)
+    setTenantLeadError('')
+    try {
+      const actor = { id: assignedAgentId, userId: assignedAgentId, email: workspaceContext.profile?.email || '', name: workspaceContext.profile?.fullName || workspaceContext.profile?.name || '' }
+      const created = await createRentalLead({ ...tenantLeadForm, role: 'tenant', listingId }, { organisationId, branchId: rentalScope.branchId, actor, assignedAgent: actor })
+      if (tenantLeadContextRef.current !== savingContext) return
+      setOverviewSnapshot((current) => current ? {
+        ...current,
+        leads: [created, ...current.leads.filter((lead) => lead.id !== created.id)],
+        leadCount: current.leadCount == null ? null : current.leadCount + (current.leads.some((lead) => lead.id === created.id) ? 0 : 1),
+        newLeadCount: current.newLeadCount + (current.leads.some((lead) => lead.id === created.id) ? 0 : 1),
+      } : current)
+      setTenantLeadOpen(false)
+      setSuccessMessage('Tenant lead added to this listing.')
+    } catch (saveError) {
+      if (tenantLeadContextRef.current === savingContext) setTenantLeadError(saveError?.message || 'Unable to create the tenant lead.')
+    } finally {
+      tenantLeadSavingRef.current = false
+      setTenantLeadSaving(false)
+    }
+  }
+
+  function openEditPanel(step) {
+    navigate(`/agent/rentals/listings/${encodeURIComponent(listingId)}/edit${typeof step === 'string' ? `?step=${encodeURIComponent(step)}` : ''}`)
   }
 
   function updateEditForm(name, value) {
@@ -1364,27 +1308,6 @@ export default function RentalListingDetailPage() {
       setSuccessMessage('Rental listing details were saved.')
     } catch (saveError) {
       setEditError(saveError?.message || 'Unable to save rental listing details.')
-    } finally {
-      setSavingEdit(false)
-    }
-  }
-
-  async function handleLandlordSave(event) {
-    event.preventDefault()
-    try {
-      setSavingEdit(true)
-      setEditError('')
-      setSuccessMessage('')
-      const result = await updateRentalListingDraft(listingId, editForm, {
-        organisationId,
-        assignedAgentId,
-        performedBy: assignedAgentId,
-      })
-      setListing(result.listing)
-      setEditForm(buildRentalListingEditForm(result.listing))
-      setSuccessMessage('Landlord details were saved.')
-    } catch (saveError) {
-      setEditError(saveError?.message || 'Unable to save landlord details.')
     } finally {
       setSavingEdit(false)
     }
@@ -1445,16 +1368,18 @@ export default function RentalListingDetailPage() {
     }
   }
 
-  async function handleProperty24Expire() {
-    if (!window.confirm('Expire this rental on Property24? It will no longer be advertised there.')) return
+  async function handleProperty24Withdraw() {
+    if (publishing) return
+    if (!window.confirm('Withdraw this rental from Property24? It will no longer be advertised there. The rental record and other channels will be kept.')) return
     try {
       setPublishing(true)
       setPublishError('')
-      await expireRentalProperty24Listing(listingId)
-      setSuccessMessage('Rental expired on Property24.')
+      setSuccessMessage('')
+      await withdrawRentalProperty24Listing(listingId)
+      setSuccessMessage('Rental withdrawn from Property24.')
       await loadListing()
     } catch (expireError) {
-      setPublishError(expireError?.message || 'Unable to expire this rental on Property24.')
+      setPublishError(expireError?.message || 'Unable to withdraw this rental from Property24.')
     } finally {
       setPublishing(false)
     }
@@ -1481,7 +1406,7 @@ export default function RentalListingDetailPage() {
         setSuccessMessage('')
         return
       }
-      setSuccessMessage('Property24 rental readiness check passed.')
+      setSuccessMessage('Property24 listing requirements passed. You can now publish.')
     } catch (previewError) {
       setProperty24Preview(null)
       setProperty24PreviewError(previewError?.message || 'Unable to check Property24 rental readiness.')
@@ -1496,7 +1421,7 @@ export default function RentalListingDetailPage() {
       setPrivatePropertyError('')
       const payload = await previewPrivatePropertyRentalListing(listingId)
       setPrivatePropertyPreview(payload)
-      setSuccessMessage(payload?.ready ? 'Private Property rental readiness check passed.' : 'Private Property has blockers to resolve before publishing.')
+      setSuccessMessage(payload?.ready ? 'Private Property listing requirements passed. You can now publish.' : 'Private Property has blockers to resolve before publishing.')
     } catch (previewError) {
       setPrivatePropertyPreview(null)
       setPrivatePropertyError(previewError?.message || 'Unable to check Private Property rental readiness.')
@@ -1507,7 +1432,7 @@ export default function RentalListingDetailPage() {
 
   async function handlePrivatePropertyPublish() {
     if (!privatePropertyPreview?.ready) {
-      setPrivatePropertyError('Run a clean Private Property readiness check before publishing this rental.')
+      setPrivatePropertyError('Check and resolve the Private Property listing requirements before publishing this rental.')
       return
     }
     if (!window.confirm('Submit this rental listing to Private Property production?')) return
@@ -1525,16 +1450,18 @@ export default function RentalListingDetailPage() {
     }
   }
 
-  async function handlePrivatePropertyExpire() {
-    if (!window.confirm('Expire this rental on Private Property? It will no longer be advertised there.')) return
+  async function handlePrivatePropertyWithdraw() {
+    if (publishingPrivateProperty) return
+    if (!window.confirm('Withdraw this rental from Private Property? It will no longer be advertised there. The rental record and other channels will be kept.')) return
     try {
       setPublishingPrivateProperty(true)
       setPrivatePropertyError('')
+      setSuccessMessage('')
       await expirePrivatePropertyRentalListing(listingId)
-      setSuccessMessage('Rental expired on Private Property.')
+      setSuccessMessage('Rental withdrawn from Private Property.')
       await loadListing()
     } catch (expireError) {
-      setPrivatePropertyError(expireError?.message || 'Unable to expire this rental on Private Property.')
+      setPrivatePropertyError(expireError?.message || 'Unable to withdraw this rental from Private Property.')
     } finally {
       setPublishingPrivateProperty(false)
     }
@@ -1567,21 +1494,6 @@ export default function RentalListingDetailPage() {
     }
   }
 
-  async function handleDeleteRentalListing() {
-    const title = String(row?.title || 'this rental listing').trim()
-    if (!window.confirm(`Permanently delete "${title}"?\n\nThis removes the rental listing and its linked workflow data. This cannot be undone.`)) return
-    try {
-      setDeletingListing(true)
-      setError('')
-      await deletePrivateListing(listingId, { organisationId })
-      navigate('/agent/rentals/listings', { replace: true, state: { message: `"${title}" was permanently deleted.` } })
-    } catch (deleteError) {
-      setError(deleteError?.message || 'Unable to delete this rental listing.')
-    } finally {
-      setDeletingListing(false)
-    }
-  }
-
   if (loading) {
     return (
       <section className="page-content">
@@ -1610,12 +1522,11 @@ export default function RentalListingDetailPage() {
   const row = detail.row
 
   function openRentalListingWorkspaceTab(tabKey) {
-    const target = resolveRentalListingWorkspaceTarget(tabKey)
-    setActiveTab(target.detailTab || 'overview')
+    navigate(buildRentalListingDetailPath(listingId, tabKey))
   }
 
   return (
-    <section className="page-content">
+    <section className="page-content rental-listing-detail">
       <div className="ui-section-stack">
         <header className="relative isolate min-h-[240px] overflow-hidden rounded-[24px] border border-[#d7e1eb] bg-[#153751] shadow-[0_12px_28px_rgba(15,23,42,0.12)] sm:min-h-[300px]">
           <div className="absolute inset-0 -z-20">
@@ -1625,7 +1536,7 @@ export default function RentalListingDetailPage() {
           <div className="flex min-h-[240px] flex-col justify-between gap-6 p-5 sm:min-h-[300px] sm:p-8">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex flex-wrap items-center gap-2">
-                <button
+                <button data-rental-control="hero"
                   type="button"
                   onClick={() => navigate('/agent/rentals/listings')}
                   className="inline-flex items-center gap-1 rounded-full border border-white/25 bg-white/10 px-3 py-1.5 text-[0.74rem] font-semibold text-white backdrop-blur-sm transition hover:bg-white/20"
@@ -1633,23 +1544,8 @@ export default function RentalListingDetailPage() {
                   <ArrowLeft size={13} aria-hidden="true" />
                   Back to listings
                 </button>
-                <span className="inline-flex rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-[0.72rem] font-semibold text-white/90 backdrop-blur-sm">Rental listing</span>
-                <span className="inline-flex rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-[0.72rem] font-semibold text-white/90 backdrop-blur-sm">{detail.statusLabel}</span>
               </div>
-              <div className="flex flex-wrap items-center justify-end gap-2">
-                <button type="button" className="ui-pill-button border-white/20 bg-white/10 text-white shadow-none hover:bg-white/20" onClick={loadListing} disabled={loading}>
-                  <RefreshCw size={16} aria-hidden="true" />
-                  Refresh
-                </button>
-                <button type="button" className="ui-pill-button border-white bg-white text-[#163956] shadow-none hover:bg-[#edf5fb]" onClick={openEditPanel}>
-                  <Pencil size={16} aria-hidden="true" />
-                  Edit Listing
-                </button>
-                <button type="button" className="ui-pill-button border-white/20 bg-white/10 text-white shadow-none hover:bg-white/20" onClick={handleDeleteRentalListing} disabled={deletingListing}>
-                  {deletingListing ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <Trash2 size={16} aria-hidden="true" />}
-                  Delete Listing
-                </button>
-              </div>
+
             </div>
             <div className="max-w-4xl">
               <h1 className="text-3xl font-semibold tracking-[-0.04em] text-white sm:text-4xl">{row.title}</h1>
@@ -1672,9 +1568,9 @@ export default function RentalListingDetailPage() {
           </p>
         ) : null}
 
-        <section className="rounded-[24px] border border-[#dde4ee] bg-white p-2 shadow-[0_10px_24px_rgba(15,23,42,0.05)]" data-testid="rental-listing-shared-workspace-tabs">
+        <section className="rental-listing-tabs" data-testid="rental-listing-shared-workspace-tabs">
           <ListingWorkspaceTabs
-            className="rounded-[18px] border border-[#e1e8ef] bg-[#fbfdff] p-1.5 [&_button]:rounded-[13px] [&_button]:border-b-0 [&_button]:px-5 [&_button]:text-center [&_button]:text-[#64788f] sm:[&_button]:flex-1 [&_button[aria-selected=true]]:bg-[#153f60] [&_button[aria-selected=true]]:text-white [&_button[aria-selected=true]]:shadow-[0_5px_14px_rgba(15,54,82,0.18)]"
+            className="rental-listing-tab-strip"
             tabs={rentalWorkspaceTabs}
             activeTab={activeRentalWorkspaceTab}
             onTabChange={openRentalListingWorkspaceTab}
@@ -1682,7 +1578,9 @@ export default function RentalListingDetailPage() {
           />
         </section>
 
-        <ListingAgentReassignmentPanel
+        <RentalTabContent
+          snapshot={overviewSnapshot}
+          agentPanel={<ListingAgentReassignmentPanel
           listingId={row.id}
           listing={listing}
           listingType="rental"
@@ -1690,13 +1588,16 @@ export default function RentalListingDetailPage() {
             await loadListing()
             setSuccessMessage('Rental listing agent reassigned successfully.')
           }}
-        />
-
-        <RentalTabContent
+        />}
+          onOpenTab={openRentalListingWorkspaceTab}
+          onNavigate={navigate}
+          onAddLead={openTenantLeadDialog}
+          onScheduleViewing={() => navigate(`/agent/rentals/pipeline/viewings?listingId=${encodeURIComponent(listingId)}`)}
+          onRefresh={loadListing}
           activeTab={activeTab}
           detail={detail}
           onPublish={handleProperty24Publish}
-          onExpireProperty24={handleProperty24Expire}
+          onWithdrawProperty24={handleProperty24Withdraw}
           publishing={publishing}
           publishError={publishError}
           property24Preview={property24Preview}
@@ -1709,20 +1610,16 @@ export default function RentalListingDetailPage() {
           privatePropertyError={privatePropertyError}
           onCheckPrivateProperty={handleCheckPrivatePropertyReadiness}
           onPublishPrivateProperty={handlePrivatePropertyPublish}
-          onExpirePrivateProperty={handlePrivatePropertyExpire}
-          onOpenMarketing={() => setActiveTab('marketing')}
+          onWithdrawPrivateProperty={handlePrivatePropertyWithdraw}
           onOpenEdit={openEditPanel}
           property24ExpiryDate={property24ExpiryDate}
           onProperty24ExpiryChange={setProperty24ExpiryDate}
           onSaveProperty24Expiry={handleSaveProperty24Expiry}
           savingProperty24Expiry={savingProperty24Expiry}
           onPrepareWebsitePublication={prepareRentalWebsitePublication}
-          landlordForm={editForm}
-          onLandlordChange={updateEditForm}
-          onSaveLandlord={handleLandlordSave}
-          savingLandlord={savingEdit}
-          landlordError={editError}
+          landlordPanel={<RentalListingLandlordPanel key={`${organisationId}:${listingId}`} listing={listing} scope={rentalScope} onSaved={(saved) => { setListing(saved); setEditForm(buildRentalListingEditForm(saved)) }} />}
         />
+        {tenantLeadOpen ? <RentalLeadDialog roleLocked linkedListing={listing} form={tenantLeadForm} onChange={(name, value) => setTenantLeadForm((current) => ({ ...current, [name]: value }))} onClose={() => { if (!tenantLeadSavingRef.current) setTenantLeadOpen(false) }} onSubmit={saveTenantLead} saving={tenantLeadSaving} error={tenantLeadError} /> : null}
       </div>
     </section>
   )

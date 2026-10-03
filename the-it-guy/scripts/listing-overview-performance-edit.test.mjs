@@ -46,6 +46,12 @@ assertContains(performanceServiceSource, ': null\n  const comparableChannels', '
 
 assertContains(portalSource, 'function SellerListingPerformance', 'seller portal listing performance component')
 assertContains(portalSource, '<SellerListingPerformance performance={sellerListingPerformance} />', 'seller portal overview performance render')
-assertContains(portalSource, 'normalizeSellerListingPerformancePayload', 'seller portal performance payload normalization')
+assertContains(portalSource, '...buildListingOverviewPerformance({', 'seller uses agent counting rules')
+assertContains(portalSource, 'onRefresh: refreshSellerPerformance', 'seller performance refresh wiring')
+assertContains(portalSource, 'sm:grid-cols-3', 'three-column seller performance layout')
+assertContains(performanceServiceSource, "readSellerOverview('bridge_seller_listing_marketing_performance'", 'secure seller metrics reader')
+const sellerCards = portalSource.slice(portalSource.indexOf('function SellerListingPerformance'), portalSource.indexOf('function SellerListingPerformance') + 2600)
+for (const label of ['Leads', 'Viewings', 'Days on market']) assertContains(sellerCards, `label: '${label}'`, 'matched overview metric')
+for (const label of ['Views', 'Offers']) assertNotContains(sellerCards, `label: '${label}'`, 'removed extra metric')
 
 console.log('Listing overview canonical performance wiring verified.')

@@ -1,4 +1,4 @@
-import { Archive, ArrowLeft, ArrowRight, Building2, CheckCircle2, Circle, CircleAlert, FileText, FolderKanban, Globe2, HelpCircle, ImagePlus, Loader2, Mail, MoreVertical, Plus, RotateCcw, Search, Share2, ShieldCheck, Sparkles, Trash2, UserRound, UsersRound, X } from 'lucide-react'
+import { Archive, ArrowLeft, ArrowRight, Building2, CheckCircle2, Circle, CircleAlert, FileText, FolderKanban, Globe2, HelpCircle, House, LandPlot, Sprout, Store, Warehouse, Blocks, ImagePlus, Loader2, Mail, MoreVertical, Plus, RotateCcw, Search, Share2, ShieldCheck, Sparkles, Trash2, UserRound, UsersRound, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import Button from '../components/ui/Button'
@@ -6,6 +6,9 @@ import Field from '../components/ui/Field'
 import SectionHeader from '../components/ui/SectionHeader'
 import FinalListingModuleOverview from '../components/listings/FinalListingModuleOverview'
 import ListingFeatureFields from '../components/listings/ListingFeatureFields'
+import ListingSyndicationChannelCard from '../components/listings/ListingSyndicationChannelCard'
+import { useOptionalOrganisation } from '../context/OrganisationContext'
+import './sales-listing-wizard.css'
 import AddressAutocomplete from '../components/location/AddressAutocomplete'
 import { getTransactionScopeForRow } from '../core/transactions/transactionScope'
 import {
@@ -252,7 +255,8 @@ const QUICK_ADD_SELLER_TYPE_CARDS = SELLER_ENTITY_TYPES.map((option) => ({
 
 const CREATE_LISTING_WORKFLOW_STEPS = [
   { key: 'seller', label: 'Seller & Mandate', description: 'Owner & mandate details' },
-  { key: 'property', label: 'Property', description: 'Add property details' },
+  { key: 'property', label: 'Property details', description: 'Address & specifications' },
+  { key: 'features', label: 'Additional property details', description: 'Features & facilities' },
   { key: 'marketing', label: 'Marketing', description: 'Photos & description' },
   { key: 'syndication', label: 'Syndication', description: 'Publish to portals' },
   { key: 'review', label: 'Review', description: 'Confirm & create' },
@@ -651,52 +655,18 @@ function isUnstorableCreateListingImageUrl(value) {
 
 function CreateListingProgressNav({ steps = [], activeStep = 'seller', maxVisitedStep = 0, onStepClick }) {
   const activeIndex = Math.max(0, steps.findIndex((step) => step.key === activeStep))
+  const compactLabels = { seller: 'Seller', property: 'Property', features: 'Features', marketing: 'Marketing', syndication: 'Portals', review: 'Review' }
   return (
-    <nav className="overflow-x-auto rounded-[16px] border border-[#dde6ef] bg-white px-4 py-3 shadow-[0_10px_24px_rgba(15,23,42,0.035)]" aria-label="Create listing progress">
-      <div className={`flex items-center gap-4 ${steps.length === 1 ? 'min-w-0' : 'min-w-[860px]'}`}>
+    <nav className="sales-create-progress" aria-label="Create listing progress">
+      <div className="sales-create-progress-grid" style={{ gridTemplateColumns: `repeat(${steps.length}, minmax(0, 1fr))` }}>
         {steps.map((step, index) => (
-          <ListingWizardStep
-            key={step.key}
-            step={step}
-            index={index}
-            isActive={index === activeIndex}
-            isComplete={index < activeIndex}
-            canVisit={index <= maxVisitedStep}
-            isLast={index === steps.length - 1}
-            onStepClick={onStepClick}
-          />
+          <button key={step.key} type="button" disabled={index > maxVisitedStep} onClick={() => onStepClick(step.key)} aria-label={`Step ${index + 1}: ${step.label}`} aria-current={index === activeIndex ? 'step' : undefined} title={step.label} className={`sales-create-step ${index < activeIndex ? 'is-visited' : ''} ${index === activeIndex ? 'is-current' : ''}`}>
+            <span className="sales-create-step-number">{index < activeIndex ? <CheckCircle2 size={17} aria-hidden="true" /> : index + 1}</span>
+            <span className="sales-create-step-label"><span className="sales-create-step-compact">{compactLabels[step.key]}</span><span className="sales-create-step-full">{step.label}</span></span>
+          </button>
         ))}
       </div>
     </nav>
-  )
-}
-
-function ListingWizardStep({ step, index, isActive = false, isComplete = false, canVisit = false, isLast = false, onStepClick }) {
-  return (
-    <div className="flex flex-1 items-center gap-4">
-      <button
-        type="button"
-        disabled={!canVisit}
-        onClick={() => onStepClick(step.key)}
-        className={`relative flex min-w-0 items-center gap-3 rounded-[10px] px-2 py-2 text-left transition ${
-          isActive ? 'text-[#142132]' : isComplete ? 'text-[#294563]' : 'text-[#7b8ca2] disabled:cursor-not-allowed'
-        }`}
-      >
-        <span className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-bold ${
-          isActive || isComplete ? 'bg-[#1f7d44] text-white' : 'bg-[#eef2f6] text-[#6b7d93]'
-        }`}>
-          {isComplete ? <CheckCircle2 size={16} aria-hidden="true" /> : index + 1}
-        </span>
-        <span className="min-w-0">
-          <span className="block truncate text-sm font-bold">{step.label}</span>
-          <span className="block truncate text-xs text-[#60758c]">{step.description}</span>
-          {isActive ? <span className="mt-2 block h-0.5 w-12 rounded-full bg-[#1f7d44]" aria-hidden="true" /> : null}
-        </span>
-      </button>
-      {!isLast ? (
-        <span className={`h-px flex-1 ${isComplete ? 'bg-[#1f7d44]' : 'bg-[#d6e0eb]'}`} aria-hidden="true" />
-      ) : null}
-    </div>
   )
 }
 
@@ -3741,6 +3711,8 @@ function AgentListings({ initialTab = null } = {}) {
   const location = useLocation()
   const routeParams = useParams()
   const { workspace, profile, role, agencyWorkflowMode, currentMembership, workspaceRole } = useWorkspace()
+  const organisationBranding = useOptionalOrganisation()
+  const agencyLogo = organisationBranding?.branding?.logoUrl || workspace?.logoUrl || workspace?.logo_url || ''
   const pilotCreationFreeze = resolveMvpPilotCreationFreeze()
   const isDeveloperWorkspace = role === 'developer'
   const linkedDevelopmentId = useMemo(() => {
@@ -8077,26 +8049,37 @@ function AgentListings({ initialTab = null } = {}) {
 
             {createListingStep === 'property' ? (
               <div className="space-y-6">
-                <ListingWizardHeader
-                  title="Property"
-                  description="Add the property details."
-                  eyebrow={`Step ${listingEditorSteps.findIndex((step) => step.key === 'property') + 1} of ${listingEditorSteps.length}`}
-                />
+                <ListingWizardHeader title="Property details" />
 
-                <ListingWizardSection title="1. Property category">
-                  <p className="text-sm text-[#607891]">Choose the market this sales listing belongs to before adding its address and property type.</p>
-                  <div className="mt-4 max-w-md">
-                    <FormField label="Property category *">
-                      <Field as="select" value={form.propertyCategory} onChange={(event) => updateForm('propertyCategory', event.target.value)}>
-                        {PROPERTY_CATEGORIES.map((category) => (
-                          <option key={category} value={category}>{getPropertyCategoryLabel(category)}</option>
+                <ListingWizardSection title="Property category">
+                  <div className="sales-property-categories" role="group" aria-label="Property category">
+                    {PROPERTY_CATEGORIES.map((category) => {
+                      const CategoryIcon = { residential: House, commercial: Building2, industrial: Warehouse, retail: Store, agricultural: Sprout, vacant_land: LandPlot, mixed_use: Blocks }[category] || Building2
+                      return <SelectionCard key={category} compact active={form.propertyCategory === category} title={getPropertyCategoryLabel(category)} icon={CategoryIcon} onClick={() => updateForm('propertyCategory', category)} />
+                    })}
+                  </div>
+                </ListingWizardSection>
+
+                <ListingWizardSection title="Ownership title / type" divided>
+                  <div className="mt-3 grid gap-4 md:grid-cols-2">
+                    <FormField label="Ownership title *">
+                      <Field as="select" value={form.propertyStructureType} onChange={(event) => updateForm('propertyStructureType', event.target.value)}>
+                        {CREATE_LISTING_PROPERTY_STRUCTURE_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>{option.label}</option>
+                        ))}
+                      </Field>
+                    </FormField>
+                    <FormField label="Property type *">
+                      <Field as="select" value={form.propertyType} onChange={(event) => updateForm('propertyType', event.target.value)}>
+                        {CREATE_LISTING_DESCRIPTIVE_PROPERTY_TYPES.map((option) => (
+                          <option key={option.value} value={option.value}>{option.label}</option>
                         ))}
                       </Field>
                     </FormField>
                   </div>
                 </ListingWizardSection>
 
-                <ListingWizardSection title="2. Property address" divided>
+                <ListingWizardSection title="Property address" divided>
                   <AddressAutocomplete
                     label="Property address"
                     value={buildListingAddressValueFromForm(form)}
@@ -8107,6 +8090,8 @@ function AgentListings({ initialTab = null } = {}) {
                     hideUnavailableMessage
                     required
                   />
+                  <details className="mt-4 rounded-xl border border-[#dbe6f2] bg-[#fbfdff] p-4">
+                    <summary className="cursor-pointer text-sm font-semibold text-[#1f4f78]">Address details</summary>
                   <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
                     <FormField label="Street number">
                       <Field value={form.streetNumber} onChange={(event) => updatePropertyAddressPart('streetNumber', event.target.value)} />
@@ -8127,61 +8112,23 @@ function AgentListings({ initialTab = null } = {}) {
                       <Field value={form.postalCode} onChange={(event) => updatePropertyAddressPart('postalCode', event.target.value)} />
                     </FormField>
                   </div>
-                </ListingWizardSection>
-
-                <ListingWizardSection title="3. Listing basics" divided>
-                  <div className="mt-3 grid gap-4 md:grid-cols-2">
-                    <FormField label="Ownership scheme *">
-                      <Field as="select" value={form.propertyStructureType} onChange={(event) => updateForm('propertyStructureType', event.target.value)}>
-                        {CREATE_LISTING_PROPERTY_STRUCTURE_OPTIONS.map((option) => (
-                          <option key={option.value} value={option.value}>{option.label}</option>
-                        ))}
-                      </Field>
-                    </FormField>
-                    <FormField label="Descriptive property type *">
-                      <Field as="select" value={form.propertyType} onChange={(event) => updateForm('propertyType', event.target.value)}>
-                        {CREATE_LISTING_DESCRIPTIVE_PROPERTY_TYPES.map((option) => (
-                          <option key={option.value} value={option.value}>{option.label}</option>
-                        ))}
-                      </Field>
-                    </FormField>
-                    <CurrencyInput
-                      label={form.listingType === 'rental' ? (form.priceOnApplication ? 'Monthly rent' : 'Monthly rent *') : (form.priceOnApplication ? 'Listing price' : 'Listing price *')}
-                      value={form.listingPrice}
-                      onChange={(value) => updateForm('listingPrice', value)}
-                    />
-                    <BooleanChoiceField
-                      label="In an estate / HOA?"
-                      value={form.estateOrHoa}
-                      yesDescription="Estate, HOA or managed community."
-                      noDescription="Standalone property."
-                      onChange={(value) => updateForm('estateOrHoa', value)}
-                    />
-                    {form.estateOrHoa ? (
-                      <FormField label="Estate / HOA name" className="md:col-span-2">
-                        <Field value={form.estateName} onChange={(event) => updateForm('estateName', event.target.value)} placeholder="Estate, complex or HOA name" />
+                  {isSectionalTitleProperty(form) ? (
+                    <div className="mt-4 grid gap-4 md:grid-cols-2">
+                      <FormField label="Complex / scheme">
+                        <Field value={form.complexName} onChange={(event) => updateForm('complexName', event.target.value)} />
                       </FormField>
-                    ) : null}
-                  </div>
+                      <FormField label="Unit / section number">
+                        <Field value={form.unitNumber || form.sectionNumber} onChange={(event) => {
+                          updateForm('unitNumber', event.target.value)
+                          updateForm('sectionNumber', event.target.value)
+                        }} />
+                      </FormField>
+                    </div>
+                  ) : null}
+                  </details>
                 </ListingWizardSection>
 
-                {getSpecialistSalesListingSchema(form.propertyCategory, form.listingType).fields.length ? (
-                  <ListingWizardSection title="4. Specialist property details" description="Capture the known specialist facts. Required fields are marked with an asterisk." divided>
-                    <div className="mt-3 grid gap-4 md:grid-cols-2">
-                      {getSpecialistSalesListingSchema(form.propertyCategory, form.listingType).fields.map((field) => (
-                        field.kind === 'boolean' ? (
-                          <BooleanChoiceField key={field.key} label={field.label} value={Boolean(form[field.key])} yesDescription="Available at this property." noDescription="Not available or not confirmed." onChange={(value) => updateForm(field.key, value)} />
-                        ) : (
-                          <FormField key={field.key} label={`${field.label}${field.required ? ' *' : ''}`} className={field.kind === 'terms' ? 'md:col-span-2' : ''}>
-                            <Field as={field.kind === 'terms' ? 'textarea' : undefined} type={field.kind === 'measurement' ? 'number' : undefined} min={field.kind === 'measurement' ? '0' : undefined} step={field.kind === 'measurement' ? '0.1' : undefined} value={form[field.key] || ''} onChange={(event) => updateForm(field.key, event.target.value)} placeholder={field.unit ? `Enter ${field.label.toLowerCase()} in ${field.unit}` : `Enter ${field.label.toLowerCase()}`} />
-                          </FormField>
-                        )
-                      ))}
-                    </div>
-                  </ListingWizardSection>
-                ) : null}
-
-                <ListingWizardSection title={getSpecialistSalesListingSchema(form.propertyCategory, form.listingType).fields.length ? '5. Property specifications' : '4. Property specifications'} divided>
+                <ListingWizardSection title="Property specifications" divided>
                   <div className="mt-3 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                     <NumberStepper label="Bedrooms" value={form.bedrooms} onChange={(value) => updateForm('bedrooms', value)} />
                     <NumberStepper label="Bathrooms" value={form.bathrooms} onChange={(value) => updateForm('bathrooms', value)} />
@@ -8202,22 +8149,28 @@ function AgentListings({ initialTab = null } = {}) {
                       <Field type="number" min="0" step="1" value={form.levies} onChange={(event) => updateForm('levies', event.target.value)} placeholder="Optional" />
                     </FormField>
                   </div>
-                  {isSectionalTitleProperty(form) ? (
-                    <div className="mt-4 grid gap-4 md:grid-cols-2">
-                      <FormField label="Complex / scheme">
-                        <Field value={form.complexName} onChange={(event) => updateForm('complexName', event.target.value)} />
-                      </FormField>
-                      <FormField label="Unit / section number">
-                        <Field value={form.unitNumber || form.sectionNumber} onChange={(event) => {
-                          updateForm('unitNumber', event.target.value)
-                          updateForm('sectionNumber', event.target.value)
-                        }} />
-                      </FormField>
-                    </div>
-                  ) : null}
                 </ListingWizardSection>
 
-                <ListingWizardSection title={`${getSpecialistSalesListingSchema(form.propertyCategory, form.listingType).fields.length ? '6' : '5'}. ${form.listingType === 'rental' ? 'Rental' : 'Sales'} portal options`} description="Capture the publication flags agents expect before syndication." divided>
+                <ListingWizardSection title="Price & sales options" divided>
+                  <div className="mb-4 grid gap-4 md:grid-cols-2">
+                    <CurrencyInput
+                      label={form.listingType === 'rental' ? (form.priceOnApplication ? 'Monthly rent' : 'Monthly rent *') : (form.priceOnApplication ? 'Listing price' : 'Listing price *')}
+                      value={form.listingPrice}
+                      onChange={(value) => updateForm('listingPrice', value)}
+                    />
+                    <BooleanChoiceField
+                      label="In an estate / HOA?"
+                      value={form.estateOrHoa}
+                      yesDescription="Estate, HOA or managed community."
+                      noDescription="Standalone property."
+                      onChange={(value) => updateForm('estateOrHoa', value)}
+                    />
+                    {form.estateOrHoa ? (
+                      <FormField label="Estate / HOA name" className="md:col-span-2">
+                        <Field value={form.estateName} onChange={(event) => updateForm('estateName', event.target.value)} placeholder="Estate, complex or HOA name" />
+                      </FormField>
+                    ) : null}
+                  </div>
                   <div className="mt-3 grid gap-3 md:grid-cols-2">
                     {CREATE_LISTING_SALES_FLAG_OPTIONS.filter((option) => form.listingType !== 'rental' || option.key === 'noTransferDuty').map((option) => (
                       <SelectionCard
@@ -8232,6 +8185,31 @@ function AgentListings({ initialTab = null } = {}) {
                     ))}
                   </div>
                   <p className="mt-3 text-xs text-[#607387]">Reduced-price portal banners are unavailable until the portals confirm a supported feed control. You can record and send a lower price from the listing’s Marketing tab.</p>
+                </ListingWizardSection>
+              </div>
+            ) : null}
+
+            {createListingStep === 'features' ? (
+              <div className="space-y-6">
+                <ListingWizardHeader title="Additional property details" />
+                {getSpecialistSalesListingSchema(form.propertyCategory, form.listingType).fields.length ? (
+                  <ListingWizardSection title="Category-specific details">
+                    <div className="mt-3 grid gap-4 md:grid-cols-2">
+                      {getSpecialistSalesListingSchema(form.propertyCategory, form.listingType).fields.filter((field) => field.key !== 'erfSize').map((field) => (
+                        field.kind === 'boolean' ? (
+                          <BooleanChoiceField key={field.key} label={field.label} value={Boolean(form[field.key])} yesDescription="Available at this property." noDescription="Not available or not confirmed." onChange={(value) => updateForm(field.key, value)} />
+                        ) : (
+                          <FormField key={field.key} label={`${field.key === 'parking' ? 'Parking details' : field.label}${field.required ? ' *' : ''}`} className={field.kind === 'terms' ? 'md:col-span-2' : ''}>
+                            <Field as={field.kind === 'terms' ? 'textarea' : undefined} type={field.kind === 'measurement' ? 'number' : undefined} min={field.kind === 'measurement' ? '0' : undefined} step={field.kind === 'measurement' ? '0.1' : undefined} value={form[field.key] || ''} onChange={(event) => updateForm(field.key, event.target.value)} placeholder={field.unit ? `Enter ${field.label.toLowerCase()} in ${field.unit}` : `Enter ${field.label.toLowerCase()}`} />
+                          </FormField>
+                        )
+                      ))}
+                    </div>
+                  </ListingWizardSection>
+                ) : null}
+
+                <ListingWizardSection title="Features & facilities">
+                  <ListingFeatureFields facts={normalizeListingFeatureFacts(form.featureFacts, form.keySellingPoints)} listingType={form.listingType} onChange={updateListingFeatureFact} presentation="cards" />
                 </ListingWizardSection>
               </div>
             ) : null}
@@ -8295,73 +8273,28 @@ function AgentListings({ initialTab = null } = {}) {
                     <span className="text-sm font-semibold text-[#2d445e]">Listing description</span>
                     <Field as="textarea" value={form.listingDescription} onChange={(event) => updateForm('listingDescription', event.target.value)} placeholder="Describe the property, lifestyle, and standout value." />
                   </label>
-                  <div className="grid gap-2">
-                    <div>
-                      <span className="text-sm font-semibold text-[#2d445e]">Key selling points</span>
-                      <p className="mt-1 text-xs text-[#607387]">Capture the actual property facts here. Portal-native mappings will be confirmed in the publishing review.</p>
-                    </div>
-                    <ListingFeatureFields facts={normalizeListingFeatureFacts(form.featureFacts, form.keySellingPoints)} listingType={form.listingType} onChange={updateListingFeatureFact} />
-                  </div>
+
                 </div>
               </div>
             ) : null}
 
             {createListingStep === 'syndication' ? (
               <div className="space-y-6">
-                <div className="border-b border-[#e6edf5] pb-5">
-                  <p className="text-xs font-bold uppercase text-[#1f7d44]">Step {listingEditorSteps.findIndex((step) => step.key === 'syndication') + 1} of {listingEditorSteps.length}</p>
-                  <h2 className="mt-2 text-2xl font-semibold text-[#142132]">Syndication</h2>
-                  <p className="mt-1 text-sm text-[#607387]">Approved listings publish automatically to the selected channels. Drafts and review listings stay private.</p>
+                <ListingWizardHeader title="Syndication" />
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <h3 className="text-sm font-semibold text-[#18324b]">Publication channels</h3>
+                  <span className="rounded-full bg-[#eef4fa] px-3 py-1 text-xs font-semibold text-[#526f88]">{selectedCreateListingPortalStatuses.filter((portal) => !portal.internalOnly).length} external selected</span>
                 </div>
-                <div className="grid gap-3 md:grid-cols-2">
+                <div className="listing-syndication-grid">
                   {createListingPortalStatuses.map((portal) => {
-                    const isLocked = portal.key === 'arch9_seller_experience'
                     const channelAvailable = portal.internalOnly || portal.availability?.available === true
-                    const ready = channelAvailable && portal.missing.length === 0
-                    const availabilityLabel = portal.internalOnly
-                      ? 'Internal only — not published to external portals'
-                      : portal.availabilityLoading
-                        ? 'Checking channel connection…'
-                        : !channelAvailable
-                          ? 'Not connected for this organisation'
-                          : ready
-                            ? 'Channel connected — listing details complete'
-                            : `${portal.missing.length} required field${portal.missing.length === 1 ? '' : 's'} missing`
-                    return (
-                      <button
-                        key={portal.key}
-                        type="button"
-                        onClick={() => toggleCreateListingSyndicationChannel(portal.key)}
-                        disabled={isLocked || !channelAvailable || portal.availabilityLoading}
-                        className={`rounded-[8px] border p-4 text-left transition ${portal.enabled && channelAvailable ? 'border-[#1f7d44] bg-[#f0fbf4]' : 'border-[#dce6f2] bg-white'} ${!isLocked && channelAvailable && !portal.availabilityLoading ? 'hover:border-[#b7c8db]' : 'cursor-not-allowed opacity-75'}`}
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <p className="text-sm font-bold text-[#142132]">{portal.label}</p>
-                            <p className={`mt-1 text-xs font-semibold ${ready || portal.internalOnly ? 'text-[#1f7d44]' : 'text-[#9a5b13]'}`}>
-                              {availabilityLabel}
-                            </p>
-                          </div>
-                          {portal.enabled && channelAvailable ? <CheckCircle2 size={18} className="text-[#1f7d44]" /> : <Circle size={18} className="text-[#8fa3b8]" />}
-                        </div>
-                        {channelAvailable && portal.missing.length ? (
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="secondary"
-                            className="mt-3"
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              setCreateListingStep(portal.missing.some((item) => ['Description', 'Photos'].includes(item)) ? 'marketing' : 'property')
-                            }}
-                          >
-                            Fix {portal.missing.length} field{portal.missing.length === 1 ? '' : 's'}
-                          </Button>
-                        ) : null}
-                      </button>
-                    )
+                    const needsAttention = portal.internalOnly ? '' : portal.availabilityLoading ? 'Checking channel connection…' : !channelAvailable ? 'Not connected for this organisation' : portal.missing.length ? `${portal.missing.length} required field${portal.missing.length === 1 ? '' : 's'} missing` : ''
+                    return <ListingSyndicationChannelCard key={portal.key} channel={portal} selected={Boolean(portal.enabled)} disabled={!channelAvailable || portal.availabilityLoading} needsAttention={needsAttention} agencyLogo={agencyLogo} onToggle={toggleCreateListingSyndicationChannel}>
+                      {channelAvailable && portal.missing.length ? <Button type="button" size="sm" variant="secondary" onClick={() => setCreateListingStep(portal.missing.some((item) => ['Description', 'Photos'].includes(item)) ? 'marketing' : 'property')}>Fix {portal.missing.length} field{portal.missing.length === 1 ? '' : 's'}</Button> : null}
+                    </ListingSyndicationChannelCard>
                   })}
                 </div>
+                <p className="text-xs leading-5 text-[#607891]">Choose where to publish this listing. Approved listings publish to the selected channels; drafts stay private in Arch9.</p>
               </div>
             ) : null}
 

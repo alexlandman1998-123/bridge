@@ -163,7 +163,7 @@ export default function ListingAgentReassignmentPanel({
   return (
     <section ref={panelRef} className={`relative rounded-[16px] border border-[#dde4ee] bg-white p-5 shadow-[0_8px_20px_rgba(15,23,42,0.035)] ${className}`.trim()} data-testid="listing-agent-reassignment">
       <p className="text-xs font-semibold uppercase text-[#607891]">Listing agent</p>
-      <button type="button" onClick={openPicker} disabled={saving} aria-expanded={open} aria-haspopup="listbox" aria-controls={`listing-agent-options-${listingId}`}
+      <button data-rental-control={listingType === 'rental' ? 'listing-agent' : undefined} type="button" onClick={openPicker} disabled={saving} aria-expanded={open} aria-haspopup="listbox" aria-controls={`listing-agent-options-${listingId}`}
         className="mt-3 flex w-full items-center gap-3 rounded-[12px] border border-[#dbe6f2] bg-[#fbfdff] p-3 text-left transition hover:border-[#aac5df] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#1f4f78] disabled:opacity-60">
         <AgentAvatar agent={currentAgent} name={currentAgentName} />
         <span className="min-w-0 flex-1">
@@ -188,7 +188,7 @@ export default function ListingAgentReassignmentPanel({
               {filteredAgents.map((row) => {
                 const selected = agentId(row) === currentAgentId
                 return (
-                  <button key={agentId(row)} type="button" role="option" aria-selected={selected} onClick={() => void assignAgent(row)}
+                  <button data-rental-control={listingType === 'rental' ? 'listing-agent' : undefined} key={agentId(row)} type="button" role="option" aria-selected={selected} onClick={() => void assignAgent(row)}
                     className="flex w-full items-center gap-3 rounded-[9px] px-2 py-2 text-left hover:bg-[#f3f8fd] focus-visible:bg-[#f3f8fd] focus-visible:outline-none">
                     <AgentAvatar agent={row} name={agentName(row)} className="!h-8 !w-8" />
                     <span className="min-w-0 flex-1">

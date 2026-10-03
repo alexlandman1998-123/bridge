@@ -22,7 +22,7 @@ import { Link, useParams } from "react-router-dom";
 import { useWorkspace } from "../../context/WorkspaceContext";
 import RentalApplicationWizard from "../../modules/rentals/shared/applications/RentalApplicationWizard.jsx";
 import RentalApplicationDocumentReviewPanel from "../../modules/rentals/shared/applications/RentalApplicationDocumentReviewPanel.jsx";
-import { rentalApplicationDocumentSlots } from "../../services/rentals/rentalApplicationWizardModel.js";
+import { rentalApplicationSavedDocumentSlots } from "../../services/rentals/rentalApplicationWizardModel.js";
 import { rentalReviewDocument, rentalApplicationApprovalReadiness, RENTAL_REVIEW_CHECKS, rentalReviewSubjects, rentalReviewResultPassed } from "../../services/rentals/rentalApplicationReviewModel.js";
 import { getRentalApplicationTenancyConversion, listRentalApplicationEvents, listRentalApplicationScreeningChecks } from "../../services/rentals/rentalApplicationRepository.js";
 import RentalApplicationDecisionPanel from "../../modules/rentals/shared/applications/RentalApplicationDecisionPanel.jsx";
@@ -105,8 +105,8 @@ const consentLabel = (value) =>
     identity_verification: "Identity verification consent",
   })[value] || title(value);
 function documentStats(application = {}) {
-  const slots = rentalApplicationDocumentSlots(application.data).filter((slot) => slot.required);
-  const uploaded = slots.filter((slot) => rentalReviewDocument(slot, application)?.status === 'accepted').length;
+  const slots = rentalApplicationSavedDocumentSlots(application.data, application.requirements).filter((slot) => slot.required);
+  const uploaded = slots.filter((slot) => slot.saved ? slot.state === 'accepted' && (!slot.expiresAt || Date.parse(slot.expiresAt) > Date.now()) : rentalReviewDocument(slot, application)?.status === 'accepted').length;
   const required = slots.length;
   return { uploaded, required, progress: required ? Math.round(uploaded / required * 100) : 0 };
 }

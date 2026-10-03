@@ -31,6 +31,8 @@ function documentSignals(item = {}) {
     item.title,
     item.label,
     item.description,
+    item.metadata?.requirementKey,
+    item.metadata?.requirement_key,
     item.group,
     item.linkedDocument?.requirementKey,
     item.linkedDocument?.requirement_key,
@@ -39,7 +41,7 @@ function documentSignals(item = {}) {
   ].map(status).filter(Boolean)
 }
 
-function isTeamManagedPackItem(item = {}) {
+export function isSellerTeamManagedDocument(item = {}) {
   return documentSignals(item).some((signal) => TEAM_MANAGED_PACK_ALIASES.some((alias) =>
     signal === alias || signal.startsWith(`${alias}_`) || signal.endsWith(`_${alias}`) || signal.includes(`_${alias}_`),
   ))
@@ -78,7 +80,7 @@ export function buildSellerPortalDocumentSummary(documentCenter = {}) {
   const checklistItems = hasTypedDocumentItems
     ? items.filter((item) => ['required_document', 'additional_request'].includes(status(item?.sourceType || item?.source_type)))
     : items
-  const clientVisibleItems = checklistItems.filter((item) => !isTeamManagedPackItem(item))
+  const clientVisibleItems = checklistItems.filter((item) => !isSellerTeamManagedDocument(item))
   const hasTeamManagedItems = clientVisibleItems.length !== items.length
   const displaySource = hasTeamManagedItems ? summaryFor(clientVisibleItems) : source
   const allActionItems = clientVisibleItems.filter(isActionItem)

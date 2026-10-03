@@ -1,3 +1,4 @@
+import { readRentalSavedChecklist } from './rentalSavedChecklist.js'
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto'
 import { rentalApplicationDocumentSlots } from '../../src/services/rentals/rentalApplicationWizardModel.js'
 const bucket = 'rental-application-documents'
@@ -21,14 +22,23 @@ function readTicket(ticket, secret, application, source) {
 export async function uploadRentalApplicationDocument(db, application, body, { source = 'applicant', applicationClient = db, signingSecret = '' } = {}) {
   if (application.status !== 'draft') throw new Error('This application can no longer be edited.')
   if (Number(body.version) !== Number(application.version)) throw new Error('This application changed. Refresh and try again.')
+  const requirements = await readRentalSavedChecklist(applicationClient, application)
+  const findRequirement = (subjectId, purpose, id, generation) => {
+    const requirement = requirements.find((item) => item.active && item.mode === 'active' && item.scopeKey === 'application' && item.subjectId === subjectId && item.purpose === purpose)
+    if (!requirement) throw new Error('Save the draft to prepare its document checklist before uploading.')
+    if ((id && requirement.id !== id) || (generation !== undefined && requirement.generation !== Number(generation))) throw new Error('The saved evidence requirement changed. Refresh and upload again.')
+    return requirement
+  }
   const storage = db.storage.from(bucket)
-  let slot, policy, path, fileSize
+  let slot, requirement, policy, path, fileSize
   if (body.action === 'complete_upload') {
     if (!signingSecret) throw new Error('Document upload is not configured.')
     const ticket = readTicket(body.ticket, signingSecret, application, source)
     if (ticket.version !== Number(application.version)) throw new Error('This application changed. Refresh and try again.')
     slot = rentalApplicationDocumentSlots(application.application_data).find((item) => item.subjectId === ticket.subjectId && item.purpose === ticket.purpose)
     if (!slot) throw new Error('The person or evidence requirement changed. Please upload again.')
+    requirement = findRequirement(ticket.subjectId, ticket.purpose, ticket.requirementId, ticket.generation)
+    if (!ticket.requirementId || !Number.isInteger(ticket.generation)) throw new Error('The document receipt predates the saved checklist. Prepare a new upload.')
     path = ticket.path
     const info = await storage.info(path)
     if (info.error || !info.data) throw new Error('The file upload is incomplete. Retry the upload.')
@@ -40,13 +50,14 @@ export async function uploadRentalApplicationDocument(db, application, body, { s
   } else {
     slot = rentalApplicationDocumentSlots(application.application_data).find((item) => item.subjectId === (body.subjectId || 'primary') && item.purpose === (body.purpose || body.documentType))
     if (!slot) throw new Error('Choose an evidence type and person in this application.')
+    requirement = findRequirement(slot.subjectId, slot.purpose, body.requirementId, body.generation)
     if (body.action === 'prepare_upload') {
       if (!signingSecret) throw new Error('Document upload is not configured.')
       policy = validateRentalDocumentUpload({ fileName: body.fileName, mimeType: body.mimeType, binary: { length: Number(body.fileSize) } })
       path = `${application.organisation_id}/${application.id}/${randomUUID()}-${policy.safeFileName}`
       const upload = await storage.createSignedUploadUrl(path, { upsert: false })
       if (upload.error) throw upload.error
-      const payload = Buffer.from(JSON.stringify({ applicationId: application.id, organisationId: application.organisation_id, version: Number(application.version), path, subjectId: slot.subjectId, purpose: slot.purpose, source, fileName: policy.safeFileName, mimeType: policy.mimeType, fileSize: Number(body.fileSize), expiresAt: Date.now() + 10 * 60 * 1000 })).toString('base64url')
+      const payload = Buffer.from(JSON.stringify({ applicationId: application.id, organisationId: application.organisation_id, version: Number(application.version), path, requirementId: requirement.id, generation: requirement.generation, subjectId: slot.subjectId, purpose: slot.purpose, source, fileName: policy.safeFileName, mimeType: policy.mimeType, fileSize: Number(body.fileSize), expiresAt: Date.now() + 10 * 60 * 1000 })).toString('base64url')
       return { uploadUrl: upload.data.signedUrl, ticket: `${payload}.${signature(payload, signingSecret)}` }
     }
     // Legacy binary transport remains available to versioned clients; the shared wizard uses direct,
@@ -60,16 +71,22 @@ export async function uploadRentalApplicationDocument(db, application, body, { s
   }
   let document
   try {
-    const inserted = await applicationClient.from('rental_application_documents').insert({ application_id: application.id, organisation_id: application.organisation_id, document_type: slot.type, storage_path: path, file_name: policy.safeFileName, mime_type: policy.mimeType, file_size_bytes: fileSize, uploaded_at: new Date().toISOString() }).select('id, document_type, status, file_name, uploaded_at').single()
+    const inserted = await applicationClient.from('rental_application_documents').insert({ application_id: application.id, organisation_id: application.organisation_id, document_type: slot.type, storage_path: path, file_name: policy.safeFileName, mime_type: policy.mimeType, file_size_bytes: fileSize, uploaded_at: new Date().toISOString() }).select('id, document_type, status, file_name, uploaded_at, created_at').single()
     if (inserted.error) throw inserted.error
     document = inserted.data
-    const links = [...(application.application_data?.documentLinks || []), { documentId: document.id, subjectId: slot.subjectId, purpose: slot.purpose, source }]
+    const links = [...(application.application_data?.documentLinks || []), { documentId: document.id, subjectId: slot.subjectId, purpose: slot.purpose, source, requirementId: requirement.id, generation: requirement.generation }]
     const saved = await applicationClient.from('rental_applications').update({ application_data: { ...application.application_data, documentLinks: links }, version: Number(application.version) + 1 }).eq('id', application.id).eq('version', application.version).eq('status', 'draft').select('id, status, version, application_data, updated_at').maybeSingle()
     if (saved.error || !saved.data) throw saved.error || new Error('This application changed. Refresh and try again.')
     return { document, application: saved.data }
   } catch (cause) {
-    if (document) await Promise.resolve(db.from('rental_application_documents').delete().eq('id', document.id)).catch(() => null)
-    await storage.remove([path]).catch(() => null)
+    // A save may have committed even if its response failed. The requirement
+    // ledger protects referenced document rows; retain their bytes when deletion
+    // fails or is uncertain rather than breaking a committed assignment.
+    let removable = !document
+    if (document) {
+      try { const removed = await db.from('rental_application_documents').delete().eq('id', document.id); removable = Boolean(removed && !removed.error) } catch { removable = false }
+    }
+    if (removable) await storage.remove([path]).catch(() => null)
     throw cause
   }
 }

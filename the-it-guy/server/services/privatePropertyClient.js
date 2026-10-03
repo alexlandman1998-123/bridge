@@ -191,14 +191,34 @@ export function summarizePrivatePropertySoapResponse(method = '', xml = '') {
   const normalizedMethod = normalizePrivatePropertyText(method)
   const continuationKey = extractPrivatePropertyXmlTag(xml, 'ContinuationKey')
   const resultText = normalizedMethod ? extractPrivatePropertyXmlTag(xml, `${normalizedMethod}Result`) : ''
+  const mutation = ['UpdateListing', 'ListingStatusUpdate'].includes(normalizedMethod)
+  const redactedResult = resultText.replace(/https?:[^\s<"']+/g, (raw) => {
+    try { const url = new URL(raw.replaceAll('&amp;', '&')); url.search = ''; return url.toString() } catch { return '[URL]' }
+  })
   const feedEventMatches = String(xml || '').match(/<LisitngEventFeedData\b|<ListingEventFeedData\b/gi) || []
   return {
     method: normalizedMethod,
     responseChars: String(xml || '').length,
-    resultText: resultText ? resultText.slice(0, 240) : '',
+    resultText: redactedResult.slice(0, mutation ? 16000 : 240),
+    ...(mutation ? { resultDigest: createHash('sha256').update(resultText).digest('hex'), resultTruncated: redactedResult.length > 16000 } : {}),
     continuationKey: continuationKey || '',
     listingEventCount: feedEventMatches.length,
   }
+}
+
+export function validatePrivatePropertySoapResult(response = {}, method = '') {
+  // Inspect the full wire result, not the truncated summary used for display.
+  const result = response.data !== undefined
+    ? extractPrivatePropertyXmlTag(response.data, `${method}Result`)
+    : normalizePrivatePropertyText(response.summary?.resultText)
+  const rejected = /\b(?:fail(?:ed|ure)?|errors?|invalid|denied|rejected|unsuccessful)\b|\bnot\s+(?:successful|accepted|queued)\b/i.test(result)
+  const acknowledged = /\b(?:success(?:ful(?:ly)?)?|succeeded|queued|accepted|processing)\b|^true$/i.test(result)
+  if (response.ok === false || (response.status && (response.status < 200 || response.status >= 300)) || !result || rejected || !acknowledged) {
+    throw new PrivatePropertySoapError(`Private Property did not acknowledge ${method}. ${!result ? 'Its response was empty.' : 'Review its response before retrying.'}`, {
+      method, status: response.status, responseBody: response.data || `<${method}Result>${escapePrivatePropertyXml(result)}</${method}Result>`,
+    })
+  }
+  return summarizePrivatePropertySoapResponse(method, response.data || `<${method}Result>${escapePrivatePropertyXml(result)}</${method}Result>`)
 }
 
 export function createPrivatePropertyClient({
@@ -250,6 +270,9 @@ export function createPrivatePropertyClient({
         )
       }
 
+      const summary = ['UpdateListing', 'ListingStatusUpdate'].includes(normalizedMethod)
+        ? validatePrivatePropertySoapResult({ status: response.status, data: responseBody }, normalizedMethod)
+        : summarizePrivatePropertySoapResponse(normalizedMethod, responseBody)
       return {
         ok: true,
         status: response.status,
@@ -257,7 +280,7 @@ export function createPrivatePropertyClient({
         method: normalizedMethod,
         requestBody: body,
         data: responseBody,
-        summary: summarizePrivatePropertySoapResponse(normalizedMethod, responseBody),
+        summary,
       }
     } catch (error) {
       if (error.name === 'AbortError') {

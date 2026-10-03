@@ -14,24 +14,62 @@ const linkNormalizer = source.match(/function normalizeSellerVisibleListingLinks
 const marketingBuilder = source.match(/function buildSellerMarketingChannels[\s\S]*?\n}\n\nfunction buildSellerAgentUpdate/)?.[0] || ''
 const sellerHero = source.match(/function SellerPropertyHero[\s\S]*?\n}\n\nfunction SellerTransactionHealthCard/)?.[0] || ''
 const sellerDashboard = source.match(/function SellerPortalDashboard[\s\S]*?\n}\n\nfunction BuyerOverviewActionPanel/)?.[0] || ''
+const sellerHealthCard = source.match(/function SellerTransactionHealthCard[\s\S]*?\n}\n\nfunction SellerMarketingActivity/)?.[0] || ''
+const agentUpdateBuilder = source.match(/function buildSellerAgentUpdate[\s\S]*?\n}/)?.[0] || ''
+const buildAgentUpdate = new Function('normalizeSellerPortalKey', `${agentUpdateBuilder}; return buildSellerAgentUpdate`)(
+  (value) => String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '_'),
+)
+const automated = { message: 'Your onboarding details were received successfully.', authorRole: 'Team update', authorName: 'Arch9', eventType: 'seller_onboarding_submitted' }
+assert.equal(buildAgentUpdate({ items: [automated], sellerAgentName: 'Assigned agent' }), null, 'automated milestones must not be attributed to an agent')
+assert.equal(buildAgentUpdate({ items: [{ ...automated, authorRole: 'Agent' }] }), null, 'an agent role alone does not turn a milestone into an authored note')
+const actualNote = { message: 'The viewing is confirmed for Saturday.', authorName: 'Actual author', authorRole: 'Agent', eventType: 'note_shared_with_client', timestampLabel: '3 October' }
+assert.deepEqual(buildAgentUpdate({ items: [automated, actualNote], sellerAgentName: 'Assigned agent', sellerAgentAvatarUrl: 'assigned-photo' }), {
+  message: actualNote.message, timestampLabel: '3 October', agentName: 'Actual author', avatarUrl: '',
+}, 'authored notes must preserve their actual author and avoid another agent’s photo')
+assert.doesNotMatch(sellerHealthCard, /score|conic-gradient|%/, 'transaction health must show status and counts instead of a percentage')
+assert.match(sellerHealthCard, /View required items.*to: 'documents'/, 'health action must open the authorised document checklist')
+assert.match(source, /documentSummary: sellerDocumentSummary/, 'health must use the same authoritative counts as the document centre')
 const sellerLogoResolver = source.match(/const sellerAgencyLogoUrl = pickFirstText\([\s\S]*?\n  \)/)?.[0] || ''
+
+const progressStepsSource = source.match(/const SELLER_PROGRESS_STEPS = \[[\s\S]*?\n\]/)?.[0]
+const sharedProgressSource = source.slice(source.indexOf('const SELLER_PROGRESS_PORTAL_KEY_BY_JOURNEY_KEY ='), source.indexOf('function normalizeSellerSaleMainStage'))
+assert.ok(progressStepsSource && sharedProgressSource, 'shared listing progress projection must be available')
+const projectListingProgress = new Function(`${progressStepsSource}\n${sharedProgressSource}\nreturn buildSellerPortalProgressModelFromSharedJourney;`)()
+const journeyKeys = ['new_lead', 'contacted', 'seller_onboarding_sent', 'seller_onboarding_submitted', 'mandate_sent', 'mandate_signed', 'listing_created', 'listing_live', 'documents_submitted']
+const expectedPortalKeys = ['contacted', 'contacted', 'onboarding', 'submitted', 'submitted', 'mandate_signed', 'listing_created', 'listing_live', 'documents_complete']
+let previousPercent = 0
+for (const [index, key] of journeyKeys.entries()) {
+  const model = projectListingProgress({
+    currentStage: { key },
+    stages: journeyKeys.map((stageKey, stageIndex) => ({ key: stageKey, state: stageIndex < index ? 'completed' : stageIndex === index ? 'current' : 'upcoming' })),
+  })
+  assert.equal(model.currentKey, expectedPortalKeys[index], `agent journey stage ${key} must map to the matching seller stage`)
+  assert.equal(model.steps.find((step) => step.key === expectedPortalKeys[index]).state, 'current')
+  assert.ok(model.percent >= previousPercent, `progress must not jump backwards at ${key}`)
+  previousPercent = model.percent
+}
 
 assert.match(linkNormalizer, /const linksByChannel = new Map\(\)/, 'seller-visible links should be deduplicated before dashboard models are built')
 assert.match(linkNormalizer, /const channelKey = platformKey \|\| urlKey/, 'marketing channels should deduplicate by platform with URL fallback')
 assert.match(marketingBuilder, /const channels = new Map\(\)/, 'marketing cards should retain a defensive channel-level dedupe')
 assert.match(source, /const sellerAgencyLogoUrl = pickFirstText\(/, 'seller portal should resolve the agent entity logo from listing branding')
-assert.match(source, /src=\{sellerAgencyLogoUrl\}/, 'seller sidebar should render the agent entity logo')
+assert.match(source, /src=\{sellerAgencyLogoDarkUrl\}/, 'seller dark sidebar should render the dark-background agency logo')
 assert.ok(
   sellerLogoResolver.indexOf('agencyLogoLightUrl') < sellerLogoResolver.indexOf('agencyLogoDarkUrl'),
-  'seller sidebar should prefer light-background logos before white/dark-background logo fallbacks',
+  'seller white surfaces should prefer light-background logos before dark-background fallbacks',
 )
 assert.match(sellerLogoResolver, /organisation_logo_light_url/, 'seller logo resolution should support legacy organisation light-logo fields')
-assert.match(source, /mt-5 grid flex-1 content-start grid-cols-2 gap-3/, 'seller mobile document categories should use compact same-row spacing')
-assert.match(source, /min-h-\[174px\] overflow-hidden/, 'seller mobile category cards should contain progress rings without row overlap')
-assert.match(source, /absolute right-3 top-3/, 'seller mobile category progress rings should sit inside the card')
-assert.doesNotMatch(source, /top-0 -translate-y-1\/2/, 'seller mobile category progress rings should not float outside cards')
+const mobileDocumentsSource = source.slice(source.indexOf('function SellerMobileDocumentsPage('), source.indexOf('function MobileDocumentList('))
+const sellerMobileSource = source.slice(source.indexOf('function SellerMobilePortal('), source.indexOf('\nfunction ', source.indexOf('function SellerMobilePortal(') + 10))
+assert.match(mobileDocumentsSource, /normalizedQuery \|\| actionOnly \|\| activeFilter !== 'all' \? <MobileDocumentList/, 'mobile search and filters must render their actual matching documents')
+assert.match(mobileDocumentsSource, /items=\{filteredItems\}/, 'mobile filtered results must use the selected document state and search')
+assert.doesNotMatch(mobileDocumentsSource, /SellerMobileDocumentCategoryRing|min-h-\[174px\]|Things requiring your attention/, 'category rows should not repeat progress displays or document task lists')
+assert.doesNotMatch(sellerMobileSource, /aria-label="Listing navigation"|Next required item|Need attention<|<SellerMarketingActivity/, 'mobile overview should not repeat navigation or document and marketing summaries')
+assert.match(sellerMobileSource, /section: 'listing_marketing', label: 'Listing'/, 'listing page should be reachable in the single bottom menu')
+assert.match(sellerMobileSource, /mobileSection === 'details'.*SellerMyDetailsReadonlyPage/, 'mobile details must render the details page rather than overview')
+assert.match(sellerMobileSource, /mobileSection === 'appointments'/, 'agent appointment link must resolve to the mobile appointment page')
 assert.doesNotMatch(source, /return `Seller Onboarding \$\{label\}`/, 'seller sidebar should not render the redundant onboarding completion badge')
-assert.match(source, /Your property is live and everything is on track\./, 'seller hero should lead with the listing status message')
+assert.doesNotMatch(sellerHero, /everything is on track/, 'seller hero should not render the removed status headline')
 assert.doesNotMatch(source, /Property Performance/, 'seller dashboard should not render the removed property performance panel')
 assert.match(source, /portal\?\.listing\?\.marketing\?\.imageGallery/, 'seller hero should resolve the agent listing gallery')
 assert.match(privateListingSource, /\.from\('listing_media'\)/, 'seller portal listing data should load the agent-platform media rows')
@@ -48,20 +86,35 @@ assert.match(privateListingSource, /function mapSellerClientPortalCorePayload[\s
 assert.doesNotMatch(workspaceServiceSource, /name: listing\?\.agencyName \|\| listing\?\.organisationName \|\| 'Selling'/, 'seller portal payload should not use Selling as an agency name')
 assert.doesNotMatch(sellerHero, /Your listing/i, 'seller hero should not render the redundant listing summary card')
 assert.match(sellerHero, /Your agent/i, 'seller hero should retain the expanded agent card')
+assert.doesNotMatch(sellerHero, /statusHeadline|everything is on track/, 'seller greeting should not claim the sale is on track')
+assert.match(sellerHero, /xl:min-h-\[280px\]/, 'agent and gallery cards should use the compact desktop height')
 assert.match(source, /Listing Progress[\s\S]*Sale Progress/, 'seller progress should expose both listing and sale workflow tabs')
 assert.match(source, /listingProgressModel=\{sellerListingProgressModel\}/, 'seller dashboard should retain the listing workflow after sale progress starts')
+const mobilePortal = source.slice(source.indexOf('function SellerMobilePortal('), source.indexOf('function SellerCompliancePackCard('))
+assert.match(mobilePortal, /<SellerProgressJourney/, 'mobile overview must render the shared desktop progress model')
+assert.match(source, /mode: isSellerPortalToken \? 'full' : 'core'/, 'seller reconciliation must refresh complete documents and appointments')
+assert.match(source, /!isSellerPortalToken && \['', 'overview', 'progress'\]/, 'seller overview must hydrate beyond the initial core snapshot')
+assert.doesNotMatch(source, /label: 'Schedule Call'|>Schedule call</, 'appointment navigation must not promise unavailable call booking')
+const agentEmailResolver = source.slice(source.indexOf('  const sellerAgentEmail ='), source.indexOf('  const sellerAgentPhone ='))
+assert.doesNotMatch(agentEmailResolver, /buyer\?\.email/, 'agent contact must never fall back to the seller email')
 assert.match(source, /saleProgressModel=\{sellerSaleProgressModel\}/, 'seller dashboard should expose the sale workflow independently')
 assert.match(source, /gridTemplateColumns: `repeat\(\$\{stepCount\}, 120px\)`/, 'seller progress nodes should stretch across the available timeline rail')
-assert.match(sellerHero, /flex h-full min-w-0 flex-col/, 'seller agent column should stretch to align with the property image')
+assert.doesNotMatch(sellerHero, /actively marketing|xl:min-h-\[410px\]/, 'seller hero should omit marketing copy and oversized gallery height')
 assert.match(marketingBuilder, /lead-sources\/property24\.png/, 'Property24 marketing rows should use the platform logo')
 assert.match(marketingBuilder, /lead-sources\/private-property\.jpeg/, 'Private Property marketing rows should use the platform logo')
 assert.match(source, /buildSellerMarketingChannels\(sellerVisibleListingLinks, sellerAgencyLogoUrl\)/, 'agency website rows should receive the agency logo')
 assert.match(source, /View Listing/, 'marketing rows should expose outbound listing actions')
 assert.match(source, /max-h-\[250px\].*overflow-y-auto/, 'seller journey timeline should scroll within its card')
-assert.match(sellerDashboard, /SellerConversationCard/, 'seller dashboard should render the property-team chat card')
+assert.doesNotMatch(source, /SellerConversationCard|Ask Your Property Team/, 'removed conversation card should not appear on desktop or mobile')
+assert.doesNotMatch(sellerDashboard, /SellerCompliancePackCard/, 'overview should not duplicate seller onboarding signatures')
+assert.doesNotMatch(source, /sellerActivityFallbackItems/, 'timeline should not invent events from the current stage')
 assert.match(sellerDashboard, /SellerDocumentTracker/, 'seller dashboard should render the document tracker')
 assert.doesNotMatch(sellerDashboard, /SellerNextMilestoneCard/, 'seller dashboard should not render the removed next milestone card')
 assert.match(source, /title="Document Tracker"/, 'document tracker should replace the important-document list')
+const documentTracker = source.match(/function SellerDocumentTracker[\s\S]*?\n}\n\nfunction SellerSecureSupportFooter/)?.[0] || ''
+assert.doesNotMatch(documentTracker, /conic-gradient|min-h-\[390px\]|percent/, 'document tracker should use compact status counts without a ring or forced height')
+assert.match(documentTracker, /sm:grid-cols-3/, 'document counts should share a desktop row and stack on small screens')
+assert.match(documentTracker, /tracker.available/, 'document tracker must not show false zeros when the checklist is unavailable')
 assert.match(clientDocumentCentreSource, /title: 'Sales Documents'/, 'seller document centre should expose a Sales Documents tab')
 assert.match(clientDocumentCentreSource, /sellerRequirementGroup\(item\) === 'sales'/, 'seller sale documents should use the shared sales grouping')
 assert.match(clientDocumentCentreSource, /disclosure\|defects\|capital improvement\|cgt\|capital-gains\|acquisition\|alteration\|building plan\|occupation certificate/, 'seller disclosure, CGT, acquisition, and alteration requirements should group under property documents')
@@ -77,7 +130,8 @@ assert.match(source, /Choose document type/, 'seller mobile upload should open a
 assert.match(source, /onOpenUploadPicker=\{openDocumentUploadPicker\}/, 'seller mobile documents should route global uploads through the picker')
 assert.match(source, /openGeneratedPortalDocumentHtml/, 'seller mobile generated documents should open as rendered HTML instead of using the fragile mobile PDF renderer')
 assert.match(source, /progress: true/, 'seller progress should be enabled as its own portal route')
-assert.match(source, /<TransactionStageWorkspace/, 'seller progress should render the dedicated transaction-stage workspace')
+assert.match(source, /<SellerProgressPage/, 'seller progress should render the same process page on desktop and mobile')
+assert.match(source, /sellerProgressPage=\{sellerProgressPage\}/, 'mobile progress must receive the full shared seller process page')
 assert.doesNotMatch(source, /key: 'progress'.*hash: '#seller-sale-progress'/, 'seller progress navigation should not redirect into the overview dashboard')
 assert.match(source, /portal\?\.transaction\?\.current_main_stage/, 'seller tracker should pass the real transaction main stage before listing fallbacks')
 assert.match(source, /hasLinkedSellerTransaction[\s\S]*\? fallbackSellerStageMeta/, 'a linked transaction should override the listing-only shared journey stage')

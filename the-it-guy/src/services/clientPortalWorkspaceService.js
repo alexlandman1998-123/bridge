@@ -34,7 +34,6 @@ import {
 } from '../content/clientPortalEducation'
 import { getTransactionWorkflowReadModel } from './transactionWorkflowReadModelService'
 import {
-  getPrivateListingActivity,
   getSellerOnboardingByToken,
   resolveSellerClientPortalFinalSignedDocumentAccess,
 } from '../lib/sellerPortalApi'
@@ -874,12 +873,9 @@ async function fetchSellerClientPortalDataByToken(token, options = {}) {
     appointments,
     leadRows: sellerLeadRows,
   })
-  const sellerActivityRows = !corePayload && listingId
-    ? await getPrivateListingActivity(listingId).catch((error) => {
-        console.warn('[clientPortalWorkspaceService] seller listing activity feed skipped.', error)
-        return []
-      })
-    : []
+  // Seller activity must come from a session-validated reader, never the
+  // agent-only table API. Overview authored notes use the scoped context RPC.
+  const sellerActivityRows = Array.isArray(context?.activity) ? context.activity : []
   const sellerActivityEvents = (Array.isArray(sellerActivityRows) ? sellerActivityRows : [])
     .filter((item) => normalizeValue(item?.visibility || item?.metadata?.visibility) === 'client_visible')
     .map((item, index) => mapSellerListingActivityEvent(item, index))
@@ -4171,7 +4167,9 @@ export async function getClientPortalWorkspaceData(token, workspace = 'shared', 
   })
 
   const clientRole = workspaceMode === 'selling' ? 'seller' : 'buyer'
-  const transactionJourneySnapshotPromise = fetchClientPortalJourneySnapshotByToken(token, clientRole, {
+  const transactionJourneySnapshotPromise = mode === 'core' && isSellerOnboardingToken(token)
+    ? Promise.resolve(null)
+    : fetchClientPortalJourneySnapshotByToken(token, clientRole, {
         sellerPortalAccessToken: options?.sellerPortalAccessToken,
         legalOnly: mode === 'core',
       }).catch((error) => {
@@ -4418,7 +4416,10 @@ export async function getClientPortalWorkspaceData(token, workspace = 'shared', 
     portalCapabilities,
   }
   try {
-    if (mode !== 'core') {
+    // These notification endpoints resolve buyer client_portal_links. Seller
+    // sessions use their own token boundary and already receive scoped actions
+    // and activity above; calling the buyer endpoints fails on every refresh.
+    if (mode !== 'core' && !isSellerOnboardingToken(token)) {
       await Promise.all([
         syncNotificationsFromNextActions(notificationContext),
         syncNotificationsFromActivityFeed(notificationContext),

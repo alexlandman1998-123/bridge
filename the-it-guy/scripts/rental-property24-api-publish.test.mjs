@@ -129,3 +129,22 @@ assert.equal(lifecycle.body.route, 'rentalStatus')
 assert.equal(lifecycle.body.lifecycle.state, 'published')
 
 console.log('rental Property24 publish API contract passed')
+
+// Exercise the withdrawal request without contacting the portal.
+const withdrawalSource = rentalDraftServiceSource.slice(rentalDraftServiceSource.indexOf('export async function withdrawRentalProperty24Listing('), rentalDraftServiceSource.indexOf('\nasync function callPrivatePropertyRentalAction'))
+const makeWithdraw = new Function('normalizeText', 'isSupabaseConfigured', 'supabase', 'fetch', 'formatRentalProperty24ApiError', withdrawalSource.replace('export ', '') + '; return withdrawRentalProperty24Listing;')
+const requests = []
+const session = { auth: { getSession: async () => ({ data: { session: { access_token: 'test-token' } } }) } }
+const withdrawRental = makeWithdraw((value) => String(value || '').trim(), true, session, async (...args) => { requests.push(args); return { ok: true, json: async () => ({ withdrawn: true }) } }, (payload, fallback) => payload.message || fallback)
+assert.deepEqual(await withdrawRental(' listing/123 '), { withdrawn: true })
+assert.equal(requests[0][0], '/api/property24/rentals/listing%2F123/withdraw')
+assert.equal(requests[0][1].method, 'POST')
+assert.equal(requests[0][1].headers.Authorization, 'Bearer test-token')
+assert.deepEqual(JSON.parse(requests[0][1].body), {})
+await assert.rejects(withdrawRental(''), /listing id is required/)
+assert.equal(requests.length, 1)
+const unsignedWithdraw = makeWithdraw((value) => String(value || '').trim(), true, { auth: { getSession: async () => ({ data: {} }) } }, () => { throw new Error('must not send') }, () => '')
+await assert.rejects(unsignedWithdraw('listing-123'), /Sign in again/)
+const failedWithdraw = makeWithdraw((value) => String(value || '').trim(), true, session, async () => ({ ok: false, json: async () => ({ message: 'Portal rejected withdrawal' }) }), (payload) => payload.message)
+await assert.rejects(failedWithdraw('listing-123'), /Portal rejected withdrawal/)
+console.log('Rental withdrawal request, authentication and error handling passed')

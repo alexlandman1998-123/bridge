@@ -4,10 +4,46 @@ import { readFileSync } from 'node:fs'
 
 import {
   buildListingChannelPublicationDisplay,
+  getPrivatePropertyReadinessMessages,
   getListingChannelViewUrl,
   normalizeListingChannelPublicUrl,
   normalizeListingChannelReference,
 } from '../listingMarketingChannelPresentation.js'
+
+test('PP organisation defaults are notes and do not become missing requirements', () => {
+  const warning = 'using_organisation_default_private_property_config'
+  const result = getPrivatePropertyReadinessMessages({
+    ready: true,
+    preview: { dataBlockers: [], technicalBlockers: [] },
+    readiness: { ready: true, blockers: [], warnings: [warning] },
+    report: { ready: true, blockers: [], warnings: [warning] },
+  })
+  assert.deepEqual(result.issues, [])
+  assert.deepEqual(result.warnings, ['Using your organisation’s Private Property connection. This does not prevent submission.'])
+})
+
+test('PP warnings never hide location, setup or nested submission blockers', () => {
+  const result = getPrivatePropertyReadinessMessages({
+    missingConfiguration: ['missing_branch'],
+    preview: { dataBlockers: ['missing_price'], technicalBlockers: ['missing_agent'] },
+    report: { readiness: {
+      blockers: ['private_property_location_not_verified'],
+      warnings: ['using_organisation_default_private_property_config'],
+    }, locationResolution: { message: 'Suburb was not found.' } },
+  })
+  assert.deepEqual(result.issues, ['Suburb was not found.', 'Setup: missing branch', 'missing price', 'missing agent', 'Private Property location not verified'])
+  assert.equal(result.warnings.length, 1)
+  assert.deepEqual(getPrivatePropertyReadinessMessages(null), { issues: [], warnings: [] })
+})
+
+test('PP retained-address recovery explains the blocked operation alongside real blockers', () => {
+  const message = 'Private Property retains a different address for this listing.'
+  const blocker = 'private_property_locked_address_mismatch'
+  const result = getPrivatePropertyReadinessMessages({ report: { recovery: { message, blockers: [blocker] }, blockers: [blocker], warnings: ['using_organisation_default_private_property_config'] } })
+  assert.equal(result.issues[0], message)
+  assert.equal(result.issues.length, 1, 'the explanation and its code are one issue')
+  assert.equal(result.warnings.length, 1)
+})
 
 test('channel URLs support saved portal links without allowing unsafe schemes', () => {
   assert.equal(normalizeListingChannelPublicUrl('www.property24.com/listing/123'), 'https://www.property24.com/listing/123')
@@ -72,4 +108,19 @@ test('marketing live count follows publication visibility independently of updat
   assert.equal(countLive([portal(false, 'current'), portal(false, '')], false, false), 0, 'old verification does not make an inactive portal live')
   assert.equal(countLive([portal(true, 'needs_attention'), portal(true, '', { changeCount: 2 })], true, false), 3, 'failed or unpublished updates do not remove an existing live listing')
   assert.equal(countLive([portal(false, '', { stage: 'withdrawn' }), portal(false, '')], false, false), 0)
+})
+
+test('observed inactive status outranks old acceptance, verification, links and change counts', () => {
+  for (const externalStatus of ['inactive', 'removed', 'paused', 'failed']) {
+    for (const activity of ['awaiting_verification', 'current']) {
+      const display = buildListingChannelPublicationDisplay({
+        key: 'private_property', live: true, reference: 'T5641227', publicUrl: 'https://www.privateproperty.co.za/T5641227',
+        externalStatus, publicationState: { stage: 'accepted', changeCount: 3 }, updateState: { status: activity },
+      })
+      assert.equal(display.status, 'needs_attention')
+      assert.equal(display.statusLabel.toLowerCase(), externalStatus)
+      assert.equal(display.live, false)
+      assert.equal(display.href, '')
+    }
+  }
 })

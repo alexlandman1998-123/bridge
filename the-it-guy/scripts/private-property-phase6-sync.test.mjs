@@ -173,6 +173,28 @@ assert.equal(syncOperation.payload.agent_ids[0], 'ARCH9-SANDBOX-USER-1')
 assert.equal(syncOperation.payload.last_payload_summary.imageUrlCount, 4)
 assert.equal(syncOperation.payload.last_payload_summary.photoUrls, undefined)
 
+for (const observed of ['Inactive', 'Removed', 'Paused', 'Error']) {
+  const resolved = resolvePrivatePropertyExternalStatus({ privatePropertyStatus: observed, eventType: 'Activated', eventStatus: 'Active' })
+  assert.notEqual(resolved, 'active', 'old activation must not override a current negative status')
+}
+const pollClient = createFakeClient()
+await recordPrivatePropertyListingSync({
+  client: pollClient, listingId: 'f35d8916-2ae9-4364-b364-fc279e260fa7', propertyId: 'PRV-1', branchGuid: 'branch',
+  environment: 'production', privatePropertyStatus: 'Inactive', externalStatus: 'active', isOnPortal: true,
+  responseSummary: { status: { resultText: 'Inactive' } },
+})
+const pollWrite = pollClient.operations.find((o) => o.table === 'private_property_listing_syncs').payload
+assert.equal(pollWrite.external_status, 'inactive')
+assert.equal(pollWrite.is_on_portal, false)
+for (const preserved of ['submitted_at', 'activated_at', 'last_payload_summary', 'agent_ids', 'suburb_id', 'private_property_ref', 'last_successful_sync_at']) {
+  assert.equal(Object.hasOwn(pollWrite, preserved), false, `a poll must not overwrite ${preserved}`)
+}
+const durable = summarizePrivatePropertySyncPayload({ submission: {
+  submittedAt: '2026-10-03T11:10:20Z', payloadDigest: 'payload', listingXmlDigest: 'wire',
+  responseSummary: { method: 'UpdateListing', resultText: 'Successful' },
+} })
+assert.equal(durable.submission.responseSummary.resultText, 'Successful')
+
 const sql = read('sql/20260824_private_property_listing_syncs.sql')
 assert.match(sql, /create table if not exists public\.private_property_listing_syncs/)
 assert.match(sql, /private_listing_id uuid not null references public\.private_listings\(id\) on delete cascade/)

@@ -17,3 +17,15 @@ it('rejects submitted applications and stale drafts without overwriting their da
   const query = { update: () => query, eq: () => query, select: () => query, maybeSingle: async () => ({ data: null }) }
   await expect(savePersistedRentalApplication({ id: 'app', status: 'draft', version: 2 }, {}, { client: { from: () => query } })).rejects.toThrow('Application changed elsewhere')
 })
+it('loads current evidence from the scoped review summary for workspace progress', async () => {
+  const { listPersistedRentalApplications } = await import('../rentalApplicationRepository.js')
+  const from = vi.fn(), select = vi.fn(), eq = vi.fn()
+  const documents = [{ id: 'current', type: 'identity', status: 'rejected' }]
+  const query = { select, eq, order: () => query, limit: async () => ({ data: [{ id: 'app', application_data: { identity: { firstName: 'Alex' } }, documents }] }) }
+  from.mockReturnValue(query); select.mockReturnValue(query); eq.mockReturnValue(query)
+  const result = await listPersistedRentalApplications('org', { includeEvidence: true, client: { from } })
+  expect(from).toHaveBeenCalledWith('rental_application_review_summaries')
+  expect(eq).toHaveBeenCalledWith('organisation_id', 'org')
+  expect(select.mock.calls[0][0]).toContain('documents')
+  expect(result[0].documents).toEqual(documents)
+})

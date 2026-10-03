@@ -34,6 +34,8 @@ export const PROFILE_FIELDS = [
   ['vatNumber', 'VAT number'],
   ['authorisedSignatoryName', 'Authorised signatory'],
   ['authorisedSignatoryCapacity', 'Signing capacity'],
+  ['authorisedSignatoryIdNumber', 'Signatory ID / passport number'],
+  ['authorisedSignatoryNationality', 'Signatory nationality'],
   ['authorisedSignatoryEmail', 'Signatory email', 'email'],
   ['authorisedSignatoryPhone', 'Signatory phone'],
   ['authorityBasis', 'Authority / resolution reference'],

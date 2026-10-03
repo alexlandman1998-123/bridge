@@ -3,6 +3,7 @@ import {
   createPrivatePropertyClient,
   normalizePrivatePropertyText,
   summarizePrivatePropertySoapResponse,
+  validatePrivatePropertySoapResult,
 } from './privatePropertyClient.js'
 import {
   resolvePrivatePropertyCredentials,
@@ -17,6 +18,7 @@ import {
 import {
   recordPrivatePropertyListingSync,
 } from './privatePropertyListingSyncService.js'
+import { inspectPrivatePropertyListingRecovery } from './privatePropertyListingRecoveryService.js'
 
 export const PRIVATE_PROPERTY_CONTROLLED_PUBLISH_SERVICE_VERSION = 'arch9_private_property_controlled_publish_rehearsal_v1'
 
@@ -45,6 +47,7 @@ export function buildPrivatePropertyPublishConfirmation({ listingId = '', enviro
 function createPreviewOptions({ readiness = {}, overrides = {} } = {}) {
   return {
     ...overrides,
+    ...(readiness.locationResolution?.suburbId ? { suburbId: readiness.locationResolution.suburbId } : {}),
     branchGuid: normalizePrivatePropertyText(overrides.branchGuid) || normalizePrivatePropertyText(readiness.agencyConfig?.branchGuid),
     agentIds: normalizePrivatePropertyText(overrides.agentIds) || normalizePrivatePropertyText(readiness.agentMapping?.agentIds),
   }
@@ -73,6 +76,7 @@ function createBaseReport({ listingId = '', environment = 'sandbox', apply = fal
       databaseWritten: false,
       rawCredentialsStored: false,
       listingPublished: false,
+      listingSubmitted: false,
     },
     readiness: readiness
       ? {
@@ -83,6 +87,8 @@ function createBaseReport({ listingId = '', environment = 'sandbox', apply = fal
         checks: readiness.checks,
       }
       : null,
+    locationResolution: readiness?.locationResolution || null,
+    recovery: readiness?.recovery || null,
     submitCandidate: payloadSummary
       ? {
         propertyId: normalizePrivatePropertyText(payloadSummary.propertyId),
@@ -106,7 +112,7 @@ function createBaseReport({ listingId = '', environment = 'sandbox', apply = fal
 }
 
 async function buildSubmitPreview({ client, listingId = '', readiness = {}, overrides = {} } = {}) {
-  const bundle = await fetchArch9ListingForPrivatePropertyPreview({ client, listingId })
+  const bundle = await fetchArch9ListingForPrivatePropertyPreview({ client, listingId, environment: readiness.environment })
   return createPrivatePropertyArch9ListingPreview({
     ...bundle,
     agentMapping: readiness.agentMapping || {},
@@ -131,14 +137,14 @@ export async function runPrivatePropertyControlledPublishRehearsal({
   if (!normalizedListingId) throw new Error('--listing-id is required.')
   const normalizedEnvironment = normalizeEnvironment(environment)
 
-  const readiness = await buildPrivatePropertyGoLiveReadinessReport({
+  let readiness = await buildPrivatePropertyGoLiveReadinessReport({
     client,
     listingId: normalizedListingId,
     environment: normalizedEnvironment,
     secrets,
     overrides,
   })
-  const preview = readiness.ready
+  let preview = readiness.ready
     ? await buildSubmitPreview({
       client,
       listingId: normalizedListingId,
@@ -160,7 +166,8 @@ export async function runPrivatePropertyControlledPublishRehearsal({
   ])
   report.warnings = unique(readiness.warnings || [])
 
-  if (!readiness.ready || !preview?.canPreview) {
+  const needsRetainedAddressCheck = normalizedEnvironment === 'production' && report.blockers.length > 0 && report.blockers.every((blocker) => blocker.startsWith('private_property_activated_address_'))
+  if ((!readiness.ready || !preview?.canPreview) && !needsRetainedAddressCheck) {
     report.status = 'BLOCKED'
     report.nextStep = 'Resolve readiness blockers, then re-run the controlled publish rehearsal.'
     return report
@@ -178,17 +185,11 @@ export async function runPrivatePropertyControlledPublishRehearsal({
     return report
   }
 
-  if (!apply) {
-    report.status = 'DRY_RUN_READY'
-    report.nextStep = 'Re-run with --apply to submit this exact Private Property listing after confirming the evidence.'
-    return report
-  }
-
   const expectedConfirmation = buildPrivatePropertyPublishConfirmation({
     listingId: normalizedListingId,
     environment: normalizedEnvironment,
   })
-  if (normalizedEnvironment === 'production' && confirmation !== expectedConfirmation) {
+  if (apply && normalizedEnvironment === 'production' && confirmation !== expectedConfirmation) {
     report.status = 'BLOCKED'
     report.blockers = unique([...report.blockers, 'missing_production_publish_confirmation'])
     report.expectedConfirmation = expectedConfirmation
@@ -202,13 +203,58 @@ export async function runPrivatePropertyControlledPublishRehearsal({
     password: credentials.password,
   })
 
+  if (normalizedEnvironment === 'production') {
+    readiness = await buildPrivatePropertyGoLiveReadinessReport({
+      client, listingId: normalizedListingId, environment: normalizedEnvironment, secrets, overrides,
+      verifyLocation: true, privateProperty: portal,
+    })
+    preview = readiness.ready ? await buildSubmitPreview({ client, listingId: normalizedListingId, readiness, overrides }) : null
+    Object.assign(report, createBaseReport({ listingId: normalizedListingId, environment: normalizedEnvironment, apply, recordSync, readiness, preview }))
+    report.safety.privatePropertyApiCalled = readiness.safety.privatePropertyApiCalled
+    report.blockers = [...readiness.blockers]
+    report.warnings = [...readiness.warnings]
+    if (!readiness.ready || !preview?.canPreview) {
+      report.blockers = unique([...report.blockers, ...(preview?.dataBlockers || []), ...(preview?.technicalBlockers || [])])
+      report.nextStep = readiness.nextStep
+      return report
+    }
+    if (preview.summary.addressFingerprint !== readiness.locationResolution.addressFingerprint) {
+      report.blockers = ['private_property_address_changed_during_location_check']
+      report.nextStep = 'The address changed during the location check. Review the current address before sending it.'
+      return report
+    }
+  }
+
+  if (!apply) {
+    report.status = 'DRY_RUN_READY'
+    report.nextStep = 'Re-run with --apply to submit this exact Private Property listing after confirming the evidence.'
+    return report
+  }
+
+  // This also protects direct callers that bypass the browser preview. Check
+  // the retained record immediately before mutation, with this exact candidate.
+  const currentBundle = await fetchArch9ListingForPrivatePropertyPreview({ client, listingId: normalizedListingId, environment: normalizedEnvironment })
+  if (normalizedEnvironment === 'production' && currentBundle.existingSync?.property_id && currentBundle.existingSync.property_id !== preview.summary.propertyId) {
+    report.blockers = ['private_property_existing_identity_changed']
+    report.nextStep = 'The existing Private Property record changed. Refresh the review before sending changes.'
+    return report
+  }
+  const recovery = readiness.recovery || await inspectPrivatePropertyListingRecovery({ portal, existingSync: currentBundle.existingSync, address: preview.payloadPreview.address })
+  report.recovery = recovery
+  if (recovery.checked) report.safety.privatePropertyApiCalled = true
+  if (recovery.blockers.length) {
+    report.blockers = unique([...report.blockers, ...recovery.blockers])
+    report.nextStep = recovery.message
+    return report
+  }
+
   report.safety.privatePropertyApiCalled = true
   try {
     const response = await portal.updateListing(preview.listingXml)
-    const responseSummary = response.summary || summarizePrivatePropertySoapResponse('UpdateListing', response.data || '')
+    const responseSummary = validatePrivatePropertySoapResult(response, 'UpdateListing')
     const privatePropertyRef = extractPrivatePropertyReference(responseSummary)
     report.status = 'SUBMITTED'
-    report.safety.listingPublished = true
+    report.safety.listingSubmitted = true
     report.apiResponse = {
       status: response.status,
       durationMs: response.durationMs,
@@ -233,7 +279,15 @@ export async function runPrivatePropertyControlledPublishRehearsal({
         suburbId: preview.summary.suburbId,
         agentIds: preview.summary.agentIds,
         responseSummary,
-        payloadSummary: preview.summary,
+        payloadSummary: {
+          ...preview.summary,
+          submission: {
+            submittedAt: report.generatedAt,
+            payloadDigest: report.submitCandidate.payloadDigest,
+            listingXmlDigest: report.submitCandidate.listingXmlDigest,
+            responseSummary,
+          },
+        },
         submittedAt: report.generatedAt,
       })
       report.safety.databaseWritten = true

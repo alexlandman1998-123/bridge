@@ -80,3 +80,50 @@ test('failed withdrawal is visible without misclassifying content as unpublished
   assert.equal(states.private_property.failureDetail, 'Portal unavailable')
   assert.equal(states.private_property.changeCount, 0)
 })
+
+const signed = (name, token = 'old') => `https://example.supabase.co/storage/v1/object/sign/documents/listing/${name}?token=${token}`
+
+test('renewed signed links match historical snapshots and storage paths', () => {
+  const published = { coverImage: signed('one.jpg'), gallery: [signed('one.jpg'), signed('two.jpg')], floorplans: [signed('plan.pdf')] }
+  const current = buildListingPublicationSnapshot({ galleryImages: [{ id: 'one', path: 'listing/one.jpg' }, { id: 'two', url: signed('two.jpg', 'renewed') }], floorplans: [{ url: signed('plan.pdf', 'renewed') }] })
+  const mediaChanges = diffListingPublicationSnapshots(current, published).filter(({ group }) => group === 'Media')
+  assert.deepEqual(mediaChanges, [])
+  assert.equal(current.gallery[1], 'listing/two.jpg')
+  assert.ok(!JSON.stringify(current).includes('token='))
+})
+
+test('gallery reorder, addition, removal and cover replacement remain detectable', () => {
+  const published = { gallery: [signed('one.jpg'), signed('two.jpg')], coverImage: signed('one.jpg') }
+  for (const gallery of [[signed('two.jpg'), signed('one.jpg')], [signed('one.jpg')], [signed('one.jpg'), signed('two.jpg'), signed('three.jpg')]]) {
+    assert.ok(diffListingPublicationSnapshots({ ...published, gallery }, published).some(({ key }) => key === 'gallery'))
+  }
+  assert.ok(diffListingPublicationSnapshots({ ...published, coverImage: signed('two.jpg') }, published).some(({ key }) => key === 'coverImage'))
+  const change = diffListingPublicationSnapshots({ gallery: [signed('two.jpg'), signed('one.jpg')] }, { gallery: published.gallery })[0]
+  assert.deepEqual(change.previousItems, ['one.jpg', 'two.jpg'])
+  assert.deepEqual(change.currentItems, ['two.jpg', 'one.jpg'])
+  assert.ok(!JSON.stringify(change).includes('token='))
+})
+
+test('external media transformations and different storage objects are real changes', () => {
+  assert.equal(diffListingPublicationSnapshots({ coverImage: 'https://cdn.example.com/a.jpg?width=800&token=new' }, { coverImage: 'https://cdn.example.com/a.jpg?width=400&token=old' }).length, 1)
+  assert.equal(diffListingPublicationSnapshots({ coverImage: signed('a.jpg').replace('/documents/', '/other/') }, { coverImage: signed('a.jpg') }).length, 1)
+})
+
+test('equivalent explicit hectares and square metres compare equally', () => {
+  const ha = buildListingPublicationSnapshot({ erfSize: '21.516', erfSizeUnit: 'ha' })
+  const sqm = buildListingPublicationSnapshot({ erfSize: '215160', erfSizeUnit: 'm²' })
+  assert.deepEqual(diffListingPublicationSnapshots(sqm, ha), [])
+  const acres = buildListingPublicationSnapshot({ erfSize: '2', erfSizeUnit: 'Acres' })
+  assert.deepEqual(diffListingPublicationSnapshots(buildListingPublicationSnapshot({ erfSize: '8093.712845' }), acres), [])
+  const changed = diffListingPublicationSnapshots(buildListingPublicationSnapshot({ erfSize: '215161' }), ha)[0]
+  assert.match(changed.previousValue, /21[.,]516 ha$/)
+  assert.match(changed.currentValue, /m²$/)
+})
+
+test('legacy units are not guessed and unchanged old measurements are not flagged', () => {
+  assert.deepEqual(diffListingPublicationSnapshots({ erfSize: '100', erfSizeUnit: 'm²' }, { erfSize: '100' }), [])
+  const change = diffListingPublicationSnapshots({ erfSize: '215160', erfSizeUnit: 'm²' }, { erfSize: '21.516' })[0]
+  assert.match(change.previousValue, /unit not recorded/)
+  assert.match(change.currentValue, /m²$/)
+  assert.equal(diffListingPublicationSnapshots({ erfSize: '100', erfSizeUnit: 'ha' }, { erfSize: '100', erfSizeUnit: 'm²' }).length, 1)
+})

@@ -5,6 +5,7 @@ import {
   normalizeSellerOnboardingCompletionMode,
 } from '../core/documents/sellerOnboardingCompletionMode'
 import { resolveListingDeletion } from './privateListingDeletion'
+import { readSellerPortalRpc, settleOptionalSellerRead } from './sellerPortalRead'
 import { MOCK_DATA_ENABLED } from '../lib/mockData'
 import { buildSellerClientPortalLink, buildSellerOnboardingLink, generateSellerOnboardingToken } from '../lib/agentListingStorage'
 import { resolveOnboardingBranding } from '../lib/onboardingBranding'
@@ -252,7 +253,7 @@ function getSellerPortalAccessStorageKey(token = '') {
 }
 
 export function getStoredSellerPortalAccessToken(token = '') {
-  if (typeof window === 'undefined' || !window.localStorage) return ''
+  if (typeof window === 'undefined') return ''
   const storageKey = getSellerPortalAccessStorageKey(token)
   if (!storageKey) return ''
 
@@ -261,19 +262,19 @@ export function getStoredSellerPortalAccessToken(token = '') {
     const accessToken = normalizeText(parsed?.accessToken)
     const expiresAt = normalizeText(parsed?.expiresAt)
     if (!accessToken) return ''
-    if (expiresAt && new Date(expiresAt).getTime() <= Date.now()) {
+    if (expiresAt && (!Number.isFinite(new Date(expiresAt).getTime()) || new Date(expiresAt).getTime() <= Date.now())) {
       window.localStorage.removeItem(storageKey)
       return ''
     }
     return accessToken
   } catch {
-    window.localStorage.removeItem(storageKey)
+    clearSellerPortalAccessToken(token)
     return ''
   }
 }
 
 export function storeSellerPortalAccessToken(token = '', session = {}) {
-  if (typeof window === 'undefined' || !window.localStorage) return ''
+  if (typeof window === 'undefined') return ''
   const storageKey = getSellerPortalAccessStorageKey(token)
   const accessToken = normalizeText(session?.accessToken)
   if (!storageKey || !accessToken) return ''
@@ -291,10 +292,10 @@ export function storeSellerPortalAccessToken(token = '', session = {}) {
 }
 
 export function clearSellerPortalAccessToken(token = '') {
-  if (typeof window === 'undefined' || !window.localStorage) return
+  if (typeof window === 'undefined') return
   const storageKey = getSellerPortalAccessStorageKey(token)
   if (!storageKey) return
-  window.localStorage.removeItem(storageKey)
+  try { window.localStorage?.removeItem(storageKey) } catch { /* Storage can be disabled. */ }
 }
 
 function buildSellerPortalAuthRequiredError(portalAuth = {}) {
@@ -3505,10 +3506,12 @@ async function fetchOrganisationBrandingSnapshot(client, organisationId) {
 async function fetchSellerOnboardingPublicBrandingSnapshot(token) {
   const normalizedToken = normalizeText(token)
   if (!normalizedToken || typeof fetch !== 'function') return null
-
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 12000)
   try {
     const response = await fetch(`/api/public/seller-onboarding-branding?token=${encodeURIComponent(normalizedToken)}`, {
       headers: { Accept: 'application/json' },
+      signal: controller.signal,
     })
     if (!response.ok) return null
     const payload = await response.json().catch(() => null)
@@ -3516,6 +3519,8 @@ async function fetchSellerOnboardingPublicBrandingSnapshot(token) {
   } catch (error) {
     console.warn('[Private Listings] public seller onboarding branding snapshot unavailable.', error)
     return null
+  } finally {
+    clearTimeout(timer)
   }
 }
 
@@ -4096,15 +4101,15 @@ async function fetchSellerClientPortalCorePayloadByToken(client, token, options 
     p_access_token: accessToken || null,
     p_require_access: requirePortalAccess,
   }
-  const rpc = await client.rpc('bridge_private_listing_seller_portal_core_payload', rpcArgs)
+  const rpc = await readSellerPortalRpc(client, 'bridge_private_listing_seller_portal_core_payload', rpcArgs)
   if (rpc.error) {
-    if (
-      isMissingRpcError(rpc.error, 'bridge_private_listing_seller_portal_core_payload') ||
-      isRecoverableSellerPortalPayloadRpcError(rpc.error)
-    ) {
+    if (isMissingRpcError(rpc.error, 'bridge_private_listing_seller_portal_core_payload')) {
       sellerPortalCorePayloadRpcUnavailable = true
       return null
     }
+    // A timeout or 5xx is temporary, not evidence that the deployed reader is
+    // missing. Keep secure retries on the same authenticated RPC.
+    if (isRecoverableSellerPortalPayloadRpcError(rpc.error) && !requirePortalAccess) return null
     throw rpc.error
   }
   if (rpc.data?.authRequired) {
@@ -4137,7 +4142,7 @@ async function fetchSellerClientPortalPayloadByToken(client, token, options = {}
     : {
         p_token: normalizedToken,
       }
-  let rpc = await client.rpc('bridge_private_listing_seller_portal_payload', rpcArgs)
+  let rpc = await readSellerPortalRpc(client, 'bridge_private_listing_seller_portal_payload', rpcArgs)
   if (
     rpc.error &&
     securePortalLookup &&
@@ -5060,26 +5065,8 @@ export async function recordSellerPortalActivationTerms({ token, acceptance = {}
 }
 
 export async function fetchSellerPortalActivationTermsConfig() {
-  const client = requireClient()
-  const { data, error } = await client
-    .from('transaction_consent_wording_versions')
-    .select('title, body, checkbox_label, fee_amount, currency, wording_version')
-    .eq('consent_type', 'arch9_transaction_platform_fee')
-    .eq('party_type', 'seller')
-    .eq('status', 'published')
-    .order('effective_at', { ascending: false })
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
-
-  if (error) {
-    if (isMissingTableError(error, 'transaction_consent_wording_versions') || isMissingSchemaError(error)) {
-      return normalizeSellerPortalActivationTermsConfig()
-    }
-    throw error
-  }
-
-  return normalizeSellerPortalActivationTermsConfig(data || {})
+  // Portal activation is separate from transaction fee consent.
+  return normalizeSellerPortalActivationTermsConfig()
 }
 
 export async function requestSellerPortalPasswordRecovery(token) {
@@ -7937,10 +7924,16 @@ export async function getSellerOnboardingByToken(token, options = {}) {
       ? null
       : await fetchSellerOnboardingFormByToken(client, normalizedToken)
     const hydratedPortalPayload = mergeSellerPortalOnboardingFormData(portalPayload, persistedOnboarding)
-    const [initialBranding, hydratedBranding, mediaByListingId] = await Promise.all([
+    const initialBrandingPromise = settleOptionalSellerRead(
       resolveSellerOnboardingBrandingSnapshot(client, normalizedToken, portalPayload.listing),
-      resolveSellerOnboardingBrandingSnapshot(client, normalizedToken, hydratedPortalPayload.listing),
-      fetchMediaRowsForListings(client, [hydratedPortalPayload.listing.id]),
+      corePayload ? 4000 : 12000,
+    )
+    const [initialBranding, hydratedBranding, mediaByListingId] = await Promise.all([
+      initialBrandingPromise,
+      persistedOnboarding
+        ? resolveSellerOnboardingBrandingSnapshot(client, normalizedToken, hydratedPortalPayload.listing)
+        : initialBrandingPromise,
+      corePayload ? Promise.resolve(new Map()) : fetchMediaRowsForListings(client, [hydratedPortalPayload.listing.id]),
     ])
     const branding = mergeSellerOnboardingBrandingSnapshots(initialBranding, hydratedBranding)
     const listingWithMedia = attachDistributionMediaToListing(

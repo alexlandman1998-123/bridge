@@ -43,8 +43,8 @@ function getRuntimeEnv() {
   return cachedRuntimeEnv
 }
 
-function createServiceClient() {
-  const env = getRuntimeEnv()
+function createServiceClient(runtimeEnv = null) {
+  const env = runtimeEnv || getRuntimeEnv()
   const supabaseUrl = normalizeText(env.SUPABASE_URL || env.VITE_SUPABASE_URL)
   const serviceRoleKey = normalizeText(env.SUPABASE_SERVICE_ROLE_KEY)
 
@@ -283,7 +283,7 @@ async function resolveSellerBranding(client, organisationId = '') {
   }
 }
 
-export async function createSellerOnboardingBrandingResponse({ method = 'GET', url = '', headers = {} } = {}) {
+export async function createSellerOnboardingBrandingResponse({ method = 'GET', url = '', headers = {}, env = null } = {}) {
   const normalizedMethod = normalizeMethod(method)
 
   if (normalizedMethod === 'OPTIONS') {
@@ -317,7 +317,7 @@ export async function createSellerOnboardingBrandingResponse({ method = 'GET', u
       })
     }
 
-    const client = createServiceClient()
+    const client = createServiceClient(env)
     const onboarding = await findOnboardingByPortalToken(client, token)
     if (!onboarding?.private_listing_id) {
       return buildJsonResponse(404, {

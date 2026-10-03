@@ -1,3 +1,4 @@
+import './listing-channel-table.css'
 import { useCallback, useEffect, useState } from 'react'
 import { ExternalLink, Globe2, Loader2, RefreshCw, SlidersHorizontal } from 'lucide-react'
 import Button from '../ui/Button'
@@ -72,14 +73,14 @@ export default function KingdomWebsitePublicationChannel({ listingId, listingTit
   }
 
   return <>
-    <div className="grid gap-4 border-t border-[#edf2f7] px-4 py-4 lg:grid-cols-[minmax(210px,1fr)_minmax(145px,0.7fr)_minmax(170px,0.8fr)_minmax(150px,0.75fr)_auto] lg:items-center">
+    <div className="listing-channel-columns border-t border-[#edf2f7]">
       <div className="flex min-w-0 items-center gap-3">
         <span className="grid h-12 w-12 shrink-0 place-items-center rounded-[14px] border border-[#cfe4d8] bg-[#f2faf5] text-[#18713e]"><Globe2 size={21} /></span>
         <div className="min-w-0"><p className="truncate text-sm font-semibold text-[#142132]">Kingdom Website</p><p className="truncate text-xs text-[#607387]">Kingdom Real Estate property website</p></div>
       </div>
       <div className="min-w-0"><p className="truncate text-sm font-semibold text-[#243d56]">{listingReference || 'Not assigned'}</p>{link ? <a href={link} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-1 text-xs font-semibold text-[#1f4f78] hover:underline">View listing <ExternalLink size={12} /></a> : <p className="mt-1 text-xs text-[#8a98a8]">Listing link unavailable</p>}</div>
       <div className="min-w-0"><p className={`inline-flex items-center gap-2 text-sm font-semibold ${statusColor}`}><span className={`h-2 w-2 rounded-full ${live && !publication.stale ? 'bg-[#1f9d64]' : blockers.length || publication.stale ? 'bg-[#d99321]' : 'border border-[#aebdca] bg-white'}`} />{statusLabel}</p>{blockers.length ? <p className="mt-1 text-xs text-[#8a641d]">{blockers[0]}</p> : null}</div>
-      <div className="text-[0.68rem] text-[#607387]">{savedAt ? <p><span className="font-semibold uppercase tracking-[0.06em] text-[#8294aa]">Arch9 saved</span> · {savedAt}</p> : null}{publication.lastSyncedAt ? <p><span className="font-semibold uppercase tracking-[0.06em] text-[#8294aa]">Kingdom updated</span> · {new Date(publication.lastSyncedAt).toLocaleString()}</p> : null}</div>
+      <div className="listing-channel-activity">{savedAt ? <p><span >Arch9 saved</span> · {savedAt}</p> : null}{publication.lastSyncedAt ? <p><span >Kingdom updated</span> · {new Date(publication.lastSyncedAt).toLocaleString()}</p> : null}</div>
       <div className="flex justify-start lg:justify-end"><Button type="button" size="sm" variant="secondary" onClick={() => setManageOpen(true)}><SlidersHorizontal size={15} />Manage</Button></div>
       {error ? <p className="text-sm text-[#b42318] lg:col-span-5" role="alert">{error}</p> : null}
       {notice ? <p className="text-sm text-[#257044] lg:col-span-5" role="status">{notice}</p> : null}

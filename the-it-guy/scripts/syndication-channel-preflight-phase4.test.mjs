@@ -83,8 +83,49 @@ const offersFromLand = buildSyndicationChannelPreflight({
 assert.equal(offersFromLand.channels.privateProperty.status, 'ready')
 assert.equal(offersFromLand.channels.privateProperty.mappedOutcome.pricePresentation, 'OffersFrom')
 assert.equal(offersFromLand.channels.property24.status, 'blocked')
-assert.ok(offersFromLand.channels.property24.blockers.includes('property24_land_mapping_not_verified'))
+assert.equal(offersFromLand.channels.property24.blockers.includes('property24_land_mapping_not_verified'), false, 'Property24 now supports land mapping')
 assert.ok(offersFromLand.channels.property24.blockers.includes('property24_price_presentation_not_verified'))
+
+for (const propertyType of ['Vacant Land', 'vacant_land', 'Vacant Land / Plot', 'Stand', 'Residential Land']) {
+  const landReview = buildSyndicationChannelPreflight({
+    listing: { property_type: propertyType, asking_price: 2250000, propertyDetails: { erfSize: 215160 } },
+    publication: { title: 'Dinokeng vacant land', description: 'Vacant bushveld land without a dwelling.' },
+  })
+  assert.equal(landReview.channels.privateProperty.status, 'ready', propertyType)
+
+  const missingArea = buildSyndicationChannelPreflight({
+    listing: { property_type: propertyType, asking_price: 2250000 },
+    publication: { title: 'Vacant land', description: 'Land area is not yet recorded.' },
+  })
+  assert.ok(missingArea.channels.privateProperty.blockers.includes('private_property_land_area_required'), propertyType)
+  assert.equal(missingArea.channels.privateProperty.blockers.includes('private_property_residential_bedrooms_and_bathrooms_required'), false, propertyType)
+}
+
+const explicitLandCategory = buildSyndicationChannelPreflight({
+  listing: { property_category: 'Vacant Land', property_type: 'House', asking_price: 2250000, propertyDetails: { erfSize: 215160 } },
+  publication: { title: 'Vacant land', description: 'The explicit specialist category takes precedence.' },
+})
+assert.equal(explicitLandCategory.channels.privateProperty.status, 'ready')
+
+for (const rooms of [{}, { bedrooms: 3 }, { bathrooms: 2 }]) {
+  const incompleteHome = buildSyndicationChannelPreflight({
+    listing: { property_type: 'House', asking_price: 2250000 },
+    publication: { title: 'Family home', description: 'A residential listing.', ...rooms },
+  })
+  assert.ok(incompleteHome.channels.privateProperty.blockers.includes('private_property_residential_bedrooms_and_bathrooms_required'))
+}
+
+for (const [propertyType, blocker] of [
+  ['Smallholding', 'private_property_farm_type_required'],
+  ['Warehouse', 'private_property_business_type_required'],
+]) {
+  const specialistReview = buildSyndicationChannelPreflight({
+    listing: { property_category: propertyType, asking_price: 2250000 },
+    publication: { title: 'Specialist property', description: 'Specialist details still need recording.' },
+  })
+  assert.ok(specialistReview.channels.privateProperty.blockers.includes(blocker))
+  assert.equal(specialistReview.channels.privateProperty.blockers.includes('private_property_residential_bedrooms_and_bathrooms_required'), false)
+}
 
 const invalidOffer = buildSyndicationChannelPreflight({
   listing: { property_type: 'House', asking_price: 100000, propertyDetails: { listingType: 'Sale', pricePresentation: 'OffersFrom', offersFrom: 120000 } },

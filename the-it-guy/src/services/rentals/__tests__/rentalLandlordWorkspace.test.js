@@ -1,3 +1,4 @@
+import { saveRentalLandlordDiscovery, linkRentalLandlordOnboardingProperty } from '../rentalLandlordOnboardingService.js'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createRentalCrmLeadMetadata } from '../rentalCrmLeadModel'
 import { getRentalLeadWorkspace, advanceRentalLead } from '../rentalLeadService'
@@ -32,6 +33,7 @@ vi.mock('../rentalLandlordMandateRepository', () => ({
   createRentalPropertyMandate: vi.fn(),
   listRentalPropertyMandates: vi.fn(),
 }))
+vi.mock('../rentalLandlordOnboardingService.js', () => ({ saveRentalLandlordDiscovery: vi.fn(), linkRentalLandlordOnboardingProperty: vi.fn() }))
 const context = {
   organisationId: 'org',
   actor: { id: 'agent' },
@@ -57,6 +59,8 @@ beforeEach(() => {
       }),
     },
   }
+  linkRentalLandlordOnboardingProperty.mockImplementation(async (_lead,id,links) => {const m=lead.raw.rawEnquiryPayload;m.landlordPortfolio=m.landlordPortfolio.map((row) => row.id===id ? {...row,...links} : row)})
+  saveRentalLandlordDiscovery.mockImplementation(async (current,patch) => { const raw=lead.raw.rawEnquiryPayload;const m=raw.rentalCrm || raw.rental_crm || raw;m.landlordProfile=patch.profile;m.landlordPortfolio=patch.portfolio;return {onboarding:{version:1}} })
   getRentalLeadWorkspace.mockImplementation(async () => ({ lead }))
   updateAgencyCrmLeadRecord.mockImplementation(async (_org, _id, patch) => {
     lead.raw = { ...lead.raw, ...patch }
@@ -200,7 +204,7 @@ describe('landlord workspace persistence', () => {
       ),
     ).rejects.toThrow('workspace')
     expect(updateAgencyCrmLeadRecord).not.toHaveBeenCalled()
-    updateAgencyCrmLeadRecord.mockRejectedValue(new Error('statement timeout'))
+    saveRentalLandlordDiscovery.mockRejectedValue(new Error('statement timeout'))
     await expect(
       saveRentalLandlordProfile(
         'lead',

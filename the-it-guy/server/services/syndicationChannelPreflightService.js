@@ -4,6 +4,7 @@ import { resolveSyndicationReviewRollout } from './syndicationReviewRolloutServi
 import { evaluateListingPortalAddressProtection } from './listingPortalAddressProtectionService.js'
 import { buildListingFeatureDeliveryReview } from './listingFeatureDeliveryReview.js'
 import { evaluateProperty24CommercialSaleFacts } from './property24ListingMapper.js'
+import { resolvePrivatePropertyCategory } from './privatePropertyListingMapper.js'
 
 export const SYNDICATION_CHANNEL_PREFLIGHT_VERSION = 'arch9_syndication_channel_preflight_v1'
 
@@ -56,14 +57,14 @@ function sharedDataBlockers(data, facts) {
 function privatePropertyPreflight({ data, facts, sharedBlockers, addressProtection }) {
   const blockers = [...sharedBlockers, ...(addressProtection.privateProperty.blockers || [])]
   const warnings = [...(addressProtection.privateProperty.warnings || [])]
-  const propertyType = key(data.propertyType || facts.propertyCategory)
-  const isResidential = !['land', 'farm', 'commercial', 'industrial', 'mixed_use'].includes(propertyType)
+  const category = resolvePrivatePropertyCategory(facts.propertyCategory || data.propertyCategory || data.propertyType)
+  const isResidential = category === 'Residential'
 
   if (isResidential && (!data.bedrooms || !data.bathrooms)) blockers.push('private_property_residential_bedrooms_and_bathrooms_required')
-  if (propertyType === 'land' && !facts.landArea) blockers.push('private_property_land_area_required')
-  if (propertyType === 'farm' && !facts.propertySubtype) blockers.push('private_property_farm_type_required')
-  if (['commercial', 'industrial'].includes(propertyType) && !facts.propertySubtype) blockers.push('private_property_business_type_required')
-  if (facts.listingPurpose === 'Rental' && facts.rentalPricePeriod === 'PerM2' && !['commercial', 'industrial', 'land', 'farm', 'mixed_use'].includes(propertyType)) {
+  if (category === 'Land' && !facts.landArea) blockers.push('private_property_land_area_required')
+  if (category === 'Farms' && !facts.propertySubtype) blockers.push('private_property_farm_type_required')
+  if (category === 'Commercial' && !facts.propertySubtype) blockers.push('private_property_business_type_required')
+  if (facts.listingPurpose === 'Rental' && facts.rentalPricePeriod === 'PerM2' && isResidential) {
     blockers.push('private_property_per_m2_rental_requires_specialist_category')
   }
   if (key(data.saleType) === 'auction' && !facts.mandateType) warnings.push('private_property_auction_details_are_checked_at_submission')

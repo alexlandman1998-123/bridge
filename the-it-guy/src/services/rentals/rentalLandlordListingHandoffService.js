@@ -1,3 +1,4 @@
+import { linkRentalLandlordOnboardingProperty } from './rentalLandlordOnboardingService.js'
 import { createAgencyCrmLeadActivity, updateAgencyCrmLeadRecord } from '../../lib/agencyCrmRepository'
 import { getRentalLeadMetadata } from './rentalLeadClassificationModel'
 import { patchRentalCrmLeadMetadata } from './rentalCrmLeadModel'
@@ -11,7 +12,7 @@ import { findLeadMandate } from './rentalLeadHandoffModel'
 const text = (value) => String(value ?? '').trim()
 
 export async function linkRentalLandlordLeadToListing(lead = {}, listingId = '', context = {}) {
-  const currentLead = context.scope ? (await getRentalLeadWorkspace(context.organisationId, lead.id, context.scope)).lead : lead
+  let currentLead = context.scope ? (await getRentalLeadWorkspace(context.organisationId, lead.id, context.scope)).lead : lead
   if (currentLead.role !== 'landlord' || !['listing_ready', 'listing_created'].includes(currentLead.stage)) throw new Error('Choose a landlord lead at Listing ready.')
   if (!text(listingId)) throw new Error('A created rental listing is required.')
   const listing = await getRentalListingForAgent(listingId, context.actor?.id || context.actor?.userId, { organisationId: context.organisationId })
@@ -24,9 +25,10 @@ export async function linkRentalLandlordLeadToListing(lead = {}, listingId = '',
     if (!property.listingId) {
       const mandates = property.canonicalPropertyId ? await listRentalPropertyMandates(property.canonicalPropertyId) : []
       if (!findLeadMandate(currentLead, mandates, property.canonicalPropertyId, context.organisationId)) throw new Error('Record a signed mandate for this portfolio property before linking its rental listing.')
+      await linkRentalLandlordOnboardingProperty(currentLead,property.id,{listingId:text(listingId)})
+      currentLead = (await getRentalLeadWorkspace(context.organisationId, currentLead.id, context.scope || {})).lead
       const metadata = patchRentalCrmLeadMetadata(currentLead.raw, {
-        landlordPortfolio: portfolio.map(item => item.id === property.id ? { ...item, listingId: text(listingId) } : item),
-        relationships: { listingId: currentLead.relationships?.listingId || text(listingId) },
+        relationships: { ...currentLead.relationships, listingId: currentLead.relationships?.listingId || text(listingId) },
       })
       await updateAgencyCrmLeadRecord(context.organisationId, currentLead.id, { rawEnquiryPayload: metadata })
     }

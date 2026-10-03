@@ -3,7 +3,7 @@ const text = (value) => String(value || '').trim()
 const storageKey = (token) => text(token) ? `${STORAGE_PREFIX}${text(token)}` : ''
 
 export function getStoredSellerPortalAccessToken(token = '') {
-  if (typeof window === 'undefined' || !window.localStorage) return ''
+  if (typeof window === 'undefined') return ''
   const key = storageKey(token)
   if (!key) return ''
   try {
@@ -11,21 +11,23 @@ export function getStoredSellerPortalAccessToken(token = '') {
     const accessToken = text(value?.accessToken)
     const expiresAt = text(value?.expiresAt)
     if (!accessToken) return ''
-    if (expiresAt && new Date(expiresAt).getTime() <= Date.now()) {
+    if (expiresAt && (!Number.isFinite(new Date(expiresAt).getTime()) || new Date(expiresAt).getTime() <= Date.now())) {
       window.localStorage.removeItem(key)
       return ''
     }
     return accessToken
   } catch {
-    window.localStorage.removeItem(key)
+    clearSellerPortalAccessToken(token)
     return ''
   }
 }
 
 export function clearSellerPortalAccessToken(token = '') {
-  if (typeof window === 'undefined' || !window.localStorage) return
+  if (typeof window === 'undefined') return
   const key = storageKey(token)
-  if (key) window.localStorage.removeItem(key)
+  try {
+    if (key) window.localStorage?.removeItem(key)
+  } catch { /* Storage may be unavailable in a restricted browser. */ }
 }
 
 export function isSellerPortalAuthRequiredError(error = null) {

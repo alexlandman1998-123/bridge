@@ -1,0 +1,11 @@
+.listing-channel-columns { display: grid; gap: 16px; padding: 16px; }
+.listing-channel-heading { display: none; border-bottom: 1px solid #edf2f7; background: #fbfdff; color: #71869e; font-size: 11px; font-weight: 600; padding-block: 10px; }
+.listing-channel-columns > * { min-width: 0; overflow-wrap: anywhere; }
+.listing-channel-activity { font-size: 12px; line-height: 1.6; color: #607387; }
+.listing-channel-activity span { text-transform: none; letter-spacing: normal; font-weight: 500; color: #607387; }
+.listing-channel-activity p { margin: 0; font-size: inherit; line-height: inherit; }
+@media (min-width: 1024px) {
+  .listing-channel-columns { grid-template-columns: minmax(0,1.35fr) minmax(0,1fr) minmax(0,.9fr) minmax(0,1.1fr) minmax(0,1.45fr); align-items: center; }
+  .listing-channel-heading { display: grid; }
+  .listing-channel-heading > :last-child { text-align: right; }
+}

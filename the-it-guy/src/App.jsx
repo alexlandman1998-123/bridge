@@ -329,6 +329,7 @@ const PublicAgencyIntakePage = lazy(() => import('./pages/PublicAgencyIntakePage
 const PublicAgentDigitalCardPage = lazy(() => import('./pages/PublicAgentDigitalCardPage'))
 const RentalModuleBoundary = lazy(() => import('./modules/rentals/shell/RentalModuleBoundary').then((module) => ({ default: module.RentalModuleBoundary })))
 const RentalApplicantJourneyPage = lazy(() => import('./pages/rentals/RentalApplicantJourneyPage'))
+const RentalLandlordOnboardingPage = lazy(() => import('./pages/rentals/RentalLandlordOnboardingPage'))
 const RentalApplicationWorkspacePage = lazy(() => import('./pages/rentals/RentalApplicationWorkspacePage'))
 const RentalApplicationDetailPage = lazy(() => import('./pages/rentals/RentalApplicationDetailPage'))
 const RetiredOfferWorkflowPage = lazy(() => import('./pages/RetiredOfferWorkflowPage'))
@@ -1912,6 +1913,7 @@ function AppRoutes() {
           <Route path="/launch/arch9" element={<Arch9LaunchConcierge />} />
           <Route path="/qr/arch9" element={<Arch9LaunchConcierge />} />
           <Route path="/card/:cardSlug" element={<AppErrorBoundary scope="agent-digital-card" title="Agent digital card failed to load"><PublicAgentDigitalCardPage /></AppErrorBoundary>} />
+          <Route path="/rental-landlord-onboarding/:token" element={<AppErrorBoundary scope="rental-landlord-onboarding" title="Landlord onboarding failed to load"><RentalLandlordOnboardingPage /></AppErrorBoundary>} />
           <Route path="/rental-application/:token" element={<AppErrorBoundary scope="rental-applicant-journey" title="Rental application failed to load"><RentalApplicantJourneyPage /></AppErrorBoundary>} />
           <Route path="/tenant/:token" element={<AppErrorBoundary scope="rental-tenant-portal" title="Tenant portal failed to load"><RentalTenantPortalPage /></AppErrorBoundary>} />
           <Route path="/landlord/:token" element={<AppErrorBoundary scope="rental-landlord-portal" title="Landlord portal failed to load"><RentalLandlordPortalPage /></AppErrorBoundary>} />

@@ -1,3 +1,5 @@
+import RentalLandlordOnboardingPanel from '../../modules/rentals/shared/applications/RentalLandlordOnboardingPanel.jsx'
+import { rentalLandlordDiscovery } from '../../services/rentals/rentalLandlordOnboardingModel.js'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import {
@@ -226,8 +228,9 @@ export default function RentalLandlordLeadWorkspace({
       organisationId: scope.organisationId,
       actor,
       scope: { ...options, ...scope, includeClosed: true },
+      expectedDiscovery: rentalLandlordDiscovery(lead.raw?.rawEnquiryPayload || lead.raw?.raw_enquiry_payload || {}),
     }),
-    [actor, options, scope],
+    [actor, options, scope, lead],
   )
   useEffect(() => {
     setProfile(landlordWorkspace(lead).profile)
@@ -1266,6 +1269,11 @@ export default function RentalLandlordLeadWorkspace({
         ) : null}
         {tab === 'Documents' ? (
           <div className="grid gap-5 lg:grid-cols-2">
+            <RentalLandlordOnboardingPanel
+              leadId={lead.id}
+              revision={JSON.stringify([saved.profile, saved.portfolio])}
+              discoveryDirty={JSON.stringify(profile) !== JSON.stringify(saved.profile) || Boolean(property && JSON.stringify(property) !== JSON.stringify(saved.portfolio.find((item) => item.id === property.id)))}
+            />
             <Card title="Landlord documents">
               <p className="text-sm text-[#60758b]">
                 Identity, company or trust records, signing authority and

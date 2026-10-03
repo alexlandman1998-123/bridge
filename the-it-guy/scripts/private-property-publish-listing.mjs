@@ -408,6 +408,17 @@ async function run() {
     return
   }
 
+  if (config.environment.toLowerCase() === 'production' || new URL(config.baseUrl).hostname === 'services.privateproperty.co.za') {
+    report.status = 'BLOCKED'
+    report.canSubmit = false
+    report.technicalBlockers.push('private_property_production_requires_controlled_publish')
+    report.nextStep = 'Use the Arch9 listing review or private-property:controlled-publish-rehearsal for production. They verify the existing PP record before submitting.'
+    const output = writeReport(report, options.output)
+    console.log(JSON.stringify({ status: report.status, output, technicalBlockers: report.technicalBlockers, nextStep: report.nextStep }, null, 2))
+    process.exitCode = 1
+    return
+  }
+
   const client = createPrivatePropertyClient({
     baseUrl: config.baseUrl,
     username: config.username,

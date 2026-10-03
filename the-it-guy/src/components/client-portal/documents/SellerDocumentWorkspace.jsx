@@ -1,3 +1,4 @@
+import SellerChecklistSummary from './SellerChecklistSummary.jsx'
 import { ArrowRight, CheckCircle2, CircleAlert, Clock3, FileStack, UploadCloud, XCircle } from 'lucide-react'
 import { createElement } from 'react'
 import { normalizeDocumentStatus } from '../../../lib/clientPortalDocumentStatus'
@@ -123,6 +124,7 @@ function SellerDocumentWorkspace({
   footerText = 'Use the row actions to upload, view, or re-upload documents without leaving this page.',
   listId = 'seller-document-list',
   experienceModel = null,
+  checklistDocumentCenter = null,
   hideHeader = false,
 }) {
   const activeTab = tabs.find((tab) => tab.key === activeTabKey) || tabs[0] || null
@@ -168,6 +170,7 @@ function SellerDocumentWorkspace({
         </header>
       ) : null}
 
+      {checklistDocumentCenter ? <SellerChecklistSummary documentCenter={checklistDocumentCenter} /> : (
       <section className="rounded-[28px] border border-[#dde6f0] bg-white px-5 py-5 shadow-[0_20px_40px_rgba(15,23,42,0.06)] sm:px-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
@@ -221,6 +224,8 @@ function SellerDocumentWorkspace({
         ) : null}
       </section>
 
+      )}
+
       <div className="grid gap-5 lg:grid-cols-[320px_minmax(0,1fr)] lg:items-start">
         <aside className="space-y-5">
           <section className="flex max-h-[360px] min-h-0 flex-col rounded-[26px] border border-[#dde6f0] bg-white px-5 py-5 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
@@ -257,6 +262,7 @@ function SellerDocumentWorkspace({
             )}
           </section>
 
+          {!checklistDocumentCenter ? (
           <section className="rounded-[26px] border border-[#dde6f0] bg-white px-5 py-5 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
             <h3 className="text-[1.02rem] font-semibold tracking-[-0.02em] text-[#142132]">Status summary</h3>
             <div className="mt-4 space-y-2.5">
@@ -275,6 +281,7 @@ function SellerDocumentWorkspace({
               ))}
             </div>
           </section>
+          ) : null}
         </aside>
 
         <section id={listId} className="flex min-h-0 flex-col rounded-[28px] border border-[#dde6f0] bg-white px-4 py-4 shadow-[0_20px_40px_rgba(15,23,42,0.06)] sm:px-5 sm:py-5 lg:h-[620px] lg:max-h-[620px]">
