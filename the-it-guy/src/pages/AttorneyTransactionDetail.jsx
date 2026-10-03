@@ -8828,7 +8828,7 @@ function ArchlineTransferWorkspace({
         const saved = await persistTaskUpdate(task, 'completed', note, {
           commandType: 'manual_workflow_override', completionMethod: 'manual', overrideScope: 'stage',
           overrideGroupId: groupId, overrideReason: stageActionReason.trim(), overrideTaskKeys: affectedTaskKeys,
-        }, 'internal')
+        }, 'internal', true)
         if (saved !== true) throw new Error(`${task.label} could not be completed.`)
         savedCount += 1
       }
@@ -8836,7 +8836,7 @@ function ArchlineTransferWorkspace({
       setStageActionReason('')
     } catch (error) {
       setStageActionOpen(false)
-      setStageActionError(`${savedCount ? `${savedCount} of ${stageOutstanding.length} tasks saved. ` : ''}${error?.message || 'The stage could not be completed.'} Refresh the matter before trying again.`)
+      setStageActionError(`${savedCount ? `${savedCount} of ${stageOutstanding.length} tasks saved. ` : ''}${error?.message || 'The stage could not be completed.'}`)
     } finally {
       setStageActionBusy(false)
     }
@@ -8849,7 +8849,7 @@ function ArchlineTransferWorkspace({
       onSelectStage={(stageKey) => onNavigateTransfer?.({ view: 'overview', stageKey })}
       onOpenStage={(stageKey, taskKey) => onNavigateTransfer?.({ view: 'workspace', stageKey, taskKey })}
       canUpdate={canUpdateSteps && !saving && !taskSaveBusy}
-      onUpdateTask={(task, status, note, workPacket) => persistTaskUpdate(task, status, note, workPacket, 'internal')}
+      onUpdateTask={(task, status, note, workPacket) => persistTaskUpdate(task, status, note, workPacket, 'internal', true)}
       onSaveMatterNumber={onSaveMatterNumber}
     />
   }

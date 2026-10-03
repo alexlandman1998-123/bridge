@@ -100,5 +100,24 @@ assert.ok(!alternativePlan.lanes[0].stepKeys.includes(SPECIALIST_ROUTE_TASKS.dec
 await db.query('update public.transactions set routing_profile_json=$1 where id=$2', [
   { workflowPlan: alternativePlan, scenarioProfile: alternativeScenario }, matter])
 await assert.rejects(db.query('select journey_private.phase5_assert_routes($1,$2)', [matter, lane]), /another instrument/)
+
+// Imported matters may have an exceptional seller before their workflow plan
+// is reconciled. Record earlier work without applying v14 signing gates yet.
+const importedMatter = '00000000-0000-0000-0000-000000000505'
+const importedLane = '00000000-0000-0000-0000-000000000506'
+await db.query('insert into public.transactions values ($1,$2,$3)', [importedMatter, { scenarioProfile: base }, 'active'])
+await db.query('insert into public.transaction_subprocesses values ($1,$2,$3)', [importedLane, importedMatter, 'transfer'])
+await db.query("insert into public.transaction_subprocess_steps(subprocess_id,step_key,status) values ($1,'specialist_classification_review','not_started')", [importedLane])
+const completeImportedReview = () => db.query("update public.transaction_subprocess_steps set status='completed',comment='Imported attorney review.' where subprocess_id=$1 and step_key='specialist_classification_review'", [importedLane])
+await assert.rejects(completeImportedReview(), /Specialist route deceased_estate is unresolved/)
+await db.exec(readFileSync(new URL('../../supabase/migrations/20260929082723_handle_unreconciled_attorney_workflow_plans.sql', import.meta.url), 'utf8'))
+await completeImportedReview()
+assert.equal((await db.query("select status from public.transaction_subprocess_steps where subprocess_id=$1 and step_key='specialist_classification_review'", [importedLane])).rows[0].status, 'completed')
+for (const functionName of ['enforce_attorney_funding_handoffs', 'enforce_attorney_phase4_tax_clearances']) {
+  const definition = (await db.query('select pg_get_functiondef($1::regprocedure) as definition', [`journey_private.${functionName}()`])).rows[0].definition
+  assert.match(definition, /coalesce\(v_(?:plan|profile).*version/)
+}
+await db.query('update public.transaction_subprocess_steps set status=$1 where subprocess_id=$2 and step_key=$3', ['not_started', lane, SPECIALIST_ROUTE_TASKS.deceased_estate])
+await assert.rejects(complete(SPECIALIST_ROUTE_TASKS.deceased_estate), /Complete specialist classification and record reviewed evidence/)
 await db.close()
-console.log('Phase 5 specialist routes passed: hold, classification, specialist task, estate authority, and stale-fact gate.')
+console.log('Phase 5 specialist routes passed: hold, classification, imported work, and planned signing gates.')
