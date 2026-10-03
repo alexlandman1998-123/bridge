@@ -21,7 +21,8 @@ export default async function handler(request, response) {
   const eventType = String(body.eventType || '')
   const path = String(body.path || '')
   const listingId = String(body.listingId || '') || null
-  if (!['site_visit', 'page_view', 'listing_view'].includes(eventType)
+  if (!['site_visit', 'page_view', 'listing_view', 'guarantee_opened', 'ppra_letter_opened'].includes(eventType)
+    || (['guarantee_opened', 'ppra_letter_opened'].includes(eventType) && path !== '/demo/homeseekers/join')
     || !isHomeSeekersPageUrl(`${origin.origin}${path}`)
     || (eventType === 'listing_view' && !listingId)
     || (eventType !== 'listing_view' && listingId)) return ignore()

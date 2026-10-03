@@ -793,3 +793,74 @@ browser verification covers the current pre-transaction account; attorney-stage
 updates and real recovery-email delivery still require controlled acceptance.
 The saved placeholder agent email, absent listing photos/live links and lack of
 a linked transaction remain data/acceptance gaps, rather than fabricated content.
+
+## Home Seekers recruitment applications
+
+`/demo/homeseekers/join` submits to `/api/home-seekers/applications`.
+The pending `home_seekers_recruitment_intake` migration stores applications
+separately from property leads, routes a bell notification with the application
+details to the active principal (administrator fallback), and counts accepted
+applications atomically. It does not send email. Recipient access requires
+continued active principal/admin membership. The migration is not applied by a
+build or test; release requires the database guard and explicit approval.
+
+The endpoint uses the existing server-only Supabase connection and
+`WEBSITES_LEAD_FINGERPRINT_SECRET` (at least 32 characters). It validates the
+Join Us page and required fields, limits requests to 16 KiB and five applications
+per fingerprint per hour, and preserves one idempotency key across unchanged
+retries. A failed submission keeps the applicant’s answers. Local Vite previews
+return an explicit unavailable response and never write live applications or
+analytics; browser success checks must use a mocked response.
+
+Optional campaign configuration: `VITE_HOME_SEEKERS_GOOGLE_ANALYTICS_ID` and
+`VITE_HOME_SEEKERS_META_PIXEL_ID`. No IDs are configured by this change. Scripts
+load only after the visitor opts into campaign measurement. Application and
+guarantee events contain no application answers or contact details. First-party
+application conversions are recorded only by successful database capture; client
+requests cannot manufacture that event. Guarantee clicks have a separate event.
+The PPRA event is reserved; no letter link or section appears until an approved
+PDF is supplied.
+
+Pricing assumptions live in `src/pages/homeSeekersRecruitment.js`. Competitor
+terms, VAT treatment, the R10 million threshold, the brand font, the PPRA letter,
+and the itemised transaction-fee breakdown remain unverified launch inputs.
+The fee card lists supplied services, not an invented cost allocation.
+
+Focused verification (from this package):
+`node --test server/tests/homeSeekersRecruitment.test.js server/tests/homeSeekersWebsiteBridge.test.js`.
+The recruitment test executes the new migration in isolated PGlite with fixture
+dependencies; it checks application capture, notification, atomic conversions,
+idempotency, rate limits, recipient isolation, privileged RPC access, input
+validation and pricing. It does not verify a deployed database or email delivery.
+
+### Join Us local acceptance — 3 October 2026
+
+The primary app’s recruitment page passed eight focused tests, focused ESLint,
+production build and browser checks. Checked widths: 320, 390, 768 and 1440 px,
+with no horizontal overflow. Keyboard checks confirmed menu focus containment,
+Escape/return focus, scroll restoration and FAQ activation. Apply links reach
+the form; its sticky button disappears while the application section is visible.
+The guarantee link reaches the existing guarantee section. Browser checks found
+no page errors. The form now has a fieldset legend and a 20-second timeout;
+answers and the retry key are retained when delivery fails.
+
+The hero reuses the existing brand photograph as a local 124 KiB AVIF, with
+intrinsic dimensions and high fetch priority. The browser title/description now
+identify agent recruitment; these client updates do not provide server-rendered
+social metadata. No new font was invented or installed.
+
+Production-preview timings on an unthrottled local Chromium browser:
+initial run load 688 ms / FCP and LCP 2,132 ms; confirmation with other test
+browsers closed load 636 ms / FCP 692 ms / LCP 796 ms. The confirmation meets the
+two-second target locally; the slower run demonstrates variability. These are
+local observations, not a guarantee for mobile networks or deployed hosting.
+Real-device/deployed performance remains a release acceptance check.
+
+Launch is pending: approved brand font and trademark artwork, confirmation of
+VAT and the R10 million threshold, evidenced competitor terms and commercial
+legal review, the itemised transaction-fee breakdown, and tracking IDs before
+paid traffic. The PPRA section remains omitted until the approved letter exists.
+The response-time promise needs an accountable reviewer. The database migration
+and API deployment remain unapplied; controlled live application, notification
+and analytics acceptance must follow an explicitly authorised release. No live
+applications, migrations, emails or deployments were performed for this review.

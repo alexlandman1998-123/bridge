@@ -21,6 +21,7 @@ import "./HomeSeekersHomeAreas.css";
 const asset = "https://d21tw07c6rnmp0.cloudfront.net/media/uploads/869/";
 const images = {
   hero: `${asset}pages/2026/8/869_eeb9a8cde79f42729798b3578488dc1e_t_w_1440_h_900.avif`,
+  guarantee: "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1920&q=88",
   careers: `${asset}pages/2025/12/869_424ce675e29a4906a0d709d7ef138c88_t_w_639_h_728.avif`,
 };
 const localAreas = [
@@ -177,7 +178,7 @@ export default function HomeSeekersDemo({ guaranteePage = false }) {
 
       {guaranteePage ? <section className="hs-brief-hero hs-campaign-hero">
         <div className="hs-campaign-hero__visual" aria-hidden="true">
-          <img src={images.hero} alt="" />
+          <img src={images.guarantee} alt="" fetchPriority="high" />
         </div>
         <div className="hs-brief-hero__copy">
           <Eyebrow>
@@ -210,7 +211,7 @@ export default function HomeSeekersDemo({ guaranteePage = false }) {
       <section className="hs-home-hero" aria-labelledby="hs-home-hero-title">
         <div className="hs-home-hero__visual" aria-hidden="true"><img src={images.hero} alt="" /></div>
         <div className="hs-home-hero__content">
-          <p className="hs-home-hero__eyebrow"><span /> HOME SEEKERS / PRETORIA EAST</p>
+          <p className="hs-home-hero__eyebrow"><span /> HOME SEEKERS</p>
           <h1 id="hs-home-hero-title">Find a home<br />that <em>moves you.</em></h1>
           <p className="hs-home-hero__intro">Real homes. Real local knowledge. A better way to move forward.</p>
           <form className="hs-home-hero__search" action="/demo/homeseekers/buying#properties" method="get" role="search">

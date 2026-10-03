@@ -185,6 +185,9 @@ function missionControlApiPlugin() {
   return {
     name: 'mission-control-api',
     configureServer(server) {
+      // Local previews must not create live applications or analytics records.
+      server.middlewares.use('/api/home-seekers/applications', (_request, response) => writeNodeJsonResponse(response, { status: 503, headers: { 'Cache-Control': 'no-store' }, body: { error: 'Applications are not enabled in this local preview. Your answers have not been sent.' } }))
+      server.middlewares.use('/api/home-seekers/analytics', (_request, response) => { response.statusCode = 204; response.end() })
       for (const [path, handler] of [['/api/public/rental-application', handlePublicRentalApplication], ['/api/rentals/application-documents', handleRentalAgentDocumentUpload], ['/api/rentals/landlord-onboarding', handleRentalLandlordOnboarding], ['/api/public/rental-landlord-onboarding', handlePublicRentalLandlordOnboarding]]) {
         server.middlewares.use(path, async (request, response) => {
           response.setHeader('Content-Type', 'application/json; charset=utf-8')
