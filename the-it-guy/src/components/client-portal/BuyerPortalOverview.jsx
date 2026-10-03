@@ -57,14 +57,15 @@ export function BuyerPortalOverviewHero({
     : theme?.heroOverlayStyle
 
   return (
-    <section className="grid gap-5 xl:grid-cols-[minmax(420px,0.84fr)_minmax(0,1.16fr)] xl:items-stretch">
-      <div className="flex min-h-[320px] min-w-0 flex-col xl:min-h-[342px]">
-        <h1 className="text-[2.1rem] font-semibold leading-[1.08] tracking-[-0.045em] text-[#102a2b] sm:text-[2.55rem]">
+    <section className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,0.84fr)_minmax(0,1.16fr)] xl:items-stretch">
+      <div className="rounded-[18px] border border-[#dbe5ec] bg-white px-5 py-5 shadow-[0_8px_24px_rgba(15,23,42,0.035)] sm:px-6 xl:col-span-2">
+        <h1 className="text-[1.6rem] font-semibold leading-tight tracking-[-0.035em] text-[#102a2b] sm:text-[2rem]">
           Welcome, {welcomeName}.
         </h1>
-
-        <div className="mt-6 flex flex-1 items-stretch">
-          <article className="flex h-full min-h-[214px] w-full flex-1 flex-col rounded-[20px] border border-[#dbe5ec] bg-white p-5 shadow-[0_12px_26px_rgba(15,23,42,0.045)]">
+      </div>
+      <div className="flex min-w-0 flex-col">
+        <div className="flex flex-1 items-stretch">
+          <article className="flex h-full min-h-[240px] w-full flex-1 flex-col rounded-[20px] border border-[#dbe5ec] bg-white p-5 shadow-[0_12px_26px_rgba(15,23,42,0.045)]">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0">
                 <p className="text-[0.67rem] font-semibold uppercase tracking-[0.13em] text-[#718196]">{attentionEyebrow}</p>
@@ -83,16 +84,16 @@ export function BuyerPortalOverviewHero({
       </div>
 
       <article
-        className="relative min-h-[320px] overflow-hidden rounded-[20px] border border-[#dbe5ef] bg-[#062b2b] p-6 text-white shadow-[0_18px_38px_rgba(15,23,42,0.12)] xl:min-h-[342px]"
+        className="relative min-h-[240px] overflow-hidden rounded-[20px] border border-[#dbe5ef] bg-[#062b2b] p-6 text-white shadow-[0_18px_38px_rgba(15,23,42,0.12)] xl:min-h-[280px]"
         style={heroStyle}
         aria-label={propertyImageAlt || propertyName}
       >
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_83%_18%,rgba(255,255,255,0.2),transparent_26%),linear-gradient(180deg,rgba(5,28,34,0)_50%,rgba(5,28,34,0.64)_100%)]" aria-hidden="true" />
-        <div className="relative flex h-full min-h-[272px] flex-col">
+        <div className="relative flex h-full min-h-[232px] flex-col">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
               <p className="text-sm font-medium text-white/75">Your purchase</p>
-              <h2 className="mt-4 max-w-xl text-[2.05rem] font-semibold leading-[1.08] tracking-[-0.04em] text-white">{propertyName}</h2>
+              <h2 className="mt-4 max-w-xl text-[1.4rem] sm:text-[1.65rem] font-semibold leading-[1.08] tracking-[-0.04em] text-white">{propertyName}</h2>
               {unitLabel ? <p className="mt-2 text-base font-semibold text-white/85">{unitLabel}</p> : null}
             </div>
             <span className={`shrink-0 rounded-full border px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] ${statusClassName}`}>

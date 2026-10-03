@@ -1,3 +1,4 @@
+import ClientDocumentUploadButton from '../components/client-portal/documents/ClientDocumentUploadButton'
 import SellerChecklistSummary from '../components/client-portal/documents/SellerChecklistSummary.jsx'
 import { sellerContactEmail } from '../core/clientPortal/sellerContactDetails.js'
 import SellerTeamWorkspace from '../components/client-portal/team/SellerTeamWorkspace.jsx'
@@ -126,6 +127,8 @@ import { resolveSellerPortalSyncPolicy } from '../core/clientPortal/sellerPortal
 import { getSystemBanks } from '../services/bondOriginatorBankService'
 import {
   createClientPortalDocumentSignedUrl,
+  fetchClientPortalOriginatorFinanceByToken,
+  resolveClientPortalQuotePdf,
   cancelClientPortalBondApplicationSubmission,
   fetchClientPortalBondApplicationSubmission,
   inviteClientPortalBondApplicationCoApplicant,
@@ -152,6 +155,7 @@ import { buildSellerPortalOffersPayload } from '../services/sellerPortalOffersSe
 import { isClientPortalDemoToken } from '../lib/onboardingDemoLinks'
 import useTransactionLiveRefresh from '../hooks/useTransactionLiveRefresh'
 import usePortalWorkspaceRefresh from '../hooks/usePortalWorkspaceRefresh'
+import useBuyerFinanceRefresh from '../hooks/useBuyerFinanceRefresh'
 import { shouldRefreshPortalDetails } from '../core/transactions/portalRefreshPolicy'
 import { MatterConversationAccess } from '../components/transaction/MatterConversation'
 import { matterMessageRequest } from '../core/transactions/matterMessageRequest.js'
@@ -1395,7 +1399,7 @@ function buildOnboardingDocumentMarkup({
 const CLIENT_PORTAL_MENU = [
   { key: 'overview', label: 'Overview', icon: LayoutDashboard },
   { key: 'progress', label: 'Transfer Journey', icon: BarChart3 },
-  { key: 'documents', label: 'Your Documents', icon: FileText },
+  { key: 'documents', label: 'Documents', icon: FileText },
   // Finance remains the existing read-only account and payment workspace in
   // Phase 1. Phase 3 will expand it into the dedicated finance-status view.
   { key: 'account', label: 'Finance', icon: HandCoins },
@@ -1413,7 +1417,7 @@ const BUYER_PORTAL_NAV_GROUPS = [
 const BUYER_PORTAL_CORE_NAVIGATION_LABELS = Object.freeze({
   overview: 'Overview',
   progress: 'Transfer Journey',
-  documents: 'Your Documents',
+  documents: 'Documents',
   account: 'Finance',
   bond_application: 'Bond Application',
   team: 'Your Team',
@@ -3584,6 +3588,8 @@ function BuyerMobilePortal({
   token,
   workspaceNavigationScope,
   activeSection,
+  transferProgressPage = null,
+  financeWorkspacePage = null,
   brandName = '',
   brandLogoUrl = '',
   brandPrimaryColour = '#10213a',
@@ -4240,7 +4246,7 @@ function BuyerMobilePortal({
                 <p className="text-sm font-medium text-[#a5d8a7]">Your purchase</p>
                 <div className="mt-4 flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <h2 className="max-w-[18rem] text-[1.82rem] font-semibold leading-[1.06] tracking-[-0.035em] text-white">
+                    <h2 className="max-w-[18rem] break-words text-[1.35rem] font-semibold leading-[1.2] tracking-[-0.035em] text-white">
                       {developmentName}
                     </h2>
                     <p className="mt-2 text-base font-semibold tracking-[-0.02em] text-[#d8e7e5]">{unitLabel}</p>
@@ -4395,20 +4401,7 @@ function BuyerMobilePortal({
 
         {mobileSection === 'progress' ? (
           <div className="mt-4">
-            <BuyerMobilePageIntro eyebrow="Journey" title="Your purchase journey" description="See the active milestone, what your team is handling, and what comes next." />
-            <SellerMobileListCard
-              eyebrow="Current milestone"
-              title={activeStep?.label || journeyCurrentStageLabel}
-              emptyText="Your purchase timeline will appear here."
-              items={clientJourneySteps.map((step) => ({
-                id: step.id,
-                title: step.label,
-                description: step.shortDescription || step.whatHappensNow || 'Your team is moving this step forward.',
-                to: 'progress',
-              }))}
-              token={token}
-              workspaceNavigationScope={workspaceNavigationScope}
-            />
+            {transferProgressPage}
             <div className="mt-4">
               <BuyerDevelopmentDeliveryPanel
                 model={developmentDeliveryModel}
@@ -4522,231 +4515,7 @@ function BuyerMobilePortal({
           </section>
         ) : null}
 
-        {mobileSection === 'finance' ? (
-          <section className="mt-4 rounded-[28px] border border-white/80 bg-white/95 p-5 shadow-[0_14px_36px_rgba(15,23,42,0.065)]">
-            <BuyerMobilePageIntro
-              eyebrow="Finance"
-              title={matterAccountsLoading ? 'Loading account' : buyerFinanceHasAccounts ? ZAR_CURRENCY.format(buyerFinanceBalanceDue) : financeTypeLabel}
-              description={buyerFinanceHasAccounts
-                ? `${buyerFinanceOpenRequests} open request${buyerFinanceOpenRequests === 1 ? '' : 's'} from your legal team.`
-                : matterAccountsUnavailable
-                  ? 'Matter account details are being prepared by your legal team.'
-                  : 'Finance and payment details will appear here once published.'}
-              meta={<Link
-                to={getPortalWorkspacePath(token, workspaceNavigationScope, financeSectionKey)}
-                className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#eef2f6] text-[#24364d]"
-                aria-label="Open finance"
-              >
-                <ChevronRight size={18} />
-              </Link>}
-            />
-
-            {matterAccountsError ? (
-              <p className="mt-4 rounded-[18px] border border-[#f1cbc7] bg-[#fff5f4] px-4 py-3 text-sm text-[#b42318]">{matterAccountsError}</p>
-            ) : null}
-
-            <div className="mt-5 grid grid-cols-3 gap-2">
-              {[
-                ['Balance', buyerFinanceHasAccounts ? ZAR_CURRENCY.format(buyerFinanceBalanceDue) : 'Pending'],
-                ['Requests', buyerFinanceOpenRequests],
-                ['Updates', buyerFinanceEventCount],
-              ].map(([label, value]) => (
-                <article key={label} className="min-w-0 rounded-[18px] border border-[#e5e9ef] bg-[#fbfcfd] px-3 py-3">
-                  <span className="block truncate text-[0.64rem] font-semibold uppercase tracking-[0.12em] text-[#8a94a3]">{label}</span>
-                  <strong className="mt-1 block truncate text-sm font-semibold text-[#101823]">{value}</strong>
-                </article>
-              ))}
-            </div>
-
-            {bondApplicationEnabled ? (
-              <Link
-                to={getPortalWorkspacePath(token, workspaceNavigationScope, 'bond_application')}
-                className="mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-[12px] border border-[#dbe5ef] bg-[#fbfdff] px-4 text-sm font-semibold text-[#35546c]"
-              >
-                Open bond application
-              </Link>
-            ) : null}
-
-            {matterAccountsLoading ? (
-              <div className="mt-5 grid gap-3">
-                {[0, 1, 2].map((item) => <div key={item} className="h-20 animate-pulse rounded-[18px] bg-[#eef2f6]" />)}
-              </div>
-            ) : null}
-
-            {!matterAccountsLoading && !buyerFinanceHasAccounts ? (
-              <p className="mt-5 rounded-[18px] border border-dashed border-[#d9dee6] bg-[#fbfcfd] px-4 py-4 text-sm leading-6 text-[#667085]">
-                No buyer account has been published yet. When your legal team adds payment instructions, statements, or proof requests, they will appear here.
-              </p>
-            ) : null}
-
-            {!matterAccountsLoading && buyerFinanceHasAccounts ? (
-              <div className="mt-5 grid gap-4">
-                {buyerMatterAccounts.map((account) => {
-                  const openRequests = (Array.isArray(account?.requests) ? account.requests : []).filter((request) =>
-                    !['complete', 'completed', 'cancelled', 'canceled'].includes(normalizePortalStatus(request?.requestStatus)),
-                  )
-                  const paymentInstructions = account?.paymentInstructions || {}
-                  const visibleDocuments = (Array.isArray(account?.documents) ? account.documents : []).slice(0, 3)
-                  const canUploadProof = typeof onUploadMatterProof === 'function'
-                  return (
-                    <article key={account.id} className="rounded-[24px] border border-[#e5e9ef] bg-[#fbfcfd] p-4">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="text-[0.66rem] font-semibold uppercase tracking-[0.12em] text-[#8a94a3]">{toTitleLabel(account.partyRole || 'Buyer')}</p>
-                          <h4 className="mt-1 text-base font-semibold tracking-[-0.03em] text-[#101823]">{account.partyLabel || toTitleLabel(account.partyRole || 'Buyer account')}</h4>
-                          {account.partyEmail ? <p className="mt-1 truncate text-xs text-[#667085]">{account.partyEmail}</p> : null}
-                        </div>
-                        <div className="shrink-0 text-right">
-                          <span className="block text-[0.62rem] font-semibold uppercase tracking-[0.1em] text-[#8a94a3]">Due</span>
-                          <strong className="mt-1 block text-sm font-semibold text-[#101823]">{ZAR_CURRENCY.format(Number(account?.balance?.balanceDue || 0))}</strong>
-                        </div>
-                      </div>
-
-                      {paymentInstructions.published ? (
-                        <div className="mt-4 rounded-[18px] border border-[#e1e7ef] bg-white p-3">
-                          <div className="mb-2 flex items-center justify-between gap-3">
-                            <p className="text-xs font-semibold text-[#101823]">Payment instructions</p>
-                            <span className="rounded-full bg-[#eef5fb] px-2 py-0.5 text-[0.64rem] font-semibold text-[#35546c]">Published</span>
-                          </div>
-                          <div className="grid gap-2 text-xs">
-                            {[
-                              ['Bank', paymentInstructions.bankName],
-                              ['Account holder', paymentInstructions.accountHolder],
-                              ['Account number', paymentInstructions.accountNumber],
-                              ['Branch code', paymentInstructions.branchCode],
-                              ['Reference', paymentInstructions.paymentReference],
-                            ].filter(([, value]) => value).map(([label, value]) => (
-                              <div key={label} className="grid grid-cols-[92px_minmax(0,1fr)] gap-2">
-                                <span className="font-semibold text-[#8a94a3]">{label}</span>
-                                <strong className="break-words font-semibold text-[#24364d]">{value}</strong>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      ) : null}
-
-                      <div className="mt-4 grid gap-2">
-                        <button
-                          type="button"
-                          onClick={() => openBuyerFinanceSheet({ mode: 'proof', account })}
-                          disabled={!canUploadProof || uploadingMatterProofAccountId === account.id}
-                          className="flex min-h-[52px] items-center justify-between rounded-[18px] bg-[#10213a] px-4 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          <span className="inline-flex items-center gap-3">
-                            {uploadingMatterProofAccountId === account.id ? <Clock3 size={18} /> : <Camera size={18} />}
-                            {uploadingMatterProofAccountId === account.id ? 'Uploading...' : 'Take photo or upload proof'}
-                          </span>
-                          <ChevronRight size={18} />
-                        </button>
-                        {matterProofUploadFeedback?.accountId === account.id && matterProofUploadFeedback?.message ? (
-                          <p className={`rounded-[16px] border px-3 py-2 text-xs font-medium ${
-                            matterProofUploadFeedback.tone === 'success'
-                              ? 'border-[#cfe8d8] bg-[#eefbf3] text-[#1f7a46]'
-                              : 'border-[#f3c2c2] bg-[#fff1f1] text-[#b42318]'
-                          }`}>
-                            {matterProofUploadFeedback.message}
-                          </p>
-                        ) : null}
-                      </div>
-
-                      {openRequests.length ? (
-                        <div className="mt-4">
-                          <div className="mb-2 flex items-center justify-between gap-3">
-                            <p className="text-xs font-semibold text-[#101823]">Requested from you</p>
-                            <span className={`rounded-full px-2 py-0.5 text-[0.64rem] font-semibold ${buyerFinanceOverdueRequests ? 'bg-[#fff1f1] text-[#b42318]' : 'bg-[#eef2f6] text-[#52657b]'}`}>
-                              {openRequests.length}
-                            </span>
-                          </div>
-                          <div className="grid gap-2">
-                            {openRequests.slice(0, 4).map((request) => {
-                              const requestStatus = normalizePortalStatus(request?.requestStatus)
-                              const canUploadRequest = typeof onUploadMatterRequestDocument === 'function' && ['requested', 'rejected'].includes(requestStatus)
-                              return (
-                                <button
-                                  key={request.id}
-                                  type="button"
-                                  onClick={() => canUploadRequest ? openBuyerFinanceSheet({ mode: 'request', account, request }) : null}
-                                  disabled={!canUploadRequest || uploadingMatterRequestId === request.id}
-                                  className="flex min-h-[64px] items-center justify-between gap-3 rounded-[18px] border border-[#e1e7ef] bg-white px-3 py-3 text-left transition disabled:cursor-default disabled:opacity-80"
-                                >
-                                  <span className="min-w-0">
-                                    <span className="flex flex-wrap items-center gap-2">
-                                      <span className="text-sm font-semibold text-[#101823]">{request.title || 'Finance document'}</span>
-                                      <span className={`rounded-full border px-2 py-0.5 text-[0.64rem] font-semibold ${
-                                        requestStatus === 'rejected'
-                                          ? 'border-[#f1cbc7] bg-[#fff5f4] text-[#b42318]'
-                                          : 'border-[#f0d8ae] bg-[#fff7eb] text-[#9a5b0f]'
-                                      }`}>
-                                        {uploadingMatterRequestId === request.id ? 'Uploading' : toTitleLabel(request.requestStatus || 'Requested')}
-                                      </span>
-                                    </span>
-                                    <span className="mt-1 block text-xs leading-5 text-[#667085]">
-                                      {toTitleLabel(request.requestType || 'Document')} {request.dueOn ? `- Due ${formatShortPortalDate(request.dueOn, 'TBC')}` : ''}
-                                    </span>
-                                  </span>
-                                  <UploadCloud size={17} className="shrink-0 text-[#24364d]" />
-                                </button>
-                              )
-                            })}
-                          </div>
-                        </div>
-                      ) : null}
-
-                      {visibleDocuments.length ? (
-                        <div className="mt-4">
-                          <p className="mb-2 text-xs font-semibold text-[#101823]">Published documents</p>
-                          <div className="grid gap-2">
-                            {visibleDocuments.map((document) => (
-                              <a
-                                key={document.id || document.title}
-                                href={document.url || undefined}
-                                target={document.url ? '_blank' : undefined}
-                                rel={document.url ? 'noreferrer' : undefined}
-                                className="flex min-h-[54px] items-center justify-between gap-3 rounded-[18px] border border-[#e1e7ef] bg-white px-3 py-2 text-left"
-                              >
-                                <span className="min-w-0">
-                                  <span className="block truncate text-sm font-semibold text-[#101823]">{document.title || 'Published document'}</span>
-                                  <span className="mt-0.5 block truncate text-xs text-[#667085]">{document.externalReference || toTitleLabel(document.documentType || 'Document')}</span>
-                                </span>
-                                <Download size={16} className="shrink-0 text-[#24364d]" />
-                              </a>
-                            ))}
-                          </div>
-                        </div>
-                      ) : null}
-                    </article>
-                  )
-                })}
-
-                {buyerFinanceActivityItems.length ? (
-                  <article className="rounded-[24px] border border-[#e5e9ef] bg-[#fbfcfd] p-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <h4 className="text-base font-semibold tracking-[-0.03em] text-[#101823]">Account activity</h4>
-                      <span className="text-xs font-semibold text-[#98a2b3]">{buyerFinanceActivityItems.length} latest</span>
-                    </div>
-                    <div className="mt-3 grid gap-3">
-                      {buyerFinanceActivityItems.map((item) => (
-                        <div key={item.id} className="grid grid-cols-[32px_minmax(0,1fr)] gap-3">
-                          <span className={`mt-1 inline-flex h-8 w-8 items-center justify-center rounded-full ${
-                            item.tone === 'credit' ? 'bg-[#eefbf3] text-[#1f7a46]' : 'bg-[#eef5fb] text-[#35546c]'
-                          }`}>
-                            {item.tone === 'credit' ? <CheckCircle2 size={16} /> : <FileText size={16} />}
-                          </span>
-                          <span className="min-w-0">
-                            <span className="block text-sm font-semibold text-[#101823]">{item.title}</span>
-                            <span className="mt-0.5 block text-xs leading-5 text-[#667085]">
-                              {item.meta}{item.amount ? ` - ${ZAR_CURRENCY.format(Math.abs(item.amount))}` : ''}
-                            </span>
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </article>
-                ) : null}
-              </div>
-            ) : null}
-          </section>
-        ) : null}
+        {mobileSection === 'finance' ? <div className="mt-4">{financeWorkspacePage}</div> : null}
 
         {mobileSection === 'appointments' ? (
           <section className="mt-4 rounded-[28px] border border-white/80 bg-white/95 p-5 shadow-[0_14px_36px_rgba(15,23,42,0.065)]">
@@ -7682,156 +7451,8 @@ function BuyerOverviewDocumentsCard({ documents = [], token, workspaceNavigation
   )
 }
 
-function BuyerStageGuide({ stageEducation = {}, whatHappensNextItems = [], whatsHappeningSummary = [], rolePlayerGuidance = [] }) {
-  return (
-    <article className={`h-full ${PORTAL_DESIGN_TOKENS.surface.card} p-5 ${PORTAL_DESIGN_TOKENS.shadow.card}`}>
-      <SellerSectionHeading
-        title={stageEducation?.title || 'Your purchase is moving forward'}
-        subtitle={stageEducation?.shortDescription || 'A simple guide to what is happening in your purchase now.'}
-      />
-      <p className={`mt-4 text-sm leading-6 ${PORTAL_DESIGN_TOKENS.text.bodyStrong}`}>
-        {stageEducation?.detailedExplanation || 'Your team will keep things moving and tell you when your input is needed.'}
-      </p>
-      <div className="mt-5 grid gap-3 md:grid-cols-2">
-        <div className={`${PORTAL_DESIGN_TOKENS.surface.cardInset} px-3.5 py-3`}>
-          <p className="text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">What you need to do</p>
-          <p className="mt-1.5 text-sm leading-6 text-[#324559]">{stageEducation?.whatClientNeedsToDo || 'No action is required unless your team requests something.'}</p>
-        </div>
-        <div className={`${PORTAL_DESIGN_TOKENS.surface.cardInset} px-3.5 py-3`}>
-          <p className="text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">What happens next</p>
-          <p className="mt-1.5 text-sm leading-6 text-[#324559]">{stageEducation?.whatHappensNext || whatHappensNextItems[0] || 'Your team will guide you through the next step.'}</p>
-        </div>
-      </div>
-      <div className="mt-5 grid gap-2">
-        {[...whatHappensNextItems, ...whatsHappeningSummary].slice(0, 4).map((item) => (
-          <p key={item} className="flex items-start gap-2 text-sm leading-6 text-[#52647a]">
-            <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[#078449]" />
-            <span>{item}</span>
-          </p>
-        ))}
-      </div>
-      {rolePlayerGuidance.length ? (
-        <div className="mt-5 border-t border-[#e5edf2] pt-4">
-          <p className="text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Team involved now</p>
-          <div className="mt-2 grid gap-2">
-            {rolePlayerGuidance.slice(0, 3).map((entry) => (
-              <p key={entry?.key} className="text-sm leading-6 text-[#52647a]">{entry?.explanation}</p>
-            ))}
-          </div>
-        </div>
-      ) : null}
-    </article>
-  )
-}
-
-function BuyerSupportFooter({ supportContact = {}, buyerPortalAccessDescription = '' }) {
-  const messageAction = supportContact?.email
-    ? { label: 'Message Team', href: `mailto:${supportContact.email}` }
-    : { label: 'Message Team', disabled: true }
-  const callAction = supportContact?.phone
-    ? { label: 'Call Team', href: `tel:${supportContact.phone}` }
-    : { label: 'Call Team', disabled: true }
-
-  return (
-    <section className={`${PORTAL_DESIGN_TOKENS.surface.support} px-5 py-4 ${PORTAL_DESIGN_TOKENS.shadow.soft}`}>
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="flex min-w-0 items-center gap-3">
-          <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] border border-[#cfe9da] bg-[#eefbf4] text-[#047857]">
-            <ShieldCheck size={20} />
-          </span>
-          <div>
-            <p className="text-sm font-semibold text-[#102032]">Your purchase link is secure and private.</p>
-            <p className="mt-0.5 max-w-2xl text-xs leading-5 text-[#64748b]">{buyerPortalAccessDescription || 'Only people with your secure purchase link can access this portal.'}</p>
-          </div>
-        </div>
-        <div className="flex flex-wrap gap-2.5">
-          <SellerPortalAction action={messageAction} className={PORTAL_DESIGN_TOKENS.button.supportPrimary} />
-          <SellerPortalAction action={callAction} className={PORTAL_DESIGN_TOKENS.button.supportSecondary} />
-        </div>
-      </div>
-    </section>
-  )
-}
-
-function BuyerProgressJourney({
-  journeyModel,
-  primaryAction = {},
-  theme,
-  token,
-  workspaceNavigationScope,
-  variant = 'summary',
-}) {
-  return (
-    <BuyerPortalJourney
-      model={journeyModel}
-      theme={theme}
-      variant={variant}
-      action={(
-        <SellerPortalAction
-          action={{ ...primaryAction, label: primaryAction?.label || 'View details', to: primaryAction?.to || 'progress' }}
-          token={token}
-          workspaceNavigationScope={workspaceNavigationScope}
-          className={PORTAL_DESIGN_TOKENS.button.primary}
-        >
-          <span>{primaryAction?.label || 'View details'}</span>
-          <ArrowRight size={14} />
-        </SellerPortalAction>
-      )}
-    />
-  )
-}
-
-function BuyerProgressPage({
-  journeyModel,
-  stageEducation = {},
-  whatHappensNextItems = [],
-  whatsHappeningSummary = [],
-  primaryAction = {},
-  latestUpdate = null,
-  theme,
-  token,
-  workspaceNavigationScope,
-}) {
-  const buyerActionCopy = stageEducation?.whatClientNeedsToDo || 'No action is needed unless your team asks for something.'
-  const nextCopy = stageEducation?.whatHappensNext || whatHappensNextItems[0] || `Your purchase is moving toward ${journeyModel?.nextStageLabel || 'the next step'}.`
-  const teamCopy = whatsHappeningSummary[0] || stageEducation?.shortDescription || 'Your team is moving the purchase forward and will post updates here.'
-  const latestUpdateTitle = latestUpdate?.title || latestUpdate?.authorName || 'No update yet'
-  const latestUpdateCopy = latestUpdate?.message || latestUpdate?.summary || 'Your latest team update will appear here.'
-  const progressInsightCards = [
-    ['What you need to do', buyerActionCopy],
-    ['What your team is doing', teamCopy],
-    ['Next', nextCopy],
-    ['Latest update', latestUpdateTitle, latestUpdateCopy],
-  ]
-
-  return (
-    <section className="space-y-5">
-      <BuyerProgressJourney
-        journeyModel={journeyModel}
-        primaryAction={primaryAction}
-        theme={theme}
-        token={token}
-        workspaceNavigationScope={workspaceNavigationScope}
-        variant="detailed"
-      />
-
-      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        {progressInsightCards.map(([label, copy, detail]) => (
-          <article key={label} className={`${PORTAL_DESIGN_TOKENS.surface.cardInset} min-h-[142px] px-4 py-4`}>
-            <p className="text-[0.66rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">{label}</p>
-            {detail ? (
-              <>
-                <h3 className="mt-3 text-sm font-semibold leading-5 text-[#142132]">{copy}</h3>
-                <p className="mt-2 text-sm leading-6 text-[#52647a]">{detail}</p>
-              </>
-            ) : (
-              <p className="mt-3 text-sm leading-6 text-[#324559]">{copy}</p>
-            )}
-          </article>
-        ))}
-      </section>
-    </section>
-  )
+function BuyerProgressJourney({ journeyModel, theme, variant = 'summary' }) {
+  return <div className="[&_h2]:text-base"><BuyerPortalJourney model={journeyModel} theme={theme} variant={variant} /></div>
 }
 
 function AttorneySaysCard({ update = null, fallbackStageLabel = '' }) {
@@ -7937,19 +7558,13 @@ function BuyerPortalDashboard({
   onCommentDraftChange,
   onCommentSubmit,
   onActionClick,
-  stageEducation,
-  whatHappensNextItems,
-  whatsHappeningSummary,
-  rolePlayerGuidance,
   controlBoard,
   supportContact,
-  buyerPortalAccessDescription,
   journeyModel,
   theme,
   token,
   workspaceNavigationScope,
 }) {
-  const hasSecondaryInsight = Boolean(controlBoard || legalProgress?.available || latestAttorneyUpdate)
   const usesSharedHighLevelJourney = journeyModel?.source === 'shared-high-level-journey'
   const currentWorkflowItem = journeyModel?.currentWorkflowItem || null
   const messageAction = supportContact?.email
@@ -8004,10 +7619,7 @@ function BuyerPortalDashboard({
       )}
       progress={(<BuyerProgressJourney
         journeyModel={journeyModel}
-        primaryAction={primaryAction}
         theme={theme}
-        token={token}
-        workspaceNavigationScope={workspaceNavigationScope}
       />)}
       updates={(<LatestUpdatesCard
           updates={updates}
@@ -8019,6 +7631,7 @@ function BuyerPortalDashboard({
           heading="Latest updates from your team"
           subtitle={latestUpdatesSubtitle}
           showComposer={false}
+          compactTypography
           className="h-[430px] overflow-y-auto"
       />)}
       documents={(<BuyerDocumentSummary
@@ -8032,13 +7645,7 @@ function BuyerPortalDashboard({
           )}
       />)}
       insights={(<>
-        <section className={`grid gap-5 xl:items-start ${hasSecondaryInsight ? 'xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]' : 'xl:grid-cols-1'}`}>
-        <BuyerStageGuide
-          stageEducation={stageEducation}
-          whatHappensNextItems={whatHappensNextItems}
-          whatsHappeningSummary={whatsHappeningSummary}
-          rolePlayerGuidance={rolePlayerGuidance}
-        />
+        <section className="grid gap-5">
         {controlBoard ? (
           <MvpTransactionControlBoard controlBoard={controlBoard} compact />
         ) : legalProgress?.available ? (
@@ -8053,10 +7660,6 @@ function BuyerPortalDashboard({
           <AttorneySaysCard update={latestAttorneyUpdate} fallbackStageLabel={currentStageLabel} />
         ) : null}
       </>)}
-      support={(<BuyerSupportFooter
-        supportContact={supportContact}
-        buyerPortalAccessDescription={buyerPortalAccessDescription}
-      />)}
     />
   )
 }
@@ -8683,6 +8286,13 @@ function ClientPortal() {
   useEffect(() => {
     setGuidedBondApplicationSuppressed(false)
   }, [token, portal?.transaction?.id])
+
+  const buyerFinanceRefresh = useBuyerFinanceRefresh({
+    token, transactionId: portal?.transaction?.id,
+    enabled: !isDemoRoute && !loading && !hydratingPortal && portalDataWorkspace === 'buying' && Boolean(portal?.transaction?.id) && location.pathname.endsWith('/account'),
+    initialFinance: portal?.originatorFinance,
+    readFinance: fetchClientPortalOriginatorFinanceByToken,
+  })
 
   useTransactionLiveRefresh({
     transactionId: workspaceData?.transaction?.id || portal?.transaction?.id,
@@ -11173,9 +10783,9 @@ function ClientPortal() {
   const snagOpenCount = (portal?.issues || []).filter((item) => !['resolved', 'closed', 'completed'].includes(String(item.status || '').toLowerCase()))
     .length
   const snagResolvedCount = Math.max((portal?.issues || []).length - snagOpenCount, 0)
-  const latestUpdates = Array.isArray(workspaceData?.activityFeed) && workspaceData.activityFeed.length
+  const latestUpdates = Array.isArray(workspaceData?.activityFeed)
     ? workspaceData.activityFeed.slice(0, 8)
-    : (portal?.discussion || []).slice(0, 5)
+    : []
   const latestAttorneyUpdate = Array.isArray(workspaceData?.attorneyUpdates) && workspaceData.attorneyUpdates.length
     ? workspaceData.attorneyUpdates[0]
     : null
@@ -11983,9 +11593,7 @@ function ClientPortal() {
     return Number.isNaN(time) || time >= Date.now() - (1000 * 60 * 60 * 2)
   }).length
   const sidebarStatusByKey = {
-    documents: effectiveWorkspace === 'seller'
-      ? null
-      : (missingRequired > 0 ? `${missingRequired} required` : 'Ready'),
+    documents: null,
     account: matterAccountsState.loading
       ? 'Loading'
       : matterAccountsState.summary?.documentCount
@@ -12576,6 +12184,20 @@ function ClientPortal() {
     ...sellerNextStep,
     href: sellerNextStep?.href || getPortalWorkspacePath(token, workspaceNavigationScope, sellerNextStep?.to || 'documents'),
   }
+  const buyerTransferProgressPage = <ClientTransferJourney
+    compactMobile
+    model={clientTransferJourneyModel}
+    audience="buyer"
+    propertyTitle={pickFirstText(portal?.listing?.address, portal?.listing?.title, `${developmentName} | ${unitLabel}`)}
+    propertyImageUrl={buyerPropertyImageUrl}
+    partyName={buyerName}
+    priceLabel={purchasePriceLabel}
+    attorneyName={pickFirstText(transferAttorneyRolePlayer?.attorneyUser?.name, transferAttorneyRolePlayer?.primaryAttorney?.name, portal?.transaction?.attorney)}
+    attorneyFirm={pickFirstText(transferAttorneyRolePlayer?.firm?.name, portal?.transaction?.attorney_firm)}
+    brand={buyerPortalTheme?.primary}
+    accent={buyerPortalTheme?.accent}
+    heroOverlayStyle={buyerPortalTheme?.heroOverlayStyle}
+  />
   const sellerProgressPage = <SellerProgressPage
     isTransaction={hasLinkedSellerTransaction}
     listingProgress={sellerListingProgressModel}
@@ -12715,10 +12337,11 @@ function ClientPortal() {
     ? `${Math.round((buyerFinanceRequestedAmount / purchasePriceValue) * 100)}%`
     : ''
   const buyerFinancePresentationModel = buildBuyerFinancePresentationModel({
-    source: 'production',
+    source: isDemoMode ? 'demo' : 'production',
     financeType: journeyFinanceType || financeTypeForPortal,
-    status: isOriginatorManagedPortalFinance ? buyerPortalBondApplicationStatusValue : '',
-    statusHelper: isOriginatorManagedPortalFinance ? buyerPortalBondApplicationStatusDetail : '',
+    status: isDemoMode ? 'Quotes received — preview' : '',
+    statusHelper: isDemoMode ? 'Sample bank responses for this preview.' : '',
+    originatorFinance: isDemoMode ? undefined : buyerFinanceRefresh.finance,
     purchasePrice: purchasePriceValue,
     requestedAmount: buyerFinanceRequestedAmount,
     cashContribution: buyerFinanceCashContribution,
@@ -12727,18 +12350,34 @@ function ClientPortal() {
     financeManagedBy: financeManagedByForPortal,
     manager: portal?.transaction?.bond_originator || portal?.transaction?.assigned_bond_originator_email
       ? {
-          name: portal?.transaction?.bond_originator || 'Bond Originator',
-          company: portal?.transaction?.bond_originator_company || '',
+          name: isDemoMode ? 'Jamie Petersen (demo)' : portal?.transaction?.bond_originator || 'Bond Originator',
+          company: isDemoMode ? 'BetterBond' : portal?.transaction?.bond_originator_company || '',
+          logo: portal?.transaction?.bond_originator_logo_url || '',
           avatar: portal?.transaction?.bond_originator_avatar_url || '',
+          email: portal?.transaction?.assigned_bond_originator_email || '',
+          phone: portal?.transaction?.assigned_bond_originator_phone || '',
         }
       : null,
-    requiredActions: buyerFinanceRequiredActions,
-    offers: displayedBondOfferCards,
+    requiredActions: isDemoMode ? [] : buyerFinanceRequiredActions,
+    offers: isDemoMode ? [{ id: 'demo-bank-quote', bankName: 'Standard Bank', offeredAmount: 2280000, interestRateDisplay: 'Sample rate: prime − 0.25%', conditionsSummary: 'Sample quote for preview. A quote document will appear here when shared by the consultant.' }] : buildBondOriginatorBuyerOfferGrantViewModel({ exportPackage: buyerFinanceRefresh.finance || {}, documents: portal?.documents || [] }).offers,
+    bankApplications: portal?.bankApplications || [],
+    bankApplicationsUnavailable: portal?.bankApplicationsUnavailable || false,
     accountSummary: matterAccountsState.summary || {},
     accountCount: matterAccountsState.accounts?.length || 0,
     loading: matterAccountsState.loading,
     unavailable: matterAccountsState.unavailable,
   })
+  const cashProofItem = buyerDocumentPresentationModel.items.find(item => /proof.of.funds/i.test(`${item.title} ${item.requirementKey || ''}`))
+  const financeWorkspacePage = <BuyerFinanceWorkspace
+    model={buyerFinancePresentationModel}
+    theme={buyerPortalTheme}
+    onOpenQuote={handleOpenPortalDocument}
+    resolveQuote={isDemoMode ? null : offer => resolveClientPortalQuotePdf({ token, offerId: offer.id })}
+    refreshAction={!isDemoMode && isOriginatorManagedPortalFinance ? <button type="button" onClick={() => void buyerFinanceRefresh.refresh()} disabled={buyerFinanceRefresh.refreshing} className="inline-flex min-h-11 items-center justify-center rounded-xl border border-[#dbe5ef] bg-white px-4 text-sm font-semibold text-[#31475c] disabled:opacity-50">{buyerFinanceRefresh.refreshing ? 'Refreshing…' : 'Refresh updates'}</button> : null}
+    primaryAction={isOriginatorManagedPortalFinance && buyerFinancePresentationModel.firstAction ? <Link to={getPortalWorkspacePath(token, workspaceNavigationScope, 'bond_application')} className="inline-flex min-h-11 items-center justify-center rounded-xl bg-[#111827] px-5 text-sm font-semibold text-white">Continue application</Link> : null}
+    secondaryAction={<Link to={getPortalWorkspacePath(token, workspaceNavigationScope, 'documents')} className="inline-flex min-h-11 items-center justify-center rounded-xl border border-[#dbe5ef] bg-white px-4 text-sm font-semibold text-[#35546c]">Finance documents</Link>}
+    cashProofAction={cashProofItem?.uploadSpec ? <ClientDocumentUploadButton uploadKey={cashProofItem.uploadKey || cashProofItem.id} uploadSpec={cashProofItem.uploadSpec} onUpload={handleDocumentCentreUpload} uploadingDocumentKey={uploadingDocumentKey} label="Upload proof of funds" className="inline-flex min-h-11 items-center justify-center rounded-xl bg-[#111827] px-5 text-sm font-semibold text-white" /> : <Link to={getPortalWorkspacePath(token, workspaceNavigationScope, 'documents')} className="inline-flex min-h-11 items-center justify-center rounded-xl border border-[#dbe5ef] px-4 text-sm font-semibold">{cashProofItem?.status === 'approved' ? 'Proof of funds approved' : cashProofItem?.status === 'review' ? 'Proof of funds in review' : 'Open proof of funds documents'}</Link>}
+  />
   const buyerPortalCutoverReadiness = buildBuyerPortalCutoverReadiness({
     source: 'production',
     models: {
@@ -13433,11 +13072,13 @@ function ClientPortal() {
       ) : (
         <div className={isBondApplication ? 'hidden' : 'lg:hidden'}>
           <BuyerMobilePortal
+            financeWorkspacePage={financeWorkspacePage}
+            transferProgressPage={buyerTransferProgressPage}
             token={token}
             workspaceNavigationScope={workspaceNavigationScope}
             activeSection={activeSection}
             brandName={buyerPortalBrandName}
-            brandLogoUrl={buyerPortalLogoLightUrl}
+            brandLogoUrl={buyerPortalLogoDarkUrl || buyerPortalLogoLightUrl}
             brandPrimaryColour={buyerPortalPrimaryColour}
             brandSecondaryColour={buyerPortalSecondaryColour}
             brandAccentColour={buyerPortalAccentColour}
@@ -13549,12 +13190,11 @@ function ClientPortal() {
                   <img
                     src={buyerPortalLogoDarkUrl}
                     alt={`${buyerPortalBrandName || 'Agency'} logo`}
-                    className="max-h-14 max-w-[210px] object-contain object-left"
+                    className="h-auto max-h-20 w-full object-contain object-left"
                   />
                 ) : (
                   <h1 className="text-[2rem] font-bold leading-tight tracking-[-0.04em] text-[#f8fbff]">{buyerPortalBrandName}</h1>
                 )}
-                <p className="mt-2 text-[0.82rem] tracking-[0.02em] text-[#dbe7f2]">Your purchase</p>
               </div>
             </>
             )}
@@ -14208,29 +13848,7 @@ function ClientPortal() {
 
             {isProgress && effectiveWorkspace !== 'seller' ? (
               <div className="space-y-5">
-                {clientTransferJourneyModel.status === 'ready' ? <ClientTransferJourney
-                  model={clientTransferJourneyModel}
-                  audience="buyer"
-                  propertyTitle={pickFirstText(portal?.listing?.address, portal?.listing?.title, `${developmentName} | ${unitLabel}`)}
-                  propertyImageUrl={buyerPropertyImageUrl}
-                  partyName={buyerName}
-                  priceLabel={purchasePriceLabel}
-                  attorneyName={pickFirstText(transferAttorneyRolePlayer?.attorneyUser?.name, transferAttorneyRolePlayer?.primaryAttorney?.name, portal?.transaction?.attorney)}
-                  attorneyFirm={pickFirstText(transferAttorneyRolePlayer?.firm?.name, portal?.transaction?.attorney_firm)}
-                  brand={buyerPortalTheme?.primary || '#087955'}
-                  accent={buyerPortalTheme?.accent}
-                  heroOverlayStyle={buyerPortalTheme?.heroOverlayStyle}
-                /> : <BuyerProgressPage
-                  journeyModel={buyerJourneyPresentationModel}
-                  stageEducation={stageEducation}
-                  whatHappensNextItems={whatHappensNextItems}
-                  whatsHappeningSummary={whatsHappeningSummary}
-                  primaryAction={primaryOverviewAction}
-                  latestUpdate={latestJourneyFeedItems[0]}
-                  theme={buyerPortalTheme}
-                  token={token}
-                  workspaceNavigationScope={workspaceNavigationScope}
-                />}
+                {buyerTransferProgressPage}
                 <BuyerDevelopmentDeliveryPanel
                   model={buyerDevelopmentOperations}
                   theme={buyerPortalTheme}
@@ -14456,7 +14074,7 @@ function ClientPortal() {
                       to={getPortalWorkspacePath(token, workspaceNavigationScope, 'documents')}
                       className="inline-flex min-h-11 items-center justify-center rounded-[12px] border border-[#dbe5ef] bg-white px-5 text-sm font-semibold text-[#35546c]"
                     >
-                      Your Documents
+                      Documents
                     </Link>
                   </div>
                 </section>
@@ -15645,42 +15263,7 @@ function ClientPortal() {
                 />
               ) : (
                 <div className="space-y-5">
-                  <BuyerFinanceWorkspace
-                    model={buyerFinancePresentationModel}
-                    theme={buyerPortalTheme}
-                    primaryAction={isOriginatorManagedPortalFinance && buyerFinancePresentationModel.firstAction ? (
-                      <Link
-                        to={getPortalWorkspacePath(token, workspaceNavigationScope, 'bond_application')}
-                        className="inline-flex min-h-11 items-center justify-center rounded-[12px] bg-[#111827] px-5 text-sm font-semibold text-white transition hover:bg-black"
-                      >
-                        Continue application
-                      </Link>
-                    ) : null}
-                    secondaryAction={(
-                      <Link
-                        to={getPortalWorkspacePath(token, workspaceNavigationScope, 'documents')}
-                        className="inline-flex min-h-11 items-center justify-center rounded-[12px] border border-[#dbe5ef] bg-white px-4 text-sm font-semibold text-[#35546c]"
-                      >
-                        Finance documents
-                      </Link>
-                    )}
-                    showLenders={false}
-                  />
-                  <ClientPortalMatterAccountsPanel
-                    accounts={matterAccountsState.accounts}
-                    summary={matterAccountsState.summary || {}}
-                    loading={matterAccountsState.loading}
-                    error={matterAccountsState.error}
-                    unavailable={matterAccountsState.unavailable}
-                    workspace="buyer"
-                    hideHeader
-                    uploadingProofAccountId={uploadingMatterProofAccountId}
-                    proofUploadFeedback={matterProofUploadFeedback}
-                    onUploadProof={handleUploadMatterAccountProof}
-                    uploadingRequestId={uploadingMatterRequestId}
-                    requestUploadFeedback={matterRequestUploadFeedback}
-                    onUploadRequestDocument={handleUploadMatterRequestDocument}
-                  />
+                  {financeWorkspacePage}
                 </div>
               )
             ) : null}

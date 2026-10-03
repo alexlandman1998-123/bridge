@@ -85,12 +85,12 @@ export default function BuyerPortalDesktopSidebar({
       <div className="border-b border-white/10 pb-5">
         <div className="min-h-[80px]">
           {brandLogoUrl ? (
-            <img src={brandLogoUrl} alt={`${brandName} logo`} className="max-h-20 max-w-[216px] object-contain object-left" />
+            <img src={brandLogoUrl} alt={`${brandName} logo`} className="h-auto max-h-20 w-full object-contain object-left" />
           ) : (
             <h1 className="text-2xl font-semibold tracking-[-0.04em] text-white">{brandName}</h1>
           )}
         </div>
-        <p className="mt-3 text-sm font-medium text-white/70">{brandDescriptor}</p>
+        {brandDescriptor ? <p className="mt-3 text-sm font-medium text-white/70">{brandDescriptor}</p> : null}
         {headerControls}
       </div>
 

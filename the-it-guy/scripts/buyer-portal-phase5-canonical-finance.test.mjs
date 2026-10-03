@@ -9,7 +9,8 @@ test('production adapts live bond and account state into the shared finance mode
   const source = await read('src/pages/ClientPortal.jsx')
 
   assert.match(source, /buildBuyerFinancePresentationModel\(\{[\s\S]*?source: 'production'/)
-  assert.match(source, /offers: displayedBondOfferCards/)
+  assert.match(source, /originatorFinance: isDemoMode \? undefined : buyerFinanceRefresh\.finance/)
+  assert.match(source, /offers: isDemoMode[^\n]*buildBondOriginatorBuyerOfferGrantViewModel/)
   assert.match(source, /accountSummary: matterAccountsState\.summary/)
   assert.match(source, /<BuyerFinanceWorkspace[\s\S]*?model=\{buyerFinancePresentationModel\}/)
   assert.match(source, /<ClientPortalMatterAccountsPanel[\s\S]*?onUploadProof=\{handleUploadMatterAccountProof\}/)

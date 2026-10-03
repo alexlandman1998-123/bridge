@@ -40595,6 +40595,40 @@ async function fetchClientVisibleAttorneyLaneUpdates(client, transactionId, view
   return rows.map((row) => mapAttorneyLaneUpdateForClient(row, subprocessById))
 }
 
+export async function fetchClientPortalBankApplicationsByToken(token) {
+  const client = requireClientPortalTokenClient(token)
+  const link = await resolveClientPortalLinkByToken(client, token)
+  const { data, error } = await client.rpc('bridge_read_buyer_bank_applications', {
+    p_transaction_id: link.transaction_id,
+  })
+  if (error) throw error
+  return Array.isArray(data) ? data : []
+}
+
+export async function fetchClientPortalOriginatorFinanceByToken(token) {
+  const client = requireClientPortalTokenClient(token)
+  const link = await resolveClientPortalLinkByToken(client, token)
+  const { data, error } = await client.rpc('bridge_read_buyer_originator_finance', {
+    p_transaction_id: link.transaction_id,
+  })
+  if (error) throw error
+  if (!data || data.source !== 'bond_originator') throw new Error('Originator finance is unavailable.')
+  return data
+}
+
+export async function resolveClientPortalQuotePdf({ token, offerId }) {
+  const client = requireClientPortalTokenClient(token)
+  const link = await resolveClientPortalLinkByToken(client, token)
+  const { data, error } = await client.rpc('bridge_read_buyer_quote_document', {
+    p_transaction_id: link.transaction_id, p_offer_id: offerId,
+  })
+  if (error || !data?.filePath) throw new Error('This quote PDF is not available. Ask your consultant to share it with you.')
+  const url = await createClientPortalDocumentSignedUrl({
+    token, filePath: data.filePath, fileBucket: data.fileBucket, expiresInSeconds: 60,
+  })
+  return { url, name: data.name || 'Bank quote.pdf' }
+}
+
 export async function fetchClientPortalAttorneyLaneUpdatesByToken(token, clientRole = 'buyer', options = {}) {
   const client = requireClientPortalTokenClient(token)
   const link = await resolveClientPortalLinkByToken(client, token)

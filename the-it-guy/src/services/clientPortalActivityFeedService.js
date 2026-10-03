@@ -462,6 +462,8 @@ function buildDiscussionEvents(portalData = {}) {
         visibility: item?.visibility || item?.visibility_scope || item?.comment_visibility,
       }),
       metadata: {
+        title: 'Update from your team',
+        description: toText(item?.commentBody || item?.commentText, 'Your transaction team shared an update.'),
         displayType: 'update',
         audience: normalize(item?.audience || item?.requested_from || 'shared'),
       },
@@ -1005,7 +1007,7 @@ function buildTransactionEventActivityEvents(portalData = {}, clientRole = 'buye
 
 function buildAttorneyLaneUpdateEvents(portalData = {}) {
   const updates = Array.isArray(portalData?.attorneyLaneUpdates) ? portalData.attorneyLaneUpdates : []
-  return updates.map((update, index) => {
+  return updates.filter(update => resolveEventVisibility(update) === 'client_visible').map((update, index) => {
     const recipients = Array.isArray(update?.clientRecipients) ? update.clientRecipients : []
     const audience = normalize(update?.audience || (recipients.length === 1 ? recipients[0] : recipients.length > 1 ? 'buyer_and_seller' : 'shared'))
     const laneLabel = toText(update?.laneLabel || update?.metadata?.laneLabel, 'Legal team')

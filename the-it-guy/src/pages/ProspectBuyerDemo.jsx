@@ -68,7 +68,7 @@ const DEFAULT_BRAND = {
 const DEMO_NAV = [
   { key: 'overview', label: 'Overview', icon: Home },
   { key: 'progress', label: 'Transfer Journey', icon: CheckCircle2 },
-  { key: 'documents', label: 'Your Documents', icon: FileText },
+  { key: 'documents', label: 'Documents', icon: FileText },
   { key: 'finance', label: 'Finance', icon: HandCoins },
   { key: 'bond-application', label: 'Bond Application', icon: FileSignature },
   { key: 'messages', label: 'Messages', icon: Mail },
@@ -969,7 +969,7 @@ function MobileBuyerPortal({ activeSection, brand, config, token, loading, demoU
   const pageTitles = {
     overview: '',
     progress: 'Transfer Journey',
-    documents: 'Your documents',
+    documents: 'Documents',
     finance: 'Finance',
     'bond-application': 'Bond application',
     messages: 'Messages & updates',
@@ -1948,7 +1948,7 @@ function DocumentCategorySummary({ brand, compact = false }) {
     <section className="rounded-[24px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#52657b]">Your documents</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#52657b]">Documents</p>
         </div>
         <span className="rounded-full bg-[#f2f4f7] px-3 py-1 text-xs font-semibold text-[#667085]">5 of 8 ready</span>
       </div>
@@ -2066,16 +2066,7 @@ function LegacyDocumentsSection({ brand, config, demoUploadComplete, onCompleteU
 
   return (
     <div className="space-y-5">
-      <header className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div>
-          <h1 className="text-3xl font-semibold tracking-[-0.06em] text-[#142132]">Your documents</h1>
-          <p className="mt-2 text-base leading-6 text-[#52657b]">All the documents for your purchase, in one place.</p>
-        </div>
-        <div className="flex items-start gap-2 rounded-[14px] px-3 py-2 text-sm text-[#52657b]">
-          <Lock size={15} className="mt-1 shrink-0 text-[#142132]" />
-          <span>Your information is secure<br className="hidden lg:block" /> and encrypted.</span>
-        </div>
-      </header>
+
 
       <DocumentStatusSummary
         readyCount={readyCount}

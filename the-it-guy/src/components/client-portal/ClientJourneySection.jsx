@@ -237,11 +237,12 @@ export function LatestUpdatesCard({
   showComposer = true,
   maxUpdates = null,
   className = '',
+  compactTypography = false,
 }) {
   const visibleUpdates = Number.isFinite(maxUpdates) ? updates.slice(0, maxUpdates) : updates
 
   return (
-    <aside className={`rounded-[20px] border border-[#dbe5ef] bg-white p-5 shadow-[0_12px_26px_rgba(15,23,42,0.045)] xl:p-6 ${className}`}>
+    <aside className={`rounded-[20px] border border-[#dbe5ef] bg-white p-5 shadow-[0_12px_26px_rgba(15,23,42,0.045)] xl:p-6 ${compactTypography ? '[&_h3]:text-base [&_h4]:text-[13px] [&_strong]:text-[13px] [&_p]:text-[13px] [&_p]:leading-5' : ''} ${className}`}>
       <header className="mb-4 flex items-start justify-between gap-3">
         <div>
           <h3 className="text-[1.28rem] font-semibold tracking-[-0.03em] text-[#142132]">{heading}</h3>

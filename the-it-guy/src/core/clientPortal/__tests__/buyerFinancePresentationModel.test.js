@@ -69,3 +69,35 @@ test('keeps a client-managed hybrid purchase out of the originator journey while
   assert.equal(model.cashContributionLabel, 'R 600 000')
   assert.match(model.description, /cash contribution/i)
 })
+
+test('does not present buyer form submission or a failed reader as bank progress', () => {
+  const base = { source: 'production', financeType: 'bond', status: 'Submitted', progressPercent: 100 }
+  const missing = buildBuyerFinancePresentationModel({ ...base, originatorFinance: null, offers: [{ source: 'legacy_document', bankName: 'Bank', amount: 100 }] })
+  assert.equal(missing.status, 'Finance updates unavailable')
+  assert.equal(missing.progressPercent, 0)
+  assert.equal(missing.bankApplicationsUnavailable, true)
+  assert.equal(missing.offers.length, 0)
+  assert.ok(missing.stages.every(stage => stage.state === 'upcoming'))
+  const waiting = buildBuyerFinancePresentationModel({ ...base, originatorFinance: { applicationReceived: false, bankApplications: [] } })
+  assert.equal(waiting.status, 'Awaiting application receipt')
+  assert.ok(waiting.stages.every(stage => stage.state === 'upcoming'))
+})
+
+test('rejects draft applications and unpublished offers and matches FNB aliases', () => {
+  const model = buildBuyerFinancePresentationModel({
+    source: 'production', financeType: 'hybrid', originatorFinance: {
+      applicationReceived: true, manager: { name: 'Assigned person', company: 'Originator' },
+      bankApplications: [
+        { bankName: 'Draft bank', application_type: 'draft_application', status: 'submitted' },
+        { bankName: 'Pending bank', application_type: 'bank_application', status: 'pending' },
+        { bankName: 'FNB', status: 'submitted' },
+        { bankName: 'First National Bank', status: 'submitted' },
+      ],
+    },
+    offers: [{ source: 'originator_capture', bankName: 'Private bank', status: 'captured' }],
+  })
+  assert.equal(model.bankApplications.length, 1)
+  assert.equal(model.offers.length, 0)
+  assert.equal(model.stageKey, 'submitted')
+  assert.equal(model.manager.name, 'Assigned person')
+})

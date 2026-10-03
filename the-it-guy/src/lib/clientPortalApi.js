@@ -11,9 +11,12 @@ async function call(method, ...args) {
 }
 
 const METHODS = [
+  'resolveClientPortalQuotePdf',
+  'fetchClientPortalOriginatorFinanceByToken',
   'cancelClientPortalBondApplicationSubmission',
   'createClientPortalDocumentSignedUrl',
   'fetchClientPortalAttorneyLaneUpdatesByToken',
+  'fetchClientPortalBankApplicationsByToken',
   'fetchSellerTransferJourneyUpdatesByToken',
   'fetchClientPortalBondApplicationSubmission',
   'fetchClientPortalNormalizedBondApplication',
@@ -83,3 +86,7 @@ export const {
   uploadClientPortalMatterFinancialProof,
   uploadClientPortalMatterFinancialRequestDocument,
 } = operations
+
+export const fetchClientPortalBankApplicationsByToken = (...args) => call('fetchClientPortalBankApplicationsByToken', ...args)
+export const fetchClientPortalOriginatorFinanceByToken = (...args) => call('fetchClientPortalOriginatorFinanceByToken', ...args)
+export const resolveClientPortalQuotePdf = (...args) => call('resolveClientPortalQuotePdf', ...args)

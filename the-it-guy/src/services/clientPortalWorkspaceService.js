@@ -1,5 +1,6 @@
 import {
   fetchClientPortalAttorneyLaneUpdatesByToken,
+  fetchClientPortalOriginatorFinanceByToken,
   fetchSellerTransferJourneyUpdatesByToken,
   fetchClientPortalByToken,
   fetchClientPortalCanonicalDocumentProjection,
@@ -10,6 +11,7 @@ import {
   fetchClientPortalMandatePacketSummaryByToken,
 } from '../lib/clientPortalApi'
 import { getDemoClientPortalSeedData } from '../lib/onboardingDemoLinks'
+import { CLIENT_TRANSFER_STAGE_DEFINITIONS } from '../core/clientPortal/transferJourneyPresentationModel.js'
 import { resolveProspectDemoConfig } from '../lib/prospectDemoConfig'
 import {
   filterNextActionsByPortalCapabilities,
@@ -3940,6 +3942,11 @@ function buildDemoClientPortalWorkspaceData(token, workspace = 'shared', prospec
     hasSellingContext: context.hasSellingContext,
   })
   let portalData = seed.portalData
+  if (workspaceMode === 'buying') portalData = { ...portalData, bankApplications: [
+    { id: 'demo-standard', bankName: 'Standard Bank', status: 'Quote received' },
+    { id: 'demo-nedbank', bankName: 'Nedbank', status: 'Under assessment' },
+    { id: 'demo-investec', bankName: 'Investec', status: 'Submitted' },
+  ] }
   const documentCenter = {
     ...buildDocumentCenter(portalData, workspaceMode),
     canonicalRequirements: [],
@@ -4093,6 +4100,25 @@ function buildDemoClientPortalWorkspaceData(token, workspace = 'shared', prospec
       disabledSections: portalCapabilities.disabledSections,
       diagnosticSummary: portalDiagnosticsSummary,
     },
+    // Preview-only legal snapshot; production continues through the attorney RPCs.
+    ...(workspaceMode === 'buying' ? {
+    transactionJourneySnapshot: {
+      legalJourney: { status: 'ready', snapshot: {
+        clientTransferMilestones: CLIENT_TRANSFER_STAGE_DEFINITIONS.map((stage, index) => ({
+          key: stage.key, status: index === 0 ? 'completed' : index === 1 ? 'in_progress' : 'not_started',
+        })),
+      } },
+    },
+    attorneyUpdates: [{
+      id: 'demo-transfer-brief', laneKey: 'transfer', visibility: 'client_visible',
+      clientRecipients: ['buyer', 'seller'], createdAt: '2026-10-03T08:00:00.000Z',
+      message: 'Sample attorney update: we are reviewing the identity documents before preparing your transfer documents.',
+      metadata: { journeyBrief: { version: 1, stageKey: 'fica',
+        currentStatus: 'Reviewing identity documents', waitingOn: 'Transfer attorney',
+        clientAction: 'Check Documents for any outstanding requests', registrationEstimate: 'To be confirmed',
+      } },
+    }],
+    } : {}),
     portalProfile,
     client: portalData?.buyer || null,
     portalCapabilities,
@@ -4232,6 +4258,14 @@ export async function getClientPortalWorkspaceData(token, workspace = 'shared', 
     portalData = {
       ...portalData,
       attorneyLaneUpdates,
+    }
+  }
+  if (mode !== 'core' && clientRole === 'buyer' && portalData?.transaction?.id) {
+    try {
+      const originatorFinance = await fetchClientPortalOriginatorFinanceByToken(token)
+      portalData = { ...portalData, originatorFinance, bankApplications: originatorFinance.bankApplications, bankApplicationsUnavailable: false, originatorFinanceUnavailable: false }
+    } catch {
+      portalData = { ...portalData, originatorFinance: null, bankApplications: [], bankApplicationsUnavailable: true, originatorFinanceUnavailable: true }
     }
   }
   const resolvedSellingContext = (Array.isArray(context.contexts) ? context.contexts : []).find((item) => {

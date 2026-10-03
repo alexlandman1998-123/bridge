@@ -83,6 +83,17 @@ export async function fetchProspectDemoConfigBySlug(slug = '') {
 
 export async function resolveProspectDemoConfig(slug = '') {
   const normalizedSlug = normalizeProspectDemoSlug(slug)
+  // Local UI work uses the real portal components without creating a buyer matter.
+  if (import.meta.env.DEV && normalizedSlug === 'demo-buyer-portal') {
+    return normalizeProspectDemoConfig({
+      agencyName: 'Only Realty',
+      logoUrl: 'https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/organisation-branding/organisations/5be90d22-3ab6-4fc9-9092-a0a2857ed76a/branding/primary-1788256135510-l8rrrm3.webp',
+      logoDarkUrl: 'https://isdowlnollckzvltkasn.supabase.co/storage/v1/object/public/organisation-branding/organisations/5be90d22-3ab6-4fc9-9092-a0a2857ed76a/branding/dark-1788256446687-hfx33uz.png',
+      primaryColour: '#0a173e',
+      secondaryColour: '#111b36',
+      accentColour: '#ad244a',
+    }, { slug: normalizedSlug })
+  }
   const loaded = await fetchProspectDemoConfigBySlug(normalizedSlug)
   return loaded || buildDefaultProspectDemoConfig(normalizedSlug)
 }

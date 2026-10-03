@@ -169,4 +169,22 @@ test('dedupes semantic duplicates and keeps grouped summary contract', () => {
   assert.equal(typeof model.summary.topics.documents, 'number')
 })
 
+test('published team messages retain their text and author while private and seller-only updates stay hidden', () => {
+  const model = buildClientPortalActivityFeedModel({ portalData: {
+    discussion: [{ id: 'agent-note', commentBody: 'Your viewing is confirmed for Tuesday.', authorName: 'Alex Agent', authorRole: 'Agent', visibility: 'client_visible', audience: 'buyer', createdAt: '2026-10-03T08:00:00Z' },
+      { id: 'internal-note', commentBody: 'Private discussion', visibility: 'internal_only', audience: 'buyer' }],
+    attorneyLaneUpdates: [
+      { id: 'buyer-legal', message: 'The transfer documents are ready to sign.', actor: 'Transfer team', actorRole: 'Attorney', visibility: 'client_visible', clientRecipients: ['buyer'], createdAt: '2026-10-03T09:00:00Z' },
+      { id: 'seller-legal', message: 'Seller-only instruction', visibility: 'client_visible', clientRecipients: ['seller'] },
+      { id: 'private-legal', message: 'Private attorney note', visibility: 'internal_only', clientRecipients: ['buyer'] },
+    ],
+  } }, 'buyer')
+  assert.equal(model.items.find(item => item.id === 'agent-note')?.description, 'Your viewing is confirmed for Tuesday.')
+  assert.equal(model.items.find(item => item.id === 'agent-note')?.actor, 'Alex Agent')
+  assert.equal(model.items.find(item => item.id === 'buyer-legal')?.description, 'The transfer documents are ready to sign.')
+  assert.equal(model.items.find(item => item.id === 'buyer-legal')?.actorRole, 'Attorney')
+  assert.deepEqual(model.items.filter(item => ['internal-note', 'seller-legal', 'private-legal'].includes(item.id)), [])
+  assert.ok(model.items.findIndex(item => item.id === 'buyer-legal') < model.items.findIndex(item => item.id === 'agent-note'))
+})
+
 console.log('client portal activity feed phase 6 tests passed')

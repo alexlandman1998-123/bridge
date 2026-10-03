@@ -1,9 +1,9 @@
 const BOND_STAGE_DEFINITIONS = Object.freeze([
-  Object.freeze({ key: 'application', label: 'Application', helper: 'Prepare and confirm your details' }),
+  Object.freeze({ key: 'application', label: 'Application received', helper: 'Your consultant reviews your application' }),
   Object.freeze({ key: 'submitted', label: 'Submitted to banks', helper: 'Banks assess the application' }),
-  Object.freeze({ key: 'responses', label: 'Bank responses', helper: 'Compare lender outcomes' }),
-  Object.freeze({ key: 'approval', label: 'Approval', helper: 'Accept the right offer' }),
-  Object.freeze({ key: 'guarantees', label: 'Guarantees', helper: 'Finance completes before registration' }),
+  Object.freeze({ key: 'responses', label: 'Bank assessment', helper: 'Banks review your application' }),
+  Object.freeze({ key: 'approval', label: 'Quotes received', helper: 'Review published bank quotes' }),
+  Object.freeze({ key: 'guarantees', label: 'Final approval', helper: 'Your consultant confirms the final outcome' }),
 ])
 
 const currency = new Intl.NumberFormat('en-ZA', {
@@ -47,13 +47,41 @@ function normalizeFinanceManager(value = '') {
     : normalized || 'bond_originator'
 }
 
+export function buyerFinanceBankKey(value) {
+  const normalized = key(value)
+  if (['fnb', 'first_national_bank', 'f_n_b'].includes(normalized)) return 'fnb'
+  return normalized
+}
+
+export function isConfirmedBuyerBankSubmission(bank) {
+  if (bank.application_type && bank.application_type !== 'bank_application') return false
+  return Boolean(bank.submittedAt || bank.submitted_at) ||
+    ['submitted', 'feedback_received', 'quote_received', 'additional_documents_required', 'declined', 'approved', 'buyer_approved', 'expired', 'under_assessment'].includes(key(bank.status))
+}
+
+function resolveOriginatorMilestone(finance, banks, offers) {
+  if (!finance) return { stage: '', status: 'Finance updates unavailable', helper: 'Your consultant’s latest records could not be loaded. Please refresh in a moment.' }
+  if ((finance.grantCaptures || []).some(grant => ['published_to_buyer', 'buyer_signed', 'submitted_for_instruction'].includes(grant.status) && (grant.published_at || grant.publishedAt))) {
+    return { stage: 'guarantees', status: 'Final approval received', helper: 'Your consultant has shared the final approval.' }
+  }
+  if (offers.length) return { stage: 'approval', status: 'Quotes received', helper: 'Review the quotes shared by your consultant below.' }
+  if (banks.some(bank => ['feedback_received', 'additional_documents_required', 'declined', 'approved', 'buyer_approved', 'expired', 'under_assessment'].includes(key(bank.status)))) {
+    return { stage: 'responses', status: 'Bank assessment', helper: 'Your consultant is recording the banks’ responses.' }
+  }
+  if (banks.length) return { stage: 'submitted', status: 'Submitted to banks', helper: 'Your consultant has recorded the bank submissions shown below.' }
+  return finance.applicationReceived
+    ? { stage: 'application', status: 'Application received', helper: 'Your consultant has received your application.' }
+    : { stage: '', status: 'Awaiting application receipt', helper: 'Your consultant has not confirmed receipt yet.' }
+}
+
 function resolveBondStage({ currentStage, status, offers = [], bankApplications = [] }) {
   const explicit = key(currentStage)
   if (BOND_STAGE_DEFINITIONS.some((stage) => stage.key === explicit)) return explicit
   const normalizedStatus = key(status)
   if (/guarantee|final_grant|registered|complete/.test(normalizedStatus)) return 'guarantees'
   if (/approv|accept|grant/.test(normalizedStatus) || offers.some((offer) => offer.isAccepted)) return 'approval'
-  if (/response|offer|conditional/.test(normalizedStatus) || offers.length > 0) return 'responses'
+  if (offers.length > 0) return 'approval'
+  if (/response|offer|conditional|assess|review/.test(normalizedStatus)) return 'responses'
   if (/submit|review|assess|bank/.test(normalizedStatus) || bankApplications.some((bank) => key(bank.status) !== 'not_started')) return 'submitted'
   return 'application'
 }
@@ -64,7 +92,7 @@ function normalizeBankApplication(bank = {}, index = 0) {
   return Object.freeze({
     ...bank,
     id: text(bank.id || bank.bankId) || `bank-${index + 1}`,
-    bankName: text(bank.bankName || bank.lenderName || bank.name) || `Bank ${index + 1}`,
+    bankName: text(bank.bankName || bank.bank_name || bank.lenderName || bank.name) || `Bank ${index + 1}`,
     status,
     statusTone: bank.statusTone || (/approv|accept|grant/.test(normalizedStatus) ? 'complete' : /declin|reject/.test(normalizedStatus) ? 'danger' : 'info'),
     amountLabel: amountLabel(bank.approvedAmount || bank.offeredAmount || bank.requestedAmount, ''),
@@ -103,9 +131,11 @@ export function buildBuyerFinancePresentationModel({
   progressPercent = 0,
   financeManagedBy = '',
   manager = null,
+  originatorFinance = undefined,
   nextStep = null,
   requiredActions = [],
   bankApplications = [],
+  bankApplicationsUnavailable = false,
   offers = [],
   accountSummary = {},
   accountCount = 0,
@@ -117,15 +147,29 @@ export function buildBuyerFinancePresentationModel({
   const financeManager = normalizeFinanceManager(financeManagedBy)
   const isOriginatorManaged = isBondFinance && financeManager === 'bond_originator'
   const isDirectFinance = isBondFinance && !isOriginatorManaged
-  const normalizedBanks = (Array.isArray(bankApplications) ? bankApplications : []).filter(Boolean).map(normalizeBankApplication)
-  const normalizedOffers = (Array.isArray(offers) ? offers : []).filter(Boolean).map(normalizeOffer)
+  const canonicalOriginator = isOriginatorManaged && source === 'production' && originatorFinance !== undefined
+  const bankRows = canonicalOriginator ? originatorFinance?.bankApplications || [] : bankApplications
+  const normalizedBanks = [...new Map((Array.isArray(bankRows) ? bankRows : []).filter(Boolean)
+    .filter(bank => !canonicalOriginator || isConfirmedBuyerBankSubmission(bank))
+    .map(normalizeBankApplication).map(bank => [buyerFinanceBankKey(bank.bankName), bank])).values()]
+  const normalizedOffers = (Array.isArray(offers) ? offers : []).filter(Boolean)
+    .filter(offer => !canonicalOriginator || (originatorFinance && offer.source === 'originator_capture' && ['published_to_buyer', 'accepted_by_buyer', 'declined_by_buyer'].includes(offer.status) && offer.publishedAt))
+    .map(normalizeOffer)
+  const milestone = canonicalOriginator ? resolveOriginatorMilestone(originatorFinance, normalizedBanks, normalizedOffers) : null
+  if (canonicalOriginator) {
+    manager = originatorFinance?.manager || null
+    requestedAmount = originatorFinance?.requestedAmount || requestedAmount
+    status = milestone.status
+    statusHelper = milestone.helper
+    requiredActions = []
+  }
   const actions = (Array.isArray(requiredActions) ? requiredActions : []).filter(Boolean).map((action, index) => Object.freeze({
     ...action,
     id: text(action.id || action.key) || `finance-action-${index + 1}`,
     title: text(action.title || action.label) || 'Complete finance requirement',
     description: text(action.description || action.helper),
   }))
-  const stageKey = isOriginatorManaged ? resolveBondStage({ currentStage, status, offers: normalizedOffers, bankApplications: normalizedBanks }) : 'account'
+  const stageKey = isOriginatorManaged ? milestone ? milestone.stage : resolveBondStage({ currentStage, status, offers: normalizedOffers, bankApplications: normalizedBanks }) : 'account'
   const currentStageIndex = isOriginatorManaged ? BOND_STAGE_DEFINITIONS.findIndex((stage) => stage.key === stageKey) : -1
   const stages = isOriginatorManaged ? BOND_STAGE_DEFINITIONS.map((stage, index) => Object.freeze({
     ...stage,
@@ -176,16 +220,20 @@ export function buildBuyerFinancePresentationModel({
     cashContributionLabel: mode === 'hybrid' ? amountLabel(cashContribution) : '',
     hasCashContribution: mode === 'hybrid' && Number(cashContribution) > 0,
     loanToValue: text(loanToValue),
-    progressPercent: Math.max(0, Math.min(100, Math.round(Number(progressPercent) || 0))),
-    manager: manager ? Object.freeze({
+    progressPercent: canonicalOriginator ? Math.max(0, Math.round(currentStageIndex / (BOND_STAGE_DEFINITIONS.length - 1) * 100)) : Math.max(0, Math.min(100, Math.round(Number(progressPercent) || 0))),
+    manager: manager && (manager.name || manager.company || manager.organisation || manager.email) ? Object.freeze({
       name: text(manager.name) || 'Finance team',
       company: text(manager.company || manager.organisation),
+      logo: text(manager.logo || manager.logoUrl),
       avatar: text(manager.avatar || manager.profileImage),
+      email: text(manager.email),
+      phone: text(manager.phone),
     }) : null,
     nextStep: resolvedNextStep,
     requiredActions: Object.freeze(actions),
     firstAction: actions[0] || null,
     bankApplications: Object.freeze(normalizedBanks),
+    bankApplicationsUnavailable: canonicalOriginator ? !originatorFinance : Boolean(bankApplicationsUnavailable),
     offers: Object.freeze(normalizedOffers.sort((left, right) => Number(right.isRecommended) - Number(left.isRecommended))),
     account: Object.freeze({
       accountCount: Number(accountCount || 0),
