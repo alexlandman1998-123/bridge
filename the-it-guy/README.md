@@ -864,3 +864,123 @@ The response-time promise needs an accountable reviewer. The database migration
 and API deployment remain unapplied; controlled live application, notification
 and analytics acceptance must follow an explicitly authorised release. No live
 applications, migrations, emails or deployments were performed for this review.
+
+
+### Rental listing save integrity
+
+Rental edits now save listing facts, publication details and gallery changes in one
+transaction. Photo edits retain existing video, tour, floor-plan and external-link
+records, as well as IDs for retained photos. P24 expiry is saved separately in
+`rentalInfo.property24ExpiryDate`; mandate expiry retains its own value. The app
+reads the listing back and verifies facts, publication, media and links before
+reporting success. Stale editor versions must reload. Failed or unconfirmed saves
+retain uploaded photo URLs for recovery without uploading the same bytes again.
+
+Release requires `20261004091223_rental_listing_atomic_persistence.sql` before the
+primary app update. Without the RPC, rental saves fail visibly; there is no fallback
+to the previous destructive distribution save. The migration is local only.
+It does not restore previously removed media, change archived rentals, update portal
+expiry remotely, or publish listings.
+
+Checks: `npm run test:rental-listing-distribution-review` includes executable local
+Postgres persistence, access-control and rollback checks. Run
+`npx vitest run src/services/rentals/__tests__/rentalListingSave.test.js` for upload,
+retry and readback checks. These checks do not write remote data or call portals.
+
+Rental media controls now remove the selected photo, change its cover designation,
+and save gallery order directly from Marketing. Photo-only saves retain the listing
+facts and publication data verbatim, including older incomplete rentals. Removing
+the last photo clears the displayed cover rather than reviving an old preview.
+The guided Marketing editor can add, change or clear a public video and virtual-tour
+URL; saved links open from Marketing and appear in Listing Media Progress. These
+optional links do not change the portal readiness percentage. Edits target only
+the selected video/tour row and preserve other media and external links.
+
+Apply `20261004092331_rental_listing_media_controls.sql` after the phase 1 migration
+and before deploying these controls. Both migrations remain local until a release
+is approved. Photo removal unlinks the gallery record; it does not delete stored
+files. Channel actions, archived-stock recovery and media forwarding to portals
+are separate work. The distribution review now also exercises both media RPCs;
+the rental save and create/detail-page tests cover link editing and photo actions.
+
+Rental Listing Channels now use the agency website controls and, where the listing's
+organisation has an enabled sharing grant, the independent Kingdom website channel.
+Website lookup errors remain visible and retryable; an unconnected agency website
+shows its connection state. An absent Kingdom sharing grant does not expose publishing
+controls. The public websites product is unchanged.
+
+Property24 and Private Property show saved references, valid public URLs, stored
+status and publication activity. Marketing loads stored status only. Refresh portal
+status explicitly probes the provider using the existing authenticated API routes.
+Manage portal settings offers Property24 rental lifecycle statuses and Private
+Property ToLet/Inactive, with the existing reactivation and readiness protections.
+Update listing remains gated by each portal's readiness preview.
+
+Submissions, acceptances, withdrawals and failures are recorded in the existing listing
+activity store. Portal acceptance does not imply a verified public page. A user may
+save a valid portal link after confirming it matches the saved rental; subsequent
+saved changes are compared with that snapshot. Status/history errors are visible,
+and an accepted request whose activity save fails is not reported as a provider
+failure or automatically retried. Refresh status before retrying such a request.
+
+No new phase 3 migration is needed. These changes remain local; the phase 1/2 RPC
+migrations above must be released with the app. Live grant configuration, portal
+credentials, website publishing and production rental smoke checks still require
+an approved release. Phase 4 readiness explanations and phase 5 stock recovery are
+separate work.
+
+Focused local checks: `node --test src/services/rentals/__tests__/rentalListingChannelModel.test.js`
+and `npx vitest run src/services/rentals/__tests__/rentalListingChannelService.test.js
+src/components/listings/__tests__/RentalWebsiteChannels.test.jsx
+src/pages/rentals/__tests__/RentalPortalManagementPanel.test.jsx
+src/pages/rentals/__tests__/RentalDistributionChannel.test.jsx
+src/pages/rentals/__tests__/RentalListingDetailPage.overview.test.jsx`.
+The existing `scripts/kingdom-isell-listing-channel.test.mjs`,
+`scripts/private-property-phase11-post-submit-monitor.test.mjs` and
+`test:rental-listing-distribution-review` check the relevant publication boundaries,
+provider monitor contract and rental persistence. All are local checks.
+
+Rental Marketing now separates the local listing checklist from portal publishing
+requirements. Incomplete checklist items name the missing fields or current workflow
+status and open the relevant editor step. Property24 publication is shown as a
+publication step rather than a missing field. The percentage is labelled checklist
+progress; completing it does not approve a portal submission.
+
+Each portal has its own requirements card showing Not checked, Checking, Check failed,
+Needs attention, Readiness not confirmed or Ready to submit. Both Private Property's
+readiness report and Property24's preview are displayed, with duplicate blockers
+removed, setup and agent mappings separated from listing fields, photo preparation
+counts, and targeted editor/settings/expiry actions. Backend recommendations remain
+separate from required blockers. Unknown requirements remain visible for support
+review. Publish controls require an explicit successful, unblocked portal check.
+
+Checks are invalidated after reloads or saved listing revisions; late responses from
+an earlier revision or organisation cannot restore a publish permission. This is a
+primary app presentation change with no new database migration or portal rules.
+Local verification: `node --test src/services/rentals/__tests__/rentalListingReadinessPresentation.test.js`
+and `npx vitest run src/pages/rentals/__tests__/RentalListingReadinessPanel.test.jsx
+src/pages/rentals/__tests__/RentalListingDetailPage.overview.test.jsx`.
+
+Rental Listings now has an explicit **Review rental stock** action. This read-only
+review includes archived and withdrawn rentals within the selected organisation
+and the user's existing agent/branch scope. Normal stock queries remain unchanged.
+Deleted records are excluded. The shared listing reader fails visibly if records,
+publication, external links or media cannot be read, or if the database response
+limit would make the review incomplete; it does not report a clean review from
+missing data. Branch-schema failures also remain errors for this review.
+
+The review identifies hidden stock, saved live portal statuses with incomplete
+references or valid public links, hidden stock still marked live, and absent photo
+galleries. Inspect history reads the selected listing's activity and compares any
+available media snapshots. Historical differences may be intentional; an empty
+history does not prove there was no data loss. Original files/backups and the
+responsible agent's confirmation may be needed. Current records can open Marketing
+for the existing channel workflow; archived records stay in the read-only review.
+No automatic unarchiving, file restoration, status probes or republishing occurs.
+Actual record recovery and production release require explicit approval.
+
+Local checks: `npx vitest run src/services/rentals/__tests__/rentalStockReviewService.test.js
+src/pages/rentals/__tests__/RentalStockReviewPanel.test.jsx
+src/pages/rentals/__tests__/RentalListingsPage.agentContact.test.jsx`, plus the
+existing `scripts/agent-listings-delete-ui.test.mjs` and rental distribution review.
+No phase 5 migration is required.

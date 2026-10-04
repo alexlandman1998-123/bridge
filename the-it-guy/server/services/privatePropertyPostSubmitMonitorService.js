@@ -295,7 +295,7 @@ export async function runPrivatePropertyPostSubmitMonitor({
 
 export async function readPrivatePropertyStoredStatus({ client, listingId, environment = 'production' } = {}) {
   const { data, error } = await client.from('private_property_listing_syncs')
-    .select('external_status,is_on_portal,private_property_ref,last_checked_at')
+    .select('external_status,is_on_portal,private_property_ref,last_checked_at,submitted_at,last_successful_sync_at,last_error')
     .eq('private_listing_id', listingId).eq('environment', normalizeEnvironment(environment)).maybeSingle()
   if (error) throw error
   const externalStatus = data?.external_status || ''
@@ -303,6 +303,7 @@ export async function readPrivatePropertyStoredStatus({ client, listingId, envir
     cached: true, generatedAt: data?.last_checked_at || '', externalStatus,
     status: ['inactive', 'removed', 'paused', 'failed'].includes(externalStatus) ? 'ATTENTION_REQUIRED' : externalStatus === 'active' ? 'ACTIVATED' : 'PENDING',
     statusProbe: { privatePropertyRef: data?.private_property_ref || '' },
+    publication: { submittedAt: data?.submitted_at || '', lastSyncedAt: data?.last_successful_sync_at || '', lastError: data?.last_error || '' },
     safety: { privatePropertyApiCalled: false, databaseWritten: false },
   }
 }

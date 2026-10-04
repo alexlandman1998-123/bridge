@@ -177,7 +177,7 @@ export function buildRentalProperty24PayloadPreview(listing = {}, options = {}) 
 
   return {
     listingType: 'Rental',
-    expiryDate: firstText(resolution.expiryDate, resolution.expiry_date, listing.expiryDate, listing.expiry_date, listing.mandateEndDate, listing.mandate_end_date, row.mandateEndDate, rentalInfo.mandateEndDate, rentalInfo.mandate_end_date),
+    expiryDate: firstText(resolution.expiryDate, resolution.expiry_date, rentalInfo.property24ExpiryDate, rentalInfo.property24_expiry_date, listing.property24ExpiryDate, listing.property24_expiry_date, listing.expiryDate, listing.expiry_date, listing.mandateEndDate, listing.mandate_end_date, row.mandateEndDate, rentalInfo.mandateEndDate, rentalInfo.mandate_end_date),
     agencyId: firstText(resolution.agencyId, resolution.agency_id, listing.property24AgencyId, listing.property24_agency_id),
     contactAgentIds: normalizeArray(
       resolution.contactAgentIds ||

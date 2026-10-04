@@ -223,7 +223,13 @@ export function buildRentalListingIndexRow(listing = {}) {
     websiteStatus: firstText(listing.bridgeListingStatus, listing.bridge_listing_status, publication.bridgeListingStatus, publication.bridge_listing_status, 'not_published'),
     updatedAt: firstText(listing.updatedAt, listing.updated_at),
     applicationCount: Number(firstNumber(listing.applicationCount, listing.application_count, listing.rentalApplicationCount, listing.rental_application_count, 0) || 0),
-    imageUrl: firstText(listing.imageUrl, listing.image_url, listing.heroImageUrl, listing.hero_image_url, publication.imageUrl, publication.heroImageUrl),
+    imageUrl: Array.isArray(listing.listingMedia)
+      ? (() => {
+        const photos = listing.listingMedia.filter((item) => (item.media_type || item.mediaType) === 'image')
+        const cover = photos.find((item) => item.is_cover || item.isCover) || photos[0]
+        return firstText(cover?.file_url, cover?.fileUrl, cover?.url)
+      })()
+      : firstText(listing.imageUrl, listing.image_url, listing.heroImageUrl, listing.hero_image_url, publication.imageUrl, publication.heroImageUrl),
   }
   // Captured rental details are authoritative. The shared listing mapper can
   // supply legacy/default zero counts and onboarding addresses; those must not

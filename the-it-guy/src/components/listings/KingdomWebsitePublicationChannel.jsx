@@ -5,6 +5,7 @@ import Button from '../ui/Button'
 import Modal from '../ui/Modal'
 import { getKingdomWebsitePublicationStatus, setKingdomWebsitePublication } from '../../services/kingdomWebsitePublicationService'
 import { normalizeListingChannelPublicUrl } from '../../services/listings/listingMarketingChannelPresentation'
+import ListingWebsiteConnectionState from './ListingWebsiteConnectionState'
 
 function publicSlug(title, reference, listingId) {
   const code = String(reference || '').trim().toUpperCase()
@@ -14,7 +15,7 @@ function publicSlug(title, reference, listingId) {
   return `${slug}-${listingId}`
 }
 
-export default function KingdomWebsitePublicationChannel({ listingId, listingTitle, listingReference, onPrepare, onStatusChange, savedAt = '' }) {
+export default function KingdomWebsitePublicationChannel({ listingId, listingTitle, listingReference, onPrepare, onStatusChange, onPublicationAction, publicationState = null, savedAt = '', showConnectionState = false }) {
   const [publication, setPublication] = useState(null)
   const [loading, setLoading] = useState(true)
   const [action, setAction] = useState('')
@@ -38,7 +39,9 @@ export default function KingdomWebsitePublicationChannel({ listingId, listingTit
   useEffect(() => { void load() }, [load])
   useEffect(() => { onStatusChange?.(publication) }, [onStatusChange, publication])
 
-  if (!publication?.available) return null
+  if (!publication?.available) return showConnectionState && (loading || error)
+    ? <ListingWebsiteConnectionState name="Kingdom Website" loading={loading} error={error} detail="Checking the authorised website-sharing connection." onRetry={() => void load()} />
+    : null
 
   const published = publication.status === 'published'
   const live = published && publication.websiteStatus === 'published'
@@ -46,8 +49,9 @@ export default function KingdomWebsitePublicationChannel({ listingId, listingTit
   const link = live && publication.hostname
     ? normalizeListingChannelPublicUrl(`https://${publication.hostname}/properties/${publicSlug(listingTitle, listingReference, listingId)}`)
     : ''
-  const statusLabel = live ? publication.stale ? 'Update available' : 'Live' : blockers.length ? 'Needs attention' : 'Not published'
-  const statusColor = live && !publication.stale ? 'text-[#18713e]' : blockers.length || publication.stale ? 'text-[#9a5b13]' : 'text-[#526a82]'
+  const stale = publication.stale || publicationState?.changeCount > 0
+  const statusLabel = live ? stale ? 'Update available' : 'Live' : blockers.length ? 'Needs attention' : 'Not published'
+  const statusColor = live && !stale ? 'text-[#18713e]' : blockers.length || stale ? 'text-[#9a5b13]' : 'text-[#526a82]'
   const infrastructureBlocked = blockers.some((blocker) => /Kingdom website|Kingdom website domain/.test(String(blocker)))
 
   const run = async (nextAction) => {
@@ -55,18 +59,29 @@ export default function KingdomWebsitePublicationChannel({ listingId, listingTit
     setAction(nextAction)
     setError('')
     setNotice('')
+    let prepared = null
+    let tracked = false
+    let accepted = false
     try {
       if (nextAction !== 'unpublish') {
-        const prepared = await onPrepare?.()
+        prepared = await onPrepare?.()
         if (prepared?.ok === false || prepared?.localOnly) throw prepared?.error || new Error('Save this listing to Arch9 before publishing it to Kingdom.')
+        await onPublicationAction?.({ stage: 'submitted', action: nextAction, draft: prepared?.publicationDraft })
+        tracked = true
       }
       const next = await setKingdomWebsitePublication(listingId, nextAction)
+      if (next?.status !== (nextAction === 'unpublish' ? 'unpublished' : 'published')) throw new Error('Kingdom publication status could not be confirmed. Refresh status before retrying.')
+      accepted = true
       setPublication(next)
+      await onPublicationAction?.({ stage: nextAction === 'unpublish' ? 'withdrawn' : 'accepted', action: nextAction, draft: prepared?.publicationDraft, publication: { ...next, publicUrl: next.hostname ? normalizeListingChannelPublicUrl(`https://${next.hostname}/properties/${publicSlug(listingTitle, listingReference, listingId)}`) : '' } })
       setNotice(nextAction === 'unpublish' ? 'Listing removed from the Kingdom website.'
         : nextAction === 'update' ? 'Kingdom website listing updated.' : 'Listing published to the Kingdom website.')
     } catch (actionError) {
+      if (!accepted && (tracked || nextAction === 'unpublish')) {
+        try { await onPublicationAction?.({ stage: nextAction === 'unpublish' ? 'withdrawal_failed' : 'failed', action: nextAction, publication: { error: actionError.message } }) } catch { /* Preserve the provider error. */ }
+      }
       await load()
-      setError(actionError?.message || 'Kingdom website publication failed.')
+      setError(accepted ? 'Kingdom accepted the request, but publication history could not be saved. Refresh status before retrying.' : actionError?.message || 'Kingdom website publication failed.')
     } finally {
       setAction('')
     }
@@ -79,8 +94,8 @@ export default function KingdomWebsitePublicationChannel({ listingId, listingTit
         <div className="min-w-0"><p className="truncate text-sm font-semibold text-[#142132]">Kingdom Website</p><p className="truncate text-xs text-[#607387]">Kingdom Real Estate property website</p></div>
       </div>
       <div className="min-w-0"><p className="truncate text-sm font-semibold text-[#243d56]">{listingReference || 'Not assigned'}</p>{link ? <a href={link} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-1 text-xs font-semibold text-[#1f4f78] hover:underline">View listing <ExternalLink size={12} /></a> : <p className="mt-1 text-xs text-[#8a98a8]">Listing link unavailable</p>}</div>
-      <div className="min-w-0"><p className={`inline-flex items-center gap-2 text-sm font-semibold ${statusColor}`}><span className={`h-2 w-2 rounded-full ${live && !publication.stale ? 'bg-[#1f9d64]' : blockers.length || publication.stale ? 'bg-[#d99321]' : 'border border-[#aebdca] bg-white'}`} />{statusLabel}</p>{blockers.length ? <p className="mt-1 text-xs text-[#8a641d]">{blockers[0]}</p> : null}</div>
-      <div className="listing-channel-activity">{savedAt ? <p><span >Arch9 saved</span> · {savedAt}</p> : null}{publication.lastSyncedAt ? <p><span >Kingdom updated</span> · {new Date(publication.lastSyncedAt).toLocaleString()}</p> : null}</div>
+      <div className="min-w-0"><p className={`inline-flex items-center gap-2 text-sm font-semibold ${statusColor}`}><span className={`h-2 w-2 rounded-full ${live && !stale ? 'bg-[#1f9d64]' : blockers.length || stale ? 'bg-[#d99321]' : 'border border-[#aebdca] bg-white'}`} />{statusLabel}</p>{blockers.length ? <p className="mt-1 text-xs text-[#8a641d]">{blockers[0]}</p> : null}</div>
+      <div className="listing-channel-activity">{savedAt ? <p><span >Arch9 saved</span> · {savedAt}</p> : null}{[['Submitted', publicationState?.submittedAt], ['Accepted', publicationState?.acceptedAt], ['Withdrawn', publicationState?.withdrawnAt], ['Failed', publicationState?.failedAt], ['Published', publication.publishedAt]].filter(([,time]) => time).map(([label,time]) => <p key={label}><span>{label}</span> · {new Date(time).toLocaleString()}</p>)}{publication.lastSyncedAt ? <p><span >Kingdom updated</span> · {new Date(publication.lastSyncedAt).toLocaleString()}</p> : null}</div>
       <div className="flex justify-start lg:justify-end"><Button type="button" size="sm" variant="secondary" onClick={() => setManageOpen(true)}><SlidersHorizontal size={15} />Manage</Button></div>
       {error ? <p className="text-sm text-[#b42318] lg:col-span-5" role="alert">{error}</p> : null}
       {notice ? <p className="text-sm text-[#257044] lg:col-span-5" role="status">{notice}</p> : null}

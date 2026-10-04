@@ -1,0 +1,60 @@
+// @vitest-environment jsdom
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+const mocks = vi.hoisted(() => ({ load: vi.fn(), history: vi.fn() }))
+vi.mock('../../../services/rentals/rentalStockReviewService', async importOriginal => ({ ...await importOriginal(), loadRentalStockReview: mocks.load, loadRentalStockHistoryReview: mocks.history }))
+import RentalStockReviewPanel from '../RentalStockReviewPanel'
+const scope = { organisationId: 'org', assignedAgentId: 'agent' }
+const listing = { id: 'rental', title: 'Hidden home', listingCategory: 'rental', listingVisibility: 'archived' }
+beforeEach(() => { vi.clearAllMocks(); mocks.load.mockResolvedValue([listing]); mocks.history.mockResolvedValue({ evidence: [], events: [] }) })
+afterEach(cleanup)
+it('loads only on request and permits history but no recovery or marketing action for archived rentals', async () => {
+  render(<RentalStockReviewPanel scope={scope} onOpen={vi.fn()} />)
+  expect(mocks.load).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByRole('button', { name: 'Review rental stock' }))
+  await screen.findByText('Hidden home — Archived')
+  expect(screen.queryByRole('button', { name: 'Open Marketing' })).toBeNull()
+  expect(screen.queryByRole('button', { name: /restore|publish|unarchive/i })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Inspect history for Hidden home' }))
+  await screen.findByText('No saved activity history.')
+  expect(mocks.history).toHaveBeenCalledWith(listing, scope)
+})
+it('distinguishes unavailable history and supports retry', async () => {
+  mocks.history.mockRejectedValueOnce(new Error('Read denied'))
+  render(<RentalStockReviewPanel scope={scope} />)
+  fireEvent.click(screen.getByRole('button', { name: 'Review rental stock' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Inspect history for Hidden home' }))
+  expect((await screen.findByRole('alert')).textContent).toContain('could not be assessed')
+  fireEvent.click(screen.getByRole('button', { name: 'Inspect history for Hidden home' }))
+  await screen.findByText('No saved activity history.')
+})
+it('clears old findings on failed refresh', async () => {
+  render(<RentalStockReviewPanel scope={scope} />)
+  fireEvent.click(screen.getByRole('button', { name: 'Review rental stock' }))
+  await screen.findByText('Hidden home — Archived')
+  mocks.load.mockRejectedValueOnce(new Error('Stock unavailable'))
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh stock review' }))
+  await screen.findByRole('alert')
+  expect(screen.queryByText('Hidden home — Archived')).toBeNull()
+})
+it('discards late responses after a workspace change', async () => {
+  let finish
+  mocks.load.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+  const { rerender } = render(<RentalStockReviewPanel key="old" scope={scope} />)
+  fireEvent.click(screen.getByRole('button', { name: 'Review rental stock' }))
+  rerender(<RentalStockReviewPanel key="new" scope={{ ...scope, organisationId: 'new' }} />)
+  await act(async () => { finish([listing]) })
+  expect(screen.queryByText('Hidden home — Archived')).toBeNull()
+})
+it('searches references and opens current listings', async () => {
+  mocks.load.mockResolvedValue([{ ...listing, listingVisibility: 'internal', listingReference: 'ABC123' }])
+  const open = vi.fn()
+  render(<RentalStockReviewPanel scope={scope} onOpen={open} />)
+  fireEvent.click(screen.getByRole('button', { name: 'Review rental stock' }))
+  await screen.findByText('Hidden home — Current')
+  fireEvent.change(screen.getByRole('textbox'), { target: { value: 'missing' } })
+  expect(screen.getByText('No matching accessible rentals.')).toBeTruthy()
+  fireEvent.change(screen.getByRole('textbox'), { target: { value: 'ABC123' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Open Marketing' }))
+  expect(open).toHaveBeenCalledWith('rental')
+})

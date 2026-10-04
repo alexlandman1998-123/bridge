@@ -259,6 +259,7 @@ function ReviewSummaryCard({ title, details, onEdit }) {
 function stepForValidationError(error = '') {
   const normalized = String(error).toLowerCase()
   if (normalized.includes('landlord') || normalized.includes('mandate') || normalized.includes('marketing approval')) return 'landlord'
+  if (normalized.includes('video link') || normalized.includes('virtual tour link')) return 'marketing'
   if (normalized.includes('property address')) return 'property'
   if (normalized.includes('rental amount') || normalized.includes('rental price frequency') || normalized.includes('deposit') || normalized.includes('available from') || normalized.includes('occupation date')) return 'terms'
   if (normalized.startsWith('enter a valid ') && !normalized.includes('landlord')) return 'features'
@@ -861,6 +862,10 @@ export default function RentalListingCreatePage() {
               </div> : <div className="mt-5 flex min-h-36 flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-[#cddaea] bg-[#f7fafc] px-4 py-6 text-center"><ImagePlus size={28} className="text-[#91abc0]" aria-hidden="true" /><p className="text-sm text-[#607891]">Add property photos</p></div>}
             </section>
 
+            <section className="grid gap-4 rounded-2xl border border-[#dbe6f2] bg-white p-4 sm:grid-cols-2 sm:p-5">
+              <label className="form-field"><span>Video link</span><input type="url" aria-label="Video link" {...formField('videoLink', form.videoLink, updateForm)} placeholder="https://youtu.be/..." /><small>Optional public video URL.</small></label>
+              <label className="form-field"><span>Virtual tour link</span><input type="url" aria-label="Virtual tour link" {...formField('virtualTourLink', form.virtualTourLink, updateForm)} placeholder="https://my.matterport.com/..." /><small>Optional public virtual tour URL.</small></label>
+            </section>
             <div className="grid min-w-0 items-start gap-4 xl:grid-cols-3">
               <section className="min-w-0 rounded-2xl border border-[#dbe6f2] bg-white p-4 sm:p-5 xl:col-span-2">
                 <div className="mb-5 flex items-center gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#eef4fa] text-[#315f80]"><FileText size={18} aria-hidden="true" /></span><h3 className="text-sm font-semibold text-[#18324b]">Listing copy</h3></div>
@@ -917,7 +922,7 @@ export default function RentalListingCreatePage() {
               <ReviewSummaryCard title="Property" onEdit={() => goToStep('property')} details={[{ label: 'Listing', value: buildRentalListingTitle(form) || 'Untitled rental listing' }, { label: 'Address', value: form.propertyAddress || 'Not added' }, { label: 'Type', value: form.propertyType || 'Not captured' }]} />
               <ReviewSummaryCard title="Additional property details" onEdit={() => goToStep('features')} details={[{ label: 'Confirmed features', value: `${selectedSellingPoints.length} confirmed` }, { label: 'Pet friendly', value: form.petsPolicy === 'allowed' ? 'Yes' : form.petsPolicy === 'not_allowed' ? 'No' : 'Subject to approval' }]} />
               <ReviewSummaryCard title="Rental terms" onEdit={() => goToStep('terms')} details={[{ label: 'Rental amount', value: form.monthlyRent ? `R ${Number(form.monthlyRent).toLocaleString('en-ZA')}` : 'Not added' }, { label: 'Frequency', value: RENTAL_SELECT_OPTIONS.rentalPriceFrequency.find((option) => option.value === form.rentalPriceFrequency)?.label || 'Not captured' }, { label: 'Available', value: form.availableFrom || 'Not added' }, { label: 'Lease', value: form.leasePeriodMonths ? `${form.leasePeriodMonths} months` : 'Not captured' }]} />
-              <ReviewSummaryCard title="Marketing" onEdit={() => goToStep('marketing')} details={[{ label: 'Photos', value: `${form.galleryImages.length} selected` }, { label: 'Description', value: form.description ? 'Added' : 'Not added' }, { label: 'Selling points', value: `${selectedSellingPoints.length} selected` }]} />
+              <ReviewSummaryCard title="Marketing" onEdit={() => goToStep('marketing')} details={[{ label: 'Photos', value: `${form.galleryImages.length} selected` }, { label: 'Video', value: form.videoLink ? 'Added' : 'Not added (optional)' }, { label: 'Virtual tour', value: form.virtualTourLink ? 'Added' : 'Not added (optional)' }, { label: 'Description', value: form.description ? 'Added' : 'Not added' }, { label: 'Selling points', value: `${selectedSellingPoints.length} selected` }]} />
             </div>
             {validationErrors.length ? <div className="rounded-[12px] border border-[#f1d4a6] bg-[#fffaf0] p-4"><p className="font-semibold text-[#8a5a12]">Complete these required items before creating</p><ul className="mt-3 grid gap-2 text-sm text-[#8a5a12]">{validationErrors.map((item) => { const step = stepForValidationError(item); return <li key={item} className="flex flex-wrap items-center justify-between gap-2"><span>{item}</span>{step !== 'review' ? <button type="button" className="font-semibold underline underline-offset-2" onClick={() => goToStep(step)}>Fix in {CREATE_STEPS.find((entry) => entry.key === step)?.label}</button> : null}</li> })}</ul></div> : null}
           </section> : null}

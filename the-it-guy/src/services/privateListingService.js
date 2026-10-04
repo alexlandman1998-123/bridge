@@ -661,16 +661,18 @@ function isArchivedPrivateListingRow(row = {}) {
   return visibility === 'archived' || status === 'archived'
 }
 
-function isVisiblePrivateListingRow(row = {}, { includeArchivedImports = false, includeArchivedListings = false } = {}) {
+function isVisiblePrivateListingRow(row = {}, { includeArchivedImports = false, includeArchivedListings = false, includeWithdrawnListings = false } = {}) {
   if (!isDeletedPrivateListingRow(row)) return true
   if (row.deleted_at || row.deletedAt || row.is_deleted || row.isDeleted) return false
+  if (includeWithdrawnListings && (normalizeKey(row.listing_status || row.listingStatus) === 'deleted' || normalizeKey(row.listing_visibility || row.listingVisibility) === 'deleted')) return false
   if (includeArchivedListings && isArchivedPrivateListingRow(row)) return true
+  if (includeWithdrawnListings && normalizeKey(row.listing_status || row.listingStatus) === 'withdrawn' && normalizeKey(row.listing_visibility || row.listingVisibility) !== 'deleted') return true
   if (!includeArchivedImports || !isProperty24MigrationImportRow(row)) return false
   return true
 }
 
-function applyVisiblePrivateListingFilters(queryBuilder, { includeArchivedImports = false, includeArchivedListings = false } = {}) {
-  if (includeArchivedImports || includeArchivedListings) return queryBuilder
+function applyVisiblePrivateListingFilters(queryBuilder, { includeArchivedImports = false, includeArchivedListings = false, includeWithdrawnListings = false } = {}) {
+  if (includeArchivedImports || includeArchivedListings || includeWithdrawnListings) return queryBuilder
   return queryBuilder
     .neq('listing_status', 'withdrawn')
     .neq('listing_visibility', 'archived')
@@ -809,7 +811,7 @@ function normalizeListingMediaRows(rows = []) {
     }))
 }
 
-async function fetchMediaRowsForListings(client, listingIds = []) {
+async function fetchMediaRowsForListings(client, listingIds = [], { strict = false } = {}) {
   const ids = [...new Set((Array.isArray(listingIds) ? listingIds : []).map((id) => normalizeUuid(id)).filter(Boolean))]
   if (!ids.length) return new Map()
 
@@ -819,6 +821,7 @@ async function fetchMediaRowsForListings(client, listingIds = []) {
     .in('listing_id', ids)
     .order('sort_order', { ascending: true })
   if (query.error) {
+    if (strict) throw query.error
     if (
       isMissingTableError(query.error, 'listing_media') ||
       isMissingSchemaError(query.error) ||
@@ -905,11 +908,12 @@ export function getListingCardImageSource(originalUrl = '', { client = supabase 
 function attachDistributionMediaToListing(listing = null, rows = []) {
   if (!listing) return listing
   const galleryImages = normalizeListingMediaRows(rows)
-  if (!galleryImages.length) return listing
+  const listingWithMedia = { ...listing, listingMedia: rows }
+  if (!galleryImages.length) return listingWithMedia
   const coverImage = galleryImages.find((image) => image.isCover) || galleryImages[0]
 
   return {
-    ...listing,
+    ...listingWithMedia,
     heroImageUrl: coverImage.url,
     images: galleryImages,
     galleryImages,
@@ -5327,15 +5331,16 @@ async function fetchDocumentRowsForListings(client, listingIds = []) {
   return map
 }
 
-async function fetchExternalLinkRowsForListings(client, listingIds = []) {
+async function fetchExternalLinkRowsForListings(client, listingIds = [], { strict = false } = {}) {
   const ids = normalizeUuidList(listingIds)
-  if (!ids.length || hasMissingTableCache('listing_external_links')) return new Map()
+  if (!ids.length || (!strict && hasMissingTableCache('listing_external_links'))) return new Map()
   const query = await client
     .from('listing_external_links')
     .select('id, listing_id, platform, url, status, published_at, last_checked_at, notes, visible_to_seller, created_at, updated_at')
     .in('listing_id', ids)
     .order('created_at', { ascending: true })
   if (query.error) {
+    if (strict) throw query.error
     if (isMissingTableError(query.error, 'listing_external_links') || isMissingColumnError(query.error)) {
       rememberMissingTable('listing_external_links')
       return new Map()
@@ -5353,9 +5358,9 @@ async function fetchExternalLinkRowsForListings(client, listingIds = []) {
   return map
 }
 
-async function fetchPublicationRowsForListings(client, listingIds = []) {
+async function fetchPublicationRowsForListings(client, listingIds = [], { strict = false } = {}) {
   const ids = normalizeUuidList(listingIds)
-  if (!ids.length || hasMissingTableCache('listing_publication_data')) return new Map()
+  if (!ids.length || (!strict && hasMissingTableCache('listing_publication_data'))) return new Map()
   let query = await client
     .from('listing_publication_data')
     .select('listing_id, title, address, suburb, province, property_type, listing_type, asking_price, bedrooms, bathrooms, garages, parking_bays, floor_size, erf_size, rates_taxes, levies, description, features, amenities, status, created_at, updated_at')
@@ -5367,6 +5372,7 @@ async function fetchPublicationRowsForListings(client, listingIds = []) {
       .in('listing_id', ids)
   }
   if (query.error) {
+    if (strict) throw query.error
     if (isMissingTableError(query.error, 'listing_publication_data') || isMissingColumnError(query.error)) {
       rememberMissingTable('listing_publication_data')
       return new Map()
@@ -6031,6 +6037,29 @@ export async function savePrivateListingSellerCanonicalUpdate(update = {}, optio
   }
 }
 
+export async function saveRentalListingSnapshot(listingId, payload, { client = null } = {}) {
+  const activeClient = client || requireClient()
+  const rpc = payload.galleryOnly ? 'save_rental_listing_gallery' : 'save_rental_listing_media_snapshot'
+  const args = {
+    p_listing_id: listingId,
+    p_expected_updated_at: payload.expectedUpdatedAt,
+    p_gallery: payload.galleryImages,
+    p_cover_index: payload.galleryImages.length ? payload.coverIndex : null,
+  }
+  if (!payload.galleryOnly) Object.assign(args, { p_listing_patch: payload.listingPatch, p_publication: payload.publicationData, p_media_edits: payload.mediaEdits || [] })
+  const { data, error } = await activeClient.rpc(rpc, args)
+  if (error) {
+    if (isMissingRpcError(error, rpc)) {
+      throw new Error('Safe rental media saving is not available in this environment yet. Apply the rental listing persistence and media controls migrations before saving.')
+    }
+    throw error
+  }
+  if (data?.listingId !== listingId || !data?.updatedAt || (!payload.galleryOnly && !data?.publication) || !Array.isArray(data?.media) || !Array.isArray(data?.externalLinks)) {
+    throw new Error('Rental save returned no confirmation. Reload before retrying; the save may have completed.')
+  }
+  return data
+}
+
 export async function syncPrivateListingDistributionData(listingId, payload = {}) {
   const client = requireClient()
   const normalizedId = normalizeUuid(listingId)
@@ -6219,7 +6248,7 @@ export async function getPrivateListing(listingId, options = {}) {
   return getPrivateListingById(listingId, options)
 }
 
-async function getPrivateListingById(listingId, { includeRequirementsAndDocuments = true } = {}) {
+async function getPrivateListingById(listingId, { includeRequirementsAndDocuments = true, requireDistributionData = false } = {}) {
   const client = requireClient()
   const normalizedId = normalizeUuid(listingId)
   if (!normalizedId) throw new Error('Listing id is required.')
@@ -6233,10 +6262,10 @@ async function getPrivateListingById(listingId, { includeRequirementsAndDocument
     fetchOnboardingRowsForListings(client, [query.data.id]),
     includeRequirementsAndDocuments ? fetchRequirementRowsForListings(client, [query.data.id]) : Promise.resolve(new Map()),
     includeRequirementsAndDocuments ? fetchDocumentRowsForListings(client, [query.data.id]) : Promise.resolve(new Map()),
-    fetchExternalLinkRowsForListings(client, [query.data.id]),
-    fetchPublicationRowsForListings(client, [query.data.id]),
+    fetchExternalLinkRowsForListings(client, [query.data.id], { strict: requireDistributionData }),
+    fetchPublicationRowsForListings(client, [query.data.id], { strict: requireDistributionData }),
     includeRequirementsAndDocuments ? fetchMandatePacketRowsForListings(client, [query.data]) : Promise.resolve(new Map()),
-    fetchMediaRowsForListings(client, [query.data.id]),
+    fetchMediaRowsForListings(client, [query.data.id], { strict: requireDistributionData }),
     fetchAssignedAgentProfilesForListings(client, [query.data]),
   ])
   const listing = mapPrivateListingRow(query.data, onboardingMap, requirementsMap, documentsMap, externalLinksMap, publicationMap, mandatePacketsMap, assignedAgentsMap)
@@ -6384,6 +6413,8 @@ export async function getAgentPrivateListings(
     includeMedia = false,
     includeArchivedImports = false,
     includeArchivedListings = false,
+    includeWithdrawnListings = false,
+    requireAvailable = false,
   } = {},
 ) {
   const client = requireClient()
@@ -6394,7 +6425,7 @@ export async function getAgentPrivateListings(
   if (!includeAllOrganisationListings && !normalizedAgentIds.length) return []
 
   const buildQuery = ({ includeBranchFilter = true } = {}) => {
-    const queryBuilder = applyVisiblePrivateListingFilters(client.from('private_listings').select('*'), { includeArchivedImports, includeArchivedListings })
+    const queryBuilder = applyVisiblePrivateListingFilters(client.from('private_listings').select('*', requireAvailable ? { count: 'exact' } : {}), { includeArchivedImports, includeArchivedListings, includeWithdrawnListings })
 
     if (normalizedOrgId) {
       queryBuilder.eq('organisation_id', normalizedOrgId)
@@ -6415,24 +6446,28 @@ export async function getAgentPrivateListings(
 
   let query = await buildQuery({ includeBranchFilter: true })
   if (query.error && normalizedBranchId && isMissingColumnError(query.error, 'branch_id')) {
+    if (requireAvailable) throw query.error
     if (includeAllOrganisationListings) return []
     query = await buildQuery({ includeBranchFilter: false })
   }
   if (query.error) {
-    if (isMissingTableError(query.error, 'private_listings')) return []
+    if (!requireAvailable && isMissingTableError(query.error, 'private_listings')) return []
     throw query.error
   }
-  const rows = (Array.isArray(query.data) ? query.data : []).filter((row) => isVisiblePrivateListingRow(row, { includeArchivedImports, includeArchivedListings }))
+  if (requireAvailable && (typeof query.count !== 'number' || query.count > (query.data || []).length)) {
+    throw new Error('The stock review could not read all accessible records. Narrow the workspace scope before reviewing again.')
+  }
+  const rows = (Array.isArray(query.data) ? query.data : []).filter((row) => isVisiblePrivateListingRow(row, { includeArchivedImports, includeArchivedListings, includeWithdrawnListings }))
   const listingIds = rows.map((row) => row.id)
   const [onboardingMap, requirementsMap, documentsMap, externalLinksMap, publicationMap, mandatePacketsMap, assignedAgentsMap, mediaMap] = await Promise.all([
     fetchOnboardingRowsForListings(client, listingIds),
     fetchRequirementRowsForListings(client, listingIds),
     fetchDocumentRowsForListings(client, listingIds),
-    fetchExternalLinkRowsForListings(client, listingIds),
-    fetchPublicationRowsForListings(client, listingIds),
+    fetchExternalLinkRowsForListings(client, listingIds, { strict: requireAvailable }),
+    fetchPublicationRowsForListings(client, listingIds, { strict: requireAvailable }),
     fetchMandatePacketRowsForListings(client, rows),
     fetchAssignedAgentProfilesForListings(client, rows),
-    includeMedia ? fetchMediaRowsForListings(client, listingIds) : Promise.resolve(new Map()),
+    includeMedia ? fetchMediaRowsForListings(client, listingIds, { strict: requireAvailable }) : Promise.resolve(new Map()),
   ])
   return rows
     .map((row) => {

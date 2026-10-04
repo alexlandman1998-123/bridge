@@ -7,6 +7,7 @@ import {
   Plus,
 } from 'lucide-react'
 import { useLocation, useNavigate } from 'react-router-dom'
+import RentalStockReviewPanel from './RentalStockReviewPanel'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import FinalListingModuleOverview from '../../components/listings/FinalListingModuleOverview'
 import { buildFinalListingModuleOverview } from '../../services/listings/finalListingModuleModel'
@@ -231,6 +232,12 @@ export default function RentalListingsPage() {
             {successMessage}
           </p>
         ) : null}
+
+        <RentalStockReviewPanel
+          key={`${organisationId}:${assignedAgentId}:${rentalScope.listingBranchId}:${rentalScope.includeAllOrganisationListings}`}
+          scope={rentalScope}
+          onOpen={(id) => navigate(`/agent/rentals/listings/${encodeURIComponent(id)}/marketing`)}
+        />
 
         <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
           <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">

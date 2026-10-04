@@ -3,10 +3,9 @@ import {
   createPrivateListingActivity,
   getAgentPrivateListings,
   getPrivateListing,
-  syncPrivateListingDistributionData,
+  saveRentalListingSnapshot,
   signPrivateListingMediaAsset,
   uploadPrivateListingMediaAsset,
-  updatePrivateListing,
 } from '../privateListingService'
 import {
   buildRentalPrivateListingPayload,
@@ -22,6 +21,7 @@ import {
   buildRentalProperty24PublishRequest,
 } from './rentalListingProperty24PublishModel'
 import { isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
+import { buildRentalMediaEdits } from './rentalListingMediaModel'
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -128,22 +128,77 @@ function buildRentalListingMediaPayload(form = {}, uploadedGalleryImages = []) {
   }
 }
 
-async function saveRentalListingMedia(listingId, form, publicationData, context) {
+function stableJson(value) {
+  if (Array.isArray(value)) return JSON.stringify(value.map((item) => JSON.parse(stableJson(item))))
+  if (value && typeof value === 'object') {
+    return JSON.stringify(Object.fromEntries(Object.keys(value).sort().map((key) => [key, JSON.parse(stableJson(value[key]))])))
+  }
+  return JSON.stringify(value ?? null)
+}
+
+function mediaSnapshot(rows = []) {
+  return rows.map((row) => ({ id: row.id, type: row.media_type, url: row.file_url, caption: row.caption || '', order: row.sort_order, cover: Boolean(row.is_cover) }))
+    .sort((left, right) => String(left.id).localeCompare(String(right.id)))
+}
+
+function linkSnapshot(rows = []) {
+  return rows.map((row) => ({ id: row.id, platform: row.platform, url: row.url, status: row.status,
+    published: row.publishedAt || row.published_at || '', checked: row.lastCheckedAt || row.last_checked_at || '',
+    notes: row.notes || '', visible: Boolean(row.visibleToSeller ?? row.visible_to_seller) }))
+    .sort((left, right) => String(left.id).localeCompare(String(right.id)))
+}
+
+async function saveRentalListingMedia(listingId, form, publicationData, context, existingListing) {
   let galleryImages = form.galleryImages
+  let receipt = null
   try {
     galleryImages = await uploadRentalGalleryImages(galleryImages, listingId, context)
     context.onUploadProgress?.({ completed: galleryImages.length, total: galleryImages.length, phase: 'saving' })
-    const result = await syncPrivateListingDistributionData(listingId, {
+    const media = buildRentalListingMediaPayload(form, galleryImages)
+    const coverIndex = galleryImages.findIndex((image) => image.id === media.coverImageId)
+    const listingPatch = buildRentalListingUpdatePayload(form, existingListing)
+    const mediaEdits = context.galleryOnly ? [] : buildRentalMediaEdits(form, existingListing)
+    receipt = await saveRentalListingSnapshot(listingId, {
+      expectedUpdatedAt: form.expectedUpdatedAt || existingListing.updatedAt || existingListing.updated_at,
+      listingPatch,
       publicationData,
-      media: buildRentalListingMediaPayload(form, galleryImages),
-      externalLinks: [],
+      galleryImages,
+      coverIndex,
+      mediaEdits,
+      galleryOnly: context.galleryOnly === true,
     })
-    if (result?.skipped) throw new Error('Rental marketing storage is unavailable. Retry saving after the listing distribution tables are restored.')
-    return result
+    const savedPhotos = receipt.media.filter((row) => row.media_type === 'image').sort((left, right) => left.sort_order - right.sort_order)
+    for (const edit of mediaEdits) {
+      const saved = receipt.media.find((row) => edit.id ? row.id === edit.id : row.media_type === edit.type && row.file_url === edit.url)
+      if ((edit.url && (!saved || saved.media_type !== edit.type || saved.file_url !== edit.url)) || (!edit.url && edit.id && saved)) {
+        throw new Error('The saved video or virtual tour does not match your changes. Reload before retrying.')
+      }
+    }
+    if (savedPhotos.length !== galleryImages.length || savedPhotos.some((row, index) => row.file_url !== galleryImages[index].url || row.is_cover !== (index === coverIndex))) {
+      throw new Error('The saved gallery does not match the selected photos and cover. Reload before retrying.')
+    }
+    const listing = await getPrivateListing(listingId, { includeRequirementsAndDocuments: false, requireDistributionData: true })
+    const publication = listing?.listingPublicationData
+    const publicationFields = { title: 'title', address: 'address', suburb: 'suburb', province: 'province', propertyType: 'property_type',
+      listingType: 'listing_type', askingPrice: 'asking_price', bedrooms: 'bedrooms', bathrooms: 'bathrooms', garages: 'garages',
+      parkingBays: 'parking_bays', floorSize: 'floor_size', erfSize: 'erf_size', description: 'description', features: 'features', amenities: 'amenities', status: 'status' }
+    const publicationMatches = context.galleryOnly || (publication && receipt.publication && Object.entries(publicationFields).every(([field, column]) =>
+      stableJson(publication[field]) === stableJson(receipt.publication[column])))
+    if (!listing || listing.id !== listingId || new Date(listing.updatedAt).getTime() !== new Date(receipt.updatedAt).getTime()
+      || (!context.galleryOnly && stableJson(receipt.facts) !== stableJson(listingPatch.sellerCanonicalFacts))
+      || stableJson(listing.sellerCanonicalFacts) !== stableJson(receipt.facts)
+      || (!context.galleryOnly && !publicationMatches)
+      || stableJson(mediaSnapshot(listing.listingMedia)) !== stableJson(mediaSnapshot(receipt.media))
+      || stableJson(linkSnapshot(listing.listingExternalLinks)) !== stableJson(linkSnapshot(receipt.externalLinks))) {
+      throw new Error('The refreshed rental does not match the saved details. Reload before retrying.')
+    }
+    return { skipped: false, listing, publication: receipt.publication, mediaCount: receipt.media.length, externalLinkCount: receipt.externalLinks.length }
   } catch (error) {
-    const saveError = new Error(`Rental draft ${listingId} is saved, but its marketing save is incomplete. ${error?.message || 'Please retry saving.'}`)
+    const saveError = new Error(`Rental ${listingId} save is not confirmed. ${error?.message || 'Reload before retrying; the save may have completed.'}`)
     saveError.listingId = listingId
     saveError.galleryImages = error.galleryImages || galleryImages
+    saveError.committed = Boolean(receipt)
+    saveError.code = receipt ? 'RENTAL_SAVE_READBACK_FAILED' : error.code || 'RENTAL_SAVE_UNCONFIRMED'
     saveError.cause = error
     throw saveError
   }
@@ -238,7 +293,7 @@ export async function createRentalListingDraft(form = {}, context = {}) {
   if (!listingId) throw new Error('Unable to create the rental listing draft.')
   context.onListingCreated?.(listingId)
   const publicationData = buildRentalPublicationDraft(form)
-  const publicationResult = await saveRentalListingMedia(listingId, form, publicationData, context)
+  const publicationResult = await saveRentalListingMedia(listingId, form, publicationData, context, created.listing)
 
   void createPrivateListingActivity({
     privateListingId: listingId,
@@ -255,7 +310,7 @@ export async function createRentalListingDraft(form = {}, context = {}) {
   }).catch(() => null)
 
   return {
-    listing: created.listing,
+    listing: publicationResult.listing,
     existing: created.existing === true,
     publicationResult,
     activity: null,
@@ -272,16 +327,12 @@ export async function updateRentalListingDraft(listingId, form = {}, context = {
 
   const existingListing = await getPrivateListing(listingId, { includeRequirementsAndDocuments: false })
   if (!existingListing || !isRentalListingRecord(existingListing)) throw new Error('Rental listing not found. Reload before saving changes.')
-  const listingPayload = buildRentalListingUpdatePayload(form, existingListing)
-  const listing = await updatePrivateListing(listingId, listingPayload, {
-    includeRequirementsAndDocuments: false,
-  })
 
   const publicationData = {
     ...buildRentalListingEditPublicationDraft(form),
     ...(normalizeText(context.publicationStatus) ? { status: normalizeText(context.publicationStatus) } : {}),
   }
-  const publicationResult = await saveRentalListingMedia(listingId, form, publicationData, context)
+  const publicationResult = await saveRentalListingMedia(listingId, form, publicationData, context, existingListing)
 
   void createPrivateListingActivity({
     privateListingId: listingId,
@@ -298,10 +349,19 @@ export async function updateRentalListingDraft(listingId, form = {}, context = {
   }).catch(() => null)
 
   return {
-    listing,
+    listing: publicationResult.listing,
     publicationResult,
     activity: null,
   }
+}
+
+// Photo controls must also work on older rentals with incomplete capture fields.
+// The gallery RPC changes no listing facts or publication details.
+export async function updateRentalListingGallery(listingId, form, context = {}) {
+  const existingListing = await getPrivateListing(listingId, { includeRequirementsAndDocuments: false })
+  if (!existingListing || !isRentalListingRecord(existingListing)) throw new Error('Rental listing not found. Reload before saving photos.')
+  const result = await saveRentalListingMedia(listingId, form, null, { ...context, galleryOnly: true }, existingListing)
+  return { listing: result.listing, publicationResult: result }
 }
 
 export async function prepareRentalProperty24PublishRequest(listingId, context = {}) {

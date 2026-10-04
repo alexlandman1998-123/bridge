@@ -13,6 +13,7 @@ import {
   normalizeRentalDistributionChannels,
   RENTAL_DISTRIBUTION_CHANNELS,
 } from './rentalListingDraftModel.js'
+import { buildRentalMediaProgress } from './rentalListingMediaModel.js'
 
 export const RENTAL_LISTING_DETAIL_VERSION = 'arch9_rental_listing_detail_v1'
 
@@ -126,6 +127,7 @@ export function buildRentalListingDetailView(listing = {}) {
     row,
     tabs: getRentalListingDetailTabs(row.id),
     readinessItems,
+    mediaProgress: buildRentalMediaProgress(listing),
     property24Readiness,
     completedReadinessCount,
     totalReadinessCount: readinessItems.length,

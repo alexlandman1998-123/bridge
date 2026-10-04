@@ -1,6 +1,7 @@
 import './listing-channel-table.css'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { CalendarDays, CheckCircle2, ExternalLink, Globe2, Loader2, RefreshCw, Send, SlidersHorizontal } from 'lucide-react'
+import { CalendarDays, CheckCircle2, ExternalLink, Globe2, Loader2, RefreshCw, Send, SlidersHorizontal, X } from 'lucide-react'
+import ListingWebsiteConnectionState from './ListingWebsiteConnectionState'
 import Button from '../ui/Button'
 import Modal from '../ui/Modal'
 import { getWebsiteListingPublicationStatus, setWebsiteListingPublication } from '../../services/websiteListingPublicationService'
@@ -21,7 +22,7 @@ const INFRASTRUCTURE_BLOCKERS = [
   'Activate a website domain',
 ]
 
-export default function WebsiteListingPublicationPanel({ listingId, listingTitle, listingReference = '', preparationBlockers = [], onPrepare, onStatusChange, onPublicationAction, publicationState = null, onReviewChanges, savedAt = '', variant = 'panel' }) {
+export default function WebsiteListingPublicationPanel({ listingId, listingTitle, listingReference = '', preparationBlockers = [], onPrepare, onStatusChange, onPublicationAction, publicationState = null, onReviewChanges, savedAt = '', variant = 'panel', showConnectionState = false }) {
   const [publication, setPublication] = useState(null)
   const [loading, setLoading] = useState(true)
   const [action, setAction] = useState('')
@@ -68,6 +69,7 @@ export default function WebsiteListingPublicationPanel({ listingId, listingTitle
     setNotice('')
     let prepared = null
     let publicationTracked = false
+    let accepted = false
     try {
       if (nextAction !== 'unpublish') {
         prepared = await onPrepare?.()
@@ -76,6 +78,9 @@ export default function WebsiteListingPublicationPanel({ listingId, listingTitle
         publicationTracked = true
       }
       const nextPublication = await setWebsiteListingPublication(listingId, nextAction)
+      if (nextPublication?.status !== (nextAction === 'unpublish' ? 'unpublished' : 'published')) throw new Error('Website publication status could not be confirmed. Refresh status before retrying.')
+      accepted = true
+      setPublication(nextPublication)
       if (nextAction !== 'unpublish') {
         const nextPublicUrl = nextPublication?.hostname
           ? normalizeListingChannelPublicUrl(`https://${nextPublication.hostname}/properties/${propertySlug(listingTitle, listingId)}`)
@@ -88,13 +93,14 @@ export default function WebsiteListingPublicationPanel({ listingId, listingTitle
         })
       }
       setPublication(nextPublication)
+      if (nextAction === 'unpublish') await onPublicationAction?.({ stage: 'withdrawn', action: nextAction, publication: nextPublication })
       setNotice(nextAction === 'unpublish'
         ? 'Listing removed from the agency website.'
         : nextAction === 'update'
           ? 'Agency website listing updated from the current CRM details.'
           : 'Listing published to the agency website.')
     } catch (actionError) {
-      if (publicationTracked) {
+      if (publicationTracked && !accepted) {
         try {
           await onPublicationAction?.({
             stage: 'failed',
@@ -106,7 +112,10 @@ export default function WebsiteListingPublicationPanel({ listingId, listingTitle
           // Preserve the original publication failure in the interface.
         }
       }
-      setError(actionError?.message || 'The agency website publication could not be changed.')
+      if (nextAction === 'unpublish' && !accepted) {
+        try { await onPublicationAction?.({ stage: 'withdrawal_failed', action: nextAction, publication: { error: actionError.message } }) } catch { /* Preserve the original failure. */ }
+      }
+      setError(accepted ? 'The website accepted the request, but publication history could not be saved. Refresh status before retrying.' : actionError?.message || 'The agency website publication could not be changed.')
     } finally {
       setAction('')
     }
@@ -137,7 +146,9 @@ export default function WebsiteListingPublicationPanel({ listingId, listingTitle
   if (variant === 'channel') {
     // A website channel only makes sense after the organisation has a live site
     // with an active domain. Avoid showing a disabled, misleading channel row.
-    if (!hasConnectedWebsite) return null
+    if (!hasConnectedWebsite) return showConnectionState
+      ? <ListingWebsiteConnectionState name="Agency Website" loading={loading} error={error} detail={readinessBlockers.join(' ') || 'No agency website with an active domain is connected to this organisation.'} onRetry={() => void load()} />
+      : null
 
     return (
       <>
@@ -177,6 +188,8 @@ export default function WebsiteListingPublicationPanel({ listingId, listingTitle
               {publicationState?.acceptedAt ? <p><span >Accepted</span> · {new Date(publicationState.acceptedAt).toLocaleString()}</p> : null}
               {publicationState?.verifiedAt ? <p><span >Verified</span> · {new Date(publicationState.verifiedAt).toLocaleString()}</p> : null}
               {publicationState?.withdrawnAt ? <p><span >Withdrawn</span> · {new Date(publicationState.withdrawnAt).toLocaleString()}</p> : null}
+              {publicationState?.failedAt ? <p><span >Failed</span> · {new Date(publicationState.failedAt).toLocaleString()}</p> : null}
+              {publication?.publishedAt ? <p><span >Published</span> · {new Date(publication.publishedAt).toLocaleString()}</p> : null}
               {!savedAt && !publicationState?.submittedAt && publication?.updatedAt ? <p><span >Last updated</span> · {new Date(publication.updatedAt).toLocaleDateString()}</p> : null}
             </div>
           </div>
