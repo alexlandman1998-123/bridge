@@ -1859,6 +1859,22 @@ Focused checks: `node --test src/services/listings/__tests__/listingPhotoStorage
 src/services/__tests__/privateListingService.coverImages.test.js`, the existing
 rental persistence SQL check, and `rentalListingSave.test.js`.
 
+
+### Rental listing save integrity
+
+Rental listing cards have a three-dot menu for withdrawal and permanent deletion.
+Withdraw listing opens Marketing, where agents use the existing portal and website
+withdrawal controls. Delete checks current channel status and stays blocked while
+an advert is live, pending or unconfirmed. Withdrawn cards remain visible so agents
+can delete them after removal is confirmed. Confirmation rechecks status, and the
+card disappears only after the shared server deletion and readback succeed.
+
+Release the shared `20261005075454_listing_deletion_withdrawal_guard.sql` migration
+before the primary app update. It also protects sales deletion while retaining
+ownership and linked-workflow checks. Local verification:
+`node --test scripts/private-listing-deletion.test.mjs` and the Vitest
+`RentalListingsPage.actions` / `rentalListingDeletionService` tests.
+
 Rental edits now save listing facts, publication details and gallery changes in one
 transaction. Photo edits retain existing video, tour, floor-plan and external-link
 records, as well as IDs for retained photos. P24 expiry is saved separately in

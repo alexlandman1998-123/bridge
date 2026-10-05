@@ -15,6 +15,19 @@ function toDate(value) {
   return Number.isNaN(parsed.getTime()) ? null : parsed
 }
 
+function appointmentStartIso(row = {}) {
+  let raw = row.dateTime || row.date_time || row.scheduledAt || row.scheduled_at || ''
+  const clock = row.startTime || row.start_time || ''
+  const date = row.appointmentDate || row.appointment_date || row.date || ''
+  if (!raw && /^\d{4}-\d{2}-\d{2}T/.test(clock)) raw = clock
+  if (!raw && /^\d{4}-\d{2}-\d{2}$/.test(date) && /^\d{2}:\d{2}/.test(clock)) raw = `${date}T${clock}`
+  if (!/^\d{4}-\d{2}-\d{2}T/.test(raw)) return null
+  if (!/(?:Z|[+-]\d{2}:?\d{2})$/i.test(raw)) raw += '+02:00'
+  const parsed = new Date(raw)
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString()
+}
+
+
 function startOfDay(value) { return sastDayStart(value) }
 function endOfDay(value) { return new Date(addCalendarDays(sastDayStart(value), 1).getTime()-1) }
 function addDays(value, amount) { return addCalendarDays(value, amount) }
