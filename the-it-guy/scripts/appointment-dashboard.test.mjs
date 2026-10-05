@@ -99,4 +99,30 @@ assert.equal(getAppointmentStatusPresentation('alternative_requested').label, 'R
   assert.equal(data.appointments[0].clientName, 'Alex Manvandieland')
 }
 
+// A lead/listing booking must remain visible when the agent created it or is
+// attending it, even when another agent owns the appointment.
+const sharedBookings = [
+  { ...appointments[0], appointmentId: 'participant-booking', assignedAgentId: 'other-agent', leadId: 'lead-1', listingId: 'listing-1', participants: [{ userId: 'agent-1', participantRole: 'agent' }] },
+  { ...appointments[0], appointmentId: 'creator-booking', assignedAgentId: 'other-agent', createdBy: 'agent-1', participants: [] },
+  { ...appointments[0], appointmentId: 'email-booking', assignedAgentId: 'other-agent', participants: [{ email: 'AGENT@EXAMPLE.COM', participantRole: 'agent' }] },
+  { ...appointments[0], appointmentId: 'unrelated-booking', assignedAgentId: 'other-agent', participants: [] },
+]
+const agentBookings = await getAppointmentDashboardData({ module: 'agent', appointments: sharedBookings, userId: 'agent-1', userEmail: 'agent@example.com', now })
+assert.deepEqual(agentBookings.appointments.map((row) => row.id), ['participant-booking', 'creator-booking', 'email-booking'])
+for (const scope of [{ module: 'lead', leadId: 'lead-1' }, { module: 'default', listingId: 'listing-1' }]) {
+  const scoped = await getAppointmentDashboardData({ ...scope, appointments: sharedBookings, now })
+  assert.deepEqual(scoped.appointments.map((row) => row.id), ['participant-booking'])
+}
+const splitDateBookings = await getAppointmentDashboardData({
+  appointments: [
+    { appointmentId: 'later', status: 'confirmed', date: '2026-06-13', startTime: '10:00' },
+    { appointmentId: 'today', status: 'confirmed', appointment_date: '2026-06-12', start_time: '14:00' },
+  ], now,
+})
+assert.equal(splitDateBookings.counts.upcoming, 2)
+assert.equal(splitDateBookings.calendarStrip.appointmentsToday, 1)
+assert.equal(splitDateBookings.nextAppointment.id, 'today')
+assert.equal(splitDateBookings.nextAppointment.dateTime, '2026-06-12T12:00:00.000Z')
+assert.equal(splitDateBookings.groups.find((group) => group.label === 'Today').appointments.length, 1)
+assert.equal(splitDateBookings.groups.find((group) => group.label === 'Tomorrow').appointments.length, 1)
 console.log('appointment dashboard tests passed')

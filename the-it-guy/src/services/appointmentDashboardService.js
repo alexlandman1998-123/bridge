@@ -14,6 +14,19 @@ function toDate(value) {
   return Number.isNaN(parsed.getTime()) ? null : parsed
 }
 
+function appointmentStartIso(row = {}) {
+  let raw = row.dateTime || row.date_time || row.scheduledAt || row.scheduled_at || ''
+  const clock = row.startTime || row.start_time || ''
+  const date = row.appointmentDate || row.appointment_date || row.date || ''
+  if (!raw && /^\d{4}-\d{2}-\d{2}T/.test(clock)) raw = clock
+  if (!raw && /^\d{4}-\d{2}-\d{2}$/.test(date) && /^\d{2}:\d{2}/.test(clock)) raw = `${date}T${clock}`
+  if (!/^\d{4}-\d{2}-\d{2}T/.test(raw)) return null
+  if (!/(?:Z|[+-]\d{2}:?\d{2})$/i.test(raw)) raw += '+02:00'
+  const parsed = new Date(raw)
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString()
+}
+
+
 function startOfDay(value) {
   const date = new Date(value)
   date.setHours(0, 0, 0, 0)
@@ -264,13 +277,14 @@ function isOverdueAppointment(appointment = {}, now = new Date()) {
 function appointmentMatchesAgent(appointment = {}, { userId = '', userEmail = '' } = {}) {
   const normalizedUserId = normalizeText(userId)
   const normalizedUserEmail = normalizeText(userEmail).toLowerCase()
-  const appointmentAgentId = normalizeText(appointment?.assignedAgentId || appointment?.agentId)
-  const appointmentAgentEmail = normalizeText(appointment?.assignedAgentEmail || appointment?.agentEmail).toLowerCase()
-  const createdBy = normalizeText(appointment?.createdBy).toLowerCase()
-  return (
-    (normalizedUserId && appointmentAgentId === normalizedUserId) ||
-    (normalizedUserEmail && (appointmentAgentEmail === normalizedUserEmail || createdBy === normalizedUserEmail))
-  )
+  const userKeys = new Set([normalizedUserId, normalizedUserEmail].map((value) => value.toLowerCase()).filter(Boolean))
+  const appointmentKeys = [
+    appointment?.assignedAgentId || appointment?.agentId,
+    appointment?.assignedAgentEmail || appointment?.agentEmail,
+    appointment?.createdBy,
+    ...extractParticipants(appointment).flatMap((participant) => [participant?.userId, participant?.email]),
+  ].map((value) => normalizeText(value).toLowerCase()).filter(Boolean)
+  return appointmentKeys.some((key) => userKeys.has(key))
 }
 
 function appointmentMatchesLeadScope(appointment = {}, leadId = '') {
@@ -411,9 +425,10 @@ function normalizeDashboardAppointment(appointment = {}, params = {}) {
     customTypeLabel: appointment?.customTypeLabel,
   })
   const status = getAppointmentStatusPresentation(appointment?.status)
-  const dateTime = appointment?.dateTime || appointment?.date_time || null
+  const dateTime = appointmentStartIso(appointment)
   return {
     ...appointment,
+    dateTime,
     id: normalizeText(appointment?.appointmentId || appointment?.id),
     typeLabel,
     typeIconKey: getTypeIconKey(appointment?.appointmentType, module),
@@ -427,7 +442,7 @@ function normalizeDashboardAppointment(appointment = {}, params = {}) {
     timeLabel: getTimeLabel(dateTime),
     dateAnchorLabel: getDateAnchorLabel(dateTime, now),
     countdownLabel: getCountdownLabel(dateTime, now),
-    isOverdue: isOverdueAppointment(appointment, now),
+    isOverdue: isOverdueAppointment({ ...appointment, dateTime }, now),
     isUrgent: isUrgent(dateTime, now),
   }
 }
@@ -452,7 +467,8 @@ export async function getAppointmentDashboardData(params = {}) {
   const now = params.now instanceof Date ? params.now : new Date()
   const module = normalizeKey(params.module) || 'default'
   const rows = await loadRows(params)
-  const scopedRows = sortAppointments(scopeAppointmentRows(rows, { ...params, module }))
+  const datedRows = rows.map((appointment) => ({ ...appointment, dateTime: appointmentStartIso(appointment) }))
+  const scopedRows = sortAppointments(scopeAppointmentRows(datedRows, { ...params, module }))
   const normalizedAppointments = scopedRows.map((appointment) => normalizeDashboardAppointment(appointment, { ...params, module, now }))
   const todayAppointments = normalizedAppointments.filter((appointment) => {
     const date = toDate(appointment?.dateTime)
