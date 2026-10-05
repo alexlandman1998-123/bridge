@@ -987,6 +987,8 @@ No phase 5 migration is required.
 
 ### Portal lead delivery
 
+Property24 also verifies unmatched historical adverts against per-agency Sale and Rental statistics. Only an explicit matching agency can admit an unlinked enquiry; foreign, conflicting, or unavailable ownership records remain pending, preserving the recovery checkpoint. The CRM enquiry payload retains the advert number, listing type and verification source for follow-up.
+
 The scheduled Property24 import discovers all enabled accounts in its own
 environment, reads each account’s encrypted credentials and keeps an independent
 agency checkpoint. New accounts recover the latest 30 days of published listing

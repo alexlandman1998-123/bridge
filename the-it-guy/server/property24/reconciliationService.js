@@ -595,17 +595,57 @@ export async function createProperty24LeadImportPlan({
       listingNumber: Number(sync.listing_number),
     })))
   }
+  // The account-wide feed also includes expired adverts absent from local
+  // stock. Statistics identify their agency explicitly; account access alone
+  // is not ownership proof because vendor credentials can cover a group.
+  const historicalOwnership = new Map()
+  const ownershipChecks = []
+  const unlinkedNumbers = new Set(rawLeads.filter((lead) => !listingMap.has(extractLeadListingNumber(lead)))
+    .map(extractLeadListingNumber).filter(Boolean))
+  if (unlinkedNumbers.size && agencyId && normalizeProperty24Text(config.organisationId) && property24.fetchAgencyListingStatistics) {
+    const checks = await Promise.allSettled(['Sale', 'Rental'].map(async (listingType) => ({
+      listingType,
+      result: await property24.fetchAgencyListingStatistics({
+        agencyIds: [Number(agencyId)], listingType,
+        startDate: new Date(now.getTime() - 31 * DAY_MS).toISOString().slice(0, 10),
+        endDate: new Date(now.getTime() + DAY_MS).toISOString().slice(0, 10),
+      }),
+    })))
+    for (const check of checks) {
+      if (check.status === 'rejected') {
+        ownershipChecks.push({ status: 'failed' })
+        continue
+      }
+      const { listingType, result: statistics } = check.value
+      ownershipChecks.push({ listingType, httpStatus: statistics.status })
+      if (statistics.status !== 200) continue
+      for (const row of asArray(statistics.data)) {
+        const listingNumber = extractLeadListingNumber(row)
+        if (!unlinkedNumbers.has(listingNumber)) continue
+        const remoteAgencyId = normalizeProperty24Text(row.agencyId || row.AgencyId)
+        const previous = historicalOwnership.get(listingNumber)
+        historicalOwnership.set(listingNumber, {
+          agencyId: remoteAgencyId, listingType,
+          ambiguous: previous?.ambiguous || Boolean(previous && previous.agencyId !== remoteAgencyId),
+        })
+      }
+    }
+  }
   const leads = rawLeads.filter((lead) => {
     const remoteAgencyId = normalizeProperty24Text(lead.agencyId || lead.AgencyId)
     return !remoteAgencyId || !config.agencyId || remoteAgencyId === String(config.agencyId)
   }).map((lead) => {
     const normalized = normalizeProperty24LeadForImport(lead, listingMap)
-    // A group credential may see multiple agencies. An unlinked advert can
-    // only inherit ownership when the provider explicitly names this agency.
+    // Both a lead's explicit agency and historical statistics can establish
+    // ownership. An unresolved or conflicting advert remains for review.
     const remoteAgencyId = normalizeProperty24Text(lead.agencyId || lead.AgencyId)
-    const organisationId = normalized.organisationId || (remoteAgencyId && remoteAgencyId === String(config.agencyId)
+    const historical = historicalOwnership.get(normalized.listingNumber)
+    const verifiedHistorical = historical && !historical.ambiguous && historical.agencyId === agencyId
+    const organisationId = normalized.organisationId || ((remoteAgencyId && remoteAgencyId === agencyId) || verifiedHistorical
       ? normalizeProperty24Text(config.organisationId) : '') || null
     return { ...normalized, organisationId,
+      ...(verifiedHistorical ? { listingType: historical.listingType,
+        agencyVerification: { agencyId: Number(agencyId), source: 'property24_listing_statistics' } } : {}),
       readyForCrmIngestion: Boolean(organisationId && (normalized.email || normalized.phone || normalized.contactName)) }
   })
   const duplicateKeys = new Set()
@@ -625,6 +665,7 @@ export async function createProperty24LeadImportPlan({
       durationMs: result.durationMs,
       summary: summarizeProperty24LeadPayload(result.data),
       listingChecks,
+      ownershipChecks,
     },
     summary: {
       receivedCount: prepared.length,

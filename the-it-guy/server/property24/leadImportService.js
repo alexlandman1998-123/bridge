@@ -179,6 +179,7 @@ function buildLeadNotes(lead = {}) {
   return [
     lead.message,
     lead.listingNumber ? `Property24 listing number: ${lead.listingNumber}` : '',
+    lead.listingType ? `Property24 enquiry type: ${lead.listingType}` : '',
     lead.receivedAt ? `Received: ${lead.receivedAt}` : '',
     lead.externalReference ? `Property24 reference: ${lead.externalReference}` : '',
   ].map(normalizeText).filter(Boolean).join('\n')
@@ -235,6 +236,8 @@ function buildCrmRows(lead = {}, listing = {}) {
         externalReference: lead.externalReference || null,
         listingNumber: lead.listingNumber || null,
         receivedAt: lead.receivedAt || null,
+        listingType: lead.listingType || null,
+        agencyVerification: lead.agencyVerification || null,
         lead: lead.raw || {},
       },
       notes: notes || null,
