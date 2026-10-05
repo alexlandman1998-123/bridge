@@ -6248,7 +6248,7 @@ export async function getPrivateListing(listingId, options = {}) {
   return getPrivateListingById(listingId, options)
 }
 
-async function getPrivateListingById(listingId, { includeRequirementsAndDocuments = true, requireDistributionData = false } = {}) {
+async function getPrivateListingById(listingId, { includeRequirementsAndDocuments = true, requireDistributionData = false, includePreviousListings = false } = {}) {
   const client = requireClient()
   const normalizedId = normalizeUuid(listingId)
   if (!normalizedId) throw new Error('Listing id is required.')
@@ -6257,7 +6257,11 @@ async function getPrivateListingById(listingId, { includeRequirementsAndDocument
     if (isMissingTableError(query.error, 'private_listings')) return null
     throw query.error
   }
-  if (!query.data || isDeletedPrivateListingRow(query.data)) return null
+  if (!query.data || !isVisiblePrivateListingRow(query.data, {
+    includeArchivedListings: includePreviousListings,
+    includeArchivedImports: includePreviousListings,
+    includeWithdrawnListings: includePreviousListings,
+  })) return null
   const [onboardingMap, requirementsMap, documentsMap, externalLinksMap, publicationMap, mandatePacketsMap, mediaMap, assignedAgentsMap] = await Promise.all([
     fetchOnboardingRowsForListings(client, [query.data.id]),
     includeRequirementsAndDocuments ? fetchRequirementRowsForListings(client, [query.data.id]) : Promise.resolve(new Map()),

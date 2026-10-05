@@ -43,7 +43,7 @@ export const PROPERTY24_LISTING_CATEGORY_MODELS = Object.freeze({
     lifecycle: { Sale: SALE_LIFECYCLE, Rental: RENTAL_LIFECYCLE },
     requiredMeasurements: { 10: ['farmSize'] },
     supportedFeatures: ['waterSupplyOrRights', 'agriculturalUse'],
-    payloadModel: 'agricultural_pending_property24_schema',
+    payloadModel: 'agricultural_v55',
   },
   [PROPERTY24_LISTING_CATEGORIES.LAND]: {
     property24TypeIds: [8],

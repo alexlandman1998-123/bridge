@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, expect, it, vi } from 'vitest'
-import { listRentalListingsForAgent, createRentalListingDraft, updateRentalListingDraft, updateRentalListingGallery, uploadRentalGalleryImages } from '../rentalListingDraftService'
+import { getRentalListingForAgent, listRentalListingsForAgent, createRentalListingDraft, updateRentalListingDraft, updateRentalListingGallery, uploadRentalGalleryImages } from '../rentalListingDraftService'
 import { buildRentalListingEditForm } from '../rentalListingEditModel'
 import { buildRentalListingIndexRow } from '../rentalListingIndexModel'
 
@@ -191,4 +191,15 @@ it('requests previous rental stock within the existing organisation and agent qu
   expect(mocks.listings).toHaveBeenCalledWith('agent-1', expect.objectContaining({ organisationId: context.organisationId, includeArchivedListings: true, includeArchivedImports: true, includeWithdrawnListings: true }))
   await listRentalListingsForAgent('agent-1', { organisationId: context.organisationId })
   expect(mocks.listings.mock.calls[1][1]).toMatchObject({ includeArchivedListings: false, includeArchivedImports: false })
+})
+
+
+it('opens an archived rental directly and requests previous listings for reference lookup', async () => {
+  mocks.get.mockResolvedValueOnce({ id: 'listing-1', listingCategory: 'rental', listingVisibility: 'archived' })
+  expect(await getRentalListingForAgent('listing-1', 'agent-1', context)).toMatchObject({ id: 'listing-1', listingVisibility: 'archived' })
+  expect(mocks.get).toHaveBeenCalledWith('listing-1', expect.objectContaining({ includePreviousListings: true }))
+  mocks.get.mockResolvedValueOnce(null)
+  mocks.listings.mockResolvedValueOnce([{ id: 'historic', listingCategory: 'rental', listingReference: 'OLD-REF', listingVisibility: 'archived' }])
+  expect(await getRentalListingForAgent('OLD-REF', 'agent-1', context)).toMatchObject({ id: 'historic' })
+  expect(mocks.listings).toHaveBeenCalledWith('agent-1', expect.objectContaining({ organisationId: context.organisationId, includeArchivedImports: true, includeArchivedListings: true, includeWithdrawnListings: true }))
 })

@@ -104,4 +104,30 @@ assert.ok(evaluateProperty24CommercialSaleFacts({
   } } } },
 }).blockers.includes('property24_commercial_gross_lettable_area_whole_sqm_required'))
 
+
+for (const listingType of ['Sale', 'Rental']) {
+  const contract = evaluateProperty24ListingCategoryContract({ listing: { property_category: 'agricultural' }, listingType })
+  assert.deepEqual(contract.blockers, [])
+  assert.ok(contract.documentedProperty24Fields.includes('propertyInfo.erf'))
+  for (const propertyType of ['House', 'Farm with house', 'Small Holding', 'Farm Land', 'Game Farm', 10]) {
+    assert.equal(resolveProperty24CategoryPropertyTypeId(propertyType, 'agricultural'), 10)
+    for (const updating of [false, true]) {
+      const farmPlan = createProperty24ListingPlan({
+        listing: { id: 'farm', property_category: 'agricultural', property_type: propertyType, listing_status: 'active', seller_canonical_facts_json: { property: { specialistFacts: { farmSize: 2.5, waterSupplyOrRights: 'Borehole', agriculturalUse: 'Grazing' } } } },
+        publication: { listing_type: listingType, property_type: propertyType, asking_price: 25000, description: 'Farm with a dwelling', rental_price_frequency: 'monthly' },
+        media: updating ? [] : [{ media_type: 'image', bytes: 'test-image' }],
+        agentMapping: { property24AgentId: 77 }, catalogMapping: { suburbId: 309 },
+        existingSync: updating ? { listingNumber: 123456 } : {},
+        options: { agencyId: 39837, environment: 'production', expiryDate: '2027-12-31', photosChanged: !updating },
+      })
+      assert.equal(farmPlan.canSubmit, true, JSON.stringify(farmPlan.dataBlockers))
+      assert.equal(farmPlan.previewPayload.propertyInfo.propertyTypeId, 10)
+      assert.deepEqual(farmPlan.previewPayload.propertyInfo.erf, { size: 25000, areaUnit: 'SquareMetres' })
+      assert.equal(farmPlan.previewPayload.status, updating ? 'Active' : 'NewListing')
+      if (updating) assert.equal(farmPlan.previewPayload.photos, null)
+    }
+  }
+}
+assert.equal(resolveProperty24CategoryPropertyTypeId(11, 'agricultural'), 11)
+
 console.log('Property24 listing category contract passed')

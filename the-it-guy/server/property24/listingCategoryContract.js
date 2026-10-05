@@ -1,4 +1,4 @@
-export const PROPERTY24_LISTING_CATEGORY_CONTRACT_VERSION = 'arch9_property24_listing_category_contract_v3'
+export const PROPERTY24_LISTING_CATEGORY_CONTRACT_VERSION = 'arch9_property24_listing_category_contract_v4'
 
 export const PROPERTY24_LISTING_CATEGORIES = Object.freeze({
   RESIDENTIAL: 'residential',
@@ -63,9 +63,10 @@ export const PROPERTY24_LISTING_CATEGORY_FIELD_MATRIX = Object.freeze({
     requiredArch9FieldsBeforePublish: ['warehouseOrFactoryArea', 'yardSize', 'powerSupply', 'loadingAccess'],
   },
   [PROPERTY24_LISTING_CATEGORIES.AGRICULTURAL]: {
-    publishingStatus: 'blocked_pending_property24_contract',
+    publishingStatus: 'supported',
     transactionTypes: ['Sale', 'Rental'],
     verifiedProperty24Fields: [],
+    documentedProperty24Fields: ['propertyInfo.propertyTypeId', 'propertyInfo.erf', 'propertyInfo.floorArea', 'propertyFeatures', 'rentalInfo.rentalRate'],
     requiredArch9FieldsBeforePublish: ['farmSize', 'waterSupplyOrRights', 'agriculturalUse'],
   },
   [PROPERTY24_LISTING_CATEGORIES.LAND]: {

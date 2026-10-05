@@ -18,7 +18,7 @@ The category contract prevents a specialist listing from silently using resident
 | Residential | supported | supported | supported | Core listing payload, location/type mapping, marketing content/media, residential feature object | None beyond the normal readiness gate |
 | Commercial | supported by local mapper | blocked | submit-ready after normal connection and listing checks | Core listing, Commercial Property type 11, optional `commercialInfo.grossLettableAreaSqm`, parking | Zoning, parking, sale price or terms |
 | Industrial | pending | pending | blocked | None beyond the general Property24 account/catalog operations | Warehouse/factory area, yard size, power supply, loading access |
-| Agricultural | pending | pending | blocked | None beyond the general Property24 account/catalog operations | Farm size, water supply/rights, agricultural use |
+| Agricultural | supported by local mapper | supported by rental adapter | submit-ready after normal connection and listing checks | Farm type 10; documented v55 general property/area/features and rental objects | Farm size, water supply/rights, agricultural use |
 | Land/development | pending | not yet in scope | blocked | None beyond the general Property24 account/catalog operations | Erf size, zoning, development rights |
 
 ## Enforcement
@@ -42,3 +42,5 @@ Local P24 readiness and the backend adapter now treat missing availability, inte
 PP's Agency Feed Service Rev 4.7 marks AvailableFrom and RentalPriceType optional. Rental availability is omitted when unknown rather than filled with today's date. PP still requires a known non-negative deposit amount (including an explicitly captured zero or no-deposit policy), valid agency/agent/address/category data and at least three rental photos. An omitted Arch9 deposit-policy selection is not an extra blocker when the actual deposit amount is known. Internal mandate and marketing status remain recommendations, consistent with the P24 adapter.
 
 Backend account/mapping, supported category/type, future P24 listing expiry, real media, invalid captured portal fields and duplicate submission guards remain in force. These changes prepare payloads locally; acceptance and publication require an explicitly authorised portal submission.
+
+Agricultural mapping evidence (5 October 2026): the [official v55 schema](https://api.property24.com/swagger/v55-listing/docs) provides `Listing.propertyInfo`, `PropertyInfo.erf`/`floorArea`, `Listing.propertyFeatures` and `Listing.rentalInfo`. Farm is type 10 in the saved authenticated catalogue. Arch9 agricultural properties use this category even when their dwelling is recorded as House. The mapper does not override conflicting non-residential types. There has been no live agricultural submission; normal connection, agent, suburb, photos, expiry, price and lifecycle gates remain.

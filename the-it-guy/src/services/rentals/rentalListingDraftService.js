@@ -263,10 +263,11 @@ export async function getRentalListingForAgent(listingId, agentId, options = {})
 
   const directListing = await getPrivateListing(normalizedListingId, {
     includeRequirementsAndDocuments: false,
+    includePreviousListings: true,
   }).catch(() => null)
   if (directListing && isRentalListingRecord(directListing)) return directListing
 
-  const rows = await listRentalListingsForAgent(agentId, options)
+  const rows = await listRentalListingsForAgent(agentId, { ...options, includePreviousListings: true })
   return rows.find((listing) => {
     const identityValues = [
       listing.id,
