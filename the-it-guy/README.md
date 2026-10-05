@@ -995,7 +995,8 @@ Property24’s `messages` response, follows all pages, and replays a recent wind
 with duplicate protection. A failed agency does not stop other accounts.
 
 Private Property lead delivery uses the `private-property-webhook` Edge Function
-and migration `20261005060708_portal_lead_intake_global_fix.sql`. An agency
+and migrations `20261005060708_portal_lead_intake_global_fix.sql` and
+`20261005064727_private_property_lead_channel_correction.sql`. An agency
 principal or group owner must register its HTTPS endpoint in the supplier admin
 portal and obtain the numeric agency ID and signing secret. The executive Admin
 Console’s Private Property section stores these separately from publishing

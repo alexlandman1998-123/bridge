@@ -27,7 +27,8 @@ try {
     create table public.leads(lead_id uuid primary key, organisation_id uuid, contact_id uuid, lead_domain text, assigned_agent_id uuid,
       assigned_user_id uuid, assigned_agent_email text, branch_id uuid, lead_category text, lead_direction text, lead_source text, source_channel text,
       stage text, status text, priority text, listing_id text, enquired_listing_id uuid, enquired_property_title text, source_reference_id text,
-      source_received_at timestamptz, raw_enquiry_payload jsonb, notes text, updated_at timestamptz);
+      source_received_at timestamptz, raw_enquiry_payload jsonb, notes text, updated_at timestamptz,
+      constraint leads_source_channel_check check (source_channel is null or source_channel in ('instagram','facebook','linkedin','website','whatsapp','email','qr','referral','manual','agent_profile','other')));
     create table public.lead_ingestion_logs(log_id uuid primary key, organisation_id uuid, source text, external_reference text,
       payload jsonb, status text, lead_id uuid, contact_id uuid, listing_id uuid, assigned_agent_id uuid, processed_at timestamptz,
       unique(organisation_id, source, external_reference));
@@ -35,8 +36,11 @@ try {
       source text, status text, is_original_enquiry boolean);
   `)
   const migration = await fs.readFile(new URL('../../supabase/migrations/20261005060708_portal_lead_intake_global_fix.sql', import.meta.url), 'utf8')
+  const correction = await fs.readFile(new URL('../../supabase/migrations/20261005064727_private_property_lead_channel_correction.sql', import.meta.url), 'utf8')
   await db.exec(migration)
+  await db.exec(correction)
   await db.exec(migration)
+  await db.exec(correction)
   await db.query(`insert into public.private_property_agency_configs(id,organisation_id,environment,enabled,status,go_live_approved_at)
     values($1,$2,'production',true,'approved',now()),($3,$4,'production',true,'approved',now())`, [config,one,otherConfig,two])
   await db.query('insert into private_listings values($1,$2,$3,$4,$5,$6)', [listing,one,agent,'fixture-agent@example.test',one,'Fixture property'])
@@ -62,6 +66,7 @@ try {
   const rows=(await db.query('select * from leads')).rows
   assert.equal(rows.length,1); assert.equal(rows[0].assigned_agent_id,agent); assert.equal(rows[0].assigned_user_id,agent)
   assert.equal(rows[0].assigned_agent_email,'fixture-agent@example.test'); assert.equal(rows[0].lead_source,'Private Property')
+  assert.equal(rows[0].source_channel,'other')
   assert.equal(rows[0].source_received_at.toISOString(),'2026-10-05T06:00:00.000Z')
   assert.equal((await db.query('select count(*)::int as count from lead_listing_interests')).rows[0].count,1)
   assert.equal((await db.query('select last_name from contacts')).rows[0].last_name,'Buyer Person')
