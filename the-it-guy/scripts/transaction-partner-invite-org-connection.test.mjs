@@ -55,7 +55,8 @@ assertIncludes(service, 'not_active_member', 'service should surface membership 
 
 assertIncludes(page, "import { useWorkspace } from '../context/WorkspaceContext'", 'invite page should read active workspace')
 assertIncludes(page, 'const workspaceId = normalizeText(workspaceContext.currentWorkspace?.id || workspaceContext.workspace?.id)', 'invite page should resolve active workspace id')
-assertIncludes(page, 'organisationId: workspaceId', 'invite page should accept against active workspace')
+assertIncludes(page, 'organisationId: acceptingOrganisation', 'invite page should accept against the eligible organisation choice')
+assertIncludes(page, 'context?.bindingState ? selectedOrganisation : workspaceId', 'legacy roles retain their active workspace path while handoffs use the verified choice')
 assertIncludes(page, 'Complete workspace setup before accepting this transaction invitation.', 'invite page should block acceptance without workspace setup')
 
 assertIncludes(

@@ -1,0 +1,248 @@
+{
+  "product": "Arch9 primary transaction workspace",
+  "status": "RELEASE_BLOCKED_DATABASE_DRY_RUN",
+  "productionBaseCommit": "8788b9596b040d87d6e05cfb76d72fd97cf077ce",
+  "candidateBranch": "codex/seller-document-release",
+  "supabaseProjectRef": "isdowlnollckzvltkasn",
+  "vercelProjectId": "prj_rbfXykMU6mU1eECbc0lJS9sPspmp",
+  "appDeploymentPerformed": false,
+  "functionDeploymentPerformed": false,
+  "schemaMigrationApplied": false,
+  "emailDeliveryTestPerformed": false,
+  "migration": {
+    "file": "supabase/migrations/20261004121736_seller_document_review_runtime_reconciliation.sql",
+    "sha256": "4810d094bcaa7f5698473d46a6cdb015dffeddb36baffec61b7fc642949ca48d",
+    "otherPendingMigrationsExcluded": 21
+  },
+  "checks": {
+    "listingSellerWorkspace": "passed",
+    "pdfsDownloaded": 59,
+    "pdfPagesChecked": 276,
+    "connectedLocalSellerJourneys": 8,
+    "appLint": "passed",
+    "appBaselineTests": "passed",
+    "productionBuild": "passed_at_candidate_commit",
+    "edgeTypeCheck": "passed",
+    "retirementBoundaryTests": 7,
+    "releaseVerifierTests": 5,
+    "targetIdentity": "passed",
+    "recoveryLock": "RECOVERY_LOCKED",
+    "scopedMigrationDryRun": "blocked_at_login",
+    "cleanMigrationReplay": "not_completed_requires_10_GiB_free",
+    "deployedSellerJourney": "not_performed",
+    "builtReleaseMarker": "matches_candidate_commit",
+    "builtCriticalAssets": "all_present"
+  },
+  "signing": {
+    "deployedVersionBefore": 11,
+    "deployedFilesBefore": 15,
+    "candidateFiles": 32,
+    "candidateBundle": [
+      {
+        "name": "supabase/functions/seller-portal-document-signing/deno.json",
+        "sha256": "16e955fcba53e4d922ab6556155768547307c31c3c53a507e9af31160d0d4cdf"
+      },
+      {
+        "name": "supabase/functions/seller-portal-document-signing/index.ts",
+        "sha256": "dbe23c3ec1dc76eace1f7f5b7ad43b1a6714f0776a04dcf5e26cdec137da6b3e"
+      },
+      {
+        "name": "supabase/functions/send-email/content/bridgeEmailLayout.ts",
+        "sha256": "1201b2d8adda2de73c9738b42f20dc5df0f0c59d2d3cfd9717af41cb7b0c094f"
+      },
+      {
+        "name": "supabase/functions/send-email/services/emailBranding.ts",
+        "sha256": "d46b77a20d13161f17bdbaff464fbb6394c9f92d1a2aff1597c1c1d79df85a28"
+      },
+      {
+        "name": "supabase/functions/send-email/services/resend.ts",
+        "sha256": "03c5c953a6f9553c194c264021ae1b7c99a2ffef0072d485002bd5cdfa93b9ea"
+      },
+      {
+        "name": "supabase/functions/send-email/utils/controlledTestRecipient.ts",
+        "sha256": "39b26e30519b75c8648ca7c8c6f92e8f2fd19287ba2889120612b7e927560614"
+      },
+      {
+        "name": "supabase/functions/send-email/utils/db.ts",
+        "sha256": "402a481c38c13f958152d9dd266c4820818ec391345382689964ab08d3d346b6"
+      },
+      {
+        "name": "supabase/functions/send-email/utils/text.ts",
+        "sha256": "0c1d65a3779594c148ba7cafa21d39ba2f294192636937ee6da4e978a9932e54"
+      },
+      {
+        "name": "the-it-guy/src/core/documents/conditionalPackDataRules.js",
+        "sha256": "9aed2b249ac107833436e3e5ea7d44a6cfe23e2334f465b7e123f65af95e3c53"
+      },
+      {
+        "name": "the-it-guy/src/core/documents/documentPartyClassification.js",
+        "sha256": "ff39dffc48a605ececbf715a83a17673cfacdb03fece8ce48d49f58d546f9d36"
+      },
+      {
+        "name": "the-it-guy/src/core/documents/ficaDeclarationDocumentMarkup.js",
+        "sha256": "07499a07a277f7d2663313553fdeae153aca6389ac784380d2e20ba4c50419ad"
+      },
+      {
+        "name": "the-it-guy/src/core/documents/ficaDeclarationDocumentModel.js",
+        "sha256": "f25c1a951ffc32c77e23537ca7c84cef818609d772baac1bad22ff9a20aa96f2"
+      },
+      {
+        "name": "the-it-guy/src/core/documents/sellerComplianceDocumentModel.js",
+        "sha256": "fa4f4b9e4a898356a36d91d6b7b023ffbfcf4c414aa6efa4ba709619472a18a2"
+      },
+      {
+        "name": "the-it-guy/src/core/documents/sellerDisclosureAcknowledgements.js",
+        "sha256": "43e47d8fdd371dfcbd82a0a66ecca2bce3b9ddd4af2e6de18f3a8d9b1c7f2b64"
+      },
+      {
+        "name": "the-it-guy/src/core/documents/sellerDocumentSigningContract.js",
+        "sha256": "9fef0c0a1e9c34ec873a347e59032cd62c83da94e574eeb7afb8841c71d75c25"
+      },
+      {
+        "name": "the-it-guy/src/core/documents/sellerFicaDueDiligenceMarkup.js",
+        "sha256": "804bf2b180eafc3bc4a658df6d3895dcfa5c052b31c694747f3a30ba919d32d8"
+      },
+      {
+        "name": "the-it-guy/src/core/documents/sellerMandateDocumentMarkup.js",
+        "sha256": "88fb366098bab07b505720e21054c8e605b93b5f8bd817fc9b1272a5df4e6f32"
+      },
+      {
+        "name": "the-it-guy/src/core/documents/sellerMandateWordingMarkup.js",
+        "sha256": "c8daec9024b5f5305c580b26fd7e29f3207bfe965902ba8125e929b42a277c0c"
+      },
+      {
+        "name": "the-it-guy/src/core/documents/sellerPortalSigningPolicy.js",
+        "sha256": "e0a54ef989c37a19ce9e8f766317bd901ad4449f3da198bf84675aa66a772d92"
+      },
+      {
+        "name": "the-it-guy/src/core/documents/sellerReviewedDocumentVersions.js",
+        "sha256": "24bc34888bc9c911612f6f07a8456a9b759c8f5591dab560fda9216aeb4c031a"
+      },
+      {
+        "name": "the-it-guy/src/core/documents/sellerSigningDocumentCorrections.js",
+        "sha256": "c25734dd559fba4f1c923a216d04b5a8ad3fd93bb0ed3f51830e0d14fa895050"
+      },
+      {
+        "name": "the-it-guy/src/core/documents/signingClassificationPolicy.js",
+        "sha256": "ccb4338bfab01e7ff8ac16503eb38efa00b481ef77fdddcdba9d838226696458"
+      },
+      {
+        "name": "the-it-guy/src/lib/arch9TermsAcceptance.js",
+        "sha256": "0062bccdb8061663d090c81ab18ef2e49a2bf29b89623c7caa6580ef6b4a9364"
+      },
+      {
+        "name": "the-it-guy/src/lib/onboardingBranding.js",
+        "sha256": "72a73c0c33fb4c2221a961b06eed9ba0ef6d5ca66c236f3d8caa8e96e17fbb9a"
+      },
+      {
+        "name": "the-it-guy/src/lib/propertyDisclosure.js",
+        "sha256": "8320d90906dca50737bf85803f077076716b215b1736e2c6814056e6c6130422"
+      },
+      {
+        "name": "the-it-guy/src/lib/propertyTaxonomy.js",
+        "sha256": "e2bfbb5154e6566506ddcb4ddbdfa6c7e4637422553613a473a7ecb0916d9feb"
+      },
+      {
+        "name": "the-it-guy/src/lib/sellerBasePackContract.js",
+        "sha256": "f7275d828cdfd3720c48b3c59653f0a58b4a475bcb92ed31f7d9dc146cd5e072"
+      },
+      {
+        "name": "the-it-guy/src/lib/sellerBondStatus.js",
+        "sha256": "1e299b19d446fc413677335c9c799ed35224f91d0bd01431f66748a0971fdf6a"
+      },
+      {
+        "name": "the-it-guy/src/lib/sellerOnboardingFlow.js",
+        "sha256": "d93442ccaf44d09b427e0f9fc9e2f7b779225c15eb8a3960dc6e4acb5f51f394"
+      },
+      {
+        "name": "the-it-guy/src/lib/sellerOnboardingFlowContract.js",
+        "sha256": "a14f8c3476244db1a6d169f2ebb9e120f0a2b1558b426b715088973ac15a3b19"
+      },
+      {
+        "name": "the-it-guy/src/lib/sellerPropertyAddress.js",
+        "sha256": "d2639aa35cb08d3bb8caf4dcc6422d821a77aed2ea913ceaedaee4e0d11a45d0"
+      },
+      {
+        "name": "the-it-guy/src/services/documents/sellerOnboardingFactTransformer.js",
+        "sha256": "522f5ab7eebf1bec4284e54c769d2e03061550ed76282ad906b798edb6fb4478"
+      }
+    ]
+  },
+  "retirement": {
+    "activeBefore": [
+      {
+        "name": "generate-mandate",
+        "version": 91,
+        "verify_jwt": true
+      },
+      {
+        "name": "resolve-signer-token",
+        "version": 90,
+        "verify_jwt": false
+      },
+      {
+        "name": "generate-final-signed-document",
+        "version": 115,
+        "verify_jwt": true
+      },
+      {
+        "name": "signer-signing-action",
+        "version": 100,
+        "verify_jwt": false
+      },
+      {
+        "name": "generate-otp",
+        "version": 82,
+        "verify_jwt": true
+      },
+      {
+        "name": "document-conversion-health",
+        "version": 48,
+        "verify_jwt": true
+      },
+      {
+        "name": "send-mandate-signing-email",
+        "version": 61,
+        "verify_jwt": true
+      },
+      {
+        "name": "retry-final-document-completion",
+        "version": 35,
+        "verify_jwt": false
+      }
+    ],
+    "absentBefore": [
+      "legal-document-watchdog",
+      "legal-document-job-runner"
+    ]
+  },
+  "recovery": {
+    "frontendDeploymentId": "dpl_6CpPwmei2ZUcbLjTGUuNzcNXvBoE",
+    "functionBundles": "tmp/phase7-signing-before.json and tmp/phase7-legacy-before-*.json in the original workspace",
+    "schemaSnapshot": "tmp/phase7-db-before.json in the original workspace",
+    "rollbackFile": "docs/seller-document-review-runtime-rollback.sql",
+    "rollbackRehearsedLive": false
+  },
+  "remaining": [
+    "Restore Supabase production database login and complete the exact one-migration dry run before any release.",
+    "Recheck the latest production app commit before deploying the isolated candidate.",
+    "Deploy and retrieve the complete signing bundle; verify every local dependency hash.",
+    "Replace the eight active legacy handlers with the pure 410 handlers; retain JWT settings and historical file access.",
+    "Run migration catalog, RLS, rollback-only behavior and security advisor checks.",
+    "Verify the deployed seller journey using an agreed agency and controlled test email recipient.",
+    "Complete the clean migration chain replay and human review of historical seller facts and mandate wording before claiming full MVP acceptance."
+  ],
+  "candidateCommit": "f90598d4f6445673cf0ce85693a7cc95ab137291",
+  "productionDatabaseFinalCheck": {
+    "checked_at": "2026-10-04T13:15:51.174177+00:00",
+    "migration_count": 1349,
+    "review_rpc_present": false,
+    "review_queue_present": false,
+    "seller_migration_applied": false
+  },
+  "productionFlagsChecked": {
+    "sellerPortalSigningEnabled": true,
+    "pilotCreationPaused": false,
+    "nativeMandateRendererEnabled": true
+  }
+}

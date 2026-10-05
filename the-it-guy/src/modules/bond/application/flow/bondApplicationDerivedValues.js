@@ -47,7 +47,7 @@ export function calculateLiabilityTotal(applicationState = {}) {
   const liabilities = Array.isArray(applicationState?.participants?.primaryApplicant?.liabilities)
     ? applicationState.participants.primaryApplicant.liabilities
     : []
-  const debts = Array.isArray(applicationState?.participants?.primaryApplicant?.debts)
+  const debts = applicationState?.participants?.primaryApplicant?.credit?.has_debts !== 'no' && Array.isArray(applicationState?.participants?.primaryApplicant?.debts)
     ? applicationState.participants.primaryApplicant.debts
     : []
   return sumBondApplicationAmounts([

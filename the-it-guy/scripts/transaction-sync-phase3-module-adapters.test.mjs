@@ -14,8 +14,9 @@ const attorney = await readFile('src/services/attorneyWorkflow/attorneyWorkflowL
 const evidence = await readFile('server/services/workflowEvidenceMapper.js', 'utf8')
 const originator = await readFile('src/services/bondOriginatorTransactionSyncService.js', 'utf8')
 
-test('every frozen action has an exact Phase 3 adapter', () => {
-  const expected = matrix.actions.map((action) => action.actionKey).sort()
+test('the operating actions retain their adapters with current private audiences and published updates', () => {
+  const published = ['TRANSFER_ATTORNEY_UPDATE_PUBLISHED', 'BOND_ATTORNEY_UPDATE_PUBLISHED', 'CANCELLATION_ATTORNEY_UPDATE_PUBLISHED']
+  const expected = [...matrix.actions.map((action) => action.actionKey), ...published].sort()
   assert.deepEqual(getTransactionSyncPhase3Coverage(), expected)
   for (const action of matrix.actions) {
     const adapter = TRANSACTION_SYNC_PHASE3_ACTION_ADAPTERS[action.actionKey]
@@ -23,7 +24,13 @@ test('every frozen action has an exact Phase 3 adapter', () => {
     assert.equal(adapter[0], action.ownerRole)
     assert.equal(adapter[1], action.sourceTable)
     assert.equal(adapter[2], action.defaultVisibility)
-    assert.deepEqual([...adapter[3]].sort(), [...action.audiences].sort())
+    const audience = action.actionKey.endsWith('_ATTORNEY_COMMENT_ADDED') ? [action.ownerRole] : action.audiences
+    assert.deepEqual([...adapter[3]].sort(), [...audience].sort())
+  }
+  for (const key of published) {
+    const adapter = TRANSACTION_SYNC_PHASE3_ACTION_ADAPTERS[key]
+    assert.equal(adapter[1], 'transaction_attorney_lane_updates')
+    assert.equal(adapter[2], 'client_visible')
   }
 })
 

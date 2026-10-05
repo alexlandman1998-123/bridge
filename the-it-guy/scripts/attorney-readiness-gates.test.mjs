@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
+import { agreementConditionIssues, securityAccountIssues, withholdingRemittanceIssues, sellerWithholdingReviewIssues, validReviewDate } from '../src/services/attorneyWorkflow/conveyancingReviewPolicy.js'
+import { normalizeAttorneyWorkflowWorkPacket } from '../src/constants/attorneyWorkflowUsability.js'
+import { buildLegalTaskWorkbenchModel } from '../src/core/transactions/legalTaskWorkbenchModel.js'
 
 const { PGlite } = await import(process.env.PGLITE_MODULE || '@electric-sql/pglite')
 const db = new PGlite()
@@ -238,5 +241,183 @@ await update('post_registration_closeout_review', 'not_started', 'Final account 
 assert.equal(await status('post_registration_closeout_review'), 'not_started')
 assert.ok((await db.query("select count(*)::int as count from transaction_attorney_lane_history where note like 'File archived after client registration%' ")).rows[0].count > 0,
   'reopening preserves the earlier completion audit row')
+// Phase 4 MVP corrections exercise the deployed guard definitions in the
+// same local database, including the earlier readiness and closure triggers.
+await db.exec(`
+alter table journey_private.task_catalog add column phase_key text, add column phase_label text, add column phase_order integer, add column task_order integer;
+alter table document_requirement_instances add column satisfied_by_document_id uuid;
+create table document_requirement_rules(document_definition_key text,context_type text,condition_json jsonb);
+insert into document_requirement_rules values ('electrical_compliance_certificate','transaction','{}');
+`)
+const taxSource = readFileSync(new URL('../../supabase/migrations/20260926142602_attorney_phase4_tax_clearance_conditions.sql', import.meta.url), 'utf8')
+const helperStart = taxSource.indexOf('create function journey_private.phase4_required_transfer_steps')
+await db.exec(taxSource.slice(helperStart, taxSource.indexOf('$$;', helperStart) + 3))
+await db.exec(readFileSync(new URL('../../supabase/migrations/20261003185915_attorney_conveyancing_review_corrections.sql', import.meta.url), 'utf8'))
+await db.exec(`create trigger corrections_tax_check before update of status,comment on transaction_subprocess_steps for each row execute function journey_private.enforce_attorney_phase4_tax_clearances();
+create trigger corrections_current_check before update of status,comment on transaction_subprocess_steps for each row execute function journey_private.enforce_stage_five_current_evidence();`)
+const dates = (await db.query(`select (now() at time zone 'Africa/Johannesburg')::date::text as today,
+  ((now() at time zone 'Africa/Johannesburg')::date + 7)::text as future,
+  ((now() at time zone 'Africa/Johannesburg')::date - 1)::text as yesterday,
+  ((now() at time zone 'Africa/Johannesburg')::date + 29)::text as late`)).rows[0]
+const correctionMatter = '00000000-0000-0000-0000-000000000701'
+const correctionTransfer = '00000000-0000-0000-0000-000000000702'
+const correctionCancellation = '00000000-0000-0000-0000-000000000703'
+const correctionBond = '00000000-0000-0000-0000-000000000704'
+const correctionProfile = {
+  financeType: 'bond', propertyTenure: 'freehold', hoaApplicable: 'no', sellerHasExistingBond: true,
+  matterProfile: { status: 'confirmed', revision: 1, factFingerprint: 'corrections' },
+  scenarioProfile: { parties: [{ id: 'buyer:1', role: 'buyer', taxResidence: 'south_africa' },
+    { id: 'seller:1', role: 'seller', taxResidence: 'outside_south_africa' }] },
+  transferTaxDecision: { route: 'transfer_duty', status: 'confirmed', dutyPaymentRequired: 'no', tdc01Reference: 'TDC-1',
+    sarsStatus: 'receipted', sarsProofReference: 'SARS-1', basisNote: 'Duty reviewed',
+    nonResidentSellers: { 'seller:1': { applicable: 'yes', directiveStatus: 'not_required', withholdingRequired: 'yes',
+      proofReference: 'NR02', basisNote: 'Seller-specific review', remittanceStatus: 'planned',
+      reservedFundsReference: 'Trust reserve', remittanceOwner: 'Conveyancer', paymentEvent: 'Proceeds payment subject to directive', dueOn: dates.future } } },
+  mvpProfile: { sellerExistingBond: true, propertyConditions: { titleRestrictions: 'no', complianceCertificates: 'no',
+    certificates: { electrical: 'no' }, electricalBasisNote: 'Vacant land inspected; no electrical installation',
+    clearances: { municipal: { issuer: 'Municipality', reference: 'Rates-1', validUntil: dates.future } } } },
+  workflowPlan: { version: 'attorney_matter_workflow_plan_v14', status: 'active', provisional: false,
+    matterProfileRevision: 1, matterProfileFingerprint: 'corrections', lanes: [
+      { laneKey: 'transfer', stepKeys: ['otp_source_docs_checked','buyer_fica_review','seller_fica_review','transfer_tax_route_confirmed',
+        'transfer_duty_tdc01_submission','non_resident_seller_applicability_review','non_resident_seller_withholding_payment_review',
+        'sars_transfer_tax_receipt_verified','municipal_rates_clearance_review','property_conditions_applicability_review',
+        'lodgement_ready','lodged_at_deeds_office','registered','post_registration_closeout_review','matter_closed'] },
+      { laneKey: 'cancellation', stepKeys: ['cancellation_figures_received','figures_expiry_captured','cancellation_guarantees_accepted',
+        'cancellation_guarantee_allocation_review','seller_cancellation_documents_signed','cancellation_consent_confirmed',
+        'cancellation_lodgement_ready','cancellation_lodged','cancellation_registered','settlement_proof_captured','cancellation_close_out_complete'] },
+      { laneKey:'bond',stepKeys:['bond_approval_letter_received','buyer_signed_bond_documents','bank_approval_to_lodge_received','guarantee_wording_accepted',
+        'bond_lodgement_ready','bond_lodged','bond_registered','bond_close_out_complete'] },
+    ] },
+}
+await db.query('insert into transactions(id,routing_profile_json,lifecycle_state) values ($1,$2,$3)',[correctionMatter,correctionProfile,'active'])
+await db.query('insert into transaction_attorney_assignments(transaction_id,assigned_user_id,status) values ($1,$2,$3)',[correctionMatter,actor,'active'])
+for (const [id,lane] of [[correctionTransfer,'transfer'],[correctionCancellation,'cancellation'],[correctionBond,'bond']]) {
+  await db.query('insert into transaction_subprocesses(id,transaction_id,process_type,status) values ($1,$2,$3,$4)',[id,correctionMatter,lane,'in_progress'])
+  for (const [i,key] of correctionProfile.workflowPlan.lanes.find(l=>l.laneKey===lane).stepKeys.entries()) {
+    await db.query('insert into transaction_subprocess_steps(id,subprocess_id,step_key,status,comment,visibility_scope,sort_order) values (gen_random_uuid(),$1,$2,$3,$4,$5,$6)',
+      [id,key,'not_started','Initial record',['post_registration_closeout_review','buyer_fica_review','seller_fica_review'].includes(key)?'internal':'professional_shared',i])
+  }
+}
+const correctionUpdate = (lane,key,status='completed') => db.query("update transaction_subprocess_steps set status=$3,comment='Current evidence reviewed',completed_at=now() where subprocess_id=$1 and step_key=$2",[lane,key,status])
+const correctionAnswer = async (lane,key,answers) => {
+  const id = (await db.query('select id from transaction_subprocess_steps where subprocess_id=$1 and step_key=$2',[lane,key])).rows[0].id
+  return db.query('insert into attorney_task_confirmations(step_id,task_confirmations) values ($1,$2) on conflict(step_id) do update set task_confirmations=excluded.task_confirmations',[id,answers])
+}
+const signature = { seller_signature_applicability: { answer: 'no', note: 'Bank instrument requires bondholder consent only' } }
+const securityRow = { id:'security-1',bondReference:'B123',property:'Erf 1',lender:'Bank A',account:'Account 1',owner:'Cancellation attorney',
+  disposition:'cancellation',instrumentReference:'Instruction-1',figuresReference:'Figures-1',validUntil:dates.future,consentReference:'Consent-1',
+  settlementAmount:'100.00',allocatedAmount:'100.00',allocationReference:'Guarantee-1' }
+const securityRows = [securityRow,{...securityRow,id:'security-2',account:'Account 2',settlementAmount:'0.00',allocatedAmount:'0.00',allocationReference:'Paid up; registered security remains'},
+  {...securityRow,id:'security-3',bondReference:'B456',lender:'Bank B',account:'Account 3'}]
+const securityResponse = rows => ({ registered_securities_review:{answer:'yes',items:rows} })
+assert.deepEqual(securityAccountIssues(securityResponse(securityRows).registered_securities_review),[])
+assert.deepEqual(withholdingRemittanceIssues(correctionProfile.transferTaxDecision.nonResidentSellers['seller:1']),[])
+assert.ok(sellerWithholdingReviewIssues({}, { closing:true }).length)
+assert.equal(validReviewDate('2026-02-30'),false)
+assert.deepEqual(agreementConditionIssues({answer:'yes',items:[{description:'Consent obtained',kind:'other',owner:'Attorney',status:'fulfilled',evidenceReference:'Consent file',basisNote:'No fixed deadline in agreement'}]}),[])
+assert.ok(agreementConditionIssues({answer:'yes',items:[{description:'Suspensive condition',kind:'suspensive',owner:'Buyer',status:'secured',deadline:dates.future,evidenceReference:'Letter',basisNote:'Funding reserved'}]}).length,'security alone cannot fulfil a suspensive condition')
+assert.deepEqual(normalizeAttorneyWorkflowWorkPacket({taskConfirmations:securityResponse(securityRows)}).taskConfirmations.registered_securities_review.items,securityRows,'rows survive the real workflow command normalizer')
+for (const [key,registerId] of [['otp_source_docs_checked','agreement_conditions_review'],['cancellation_guarantee_allocation_review','registered_securities_review'],['settlement_proof_captured','security_settlement_review'],['matter_closed','registration_communication_review']]) {
+  const model=buildLegalTaskWorkbenchModel({task:{key,label:key,operationalContract:{lane:key.startsWith('cancellation')||key.startsWith('settlement')?'cancellation':'transfer'}}})
+  assert.ok(model.confirmationRows.find(row=>row.id===registerId)?.register,'the actual workbench exposes the persisted record')
+}
+const rmcpModel=buildLegalTaskWorkbenchModel({task:{key:'buyer_fica_review',label:'Buyer FICA',operationalContract:{lane:'transfer'},stageTwoParties:[{partyId:'buyer:1',partyName:'Buyer'}]}})
+assert.deepEqual(rmcpModel.confirmationRows.find(row=>row.id==='rmcp_review:buyer:1').answers,['yes','no'])
+assert.equal(Boolean(rmcpModel.confirmationRows.find(row=>row.id==='rmcp_review:buyer:1').authoritative),false,'the attorney can record the risk review; a party-fact row cannot silently replace it')
+for(const key of correctionProfile.workflowPlan.lanes[1].stepKeys.slice(0,6)) await correctionUpdate(correctionCancellation,key,
+  key==='seller_cancellation_documents_signed'?'not_applicable':'completed')
+await correctionAnswer(correctionCancellation,'seller_cancellation_documents_signed',signature)
+await assert.rejects(correctionUpdate(correctionCancellation,'cancellation_lodgement_ready'),/every registered security/)
+await correctionAnswer(correctionCancellation,'cancellation_guarantee_allocation_review',securityResponse(securityRows))
+await correctionUpdate(correctionCancellation,'cancellation_lodgement_ready')
+await correctionAnswer(correctionCancellation,'seller_cancellation_documents_signed',{seller_signature_applicability:{answer:'yes',note:'Bank now requires seller signature'}})
+assert.equal((await db.query("select status from transaction_subprocess_steps where subprocess_id=$1 and step_key='cancellation_lodgement_ready'",[correctionCancellation])).rows[0].status,'not_started','changed applicability withdraws readiness')
+await assert.rejects(correctionUpdate(correctionCancellation,'cancellation_lodgement_ready'),/seller signature applicability/)
+await correctionAnswer(correctionCancellation,'seller_cancellation_documents_signed',signature)
+await correctionUpdate(correctionCancellation,'cancellation_consent_confirmed','not_applicable')
+await assert.rejects(correctionUpdate(correctionCancellation,'cancellation_lodgement_ready'),/cancellation_consent_confirmed/)
+await correctionUpdate(correctionCancellation,'cancellation_consent_confirmed')
+for(const [rows,message] of [[[{...securityRow,validUntil:dates.today}],/expired/],[[{...securityRow,allocatedAmount:'99.00'}],/shortfall/],[[{...securityRow,disposition:'specialist_hold'}],/specialist/],[[securityRow,securityRow],/Duplicate/],[[{...securityRow,settlementAmount:'-1'}],/non-negative/]]) {
+  assert.ok(securityAccountIssues(securityResponse(rows).registered_securities_review).length,'the screen and SQL reject the same incomplete security record')
+  await correctionAnswer(correctionCancellation,'cancellation_guarantee_allocation_review',securityResponse(rows))
+  await assert.rejects(correctionUpdate(correctionCancellation,'cancellation_lodgement_ready'),message)
+}
+await correctionAnswer(correctionCancellation,'cancellation_guarantee_allocation_review',securityResponse(securityRows))
+await correctionUpdate(correctionCancellation,'cancellation_lodgement_ready')
+
+await assert.rejects(correctionUpdate(correctionBond,'bond_close_out_complete'),/lane registration/)
+for(const key of correctionProfile.workflowPlan.lanes[2].stepKeys.slice(0,5)) await correctionUpdate(correctionBond,key)
+for(const key of correctionProfile.workflowPlan.lanes[0].stepKeys.slice(0,10)) await correctionUpdate(correctionTransfer,key)
+await db.query('insert into document_requirement_instances(id,transaction_id,document_definition_key,status,requirement_level,stage_gates,expiry_date) values(gen_random_uuid(),$1,$2,$3,$4,$5,$6)',[correctionMatter,'rates_clearance_certificate','approved','required',['lodgement_ready'],dates.future])
+await db.query('insert into document_requirement_instances(id,transaction_id,document_definition_key,status,requirement_level,stage_gates) values(gen_random_uuid(),$1,$2,$3,$4,$5)',[correctionMatter,'electrical_compliance_certificate','pending','blocker',['lodgement_ready']])
+await assert.rejects(correctionUpdate(correctionTransfer,'lodgement_ready'),/agreement conditions/)
+await correctionAnswer(correctionTransfer,'otp_source_docs_checked',{agreement_conditions_review:{answer:'yes',items:[{description:'Finance condition',kind:'suspensive',deadline:dates.future,owner:'Buyer',status:'extended',evidenceReference:'Amendment',basisNote:'Extended'}]}})
+await assert.rejects(correctionUpdate(correctionTransfer,'lodgement_ready'),/extension alone/)
+await correctionAnswer(correctionTransfer,'otp_source_docs_checked',{agreement_conditions_review:{answer:'not_applicable',note:'Current unconditional sale; no outstanding conditions'}})
+await assert.rejects(correctionUpdate(correctionTransfer,'lodgement_ready'),/RMCP/)
+await correctionAnswer(correctionTransfer,'buyer_fica_review',{'rmcp_review:buyer:1':{answer:'yes',note:'Internal compliance reference buyer-1'}})
+await correctionAnswer(correctionTransfer,'seller_fica_review',{'rmcp_review:seller:1':{answer:'yes',note:'Internal compliance reference seller-1'}})
+await correctionUpdate(correctionTransfer,'lodgement_ready')
+// Unpaid planned withholding is permitted, but cannot bypass its owner,
+// reserve, due date or final-account remittance proof.
+await assert.rejects(db.query('select journey_private.assert_attorney_withholding_remittance($1,true)',[correctionProfile.transferTaxDecision.nonResidentSellers['seller:1']]),/payment proof/)
+for(const changed of [{dueOn:dates.today},{remittanceOwner:''},{reservedFundsReference:''},{remittanceStatus:'unknown'},
+  {remittanceStatus:'withheld',withheldOn:dates.today,purchaserResidence:'resident',dueOn:dates.late}]) {
+  await assert.rejects(db.query('select journey_private.assert_attorney_withholding_remittance($1,false)',[{...correctionProfile.transferTaxDecision.nonResidentSellers['seller:1'],...changed}]))
+}
+await db.query('select journey_private.assert_attorney_withholding_remittance($1,false)',[{...correctionProfile.transferTaxDecision.nonResidentSellers['seller:1'],remittanceStatus:'withheld',withheldOn:dates.today,purchaserResidence:'non_resident'}])
+await db.query('select journey_private.assert_attorney_withholding_remittance($1,true)',[{applicable:'yes',withholdingRequired:'yes',paymentReference:'Paid SARS proof'}])
+// Canonical no-installation review still needs the task. Unknown cannot waive it.
+await correctionUpdate(correctionTransfer,'property_conditions_applicability_review','not_started')
+await assert.rejects(correctionUpdate(correctionTransfer,'lodgement_ready'),/electrical|property_conditions_applicability/)
+await correctionUpdate(correctionTransfer,'property_conditions_applicability_review')
+const electricalChanged=structuredClone(correctionProfile);electricalChanged.mvpProfile.propertyConditions.certificates.electrical='yes'
+await db.query('update transactions set routing_profile_json=$2 where id=$1',[correctionMatter,electricalChanged])
+await assert.rejects(correctionUpdate(correctionTransfer,'lodgement_ready'),/electrical/)
+await db.query('update transactions set routing_profile_json=$2 where id=$1',[correctionMatter,correctionProfile])
+await correctionUpdate(correctionTransfer,'lodgement_ready')
+// Agreement replacement withdraws readiness and reopens substantive review.
+await db.query('insert into document_requirement_instances(id,transaction_id,document_definition_key,status,requirement_level,stage_gates) values(gen_random_uuid(),$1,$2,$3,$4,$5)',[correctionMatter,'signed_otp','approved','required',['attorney_instruction_ready']])
+await db.query("update document_requirement_instances set satisfied_by_document_id=gen_random_uuid() where transaction_id=$1 and document_definition_key='signed_otp'",[correctionMatter])
+await assert.rejects(correctionUpdate(correctionTransfer,'lodgement_ready'),/otp_source_docs_checked/)
+await correctionUpdate(correctionTransfer,'otp_source_docs_checked')
+await correctionUpdate(correctionTransfer,'lodgement_ready')
+await correctionUpdate(correctionBond,'bond_lodged')
+await correctionUpdate(correctionCancellation,'cancellation_lodged')
+await correctionUpdate(correctionTransfer,'lodged_at_deeds_office')
+await correctionUpdate(correctionBond,'bond_registered')
+await correctionUpdate(correctionBond,'bond_close_out_complete')
+await correctionUpdate(correctionCancellation,'cancellation_registered')
+await correctionUpdate(correctionTransfer,'registered')
+await assert.rejects(correctionUpdate(correctionCancellation,'cancellation_close_out_complete'),/settlement review/)
+await correctionUpdate(correctionCancellation,'settlement_proof_captured')
+await assert.rejects(correctionUpdate(correctionCancellation,'cancellation_close_out_complete'),/each security account/)
+await correctionAnswer(correctionCancellation,'settlement_proof_captured',{security_settlement_review:{answer:'yes',items:securityRows.slice(0,2).map(row=>({...row,registrationReference:'Deeds-1',settlementReference:'Bank payment / zero account verified'}))}})
+await assert.rejects(correctionUpdate(correctionCancellation,'cancellation_close_out_complete'),/each security account/)
+await correctionAnswer(correctionCancellation,'settlement_proof_captured',{security_settlement_review:{answer:'yes',items:securityRows.map(row=>({...row,registrationReference:'Deeds-1',settlementReference:'Bank payment / zero account verified'}))}})
+await correctionUpdate(correctionCancellation,'cancellation_close_out_complete')
+await correctionAnswer(correctionTransfer,'post_registration_closeout_review',{final_account_position_reviewed:{answer:'yes',note:'Trust account reconciled'}})
+await assert.rejects(correctionUpdate(correctionTransfer,'post_registration_closeout_review'),/remittance payment proof/)
+const paid=structuredClone(correctionProfile);paid.transferTaxDecision.nonResidentSellers['seller:1'].paymentReference='SARS payment proof'
+await db.query('update transactions set routing_profile_json=$2 where id=$1',[correctionMatter,paid])
+await correctionUpdate(correctionTransfer,'post_registration_closeout_review')
+const communication={channel:'email',sentOn:dates.today,audience:'buyer',recipients:'Buyer',reference:'Sent mail record'}
+await correctionAnswer(correctionTransfer,'matter_closed',{matter_closure_confirmed:{answer:'yes'},registration_communication_review:{answer:'yes',items:[communication]}})
+await assert.rejects(correctionUpdate(correctionTransfer,'matter_closed'),/all appropriate/)
+await correctionAnswer(correctionTransfer,'matter_closed',{matter_closure_confirmed:{answer:'yes'},registration_communication_review:{answer:'yes',items:[{...communication,audience:'both',recipients:'Buyer and all seller representatives'}]}})
+await correctionUpdate(correctionTransfer,'matter_closed')
+assert.equal((await db.query("select status from transaction_subprocess_steps where subprocess_id=$1 and step_key='matter_closed'",[correctionTransfer])).rows[0].status,'completed','external communication closes the actual lane without sending messages')
+const changedParty=structuredClone(paid);changedParty.scenarioProfile.parties[0].taxResidence='outside_south_africa'
+await assert.rejects(db.query('update transactions set routing_profile_json=$2 where id=$1',[correctionMatter,changedParty]),/Reopen matter closure/)
+await assert.rejects(db.query("update document_requirement_instances set satisfied_by_document_id=gen_random_uuid() where transaction_id=$1 and document_definition_key='signed_otp'",[correctionMatter]),/Reopen matter closure/)
+await correctionUpdate(correctionTransfer,'matter_closed','not_started')
+await db.query('update transactions set routing_profile_json=$2 where id=$1',[correctionMatter,changedParty])
+assert.equal((await db.query("select status from transaction_subprocess_steps where subprocess_id=$1 and step_key='buyer_fica_review'",[correctionTransfer])).rows[0].status,'not_started')
+assert.equal((await db.query("select task_confirmations from attorney_task_confirmations c join transaction_subprocess_steps s on s.id=c.step_id where s.subprocess_id=$1 and s.step_key='buyer_fica_review'",[correctionTransfer])).rows[0].task_confirmations['rmcp_review:buyer:1'],undefined,'old RMCP approval cannot survive material party changes')
+await assert.rejects(db.query('select journey_private.assert_attorney_seller_withholding_review($1,false)',[{}]),/current seller-specific/)
+await assert.rejects(db.query("update transaction_subprocess_steps set visibility_scope='client_visible' where subprocess_id=$1 and step_key='buyer_fica_review'",[correctionTransfer]),/internal to the attorney firm/)
+assert.equal((await db.query("select condition_json from document_requirement_rules where document_definition_key='electrical_compliance_certificate'")).rows[0].condition_json.all[1].fact,'compliance.electrical_not_applicable')
+await assert.rejects(db.exec(`set role anon; select journey_private.assert_conveyancing_review('${correctionMatter}','transfer','lodgement_ready')`),/permission denied/)
+await db.exec('reset role')
 await db.close()
 console.log('Attorney readiness gates passed: milestone outcomes, cross-lane handoff, reopening, and plan correction.')

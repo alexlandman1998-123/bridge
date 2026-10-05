@@ -1,3 +1,5 @@
+import { resolveDocumentBrandPalette } from '../../lib/onboardingBranding.js'
+
 export const SELLER_MANDATE_DOCUMENT_CONTRACT = 'arch9-seller-mandate-document-v1'
 
 const text = (value) => String(value ?? '').trim()
@@ -80,6 +82,7 @@ export function buildSellerMandateDocumentModel({ signingPack = {}, approval = {
   const mandate = record(pack.mandate)
   const seller = record(pack.seller)
   const branding = record(pack.branding)
+  const palette = resolveDocumentBrandPalette(branding)
   const commission = record(approval.commission)
   const type = requireSellerMandateWording(mandate.mandateType)
   const protectionDays = text(mandate.protectionPeriodDays ?? mandate.protectionPeriod) ? Number(mandate.protectionPeriodDays ?? mandate.protectionPeriod) : 0
@@ -98,8 +101,8 @@ export function buildSellerMandateDocumentModel({ signingPack = {}, approval = {
     type,
     ...variantTerms(type, mandate, agencyName),
     agencyName,
-    primaryColour: /^#[0-9a-f]{6}$/i.test(branding.primaryColour || branding.primaryColor || '') ? (branding.primaryColour || branding.primaryColor) : '#193d2e',
-    accentColour: /^#[0-9a-f]{6}$/i.test(branding.accentColour || branding.accentColor || '') ? (branding.accentColour || branding.accentColor) : '#176842',
+    primaryColour: palette.primaryColour,
+    accentColour: palette.accentColour,
     logoUrl: first(branding.logoLightUrl, branding.logo_light_url, branding.logoUrl, branding.logo_url, branding.logoDarkUrl, branding.logo_dark_url),
     generatedAt: text(generatedAt),
     reference: first(pack.documentReference, pack.reference, pack.listingReference, pack.property?.reference),
@@ -145,6 +148,7 @@ function section(title, body) {
 
 export function buildSellerMandateWordingMarkup(input = {}) {
   const model = input?.contract === SELLER_MANDATE_DOCUMENT_CONTRACT ? input : buildSellerMandateDocumentModel(input)
+  const palette = resolveDocumentBrandPalette({ primaryColour: model.primaryColour, accentColour: model.accentColour })
   const logo = model.logoUrl ? `<img src="${escapeHtml(model.logoUrl)}" alt="${escapeHtml(model.agencyName)} logo" />` : escapeHtml(model.agencyName)
   const clauses = [
     section('1. Appointment', model.appointment),
@@ -184,6 +188,6 @@ export function buildSellerMandateWordingMarkup(input = {}) {
   })
   const pages = bodies.map((body, index) => `<section class="page"><header class="header"><div class="brand">${logo}</div><div class="meta">${escapeHtml(model.agencyName)}<br />${escapeHtml(model.reference)}<br />Prepared ${escapeHtml(model.generatedAt)}</div></header><main>${body}</main><footer class="footer"><span>${escapeHtml(model.agencyName)} · ${escapeHtml(model.heading)}</span><span>Page ${index + 1} of ${bodies.length}</span></footer></section>`).join('')
   return `<!doctype html><html><head><meta charset="utf-8" /><title>${escapeHtml(model.heading)} - reviewed signing copy</title><style>
-  @page{size:A4;margin:0}*{box-sizing:border-box}body{margin:0;background:#fff;color:#1d2935;font:10pt/1.45 Georgia,'Times New Roman',serif}.document{--primary:${model.primaryColour};--accent:${model.accentColour};width:210mm;margin:auto}.page{width:210mm;min-height:296mm;padding:12mm 16mm 22mm;position:relative;break-after:page}.page:last-child{break-after:auto}.header{display:flex;justify-content:space-between;align-items:center;gap:8mm;padding-bottom:5mm;border-bottom:1px solid #cbd9d0}.brand{font-size:17pt;font-weight:700;color:var(--primary)}.brand img{max-width:55mm;max-height:16mm;object-fit:contain}.meta{color:#607387;font-size:8pt;text-align:right}.eyebrow{color:var(--accent);font-size:8pt;text-transform:uppercase;letter-spacing:.08em}h1{margin:6mm 0 4mm;color:var(--primary);font-size:20pt;line-height:1.15}.facts{display:grid;grid-template-columns:1fr 1fr;gap:3mm;margin:4mm 0}.fact{min-height:15mm;padding:3mm;border:1px solid #dbe7df;border-radius:2mm;break-inside:avoid}.fact dt{color:#5b6d7f;font-size:7.5pt;text-transform:uppercase;letter-spacing:.04em}.fact dd{margin:1.5mm 0 0;font-size:9pt;font-weight:700;overflow-wrap:anywhere}.clause{margin:0 0 6mm;break-inside:avoid}.clause h2,.acceptance h2{margin:0 0 2mm;padding-bottom:1mm;border-bottom:1px solid #dbe7df;color:var(--primary);font-size:11pt}.clause p{margin:0}.conditions{white-space:pre-wrap;overflow-wrap:anywhere}.signatures{display:grid;grid-template-columns:1fr 1fr;gap:8mm;margin-top:8mm}.signature{min-height:40mm;break-inside:avoid;overflow-wrap:anywhere}.signature strong,.signature span{display:block}.signature span{color:#64748b;font-size:8.5pt}.line{margin-top:10mm;padding-top:1mm;border-top:1px solid #324253;color:#5b6d7f;font-size:8pt}.acceptance{margin-top:10mm;break-inside:avoid}.acceptance p{margin:2mm 0}.footer{position:absolute;bottom:7mm;left:16mm;right:16mm;display:flex;justify-content:space-between;gap:5mm;border-top:1px solid #cbd9d0;padding-top:3mm;color:#607387;font-size:7pt}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}.document{margin:0}}
+  @page{size:A4;margin:0}*{box-sizing:border-box}body{margin:0;background:#fff;color:#1d2935;font:10pt/1.45 Georgia,'Times New Roman',serif}.document{--primary:${palette.primaryColour};--accent:${palette.accentColour};--primary-ink:${palette.primaryInk};--accent-ink:${palette.accentInk};width:210mm;margin:auto}.page{width:210mm;min-height:296mm;padding:12mm 16mm 22mm;position:relative;break-after:page}.page:last-child{break-after:auto}.header{display:flex;justify-content:space-between;align-items:center;gap:8mm;padding-bottom:5mm;border-bottom:2px solid var(--accent)}.brand{font-size:17pt;font-weight:700;color:var(--primary-ink)}.brand img{max-width:55mm;max-height:16mm;object-fit:contain}.meta{color:#607387;font-size:8pt;text-align:right}.eyebrow{color:var(--accent-ink);font-size:8pt;text-transform:uppercase;letter-spacing:.08em}h1{margin:6mm 0 4mm;color:var(--primary-ink);font-size:20pt;line-height:1.15}.facts{display:grid;grid-template-columns:1fr 1fr;gap:3mm;margin:4mm 0}.fact{min-height:15mm;padding:3mm;border:1px solid #dbe7df;border-radius:2mm;break-inside:avoid}.fact dt{color:#5b6d7f;font-size:7.5pt;text-transform:uppercase;letter-spacing:.04em}.fact dd{margin:1.5mm 0 0;font-size:9pt;font-weight:700;overflow-wrap:anywhere}.clause{margin:0 0 6mm;break-inside:avoid}.clause h2,.acceptance h2{margin:0 0 2mm;padding-bottom:1mm;border-bottom:1px solid #dbe7df;color:var(--primary-ink);font-size:11pt}.clause p{margin:0}.conditions{white-space:pre-wrap;overflow-wrap:anywhere}.signatures{display:grid;grid-template-columns:1fr 1fr;gap:8mm;margin-top:8mm}.signature{min-height:40mm;break-inside:avoid;overflow-wrap:anywhere}.signature strong,.signature span{display:block}.signature span{color:#64748b;font-size:8.5pt}.line{margin-top:10mm;padding-top:1mm;border-top:1px solid #324253;color:#5b6d7f;font-size:8pt}.acceptance{margin-top:10mm;break-inside:avoid}.acceptance p{margin:2mm 0}.footer{position:absolute;bottom:7mm;left:16mm;right:16mm;display:flex;justify-content:space-between;gap:5mm;border-top:1px solid #cbd9d0;padding-top:3mm;color:#607387;font-size:7pt}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}.document{margin:0}}
   </style></head><body><div class="document">${pages}</div></body></html>`
 }

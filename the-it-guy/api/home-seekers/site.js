@@ -1,5 +1,5 @@
 import { getHomeSeekersPublishedListings, getHomeSeekersWebsiteConnection } from '../../server/services/homeSeekersWebsiteBridge.js'
-import { writeNodeJsonResponse } from '../../server/services/hqMissionControlApi.js'
+import { writeHomeSeekersJsonResponse as writeNodeJsonResponse } from '../../server/services/homeSeekersApiResponse.js'
 
 export default async function handler(request, response) {
   if (request.method !== 'GET') {

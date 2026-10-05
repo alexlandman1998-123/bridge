@@ -1,3 +1,4 @@
+import { beginRentalPublicationAttempt, updateRentalPublicationAttempt, retainUncertainRentalPublication, isDefinitePortalRejection, publicRentalPublicationAttempt } from './rentalPublicationAttemptService.js'
 import { createHash } from 'node:crypto'
 import {
   createPrivatePropertyClient,
@@ -248,11 +249,18 @@ export async function runPrivatePropertyControlledPublishRehearsal({
     return report
   }
 
+  const attempt = currentBundle.listing?.listing_category === 'rental' ? await beginRentalPublicationAttempt({ client,listingId:normalizedListingId,
+    channel:'private_property',environment:normalizedEnvironment,identity:{ propertyId:preview.summary.propertyId,branchGuid:preview.summary.branchId,
+      listingType:preview.summary.listingType,existed:Boolean(currentBundle.existingSync?.property_id) },payload:preview.listingXml }) : null
+  if (currentBundle.listing?.listing_category === 'rental' && !attempt) throw new Error('The rental listing changed during publishing. Reload and recheck it before sending.')
+  let receipt = {}
   report.safety.privatePropertyApiCalled = true
   try {
     const response = await portal.updateListing(preview.listingXml)
     const responseSummary = validatePrivatePropertySoapResult(response, 'UpdateListing')
     const privatePropertyRef = extractPrivatePropertyReference(responseSummary)
+    receipt = { accepted:true,reference:privatePropertyRef }
+    if (attempt) await updateRentalPublicationAttempt(client,attempt,{ state:'uncertain',receipt })
     report.status = 'SUBMITTED'
     report.safety.listingSubmitted = true
     report.apiResponse = {
@@ -291,6 +299,7 @@ export async function runPrivatePropertyControlledPublishRehearsal({
         submittedAt: report.generatedAt,
       })
       report.safety.databaseWritten = true
+      if (attempt && (syncResult.externalLinkWarning || !syncResult.sync?.id)) throw new Error('Private Property accepted the rental but saving its local channel details failed.')
       report.syncResult = {
         arch9Status: syncResult.arch9Status,
         syncId: normalizePrivatePropertyText(syncResult.sync?.id),
@@ -298,8 +307,20 @@ export async function runPrivatePropertyControlledPublishRehearsal({
         externalLinkWarning: syncResult.externalLinkWarning || null,
       }
     }
+    if (attempt && recordSync) {
+      await updateRentalPublicationAttempt(client,attempt,{ state:'accepted',receipt })
+      report.submissionAttempt = publicRentalPublicationAttempt({ ...attempt,state:'accepted',receipt })
+    } else if (attempt) {
+      report.status = 'UNCERTAIN'
+      report.submissionAttempt = publicRentalPublicationAttempt({ ...attempt,state:'uncertain',receipt })
+    }
   } catch (error) {
-    report.status = 'BLOCKED'
+    if (attempt) {
+      if (!receipt.accepted && isDefinitePortalRejection(error)) await updateRentalPublicationAttempt(client,attempt,{ state:'rejected',last_error:error.message })
+      else await retainUncertainRentalPublication(client,attempt,error,receipt)
+    }
+    report.status = attempt && (receipt.accepted || !isDefinitePortalRejection(error)) ? 'UNCERTAIN' : 'BLOCKED'
+    report.submissionAttempt = publicRentalPublicationAttempt({ ...attempt,state:report.status === 'UNCERTAIN' ? 'uncertain' : 'rejected',receipt })
     report.safety.listingPublished = false
     report.blockers = unique([...report.blockers, 'private_property_update_listing_failed'])
     report.apiResponse = {
@@ -313,7 +334,7 @@ export async function runPrivatePropertyControlledPublishRehearsal({
         responseSummary: error.responseBody ? summarizePrivatePropertySoapResponse('UpdateListing', error.responseBody) : null,
       },
     }
-    report.nextStep = 'Fix the Private Property submit error, then re-run the controlled publish rehearsal.'
+    report.nextStep = report.status === 'UNCERTAIN' ? 'Reconcile the saved submission before sending again; Private Property may already have accepted it.' : 'Fix the Private Property submit error, then re-run the controlled publish rehearsal.'
   }
 
   return report

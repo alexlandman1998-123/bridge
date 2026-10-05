@@ -1,5 +1,15 @@
+import BondOnlineSigningPanel from './BondOnlineSigningPanel.jsx'
+import { MARITAL_STATUS_OPTIONS, MARITAL_REGIME_OPTIONS } from '../../../../lib/buyerOnboardingFlowContract.js'
+import BondApplicationStageProgress from '../workspace/BondApplicationStageProgress.jsx'
+import AssetsScreen from './AssetsScreen.jsx'
+import BondApplicationDocumentPreview from './BondApplicationDocumentPreview.jsx'
+import DocumentsChecklistScreen from './DocumentsChecklistScreen.jsx'
+export { default as DocumentsChecklistScreen } from './DocumentsChecklistScreen.jsx'
+import LiabilitiesScreen from './LiabilitiesScreen.jsx'
+import { evaluateBondApplicationRule } from '../flow/bondApplicationRuleEvaluator.js'
+import { validateBondApplicationScreen } from '../flow/bondApplicationScreenValidation.js'
 import BondApplicationBuyerNotices from '../../../../components/bond/BondApplicationBuyerNotices'
-import { AlertTriangle, ArrowLeft, CheckCircle2, ChevronRight, FileText, PenLine, RotateCcw, ShieldCheck, UploadCloud } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, ChevronRight, FileText, PenLine, RotateCcw, ShieldCheck, UploadCloud } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import {
   GUIDED_BOND_APPLICATION_PHASE2_STEPS,
@@ -8,7 +18,7 @@ import { useGuidedBondApplication } from './hooks/useGuidedBondApplication.js'
 import { useBondApplicationDocuments } from './hooks/useBondApplicationDocuments.js'
 import { useBondApplicationSubmission } from './hooks/useBondApplicationSubmission.js'
 import { BondApplicationSignaturePad } from './BondApplicationSignaturePad.jsx'
-import { BUYER_ENTITY_TYPE_OPTIONS, getBondApplicationRepeatableGroup } from '../flow/bondApplicationFlowContract.js'
+import { BUYER_ENTITY_TYPE_OPTIONS, EMPLOYMENT_TYPE_VALUES, getBondApplicationRepeatableGroup } from '../flow/bondApplicationFlowContract.js'
 import {
   BOND_APPLICATION_DOCUMENT_RULE_SET_VERSION,
 } from '../documents/index.js'
@@ -20,8 +30,6 @@ import {
 } from '../flow/bondApplicationRuleEvaluator.js'
 import {
   calculateAdditionalIncomeTotal,
-  calculateAssetTotal,
-  calculateLiabilityTotal,
   calculateMonthlyCommitmentTotal,
 } from '../flow/bondApplicationDerivedValues.js'
 
@@ -132,7 +140,7 @@ function OptionCardGroup({ legend, value, options, onChange, error }) {
   return (
     <fieldset>
       <legend className="text-sm font-semibold text-[#203549]">{legend}</legend>
-      <div className="mt-3 grid gap-3 sm:grid-cols-3">
+      <div className="mt-3 grid gap-3 sm:grid-cols-3 lg:mt-2">
         {options.map((option) => {
           const selected = value === option.value
           return (
@@ -142,7 +150,7 @@ function OptionCardGroup({ legend, value, options, onChange, error }) {
               role="radio"
               aria-checked={selected}
               onClick={() => onChange(option.value)}
-              className={`min-h-[92px] rounded-[14px] border px-4 py-3 text-left transition focus:outline-none focus:ring-2 focus:ring-[#35546c]/20 ${
+              className={`min-h-[92px] rounded-[14px] border px-4 py-3 lg:min-h-[76px] lg:py-2 text-left transition focus:outline-none focus:ring-2 focus:ring-[#35546c]/20 ${
                 selected
                   ? 'border-[#9bb8d2] bg-[#eef5fb] text-[#17314b] shadow-[0_10px_22px_rgba(15,23,42,0.06)]'
                   : 'border-[#dbe5ef] bg-white text-[#324559] hover:border-[#c4d4e4] hover:bg-[#fbfdff]'
@@ -235,27 +243,42 @@ function RepeatableGroupField({ question, group, state, updateRepeatableGroup, i
   const [editingId, setEditingId] = useState(null)
   const [draft, setDraft] = useState(null)
   const [removeId, setRemoveId] = useState(null)
+  const [draftIssues, setDraftIssues] = useState([])
   const error = getFieldError(issues, question.path)
 
   function startAdd() {
     const id = createGuidedItemId(group.key)
     setDraft({ id, guidedItemId: id, source: 'guided' })
+    setDraftIssues([])
     setEditingId(id)
   }
 
   function startEdit(record) {
     const id = record.id || record.guidedItemId || record.legacyKey || createGuidedItemId(group.key)
     setDraft({ ...record, id: record.id || id, guidedItemId: record.guidedItemId || id, source: record.source || 'guided' })
+    setDraftIssues([])
     setEditingId(id)
   }
 
   function saveItem() {
     const id = draft.id || draft.guidedItemId || editingId || createGuidedItemId(group.key)
     const normalizedDraft = { ...draft, id, guidedItemId: draft.guidedItemId || id, source: draft.source || 'guided' }
+    if (group.key === 'existing_properties' && normalizedDraft.hasBond === 'no') {
+      normalizedDraft.outstandingBondBalance = '0'
+      normalizedDraft.monthlyBondRepayment = '0'
+    }
     const index = records.findIndex((record) => (record.id || record.guidedItemId || record.legacyKey) === editingId)
     const nextRecords = index >= 0
       ? records.map((record, recordIndex) => (recordIndex === index ? normalizedDraft : record))
       : [...records, normalizedDraft]
+    const candidateState = setItemPathValue(state, question.path, nextRecords)
+    const screenKey = group.key === 'existing_properties' ? 'existing_properties' : group.key
+    if (['debts', 'existing_properties', 'liabilities'].includes(group.key)) {
+      const savedIndex = index >= 0 ? index : nextRecords.length - 1
+      const errors = validateBondApplicationScreen({ applicationState: candidateState, screenKey }).issues.filter((item) => item.path.startsWith(`${question.path}.${savedIndex}.`))
+      setDraftIssues(errors)
+      if (errors.length) return
+    }
     updateRepeatableGroup(question.path, nextRecords)
     setDraft(null)
     setEditingId(null)
@@ -279,6 +302,7 @@ function RepeatableGroupField({ question, group, state, updateRepeatableGroup, i
             const id = record.id || record.guidedItemId || record.legacyKey || `${group.key}-${index}`
             const title = getBondApplicationPathValue(record, group.summaryLabelPath) || record.type || `${group.label} ${index + 1}`
             const amount = record.monthlyAmount ?? record.monthlyInstalment ?? record.outstandingBalance ?? record.value ?? record.currentBalance
+            const recordIssues = issues.filter((item) => item.path.startsWith(`${question.path}.${index}.`))
             return (
               <article key={id} className="rounded-[14px] border border-[#dbe5ef] bg-[#fbfdff] p-3">
                 <div className="flex flex-wrap items-start justify-between gap-3">
@@ -286,6 +310,7 @@ function RepeatableGroupField({ question, group, state, updateRepeatableGroup, i
                     <h4 className="text-sm font-semibold text-[#17283a]">{title}</h4>
                     {record.accountNumber ? <p className="mt-1 text-xs text-[#6b7d93]">Account {maskAccount(record.accountNumber)}</p> : null}
                     {amount !== undefined && amount !== null && amount !== '' ? <p className="mt-1 text-xs font-semibold text-[#4d6279]">{formatCurrency(amount)}</p> : null}
+                    {recordIssues.map((item) => <p key={item.path} role="alert" className="mt-1 text-xs text-[#b5472d]">{item.message} Select Edit to update this item.</p>)}
                   </div>
                   <div className="flex items-center gap-2">
                     {removeId === id ? (
@@ -313,8 +338,9 @@ function RepeatableGroupField({ question, group, state, updateRepeatableGroup, i
         <div className="rounded-[14px] border border-[#dbe5ef] bg-white p-4">
           <div className="grid gap-3 sm:grid-cols-2">
             {(group.itemFields || []).map((field) => {
+              if (!evaluateBondApplicationRule(field.visibleWhen, draft)) return null
               const fieldValue = getBondApplicationPathValue(draft, field.path)
-              const fieldError = issues.find((item) => item.path?.includes(`${question.path}.`) && item.path?.endsWith(field.path))?.message || ''
+              const fieldError = draftIssues.find((item) => item.path.endsWith(`.${field.path}`))?.message || ''
               if (field.type === 'select' || field.type === 'yes_no') {
                 return (
                   <SelectField
@@ -387,73 +413,37 @@ function SaveStatus({ status, error, onRetry }) {
   )
 }
 
-function Stepper({ currentStepKey, steps = GUIDED_BOND_APPLICATION_PHASE2_STEPS }) {
-  return (
-    <ol className="grid gap-2 md:grid-cols-4 xl:grid-cols-8">
-      {steps.map((step, index) => {
-        const active = step.key === currentStepKey
-        const completed = step.status === 'complete'
-        return (
-          <li key={step.key}>
-            <span
-              aria-current={active ? 'step' : undefined}
-              className={`flex min-h-[44px] items-center rounded-[12px] border px-3 py-2 text-xs font-semibold ${
-                active
-                  ? 'border-[#9bb8d2] bg-white text-[#17314b] shadow-[0_8px_18px_rgba(15,23,42,0.06)]'
-                  : completed
-                    ? 'border-[#cfe4d8] bg-[#f2faf5] text-[#28724d]'
-                    : 'border-[#e1e9f2] bg-[#f8fbff] text-[#74869b]'
-              }`}
-            >
-              <span className="mr-2 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#edf3f8] text-[0.68rem]">{index + 1}</span>
-              <span className="truncate">{step.label}</span>
-            </span>
-          </li>
-        )
-      })}
-    </ol>
-  )
+function Stepper({ currentStepKey, steps = GUIDED_BOND_APPLICATION_PHASE2_STEPS, screenKey, percent, documentProgress, submissionStatus }) {
+  const submissionScreen = ['prepare_signature', 'awaiting_signature', 'submitted_status'].includes(screenKey)
+  const submitted = submissionStatus === BOND_APPLICATION_SUBMISSION_STATUSES.submitted
+  const details = steps.filter((step) => !['documents', 'review_sign'].includes(step.key))
+  const completed = []
+  if (details.length && details.every((step) => step.status === 'complete')) completed.push(0)
+  if (documentProgress?.canContinue) completed.push(1)
+  if (submissionStatus === BOND_APPLICATION_SUBMISSION_STATUSES.awaitingSignature || submitted) completed.push(2)
+  if (submitted) completed.push(3)
+  return <BondApplicationStageProgress
+    activeIndex={submissionScreen ? 3 : currentStepKey === 'review_sign' ? 2 : currentStepKey === 'documents' ? 1 : 0}
+    completed={completed}
+    percent={percent}
+  />
 }
 
-function SummaryRail({ state, documentProgress = null }) {
-  const property = state.application.property || {}
-  const finance = state.application.finance || {}
-  const buyerEntity = state.application.buyerEntity || {}
-  const applicantStructure = state.application.applicantStructure
-  const monthlyTotal = calculateMonthlyCommitmentTotal(state)
-  const incomeTotal = calculateAdditionalIncomeTotal(state)
-  const assetTotal = calculateAssetTotal(state)
-  const liabilityTotal = calculateLiabilityTotal(state)
-  const documentStatus = documentProgress
-    ? documentProgress.totalRequired > 0
-      ? `${documentProgress.completedRequired} of ${documentProgress.totalRequired} received`
-      : 'No active requests'
-    : 'Next step'
+function DetailsTracker({ flow }) {
+  if (['documents', 'review_sign'].includes(flow.currentStep.key)) return null
+  const screens = flow.screens.filter(item => !item.editOnly && !item.transitionOnly && !['documents', 'review_sign'].includes(item.stepKey))
+  const currentKey = flow.currentScreenKey === 'about_you_edit' ? 'about_you_confirmation' : flow.currentScreenKey
+  const index = Math.max(0, screens.findIndex(item => item.key === currentKey))
   return (
-    <aside className="space-y-3 lg:sticky lg:top-5 lg:h-fit">
-      <article className="rounded-[18px] border border-[#dbe5ef] bg-white p-4">
-        <h3 className="text-sm font-semibold text-[#142132]">Your purchase</h3>
-        <dl className="mt-3 space-y-2 text-sm text-[#5f7288]">
-          <div><dt className="text-xs uppercase tracking-[0.1em] text-[#8191a5]">Property</dt><dd className="font-semibold text-[#17283a]">{property.developmentName || property.propertyReference || 'Property pending'}</dd></div>
-          <div><dt className="text-xs uppercase tracking-[0.1em] text-[#8191a5]">Unit</dt><dd className="font-semibold text-[#17283a]">{property.unitReference || 'Unit pending'}</dd></div>
-          <div><dt className="text-xs uppercase tracking-[0.1em] text-[#8191a5]">Purchaser</dt><dd className="font-semibold text-[#17283a]">{BUYER_ENTITY_TYPE_OPTIONS.find((option) => option.value === (buyerEntity.entityType || 'individual'))?.label || 'Individual'}</dd></div>
-          <div><dt className="text-xs uppercase tracking-[0.1em] text-[#8191a5]">Bond required</dt><dd className="font-semibold text-[#17283a]">{formatCurrency(finance.requestedBondAmount) || 'Not provided'}</dd></div>
-        </dl>
-      </article>
-      <article className="rounded-[18px] border border-[#dbe5ef] bg-white p-4">
-        <h3 className="text-sm font-semibold text-[#142132]">Application status</h3>
-        <dl className="mt-3 space-y-2 text-sm">
-          <div className="flex justify-between gap-3"><dt className="text-[#6b7d93]">Primary applicant</dt><dd className="font-semibold text-[#17283a]">In progress</dd></div>
-          <div className="flex justify-between gap-3"><dt className="text-[#6b7d93]">Employment and income</dt><dd className="font-semibold text-[#17283a]">{incomeTotal > 0 ? 'In progress' : 'In progress'}</dd></div>
-          <div className="flex justify-between gap-3"><dt className="text-[#6b7d93]">Monthly commitments</dt><dd className="font-semibold text-[#17283a]">{monthlyTotal > 0 ? formatCurrency(monthlyTotal) : 'In progress'}</dd></div>
-          <div className="flex justify-between gap-3"><dt className="text-[#6b7d93]">Assets</dt><dd className="font-semibold text-[#17283a]">{assetTotal > 0 ? formatCurrency(assetTotal) : 'In progress'}</dd></div>
-          <div className="flex justify-between gap-3"><dt className="text-[#6b7d93]">Liabilities</dt><dd className="font-semibold text-[#17283a]">{liabilityTotal > 0 ? formatCurrency(liabilityTotal) : 'In progress'}</dd></div>
-          <div className="flex justify-between gap-3"><dt className="text-[#6b7d93]">Co-applicant</dt><dd className="font-semibold text-[#17283a]">{applicantStructure === 'joint' ? 'Continue application' : 'Not added'}</dd></div>
-          <div className="flex justify-between gap-3"><dt className="text-[#6b7d93]">Documents</dt><dd className="font-semibold text-[#17283a]">{documentStatus}</dd></div>
-          <div className="flex justify-between gap-3"><dt className="text-[#6b7d93]">Final signature</dt><dd className="font-semibold text-[#17283a]">Pending</dd></div>
-        </dl>
-      </article>
-    </aside>
+    <div className="mt-3 border-t border-[#e6edf5] pt-3" aria-label="Details tracker">
+      <div className="mb-2 flex items-center justify-between gap-3 text-xs text-[#61748a]" aria-live="polite">
+        <span className="font-semibold text-[#203549]">{flow.currentScreen.title}</span>
+        <span className="shrink-0">Details · {index + 1} of {screens.length}</span>
+      </div>
+      <div role="progressbar" aria-label="Position in details" aria-valuemin={1} aria-valuemax={screens.length} aria-valuenow={index + 1} className="h-1 overflow-hidden rounded-full bg-[#e4ebf3]">
+        <div className="h-full rounded-full bg-[#35546c] transition-[width] duration-300" style={{ width: `${((index + 1) / screens.length) * 100}%` }} />
+      </div>
+    </div>
   )
 }
 
@@ -464,18 +454,16 @@ function ApplicationConfirmationScreen({ state, updateField, issues }) {
   const entityType = buyerEntity.entityType || 'individual'
   const showEntityFields = ['company', 'trust'].includes(entityType)
   return (
-    <div className="space-y-5">
+    <div className="space-y-5 lg:space-y-3">
       <div>
         <h2 className="text-xl font-semibold tracking-[-0.02em] text-[#142132]">Your purchase</h2>
         <p className="mt-2 text-sm leading-6 text-[#5f7288]">Confirm the property and bond amounts before we move to your details.</p>
       </div>
-      <dl className="grid gap-3 sm:grid-cols-2">
-        <DetailRow label="Development" value={property.developmentName} />
-        <DetailRow label="Unit" value={property.unitReference} />
-        <DetailRow label="Property reference" value={property.propertyReference} />
-        <DetailRow label="Purchase price" value={formatCurrency(finance.purchasePrice)} />
-      </dl>
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="rounded-xl bg-[#f5f8fb] px-4 py-3 lg:py-2">
+        <p className="text-xs font-medium text-[#61748a]">Property</p>
+        <p className="mt-1 text-sm font-semibold text-[#142132]">{property.propertyReference || property.unitReference || property.address || 'Your property'}</p>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <TextInput id="guided-purchase-price" label="Purchase price" value={finance.purchasePrice} inputMode="decimal" onChange={(value) => updateField('application.finance.purchasePrice', value)} error={getFieldError(issues, 'application.finance.purchasePrice')} />
         <TextInput id="guided-deposit" label="Deposit" value={finance.depositAmount} inputMode="decimal" onChange={(value) => updateField('application.finance.depositAmount', value)} />
         <TextInput id="guided-bond-required" label="Bond required" value={finance.requestedBondAmount} inputMode="decimal" onChange={(value) => updateField('application.finance.requestedBondAmount', value)} error={getFieldError(issues, 'application.finance.requestedBondAmount')} />
@@ -603,7 +591,7 @@ function AboutYouConfirmationScreen({ state, onEdit }) {
         <DetailRow label="Mobile number" value={contact.phone || personal.phone || address.cellphone_number} />
         <DetailRow label="Email address" value={contact.email || personal.email || address.email_address} />
         <DetailRow label="Residential address" value={[address.residential_address_street, address.residential_address_suburb, address.residential_address_city].filter(Boolean).join(', ')} />
-        <DetailRow label="Marital status" value={personal.marital_status} />
+        <DetailRow label="Marital status" value={MARITAL_STATUS_OPTIONS.find(item => item.value === personal.marital_status)?.label || personal.marital_status} />
       </dl>
       <button type="button" onClick={onEdit} className="inline-flex min-h-[42px] items-center rounded-[12px] border border-[#d1deeb] bg-white px-4 py-2 text-sm font-semibold text-[#21384d] transition hover:border-[#b9cbde] hover:bg-[#f8fbff]">
         Update my details
@@ -629,7 +617,8 @@ function AboutYouEditScreen({ state, updateField, issues }) {
         <TextInput id="guided-identity" label="Identity or passport number" value={personal.identity_number || personal.passport_number || ''} onChange={(value) => updateField('participants.primaryApplicant.personal.identity_number', value)} />
         <TextInput id="guided-phone" label="Mobile number" value={contact.phone || personal.phone || ''} onChange={(value) => updateField('participants.primaryApplicant.contact.phone', value)} error={getFieldError(issues, 'participants.primaryApplicant.contact.phone')} />
         <TextInput id="guided-email" label="Email address" value={contact.email || personal.email || ''} type="email" onChange={(value) => updateField('participants.primaryApplicant.contact.email', value)} error={getFieldError(issues, 'participants.primaryApplicant.contact.email')} />
-        <TextInput id="guided-marital" label="Marital status" value={personal.marital_status || ''} onChange={(value) => updateField('participants.primaryApplicant.personal.marital_status', value)} />
+        <SelectField id="guided-marital" label="Marital status" value={personal.marital_status || ''} options={MARITAL_STATUS_OPTIONS.filter(item => item.value)} onChange={(value) => updateField('participants.primaryApplicant.personal.marital_status', value)} />
+        {personal.marital_status === 'married' ? <SelectField id="guided-marital-regime" label="Marriage regime" value={state.participants.primaryApplicant.marital?.regime || ''} options={MARITAL_REGIME_OPTIONS.filter(item => item.value && item.value !== 'not_applicable')} onChange={(value) => updateField('participants.primaryApplicant.marital.regime', value)} error={getFieldError(issues, 'participants.primaryApplicant.marital.regime')} /> : null}
         <TextInput id="guided-address-street" label="Residential street" value={address.residential_address_street || ''} onChange={(value) => updateField('participants.primaryApplicant.address.residential_address_street', value)} />
         <TextInput id="guided-address-city" label="Residential city" value={address.residential_address_city || ''} onChange={(value) => updateField('participants.primaryApplicant.address.residential_address_city', value)} />
       </div>
@@ -669,7 +658,6 @@ function EmploymentDetailsScreen({ state, updateField, issues }) {
         <TextInput id="guided-employer" label="Employer name" value={employment.employer_name || ''} onChange={(value) => updateField('participants.primaryApplicant.employment.employer_name', value)} error={getFieldError(issues, 'participants.primaryApplicant.employment.employer_name')} />
         <TextInput id="guided-occupation" label="Job title or occupation" value={employment.nature_of_occupation || ''} onChange={(value) => updateField('participants.primaryApplicant.employment.nature_of_occupation', value)} error={getFieldError(issues, 'participants.primaryApplicant.employment.nature_of_occupation')} />
         <TextInput id="guided-gross-income" label="Gross monthly income" value={expenses.gross_salary || ''} inputMode="decimal" onChange={(value) => updateField('participants.primaryApplicant.expenses.gross_salary', value)} error={getFieldError(issues, 'participants.primaryApplicant.expenses.gross_salary')} />
-        <TextInput id="guided-employee-number" label="Employee number" value={employment.employee_number || ''} onChange={(value) => updateField('participants.primaryApplicant.employment.employee_number', value)} />
       </div>
     </div>
   )
@@ -681,13 +669,15 @@ function EmploymentAdditionalDetailsScreen({ state, updateField, issues }) {
     <div className="space-y-5">
       <div>
         <h2 className="text-xl font-semibold tracking-[-0.02em] text-[#142132]">How long have you worked there?</h2>
-        <p className="mt-2 text-sm leading-6 text-[#5f7288]">The current application stores employment duration as years and months.</p>
+        <p className="mt-2 text-sm leading-6 text-[#5f7288]">Enter how long you have worked for your current employer.</p>
       </div>
       <div className="grid gap-3 sm:grid-cols-3">
         <TextInput id="guided-employment-years" label="Years" value={employment.employment_years || ''} inputMode="numeric" onChange={(value) => updateField('participants.primaryApplicant.employment.employment_years', value)} error={getFieldError(issues, 'participants.primaryApplicant.employment.employment_years')} />
         <TextInput id="guided-employment-months" label="Months" value={employment.employment_months || ''} inputMode="numeric" onChange={(value) => updateField('participants.primaryApplicant.employment.employment_months', value)} />
-        <TextInput id="guided-works-sa" label="Works in South Africa" value={employment.works_in_south_africa || ''} onChange={(value) => updateField('participants.primaryApplicant.employment.works_in_south_africa', value)} error={getFieldError(issues, 'participants.primaryApplicant.employment.works_in_south_africa')} />
+
       </div>
+      <OptionCardGroup legend="Is your current work based in South Africa?" value={employment.works_in_south_africa || ''} options={[{value:'yes',label:'Yes'},{value:'no',label:'No'}]} onChange={(value) => updateField('participants.primaryApplicant.employment.works_in_south_africa', value)} error={getFieldError(issues, 'participants.primaryApplicant.employment.works_in_south_africa')} />
+      <p className="text-xs text-[#61748a]">Choose Yes if you carry out your current work in South Africa, including remote work. Choose No if you work abroad.</p>
     </div>
   )
 }
@@ -735,7 +725,7 @@ function MonthlyCommitmentsSummaryScreen({ state }) {
         <p className="mt-2 text-sm leading-6 text-[#5f7288]">This is a summary of the amounts you entered. It is not an approval or affordability result.</p>
       </div>
       <dl className="grid gap-3 sm:grid-cols-2">
-        <DetailRow label="Additional monthly income" value={incomeTotal > 0 ? formatCurrency(incomeTotal) : 'Not provided'} />
+        <DetailRow label="Additional monthly income" value={incomeTotal > 0 ? formatCurrency(incomeTotal) : state.participants.primaryApplicant.employment?.has_additional_income === 'no' ? 'No' : 'Not provided'} />
         <DetailRow label="Estimated monthly commitments" value={monthlyTotal > 0 ? formatCurrency(monthlyTotal) : 'Not provided'} />
       </dl>
     </div>
@@ -747,7 +737,7 @@ function GenericQuestionScreen({ screen, state, updateField, updateRepeatableGro
     <div className="space-y-5">
       <div>
         <h2 className="text-xl font-semibold tracking-[-0.02em] text-[#142132]">{screen.title}</h2>
-        <p className="mt-2 text-sm leading-6 text-[#5f7288]">Answer the questions that apply to this part of your application.</p>
+        <p className="mt-2 text-sm leading-6 text-[#5f7288]">{screen.key === 'debts_gate' ? 'Include home loans, vehicle finance, personal loans, credit cards, store accounts and overdrafts. You will add each account if you select Yes.' : screen.key === 'debts' ? 'Add each debt separately, including the lender, amount still owed and monthly repayment. Include accounts even if you plan to settle them.' : screen.key === 'existing_properties_gate' ? 'Include property you own alone or jointly. If you select Yes, you will add each property and any outstanding bond.' : screen.key === 'existing_properties' ? 'Add each property you currently own, its estimated value and whether it has a bond. Loan repayments belong in Existing debts too; do not add the same loan twice.' : 'Answer the questions that apply to this part of your application.'}</p>
       </div>
       <div className="grid gap-4">
         {screen.questions.map((question) => {
@@ -793,125 +783,6 @@ function BranchChangeNotice({ pending, onConfirm, onCancel }) {
   )
 }
 
-function DocumentStatusBadge({ statusLabel }) {
-  return (
-    <span className="inline-flex rounded-full border border-[#d8e3ee] bg-[#f8fbff] px-2.5 py-1 text-xs font-semibold text-[#40566d]">
-      {statusLabel}
-    </span>
-  )
-}
-
-function DocumentRequirementCard({ item, uploadState, onUpload, onRetry }) {
-  const requirement = item.requirement
-  const inputId = `guided-document-${requirement.key}`
-  const uploadStatus = uploadState[requirement.key]?.status || ''
-  const uploadError = uploadState[requirement.key]?.error || ''
-  const primaryDocument = item.documents?.[0] || null
-  const canUpload = ['missing', 'partially_satisfied', 'rejected'].includes(item.status)
-  const actionLabel = item.status === 'rejected' ? 'Replace document' : 'Upload document'
-  return (
-    <article className="rounded-[16px] border border-[#dbe5ef] bg-white p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h3 className="text-sm font-semibold text-[#17283a]">{requirement.title}</h3>
-          <p className="mt-1 text-sm leading-6 text-[#61748a]">{requirement.description}</p>
-          {requirement.reason ? <p className="mt-1 text-xs text-[#7a8da3]">{requirement.reason}</p> : null}
-        </div>
-        <DocumentStatusBadge statusLabel={item.statusLabel} />
-      </div>
-      <dl className="mt-3 grid gap-2 text-xs text-[#61748a] sm:grid-cols-2">
-        <div><dt className="font-semibold text-[#40566d]">Required files</dt><dd>{item.requiredCount}</dd></div>
-        <div><dt className="font-semibold text-[#40566d]">Received</dt><dd>{item.uploadedCount}</dd></div>
-        {primaryDocument ? (
-          <div className="sm:col-span-2"><dt className="font-semibold text-[#40566d]">Document</dt><dd className="break-words">{primaryDocument.name || primaryDocument.document_label || 'Uploaded document'}</dd></div>
-        ) : null}
-      </dl>
-      {canUpload ? (
-        <div className="mt-4 flex flex-wrap items-center gap-2">
-          <label htmlFor={inputId} className="inline-flex min-h-[42px] cursor-pointer items-center gap-2 rounded-[12px] bg-[#35546c] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#2d475d]">
-            <UploadCloud size={16} aria-hidden="true" />
-            {uploadStatus === 'uploading' ? 'Uploading...' : actionLabel}
-          </label>
-          <input
-            id={inputId}
-            type="file"
-            className="sr-only"
-            onChange={(event) => {
-              const file = event.target.files?.[0]
-              if (file) void onUpload(item, file)
-              event.target.value = ''
-            }}
-            aria-label={`${actionLabel}: ${requirement.title}`}
-          />
-          {uploadStatus === 'error' ? (
-            <button type="button" onClick={() => void onRetry(item)} className="inline-flex min-h-[42px] items-center gap-2 rounded-[12px] border border-[#f1d4cf] bg-[#fff8f6] px-4 py-2 text-sm font-semibold text-[#b5472d]">
-              <RotateCcw size={15} aria-hidden="true" />
-              Retry
-            </button>
-          ) : null}
-        </div>
-      ) : null}
-      {uploadError ? <p className="mt-2 text-xs font-semibold text-[#b5472d]" role="alert">{uploadError}</p> : null}
-    </article>
-  )
-}
-
-function DocumentsChecklistScreen({ documentsController }) {
-  const { groups, progress, error, uploadState, uploadDocument, retryUpload, reconciling } = documentsController
-  return (
-    <div className="space-y-5">
-      <div>
-        <h2 className="text-xl font-semibold tracking-[-0.02em] text-[#142132]">Documents for your application</h2>
-        <p className="mt-2 text-sm leading-6 text-[#5f7288]">We have used your application details to work out what is needed. Upload documents now, while you complete the application, or later in your portal. They are required before your originator can send the application to a bank.</p>
-      </div>
-      <div className="rounded-[14px] border border-[#dbe5ef] bg-[#fbfdff] p-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="text-sm font-semibold text-[#17283a]">Document progress</p>
-            <p className="mt-1 text-xs text-[#61748a]">{progress.completedRequired} of {progress.totalRequired} required documents received</p>
-          </div>
-          <span className="text-lg font-semibold text-[#17314b]">{progress.percent}%</span>
-        </div>
-        <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-[#e4ebf3]">
-          <div className="h-full rounded-full bg-[linear-gradient(90deg,#35546c_0%,#2f8a64_100%)] transition-all duration-300" style={{ width: `${progress.percent}%` }} />
-        </div>
-      </div>
-      {error ? (
-        <div className="rounded-[14px] border border-[#f1d4cf] bg-[#fff8f6] px-3 py-3 text-sm leading-6 text-[#b5472d]" role="alert">
-          {error}
-        </div>
-      ) : null}
-      {reconciling ? <p className="text-sm text-[#61748a]" aria-live="polite">Refreshing document checklist...</p> : null}
-      {groups.length ? groups.map((group) => (
-        <section key={group.key} className="space-y-3">
-          <h3 className="text-sm font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">{group.title}</h3>
-          <div className="space-y-3">
-            {group.items.map((item) => (
-              <DocumentRequirementCard
-                key={item.requirement.key}
-                item={item}
-                uploadState={uploadState}
-                onUpload={uploadDocument}
-                onRetry={retryUpload}
-              />
-            ))}
-          </div>
-        </section>
-      )) : (
-        <div className="rounded-[14px] border border-dashed border-[#cfdcea] bg-[#fbfdff] p-4 text-sm text-[#61748a]">
-          No active document requests are available for this application yet.
-        </div>
-      )}
-      {!progress.canContinue && progress.blockingMissing.length ? (
-        <div className="flex items-start gap-2 rounded-[14px] border border-[#f2d6a6] bg-[#fff9ed] p-4 text-sm text-[#6f5120]" role="status">
-          <AlertTriangle size={18} className="mt-0.5 shrink-0" aria-hidden="true" />
-          <p>You can continue and sign the application now. These documents can be uploaded here or later from your portal, but are required before bank submission.</p>
-        </div>
-      ) : null}
-    </div>
-  )
-}
-
 function ReviewOverviewScreen({ submissionController, onEditSection }) {
   const { reviewSections, readiness, readinessAttempted } = submissionController
   const issuesByCategory = readiness.issues.reduce((accumulator, issue) => {
@@ -942,7 +813,10 @@ function ReviewOverviewScreen({ submissionController, onEditSection }) {
           </div>
         </div>
       ) : null}
-      <div className="grid gap-3">
+      <BondApplicationDocumentPreview presentation={submissionController.reviewDocument} />
+      <details className="rounded-2xl border border-[#dbe5ef] p-4">
+        <summary className="cursor-pointer text-sm font-semibold text-[#17283a]">Edit application sections</summary>
+      <div className="mt-3 grid gap-3">
         {reviewSections.map((section) => (
           <article key={section.key} className="rounded-[16px] border border-[#dbe5ef] bg-white p-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
@@ -963,6 +837,7 @@ function ReviewOverviewScreen({ submissionController, onEditSection }) {
           </article>
         ))}
       </div>
+      </details>
     </div>
   )
 }
@@ -1001,7 +876,7 @@ function DeclarationsScreen({ submissionController }) {
   )
 }
 
-function PrepareSignatureScreen({ submissionController, applicationState, updateField }) {
+function PrepareSignatureScreen({ onlineSigning,  submissionController, applicationState, updateField }) {
   const { readiness, preparing, error, submission, prepareForSignature } = submissionController
   const status = String(submission?.status || '').toLowerCase()
   const awaiting = status === BOND_APPLICATION_SUBMISSION_STATUSES.awaitingSignature
@@ -1010,7 +885,7 @@ function PrepareSignatureScreen({ submissionController, applicationState, update
     <div className="space-y-5">
       <div>
         <h2 className="text-xl font-semibold tracking-[-0.02em] text-[#142132]">Prepare for signing</h2>
-        <p className="mt-2 text-sm leading-6 text-[#5f7288]">Review your details, confirm the declaration, and draw your signature. We will save it with this application and include it in the PDF.</p>
+        <p className="mt-2 text-sm leading-6 text-[#5f7288]">Review your details and confirm the declarations. Choose to sign online or download a copy to sign by hand and upload here.</p>
       </div>
       {!readiness.ready && readiness.issues.length ? (
         <div className="rounded-[14px] border border-[#f2d6a6] bg-[#fff9ed] p-4" role="alert">
@@ -1026,7 +901,7 @@ function PrepareSignatureScreen({ submissionController, applicationState, update
           Your application is prepared and awaiting your signature.
         </div>
       ) : null}
-      {!awaiting ? (
+      {!awaiting && !onlineSigning ? (
         <div className="rounded-[16px] border border-[#dbe5ef] bg-[#fbfdff] p-4">
           <BondApplicationSignaturePad
             value={signature.dataUrl || ''}
@@ -1045,14 +920,20 @@ function PrepareSignatureScreen({ submissionController, applicationState, update
           </label>
         </div>
       ) : null}
+      {onlineSigning ? <BondOnlineSigningPanel availability={onlineSigning.availability} client={onlineSigning.client} onPrepare={submissionController.prepareOnline} /> : null}
+      {submissionController.wetInkAvailable && !awaiting ? <div className="rounded-2xl border border-[#dbe5ef] p-4">
+        <h3 className="font-semibold text-[#142132]">Prefer to sign by hand?</h3>
+        <p className="mt-2 text-sm leading-6 text-[#5f7288]">Download this fixed application version, sign and date it, then upload the complete PDF here. Your consultant will check it before accepting it.</p>
+        <button type="button" disabled={preparing} onClick={() => void submissionController.prepareWetInk()} className="mt-3 min-h-11 rounded-xl border px-4 text-sm font-semibold disabled:opacity-50">Download, sign and upload</button>
+      </div> : null}
       <div className="flex flex-wrap gap-2">
-        {!awaiting ? (
+        {!awaiting && !onlineSigning ? (
           <button type="button" disabled={preparing} onClick={() => void prepareForSignature()} className="inline-flex min-h-[42px] items-center gap-2 rounded-[12px] bg-[#35546c] px-4 py-2 text-sm font-semibold text-white disabled:bg-[#9aa9b8]">
             <FileText size={16} aria-hidden="true" />
             {preparing ? 'Saving signature...' : 'Sign application'}
           </button>
         ) : (
-          <p className="text-sm font-medium text-[#40566d]">Your application is ready for signature.</p>
+          awaiting ? <p className="text-sm font-medium text-[#40566d]">Your application is ready for signature.</p> : null
         )}
       </div>
     </div>
@@ -1101,12 +982,117 @@ function SubmittedApplicationScreen({ submissionController }) {
   )
 }
 
+const INCOME_BANKS = ['Absa', 'African Bank', 'Capitec', 'Discovery Bank', 'FNB', 'Investec', 'Nedbank', 'Standard Bank', 'TymeBank']
+
+export function IncomeBankScreen({ state, updateRepeatableGroup, issues = [] }) {
+  const path = 'participants.primaryApplicant.bankAccounts'
+  const accounts = state.participants.primaryApplicant.bankAccounts || []
+  const account = accounts.find(item => item.legacyKey === 'primary') || accounts[0]
+  const knownBank = INCOME_BANKS.find(name => name.toLowerCase() === String(account?.bankName || '').replace(/_/g, ' ').toLowerCase())
+  const [otherBank, setOtherBank] = useState(Boolean(account?.bankName && !knownBank))
+  const [statementFiles, setStatementFiles] = useState([])
+  const selfEmployed = EMPLOYMENT_TYPE_VALUES.selfEmployed.includes(state.participants.primaryApplicant.employment?.occupation_status)
+  function setBank(bankName) {
+    const next = { ...(account || {}), legacyKey: 'primary', bankName }
+    updateRepeatableGroup(path, account ? accounts.map(item => item === account ? next : item) : [next])
+  }
+  const error = issues.find(item => item.path === path || item.path === `${path}.${Math.max(0, accounts.indexOf(account))}.bankName`)?.message
+  return <div className="space-y-5">
+    <div><h2 className="text-xl font-semibold text-[#142132]">Where do you receive your income?</h2><p className="mt-2 text-sm leading-6 text-[#61748a]">Select the bank where you receive your salary or main income.</p></div>
+    <div className="rounded-xl bg-[#f5f8fb] p-4 text-sm leading-6 text-[#4d6279]">Your bond consultant uses your bank statements to verify income and expenses for the banks assessing your application.</div>
+    <div className="max-w-xl space-y-3">
+      <SelectField id="guided-income-bank" label="Your income bank" value={otherBank ? '__other' : knownBank || ''} options={[...INCOME_BANKS.map(name => ({value:name,label:name})), {value:'__other',label:'Another bank'}]} onChange={value => { setOtherBank(value === '__other'); setBank(value === '__other' ? '' : value) }} error={otherBank ? '' : error} />
+      {otherBank ? <TextInput id="guided-income-bank-other" label="Bank name" value={account?.bankName || ''} onChange={setBank} error={error} /> : null}
+    </div>
+    <section className="space-y-3 rounded-xl border border-[#dbe5ef] p-4" aria-labelledby="supporting-bank-statements">
+      <h3 id="supporting-bank-statements" className="text-sm font-semibold">Supporting bank statements</h3>
+      <p className="text-sm leading-6 text-[#61748a]">{selfEmployed
+        ? 'Provide your latest 6 consecutive months of personal bank statements. If you use a business bank account, also provide the latest 6 consecutive months of business statements.'
+        : 'Provide your latest 3 consecutive months of bank statements for the account where you receive your salary or main income.'}</p>
+      <p className="text-sm leading-6 text-[#61748a]">Include every page for the full period. You can provide one combined statement or separate monthly statements.</p>
+      <div className="space-y-3 rounded-xl border border-dashed border-[#cfdcea] bg-[#fbfdff] p-4">
+        <label htmlFor="guided-bank-statement-files" className="block text-sm font-semibold text-[#21384d]">Choose bank statements</label>
+        <input
+          id="guided-bank-statement-files"
+          type="file"
+          multiple
+          accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
+          aria-describedby="guided-bank-statement-selection-note"
+          className="block min-h-11 w-full text-sm text-[#61748a] file:mr-3 file:min-h-11 file:rounded-xl file:border-0 file:bg-[#35546c] file:px-4 file:text-sm file:font-semibold file:text-white"
+          onChange={(event) => {
+            const selected = Array.from(event.target.files || [])
+            setStatementFiles((current) => [...current, ...selected.filter((file) => !current.some((existing) => existing.name === file.name && existing.size === file.size && existing.lastModified === file.lastModified))])
+            event.target.value = ''
+          }}
+        />
+        <p id="guided-bank-statement-selection-note" className="text-xs leading-5 text-[#61748a]">PDF, JPG or PNG. Selected files stay in this browser session on this screen; they have not been sent or saved to your application.</p>
+        {statementFiles.length ? <ul className="space-y-2" aria-label="Selected bank statements">
+          {statementFiles.map((file, index) => <li key={`${file.name}-${file.size}-${file.lastModified}`} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[#dbe5ef] bg-white p-3">
+            <div className="min-w-0"><p className="break-all text-sm font-medium text-[#21384d]">{file.name}</p><p className="text-xs text-[#61748a]">Selected · not sent</p></div>
+            <button type="button" onClick={() => setStatementFiles((current) => current.filter((_, position) => position !== index))} aria-label={`Remove ${file.name}`} className="min-h-11 px-3 text-xs font-semibold text-[#b5472d]">Remove</button>
+          </li>)}
+        </ul> : null}
+        <button type="button" disabled aria-describedby="guided-bank-statement-delivery-note" className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[#9aa9b8] px-4 text-sm font-semibold text-white disabled:cursor-not-allowed"><UploadCloud size={16} aria-hidden="true" />Send statements to bond consultant</button>
+        <p id="guided-bank-statement-delivery-note" className="text-sm leading-6 text-[#61748a]" role="status">Sending will be available here once your bond consultant’s secure upload connection is set up. No files have been sent.</p>
+      </div>
+      <p className="text-xs leading-5 text-[#61748a]">Bank statements contain sensitive financial information. This selector does not upload files to Arch9. Your consultant’s secure connection is needed to send them directly and keep only their status here.</p>
+    </section>
+    <p className="text-xs leading-5 text-[#61748a]">Existing loans and credit accounts are collected in the next debt questions.</p>
+  </div>
+}
+
+const OTHER_MONTHLY_COST_TYPES = [
+  { value: 'insurance', label: 'Insurance', description: 'Life, vehicle or household insurance. Exclude medical aid entered earlier.' },
+  { value: 'phone_internet', label: 'Phone and internet', description: 'Your monthly mobile phone and home internet costs.' },
+  { value: 'utilities', label: 'Water and electricity', description: 'Your usual monthly water, electricity and other utility charges.' },
+  { value: 'subscriptions', label: 'Subscriptions and memberships', description: 'For example, streaming services, gym memberships or professional memberships.' },
+  { value: 'domestic_help', label: 'Domestic help', description: 'Regular payments for a domestic worker, gardener or similar household help.' },
+  { value: 'other', label: 'Another regular monthly cost', description: 'Describe a regular cost that does not fit the options above.' },
+]
+
+export function MonthlyCommitmentsScreen({ state, updateRepeatableGroup, issues = [] }) {
+  const path = 'participants.primaryApplicant.monthlyCommitments'
+  const records = state.participants.primaryApplicant.monthlyCommitments || []
+  const items = records.filter(item => !item.legacyKey)
+  function patch(item, values) {
+    updateRepeatableGroup(path, records.map(record => record === item ? { ...record, ...values } : record))
+  }
+  function add() {
+    const id = createGuidedItemId('monthly_commitments')
+    updateRepeatableGroup(path, [...records, { id, guidedItemId: id, source: 'guided', description: '', monthlyAmount: '' }])
+  }
+  return <div className="space-y-4">
+    <div><h2 className="text-xl font-semibold text-[#142132]">Other recurring commitments</h2><p className="mt-2 text-sm leading-6 text-[#61748a]">Check insurance, phone and internet, utilities, subscriptions and household help. Include only costs you pay regularly.</p></div>
+    <p className="rounded-xl bg-[#f5f8fb] p-3 text-xs leading-5 text-[#61748a]">Rent, groceries, transport, medical aid, education and maintenance were captured earlier. Loan repayments are collected in the debts section. Do not include them again here.</p>
+    <OptionCardGroup legend="Do you have any additional monthly costs?" value={items.length ? 'yes' : 'no'} options={[{value:'yes',label:'Yes'},{value:'no',label:'No'}]} onChange={value => { if (value === 'yes' && !items.length) add(); if (value === 'no') updateRepeatableGroup(path, records.filter(item => item.legacyKey)) }} />
+    {items.map((item, index) => {
+      const matchingType = OTHER_MONTHLY_COST_TYPES.find(type => type.label === item.description)
+      const selectedType = item.category || matchingType?.value || (item.description ? 'other' : '')
+      const type = OTHER_MONTHLY_COST_TYPES.find(option => option.value === selectedType)
+      const errorPath = `${path}.${records.indexOf(item)}`
+      return <article key={item.id || item.guidedItemId || index} className="rounded-xl border border-[#dbe5ef] p-4">
+        <div className="mb-3 flex items-center justify-between"><h3 className="text-sm font-semibold">Monthly cost {index + 1}</h3><button type="button" className="text-xs font-semibold text-[#b5472d]" onClick={() => updateRepeatableGroup(path, records.filter(record => record !== item))}>Remove cost {index + 1}</button></div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <SelectField id={`commitment-${index}-type`} label="Type of monthly cost" value={selectedType} options={OTHER_MONTHLY_COST_TYPES} onChange={value => patch(item, { category: value, description: value === 'other' ? '' : OTHER_MONTHLY_COST_TYPES.find(option => option.value === value)?.label || '' })} error={selectedType === 'other' ? '' : issues.find(issue => issue.path === `${errorPath}.description`)?.message} />
+          <TextInput id={`commitment-${index}-amount`} label="Monthly amount (R)" value={item.monthlyAmount ?? ''} inputMode="decimal" onChange={value => patch(item, {monthlyAmount:value})} error={issues.find(issue => issue.path === `${errorPath}.monthlyAmount`)?.message} />
+        </div>
+        {type ? <p className="mt-2 text-xs leading-5 text-[#61748a]">{type.description} Use a monthly average if the amount varies.</p> : null}
+        {selectedType === 'other' ? <div className="mt-3"><TextInput id={`commitment-${index}-description`} label="Describe the monthly cost" value={item.description || ''} onChange={value => patch(item, {description:value})} error={issues.find(issue => issue.path === `${errorPath}.description`)?.message} /></div> : null}
+      </article>
+    })}
+    {items.length ? <><button type="button" className="min-h-11 rounded-xl border border-[#d1deeb] px-4 text-sm font-semibold" onClick={add}>Add another monthly cost</button><div className="flex items-center justify-between rounded-xl bg-[#f5f8fb] p-4 text-sm"><span>Other monthly costs</span><strong>{formatCurrency(items.reduce((sum, item) => sum + (Number(String(item.monthlyAmount || '').replace(/[ ,]/g, '')) || 0), 0))}</strong></div></> : <p className="text-sm text-[#61748a]">No additional monthly costs. Select Continue to review your monthly commitments.</p>}
+  </div>
+}
+
 function CurrentScreen({
+  onlineSigning,
   controller,
   documentsController,
   submissionController,
   participantModeEnabled = false,
   onInviteCoApplicant,
+  onOpenDocument,
+  onOpenDocuments,
 }) {
   const { currentScreenKey, applicationState, updateField, updateRepeatableGroup, validationIssues, handoffReason, flow } = controller
   if (currentScreenKey === 'application_confirmation') return <ApplicationConfirmationScreen state={applicationState} updateField={updateField} issues={validationIssues} />
@@ -1115,13 +1101,17 @@ function CurrentScreen({
   if (currentScreenKey === 'about_you_edit') return <AboutYouEditScreen state={applicationState} updateField={updateField} issues={validationIssues} />
   if (currentScreenKey === 'employment_type') return <EmploymentTypeScreen state={applicationState} updateField={updateField} issues={validationIssues} />
   if (currentScreenKey === 'monthly_commitments_summary') return <MonthlyCommitmentsSummaryScreen state={applicationState} />
-  if (currentScreenKey === 'document_checklist') return <DocumentsChecklistScreen documentsController={documentsController} />
+  if (currentScreenKey === 'document_checklist') return <DocumentsChecklistScreen documentsController={documentsController} onOpenDocument={onOpenDocument} onOpenDocuments={onOpenDocuments} />
   if (currentScreenKey === 'review_overview') return <ReviewOverviewScreen submissionController={submissionController} onEditSection={(section) => void controller.openScreen(section.screenKey)} />
   if (currentScreenKey === 'declarations') return <DeclarationsScreen submissionController={submissionController} />
-  if (currentScreenKey === 'prepare_signature') return <PrepareSignatureScreen submissionController={submissionController} applicationState={applicationState} updateField={updateField} />
+  if (currentScreenKey === 'prepare_signature') return <PrepareSignatureScreen onlineSigning={onlineSigning} submissionController={submissionController} applicationState={applicationState} updateField={updateField} />
   if (currentScreenKey === 'awaiting_signature') return <AwaitingSignatureScreen submissionController={submissionController} />
   if (currentScreenKey === 'submitted_status') return <SubmittedApplicationScreen submissionController={submissionController} />
   if (flow.currentScreen?.transitionOnly) return <TransitionScreen reason={handoffReason || (currentScreenKey === 'phase4_review_sign_handoff' ? 'phase_4_review_sign' : currentScreenKey === 'phase3_documents_handoff' ? 'phase_3_documents' : '')} />
+  if (currentScreenKey === 'bank_accounts') return <IncomeBankScreen state={applicationState} updateRepeatableGroup={updateRepeatableGroup} issues={validationIssues} />
+  if (currentScreenKey === 'assets') return <AssetsScreen state={applicationState} updateRepeatableGroup={updateRepeatableGroup} issues={validationIssues} />
+  if (currentScreenKey === 'liabilities') return <LiabilitiesScreen state={applicationState} updateRepeatableGroup={updateRepeatableGroup} issues={validationIssues} />
+  if (currentScreenKey === 'monthly_other_commitments') return <MonthlyCommitmentsScreen state={applicationState} updateRepeatableGroup={updateRepeatableGroup} issues={validationIssues} />
   if (currentScreenKey === 'employment_details') return <EmploymentDetailsScreen state={applicationState} updateField={updateField} issues={validationIssues} />
   if (currentScreenKey === 'employment_additional_details') return <EmploymentAdditionalDetailsScreen state={applicationState} updateField={updateField} issues={validationIssues} />
   if (flow.currentScreen) {
@@ -1151,10 +1141,17 @@ export default function GuidedBondApplication({
   saveClientPortalOnboardingDraft,
   requiredDocuments = [],
   documents = [],
+  additionalRequirements = [],
+  preview = false,
   onReconcileDocumentRequirements,
   onUploadRequiredDocument,
   onRefreshDocuments,
+  onOpenDocument,
+  onOpenDocuments,
   onPrepareSubmission,
+  onPrepareWetInk,
+  onPrepareOnlineSigning,
+  onlineSigning,
   onRefreshSubmission,
   onCancelPendingSubmission,
   participantModeEnabled = false,
@@ -1175,9 +1172,12 @@ export default function GuidedBondApplication({
     applicationState: controller.applicationState,
     requiredDocuments,
     documents,
+    additionalRequirements,
     onReconcileDocumentRequirements,
+    saveLatestApplication: controller.saveCurrent,
     onUploadRequiredDocument,
     onRefreshDocuments,
+    active: controller.currentScreenKey === 'document_checklist',
   })
   const submissionController = useBondApplicationSubmission({
     applicationState: controller.applicationState,
@@ -1186,6 +1186,8 @@ export default function GuidedBondApplication({
     saveStatus: controller.saveStatus,
     saveLatestApplication: controller.saveCurrent,
     onPrepareSubmission,
+    onPrepareWetInk,
+    onPrepareOnlineSigning,
     onRefreshSubmission,
     onCancelPendingSubmission,
     onFinalized: () => void controller.openScreen('submitted_status'),
@@ -1252,48 +1254,28 @@ export default function GuidedBondApplication({
   }
 
   return (
-    <section className="space-y-5 rounded-[22px] border border-[#dbe5ef] bg-[#f8fbff] px-4 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)] sm:px-5 sm:py-5">
+    <section className="space-y-6 rounded-[22px] border border-[#dbe5ef] bg-white p-4 sm:p-6 lg:flex lg:max-h-[calc(100dvh-6rem)] lg:flex-col lg:gap-4 lg:space-y-0 lg:overflow-hidden lg:p-5">
       {showHandoffNotices && token ? <BondApplicationBuyerNotices token={token} /> : null}
-      <header className="flex flex-wrap items-center justify-between gap-3 rounded-[18px] border border-[#dbe5ef] bg-white px-4 py-3">
-        <button type="button" onClick={onBackToPortal} className="inline-flex min-h-[38px] items-center gap-2 rounded-[10px] border border-[#d1deeb] bg-white px-3 py-1.5 text-xs font-semibold text-[#21384d] transition hover:border-[#b9cbde] hover:bg-[#f8fbff]">
-          <ArrowLeft size={14} aria-hidden="true" />
-          Back to portal
-        </button>
-        <SaveStatus status={controller.saveStatus} error={controller.saveError} onRetry={() => void controller.retrySave()} />
-        <button type="button" onClick={() => void controller.saveAndExit()} disabled={disablePrimary} className="inline-flex min-h-[38px] items-center rounded-[10px] bg-[#35546c] px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-[#2d475d] disabled:cursor-not-allowed disabled:bg-[#9aa9b8]">
-          Save and exit
-        </button>
+      <header className="border-b border-[#e6edf5] pb-5 lg:shrink-0 lg:pb-3">
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-3 lg:mb-3">
+          <h1 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">Bond application</h1>
+          <div className="flex items-center gap-3">
+            {preview ? <span className="text-xs text-[#61748a]">Preview · saved for this session</span> : <SaveStatus status={controller.saveStatus} error={controller.saveError} onRetry={() => void controller.retrySave().catch(() => {})} />}
+            <button type="button" onClick={() => void controller.saveAndExit().catch(() => {})} disabled={disablePrimary} className="min-h-11 rounded-xl border border-[#d1deeb] px-3 text-xs font-semibold text-[#21384d] disabled:opacity-60">Save and exit</button>
+          </div>
+        </div>
+        <Stepper currentStepKey={progress.currentStep.key} steps={controller.flow.steps} screenKey={controller.currentScreenKey} percent={progress.percent} documentProgress={documentsController.progress} submissionStatus={submissionStatus} />
+        <DetailsTracker flow={controller.flow} />
       </header>
 
-      <div className="space-y-2">
-        <span className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Complete your bond application</span>
-        <h1 ref={headingRef} tabIndex={-1} className="text-2xl font-semibold tracking-[-0.03em] text-[#142132] outline-none">
-          {screen.title}
-        </h1>
-        <p className="max-w-3xl text-sm leading-6 text-[#5f7288]">
-          We have prefilled what we can from your onboarding and only ask for what is still needed.
-        </p>
-      </div>
-
-      <section className="rounded-[18px] border border-[#dbe5ef] bg-white p-4">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">
-          <span>Step {progress.currentStepIndex + 1} of {progress.stepCount}: {progress.currentStep.label}</span>
-          <span>{progress.percent}%</span>
-        </div>
-        <div className="mb-4 h-2.5 overflow-hidden rounded-full bg-[#e4ebf3]">
-          <div className="h-full rounded-full bg-[linear-gradient(90deg,#35546c_0%,#2f8a64_100%)] transition-all duration-300" style={{ width: `${progress.percent}%` }} />
-        </div>
-        <Stepper currentStepKey={progress.currentStep.key} steps={controller.flow.steps} />
-      </section>
-
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_300px]">
-        <div className="space-y-3">
+      <div className="mx-auto w-full max-w-3xl space-y-4 lg:min-h-0 lg:max-w-none lg:overflow-y-auto lg:overscroll-contain lg:pr-1" aria-label="Application section">
+        <p className="text-xs text-[#61748a]">{controller.flow.progress.completedRequired} of {controller.flow.progress.totalRequired} required details complete</p>
           {controller.saveError ? (
             <div className="rounded-[14px] border border-[#f1d4cf] bg-[#fff8f6] px-3 py-3 text-sm leading-6 text-[#b5472d]" role="alert">
               {controller.saveError}
             </div>
           ) : null}
-          <article className="rounded-[18px] border border-[#dbe5ef] bg-white p-5">
+          <article ref={headingRef} tabIndex={-1} aria-label={screen.title} className="outline-none">
             <BranchChangeNotice
               pending={controller.pendingBranchChange}
               onConfirm={controller.confirmBranchChange}
@@ -1301,31 +1283,27 @@ export default function GuidedBondApplication({
             />
             {controller.pendingBranchChange ? <div className="h-5" /> : null}
             <CurrentScreen
+              onlineSigning={onlineSigning}
               controller={controller}
               documentsController={documentsController}
+              onOpenDocument={onOpenDocument}
+              onOpenDocuments={onOpenDocuments}
               submissionController={submissionController}
               participantModeEnabled={participantModeEnabled}
               onInviteCoApplicant={onInviteCoApplicant}
             />
           </article>
-          <div className="lg:hidden">
-            <SummaryRail state={controller.applicationState} documentProgress={documentsController.progress} />
-          </div>
-        </div>
-        <div className="hidden lg:block">
-          <SummaryRail state={controller.applicationState} documentProgress={documentsController.progress} />
-        </div>
       </div>
 
-      <footer className="sticky bottom-0 z-10 -mx-4 -mb-4 border-t border-[#dbe5ef] bg-white/95 px-4 py-3 backdrop-blur sm:-mx-5 sm:-mb-5 sm:px-5" style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}>
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <button type="button" onClick={() => void handleBack()} disabled={disablePrimary} className="inline-flex min-h-[42px] items-center gap-2 rounded-[12px] border border-[#d1deeb] bg-white px-4 py-2 text-sm font-semibold text-[#21384d] transition hover:border-[#b9cbde] hover:bg-[#f8fbff] disabled:cursor-not-allowed disabled:opacity-60">
+      <footer className="sticky bottom-0 z-10 -mx-4 -mb-4 border-t border-[#dbe5ef] bg-white/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:-mb-6 sm:px-6 lg:static lg:-mx-5 lg:-mb-5 lg:shrink-0 lg:px-5" style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}>
+        <div className="mx-auto flex max-w-3xl flex-wrap items-center justify-between gap-3 lg:max-w-none">
+          <button type="button" onClick={() => void handleBack().catch(() => {})} disabled={disablePrimary} className="inline-flex min-h-[42px] items-center gap-2 rounded-[12px] border border-[#d1deeb] bg-white px-4 py-2 text-sm font-semibold text-[#21384d] transition hover:border-[#b9cbde] hover:bg-[#f8fbff] disabled:cursor-not-allowed disabled:opacity-60">
             <ArrowLeft size={15} aria-hidden="true" />
             Back
           </button>
           <div className="flex items-center gap-3">
-            <span className="hidden text-xs font-medium text-[#6b7d93] sm:inline">Saved through your secure application link.</span>
-            <button type="button" onClick={() => void handleContinue()} disabled={disablePrimary || (['prepare_signature', 'awaiting_signature'].includes(controller.currentScreenKey) && !submissionController.signingAvailability.available)} className="inline-flex min-h-[42px] items-center gap-2 rounded-[12px] bg-[#35546c] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#2d475d] disabled:cursor-not-allowed disabled:bg-[#9aa9b8]">
+            <span className="hidden text-xs font-medium text-[#6b7d93] sm:inline">{preview ? 'Preview only · changes stay in this session.' : 'Saved through your secure application link.'}</span>
+            <button type="button" onClick={() => void handleContinue().catch(() => {})} disabled={disablePrimary || (['prepare_signature', 'awaiting_signature'].includes(controller.currentScreenKey) && !submissionController.signingAvailability.available)} className="inline-flex min-h-[42px] items-center gap-2 rounded-[12px] bg-[#35546c] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#2d475d] disabled:cursor-not-allowed disabled:bg-[#9aa9b8]">
               {controller.currentScreenKey === 'document_checklist' ? 'Continue to review' : controller.currentScreenKey === 'prepare_signature' ? 'Prepare application' : controller.currentScreenKey === 'awaiting_signature' ? 'Sign application' : controller.currentScreenKey === 'phase3_documents_handoff' ? 'Continue to documents' : isTransition ? 'Continue application' : 'Continue'}
               <ChevronRight size={15} aria-hidden="true" />
             </button>

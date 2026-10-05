@@ -26,7 +26,7 @@ export async function verifyRentalLeadHandoff(lead, toStage, context = {}) {
   }
   if (toStage === 'listing_created') {
     const listingId = text(lead.relationships?.listingId)
-    const listing = listingId ? await getRentalListingForAgent(listingId, context.actor?.id || context.actor?.userId, { organisationId: context.organisationId }) : null
+    const listing = listingId ? await getRentalListingForAgent(listingId, context.actor?.id || context.actor?.userId, { ...buildRentalListingQueryOptions(context.scope || {}), organisationId: context.organisationId }) : null
     return requireRentalLeadHandoff(lead, toStage, { listing, organisationId: context.organisationId })
   }
   return { evidence: {}, relationships: {} }

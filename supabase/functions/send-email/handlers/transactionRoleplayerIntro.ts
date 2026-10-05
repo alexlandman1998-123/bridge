@@ -1,3 +1,4 @@
+import { transactionHandoffManagedByWorker } from '../services/transactionHandoffDispatch.ts';
 import { createClient } from "supabase";
 import {
   renderBridgeBullets,
@@ -705,6 +706,10 @@ export async function handleTransactionRoleplayerHandoffEmail(
   const supabase = createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
+
+  if (await transactionHandoffManagedByWorker(transactionId,supabase)) {
+    return jsonResponse(200,{ok:true,sent:false,queued:true,reason:'durable_handoff_dispatch',transactionId});
+  }
 
   let transactionQuery = await supabase
     .from("transactions")

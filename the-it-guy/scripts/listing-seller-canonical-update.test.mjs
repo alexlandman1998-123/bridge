@@ -1,3 +1,4 @@
+import { getSellerMandatePreparationIssues } from '../src/lib/sellerMandateCapture.js'
 import assert from 'node:assert/strict'
 import { createListingSellerProfileBuilderDraft, buildListingSellerProfileFormPatch, selectListingSellerProfileBranch } from '../src/lib/listingSellerProfileBuilderModel.js'
 import { readFile } from 'node:fs/promises'
@@ -5,6 +6,8 @@ import { readFile } from 'node:fs/promises'
 import {
   applyListingSellerCanonicalUpdateSnapshot,
   buildListingSellerCanonicalUpdate,
+  buildListingSellerCanonicalSavePayload,
+  isMatchingSellerCanonicalSaveReceipt,
   LISTING_SELLER_CANONICAL_UPDATE_VERSION,
 } from '../src/services/listings/listingSellerCanonicalUpdateModel.js'
 import { limitSellerCanonicalSaveWait, saveListingSellerCanonicalUpdate } from '../src/services/listings/listingSellerCanonicalUpdateService.js'
@@ -69,6 +72,55 @@ await test('builds one canonical seller mutation with provenance and optimistic 
   assert.equal(update.requirementsAffected, false)
   assert.deepEqual(update.changedFields, ['firstName', 'sellerFirstName'])
   assert.equal(update.canonicalFacts.context.canonical_update.mutation_id, update.mutationId)
+})
+
+await test('sends changed fields without resending existing documents and preserves clears and normalized aliases', () => {
+  const savedForm = {
+    ...listing.sellerOnboarding.formData,
+    sellerPostOnboardingDrafts: { documents: [{ generatedHtml: 'saved draft'.repeat(50000) }] },
+    sellerOnboardingManualSigningPack: { documents: [{ versionId: 'old-version', generatedHtml: 'signed copy'.repeat(50000) }] },
+    phone: 'old phone', sellerPhone: 'old phone', mobile: 'old phone',
+  }
+  const update = buildListingSellerCanonicalUpdate({
+    listing: { ...listing, sellerOnboarding: { status: 'in_progress', formData: savedForm } },
+    formPatch: { phone: '', notes: 'Updated note' },
+    mutationId: '33333333-3333-4333-8333-333333333333',
+  })
+  const payload = buildListingSellerCanonicalSavePayload(update)
+  assert.equal(payload.formData.phone, '')
+  assert.equal(payload.formData.sellerPhone, '')
+  assert.equal(payload.formData.mobile, '')
+  assert.equal(payload.formData.notes, 'Updated note')
+  assert.equal(payload.formData.sellerPostOnboardingDrafts, undefined)
+  assert.equal(payload.formData.sellerOnboardingManualSigningPack, undefined)
+  assert.equal(payload.listingPatch.sellerCanonicalFacts, undefined)
+  assert.ok(JSON.stringify(payload).length < JSON.stringify(update.nextFormData).length / 10)
+  assert.deepEqual({ ...savedForm, ...payload.formData }, update.nextFormData)
+})
+
+await test('timeout confirmation requires the exact mutation and frozen document contents on both saved records', () => {
+  const update = buildListingSellerCanonicalUpdate({ listing,
+    formPatch: { sellerOnboardingManualSigningPack: { documents: [{ versionId: 'prepared-copy', generatedHtml: 'Exact approved HTML' }] } },
+    mutationId: '33333333-3333-4333-8333-333333333333',
+  })
+  const receipt = {
+    listing: { id: listing.id, seller_canonical_facts_json: update.canonicalFacts,
+      seller_onboarding_status: update.onboardingStatus, seller_type: update.sellerType,
+      address_line_1: update.listingPatch.addressLine1, mandate_type: update.listingPatch.mandateType },
+    onboarding: { id: 'onboarding-1', private_listing_id: listing.id, status: update.onboardingStatus,
+      canonical_facts_json: update.canonicalFacts, form_data: update.nextFormData },
+  }
+  assert.equal(isMatchingSellerCanonicalSaveReceipt(receipt, update), true)
+  const reversedKeys = Object.fromEntries(Object.entries(update.canonicalFacts).reverse())
+  assert.equal(isMatchingSellerCanonicalSaveReceipt({ ...receipt, listing: { ...receipt.listing, seller_canonical_facts_json: reversedKeys } }, update), true)
+  for (const changed of [
+    { ...receipt, listing: { ...receipt.listing, id: 'different-listing' } },
+    { ...receipt, onboarding: { ...receipt.onboarding, canonical_facts_json: {} } },
+    { ...receipt, onboarding: { ...receipt.onboarding, status: 'rejected' } },
+    { ...receipt, listing: { ...receipt.listing, address_line_1: 'Later listing edit' } },
+    { ...receipt, onboarding: { ...receipt.onboarding, form_data: { ...update.nextFormData,
+      sellerOnboardingManualSigningPack: { documents: [{ versionId: 'later-copy', generatedHtml: 'Changed' }] } } } },
+  ]) assert.equal(isMatchingSellerCanonicalSaveReceipt(changed, update), false)
 })
 
 await test('marks authority and ownership changes for document requirement resync', () => {
@@ -165,6 +217,34 @@ await test('returns the committed seller snapshot when requirement projection ne
   assert.equal(result.warnings[0].code, 'SELLER_REQUIREMENT_SYNC_FAILED')
 })
 
+for (const refreshedChecklist of [false, true]) {
+await test(`a seller save retains loaded media and branding with checklist refresh ${refreshedChecklist}`, async () => {
+  const existingListing = { ...listing, heroImageUrl: 'https://example.test/photo.jpg', branding: { organisationName: 'Saved Agency' },
+    assignedAgentName: 'Listing Agent', listingPublicationData: { status: 'Published' } }
+  const checklist = { documentRequirements: [{ id: 'saved-requirement', status: 'approved' }], documents: [{ id: 'saved-document' }], readinessSummary: { ready: true } }
+  const result = await saveListingSellerCanonicalUpdate({ listing: existingListing, formPatch: { notes: 'Pack ready' },
+    syncLinkedCrmContact: false, includeRequirementsAndDocuments: false }, {
+    savePrivateListingSellerCanonicalUpdate: async () => ({ snapshotOnly: true, receipt: {},
+      requirementSyncResult: refreshedChecklist ? { listing: checklist } : null,
+      listing: { updatedAt: '2026-10-05T07:00:00Z', heroImageUrl: '', branding: {}, assignedAgentName: '', listingPublicationData: null,
+        ...(refreshedChecklist ? checklist : {}),
+        sellerOnboarding: { id: 'saved-onboarding-id' } } }),
+  })
+  assert.equal(result.listing.updatedAt, '2026-10-05T07:00:00Z')
+  assert.equal(result.listing.heroImageUrl, existingListing.heroImageUrl)
+  assert.deepEqual(result.listing.branding, existingListing.branding)
+  assert.equal(result.listing.assignedAgentName, existingListing.assignedAgentName)
+  assert.deepEqual(result.listing.listingPublicationData, existingListing.listingPublicationData)
+  assert.equal(result.listing.sellerOnboarding.id, 'saved-onboarding-id')
+  assert.equal(result.listing.sellerOnboarding.formData.notes, 'Pack ready')
+  if (refreshedChecklist) {
+    assert.deepEqual(result.listing.documentRequirements, checklist.documentRequirements)
+    assert.deepEqual(result.listing.documents, checklist.documents)
+    assert.deepEqual(result.listing.readinessSummary, checklist.readinessSummary)
+  }
+})
+}
+
 await test('wires listing seller editors to the canonical service and an atomic RLS RPC', async () => {
   const [page, privateListingService, migration] = await Promise.all([
     readFile(new URL('../src/pages/AgentListingDetail.jsx', import.meta.url), 'utf8'),
@@ -197,6 +277,7 @@ async function runLeadPreparation({ mandateType = 'dual', digital = false, saveE
     askingPrice: '1000000', mandateType: 'sole', propertyDisclosure: { comments: 'Retain this explanation.' } }
   const currentListing = priorListing || { ...listing, sellerOnboarding: { status: 'completed', formData: originalForm } }
   const scope = {
+    getSellerMandatePreparationIssues,
     selectedLeadLinkedListingId: listing.id, selectedLeadLinkedListing: currentListing,
     selectedLead: { leadId: 'lead-1', sellerOnboarding: { formData: { ...originalForm, sellerSurname: 'Stale CRM' } } },
     sellerSigningPackSaving: false, SELLER_PORTAL_SIGNING_ENABLED: true,
@@ -209,7 +290,7 @@ async function runLeadPreparation({ mandateType = 'dual', digital = false, saveE
     normalizeText: value => String(value ?? '').trim(), isValidEmail: value => String(value).includes('@'),
     getLeadSellerOnboardingFormData: lead => lead.sellerOnboarding.formData,
     getSellerLeadReviewFormData: (lead, row) => ({ ...lead.sellerOnboarding.formData, ...row.sellerOnboarding.formData }),
-    hasCompletedOnboardingDisclosureSignature: () => false,
+    selectedSellerDisclosureComplete: false,
     readSellerOnboardingReview: () => ({ status: 'approved' }), SELLER_ONBOARDING_REVIEW_STATUS: { approved: 'approved' },
     getSellerLeadOnboardingReviewChecklist: () => ({ ready: true }),
     getSellerLeadSigningRecipients: () => [{ id: 'owner-1', name: 'Old Owner', email: 'owner@example.test', role: 'Seller' }],
@@ -223,8 +304,9 @@ async function runLeadPreparation({ mandateType = 'dual', digital = false, saveE
     getPrivateListing: async () => { throw new Error('Unexpected fallback read') },
     persistSellerProfileOnboardingFormData: async () => { throw new Error('Preparation used a split onboarding write') },
     saveListingSellerCanonicalUpdate: async input => saveListingSellerCanonicalUpdate(input, {
-      savePrivateListingSellerCanonicalUpdate: async update => {
+      savePrivateListingSellerCanonicalUpdate: async (update, options) => {
         events.saves.push(update)
+        events.saveOptions = options
         if (saveError) throw saveError
         events.committed = applyListingSellerCanonicalUpdateSnapshot(currentListing, update)
         if (warning) throw Object.assign(new Error(warning), { committed: true, code: 'SELLER_READBACK_FAILED', listing: events.committed })
@@ -237,7 +319,7 @@ async function runLeadPreparation({ mandateType = 'dual', digital = false, saveE
     updatePrivateListing: async (_id, patch) => { events.listingWrites.push(patch) },
     updateAgencyCrmLeadRecord: async () => {}, patchSelectedLeadRecord: () => {},
     setSellerSigningPackError: message => { if (message) events.errors.push(message) },
-    setSellerSigningPackSaving: () => {}, setSellerSigningPackModalOpen: () => {},
+    setSellerSigningPackProgress: () => {}, setSellerSigningPackSaving: () => {}, setSellerSigningPackModalOpen: () => {},
     setMessage: () => {}, scheduleRecordsReload: () => {},
   }
   await Function(...Object.keys(scope), `${leadPreparationAction}\nreturn sendSellerLeadSigningPack()`)(...Object.values(scope))
@@ -250,6 +332,7 @@ for (const mandateType of ['sole', 'open', 'dual']) {
       const events = await runLeadPreparation({ mandateType, digital })
       assert.deepEqual(events.errors, [])
       assert.equal(events.saves.length, 1)
+      assert.equal(events.saveOptions.forceRequirementSync, true)
       assert.deepEqual(events.listingWrites, [{ mandateStatus: 'generated' }])
       assert.equal(events.sends.length, digital ? 3 : 0)
       const update = events.saves[0]
@@ -277,7 +360,7 @@ for (const mandateType of ['sole', 'open', 'dual']) {
   }
 }
 
-for (const message of ['Database write failed', 'This seller record changed after you opened it.']) {
+for (const message of ['Database write failed', 'This seller record changed after you opened it.', 'The seller save request timed out and its completion could not be confirmed.']) {
   await test(`actual preparation stops before dispatch or local success when ${message}`, async () => {
     const events = await runLeadPreparation({ digital: true, saveError: new Error(message) })
     assert.deepEqual(events.errors, [message])

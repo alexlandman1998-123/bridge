@@ -3,6 +3,9 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import process from 'node:process'
 import { createClient } from '@supabase/supabase-js'
+import { PGlite } from '@electric-sql/pglite'
+import { verifyAppointmentResponses } from './helpers/appointmentResponseFixture.mjs'
+import { respondToPortalAppointment } from '../src/services/clientAppointmentResponseService.js'
 
 const root = resolve(import.meta.dirname, '..')
 const migration = readFileSync(resolve(root, '../supabase/migrations/202607180047_attorney_calendar_phase4_rsvp_lifecycle.sql'), 'utf8')
@@ -44,17 +47,46 @@ for (const token of [
 }
 
 assert.ok(operations.includes('rsvp_expires_at: dateTime || null'), 'New attorney invites should expire RSVP capability at appointment start.')
-assert.ok(operations.includes('delete next.rsvp_expires_at'), 'Pre-migration fallback should remove the expiry column safely.')
+assert.ok(operations.includes("client.rpc('create_attorney_appointment_invite'"), 'RSVP tokens and expiry must save atomically through the database operation.')
+assert.ok(api.includes('return respondToPortalAppointment(client, { ...input, onLegacyResponse:'), 'Portal responses must use the atomic writer.')
+const responseChecks = await verifyAppointmentResponses(PGlite)
+console.log(`Appointment response database checks passed: ${responseChecks.length} scenarios`)
 
-for (const token of [
-  "notifyAppointmentParticipants(normalizedAppointmentId, appointmentNotificationEventType",
-  "mapClientPortalAppointmentActionToNotificationEvent(normalizedAction)",
-  "trigger: 'client_portal_appointment_response'",
-  "cancelAppointmentReminders(normalizedAppointmentId)",
-  "normalizedAction === 'decline' || normalizedAction === 'reschedule'",
-]) {
-  assert.ok(api.includes(token), `Client portal appointment responses should include ${token}`)
-}
+// A transport interruption after a commit must reuse the same command, while
+// permission/stale-time errors must reach the user without another write.
+const calls = []
+const client = { rpc: async (name, args) => {
+  calls.push({ name, args: { ...args } })
+  if (calls.length === 1) return { error: new Error('Failed to fetch') }
+  return { data: { appointmentId: 'appointment', participantId: 'buyer', rsvpStatus: 'Accepted', status: 'Pending Confirmation', replayed: true } }
+} }
+const response = await respondToPortalAppointment(client, { token: 'capability', appointmentId: 'appointment', action: 'confirm', expectedStart: '2099-07-20T08:00Z' })
+assert.equal(response.status, 'Pending Confirmation')
+assert.equal(calls.length, 2)
+assert.deepEqual(calls[0], calls[1])
+assert.equal(calls[0].name, 'bridge_respond_client_portal_appointment')
+assert.equal('p_client_role' in calls[0].args, false)
+let deniedCalls = 0
+await assert.rejects(respondToPortalAppointment({ rpc: async () => { deniedCalls++; return { error: { code: '42501', message: 'Appointment access denied' } } } },
+  { token: 'capability', appointmentId: 'appointment', action: 'confirm', expectedStart: '2099-07-20T08:00Z' }), error => error.code === '42501' && error.message.includes('access denied'))
+assert.equal(deniedCalls, 1)
+let rescheduleArgs
+await respondToPortalAppointment({ rpc: async (_name, args) => { rescheduleArgs=args; return { data: { appointmentId: 'appointment', participantId: 'seller', rsvpStatus: 'Proposed New Time', status: 'Reschedule Requested' } } } },
+  { token: 'seller-capability', sellerPortalAccessToken: 'session', appointmentId: 'appointment', action: 'reschedule', expectedStart: '2099-07-20T08:00Z', preferredDateTime: '2099-07-21T10:00', notes: 'Morning please' })
+assert.equal(rescheduleArgs.p_preferred_start, '2099-07-21T08:00:00.000Z')
+assert.equal(rescheduleArgs.p_seller_access_token, 'session')
+
+let legacyCalls=0
+await respondToPortalAppointment({ rpc: async () => ({ data: { appointmentId: 'appointment', participantId: 'buyer', rsvpStatus: 'Accepted', status: 'Confirmed', legacyDelivery: true } }) },
+  { token: 'capability', appointmentId: 'appointment', action: 'confirm', expectedStart: '2099-07-20T08:00Z', onLegacyResponse: async () => { legacyCalls++; throw new Error('Provider unavailable') } })
+await Promise.resolve(); await Promise.resolve()
+assert.equal(legacyCalls, 1, 'Legacy delivery failure must not reject the already-saved response.')
+await respondToPortalAppointment({ rpc: async () => ({ data: { appointmentId: 'appointment', participantId: 'buyer', rsvpStatus: 'Accepted', status: 'Confirmed', legacyDelivery: false } }) },
+  { token: 'capability', appointmentId: 'appointment', action: 'confirm', expectedStart: '2099-07-20T08:00Z', onLegacyResponse: async () => { legacyCalls++ } })
+assert.equal(legacyCalls, 1, 'Managed delivery must not also send through the browser.')
+
+await assert.rejects(respondToPortalAppointment({ rpc: async () => ({ data: { appointmentId:'appointment', status:'cancelled', responseUnavailable:true } }) },
+  { token:'seller-capability', appointmentId:'appointment', action:'confirm', expectedStart:'2099-07-20T08:00Z' }), /no longer active/)
 
 if (!liveMode) {
   console.log('attorney calendar Phase 4 RSVP contract passed')
@@ -190,7 +222,7 @@ try {
     service.from('appointment_reminders').select('status').eq('appointment_id', appointmentId),
     service.from('appointment_notification_events').select('recipient_id, event_type, dedupe_key').eq('appointment_id', appointmentId),
   ])
-  assert.equal(appointmentState.data?.status, 'alternative_requested')
+  assert.equal(appointmentState.data?.status, 'Reschedule Requested')
   assert.equal(participantState.data?.rsvp_status, 'Proposed New Time')
   assert.ok(participantState.data?.responded_at)
   assert.equal(requestState.data?.length, 1, 'RSVP replay must not duplicate reschedule requests')

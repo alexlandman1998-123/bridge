@@ -1,3 +1,4 @@
+import { appointmentStartIso, sastDateKey, sastParts } from '../../../core/appointments/attorneyCalendarModel.js'
 import { useMemo, useState } from 'react'
 import ClientAppointmentCard from './ClientAppointmentCard'
 import ClientAppointmentDetailsModal from './ClientAppointmentDetailsModal'
@@ -39,7 +40,7 @@ function resolveRequiredDocumentChecklist(appointment = {}, documentCenter = {})
 }
 
 function filterClientVisibleParticipants(participants = []) {
-  const allowedRoles = new Set(['buyer', 'seller', 'agent', 'principal', 'attorney', 'bond originator', 'developer representative'])
+  const allowedRoles = new Set(['client', 'buyer', 'seller', 'agent', 'principal', 'attorney', 'bond originator', 'developer representative'])
   return toArray(participants).filter((participant) => {
     const role = String(participant?.participantRole || '').trim().toLowerCase()
     if (!role) return false
@@ -54,10 +55,12 @@ function normalizeAppointmentForDisplay(appointment = {}, role = 'buyer', docume
   const roleName = role === 'seller' ? 'seller' : 'buyer'
   const clientParticipant = participants.find((participant) =>
     String(participant?.participantRole || '').trim().toLowerCase() === roleName,
-  ) || null
+  ) || (participants.filter(participant => String(participant?.participantRole || '').trim().toLowerCase() === 'client').length === 1
+    ? participants.find(participant => String(participant?.participantRole || '').trim().toLowerCase() === 'client') : null)
 
   return {
     ...appointment,
+    dateTime: appointmentStartIso(appointment),
     normalizedStatus,
     participants,
     clientParticipant,
@@ -104,7 +107,7 @@ function ClientAppointmentsSection({
   const [now] = useState(() => Date.now())
   const upcoming = visibleAppointments.filter((item) => {
     const status = item?.normalizedStatus
-    if (status === 'completed' || status === 'cancelled' || status === 'declined') return false
+    if (status === 'completed' || status === 'cancelled' || status === 'declined' || status === 'no_show') return false
     const time = Date.parse(item?.dateTime || '')
     return Number.isNaN(time) || time >= now - (1000 * 60 * 60 * 2)
   })
@@ -123,7 +126,7 @@ function ClientAppointmentsSection({
     setRescheduleTarget(appointment)
     const initialDate = appointment?.dateTime ? new Date(appointment.dateTime) : null
     const localDate = initialDate && !Number.isNaN(initialDate.getTime())
-      ? new Date(initialDate.getTime() - initialDate.getTimezoneOffset() * 60000).toISOString().slice(0, 16)
+      ? `${sastDateKey(initialDate)}T${String(sastParts(initialDate).hour).padStart(2, '0')}:${String(sastParts(initialDate).minute).padStart(2, '0')}`
       : ''
     setRescheduleDateTime(localDate)
     setRescheduleNotes('')

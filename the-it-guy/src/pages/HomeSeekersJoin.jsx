@@ -7,7 +7,7 @@ import HomeSeekersFooter from './HomeSeekersFooter'
 import './HomeSeekersJoin.css'
 
 const base = '/demo/homeseekers'
-const nav = [['Selling', 'selling'], ['Buying', 'buying'], ['Renting', 'renting'], ['Areas', 'areas'], ['About', 'about'], ['Join us', 'join']]
+const nav = [['Selling', 'selling'], ['Buying', 'buying'], ['Renting', 'renting'], ['About', 'about'], ['Join us', 'join']]
 const { monthlyFee } = recruitmentPricing
 const example = recruitmentExample()
 const annualCommission = example.commission

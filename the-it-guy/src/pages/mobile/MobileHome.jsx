@@ -16,6 +16,7 @@ import { useOptionalOrganisation } from '../../context/OrganisationContext'
 import { MobileCard, MobileErrorState, MobileLoadingState } from '../../components/mobile-shell/MobileShellStates'
 import { getMobileDashboardSnapshot, getMobileDashboardSnapshotAsync } from '../../services/mobileDashboardService'
 import { trackMobileMetric } from '../../services/observability/monitoring'
+import AgentDashboard from '../../components/mobile-shell/AgentDashboard'
 
 const CARD_TONES = {
   green: 'bg-[#e5f6ed] text-[#1f8b65]',
@@ -401,6 +402,13 @@ export default function MobileHome() {
 
   if (state.loading) return <MobileLoadingState label="Loading mobile dashboard" />
   if (state.error) return <MobileErrorState title="We couldn't load your dashboard." body={state.error} onRetry={load} />
+
+  if (['agent', 'principal', 'default'].includes(snapshot?.category)) {
+    return <>
+      {showUnsupportedNotice && <MobileCard><h2>That page is not available on mobile yet.</h2><p>You can continue from your mobile workspace.</p></MobileCard>}
+      <AgentDashboard snapshot={snapshot} onOpen={handlePriorityOpen} onAction={handleQuickAction} />
+    </>
+  }
 
   return (
     <div className="space-y-5" data-mobile-home>

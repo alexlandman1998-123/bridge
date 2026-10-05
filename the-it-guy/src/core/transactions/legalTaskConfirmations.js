@@ -2,7 +2,10 @@ export function normalizeTaskConfirmations(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
   return Object.fromEntries(Object.entries(value).slice(0, 100).flatMap(([id, response]) => {
     if (!id || !['yes', 'no', 'not_applicable'].includes(response?.answer)) return []
-    return [[id, { answer: response.answer, note: String(response.note || '').slice(0, 4000) }]]
+    const items = Array.isArray(response.items) ? response.items.slice(0, 100).map(item =>
+      Object.fromEntries(Object.entries(item || {}).slice(0, 30).filter(([, value]) => typeof value === 'string')
+        .map(([field, value]) => [field, value.slice(0, 4000)]))) : undefined
+    return [[id, { answer: response.answer, note: String(response.note || '').slice(0, 4000), ...(items ? { items } : {}) }]]
   }))
 }
 

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createSellerReviewedDocumentVersions } from '../sellerReviewedDocumentVersions.js'
-import { downloadSellerPhysicalSigningCopy, getSellerPhysicalSigningCopy } from '../sellerPhysicalSigningCopy.js'
+import { downloadSellerPhysicalSigningCopy, getSellerPhysicalSigningCopy, getSellerPortalSignedUploadReference } from '../sellerPhysicalSigningCopy.js'
 
 const approval = { status: 'approved', signingRoute: 'manual_upload', commission: { confirmed: true } }
 const signingPack = { signers: [{ name: 'Alex Seller', role: 'Seller' }], mandate: { propertyAddress: '1 Test Road' } }
@@ -34,6 +34,21 @@ test('changed reviewed content cannot be downloaded', async () => {
   const copy = await reviewedMandate()
   const row = { original: { document: { ...copy, generatedHtml: '<article>Changed mandate</article>' } } }
   await assert.rejects(downloadSellerPhysicalSigningCopy(row, async () => {}), /changed since approval/)
+})
+
+test('returned portal files use the exact opened version for each signing document; standalone files retain their existing path', async () => {
+  const reviewed = await createSellerReviewedDocumentVersions({ manualSigningPack: { documents: ['signed_disclosure_form', 'signed_fica_declaration', 'signed_mandate']
+    .map(key => ({ key, generatedHtml: `<article>Frozen ${key}</article>` })) }, formalPackApproval: approval, signingPack, actor: 'agent-1' })
+  const form = { sellerOnboardingManualSigningPack: { documents: reviewed.documents } }
+  for (const copy of reviewed.documents) {
+    assert.deepEqual(await getSellerPortalSignedUploadReference(form, copy.key), { reviewedSigningVersionId: copy.versionId, reviewedSigningVersionDigest: copy.versionDigest })
+  }
+  assert.equal(await getSellerPortalSignedUploadReference(form, 'identity_document'), null)
+  assert.equal(await getSellerPortalSignedUploadReference({}, 'signed_mandate'), null)
+  const original = reviewed.documents[0].generatedHtml
+  reviewed.documents[0].generatedHtml = '<article>Substituted disclosure</article>'
+  await assert.rejects(getSellerPortalSignedUploadReference(form, 'signed_disclosure_form'), /changed since approval/)
+  reviewed.documents[0].generatedHtml = original
 })
 
 test('opening an older versioned copy does not regenerate its approved HTML', async () => {

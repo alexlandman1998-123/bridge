@@ -46,6 +46,10 @@ function matchesRequirement(requirement, document, requirementRow = null) {
   // A manually linked requirement may identify the file, but cannot override
   // the applicant/surety owner recorded on that file.
   if (documentId && linkedIds.includes(documentId)) return true
+  // Canonical uploads may use a custom request key rather than a type alias.
+  // Match all files belonging to that exact requirement, never a neighbouring one.
+  const canonicalId = requirementRow?.canonical_requirement_instance_id
+  if (canonicalId && document.canonical_requirement_instance_id) return canonicalId === document.canonical_requirement_instance_id
   const documentTypes = new Set(getDocumentTypeKeys(document))
   const aliases = new Set((requirement.matching?.canonicalTypes || []).map(normalizeBondApplicationDocumentKey).filter(Boolean))
   return [...aliases].some((alias) => documentTypes.has(alias))
@@ -55,7 +59,10 @@ function findRequirementRow(requirement, existingRequiredDocuments = []) {
   const requirementKey = normalizeBondApplicationDocumentKey(requirement.key)
   return existingRequiredDocuments.find((row) =>
     normalizeBondApplicationDocumentKey(row.document_key || row.key || row.requirement_key) === requirementKey,
-  ) || null
+  ) || existingRequiredDocuments.find((row) => {
+    const key = normalizeBondApplicationDocumentKey(row.document_key || row.key || row.requirement_key)
+    return (requirement.matching?.canonicalTypes || []).some(alias => normalizeBondApplicationDocumentKey(alias) === key)
+  }) || null
 }
 
 function requirementAllowsMultipleFiles(requirement = {}) {
@@ -84,6 +91,8 @@ function mergeExternallyRequestedRequirements(existingRequiredDocuments = [], ma
     .filter((row) => {
       const key = normalizeBondApplicationDocumentKey(row.document_key || row.key || row.requirement_key)
       if (!key || managedKeys.has(key)) return false
+      const purpose = normalizeBondApplicationDocumentKey([key, row.group_key, row.group_label, row.category, row.source, row.source_system, row.reconciliation_source, row.requested_by_role].filter(Boolean).join(' '))
+      if (!/bond|originator|finance|affordability/.test(purpose)) return false
       if (row.enabled === false || row.is_required === false) return false
       const role = normalizeBondApplicationDocumentKey(row.required_from_role || row.requiredFromRole)
       const scope = normalizeBondApplicationDocumentKey(row.visibility_scope || row.visibilityScope)
@@ -112,7 +121,7 @@ export function buildBondApplicationDocumentChecklist({
   existingRequiredDocuments = [],
   existingDocuments = [],
 } = {}) {
-  const managedKeys = new Set(activeRequirements.map((requirement) => normalizeBondApplicationDocumentKey(requirement.key)))
+  const managedKeys = new Set(activeRequirements.flatMap((requirement) => [requirement.key, requirement.canonicalDocumentType, ...(requirement.matching?.canonicalTypes || [])]).map(normalizeBondApplicationDocumentKey).filter(Boolean))
   const requirements = [
     ...activeRequirements,
     ...mergeExternallyRequestedRequirements(existingRequiredDocuments, managedKeys),

@@ -1,6 +1,8 @@
 import { Copy, FilePlus2, Link2, RefreshCw, ShieldCheck, XCircle } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import BondApplicationHandoff from '../../components/bond/BondApplicationHandoff'
+import BondWetInkReviewQueue from '../../components/bond/BondWetInkReviewQueue.jsx'
+import { BondSubmissionPackWorkspace } from '../../components/bond/BondSubmissionPackPanel.jsx'
 import BondEmptyState from '../../components/bond/BondEmptyState'
 import BondPageShell from '../../components/bond/BondPageShell'
 import {
@@ -269,6 +271,8 @@ export default function BondApplicationActionCentrePage() {
         <p className="mt-4 flex items-center gap-2 rounded-xl bg-[#f4f8fc] px-3 py-2 text-xs text-[#526d88]"><ShieldCheck size={16} className="text-[#2f7a54]" /> Email delivery is queued safely. Follow-ups are planned for days 1, 3, and 7, and stop once the application is submitted or cancelled.</p>
       </section>
 
+      <BondWetInkReviewQueue />
+      <BondSubmissionPackWorkspace />
       {state.error ? <section className="rounded-xl border border-[#f0caca] bg-[#fff6f6] p-4 text-sm text-[#9c3535]">{state.error}</section> : null}
       {state.loading ? <BondEmptyState title="Loading your application actions…" description="Checking your assigned originator intake packages." /> : null}
       {!state.loading && items.length === 0 ? <BondEmptyState title="No assigned applications" description="When an intake package is assigned to you, its buyer link and document actions will appear here." /> : null}

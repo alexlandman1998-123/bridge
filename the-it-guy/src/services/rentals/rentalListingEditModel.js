@@ -11,6 +11,7 @@ import {
   validateRentalListingDraftForm,
 } from './rentalListingDraftModel.js'
 import { buildRentalListingIndexRow, getRentalListingFacts } from './rentalListingIndexModel.js'
+import { getRentalMediaLinks } from './rentalListingMediaModel.js'
 
 export const RENTAL_LISTING_EDIT_VERSION = 'arch9_rental_listing_edit_v1'
 
@@ -70,8 +71,8 @@ export function buildRentalListingEditForm(listing = {}) {
       id: String(item.id || item.path || item.file_url || item.fileUrl || `gallery-${index + 1}`),
       name: String(item.caption || item.name || `Image ${index + 1}`),
       url: String(item.file_url || item.fileUrl || item.url || '').trim(),
-      path: String(item.path || '').trim(),
-      bucket: String(item.bucket || '').trim(),
+      path: String(item.path || item.storage_path || '').trim(),
+      bucket: String(item.bucket || item.storage_bucket || '').trim(),
       signedUrl: String(item.signed_url || item.signedUrl || '').trim(),
       publicUrl: String(item.public_url || item.publicUrl || '').trim(),
       contentType: String(item.content_type || item.contentType || '').trim(),
@@ -87,6 +88,7 @@ export function buildRentalListingEditForm(listing = {}) {
 
   return {
     ...RENTAL_LISTING_INITIAL_FORM,
+    ...getRentalMediaLinks(raw),
     rentalPortalFacts: { ...facts.rentalPortalFacts },
     title: normalizeText(row.title === 'Rental listing' ? '' : row.title),
     landlordName: normalizeText(row.landlordName),
@@ -174,7 +176,7 @@ export function buildRentalListingEditForm(listing = {}) {
     mandateStatus: normalizeText(row.mandateStatus) || RENTAL_LISTING_INITIAL_FORM.mandateStatus,
     mandateStartDate: normalizeText(row.mandateStartDate),
     mandateEndDate: normalizeText(row.mandateEndDate),
-    property24ExpiryDate: normalizeText(raw.property24ExpiryDate || raw.property24_expiry_date || publication.property24ExpiryDate || publication.property24_expiry_date || raw.expiryDate),
+    property24ExpiryDate: normalizeText(rentalInfo.property24ExpiryDate ?? rentalInfo.property24_expiry_date ?? raw.property24ExpiryDate ?? raw.property24_expiry_date ?? publication.property24ExpiryDate ?? publication.property24_expiry_date ?? ''),
     property24SuburbId: normalizeText(raw.property24SuburbId || raw.property24_suburb_id || publication.property24SuburbId || publication.property24_suburb_id || rentalInfo.property24SuburbId || rentalInfo.property24_suburb_id),
     marketingApprovalStatus: normalizeText(row.marketingApprovalStatus) || RENTAL_LISTING_INITIAL_FORM.marketingApprovalStatus,
     description: normalizeText(raw.description || raw.listingPreviewDescription || raw.listing_preview_description),
@@ -188,6 +190,7 @@ export function buildRentalListingEditForm(listing = {}) {
       : Array.isArray(publication.amenities)
         ? publication.amenities.filter((item) => RENTAL_AMENITY_OPTIONS.includes(String(item || '').trim()))
         : [],
+    expectedUpdatedAt: normalizeText(raw.updatedAt || raw.updated_at),
     galleryImages,
     coverImageId,
     internalNotes: normalizeText(raw.internalNotes || raw.internal_notes || raw.internalListingNotes || raw.internal_listing_notes),
@@ -209,7 +212,7 @@ export function buildRentalListingUpdatePayload(form = {}, existingListing = {})
   const existingFacts = getRentalListingFacts(existingListing)
   const capturedFacts = buildRentalCanonicalFacts(form)
   const canonicalFacts = { ...existingFacts, ...capturedFacts }
-  for (const section of ['addressProfile', 'propertyProfile', 'rentalInfo', 'distribution']) {
+  for (const section of ['addressProfile', 'propertyProfile', 'rentalInfo', 'distribution', 'marketingMedia']) {
     canonicalFacts[section] = { ...existingFacts[section], ...capturedFacts[section] }
   }
   canonicalFacts.propertyProfile.portalFeatures = { ...existingFacts.propertyProfile?.portalFeatures, ...capturedFacts.propertyProfile.portalFeatures }

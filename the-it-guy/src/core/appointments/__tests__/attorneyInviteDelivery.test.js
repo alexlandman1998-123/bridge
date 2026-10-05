@@ -14,6 +14,10 @@ assert.equal(sent.calendarInviteDelivered, true)
 assert.equal(sent.reminders.status, 'scheduled')
 assert.equal(sent.reminders.scheduledCount, 2)
 assert.equal(buildAttorneyInviteOutcome(sent).tone, 'success')
+assert.match(buildAttorneyInviteOutcome({ status: 'processing' }).message, /saved.*in progress/)
+assert.equal(buildAttorneyInviteOutcome({ status: 'disabled' }).tone, 'success')
+assert.match(buildAttorneyInviteOutcome({ status: 'disabled' }).message, /Notifications are switched off/)
+assert.doesNotMatch(buildAttorneyInviteOutcome({ ...sent, calendarInviteRequested: false }).message, /attachment/)
 
 const failed = summarizeAttorneyInviteDelivery({
   notificationResults: [{ email: { sent: false, status: 'failed', reason: 'provider unavailable' } }],

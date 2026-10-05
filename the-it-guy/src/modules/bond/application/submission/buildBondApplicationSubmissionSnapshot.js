@@ -174,8 +174,8 @@ export function buildBondApplicationSubmissionSnapshot({
     selectedBanks: cloneBondApplicationValue(applicationState?.application?.selectedBankIds || []),
     documentManifest: activeDocumentItems.map(activeDocumentManifestItem),
     declarations: cloneBondApplicationValue(declarations || []),
-    participants: participantSnapshots,
-    signerManifest: resolvedSignerManifest,
+    participants: cloneBondApplicationValue(participantSnapshots),
+    signerManifest: cloneBondApplicationValue(resolvedSignerManifest),
     signatureEvidence: (signatureEvidence || applicationState?.application?.signatureEvidence) && typeof (signatureEvidence || applicationState?.application?.signatureEvidence) === 'object'
       ? cloneBondApplicationValue(signatureEvidence || applicationState.application.signatureEvidence)
       : null,

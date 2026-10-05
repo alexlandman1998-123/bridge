@@ -1,4 +1,6 @@
 export const ATTORNEY_INVITE_DELIVERY_STATUSES = Object.freeze({
+  processing: 'processing',
+  disabled: 'disabled',
   sent: 'sent',
   queued: 'queued',
   partial: 'partial',
@@ -64,14 +66,24 @@ export function summarizeAttorneyInviteDelivery({
 
 export function buildAttorneyInviteOutcome(delivery = {}) {
   const status = normalizeText(delivery?.status)
+  if (status === ATTORNEY_INVITE_DELIVERY_STATUSES.processing) {
+    return { tone: 'success', message: 'Appointment saved. Invite delivery is in progress.' }
+  }
+  if (status === ATTORNEY_INVITE_DELIVERY_STATUSES.disabled) {
+    return { tone: 'success', message: 'Appointment saved. Notifications are switched off.' }
+  }
   if (status === ATTORNEY_INVITE_DELIVERY_STATUSES.sent) {
-    return { tone: 'success', message: 'Attorney invite created and email sent with a calendar attachment.' }
+    return { tone: 'success', message: delivery.calendarInviteRequested === false
+      ? 'Appointment saved and invite email sent.'
+      : 'Attorney invite created and email sent with a calendar attachment.' }
   }
   if (status === ATTORNEY_INVITE_DELIVERY_STATUSES.partial) {
     return { tone: 'error', message: 'Appointment saved, but one or more invite deliveries failed. Use Resend from the appointment.' }
   }
   if (status === ATTORNEY_INVITE_DELIVERY_STATUSES.queued) {
-    return { tone: 'success', message: 'Attorney invite created and email queued with a calendar attachment.' }
+    return { tone: 'success', message: delivery.calendarInviteRequested === false
+      ? 'Appointment saved and invite email queued.'
+      : 'Attorney invite created and email queued with a calendar attachment.' }
   }
   if (status === ATTORNEY_INVITE_DELIVERY_STATUSES.failed) {
     return { tone: 'error', message: 'Appointment saved, but the invite email could not be delivered. Use Resend from the appointment.' }

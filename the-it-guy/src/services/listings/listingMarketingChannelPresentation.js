@@ -47,6 +47,22 @@ export function normalizeListingChannelPublicUrl(value = '') {
   }
 }
 
+export function buildWebsiteListingPublicUrl(publication = {}, listingId = '', listingTitle = '') {
+  if (!publication?.hostname || !text(listingId)) return ''
+  const homeSeekers = publication.websiteSiteId === 'c2fcb2e4-23c1-4302-b490-7332f5075669'
+  // The original platform preview domain does not serve the standalone site.
+  // Keep using its Vercel alias until the CRM has an active custom domain.
+  const hostname = homeSeekers && text(publication.hostname).endsWith('.sites.propdata.co.za')
+    ? 'home-seekers-website-alpha.vercel.app'
+    : text(publication.hostname)
+  const safeTitle = text(listingTitle || 'property').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'property'
+  const path = homeSeekers
+    ? `/demo/homeseekers/properties/${encodeURIComponent(text(listingId))}`
+    : `/properties/${safeTitle}-${encodeURIComponent(text(listingId))}`
+  return normalizeListingChannelPublicUrl(`https://${hostname}${path}`)
+}
+
 export function normalizeListingChannelReference(value = '') {
   return text(value).replace(/^ref(?:erence)?\s*:\s*/i, '')
 }

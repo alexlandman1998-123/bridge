@@ -1,12 +1,14 @@
+import { isRentalCreationId } from './rentalListingCreationRecovery.js'
+import { isRentalListingInWorkspace } from './rentalWorkspaceScope.js'
 import {
   createPrivateListing,
   createPrivateListingActivity,
   getAgentPrivateListings,
   getPrivateListing,
-  syncPrivateListingDistributionData,
+  saveRentalListingSnapshot,
+  saveRentalListingExpiry,
   signPrivateListingMediaAsset,
   uploadPrivateListingMediaAsset,
-  updatePrivateListing,
 } from '../privateListingService'
 import {
   buildRentalPrivateListingPayload,
@@ -22,6 +24,7 @@ import {
   buildRentalProperty24PublishRequest,
 } from './rentalListingProperty24PublishModel'
 import { isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
+import { buildRentalMediaEdits } from './rentalListingMediaModel'
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -29,7 +32,7 @@ function normalizeText(value) {
 
 function normalizeGalleryItems(items = []) {
   return (Array.isArray(items) ? items : [])
-    .filter((item) => item && (item.url || item.signedUrl || item.publicUrl || item.file))
+    .filter((item) => item && (item.url || item.signedUrl || item.publicUrl || item.file || (item.bucket && item.path)))
     .map((item, index) => ({
       id: String(item.id || item.path || `gallery-${index + 1}`),
       name: String(item.name || item.fileName || `Image ${index + 1}`),
@@ -72,7 +75,10 @@ export async function uploadRentalGalleryImages(galleryImages = [], listingId, {
       const item = normalizedImages[index]
       try {
         if (!item.file) {
-          if (!isPersistableMediaUrl(item.url || item.signedUrl || item.publicUrl)) {
+          if (item.bucket && item.path) {
+            const asset = await signPrivateListingMediaAsset({ bucket: item.bucket, path: item.path, fileName: item.name })
+            uploadedImages[index] = { ...item, url: asset.url || asset.signedUrl, signedUrl: asset.signedUrl || '' }
+          } else if (!isPersistableMediaUrl(item.url || item.signedUrl || item.publicUrl)) {
             throw new Error('Select the original photo again before saving.')
           }
           completed += 1
@@ -128,22 +134,77 @@ function buildRentalListingMediaPayload(form = {}, uploadedGalleryImages = []) {
   }
 }
 
-async function saveRentalListingMedia(listingId, form, publicationData, context) {
+function stableJson(value) {
+  if (Array.isArray(value)) return JSON.stringify(value.map((item) => JSON.parse(stableJson(item))))
+  if (value && typeof value === 'object') {
+    return JSON.stringify(Object.fromEntries(Object.keys(value).sort().map((key) => [key, JSON.parse(stableJson(value[key]))])))
+  }
+  return JSON.stringify(value ?? null)
+}
+
+function mediaSnapshot(rows = []) {
+  return rows.map((row) => ({ id: row.id, type: row.media_type, url: row.storage_bucket && row.storage_path ? `${row.storage_bucket}/${row.storage_path}` : row.file_url, caption: row.caption || '', order: row.sort_order, cover: Boolean(row.is_cover) }))
+    .sort((left, right) => String(left.id).localeCompare(String(right.id)))
+}
+
+function linkSnapshot(rows = []) {
+  return rows.map((row) => ({ id: row.id, platform: row.platform, url: row.url, status: row.status,
+    published: row.publishedAt || row.published_at || '', checked: row.lastCheckedAt || row.last_checked_at || '',
+    notes: row.notes || '', visible: Boolean(row.visibleToSeller ?? row.visible_to_seller) }))
+    .sort((left, right) => String(left.id).localeCompare(String(right.id)))
+}
+
+async function saveRentalListingMedia(listingId, form, publicationData, context, existingListing) {
   let galleryImages = form.galleryImages
+  let receipt = null
   try {
     galleryImages = await uploadRentalGalleryImages(galleryImages, listingId, context)
     context.onUploadProgress?.({ completed: galleryImages.length, total: galleryImages.length, phase: 'saving' })
-    const result = await syncPrivateListingDistributionData(listingId, {
+    const media = buildRentalListingMediaPayload(form, galleryImages)
+    const coverIndex = galleryImages.findIndex((image) => image.id === media.coverImageId)
+    const listingPatch = buildRentalListingUpdatePayload(form, existingListing)
+    const mediaEdits = context.galleryOnly ? [] : buildRentalMediaEdits(form, existingListing)
+    receipt = await saveRentalListingSnapshot(listingId, {
+      expectedUpdatedAt: form.expectedUpdatedAt || existingListing.updatedAt || existingListing.updated_at,
+      listingPatch,
       publicationData,
-      media: buildRentalListingMediaPayload(form, galleryImages),
-      externalLinks: [],
+      galleryImages,
+      coverIndex,
+      mediaEdits,
+      galleryOnly: context.galleryOnly === true,
     })
-    if (result?.skipped) throw new Error('Rental marketing storage is unavailable. Retry saving after the listing distribution tables are restored.')
-    return result
+    const savedPhotos = receipt.media.filter((row) => row.media_type === 'image').sort((left, right) => left.sort_order - right.sort_order)
+    for (const edit of mediaEdits) {
+      const saved = receipt.media.find((row) => edit.id ? row.id === edit.id : row.media_type === edit.type && row.file_url === edit.url)
+      if ((edit.url && (!saved || saved.media_type !== edit.type || saved.file_url !== edit.url)) || (!edit.url && edit.id && saved)) {
+        throw new Error('The saved video or virtual tour does not match your changes. Reload before retrying.')
+      }
+    }
+    if (savedPhotos.length !== galleryImages.length || savedPhotos.some((row, index) => row.file_url !== galleryImages[index].url || row.is_cover !== (index === coverIndex))) {
+      throw new Error('The saved gallery does not match the selected photos and cover. Reload before retrying.')
+    }
+    const listing = await getPrivateListing(listingId, { includeRequirementsAndDocuments: false, requireDistributionData: true })
+    const publication = listing?.listingPublicationData
+    const publicationFields = { title: 'title', address: 'address', suburb: 'suburb', province: 'province', propertyType: 'property_type',
+      listingType: 'listing_type', askingPrice: 'asking_price', bedrooms: 'bedrooms', bathrooms: 'bathrooms', garages: 'garages',
+      parkingBays: 'parking_bays', floorSize: 'floor_size', erfSize: 'erf_size', description: 'description', features: 'features', amenities: 'amenities', status: 'status' }
+    const publicationMatches = context.galleryOnly || (publication && receipt.publication && Object.entries(publicationFields).every(([field, column]) =>
+      stableJson(publication[field]) === stableJson(receipt.publication[column])))
+    if (!listing || listing.id !== listingId || new Date(listing.updatedAt).getTime() !== new Date(receipt.updatedAt).getTime()
+      || (!context.galleryOnly && stableJson(receipt.facts) !== stableJson(listingPatch.sellerCanonicalFacts))
+      || stableJson(listing.sellerCanonicalFacts) !== stableJson(receipt.facts)
+      || (!context.galleryOnly && !publicationMatches)
+      || stableJson(mediaSnapshot(listing.listingMedia)) !== stableJson(mediaSnapshot(receipt.media))
+      || stableJson(linkSnapshot(listing.listingExternalLinks)) !== stableJson(linkSnapshot(receipt.externalLinks))) {
+      throw new Error('The refreshed rental does not match the saved details. Reload before retrying.')
+    }
+    return { skipped: false, listing, publication: receipt.publication, mediaCount: receipt.media.length, externalLinkCount: receipt.externalLinks.length, activityId: receipt.activityId }
   } catch (error) {
-    const saveError = new Error(`Rental draft ${listingId} is saved, but its marketing save is incomplete. ${error?.message || 'Please retry saving.'}`)
+    const saveError = new Error(`Rental ${listingId} save is not confirmed. ${error?.message || 'Reload before retrying; the save may have completed.'}`)
     saveError.listingId = listingId
     saveError.galleryImages = error.galleryImages || galleryImages
+    saveError.committed = Boolean(receipt)
+    saveError.code = receipt ? 'RENTAL_SAVE_READBACK_FAILED' : error.code || 'RENTAL_SAVE_UNCONFIRMED'
     saveError.cause = error
     throw saveError
   }
@@ -189,26 +250,36 @@ export function isRentalListingRecord(listing = {}) {
 }
 
 export async function listRentalListingsForAgent(agentId, options = {}) {
+  if (!normalizeText(options.organisationId) || !normalizeText(agentId)) throw new Error('Select an organisation and sign in before loading rentals.')
   const rows = await getAgentPrivateListings(agentId, {
     organisationId: options.organisationId,
     branchId: options.branchId,
     assignedAgentIds: options.assignedAgentIds,
     includeAllOrganisationListings: options.includeAllOrganisationListings,
     includeMedia: true,
+    requireAvailable: true,
+    includeArchivedListings: options.includePreviousListings === true,
+    includeArchivedImports: options.includePreviousListings === true,
+    includeWithdrawnListings: options.includePreviousListings === true,
   })
-  return rows.filter(isRentalListingRecord)
+  return rows.filter(row => isRentalListingRecord(row) && isRentalListingInWorkspace(row, agentId, options))
 }
 
 export async function getRentalListingForAgent(listingId, agentId, options = {}) {
   const normalizedListingId = normalizeText(listingId)
   if (!normalizedListingId) throw new Error('Rental listing id is required.')
 
-  const directListing = await getPrivateListing(normalizedListingId, {
-    includeRequirementsAndDocuments: false,
-  }).catch(() => null)
-  if (directListing && isRentalListingRecord(directListing)) return directListing
+  if (!normalizeText(options.organisationId) || !normalizeText(agentId)) throw new Error('Select an organisation and sign in before loading rentals.')
+  // References use the scoped list. A UUID lookup must enforce exactly the same
+  // scope; RLS alone may allow the user to access several organisations.
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(normalizedListingId)) {
+    const directListing = await getPrivateListing(normalizedListingId, {
+      includeRequirementsAndDocuments: false, requireDistributionData: true, includePreviousListings: true,
+    })
+    return directListing && isRentalListingRecord(directListing) && isRentalListingInWorkspace(directListing, agentId, options) ? directListing : null
+  }
 
-  const rows = await listRentalListingsForAgent(agentId, options)
+  const rows = await listRentalListingsForAgent(agentId, { ...options, includePreviousListings: true })
   return rows.find((listing) => {
     const identityValues = [
       listing.id,
@@ -229,33 +300,28 @@ export async function createRentalListingDraft(form = {}, context = {}) {
     throw error
   }
 
+  if (!isRentalCreationId(context.creationId)) throw new Error('Save the rental creation identity before creating this draft.')
   const listingPayload = buildRentalPrivateListingPayload(form, context)
   const created = await createPrivateListing(listingPayload, {
     includeRequirementsAndDocuments: false,
     syncRequirements: false,
+    rentalCreationId: context.creationId,
+    onListingCreated: context.onListingCreated,
   })
   const listingId = created?.listing?.id
   if (!listingId) throw new Error('Unable to create the rental listing draft.')
-  context.onListingCreated?.(listingId)
+  context.onListingCreated?.(listingId, created.listing)
+  if (created.existing) {
+    // Reconcile a previously accepted request before doing any more writes.
+    const listing = await getPrivateListing(listingId, { includeRequirementsAndDocuments: false, requireDistributionData: true })
+    if (!isRentalListingInWorkspace(listing, context.assignedAgentId, context)) throw new Error('The saved rental is outside this workspace.')
+    return { listing, existing: true, recovered: true, publicationResult: null, activity: null }
+  }
   const publicationData = buildRentalPublicationDraft(form)
-  const publicationResult = await saveRentalListingMedia(listingId, form, publicationData, context)
-
-  void createPrivateListingActivity({
-    privateListingId: listingId,
-    activityType: 'rental_listing_draft_created',
-    activityTitle: 'Rental listing draft created',
-    activityDescription: 'Rental listing captured in the staging Rentals workspace.',
-    performedBy: context.performedBy || context.assignedAgentId || null,
-    visibility: 'internal',
-    metadata: {
-      source: 'rentals_phase4_capture',
-      publicationDraftSkipped: publicationResult?.skipped === true,
-      publicationDraftReason: publicationResult?.reason || '',
-    },
-  }).catch(() => null)
+  const publicationResult = await saveRentalListingMedia(listingId, form, publicationData, context, created.listing)
 
   return {
-    listing: created.listing,
+    listing: publicationResult.listing,
     existing: created.existing === true,
     publicationResult,
     activity: null,
@@ -271,37 +337,53 @@ export async function updateRentalListingDraft(listingId, form = {}, context = {
   }
 
   const existingListing = await getPrivateListing(listingId, { includeRequirementsAndDocuments: false })
-  if (!existingListing || !isRentalListingRecord(existingListing)) throw new Error('Rental listing not found. Reload before saving changes.')
-  const listingPayload = buildRentalListingUpdatePayload(form, existingListing)
-  const listing = await updatePrivateListing(listingId, listingPayload, {
-    includeRequirementsAndDocuments: false,
-  })
+  if (!existingListing || !isRentalListingRecord(existingListing) || !isRentalListingInWorkspace(existingListing, context.assignedAgentId, context)) throw new Error('Rental listing not found. Reload before saving changes.')
 
   const publicationData = {
     ...buildRentalListingEditPublicationDraft(form),
     ...(normalizeText(context.publicationStatus) ? { status: normalizeText(context.publicationStatus) } : {}),
   }
-  const publicationResult = await saveRentalListingMedia(listingId, form, publicationData, context)
-
-  void createPrivateListingActivity({
-    privateListingId: listingId,
-    activityType: 'rental_listing_updated',
-    activityTitle: 'Rental listing updated',
-    activityDescription: 'Rental listing facts were updated in the Rentals workspace.',
-    performedBy: context.performedBy || context.assignedAgentId || null,
-    visibility: 'internal',
-    metadata: {
-      source: 'rentals_phase5_detail_edit',
-      publicationDraftSkipped: publicationResult?.skipped === true,
-      publicationDraftReason: publicationResult?.reason || '',
-    },
-  }).catch(() => null)
+  const publicationResult = await saveRentalListingMedia(listingId, form, publicationData, context, existingListing)
 
   return {
-    listing,
+    listing: publicationResult.listing,
     publicationResult,
     activity: null,
   }
+}
+
+// Photo controls must also work on older rentals with incomplete capture fields.
+// The gallery RPC changes no listing facts or publication details.
+export async function updateRentalProperty24Expiry(listingId, { expiryDate, expectedUpdatedAt }, context = {}) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(expiryDate || '') || expiryDate <= new Date().toISOString().slice(0, 10)) throw new Error('Property24 expiry must be a future date.')
+  const existing = await getPrivateListing(listingId, { includeRequirementsAndDocuments: false, requireDistributionData: true })
+  if (!existing || !isRentalListingRecord(existing) || !isRentalListingInWorkspace(existing, context.assignedAgentId, context)) throw new Error('Rental listing not found. Reload before saving expiry.')
+  let receipt
+  try {
+    receipt = await saveRentalListingExpiry(listingId, { expiryDate, expectedUpdatedAt })
+    const listing = await getPrivateListing(listingId, { includeRequirementsAndDocuments: false, requireDistributionData: true })
+    if (!listing || listing.id !== listingId || new Date(listing.updatedAt).getTime() !== new Date(receipt.updatedAt).getTime()
+      || stableJson(listing.sellerCanonicalFacts) !== stableJson(receipt.facts)
+      || stableJson(mediaSnapshot(listing.listingMedia)) !== stableJson(mediaSnapshot(existing.listingMedia))
+      || stableJson(linkSnapshot(listing.listingExternalLinks)) !== stableJson(linkSnapshot(existing.listingExternalLinks))
+      || stableJson(listing.listingPublicationData) !== stableJson(existing.listingPublicationData)) {
+      throw new Error('The refreshed rental expiry does not match the saved details.')
+    }
+    return { listing, activityId: receipt.activityId }
+  } catch (error) {
+    const saveError = new Error(`Rental expiry save is not confirmed. ${error.message} Reload before retrying; the save may have completed.`)
+    saveError.committed = Boolean(receipt)
+    saveError.code = 'RENTAL_EXPIRY_UNCONFIRMED'
+    saveError.cause = error
+    throw saveError
+  }
+}
+
+export async function updateRentalListingGallery(listingId, form, context = {}) {
+  const existingListing = await getPrivateListing(listingId, { includeRequirementsAndDocuments: false })
+  if (!existingListing || !isRentalListingRecord(existingListing) || !isRentalListingInWorkspace(existingListing, context.assignedAgentId, context)) throw new Error('Rental listing not found. Reload before saving photos.')
+  const result = await saveRentalListingMedia(listingId, form, null, { ...context, galleryOnly: true }, existingListing)
+  return { listing: result.listing, publicationResult: result }
 }
 
 export async function prepareRentalProperty24PublishRequest(listingId, context = {}) {
@@ -398,7 +480,9 @@ export async function publishRentalProperty24Listing(listingId, options = {}) {
   })
   const payload = await response.json().catch(() => ({}))
   if (!response.ok) {
-    throw new Error(formatRentalProperty24ApiError(payload, 'Property24 rental publish failed.'))
+    const error = new Error(formatRentalProperty24ApiError(payload, 'Property24 rental publish failed.'))
+    error.definiteRejection = [400,401,403,404,422].includes(response.status) && payload.status !== 'UNCERTAIN' && payload.report?.status !== 'UNCERTAIN'
+    throw error
   }
   return payload
 }
@@ -455,7 +539,11 @@ async function callPrivatePropertyRentalAction(listingId, action, body = {}, { m
     ...(method === 'GET' ? {} : { body: JSON.stringify({ environment: 'production', photosChanged: true, ...body }) }),
   })
   const payload = await response.json().catch(() => ({}))
-  if (!response.ok) throw new Error(String(payload?.message || 'Private Property rental request failed.'))
+  if (!response.ok) {
+    const error = new Error(String(payload?.message || 'Private Property rental request failed.'))
+    error.definiteRejection = [400,401,403,404,422].includes(response.status) && payload.status !== 'UNCERTAIN' && payload.report?.status !== 'UNCERTAIN'
+    throw error
+  }
   return payload
 }
 

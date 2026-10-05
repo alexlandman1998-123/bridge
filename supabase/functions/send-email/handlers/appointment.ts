@@ -115,14 +115,14 @@ export function buildIcsAttachment(payload: SendAppointmentEmailPayload) {
     `X-WR-TIMEZONE:${escapeIcsText(timezone)}`,
     "BEGIN:VEVENT",
     `UID:${escapeIcsText(uid)}`,
-    `DTSTAMP:${formatUtcIcsDate(new Date().toISOString())}`,
+    `DTSTAMP:${formatUtcIcsDate(payload.calendarTimestamp || new Date().toISOString())}`,
     `DTSTART:${formatUtcIcsDate(start.toISOString())}`,
     `DTEND:${formatUtcIcsDate(end.toISOString())}`,
     `SUMMARY:${escapeIcsText(title)}`,
     `DESCRIPTION:${escapeIcsText(description)}`,
     `LOCATION:${escapeIcsText(location)}`,
     `STATUS:${eventStatus}`,
-    "SEQUENCE:0",
+    `SEQUENCE:${Math.max(0, Math.min(2147483647, Math.floor(Number(payload.calendarSequence) || 0)))}`,
     `ORGANIZER;CN=${escapeIcsText(organizerName)}:MAILTO:${
       escapeIcsText(organizerEmail)
     }`,
@@ -138,11 +138,21 @@ export function buildIcsAttachment(payload: SendAppointmentEmailPayload) {
     "END:VCALENDAR",
   ].filter(Boolean).join("\r\n");
 
+  const folded = content.split('\r\n').map(line => {
+    let output = '', segment = '', length = 0;
+    for (const character of line) {
+      const size = new TextEncoder().encode(character).length;
+      if (length + size > 75) { output += segment + '\r\n'; segment = ' '; length = 1; }
+      segment += character; length += size;
+    }
+    return output + segment;
+  }).join('\r\n') + '\r\n';
+
   return {
     filename: normalizeText(payload.appointmentId)
       ? `arch9-appointment-${normalizeText(payload.appointmentId)}.ics`
       : "arch9-appointment.ics",
-    content: encodeBase64Utf8(content),
+    content: encodeBase64Utf8(folded),
     content_type: `text/calendar; method=${method}; charset=UTF-8`,
   };
 }

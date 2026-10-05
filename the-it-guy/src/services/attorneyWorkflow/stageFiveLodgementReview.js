@@ -1,4 +1,5 @@
 import { isMatterWorkflowPlanCurrent } from './matterWorkflowPlanService.js'
+import { agreementConditionIssues, securityAccountIssues, cancellationSignatureIssues, electricalNotApplicable } from './conveyancingReviewPolicy.js'
 
 const MILESTONES = Object.freeze({
   transfer: { ready: 'lodgement_ready', lodged: 'lodged_at_deeds_office', prep: 'in_prep', registered: 'registered', label: 'Transfer' },
@@ -22,10 +23,11 @@ function issue(id, label, laneKey = 'transfer', kind = 'task') {
   return { id, label, laneKey, kind }
 }
 
-function documentIssues(rows, now) {
+function documentIssues(rows, now, routingProfile) {
   const at = new Date(now).getTime()
   return (rows || []).flatMap((row, index) => {
     const requirement = row.requirement || row
+    if ((requirement.document_definition_key || requirement.documentDefinitionKey) === 'electrical_compliance_certificate' && electricalNotApplicable(routingProfile.mvpProfile?.propertyConditions || routingProfile.propertyConditions)) return []
     const gates = requirement.stage_gates || requirement.stageGates || []
     const level = normalized(requirement.requirement_level || requirement.requirementLevel)
     if (!gates.includes('lodgement_ready') || !['blocker', 'required'].includes(level)) return []
@@ -86,7 +88,7 @@ export function buildStageFiveLodgementReview({
       }
     }
     if (!documentsLoaded) issues.push(issue('documents:unavailable', 'Lodgement document status has not loaded. Refresh the document checklist.', 'transfer', 'document'))
-    else issues.push(...documentIssues(requiredDocuments, now))
+    else issues.push(...documentIssues(requiredDocuments, now, routingProfile))
     const tax = routingProfile?.transferTaxDecision || routingProfile?.transfer_tax_decision || {}
     if (tax.status !== 'confirmed' || !['transfer_duty', 'vat', 'zero_rated_going_concern', 'exempt'].includes(tax.route) ||
       tax.sarsStatus !== 'receipted' || !text(tax.sarsProofReference)) {
@@ -94,6 +96,31 @@ export function buildStageFiveLodgementReview({
     }
     if (taxLodgementReadiness?.ready === false) {
       issues.push(...(taxLodgementReadiness.warnings || []).map((warning, index) => issue(`tax:${index}`, warning, 'transfer', 'tax')))
+    }
+  }
+
+  const confirmationsFor = (lane, key) => {
+    const row = stepRows(lane).find(step => (step.stepKey || step.step_key || step.key) === key)
+    return row?.taskConfirmations || row?.task_confirmations || {}
+  }
+  if (['ready', 'lodged', 'registered'].includes(stage)) {
+    if (laneKey === 'transfer') {
+      if (stepState(ownLane, 'otp_source_docs_checked') !== COMPLETE) issues.push(issue('agreement:review', 'Complete the current agreement review before the milestone.'))
+      issues.push(...agreementConditionIssues(confirmationsFor(ownLane, 'otp_source_docs_checked').agreement_conditions_review, now)
+        .map((label, i) => issue(`agreement:${i}`, label)))
+      for (const party of routingProfile.scenarioProfile?.parties || []) {
+        if (!['buyer', 'seller'].includes(party.role)) continue
+        if (stepState(ownLane, `${party.role}_fica_review`) !== COMPLETE) issues.push(issue(`fica:${party.id}`, 'Complete the current party FICA review before the milestone.'))
+        const response = confirmationsFor(ownLane, `${party.role}_fica_review`)[`rmcp_review:${party.id}`]
+        if (response?.answer !== 'yes' || !text(response.note)) issues.push(issue(`rmcp:${party.id}`, `${party.name || party.id}: record the firm RMCP review and internal evidence reference.`))
+      }
+    }
+    if (laneKey === 'cancellation' || (laneKey === 'transfer' && plannedByKey.has('cancellation'))) {
+      const cancellation = laneByKey.get('cancellation')
+      issues.push(...securityAccountIssues(confirmationsFor(cancellation, 'cancellation_guarantee_allocation_review').registered_securities_review, now)
+        .map((label, i) => issue(`security:${i}`, label, 'cancellation')))
+      const signature = stepRows(cancellation).find(step => (step.stepKey || step.step_key || step.key) === 'seller_cancellation_documents_signed')
+      issues.push(...cancellationSignatureIssues(signature).map((label, i) => issue(`signature:${i}`, label, 'cancellation')))
     }
   }
 

@@ -6,6 +6,7 @@ import { acceptInvite, getInviteByToken, INVITE_TYPES, InviteValidationError } f
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { SIGNUP_INTENT_SOURCE, SIGNUP_WORKSPACE_ACTIONS } from '../constants/signupIntents'
 import { buildSignupIntent, storeSignupIntentTemporarily } from '../lib/signupIntent'
+import TransactionPartnerInvitePage from './TransactionPartnerInvitePage'
 
 const PENDING_INVITE_TOKEN_STORAGE_KEY = 'itg:pending-org-invite-token'
 const PENDING_INVITE_EMAIL_STORAGE_KEY = 'itg:pending-org-invite-email'
@@ -411,6 +412,9 @@ export default function InviteResolver() {
   }, [token])
 
   const invite = inviteContext?.inviteType ? inviteContext : null
+  const organisationHandoff = invite?.inviteType === INVITE_TYPES.transaction
+    && Boolean(invite?.metadata?.transaction_partner_invitation_id || invite?.metadata?.transactionPartnerInvitationId)
+    && ['attorney', 'transfer_attorney', 'bond_attorney', 'cancellation_attorney', 'bond_originator'].includes(invite?.metadata?.transaction_partner_role_type || invite?.targetTransactionRole)
   const principalClaimInvite = isPrincipalClaimInvite(invite)
   const invitedEmail = normalizeText(invite?.email)
   const signedInAsInvitedEmail = Boolean(sessionEmail && invitedEmail && sessionEmail === invitedEmail.toLowerCase())
@@ -468,9 +472,10 @@ export default function InviteResolver() {
   }, [acceptedInviteBelongsToSession])
 
   useEffect(() => {
+    if (organisationHandoff) { clearPendingInviteToken(); return }
     if (!acceptedInviteBelongsToSession) return
     window.location.replace(getInviteTarget(invite))
-  }, [acceptedInviteBelongsToSession, invite, navigate])
+  }, [acceptedInviteBelongsToSession, invite, navigate, organisationHandoff])
 
   useEffect(() => {
     if (CLEAR_PENDING_INVITE_REASONS.has(reason) && !pendingInviteWrongAccount) {
@@ -522,11 +527,11 @@ export default function InviteResolver() {
 
   useEffect(() => {
     const safeToken = normalizeText(token)
-    if (!safeToken || saving || acceptedResult) return
+    if (!safeToken || saving || acceptedResult || organisationHandoff) return
     if (reason || pendingInviteWrongAccount || !signedInAsInvitedEmail) return
     if (!shouldAutoAcceptInvite(safeToken)) return
     void handleAccept()
-  }, [acceptedResult, handleAccept, pendingInviteWrongAccount, reason, saving, signedInAsInvitedEmail, token])
+  }, [acceptedResult, handleAccept, organisationHandoff, pendingInviteWrongAccount, reason, saving, signedInAsInvitedEmail, token])
 
   async function handleSwitchAccount() {
     const safeToken = normalizeText(token)
@@ -545,6 +550,7 @@ export default function InviteResolver() {
     }), { replace: true })
   }
 
+  if (organisationHandoff) return <TransactionPartnerInvitePage />
   if (loading) {
     return (
       <InvitePageShell>

@@ -116,7 +116,8 @@ function runGuidedMetadataTests() {
   assert.equal(getGuidedBondApplicationMetadata(withMetadata).current_step_key, 'employment_income')
 
   const roundTripped = toLegacyBondApplication(fromLegacyBondApplication(withMetadata))
-  assert.deepEqual(roundTripped._meta, withMetadata._meta)
+  // The adapter explicitly persists the optional signature slot as null for unsigned drafts.
+  assert.deepEqual(roundTripped._meta, { ...withMetadata._meta, bond_application_html_signature: null })
   assert.deepEqual(roundTripped.unknown_phase2, { keep: true })
 
   const viewModel = buildBondApplicationViewModel({

@@ -1,0 +1,251 @@
+{
+  "preparedAtUtc": "2026-10-04T10:32:34.234300+00:00",
+  "userApproval": "Push all these updates and migrations in this chat to production",
+  "product": "Primary Arch9 workspace",
+  "scope": "Organisation switcher and Kingdom/I Sell rental phases 1\u20135",
+  "baseCommit": "fab60fbb45c9d262c0803baba2b6564be77c1b19",
+  "databaseProject": "isdowlnollckzvltkasn",
+  "applicationProject": "prj_rbfXykMU6mU1eECbc0lJS9sPspmp",
+  "applicationDomain": "app.arch9.co.za",
+  "rollbackDeployment": "dpl_GjBSz9htHfLPVDdHUY9L9SAmQxMg",
+  "migrations": [
+    "20261004091223_rental_listing_atomic_persistence.sql",
+    "20261004092331_rental_listing_media_controls.sql"
+  ],
+  "databaseState": "Applied and verified in production; isolated dry-run now up to date",
+  "schemaVerification": "Three security-invoker RPCs, empty search_path, authenticated execute only; underlying RLS retained",
+  "productionSmoke": "Unsigned and inaccessible saves rejected in a rolled-back transaction; no customer records changed",
+  "localChecks": {
+    "appTests": 85,
+    "modelTests": 14,
+    "focusedOperationalChecks": "Rental persistence SQL, archive controls, website boundaries, Private Property monitor and baseline passed",
+    "build": "Vite, login probe, bundle budget, deployment audit and agent schema contract passed",
+    "lint": "0 errors; 8 existing warnings in selected files"
+  },
+  "applicationState": "READY and serving app.arch9.co.za",
+  "recoveryCheck": "RECOVERY_LOCKED",
+  "unrelatedChangesExcluded": true,
+  "bulkUnarchiveOrRepublishPerformed": false,
+  "files": [
+    {
+      "path": "supabase/migrations/20261004091223_rental_listing_atomic_persistence.sql",
+      "sha256": "c1e9c4803edaf4ef086a008a9a35226a76b6fd57a7fe9b79ae91296fb7caa25c"
+    },
+    {
+      "path": "supabase/migrations/20261004092331_rental_listing_media_controls.sql",
+      "sha256": "69f3169832bab44a65d30beebf016f9c23fa173ab28888ec05d54f75a27cf843"
+    },
+    {
+      "path": "the-it-guy/src/components/Sidebar.jsx",
+      "sha256": "a5a4514739d406f0bc4e0132ea7744b026ec726b8d06f1f79dbacc46175f636f"
+    },
+    {
+      "path": "the-it-guy/src/components/OrganisationWorkspaceSwitcher.jsx",
+      "sha256": "030e828452db123d3e173c29ec1c70298637d60a79f1ddc9e3b0f8b08d84f122"
+    },
+    {
+      "path": "the-it-guy/src/components/__tests__/OrganisationWorkspaceSwitcher.test.jsx",
+      "sha256": "f0fa7a7d5214c97330be4a6c996c37597377938e4cc368a4840dfe099608bb07"
+    },
+    {
+      "path": "the-it-guy/src/services/privateListingService.js",
+      "sha256": "f8ae1a68a417fee40eeb5e4d16337449978a6e70bdbfea7e4e7f00604ef80738"
+    },
+    {
+      "path": "the-it-guy/src/services/__tests__/privateListingService.rentalMedia.test.js",
+      "sha256": "fdcce42303af1c17eb31201fa2cf3cbe09fd245b661064d04f3739e138109783"
+    },
+    {
+      "path": "the-it-guy/server/services/privatePropertyPostSubmitMonitorService.js",
+      "sha256": "68f6d94fbdf5b796f22dec9a3c8070b04da984eee02f1b7012a7d6dadb8fdbc2"
+    },
+    {
+      "path": "the-it-guy/scripts/rental-listing-distribution-review.test.mjs",
+      "sha256": "94c657e6b664f0cad671043ebe4bc3a97ecfdd9cc9ae82a1f7e9216e028e6d96"
+    },
+    {
+      "path": "the-it-guy/src/components/listings/KingdomWebsitePublicationChannel.jsx",
+      "sha256": "817202458fcb6e9b0f38a6f17dc3eb6aa9803314317b16baa77fddd0d8e4aa00"
+    },
+    {
+      "path": "the-it-guy/src/components/listings/WebsiteListingPublicationPanel.jsx",
+      "sha256": "5724812a70513de4de9c26c8f7094978abe178c28cd4c05313b8fdd2b92e575c"
+    },
+    {
+      "path": "the-it-guy/src/pages/rentals/RentalDistributionChannel.jsx",
+      "sha256": "f710af9694dc1aefb29c47b4909b1572b37ab754d139710a0ec67c2ababe30fe"
+    },
+    {
+      "path": "the-it-guy/src/pages/rentals/RentalListingCreatePage.jsx",
+      "sha256": "bd0c399651a9566051128f65b51e6dd5e4e3ff1486fd8af5fd1c72d25e2cf58b"
+    },
+    {
+      "path": "the-it-guy/src/pages/rentals/RentalListingDetailPage.jsx",
+      "sha256": "c6a57ee0de7501c076234e9d8d32bdfec780c00db7b62d35d7595e5d60a4cfd9"
+    },
+    {
+      "path": "the-it-guy/src/pages/rentals/RentalListingOverview.jsx",
+      "sha256": "a8a54ce6d30079e55f656c5760c808292f95ec85b120e635b145ee9f36fa2a27"
+    },
+    {
+      "path": "the-it-guy/src/pages/rentals/RentalListingsPage.jsx",
+      "sha256": "239fafba374b15cdbd1dec5d7b063cacfee988bbc057cd75ccd3b807f158e098"
+    },
+    {
+      "path": "the-it-guy/src/pages/rentals/__tests__/RentalListingCreatePage.save.test.jsx",
+      "sha256": "6ac31f8a11228e7695f1de2611bc1805010eb742b718bbe49cfd94a8e3c65b3d"
+    },
+    {
+      "path": "the-it-guy/src/pages/rentals/__tests__/RentalListingDetailPage.overview.test.jsx",
+      "sha256": "d64aeee9aa25b357c305ed7ddfc7e30fee73ad2e5bd3f91cd9307b26ed4c7660"
+    },
+    {
+      "path": "the-it-guy/src/services/rentals/__tests__/rentalListingSave.test.js",
+      "sha256": "a84f980a171d4fbd1e0e80357e98f5bc36a7fc73f365427ed4b36271ff2c91be"
+    },
+    {
+      "path": "the-it-guy/src/services/rentals/rentalListingDetailModel.js",
+      "sha256": "233369254e7fa0687310b8f2d191fc81a022675a0aba990630e990bc96060ccf"
+    },
+    {
+      "path": "the-it-guy/src/services/rentals/rentalListingDraftModel.js",
+      "sha256": "879b633419e9143aaed38cc60e0b6167cd1d5b4baa448c522f5412c12d5db501"
+    },
+    {
+      "path": "the-it-guy/src/services/rentals/rentalListingDraftService.js",
+      "sha256": "f13223152ef87f975c079bea9ae849bb6c99319fc174a5134118f888dd552857"
+    },
+    {
+      "path": "the-it-guy/src/services/rentals/rentalListingEditModel.js",
+      "sha256": "59df607219aaaf9facdc4e13d096a1953e372dea5b23ef9082a93537b3310a7a"
+    },
+    {
+      "path": "the-it-guy/src/services/rentals/rentalListingIndexModel.js",
+      "sha256": "399c9ff3b7942ba7da34051550c7d4310c5109565aabc80057a8b69e8bd5db77"
+    },
+    {
+      "path": "the-it-guy/src/services/rentals/rentalListingProperty24FieldComparisonModel.js",
+      "sha256": "f8f9e1d560f3c32d4a8961515351f7fd27f173adf787660bda09a387319e3a6e"
+    },
+    {
+      "path": "the-it-guy/src/services/rentals/rentalListingProperty24ReadinessModel.js",
+      "sha256": "8b28e317b9214f03a227a1b0a308a4e21db9ee147d14263bf6694106239ef531"
+    },
+    {
+      "path": "the-it-guy/src/components/listings/ListingWebsiteConnectionState.jsx",
+      "sha256": "7d8cde5e0e5d31817fa19a72e6c7b789d7fdefca4ba8e81d1c30887aa1c483cb"
+    },
+    {
+      "path": "the-it-guy/src/components/listings/__tests__/RentalWebsiteChannels.test.jsx",
+      "sha256": "b39bfcb14d9cabdcc0a2ec74dc201a23f9e14da96e143082e288aa66605426bf"
+    },
+    {
+      "path": "the-it-guy/src/pages/rentals/RentalListingReadinessPanel.jsx",
+      "sha256": "3b5c9d9381351f486c5273949881ce39e7ea0d13e95f3aaedd77d4d5049705cc"
+    },
+    {
+      "path": "the-it-guy/src/pages/rentals/RentalPortalManagementPanel.jsx",
+      "sha256": "1f69abda97d2b1ab53fdc569f50fddd32239da253656e96a0798251719be06cf"
+    },
+    {
+      "path": "the-it-guy/src/pages/rentals/RentalStockReviewPanel.jsx",
+      "sha256": "5617435456e0c96ed4409668d2638892b02e7bcfa3a4af8831cd776cdb64ae22"
+    },
+    {
+      "path": "the-it-guy/src/pages/rentals/__tests__/RentalListingReadinessPanel.test.jsx",
+      "sha256": "f6eeebeb4e4cc66b21bc16e0dbde46f428500ba2374364a78e89ae1bbb5d5c19"
+    },
+    {
+      "path": "the-it-guy/src/pages/rentals/__tests__/RentalPortalManagementPanel.test.jsx",
+      "sha256": "069f2588e295f195e6830457afe97cc7c5d5cff077bfd5856a5451d0f3af05a1"
+    },
+    {
+      "path": "the-it-guy/src/pages/rentals/__tests__/RentalStockReviewPanel.test.jsx",
+      "sha256": "95d32a880fa8a9c92d52c3516d0782865793296c5f054c72172487e1b855b7a8"
+    },
+    {
+      "path": "the-it-guy/src/services/rentals/__tests__/rentalListingChannelModel.test.js",
+      "sha256": "d2c4920e5e4e1abfaf48ab16e82a6de0873f2e6a9550ae874258439cb4c1b9e1"
+    },
+    {
+      "path": "the-it-guy/src/services/rentals/__tests__/rentalListingChannelService.test.js",
+      "sha256": "579a9de6d92cdfd855bcb11d527c2f4fcb09fb6f295b4f9b11e568331ca0b9ae"
+    },
+    {
+      "path": "the-it-guy/src/services/rentals/__tests__/rentalListingPersistence.test.mjs",
+      "sha256": "6a6713d33b734784414391e058365930c0cb46ad2432a9f35e4c5debb8d1792c"
+    },
+    {
+      "path": "the-it-guy/src/services/rentals/__tests__/rentalListingReadinessPresentation.test.js",
+      "sha256": "27c177f4b05408f08c31187f1acbf697ab40c243edc94da5e55c518220af53d6"
+    },
+    {
+      "path": "the-it-guy/src/services/rentals/__tests__/rentalStockReviewService.test.js",
+      "sha256": "cc3cdba7e1e0efaf94f6241ecbc759307ac692da6def3527b104cf63b1a2f8f5"
+    },
+    {
+      "path": "the-it-guy/src/services/rentals/rentalListingChannelModel.js",
+      "sha256": "62e015b5631756b98c4af463d6c5bb73e59b2c8ca06895770a2b8ca241716ab1"
+    },
+    {
+      "path": "the-it-guy/src/services/rentals/rentalListingChannelService.js",
+      "sha256": "f41c4a4cd49b387c0eb9f1104747c62a7f7e7173c3703f9806a82e5fc706a151"
+    },
+    {
+      "path": "the-it-guy/src/services/rentals/rentalListingMediaModel.js",
+      "sha256": "106a7923eb4e4438cbee205d037186a60ca9a53e61b910a06bdbc91b915054a7"
+    },
+    {
+      "path": "the-it-guy/src/services/rentals/rentalListingReadinessPresentation.js",
+      "sha256": "bebeb76c0ecab5cb74547b530ebc1d2c0cace0c05ed7e2b94d2036d623bea14d"
+    },
+    {
+      "path": "the-it-guy/src/services/rentals/rentalStockReviewService.js",
+      "sha256": "18e5a1b9e834fcb933386b9a8f9f95c03e5e800e671ee12f9ee55db517c3669d"
+    },
+    {
+      "path": "the-it-guy/README.md",
+      "sha256": "ec0f9acec314ff22c8552937e39827cd686aa9743f4482a6f6286f4f930f696e"
+    }
+  ],
+  "verifiedAtUtc": "2026-10-04T10:38:18.182073+00:00",
+  "commit": "8788b9596b040d87d6e05cfb76d72fd97cf077ce",
+  "deploymentId": "dpl_6CpPwmei2ZUcbLjTGUuNzcNXvBoE",
+  "deploymentUrl": "https://bridge-188btlp2j-alexs-projects-f5496a21.vercel.app",
+  "liveAssets": {
+    "appUrl": "https://app.arch9.co.za",
+    "releaseId": "8788b9596b040d87d6e05cfb76d72fd97cf077ce",
+    "criticalAssetCount": 766,
+    "passed": true,
+    "readiness": true,
+    "stockReview": true,
+    "organisationSwitcher": true,
+    "failedAssets": []
+  },
+  "liveApiAuthentication": {
+    "passed": true,
+    "checks": [
+      {
+        "path": "/api/property24/rentals/00000000-0000-4000-8000-000000000000/status?environment=production&refresh=false",
+        "status": 401,
+        "error": "unauthorized",
+        "message": "Your session could not be verified."
+      },
+      {
+        "path": "/api/private-property/listings/00000000-0000-4000-8000-000000000000/status?environment=production&cached=true",
+        "status": 401,
+        "error": "unauthorized",
+        "message": "Your session could not be verified."
+      }
+    ]
+  },
+  "rpcApiVisibility": "All three RPCs available in the live REST schema and return 401/42501 for anonymous callers",
+  "remainingVerification": [
+    "An authenticated workflow smoke with the affected Kingdom/I Sell user: organisation switching, rental save/reload, photo edit, video/tour, expiry and channel checks. No customer rental was edited or portal-published during deployment verification."
+  ],
+  "securityAdvisorSummary": "No findings for the three new RPCs. Existing project notices retained in kingdom-rental-production-advisors-20261004.json.",
+  "verificationNotes": [
+    "The established asset verifier timed out on its 766-request burst. Equivalent checks with eight concurrent requests passed for all assets.",
+    "Unauthenticated Private Property internal-token path returns existing 503 when that token is absent. Browser-session path uses Supabase auth and correctly returns 401 for invalid sessions."
+  ]
+}

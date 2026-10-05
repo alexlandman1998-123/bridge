@@ -689,7 +689,7 @@ function buildApplicantViewModel(participant = {}, role = 'primary_applicant', f
   const bankAccounts = Array.isArray(participant.bankAccounts) ? participant.bankAccounts : []
   const assets = Array.isArray(participant.assets) ? participant.assets : []
   const liabilities = Array.isArray(participant.liabilities) ? participant.liabilities : []
-  const debts = Array.isArray(participant.debts) ? participant.debts : []
+  const debts = participant.credit?.has_debts !== 'no' && Array.isArray(participant.debts) ? participant.debts : []
   const incomeSources = Array.isArray(participant.incomeSources) ? participant.incomeSources : []
   const monthlyCommitments = Array.isArray(participant.monthlyCommitments) ? participant.monthlyCommitments : []
   const grossIncome = number(valueFrom(employment.gross_salary, employment.grossMonthlyIncome, employment.gross_monthly_income, employment.monthly_income, employment.monthlyIncome))

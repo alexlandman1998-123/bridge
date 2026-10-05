@@ -7,6 +7,7 @@ import {
   getSellerDocumentSigningRouteReadiness,
   getSellerDocumentSigningState,
   hasCompletedOnboardingDisclosureSignature,
+  hasCompletedSellerDisclosure,
 } from '../sellerDocumentSigningContract.js'
 import { PROPERTY_DISCLOSURE_QUESTIONS } from '../../../lib/propertyDisclosure.js'
 
@@ -34,6 +35,14 @@ test('recognises an actual onboarding disclosure signature, including all requir
   assert.equal(hasCompletedOnboardingDisclosureSignature({ propertyDisclosure: signedDisclosure, seller_compliance_signing: {}, seller_compliance_signers: [{ complete: false }] }), false)
   assert.equal(hasCompletedOnboardingDisclosureSignature({ propertyDisclosure: signedDisclosure, sellerComplianceSigning: { complete: false } }), false)
   assert.equal(hasCompletedOnboardingDisclosureSignature({ propertyDisclosure: signedDisclosure, sellerComplianceSigning: { complete: true } }), true)
+})
+
+test('uses completed disclosure evidence returned after onboarding without treating uploads or other documents as completion', () => {
+  assert.equal(hasCompletedSellerDisclosure({ formData: { propertyDisclosure: signedDisclosure } }), true)
+  assert.equal(hasCompletedSellerDisclosure({ documentRows: [{ key: 'signed_disclosure_form', complete: true }] }), true)
+  assert.equal(hasCompletedSellerDisclosure({ documentRows: [{ key: 'signed_disclosure_form', status: 'uploaded', complete: false }] }), false)
+  assert.equal(hasCompletedSellerDisclosure({ documentRows: [{ key: 'signed_fica_declaration', complete: true }] }), false)
+  assert.equal(hasCompletedSellerDisclosure({ documentRows: null }), false)
 })
 
 test('only the three seller pack documents offer the two signing routes', () => {

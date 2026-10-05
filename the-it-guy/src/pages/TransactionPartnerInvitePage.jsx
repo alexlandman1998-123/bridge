@@ -1,6 +1,6 @@
 import { AlertCircle, CheckCircle2, Mail, ShieldCheck } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import Button from '../components/ui/Button'
 import {
   acceptTransactionPartnerInvitation,
@@ -10,6 +10,9 @@ import {
 } from '../services/transactionPartnerInvitationService'
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { useWorkspace } from '../context/WorkspaceContext'
+import { clearPendingPartnerInvitePath, rememberPendingPartnerInvitePath } from '../lib/pendingPartnerInvite'
+import { buildSignupIntent, persistSignupIntent, storeSignupIntentTemporarily } from '../lib/signupIntent'
+import { SIGNUP_INTENT_SOURCE, SIGNUP_WORKSPACE_ACTIONS } from '../constants/signupIntents'
 
 const PROFESSIONAL_ROLE_OPTIONS = [
   { value: 'attorney', professionalRole: 'transfer_attorney', label: 'Transfer Attorney' },
@@ -35,6 +38,8 @@ function defaultAppRoleForInvitation(roleType) {
 
 function TransactionPartnerInvitePage() {
   const { token } = useParams()
+  const navigate = useNavigate()
+  const [selectedOrganisation, setSelectedOrganisation] = useState('')
   const [loading, setLoading] = useState(true)
   const [sessionUser, setSessionUser] = useState(null)
   const [context, setContext] = useState(null)
@@ -85,6 +90,8 @@ function TransactionPartnerInvitePage() {
         const user = sessionResult?.data?.session?.user || null
         setContext(inviteResult)
         setSessionUser(user)
+        const organisations = inviteResult.organisations || []
+        setSelectedOrganisation(organisations.length === 1 ? organisations[0].id : '')
         setForm((previous) => ({
           ...previous,
           email: invite?.email || user?.email || previous.email,
@@ -126,12 +133,13 @@ function TransactionPartnerInvitePage() {
   }
 
   async function acceptWithCurrentSession(user = sessionUser) {
-    if (!workspaceId) {
+    const acceptingOrganisation = context?.bindingState ? selectedOrganisation : workspaceId
+    if (!acceptingOrganisation) {
       throw new Error('Complete workspace setup before accepting this transaction invitation.')
     }
     const accepted = await acceptTransactionPartnerInvitation({
       token,
-      organisationId: workspaceId,
+      organisationId: acceptingOrganisation,
       profile: {
         firstName: form.firstName,
         lastName: form.lastName,
@@ -140,7 +148,9 @@ function TransactionPartnerInvitePage() {
         professionalRole: form.professionalRole,
       },
     })
+    if (context?.bindingState) workspaceContext.setWorkspace?.({ id: acceptingOrganisation })
     setResult(accepted)
+    clearPendingPartnerInvitePath(`/transaction-invite/${encodeURIComponent(token)}`)
     setSessionUser(user)
     return accepted
   }
@@ -209,7 +219,8 @@ function TransactionPartnerInvitePage() {
       setBusy(true)
       setError('')
       await declineTransactionPartnerInvitation(token)
-      setMessage('Invitation declined. The transaction owner will be notified.')
+      setMessage('Invitation declined. The transaction owner can see the updated status.')
+      if (context?.bindingState) setContext(previous => ({ ...previous, invitation: { ...previous.invitation, status: 'declined' } }))
     } catch (declineError) {
       setError(declineError.message || 'Unable to decline this invitation.')
     } finally {
@@ -222,6 +233,68 @@ function TransactionPartnerInvitePage() {
       <main className="min-h-screen bg-[#f5f8fb] px-4 py-10">
         <section className="mx-auto max-w-[760px] rounded-[24px] border border-[#dbe4ef] bg-white p-6 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
           <p className="text-sm font-semibold text-[#60758d]">Loading invitation...</p>
+        </section>
+      </main>
+    )
+  }
+
+  if (context?.bindingState && invitation) {
+    const returnPath = `/transaction-invite/${encodeURIComponent(token)}`
+    const organisations = context.organisations || []
+    const wrongAccount = sessionUser && sessionUser.email?.toLowerCase() !== invitation.email?.toLowerCase()
+    const authPath = `/auth?${new URLSearchParams({ next: returnPath, email: invitation.email || '' })}`
+    const beginSetup = async () => {
+      try {
+        setBusy(true)
+        setError('')
+        rememberPendingPartnerInvitePath(returnPath)
+        const intent = buildSignupIntent({
+          position: invitation.roleType === 'bond_originator' ? 'bond_owner' : 'attorney_owner',
+          source: SIGNUP_INTENT_SOURCE.inviteLink,
+          overrides: { workspace_action: SIGNUP_WORKSPACE_ACTIONS.createWorkspace, email: invitation.email, invite_token: token },
+        })
+        storeSignupIntentTemporarily(intent)
+        if (sessionUser) {
+          await persistSignupIntent({ intent, user: sessionUser, email: invitation.email, status: 'ready_for_onboarding' })
+          await workspaceContext.retryWorkspaceBootstrap?.()
+        }
+        navigate(sessionUser ? '/onboarding/profile' : `${authPath}&mode=signup`)
+      } catch (setupError) {
+        setError(setupError.message || 'Unable to prepare organisation setup. Your invitation is still available.')
+      } finally { setBusy(false) }
+    }
+    return (
+      <main className="min-h-screen bg-[#f5f8fb] px-4 py-10">
+        <section className="mx-auto max-w-[760px] space-y-5 rounded-[24px] border border-[#dbe4ef] bg-white p-6">
+          <h1 className="text-2xl font-semibold">Receive this matter for your organisation</h1>
+          <p>{invitation.invitedByOrganisation} has invited {invitation.companyName} as the {roleLabel.toLowerCase()}.</p>
+          <p className="text-sm text-[#60758d]">Create or select your organisation, then connect this matter. Your team can review the instruction once it is ready. Connecting does not record instruction delivery or acceptance.</p>
+          {error ? <p role="alert" className="text-danger">{error}</p> : null}
+          {message ? <p role="status">{message}</p> : null}
+          {invitation.status === 'declined' ? <p role="status">This invitation has been declined. Ask the transaction owner for a fresh invitation if you need to reconnect.</p> : result ? <>
+            <p role="status">The matter is connected to your organisation. Eligible instructions are queued automatically; delivery and acceptance are tracked separately.</p>
+            <Link to={result.nextPath}>Open matter</Link>
+          </> : !sessionUser ? <>
+            <p>Continue with {invitation.email}. After email verification and organisation setup, return here to connect the matter.</p>
+            <Link to={authPath} onClick={() => rememberPendingPartnerInvitePath(returnPath)}>Sign in</Link>
+            <Button disabled={busy} onClick={beginSetup}>Create account and organisation</Button>
+          </> : wrongAccount ? <>
+            <p role="alert">Sign in with {invitation.email} to continue.</p>
+            <Button onClick={async () => { rememberPendingPartnerInvitePath(returnPath); await supabase.auth.signOut(); navigate(authPath) }}>Switch account</Button>
+          </> : <>
+            {organisations.length ? <label className="block space-y-2">
+              <span>Organisation receiving this matter</span>
+              <select aria-label="Organisation receiving this matter" value={selectedOrganisation} onChange={event => setSelectedOrganisation(event.target.value)} className="block w-full rounded border p-3">
+                <option value="">Choose an organisation</option>
+                {organisations.map(org => <option key={org.id} value={org.id}>{org.name}</option>)}
+              </select>
+            </label> : <>
+              <p>An organisation administrator must complete workspace setup or approve your organisation access before this matter can be connected.</p>
+              <Button disabled={busy} onClick={beginSetup}>Set up organisation</Button>
+            </>}
+            <Button disabled={busy || !selectedOrganisation} onClick={handleAcceptInvitation}>{busy ? 'Connecting…' : context.bindingState === 'accepted_unbound' ? 'Complete matter connection' : 'Connect matter to organisation'}</Button>
+            {invitation.status === 'pending' ? <Button variant="secondary" disabled={busy} onClick={handleDeclineInvitation}>Decline invitation</Button> : null}
+          </>}
         </section>
       </main>
     )

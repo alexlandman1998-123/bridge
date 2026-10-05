@@ -231,6 +231,7 @@ function buildParticipant({ role, legacyApplicantKey, applicant = {}, employment
     address: {},
     marital: {
       maritalStatus: clonedApplicant.marital_status ?? null,
+      regime: clonedApplicant.marital_regime ?? null,
     },
     employment: cloneBondApplicationValue(employment) || {},
     incomeSources: [],
@@ -309,6 +310,8 @@ function mapDebts(legacy = {}) {
       bank: bank.other_finance_1_bank ?? null,
       currentBalance: bank.other_finance_1_current_balance ?? null,
       monthlyPayment: bank.other_finance_1_monthly_payment ?? null,
+      outstandingBalance: bank.other_finance_1_current_balance ?? null,
+      monthlyInstalment: bank.other_finance_1_monthly_payment ?? null,
       settled: bank.other_finance_1_settled ?? null,
       businessAccount: bank.other_finance_1_business_account ?? null,
       legalEntityAccount: bank.other_finance_1_legal_entity_account ?? null,
@@ -317,10 +320,13 @@ function mapDebts(legacy = {}) {
   if (bank.retail_account_name || bank.retail_current_balance) {
     debts.push({
       legacyKey: 'retail_account',
-      type: 'retail_account',
+      type: 'store_account',
+      bank: bank.retail_account_name ?? null,
       accountName: bank.retail_account_name ?? null,
       currentBalance: bank.retail_current_balance ?? null,
       monthlyPayment: bank.retail_monthly_payment ?? null,
+      outstandingBalance: bank.retail_current_balance ?? null,
+      monthlyInstalment: bank.retail_monthly_payment ?? null,
       settled: bank.retail_settled ?? null,
     })
   }
@@ -336,11 +342,12 @@ function mapAssets(legacy = {}) {
     ['furniture_and_fittings', assets.furniture_and_fittings],
     ['other_assets', assets.other_assets_value],
   ]
-    .filter(([, value]) => value !== undefined)
+    .filter(([, value]) => amountNumber(value) !== null && amountNumber(value) > 0)
     .map(([legacyKey, value]) => ({
       legacyKey,
       value,
-      description: legacyKey === 'other_assets' ? assets.other_assets_description ?? null : null,
+      type: { vehicles: 'vehicle', investments: 'investments', furniture_and_fittings: 'other', other_assets: 'other' }[legacyKey] || 'other',
+      description: legacyKey === 'other_assets' ? assets.other_assets_description || 'Other assets previously captured' : { fixed_property: 'Property value previously captured', vehicles: 'Vehicles previously captured', investments: 'Investments previously captured', furniture_and_fittings: 'Furniture and fittings' }[legacyKey],
     }))
 }
 
@@ -351,11 +358,11 @@ function mapLiabilities(legacy = {}) {
     ['other_liabilities', liabilities.other_liabilities_value],
     ['total_liabilities', liabilities.total_liabilities],
   ]
-    .filter(([, value]) => value !== undefined)
+    .filter(([, value]) => amountNumber(value) !== null && amountNumber(value) > 0)
     .map(([legacyKey, value]) => ({
       legacyKey,
       value,
-      description: legacyKey === 'other_liabilities' ? liabilities.other_liabilities_description ?? null : null,
+      description: legacyKey === 'other_liabilities' ? liabilities.other_liabilities_description || 'Other liabilities previously captured' : 'Liabilities previously captured',
     }))
 }
 
@@ -487,9 +494,15 @@ export function fromLegacyBondApplication(legacyApplication = {}, options = {}) 
   state.participants.primaryApplicant.incomeSources = cloneBondApplicationValue(guidedRepeatables.income_sources || [])
   state.participants.primaryApplicant.monthlyCommitments = mergeGuidedRecords(mapMonthlyCommitments(legacy), guidedRepeatables.monthly_commitments)
   state.participants.primaryApplicant.bankAccounts = mergeGuidedRecords(mapBankAccounts(legacy), guidedRepeatables.bank_accounts)
-  state.participants.primaryApplicant.debts = mergeGuidedRecords(mapDebts(legacy), guidedRepeatables.debts)
-  state.participants.primaryApplicant.assets = mergeGuidedRecords(mapAssets(legacy), guidedRepeatables.assets)
-  state.participants.primaryApplicant.liabilities = mergeGuidedRecords(mapLiabilities(legacy), guidedRepeatables.liabilities)
+  state.participants.primaryApplicant.debts = guidedRepeatables.debts_authoritative
+    ? cloneBondApplicationValue(guidedRepeatables.debts || [])
+    : mergeGuidedRecords(mapDebts(legacy), guidedRepeatables.debts)
+  state.participants.primaryApplicant.assets = guidedRepeatables.assets_authoritative
+    ? cloneBondApplicationValue(guidedRepeatables.assets || [])
+    : mergeGuidedRecords(mapAssets(legacy), guidedRepeatables.assets)
+  state.participants.primaryApplicant.liabilities = guidedRepeatables.liabilities_authoritative
+    ? cloneBondApplicationValue(guidedRepeatables.liabilities || [])
+    : mergeGuidedRecords(mapLiabilities(legacy), guidedRepeatables.liabilities)
   state.participants.primaryApplicant.existingProperties = cloneBondApplicationValue(guidedRepeatables.existing_properties || [])
 
   state.participants.coApplicant = coApplicant && hasMeaningfulApplicantData(coApplicant)
@@ -579,16 +592,25 @@ function guidedOnly(records = []) {
 function applyGuidedRepeatablesToLegacy(legacy, state) {
   const applicant = state?.participants?.primaryApplicant || {}
   const existingRepeatables = getGuidedRepeatables(legacy)
+  const previousAssets = existingRepeatables.assets_authoritative ? existingRepeatables.assets || [] : mergeGuidedRecords(mapAssets(legacy), existingRepeatables.assets)
+  const assetsChanged = Boolean(existingRepeatables.assets_authoritative) || JSON.stringify(applicant.assets || []) !== JSON.stringify(previousAssets)
+  const previousDebts = existingRepeatables.debts_authoritative ? existingRepeatables.debts || [] : mergeGuidedRecords(mapDebts(legacy), existingRepeatables.debts)
+  const debtsChanged = Boolean(existingRepeatables.debts_authoritative) || JSON.stringify(applicant.debts || []) !== JSON.stringify(previousDebts)
+  const previousLiabilities = existingRepeatables.liabilities_authoritative ? existingRepeatables.liabilities || [] : mergeGuidedRecords(mapLiabilities(legacy), existingRepeatables.liabilities)
+  const liabilitiesChanged = Boolean(existingRepeatables.liabilities_authoritative) || JSON.stringify(applicant.liabilities || []) !== JSON.stringify(previousLiabilities)
   const nextRepeatables = {
     ...existingRepeatables,
     income_sources: cloneBondApplicationValue(applicant.incomeSources || []),
     monthly_commitments: guidedOnly(applicant.monthlyCommitments),
     bank_accounts: guidedOnly(applicant.bankAccounts),
-    debts: guidedOnly(applicant.debts),
+    debts: debtsChanged ? cloneBondApplicationValue(applicant.debts || []) : guidedOnly(applicant.debts),
     existing_properties: cloneBondApplicationValue(applicant.existingProperties || []),
-    assets: guidedOnly(applicant.assets),
-    liabilities: guidedOnly(applicant.liabilities),
+    assets: assetsChanged ? cloneBondApplicationValue(applicant.assets || []) : guidedOnly(applicant.assets),
+    liabilities: liabilitiesChanged ? cloneBondApplicationValue(applicant.liabilities || []) : guidedOnly(applicant.liabilities),
   }
+  if (assetsChanged) nextRepeatables.assets_authoritative = true
+  if (debtsChanged) nextRepeatables.debts_authoritative = true
+  if (liabilitiesChanged) nextRepeatables.liabilities_authoritative = true
   Object.keys(nextRepeatables).forEach((key) => {
     if (Array.isArray(nextRepeatables[key]) && nextRepeatables[key].length === 0 && !Array.isArray(existingRepeatables[key])) {
       delete nextRepeatables[key]
@@ -604,20 +626,19 @@ function applyGuidedRepeatablesToLegacy(legacy, state) {
     ...(legacy.income_deductions_expenses || {}),
     primary: {
       ...primaryExpenses,
-      ...(legacy.income_deductions_expenses?.primary || {}),
     },
   }
 
-  const guidedAssets = guidedOnly(applicant.assets)
-  const guidedLiabilities = guidedOnly(applicant.liabilities)
+  const guidedAssets = assetsChanged ? applicant.assets || [] : guidedOnly(applicant.assets)
+  const guidedLiabilities = liabilitiesChanged ? applicant.liabilities || [] : guidedOnly(applicant.liabilities)
   const assetTotal = sumAmounts(guidedAssets, 'value')
   const liabilityTotal = sumAmounts(guidedLiabilities, 'value')
-  if (assetTotal || liabilityTotal) {
+  if (assetTotal || liabilityTotal || assetsChanged || liabilitiesChanged) {
     legacy.assets_liabilities = {
       ...(legacy.assets_liabilities || {}),
-      total_assets: assetTotal ? String(assetTotal) : legacy.assets_liabilities?.total_assets,
-      total_liabilities: liabilityTotal ? String(liabilityTotal) : legacy.assets_liabilities?.total_liabilities,
-      net_asset_value: assetTotal || liabilityTotal ? String(assetTotal - liabilityTotal) : legacy.assets_liabilities?.net_asset_value,
+      total_assets: assetsChanged || assetTotal ? String(assetTotal) : legacy.assets_liabilities?.total_assets,
+      total_liabilities: liabilitiesChanged || liabilityTotal ? String(liabilityTotal) : legacy.assets_liabilities?.total_liabilities,
+      net_asset_value: assetsChanged || liabilitiesChanged || assetTotal || liabilityTotal ? String((assetsChanged || assetTotal ? assetTotal : amountNumber(legacy.assets_liabilities?.total_assets) || 0) - (liabilitiesChanged || liabilityTotal ? liabilityTotal : amountNumber(legacy.assets_liabilities?.total_liabilities) || 0)) : legacy.assets_liabilities?.net_asset_value,
     }
   }
 }
@@ -708,6 +729,7 @@ function applyKnownMappedState(legacy, state) {
   if (primary) {
     legacy.applicants = upsertApplicant(applicants, {
       ...primary,
+      ...(state.participants.primaryApplicant.marital?.regime || primary.marital_regime ? { marital_regime: primary.marital_status === 'married' ? state.participants.primaryApplicant.marital?.regime ?? primary.marital_regime : null } : {}),
       email: primaryContact.email ?? primary.email,
       phone: primaryContact.phone ?? primary.phone,
       key: 'primary',
@@ -747,9 +769,11 @@ function applyKnownMappedState(legacy, state) {
   legacy.declarations_consents.digital_signature_date =
     state?.legacySubmission?.typedSignatureDate ?? legacy.declarations_consents.digital_signature_date
   legacy.consent = cloneBondApplicationValue(state?.legacySubmission?.consents?.consent || legacy.consent || {})
-  legacy._meta = {
-    ...(legacy._meta || {}),
-    bond_application_html_signature: cloneBondApplicationValue(state?.application?.signatureEvidence || legacy?._meta?.bond_application_html_signature || null),
+  if (state?.application?.signatureEvidence || legacy?._meta?.bond_application_html_signature !== undefined) {
+    legacy._meta = {
+      ...(legacy._meta || {}),
+      bond_application_html_signature: cloneBondApplicationValue(state?.application?.signatureEvidence || legacy?._meta?.bond_application_html_signature || null),
+    }
   }
   applyBankAccountToLegacy(legacy, state)
   applyGuidedRepeatablesToLegacy(legacy, state)

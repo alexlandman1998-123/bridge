@@ -345,3 +345,13 @@ enabled = true
 verify_jwt = false
 import_map = "./functions/seller-portal-document-signing/deno.json"
 entrypoint = "./functions/seller-portal-document-signing/index.ts"
+
+[functions.attorney-appointment-delivery-worker]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/attorney-appointment-delivery-worker/index.ts"
+
+[functions.transaction-handoff-dispatch-worker]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/transaction-handoff-dispatch-worker/index.ts"

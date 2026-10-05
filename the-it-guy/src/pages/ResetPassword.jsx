@@ -1,6 +1,7 @@
-import { ArrowLeft, ArrowRight, CheckCircle2, Eye, EyeOff, ShieldCheck } from 'lucide-react'
+import { ArrowLeft, ArrowRight, CheckCircle2, Eye, EyeOff } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import Arch9AccessLayout from '../components/auth/Arch9AccessLayout'
 import { recordAuditEvent } from '../lib/activityAudit'
 import { clearPostLoginRedirect } from '../lib/resolveMobileAwareRedirect'
 import { clearSupabaseLocalAuthState, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
@@ -182,48 +183,19 @@ export default function ResetPassword() {
 
   if (checkingSession) {
     return (
-      <section className="auth-loading-screen">
-        <div className="auth-loading-card">
-          <h2>Opening your reset link...</h2>
-          <p>Checking the secure recovery session.</p>
-        </div>
-      </section>
+      <Arch9AccessLayout mode="recovery">
+        <section className="auth-card auth-card-login" role="status">
+          <div className="auth-card-head compact">
+            <h2>Opening your reset link…</h2>
+            <p>Checking the secure recovery session.</p>
+          </div>
+        </section>
+      </Arch9AccessLayout>
     )
   }
 
   return (
-    <div className="auth-page auth-page-login">
-      <main className="auth-shell">
-        <section className="auth-hero">
-          <div className="auth-hero-glow" aria-hidden="true" />
-          <div className="auth-network-pattern" aria-hidden="true" />
-          <div className="auth-hero-orbit" aria-hidden="true" />
-          <div className="auth-hero-top">
-            <p className="auth-brand">Arch9</p>
-          </div>
-          <div className="auth-hero-copy">
-            <h1>Secure access, <span>restored.</span></h1>
-            <p>Choose a new password for your Arch9 agent workspace.</p>
-          </div>
-
-          <div className="auth-architecture" aria-hidden="true">
-            <span className="auth-building auth-building-one" />
-            <span className="auth-building auth-building-two" />
-            <span className="auth-building auth-building-three" />
-            <span className="auth-connection auth-connection-one" />
-            <span className="auth-connection auth-connection-two" />
-            <span className="auth-connection auth-connection-three" />
-            <i className="auth-node auth-node-one" />
-            <i className="auth-node auth-node-two" />
-            <i className="auth-node auth-node-three" />
-          </div>
-
-          <div className="auth-hero-trust">
-            <ShieldCheck size={22} />
-            <span>Recovery links are verified before your password can be changed</span>
-          </div>
-        </section>
-
+    <Arch9AccessLayout mode="recovery">
         <section className="auth-card auth-card-login">
           <form id="agent-reset-password-form" className="auth-form" onSubmit={handleSubmit}>
             <div className="auth-card-head compact">
@@ -305,7 +277,6 @@ export default function ResetPassword() {
             </button>
           ) : null}
         </section>
-      </main>
-    </div>
+    </Arch9AccessLayout>
   )
 }

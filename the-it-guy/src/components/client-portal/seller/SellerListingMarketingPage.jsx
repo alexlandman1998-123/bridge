@@ -53,8 +53,6 @@ export default function SellerListingMarketingPage({ listing = {}, channels = []
             {card.href ? <a href={card.href} target="_blank" rel="noopener noreferrer" aria-label={`View listing on ${card.label}`} className="mt-auto inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#123f3a] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#0b312d]">View live listing <ExternalLink size={15} /></a> : <p className="mt-auto hidden text-xs leading-5 sm:block text-[#64748b]">A live link will appear here once your agent shares it.</p>}
           </article>)}
         </div>
-        {channelLeads ? <p className="mt-4 text-xs leading-5 text-[#64748b]">Leads are counted once per platform. A buyer can enquire through more than one platform.</p> : null}
-        {channelLeads?.other > 0 ? <p className="mt-2 text-sm text-[#64748b]">{channelLeads.other} leads have another or unspecified source.</p> : null}
       </section>
 
       <div className={`relative overflow-hidden rounded-[20px] border border-[#dbe5ef] bg-white ${listing.images?.length ? 'h-[330px] sm:h-[480px] xl:h-[540px]' : 'h-[250px] sm:h-[300px]'}`}>

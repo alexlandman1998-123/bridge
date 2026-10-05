@@ -61,7 +61,8 @@ for (const expected of [
   'Show detailed register',
   'openConveyancingDocumentRequest',
   'openConveyancingDocumentUpload',
-  "showDetailedDocumentRegister || isAgentTransactionView || workspaceRole === 'bond_originator'",
+  'const isTransactionOperatorView = isAgentTransactionView || isDeveloperTransactionView',
+  "showDetailedDocumentRegister || isTransactionOperatorView || workspaceRole === 'bond_originator'",
 ]) {
   assert.ok(source.includes(expected), `Phase 3 document control should include: ${expected}`)
 }

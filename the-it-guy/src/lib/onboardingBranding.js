@@ -354,3 +354,30 @@ export function resolveOnboardingBranding(...sources) {
     accentColour: pickFirstText(flattenedSources, ACCENT_COLOUR_KEYS),
   }
 }
+
+/** Safe agency colours for paper documents, with readable ink on white. */
+export function resolveDocumentBrandPalette(...sources) {
+  const branding = resolveOnboardingBranding(...sources)
+  const colour = (value, fallback) => /^#[0-9a-f]{6}$/i.test(value) ? value
+    : /^#[0-9a-f]{3}$/i.test(value) ? `#${value.slice(1).split('').map(part => part + part).join('')}` : fallback
+  const channels = value => [1, 3, 5].map(index => parseInt(value.slice(index, index + 2), 16))
+  const hex = values => `#${values.map(value => Math.round(value).toString(16).padStart(2, '0')).join('')}`
+  const contrast = values => {
+    const [red, green, blue] = values.map(value => value / 255).map(value => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4)
+    return 1.05 / (0.2126 * red + 0.7152 * green + 0.0722 * blue + 0.05)
+  }
+  const ink = value => {
+    const rgb = channels(value)
+    if (contrast(rgb) >= 4.5) return value
+    for (let factor = 0.95; factor > 0; factor -= 0.05) {
+      const shade = rgb.map(channel => Math.round(channel * factor))
+      if (contrast(shade) >= 4.5) return hex(shade)
+    }
+    return '#000000'
+  }
+  const tint = value => hex(channels(value).map(channel => channel * 0.06 + 255 * 0.94))
+  const primaryColour = colour(branding.primaryColour, '#193d2e')
+  const accentColour = colour(branding.accentColour, '#176842')
+  return { primaryColour, accentColour, primaryInk: ink(primaryColour), accentInk: ink(accentColour),
+    primaryTint: tint(primaryColour), accentTint: tint(accentColour) }
+}

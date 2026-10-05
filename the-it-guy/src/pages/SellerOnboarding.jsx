@@ -30,6 +30,7 @@ import PremiumOnboardingLanding from '../components/onboarding/PremiumOnboarding
 import SellerFicaQuestions from '../components/onboarding/SellerFicaQuestions'
 import Button from '../components/ui/Button'
 import { MOCK_DATA_ENABLED } from '../lib/mockData'
+import { downloadHtmlDocumentPdf } from '../lib/htmlDocumentPdf'
 import { resolveSellerBondStatus, sellerBondDeclaration } from '../lib/sellerBondStatus'
 import {
   getOnboardingBrandInitials,
@@ -3826,8 +3827,6 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
 
   async function handleDownloadDisclosurePdf() {
     if (!form?.propertyDisclosure) return
-    let pdfStage = null
-    let styleElement = null
     try {
       setError('')
       const normalizedDisclosure = normalizePropertyDisclosure(activePropertyDisclosure || {}, {
@@ -3837,7 +3836,6 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         setError('Complete and sign the disclosure before downloading it.')
         return
       }
-      const { default: html2pdf } = await import('html2pdf.js/src/index.js')
       // A downloaded disclosure is an official artefact. Refresh the
       // organisation mark immediately before rendering so an older frozen
       // onboarding payload cannot fall back to the organisation name after a
@@ -3875,57 +3873,16 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
           logoDarkUrl: agencyBrand.logoDarkUrl,
           logoLightUrl: agencyBrand.logoLightUrl,
           logoIconUrl: agencyBrand.logoIconUrl,
+          primaryColour: agencyBrand.primaryColour,
+          secondaryColour: agencyBrand.secondaryColour,
+          accentColour: agencyBrand.accentColour,
         },
       })
-      const pdfDocument = new window.DOMParser().parseFromString(markup, 'text/html')
-      const documentBody = pdfDocument.body
-      const style = pdfDocument.head.querySelector('style')
-      styleElement = document.createElement('style')
-      styleElement.setAttribute('data-seller-disclosure-pdf-style', 'true')
-      styleElement.textContent = style?.textContent || ''
-      pdfStage = document.createElement('div')
-      pdfStage.setAttribute('data-seller-disclosure-pdf-stage', 'true')
-      pdfStage.style.position = 'fixed'
-      pdfStage.style.left = '-10000px'
-      pdfStage.style.top = '0'
-      pdfStage.style.width = '210mm'
-      pdfStage.style.background = '#ffffff'
-      pdfStage.style.pointerEvents = 'none'
-      pdfStage.innerHTML = documentBody.innerHTML
-      document.head.appendChild(styleElement)
-      document.body.appendChild(pdfStage)
-      const imageLoads = Array.from(pdfStage.querySelectorAll('img')).map((image) => {
-        if (image.complete) return Promise.resolve()
-        return new Promise((resolve) => {
-          image.onload = resolve
-          image.onerror = resolve
-        })
+      await downloadHtmlDocumentPdf(markup, 'property-condition-disclosure.pdf', {
+        stageName: 'seller-disclosure',
       })
-      await Promise.all(imageLoads)
-      await new Promise((resolve) => window.requestAnimationFrame(resolve))
-      const exportTarget = pdfStage.querySelector('.property-disclosure-document') || pdfStage
-      await html2pdf()
-        .set({
-          margin: 0,
-          filename: 'property-condition-disclosure.pdf',
-          image: { type: 'jpeg', quality: 0.98 },
-          html2canvas: {
-            scale: 2,
-            useCORS: true,
-            backgroundColor: '#ffffff',
-            windowWidth: 794,
-            windowHeight: 1123,
-          },
-          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-          pagebreak: { mode: ['css', 'legacy'] },
-        })
-        .from(exportTarget)
-        .save()
     } catch (downloadError) {
       setError(downloadError?.message || 'Unable to download the disclosure PDF right now.')
-    } finally {
-      pdfStage?.remove()
-      styleElement?.remove()
     }
   }
 

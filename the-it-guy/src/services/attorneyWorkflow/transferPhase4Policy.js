@@ -1,3 +1,4 @@
+import { withholdingRemittanceIssues } from './conveyancingReviewPolicy.js'
 const key = (value) => String(value || '').trim().toLowerCase()
 const sellers = (scenarioProfile) => (Array.isArray(scenarioProfile?.parties) ? scenarioProfile.parties : [])
   .filter((party) => party?.role === 'seller')
@@ -118,7 +119,7 @@ export function phase4DecisionIssues(decision = {}, scenarioProfile = {}, proper
       if (!['issued', 'not_required'].includes(review.directiveStatus)) issues.push(`${label}: directive decision`)
       if (review.directiveStatus === 'issued' && !String(review.directiveReference || '').trim()) issues.push(`${label}: directive proof`)
       if (!['yes', 'no'].includes(review.withholdingRequired)) issues.push(`${label}: withholding decision`)
-      if (review.withholdingRequired === 'yes' && !String(review.paymentReference || '').trim()) issues.push(`${label}: withholding payment proof`)
+      issues.push(...withholdingRemittanceIssues(review).map(issue => `${label}: ${issue}`))
       if (!String(review.proofReference || '').trim()) issues.push(`${label}: non-resident review evidence`)
     }
   }
@@ -135,10 +136,11 @@ export function phase4DecisionIssues(decision = {}, scenarioProfile = {}, proper
     }
     if (!['yes', 'no'].includes(propertyConditions.titleRestrictions)) issues.push('title conditions applicability')
     if (!['yes', 'no'].includes(propertyConditions.complianceCertificates)) issues.push('compliance certificate applicability')
+    if (!['yes', 'no'].includes(propertyConditions.certificates?.electrical)) issues.push('electrical installation / certificate applicability')
+    if (propertyConditions.certificates?.electrical === 'no' && !String(propertyConditions.electricalBasisNote || '').trim()) issues.push('electrical non-applicability basis')
     if (propertyConditions.titleRestrictions === 'yes' && !String(propertyConditions.titleConditionsReference || '').trim()) issues.push('title condition evidence')
     if (propertyConditions.complianceCertificates === 'yes') {
-      // Electrical proof remains a baseline canonical lodgement blocker.
-      for (const type of ['gas', 'electricFence', 'beetle']) {
+      for (const type of ['gas', 'electricFence', 'beetle', 'water']) {
         if (!['yes', 'no'].includes(propertyConditions.certificates?.[type])) issues.push(`${type} certificate applicability`)
       }
     }

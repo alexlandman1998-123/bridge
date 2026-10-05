@@ -1,0 +1,175 @@
+/* Shared staff and professional access design. Client portals are independent. */
+body .arch9-access.auth-page {
+  --access-ink: #152621;
+  --access-muted: #627068;
+  --access-accent: #166b50;
+  display: grid;
+  grid-template-columns: minmax(0, 46fr) minmax(0, 54fr);
+  align-items: stretch;
+  justify-items: stretch;
+  width: 100%;
+  height: auto;
+  min-height: 100dvh;
+  padding: 16px;
+  overflow: visible;
+  background: #f9faf8;
+  color: var(--access-ink);
+  font-family: var(--font-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif);
+  -webkit-font-smoothing: antialiased;
+}
+
+.arch9-access *, .arch9-access *::before, .arch9-access *::after { box-sizing: border-box; }
+.arch9-access-story {
+  position: sticky;
+  top: 16px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 650px;
+  height: calc(100dvh - 32px);
+  overflow: hidden;
+  isolation: isolate;
+  width: 100%;
+  padding: clamp(32px, 4vw, 64px);
+  border-radius: 20px;
+  color: #fff;
+  background: radial-gradient(ellipse at 85% 100%, #1a594b 0%, transparent 57%), #0b211c;
+}
+.arch9-access-wordmark { display: inline-flex; align-items: baseline; gap: 0; font-size: 32px; font-weight: 650; line-height: 1; letter-spacing: -.065em; color: inherit; }
+.arch9-access-wordmark > span { font-weight: 400; }
+.arch9-access-wordmark > i { width: 6px; height: 6px; margin-left: 5px; border-radius: 50%; background: #84dcb0; }
+.arch9-access-story-copy { position: relative; z-index: 1; margin: auto 0; padding: 70px 0 120px; }
+.arch9-access-kicker { margin: 0 0 22px; color: #a8bcb4; font-size: 10px; font-weight: 600; letter-spacing: .16em; }
+.arch9-access-story h1 { margin: 0; color: #f5faf5; font-size: clamp(52px, 5.4vw, 86px); font-weight: 500; letter-spacing: -.065em; line-height: 1.03; }
+.arch9-access-story h1 > span { color: #bceacc; }
+.arch9-access-story-copy > p:last-child { max-width: 310px; margin: 26px 0 0; color: #b1c3bb; font-size: 15px; line-height: 1.7; }
+.arch9-access-art { position: absolute; z-index: -1; right: -90px; bottom: 65px; width: 430px; height: 310px; transform: rotate(-28deg) skew(12deg); }
+.arch9-access-art > span { position: absolute; inset: 0; border: 1px solid #b7e6ca32; border-radius: 32px; background: linear-gradient(160deg, #b9f2d009, #93cead02); }
+.arch9-access-art > span:nth-child(2) { inset: 38px 45px; }
+.arch9-access-art > span:nth-child(3) { inset: 76px 90px; background: linear-gradient(160deg, #b9f2d012, transparent); }
+.arch9-access-art > i { position: absolute; top: 73px; left: 92px; width: 7px; height: 7px; border-radius: 50%; background: #bbebcf; box-shadow: 0 0 32px #b9f2d088; }
+.arch9-access-story-footer { position: relative; z-index: 1; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; color: #a6bcb2; font-size: 10px; }
+.arch9-access-main { display: flex; flex-direction: column; width: 100%; min-width: 0; min-height: calc(100dvh - 32px); padding: 28px clamp(32px, 6vw, 96px) 16px; }
+.arch9-access-topbar { display: flex; align-items: center; justify-content: flex-end; gap: 16px; }
+.arch9-access-topbar > .arch9-access-wordmark { display: none; }
+.arch9-access-audience { display: inline-flex; align-items: center; gap: 7px; color: var(--access-muted); font-size: 11px; font-weight: 500; }
+.arch9-access-audience > i { width: 5px; height: 5px; border-radius: 50%; background: #217455; }
+.arch9-access-content { width: 100%; max-width: 400px; margin: auto; padding: 64px 0; }
+.arch9-access-footer { display: flex; justify-content: space-between; gap: 16px; color: #69766d; font-size: 10px; }
+
+/* Keep the established form handlers and signup fields, with one visual system. */
+body .arch9-access.auth-page .arch9-access-main .auth-card,
+body .arch9-access.auth-page .arch9-access-main .arch9-access-card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  width: 100%;
+  max-width: none;
+  min-height: 0;
+  gap: 20px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  overflow: visible;
+  background: transparent;
+  box-shadow: none;
+}
+body .arch9-access.auth-page .arch9-access-main .auth-card > * { width: 100%; flex: 0 0 auto; }
+body .arch9-access.auth-page .arch9-access-main .auth-card .auth-form,
+body .arch9-access.auth-page .arch9-access-main .arch9-access-form { display: grid; flex: 0 0 auto; gap: 26px; min-height: 0; margin: 0; padding: 0; overflow: visible; scrollbar-gutter: auto; }
+body .arch9-access.auth-page .arch9-access-main .auth-card-head.compact,
+body .arch9-access.auth-page .arch9-access-main .arch9-access-heading { display: grid; gap: 10px; margin: 0 0 6px; }
+body .arch9-access.auth-page .arch9-access-main .auth-card-eyebrow { color: #6b7870; font-size: 10px; font-weight: 600; line-height: 1.4; letter-spacing: .12em; }
+body .arch9-access.auth-page .arch9-access-main .auth-card-head h2,
+body .arch9-access.auth-page .arch9-access-main .arch9-access-heading h1 { margin: 0; color: var(--access-ink); font-size: 38px; font-weight: 550; line-height: 1.14; letter-spacing: -.055em; }
+body .arch9-access.auth-page .arch9-access-main .auth-card-head p,
+body .arch9-access.auth-page .arch9-access-main .arch9-access-heading p { margin: 0; color: var(--access-muted); font-size: 14px; line-height: 1.65; }
+body .arch9-access.auth-page .arch9-access-main .auth-field-stack { gap: 20px; }
+body .arch9-access.auth-page .arch9-access-main .auth-form label,
+body .arch9-access.auth-page .arch9-access-main .arch9-access-form label { display: grid; gap: 9px; color: #33493e; font-size: 12px; font-weight: 550; line-height: 1.3; }
+body .arch9-access.auth-page .arch9-access-main .auth-form input,
+body .arch9-access.auth-page .arch9-access-main .arch9-access-form input {
+  width: 100%;
+  min-width: 0;
+  min-height: 54px;
+  padding: 14px 16px;
+  border: 1px solid #dce3dc;
+  border-radius: 10px;
+  background: #fff;
+  color: var(--access-ink);
+  font: inherit;
+  font-size: 16px;
+  font-weight: 400;
+  outline: none;
+  box-shadow: 0 2px 3px #15262103;
+  transition: border-color .15s, box-shadow .15s;
+}
+body .arch9-access.auth-page .arch9-access-main input::placeholder { color: #69766d; opacity: 1; }
+body .arch9-access.auth-page .arch9-access-main input:focus-visible { border-color: #217455; box-shadow: 0 0 0 3px #21745518; }
+body .arch9-access.auth-page .arch9-access-main input:disabled { background: #f0f3ef; opacity: .65; cursor: not-allowed; }
+body .arch9-access.auth-page .arch9-access-main .auth-password-field { display: grid; gap: 9px; }
+body .arch9-access.auth-page .arch9-access-main .auth-password-input { position: relative; }
+body .arch9-access.auth-page .arch9-access-main .auth-password-input input { padding-right: 54px; }
+body .arch9-access.auth-page .arch9-access-main .auth-password-input button { position: absolute; top: 50%; right: 5px; width: 44px; height: 44px; border: 0; border-radius: 7px; background: transparent; color: #7f8c83; transform: translateY(-50%); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+body .arch9-access.auth-page .arch9-access-main .auth-recovery-link { justify-self: end; min-height: 44px; margin: 0; color: #42664e; font-size: 12px; font-weight: 550; }
+body .arch9-access.auth-page .arch9-access-main .auth-submit,
+body .arch9-access.auth-page .arch9-access-main .arch9-access-submit { display: inline-flex; align-items: center; justify-content: center; gap: 10px; width: 100%; min-height: 54px; margin: 0; padding: 14px 20px; border: 1px solid #166b50; border-radius: 10px; background: #166b50; color: #fff; font: inherit; font-size: 14px; font-weight: 550; box-shadow: 0 4px 8px #166b5010; cursor: pointer; transition: background .15s, box-shadow .15s; }
+body .arch9-access.auth-page .arch9-access-main .auth-submit:hover:not(:disabled),
+body .arch9-access.auth-page .arch9-access-main .arch9-access-submit:hover:not(:disabled) { background: #11543e; box-shadow: 0 4px 12px #166b5020; }
+body .arch9-access.auth-page .arch9-access-main button:disabled { cursor: not-allowed; opacity: .55; }
+body .arch9-access.auth-page .arch9-access-main button:focus-visible { outline: 3px solid #21745545; outline-offset: 3px; }
+body .arch9-access.auth-page .arch9-access-main .auth-footer { display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: center; width: 100%; gap: 4px 7px; margin: 0; padding: 0; border: 0; color: #69766d; font-size: 12px; }
+body .arch9-access.auth-page .arch9-access-main .auth-footer button { min-height: 44px; padding: 0 4px; color: #166b50; font-weight: 600; }
+body .arch9-access.auth-page .arch9-access-main .auth-secondary-cta,
+body .arch9-access.auth-page .arch9-access-main .arch9-access-secondary { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 48px; padding: 12px 16px; border: 1px solid #dce3dc; border-radius: 10px; background: transparent; color: #42664e; font: inherit; font-size: 13px; cursor: pointer; }
+body .arch9-access.auth-page .arch9-access-main .auth-feedback { margin: 0; border-radius: 10px; font-size: 13px; line-height: 1.6; }
+body .arch9-access.auth-page .arch9-access-main .auth-security-notice { margin: 0; font-size: 13px; }
+body .arch9-access.auth-page .arch9-access-main .signup-stepper { width: 100%; margin: 0 0 12px; }
+body .arch9-access.auth-page .arch9-access-main .signup-role-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+body .arch9-access.auth-page .arch9-access-main .signup-role-grid-wrap { max-height: none; overflow: visible; }
+body .arch9-access.auth-page .arch9-access-main .signup-role-card { min-height: 88px; padding: 16px; border-color: #dce3dc; border-radius: 12px; background: #fff; box-shadow: 0 2px 3px #15262103; }
+body .arch9-access.auth-page .arch9-access-main .signup-role-card.active,
+body .arch9-access.auth-page .arch9-access-main .signup-position-card.active { border-color: #166b50; background: #f0f6f0; box-shadow: none; }
+body .arch9-access.auth-page .arch9-access-main .signup-role-card-icon,
+body .arch9-access.auth-page .arch9-access-main .signup-position-icon { color: #166b50; background: #edf4ed; box-shadow: none; }
+body .arch9-access.auth-page .arch9-access-main .auth-action-row { flex-wrap: wrap; }
+body .arch9-access.auth-page .arch9-access-main .auth-action-row .auth-submit { min-width: 0; flex: 1; }
+.arch9-access.auth-page.auth-page-signup .arch9-access-content { max-width: 540px; }
+
+@media (max-width: 980px) {
+  body .arch9-access.auth-page { grid-template-columns: minmax(0, 42fr) minmax(0, 58fr); }
+  .arch9-access-story { padding: 32px; }
+  .arch9-access-story h1 { font-size: 52px; }
+  .arch9-access-main { padding-inline: 32px; }
+}
+
+@media (max-width: 767px) {
+  body .arch9-access.auth-page { display: block; min-height: 100dvh; padding: 0; background: radial-gradient(ellipse at 100% 0, #e8f1e8 0, transparent 48%), #f9faf8; }
+  .arch9-access-story { display: none; }
+  .arch9-access-main { min-height: 100dvh; padding: max(32px, env(safe-area-inset-top)) 28px max(24px, env(safe-area-inset-bottom)); }
+  .arch9-access-topbar { justify-content: space-between; gap: 10px; }
+  .arch9-access-topbar > .arch9-access-wordmark { display: inline-flex; font-size: 31px; }
+  .arch9-access-audience { max-width: 140px; font-size: 10px; }
+  .arch9-access-content { margin-block: auto; padding-block: 64px; }
+  body .arch9-access.auth-page .arch9-access-main .auth-card-head h2,
+  body .arch9-access.auth-page .arch9-access-main .arch9-access-heading h1 { font-size: 36px; }
+  .arch9-access-footer { font-size: 10px; }
+  body .arch9-access.auth-page .arch9-access-main .signup-role-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 360px) {
+  .arch9-access-main { padding-inline: 22px; }
+  body .arch9-access.auth-page .arch9-access-main .auth-card-head h2,
+  body .arch9-access.auth-page .arch9-access-main .arch9-access-heading h1 { font-size: 32px; }
+}
+
+@media (max-height: 650px) and (max-width: 767px) {
+  .arch9-access-main { padding-top: max(24px, env(safe-area-inset-top)); }
+  .arch9-access-content { padding-block: 36px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body .arch9-access.auth-page .arch9-access-main input, body .arch9-access.auth-page .arch9-access-main button { transition: none; }
+}

@@ -151,3 +151,20 @@ const jointSnapshot = buildJointBondApplicationSubmissionSnapshot({ normalizedAp
 const jointSubmission = { status: 'submitted', signed_at: '2026-09-13T10:00:00Z', snapshot_json: jointSnapshot, declarations_json: Object.values(jointEvidence).flat() }
 const jointReady = validateBondApplicationSubmissionReadiness({ ...input, applicationState: jointState, stage: 'bank_submission', submission: jointSubmission })
 assert.equal(jointReady.ready, true, JSON.stringify(jointReady.issues))
+
+// Canonical uploads can carry request-specific keys; count all files for that
+// exact request, including evidence received after the application was signed.
+const statementsRequirement = { key: 'requested_statements', title: 'Bank statements', active: true, required: true, requiredBefore: 'required_before_bank_submission', satisfactionMode: 'uploaded', minimumFileCount: 3, allowMultipleFiles: true, matching: { canonicalTypes: ['bank_statements'] } }
+const statementRows = [{ document_key: statementsRequirement.key, canonical_requirement_instance_id: 'canonical-statements' }]
+const statementFiles = [1, 2, 3].map(number => ({ id: `late-${number}`, document_type: 'custom-request-key', canonical_requirement_instance_id: 'canonical-statements', status: 'uploaded', uploaded_by_party: 'buyer' }))
+const lateEvidenceChecklist = files => buildBondApplicationDocumentChecklist({ activeRequirements: [statementsRequirement], existingRequiredDocuments: statementRows, existingDocuments: files })
+const beforeLateUpload = { items: [...checklist.items, ...lateEvidenceChecklist(statementFiles.slice(0, 2)).items] }
+assert.equal(validateBondApplicationSubmissionReadiness({ ...input, documentChecklist: beforeLateUpload, stage: 'bank_submission', submission }).ready, false)
+const signedAnswers = JSON.stringify(submission.snapshot_json)
+const afterLateUpload = { items: [...checklist.items, ...lateEvidenceChecklist(statementFiles).items] }
+assert.equal(validateBondApplicationSubmissionReadiness({ ...input, documentChecklist: afterLateUpload, stage: 'bank_submission', submission }).ready, true)
+assert.equal(JSON.stringify(submission.snapshot_json), signedAnswers)
+const wrongRequest = [...statementFiles.slice(0, 2), { ...statementFiles[2], document_type: 'bank_statements', canonical_requirement_instance_id: 'neighbouring-request' }]
+assert.equal(lateEvidenceChecklist(wrongRequest).items[0].complete, false)
+assert.equal(lateEvidenceChecklist(statementFiles.map(file => ({ ...file, review_status: 'rejected' }))).items[0].complete, false)
+console.log('Canonical late-upload bank readiness: missing files, exact request scope, unchanged signed answers and rejected evidence passed')

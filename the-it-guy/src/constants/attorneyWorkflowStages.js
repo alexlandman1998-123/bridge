@@ -393,6 +393,8 @@ export const ATTORNEY_WORKFLOW_STAGE_DEFINITIONS = {
     }),
     transferStage({
       key: 'buyer_fica_review',
+      defaultVisibility: 'internal',
+      clientVisibleAllowed: false,
       label: 'Review & Approve Buyer FICA',
       description: 'Review the buyer\'s applicable identity, address and authority documents in one pack.',
       actionLabel: 'Review buyer FICA',
@@ -403,6 +405,8 @@ export const ATTORNEY_WORKFLOW_STAGE_DEFINITIONS = {
     }),
     transferStage({
       key: 'seller_fica_review',
+      defaultVisibility: 'internal',
+      clientVisibleAllowed: false,
       label: 'Review & Approve Seller FICA',
       description: 'Review the seller\'s applicable identity, address and authority documents in one pack.',
       actionLabel: 'Review seller FICA',
@@ -1375,7 +1379,10 @@ export function getAttorneyStageLabel(stageKey, laneKey = null) {
 
 export function getAttorneyStageDefinitionsForLane(laneKey) {
   const lane = normalizeLaneKey(laneKey)
-  return [...(ATTORNEY_WORKFLOW_STAGE_DEFINITIONS[lane] || [])]
+  const definitions = [...(ATTORNEY_WORKFLOW_STAGE_DEFINITIONS[lane] || [])]
+  if (lane !== 'transfer') return definitions
+  const order = TRANSFER_ATTORNEY_JOURNEY_PHASES.flatMap(phase => phase.stageKeys)
+  return definitions.sort((a, b) => order.indexOf(a.key) - order.indexOf(b.key))
 }
 
 export function getAttorneyJourneyPhasesForLane(laneKey) {

@@ -507,7 +507,7 @@ const transferDutyLodgementModel = buildTransferWorkspaceViewModel({
       transferTaxDecision: { route: 'transfer_duty', status: 'confirmed', tdc01Reference: 'TDC01-1',
         dutyPaymentRequired: 'no', sarsStatus: 'receipted', basisNote: 'Dutiable purchase', sarsProofReference: 'SARS-1' },
       propertyTenure: 'freehold', hoaApplicable: 'no',
-      propertyConditions: { titleRestrictions: 'no', complianceCertificates: 'no',
+      propertyConditions: { titleRestrictions: 'no', complianceCertificates: 'no', certificates: { electrical: 'no' }, electricalBasisNote: 'Reviewed vacant land; no installation',
         clearances: { municipal: { issuer: 'Municipality', reference: 'RCC-1', validUntil: '2030-01-01' } } },
     },
     lane: {
@@ -531,7 +531,7 @@ const verifiedTransferDutyLodgementModel = buildTransferWorkspaceViewModel({
       transferTaxDecision: { route: 'transfer_duty', status: 'confirmed', tdc01Reference: 'TDC01-1',
         dutyPaymentRequired: 'no', sarsStatus: 'receipted', basisNote: 'Dutiable purchase', sarsProofReference: 'SARS-1' },
       propertyTenure: 'freehold', hoaApplicable: 'no',
-      propertyConditions: { titleRestrictions: 'no', complianceCertificates: 'no',
+      propertyConditions: { titleRestrictions: 'no', complianceCertificates: 'no', certificates: { electrical: 'no' }, electricalBasisNote: 'Reviewed vacant land; no installation',
         clearances: { municipal: { issuer: 'Municipality', reference: 'RCC-1', validUntil: '2030-01-01' } } },
     },
     lane: {

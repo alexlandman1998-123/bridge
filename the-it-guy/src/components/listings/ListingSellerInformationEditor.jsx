@@ -1,3 +1,4 @@
+import SellerMandateDetailsEditor from '../documents/SellerMandateDetailsEditor.jsx'
 import { Plus, Trash2 } from 'lucide-react'
 
 import { LISTING_SELLER_PROFILE_BRANCHES } from '../../lib/listingSellerProfileBuilderModel.js'
@@ -142,6 +143,10 @@ export default function ListingSellerInformationEditor({
           <label className="flex items-center gap-2 text-sm font-semibold text-[#2d445e]"><input type="checkbox" checked={Boolean(draft.cancellationRequired)} onChange={(event) => onChange('cancellationRequired', event.target.checked)} />Bond cancellation required</label>
         </> : null}
       </section>
+      <SellerMandateDetailsEditor ownershipType={branch} value={{ ...draft, startDate: draft.mandateStartDate, endDate: draft.expiryDate, specialConditions: draft.mandateTerms }} onChange={next => {
+        const fields = { startDate: 'mandateStartDate', endDate: 'expiryDate', specialConditions: 'mandateTerms' }
+        for (const [key, value] of Object.entries(next)) onChange(fields[key] || key, value)
+      }} />
       <button type="submit" className="sr-only" disabled={saving}>Save seller information</button>
     </form>
   )

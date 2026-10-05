@@ -2,6 +2,96 @@
 
 High-end React + Vite + Supabase transaction workspace for Samlin Construction.
 
+## Transaction buyer and seller capture
+
+The agent's Create Transaction → Buyer & Seller step captures each legal entity
+separately from its people. Individuals, multiple owners, companies, CCs, trusts,
+foreign entities and seller estates can record representatives, spouses, ownership,
+contact and signing roles. Every person keeps a stable identity and their own
+marital status and marriage regime. Missing identity or authority information stays
+visible as an item to confirm; capture does not approve documents or authority.
+
+The transaction saves this snapshot in the existing buyer onboarding JSON and
+passes it to document generation. The current legal checklist supplies the entity
+and marriage document sets; mixed owners combine their applicable sets. Canonical
+identity and marital requirements retain the exact person's identity. Compatibility
+upload slots permit multiple files where several people need the same evidence.
+Existing files and review states remain attached on recalculation. Checklist items
+awaiting approval are shown as pending in the preview and retain the existing policy.
+Foreign-law and other-entity details remain flagged for attorney confirmation.
+
+Focused local checks from this package:
+`node --test src/core/transactions/__tests__/transactionPartyProfile.test.js src/services/documents/__tests__/documentRequestCanonicalTransactionSyncService.test.js src/services/documents/__tests__/documentRequestCanonicalRequiredDocumentSyncService.test.js`,
+`node scripts/transaction-canonical-document-engine.test.mjs`, and
+`npx vitest run src/components/transaction/__tests__/TransactionPartyCapture.test.jsx src/components/transaction/__tests__/AgentTransactionPartyCapture.test.jsx src/services/documents/__tests__/transactionPartyRequirements.test.js`.
+These checks use fixtures and send no invitations or live writes. This change needs
+no migration. Production release and a saved-matter live check are separate steps.
+
+The capture flow now includes an Existing Documents step. It accepts the agreed
+selling price (prefilled from a linked listing/unit) and actual sale date, reuses
+buyer leads, listing seller details and available CRM seller leads, and preserves
+the chosen stage for address-first backfills. Documents are queued locally until
+the transaction has been created; closing before saving discards that queue.
+Files use the standard type/size checks and authenticated transaction upload API.
+The receipt reports each saved or failed file and retries only unsaved files
+against the same transaction. Unmatched evidence is retained in the document
+library for manual checklist matching; person-specific uploads never guess which
+co-owner's requirement to satisfy. Uploads stay internal and still need review.
+If creation reports that a transaction exists but setup is incomplete, the wizard
+opens that existing transaction instead of offering to create another one.
+
+Additional focused checks:
+`npx vitest run src/core/transactions/__tests__/transactionCaptureDocuments.test.js src/components/transaction/__tests__/AgentTransactionPartyCapture.test.jsx`
+and `node src/core/transactions/__tests__/newTransactionSetupHealth.test.js`.
+No schema migration or remote data change is required for this capture flow.
+
+Transaction capture also records buyer finance (unknown, cash, bond or mixed),
+the bank and reported application position, plus the seller's separate existing
+bond position, bank and reference. Funding checks use the existing deal setup
+contract: the deposit is included in the mixed route's cash portion; incomplete
+or inconsistent funding remains a follow-up item. Reported approval does not
+verify bank approval or advance the captured transaction stage.
+
+Transfer, bond registration and cancellation attorneys remain separate roles.
+Known organisation destinations use existing firm nomination and the durable
+handoff register. An external nominee, including a directory contact without an
+organisation destination, is excluded from immediate assignment and receives
+the existing organisation connection invitation after save. The finance snapshot
+retains the professional nominations in `__bridge_finance.captureSnapshot`.
+Explicit nominees supersede inherited development defaults; cash suppresses
+buyer bond professionals and a direct bank route suppresses originators. Seller
+cancellation can still apply to a cash purchase. Seller bond facts also update
+the canonical document checklist and capture upload options.
+
+Invitation recovery reads history strictly before creating: permission/network
+failures cannot prove absence. Pending or accepted invitations are reused;
+expired/declined invitations require review in the transaction workspace. Failed
+attempts retry against the saved transaction. An unconfirmed email is shown as
+unconfirmed; invitation, delivery and firm acceptance are separate states in the
+existing handoff register shown on the receipt. No new migration is introduced;
+the organisation handoff and invitation infrastructure described below must be
+available on the target before live verification.
+
+Focused finance/handoff checks:
+`npx vitest run src/core/transactions/__tests__/transactionCaptureFinance.test.js src/services/__tests__/transactionCaptureHandoffService.test.js src/components/transaction/__tests__/AgentTransactionPartyCapture.test.jsx src/services/documents/__tests__/transactionPartyRequirements.test.js`
+and the existing `npm run test:transaction-handoff-register` and
+`npm run test:transaction-partner-invite-org-connection`.
+These fixture checks send no live invitations or instructions.
+
+Scenario verification also exercises 192 combinations of buyer and seller entities, marital
+positions, finance routes and seller bond positions through snapshot reload,
+canonical checklist generation, person-specific evidence matching and professional
+routing. Seller estates are included across those combinations. Reopening capture
+starts with a fresh form, preventing property details, notes and appointed firms
+from carrying over. Invitation recovery refuses malformed history and reuses a
+persisted invitation after a lost response.
+
+Run the existing focused checks above plus
+`npx vitest run src/services/documents/__tests__/transactionCaptureScenarios.test.js`.
+These are local fixture checks of the wizard and services. Authenticated storage,
+organisation connection, email delivery and acceptance on a deployed environment
+still need a live saved-transaction check after an authorised release.
+
 ## Retired document generator
 
 The legacy mandate/OTP generator, template workspace, packet signing endpoints,
@@ -13,6 +103,469 @@ independent. Existing document records and final-file access are preserved.
 Run `node --test scripts/document-generator-retirement.test.mjs` from this package
 to check the retirement boundary and independent upload behavior. Server handler
 changes require an explicit deployment before they affect an existing environment.
+
+Seller mandate, FICA and disclosure HTML downloads use the shared browser PDF
+exporter. It keeps the source off-screen in a wrapper while the captured document
+retains normal layout, preserving its page height. The disclosure download uses
+the same exporter after its existing completeness and current-branding checks.
+Run `npm run test:seller-document-pdf-download` for the local Chromium download
+regression, also included in `npm run check:listing-seller-workspace`.
+It checks original and corrected copies, mobile downloads, two distinct agency
+palettes and public/private image access. The actual PDFs must retain page counts,
+visible content, repeated logos and the saved primary/accent colours. Missing,
+corrupt, expired, timed-out or inaccessible images must stop the download and
+remove temporary rendering elements. It uses no remote services.
+SVG logos with only a viewBox receive explicit dimensions in the export copy,
+preventing canvas capture from cropping the logo. The check includes the Home
+Seekers SVG and verifies all four corners of synthetic logos on every page.
+Install the browser with `npx playwright install chromium`
+if it is missing. PDF and rendered-page evidence is written to
+`test-results/seller-document-pdf-download/`.
+
+The mandate wording review has a shared A4 layout for Exclusive, Open and Dual
+drafts. It reads the exact Phase 1 Markdown, presents the captured commercial
+terms and schedules, retains every numbered clause, and keeps each seller
+signature and both Dual agency acceptance blocks intact. Missing details remain
+visible. Each page carries a review warning, reference, wording version and page
+number. Long text uses measured pagination; the review exporter captures each
+page separately to avoid browser canvas limits. Full signing copies require the
+exact approvals described below; historical copies retain their frozen wording.
+
+Run `node scripts/render-seller-mandate-review-pdfs.mjs` from this package to
+regenerate the three synthetic review proofs in the repository's `output/pdf/`.
+The same script with `--check` writes all evidence under
+`test-results/mandate-review-layout/`, including ordinary, maximum-length,
+six-owner, mobile, zero-protection, fixed/open-period, missing-data and branding
+cases. `npm run test:seller-document-pdf-download` includes this check and the
+wording-preservation tests. Saved revised schedules also produce this full draft
+in the normal post-onboarding review, with scripts blocked in preview frames and
+pagination performed by the app. Mobile previews retain the complete text.
+
+The separate seller-document signing service supports the full layout behind
+explicit approval gates. `sellerMandateWordingRelease.js` pins the complete three
+source drafts and their hashes; all releases remain pending and the agency
+approval register is empty. An old template approval or client flag cannot enable
+them. Exact business/counsel wording approval, matching agency-schedule approval,
+checked authority/signed disclosure/FFC evidence and complete captured terms are
+required before a signing version can freeze. Agency certificates must remain
+current when links are issued or used. Do not populate approvals from synthetic
+test fixtures.
+
+Full copies freeze the wording, commercial schedules, notices, parties, branding,
+evidence review and signer matrix together. Exclusive/Open include one agency
+acceptance; Dual includes two distinct agency recipients on the same copy. FICA
+and disclosure retain their seller signers. An agency token accesses only its
+mandate. Changes to full frozen mandates require a replacement and fresh review;
+the old-copy correction path remains separate. Preview and final review require
+every signature, and signature evidence prints in its matching seller or agency
+block before pagination. No retired packet endpoint is re-enabled.
+
+Newly finalized FICA/disclosure copies also annotate their signature panels with
+the recorded per-person date/place and signature. Their appended evidence pages
+reuse the frozen source's logo, palette and footer, with bounded signer groups
+and updated page numbers. Frozen source bytes and existing final artifacts stay
+unchanged. The final-evidence checks run with the reviewed-version check below;
+signature completion does not assert verification of supporting FICA evidence.
+
+Run `npm run test:seller-reviewed-document-versions` for pending-approval, exact
+wording, frozen-input and tampering checks. `npm run test:seller-document-journey`
+also exercises the three full mandate variants through the actual Edge handler
+and existing SQL, using explicit synthetic approval substitutions. For a focused
+rerun after changing the full mandate flow, use
+`node scripts/seller-document-journey.test.mjs --full-mandates-only`.
+These are local checks. Real commercial/legal approvals, hosted acceptance and
+an explicitly requested deployment remain necessary before activation.
+
+Run `npm run test:seller-document-journey` for connected local acceptance of all
+three generators. It carries the same PostgreSQL records through canonical save,
+save retry, reopen, generation, frozen approval, browser download, shared-detail
+correction, each required signature or physical upload, review, and reopen. The
+original eight journeys cover individual, multiple-owner, company and trust
+sellers across sole, exclusive, open and dual mandates. Three full-wording
+journeys verify contracting-agency signatures and archived wording. Four
+additional connected journeys complete FICA/disclosure first, then prepare a
+full mandate while preserving both completed versions. They include company,
+multiple-owner and trust authority, mixed physical/digital routes, actual public
+React signing interactions and the physical-review confirmation. The Dual case
+replaces a partially signed mandate, preserving its evidence and requiring all
+new signatures. Guards cover stale saves and copies, incomplete
+signatures, expired links, partial email failure, replacement links, review retries
+and immutable signed evidence. Each downloaded page must contain visible content;
+the final PDFs must include the actual drawn signatures and persisted agency logo.
+The signature certificate uses the source template's A4 page class to avoid an
+extra blank page between the reviewed document and its signature evidence.
+
+This check also runs the disclosure, branding and profile-alignment regressions
+and is included in `check:listing-seller-workspace`. PDFs, selected rendered pages
+and a machine-readable report are written to `test-results/seller-document-journey/`.
+Auth/session, email, Storage and transaction-promotion infrastructure are synthetic;
+the actual Edge handler and canonical-save, upload, signing and review SQL run
+locally. Human checks of wet-ink signatures, hosted UI, live delivery and the full
+migration chain remain release acceptance steps. This check performs no remote
+writes and grants no deployment approval.
+
+For a focused rerun of the sequential flows, use
+`node scripts/seller-document-journey.test.mjs --connected-only`.
+Seller-portal physical uploads bind to the version currently open in the portal;
+the service checks it again before Storage and the database checks it atomically.
+The additive migration `20261004181626_seller_portal_signed_upload_version_binding.sql`
+must be released before this portal upload code. Standalone historical uploads
+retain the established upload path. Completed disclosure evidence from later
+portal signing or physical review is recognised when preparing the mandate;
+it is not inferred from an upload or onboarding submission alone.
+
+New mandate, FICA and disclosure renders share the saved agency palette, with
+readable heading colours even for a light palette. Approved HTML and its hash
+stay unchanged when agency settings change; nested mandate terms are copied at
+approval. Export validates and embeds configured image bytes in the temporary
+PDF stage, rather than silently dropping logos or signatures. Old signed links
+in the public `organisation-branding` bucket use public access; private document
+and signature links retain their signed access. No data migration is needed.
+
+Seller portal corrections regenerate the mandate, FICA and disclosure from a
+local projection of the captured facts. The primary person's corrected name,
+identity, contact and address reach each unsigned copy while co-owners, entity
+identity, signing authority and invitation routing are retained. FICA is rebuilt
+instead of reusing its stale model; captured declaration wording and other
+untouched facts remain. Cleared fields stay cleared. Dual mandates expose the
+second agency in the correction editor.
+Run `npm run test:seller-document-corrections` for field/ownership regressions and
+the real Edge correction handler against the existing correction SQL function in
+an isolated PostgreSQL database. It checks complete-pack updates, rollback,
+stale/expired links, signing locks and preservation of approved source/history.
+This is included in `check:listing-seller-workspace` and makes no remote writes.
+No new migration is required. The Edge Function and app changes need deployment
+before taking effect. The correction check includes facts-bound reviewed versions
+created by the current browser contract.
+
+Browser preparation, browser verification and the signing Edge Function share
+`computeSellerReviewedDocumentVersionDigest` in `sellerReviewedDocumentVersions.js`.
+It binds the reviewed content, source draft, signer roster, mandate terms and any
+captured-facts fingerprint into one SHA-256 version. Missing or empty facts
+fingerprints retain the existing legacy hash format. A present fingerprint must
+match; the server never falls back to a hash that ignores it. The saved index
+must agree with both source fingerprints, the signer roster and the terms.
+Run `npm run test:seller-reviewed-document-versions` for fixed hash vectors,
+legacy/history preservation, and actual client preparation plus Edge issuance
+and viewing with synthetic auth, local records and an in-memory email transport.
+It also rejects tampering before any write. This check is included in
+`check:listing-seller-workspace`. It does not send email or modify live records.
+Existing approved versions and signature evidence need no migration or rehash.
+A coordinated app/Edge release and live acceptance check are still required.
+
+FICA-only preparation keeps an unchanged frozen mandate at its original version,
+including copies without the newer facts fingerprint. Sole and Exclusive aliases
+compare as the same legacy appointment without changing the stored terms or hash.
+When available, the older saved signing snapshot supplies the facts comparison.
+Records lacking that baseline remain candidates for manual historical review.
+Full mandates compare their actual frozen inputs while ignoring a later pack's
+preparation time. Changed parties, property, branding or agreed terms require a
+separately reviewed replacement.
+
+When renewing full mandate wording, retain the exact previously approved release
+in `SELLER_MANDATE_WORDING_ARCHIVE`, including its variant, version, source and
+approval evidence. Keep its agency approvals and the v1 reconstruction renderer.
+Historical verification uses that trusted register; approval inside a saved copy
+alone is insufficient. Existing requests may finish against their approved copy,
+subject to the existing expiry/evidence guards. A new signing request requires the
+current approved wording. Full-template labels with missing contract/capture
+metadata are rejected rather than treated as legacy copies.
+Unknown saved capture versions stay preserved and show
+a notice requiring agent review rather than being converted to version 1.
+The real wording register remains pending and its archive is empty.
+
+Historical seller checks use `scripts/sql/seller-mvp-acceptance-audit.sql` in a
+read-only transaction. The output contains listing/onboarding identifiers, reason
+codes and preservation flags, with no names, document HTML or tokens. Canonical
+conflicts and completed captures require agent review; unfinished capture remains
+unfinished, rentals stay outside seller-sale scope, and frozen copies must be
+preserved. No automatic repair is permitted. Run
+`npm run test:seller-existing-record-audit` for actual PostgreSQL fixture checks;
+it is also included in `check:listing-seller-workspace`. Migration comparison and
+isolated clean replay commands are documented in
+`../docs/database-release-runbook.md`.
+
+The read-only audit includes legacy mandate copies, incomplete full-contract
+metadata, unfamiliar capture versions and approved copies in version history.
+These are preservation/review reasons, not automatic conversion instructions.
+`npm run test:seller-document-journey` also checks the actual forward correction
+against sent, partially signed and completed/reviewed full mandates, and tests
+wording renewal against the real signing handler with synthetic approvals.
+
+The same focused check validates the forward migration
+`20261004121736_seller_document_review_runtime_reconciliation.sql`, prepared after
+the live catalog showed missing review/reminder actions and review-queue objects
+under historical versions with different recorded SQL. It restores those actions
+and exact-requirement guards, keeps the current upload/signing functions, and
+does not backfill historical records or start automatic reminders. The
+[4 October migration review](../output/seller-document-migration-review-2026-10-04.html)
+contains the 39-record review queue, catalog evidence and outstanding acceptance
+checks. Live application requires a separately approved scoped release.
+
+### Mandate capture and review schedules
+
+Seller lead onboarding, the listing seller-information editor, and the listing
+profile wizard use the same mandate editor. Sole/exclusive aliases display as
+**Exclusive**. Open offers an agreed end date or an explicit appointment until
+cancelled; Exclusive and Dual require a fixed period before preparation. Enter
+`0` for no buyer-protection period. Blank protection and commission fields are
+unfinished instructions, not defaults.
+
+Use **Capture revised mandate schedules** to add contracting agency identities,
+business and practitioner FFC evidence references, authorised representatives,
+seller capacity/authority, exclusions and earlier introductions, marketing
+commitments, approved expense limits, notices and annexures. Dual exposes both
+agencies and an explicit allocation rule, shares and each portion's VAT treatment.
+No allocation or proposed protection period is silently supplied. Certificate
+references record supplied evidence; they do not certify verification.
+
+These schedules are versioned JSON inside the existing onboarding form. Drafts
+can be incomplete. Save/reopen preserves blank values, `None`, `Not applicable`,
+zero protection days, inactive Dual fields and cleared end dates. Fresh signing
+snapshots copy schedules by value; old frozen copies remain unchanged. New
+schedules are review data until the revised layout and approved signing template
+can include them. Preparation and the correction endpoint reject silently adding
+them to the existing contract. Existing mandate corrections retain their legacy
+path and now support indefinite Open appointments and valid calendar dates.
+
+`npm run test:listing-seller-canonical-update` includes the capture requirements,
+alias/clear preservation and actual lead-preparation actions. Run the editor
+interaction checks with
+`npx vitest run src/components/documents/__tests__/SellerMandateDetailsEditor.test.jsx src/components/listings/__tests__/ListingSellerInformationEditor.test.jsx`.
+`npm run test:seller-document-corrections` checks the endpoint/SQL correction
+boundary. `npm run test:seller-document-journey` also saves and reopens the new
+schedules through the existing canonical SQL before checking the existing FICA,
+disclosure and mandate journeys. This capture change requires no schema migration
+or remote write. The three proposed contracts and remaining work are recorded in
+[the mandate decision record](docs/mandate-wording-review/decision-record.md).
+
+## Attorney calendar saving
+
+The Attorney calendar loads appointments for authorised matters across their
+agency/developer organisations, plus matterless events owned by the firm.
+New invites use the selected matter's organisation. The appointment, recipients,
+RSVP tokens, notification preference and delivery jobs save together in one database
+transaction. A confirmed save releases the controls without waiting for email or
+refresh. Turning **Send notifications** off persists through later edits and skips
+email, portal notifications and reminders; calendar attachments are a separate option.
+
+Saved rows appear immediately. Background reconciliation preserves the calendar
+view, date, filters and open appointment; focus, reconnection and the existing
+Attorney refresh hook's visible polling recover changes from other workspaces.
+Stale reads cannot replace newer snapshots. Schema mismatches reject the save
+instead of silently discarding workflow links or location details. A failed recipient
+write rolls back the whole save, including its queued communications.
+
+Calendar day/week/month calculations, displayed times and date filters use SAST,
+even when the browser is in another timezone. Cards use the saved end time and
+separate overlapping appointments into columns. The calendar includes completed,
+cancelled and declined history, with separate filters; active workload totals exclude
+closed bookings. Month navigation uses calendar months, the mini-picker includes all
+six weeks, and readiness uses saved document/matter evidence rather than an empty
+preparation checklist.
+
+Delivery feedback reloads from saved jobs. The service-only
+`attorney-appointment-delivery-worker` dispatches invitations, changes, cancellations,
+confirmation and reminders through the existing email service. A one-minute cron
+schedule uses the platform's Vault credentials. Leased jobs retry after interruption
+with bounded backoff, stable provider keys and frozen private email payloads; replaced revisions and closed or
+declined recipients do not receive old reminders. Explicit resends reuse pending
+work, retry failed work, or create one new job after a recorded send. In-app receipts
+and portal messages persist independently of the browser and preserve read state.
+ICS attachments retain the appointment UID, advance SEQUENCE on calendar changes,
+use the saved SAST duration and CANCEL semantics, and fold Unicode lines correctly.
+This provides calendar attachments, without two-way Google/Outlook synchronisation.
+
+Appointment details support editing the time, assigning or clearing a scheduling
+owner, assigning a boardroom, completing and cancelling. The owner is saved with
+their profile identity and email, separately from the matter attorney. Room choices
+include the selected matter's organisation and the assigned firm's backing
+organisation; firm IDs are not used as organisation IDs. Time changes request fresh
+client confirmation and close old reschedule requests/reminders. Cancellation
+keeps the record, reason and actor and revokes old RSVP links. Closed appointments
+cannot be edited, and stale saves must refresh first. Database checks reject
+overlapping people or rooms across organisations without exposing hidden booking
+details; shared room saves use a short transaction lock to prevent double booking.
+Room changes also update the physical venue used in communications. Edits replace
+old reminder jobs, while a database guard prevents late legacy scheduling from
+recreating reminders for closed appointments.
+
+Local changes require the append-only migrations
+`20261003201121_attorney_appointment_management.sql`,
+`20261003204422_attorney_calendar_durable_delivery.sql` and
+`20261003204821_attorney_calendar_delivery_worker_schedule.sql`. The two new delivery
+migrations and worker have not been applied/deployed remotely. Release must deploy
+both the delivery worker and updated `send-email` function, apply the migrations,
+and verify `ARCH9_APP_URL` plus Vault's `arch9_project_url` and
+`arch9_service_role_key` match the target environment. Provider delivery and
+Google/Outlook import acceptance still require an authorised live smoke check.
+
+Worker HTTP/authorization check: from the repository root run
+`deno test --allow-env supabase/functions/attorney-appointment-delivery-worker/index.test.ts`
+(the test stubs database calls and sends no email).
+
+Focused checks: `npm run test:attorney-calendar-invite` (local contract, service,
+component and page checks); use `npm run check:app` from the repository root for
+the app baseline. Browser checks use fixture services and do not send emails or
+write live bookings.
+
+Client portal and public RSVP responses share one database writer. It verifies
+buyer invitation identity or the seller's current secure session, saves the
+participant response and any proposed time together, and confirms a booking only
+when every required attendee has accepted. Optional attendees do not block it.
+Retries reuse a saved command receipt; a lost acknowledgement cannot duplicate
+requests or overwrite a later choice. A stale booking time requires a refresh. Listing viewings retain their existing
+buyer/seller/agent proposal rounds and dedicated notification handling, including
+new invitations after a counterproposal; portal responses use that same writer.
+
+Appointment, participant and reschedule-request changes advance the existing
+matter refresh watermark used by professional and client workspaces. Matching
+local responses also refresh an open matter immediately. Late older workspace
+reads preserve the newer appointment responses. Portals continue to use
+scoped polling and recover through focus/reconnection. Appointment displays and
+reschedule drafts use SAST, including older date/clock records. Private bookings
+remain private and the notifications-off choice is preserved. Managed attorney
+responses use the durable delivery queue; older appointments retain their existing
+delivery adapter after the save, without making acknowledgement wait for email.
+
+These response changes also require the append-only local migration
+`20261004110204_attorney_cross_role_appointment_responses.sql`. It has not been
+applied remotely. The established RSVP check now executes this migration and the
+existing calendar management/delivery migrations in an isolated database, covering
+rollback, replay, required attendees, separate party proposals and portal scope.
+Run `node scripts/attorney-calendar-phase4-rsvp.test.mjs` without `--live` for this
+check. A live cross-role transaction and provider delivery remain release checks.
+
+## Attorney document persistence
+
+Attorney matter uploads save the file record, exact request/requirement links,
+activity and refresh signals together through `bridge_save_attorney_document`.
+Requests and reviews use authenticated retry receipts; repeated submissions reuse
+the saved action. Upload notes, participant identity, lane and visibility survive
+reloads. New replacements reopen canonical review, and stale files cannot approve
+new evidence. Save controls release before background refreshes or temporary
+download URLs are resolved. Transport failures retain the storage object until
+the saved outcome can be confirmed; definite database rejection allows cleanup.
+
+Apply `supabase/migrations/20261003173649_attorney_document_persistence.sql` before
+releasing the frontend. Missing RPCs fail explicitly rather than falling back to
+browser-owned linking. Notification delivery and legacy workflow reporting retain
+their existing integrations; the canonical document save does not depend on them.
+Release and database application require separate authorization and live checks.
+
+Focused checks from this package: `node --test scripts/attorney-document-persistence.test.mjs`
+and `node --test scripts/shared-matter-journey-live-refresh.test.mjs scripts/atomic-buyer-portal-document-upload.test.mjs`.
+
+The Attorney document request view tracks waiting files, review, corrections and
+completion. Requesters select an exact checklist requirement or an additional
+supporting document; an open request disables another request for that instance.
+The requirement fixes its recipient. Only the exact received file can be reviewed;
+additional-file approval completes its request without completing a legal task.
+Correction reasons persist on the request, and replacement returns it for review.
+Requested uploads retain their client recipient; professional-only requests use
+the existing Storage policy's professional audience instead of client sharing.
+The new request review RPC requires
+`supabase/migrations/20261003180814_attorney_document_request_review.sql` after the
+persistence migration. Both migrations and the frontend need a coordinated release.
+
+UI/model checks: `node --test src/services/documents/__tests__/attorneyDocumentRequestModel.test.js`
+and `npx vitest run src/components/attorney/operations/__tests__/AttorneyDocumentRequests.test.jsx`.
+
+Attorney drafting uses external Word or firm templates and private uploads. The
+Documents view now retains working drafts, ready-for-signature copies, signed
+copies and supporting-evidence revisions in one numbered history. Each revision
+keeps its exact matter, attorney lane, requirement, request and participant.
+Unsigned copies stay internal and cannot supply checklist or requested evidence;
+an accepted signed copy remains current while a new draft is prepared. Changed
+signed evidence returns to review, with earlier approvals and files retained.
+The generator, template workspace and packet signing remain retired.
+
+`bridge_save_attorney_document_version` wraps the existing atomic save and records
+version identity before success. Repeated saves recover the same version; a stale
+predecessor rejects another branch. Historical files and metadata cannot be
+overwritten or deleted through the document table. Existing ordinary uploads join
+the history as version 1 only when an attorney explicitly replaces them. Browser
+controls release before background refresh, and the saved version appears locally
+from the confirmed response. No existing files are copied or backfilled on release.
+
+Apply `supabase/migrations/20261003183115_attorney_document_versions.sql` after the
+two attorney document migrations above, then release the frontend and verify a
+logged-in matter through draft, signed upload, review, replacement and reopen.
+This local implementation does not apply migrations or release the application.
+Focused checks include the persistence check above,
+`node --test src/services/documents/__tests__/attorneyDocumentVersionModel.test.js`,
+and `npx vitest run src/components/attorney/operations/__tests__/AttorneyDocumentVersions.test.jsx`.
+
+Private documents and legal notes follow the responsible firm and its allocated
+matter team. Explicit delegations grant only their selected capabilities and
+expire with the delegation. New records retain their owning firm across appointment
+changes; historical records with ambiguous ownership remain author-only. Shared
+documents and client recipients keep their existing audiences. Stored files,
+activity, audit events, document retries and replacements enforce the same boundary.
+Private FICA tasks have no client wording in the canonical catalogue.
+
+Apply `supabase/migrations/20261004102741_attorney_internal_workspace_boundaries.sql`
+after the document and conveyancing corrections, then verify distinct attorney
+firms and client sessions in a live matter. This implementation is local and does
+not apply the migration or release the application. The existing permission check
+now covers private access: `node --test scripts/attorney-workbench-permission-contract.test.mjs`.
+
+Attorney coordination summaries read the saved shared journey for every required
+lane, even when the viewer can open only their own Work page. A completed handoff
+is ready; reopening it withdraws readiness on refresh. The active plan and explicit
+not-applicable outcomes exclude unnecessary dependencies. Missing progress or an
+unconfirmed assignment remains visible instead of being reported as clear. An
+assignment hidden by access rules is unconfirmed rather than assumed missing. Other
+firms' notes, files and editing controls stay outside the summary.
+
+Focused coordination checks: `node scripts/attorney-workflow-scoped-load.test.mjs`
+and `node src/services/__tests__/phase6OutcomeConsistency.test.js`. This frontend change uses
+the existing professional journey reader and requires no new database migration.
+
+## Attorney conveyancing reviews
+
+The existing transfer, bond and cancellation stages remain. Agreement review now
+records applicable conditions, payment dates, owners and supporting decisions.
+Cancellation allocation records each registered bond and linked loan account,
+including paid-up registered security; settlement records match those accounts.
+Seller signatures may be recorded as not applicable only after a saved lender /
+instrument decision; bondholder consent remains required. Changed review records
+withdraw unlodged readiness, and replacement of a linked agreement reopens its
+substantive review. Reopen a completed review task to correct its saved records.
+
+FICA reviews prompt for each party's firm RMCP review and internal reference;
+findings stay inside the attorney firm. Existing capacity prompts include the
+applicable guardianship, marital, entity distress/disposal and trustee decisions.
+Electrical non-applicability requires an attorney decision and completed property
+review; unknown applicability continues to require proof. Water compliance remains
+municipality / contract dependent; the document resolver uses the saved property
+municipality from the linked listing when available. Withholding review can record reserved funds,
+owner, payment event and a future remittance deadline; actual withholding uses
+the purchaser's residence and reviewed period. Due remittance and final-account
+closure need payment proof. The separate SARS transfer-tax receipt stays required.
+
+Registration communication may use portal updates or a recorded external channel,
+date, recipients and evidence reference. Saving this evidence does not send a
+message. Clearance dates use the same SAST calendar and conservative **usable
+before** cutoff in the screen and database; this change does not decide a registry's
+inclusive expiry interpretation. Municipal issue windows remain distinct from
+body-corporate / HOA issuer conditions.
+
+Release the frontend together with
+`supabase/migrations/20261003185915_attorney_conveyancing_review_corrections.sql`,
+after the three document migrations above. Existing unlodged matters need their
+new review records completed before readiness can be confirmed. No historical
+task outcomes or documents are deleted. Focused checks: `npm run check:attorney-conveyancing`,
+`node scripts/verify-attorney-cancellation-lane-phase9.mjs`, and
+`npx vitest run src/components/attorney/workflow/__tests__/TaskConfirmations.test.jsx`.
+The local municipality and electrical fact cases use the existing
+`node scripts/transaction-canonical-document-engine.test.mjs` check.
+The readiness check executes the new migration in a local database and walks
+through registration, settlement and closure, with negative applicability and
+timing cases. Local fixtures do not establish a percentage of real matters covered:
+logged-in release checks, practising conveyancer review and the representative
+matter cohort described in `docs/attorney-conveyancing-process-audit-2026-10-03.md`
+remain necessary before claiming the 95% target.
 
 ## Dashboard transaction counts
 
@@ -794,6 +1347,135 @@ updates and real recovery-email delivery still require controlled acceptance.
 The saved placeholder agent email, absent listing photos/live links and lack of
 a linked transaction remain data/acceptance gaps, rather than fabricated content.
 
+## Home Seekers standalone website hosting
+
+The Home Seekers public website belongs to the primary Vite product. Its separate
+Vercel project is `home-seekers-website`
+(`prj_uxIQ3zvHt7AM0iKSBXLa9ezBh5MA`), with the existing production alias
+`home-seekers-website-alpha.vercel.app`. Kingdom remains in `apps/websites` and
+has a separate release.
+
+From this package, run `npm run build:home-seekers-website`. This builds the
+current frontend and packages the existing `/api/home-seekers/site`, `/leads`,
+`/analytics` and `/applications` handlers with their dependencies as Node.js 24
+functions. The output is isolated in `.vercel/home-seekers-website/.vercel/output`
+and its project link is fixed to Home Seekers. It does not alter the main app's
+Vercel link, deploy anything, copy environment files, include other CRM APIs or
+include scheduled jobs. Generate this artifact from the approved release source;
+do not copy a previous `dist` directory into a static-only deployment.
+
+The Home Seekers Vercel **Production** environment needs server-only
+`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` and
+`WEBSITES_LEAD_FINGERPRINT_SECRET` (at least 32 characters). The URL and service
+key must refer to Arch9 production (`isdowlnollckzvltkasn`), and the active
+Home Seekers website/domain records remain the tenant boundary. Credentials
+are read at function runtime, never embedded in the build. Preview deployments
+must not inherit production database credentials. Publishing real listings and
+testing real lead delivery are separate authorised tasks.
+
+After explicit production release approval, deploy the reviewed artifact from
+this package with
+`VERCEL_PROJECT_ID=prj_uxIQ3zvHt7AM0iKSBXLa9ezBh5MA VERCEL_ORG_ID=team_ezJ5RCE7qwTf14fw215IhPs5 vercel deploy --prebuilt --prod --cwd .vercel/home-seekers-website`.
+The root redirects to `/demo/homeseekers`; real files and functions resolve before
+the public page fallback. Unknown API paths return JSON 404 responses. Verify
+the standalone `/api/home-seekers/site` returns JSON and `/api/home-seekers/leads`
+rejects GET with JSON 405, then check the Home Seekers pages load. These checks
+do not submit a lead, publish a listing or send email. Confirm the project and
+retain its previous production deployment for rollback before promoting.
+
+Focused local verification:
+`node --test server/tests/homeSeekersWebsiteDeployment.test.js server/tests/homeSeekersWebsiteBridge.test.js server/tests/homeSeekersRecruitment.test.js`.
+The deployment check executes the bundled handlers against a loopback CRM
+fixture, including standalone/custom-host enquiry validation, tenant scope,
+unknown API paths, missing configuration and credential isolation. It makes no
+remote writes.
+
+### Home Seekers CRM listings
+
+The home, Buying and Renting pages use the approved CRM website publication
+snapshots. The featured section has no sample fallback: loading, an unavailable
+feed and no published stock each have an explicit visitor message. An empty feed
+offers contact with the team instead of invented listings. The public feed
+rechecks the organisation and canonical Published status on every request.
+
+In the CRM's Agency Website channel, Publish and Update prepare the current
+listing details and durable media before synchronising the website snapshot.
+An ordinary CRM edit remains unpublished until Update is used. Unpublish removes
+the home from the public feed while keeping its CRM record. Sales and rentals
+open `/demo/homeseekers/properties/<listing-id>`; existing Buying detail links
+continue to work. Home Seekers links use the standalone Vercel alias instead of
+the original platform preview hostname, and follow the active custom hostname
+returned by the CRM after domain connection. Other agencies retain their routes.
+
+Area sections and navigation are hidden for launch; `/demo/homeseekers/areas`
+returns to the homepage. The deferred area components and content remain in
+source for a later, separately scoped implementation.
+
+Focused listing checks from this package:
+`npx vitest run src/pages/__tests__/HomeSeekersListings.test.jsx
+src/components/listings/__tests__/HomeSeekersWebsitePublication.test.jsx
+src/components/listings/__tests__/RentalWebsiteChannels.test.jsx` and
+`node --test server/tests/homeSeekersWebsiteBridge.test.js
+src/services/listings/__tests__/listingMarketingChannelPresentation.test.js`.
+These use local fixtures, including publication/update/withdrawal visibility,
+tenant isolation, sales/rental detail pages and the absence of sample stock.
+No migration or remote listing publication is performed. Rebuild the standalone
+package after frontend changes; the main CRM needs its own approved frontend
+release for the corrected publication links to reach agents.
+
+### Home Seekers website enquiries
+
+Homepage and Contact enquiries carry Buy, Sell, Rent or Other intent. Buying
+and Renting enquiries default to their page's intent; valuations are seller
+enquiries, and property enquiries retain the published CRM listing ID. The
+existing CRM ingestion creates the contact, lead and notifications atomically,
+classifies rentals for the rental workspace, assigns a property enquiry to its
+active listing agent and leaves general enquiries awaiting assignment. Existing
+principal alerts and the Home Seekers seller email recipient remain in force.
+
+Every form joins overlapping submissions and keeps the same key after an
+uncertain network/server failure. An unchanged retry therefore confirms the
+original lead instead of creating another one. Definitive rejections or edited
+details start a new attempt. Forms retain the visitor's answers on failure,
+time out after 20 seconds and show success only after explicit CRM acceptance.
+The API limits bodies to 16 KiB, validates consent and contact details, checks
+published pages/listings and applies the existing five-per-hour fingerprint
+limit across the site's aliases. Internal lead/notification IDs stay private.
+
+An accepted lead immediately hands its queued notification to the existing
+durable dispatcher. Notification delivery failure does not undo CRM acceptance.
+Pending migration `20261004104401_home_seekers_lead_notification_queue.sql`
+replaces the seller-only cron with a Home Seekers enquiry retry job, covering
+all intents. It preserves dispatcher claims, provider idempotency, attempt limits
+and retry backoff; it excludes other organisations and orphaned receipts.
+Apply only this reviewed migration through the database release guard after
+explicit release approval, deploy the updated `website-lead-dispatcher` Edge
+Function, then release the standalone website artifact. Targeted dispatcher
+calls leave other agencies' stale claims untouched; the Home Seekers worker
+recovers its own interrupted claims.
+Neither builds nor these tests apply migrations, send email or deploy anything.
+
+Focused checks from this package:
+`node --test server/tests/homeSeekersLeads.test.js
+server/tests/homeSeekersWebsiteDeployment.test.js
+server/tests/homeSeekersWebsiteBridge.test.js
+server/tests/homeSeekersRecruitment.test.js` and
+`npx vitest run src/pages/__tests__/HomeSeekersLeadForms.test.jsx
+src/pages/__tests__/HomeSeekersListings.test.jsx`.
+The lead check executes the actual ingestion/classification/dispatch SQL in
+isolated Postgres with local fixtures. Controlled deployed CRM and email
+acceptance still requires an explicitly authorised release and live submission.
+
+From the repository root, the dispatcher's HTTP and payload checks are
+`deno test --config supabase/functions/website-lead-dispatcher/deno.json
+--allow-env --allow-net=127.0.0.1
+supabase/functions/website-lead-dispatcher/index.test.ts
+supabase/functions/_shared/websiteLeadDispatch.test.ts`.
+They exercise the real handler against a loopback database fixture; no email is
+sent. Local browser acceptance covered a committed lead with a lost response,
+an unchanged retry producing one lead, a rental property viewing, Contact rental
+intent and a mobile valuation. Live inbox delivery remains a release check.
+
 ## Home Seekers recruitment applications
 
 `/demo/homeseekers/join` submits to `/api/home-seekers/applications`.
@@ -864,3 +1546,827 @@ The response-time promise needs an accountable reviewer. The database migration
 and API deployment remain unapplied; controlled live application, notification
 and analytics acceptance must follow an explicitly authorised release. No live
 applications, migrations, emails or deployments were performed for this review.
+
+## Organisation handoff register
+
+The agent buyer workspace shows a persisted handoff per matter and partner lane.
+Organisation nomination, onboarding/signed-OTP readiness, invitation status,
+delivery evidence and organisation receipt are separate. Missing destinations,
+competing destinations, expired/declined invitations and accepted invitations
+without an organisation link appear as actions. Consultant and branch allocation
+remain separate from this organisation-level register.
+
+Source changes reconcile in the same database transaction; existing matters are
+backfilled by `20261004074909_transaction_handoff_register.sql`. Matter-access
+policies protect reads, and clients cannot edit handoff states directly. Bearer
+tokens are excluded. A nomination or signup acceptance never implies instruction
+delivery or organisation receipt. Confirmed firm acceptance and explicit bond
+intake acceptance are recognised; legacy delivery starts as unconfirmed.
+
+Run `npm run test:transaction-handoff-register` in this package. The tests execute
+the migration in a local PostgreSQL engine and exercise the read service and UI.
+The migration has not been applied remotely. This first pass adds visibility and
+persistence; durable dispatch/retries, external-partner signup repair, stale
+assignment cleanup and recovery queues belong to the following passes.
+
+### Durable handoff dispatch
+
+Phase 2 persists organisation dispatch jobs when the source facts make an
+instruction ready. The service worker prepares the attorney firm matter or bond
+originator intake, partner assignment, organisation inbox notification and buyer
+journey event together. Email work is then persisted per recipient, independently
+from matter preparation. A firm preparation failure does not stop the bond lane.
+Existing accepted assignments and bank applications retain their state; competing
+domain destinations require review instead of being overwritten.
+
+Organisation company email is the first delivery destination. Without one, active
+organisation administrators/firm leads at organisation scope receive the notice.
+Named consultant or branch routing is not assigned by this worker. Missing firm
+links or contacts remain visible, with bounded background retries. External
+partners wait for signup and an organisation binding before formal dispatch.
+
+Each job has a lease and attempt history. Interrupted work is reclaimed; successful
+recipients are skipped on retries. Provider requests keep the same frozen sender,
+recipient, content and idempotency key. Eight failed/interrupted attempts stop for
+review. Uncertain sends older than 23 hours also stop for review, before the
+[provider's 24-hour deduplication window](https://resend.com/changelog/idempotency-keys)
+expires. Provider acceptance and organisation acceptance remain separate.
+Controlled test recipients never reach the provider. The agent panel refreshes
+pending work every 30 seconds while visible and refreshes on window focus.
+
+Previously ready matters are held with `historical_delivery_review_required`.
+Installing the migration does not replay historical emails. Later recovery work
+will provide the explicit review/release flow. The legacy browser handoff and
+formal attorney email paths defer to the organisation worker after migration;
+other notifications retain their existing paths.
+
+Checks from this package: `npm run test:transaction-handoff-dispatch`.
+Worker/transport checks from the repository root:
+`deno test --allow-env --config supabase/functions/send-email/deno.json supabase/functions/_shared/transactionHandoffDelivery.test.ts supabase/functions/transaction-handoff-dispatch-worker/index.test.ts supabase/functions/send-email/services/transactionHandoffDispatch.test.ts`.
+These tests use local database/provider fixtures and send no live communications.
+
+Release prerequisites: the Phase 1 register migration, then
+`20261004080223_transaction_handoff_durable_dispatch.sql` and
+`20261004080224_transaction_handoff_dispatch_schedule.sql`. Deploy the new
+`transaction-handoff-dispatch-worker`, updated `send-email` guards, and primary
+app before enabling the database schedule. The guards retain the previous path
+while the dispatch RPC is absent. Verify the target's `ARCH9_APP_URL`,
+`ARCH9_RESEND_FROM_EMAIL` (or `RESEND_FROM_EMAIL`), `RESEND_API_KEY`, and Vault's
+`arch9_project_url`/`arch9_service_role_key` configuration. The schedule invokes
+service-only claims every minute. Verify a new authorised instruction, its native
+intake/matter, inbox/journey records, provider receipt and pending organisation
+acceptance after release. No migrations, worker deployments or live email tests
+have been performed for this local implementation.
+
+### External partner signup and matter connection
+
+Phase 3 routes attorney and bond partner invitations through organisation
+connection, including existing canonical `/invite/` links and legacy
+`/transaction-invite/` links. The preview shows the inviting organisation,
+invited company and role; buyer details and documents remain unavailable before
+connection. Partners can sign in, create an account, verify their email and use
+the existing organisation setup. The invitation reference survives in the saved
+signup intent, allowing continuation on another device. It is cleared only after
+the matter connection commits.
+
+Acceptance requires the verified invited email and active management authority
+at organisation scope in a matching bond business or linked attorney firm.
+Eligible workspaces are listed explicitly; multiple matches require a choice.
+Consultant/branch membership cannot bind the organisation. A changed nomination,
+closed matter, expired/declined/revoked link or conflicting destination stops the
+connection. Generic canonical acceptance cannot consume an unbound handoff.
+
+The invitation binding, reusable partner relationship, participant, roleplayer,
+matter access and Phase 2 dispatch intent commit together. Existing accepted but
+unbound invitations can be completed by their original recipient. Repeating a
+successful connection reuses the records and dispatch generation. Consumed legacy
+links have a private digest for recipient-only resumption after a lost response.
+Signup and connection never confirm instruction delivery or firm acceptance;
+signed-OTP/readiness gates still control native matter/intake preparation.
+
+Run `npm run test:transaction-partner-invite-org-connection` for the existing
+contract, executable database rollback/access/routing tests and signup UI/service
+checks. `npm run test:transaction-handoff-dispatch` verifies the previous phases
+remain sound. Local fixtures send no live communications. The database fixture
+executes the existing acceptance/reconciliation and canonical sync functions as
+well as the new migration; it does not simulate a deployed Auth email callback.
+
+Release requires `20261004082510_transaction_partner_handoff_signup_binding.sql`
+after Phases 1 and 2, plus the primary app changes. Verify new attorney and bond
+signups, email confirmation on another device, organisation setup, explicit
+connection and subsequent worker preparation in the authorised target. This
+implementation has not applied remote migrations, deployed or sent live emails.
+Invitation reminder automation and an operator recovery/release queue remain later work.
+
+
+### Organisation handoffs: assignment retirement (Phase 4)
+
+Organisation replacement, removal and matter closure now retire the old partner
+lane in the same database transaction. Invitation-derived grants are archived
+privately before revocation; independent manual grants remain intact. Old portal
+and invitation links cannot restore the retired lane, including consumed legacy
+invitations. Portal tokens rotate on retirement. Native attorney assignments,
+bond records, buyer data, portal content and delivery receipts remain available
+as history to the owning workspace. Direct portal and native record access also
+exclude the retired organisation.
+
+A pending, unallocated bond intake can follow a replacement nomination without
+losing its saved data. Bank applications, progressed intakes or consultant/branch
+allocations hold the replacement handoff for review instead of transferring
+ownership automatically. The agent handoff panel shows this hold. A later
+operator recovery/release queue must resolve it; this phase adds no bypass.
+Attorney firm receipt is retained independently of retiring its assignment.
+
+Run the existing `npm run test:transaction-partner-invite-org-connection` for
+executable replacement, removal, closure, stale-link, direct-access, preservation
+and rollback checks. `npm run test:transaction-handoff-dispatch` covers register
+presentation and prior dispatch gates. Tests use local fixtures and send no email.
+
+Release requires `20261004083851_transaction_handoff_assignment_retirement.sql`
+after Phases 1–3 and the primary app changes. No existing migration was edited.
+This phase reacts to future source changes; it does not bulk-repair historical
+assignments. Remote migrations and deployment remain unapplied. After an approved
+release, verify attorney/bond replacement, portal revocation and a progressed
+finance review hold against the target's real policies and worker.
+
+### Organisation handoffs: operator recovery (Phase 5)
+
+The existing agent matter handoff panel now offers recovery controls to active
+organisation managers at the owning agency's headquarters. Partner and branch
+membership cannot authorise recovery. Each decision requires a review reason,
+the current handoff generation and a reusable request identity. The private
+recovery decision and internal matter event commit with the queued work; a lost
+response can resume the same decision without extending retries twice.
+
+Eligible failures can be retried after correcting their cause. Exhausted jobs
+receive four additional attempts per reviewed decision, with a hard cap of 24.
+Attempt history, recipient keys, frozen payloads, provider clocks and successful
+receipts are retained. A leased job or an expired provider deduplication window
+requires delivery confirmation and cannot be forced through this control.
+Recovery queues background work; it never marks an instruction sent or accepted.
+
+Reviewed historical and retirement holds can be released once readiness and
+nomination gates pass. If progressed finance belongs to another organisation,
+release remains blocked: correct the nomination to the existing finance owner
+and review it again. An inactive intake belonging to that organisation regains
+its recorded allocation; buyer data and bank applications are not transferred.
+Closed matters, expired invitations and changed source generations cannot be
+released through recovery. Private worker payloads and recovery tables remain
+unavailable to browser clients.
+
+Run `npm run test:transaction-partner-invite-org-connection` for executable
+permission, rollback, retry allowance, worker-claim, source fencing, idempotency,
+receipt preservation and finance ownership checks. Run
+`npm run test:transaction-handoff-dispatch` for prior dispatch behaviour and the
+recovery panel/service checks. `npm run check:app` covers lint, baseline tests and
+production build. These checks use local fixtures without sending communications.
+
+Release requires `20261004085417_transaction_handoff_operator_recovery.sql`
+after Phases 1–4, plus the primary app changes. No remote migration or deployment
+was performed. Verify recovery with real agency-manager and partner accounts and
+the running worker after authorised release. Recovery is available per matter;
+a central cross-matter queue, automated invitation reminders, bulk historical
+repair and reconciliation of uncertain provider results are not implemented here.
+
+### Organisation handoffs: central oversight (Phase 6)
+
+The principal dashboard now includes an organisation handoff queue across the
+agency's active matters. Access uses Phase 5's active headquarters management
+membership at the owning agency; partner administrators and branch membership
+cannot enumerate that agency's matters. The queue remains agency-wide when other
+dashboard filters change. It has server-side filters, bounded pagination and
+totals over the complete organisation scope, and refreshes while visible.
+
+Managers can distinguish readiness waits, partners awaiting signup, queued
+instructions, failures/review holds and outstanding organisation receipts. Pending
+invitation expiry is evaluated on each read. Pending dates use saved work,
+invitation or preparation timestamps instead of a dashboard refresh time.
+Missing required registers, delivery jobs, native matters, partner assignments,
+email intents, provider receipts, frozen payloads and owner mismatches are flagged
+as missing evidence. Recovery also requires the saved handoff owner to match
+the matter owner, so corrupted ownership cannot authorise another tenant. Delivered handoffs with organisation receipt leave the queue;
+closed matters are excluded. A missing record never becomes a healthy empty result.
+
+Each entry opens its matter or the existing guarded handoff review/recovery panel.
+The queue read does not reconcile, repair, requeue or send anything. Buyer details,
+invitation tokens, recipient emails, email payloads and private recovery history
+are not included in the queue response. Errors and unavailable migration/access
+are visible. Workspace changes discard old results and close the previous review.
+
+The existing `npm run test:transaction-partner-invite-org-connection` now executes
+the organisation queue migration and checks scope isolation, evidence gaps,
+expiry, stable age, pagination, completion/closure and read-only behaviour.
+`npm run test:transaction-handoff-dispatch` includes queue UI and service checks
+alongside prior handoff gates. `npm run check:app` verifies lint, baseline tests
+and the primary app build. Local fixtures do not send communications.
+
+Release requires `20261004090057_transaction_handoff_organisation_queue.sql`
+after Phases 1–5 and the primary app changes. No remote migration or deployment
+was performed. Verify organisation scope and recovery navigation with real
+principal, branch and partner accounts after authorised release. Automated
+invitation reminders, bulk historical repair and uncertain provider-result
+reconciliation remain separate work; this queue surfaces them for investigation.
+
+### Rental listing save integrity
+
+Connected local acceptance now runs the real rental detail and guided editors,
+workspace scope and save services against the shared migrated PostgreSQL fixture.
+It caught and corrected the date-only P24 expiry path: incomplete rentals no longer
+need a complete capture form to change expiry, and that control cannot submit
+unrelated editor fields. The new `save_rental_listing_expiry_v1` transaction changes
+only P24 expiry and timestamps, preserves publication/media/links and mandate expiry,
+and records actor-attributed before/after history. Stale or unauthorised updates and
+history failures are rejected atomically. A failed readback is explicitly unconfirmed.
+Apply `20261004163134_rental_listing_expiry_isolated_save.sql` after the durable-history
+migration before releasing the updated client. The existing distribution review now
+includes its SQL access/rollback checks; expiry UI/service regression checks cover
+its receipt and readback. See [rental reliability acceptance](../docs/kingdom-rental-reliability-acceptance-20261004.md)
+for the connected loopback browser fixture, tested boundaries and outstanding actual
+signed-in account acceptance. Local fixtures do not certify hosted memberships,
+Storage permissions, provider credentials or live portal pages.
+
+
+Rental Property24 and Private Property sends now commit a server-owned submission
+journal before calling the provider. One unresolved request per rental/channel/
+environment blocks concurrent sends and changed-payload retries. Confirmed portal
+receipts are retained before local sync writes. Timeouts, server errors, missing
+references and failed local repairs remain uncertain; they are not reported as
+confirmed rejection. Stale create previews cannot bypass a completed submission.
+Stock review and channel settings show **Outcome unconfirmed** and allow
+**Reconcile previous request** even without a saved public reference.
+Reconciliation probes exact source/provider identifiers and repairs local sync
+without publishing again. It never matches by address or title, releases a slot
+because time elapsed, or treats an absent advert as proof of rejection. Ambiguous
+content updates require provider review when the API cannot prove their outcome.
+Withdrawals remain pending while the portal still reports the rental live.
+Apply `20261004155515_rental_publication_attempt_recovery.sql` before releasing
+this server/client. Browsers have scoped read access to the journal and cannot
+forge or clear its entries. This protects submissions made through the new journal;
+older uncertain submissions still require investigation of their existing evidence.
+Focused checks: `npx vitest run server/tests/rentalPublicationRecovery.test.js`,
+the rental channel service/model and portal management tests, and the established
+Property24/Private Property publish, workflow and browser API checks. All use
+fixtures; no real listing is published or remote database written by these checks.
+
+Rental detail and gallery saves record their authenticated actor, time and before/after
+facts, publication data, media (including bucket/path identities) and external links
+inside the save transaction. Activity insert failures roll back the save. Combined
+video/tour edits produce one final audit snapshot. Stock review displays recorded
+changes and reads older history pages; refreshed signed photo links do not count as
+edits. Historical snapshots are evidence, not automatic restoration approval.
+Apply `20261004154901_rental_listing_durable_history.sql` after the photo storage
+identity migration before deploying this client: v2 save functions fail before
+writes when absent. Older RPC entry points also delegate to the audited transaction.
+No older history is fabricated. Check with
+`node src/services/rentals/__tests__/rentalListingPersistence.test.mjs` and the
+rental history model, activity pagination and stock review component tests.
+
+Rental creation reserves a UUID in the workspace browser draft before its first
+database request. Every retry uses that same primary key with INSERT, never upsert.
+A lost response or key conflict is reconciled through an authorised read of the
+same rental. Existing rentals are reviewed before another save; an older creation
+form cannot silently replace their saved details or photos. Confirmed creation IDs
+and uploaded photo bucket/path references survive a browser refresh. Files that
+had not uploaded need to be reselected. Failed recovery reads or browser storage
+block creation rather than starting with another identity. The receipt is cleared
+only after confirmed save and any requested landlord link succeed.
+Phase 3 uses the existing listing primary key and requires no new migration.
+Focused checks: `node --test src/services/rentals/__tests__/rentalListingCreationRecovery.test.js`
+and the creation-entry, rental-save and create-page tests. These use local fixtures
+and local Postgres; they do not create production rentals.
+
+Rental lookup and editing enforce the selected organisation and the same agent or
+branch scope used by the rental list, including organisation-wide principals.
+Read failures stay visible rather than falling back to a misleading not-found result.
+Changing organisation, agent, branch, permission scope or listing resets the editor;
+late responses cannot replace the current listing or navigate back to an old workspace.
+Browser drafts use a workspace-specific key. Older unscoped drafts remain in storage
+but are not automatically restored because their owning organisation is unknown.
+Photo, expiry, edit and portal actions cannot overlap on the same detail page.
+Workspace regression checks are in `rentalListingWorkspace.test.js`,
+`RentalListingCreatePage.save.test.jsx` and `RentalListingDetailPage.overview.test.jsx`.
+This workspace correction needs no additional database migration.
+
+Rental private photos retain their storage bucket and path through both atomic
+save paths. Listing and cover reads, plus rental P24/PP payload preparation, issue
+fresh signed viewing URLs. Readback compares durable object identity because a
+refreshed URL can have a different token. External images keep their original URLs.
+Signing failures never substitute a public URL or silently reuse an expired link.
+Release requires `20261004151831_rental_photo_storage_identity.sql`, which recovers
+unambiguous existing rental references only when the matching storage object exists
+in that listing's upload namespace. It does not make any bucket public.
+Focused checks: `node --test src/services/listings/__tests__/listingPhotoStorage.test.js
+src/services/__tests__/privateListingService.coverImages.test.js`, the existing
+rental persistence SQL check, and `rentalListingSave.test.js`.
+
+Rental edits now save listing facts, publication details and gallery changes in one
+transaction. Photo edits retain existing video, tour, floor-plan and external-link
+records, as well as IDs for retained photos. P24 expiry is saved separately in
+`rentalInfo.property24ExpiryDate`; mandate expiry retains its own value. The app
+reads the listing back and verifies facts, publication, media and links before
+reporting success. Stale editor versions must reload. Failed or unconfirmed saves
+retain uploaded photo URLs for recovery without uploading the same bytes again.
+
+Release requires `20261004091223_rental_listing_atomic_persistence.sql` before the
+primary app update. Without the RPC, rental saves fail visibly; there is no fallback
+to the previous destructive distribution save. The original migration was applied in the verified 4 October repair release.
+It does not restore previously removed media, change archived rentals, update portal
+expiry remotely, or publish listings.
+
+Checks: `npm run test:rental-listing-distribution-review` includes executable local
+Postgres persistence, access-control and rollback checks. Run
+`npx vitest run src/services/rentals/__tests__/rentalListingSave.test.js` for upload,
+retry and readback checks. These checks do not write remote data or call portals.
+
+Rental media controls now remove the selected photo, change its cover designation,
+and save gallery order directly from Marketing. Photo-only saves retain the listing
+facts and publication data verbatim, including older incomplete rentals. Removing
+the last photo clears the displayed cover rather than reviving an old preview.
+The guided Marketing editor can add, change or clear a public video and virtual-tour
+URL; saved links open from Marketing and appear in Listing Media Progress. These
+optional links do not change the portal readiness percentage. Edits target only
+the selected video/tour row and preserve other media and external links.
+
+Apply `20261004092331_rental_listing_media_controls.sql` after the phase 1 migration
+and before deploying these controls. Both original migrations were applied in the verified 4 October repair release.
+Photo removal unlinks the gallery record; it does not delete stored
+files. Channel actions, archived-stock recovery and media forwarding to portals
+are separate work. The distribution review now also exercises both media RPCs;
+the rental save and create/detail-page tests cover link editing and photo actions.
+
+Rental Listing Channels now use the agency website controls and, where the listing's
+organisation has an enabled sharing grant, the independent Kingdom website channel.
+Website lookup errors remain visible and retryable; an unconnected agency website
+shows its connection state. An absent Kingdom sharing grant does not expose publishing
+controls. The public websites product is unchanged.
+
+Property24 and Private Property show saved references, valid public URLs, stored
+status and publication activity. Marketing loads stored status only. Refresh portal
+status explicitly probes the provider using the existing authenticated API routes.
+Manage portal settings offers Property24 rental lifecycle statuses and Private
+Property ToLet/Inactive, with the existing reactivation and readiness protections.
+Update listing remains gated by each portal's readiness preview.
+
+Submissions, acceptances, withdrawals and failures are recorded in the existing listing
+activity store. Portal acceptance does not imply a verified public page. A user may
+save a valid portal link after confirming it matches the saved rental; subsequent
+saved changes are compared with that snapshot. Status/history errors are visible,
+and an accepted request whose activity save fails is not reported as a provider
+failure or automatically retried. Refresh status before retrying such a request.
+
+No new phase 3 migration is needed. These changes remain local; the phase 1/2 RPC
+migrations above must be released with the app. Live grant configuration, portal
+credentials, website publishing and production rental smoke checks still require
+an approved release. Phase 4 readiness explanations and phase 5 stock recovery are
+separate work.
+
+Focused local checks: `node --test src/services/rentals/__tests__/rentalListingChannelModel.test.js`
+and `npx vitest run src/services/rentals/__tests__/rentalListingChannelService.test.js
+src/components/listings/__tests__/RentalWebsiteChannels.test.jsx
+src/pages/rentals/__tests__/RentalPortalManagementPanel.test.jsx
+src/pages/rentals/__tests__/RentalDistributionChannel.test.jsx
+src/pages/rentals/__tests__/RentalListingDetailPage.overview.test.jsx`.
+The existing `scripts/kingdom-isell-listing-channel.test.mjs`,
+`scripts/private-property-phase11-post-submit-monitor.test.mjs` and
+`test:rental-listing-distribution-review` check the relevant publication boundaries,
+provider monitor contract and rental persistence. All are local checks.
+
+Rental Marketing now separates the local listing checklist from portal publishing
+requirements. Incomplete checklist items name the missing fields or current workflow
+status and open the relevant editor step. Property24 publication is shown as a
+publication step rather than a missing field. The percentage is labelled checklist
+progress; completing it does not approve a portal submission.
+
+Each portal has its own requirements card showing Not checked, Checking, Check failed,
+Needs attention, Readiness not confirmed or Ready to submit. Both Private Property's
+readiness report and Property24's preview are displayed, with duplicate blockers
+removed, setup and agent mappings separated from listing fields, photo preparation
+counts, and targeted editor/settings/expiry actions. Backend recommendations remain
+separate from required blockers. Unknown requirements remain visible for support
+review. Publish controls require an explicit successful, unblocked portal check.
+
+Checks are invalidated after reloads or saved listing revisions; late responses from
+an earlier revision or organisation cannot restore a publish permission. This is a
+primary app presentation change with no new database migration or portal rules.
+Local verification: `node --test src/services/rentals/__tests__/rentalListingReadinessPresentation.test.js`
+and `npx vitest run src/pages/rentals/__tests__/RentalListingReadinessPanel.test.jsx
+src/pages/rentals/__tests__/RentalListingDetailPage.overview.test.jsx`.
+
+Rental Listings now has an explicit **Review rental stock** action. This read-only
+review includes archived and withdrawn rentals within the selected organisation
+and the user's existing agent/branch scope. Normal stock queries remain unchanged.
+Deleted records are excluded. The shared listing reader fails visibly if records,
+publication, external links or media cannot be read, or if the database response
+limit would make the review incomplete; it does not report a clean review from
+missing data. Branch-schema failures also remain errors for this review.
+
+The review identifies hidden stock, saved live portal statuses with incomplete
+references or valid public links, hidden stock still marked live, and absent photo
+galleries. Inspect history reads the selected listing's activity and compares any
+available media snapshots. Historical differences may be intentional; an empty
+history does not prove there was no data loss. Original files/backups and the
+responsible agent's confirmation may be needed. Current records can open Marketing
+for the existing channel workflow; archived records stay in the read-only review.
+No automatic unarchiving, file restoration, status probes or republishing occurs.
+Actual record recovery and production release require explicit approval.
+
+Local checks: `npx vitest run src/services/rentals/__tests__/rentalStockReviewService.test.js
+src/pages/rentals/__tests__/RentalStockReviewPanel.test.jsx
+src/pages/rentals/__tests__/RentalListingsPage.agentContact.test.jsx`, plus the
+existing `scripts/agent-listings-delete-ui.test.mjs` and rental distribution review.
+No phase 5 migration is required.
+
+## Seller document release verification
+
+The revised mandate release uses the exact candidate and sign-off pack described
+in [the Phase 7 decision record](docs/mandate-wording-review/decision-record.md#phase-7-sign-off-pack-and-release-controls).
+The user's confirmation on 4 October 2026 is recorded against each unchanged
+Exclusive, Open and Dual draft. `Pretoria` is recorded as supplied context; it
+does not identify a lawyer or a contracting agency. Exact agency-schedule and
+human design approval remain separate from that wording confirmation.
+
+After the complete `npm run test:seller-document-journey` run, export the current
+review candidate and a new pending decision file:
+
+```bash
+node scripts/seller-document-release-check.mjs --candidate-out=docs/mandate-wording-review/release-candidate.json --decision-template-out=docs/mandate-wording-review/release-decision.json
+```
+
+The decision writer refuses to overwrite an existing file. The candidate locks
+the three wording hashes, fifteen synthetic PDF proofs, both scoped migrations,
+rollback, the signing import graph and the relevant app/QA source. The journey
+records that source fingerprint and rejects changes made during its run. Its
+transactional rollback rehearsal preserves every fixture record and signature;
+it is local evidence, not a production recovery rehearsal.
+
+Validate the saved candidate and decision with:
+
+```bash
+node scripts/seller-document-release-check.mjs --candidate=docs/mandate-wording-review/release-candidate.json --decision=docs/mandate-wording-review/release-decision.json --require-ready=true
+```
+
+This strict command fails until exact agency/design approvals, build, migration
+replay, target/recovery, scoped dry run, catalog/security, rollback, hosted seller
+acceptance and delivery evidence are recorded for the same source. Also supply
+the retrieved signing/retirement bundles and matching frontend arguments below.
+Changed source, wording, PDF bytes, migration or QA evidence invalidates the
+candidate. This read-only check never deploys, applies SQL or sends email. A
+passing result is release-review evidence; a rollout still needs current-task
+authorization and the database release runbook.
+
+Run `npm run check:seller-document-release` from the primary package to verify
+release packaging and the release checker itself. It follows the signing handler's
+actual import graph, including every nested branding, mandate, FICA, disclosure
+and correction module. A matching entrypoint alone cannot establish a matching
+deployment. The local command reports remote verification as false until the
+remote evidence is supplied; it does not deploy or send email.
+
+`node scripts/seller-document-release-check.mjs --bundle-out=/tmp/seller-signing-bundle.json`
+exports the complete deployment payload without credentials. For a deployed check,
+provide `--remote-signing`, `--remote-retired`, `--deployment-url` and
+`--expected-release-id`, each as `--option=value`. The signing snapshot is the
+retrieved Supabase function including its files. Retirement evidence must contain
+the complete function `inventory` and a `bundles` object keyed by every active
+retired function name. The checker rejects missing or stale dependencies, altered
+JWT settings, legacy handler dependencies, mismatched inventories, stale frontend
+release markers and protected deployments. It does not replace authenticated
+seller acceptance, migration verification or email-delivery checks.
+
+The earlier release candidate was isolated from unrelated work on
+`codex/seller-document-release`, starting from production commit
+`8788b9596b040d87d6e05cfb76d72fd97cf077ce`. Apply only the reviewed seller-runtime
+migration after the target, recovery and exact scoped dry run pass. Deploy the
+complete signing bundle and replace the eight active retired handlers with the
+pure HTTP 410 bundle, retaining their JWT settings. Preserve historical final-file
+access and leave the two absent retired handlers absent. Then deploy the matching
+app commit and verify retrieved bundles and the deployed seller journey.
+
+That earlier checkpoint is [the release status](../docs/seller-document-release-status.json).
+It predates the revised wording and Phase 6 fixes and must not be used as the
+candidate for this sign-off. Isolate the current seller changes against the
+current production source and rerun build/acceptance before an actual release.
+The required Supabase migration dry run stalled during production database login;
+no app deployment, function deployment or schema migration was performed. The
+local workspace suite, app lint and baseline tests, production build, Edge type
+check, retirement tests and release-check tests passed. A live transaction-only
+rehearsal, post-migration advisor check, complete clean migration replay and hosted
+acceptance remain outstanding. The full replay needs at least 10 GiB free.
+
+Recovery definitions and old function bundles are retained outside source in the
+original workspace's `tmp/phase7-*` files.
+[The scoped SQL rollback](../docs/seller-document-review-runtime-rollback.sql)
+removes only the newly restored RPCs, view and triggers, retaining event data,
+columns and automation definitions. It has not been rehearsed against production;
+do not execute it without the matching app/function recovery and catalog checks.
+
+## Revo external websites
+
+Revo organisation administrators can configure independent website connections
+under Settings → Integrations → External Websites. Each connection has scoped
+listing access or leads-only access, separate credentials, fallback assignment,
+signed listing webhooks, durable withdrawal reconciliation and activity records.
+The backend reuses the public listing projection and canonical website-to-CRM
+intake; Revo’s website interface and Prop Data/DNS migration remain separate.
+
+Run `npm run test:external-websites` from this package for the local PostgreSQL,
+API, handover-example and administration-control checks. These use fixtures and
+perform no remote writes or deliveries. The developer contract and release
+requirements are in [docs/external-websites.md](docs/external-websites.md).
+
+### Rental listing property registration
+
+New rental listings register an active canonical property and a vacant rentable
+unit in Properties & units in the same database transaction as listing creation.
+Exact organisation/address/unit matches reuse existing inventory; existing
+occupancy, contractual rent and management facts are preserved. Landlord portfolio
+handoffs retain their canonical property identity. Standalone homes use MAIN;
+numbered units use their captured unit number. Missing city details are flagged
+in property metadata for review; no city is invented.
+
+A listing alone does not create confirmed management authority or a contracted
+lease. The management dashboard explains why active mandates and monthly rent
+roll can remain zero while a rental is advertised. Property addresses now map
+correctly from database fields into the portfolio.
+
+Release requires `20261004165101_rental_listing_property_registration.sql` and
+the primary app changes. The migration also repairs identifiable existing active
+rental stock, including imported listings. Ambiguous multi-unit matches or invalid
+legacy facts abort the transaction for review rather than partially repairing it.
+Before release, inspect that exact backfill scope and unresolved/addressless stock
+in the target environment. No live database writes or deployment were performed.
+Run the existing `test:rental-listing-distribution-review` check for executable
+SQL/RLS registration, deduplication, rollback, branch/organisation denial, occupied
+unit preservation and compatibility with the audited snapshot save.
+
+### Portal lead delivery
+
+Property24 also verifies unmatched historical adverts against per-agency Sale and Rental statistics. Only an explicit matching agency can admit an unlinked enquiry; foreign, conflicting, or unavailable ownership records remain pending, preserving the recovery checkpoint. The CRM enquiry payload retains the advert number, listing type and verification source for follow-up.
+
+The scheduled Property24 import discovers all enabled accounts in its own
+environment, reads each account’s encrypted credentials and keeps an independent
+agency checkpoint. New accounts recover the latest 30 days of published listing
+enquiries without sending historical introduction emails. The agency feed uses
+Property24’s `messages` response, follows all pages, and replays a recent window
+with duplicate protection. A failed agency does not stop other accounts.
+
+Private Property lead delivery uses the `private-property-webhook` Edge Function
+and migrations `20261005060708_portal_lead_intake_global_fix.sql` and
+`20261005064727_private_property_lead_channel_correction.sql`. An agency
+principal or group owner must register its HTTPS endpoint in the supplier admin
+portal and obtain the numeric agency ID and signing secret. The executive Admin
+Console’s Private Property section stores these separately from publishing
+credentials in Vault and shows last delivery and failures. Listing API access
+alone does not register a lead webhook. The receiver verifies HMAC SHA-256 over
+the exact body, checks agency ownership, resolves all three supplier listing
+references and retries failed deliveries. CRM writes and duplicate protection
+run in one transaction.
+
+Run the existing Property24 phase 5, 7 and 9 checks,
+`node scripts/portal-lead-intake.test.mjs`, and from the repository root
+`deno test --config supabase/functions/private-property-webhook/deno.json
+supabase/functions/_shared/privatePropertyLeadWebhook.test.ts`. These checks
+use local fixtures and send no communications. Supplier registration and a real
+signed delivery remain required for Private Property acceptance.
+
+## Recruitment workspace
+
+The Vite dev server loads the real Join Us link context and organisation branding
+through the server-only recruitment API. Local forms are labelled as previews
+and cannot submit applications to the configured database. Published intake uses
+the normal submission endpoint.
+
+Sales organisation principals and administrators can open Organisation → Recruitment
+(`/agency/recruitment`). The Agent Leads / Closed Leads table includes search,
+stage filters and pagination. Copy Intake Link in the Recruitment header creates
+and copies a public Join Us link; the table has no separate intake-links panel
+or website-link controls. The current link is reused while the page remains open.
+Add Agent Lead opens a popup over the table; saving
+adds the new lead to the table without opening its detail page. Failed saves retain
+the popup’s entries for retry. Each lead has Overview, Agent Details and Documents,
+with a buyer-style header and readiness based on saved information: onboarding
+captured, experience, qualifications/registration, preferred area and supporting
+documents. Captured information still requires human review. Joined and no-longer-
+proceeding leads appear in Closed Leads. Only leads closed as not proceeding can be reopened.
+
+Records live independently of property leads in `recruitment_leads`. PDF/JPG/PNG
+files up to 10 MB use the private `recruitment-documents` bucket. The append-only
+`recruitment_workspace` and `recruitment_lead_received` migrations must be applied before persistence works;
+no migration or production release is performed by building the UI. Active
+principal/admin/super_admin membership is enforced by database policies, and
+version checks prevent stale edits from overwriting another save. This first
+version supports manual capture; public website applications are not imported.
+
+Focused checks from this package: `npx vitest run src/pages/recruitment/__tests__`.
+The database tests execute the migration in an isolated in-memory PostgreSQL
+instance and check organisation isolation, management-only access, private file
+access, invalid stages and stale saves. They do not access a remote project.
+
+Phase 1 captures staff and referral enquiries at **Lead Received**. Name and at
+least one contact method are required; source, preferred area, referrer and notes
+can be saved. Receipt time, capturing user, intake channel and an intake key are
+stamped by the database. Repeating the same draft creation recovers its original
+record. An append-only activity history records receipt, edits, closure and
+reopening; receipt metadata cannot be changed by callers.
+
+The Overview shows the agreed eight-stage journey. The stage is read-only in
+this phase, and database guards reject advancement to later stages. Historical
+joined records are retained separately without implying that an agent account
+was activated. The onboarding readiness indicator does not advance the journey.
+Public links, website intake and automated invitations remain subsequent work.
+
+Phase 2 adds the **Application Submitted** workflow. Organisation managers create
+public and website links from Recruitment, or a private invitation from a saved
+Lead Received record. The primary app hosts `/join-us/:token`; use the website
+link as your website’s Join Us button destination, or an iframe `src` pointing to
+that URL. This keeps organisation branding and questionnaire changes in one
+place. No existing website is changed automatically.
+
+The form has Basic Details, Insights, PPRA/FFC and Review steps. Insights include
+areas, experience, average deals, commission retained, current agency, joining
+date and mandate handover obligations. Registration questions distinguish new
+entrants, candidate, non-principal and principal practitioners and capture FFC,
+qualification route/progress, PDE, practical training and CPD. New entrants do
+not need an FFC number to apply. Both processing consent and an accuracy
+declaration are required. Answers are kept in memory while the page is open;
+closing or refreshing an unfinished form clears them.
+
+Questions were informed by the PPRA’s [FFC renewal guidance](https://theppra.org.za/licensing-and-registrations/ffc-renewals/),
+[education transition clarification](https://theppra.org.za/download.php?data_id=145160)
+and [PDE guidance](https://theppra.org.za/education/pde/). These are recruitment
+self-declarations, not PPRA registration or verified compliance. The exact eXp
+South Africa application questionnaire is behind account registration at
+[join.expsouthafrica.co.za](https://join.expsouthafrica.co.za/); this implementation
+does not claim to reproduce that questionnaire.
+
+The server endpoint `/api/public/recruitment-intake` returns public branding only
+and accepts validated submissions through a service-role-only database function.
+The `recruitment_application_submitted` migration must follow the first two
+recruitment migrations. Configure server-only `SUPABASE_URL`,
+`SUPABASE_SERVICE_ROLE_KEY`, and `RECRUITMENT_INTAKE_FINGERPRINT_SECRET` (a random
+secret of at least 32 characters; the existing `WEBSITES_LEAD_FINGERPRINT_SECRET`
+is supported as a fallback). No secret is included in the form bundle. Vite local
+previews deliberately disable this endpoint to avoid writing to a remote database.
+
+Private links expire after 14 days and public/website links after one year.
+Addresses are shown only at creation; copy them then. Only their SHA-256 hashes
+are stored. Managers can revoke links. Private submissions update the original
+lead while preserving receipt time, source and staff notes. Public submissions
+create their own recruitment lead at Application Submitted. Repeating the same
+link/submission key returns the original acknowledgement; submitting with a new
+key is a new application rather than an unverified email-based merge. Intake is
+limited to five accepted applications per sender fingerprint per hour across
+links, with a honeypot and request-size cap. Application snapshots are immutable
+and anonymous users cannot read recruitment records or call the submission RPC.
+
+Submitted answers appear in Agent Details and generate four review requirement
+cards in Overview. Closing/reopening a submitted application preserves its stage
+and snapshot. Approval and later stages remain locked. Links can be copied and
+shared manually; creating them does not send email. Automated invitations,
+applicant uploads, review/approval actions and contracts remain later work.
+Focused checks cover form progression, failed submissions, retry keys, branding,
+link hashing/revocation, organisation isolation and atomic database capture.
+
+Phase 3 adds **Under Review**. Organisation principals and administrators start
+review from a submitted application in Overview. The database records the starting
+reviewer and time. Staff record four checks (registration/FFC, qualifications/PDE,
+training/CPD and handover), overall/interview notes, an optional internal follow-up
+date, and individual document findings. Resolved checks, not-applicable reasons and
+information requests need explanatory notes. Evidence references must point to an
+uploaded file on that same lead; review findings do not alter the application.
+
+Each changed finding is stamped with the saving user and time. Review saves use
+the current record version and reject conflicts. Unsaved review findings disable
+agent-detail saves, uploads and close/reopen actions until the review is saved;
+unsaved agent details similarly block review saves. Review summary is derived from
+the four checks and every current uploaded document: In progress, Needs information
+or Ready for approval. A new upload makes a ready review incomplete until reviewed.
+Ready for approval leaves the pipeline at Under Review; Phase 4 approval is still
+locked. Closing and reopening preserves findings and returns to Under Review.
+
+Apply `recruitment_under_review` after the three earlier recruitment migrations
+when an authorised release is requested. The migration has been tested locally,
+not applied to a remote database. Review uses existing organisation management RLS;
+there is no public review access. Follow-up dates and information requests are
+internal records and do not send messages or reminders. The focused recruitment
+suite includes review start/access, audit stamps, evidence isolation, stale saves,
+readiness, document additions and closure/reopening.
+
+Phase 4 adds **Application Approved**. Organisation principals and administrators
+approve from Overview after the saved review resolves all four checks and every
+uploaded document. A decision reason and deliberate confirmation are required.
+Approval uses the current lead version; a stale record or lost access requires
+reloading and reviewing the record again before approval. The database verifies
+readiness and the presence of reviewed files independently of the UI, stamps the
+approving user and time, and appends an approval activity.
+
+An immutable approval snapshot retains the submitted application, saved findings,
+review documents, agent information and pre-approval record version. The review
+and its documents are locked after approval; management users cannot delete the
+approved record or its referenced files. Contact/detail corrections remain possible
+without changing that snapshot. Closing and reopening an approved lead restores
+Application Approved and preserves the original decision. Contract generation,
+sending, signatures, onboarding and agent activation remain subsequent phases.
+Approval does not send email, make a PPRA compliance determination or create an
+agent account. The append-only `recruitment_application_approved` migration must
+follow the review migration; it has not been applied by this implementation.
+
+Recruitment contract preparation adds a separate private `recruitment-contracts`
+bucket and a retained PDF version history in Overview. Active approved applications
+can prepare PDFs up to 10 MB; review evidence stays locked in its original bucket.
+Each version records the preparing user/time and approval reference. Preparation
+uses the current record version, records an activity, preserves older versions and
+leaves the stage at Application Approved. Registered contract files cannot be
+replaced, renamed or deleted through authenticated storage access. Failed saves
+attempt to clean up unregistered uploads; retention protects registered files even
+if the response was uncertain. Contract downloads require organisation management
+access. No public contract URL, email sending, contract-generation template or
+Contract Sent transition is enabled by the preparation foundation. The delivery
+workflow still needs the requester’s choice between recording manual sending and
+generating/emailing from an organisation template. The prepared append-only
+`recruitment_contract_sent` migration has not been applied remotely.
+
+Phase 6 adds **Contract Signed** through staff verification of a returned PDF.
+As a prerequisite, an approved lead with a prepared contract can record prior
+external delivery: the current version, recipient/contact, channel, date,
+evidence/reference and confirmation that the version was already provided.
+This records Contract Sent; the action does not send a message or verify provider
+delivery. Automatic contract generation/email remains a separate unresolved choice.
+
+At Contract Sent, staff record both the agent and organisation representative,
+the date signing was completed, paper or external electronic signing method,
+verification findings and the complete signed PDF (up to 10 MB). External
+electronic signing requires a reference. Staff must confirm the delivered version
+matches, all pages/annexures are present and both signatures are complete. This
+records staff verification, not a cryptographic signature or automated legal
+assessment. Dates must fall between approval, delivery, completed signing and today.
+
+Signed PDFs use a separate private `recruitment-signed-contracts` bucket. Original
+versions, delivery records, signed evidence and verification records are retained;
+recording users/times are authored by the database. Current-version checks reject
+stale saves. Unsaved contract findings block other writes; a failed save keeps the
+findings and selected file in memory. Closing/reopening returns to the recorded
+Contract Sent or Contract Signed stage. Onboarding/activation remain locked. The
+append-only `recruitment_contract_signed` migration follows the contract preparation
+migration and has not been applied remotely. Focused recruitment tests cover
+organisation/role isolation, version linkage, partial signatures, dates, file
+retention, stale saves, failure recovery and closure/reopening. No email, real
+signature, deployment or remote database change is performed by these checks.
+
+Phase 7 adds **Onboarding Complete** after a verified signed contract. A separate
+private `recruitment-onboarding-documents` bucket holds the final joining pack
+(PDF/JPG/PNG, up to 10 MB each). Documents append to a retained pack and start
+awaiting review. Existing application-review documents and contract evidence stay
+preserved. Uploads record the database-authored user/time; failed saves attempt to
+clean up unregistered uploads, while registered files cannot be replaced or deleted.
+
+Overview provides six joining checks: identity/contact, PPRA/FFC position,
+qualifications/PDE, training/CPD arrangements, mandate/agency handover and
+organisation induction. These are operational staff checks, not a new regulatory
+certification. Each resolved item needs findings or a non-applicability reason and
+can link to the final pack. Staff may save partial progress and information requests.
+Uploading another file preserves saved findings and adds an awaiting-review entry.
+Completion requires all six checks resolved, a nonempty reviewed document pack,
+a valid agreed joining date (which may be future), completion findings and explicit
+confirmation. It atomically preserves the checklist, pack and signed-contract
+reference in an immutable completion snapshot with the database-authored actor/time.
+
+Current-version checks protect uploads, progress and completion from stale saves.
+Unsaved onboarding findings block other writes and uploads; errors keep those
+findings in memory. Closing/reopening preserves progress and restores Contract
+Signed or Onboarding Complete. The new `recruitment_onboarding_complete` migration
+follows `recruitment_contract_signed` and has not been applied remotely. Agent
+activation/account creation belongs to Phase 8; no email, deployment or remote
+database change is performed by this implementation.
+
+Phase 8 adds **Agent Activated** using Arch9’s existing canonical invitation and
+organisation-membership workflow. From a completed onboarding record, management
+records activation findings and confirms identity/access. An existing active agent
+with the same email can be linked directly; recruitment does not alter their role,
+branch, commission or profile. Otherwise the atomic recruitment RPC prepares a
+standard `agent` workspace invitation and retains its ID, actor/time and findings.
+The lead remains Onboarding Complete until the agent accepts with their own account
+and staff select **Confirm agent activation**. Preparing or retrieving a link does
+not send email or WhatsApp. Share the access link directly or manage delivery through
+the existing user-invitation tools. Existing invitation acceptance creates/activates
+the account membership; recruitment never silently creates credentials or grants a
+higher role. Internal activation findings remain private to the recruitment record.
+
+Activation validates the active agent membership, same organisation/email and,
+where an invitation was prepared, acceptance by the same user. It requires retained
+signed-contract and onboarding evidence. The database records the real membership,
+user, role, actor/time and onboarding reference. Expired/revoked invitations can be
+reprepared by confirming again; earlier preparation records are retained. Pending
+retries reuse the prepared invitation, and retries after an uncertain successful
+activation return the preserved result without another event. Duplicate invitation,
+email and user links are blocked. A pending invitation for a privileged or different
+role cannot be adopted. Closed leads must be reopened before activation; activated
+leads are terminal, appear in Closed Leads and provide an **Open agent** link.
+
+Unsaved activation findings block other writes and survive failed saves. Activation
+records cannot be changed after completion; later offboarding and account changes
+continue to use the existing agent directory. The append-only
+`recruitment_agent_activated` migration follows `recruitment_onboarding_complete`
+and has not been applied remotely. Focused checks use isolated database membership
+and canonical-invitation fixtures; live invite acceptance/delivery and production
+integration still need verification after an explicitly approved release. No real
+account, access grant, email, deployment or remote database write is performed here.

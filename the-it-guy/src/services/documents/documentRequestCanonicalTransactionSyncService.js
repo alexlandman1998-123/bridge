@@ -1,3 +1,4 @@
+import { getTransactionParties } from '../../core/transactions/transactionPartyProfile.js'
 import { resolveTransactionFacts } from '../attorneyWorkflow/transactionFactsResolver.js'
 import {
   buildCanonicalRequiredDocumentRows,
@@ -249,13 +250,14 @@ export function buildCanonicalDocumentRequestScenarioFromTransactionContext({
     firstPath(normalizedSellerFormData, ['seller.marital_regime']),
     firstPath(normalizedSellerFormData, ['seller.marital_status']),
   )
-  const sellerKnown = hasSellerSignal({
+  const partySnapshot = getTransactionParties(normalizedOnboardingFormData, normalizedTransaction)
+  const sellerKnown = partySnapshot ? partySnapshot.seller.entityType !== 'unknown' : hasSellerSignal({
     facts,
     transaction: normalizedTransaction,
     sellerFormData: normalizedSellerFormData,
     listing: normalizedListing,
   })
-  const buyerKnown = Boolean(buyerEntityType)
+  const buyerKnown = partySnapshot ? partySnapshot.buyer.entityType !== 'unknown' : Boolean(buyerEntityType)
   const propertyTriggers = propertyTriggerValues({
     facts,
     transaction: normalizedTransaction,
@@ -267,6 +269,8 @@ export function buildCanonicalDocumentRequestScenarioFromTransactionContext({
     firstValue(
       explicit.sellerHasExistingBond,
       explicit.seller_has_existing_bond,
+      ['yes', 'no'].includes(normalizedOnboardingFormData.__bridge_finance?.captureSnapshot?.sellerBondStatus)
+        ? normalizedOnboardingFormData.__bridge_finance.captureSnapshot.sellerBondStatus === 'yes' : undefined,
       facts.sellerHasExistingBond,
       normalizedTransaction.seller_has_existing_bond,
       normalizedTransaction.existing_bond,
@@ -280,6 +284,7 @@ export function buildCanonicalDocumentRequestScenarioFromTransactionContext({
 
   const scenario = {
     ...explicit,
+    transactionParties: getTransactionParties(normalizedOnboardingFormData, normalizedTransaction) || explicit.transactionParties,
     buyerEntityType,
     sellerEntityType,
     buyerMaritalRegime,

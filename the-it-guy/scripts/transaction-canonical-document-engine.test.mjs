@@ -309,6 +309,44 @@ try {
   assert.equal(trustBuyerKeys.includes('buyer_letters_of_authority'), false)
   assert.equal(trustBuyerKeys.includes('buyer_trustee_resolution'), false)
 
+  const waterDefinition = {
+    key: 'water_installation_certificate', display_label: 'Water Installation Certificate',
+    category: 'property_compliance', pack_key: 'property_compliance',
+    default_requirement_level: 'blocker', default_visibility: ['seller', 'transferring_attorney'],
+    default_upload_roles: ['seller', 'transferring_attorney'],
+  }
+  const waterRule = {
+    id: 'rule-local-water', document_definition_key: waterDefinition.key,
+    pack_key: 'property_compliance', context_type: 'transaction',
+    condition_json: { all: [{ fact: 'property.municipality', operator: 'in', value: ['Cape Town', 'City of Cape Town', 'city_of_cape_town', 'cape_town'] }] },
+    requirement_level: 'blocker', stage_gates: ['lodgement_ready'], requested_from_role: 'seller',
+    visible_to_roles: ['seller', 'transferring_attorney'], uploadable_by_roles: ['seller', 'transferring_attorney'],
+    reviewer_role: 'transferring_attorney', priority: 630,
+  }
+  for (const [propertySource, expected] of [
+    [{ municipality: 'City of Cape Town' }, true],
+    [{ seller_canonical_facts: { property: { municipality: 'city_of_cape_town' } } }, true],
+    [{ property_address_details: { municipality: 'Cape Town' } }, true],
+    [{ municipality: 'Johannesburg' }, false],
+    [{ city: 'Cape Town' }, false],
+    [{}, false],
+  ]) {
+    const result = buildProjectedTransactionRequirementCandidates({
+      transaction: { ...otpBondTransaction, listing: propertySource },
+      // A buyer's residential municipality must not classify the transferred property.
+      formData: { municipality: 'City of Cape Town' },
+      rules: [waterRule], definitions: [waterDefinition],
+    })
+    assert.equal(result.candidates.some(candidate => candidate.generated.document_definition_key === waterDefinition.key), expected)
+  }
+  const electricalFacts = value => buildTransactionDocumentFacts({
+    transaction: { ...otpBondTransaction, routing_profile_json: { mvpProfile: { propertyConditions: value } } },
+  }).compliance.electrical_not_applicable
+  assert.equal(electricalFacts({ certificates: { electrical: 'no' }, electricalBasisNote: 'No installation; title and property reviewed.' }), true)
+  assert.equal(electricalFacts({ certificates: { electrical: 'no' } }), false)
+  assert.equal(electricalFacts({ certificates: { electrical: 'yes' } }), false)
+  assert.equal(electricalFacts({}), false)
+
   console.log('transaction canonical document engine tests passed')
 } finally {
   await server.close()

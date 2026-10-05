@@ -190,3 +190,13 @@ assert.equal(legacyVersionPreview.summary.property24ApiVersion, 'v53')
 assert.ok(legacyVersionPreview.dataBlockers.includes('property24_rental_listing_service_v55_required'))
 
 console.log('Rental Property24 backend adapter contract passed')
+
+const agriculturalRental = createProperty24RentalListingPlan({
+  listing: { ...RENTAL_LISTING_RELEASE_GATE_FIXTURE, propertyCategory: 'agricultural', propertyType: 'House' },
+  agentMapping: { property24AgentId: 77959, sourceReference: 'farm-agent' },
+  media: [{ mediaType: 'image', bytes: 'test-farm-photo', mimeContentType: 'image/jpeg' }],
+  options: { includeSubmitPayload: true },
+})
+assert.equal(agriculturalRental.canSubmit, true, JSON.stringify(agriculturalRental.dataBlockers))
+assert.equal(agriculturalRental.payload.propertyInfo.propertyTypeId, 10)
+assert.equal(agriculturalRental.payload.rentalInfo.rentalRate, 'Month')

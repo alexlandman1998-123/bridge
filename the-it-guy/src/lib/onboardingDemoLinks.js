@@ -1,4 +1,5 @@
 import {
+  buildDefaultProspectDemoConfig,
   normalizeProspectDemoConfig,
   normalizeProspectDemoSlug,
 } from './prospectDemoConfig'
@@ -44,7 +45,9 @@ const DEMO_PROPERTY_GALLERY = [
 
 function resolveDemoConfig(token = '', prospectConfig = null) {
   const normalizedToken = normalizeProspectDemoSlug(token)
-  return normalizeProspectDemoConfig(prospectConfig || {}, { slug: normalizedToken || token })
+  const defaultConfig = normalizedToken === BUYER_PORTAL_DEMO_TOKEN ? buildDefaultProspectDemoConfig(normalizedToken) : {}
+  const supplied = normalizeProspectDemoConfig(prospectConfig || {}, { slug: normalizedToken || token })
+  return normalizeProspectDemoConfig({ ...defaultConfig, ...Object.fromEntries(Object.entries(supplied).filter(([, value]) => value !== '')) }, { slug: normalizedToken || token })
 }
 
 function resolveDemoBrand(token = '', prospectConfig = null) {
@@ -62,6 +65,7 @@ function resolveDemoBrand(token = '', prospectConfig = null) {
     organisationName: agencyName,
     agencyName,
     senderName: agencyName,
+    initials: agencyName.split(/\s+/).filter(Boolean).slice(0, 2).map((word) => word[0]).join('').toUpperCase(),
     logoUrl,
     logoDarkUrl,
     logoLightUrl,

@@ -4,11 +4,21 @@ import { readFileSync } from 'node:fs'
 
 import {
   buildListingChannelPublicationDisplay,
+  buildWebsiteListingPublicUrl,
   getPrivatePropertyReadinessMessages,
   getListingChannelViewUrl,
   normalizeListingChannelPublicUrl,
   normalizeListingChannelReference,
 } from '../listingMarketingChannelPresentation.js'
+
+test('Home Seekers CRM links open the standalone property page and follow a custom domain', () => {
+  const site = { websiteSiteId: 'c2fcb2e4-23c1-4302-b490-7332f5075669', hostname: 'home-seekers-2958d402.sites.propdata.co.za' }
+  assert.equal(buildWebsiteListingPublicUrl(site, 'listing-1', 'Updated title'), 'https://home-seekers-website-alpha.vercel.app/demo/homeseekers/properties/listing-1')
+  assert.equal(buildWebsiteListingPublicUrl({ ...site, hostname: 'home-seekers-website-alpha.vercel.app' }, 'listing-1'), 'https://home-seekers-website-alpha.vercel.app/demo/homeseekers/properties/listing-1')
+  assert.equal(buildWebsiteListingPublicUrl({ ...site, hostname: 'www.homeseekers.example' }, 'listing-1'), 'https://www.homeseekers.example/demo/homeseekers/properties/listing-1')
+  assert.equal(buildWebsiteListingPublicUrl({ websiteSiteId: 'other-site', hostname: 'agency.example' }, 'listing-2', 'Hôme by the Sea'), 'https://agency.example/properties/home-by-the-sea-listing-2')
+  assert.equal(buildWebsiteListingPublicUrl({}, 'listing-1'), '')
+})
 
 test('PP organisation defaults are notes and do not become missing requirements', () => {
   const warning = 'using_organisation_default_private_property_config'

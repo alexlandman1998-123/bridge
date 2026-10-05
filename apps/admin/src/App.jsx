@@ -1,5 +1,6 @@
 import {
   AlertTriangle,
+  ArrowRight,
   BarChart3,
   Building2,
   CalendarDays,
@@ -10,6 +11,8 @@ import {
   Copy,
   Download,
   ExternalLink,
+  Eye,
+  EyeOff,
   FileText,
   Filter,
   Headphones,
@@ -32,6 +35,7 @@ import {
   X,
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
+import Arch9AccessLayout from '../../../the-it-guy/src/components/auth/Arch9AccessLayout'
 import { formatAdminLevelLabel, resolveAdminAccess } from './lib/adminAccess'
 import {
   ADMIN_NAV_ITEMS,
@@ -3268,6 +3272,7 @@ function AgencyOnboardingPage() {
 function LoginScreen({ authError, onMagicLink, onSignIn }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const configStatus = getSupabaseConfigStatus()
 
@@ -3285,48 +3290,56 @@ function LoginScreen({ authError, onMagicLink, onSignIn }) {
   }
 
   return (
-    <main className="login-shell">
-      <section className="login-panel">
-        <div className="brand-lockup">
-          <div className="brand-mark" aria-hidden="true">A9</div>
-          <div>
-            <p>Arch9 Internal</p>
-            <h1>Operating Console</h1>
-          </div>
+    <Arch9AccessLayout audience="Operating Console">
+      <section className="arch9-access-card">
+        <div className="arch9-access-heading">
+          <span className="auth-card-eyebrow">INTERNAL ACCESS</span>
+          <h1>Welcome back.</h1>
+          <p>Sign in to your Arch9 Operating Console.</p>
         </div>
 
-        <form className="login-form" onSubmit={submit}>
+        <form className="arch9-access-form" onSubmit={submit} aria-busy={isSubmitting}>
           <label>
             <span>Email</span>
             <input
               autoComplete="email"
               inputMode="email"
+              autoCapitalize="none"
+              spellCheck={false}
+              required
               onChange={(event) => setEmail(event.target.value)}
               placeholder="you@arch9.co.za"
               type="email"
               value={email}
             />
           </label>
-          <label>
-            <span>Password</span>
+          <div className="auth-password-field">
+            <label htmlFor="admin-access-password">Password</label>
+            <div className="auth-password-input">
             <input
+              id="admin-access-password"
               autoComplete="current-password"
               onChange={(event) => setPassword(event.target.value)}
               placeholder="Password"
-              type="password"
+              type={showPassword ? 'text' : 'password'}
               value={password}
+              required
             />
-          </label>
+            <button type="button" aria-label={showPassword ? 'Hide password' : 'Show password'} aria-pressed={showPassword} onClick={() => setShowPassword((value) => !value)}>
+              {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+            </button>
+            </div>
+          </div>
 
           {authError ? <Notice tone="danger" text={authError} /> : null}
           {!configStatus.ok ? <Notice tone="warning" text={configStatus.message} /> : null}
 
-          <button className="primary-button" disabled={!isSupabaseConfigured || isSubmitting} type="submit">
-            <ShieldCheck size={18} />
+          <button className="arch9-access-submit" disabled={!isSupabaseConfigured || isSubmitting} type="submit">
             <span>{isSubmitting ? 'Signing in...' : 'Sign in'}</span>
+            <ArrowRight size={16} aria-hidden="true" />
           </button>
           <button
-            className="secondary-button"
+            className="arch9-access-secondary"
             disabled={!isSupabaseConfigured || !email || isSubmitting}
             onClick={sendMagicLink}
             type="button"
@@ -3335,7 +3348,7 @@ function LoginScreen({ authError, onMagicLink, onSignIn }) {
           </button>
         </form>
       </section>
-    </main>
+    </Arch9AccessLayout>
   )
 }
 

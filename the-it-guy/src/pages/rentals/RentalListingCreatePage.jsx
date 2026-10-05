@@ -1,3 +1,5 @@
+import { isRentalCreationId, serializeRentalCreationDraft } from '../../services/rentals/rentalListingCreationRecovery'
+import { buildRentalWorkspaceKey, buildRentalListingDraftStorageKey, buildRentalListingQueryOptions } from '../../services/rentals/rentalWorkspaceScope'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Blocks, Building2, CalendarDays, CheckCircle2, ClipboardCheck, ChevronLeft, ChevronRight, Coins, FileText, Globe2, House, ImagePlus, Landmark, LandPlot, Loader2, Minus, Plus, Save, ShieldCheck, Sprout, Store, Trash2, UserRound, Users, Wallet, Warehouse, X } from 'lucide-react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
@@ -70,7 +72,6 @@ const CREATE_STEPS = Object.freeze([
   { key: 'review', label: 'Review', description: 'Confirm & create' },
 ])
 
-const RENTAL_CREATE_SESSION_DRAFT_KEY = 'arch9:rental-listing:create-draft'
 
 const LANDLORD_TYPE_CARDS = Object.freeze([
   { value: 'individual', label: 'Individual', description: 'One person owns the property.', icon: UserRound },
@@ -259,6 +260,7 @@ function ReviewSummaryCard({ title, details, onEdit }) {
 function stepForValidationError(error = '') {
   const normalized = String(error).toLowerCase()
   if (normalized.includes('landlord') || normalized.includes('mandate') || normalized.includes('marketing approval')) return 'landlord'
+  if (normalized.includes('video link') || normalized.includes('virtual tour link')) return 'marketing'
   if (normalized.includes('property address')) return 'property'
   if (normalized.includes('rental amount') || normalized.includes('rental price frequency') || normalized.includes('deposit') || normalized.includes('available from') || normalized.includes('occupation date')) return 'terms'
   if (normalized.startsWith('enter a valid ') && !normalized.includes('landlord')) return 'features'
@@ -293,6 +295,14 @@ function RentalCreateProgressNav({ activeStep, onStepClick }) {
 }
 
 export default function RentalListingCreatePage() {
+  const scope = resolveRentalWorkspaceScope(useWorkspace())
+  const params = useParams()
+  const [searchParams] = useSearchParams()
+  const routeKey = [params.listingId || '', searchParams.get('leadId') || '', searchParams.get('portfolioPropertyId') || ''].join(':')
+  return <ScopedRentalListingCreatePage key={buildRentalWorkspaceKey(scope, routeKey)} />
+}
+
+function ScopedRentalListingCreatePage() {
   const navigate = useNavigate()
   const params = useParams()
   const [searchParams] = useSearchParams()
@@ -306,7 +316,7 @@ export default function RentalListingCreatePage() {
   const editListingId = String(params.listingId || '').trim()
   const isEditing = Boolean(editListingId)
   const portfolioPropertyId = String(searchParams.get('portfolioPropertyId') || '').trim()
-  const draftStorageKey = searchParams.get('leadId') ? `${RENTAL_CREATE_SESSION_DRAFT_KEY}:${searchParams.get('leadId')}:${portfolioPropertyId || 'primary'}` : RENTAL_CREATE_SESSION_DRAFT_KEY
+  const draftStorageKey = buildRentalListingDraftStorageKey(rentalScope, { leadId: searchParams.get('leadId') || '', portfolioPropertyId }) + (isEditing ? `:edit:${editListingId}` : '')
   const [form, setForm] = useState(createInitialFormState)
   const [activeStep, setActiveStep] = useState(() => isEditing && CREATE_STEPS.some((step) => step.key === searchParams.get('step')) ? searchParams.get('step') : 'landlord')
   const galleryImagesRef = useRef(form.galleryImages)
@@ -317,6 +327,13 @@ export default function RentalListingCreatePage() {
   const [notice, setNotice] = useState('')
   const [linkedLandlordLead, setLinkedLandlordLead] = useState(null)
   const [pendingListingId, setPendingListingId] = useState('')
+  const pendingListingIdRef = useRef('')
+  const [creationId, setCreationId] = useState('')
+  const creationIdRef = useRef('')
+  const [recovering, setRecovering] = useState(false)
+  const [recoveryBlocked, setRecoveryBlocked] = useState(false)
+  const mountedRef = useRef(true)
+  useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false } }, [])
 
   const validationErrors = useMemo(
     () => validateRentalListingDraftForm(form, { organisationId }),
@@ -336,42 +353,66 @@ export default function RentalListingCreatePage() {
     () => normalizeRentalDistributionChannels(form.selectedSyndicationChannels),
     [form.selectedSyndicationChannels],
   )
-  const canSubmit = validationErrors.length === 0 && !saving && (!searchParams.get('leadId') || Boolean(linkedLandlordLead))
+  const canSubmit = validationErrors.length === 0 && !saving && !recovering && !recoveryBlocked && (!searchParams.get('leadId') || Boolean(linkedLandlordLead))
   const activeStepIndex = CREATE_STEPS.findIndex((step) => step.key === activeStep)
   const priceFrequencyOptions = rentalPriceFrequencyOptions(form.propertyCategory)
 
   useEffect(() => {
+    if (isEditing) return
+    let cancelled = false
     try {
-      if (isEditing) return
       const storedDraft = window.sessionStorage.getItem(draftStorageKey)
       if (!storedDraft) return
       const parsedDraft = JSON.parse(storedDraft)
-      if (!parsedDraft || typeof parsedDraft !== 'object') return
-      setForm((current) => restoreRentalFeatureSelections({
-        ...current,
-        ...parsedDraft.form,
-        selectedFeatures: Array.isArray(parsedDraft.form?.selectedFeatures) ? parsedDraft.form.selectedFeatures : current.selectedFeatures,
-        amenities: Array.isArray(parsedDraft.form?.amenities) ? parsedDraft.form.amenities : current.amenities,
-        galleryImages: current.galleryImages,
-        coverImageId: current.coverImageId,
-      }))
-      if (CREATE_STEPS.some((step) => step.key === parsedDraft.activeStep)) setActiveStep(parsedDraft.activeStep)
-      setNotice('Your saved rental draft was restored for this browser session.')
-    } catch {
-      window.sessionStorage.removeItem(draftStorageKey)
+      if (!parsedDraft || typeof parsedDraft !== 'object') throw new Error('Invalid saved draft.')
+      if (parsedDraft.creationId && !isRentalCreationId(parsedDraft.creationId)) throw new Error('The saved creation identity is invalid. Open Rental Listings to find the existing draft.')
+      pendingListingIdRef.current = parsedDraft.pendingListingId || ''
+      creationIdRef.current = parsedDraft.creationId || ''
+      setCreationId(creationIdRef.current)
+      const restored = restoreRentalFeatureSelections({ ...createInitialFormState(), ...parsedDraft.form,
+        galleryImages: parsedDraft.form?.galleryImages || [], coverImageId: parsedDraft.form?.coverImageId || '' })
+      setForm(restored)
+      if (CREATE_STEPS.some(step => step.key === parsedDraft.activeStep)) setActiveStep(parsedDraft.activeStep)
+      const missingPhotos = parsedDraft.missingPhotoCount ? ' Reselect photos that had not finished uploading before the refresh.' : ''
+      setNotice(`Your saved rental draft was restored for this browser session.${missingPhotos}`)
+      const recoveryId = parsedDraft.pendingListingId || parsedDraft.creationId
+      if (recoveryId) {
+        setRecovering(true)
+        void getRentalListingForAgent(recoveryId, assignedAgentId, buildRentalListingQueryOptions(rentalScope)).then(row => {
+          if (cancelled) return
+          if (!row) {
+            if (parsedDraft.pendingListingId) throw new Error('The previously created rental is unavailable. Open Rental Listings before retrying.')
+            setNotice(`Creation was not confirmed. Retry this draft to use the same reserved listing.${missingPhotos}`)
+            return
+          }
+          pendingListingIdRef.current = row.id
+          setPendingListingId(row.id)
+          const savedForm = restoreRentalFeatureSelections(buildRentalListingEditForm(row))
+          // A completed atomic save is authoritative. For an unfinished shell,
+          // keep any uploaded photos retained in the browser recovery receipt.
+          if (!row.listingPublicationData && !savedForm.galleryImages.length) {
+            savedForm.galleryImages = restored.galleryImages
+            savedForm.coverImageId = restored.coverImageId
+          }
+          setForm(savedForm)
+          setNotice(`Your existing rental was recovered. Review its saved details before retrying.${missingPhotos}`)
+        }).catch(loadError => {
+          if (!cancelled) { setRecoveryBlocked(true); setError(loadError?.message || 'Unable to verify the existing rental. Reload before retrying.') }
+        }).finally(() => { if (!cancelled) setRecovering(false) })
+      }
+    } catch (restoreError) {
+      setRecoveryBlocked(true)
+      setError(restoreError?.message || 'Unable to recover the saved draft. Open Rental Listings before creating another rental.')
     }
-  }, [isEditing, draftStorageKey])
+    return () => { cancelled = true }
+  }, [assignedAgentId, draftStorageKey, isEditing, rentalScope])
 
   useEffect(() => {
     if (!isEditing || !organisationId) return
     let cancelled = false
     setSaving(true)
     setError('')
-    getRentalListingForAgent(editListingId, assignedAgentId, {
-      organisationId,
-      branchId,
-      scopeLevel: rentalScope.scopeLevel,
-    }).then((existingListing) => {
+    getRentalListingForAgent(editListingId, assignedAgentId, buildRentalListingQueryOptions(rentalScope)).then((existingListing) => {
       if (cancelled) return
       if (!existingListing) throw new Error('Rental listing not found.')
       setForm(restoreRentalFeatureSelections(buildRentalListingEditForm(existingListing)))
@@ -382,7 +423,7 @@ export default function RentalListingCreatePage() {
       if (!cancelled) setSaving(false)
     })
     return () => { cancelled = true }
-  }, [assignedAgentId, branchId, editListingId, isEditing, organisationId, rentalScope.scopeLevel])
+  }, [assignedAgentId, editListingId, isEditing, organisationId, rentalScope])
 
   useEffect(() => {
     galleryImagesRef.current = form.galleryImages
@@ -535,19 +576,17 @@ export default function RentalListingCreatePage() {
     if (previous) goToStep(previous.key)
   }
 
+  function persistRecoveryDraft(currentForm, pendingId = pendingListingIdRef.current) {
+    const draft = serializeRentalCreationDraft(currentForm, { activeStep, creationId: creationIdRef.current, pendingListingId: pendingId })
+    window.sessionStorage.setItem(draftStorageKey, JSON.stringify(draft))
+  }
+
   function saveDraftForSession() {
+    if (recoveryBlocked || recovering) return
     try {
-      const serializableForm = {
-        ...form,
-        galleryImages: [],
-        coverImageId: '',
-      }
-      window.sessionStorage.setItem(draftStorageKey, JSON.stringify({
-        activeStep,
-        form: serializableForm,
-      }))
+      persistRecoveryDraft(form)
       setError('')
-      setNotice('Draft saved for this browser session. Images will be saved when the listing is created.')
+      setNotice('Draft saved for this browser session. Photos that have not uploaded must be reselected after a refresh.')
     } catch {
       setError('Unable to save this draft in the current browser session.')
     }
@@ -561,7 +600,7 @@ export default function RentalListingCreatePage() {
       return
     }
     if (!canSubmit) {
-      setError(validationErrors[0] || 'Complete the required rental listing fields.')
+      if (!recoveryBlocked && !recovering) setError(validationErrors[0] || 'Complete the required rental listing fields.')
       return
     }
     try {
@@ -569,16 +608,45 @@ export default function RentalListingCreatePage() {
       setSaving(true)
       setSaveProgress(pendingListingId || isEditing ? 'Saving rental details…' : 'Creating rental draft…')
       setError('')
+      if (!isEditing) {
+        // Persist before the first request. A browser-storage failure must not
+        // leave a remotely created record with no durable recovery identity.
+        creationIdRef.current ||= globalThis.crypto.randomUUID()
+        persistRecoveryDraft(form)
+        setCreationId(creationIdRef.current)
+      }
       const context = {
-        organisationId, branchId, assignedAgentId, performedBy: assignedAgentId,
-        onListingCreated: setPendingListingId,
+        creationId: creationIdRef.current,
+        canonicalPropertyId: linkedLandlordLead && portfolioPropertyId
+          ? landlordWorkspace(linkedLandlordLead).portfolio.find(item => item.id === portfolioPropertyId)?.canonicalPropertyId : undefined,
+        ...rentalScope, organisationId, branchId, assignedAgentId, performedBy: assignedAgentId,
+        onListingCreated: id => {
+          // Persist the receipt even if the user has since switched workspaces.
+          pendingListingIdRef.current = id
+          persistRecoveryDraft(form, id)
+          if (mountedRef.current) setPendingListingId(id)
+        },
         onUploadProgress: ({ completed, total, phase }) => setSaveProgress(phase === 'saving' ? 'Saving rental marketing…' : `Saving photos: ${completed} of ${total}…`),
       }
       const result = isEditing || pendingListingId
         ? await updateRentalListingDraft(editListingId || pendingListingId, form, context)
         : await createRentalListingDraft(form, context)
+      if (!mountedRef.current) return
       const listingId = result?.listing?.id
       if (listingId) {
+        if (result.recovered) {
+          pendingListingIdRef.current = listingId
+          setPendingListingId(listingId)
+          const savedForm = restoreRentalFeatureSelections(buildRentalListingEditForm(result.listing))
+          if (!result.listing.listingPublicationData && !savedForm.galleryImages.length) {
+            savedForm.galleryImages = form.galleryImages
+            savedForm.coverImageId = form.coverImageId
+          }
+          setForm(savedForm)
+          persistRecoveryDraft(savedForm, listingId)
+          setNotice('Your existing rental was recovered. Review its saved details, then retry saving to finish the same rental.')
+          return
+        }
         if (linkedLandlordLead && !isEditing) {
           setPendingListingId(listingId)
           try {
@@ -589,6 +657,8 @@ export default function RentalListingCreatePage() {
             return
           }
         }
+        if (!mountedRef.current) return
+        if (!isEditing) { try { window.sessionStorage.removeItem(draftStorageKey) } catch { /* The saved identity still prevents duplication. */ } }
         navigate(`/agent/rentals/listings/${encodeURIComponent(listingId)}/marketing`, {
           state: {
             [isEditing ? 'rentalListingUpdatedTitle' : 'rentalListingCreatedTitle']: buildRentalListingTitle(form),
@@ -601,7 +671,12 @@ export default function RentalListingCreatePage() {
         state: { [isEditing ? 'rentalListingUpdatedTitle' : 'rentalListingCreatedTitle']: buildRentalListingTitle(form) },
       })
     } catch (saveError) {
-      if (!isEditing && saveError.listingId) setPendingListingId(saveError.listingId)
+      if (!isEditing && creationIdRef.current) {
+        try { persistRecoveryDraft({ ...form, galleryImages: saveError.galleryImages || form.galleryImages }, saveError.listingId || pendingListingIdRef.current) }
+        catch { /* The identity saved before creation remains the recovery anchor. */ }
+      }
+      if (!mountedRef.current) return
+      if (!isEditing && saveError.listingId) { pendingListingIdRef.current = saveError.listingId; setPendingListingId(saveError.listingId) }
       if (Array.isArray(saveError.galleryImages)) {
         setForm((current) => ({ ...current, galleryImages: saveError.galleryImages }))
       }
@@ -634,6 +709,7 @@ export default function RentalListingCreatePage() {
         </header>
 
         {saving && saveProgress ? <p role="status" className="px-4 py-3 text-sm font-semibold text-[#607891]">{saveProgress}</p> : null}
+        {recovering ? <p role="status" className="px-4 text-sm text-[#607891]">Checking the saved rental before retrying…</p> : null}
         {pendingListingId && error ? <p className="px-4 text-sm text-[#607891]">Your rental draft already exists. Retry saving here to finish its photos and marketing without creating another listing.</p> : null}
         {error ? (
           <p className="rounded-[8px] border border-[#f2c6c6] bg-[#fff7f7] px-4 py-3 text-sm font-semibold text-[#9f3131]">{error}</p>
@@ -861,6 +937,10 @@ export default function RentalListingCreatePage() {
               </div> : <div className="mt-5 flex min-h-36 flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-[#cddaea] bg-[#f7fafc] px-4 py-6 text-center"><ImagePlus size={28} className="text-[#91abc0]" aria-hidden="true" /><p className="text-sm text-[#607891]">Add property photos</p></div>}
             </section>
 
+            <section className="grid gap-4 rounded-2xl border border-[#dbe6f2] bg-white p-4 sm:grid-cols-2 sm:p-5">
+              <label className="form-field"><span>Video link</span><input type="url" aria-label="Video link" {...formField('videoLink', form.videoLink, updateForm)} placeholder="https://youtu.be/..." /><small>Optional public video URL.</small></label>
+              <label className="form-field"><span>Virtual tour link</span><input type="url" aria-label="Virtual tour link" {...formField('virtualTourLink', form.virtualTourLink, updateForm)} placeholder="https://my.matterport.com/..." /><small>Optional public virtual tour URL.</small></label>
+            </section>
             <div className="grid min-w-0 items-start gap-4 xl:grid-cols-3">
               <section className="min-w-0 rounded-2xl border border-[#dbe6f2] bg-white p-4 sm:p-5 xl:col-span-2">
                 <div className="mb-5 flex items-center gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#eef4fa] text-[#315f80]"><FileText size={18} aria-hidden="true" /></span><h3 className="text-sm font-semibold text-[#18324b]">Listing copy</h3></div>
@@ -917,7 +997,7 @@ export default function RentalListingCreatePage() {
               <ReviewSummaryCard title="Property" onEdit={() => goToStep('property')} details={[{ label: 'Listing', value: buildRentalListingTitle(form) || 'Untitled rental listing' }, { label: 'Address', value: form.propertyAddress || 'Not added' }, { label: 'Type', value: form.propertyType || 'Not captured' }]} />
               <ReviewSummaryCard title="Additional property details" onEdit={() => goToStep('features')} details={[{ label: 'Confirmed features', value: `${selectedSellingPoints.length} confirmed` }, { label: 'Pet friendly', value: form.petsPolicy === 'allowed' ? 'Yes' : form.petsPolicy === 'not_allowed' ? 'No' : 'Subject to approval' }]} />
               <ReviewSummaryCard title="Rental terms" onEdit={() => goToStep('terms')} details={[{ label: 'Rental amount', value: form.monthlyRent ? `R ${Number(form.monthlyRent).toLocaleString('en-ZA')}` : 'Not added' }, { label: 'Frequency', value: RENTAL_SELECT_OPTIONS.rentalPriceFrequency.find((option) => option.value === form.rentalPriceFrequency)?.label || 'Not captured' }, { label: 'Available', value: form.availableFrom || 'Not added' }, { label: 'Lease', value: form.leasePeriodMonths ? `${form.leasePeriodMonths} months` : 'Not captured' }]} />
-              <ReviewSummaryCard title="Marketing" onEdit={() => goToStep('marketing')} details={[{ label: 'Photos', value: `${form.galleryImages.length} selected` }, { label: 'Description', value: form.description ? 'Added' : 'Not added' }, { label: 'Selling points', value: `${selectedSellingPoints.length} selected` }]} />
+              <ReviewSummaryCard title="Marketing" onEdit={() => goToStep('marketing')} details={[{ label: 'Photos', value: `${form.galleryImages.length} selected` }, { label: 'Video', value: form.videoLink ? 'Added' : 'Not added (optional)' }, { label: 'Virtual tour', value: form.virtualTourLink ? 'Added' : 'Not added (optional)' }, { label: 'Description', value: form.description ? 'Added' : 'Not added' }, { label: 'Selling points', value: `${selectedSellingPoints.length} selected` }]} />
             </div>
             {validationErrors.length ? <div className="rounded-[12px] border border-[#f1d4a6] bg-[#fffaf0] p-4"><p className="font-semibold text-[#8a5a12]">Complete these required items before creating</p><ul className="mt-3 grid gap-2 text-sm text-[#8a5a12]">{validationErrors.map((item) => { const step = stepForValidationError(item); return <li key={item} className="flex flex-wrap items-center justify-between gap-2"><span>{item}</span>{step !== 'review' ? <button type="button" className="font-semibold underline underline-offset-2" onClick={() => goToStep(step)}>Fix in {CREATE_STEPS.find((entry) => entry.key === step)?.label}</button> : null}</li> })}</ul></div> : null}
           </section> : null}
@@ -939,7 +1019,7 @@ export default function RentalListingCreatePage() {
                 disabled={activeStep === 'review' ? !canSubmit : false}
               >
                 {activeStep === 'review' && saving ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : activeStep === 'review' ? <Save size={16} aria-hidden="true" /> : <ChevronRight size={16} aria-hidden="true" />}
-                {activeStep === 'review' ? (saving ? 'Saving rental…' : isEditing ? 'Save rental changes' : pendingListingId ? 'Retry saving rental' : 'Create rental listing') : 'Continue'}
+                {activeStep === 'review' ? (saving ? 'Saving rental…' : isEditing ? 'Save rental changes' : pendingListingId || creationId ? 'Retry saving rental' : 'Create rental listing') : 'Continue'}
               </Button>
             </div>
           </footer>

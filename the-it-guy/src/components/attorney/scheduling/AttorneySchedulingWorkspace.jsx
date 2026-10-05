@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   AlertTriangle,
@@ -19,13 +19,13 @@ import {
 import {
   assignAttorneyAppointmentResource,
   createAttorneyAppointmentInvite,
+  manageAttorneyWorkspaceAppointment,
   proposeAttorneyAppointmentReschedule,
   resendAttorneyAppointmentCommunication,
   resolveAttorneyAppointmentReschedule,
-  updateAttorneyAppointmentOperationalStatus,
-  upsertAttorneyAppointmentParticipant,
 } from '../../../services/attorneyOperations'
-import { getAppointmentTypeTemplate, getAppointmentRequiredPrep } from '../../../services/appointmentTemplateService'
+import { appointmentEditDraft, buildAppointmentEditChanges } from '../../../services/attorneyAppointmentManagement'
+import { CALENDAR_TIMEZONE, sastParts, sastDateKey, sameSastDay, sastDayStart, sastWeekStart, sastMonthStart, addCalendarDays, shiftCalendarMonth, appointmentMatchesCalendarRange, appointmentDurationMinutes, calendarOperationalStatus, isClosedAppointment, layoutCalendarDay } from '../../../core/appointments/attorneyCalendarModel'
 import {
   ATTORNEY_INVITE_LOCATION_MODES,
   ATTORNEY_INVITE_LOCATION_OPTIONS,
@@ -47,7 +47,6 @@ import {
 
 const BUSINESS_DAY_START = 8
 const BUSINESS_DAY_END = 18
-const BUSINESS_DAY_MINUTES = (BUSINESS_DAY_END - BUSINESS_DAY_START) * 60
 
 const APPOINTMENT_TONES = {
   transfer: {
@@ -135,6 +134,8 @@ const STATUS_TONES = {
   reschedule_requested: { label: 'Reschedule Requested', color: '#c2410c', bg: '#fff7ed', border: '#fed7aa' },
   blocked: { label: 'Blocked', color: '#b42318', bg: '#fef3f2', border: '#fecaca' },
   completed: { label: 'Completed', color: '#067647', bg: '#ecfdf3', border: '#bbf7d0' },
+  declined: { label: 'Declined', color: '#b42318', bg: '#fef3f2', border: '#fecaca' },
+  no_show: { label: 'No show', color: '#475569', bg: '#f8fafc', border: '#dbe3ef' },
   cancelled: { label: 'Cancelled', color: '#475569', bg: '#f8fafc', border: '#dbe3ef' },
 }
 
@@ -160,47 +161,17 @@ function isPast(dateTimeValue) {
   return value < Date.now()
 }
 
-function isSameCalendarDay(leftValue, rightValue) {
-  const left = new Date(leftValue || '')
-  const right = new Date(rightValue || '')
-  if (Number.isNaN(left.getTime()) || Number.isNaN(right.getTime())) return false
-  return left.getFullYear() === right.getFullYear() && left.getMonth() === right.getMonth() && left.getDate() === right.getDate()
-}
-
-function isToday(dateTimeValue) {
-  return isSameCalendarDay(dateTimeValue, new Date())
-}
-
-function addDays(date, count) {
-  const next = new Date(date)
-  next.setDate(next.getDate() + count)
-  return next
-}
-
-function startOfDay(date) {
-  const next = new Date(date)
-  next.setHours(0, 0, 0, 0)
-  return next
-}
-
-function startOfWeek(date) {
-  const next = startOfDay(date)
-  const day = next.getDay()
-  const diff = day === 0 ? -6 : 1 - day
-  next.setDate(next.getDate() + diff)
-  return next
-}
-
-function startOfMonth(date) {
-  const next = startOfDay(date)
-  next.setDate(1)
-  return next
-}
+const isSameCalendarDay = sameSastDay
+const addDays = addCalendarDays
+const startOfDay = sastDayStart
+const startOfWeek = sastWeekStart
+const startOfMonth = sastMonthStart
+function isToday(value) { return sameSastDay(value, new Date()) }
 
 function formatDate(value, options = {}) {
   const parsed = new Date(value || '')
   if (Number.isNaN(parsed.getTime())) return 'Date pending'
-  return parsed.toLocaleDateString('en-ZA', {
+  return parsed.toLocaleDateString('en-ZA', { timeZone: CALENDAR_TIMEZONE,
     day: '2-digit',
     month: 'short',
     year: options.includeYear === false ? undefined : 'numeric',
@@ -210,7 +181,7 @@ function formatDate(value, options = {}) {
 function formatTime(value) {
   const parsed = new Date(value || '')
   if (Number.isNaN(parsed.getTime())) return 'Time pending'
-  return parsed.toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' })
+  return parsed.toLocaleTimeString('en-ZA', { timeZone: CALENDAR_TIMEZONE, hour: '2-digit', minute: '2-digit' })
 }
 
 function timeInputToMinutes(value = '') {
@@ -234,7 +205,7 @@ function resolveInviteDraftDurationMinutes(draft = {}, fallbackMinutes = 60) {
 function formatDateTime(value) {
   const parsed = new Date(value || '')
   if (Number.isNaN(parsed.getTime())) return 'Date pending'
-  return parsed.toLocaleString('en-ZA', {
+  return parsed.toLocaleString('en-ZA', { timeZone: CALENDAR_TIMEZONE,
     day: '2-digit',
     month: 'short',
     hour: '2-digit',
@@ -242,14 +213,7 @@ function formatDateTime(value) {
   })
 }
 
-function toDateInputValue(value) {
-  const parsed = value instanceof Date ? value : new Date(value || '')
-  if (Number.isNaN(parsed.getTime())) return ''
-  const year = parsed.getFullYear()
-  const month = String(parsed.getMonth() + 1).padStart(2, '0')
-  const day = String(parsed.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
+const toDateInputValue = sastDateKey
 
 function getInitials(value = '') {
   const parts = normalizeText(value).split(/\s+/).filter(Boolean)
@@ -294,29 +258,21 @@ function johannesburgDateTimeInputToIso(value = '') {
 
 function formatRangeLabel(start, end) {
   if (!start || !end) return 'Date range'
-  const sameMonth = start.getMonth() === end.getMonth() && start.getFullYear() === end.getFullYear()
+  const sameMonth = sastDateKey(start).slice(0, 7) === sastDateKey(end).slice(0, 7)
   if (sameMonth) {
-    return `${start.toLocaleDateString('en-ZA', { day: '2-digit' })} - ${end.toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' })}`
+    return `${start.toLocaleDateString('en-ZA', { timeZone: CALENDAR_TIMEZONE, day: '2-digit' })} - ${end.toLocaleDateString('en-ZA', { timeZone: CALENDAR_TIMEZONE, day: '2-digit', month: 'short', year: 'numeric' })}`
   }
   return `${formatDate(start)} - ${formatDate(end)}`
 }
 
-function resolveOperationalStatus(row = {}) {
-  const status = normalizeLower(row.status)
-  if (!status) return 'awaiting_confirmation'
-  if (status.includes('cancel')) return 'cancelled'
-  if (status.includes('complete')) return 'completed'
-  if (status.includes('block')) return 'blocked'
-  if (status.includes('reschedule')) return 'reschedule_requested'
-  if (status.includes('pending') || status.includes('proposed') || status.includes('requested')) return 'awaiting_confirmation'
-  if (status.includes('confirm')) return 'confirmed'
-  return 'awaiting_confirmation'
-}
+const resolveOperationalStatus = calendarOperationalStatus
 
 function readinessLabel(blockers = [], status = '') {
   const normalizedStatus = resolveOperationalStatus({ status })
   if (normalizedStatus === 'cancelled') return 'Cancelled'
-  if (normalizedStatus === 'completed') return 'Ready'
+  if (normalizedStatus === 'completed') return 'Completed'
+  if (normalizedStatus === 'declined') return 'Declined'
+  if (normalizedStatus === 'no_show') return 'No show'
   if (blockers.some((item) => item.toLowerCase().includes('document'))) return 'Waiting on Documents'
   if (blockers.some((item) => item.toLowerCase().includes('confirm'))) return 'Waiting on Client'
   if (blockers.some((item) => item.toLowerCase().includes('attorney'))) return 'Waiting on Attorney'
@@ -345,20 +301,12 @@ function roleCanSeeMatterType(role = '', matterType = '') {
 }
 
 function createReadiness(row, documentQueueByTransaction = {}) {
+  if (isClosedAppointment(row)) return { label: readinessLabel([], row.status), blockers: [] }
   const blockers = []
   const transactionId = normalizeText(row.transactionId)
   const docs = transactionId ? (documentQueueByTransaction[transactionId] || []) : []
   const pendingDocs = docs.filter((item) => hasOutstandingDocState(item.status))
   if (pendingDocs.length) blockers.push('Required document checks are still pending.')
-
-  const template = getAppointmentTypeTemplate(row.appointmentTypeKey || row.appointmentType)
-  const prepChecklist = getAppointmentRequiredPrep(template.type, {
-    requirementStatusByKey: {},
-    uploadedRequirementKeys: [],
-  })
-  if (prepChecklist.some((item) => item.completed === false)) {
-    blockers.push('Template prep requirements still need confirmation.')
-  }
 
   const status = resolveOperationalStatus(row)
   if (status === 'awaiting_confirmation') {
@@ -441,7 +389,7 @@ function sortByDateAscending(rows = []) {
 }
 
 function filterActive(rows = []) {
-  return rows.filter((row) => !['cancelled', 'completed'].includes(row.operationalStatus))
+  return rows.filter((row) => !isClosedAppointment(row))
 }
 
 function buildRescheduleRows(appointmentRows = []) {
@@ -498,7 +446,10 @@ function classifyAppointment(row = {}) {
 }
 
 function getAppointmentTone(row = {}) {
-  return APPOINTMENT_TONES[classifyAppointment(row)] || APPOINTMENT_TONES.internal
+  const tone = APPOINTMENT_TONES[classifyAppointment(row)] || APPOINTMENT_TONES.internal
+  if (!isClosedAppointment(row)) return tone
+  const status = STATUS_TONES[resolveOperationalStatus(row)]
+  return { ...tone, label: status.label, text: status.color, accent: status.color, bg: status.bg, border: status.border }
 }
 
 function getStatusTone(row = {}) {
@@ -513,7 +464,7 @@ function appointmentMatchesMatterType(row = {}, value = 'all') {
 
 function appointmentMatchesAttorney(row = {}, value = 'all') {
   if (value === 'all') return true
-  return [row.assignedAttorneyId, row.assignedSecretaryId, row.assignedAdminHandlerId].some((id) => String(id || '') === String(value))
+  return [row.schedulingOwnerId, row.assignedAttorneyId, row.assignedSecretaryId, row.assignedAdminHandlerId].some((id) => String(id || '') === String(value))
 }
 
 function appointmentMatchesBoardroom(row = {}, value = 'all') {
@@ -522,30 +473,8 @@ function appointmentMatchesBoardroom(row = {}, value = 'all') {
   return String(row.resourceId || '') === String(value)
 }
 
-function appointmentMatchesDateRange(row = {}, value = 'all', selectedDate = new Date()) {
-  const parsed = new Date(row.dateTime || '')
-  if (Number.isNaN(parsed.getTime())) return value === 'all'
-  const today = startOfDay(new Date())
-  if (value === 'today') return isSameCalendarDay(parsed, today)
-  if (value === 'week') {
-    const weekStart = startOfWeek(selectedDate)
-    const weekEnd = addDays(weekStart, 7)
-    return parsed >= weekStart && parsed < weekEnd
-  }
-  if (value === 'month') {
-    return parsed.getMonth() === selectedDate.getMonth() && parsed.getFullYear() === selectedDate.getFullYear()
-  }
-  return true
-}
-
-function resolveAppointmentDuration(row = {}) {
-  const type = classifyAppointment(row)
-  if (type === 'bond') return 60
-  if (type === 'transfer') return 60
-  if (type === 'cancellation') return 45
-  if (type === 'reschedule') return 30
-  return 45
-}
+const appointmentMatchesDateRange = appointmentMatchesCalendarRange
+const resolveAppointmentDuration = appointmentDurationMinutes
 
 function buildVisibleRows(rows = [], filters = {}, selectedDate = new Date()) {
   const query = normalizeLower(filters.query)
@@ -602,7 +531,7 @@ function buildOperationalFeed(rows = [], rescheduleRows = []) {
     .map((row) => ({
       id: `appointment-${row.id}`,
       tone: getAppointmentTone(row),
-      title: `${row.appointmentType || 'Appointment'} ${row.operationalStatus === 'confirmed' ? 'confirmed' : 'scheduled'}`,
+      title: `${row.appointmentType || 'Appointment'} ${row.operationalStatusLabel || 'scheduled'}`,
       description: `${row.matterReference} - ${row.clientName || 'Client pending'}`,
       timestamp: row.dateTime,
     }))
@@ -659,6 +588,7 @@ function buildStaffRows(members = [], rows = []) {
     seen.add(String(member.value || ''))
     const color = STAFF_COLORS[index % STAFF_COLORS.length]
     const appointments = rows.filter((row) => [
+      row.schedulingOwnerId,
       row.assignedAttorneyId,
       row.assignedSecretaryId,
       row.assignedAdminHandlerId,
@@ -675,6 +605,7 @@ function buildStaffRows(members = [], rows = []) {
   const syntheticRows = []
   rows.forEach((row) => {
     [
+      { id: row.schedulingOwnerId, name: row.schedulingOwnerName, role: 'Scheduling owner' },
       { id: row.assignedAttorneyId, name: row.assignedAttorneyName, role: 'Attorney' },
       { id: row.assignedSecretaryId, name: row.assignedSecretaryName, role: 'Secretary' },
       { id: row.assignedAdminHandlerId, name: row.assignedAdminHandlerName, role: 'Support Staff' },
@@ -690,7 +621,7 @@ function buildStaffRows(members = [], rows = []) {
         roleLabel: staff.role,
         initials: getInitials(staff.name),
         color,
-        appointments: rows.filter((item) => [item.assignedAttorneyId, item.assignedSecretaryId, item.assignedAdminHandlerId].some((staffId) => String(staffId || '') === id)).length,
+        appointments: rows.filter((item) => [item.schedulingOwnerId, item.assignedAttorneyId, item.assignedSecretaryId, item.assignedAdminHandlerId].some((staffId) => String(staffId || '') === id)).length,
       })
     })
   })
@@ -701,6 +632,7 @@ function buildStaffRows(members = [], rows = []) {
 function appointmentMatchesStaffSelection(row = {}, selectedStaffIds = []) {
   if (!selectedStaffIds.length) return true
   return [
+    row.schedulingOwnerId,
     row.assignedAttorneyId,
     row.assignedSecretaryId,
     row.assignedAdminHandlerId,
@@ -708,7 +640,8 @@ function appointmentMatchesStaffSelection(row = {}, selectedStaffIds = []) {
 }
 
 function getStaffForAppointment(row = {}, staffRows = []) {
-  return staffRows.find((staff) => [
+  return staffRows.find(staff => staff.value === row.schedulingOwnerId) || staffRows.find((staff) => [
+    row.schedulingOwnerId,
     row.assignedAttorneyId,
     row.assignedSecretaryId,
     row.assignedAdminHandlerId,
@@ -720,13 +653,15 @@ function createInviteDraftDefaults(selectedDate = new Date()) {
   if (Number.isNaN(start.getTime())) {
     return { ...DEFAULT_ATTORNEY_INVITE_DRAFT }
   }
-  if (!start.getHours()) start.setHours(9, 0, 0, 0)
+  const parts = sastParts(start)
+  const hour = parts.hour || 9
+  const minute = parts.hour ? parts.minute : 0
   return {
     ...DEFAULT_ATTORNEY_INVITE_DRAFT,
     title: '',
     date: toDateInputValue(start),
-    startTime: `${String(start.getHours()).padStart(2, '0')}:${String(start.getMinutes()).padStart(2, '0')}`,
-    endTime: `${String(Math.min(start.getHours() + 1, 23)).padStart(2, '0')}:${String(start.getMinutes()).padStart(2, '0')}`,
+    startTime: `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`,
+    endTime: `${String(Math.min(hour + 1, 23)).padStart(2, '0')}:${String(minute).padStart(2, '0')}`,
     sendNotifications: true,
   }
 }
@@ -784,6 +719,10 @@ function FilterToolbar({ filters, setFilters, resources, memberOptions }) {
         <option value="awaiting_confirmation">Pending</option>
         <option value="reschedule_requested">Reschedule requested</option>
         <option value="blocked">Blocked</option>
+        <option value="completed">Completed</option>
+        <option value="cancelled">Cancelled</option>
+        <option value="declined">Declined</option>
+        <option value="no_show">No show</option>
       </select>
       <select value={filters.boardroom} onChange={(event) => setFilters((previous) => ({ ...previous, boardroom: event.target.value }))}>
         <option value="all">All Boardrooms</option>
@@ -794,9 +733,9 @@ function FilterToolbar({ filters, setFilters, resources, memberOptions }) {
       </select>
       <select value={filters.dateRange} onChange={(event) => setFilters((previous) => ({ ...previous, dateRange: event.target.value }))}>
         <option value="all">All Dates</option>
-        <option value="today">Today</option>
-        <option value="week">This Week</option>
-        <option value="month">This Month</option>
+        <option value="today">Selected day</option>
+        <option value="week">Selected week</option>
+        <option value="month">Selected month</option>
       </select>
       <button type="button" className="scheduling-filter-icon" aria-label="Advanced calendar filters">
         <Filter size={16} />
@@ -807,20 +746,18 @@ function FilterToolbar({ filters, setFilters, resources, memberOptions }) {
 
 function MiniMonthPicker({ selectedDate, setSelectedDate }) {
   const monthStart = startOfMonth(selectedDate)
-  const cells = buildMonthCells(selectedDate).slice(0, 35)
+  const cells = buildMonthCells(selectedDate)
 
   function shiftMonth(direction) {
     setSelectedDate((previous) => {
-      const next = new Date(previous)
-      next.setMonth(next.getMonth() + direction)
-      return next
+      return shiftCalendarMonth(previous, direction)
     })
   }
 
   return (
     <aside className="mini-month-picker" aria-label="Monthly date picker">
       <div className="mini-month-header">
-        <strong>{selectedDate.toLocaleDateString('en-ZA', { month: 'long', year: 'numeric' })}</strong>
+        <strong>{selectedDate.toLocaleDateString('en-ZA', { timeZone: CALENDAR_TIMEZONE, month: 'long', year: 'numeric' })}</strong>
         <span>
           <button type="button" onClick={() => shiftMonth(-1)} aria-label="Previous month"><ChevronLeft size={14} /></button>
           <button type="button" onClick={() => shiftMonth(1)} aria-label="Next month"><ChevronRight size={14} /></button>
@@ -832,10 +769,10 @@ function MiniMonthPicker({ selectedDate, setSelectedDate }) {
           <button
             key={day.toISOString()}
             type="button"
-            className={`${day.getMonth() !== monthStart.getMonth() ? 'is-muted' : ''} ${isSameCalendarDay(day, selectedDate) ? 'is-selected' : ''}`}
+            className={`${sastParts(day).month !== sastParts(monthStart).month ? 'is-muted' : ''} ${isSameCalendarDay(day, selectedDate) ? 'is-selected' : ''}`}
             onClick={() => setSelectedDate(day)}
           >
-            {day.getDate()}
+            {sastParts(day).day}
           </button>
         ))}
       </div>
@@ -947,15 +884,15 @@ function CalendarControls({ viewMode, setViewMode, selectedDate, setSelectedDate
   const weekStart = startOfWeek(selectedDate)
   const weekEnd = addDays(weekStart, 6)
   const rangeLabel = normalizeLower(viewMode) === 'month'
-    ? selectedDate.toLocaleDateString('en-ZA', { month: 'long', year: 'numeric' })
+    ? selectedDate.toLocaleDateString('en-ZA', { timeZone: CALENDAR_TIMEZONE, month: 'long', year: 'numeric' })
     : normalizeLower(viewMode) === 'day'
       ? formatDate(selectedDate)
       : formatRangeLabel(weekStart, weekEnd)
 
   function shiftDate(direction) {
     const normalized = normalizeLower(viewMode)
-    const step = normalized === 'month' ? 31 : normalized === 'day' ? 1 : 7
-    setSelectedDate((previous) => addDays(previous, direction * step))
+    const step = normalized === 'day' ? 1 : 7
+    setSelectedDate((previous) => normalized === 'month' ? shiftCalendarMonth(previous, direction) : addDays(previous, direction * step))
   }
 
   return (
@@ -964,7 +901,7 @@ function CalendarControls({ viewMode, setViewMode, selectedDate, setSelectedDate
         <button type="button" aria-label="Previous" onClick={() => shiftDate(-1)}><ChevronLeft size={16} /></button>
         <button type="button" onClick={() => setSelectedDate(new Date())}>Today</button>
         <button type="button" aria-label="Next" onClick={() => shiftDate(1)}><ChevronRight size={16} /></button>
-        <strong>{rangeLabel}</strong>
+        <strong>{rangeLabel} · SAST</strong>
       </div>
       <div className="calendar-view-toggle">
         {VIEW_MODES.map((mode) => (
@@ -984,9 +921,14 @@ function CalendarControls({ viewMode, setViewMode, selectedDate, setSelectedDate
 
 function WeekCalendar({ rows, viewMode, selectedDate, onSelect, staffRows }) {
   const columns = buildDayColumns(viewMode, selectedDate)
-  const timeSlots = Array.from({ length: BUSINESS_DAY_END - BUSINESS_DAY_START }, (_, index) => BUSINESS_DAY_START + index)
+  const displayed = rows.filter(row => columns.some(day => sameSastDay(row.dateTime, day)))
+  const starts = displayed.map(row => (sastParts(row.dateTime)?.hour || 0) * 60 + (sastParts(row.dateTime)?.minute || 0))
+  const gridStart = Math.min(BUSINESS_DAY_START, ...starts.map(minutes => Math.floor(minutes / 60)))
+  const gridEnd = Math.max(BUSINESS_DAY_END, ...displayed.map((row, index) => Math.ceil((starts[index] + appointmentDurationMinutes(row)) / 60)))
+  const gridMinutes = (gridEnd - gridStart) * 60
+  const timeSlots = Array.from({ length: gridEnd - gridStart }, (_, index) => gridStart + index)
   const now = new Date()
-  const currentTop = ((now.getHours() * 60 + now.getMinutes()) - (BUSINESS_DAY_START * 60)) / BUSINESS_DAY_MINUTES * 100
+  const currentTop = ((sastParts(now).hour * 60 + sastParts(now).minute) - (gridStart * 60)) / gridMinutes * 100
 
   return (
     <div className={`week-calendar ${columns.length === 1 ? 'is-day-view' : ''}`}>
@@ -994,21 +936,22 @@ function WeekCalendar({ rows, viewMode, selectedDate, onSelect, staffRows }) {
         <span />
         {columns.map((day) => (
           <div key={day.toISOString()} className={isToday(day) ? 'is-today' : ''}>
-            <span>{day.toLocaleDateString('en-ZA', { weekday: 'short' })}</span>
-            <strong>{day.toLocaleDateString('en-ZA', { day: '2-digit', month: 'short' })}</strong>
+            <span>{day.toLocaleDateString('en-ZA', { timeZone: CALENDAR_TIMEZONE, weekday: 'short' })}</span>
+            <strong>{day.toLocaleDateString('en-ZA', { timeZone: CALENDAR_TIMEZONE, day: '2-digit', month: 'short' })}</strong>
           </div>
         ))}
       </div>
       <div className="week-calendar-body" style={{ gridTemplateColumns: `64px repeat(${columns.length}, minmax(136px, 1fr))` }}>
-        <div className="calendar-time-rail">
+        <div className="calendar-time-rail" style={{ gridTemplateRows: `repeat(${timeSlots.length}, 1fr)` }}>
           {timeSlots.map((hour) => (
             <span key={hour}>{String(hour).padStart(2, '0')}:00</span>
           ))}
         </div>
         {columns.map((day) => {
           const dayRows = rows.filter((row) => isSameCalendarDay(row.dateTime, day))
+          const lanes = layoutCalendarDay(dayRows)
           return (
-            <div key={day.toISOString()} className="calendar-day-column">
+            <div key={day.toISOString()} className="calendar-day-column" style={{ backgroundSize: `100% ${100 / timeSlots.length}%` }}>
               {isToday(day) && currentTop >= 0 && currentTop <= 100 ? (
                 <div className="calendar-now-line" style={{ top: `${currentTop}%` }}>
                   <span>{formatTime(now)}</span>
@@ -1017,9 +960,10 @@ function WeekCalendar({ rows, viewMode, selectedDate, onSelect, staffRows }) {
               {dayRows.map((row) => {
                 const parsed = new Date(row.dateTime || '')
                 if (Number.isNaN(parsed.getTime())) return null
-                const minutesFromStart = (parsed.getHours() * 60 + parsed.getMinutes()) - (BUSINESS_DAY_START * 60)
-                const top = Math.max(0, Math.min(93, (minutesFromStart / BUSINESS_DAY_MINUTES) * 100))
-                const height = Math.max(7, Math.min(22, (resolveAppointmentDuration(row) / BUSINESS_DAY_MINUTES) * 100))
+                const minutesFromStart = (sastParts(parsed).hour * 60 + sastParts(parsed).minute) - (gridStart * 60)
+                const top = Math.max(0, Math.min(100, (minutesFromStart / gridMinutes) * 100))
+                const height = Math.max(0, Math.min(100 - top, (resolveAppointmentDuration(row) / gridMinutes) * 100))
+                const lane = lanes.get(row.id) || { lane: 0, count: 1 }
                 const tone = getAppointmentTone(row)
                 const staff = getStaffForAppointment(row, staffRows)
                 return (
@@ -1027,9 +971,14 @@ function WeekCalendar({ rows, viewMode, selectedDate, onSelect, staffRows }) {
                     key={row.id}
                     type="button"
                     className="calendar-event"
+                    title={`${row.matterReference} · ${row.appointmentType} · ${formatTime(row.dateTime)} - ${formatTime(new Date(parsed.getTime() + resolveAppointmentDuration(row) * 60000))} SAST`}
                     style={{
                       top: `${top}%`,
-                      minHeight: `${height}%`,
+                      left: `calc(${lane.lane * 100 / lane.count}% + 4px)`,
+                      width: `calc(${100 / lane.count}% - 8px)`,
+                      height: `${height}%`,
+                      minHeight: 0,
+                      overflow: 'hidden',
                       background: tone.bg,
                       borderColor: tone.border,
                       borderLeftColor: staff?.color || tone.accent,
@@ -1037,7 +986,7 @@ function WeekCalendar({ rows, viewMode, selectedDate, onSelect, staffRows }) {
                     }}
                     onClick={() => onSelect(row)}
                   >
-                    <span>{row.matterReference}</span>
+                    <span>{row.matterReference}{isClosedAppointment(row) ? ` · ${getStatusTone(row).label}` : ''}</span>
                     <strong>{row.appointmentType || tone.label}</strong>
                     <small>{formatTime(row.dateTime)} - {formatTime(new Date(parsed.getTime() + resolveAppointmentDuration(row) * 60 * 1000))}</small>
                     <small>{staff?.label || row.assignedAttorneyName || row.assignedSecretaryName || tone.label}</small>
@@ -1061,10 +1010,10 @@ function MonthCalendar({ rows, selectedDate, onSelect }) {
       ))}
       {cells.map((day) => {
         const dayRows = rows.filter((row) => isSameCalendarDay(row.dateTime, day))
-        const isOutside = day.getMonth() !== selectedDate.getMonth()
+        const isOutside = sastParts(day).month !== sastParts(selectedDate).month
         return (
           <article key={day.toISOString()} className={`month-calendar-cell ${isOutside ? 'is-outside' : ''} ${isToday(day) ? 'is-today' : ''}`}>
-            <span>{day.getDate()}</span>
+            <span>{sastParts(day).day}</span>
             {dayRows.slice(0, 3).map((row) => {
               const tone = getAppointmentTone(row)
               return (
@@ -1513,7 +1462,7 @@ export function CreateInviteDrawer({
   )
 }
 
-function AppointmentDrawer({
+export function AppointmentDrawer({
   appointment,
   resources,
   staffOptions,
@@ -1522,10 +1471,18 @@ function AppointmentDrawer({
   onResourceAssign,
   onStaffAssign,
   onComplete,
+  onEdit,
+  onCancel,
+  firmOrganisationId,
   onResendCommunication,
 }) {
+  const [editDraft, setEditDraft] = useState(null)
+  const [cancelReason, setCancelReason] = useState(null)
   if (!appointment) return null
   const tone = getAppointmentTone(appointment)
+  const closed = ['completed', 'cancelled', 'canceled', 'declined', 'no_show'].includes(normalizeLower(appointment.status))
+  const disabled = Boolean(busyId) || closed || !appointment.updatedAt
+  const availableResources = resources.filter(resource => !resource.organisationId || resource.organisationId === appointment.organisationId || resource.organisationId === firmOrganisationId)
 
   return (
     <aside className="appointment-drawer" aria-label="Appointment detail">
@@ -1538,12 +1495,16 @@ function AppointmentDrawer({
         <p>{appointment.clientName || 'Client pending'}</p>
         <div className="drawer-facts">
           <div><span>Date</span><strong>{formatDate(appointment.dateTime)}</strong></div>
-          <div><span>Time</span><strong>{formatTime(appointment.dateTime)}</strong></div>
+          <div><span>Time</span><strong>{formatTime(appointment.dateTime)} - {formatTime(new Date(new Date(appointment.dateTime).getTime() + appointmentDurationMinutes(appointment) * 60000))} SAST</strong></div>
           <div><span>Status</span><strong>{getStatusTone(appointment).label}</strong></div>
           <div><span>Boardroom</span><strong>{appointment.resourceName || 'Unassigned'}</strong></div>
           <div><span>Attorney</span><strong>{appointment.assignedAttorneyName || appointment.assignedSecretaryName || 'Unassigned'}</strong></div>
-          <div><span>Calendar Sync</span><strong>{appointment.externalCalendarStatus || 'Not synced'}</strong></div>
+          <div><span>Scheduling owner</span><strong>{appointment.schedulingOwnerName || 'Unassigned'}</strong></div>
+          <div><span>Invite delivery</span><strong>{appointment.delivery?.status || 'Unavailable'}</strong></div>
+          <div><span>Calendar attachment</span><strong>{appointment.delivery?.calendarInviteDelivered ? 'Sent with email' : appointment.delivery?.calendarInviteRequested === false ? 'Switched off' : 'Awaiting delivery'}</strong></div>
+          <div><span>Reminders</span><strong>{appointment.delivery?.reminders?.status || 'Unavailable'}</strong></div>
         </div>
+        {appointment.cancellationReason ? <p>Cancellation reason: {appointment.cancellationReason}</p> : null}
         {appointment.readiness?.blockers?.length ? (
           <div className="drawer-blockers">
             <strong>Readiness blockers</strong>
@@ -1551,28 +1512,55 @@ function AppointmentDrawer({
           </div>
         ) : null}
         <div className="drawer-field">
-          <label>Boardroom</label>
-          <select value={appointment.resourceId || ''} onChange={(event) => onResourceAssign(appointment, event.target.value)}>
+          <label htmlFor="appointment-boardroom">Boardroom</label>
+          <select id="appointment-boardroom" disabled={disabled} value={appointment.resourceId || ''} onChange={(event) => onResourceAssign(appointment, event.target.value)}>
             <option value="">Unassigned</option>
-            {resources.map((resource) => (
+            {appointment.resourceId && !availableResources.some(resource => resource.resourceId === appointment.resourceId) ? <option value={appointment.resourceId}>Current boardroom (unavailable)</option> : null}
+            {availableResources.map((resource) => (
               <option key={resource.resourceId} value={resource.resourceId}>{resource.resourceName}</option>
             ))}
           </select>
         </div>
         <div className="drawer-field">
-          <label>Scheduling owner</label>
-          <select value="" onChange={(event) => onStaffAssign(appointment, { role: 'coordinator', userId: event.target.value })}>
-            <option value="">Assign staff member</option>
+          <label htmlFor="appointment-owner">Scheduling owner</label>
+          <select id="appointment-owner" disabled={disabled} value={appointment.schedulingOwnerId || ''} onChange={(event) => onStaffAssign(appointment, { userId: event.target.value })}>
+            <option value="">Unassigned</option>
+            {appointment.schedulingOwnerId && !staffOptions.some(member => member.value === appointment.schedulingOwnerId) ? <option value={appointment.schedulingOwnerId}>{appointment.schedulingOwnerName || 'Current owner (unavailable)'}</option> : null}
             {staffOptions.map((member) => (
               <option key={member.value} value={member.value}>{member.label}</option>
             ))}
           </select>
         </div>
+        {!closed && editDraft ? (
+          <form aria-label="Edit appointment time" onSubmit={async event => {
+            event.preventDefault()
+            if (await onEdit(appointment, editDraft)) setEditDraft(null)
+          }}>
+            <p>Times are in South African Standard Time. Participants will be asked to confirm the new time.</p>
+            <label className="drawer-field"><span>Appointment date</span><input type="date" required disabled={Boolean(busyId)} value={editDraft.date} onChange={event => setEditDraft(previous => ({ ...previous, date: event.target.value }))} /></label>
+            <label className="drawer-field"><span>Appointment start time</span><input type="time" required disabled={Boolean(busyId)} value={editDraft.startTime} onChange={event => setEditDraft(previous => ({ ...previous, startTime: event.target.value }))} /></label>
+            <label className="drawer-field"><span>Appointment end time</span><input type="time" required disabled={Boolean(busyId)} value={editDraft.endTime} onChange={event => setEditDraft(previous => ({ ...previous, endTime: event.target.value }))} /></label>
+            <div className="drawer-actions"><button type="submit" disabled={Boolean(busyId)}>Save appointment changes</button><button type="button" disabled={Boolean(busyId)} onClick={() => setEditDraft(null)}>Discard changes</button></div>
+          </form>
+        ) : null}
+        {!closed && cancelReason !== null ? (
+          <form aria-label="Cancel appointment" onSubmit={async event => {
+            event.preventDefault()
+            if (await onCancel(appointment, cancelReason)) setCancelReason(null)
+          }}>
+            <p>Cancel this appointment and its pending reminders. The appointment record will be kept.</p>
+            <label className="drawer-field"><span>Cancellation reason</span><textarea required maxLength={1000} disabled={Boolean(busyId)} value={cancelReason} onChange={event => setCancelReason(event.target.value)} /></label>
+            <div className="drawer-actions"><button type="submit" disabled={Boolean(busyId) || !cancelReason.trim()}>Confirm cancellation</button><button type="button" disabled={Boolean(busyId)} onClick={() => setCancelReason(null)}>Keep appointment</button></div>
+          </form>
+        ) : null}
+        {!appointment.updatedAt && !closed ? <p>Refresh the calendar before changing this appointment.</p> : null}
         <div className="drawer-actions">
-          <button type="button" onClick={() => onComplete(appointment)} disabled={Boolean(busyId)}>
+          <button type="button" disabled={disabled} onClick={() => { setCancelReason(null); setEditDraft({ ...appointmentEditDraft(appointment), expectedUpdatedAt: appointment.updatedAt }) }}>Edit time</button>
+          <button type="button" disabled={disabled} onClick={() => { setEditDraft(null); setCancelReason('') }}>Cancel appointment</button>
+          <button type="button" onClick={() => onComplete(appointment)} disabled={disabled}>
             Mark Completed
           </button>
-          <button type="button" onClick={() => onResendCommunication(appointment, 'confirmation')} disabled={Boolean(busyId)}>
+          <button type="button" onClick={() => onResendCommunication(appointment, 'reminder')} disabled={disabled}>
             Send Reminder
           </button>
           {appointment.actionHref ? <Link to={appointment.actionHref}>Open Matter</Link> : null}
@@ -2004,7 +1992,7 @@ function SchedulingStyles() {
       .calendar-time-rail span {
         color: #60748c;
         font-size: 0.72rem;
-        padding: 0.75rem 0.55rem 0 0;
+        padding: 0.2rem 0.55rem 0 0;
         text-align: right;
         border-bottom: 1px solid #edf2f7;
       }
@@ -2013,7 +2001,7 @@ function SchedulingStyles() {
         position: relative;
         min-height: 540px;
         border-left: 1px solid #edf2f7;
-        background-image: linear-gradient(to bottom, transparent calc(10% - 1px), #edf2f7 calc(10% - 1px), #edf2f7 10%, transparent 10%);
+        background-image: linear-gradient(to bottom, transparent calc(100% - 1px), #edf2f7 calc(100% - 1px));
         background-size: 100% 10%;
       }
 
@@ -3019,6 +3007,13 @@ function AttorneySchedulingWorkspace({
   const [busyId, setBusyId] = useState('')
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
+  const actionRef = useRef(0)
+  const pendingActionRef = useRef(false)
+  const mountedRef = useRef(true)
+  useEffect(() => {
+    mountedRef.current = true
+    return () => { mountedRef.current = false }
+  }, [])
   const [viewMode, setViewMode] = useState('Week')
   const [selectedDate, setSelectedDate] = useState(new Date())
   const [selectedAppointment, setSelectedAppointment] = useState(null)
@@ -3038,7 +3033,7 @@ function AttorneySchedulingWorkspace({
     matterType: 'all',
     status: 'all',
     boardroom: 'all',
-    dateRange: 'week',
+    dateRange: 'all',
   })
 
   const normalizedRows = useMemo(() => {
@@ -3056,8 +3051,8 @@ function AttorneySchedulingWorkspace({
   const activeRows = useMemo(() => filterActive(normalizedRows), [normalizedRows])
   const staffRows = useMemo(() => buildStaffRows(memberOptions, activeRows), [memberOptions, activeRows])
   const staffFilteredRows = useMemo(
-    () => activeRows.filter((row) => appointmentMatchesStaffSelection(row, selectedStaffIds)),
-    [activeRows, selectedStaffIds],
+    () => normalizedRows.filter((row) => appointmentMatchesStaffSelection(row, selectedStaffIds)),
+    [normalizedRows, selectedStaffIds],
   )
   const visibleRows = useMemo(() => sortByDateAscending(buildVisibleRows(staffFilteredRows, filters, selectedDate)), [staffFilteredRows, filters, selectedDate])
   const rescheduleRows = useMemo(() => buildRescheduleRows(normalizedRows), [normalizedRows])
@@ -3065,10 +3060,12 @@ function AttorneySchedulingWorkspace({
   const staffOptions = useMemo(() => normalizeStaffOptions(memberOptions), [memberOptions])
   const feedRows = useMemo(() => buildOperationalFeed(visibleRows, visibleRescheduleRows), [visibleRows, visibleRescheduleRows])
   const matterOptions = useMemo(() => buildMatterOptions(matterRows), [matterRows])
+  const inviteOrganisationId = matterOptions.find(matter => matter.matterId === inviteDraft.matterId)?.organisationId
+    || (inviteDraft.appointmentType === 'internal_meeting' ? organisationId : matterOptions.find(matter => matter.organisationId)?.organisationId || organisationId)
 
   useEffect(() => {
     let active = true
-    const scopedOrganisationId = organisationId || matterOptions.find((matter) => matter.organisationId)?.organisationId
+    const scopedOrganisationId = inviteOrganisationId
     if (!scopedOrganisationId) {
       setRolloutStatus((current) => ({ ...current, enabled: false, reason: 'organisation_required' }))
       return () => { active = false }
@@ -3084,7 +3081,7 @@ function AttorneySchedulingWorkspace({
         }
       })
     return () => { active = false }
-  }, [organisationId, matterOptions])
+  }, [inviteOrganisationId])
 
   const metrics = useMemo(() => {
     const boardroomAssigned = activeRows.filter((row) => normalizeText(row.resourceId)).length
@@ -3106,44 +3103,75 @@ function AttorneySchedulingWorkspace({
   }, [activeRows, rescheduleRows.length, selectedDate])
 
   async function withBusy(id, callback, successMessage = 'Scheduling workspace updated.') {
+    if (pendingActionRef.current) return
+    pendingActionRef.current = true
+    const actionId = ++actionRef.current
     setBusyId(id)
     setError('')
     setMessage('')
     try {
       const outcome = await callback()
+      if (!mountedRef.current) return
       const outcomeMessage = normalizeText(outcome?.message)
       if (outcomeMessage && outcome?.tone === 'error') {
         setError(outcomeMessage)
       } else {
         setMessage(outcomeMessage || successMessage)
       }
-      await onWorkspaceChanged?.()
+      // A confirmed save remains successful even if reconciliation is slow.
+      void Promise.resolve().then(() => onWorkspaceChanged?.({ savedAppointment: outcome?.savedAppointment })).catch(() => {
+        if (mountedRef.current && actionRef.current === actionId) {
+          setError('Changes saved. The calendar could not refresh; reload to see the latest updates.')
+        }
+      })
+      if (outcome?.savedAppointment?.deliveryCompletion) {
+        void outcome.savedAppointment.deliveryCompletion.then((completed) => {
+          if (!mountedRef.current || actionRef.current !== actionId) return
+          const feedback = buildAttorneyInviteOutcome(completed.delivery)
+          setMessage(feedback.tone === 'error' ? '' : feedback.message)
+          setError(feedback.tone === 'error' ? feedback.message : '')
+        })
+      }
+      if (outcome?.savedAppointment?.communicationCompletion) {
+        void outcome.savedAppointment.communicationCompletion.then(completed => {
+          if (mountedRef.current && actionRef.current === actionId && !completed.ok) {
+            setError('Changes saved. Some appointment communications could not be delivered.')
+          }
+        })
+      }
+      return true
     } catch (actionError) {
-      setError(actionError?.message || 'Unable to update scheduling workspace.')
+      if (mountedRef.current) setError(actionError?.message || 'Unable to update scheduling workspace.')
+      return false
     } finally {
-      setBusyId('')
+      pendingActionRef.current = false
+      if (mountedRef.current) setBusyId('')
     }
   }
 
   const handleResourceAssign = (row, resourceId) => withBusy(`resource-${row.id}`, async () => {
-    await assignAttorneyAppointmentResource(row.id, resourceId || null)
+    return { savedAppointment: await assignAttorneyAppointmentResource(row.id, resourceId || null, { expectedUpdatedAt: row.updatedAt }) }
   })
 
   const handleStaffAssign = (row, payload) => withBusy(`staff-${row.id}-${payload?.role || ''}`, async () => {
-    const selected = (memberOptions || []).find((item) => String(item.value) === String(payload?.userId || ''))
-    await upsertAttorneyAppointmentParticipant(row.id, {
-      participantRole: payload.role,
-      name: selected?.label || 'Assigned Staff',
-      email: '',
-    })
+    return { savedAppointment: await manageAttorneyWorkspaceAppointment(row.id, 'owner', row.updatedAt, { userId: payload.userId || null }) }
   })
 
   const handleComplete = (row) => withBusy(`complete-${row.id}`, async () => {
-    await updateAttorneyAppointmentOperationalStatus(row.id, 'completed', { actorRole: currentRole })
+    return { savedAppointment: await manageAttorneyWorkspaceAppointment(row.id, 'complete', row.updatedAt) }
   })
+
+  const handleEdit = (row, draft) => withBusy(`edit-${row.id}`, async () => ({
+    savedAppointment: await manageAttorneyWorkspaceAppointment(row.id, 'edit', draft.expectedUpdatedAt, buildAppointmentEditChanges(draft)),
+  }), 'Appointment time updated. Confirmation messages are processing.')
+  const handleCancel = (row, reason) => withBusy(`cancel-${row.id}`, async () => ({
+    savedAppointment: await manageAttorneyWorkspaceAppointment(row.id, 'cancel', row.updatedAt, { reason }),
+  }), 'Appointment cancelled. Cancellation messages are processing.')
 
   const handleResendCommunication = (row, kind) => withBusy(`notify-${row.id}-${kind}`, async () => {
     const result = await resendAttorneyAppointmentCommunication(row.id, kind)
+    if (result.queuedCount > 0) return { tone: 'success', message: 'Appointment communication queued for delivery.' }
+    if (result.deliveryRecorded) return { tone: 'success', message: 'Delivery is already recorded for this appointment.' }
     if (result.failedCount > 0) {
       return { tone: 'error', message: 'The appointment remains saved, but the communication could not be delivered.' }
     }
@@ -3231,7 +3259,7 @@ function AttorneySchedulingWorkspace({
       durationMinutes: resolveInviteDraftDurationMinutes(inviteDraft, getInviteType(inviteDraft.appointmentType).durationMinutes),
       attachCalendarInvite: inviteDraft.sendNotifications !== false,
       recipientName: inviteDraft.recipientName || selectedMatter?.clientName || currentUser?.name || currentUser?.email || 'Team Member',
-      organisationId: organisationId || selectedMatter?.organisationId,
+      organisationId: selectedMatter?.organisationId || organisationId,
       transactionId: selectedMatter?.matterId || '',
       resourceName: boardroomLocation,
       attorneyName: currentUser?.name || currentUser?.email || '',
@@ -3247,7 +3275,7 @@ function AttorneySchedulingWorkspace({
       const created = await createAttorneyAppointmentInvite(inviteContract.value)
       setInviteOpen(false)
       setInviteDraft(createInviteDraftDefaults(selectedDate))
-      return buildAttorneyInviteOutcome(created.delivery)
+      return { ...buildAttorneyInviteOutcome(created.delivery), savedAppointment: created }
     })
   }
 
@@ -3293,7 +3321,9 @@ function AttorneySchedulingWorkspace({
         <OperationalFeedPanel rows={feedRows} />
       </section>
       <AppointmentDrawer
-        appointment={selectedAppointment}
+        key={selectedAppointment?.id || 'none'}
+        firmOrganisationId={organisationId}
+        appointment={normalizedRows.find(row => row.id === selectedAppointment?.id) || null}
         resources={resources}
         staffOptions={staffOptions}
         busyId={busyId}
@@ -3301,6 +3331,8 @@ function AttorneySchedulingWorkspace({
         onResourceAssign={handleResourceAssign}
         onStaffAssign={handleStaffAssign}
         onComplete={handleComplete}
+        onEdit={handleEdit}
+        onCancel={handleCancel}
         onResendCommunication={handleResendCommunication}
       />
       <CreateInviteDrawer
@@ -3308,7 +3340,7 @@ function AttorneySchedulingWorkspace({
         draft={inviteDraft}
         setDraft={setInviteDraft}
         matterOptions={matterOptions}
-        resources={resources}
+        resources={resources.filter(resource => !resource.organisationId || resource.organisationId === inviteOrganisationId || resource.organisationId === organisationId)}
         staffOptions={staffOptions}
         busyId={busyId}
         onClose={() => setInviteOpen(false)}

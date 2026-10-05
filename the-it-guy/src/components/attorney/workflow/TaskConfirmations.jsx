@@ -4,6 +4,25 @@ import Button from '../../ui/Button.jsx'
 import Field from '../../ui/Field.jsx'
 import { getLegalTaskChecklistProgress } from '../../../core/transactions/legalTaskWorkbenchModel.js'
 
+function ReviewRegister({ spec, items = [], disabled, onChange }) {
+  const update = (index, field, value) => onChange(items.map((row, i) => i === index ? { ...row, [field]: value } : row))
+  return <div className="ml-8 space-y-3" aria-label={spec.label}>
+    <p className="text-xs text-slate-600">{spec.help}</p>
+    {items.map((row, index) => <fieldset key={row.id || index} disabled={disabled} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+      <legend className="px-1 text-xs font-semibold">Item {index + 1}</legend>
+      <div className="grid min-w-0 gap-3 sm:grid-cols-2">
+        {spec.fields.map(field => <label key={field.key} className="grid min-w-0 gap-1 text-xs text-slate-700">{field.label}
+          {field.type === 'select' ? <Field as="select" value={row[field.key] || ''} onChange={event => update(index, field.key, event.target.value)}>
+            <option value="">Review needed</option>{field.options.map(option => <option key={option} value={option}>{option.replaceAll('_', ' ')}</option>)}
+          </Field> : <Field type={field.type} min={field.type === 'number' ? '0' : undefined} step={field.type === 'number' ? '0.01' : undefined} maxLength={4000} value={row[field.key] || ''} onChange={event => update(index, field.key, event.target.value)} />}
+        </label>)}
+      </div>
+      <button type="button" className="mt-3 text-xs font-semibold text-red-700 disabled:opacity-50" onClick={() => onChange(items.filter((_, i) => i !== index))}>Remove item {index + 1}</button>
+    </fieldset>)}
+    <Button type="button" variant="secondary" size="sm" disabled={disabled || items.length >= 100} onClick={() => onChange([...items, { id: crypto.randomUUID() }])}>Add item</Button>
+  </div>
+}
+
 function ConfirmationRow({ item, response, noteOpen, disabled, busy, error, onChange, onToggleNote, onRunAction, details }) {
   const answer = item.authoritative ? item.authoritativeAnswer || '' : response?.answer || ''
   const documentStatus = item.documentStatus
@@ -40,6 +59,7 @@ function ConfirmationRow({ item, response, noteOpen, disabled, busy, error, onCh
     {item.additionalAction ? <div className="ml-8"><button type="button" disabled={busy || item.additionalAction.disabled} className="text-xs font-semibold text-emerald-800 hover:underline disabled:opacity-50" onClick={() => onRunAction?.(item.additionalAction)}>{item.additionalAction.label}</button></div> : null}
     {item.requirement && !documentStatus ? <p className={`ml-8 text-xs ${item.requirement.complete ? 'text-emerald-800' : 'text-amber-800'}`}>{item.requirement.complete ? 'Requirement present' : 'Requirement still outstanding'}</p> : null}
     {details ? <div className="ml-8 rounded-lg border border-slate-200 bg-slate-50/60 p-3">{details}</div> : null}
+    {item.register ? <ReviewRegister spec={item.register} items={response?.items || []} disabled={disabled || busy} onChange={items => onChange({ items })} /> : null}
     {!item.authoritative ? <button type="button" disabled={disabled || busy} className="ml-8 inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-emerald-800 disabled:opacity-50" onClick={onToggleNote}><MessageSquarePlus size={13} />{response?.note ? 'Edit note' : 'Add note'}</button> : null}
     {!item.authoritative && (noteOpen || response?.note) ? <label className="ml-8 grid gap-1 text-sm">Note for {item.label}<Field as="textarea" rows={2} maxLength={4000} disabled={disabled || busy} value={response?.note || ''} onChange={event => onChange({ note: event.target.value })} /></label> : null}
     {error ? <p role="alert" className="ml-8 text-xs text-red-700">{error}</p> : null}
@@ -89,7 +109,7 @@ export default function TaskConfirmations({ taskKey, items, saved = {}, disabled
   }
   async function save() {
     if (disabled || pending.current) return
-    const invalidRows = Object.fromEntries(items.filter(item => draft[item.id]?.note?.trim() && !draft[item.id]?.answer)
+    const invalidRows = Object.fromEntries(items.filter(item => (draft[item.id]?.note?.trim() || draft[item.id]?.items?.length) && !draft[item.id]?.answer)
       .map(item => [item.id, 'Choose an answer before saving this note.']))
     if (Object.keys(invalidRows).length) { setRowErrors(invalidRows); setError('Answer the highlighted row before saving.'); return }
     const savingTaskKey = taskKey

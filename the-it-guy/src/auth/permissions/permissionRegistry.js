@@ -553,6 +553,7 @@ export const routePermissionRules = Object.freeze([
   { prefix: '/agency/branches', appRole: APP_ROLES.agent, workspaceType: WORKSPACE_TYPES.agency, permission: PERMISSIONS.manageBranches },
   { prefix: '/agency/commission', appRole: APP_ROLES.agent, workspaceType: WORKSPACE_TYPES.agency, permission: PERMISSIONS.viewCommissionStructures },
   { prefix: '/agency/agents', appRole: APP_ROLES.agent, workspaceType: WORKSPACE_TYPES.agency, permission: PERMISSIONS.manageUsers },
+  { prefix: '/agency/recruitment', appRole: APP_ROLES.agent, workspaceType: WORKSPACE_TYPES.agency, permission: PERMISSIONS.manageUsers },
   { prefix: '/agency/partners', appRole: APP_ROLES.agent, workspaceType: WORKSPACE_TYPES.agency, permission: PERMISSIONS.partnersViewNetwork },
   { prefix: '/agency/analytics', appRole: APP_ROLES.agent, workspaceType: WORKSPACE_TYPES.agency, permission: PERMISSIONS.viewReports },
   { prefix: '/agents/reporting', appRole: APP_ROLES.agent, workspaceType: WORKSPACE_TYPES.agency, permission: PERMISSIONS.viewReports },

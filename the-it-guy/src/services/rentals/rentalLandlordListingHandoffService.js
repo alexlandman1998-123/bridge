@@ -1,3 +1,4 @@
+import { buildRentalListingQueryOptions } from './rentalWorkspaceScope'
 import { linkRentalLandlordOnboardingProperty } from './rentalLandlordOnboardingService.js'
 import { createAgencyCrmLeadActivity, updateAgencyCrmLeadRecord } from '../../lib/agencyCrmRepository'
 import { getRentalLeadMetadata } from './rentalLeadClassificationModel'
@@ -15,7 +16,7 @@ export async function linkRentalLandlordLeadToListing(lead = {}, listingId = '',
   let currentLead = context.scope ? (await getRentalLeadWorkspace(context.organisationId, lead.id, context.scope)).lead : lead
   if (currentLead.role !== 'landlord' || !['listing_ready', 'listing_created'].includes(currentLead.stage)) throw new Error('Choose a landlord lead at Listing ready.')
   if (!text(listingId)) throw new Error('A created rental listing is required.')
-  const listing = await getRentalListingForAgent(listingId, context.actor?.id || context.actor?.userId, { organisationId: context.organisationId })
+  const listing = await getRentalListingForAgent(listingId, context.actor?.id || context.actor?.userId, { ...buildRentalListingQueryOptions(context.scope || {}), organisationId: context.organisationId })
   if (!listing || text(listing.organisationId || listing.organisation_id) !== text(context.organisationId)) throw new Error('The rental listing was not found in this organisation.')
   if (text(context.portfolioPropertyId)) {
     const { portfolio } = landlordWorkspace(currentLead)

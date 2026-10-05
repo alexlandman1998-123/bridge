@@ -29,11 +29,13 @@ export async function getHomeSeekersWebsiteConnection(client = adminClient()) {
   if (!site?.published_revision_id) throw new Error('The Home Seekers website is not published.')
 
   const { data: domains, error: domainError } = await client.from('website_domains')
-    .select('hostname, status')
+    .select('hostname, status, domain_kind, is_primary')
     .eq('website_site_id', site.id)
     .eq('status', 'active')
   if (domainError) throw domainError
-  const domain = (domains || []).find((item) => item.hostname === 'home-seekers-website-alpha.vercel.app')
+  const domain = (domains || []).find((item) => item.domain_kind === 'custom' && item.is_primary)
+    || (domains || []).find((item) => item.hostname === 'home-seekers-website-alpha.vercel.app')
+    || (domains || []).find((item) => item.domain_kind === 'custom')
     || (domains || []).find((item) => item.hostname?.endsWith('.vercel.app'))
   if (!domain) throw new Error('The Home Seekers website has no active delivery domain.')
   return { client, site, hostname: domain.hostname }

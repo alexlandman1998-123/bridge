@@ -96,6 +96,9 @@ export function useGuidedBondApplication({
   const [saveError, setSaveError] = useState('')
   const [handoffReason, setHandoffReason] = useState('')
   const [pendingBranchChange, setPendingBranchChange] = useState(null)
+  const portalIdentityRef = useRef(token)
+  const navigationHistoryRef = useRef([])
+  const navigationPendingRef = useRef(false)
   const dirtyRef = useRef(false)
   const latestStateRef = useRef(applicationState)
   const latestScreenRef = useRef(currentScreenKey)
@@ -103,6 +106,11 @@ export function useGuidedBondApplication({
   const saveControllerRef = useRef(null)
 
   useEffect(() => {
+    // Background portal refreshes must not reset an active draft or its position.
+    if (portalIdentityRef.current === token) return
+    portalIdentityRef.current = token
+    navigationHistoryRef.current = []
+    saveControllerRef.current = null
     setApplicationState(initialState)
     setCurrentScreenKey(resolveGuidedBondApplicationScreenKey(initialMetadata))
     setCompletedScreenKeys(normalizeCompletedScreenKeys(initialMetadata?.completed_screen_keys))
@@ -112,7 +120,7 @@ export function useGuidedBondApplication({
     setHandoffReason('')
     setPendingBranchChange(null)
     dirtyRef.current = false
-  }, [initialState, initialMetadata])
+  }, [initialState, initialMetadata, token])
 
   const flow = useMemo(() => resolveBondApplicationFlow({
     applicationState,
@@ -165,8 +173,10 @@ export function useGuidedBondApplication({
     return { state: persistedState, draftToPersist, formData }
   }, [portal?.onboardingFormData?.formData, saveClientPortalOnboardingDraft, token])
 
+  const persistStateRef = useRef(persistState)
+  persistStateRef.current = persistState
   if (!saveControllerRef.current) {
-    saveControllerRef.current = createGuidedBondApplicationSaveController(persistState)
+    saveControllerRef.current = createGuidedBondApplicationSaveController((state, options) => persistStateRef.current(state, options))
   }
 
   const saveNow = useCallback(async (state = latestStateRef.current, options = {}) => {
@@ -220,6 +230,9 @@ export function useGuidedBondApplication({
       if (path === 'application.applicantStructure') {
         next = setPathValue(next, 'application.requiresSurety', value === 'surety' ? 'yes' : 'no')
       }
+      if (!path.startsWith('application.signatureEvidence') && JSON.stringify(getPathValue(previous, path)) !== JSON.stringify(value)) {
+        next = setPathValue(next, 'application.signatureEvidence', {})
+      }
       dirtyRef.current = true
       return next
     })
@@ -236,6 +249,7 @@ export function useGuidedBondApplication({
         next = setPathValue(next, path, Array.isArray(existing) ? [] : null)
       })
       next = setPathValue(next, pending.path, pending.value)
+      next = setPathValue(next, 'application.signatureEvidence', {})
       computedNext = next
       dirtyRef.current = true
       return next
@@ -249,7 +263,10 @@ export function useGuidedBondApplication({
   }, [])
 
   const updateRepeatableGroup = useCallback((path, records = []) => {
-    setApplicationState((previous) => setPathValue(previous, path, records))
+    setApplicationState((previous) => {
+      const next = setPathValue(previous, path, records)
+      return JSON.stringify(getPathValue(previous, path)) === JSON.stringify(records) ? next : setPathValue(next, 'application.signatureEvidence', {})
+    })
     dirtyRef.current = true
   }, [])
 
@@ -259,6 +276,9 @@ export function useGuidedBondApplication({
       Object.entries(entries).forEach(([path, value]) => {
         next = setPathValue(next, path, value)
       })
+      if (Object.entries(entries).some(([path, value]) => !path.startsWith('application.signatureEvidence') && JSON.stringify(getPathValue(previous, path)) !== JSON.stringify(value))) {
+        next = setPathValue(next, 'application.signatureEvidence', {})
+      }
       dirtyRef.current = true
       return next
     })
@@ -269,18 +289,28 @@ export function useGuidedBondApplication({
   const openAboutYouEdit = useCallback(() => {
     const nextCompleted = normalizeCompletedScreenKeys([...latestCompletedRef.current, 'about_you_confirmation'])
     setCompletedScreenKeys(nextCompleted)
+    navigationHistoryRef.current.push(latestScreenRef.current)
+    latestScreenRef.current = 'about_you_edit'
     setCurrentScreenKey('about_you_edit')
     setValidationIssues([])
     void saveNow(latestStateRef.current, { screenKey: 'about_you_edit', completed: nextCompleted }).catch(() => {})
   }, [saveNow])
 
   const continueForward = useCallback(async (options = {}) => {
+    if (navigationPendingRef.current) return { ok: false, reason: 'busy' }
     const validation = validateBondApplicationScreen({
       applicationState: latestStateRef.current,
       screenKey: latestScreenRef.current,
     })
     setValidationIssues(validation.issues)
-    if (!validation.valid) return { ok: false, reason: 'validation', issues: validation.issues }
+    if (!validation.valid) {
+      if (latestScreenRef.current === 'about_you_confirmation') {
+        navigationHistoryRef.current.push(latestScreenRef.current)
+        latestScreenRef.current = 'about_you_edit'
+        setCurrentScreenKey('about_you_edit')
+      }
+      return { ok: false, reason: 'validation', issues: validation.issues }
+    }
 
     const current = latestScreenRef.current
     const completed = normalizeCompletedScreenKeys([...latestCompletedRef.current, current])
@@ -309,29 +339,48 @@ export function useGuidedBondApplication({
       setHandoffReason(GUIDED_BOND_APPLICATION_PHASE3_DOCUMENTS_HANDOFF_REASON)
     }
 
-    const saveResult = await saveNow(nextState, { screenKey: nextScreenKey, completed })
-    if (saveResult?.stale === false || saveResult?.result) {
+    navigationPendingRef.current = true
+    try {
+      const saveResult = await saveNow(nextState, { screenKey: nextScreenKey, completed })
+      if (saveResult?.stale) return { ok: false, reason: 'stale_save' }
+      navigationHistoryRef.current.push(current)
+      latestScreenRef.current = nextScreenKey
+      latestCompletedRef.current = completed
       setCompletedScreenKeys(completed)
       setCurrentScreenKey(nextScreenKey)
       setValidationIssues([])
+      return { ok: true, screenKey: nextScreenKey }
+    } finally {
+      navigationPendingRef.current = false
     }
-    return { ok: true, screenKey: nextScreenKey }
   }, [saveNow])
 
   const goBack = useCallback(async () => {
+    if (navigationPendingRef.current) return { ok: false, reason: 'busy' }
     const resolved = resolveBondApplicationFlow({
       applicationState: latestStateRef.current,
       currentScreenKey: latestScreenRef.current,
       completedScreenKeys: latestCompletedRef.current,
     })
-    const previousScreenKey = resolved.previousScreenKey
+    const visibleKeys = new Set(resolved.screens.map(screen => screen.key))
+    visibleKeys.add('about_you_edit')
+    let previousScreenKey = null
+    while (navigationHistoryRef.current.length && !previousScreenKey) {
+      const candidate = navigationHistoryRef.current.pop()
+      if (visibleKeys.has(candidate) && candidate !== latestScreenRef.current) previousScreenKey = candidate
+    }
+    previousScreenKey ||= resolved.previousScreenKey
     if (!previousScreenKey) return { ok: false, reason: 'first_screen' }
     setValidationIssues([])
+    latestScreenRef.current = previousScreenKey
     setCurrentScreenKey(previousScreenKey)
+    navigationPendingRef.current = true
     try {
       await saveNow(latestStateRef.current, { screenKey: previousScreenKey, completed: latestCompletedRef.current })
     } catch {
       // Back navigation preserves in-memory data even if metadata save fails.
+    } finally {
+      navigationPendingRef.current = false
     }
     return { ok: true, screenKey: previousScreenKey }
   }, [saveNow])
@@ -349,6 +398,8 @@ export function useGuidedBondApplication({
     const nextScreenKey = String(screenKey || '').trim()
     if (!nextScreenKey) return { ok: false, reason: 'missing_screen' }
     setValidationIssues([])
+    navigationHistoryRef.current.push(latestScreenRef.current)
+    latestScreenRef.current = nextScreenKey
     setCurrentScreenKey(nextScreenKey)
     try {
       await saveNow(latestStateRef.current, { screenKey: nextScreenKey, completed: latestCompletedRef.current })

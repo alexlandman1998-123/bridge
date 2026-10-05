@@ -41,7 +41,7 @@ function resolveStartDate(appointment = {}) {
   const date = toText(appointment?.date || appointment?.appointment_date)
   const start = toText(appointment?.startTime || appointment?.start_time).slice(0, 5)
   if (date && start) {
-    const parsed = new Date(`${date}T${start}`)
+    const parsed = new Date(`${date}T${start}+02:00`)
     if (!Number.isNaN(parsed.getTime())) return parsed
   }
 
@@ -58,7 +58,7 @@ function resolveEndDate(appointment = {}, startDate = null) {
   const date = toText(appointment?.date || appointment?.appointment_date)
   const end = toText(appointment?.endTime || appointment?.end_time).slice(0, 5)
   if (date && end) {
-    const parsed = new Date(`${date}T${end}`)
+    const parsed = new Date(`${date}T${end}+02:00`)
     if (!Number.isNaN(parsed.getTime())) return parsed
   }
 
@@ -70,7 +70,7 @@ function resolveEndDate(appointment = {}, startDate = null) {
 function formatIcsDateTimeInTimezone(date, timeZone = DEFAULT_TIMEZONE) {
   const formatter = new Intl.DateTimeFormat('en-CA', {
     timeZone,
-    hour12: false,
+    hourCycle: 'h23',
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -228,12 +228,14 @@ export function buildAppointmentICSPayload(appointment = {}, options = {}) {
   const title = getAppointmentCalendarTitle(appointment)
   const description = getAppointmentCalendarDescription(appointment)
   const location = getAppointmentCalendarLocation(appointment)
-  const method = toLower(appointment?.status).includes('cancel') ? 'CANCEL' : 'REQUEST'
+  const status = toLower(appointment?.status)
+  const cancelled = status.includes('cancel') || status === 'declined'
+  const method = cancelled ? 'CANCEL' : 'REQUEST'
 
   return {
     uid,
     method,
-    status: toLower(appointment?.status).includes('cancel') ? 'CANCELLED' : 'CONFIRMED',
+    status: cancelled ? 'CANCELLED' : /pending|request|propos/.test(status) ? 'TENTATIVE' : 'CONFIRMED',
     title,
     description,
     location,
@@ -250,7 +252,7 @@ export function buildAppointmentICSPayload(appointment = {}, options = {}) {
     organizer: organizerEmail ? { name: organizerName, email: organizerEmail.toLowerCase() } : null,
     appointmentUrl: toText(appointment?.appointmentUrl || appointment?.actionHref || appointment?.portalLink || appointment?.clientPortalLink),
     transactionReference: toText(appointment?.transactionReference || appointment?.transaction_reference || appointment?.matterReference),
-    sequence: Number(appointment?.calendarSequence || appointment?.calendar_sequence || 0) || 0,
+    sequence: Number(appointment?.calendarSequence || appointment?.calendar_sequence || appointment?.calendarRevision || appointment?.calendar_revision || 0) || 0,
   }
 }
 

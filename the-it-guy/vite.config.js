@@ -1,3 +1,5 @@
+import externalWebsiteHandler from './api/integrations/v1/[...path].js'
+import { createLocalRecruitmentIntakeResponse } from './server/services/recruitmentIntakeApi.js'
 import { createSellerOnboardingBrandingResponse } from './server/services/sellerOnboardingBrandingApi.js'
 import { handleRentalLandlordOnboarding, handlePublicRentalLandlordOnboarding } from './server/services/rentalLandlordOnboardingApi.js'
 import { handlePublicRentalApplication } from './server/services/publicRentalApplicationApi.js'
@@ -185,7 +187,24 @@ function missionControlApiPlugin() {
   return {
     name: 'mission-control-api',
     configureServer(server) {
+      server.middlewares.use('/api/integrations/v1', (request, response) => {
+        request.url = `/api/integrations/v1${request.url}`
+        return externalWebsiteHandler(request, response)
+      })
       // Local previews must not create live applications or analytics records.
+      server.middlewares.use('/api/public/recruitment-intake', async (request, response) => {
+        const env = { ...loadEnv(server.config.mode, server.config.root, ''), ...process.env }
+        try {
+          const chunks = []; let size = 0
+          for await (const chunk of request) {
+            size += chunk.length
+            if (size > 24000) return writeNodeJsonResponse(response, { status: 413, body: { error: 'Application is too large.' } })
+            chunks.push(chunk)
+          }
+          const body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {}
+          writeNodeJsonResponse(response, await createLocalRecruitmentIntakeResponse({ method: request.method, headers: request.headers, body, env: { ...env, SUPABASE_URL: env.VITE_SUPABASE_URL || env.SUPABASE_URL } }))
+        } catch { writeNodeJsonResponse(response, { status: 400, body: { error: 'Invalid application request.' } }) }
+      })
       server.middlewares.use('/api/home-seekers/applications', (_request, response) => writeNodeJsonResponse(response, { status: 503, headers: { 'Cache-Control': 'no-store' }, body: { error: 'Applications are not enabled in this local preview. Your answers have not been sent.' } }))
       server.middlewares.use('/api/home-seekers/analytics', (_request, response) => { response.statusCode = 204; response.end() })
       for (const [path, handler] of [['/api/public/rental-application', handlePublicRentalApplication], ['/api/rentals/application-documents', handleRentalAgentDocumentUpload], ['/api/rentals/landlord-onboarding', handleRentalLandlordOnboarding], ['/api/public/rental-landlord-onboarding', handlePublicRentalLandlordOnboarding]]) {

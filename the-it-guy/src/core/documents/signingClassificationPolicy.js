@@ -57,6 +57,11 @@ export const SIGNING_CLASSIFICATION_REGISTER = Object.freeze({
     'Rental lease signing and tenancy acknowledgement',
     'Legal counsel and rental operations',
   ),
+  buyer_bond_application: workflow(
+    SIGNING_CLASSIFICATION_STATUS.LEGAL_REVIEW_REQUIRED,
+    'Buyer bond application: fixed version, individual identity verification and signed application PDF',
+    'Legal counsel, participating banks and bond-originator operations',
+  ),
   buyer_onboarding: workflow(
     SIGNING_CLASSIFICATION_STATUS.ACKNOWLEDGEMENT_ONLY,
     'Buyer data capture, consent, and document upload',

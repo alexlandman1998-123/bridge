@@ -8,6 +8,7 @@ import { retiredDocumentGenerator } from '../../supabase/functions/_shared/retir
 import { assertDocumentGeneratorAvailable, RETIRED_DOCUMENT_FUNCTIONS } from '../src/core/documents/documentGeneratorRetirement.js'
 import { buildKingstonsDigitalSigningDecision } from '../src/core/kingstons/digitalSigningDecision.js'
 import { buildKingstonsBuyerOtpDigitalDecision } from '../src/core/transactions/kingstonsBuyerOtpReadiness.js'
+import { buildPrivateListingDocumentPersistenceReceipt } from '../src/services/listings/listingSellerDocumentPersistenceModel.js'
 
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8')
 function functionSource(path, name) {
@@ -83,9 +84,14 @@ test('signed mandate and OTP uploads persist files and requirement links with no
     let savedDocument
     let savedListing
     let requirementStatus
+    let promotedDocumentId
     const requirement = { id: 'requirement-1', requirement_key: documentType }
     const upload = vm.runInNewContext(`(${functionSource('../src/services/privateListingService.js', 'uploadPrivateListingDocument')})`, {
-      requireClient: () => ({}),
+      requireClient: () => ({ rpc: async (name, parameters) => {
+        assert.equal(name, 'bridge_promote_private_listing_document_row')
+        promotedDocumentId = parameters.p_private_listing_document_id
+        return { data: { promotion_status: 'promoted' }, error: null }
+      } }),
       getCurrentUser: async () => ({ id: 'agent-1' }),
       normalizeUuid: value => String(value || ''),
       normalizeText: value => String(value || ''),
@@ -102,8 +108,10 @@ test('signed mandate and OTP uploads persist files and requirement links with no
         return { data: { ...row, id: 'document-1' } }
       },
       normalizeDocumentRows: rows => rows,
-      updatePrivateListingRequirementStatus: async (_, status) => { requirementStatus = status },
+      buildPrivateListingDocumentPersistenceReceipt,
+      updatePrivateListingRequirementStatus: async (_, status) => { requirementStatus = status; return true },
       updatePrivateListing: async (_, listing) => { savedListing = listing },
+      recordSellerMandateSignedWorkflowStage: async () => true,
       createPrivateListingActivity: async () => null,
       syncSellerJourneyLeadStageForListingId: async () => true,
       createPrivateListingDocumentSignedUrl: async () => 'https://example.test/signed-file',
@@ -114,6 +122,7 @@ test('signed mandate and OTP uploads persist files and requirement links with no
     assert.equal(result.id, 'document-1')
     assert.equal(result.requirementId, requirement.id)
     assert.equal(savedDocument.document_type, documentType)
+    assert.equal(promotedDocumentId, 'document-1')
     assert.equal(requirementStatus, 'uploaded')
     assert.equal(result.url, 'https://example.test/signed-file')
     if (documentType === 'signed_mandate') assert.equal(savedListing.mandateStatus, 'signed_uploaded')

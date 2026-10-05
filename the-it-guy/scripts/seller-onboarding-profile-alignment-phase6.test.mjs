@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { buildCanonicalSellerOnboardingPayload, validateSellerOnboardingFacts } from '../src/services/documents/sellerOnboardingFactTransformer.js'
+import { buildSellerEntityProfileAliases } from '../src/lib/sellerProfileCaptureModel.js'
 
 function test(name, fn) {
   try {
@@ -24,8 +25,8 @@ function assertSourceIncludes(source, token, message) {
 test('seller onboarding persists profile-compatible aliases on draft and submit', () => {
   assertSourceIncludes(
     sellerOnboardingSource,
-    'function buildSellerEntityProfileAliases(form = {})',
-    'Seller onboarding should centralize entity/profile alias mapping.',
+    "from '../lib/sellerProfileCaptureModel'",
+    'Seller onboarding should use the shared entity/profile mapper.',
   )
   assertSourceIncludes(
     sellerOnboardingSource,
@@ -37,19 +38,24 @@ test('seller onboarding persists profile-compatible aliases on draft and submit'
     '...buildSellerEntityProfileAliases(submissionForm)',
     'Final submissions should persist entity/profile aliases.',
   )
-  for (const token of [
-    'owner_entity_type',
-    'owner_structure_type',
-    'seller_legal_type',
-    'company_directors',
-    'trust_trustees',
-    'authorised_signatory_name',
-    'authorised_trustee_name',
-    'foreign_owner_country',
-    'foreign_registration_number',
-  ]) {
-    assertSourceIncludes(sellerOnboardingSource, token, `Seller onboarding aliases should include ${token}.`)
-  }
+  const aliases = buildSellerEntityProfileAliases({
+    ownerEntityType: 'foreign', ownerStructureType: 'foreign_company', sellerLegalType: 'company',
+    companyDirectors: [{ name: 'Alex', surname: 'Director', email: 'alex@example.test' }],
+    trustees: [{ name: 'Taylor', surname: 'Trustee', email: 'taylor@example.test' }],
+    authorisedSignatoryName: 'Alex Director', authorisedTrusteeName: 'Taylor Trustee',
+    foreignOwnerCountry: 'United Kingdom', foreignRegistrationNumber: 'FC-123',
+  })
+  assert.equal(aliases.owner_entity_type, 'foreign')
+  assert.equal(aliases.owner_structure_type, 'foreign_company')
+  assert.equal(aliases.seller_legal_type, 'company')
+  assert.equal(aliases.company_directors[0].full_name, 'Alex Director')
+  assert.equal(aliases.trust_trustees[0].full_name, 'Taylor Trustee')
+  assert.equal(aliases.authorised_signatory_name, 'Alex Director')
+  assert.equal(aliases.authorised_trustee_name, 'Taylor Trustee')
+  assert.equal(aliases.foreign_owner_country, 'United Kingdom')
+  assert.equal(aliases.foreign_registration_number, 'FC-123')
+  const reopened = JSON.parse(JSON.stringify(aliases))
+  assert.deepEqual(buildSellerEntityProfileAliases(reopened), aliases, 'Saving and reopening must preserve profile aliases')
 })
 
 test('seller onboarding final validation gates entity-specific profile fields', () => {

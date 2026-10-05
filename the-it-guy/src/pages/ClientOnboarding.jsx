@@ -1,3 +1,4 @@
+import { MARITAL_STATUS_OPTIONS, MARITAL_REGIME_OPTIONS } from '../lib/buyerOnboardingFlowContract.js'
 import {
   CheckCircle2,
   ChevronLeft,
@@ -211,22 +212,6 @@ const RESIDENCY_STATUS_OPTIONS = [
   { value: 'sa_citizen', label: 'South African citizen' },
   { value: 'permanent_resident', label: 'Permanent resident' },
   { value: 'foreign_national', label: 'Foreign national / non-resident' },
-]
-
-const MARITAL_STATUS_OPTIONS = [
-  { value: '', label: 'Select status' },
-  { value: 'single', label: 'Single' },
-  { value: 'married', label: 'Married' },
-  { value: 'divorced', label: 'Divorced' },
-  { value: 'widowed', label: 'Widowed' },
-]
-
-const MARITAL_REGIME_OPTIONS = [
-  { value: '', label: 'Select regime' },
-  { value: 'not_applicable', label: 'Not applicable' },
-  { value: 'in_community', label: 'In community of property' },
-  { value: 'out_of_community', label: 'Out of community of property' },
-  { value: 'out_of_community_with_accrual', label: 'Out of community with accrual' },
 ]
 
 const YES_NO_OPTIONS = [

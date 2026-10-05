@@ -7,6 +7,7 @@ import {
   Plus,
 } from 'lucide-react'
 import { useLocation, useNavigate } from 'react-router-dom'
+import RentalStockReviewPanel from './RentalStockReviewPanel'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import FinalListingModuleOverview from '../../components/listings/FinalListingModuleOverview'
 import { buildFinalListingModuleOverview } from '../../services/listings/finalListingModuleModel'
@@ -160,7 +161,7 @@ export default function RentalListingsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
-  const [statusTab, setStatusTab] = useState('all')
+  const [statusTab, setStatusTab] = useState('current')
 
   const rentalRows = useMemo(() => buildRentalListingIndexRows(listings), [listings])
   const summary = useMemo(() => summarizeRentalListingIndexRows(rentalRows), [rentalRows])
@@ -187,7 +188,7 @@ export default function RentalListingsPage() {
     try {
       setLoading(true)
       setError('')
-      const rows = await listRentalListingsForAgent(assignedAgentId, buildRentalListingQueryOptions(rentalScope))
+      const rows = await listRentalListingsForAgent(assignedAgentId, { ...buildRentalListingQueryOptions(rentalScope), includePreviousListings: true })
       setListings(rows)
     } catch (loadError) {
       setError(loadError?.message || 'Unable to load rental listings.')
@@ -232,6 +233,12 @@ export default function RentalListingsPage() {
           </p>
         ) : null}
 
+        <RentalStockReviewPanel
+          key={`${organisationId}:${assignedAgentId}:${rentalScope.listingBranchId}:${rentalScope.includeAllOrganisationListings}`}
+          scope={rentalScope}
+          onOpen={(id) => navigate(`/agent/rentals/listings/${encodeURIComponent(id)}/marketing`)}
+        />
+
         <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
           <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
@@ -241,30 +248,30 @@ export default function RentalListingsPage() {
               </p>
             </div>
 
-            <div className="grid w-full grid-cols-3 gap-1.5 rounded-[18px] border border-[#dbe6f2] bg-[#f5f9fd] p-1.5 sm:max-w-[460px]">
-              {RENTAL_LISTING_STATUS_TABS.map((tab) => {
-                const count = tab.key === 'all' ? summary.total : summary[tab.key] || 0
-                const active = statusTab === tab.key
-                return (
-                  <button
-                    key={tab.key}
-                    type="button"
-                    aria-pressed={active}
-                    onClick={() => setStatusTab(tab.key)}
-                    className={`min-w-0 w-full rounded-[12px] border px-2.5 py-2 text-left transition ${
-                      active
-                        ? 'border-[#1f4f78] bg-[#1f4f78] text-white shadow-[0_8px_16px_rgba(31,79,120,0.2)]'
-                        : 'border-[#d8e3ef] bg-white text-[#35546c] hover:border-[#b7c8db]'
-                    }`}
-                  >
-                    <span className="block truncate text-[0.84rem] font-semibold leading-5">{tab.label}</span>
-                    <span className={`mt-0.5 block truncate text-[0.7rem] font-medium leading-4 ${active ? 'text-white/82' : 'text-[#7b8ca2]'}`}>
-                      {count} item{count === 1 ? '' : 's'}
-                    </span>
-                  </button>
-                )
-              })}
-            </div>
+          </div>
+
+          <div className="mb-5 grid gap-2 rounded-[18px] border border-[#dbe6f2] bg-[#f5f9fd] p-1.5 sm:grid-cols-2" aria-label="Rental listing collections">
+            {RENTAL_LISTING_STATUS_TABS.map((tab) => {
+              const count = summary[tab.key] || 0
+              const active = statusTab === tab.key
+              return (
+                <button
+                  key={tab.key}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => setStatusTab(tab.key)}
+                  className={`rounded-[12px] border px-3 py-2.5 text-left transition ${active
+                    ? 'border-[#1f4f78] bg-[#1f4f78] text-white shadow-[0_8px_16px_rgba(31,79,120,0.2)]'
+                    : 'border-[#d8e3ef] bg-white text-[#35546c] hover:border-[#b7c8db]'}`}
+                >
+                  <span className="flex items-center justify-between gap-3 text-sm font-semibold">
+                    {tab.label}
+                    <span className={`rounded-full px-2 py-0.5 text-xs ${active ? 'bg-white/18 text-white' : 'bg-[#edf4fa] text-[#4e6983]'}`}>{count}</span>
+                  </span>
+                  <span className={`mt-1 block text-xs ${active ? 'text-white/80' : 'text-[#7b8ca2]'}`}>{tab.description}</span>
+                </button>
+              )
+            })}
           </div>
 
           {loading ? (
@@ -287,9 +294,9 @@ export default function RentalListingsPage() {
               <span className="mx-auto inline-flex h-12 w-12 items-center justify-center rounded-[8px] border border-[#dbe6f2] bg-[#f8fafc] text-[#42617f]">
                 <CalendarDays size={22} aria-hidden="true" />
               </span>
-              <h2 className="mt-4 text-lg font-semibold text-[#18324b]">No rental listings found</h2>
+              <h2 className="mt-4 text-lg font-semibold text-[#18324b]">{statusTab === 'previous' ? 'No previous rental listings' : 'No current rental listings'}</h2>
               <p className="mx-auto mt-2 max-w-xl text-sm text-[#607891]">
-                Create a rental listing draft or adjust the search and status filters.
+                {statusTab === 'previous' ? 'Past rental listings and historical imports will appear here.' : 'Create a rental listing draft to add to your current stock.'}
               </p>
               <button type="button" className="ui-pill-button ui-pill-button-active mx-auto mt-4" onClick={() => navigate('/agent/rentals/listings/new')}>
                 <Plus size={16} aria-hidden="true" />

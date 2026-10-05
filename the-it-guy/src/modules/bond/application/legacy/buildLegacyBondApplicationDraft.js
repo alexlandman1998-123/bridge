@@ -188,6 +188,7 @@ export function buildLegacyBondApplicationDraft(portal) {
 
   return {
     _meta: existing._meta && typeof existing._meta === 'object' && !Array.isArray(existing._meta) ? cloneBondApplicationValue(existing._meta) : {},
+    ...(existing._guided_repeatables && typeof existing._guided_repeatables === 'object' && !Array.isArray(existing._guided_repeatables) ? { _guided_repeatables: cloneBondApplicationValue(existing._guided_repeatables) } : {}),
     status: resolveBondApplicationStatus(existing.status),
     submitted_at: existing.submitted_at || '',
     selected_banks: Array.isArray(existing.selected_banks)
@@ -289,6 +290,7 @@ export function buildLegacyBondApplicationDraft(portal) {
       },
     },
     credit_history: {
+      ...(existing.credit_history || {}),
       currently_under_administration: String(existing?.credit_history?.currently_under_administration || ''),
       ever_under_administration: String(existing?.credit_history?.ever_under_administration || ''),
       judgments_taken: String(existing?.credit_history?.judgments_taken || existing?.credit_history?.judgments || ''),

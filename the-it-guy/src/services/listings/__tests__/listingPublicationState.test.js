@@ -35,6 +35,26 @@ test('snapshot differences identify exact changed fields', () => {
   assert.deepEqual(diffListingPublicationSnapshots(current, published).map((change) => change.key), ['description', 'price'])
 })
 
+test('publishing an accepted seller lead does not create a portal content change', () => {
+  const current = buildListingPublicationSnapshot(baseDraft)
+  for (const status of ['seller_lead', 'mandate_signed']) {
+    const accepted = buildListingPublicationSnapshot({ ...baseDraft, listingStatus: status })
+    const states = deriveListingPublicationStates(['Property24', 'Private Property'].map((channel) => ({
+      activity_type: 'listing_channel_publication_accepted', created_at: '2026-10-05T11:58:00Z',
+      metadata: { channel, snapshot: accepted },
+    })), current)
+    for (const channel of ['property24', 'private_property']) {
+      assert.equal(states[channel].stage, 'accepted', 'visibility verification remains pending')
+      assert.equal(states[channel].changeCount, 0)
+      const edited = buildListingPublicationSnapshot({ ...baseDraft, price: '2600000', listingStatus: 'under_offer' })
+      assert.deepEqual(diffListingPublicationSnapshots(edited, accepted, { channel }).map(({ key }) => key), ['price', 'listingStatus'])
+      assert.equal(diffListingPublicationSnapshots(buildListingPublicationSnapshot({ ...baseDraft, listingStatus: 'sold' }), accepted, { channel })[0].key, 'listingStatus')
+    }
+    assert.equal(diffListingPublicationSnapshots(current, accepted, { channel: 'arch9_catalogue' })[0].key, 'listingStatus')
+    assert.equal(diffListingPublicationSnapshots(current, accepted, { channel: 'agency_website' })[0].key, 'listingStatus')
+  }
+})
+
 test('channel lifecycle keeps accepted snapshot separate from later local edits', () => {
   const published = buildListingPublicationSnapshot(baseDraft)
   const current = buildListingPublicationSnapshot({ ...baseDraft, headline: 'Updated family home' })

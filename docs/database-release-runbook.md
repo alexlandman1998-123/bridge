@@ -13,6 +13,78 @@ For each requested release:
 
 The historical reconciliation process remains below for later cleanup and for teams that choose the staged route. Staging drift alone is not a reason to hold an explicitly requested direct-production pilot release.
 
+## Seller document migration and historical record checks
+
+Run `npm run audit:migration-history` from the repository root for a read-only
+comparison of versions, names and recorded SQL. It checks matching timestamps
+as well as missing files; a recorded version alone does not prove matching SQL.
+`--strict` returns a failure for unresolved history differences. Reports contain
+statement indexes and counts, never SQL text or credentials. Empty recorded SQL
+means unavailable evidence, not proof that schema changes are missing.
+
+When direct CLI database access is unavailable, supply `--remote-ledger=<file>`
+and `--remote-statements=<file>` with read-only exports. The ledger must include
+`version`, `name` and `sql_hash` from
+`md5(array_to_string(statements, E'\n\n'))`; statement archives are used only
+when their hashes match that ledger. Keep the capture time and target identity
+with the evidence. Check effective current function bodies and access controls
+before deciding whether any historical difference requires a forward correction.
+Never repair the ledger or replay an old migration merely because its name differs.
+
+Run `npm run check:migrations:local` for the complete clean migration replay and
+atomic transaction probes. It requires a local Docker engine and at least 10 GiB
+free on the host filesystem, creates a temporary project with
+separate ports and an internal network, disables scheduled jobs, and excludes
+production configuration and seeds. It removes its own stack after success or
+failure. A missing engine or failed replay is a failed check, never acceptance.
+`npm run test:migration-audit` verifies the history comparison and replay safety
+guards with synthetic commands; that test does not replace a real replay.
+
+The primary app's `scripts/sql/seller-mvp-acceptance-audit.sql` runs in a read-only
+transaction and classifies historical seller candidates. It identifies unfinished
+capture, canonical conflicts, rentals outside seller-sale scope, and approved or
+signed copies that must be preserved. Its output is an agent review queue, not
+repair instructions. Resolve facts through the existing canonical seller save
+after the agent confirms them; review unsigned replacements separately. Preserve
+frozen copies, signatures and historical requirements. Live repairs require
+explicit approval for their exact records and proposed changes.
+
+Mandate wording renewal does not require a JSON backfill or a rehash of old
+documents. The read-only seller audit flags legacy mandates, incomplete revised
+contracts and unknown capture versions for review, and recognises frozen copies
+in version history. Keep the old HTML, terms, version IDs/digests, signer matrix
+and evidence. Prepare a separate replacement only after confirming the actual
+instructions and approvals. The focused signing journey verifies preservation
+when the existing forward correction is reapplied around sent, partially signed
+and reviewed records; it is a PostgreSQL fixture check, not a full-chain replay.
+
+For a future wording release, archive the exact old approved runtime entry and
+retain its agency approvals and version-specific reconstruction renderer before
+replacing the active entry. The browser and Edge Function must ship the same
+register and renderer. Archive entries verify existing copies and requests;
+creating a new request still requires the currently approved wording.
+
+The forward migration `20261004121736_seller_document_review_runtime_reconciliation.sql`
+restores missing review actions, the review queue, manual reminder support and
+exact-requirement completion guards found during that audit. It leaves the
+current upload/signing RPCs and frozen copies in place, and does not backfill
+historical requirements or start automatic reminders. Verify this migration
+with `npm --prefix the-it-guy run test:seller-existing-record-audit`, which also
+executes the correction against a PostgreSQL fixture with the current physical
+signing version guard. Its live application requires a separately approved,
+scoped release; unrelated pending migrations remain excluded.
+
+Returned physical signing files from the seller portal also require
+`20261004181626_seller_portal_signed_upload_version_binding.sql` before releasing
+the matching portal upload code. This adds a separate version-bound command
+around the existing token/session and Document Trust upload path. It records the
+opened version ID/digest, rejects stale copies atomically, and leaves approval
+to the existing staff review. It changes no historical rows or existing RPC
+signature. The connected `test:seller-document-journey` check executes this SQL
+locally, including stale-version/session rejection, rollback, Storage cleanup
+and physical review. It does not replace complete migration replay, hosted
+Storage/session acceptance or an approved target-specific database release.
+
 ## Current safety state
 
 Outside the temporary pilot above, broad linked-database pushes remain frozen while historical migration drift exists. Do not override the Phase 0 guard and do not use `--include-all`.

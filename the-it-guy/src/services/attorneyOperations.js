@@ -1,3 +1,4 @@
+import { appointmentStartIso, calendarOperationalStatus } from '../core/appointments/attorneyCalendarModel.js'
 import { getAttorneyProfessionalProfilePermissions, getCurrentUserAttorneyMembership } from '../lib/attorneyPermissions'
 import { buildMatterListProgress, fetchMatterListProgress } from './attorneyMatterProgress.js'
 import { fetchDashboardDevelopmentProfileImages } from '../lib/api/dashboardTransactionSummaryApi.js'
@@ -17,14 +18,13 @@ import { applyAppointmentTemplate } from './appointmentTemplateService'
 import {
   notifyAppointmentParticipants,
   scheduleAppointmentReminders,
-  cancelAppointmentReminders,
 } from './appointmentNotificationService'
 import {
   proposeAppointmentReschedule,
   resolveAppointmentRescheduleRequest,
 } from './appointmentRescheduleService'
 import { requireValidAttorneyInvite } from '../core/appointments/attorneyInviteContract'
-import { summarizeAttorneyInviteDelivery } from '../core/appointments/attorneyInviteDelivery'
+import { readAttorneyAppointmentDelivery } from './attorneyAppointmentDelivery'
 import {
   recordAttorneyCalendarRolloutEvent,
   requireAttorneyCalendarRollout,
@@ -34,6 +34,7 @@ import {
   buildAttorneyOperationsScope,
 } from '../core/transactions/attorneyOperationsScope.js'
 import { createPerfTimer } from '../lib/performanceTrace'
+import { manageAttorneyAppointment } from './attorneyAppointmentManagement'
 import {
   resolvePortalBuyerName,
   resolvePortalPropertyLabel,
@@ -124,7 +125,7 @@ function buildAppointmentDateTime(date = '', startTime = '', fallback = '') {
   const safeDate = normalizeText(date)
   const safeStart = normalizeText(startTime)
   if (!safeDate || !safeStart) return ''
-  return `${safeDate}T${safeStart.length === 5 ? `${safeStart}:00` : safeStart}`
+  return `${safeDate}T${safeStart.length === 5 ? `${safeStart}:00` : safeStart}+02:00`
 }
 
 function deriveAttorneyInviteDateAndTimeParts(dateTimeValue = '', fallbackDate = '', fallbackStartTime = '', fallbackEndTime = '') {
@@ -493,67 +494,133 @@ async function fetchDocumentRequests(client, transactionIds = []) {
   return query.data || []
 }
 
-async function fetchAppointments(client, transactionIds = [], organisationId = '') {
+export function mapAttorneyAppointmentForWorkspace(appointment, matter = null, attendeesDetailed = [], rescheduleRequests = []) {
+  attendeesDetailed = attendeesDetailed.map(row => ({ ...row,
+    participantId: row.participantId || row.participant_id, userId: row.userId || row.user_id || null,
+    participantRole: row.participantRole || row.participant_role, rsvpStatus: row.rsvpStatus || row.rsvp_status,
+    isSchedulingOwner: Boolean(row.isSchedulingOwner || row.is_scheduling_owner),
+  }))
+  const attendees = attendeesDetailed.map((row) => row.name).filter(Boolean)
+  const latestRescheduleRequest = rescheduleRequests[0] || null
+  const dateTime = buildDateTimeFromAppointment(appointment)
+  const appointmentTypeKey = normalizeAppointmentTypeKey(appointment.appointment_type)
+  const appointmentTypeLabel = getAppointmentTypeLabel(appointmentTypeKey)
+  const appointmentStatus = normalizeText(appointment.status || 'Pending Confirmation') || 'Pending Confirmation'
+  return {
+    id: appointment.appointment_id,
+    appointmentType: appointmentTypeLabel || appointment.title || 'General consultation',
+    appointmentTypeKey,
+    matterReference: matter?.matterReference || getMatterReference({}, appointment.transaction_id),
+    transactionId: appointment.transaction_id || null,
+    organisationId: appointment.organisation_id || matter?.organisationId || null,
+    clientName: matter?.clientName || 'Unassigned client',
+    dateTime,
+    rawDateTime: dateTime,
+    appointmentDate: appointment.appointment_date || null,
+    startTime: appointment.start_time || null,
+    endTime: appointment.end_time || null,
+    updatedAt: appointment.updated_at || null,
+    delivery: appointment.delivery || null,
+    calendarRevision: appointment.calendar_revision || 0,
+    schedulingOwnerId: appointment.scheduling_owner_user_id || null,
+    schedulingOwnerName: attendeesDetailed.find(row => row.isSchedulingOwner || row.is_scheduling_owner)?.name || null,
+    title: appointment.title || null,
+    cancellationReason: appointment.cancellation_reason || null,
+    cancelledAt: appointment.cancelled_at || null,
+    attendees,
+    attendeesDetailed,
+    linkedWorkflow: appointment.linked_workflow || null,
+    linkedWorkflowStage: appointment.linked_workflow_stage || appointment.linked_transaction_stage || null,
+    location: appointment.location || '',
+    locationType: appointment.location_type || null,
+    meetingUrl: appointment.meeting_url || null,
+    instructions: appointment.appointment_instructions || null,
+    requiredDocuments: Array.isArray(appointment.required_documents) ? appointment.required_documents : [],
+    visibility: appointment.visibility_scope || 'shared_role_players',
+    calendarEventUid: appointment.calendar_event_uid || null,
+    externalCalendarStatus: appointment.external_calendar_status || 'not_synced',
+    externalCalendarProvider: appointment.external_calendar_provider || null,
+    externalCalendarEventId: appointment.external_calendar_event_id || null,
+    icsGeneratedAt: appointment.ics_generated_at || null,
+    resourceId: appointment.resource_id || null,
+    status: appointmentStatus,
+    rescheduleRequests,
+    latestRescheduleRequest,
+    assignedAttorneyId: matter?.assignedAttorneyId || null,
+    assignedSecretaryId: matter?.assignedSecretaryId || null,
+    assignedAdminHandlerId: matter?.assignedAdminHandlerId || null,
+    assignedAttorneyName: matter?.assignedAttorneyName || null,
+    assignedSecretaryName: matter?.assignedSecretaryName || null,
+    assignedAdminHandlerName: matter?.assignedAdminHandlerName || null,
+    matterType: matter?.matterType || null,
+    flags: matter?.flags || {},
+    actionLabel: 'Open Matter',
+    actionHref: appointment.transaction_id ? `/transactions/${encodeURIComponent(appointment.transaction_id)}` : '',
+  }
+}
+
+export async function fetchAttorneyWorkspaceAppointments(client, transactionIds = [], organisationId = '') {
   const ids = [...new Set((transactionIds || []).filter(Boolean))]
   const scopedOrganisationId = normalizeText(organisationId)
   if (!ids.length && !scopedOrganisationId) return []
 
-  const primarySelect = 'appointment_id, organisation_id, transaction_id, resource_id, appointment_type, title, appointment_date, start_time, end_time, date_time, location, linked_workflow, linked_workflow_stage, linked_transaction_stage, visibility_scope, appointment_instructions, required_documents, status, calendar_event_uid, external_calendar_status, external_calendar_provider, external_calendar_event_id, ics_generated_at, updated_at, created_at'
+  const primarySelect = 'appointment_id, organisation_id, transaction_id, resource_id, appointment_type, title, appointment_date, start_time, end_time, date_time, scheduling_owner_user_id, attorney_delivery_enabled, attorney_attach_calendar, calendar_revision, location_type, meeting_url, location, linked_workflow, linked_workflow_stage, linked_transaction_stage, visibility_scope, appointment_instructions, required_documents, status, cancellation_reason, cancelled_at, calendar_event_uid, external_calendar_status, external_calendar_provider, external_calendar_event_id, ics_generated_at, updated_at, created_at'
   const compatibilitySelect = 'appointment_id, transaction_id, appointment_type, title, appointment_date, start_time, end_time, date_time, location, status, updated_at, created_at'
 
-  let baseQuery = client.from('appointments').select(primarySelect)
-  if (scopedOrganisationId) {
-    baseQuery = baseQuery.eq('organisation_id', scopedOrganisationId)
-  } else {
-    baseQuery = baseQuery.in('transaction_id', ids)
-  }
-  let query = await baseQuery
-
-  if (
-    query.error &&
-    (isMissingColumnError(query.error, 'linked_workflow') ||
-      isMissingColumnError(query.error, 'linked_workflow_stage') ||
-      isMissingColumnError(query.error, 'linked_transaction_stage') ||
-      isMissingColumnError(query.error, 'visibility_scope') ||
-      isMissingColumnError(query.error, 'appointment_instructions') ||
-      isMissingColumnError(query.error, 'required_documents') ||
-      isMissingColumnError(query.error, 'organisation_id') ||
-      isMissingColumnError(query.error, 'resource_id') ||
-      isMissingColumnError(query.error, 'calendar_event_uid') ||
-      isMissingColumnError(query.error, 'external_calendar_status'))
-  ) {
-    const canUseOrganisationFallback = scopedOrganisationId && !isMissingColumnError(query.error, 'organisation_id')
-    let fallbackQuery = client.from('appointments').select(compatibilitySelect)
-    if (canUseOrganisationFallback) {
-      fallbackQuery = fallbackQuery.eq('organisation_id', scopedOrganisationId)
-    } else {
-      fallbackQuery = fallbackQuery.in('transaction_id', ids)
+  async function readScope(internal = false) {
+    const scope = (query) => internal
+      ? query.eq('organisation_id', scopedOrganisationId).is('transaction_id', null)
+      : query.in('transaction_id', ids)
+    let query = await scope(client.from('appointments').select(primarySelect))
+    if (query.error && ['attorney_delivery_enabled','attorney_attach_calendar','calendar_revision'].some(column => String(query.error.message || '').includes(column))) {
+      query = await scope(client.from('appointments').select(primarySelect.replace(', attorney_delivery_enabled, attorney_attach_calendar, calendar_revision', '')))
     }
-    query = await fallbackQuery
-  }
-
-  if (query.error) {
-    if (isMissingTableError(query.error, 'appointments')) {
-      return []
+    if (query.error && isMissingColumnError(query.error, 'scheduling_owner_user_id')) {
+      query = await scope(client.from('appointments').select(primarySelect.replace(', scheduling_owner_user_id', '')))
     }
-    throw query.error
+    if (query.error && isMissingColumnError(query.error)) {
+      // Legacy schemas cannot safely identify firm-owned internal events.
+      if (internal && isMissingColumnError(query.error, 'organisation_id')) return []
+      query = await scope(client.from('appointments').select(compatibilitySelect))
+    }
+    if (query.error) {
+      if (isMissingTableError(query.error, 'appointments')) return []
+      throw query.error
+    }
+    return (query.data || []).filter((row) => internal
+      ? !row.transaction_id
+      : ids.includes(row.transaction_id))
   }
 
-  return (query.data || []).filter((appointment) => {
-    if (!ids.length) return true
-    if (!appointment.transaction_id) return true
-    return ids.includes(appointment.transaction_id)
-  })
+  // Assigned matters retain their own agency/developer organisation. Read them
+  // by authorised matter IDs; read matterless events only from the firm's org.
+  const scopes = await Promise.all([
+    ids.length ? readScope() : [],
+    scopedOrganisationId ? readScope(true) : [],
+  ])
+  const appointments = [...new Map(scopes.flat().map((row) => [row.appointment_id, row])).values()]
+  const managed = appointments.filter(row => row.attorney_delivery_enabled !== undefined && row.attorney_delivery_enabled !== null)
+  if (managed.length) {
+    const jobs = await client.from('attorney_appointment_delivery_jobs').select('appointment_id, revision, event_kind, status, next_attempt_at, sent_at, last_error').in('appointment_id', managed.map(row => row.appointment_id))
+    for (const row of managed) row.delivery = readAttorneyAppointmentDelivery(row, jobs.error ? null : jobs.data)
+  }
+  return appointments
 }
 
 async function fetchParticipantsByAppointment(client, appointmentIds = []) {
   const ids = [...new Set((appointmentIds || []).filter(Boolean))]
   if (!ids.length) return {}
 
-  const query = await client
+  let query = await client
     .from('appointment_participants')
-    .select('appointment_id, name, email, participant_role')
+    .select('appointment_id, participant_id, user_id, name, email, participant_role, rsvp_status, is_scheduling_owner')
     .in('appointment_id', ids)
+
+  if (query.error && isMissingColumnError(query.error, 'is_scheduling_owner')) {
+    query = await client.from('appointment_participants')
+      .select('appointment_id, participant_id, user_id, name, email, participant_role, rsvp_status')
+      .in('appointment_id', ids)
+  }
 
   if (query.error) {
     if (isMissingTableError(query.error, 'appointment_participants')) {
@@ -567,6 +634,10 @@ async function fetchParticipantsByAppointment(client, appointmentIds = []) {
       accumulator[row.appointment_id] = []
     }
     accumulator[row.appointment_id].push({
+      participantId: row.participant_id,
+      userId: row.user_id || null,
+      rsvpStatus: row.rsvp_status || 'Pending',
+      isSchedulingOwner: Boolean(row.is_scheduling_owner),
       name: row.name,
       email: toLower(row.email),
       participantRole: row.participant_role || 'Participant',
@@ -757,14 +828,7 @@ function buildQueuePriority({ dueDate = null, isBlocked = false, isOverdue = fal
 }
 
 function buildDateTimeFromAppointment(appointment = {}) {
-  if (appointment.date_time) return appointment.date_time
-  if (appointment.appointment_date && appointment.start_time) {
-    return `${appointment.appointment_date}T${appointment.start_time}`
-  }
-  if (appointment.appointment_date) {
-    return `${appointment.appointment_date}T00:00:00`
-  }
-  return appointment.created_at || appointment.updated_at || null
+  return appointmentStartIso(appointment)
 }
 
 function getOperationalWorkspaceCacheKey(firmId = '', userId = '') {
@@ -834,10 +898,12 @@ export async function getAttorneyOperationalWorkspaceData(firmId = null, userId 
     timer,
   })
     .then((data) => {
-      operationalWorkspaceCache.set(cacheKey, {
-        data,
-        expiresAt: Date.now() + OPERATIONAL_WORKSPACE_CACHE_TTL_MS,
-      })
+      if (operationalWorkspaceInflight.get(cacheKey) === loadPromise) {
+        operationalWorkspaceCache.set(cacheKey, {
+          data,
+          expiresAt: Date.now() + OPERATIONAL_WORKSPACE_CACHE_TTL_MS,
+        })
+      }
       timer.end({
         outcome: 'loaded',
         matters: data?.matterQueue?.length || 0,
@@ -851,7 +917,9 @@ export async function getAttorneyOperationalWorkspaceData(firmId = null, userId 
       throw error
     })
     .finally(() => {
-      operationalWorkspaceInflight.delete(cacheKey)
+      if (operationalWorkspaceInflight.get(cacheKey) === loadPromise) {
+        operationalWorkspaceInflight.delete(cacheKey)
+      }
     })
 
   operationalWorkspaceInflight.set(cacheKey, loadPromise)
@@ -1047,7 +1115,7 @@ async function loadAttorneyOperationalWorkspaceData(firmId = null, userId = null
     fetchBuyersById(client, transactions.map((transaction) => transaction.buyer_id).filter(Boolean)),
     fetchChecklistItems(client, transactionIds),
     fetchDocumentRequests(client, transactionIds),
-    fetchAppointments(client, transactionIds, resolvedFirm.id),
+    fetchAttorneyWorkspaceAppointments(client, transactionIds, resolvedFirm.organisationId),
     fetchPacketSigners(client, transactionIds),
   ])
   timer.mark('matterDependencies:loaded', {
@@ -1235,62 +1303,12 @@ async function loadAttorneyOperationalWorkspaceData(firmId = null, userId = null
   const appointmentQueue = canAccessAppointments
     ? (appointments || [])
         .filter((appointment) => !appointment.transaction_id || scopedMatterIds.has(appointment.transaction_id))
-        .map((appointment) => {
-          const matter = matterQueue.find((item) => item.matterId === appointment.transaction_id)
-          const attendeesDetailed = participantsByAppointment[appointment.appointment_id] || []
-          const attendees = attendeesDetailed.map((row) => row.name).filter(Boolean)
-          const rescheduleRequests = rescheduleRequestsByAppointment[appointment.appointment_id] || []
-          const latestRescheduleRequest = rescheduleRequests[0] || null
-          const dateTime = buildDateTimeFromAppointment(appointment)
-          const appointmentTypeKey = normalizeAppointmentTypeKey(appointment.appointment_type)
-          const appointmentTypeLabel = getAppointmentTypeLabel(appointmentTypeKey)
-          const appointmentStatus = normalizeText(appointment.status || 'Pending Confirmation') || 'Pending Confirmation'
-          const statusWithRescheduleContext = latestRescheduleRequest
-            ? (
-                toLower(latestRescheduleRequest.status) === 'proposed'
-                  ? 'Proposed'
-                  : 'Reschedule Requested'
-              )
-            : appointmentStatus
-          return {
-            id: appointment.appointment_id,
-            appointmentType: appointmentTypeLabel || appointment.title || 'General consultation',
-            appointmentTypeKey,
-            matterReference: matter?.matterReference || getMatterReference({}, appointment.transaction_id),
-            transactionId: appointment.transaction_id || null,
-            organisationId: appointment.organisation_id || matter?.organisationId || null,
-            clientName: matter?.clientName || 'Unassigned client',
-            dateTime,
-            rawDateTime: dateTime,
-            attendees,
-            attendeesDetailed,
-            linkedWorkflow: appointment.linked_workflow || null,
-            linkedWorkflowStage: appointment.linked_workflow_stage || appointment.linked_transaction_stage || null,
-            location: appointment.location || '',
-            instructions: appointment.appointment_instructions || null,
-            requiredDocuments: Array.isArray(appointment.required_documents) ? appointment.required_documents : [],
-            visibility: appointment.visibility_scope || 'shared_role_players',
-            calendarEventUid: appointment.calendar_event_uid || null,
-            externalCalendarStatus: appointment.external_calendar_status || 'not_synced',
-            externalCalendarProvider: appointment.external_calendar_provider || null,
-            externalCalendarEventId: appointment.external_calendar_event_id || null,
-            icsGeneratedAt: appointment.ics_generated_at || null,
-            resourceId: appointment.resource_id || null,
-            status: statusWithRescheduleContext,
-            rescheduleRequests,
-            latestRescheduleRequest,
-            assignedAttorneyId: matter?.assignedAttorneyId || null,
-            assignedSecretaryId: matter?.assignedSecretaryId || null,
-            assignedAdminHandlerId: matter?.assignedAdminHandlerId || null,
-            assignedAttorneyName: matter?.assignedAttorneyName || null,
-            assignedSecretaryName: matter?.assignedSecretaryName || null,
-            assignedAdminHandlerName: matter?.assignedAdminHandlerName || null,
-            matterType: matter?.matterType || null,
-            flags: matter?.flags || {},
-            actionLabel: 'Open Matter',
-            actionHref: appointment.transaction_id ? `/transactions/${encodeURIComponent(appointment.transaction_id)}` : '',
-          }
-        })
+        .map((appointment) => mapAttorneyAppointmentForWorkspace(
+          appointment,
+          matterQueue.find((item) => item.matterId === appointment.transaction_id),
+          participantsByAppointment[appointment.appointment_id] || [],
+          rescheduleRequestsByAppointment[appointment.appointment_id] || [],
+        ))
     : []
 
   const pendingSignerStatuses = new Set(['pending', 'sent', 'viewed'])
@@ -1462,6 +1480,7 @@ async function loadAttorneyOperationalWorkspaceData(firmId = null, userId = null
   return {
     firm: {
       id: resolvedFirm.id,
+      organisationId: resolvedFirm.organisationId || null,
       name: resolvedFirm.name,
       logo_url: resolvedFirm.logoUrl || '',
       primary_colour: resolvedFirm.primaryColour || '',
@@ -1505,6 +1524,7 @@ async function loadAttorneyOperationalWorkspaceData(firmId = null, userId = null
       members: visibleMembers.map((member) => ({
         value: member.userId,
         label: profilesById[member.userId]?.name || 'Team Member',
+        email: profilesById[member.userId]?.email || '',
         role: member.role,
       })),
       matterTypes: availableMatterTypes,
@@ -1515,19 +1535,9 @@ async function loadAttorneyOperationalWorkspaceData(firmId = null, userId = null
 
 function normalizeAppointmentOperationalStatus(value = '') {
   const normalized = toLower(value)
-  if (!normalized) return 'awaiting_confirmation'
-  if (normalized.includes('cancel')) return 'cancelled'
-  if (normalized.includes('complete')) return 'completed'
-  if (normalized.includes('declin')) return 'cancelled'
   if (normalized.includes('progress')) return 'in_progress'
-  if (normalized.includes('reschedule')) return 'reschedule_requested'
-  if (normalized.includes('confirm')) return 'confirmed'
-  if (normalized.includes('proposed')) return 'awaiting_confirmation'
-  if (normalized.includes('pending') || normalized.includes('requested')) return 'awaiting_confirmation'
-  if (normalized === 'ready') return 'ready'
-  if (normalized === 'blocked') return 'blocked'
-  if (normalized === 'draft') return 'draft'
-  return 'awaiting_confirmation'
+  if (['ready','draft'].includes(normalized)) return normalized
+  return calendarOperationalStatus({ status: value })
 }
 
 function mapOperationalToDbStatus(value = '') {
@@ -1551,20 +1561,22 @@ export async function updateAttorneyAppointmentOperationalStatus(appointmentId, 
   }
 
   const status = mapOperationalToDbStatus(operationalStatus)
+  if (status === 'Completed' || status === 'Cancelled') {
+    const saved = await manageAttorneyWorkspaceAppointment(scopedAppointmentId,
+      status === 'Completed' ? 'complete' : 'cancel', options.expectedUpdatedAt, { reason: options.reason })
+    return { ...saved, status, operationalStatus: normalizeAppointmentOperationalStatus(status) }
+  }
   const nowIso = new Date().toISOString()
   const updatePayload = {
     status,
     updated_at: nowIso,
-  }
-  if (status === 'Completed') {
-    updatePayload.completed_at = nowIso
   }
 
   const update = await client
     .from('appointments')
     .update(updatePayload)
     .eq('appointment_id', scopedAppointmentId)
-    .select('appointment_id, transaction_id, status, visibility_scope')
+    .select('appointment_id, transaction_id, status, visibility_scope, attorney_delivery_enabled')
     .maybeSingle()
 
   if (update.error) throw update.error
@@ -1574,16 +1586,7 @@ export async function updateAttorneyAppointmentOperationalStatus(appointmentId, 
     throw new Error('Appointment could not be updated.')
   }
 
-  if (status === 'Completed') {
-    await cancelAppointmentReminders(scopedAppointmentId).catch(() => null)
-    await notifyAppointmentParticipants(scopedAppointmentId, 'appointment_completed', {
-      visibility: appointment.visibility_scope || 'shared_role_players',
-      metadata: {
-        source: 'updateAttorneyAppointmentOperationalStatus',
-        actorRole: normalizeText(options?.actorRole || 'attorney'),
-      },
-    }).catch(() => null)
-  } else if (status === 'Confirmed') {
+  if (status === 'Confirmed' && appointment.attorney_delivery_enabled == null) {
     await notifyAppointmentParticipants(scopedAppointmentId, 'appointment_confirmed', {
       visibility: appointment.visibility_scope || 'shared_role_players',
       metadata: {
@@ -1602,94 +1605,15 @@ export async function updateAttorneyAppointmentOperationalStatus(appointmentId, 
   }
 }
 
-export async function assignAttorneyAppointmentResource(appointmentId, resourceId = null) {
-  const client = requireClient()
-  const scopedAppointmentId = normalizeText(appointmentId)
-  if (!scopedAppointmentId) {
-    throw new Error('Appointment is required.')
-  }
-
-  const normalizedResourceId = normalizeText(resourceId) || null
-  const update = await client
-    .from('appointments')
-    .update({
-      resource_id: normalizedResourceId,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('appointment_id', scopedAppointmentId)
-    .select('appointment_id, resource_id')
-    .maybeSingle()
-
-  if (update.error) throw update.error
-  return {
-    appointmentId: update.data?.appointment_id || scopedAppointmentId,
-    resourceId: update.data?.resource_id || null,
-  }
+export async function manageAttorneyWorkspaceAppointment(appointmentId, action, expectedUpdatedAt, changes = {}) {
+  const saved = await manageAttorneyAppointment(appointmentId, action, expectedUpdatedAt, changes)
+  operationalWorkspaceCache.clear()
+  operationalWorkspaceInflight.clear()
+  return saved
 }
 
-export async function upsertAttorneyAppointmentParticipant(appointmentId, payload = {}) {
-  const client = requireClient()
-  const scopedAppointmentId = normalizeText(appointmentId)
-  if (!scopedAppointmentId) {
-    throw new Error('Appointment is required.')
-  }
-
-  const participantRole = normalizeText(payload?.participantRole || payload?.participant_role || 'Participant')
-  const participantName = normalizeText(payload?.name || payload?.participantName)
-  const participantEmail = toLower(payload?.email)
-
-  if (!participantName && !participantEmail) {
-    throw new Error('Participant name or email is required.')
-  }
-
-  const lookup = await client
-    .from('appointment_participants')
-    .select('participant_id')
-    .eq('appointment_id', scopedAppointmentId)
-    .eq('participant_role', participantRole)
-    .limit(1)
-    .maybeSingle()
-
-  if (lookup.error && !isMissingTableError(lookup.error, 'appointment_participants')) {
-    throw lookup.error
-  }
-
-  if (lookup.data?.participant_id) {
-    const update = await client
-      .from('appointment_participants')
-      .update({
-        name: participantName || 'Participant',
-        email: participantEmail || null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('participant_id', lookup.data.participant_id)
-      .select('participant_id, appointment_id, name, email, participant_role')
-      .maybeSingle()
-    if (update.error) throw update.error
-    return update.data
-  }
-
-  const appointmentLookup = await client
-    .from('appointments')
-    .select('organisation_id')
-    .eq('appointment_id', scopedAppointmentId)
-    .maybeSingle()
-  if (appointmentLookup.error) throw appointmentLookup.error
-
-  const insert = await client
-    .from('appointment_participants')
-    .insert({
-      appointment_id: scopedAppointmentId,
-      organisation_id: appointmentLookup.data?.organisation_id || null,
-      name: participantName || 'Participant',
-      email: participantEmail || null,
-      participant_role: participantRole,
-      rsvp_status: 'Pending',
-    })
-    .select('participant_id, appointment_id, name, email, participant_role')
-    .maybeSingle()
-  if (insert.error) throw insert.error
-  return insert.data
+export async function assignAttorneyAppointmentResource(appointmentId, resourceId = null, options = {}) {
+  return manageAttorneyWorkspaceAppointment(appointmentId, 'resource', options.expectedUpdatedAt, { resourceId })
 }
 
 export async function createAttorneyAppointmentInvite(input = {}) {
@@ -1707,11 +1631,11 @@ export async function createAttorneyAppointmentInvite(input = {}) {
   const recipientName = invite.recipientName || recipientEmail
 
   await requireAttorneyCalendarRollout(organisationId, { client })
-  await recordAttorneyCalendarRolloutEvent('invite_attempted', {
+  void recordAttorneyCalendarRolloutEvent('invite_attempted', {
     organisationId,
     transactionId,
     metadata: { appointmentType },
-  }, { client })
+  }, { client }).catch(() => {})
 
   const user = await getAuthenticatedUser(client).catch(() => null)
   const appointmentId = createUuid()
@@ -1768,6 +1692,7 @@ export async function createAttorneyAppointmentInvite(input = {}) {
       participant_id: createUuid(),
       appointment_id: appointmentId,
       organisation_id: organisationId,
+      user_id: isUuidLike(user?.id) ? user.id : null,
       name: attorneyName || 'Attorney',
       email: attorneyEmail || null,
       participant_role: 'Attorney',
@@ -1822,144 +1747,31 @@ export async function createAttorneyAppointmentInvite(input = {}) {
     throw conflictError
   }
 
-  let appointmentResult = await client
-    .from('appointments')
-    .insert(insertPayload)
-    .select('appointment_id, transaction_id, status, visibility_scope')
-    .maybeSingle()
-
-  if (appointmentResult.error && isMissingColumnError(appointmentResult.error)) {
-    const fallbackPayload = { ...insertPayload }
-    delete fallbackPayload.timezone
-    delete fallbackPayload.location_type
-    delete fallbackPayload.meeting_url
-    delete fallbackPayload.linked_workflow
-    delete fallbackPayload.linked_workflow_stage
-    delete fallbackPayload.linked_transaction_stage
-    delete fallbackPayload.visibility_scope
-    delete fallbackPayload.appointment_instructions
-    delete fallbackPayload.required_documents
-    delete fallbackPayload.resource_id
-    appointmentResult = await client
-      .from('appointments')
-      .insert(fallbackPayload)
-      .select('appointment_id, transaction_id, status')
-      .maybeSingle()
-  }
-
-  if (appointmentResult.error) {
-    await recordAttorneyCalendarRolloutEvent('persistence_failed', {
-      organisationId,
-      transactionId,
-      appointmentId,
-      metadata: { stage: 'appointment', code: appointmentResult.error.code || null },
-    }, { client })
-    throw appointmentResult.error
-  }
-
-  let participantResult = await client.from('appointment_participants').insert(participantRows)
-  if (participantResult.error && isMissingColumnError(participantResult.error)) {
-    const fallbackParticipantRows = participantRows.map((row) => {
-      const next = { ...row }
-      delete next.created_at
-      delete next.updated_at
-      delete next.rsvp_expires_at
-      return next
-    })
-    participantResult = await client.from('appointment_participants').insert(fallbackParticipantRows)
-  }
-  if (participantResult.error) {
-    const rollback = await client.from('appointments').delete().eq('appointment_id', appointmentId)
-    const persistenceError = new Error(
-      rollback.error
-        ? 'Invite participants could not be saved and the incomplete appointment could not be rolled back.'
-        : 'Invite participants could not be saved. The incomplete appointment was rolled back.',
-    )
-    persistenceError.name = 'AttorneyInvitePersistenceError'
-    persistenceError.code = 'ATTORNEY_INVITE_PARTICIPANT_PERSISTENCE_FAILED'
-    persistenceError.appointmentRolledBack = !rollback.error
-    persistenceError.cause = participantResult.error
-    await recordAttorneyCalendarRolloutEvent('persistence_failed', {
-      organisationId,
-      transactionId,
-      appointmentId,
-      metadata: {
-        stage: 'participants',
-        appointmentRolledBack: !rollback.error,
-        code: participantResult.error.code || null,
-      },
-    }, { client })
-    throw persistenceError
-  }
-
-  let notificationResult = []
-  let notificationError = null
-  try {
-    notificationResult = await notifyAppointmentParticipants(appointmentId, 'appointment_confirmation_required', {
-      visibility: appointmentResult.data?.visibility_scope || visibility,
-      recipientParticipantIds: [recipientParticipantId],
-      metadata: {
-        source: 'createAttorneyAppointmentInvite',
-        appointmentType,
-        transactionId,
-        timezone: invite.timezone,
-        organizerName: attorneyName,
-        organizerEmail: attorneyEmail,
-        attachCalendarInvite: invite.attachCalendarInvite,
-      },
-    })
-  } catch (error) {
-    notificationError = error
-  }
-
-  let reminderResult = []
-  let reminderError = null
-  try {
-    reminderResult = await scheduleAppointmentReminders(appointmentId, { recipientParticipantIds: [recipientParticipantId] })
-  } catch (error) {
-    reminderError = error
-  }
-
-  const delivery = summarizeAttorneyInviteDelivery({
-    notificationResults: notificationResult,
-    notificationError,
-    reminderResults: reminderResult,
-    reminderError,
-    calendarInviteRequested: invite.attachCalendarInvite,
+  const result = await client.rpc('create_attorney_appointment_invite', {
+    p_appointment: insertPayload, p_participants: participantRows,
+    p_send_notifications: invite.sendNotifications, p_attach_calendar: invite.attachCalendarInvite,
   })
-
-  await recordAttorneyCalendarRolloutEvent('invite_created', {
-    organisationId,
-    transactionId,
-    appointmentId,
+  if (result.error) {
+    if (result.error.code === 'PGRST202') throw new Error('The calendar needs the latest database migration before invitations can be saved.')
+    throw result.error
+  }
+  const confirmed = result.data
+  if (confirmed?.appointment?.appointment_id !== appointmentId || !Array.isArray(confirmed.participants) || !confirmed.participants.length) {
+    throw new Error('Appointment save could not be confirmed. Refresh the calendar before trying again.')
+  }
+  operationalWorkspaceCache.clear()
+  operationalWorkspaceInflight.clear()
+  const delivery = {
+    status: invite.sendNotifications ? 'queued' : 'disabled', retryable: false,
+    calendarInviteRequested: invite.attachCalendarInvite, calendarInviteDelivered: false,
+    reminders: { status: invite.sendNotifications ? 'scheduled' : 'skipped' },
+  }
+  void recordAttorneyCalendarRolloutEvent('invite_created', {
+    organisationId, transactionId, appointmentId,
     metadata: { appointmentType, deliveryStatus: delivery.status },
-  }, { client })
-  if (delivery.status === 'failed') {
-    await recordAttorneyCalendarRolloutEvent('delivery_failed', {
-      organisationId,
-      transactionId,
-      appointmentId,
-      metadata: { retryable: delivery.retryable, failureReasons: delivery.failureReasons },
-    }, { client })
-  }
-  if (reminderError) {
-    await recordAttorneyCalendarRolloutEvent('reminder_failed', {
-      organisationId,
-      transactionId,
-      appointmentId,
-      metadata: { message: reminderError.message || 'Reminder scheduling failed' },
-    }, { client })
-  }
-
-  return {
-    appointmentId,
-    transactionId,
-    status: appointmentResult.data?.status || 'Pending Confirmation',
-    appointmentType,
-    notificationResult,
-    reminderResult,
-    delivery,
-  }
+  }, { client }).catch(() => {})
+  return { appointmentId, transactionId, status: confirmed.appointment.status,
+    appointmentType, appointment: confirmed.appointment, participants: confirmed.participants, delivery }
 }
 
 export async function resendAttorneyAppointmentCommunication(appointmentId, communicationType = 'confirmation') {
@@ -1969,42 +1781,11 @@ export async function resendAttorneyAppointmentCommunication(appointmentId, comm
     throw new Error('Appointment is required.')
   }
 
-  const appointmentQuery = await client
-    .from('appointments')
-    .select('appointment_id, visibility_scope')
-    .eq('appointment_id', scopedAppointmentId)
-    .maybeSingle()
-  if (appointmentQuery.error) throw appointmentQuery.error
-
-  const visibility = appointmentQuery.data?.visibility_scope || 'shared_role_players'
-  let eventType = 'appointment_confirmation_required'
-  if (communicationType === 'calendar') {
-    eventType = 'appointment_scheduled'
-  } else if (communicationType === 'documents') {
-    eventType = 'appointment_documents_required'
-  } else if (communicationType === 'reminder') {
-    eventType = 'appointment_reminder_due'
-  } else if (communicationType === 'portal') {
-    eventType = 'appointment_updated'
-  }
-
-  const user = await getAuthenticatedUser(client).catch(() => null)
-  const result = await notifyAppointmentParticipants(scopedAppointmentId, eventType, {
-    visibility,
-    forceDelivery: true,
-    excludeRecipientEmails: [user?.email],
-    metadata: {
-      source: 'resendAttorneyAppointmentCommunication',
-      communicationType,
-    },
-  })
-
-  return {
-    appointmentId: scopedAppointmentId,
-    eventType,
-    deliveredCount: Array.isArray(result) ? result.filter((row) => row?.email?.sent === true).length : 0,
-    failedCount: Array.isArray(result) ? result.filter((row) => row?.email?.status === 'failed').length : 0,
-  }
+  const kind = communicationType === 'documents' ? 'documents' : communicationType === 'reminder' ? 'reminder_due'
+    : ['portal','calendar'].includes(communicationType) ? 'updated' : 'invite'
+  const result = await client.rpc('retry_attorney_appointment_delivery', { p_id: scopedAppointmentId, p_kind: kind })
+  if (result.error) throw result.error
+  return { appointmentId: scopedAppointmentId, queuedCount: Number(result.data) || 0, deliveryRecorded: Number(result.data) === 0 }
 }
 
 export async function proposeAttorneyAppointmentReschedule(requestId, payload = {}) {

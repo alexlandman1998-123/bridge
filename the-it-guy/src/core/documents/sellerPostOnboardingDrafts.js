@@ -1,3 +1,6 @@
+import { readSellerMandateTerms } from '../../lib/sellerMandateCapture.js'
+import { getMandateWordingRelease } from './sellerMandateSigningApproval.js'
+import { buildSellerMandateReviewDocumentMarkup } from './sellerMandateReviewDocumentMarkup.js'
 import { buildFicaDeclarationDocumentModel } from './ficaDeclarationDocumentModel.js'
 import { buildSellerFicaDueDiligenceMarkup, SELLER_FICA_DUE_DILIGENCE_TEMPLATE_VERSION } from './sellerFicaDueDiligenceMarkup.js'
 import { buildSellerComplianceDocumentModel } from './sellerComplianceDocumentModel.js'
@@ -162,7 +165,7 @@ export function buildSellerPostOnboardingDrafts({ formData = {}, listing = {}, b
     compliancePack: { signers: compliancePack.signers },
   })
   const ficaHtml = buildSellerFicaDueDiligenceMarkup({ model: ficaModel, formData: safeFormData, branding: safeBranding, generatedAt })
-  const mandateHtml = mandatePreparationMarkup({ seller, sellerId, property, reference, branding: safeBranding, generatedAt })
+  const legacyMandateHtml = mandatePreparationMarkup({ seller, sellerId, property, reference, branding: safeBranding, generatedAt })
   const brandingVersion = firstText(
     safeBranding.brandingVersion,
     safeBranding.branding_version,
@@ -186,6 +189,18 @@ export function buildSellerPostOnboardingDrafts({ formData = {}, listing = {}, b
     ...brandingSnapshotBase,
     fingerprint: createSellerPostOnboardingDraftFingerprint(brandingSnapshotBase),
   }
+  const mandateReviewSnapshot = safeFormData.mandateCapture === undefined ? null : buildSellerOnboardingSigningPackSnapshot({
+    formData: safeFormData, listing: safeListing, recipients: signingPlan.recipients,
+    mandate: readSellerMandateTerms(safeFormData), branding: safeBranding, generatedAt,
+  })
+  if (mandateReviewSnapshot) {
+    mandateReviewSnapshot.documentReference = reference
+    mandateReviewSnapshot.disclosureReference = safeFormData.mandateAcceptanceReview?.disclosureReference || ''
+  }
+  const mandateRelease = mandateReviewSnapshot ? getMandateWordingRelease(mandateReviewSnapshot.mandate) : null
+  const mandateHtml = mandateReviewSnapshot && mandateRelease
+    ? buildSellerMandateReviewDocumentMarkup({ signingPack: mandateReviewSnapshot, draftMarkdown: mandateRelease.markdown, generatedAt })
+    : legacyMandateHtml
   const source = {
     onboardingVersion: firstText(safeFormData.sellerOnboardingCompletion?.version, safeFormData.seller_onboarding_completion?.version, 'seller_onboarding_submission_v1'),
     onboardingSubmittedAt: firstText(safeFormData.sellerOnboardingCompletion?.completedAt, safeFormData.sellerOnboardingCompletion?.completed_at, safeFormData.seller_onboarding_completion?.completedAt, safeFormData.seller_onboarding_completion?.completed_at),
@@ -201,7 +216,7 @@ export function buildSellerPostOnboardingDrafts({ formData = {}, listing = {}, b
     documents: [
       draftDocument({ key: SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM, targetRequirementKey: SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM, artifactStage: SELLER_DOCUMENT_ARTIFACT_STAGES.REVIEW_DRAFT, name: 'Mandatory Disclosure / Defects Form', status: 'awaiting_agent_review', templateVersion: 'property_disclosure_annexure_a_v2', brandingVersion, generatedAt, generatedHtml: disclosureHtml, metadata: { source: 'seller_onboarding', brandingSnapshot } }),
       draftDocument({ key: SELLER_DOCUMENT_ARTIFACT_KEYS.FICA_REVIEW_DRAFT, targetRequirementKey: SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION, name: 'Seller FICA review draft', status: 'awaiting_agent_review', templateVersion: SELLER_FICA_DUE_DILIGENCE_TEMPLATE_VERSION, brandingVersion, generatedAt, generatedHtml: ficaHtml, metadata: { ficaDeclarationModel: ficaModel, wordingVersion: ficaModel.declaration.wordingVersion, brandingSnapshot } }),
-      draftDocument({ key: SELLER_DOCUMENT_ARTIFACT_KEYS.MANDATE_PREPARATION_SUMMARY, targetRequirementKey: SELLER_BASE_PACK_KEYS.SIGNED_MANDATE, name: 'Mandate preparation summary', status: 'awaiting_agent_review', templateVersion: 'seller_mandate_preparation_summary_v1', brandingVersion, generatedAt, generatedHtml: mandateHtml, metadata: { commissionPending: true, notForSignature: true, brandingSnapshot } }),
+      draftDocument({ key: SELLER_DOCUMENT_ARTIFACT_KEYS.MANDATE_PREPARATION_SUMMARY, targetRequirementKey: SELLER_BASE_PACK_KEYS.SIGNED_MANDATE, name: mandateReviewSnapshot ? 'Full mandate review draft' : 'Mandate preparation summary', status: 'awaiting_agent_review', templateVersion: mandateRelease?.version || 'seller_mandate_preparation_summary_v1', brandingVersion, generatedAt, generatedHtml: mandateHtml, metadata: { commissionPending: true, notForSignature: true, ...(mandateRelease ? { wordingDigest: mandateRelease.wordingDigest } : {}), brandingSnapshot } }),
     ],
   }
 }

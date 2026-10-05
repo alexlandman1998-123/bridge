@@ -71,6 +71,9 @@ function validateRepeatableQuestion(question, state, contract) {
   if (!Array.isArray(records)) return issues
   const group = contract.repeatableGroups[question.groupKey]
   records.forEach((record, index) => {
+    // These costs belong to earlier screens; the additional-cost editor does not display them.
+    if (question.groupKey === 'monthly_commitments' && record.legacyKey) return
+    if (question.groupKey === 'bank_accounts' && record !== (records.find(item => item.legacyKey === 'primary') || records[0])) return
     (group?.itemFields || []).forEach((field) => {
       if (!evaluateBondApplicationRule(field.visibleWhen, record)) return
       const validation = validateScalarQuestion({

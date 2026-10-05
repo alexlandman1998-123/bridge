@@ -1,17 +1,19 @@
 // @vitest-environment jsdom
 import { beforeEach, expect, it, vi } from 'vitest'
-import { createRentalListingDraft, updateRentalListingDraft, uploadRentalGalleryImages } from '../rentalListingDraftService'
+import { listRentalListingsForAgent, createRentalListingDraft, updateRentalListingDraft, updateRentalListingGallery, updateRentalProperty24Expiry, uploadRentalGalleryImages } from '../rentalListingDraftService'
+import { buildRentalListingEditForm } from '../rentalListingEditModel'
 import { buildRentalListingIndexRow } from '../rentalListingIndexModel'
 
-const mocks = vi.hoisted(() => ({ create: vi.fn(), update: vi.fn(), get: vi.fn(), upload: vi.fn(), sign: vi.fn(), sync: vi.fn() }))
+const mocks = vi.hoisted(() => ({ listings: vi.fn(), create: vi.fn(), update: vi.fn(), get: vi.fn(), upload: vi.fn(), sign: vi.fn(), sync: vi.fn(), expiry: vi.fn(), saved: null }))
 vi.mock('../../privateListingService', () => ({
   createPrivateListing: mocks.create,
   updatePrivateListing: mocks.update,
   uploadPrivateListingMediaAsset: mocks.upload,
   signPrivateListingMediaAsset: mocks.sign,
-  syncPrivateListingDistributionData: mocks.sync,
+  saveRentalListingSnapshot: mocks.sync,
+  saveRentalListingExpiry: mocks.expiry,
   createPrivateListingActivity: async () => null,
-  getAgentPrivateListings: async () => [],
+  getAgentPrivateListings: mocks.listings,
   getPrivateListing: mocks.get,
 }))
 vi.mock('../../../lib/supabaseClient', () => ({ isSupabaseConfigured: false, supabase: null }))
@@ -19,14 +21,57 @@ vi.mock('../../../lib/supabaseClient', () => ({ isSupabaseConfigured: false, sup
 const photo = (index) => ({ id: `photo-${index}`, name: `${index}.jpg`, url: `blob:${index}`, file: new File(['image'], `${index}.jpg`, { type: 'image/jpeg' }) })
 const asset = (file) => ({ path: `saved/${file.name}`, url: `https://storage.example/${file.name}` })
 const form = (images = []) => ({ landlordName: 'Test Owner', propertyAddress: '12 Example Road', monthlyRent: 11000, rentalPriceFrequency: 'monthly', depositPolicy: 'no_deposit', availableFrom: '2026-10-01', description: 'Rental home', galleryImages: images, coverImageId: images[1]?.id })
-const context = { organisationId: '11111111-1111-4111-8111-111111111111' }
+const context = { organisationId: '11111111-1111-4111-8111-111111111111', assignedAgentId: 'agent-1', creationId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }
 beforeEach(() => {
   vi.clearAllMocks()
-  mocks.create.mockResolvedValue({ listing: { id: 'listing-1' } })
+  mocks.saved = null
+  mocks.create.mockResolvedValue({ listing: { id: 'listing-1', updatedAt: '2026-10-01T00:00:00Z' } })
   mocks.update.mockResolvedValue({ id: 'listing-1' })
-  mocks.get.mockResolvedValue({ id: 'listing-1', listingCategory: 'rental', sellerCanonicalFacts: { landlordIdentity: { reference: 'existing-owner' } } })
-  mocks.sync.mockResolvedValue({ skipped: false })
+  mocks.get.mockImplementation(async () => mocks.saved || { organisationId: context.organisationId, assignedAgentId: context.assignedAgentId, id: 'listing-1', updatedAt: '2026-10-01T00:00:00Z', listingCategory: 'rental', sellerCanonicalFacts: { landlordIdentity: { reference: 'existing-owner' } } })
+  mocks.sync.mockImplementation(async (id, payload) => {
+    const map = { propertyType: 'property_type', listingType: 'listing_type', askingPrice: 'asking_price', parkingBays: 'parking_bays', floorSize: 'floor_size', erfSize: 'erf_size' }
+    const publication = payload.publicationData ? Object.fromEntries(Object.entries(payload.publicationData).map(([key, value]) => [map[key] || key, value])) : null
+    const media = payload.galleryImages.map((image, index) => ({ id: image.id, media_type: 'image', file_url: image.url, caption: image.name, sort_order: index, is_cover: index === payload.coverIndex }))
+    for (const edit of payload.mediaEdits || []) if (edit.url) media.push({ id: edit.id || `saved-${edit.type}`, media_type: edit.type, file_url: edit.url, sort_order: 0, is_cover: false })
+    const receipt = { listingId: id, updatedAt: '2026-10-04T09:00:00Z', facts: payload.listingPatch.sellerCanonicalFacts, publication, media, externalLinks: [] }
+    mocks.saved = { id, organisationId: context.organisationId, assignedAgentId: context.assignedAgentId, listingCategory: 'rental', updatedAt: receipt.updatedAt, sellerCanonicalFacts: receipt.facts,
+      listingPublicationData: payload.publicationData, listingMedia: media, listingExternalLinks: [] }
+    return receipt
+  })
   mocks.upload.mockImplementation(async (file) => asset(file))
+})
+
+it('verifies refreshed photo identity even when readback has a different signed URL', async () => {
+  const originalSave = mocks.sync.getMockImplementation()
+  mocks.sync.mockImplementation(async (...args) => {
+    const receipt = await originalSave(...args)
+    receipt.media = receipt.media.map((row) => ({ ...row, storage_bucket: 'documents', storage_path: `private-listings/listing-1/gallery/${row.id}` }))
+    mocks.saved.listingMedia = receipt.media.map((row) => ({ ...row, file_url: 'https://storage.example/fresh-token' }))
+    return receipt
+  })
+  const result = await createRentalListingDraft(form([photo(1)]), context)
+  expect(result.listing.listingMedia[0].file_url).toBe('https://storage.example/fresh-token')
+  const reopened = buildRentalListingEditForm(result.listing)
+  expect(reopened.galleryImages[0]).toMatchObject({ bucket: 'documents', path: 'private-listings/listing-1/gallery/photo-1' })
+})
+
+it('saves video and virtual tour links, returns saved media and rehydrates their editor values', async () => {
+  const links = { videoLink: 'https://video.test/watch', virtualTourLink: 'https://tour.test/view' }
+  const result = await createRentalListingDraft({ ...form(), ...links }, context)
+  expect(mocks.sync.mock.calls[0][1].mediaEdits).toEqual([{ type: 'video', id: null, url: links.videoLink }, { type: 'virtual_tour', id: null, url: links.virtualTourLink }])
+  expect(buildRentalListingEditForm(result.listing)).toMatchObject(links)
+})
+
+it('rejects unsafe video links before any listing or storage write', async () => {
+  await expect(createRentalListingDraft({ ...form(), videoLink: 'javascript:alert(1)' }, context)).rejects.toThrow('Video link')
+  expect(mocks.create).not.toHaveBeenCalled()
+  expect(mocks.sync).not.toHaveBeenCalled()
+})
+
+it('allows gallery-only actions on incomplete legacy rentals and uses the photo-only RPC mode', async () => {
+  const result = await updateRentalListingGallery('listing-1', { galleryImages: [], expectedUpdatedAt: '2026-10-01T00:00:00Z' }, context)
+  expect(mocks.sync.mock.calls[0][1]).toMatchObject({ galleryOnly: true, mediaEdits: [], publicationData: null })
+  expect(result.listing.id).toBe('listing-1')
 })
 
 it('saves 26 photos with at most two concurrent uploads and preserves order and the selected cover', async () => {
@@ -45,9 +90,9 @@ it('saves 26 photos with at most two concurrent uploads and preserves order and 
   expect(peak).toBe(2)
   expect(mocks.upload).toHaveBeenCalledTimes(26)
   expect(mocks.upload.mock.calls.every(([, options]) => options.upsert === false)).toBe(true)
-  const media = mocks.sync.mock.calls[0][1].media
+  const media = mocks.sync.mock.calls[0][1]
   expect(media.galleryImages.map((image) => image.id)).toEqual(images.map((image) => image.id))
-  expect(media.coverImageId).toBe('photo-1')
+  expect(media.coverIndex).toBe(1)
   expect(media.galleryImages.every((image) => !image.file && image.url.startsWith('https:'))).toBe(true)
   expect(progress).toHaveBeenLastCalledWith({ completed: 26, total: 26, phase: 'saving' })
 })
@@ -62,7 +107,7 @@ it('retains the saved draft, successful uploads and unprocessed files when stora
   const created = vi.fn()
   let failure
   try { await createRentalListingDraft(form(images), { ...context, onListingCreated: created }) } catch (error) { failure = error }
-  expect(created).toHaveBeenCalledWith('listing-1')
+  expect(created).toHaveBeenCalledWith('listing-1', expect.objectContaining({ id: 'listing-1' }))
   expect(failure.listingId).toBe('listing-1')
   expect(failure.message).toContain('statement timeout')
   expect(failure.galleryImages).toHaveLength(26)
@@ -73,10 +118,10 @@ it('retains the saved draft, successful uploads and unprocessed files when stora
   mocks.upload.mockImplementation(async (file) => asset(file))
   await updateRentalListingDraft(failure.listingId, form(failure.galleryImages), context)
   expect(mocks.create).toHaveBeenCalledTimes(1)
-  expect(mocks.update).toHaveBeenCalledWith('listing-1', expect.any(Object), expect.any(Object))
-  expect(mocks.update.mock.calls[0][1].sellerCanonicalFacts.landlordIdentity).toEqual({ reference: 'existing-owner' })
+  expect(mocks.update).not.toHaveBeenCalled()
+  expect(mocks.sync.mock.calls[0][1].listingPatch.sellerCanonicalFacts.landlordIdentity).toEqual({ reference: 'existing-owner' })
   expect(mocks.upload).toHaveBeenCalledTimes(27)
-  expect(mocks.sync.mock.calls[0][1].media.galleryImages).toHaveLength(26)
+  expect(mocks.sync.mock.calls[0][1].galleryImages).toHaveLength(26)
 })
 
 it('retains uploaded photo URLs if publication saving times out', async () => {
@@ -98,11 +143,11 @@ it('retries the viewing link for an uploaded private photo without uploading its
   await updateRentalListingDraft('listing-1', form(failure.galleryImages), context)
   expect(mocks.upload).toHaveBeenCalledTimes(1)
   expect(mocks.sign).toHaveBeenCalledTimes(1)
-  expect(mocks.sync.mock.calls[0][1].media.galleryImages[0].url).toBe('https://storage.example/0.jpg')
+  expect(mocks.sync.mock.calls[0][1].galleryImages[0].url).toBe('https://storage.example/0.jpg')
 })
 
 it('does not report success when distribution tables are unavailable', async () => {
-  mocks.sync.mockResolvedValue({ skipped: true, reason: 'distribution_tables_missing' })
+  mocks.sync.mockRejectedValue(new Error('Safe rental storage is unavailable until the migration is applied'))
   await expect(createRentalListingDraft(form(), context)).rejects.toMatchObject({ listingId: 'listing-1', message: expect.stringContaining('storage is unavailable') })
 })
 
@@ -126,4 +171,82 @@ it('rejects incomplete owner details and prevents edits to missing or non-rental
   }
   expect(mocks.update).not.toHaveBeenCalled()
   expect(mocks.sync).not.toHaveBeenCalled()
+})
+
+it('returns the reloaded snapshot, saves P24 expiry separately, and carries the editor version', async () => {
+  const draft = { ...form(), property24ExpiryDate: '2027-04-01', mandateEndDate: '2026-12-31', expectedUpdatedAt: '2026-10-01T00:00:00Z' }
+  const result = await updateRentalListingDraft('listing-1', draft, context)
+  expect(result.listing).toBe(mocks.saved)
+  const payload = mocks.sync.mock.calls[0][1]
+  expect(payload.expectedUpdatedAt).toBe(draft.expectedUpdatedAt)
+  expect(payload.listingPatch.sellerCanonicalFacts.rentalInfo).toMatchObject({ property24ExpiryDate: '2027-04-01', mandateEndDate: '2026-12-31' })
+  expect(payload).not.toHaveProperty('externalLinks')
+})
+
+it('does not claim success when readback is stale or fails after a confirmed save', async () => {
+  mocks.get.mockResolvedValueOnce({ organisationId: context.organisationId, assignedAgentId: context.assignedAgentId, id: 'listing-1', listingCategory: 'rental', updatedAt: '2026-10-01T00:00:00Z' }).mockRejectedValueOnce(new Error('readback timeout'))
+  await expect(updateRentalListingDraft('listing-1', form([photo(0)]), context)).rejects.toMatchObject({ code: 'RENTAL_SAVE_READBACK_FAILED', committed: true, galleryImages: [expect.objectContaining({ url: 'https://storage.example/0.jpg' })] })
+})
+
+it('rejects a refreshed snapshot that is missing saved media', async () => {
+  const originalSave = mocks.sync.getMockImplementation()
+  mocks.sync.mockImplementation(async (...args) => {
+    const receipt = await originalSave(...args)
+    mocks.saved.listingMedia = []
+    return receipt
+  })
+  await expect(createRentalListingDraft(form([photo(0)]), context)).rejects.toMatchObject({ code: 'RENTAL_SAVE_READBACK_FAILED', committed: true })
+})
+
+
+it('reconciles an already created rental without overwriting it from a stale creation form', async () => {
+  const current = { id: 'listing-1', organisationId: context.organisationId, assignedAgentId: context.assignedAgentId,
+    listingCategory: 'rental', title: 'Already saved rental', listingPublicationData: {}, listingMedia: [{ id: 'saved', file_url: 'https://photo.test/current' }] }
+  mocks.create.mockResolvedValue({ listing: current, existing: true })
+  mocks.get.mockResolvedValue(current)
+  const result = await createRentalListingDraft(form(), context)
+  expect(result).toMatchObject({ listing: current, recovered: true, existing: true })
+  expect(mocks.sync).not.toHaveBeenCalled()
+  expect(mocks.upload).not.toHaveBeenCalled()
+  expect(mocks.create.mock.calls[0][1].rentalCreationId).toBe(context.creationId)
+})
+
+it('resumes an uploaded photo after refresh without requiring its original file bytes', async () => {
+  mocks.sign.mockResolvedValue({ url: 'https://storage.example/fresh', signedUrl: 'https://storage.example/fresh' })
+  const photos = await uploadRentalGalleryImages([{ id: 'uploaded', name: 'Saved photo', bucket: 'documents', path: 'private-listings/listing-1/gallery/photo.jpg', url: '' }], 'listing-1')
+  expect(photos[0].url).toBe('https://storage.example/fresh')
+  expect(mocks.upload).not.toHaveBeenCalled()
+  expect(mocks.sign).toHaveBeenCalledWith(expect.objectContaining({ bucket: 'documents', path: 'private-listings/listing-1/gallery/photo.jpg' }))
+})
+
+ it('saves expiry without validating or replacing legacy capture fields',async()=>{
+ const original={id:'listing-1',organisationId:context.organisationId,assignedAgentId:context.assignedAgentId,listingCategory:'rental',updatedAt:'2026-10-01T00:00:00Z',sellerCanonicalFacts:{rentalInfo:{mandateEndDate:'2029-01-01'},unknown:{keep:true}},listingMedia:[],listingExternalLinks:[],listingPublicationData:null}
+ const facts={...original.sellerCanonicalFacts,rentalInfo:{...original.sellerCanonicalFacts.rentalInfo,property24ExpiryDate:'2028-04-30'}}
+ mocks.get.mockReset().mockResolvedValueOnce(original).mockResolvedValueOnce({...original,updatedAt:'2026-10-04T10:00:00Z',sellerCanonicalFacts:facts})
+ mocks.expiry.mockResolvedValue({listingId:original.id,updatedAt:'2026-10-04T10:00:00Z',facts,activityId:'audit'})
+ await expect(updateRentalProperty24Expiry(original.id,{expiryDate:'2028-04-30',expectedUpdatedAt:original.updatedAt},context)).resolves.toMatchObject({activityId:'audit'})
+ expect(mocks.expiry).toHaveBeenCalledWith(original.id,{expiryDate:'2028-04-30',expectedUpdatedAt:original.updatedAt})
+ expect(mocks.sync).not.toHaveBeenCalled();expect(mocks.upload).not.toHaveBeenCalled()
+ })
+ it('rejects expiry saves in another organisation before the RPC',async()=>{
+ mocks.get.mockResolvedValue({id:'listing-1',listingCategory:'rental',organisationId:'foreign',assignedAgentId:context.assignedAgentId})
+ await expect(updateRentalProperty24Expiry('listing-1',{expiryDate:'2028-04-30',expectedUpdatedAt:'old'},context)).rejects.toThrow('not found')
+ expect(mocks.expiry).not.toHaveBeenCalled()
+ })
+ it('reports uncertain expiry readback without claiming success',async()=>{
+ mocks.expiry.mockResolvedValue({updatedAt:'2026-10-04T10:00:00Z',facts:{rentalInfo:{property24ExpiryDate:'2028-04-30'}}})
+ await expect(updateRentalProperty24Expiry('listing-1',{expiryDate:'2028-04-30',expectedUpdatedAt:'old'},context)).rejects.toThrow('save may have completed')
+ })
+
+it('includes previous listings only when requested and preserves organisation and agent scope', async () => {
+  mocks.listings.mockResolvedValue([
+    { id: 'archive', organisationId: context.organisationId, assignedAgentId: context.assignedAgentId, listingCategory: 'rental', listingVisibility: 'archived' },
+    { id: 'other-org', organisationId: 'another-org', assignedAgentId: context.assignedAgentId, listingCategory: 'rental' },
+    { id: 'other-agent', organisationId: context.organisationId, assignedAgentId: 'another-agent', listingCategory: 'rental' },
+  ])
+  const rows = await listRentalListingsForAgent(context.assignedAgentId, { organisationId: context.organisationId, includePreviousListings: true })
+  expect(rows.map(row => row.id)).toEqual(['archive'])
+  expect(mocks.listings.mock.calls[0][1]).toMatchObject({ organisationId: context.organisationId, includeArchivedListings: true, includeArchivedImports: true, includeWithdrawnListings: true })
+  await listRentalListingsForAgent(context.assignedAgentId, { organisationId: context.organisationId })
+  expect(mocks.listings.mock.calls[1][1]).toMatchObject({ includeArchivedListings: false, includeWithdrawnListings: false })
 })

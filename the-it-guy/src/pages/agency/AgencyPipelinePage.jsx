@@ -1,3 +1,6 @@
+import { prepareSellerMandateReviewPreview } from '../../lib/sellerMandateReviewPreview.js'
+import SellerMandateDetailsEditor from '../../components/documents/SellerMandateDetailsEditor.jsx'
+import { getSellerMandatePreparationIssues, readSellerMandateTerms } from '../../lib/sellerMandateCapture.js'
 import { saveListingSellerCanonicalUpdate } from '../../services/listings/listingSellerCanonicalUpdateService.js'
 import { buildListingSellerCanonicalUpdate } from '../../services/listings/listingSellerCanonicalUpdateModel.js'
 import { AlertTriangle, ArrowLeft, ArrowUpRight, Bath, BedDouble, Bold, Bookmark, Box, Building2, CalendarDays, Car, Check, CheckCircle2, CheckSquare, ChevronDown, ChevronRight, Clock3, Columns3, Copy, Download, ExternalLink, Eye, FileText, Filter, Gauge, Home, ImageIcon, Italic, Lightbulb, Link2, List, Lock, Mail, MapPin, MessageCircle, MoreHorizontal, Paperclip, Pencil, Phone, Plus, RefreshCw, Ruler, Search, Send, Settings, ShieldCheck, Smile, Star, Table2, Tag, Trash2, TrendingUp, Upload, UserRound, X, Zap } from 'lucide-react'
@@ -163,13 +166,12 @@ import {
   SELLER_ONBOARDING_REVIEW_STATUS,
 } from '../../core/documents/sellerOnboardingReview'
 import { createSellerOnboardingManualSigningPack, createSellerOnboardingSigningCopyPack } from '../../core/documents/sellerOnboardingManualSigningPack'
-import { requireSellerMandateWording } from '../../core/documents/sellerMandateDocumentMarkup'
 import { createSellerReviewedDocumentVersions, buildSellerReviewedDocumentVersionIndex } from '../../core/documents/sellerReviewedDocumentVersions'
 import { downloadSellerPhysicalSigningCopy, getSellerPhysicalSigningCopy, requireSellerPhysicalSigningCopy } from '../../core/documents/sellerPhysicalSigningCopy'
 import { SELLER_PORTAL_SIGNING_ENABLED } from '../../core/documents/sellerPortalSigningPolicy'
 import { listSellerPortalSigningRequests, previewSellerPortalSignedDocument, reviewSellerPortalSignedDocument, sendSellerDocumentForSignature } from '../../services/sellerPortalDocumentSigningService'
 import { reviewSellerDocument } from '../../services/sellerDocumentReviewWorkflowService'
-import { hasCompletedOnboardingDisclosureSignature } from '../../core/documents/sellerDocumentSigningContract'
+import { hasCompletedSellerDisclosure } from '../../core/documents/sellerDocumentSigningContract'
 import { SELLER_ONBOARDING_SIGNING_STAGES, createSellerOnboardingSigningLifecycle } from '../../core/documents/sellerOnboardingSigningLifecycle'
 import { getSellerProcessDefinition } from '../../services/sellerProcessDefinitionService'
 import {
@@ -278,6 +280,7 @@ import {
   assessBuyerLeadOfferReadiness,
   formatBuyerLeadOfferReadinessBlocker,
 } from '../../core/leads/buyerLeadOfferReadiness'
+import TransactionHandoffRegisterPanel from '../../components/transactions/TransactionHandoffRegisterPanel'
 import { buildTransactionHandoffHealth } from '../../core/transactions/transactionHandoffHealth'
 import { resolveTransactionRoutingProfile } from '../../services/transactionRoutingProfileService'
 import {
@@ -11933,6 +11936,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }, [sellerOnboardingReviewRoute])
   const [sellerSigningPackModalOpen, setSellerSigningPackModalOpen] = useState(false)
   const [sellerSigningPackSaving, setSellerSigningPackSaving] = useState(false)
+  const [sellerSigningPackProgress, setSellerSigningPackProgress] = useState('')
   const [sellerSigningPackError, setSellerSigningPackError] = useState('')
   const [sellerPortalSigningRequests, setSellerPortalSigningRequests] = useState([])
   const [sellerPortalSigningBusy, setSellerPortalSigningBusy] = useState('')
@@ -17494,6 +17498,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       selectedSellerJourney,
     ],
   )
+
+  const selectedSellerDisclosureComplete = hasCompletedSellerDisclosure({
+    formData: getSellerLeadReviewFormData(selectedLead, selectedLeadLinkedListing),
+    documentRows: selectedSellerDocumentCategories.flatMap((category) => category.items || []),
+  })
 
   const selectedSellerComplianceSigning = useMemo(
     () => selectedLeadIsSeller
@@ -27303,7 +27312,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     const formData = getLeadSellerOnboardingFormData(selectedLead)
     const savedRoutes = formData.sellerOnboardingFormalPackApproval?.documentRoutes || {}
     setSellerOnboardingDocumentRoutes({
-      ...(!hasCompletedOnboardingDisclosureSignature(formData) ? { signed_disclosure_form: savedRoutes.signed_disclosure_form === 'digital_pack' && SELLER_PORTAL_SIGNING_ENABLED ? 'digital_pack' : 'manual_upload' } : {}),
+      ...(!selectedSellerDisclosureComplete ? { signed_disclosure_form: savedRoutes.signed_disclosure_form === 'digital_pack' && SELLER_PORTAL_SIGNING_ENABLED ? 'digital_pack' : 'manual_upload' } : {}),
       signed_fica_declaration: savedRoutes.signed_fica_declaration === 'digital_pack' && SELLER_PORTAL_SIGNING_ENABLED ? 'digital_pack' : 'manual_upload',
       signed_mandate: savedRoutes.signed_mandate === 'digital_pack' && SELLER_PORTAL_SIGNING_ENABLED ? 'digital_pack' : 'manual_upload',
     })
@@ -27460,19 +27469,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     if (!SELLER_PORTAL_SIGNING_ENABLED) setSellerOnboardingReviewRoute('manual_upload')
     const formData = getSellerLeadReviewFormData(selectedLead, selectedLeadLinkedListing)
     setSellerSigningPackError('')
-    setSellerSigningPackTerms({
-      mandateType: normalizeText(formData.mandateType || selectedLeadLinkedListing?.mandateType),
-      askingPrice: normalizeText(formData.askingPrice || formData.asking_price || selectedLeadLinkedListing?.askingPrice || selectedLeadLinkedListing?.asking_price),
-      startDate: normalizeText(formData.mandateStartDate || formData.mandate_start_date).slice(0, 10),
-      endDate: normalizeText(formData.mandateEndDate || formData.mandate_end_date).slice(0, 10),
-      protectionPeriod: normalizeText(formData.mandateProtectionPeriod || formData.mandate_protection_period || formData.protectionPeriodDays),
-      otherAgencyName: normalizeText(formData.otherAgencyName || formData.coAgencyName),
-      protectionPeriodDays: normalizeText(formData.protectionPeriodDays || formData.mandateProtectionPeriod || formData.mandate_protection_period),
-      commissionBasis: normalizeText(formData.commissionBasis || formData.commission_basis) === 'fixed' ? 'fixed' : 'percentage',
-      commissionPercentage: normalizeText(formData.commissionPercentage || formData.commission_percent || formData.mandateCommissionPercentage),
-      commissionAmount: normalizeText(formData.commissionAmount || formData.commission_amount),
-      vatHandling: normalizeText(formData.vatHandling || formData.vat_handling),
-    })
+    setSellerSigningPackTerms(readSellerMandateTerms(formData, selectedLeadLinkedListing || {}))
     setSellerSigningPackModalOpen(true)
   }
 
@@ -27492,8 +27489,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     const listingId = normalizeText(selectedLeadLinkedListingId)
     const leadId = normalizeText(selectedLead?.leadId || selectedLead?.lead_id || selectedLead?.id)
     if (sellerSigningPackSaving) return
-    const currentOnboarding = getLeadSellerOnboardingFormData(selectedLead)
-    const disclosureOutstanding = !hasCompletedOnboardingDisclosureSignature(currentOnboarding)
+    const disclosureOutstanding = !selectedSellerDisclosureComplete
     const selectedDocumentRoutes = { ...sellerOnboardingDocumentRoutes }
     if (!disclosureOutstanding) delete selectedDocumentRoutes.signed_disclosure_form
     const digitalKeys = Object.entries(selectedDocumentRoutes).filter(([, route]) => route === 'digital_pack').map(([key]) => key)
@@ -27529,37 +27525,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setSellerSigningPackError(`Complete required signer details before sending: ${incompleteRecipients.join('; ') || 'at least one signer is required'}.`)
       return
     }
-    const percentage = Number(sellerSigningPackTerms.commissionPercentage)
-    const amount = Number(sellerSigningPackTerms.commissionAmount)
-    if (!normalizeText(sellerSigningPackTerms.mandateType)) {
-      setSellerSigningPackError('Choose the mandate type before sending.')
-      return
-    }
-    try {
-      requireSellerMandateWording(sellerSigningPackTerms.mandateType)
-    } catch (wordingError) {
-      setSellerSigningPackError(wordingError.message)
-      return
-    }
-    if (sellerSigningPackTerms.mandateType === 'dual' && !normalizeText(sellerSigningPackTerms.otherAgencyName)) {
-      setSellerSigningPackError('Name the second agency before preparing a dual mandate.')
-      return
-    }
-    if (sellerSigningPackTerms.protectionPeriod && (!Number.isInteger(Number(sellerSigningPackTerms.protectionPeriod)) || Number(sellerSigningPackTerms.protectionPeriod) < 0)) {
-      setSellerSigningPackError('Enter a whole number of protection days, or leave it blank for none.')
-      return
-    }
-    if (sellerSigningPackTerms.commissionBasis === 'fixed' ? !(amount > 0) : !(percentage > 0)) {
-      setSellerSigningPackError(sellerSigningPackTerms.commissionBasis === 'fixed' ? 'Enter a fixed Rand commission amount before sending.' : 'Enter a commission percentage before sending.')
-      return
-    }
-    if (!normalizeText(sellerSigningPackTerms.vatHandling)) {
-      setSellerSigningPackError('Select the VAT treatment before sending the mandate.')
+    const mandateIssues = selectedDocumentRoutes.signed_mandate ? getSellerMandatePreparationIssues(sellerSigningPackTerms, { ownershipType: formData.ownerStructureType || formData.ownershipType || formData.sellerLegalType || formData.sellerType }) : []
+    if (mandateIssues.length) {
+      setSellerSigningPackError(`Complete the mandate details before preparing copies: ${mandateIssues.join('; ')}.`)
       return
     }
 
     setSellerSigningPackError('')
     setSellerSigningPackSaving(true)
+    setSellerSigningPackProgress('Preparing reviewed documents…')
     let dispatchedDocuments = 0
     try {
     let listingSnapshot = selectedLeadLinkedListing?.sourceListing || selectedLeadLinkedListing
@@ -27668,6 +27642,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           signingPack,
           postOnboardingDrafts,
           formData,
+          disclosureSigned: selectedSellerDisclosureComplete,
           actor: normalizeText(currentAgent?.id),
           generatedAt: now,
         })
@@ -27676,7 +27651,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           formalPackApproval,
           signingPack,
           postOnboardingDrafts,
-          disclosureSigned: hasCompletedOnboardingDisclosureSignature(formData),
+          disclosureSigned: selectedSellerDisclosureComplete,
           actor: normalizeText(currentAgent?.id),
           generatedAt: now,
         })
@@ -27713,6 +27688,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
     nextFormData.seller_onboarding_signing_lifecycle = nextFormData.sellerOnboardingSigningLifecycle
 
+      setSellerSigningPackProgress('Saving approved copies and refreshing the checklist…')
       const canonicalSaveResult = await saveListingSellerCanonicalUpdate({
         listing: listingSnapshot,
         formPatch: nextFormData,
@@ -27721,6 +27697,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         source: 'seller_lead_signing_pack',
         organisationId,
         syncLinkedCrmContact: false,
+        forceRequirementSync: true,
         includeRequirementsAndDocuments: false,
       })
       setSelectedLeadHydratedListing(canonicalSaveResult.listing)
@@ -27730,6 +27707,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
       const sent = []
       for (const documentKey of digitalKeys) {
+        setSellerSigningPackProgress(`Sending signing links (${sent.length + 1} of ${digitalKeys.length})…`)
         const result = await sendSellerDocumentForSignature(listingId, documentKey)
         sent.push({ documentKey, sentCount: result.sentCount })
         dispatchedDocuments += 1
@@ -27739,6 +27717,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         setSellerPortalSigningRequests(requests.documents || [])
       }
 
+      setSellerSigningPackProgress('Finishing the seller workflow…')
       await updatePrivateListing(listingId, {
         mandateStatus: 'generated',
       }, { includeRequirementsAndDocuments: false })
@@ -27760,6 +27739,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setSellerSigningPackModalOpen(true)
     } finally {
       setSellerSigningPackSaving(false)
+      setSellerSigningPackProgress('')
     }
   }
 
@@ -39946,6 +39926,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                        </section>
 	                        ) : null}
 
+                        <TransactionHandoffRegisterPanel
+                          transactionId={selectedLeadLinkedTransactionId}
+                          refreshKey={selectedLeadLinkedTransaction?.updated_at || selectedLeadLinkedTransaction?.updatedAt || ''}
+                        />
+
 		                      </div>
 
                     </div>
@@ -41001,6 +40986,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         <iframe
           title={`${sellerLeadGeneratedPreview?.title || 'Seller document'} preview`}
           srcDoc={sellerLeadGeneratedPreview?.markup || ''}
+          onLoad={event => prepareSellerMandateReviewPreview(event.currentTarget).catch(() => setSellerLeadGeneratedPreviewError('The complete mandate could not be displayed. Reload the preview.'))}
           sandbox="allow-same-origin"
           className="h-[68vh] min-h-[420px] w-full rounded-xl border border-[#dbe4ee] bg-white"
         />
@@ -41045,27 +41031,44 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           <fieldset className="grid gap-3 rounded-[16px] border border-[#dce6f2] bg-white p-4">
             <legend className="px-1 text-sm font-semibold text-[#243d56]">Choose how each document will be signed</legend>
             {[
-              ...(!hasCompletedOnboardingDisclosureSignature(getLeadSellerOnboardingFormData(selectedLead)) ? [['signed_disclosure_form', 'Mandatory Disclosure / Defects Form']] : []),
+              ...(!selectedSellerDisclosureComplete ? [['signed_disclosure_form', 'Mandatory Disclosure / Defects Form']] : []),
               ['signed_fica_declaration', 'Seller FICA declaration'],
               ['signed_mandate', 'Seller mandate'],
             ].map(([documentKey, label]) => (
-              <label key={documentKey} className="grid gap-2 rounded-xl border border-[#dce6f2] p-3 text-sm font-semibold text-[#243d56] sm:grid-cols-[1fr_auto] sm:items-center">
+              <div key={documentKey} className="grid gap-3 rounded-xl border border-[#dce6f2] p-3 text-sm font-semibold text-[#243d56]">
                 <span>{label}</span>
-                <select aria-label={`${label} signing route`} className="rounded-lg border border-[#cfdceb] bg-white px-3 py-2" value={sellerOnboardingDocumentRoutes[documentKey]} onChange={(event) => setSellerOnboardingDocumentRoutes((previous) => ({ ...previous, [documentKey]: event.target.value }))}>
-                  <option value="manual_upload">Sign physically · upload original</option>
-                  <option value="digital_pack" disabled={!SELLER_PORTAL_SIGNING_ENABLED}>Sign digitally · send private links</option>
-                </select>
-              </label>
+                <div role="group" aria-label={`${label} signing route`} className="grid gap-2 sm:grid-cols-2">
+                  {[
+                    ['manual_upload', 'Sign physically', 'Upload the signed original'],
+                    ['digital_pack', 'Sign digitally', 'Send private signing links'],
+                  ].map(([route, title, description]) => {
+                    const selected = sellerOnboardingDocumentRoutes[documentKey] === route
+                    return (
+                      <button
+                        key={route}
+                        type="button"
+                        aria-pressed={selected}
+                        disabled={sellerOnboardingReviewSaving || (route === 'digital_pack' && !SELLER_PORTAL_SIGNING_ENABLED)}
+                        onClick={() => setSellerOnboardingDocumentRoutes((previous) => ({ ...previous, [documentKey]: route }))}
+                        className={`rounded-xl border px-3 py-3 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#13784f] disabled:cursor-not-allowed disabled:opacity-50 ${selected ? 'border-[#13784f] bg-[#eaf7ef] text-[#126946]' : 'border-[#cfdceb] bg-white text-[#243d56] hover:border-[#b9cde3]'}`}
+                      >
+                        <span className="flex items-center gap-2">{selected ? <Check className="h-4 w-4" aria-hidden="true" /> : null}{title}</span>
+                        <span className="mt-1 block text-xs font-normal">{description}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
             ))}
             {!SELLER_PORTAL_SIGNING_ENABLED ? <p className="text-xs text-[#6a8098]">Digital signing is awaiting portal release configuration.</p> : null}
-            {hasCompletedOnboardingDisclosureSignature(getLeadSellerOnboardingFormData(selectedLead)) ? <p className="rounded-xl bg-[#eaf7ee] px-3 py-2 text-sm text-[#176842]">The defects disclosure was signed during onboarding. It will not be sent again.</p> : null}
+            {selectedSellerDisclosureComplete ? <p className="rounded-xl bg-[#eaf7ee] px-3 py-2 text-sm text-[#176842]">The defects disclosure already has complete signed evidence. It will not be sent again.</p> : null}
           </fieldset>
         </div>
       </Modal>
 
       <Modal
         open={sellerSigningPackModalOpen}
-        onClose={() => setSellerSigningPackModalOpen(false)}
+        onClose={() => { if (!sellerSigningPackSaving) setSellerSigningPackModalOpen(false) }}
         title="Prepare seller signing pack"
         subtitle="This stays on the seller lead. It does not create, publish, or activate a market listing."
         className="max-w-3xl"
@@ -41073,12 +41076,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <Button type="button" variant="secondary" disabled={sellerSigningPackSaving} onClick={() => setSellerSigningPackModalOpen(false)}>Cancel</Button>
             <Button type="button" disabled={sellerSigningPackSaving} onClick={() => void sendSellerLeadSigningPack()}>
-              {sellerSigningPackSaving ? 'Preparing…' : Object.values(sellerOnboardingDocumentRoutes).includes('digital_pack') ? 'Approve and send selected links' : 'Prepare physical copies'}
+              {sellerSigningPackSaving ? sellerSigningPackProgress || 'Preparing…' : Object.values(sellerOnboardingDocumentRoutes).includes('digital_pack') ? 'Approve and send selected links' : 'Prepare physical copies'}
             </Button>
           </div>
         )}
       >
         <div className="space-y-5">
+          {sellerSigningPackSaving ? <p role="status" aria-live="polite" className="text-sm font-semibold text-[#47637d]">{sellerSigningPackProgress}</p> : null}
           {sellerSigningPackError ? (
             <div role="alert" className="rounded-[16px] border border-[#f3c6c1] bg-[#fff6f5] px-4 py-3 text-sm leading-6 text-[#a33c32]">
               {sellerSigningPackError}
@@ -41091,36 +41095,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             <legend className="px-1 text-sm font-semibold text-[#243d56]">Signing routes</legend>
             <div className="grid gap-1 text-sm text-[#243d56]">{Object.entries({ signed_disclosure_form: 'Disclosure', signed_fica_declaration: 'FICA', signed_mandate: 'Mandate' }).filter(([key]) => key in sellerOnboardingDocumentRoutes).map(([key, label]) => <span key={key}>{label}: {sellerOnboardingDocumentRoutes[key] === 'digital_pack' ? 'private signing links will be emailed to every required signer' : 'download and upload the signed original'}</span>)}</div>
           </fieldset>
-          <fieldset className="grid gap-4 rounded-[16px] border border-[#dce6f2] bg-white p-4 text-sm sm:grid-cols-2">
-            <legend className="px-1 text-sm font-semibold text-[#243d56]">Mandate commercial terms</legend>
-            <label className="grid gap-1.5 font-semibold text-[#243d56]">Mandate type <span className="font-normal text-[#607387]">Pre-filled if it was captured earlier; otherwise choose it now.</span>
-              <Field as="select" value={sellerSigningPackTerms.mandateType} onChange={(event) => setSellerSigningPackTerms((previous) => ({ ...previous, mandateType: event.target.value }))}>
-                <option value="">Choose mandate type</option><option value="sole">Exclusive</option><option value="open">Open</option>
-              </Field>
-            </label>
-            {sellerSigningPackTerms.mandateType === 'dual' ? <label className="grid gap-1.5 font-semibold text-[#243d56]">Second agency name
-              <Field value={sellerSigningPackTerms.otherAgencyName} onChange={(event) => setSellerSigningPackTerms((previous) => ({ ...previous, otherAgencyName: event.target.value }))} placeholder="Agency named in the dual appointment" />
-            </label> : null}
-            <label className="grid gap-1.5 font-semibold text-[#243d56]">Asking price (R)
-              <Field type="number" min="1" step="1" value={sellerSigningPackTerms.askingPrice} onChange={(event) => setSellerSigningPackTerms((previous) => ({ ...previous, askingPrice: event.target.value }))} />
-            </label>
-            <label className="grid gap-1.5 font-semibold text-[#243d56]">Mandate starts
-              <Field type="date" value={sellerSigningPackTerms.startDate} onChange={(event) => setSellerSigningPackTerms((previous) => ({ ...previous, startDate: event.target.value }))} />
-            </label>
-            <label className="grid gap-1.5 font-semibold text-[#243d56]">Mandate ends
-              <Field type="date" min={sellerSigningPackTerms.startDate || undefined} value={sellerSigningPackTerms.endDate} onChange={(event) => setSellerSigningPackTerms((previous) => ({ ...previous, endDate: event.target.value }))} />
-            </label>
-            <label className="grid gap-1.5 font-semibold text-[#243d56]">Buyer protection period in days <span className="font-normal text-[#607387]">Only if agreed</span>
-              <Field type="number" min="0" step="1" value={sellerSigningPackTerms.protectionPeriod} onChange={(event) => setSellerSigningPackTerms((previous) => ({ ...previous, protectionPeriod: event.target.value }))} />
-            </label>
-            <fieldset className="grid gap-2"><legend className="font-semibold text-[#243d56]">Commission basis</legend><div className="flex flex-wrap gap-3"><label className="inline-flex items-center gap-2"><input type="radio" name="seller-lead-commission-basis" checked={sellerSigningPackTerms.commissionBasis === 'percentage'} onChange={() => setSellerSigningPackTerms((previous) => ({ ...previous, commissionBasis: 'percentage' }))} />Percentage</label><label className="inline-flex items-center gap-2"><input type="radio" name="seller-lead-commission-basis" checked={sellerSigningPackTerms.commissionBasis === 'fixed'} onChange={() => setSellerSigningPackTerms((previous) => ({ ...previous, commissionBasis: 'fixed' }))} />Fixed Rand amount</label></div></fieldset>
-            <label className="grid gap-1.5 font-semibold text-[#243d56]">{sellerSigningPackTerms.commissionBasis === 'fixed' ? 'Fixed commission amount (R)' : 'Commission percentage'}
-              <Field type="number" min="0" step="0.01" value={sellerSigningPackTerms.commissionBasis === 'fixed' ? sellerSigningPackTerms.commissionAmount : sellerSigningPackTerms.commissionPercentage} onChange={(event) => setSellerSigningPackTerms((previous) => ({ ...previous, [previous.commissionBasis === 'fixed' ? 'commissionAmount' : 'commissionPercentage']: event.target.value }))} />
-            </label>
-            <label className="grid gap-1.5 font-semibold text-[#243d56]">VAT treatment
-              <Field as="select" value={sellerSigningPackTerms.vatHandling} onChange={(event) => setSellerSigningPackTerms((previous) => ({ ...previous, vatHandling: event.target.value }))}><option value="">Select VAT treatment</option><option value="no">No VAT</option><option value="exclusive">VAT exclusive</option><option value="inclusive">VAT inclusive</option></Field>
-            </label>
-          </fieldset>
+          <SellerMandateDetailsEditor value={sellerSigningPackTerms} allowExtendedCapture={false} captureReadOnly ownershipType={getSellerLeadReviewFormData(selectedLead, selectedLeadLinkedListing).sellerLegalType} onChange={setSellerSigningPackTerms} />
           <section className="rounded-[16px] border border-[#dce6f2] bg-white p-4 text-sm">
             <p className="font-semibold text-[#243d56]">Required signer{getSellerLeadSigningRecipients().length === 1 ? '' : 's'}</p>
             <div className="mt-3 space-y-2">{getSellerLeadSigningRecipients().map((signer, index) => <div key={`${signer.email}:${signer.role}:${index}`} className="flex flex-wrap justify-between gap-2 rounded-xl bg-[#f8fbff] px-3 py-2"><span className="font-semibold text-[#243d56]">{signer.name || 'Name required'} <span className="font-normal text-[#607387]">· Required signer</span></span><span className="text-[#607387]">{signer.email || 'Email required'}</span></div>)}</div>

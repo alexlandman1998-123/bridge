@@ -1,9 +1,10 @@
 import { Buffer } from 'node:buffer'
 import { describe, expect, it } from 'vitest'
+import { buildAppointmentICSPayload, getGoogleCalendarLink, getOutlookCalendarLink } from '../src/services/appointmentCalendarInviteService'
 import { buildIcsAttachment } from '../../supabase/functions/send-email/handlers/appointment.ts'
 
 function decodeAttachment(attachment) {
-  return Buffer.from(attachment.content, 'base64').toString('utf8')
+  return Buffer.from(attachment.content, 'base64').toString('utf8').replace(/\r\n[ \t]/g,'')
 }
 
 function payload(overrides = {}) {
@@ -75,4 +76,28 @@ describe('appointment calendar attachment', () => {
     expect(content).toContain('DTSTART:20260720T080000Z')
     expect(content).toContain('DTEND:20260720T084500Z')
   })
+})
+
+it('keeps retry attachments stable, advances sequence and folds Unicode lines', () => {
+  const input = payload({calendarSequence:3,calendarTimestamp:'2026-10-03T12:00:00Z',appointmentTitle:'é'.repeat(100)})
+  const first=buildIcsAttachment(input), second=buildIcsAttachment(input)
+  expect(first.content).toBe(second.content)
+  const raw=Buffer.from(first.content,'base64').toString('utf8')
+  expect(raw.split('\r\n').every(line=>Buffer.byteLength(line,'utf8')<=75)).toBe(true)
+  expect(decodeAttachment(first)).toContain('SEQUENCE:3')
+  expect(decodeAttachment(first)).toContain('DTSTAMP:20261003T120000Z')
+  const cancelled=decodeAttachment(buildIcsAttachment({...input,type:'appointment_cancelled',calendarSequence:4}))
+  expect(cancelled).toContain('SEQUENCE:4')
+  expect(cancelled).toContain('METHOD:CANCEL')
+  expect(cancelled).toContain('UID:bridge-11111111-1111-4111-8111-111111111111@bridge.app')
+})
+
+it('uses saved SAST civil times and revision in downloadable calendar links',()=>{
+  const input={appointment_id:'stable',appointment_date:'2099-07-20',start_time:'10:00',end_time:'11:30',status:'Pending Confirmation',calendar_revision:2}
+  const event=buildAppointmentICSPayload(input)
+  expect(event.start.toISOString()).toBe('2099-07-20T08:00:00.000Z')
+  expect(event.end.toISOString()).toBe('2099-07-20T09:30:00.000Z')
+  expect(event).toMatchObject({sequence:2,status:'TENTATIVE',uid:'bridge-stable@bridge.app'})
+  expect(new URL(getGoogleCalendarLink(input)).searchParams.get('dates')).toBe('20990720T100000/20990720T113000')
+  expect(new URL(getOutlookCalendarLink(input)).searchParams.get('startdt')).toBe('2099-07-20T08:00:00.000Z')
 })

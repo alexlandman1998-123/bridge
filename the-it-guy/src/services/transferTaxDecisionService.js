@@ -54,6 +54,13 @@ function sellerReviews(value) {
     directiveReference: text(review?.directiveReference),
     withholdingRequired: yesNoUnknown(review?.withholdingRequired),
     paymentReference: text(review?.paymentReference),
+    remittanceStatus: ['planned', 'withheld', 'paid'].includes(key(review?.remittanceStatus)) ? key(review.remittanceStatus) : 'unknown',
+    reservedFundsReference: text(review?.reservedFundsReference),
+    remittanceOwner: text(review?.remittanceOwner),
+    paymentEvent: text(review?.paymentEvent),
+    dueOn: text(review?.dueOn),
+    withheldOn: text(review?.withheldOn),
+    purchaserResidence: ['resident', 'non_resident'].includes(key(review?.purchaserResidence)) ? key(review.purchaserResidence) : 'unknown',
     proofReference: text(review?.proofReference),
     basisNote: text(review?.basisNote),
   }]))

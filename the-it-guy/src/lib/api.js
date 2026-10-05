@@ -1,3 +1,7 @@
+import { buildTransactionPartiesSnapshot, transactionPartiesOnboardingSeed } from '../core/transactions/transactionPartyProfile.js'
+import { readTransactionHandoffDispatchMode } from '../services/transactionHandoffRegisterService.js'
+import { sealBondReviewedVersion } from '../modules/bond/application/submission/bondApplicationReviewedVersion.js'
+import { createBuyerBondApplicationRuntimeService } from '../modules/bond/application/workspace/bondApplicationRuntimeService.js'
 import { assertBondApplicationSigningAvailable } from '../modules/bond/application/submission/bondApplicationSigningAvailability.js'
 import { isBondCorrectionResubmission } from '../modules/bond/application/submission/bondApplicationCorrection.js'
 import { DOCUMENTS_BUCKET_CANDIDATES, createScopedSupabaseClient, invokeEdgeFunction, supabase } from './supabaseClient'
@@ -5,6 +9,7 @@ import { uploadToStorageCandidateBuckets } from './storageFallbacks'
 import { validateDocumentUploadFile } from './documentUploadPolicy'
 import { reportDocumentUploadTelemetry } from './documentUploadObservability'
 import { createDocumentUploadProgressReporter } from './documentUploadLifecycle'
+import { isAttorneyDocumentActor, persistAttorneyDocument, requestAttorneyDocuments, reviewAttorneyDocument, reviewAttorneyDocumentRequest, isDefiniteDocumentSaveFailure } from '../services/documents/attorneyDocumentPersistence.js'
 import { retryMutationWithoutReportedMissingColumns } from './targetedMissingColumnRetry.js'
 import {
   COMPATIBILITY_FALLBACK_IDS,
@@ -106,6 +111,7 @@ import {
   resolveWizardHandoffNextAction,
   resolveWizardInitialTransactionStage,
 } from '../core/transactions/newTransactionSetupHealth.js'
+import { resolveTransactionCaptureParticipantPolicy } from '../core/transactions/transactionCaptureFinance.js'
 import { resolveTransactionSaleProfile } from '../core/transactions/transactionSaleProfile.js'
 import { assertTransactionCreationInput } from '../core/transactions/transactionCreationInput.js'
 import {
@@ -257,7 +263,8 @@ import {
 import { bondPerfLog, createPerfTimer } from './performanceTrace'
 import { resolveLegalDocumentRequirements } from '../services/attorneyWorkflow/attorneyDocumentRequirementsResolver'
 import { normalizePropertyCategory, normalizePropertyStructureType, PROPERTY_CATEGORIES } from './propertyTaxonomy'
-import { getSuggestedRescheduleSlots } from './appointmentAvailabilityEngine'
+import { respondToPortalAppointment } from '../services/clientAppointmentResponseService.js'
+import { appointmentStartIso } from '../core/appointments/attorneyCalendarModel.js'
 import { resolveTransactionParticipantShape } from '../services/roleResolutionService'
 import { assertWorkspaceEntitlementLimit } from '../services/workspaceEntitlementsService'
 import {
@@ -10828,7 +10835,7 @@ async function upsertTransactionParticipantsRowsWithFallback(
   return result
 }
 
-async function ensureTransactionParticipants(client, { transaction, buyer }) {
+async function ensureTransactionParticipants(client, { transaction, buyer, explicitCapture = null }) {
   if (!transaction?.id) {
     return {
       participants: [],
@@ -10846,7 +10853,9 @@ async function ensureTransactionParticipants(client, { transaction, buyer }) {
       })
     : []
 
-  const defaults = buildDefaultParticipantRows(transaction, buyer, inheritedParticipants)
+  const participantPolicy = await resolveTransactionCaptureParticipantPolicy({ client, transactionId: transaction.id, explicitCapture,
+    defaults: buildDefaultParticipantRows(transaction, buyer, inheritedParticipants) })
+  const defaults = participantPolicy.defaults
   const rowSelect = TRANSACTION_PARTICIPANT_FULL_SELECT
 
   const profileIdByEmail = await resolveProfileIdsByEmail(
@@ -11023,6 +11032,16 @@ async function ensureTransactionParticipants(client, { transaction, buyer }) {
     throw upsertResult.error
   }
 
+  // Captured professionals are owned by nomination/connection, not defaults.
+  // Include those persisted rows in the view without overwriting their access.
+  if (participantPolicy.captured) {
+    let persisted = await client.from('transaction_participants').select(rowSelect).eq('transaction_id', transaction.id)
+    if (persisted.error && isMissingTransactionParticipantExtendedColumn(persisted.error)) {
+      persisted = await client.from('transaction_participants').select(TRANSACTION_PARTICIPANT_LEGACY_SELECT).eq('transaction_id', transaction.id)
+    }
+    if (persisted.error) throw persisted.error
+    upsertResult = persisted
+  }
   const participants = (upsertResult.data || []).map((row) => normalizeTransactionParticipantRow(row))
   const viewerRole = await resolveViewerRole(client, participants)
   const activeViewer = participants.find((item) => item.roleType === viewerRole) || participants[0]
@@ -13760,7 +13779,7 @@ function normalizeAppointmentRecordRow(row = {}) {
     date: row?.appointment_date || null,
     startTime: row?.start_time || null,
     endTime: row?.end_time || null,
-    dateTime: row?.date_time || null,
+    dateTime: appointmentStartIso(row),
     location: String(row?.location || '').trim() || null,
     notes: String(row?.notes || '').trim() || null,
     status: String(row?.status || '').trim() || 'Pending Confirmation',
@@ -15506,12 +15525,39 @@ export async function fetchTransactionDocumentRequests(transactionId) {
   return result[transactionId] || []
 }
 
+async function notifySavedAttorneyDocumentRequests(client, { transactionId, actorRole, requests }) {
+  const notifications = async () => {
+    for (const request of requests) {
+      const roleTarget = normalizeRequestRoleScope(request.assigned_to_role, 'client')
+      const targets = await fetchNotificationTargetsByRole(client, {
+        transactionId, roleTypes: roleTarget === 'client' ? ['buyer', 'seller', 'client'] : [roleTarget],
+      })
+      await Promise.all(targets.map(target => createTransactionNotificationIfPossible(client, {
+        transactionId, userId: target.userId, roleType: target.roleType || roleTarget,
+        notificationType: 'additional_document_requested', title: 'Additional document requested',
+        message: `${TRANSACTION_ROLE_LABELS[actorRole] || actorRole} requested ${request.title} for this transaction.`,
+        eventType: 'TransactionUpdated',
+        eventData: { source: 'additional_document_requested', requestId: request.id, documentName: request.title,
+          requestedFrom: request.requested_from, visibility: request.visibility_scope, priority: request.priority, dueDate: request.due_date },
+        dedupeKey: `additional-doc-request:${request.id}:${target.userId}`,
+      })))
+    }
+  }
+  const results = await Promise.allSettled([
+    sendAdditionalDocumentRequestEmails(client, { transactionId, actorRole, requests }), notifications(),
+  ])
+  if (results.some(result => result.status === 'rejected')) {
+    console.warn('[document-requests] Saved request notification could not be delivered')
+  }
+}
+
 export async function createTransactionDocumentRequests({
   transactionId,
   requests = [],
   requestGroupLabel = null,
   requestGroupDescription = null,
   createdByRole = null,
+  commandId = null,
 } = {}) {
   const client = requireClient()
   if (!transactionId) {
@@ -15537,7 +15583,7 @@ export async function createTransactionDocumentRequests({
   const createdAt = new Date().toISOString()
   let groupId = null
 
-  if (requests.length > 1 || requestGroupLabel) {
+  if (!isAttorneyDocumentActor(actor.role) && (requests.length > 1 || requestGroupLabel)) {
     const groupPayload = {
       transaction_id: transactionId,
       title: normalizeTextValue(requestGroupLabel || 'Document Request Pack'),
@@ -15616,6 +15662,18 @@ export async function createTransactionDocumentRequests({
       updated_at: createdAt,
     }
   })
+
+  if (isAttorneyDocumentActor(actor.role)) {
+    const savedRequests = await requestAttorneyDocuments(client, {
+      transactionId, requests: insertRows, commandId,
+      groupTitle: requestGroupLabel, groupDescription: requestGroupDescription,
+    })
+    // Requests, canonical projections and activity have committed together.
+    // Notification delivery is independent of the saved request receipt.
+    void notifySavedAttorneyDocumentRequests(client, { transactionId, actorRole: normalizedActorRole, requests: savedRequests })
+      .catch(() => console.warn('[document-requests] Saved request notification could not be delivered'))
+    return savedRequests.map(normalizeDocumentRequestRow)
+  }
 
   let insert = await client
     .from('document_requests')
@@ -15738,6 +15796,14 @@ export async function createTransactionDocumentRequests({
   }
 
   return normalizedCreatedRequests
+}
+
+export async function reviewAttorneyMatterDocumentRequest({ requestId, documentId, action, reason = '', commandId } = {}) {
+  if (!requestId || !documentId) throw new Error('Choose the received document before reviewing this request.')
+  if (!['approve', 'reject'].includes(action)) throw new Error('Choose approval or a correction request.')
+  if (action === 'reject' && !reason.trim()) throw new Error('Explain the correction required.')
+  const result = await reviewAttorneyDocumentRequest(requireClient(), { requestId, documentId, action, reason, commandId })
+  return { ...normalizeDocumentRequestRow(result.request), saved: true, refreshRequired: true }
 }
 
 export async function updateTransactionDocumentRequestStatus({
@@ -18324,6 +18390,16 @@ async function fetchSharedDocumentRowsByTransactionIds(client, transactionIds = 
   }
 
   const documentSelectCandidates = [
+    {
+      select:
+        'id, transaction_id, name, file_path, category, document_type, status, review_status, visibility_scope, stage_key, uploaded_by_user_id, is_client_visible, uploaded_by_role, uploaded_by_email, uploaded_by_party, external_access_id, bucket_key, source, source_document_id, file_bucket, finance_lane, related_entity_type, related_entity_id, canonical_requirement_instance_id, created_at, updated_at, notes, lane_key, attorney_role, attorney_persistence_version, client_recipient_role, attorney_version_root_id, attorney_version_previous_id, attorney_version_number, attorney_version_kind, attorney_version_document_type, attorney_target_requirement_id, attorney_target_request_id',
+      hasClientVisibilityColumn: true,
+    },
+    {
+      select:
+        'id, transaction_id, name, file_path, category, document_type, status, review_status, visibility_scope, stage_key, uploaded_by_user_id, is_client_visible, uploaded_by_role, uploaded_by_email, uploaded_by_party, external_access_id, bucket_key, source, source_document_id, file_bucket, finance_lane, related_entity_type, related_entity_id, canonical_requirement_instance_id, created_at, updated_at, notes, lane_key, attorney_role, attorney_persistence_version, client_recipient_role',
+      hasClientVisibilityColumn: true,
+    },
     {
       select:
         'id, transaction_id, name, file_path, category, document_type, status, review_status, visibility_scope, stage_key, uploaded_by_user_id, is_client_visible, uploaded_by_role, uploaded_by_email, uploaded_by_party, external_access_id, bucket_key, source, source_document_id, file_bucket, finance_lane, related_entity_type, related_entity_id, canonical_requirement_instance_id, created_at, updated_at',
@@ -30451,6 +30527,13 @@ function normalizeWizardBuyerParty(party = {}, index = 0, fallbackPurchaserType 
 
   return {
     id: normalizeNullableText(party.id) || `buyer-party-${index + 1}`,
+    maritalStatus: normalizeNullableText(party.maritalStatus || party.marital_status),
+    marital_status: normalizeNullableText(party.maritalStatus || party.marital_status),
+    maritalRegime: normalizeNullableText(party.maritalRegime || party.marital_regime),
+    marital_regime: normalizeNullableText(party.maritalRegime || party.marital_regime),
+    spouseOfId: normalizeNullableText(party.spouseOfId),
+    isOwner: party.isOwner === true,
+    primaryContact: party.primaryContact === true,
     role,
     party_role: role,
     purchaserType,
@@ -30623,7 +30706,7 @@ function normalizeWizardHandoffChecklist(input = {}) {
 
 async function persistInitialBuyerPartiesOnboardingData(
   client,
-  { transactionId, purchaserType, buyerParties = [], financeSnapshot = {}, handoffChecklist = {} } = {},
+  { transactionId, purchaserType, buyerParties = [], financeSnapshot = {}, handoffChecklist = {}, transactionParties = null } = {},
 ) {
   if (!transactionId) {
     return null
@@ -30645,7 +30728,7 @@ async function persistInitialBuyerPartiesOnboardingData(
       ].some((value) => value !== null && value !== undefined && value !== ''),
   )
 
-  if (!buyerParties.length && !hasFinanceSeed) {
+  if (!buyerParties.length && !hasFinanceSeed && !transactionParties) {
     return null
   }
 
@@ -30675,6 +30758,7 @@ async function persistInitialBuyerPartiesOnboardingData(
   const primaryParty = buyerParties.find((party) => party.isPrimary || party.role === 'primary_purchaser') || buyerParties[0]
   const nextFormData = {
     ...existingFormData,
+    ...transactionPartiesOnboardingSeed(transactionParties),
     purchaser_type: purchaserType,
     purchaser_entity_type: purchaserType,
     purchasers: buyerParties.length ? buyerParties : existingFormData.purchasers,
@@ -31135,12 +31219,14 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
 
   const purchaserType = normalizePurchaserType(setup.purchaserType)
   const buyerParties = resolveWizardBuyerParties(setup, purchaserType)
+  const transactionParties = setup.transactionParties ? buildTransactionPartiesSnapshot(setup.transactionParties) : null
   const handoffChecklist = normalizeWizardHandoffChecklist(options?.handoffChecklist || setup?.handoffChecklist || {})
   const requestedDetailedStage = normalizeTransactionStage(status.stage, 'Reserved')
   const requestedMainStage = normalizeMainStage(status.mainStage, requestedDetailedStage)
   const initialTransactionStage = resolveWizardInitialTransactionStage(handoffChecklist, {
     stage: requestedDetailedStage,
     mainStage: requestedMainStage,
+    preserveCapturedStage: Boolean(options?.preserveCapturedStage || options?.creationOrigin === 'quick_address_capture'),
   })
   const resolvedDetailedStage = normalizeTransactionStage(initialTransactionStage.stage, requestedDetailedStage)
   const resolvedMainStage = normalizeMainStage(initialTransactionStage.mainStage, resolvedDetailedStage)
@@ -31218,7 +31304,18 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
           (existing) => normalizeRoleType(existing.roleType) === normalizeRoleType(selection.roleType),
         ),
     ),
-  ].map(prepareFirmFirstTransferRoleplayer)
+  ].filter((selection) => {
+    if (!finance.captureSnapshot) return true
+    const capture = finance.captureSnapshot
+    // An explicitly captured external nominee supersedes development defaults;
+    // only organisation connection may grant that professional matter access.
+    if (capture.professionalNominations?.some((nomination) => nomination.roleType === selection.roleType && nomination.connected === false)) return false
+    const usesBond = ['bond', 'hybrid', 'combination'].includes(capture.type)
+    if (selection.roleType === 'bond_originator') return usesBond && capture.managedBy === 'bond_originator'
+    if (selection.roleType === 'bond_attorney') return usesBond
+    if (selection.roleType === 'cancellation_attorney') return capture.sellerBondStatus === 'yes'
+    return true
+  }).map(prepareFirmFirstTransferRoleplayer)
   const primaryPartnerSelection =
     mergedRolePlayerSelections.find((item) => item.partnerOrganisationId || item.partnerRelationshipId) || null
   const hierarchyScope =
@@ -31674,6 +31771,7 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
 
   try {
     const participantsResult = await ensureTransactionParticipants(client, {
+      explicitCapture: Boolean(finance.captureSnapshot),
       transaction: {
         ...transactionPayload,
         id: transaction.id,
@@ -31719,7 +31817,7 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       buyerId: buyer?.id || null,
       financeType: normalizedFinanceType,
     })
-    if (propagationResult.attorneyAssignments.length < expectedAttorneyAssignments.length) {
+    if (propagationResult.attorneyAssignments.length < expectedAttorneyAssignments) {
       const error = new Error('The selected attorney assignment did not reach the attorney workspace.')
       error.code = 'ATTORNEY_ASSIGNMENT_SETUP_INCOMPLETE'
       error.setupArea = 'attorney_assignment'
@@ -31801,8 +31899,10 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       transactionId: transaction.id,
       purchaserType,
       buyerParties,
+      transactionParties,
       financeSnapshot: {
         financeType: normalizedFinanceType,
+        captureSnapshot: finance.captureSnapshot || null,
         financeManagedBy: transactionPayload.finance_managed_by,
         purchasePrice: transactionPayload.purchase_price,
         cashAmount: transactionPayload.cash_amount,
@@ -31839,6 +31939,7 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
   try {
     requiredDocumentRows = await ensureTransactionRequiredDocuments(client, {
       transactionId: transaction.id,
+      formData: onboardingSnapshot || transactionPartiesOnboardingSeed(transactionParties),
       purchaserType,
       financeType: normalizedFinanceType,
       reservationRequired: reservationRequired,
@@ -46513,527 +46614,16 @@ export async function submitClientPortalComment({ token, commentText, sellerPort
     body: normalizedText, audience: 'everyone', client })
 }
 
-function normalizeClientPortalAppointmentAction(value = '') {
-  const normalized = String(value || '')
-    .trim()
-    .toLowerCase()
-  if (['confirm', 'accepted', 'accept'].includes(normalized)) return 'confirm'
-  if (['decline', 'declined'].includes(normalized)) return 'decline'
-  if (['reschedule', 'reschedule_requested', 'request_reschedule'].includes(normalized)) return 'reschedule'
-  return ''
-}
-
-function mapClientPortalAppointmentActionToRsvp(action = '') {
-  if (action === 'confirm') return 'Accepted'
-  if (action === 'decline') return 'Declined'
-  if (action === 'reschedule') return 'Proposed New Time'
-  return 'Pending'
-}
-
-function mapClientPortalAppointmentActionToNotificationEvent(action = '') {
-  if (action === 'confirm') return 'appointment_confirmed'
-  if (action === 'decline') return 'appointment_declined'
-  if (action === 'reschedule') return 'appointment_reschedule_requested'
-  return 'appointment_updated'
-}
-
-function deriveAppointmentStatusFromParticipants(participants = []) {
-  const normalizedParticipants = (Array.isArray(participants) ? participants : []).map((participant) =>
-    String(participant?.rsvp_status || participant?.rsvpStatus || 'Pending')
-      .trim()
-      .toLowerCase(),
-  )
-  if (!normalizedParticipants.length) return 'Pending Confirmation'
-  if (normalizedParticipants.some((status) => status === 'declined')) return 'Cancelled'
-  if (normalizedParticipants.some((status) => status === 'proposed new time')) return 'Needs Reschedule'
-  if (normalizedParticipants.every((status) => status === 'accepted')) return 'Confirmed'
-  return 'Pending Confirmation'
-}
-
-function normalizeClientPortalRoleForAppointment(value = '') {
-  const normalized = String(value || '')
-    .trim()
-    .toLowerCase()
-  if (normalized === 'seller' || normalized === 'selling') return 'seller'
-  return 'buyer'
-}
-
-function resolveClientParticipantCandidate(participants = [], clientRole = 'buyer', clientEmail = '') {
-  const rows = Array.isArray(participants) ? participants : []
-  if (!rows.length) return null
-
-  const roleTargets = clientRole === 'seller' ? ['seller'] : ['buyer']
-  const normalizedEmail = String(clientEmail || '')
-    .trim()
-    .toLowerCase()
-  const matchesRole = (participant) =>
-    roleTargets.includes(
-      String(participant?.participant_role || '')
-        .trim()
-        .toLowerCase(),
-    )
-  const matchesEmail = (participant) =>
-    normalizedEmail &&
-    String(participant?.email || '')
-      .trim()
-      .toLowerCase() === normalizedEmail
-
-  const roleAndEmail = rows.find((participant) => matchesRole(participant) && matchesEmail(participant))
-  if (roleAndEmail) return roleAndEmail
-
-  const roleOnly = rows.find((participant) => matchesRole(participant))
-  if (roleOnly) return roleOnly
-
-  const emailOnly = rows.find((participant) => matchesEmail(participant))
-  if (emailOnly) return emailOnly
-
-  return rows[0]
-}
-
-export async function respondToClientPortalAppointment({
-  token,
-  appointmentId,
-  action,
-  clientRole = 'buyer',
-  preferredDateTime = null,
-  notes = '',
-} = {}) {
-  const client = requireClientPortalTokenClient(token)
-  const link = await resolveClientPortalLinkByToken(client, token)
-  if (!link?.transaction_id) {
-    throw new Error('Client portal link is missing a transaction.')
-  }
-
-  const normalizedAction = normalizeClientPortalAppointmentAction(action)
-  if (!normalizedAction) {
-    throw new Error('Invalid appointment action.')
-  }
-
-  const normalizedAppointmentId = String(appointmentId || '').trim()
-  if (!normalizedAppointmentId) {
-    throw new Error('Appointment ID is required.')
-  }
-
-  const roleScope = normalizeClientPortalRoleForAppointment(clientRole)
-  const requestedByRole = roleScope === 'seller' ? 'client_seller' : 'client_buyer'
-  const normalizedNotes = String(notes || '').trim()
-  let normalizedPreferredDateTime = null
-  if (preferredDateTime) {
-    const parsedPreferredDate = new Date(preferredDateTime)
-    if (Number.isNaN(parsedPreferredDate.getTime())) {
-      throw new Error('Please provide a valid preferred date and time.')
-    }
-    normalizedPreferredDateTime = parsedPreferredDate.toISOString()
-  }
-  if (normalizedAction === 'reschedule') {
-    if (!normalizedPreferredDateTime) {
-      throw new Error('Please choose a preferred date and time for the reschedule request.')
-    }
-    if (new Date(normalizedPreferredDateTime).getTime() <= Date.now()) {
-      throw new Error('Please choose a preferred date and time in the future.')
-    }
-  }
-
-  const appointmentQuery = await client
-    .from('appointments')
-    .select(
-      'appointment_id, organisation_id, transaction_id, title, appointment_type, appointment_date, start_time, end_time, date_time, status, visibility_scope, notes, resource_id, allow_outside_business_hours, linked_workflow_stage, linked_transaction_stage',
-    )
-    .eq('appointment_id', normalizedAppointmentId)
-    .eq('transaction_id', link.transaction_id)
-    .maybeSingle()
-
-  if (appointmentQuery.error) {
-    if (isMissingTableError(appointmentQuery.error, 'appointments') || isMissingSchemaError(appointmentQuery.error)) {
-      throw new Error('Appointment scheduling is not available yet.')
-    }
-    throw appointmentQuery.error
-  }
-
-  if (!appointmentQuery.data) {
-    throw new Error('Appointment not found.')
-  }
-
-  const appointmentVisibility = normalizeAppointmentVisibilityScope(appointmentQuery.data.visibility_scope)
-  if (appointmentVisibility === 'internal_only') {
-    throw new Error('This appointment is not available in the client portal.')
-  }
-
-  const [buyerQuery, contextsQuery, participantsQuery] = await Promise.all([
-    link?.buyer_id
-      ? client.from('buyers').select('id, email').eq('id', link.buyer_id).maybeSingle()
-      : Promise.resolve({ data: null, error: null }),
-    client
-      .from('client_portal_contexts')
-      .select('client_email, context_type')
-      .eq('transaction_id', link.transaction_id),
-    client
-      .from('appointment_participants')
-      .select('participant_id, appointment_id, name, email, participant_role, rsvp_status')
-      .eq('appointment_id', normalizedAppointmentId),
-  ])
-
-  if (buyerQuery.error && !isMissingSchemaError(buyerQuery.error)) {
-    throw buyerQuery.error
-  }
-  if (
-    contextsQuery.error &&
-    !isMissingTableError(contextsQuery.error, 'client_portal_contexts') &&
-    !isMissingSchemaError(contextsQuery.error)
-  ) {
-    throw contextsQuery.error
-  }
-  if (
-    participantsQuery.error &&
-    !isMissingTableError(participantsQuery.error, 'appointment_participants') &&
-    !isMissingSchemaError(participantsQuery.error)
-  ) {
-    throw participantsQuery.error
-  }
-
-  const sellerContextEmail = (contextsQuery.data || []).find(
-    (contextRow) =>
-      String(contextRow?.context_type || '')
-        .trim()
-        .toLowerCase() === 'selling',
-  )?.client_email
-  const buyerEmail = buyerQuery.data?.email || null
-  const clientEmail = roleScope === 'seller' ? sellerContextEmail : buyerEmail
-
-  const targetParticipant = resolveClientParticipantCandidate(participantsQuery.data || [], roleScope, clientEmail)
-  const hasTargetParticipant = Boolean(targetParticipant?.participant_id)
-
-  const nowIso = new Date().toISOString()
-  let rescheduleRequestRecord = null
-  let suggestedRescheduleSlots = []
-
-  if (normalizedAction === 'reschedule') {
-    const appointmentDate = String(appointmentQuery.data?.appointment_date || '').trim()
-    const startTime = String(appointmentQuery.data?.start_time || '')
-      .trim()
-      .slice(0, 5)
-    const endTime = String(appointmentQuery.data?.end_time || '')
-      .trim()
-      .slice(0, 5)
-    const startCandidate = appointmentQuery.data?.date_time
-      ? new Date(appointmentQuery.data.date_time)
-      : appointmentDate && startTime
-        ? new Date(`${appointmentDate}T${startTime}`)
-        : null
-    const endCandidate = appointmentDate && endTime ? new Date(`${appointmentDate}T${endTime}`) : null
-    const hasValidStart = startCandidate instanceof Date && !Number.isNaN(startCandidate?.getTime?.())
-    const hasValidEnd = endCandidate instanceof Date && !Number.isNaN(endCandidate?.getTime?.())
-    const durationMinutes =
-      hasValidStart && hasValidEnd && endCandidate.getTime() > startCandidate.getTime()
-        ? Math.max(15, Math.round((endCandidate.getTime() - startCandidate.getTime()) / (1000 * 60)))
-        : 45
-    const preferredEndIso = normalizedPreferredDateTime
-      ? new Date(new Date(normalizedPreferredDateTime).getTime() + durationMinutes * 60 * 1000).toISOString()
-      : null
-
-    const transactionAppointmentsQuery = await client
-      .from('appointments')
-      .select(
-        'appointment_id, transaction_id, appointment_type, title, appointment_date, start_time, end_time, date_time, status, resource_id, linked_workflow_stage, linked_transaction_stage, allow_outside_business_hours',
-      )
-      .eq('transaction_id', link.transaction_id)
-      .order('date_time', { ascending: true })
-
-    if (
-      transactionAppointmentsQuery.error &&
-      !isMissingTableError(transactionAppointmentsQuery.error, 'appointments') &&
-      !isMissingSchemaError(transactionAppointmentsQuery.error)
-    ) {
-      throw transactionAppointmentsQuery.error
-    }
-
-    const appointmentRows = Array.isArray(transactionAppointmentsQuery.data) ? transactionAppointmentsQuery.data : []
-    const appointmentIds = appointmentRows.map((row) => row?.appointment_id).filter(Boolean)
-    const participantRowsByAppointment = {}
-    if (appointmentIds.length) {
-      const transactionParticipantsQuery = await client
-        .from('appointment_participants')
-        .select('appointment_id, name, email, participant_role, rsvp_status')
-        .in('appointment_id', appointmentIds)
-
-      if (
-        transactionParticipantsQuery.error &&
-        !isMissingTableError(transactionParticipantsQuery.error, 'appointment_participants') &&
-        !isMissingSchemaError(transactionParticipantsQuery.error)
-      ) {
-        throw transactionParticipantsQuery.error
-      }
-
-      for (const participantRow of transactionParticipantsQuery.data || []) {
-        const targetAppointmentId = participantRow?.appointment_id
-        if (!targetAppointmentId) continue
-        if (!participantRowsByAppointment[targetAppointmentId]) {
-          participantRowsByAppointment[targetAppointmentId] = []
-        }
-        participantRowsByAppointment[targetAppointmentId].push({
-          name: participantRow?.name || '',
-          email: participantRow?.email || '',
-          participantRole: participantRow?.participant_role || '',
-          rsvpStatus: participantRow?.rsvp_status || 'Pending',
-        })
-      }
-    }
-
-    const normalizedAppointments = appointmentRows.map((row) => ({
-      appointmentId: row?.appointment_id,
-      transactionId: row?.transaction_id,
-      appointmentType: row?.appointment_type,
-      title: row?.title,
-      date: row?.appointment_date,
-      startTime: String(row?.start_time || '')
-        .trim()
-        .slice(0, 5),
-      endTime: String(row?.end_time || '')
-        .trim()
-        .slice(0, 5),
-      dateTime: row?.date_time,
-      status: row?.status,
-      resourceId: row?.resource_id || null,
-      linkedWorkflowStage: row?.linked_workflow_stage || null,
-      linkedTransactionStage: row?.linked_transaction_stage || null,
-      allowOutsideBusinessHours: row?.allow_outside_business_hours === true,
-      participants: participantRowsByAppointment[row?.appointment_id] || [],
-    }))
-
-    suggestedRescheduleSlots = getSuggestedRescheduleSlots(normalizedAppointmentId, {
-      appointments: normalizedAppointments,
-      maxSuggestions: 6,
-      searchDays: 14,
-      allowOutsideBusinessHours: appointmentQuery.data?.allow_outside_business_hours === true,
+export async function respondToClientPortalAppointment(input = {}) {
+  const client = String(input.token || '').toLowerCase().startsWith('seller-')
+    ? requireClient() : requireClientPortalTokenClient(input.token)
+  return respondToPortalAppointment(client, { ...input, onLegacyResponse: async receipt => {
+    const { notifyAppointmentParticipants, scheduleAppointmentReminders } = await import('../services/appointmentNotificationService.js')
+    await notifyAppointmentParticipants(receipt.appointmentId, receipt.notificationEvent, {
+      metadata: { trigger: 'client_portal_appointment_response' },
     })
-
-    const existingPendingRequestQuery = await client
-      .from('appointment_reschedule_requests')
-      .select('id')
-      .eq('appointment_id', normalizedAppointmentId)
-      .eq('requested_by_role', requestedByRole)
-      .in('status', ['pending', 'proposed'])
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-
-    if (
-      existingPendingRequestQuery.error &&
-      !isMissingTableError(existingPendingRequestQuery.error, 'appointment_reschedule_requests') &&
-      !isMissingSchemaError(existingPendingRequestQuery.error)
-    ) {
-      throw existingPendingRequestQuery.error
-    }
-
-    const rescheduleMutationPayload = {
-      appointment_id: normalizedAppointmentId,
-      requested_by: null,
-      requested_by_role: requestedByRole,
-      reason: normalizedNotes || null,
-      preferred_start: normalizedPreferredDateTime,
-      preferred_end: preferredEndIso,
-      status: 'pending',
-      reviewed_by: null,
-      reviewed_at: null,
-      suggested_slots: suggestedRescheduleSlots,
-      updated_at: nowIso,
-    }
-
-    let rescheduleMutationResult = null
-    if (existingPendingRequestQuery.data?.id) {
-      rescheduleMutationResult = await client
-        .from('appointment_reschedule_requests')
-        .update(rescheduleMutationPayload)
-        .eq('id', existingPendingRequestQuery.data.id)
-        .select(
-          'id, appointment_id, requested_by, requested_by_role, reason, preferred_start, preferred_end, status, reviewed_by, reviewed_at, suggested_slots, created_at, updated_at',
-        )
-        .single()
-    } else {
-      rescheduleMutationResult = await client
-        .from('appointment_reschedule_requests')
-        .insert({
-          ...rescheduleMutationPayload,
-          created_at: nowIso,
-        })
-        .select(
-          'id, appointment_id, requested_by, requested_by_role, reason, preferred_start, preferred_end, status, reviewed_by, reviewed_at, suggested_slots, created_at, updated_at',
-        )
-        .single()
-    }
-
-    if (rescheduleMutationResult?.error) {
-      if (
-        isMissingTableError(rescheduleMutationResult.error, 'appointment_reschedule_requests') ||
-        isMissingSchemaError(rescheduleMutationResult.error)
-      ) {
-        throw new Error('Reschedule workflow is not configured yet.')
-      }
-      throw rescheduleMutationResult.error
-    }
-
-    rescheduleRequestRecord = normalizeAppointmentRescheduleRequestRow(rescheduleMutationResult.data || {})
-  }
-
-  let participantUpdate = { data: null, error: null }
-  if (hasTargetParticipant) {
-    const participantUpdatePayload = {
-      rsvp_status: mapClientPortalAppointmentActionToRsvp(normalizedAction),
-      responded_at: nowIso,
-      updated_at: nowIso,
-    }
-    if (normalizedAction === 'reschedule') {
-      participantUpdatePayload.proposed_new_time = normalizedPreferredDateTime
-    } else {
-      participantUpdatePayload.proposed_new_time = null
-    }
-
-    participantUpdate = await client
-      .from('appointment_participants')
-      .update(participantUpdatePayload)
-      .eq('appointment_id', normalizedAppointmentId)
-      .eq('participant_id', targetParticipant.participant_id)
-      .select('participant_id, appointment_id, participant_role, rsvp_status, proposed_new_time, responded_at')
-      .maybeSingle()
-
-    if (participantUpdate.error) {
-      if (
-        isMissingTableError(participantUpdate.error, 'appointment_participants') ||
-        isMissingSchemaError(participantUpdate.error)
-      ) {
-        throw new Error('Appointment participants are not configured yet.')
-      }
-      throw participantUpdate.error
-    }
-  }
-
-  let refreshedParticipantsQuery = { data: [], error: null }
-  if (hasTargetParticipant) {
-    refreshedParticipantsQuery = await client
-      .from('appointment_participants')
-      .select('participant_id, appointment_id, participant_role, rsvp_status')
-      .eq('appointment_id', normalizedAppointmentId)
-  }
-
-  if (
-    refreshedParticipantsQuery.error &&
-    !isMissingTableError(refreshedParticipantsQuery.error, 'appointment_participants') &&
-    !isMissingSchemaError(refreshedParticipantsQuery.error)
-  ) {
-    throw refreshedParticipantsQuery.error
-  }
-
-  const nextAppointmentStatus = hasTargetParticipant
-    ? normalizedAction === 'reschedule'
-      ? 'Reschedule Requested'
-      : deriveAppointmentStatusFromParticipants(refreshedParticipantsQuery.data || [])
-    : normalizedAction === 'confirm'
-      ? 'Confirmed'
-      : normalizedAction === 'decline'
-        ? 'Cancelled'
-        : 'Reschedule Requested'
-
-  const appointmentUpdatePayload = {
-    status: nextAppointmentStatus,
-    updated_at: nowIso,
-  }
-  if (normalizedAction === 'reschedule' && normalizedNotes) {
-    appointmentUpdatePayload.notes = [
-      appointmentQuery.data?.title ? `${appointmentQuery.data.title}:` : 'Reschedule request:',
-      normalizedNotes,
-    ].join(' ')
-  }
-
-  const appointmentStatusUpdate = await client
-    .from('appointments')
-    .update(appointmentUpdatePayload)
-    .eq('appointment_id', normalizedAppointmentId)
-    .eq('transaction_id', link.transaction_id)
-    .select(
-      'appointment_id, transaction_id, appointment_type, title, appointment_date, start_time, end_time, date_time, location, notes, status, linked_workflow, linked_workflow_stage, linked_task_id, linked_transaction_stage, visibility_scope, appointment_instructions, required_documents, completion_behavior, created_at, updated_at',
-    )
-    .maybeSingle()
-
-  if (appointmentStatusUpdate.error) {
-    throw appointmentStatusUpdate.error
-  }
-
-  const actionTitle = appointmentQuery.data?.title || appointmentQuery.data?.appointment_type || 'Appointment'
-  const roleLabel = roleScope === 'seller' ? 'Seller' : 'Buyer'
-  const actionVerb =
-    normalizedAction === 'confirm'
-      ? 'confirmed'
-      : normalizedAction === 'decline'
-        ? 'declined'
-        : 'requested a reschedule for'
-
-  await logTransactionEventIfPossible(client, {
-    transactionId: link.transaction_id,
-    eventType: normalizedAction === 'reschedule' ? 'appointment_reschedule_requested' : 'AppointmentUpdated',
-    eventData: {
-      trigger: 'client_portal_appointment_response',
-      appointmentId: normalizedAppointmentId,
-      appointmentTitle: actionTitle,
-      action: normalizedAction,
-      status: nextAppointmentStatus,
-      role: roleScope,
-      preferredDateTime: normalizedPreferredDateTime,
-      rescheduleRequestId: rescheduleRequestRecord?.id || null,
-      suggestedSlots: suggestedRescheduleSlots,
-      notes: normalizedNotes || null,
-      message: `${roleLabel} ${actionVerb} ${actionTitle}.`,
-    },
-    createdByRole: 'client',
-  }).catch(() => null)
-
-  const appointmentNotificationEventType = mapClientPortalAppointmentActionToNotificationEvent(normalizedAction)
-  const appointmentNotificationMetadata = {
-    trigger: 'client_portal_appointment_response',
-    action: normalizedAction,
-    role: roleScope,
-    participantId: targetParticipant?.participant_id || null,
-    preferredStart: normalizedPreferredDateTime,
-    preferredEnd: rescheduleRequestRecord?.preferredEnd || rescheduleRequestRecord?.preferred_end || null,
-    rescheduleRequestId: rescheduleRequestRecord?.id || null,
-    suggestedSlots: suggestedRescheduleSlots,
-    reason: normalizedNotes || null,
-    source: 'client_portal_appointment_response',
-  }
-  const {
-    cancelAppointmentReminders,
-    notifyAppointmentParticipants,
-  } = await import('../services/appointmentNotificationService')
-  await notifyAppointmentParticipants(normalizedAppointmentId, appointmentNotificationEventType, {
-    visibility: appointmentQuery.data?.visibility_scope || 'shared_role_players',
-    metadata: appointmentNotificationMetadata,
-  }).catch((notificationError) => {
-    console.warn('[client-portal-appointments] notification dispatch failed', notificationError)
-  })
-
-  if (normalizedAction === 'decline' || normalizedAction === 'reschedule') {
-    await cancelAppointmentReminders(normalizedAppointmentId).catch((reminderError) => {
-      console.warn('[client-portal-appointments] reminder cancellation failed', reminderError)
-    })
-  }
-
-  const updatedRow = appointmentStatusUpdate.data || appointmentQuery.data
-  const normalizedUpdatedAppointment = normalizeAppointmentRecordRow(updatedRow)
-  if (rescheduleRequestRecord) {
-    normalizedUpdatedAppointment.rescheduleRequests = [rescheduleRequestRecord]
-    normalizedUpdatedAppointment.latestRescheduleRequest = rescheduleRequestRecord
-  }
-  return {
-    appointment: normalizedUpdatedAppointment,
-    participant: participantUpdate.data
-      ? normalizeAppointmentParticipantRecordRow(participantUpdate.data)
-      : targetParticipant
-        ? normalizeAppointmentParticipantRecordRow(targetParticipant)
-        : null,
-    status: nextAppointmentStatus,
-    action: normalizedAction,
-    rescheduleRequest: rescheduleRequestRecord,
-    suggestedSlots: suggestedRescheduleSlots,
-  }
+    if (receipt.status === 'Confirmed') await scheduleAppointmentReminders(receipt.appointmentId)
+  } })
 }
 
 async function resolveClientPortalBranding(client, transaction = {}, link = {}) {
@@ -50246,106 +49836,111 @@ async function triggerPostSigningWorkflowIfNeeded(
     nextAction,
   })
 
+  const durableDispatch = await readTransactionHandoffDispatchMode(client, normalizedTransactionId)
+
   let activation = null
   let attorneyActivation = []
   let mandateAllocationPromotion = null
   let signedOtpHandoffRelease = null
-  try {
-    attorneyActivation = await activateSelectedAttorneyRoleplayersForOnboarding(client, {
-      transaction,
-      financeType: normalizedFinanceType,
-      buyer,
-      formData: onboardingFormData,
-      source: 'signed_otp_received',
-      createdByRole: actorRole,
-    })
-    await syncAttorneyIncomingInstructionStatus(client, {
-      transactionId: normalizedTransactionId,
-      status: ATTORNEY_INCOMING_INSTRUCTION_STATUSES.readyForAcceptance,
-      occurredAt: new Date().toISOString(),
-      source: 'signed_otp_attorney_activation',
-    })
-    mandateAllocationPromotion = await promoteMandateTransferAttorneyAllocationToInstruction(client, {
-      transaction,
-      source: 'signed_otp_received',
-    })
-    activation = await activateSelectedBondOriginatorForOnboarding(client, {
-      transaction,
-      financeType: normalizedFinanceType,
-      buyer,
-      formData: onboardingFormData,
-      source: 'signed_otp_received',
-      createdByRole: actorRole,
-    })
-    if (activation?.activated) {
-      let buyerBondApplicationPortalMetadata = {}
-      try {
-        buyerBondApplicationPortalMetadata = await resolveBuyerBondApplicationPortalMetadata(client, {
-          transaction,
-          buyer,
-          unit,
-        })
-      } catch (portalLinkError) {
-        buyerBondApplicationPortalMetadata = { portalLinkSource: 'resolution_failed' }
-        console.warn('Buyer bond application portal link resolution failed', {
-          transactionId: normalizedTransactionId,
-          error: portalLinkError,
-        })
-      }
-      await notifyBondIntakeStartedForOnboarding({
-        transaction: {
-          ...transaction,
-          finance_type: normalizedFinanceType,
-          buyer_name: buyer?.name || null,
-          buyer_email: buyer?.email || null,
-          bond_workspace_id: activation.scope?.bondWorkspaceId || transaction?.bond_workspace_id || null,
-          bond_region_id: activation.scope?.bondRegionId || transaction?.bond_region_id || null,
-          bond_workspace_unit_id: activation.scope?.bondWorkspaceUnitId || transaction?.bond_workspace_unit_id || null,
-          transaction_role_players: [
-            {
-              ...activation.roleplayer,
-              status: 'active',
-              assignment_status: 'active',
-            },
-          ],
-          unit_number: unit?.unit_number || null,
-          development_name:
-            unit?.development && Array.isArray(unit.development)
-              ? unit.development[0]?.name || null
-              : unit?.development?.name || null,
-        },
+  if (!durableDispatch) {
+    try {
+      attorneyActivation = await activateSelectedAttorneyRoleplayersForOnboarding(client, {
+        transaction,
+        financeType: normalizedFinanceType,
+        buyer,
         formData: onboardingFormData,
-        actor: { id: actorUserId || null, roleType: actorRole },
-        client,
-        emailEnabled: true,
-        metadata: {
-          source: 'signed_otp_received',
-          ...buyerBondApplicationPortalMetadata,
-        },
+        source: 'signed_otp_received',
+        createdByRole: actorRole,
       })
-      const notifiedAt = new Date().toISOString()
-      await updateRecordByIdWithMissingColumnFallback(
-        client,
-        'transaction_role_players',
-        activation.roleplayer.id,
-        {
-          status: 'active',
-          assignment_status: 'active',
-          notified_at: notifiedAt,
-          updated_at: notifiedAt,
-        },
-        'id, status, assignment_status, notified_at, updated_at',
-      )
+      await syncAttorneyIncomingInstructionStatus(client, {
+        transactionId: normalizedTransactionId,
+        status: ATTORNEY_INCOMING_INSTRUCTION_STATUSES.readyForAcceptance,
+        occurredAt: new Date().toISOString(),
+        source: 'signed_otp_attorney_activation',
+      })
+      mandateAllocationPromotion = await promoteMandateTransferAttorneyAllocationToInstruction(client, {
+        transaction,
+        source: 'signed_otp_received',
+      })
+      activation = await activateSelectedBondOriginatorForOnboarding(client, {
+        transaction,
+        financeType: normalizedFinanceType,
+        buyer,
+        formData: onboardingFormData,
+        source: 'signed_otp_received',
+        createdByRole: actorRole,
+      })
+      if (activation?.activated) {
+        let buyerBondApplicationPortalMetadata = {}
+        try {
+          buyerBondApplicationPortalMetadata = await resolveBuyerBondApplicationPortalMetadata(client, {
+            transaction,
+            buyer,
+            unit,
+          })
+        } catch (portalLinkError) {
+          buyerBondApplicationPortalMetadata = { portalLinkSource: 'resolution_failed' }
+          console.warn('Buyer bond application portal link resolution failed', {
+            transactionId: normalizedTransactionId,
+            error: portalLinkError,
+          })
+        }
+        await notifyBondIntakeStartedForOnboarding({
+          transaction: {
+            ...transaction,
+            finance_type: normalizedFinanceType,
+            buyer_name: buyer?.name || null,
+            buyer_email: buyer?.email || null,
+            bond_workspace_id: activation.scope?.bondWorkspaceId || transaction?.bond_workspace_id || null,
+            bond_region_id: activation.scope?.bondRegionId || transaction?.bond_region_id || null,
+            bond_workspace_unit_id: activation.scope?.bondWorkspaceUnitId || transaction?.bond_workspace_unit_id || null,
+            transaction_role_players: [
+              {
+                ...activation.roleplayer,
+                status: 'active',
+                assignment_status: 'active',
+              },
+            ],
+            unit_number: unit?.unit_number || null,
+            development_name:
+              unit?.development && Array.isArray(unit.development)
+                ? unit.development[0]?.name || null
+                : unit?.development?.name || null,
+          },
+          formData: onboardingFormData,
+          actor: { id: actorUserId || null, roleType: actorRole },
+          client,
+          emailEnabled: true,
+          metadata: {
+            source: 'signed_otp_received',
+            ...buyerBondApplicationPortalMetadata,
+          },
+        })
+        const notifiedAt = new Date().toISOString()
+        await updateRecordByIdWithMissingColumnFallback(
+          client,
+          'transaction_role_players',
+          activation.roleplayer.id,
+          {
+            status: 'active',
+            assignment_status: 'active',
+            notified_at: notifiedAt,
+            updated_at: notifiedAt,
+          },
+          'id, status, assignment_status, notified_at, updated_at',
+        )
+      }
+
+      await sendRoleplayerHandoffEmailForOnboarding(client, {
+        transactionId: normalizedTransactionId,
+      })
+    } catch (handoffSetupError) {
+      console.warn('Signed OTP handoff activation failed', {
+        transactionId: normalizedTransactionId,
+        error: handoffSetupError,
+      })
     }
 
-    await sendRoleplayerHandoffEmailForOnboarding(client, {
-      transactionId: normalizedTransactionId,
-    })
-  } catch (handoffSetupError) {
-    console.warn('Signed OTP handoff activation failed', {
-      transactionId: normalizedTransactionId,
-      error: handoffSetupError,
-    })
   }
 
   const stageResult = await advanceTransactionMainStageIfNeeded(client, {
@@ -50358,7 +49953,7 @@ async function triggerPostSigningWorkflowIfNeeded(
     actorRole,
   })
 
-  if (originatorManagedFinance) {
+  if (originatorManagedFinance && !durableDispatch) {
     await checkAndNotifyBondOtpReady({
       transaction: {
         id: normalizedTransactionId,
@@ -50378,6 +49973,7 @@ async function triggerPostSigningWorkflowIfNeeded(
   }
 
   signedOtpHandoffRelease = buildSignedOtpHandoffReleaseDecision({
+    durableDispatch,
     transaction,
     financeType: normalizedFinanceType,
     financeManagedBy,
@@ -52092,6 +51688,7 @@ async function createDocumentUploadIdempotencyKey({
   documentType = null,
   category = null,
   relatedEntityId = null,
+  attorneyScope = null,
 } = {}) {
   const scope = JSON.stringify({
     transactionId: String(transactionId || '').trim(),
@@ -52101,6 +51698,7 @@ async function createDocumentUploadIdempotencyKey({
     documentType: normalizeDocumentKeyCandidate(documentType),
     category: normalizeDocumentKeyCandidate(category),
     ...(relatedEntityId ? { relatedEntityId: String(relatedEntityId).trim() } : {}),
+    ...(attorneyScope ? { attorneyScope } : {}),
   })
   // Reading an entire PDF into memory just to create a retry key made larger
   // uploads appear frozen before the Storage request even began. The file
@@ -52315,7 +51913,12 @@ async function runInternalDocumentUploadFollowUps(
     },
   ]
 
-  const enabledFollowUps = followUps.filter(({ step }) => inferCanonicalRequirement || step === 'activity_log' || (step === 'document_request_link' && documentRequestId))
+  // Capture imports retain the recorded deal stage. The exact canonical link
+  // above records receipt; legacy type/name matching must not pick another
+  // co-owner or start workflow automation while historical files are imported.
+  const enabledFollowUps = followUps.filter(({ step }) => source === 'transaction_capture'
+    ? step === 'activity_log'
+    : inferCanonicalRequirement || step === 'activity_log' || (step === 'document_request_link' && documentRequestId))
   const results = await Promise.allSettled(enabledFollowUps.map(({ run }) => run()))
   results.forEach((result, index) => {
     if (result.status === 'rejected') {
@@ -52326,6 +51929,19 @@ async function runInternalDocumentUploadFollowUps(
         error: result.reason,
       })
     }
+  })
+}
+
+async function reconcileAttorneyDocumentEvidence(client, { document, status, requirementInstanceId = null }) {
+  // The document, request and canonical checklist already committed. Preserve
+  // the older workflow reporting integration without making its reads/writes
+  // part of the user-facing save or re-running title-based document matching.
+  const evidenceKey = document.document_type || document.category || document.name
+  if (!document.transaction_id || !evidenceKey) return
+  await processWorkflowEvidenceIfPossible(client, {
+    transactionId: document.transaction_id, evidenceType: 'document', evidenceId: document.id,
+    evidenceKey, status, source: 'attorney_document_save', createdBy: document.uploaded_by_user_id || null,
+    payload: { requirementInstanceId },
   })
 }
 
@@ -52350,8 +51966,11 @@ export async function uploadDocument({
   relatedEntityId = null,
   attorneyLaneKey = null,
   attorneyRole = null,
+  attorneyVersionKind = null,
+  attorneyPreviousVersionId = null,
   inferCanonicalRequirement = true,
   onProgress = null,
+  notes = null,
 }) {
   const reportProgress = createDocumentUploadProgressReporter(onProgress)
 
@@ -52361,6 +51980,10 @@ export async function uploadDocument({
   const activeProfile = await resolveActiveProfileContext(client)
   const filePolicy = validateDocumentUploadFile(file, { surface: 'internal_transaction', transactionId: activeTransactionId })
   const attorneyLaneMetadata = resolveAttorneyDocumentLaneMetadata({ attorneyLaneKey, attorneyRole })
+  const attorneySave = Boolean(attorneyLaneMetadata) || source === 'attorney_workspace'
+  if (attorneySave && !attorneyLaneMetadata) throw new Error('Select an editable attorney lane before uploading this document.')
+  const versionKind = attorneySave ? attorneyVersionKind || 'evidence' : null
+  if (versionKind && !['draft', 'final', 'signed', 'evidence'].includes(versionKind)) throw new Error('Select a valid document version type.')
   reportProgress('matching', 'Matching the document to this transaction…')
   const canonicalTarget = inferCanonicalRequirement ? await resolveCanonicalRequirementTargetForUpload(client, {
     transactionId: activeTransactionId,
@@ -52390,6 +52013,13 @@ export async function uploadDocument({
     documentType: normalizedDocumentType,
     category,
     relatedEntityId,
+    attorneyScope: attorneySave ? {
+      actor: activeProfile.userId, lane: attorneyLaneMetadata.laneKey,
+      visibility: visibilityScope || (isClientVisible ? 'shared' : 'internal'),
+      clientRecipientRole, isClientVisible, stageKey, uploadedByParty, bucketKey, source,
+      financeLane, relatedEntityType, notes,
+      versionKind, previousVersionId: attorneyPreviousVersionId,
+    } : null,
   })
   const existingDocument = await findDocumentByUploadIdempotencyKey(client, {
     transactionId: activeTransactionId,
@@ -52397,6 +52027,17 @@ export async function uploadDocument({
   })
 
   if (existingDocument) {
+    if (attorneySave) {
+      const saved = await persistAttorneyDocument(client, {
+        document: { ...existingDocument, lane_key: attorneyLaneMetadata.laneKey, upload_idempotency_key: uploadIdempotencyKey,
+          canonical_requirement_instance_id: canonicalTarget?.canonicalRequirementInstanceId || canonicalRequirementInstanceId || null,
+          attorney_version_kind: versionKind, attorney_version_previous_id: attorneyPreviousVersionId,
+        },
+        documentRequestId,
+      })
+      reportProgress('complete', 'This document was already saved.', { documentId: saved.id, postUploadProcessing: 'complete' })
+      return saved
+    }
     reportProgress('complete', 'This document was already saved. Reusing the existing upload…')
     reportDocumentUploadTelemetry({
       surface: 'internal_transaction',
@@ -52466,6 +52107,8 @@ export async function uploadDocument({
         }
       : {}),
     upload_idempotency_key: uploadIdempotencyKey,
+    ...(attorneySave ? { notes: normalizeNullableText(notes), attorney_version_kind: versionKind,
+      attorney_version_previous_id: normalizeNullableUuid(attorneyPreviousVersionId) } : {}),
   }
 
   const documentSelectFields = [
@@ -52496,6 +52139,30 @@ export async function uploadDocument({
   // Storage has accepted the file; persist its transaction record before
   // doing any downstream document automation.
   reportProgress('saving', 'File uploaded. Saving it to the transaction document library…')
+  if (attorneySave) {
+    let saved
+    try {
+      saved = await persistAttorneyDocument(client, { document: documentInsertPayload, documentRequestId })
+    } catch (saveError) {
+      if (isDefiniteDocumentSaveFailure(saveError)) {
+        await removeDocumentUploadObjectAfterFailedPersistence(client, { bucket: uploadedBucket, filePath, error: saveError })
+      }
+      reportProgress('failed', saveError?.message || 'The document save could not be confirmed.', { error: saveError })
+      throw saveError
+    }
+    if (saved.deduplicated && saved.file_path !== filePath) {
+      // The RPC proved which object is retained, making this cleanup safe even
+      // when two uploads raced or the previous response was lost.
+      void removeDocumentUploadObjectAfterFailedPersistence(client, { bucket: uploadedBucket, filePath, error: { code: '23505' } })
+    }
+    reportDocumentUploadTelemetry({ surface: 'internal_transaction', stage: 'persistence', outcome: 'durable_saved', transactionId: activeTransactionId, documentId: saved.id })
+    if (!saved.deduplicated && saved.canonicalRequirementInstanceId) {
+      void reconcileAttorneyDocumentEvidence(client, { document: saved, status: 'uploaded', requirementInstanceId: saved.canonicalRequirementInstanceId })
+        .catch(() => console.warn('[document-upload] Saved document reporting could not refresh'))
+    }
+    reportProgress('complete', 'Document saved successfully.', { documentId: saved.id, postUploadProcessing: 'complete' })
+    return saved
+  }
   let result = await client
     .from('documents')
     .insert(documentInsertPayload)
@@ -52871,6 +52538,7 @@ export async function reviewCanonicalDocumentRequirement({
   reason = '',
   notes = '',
   attorneyLaneKey = '',
+  commandId = null,
 } = {}) {
   const client = requireClient()
   const activeProfile = await resolveActiveProfileContext(client)
@@ -52881,6 +52549,27 @@ export async function reviewCanonicalDocumentRequirement({
   if (!requirementInstanceId) throw new Error('A canonical requirement is required for review.')
   if (!['approve', 'reject', 'waive'].includes(normalizedAction)) {
     throw new Error('Unsupported canonical document review action.')
+  }
+
+  if (isAttorneyDocumentActor(profileRole)) {
+    const saved = await reviewAttorneyDocument(client, {
+      requirementInstanceId, documentId, action: normalizedAction, reason: reason || notes,
+      actorRole: ['bond', 'cancellation'].includes(attorneyLaneKey)
+        ? `${attorneyLaneKey}_attorney` : normalizeCanonicalUploadActorRole(profileRole || 'attorney'),
+      commandId,
+    })
+    if (documentId) {
+      void (async () => {
+        const lookup = await client.from('documents').select('id, transaction_id, document_type, category, name, uploaded_by_user_id').eq('id', documentId).maybeSingle()
+        if (lookup.error) throw lookup.error
+        if (lookup.data) await reconcileAttorneyDocumentEvidence(client, {
+          document: { ...lookup.data, uploaded_by_user_id: activeProfile.userId },
+          status: normalizedAction === 'approve' ? 'approved' : normalizedAction === 'reject' ? 'rejected' : 'removed',
+          requirementInstanceId,
+        })
+      })().catch(() => console.warn('[document-review] Saved review reporting could not refresh'))
+    }
+    return saved
   }
 
   const rpc = await client.rpc('bridge_review_canonical_requirement', {
@@ -56233,7 +55922,7 @@ export async function prepareClientPortalJointBondApplicationSubmission({
   const jointDocumentRequirements = resolveBondApplicationDocumentRequirements({ applicationState, includeAllParticipants: true })
   const jointChecklist = buildBondApplicationDocumentChecklist({ activeRequirements: jointDocumentRequirements.activeRequirements, existingDocuments: portalContext.documents || [], existingRequiredDocuments: portalContext.requiredDocuments || [] })
   const jointDocumentManifest = buildBondApplicationSubmissionSnapshot({ applicationState, documentChecklist: jointChecklist }).documentManifest
-  const snapshot = buildJointBondApplicationSubmissionSnapshot({
+  let snapshot = buildJointBondApplicationSubmissionSnapshot({
     normalizedApplication,
     documentManifest: jointDocumentManifest,
     signerManifest,
@@ -56244,6 +55933,7 @@ export async function prepareClientPortalJointBondApplicationSubmission({
       sourceHash,
     },
   })
+  snapshot = await sealBondReviewedVersion(snapshot)
   const snapshotHash = await hashBondApplicationSnapshot(snapshot)
   const insert = await client
     .from('transaction_bond_application_submissions')
@@ -56657,7 +56347,7 @@ export async function prepareClientPortalBondApplicationSubmission({
   if (latestVersionQuery.error && !isMissingTableError(latestVersionQuery.error, 'transaction_bond_application_submissions')) throw latestVersionQuery.error
   const nextVersion = Number(latestVersionQuery.data?.submission_version || 0) + 1
   const now = new Date().toISOString()
-  const snapshot = buildBondApplicationSubmissionSnapshot({
+  let snapshot = buildBondApplicationSubmissionSnapshot({
     applicationState,
     transaction: context.transaction,
     submissionVersion: nextVersion,
@@ -56678,6 +56368,7 @@ export async function prepareClientPortalBondApplicationSubmission({
     },
     createdAt: now,
   })
+  snapshot = await sealBondReviewedVersion(snapshot)
   const snapshotHash = await hashBondApplicationSnapshot(snapshot)
   const insert = await client
     .from('transaction_bond_application_submissions')
@@ -56797,7 +56488,7 @@ export async function submitClientPortalBondApplicationHtmlSignature({
     signedAt: signatureEvidence.signedAt || now,
     confirmed: true,
   }
-  const snapshot = buildBondApplicationSubmissionSnapshot({
+  let snapshot = buildBondApplicationSubmissionSnapshot({
     applicationState,
     transaction: context.transaction,
     submissionVersion: Number(latestVersionQuery.data?.submission_version || 0) + 1,
@@ -56808,6 +56499,7 @@ export async function submitClientPortalBondApplicationHtmlSignature({
     source: { onboardingFormDataId: context.onboardingFormData?.id || null, sourceUpdatedAt: context.onboardingFormData?.updated_at || null, sourceHash },
     createdAt: now,
   })
+  snapshot = await sealBondReviewedVersion(snapshot)
   const snapshotHash = await hashBondApplicationSnapshot(snapshot)
   const insert = await client.from('transaction_bond_application_submissions').insert({
     transaction_id: context.transaction.id,
@@ -56993,4 +56685,53 @@ export async function finalizeClientPortalBondApplicationSubmission({ token, sub
 
 export const EMPTY_STATE = {
   dashboardMetrics: EMPTY_DASHBOARD_METRICS,
+}
+
+
+function buyerBondApplicationRuntime({ token, accessToken } = {}) {
+  const client = accessToken ? requireBondApplicationPortalTokenClient(accessToken) : requireClientPortalTokenClient(token)
+  return createBuyerBondApplicationRuntimeService({ client, validateFile: (file) => validateDocumentUploadFile(file, { surface: 'buyer_portal' }) })
+}
+export const fetchBuyerBondApplicationRuntime = (args) => buyerBondApplicationRuntime(args).load()
+export const saveBuyerBondApplicationRuntimeDraft = (args) => buyerBondApplicationRuntime(args).save(args)
+export const reconcileBuyerBondApplicationRuntimeDocuments = (args) => buyerBondApplicationRuntime(args).reconcile(args)
+export const uploadBuyerBondApplicationRuntimeDocument = (args) => buyerBondApplicationRuntime(args).upload(args)
+export const submitBuyerBondApplicationRuntime = (args) => buyerBondApplicationRuntime(args).submit(args)
+export const refreshBuyerBondApplicationRuntimeSubmission = (args) => buyerBondApplicationRuntime(args).refreshSubmission()
+export const cancelBuyerBondApplicationRuntimeSubmission = (args) => buyerBondApplicationRuntime(args).cancel(args)
+const buyerWetInkService = ({ token, accessToken } = {}) => createBondWetInkSigningService(accessToken ? requireBondApplicationPortalTokenClient(accessToken) : requireClientPortalTokenClient(token))
+export const fetchBuyerBondWetInkSigning = (args) => buyerWetInkService(args).load()
+export const prepareBuyerBondWetInkSigning = (args) => buyerWetInkService(args).prepare(args)
+export const uploadBuyerBondWetInkSignedCopy = (args) => buyerWetInkService(args).upload(args)
+export const cancelBuyerBondWetInkSigning = (args) => buyerWetInkService(args).cancel(args.versionId)
+export const renderBuyerBondWetInkSigningPdf = (args) => buyerWetInkService(args).signingPdf(args.version)
+export const readBuyerBondWetInkOriginal = (args) => buyerWetInkService(args).readOriginal(args.upload)
+export const fetchBondWetInkReviewQueue = () => createBondWetInkSigningService(requireClient()).queue()
+export const readBondWetInkReviewOriginal = (upload) => createBondWetInkSigningService(requireClient()).readOriginal(upload)
+export const reviewBondWetInkSignedCopy = (args) => createBondWetInkSigningService(requireClient()).review(args)
+import { createBondWetInkSigningService } from '../services/bondWetInkSigningService.js'
+
+// Consultant-only pack scope is verified by the database before any financial
+// context is read. The original receipt exposes no browser mutation path.
+export async function fetchBondSubmissionPackContext({ transactionId } = {}) {
+  const proof = await requireClient().rpc('bridge_bond_submission_pack_original', { p_transaction: transactionId })
+  if (proof.error) throw proof.error
+  const context = await fetchBondApplicationDownloadContext({ transactionId })
+  if (proof.data?.submissionId !== context.submission?.id) throw new Error('The signed application changed. Refresh and retry.')
+  const review = await requireClient().rpc('bridge_bond_submission_review_context', { p_transaction: transactionId })
+  if (review.error) throw review.error
+  if (review.data?.submissionId !== context.submission?.id) throw new Error('The signed application changed. Refresh and retry.')
+  return { ...context, originalEvidence: proof.data?.originalEvidence || null, reviewContext: review.data }
+}
+
+export async function fetchBondSubmissionPackQueue() {
+  const result = await requireClient().rpc('bridge_bond_submission_pack_queue')
+  if (result.error) throw result.error
+  return result.data || []
+}
+
+export async function recordBondSubmissionConsultantReview({ transactionId, submissionId, contextHash, checks } = {}) {
+  const result = await requireClient().rpc('bridge_record_bond_submission_review', { p_transaction: transactionId, p_submission: submissionId, p_context_hash: contextHash, p_checks: checks })
+  if (result.error) throw result.error
+  return result.data
 }

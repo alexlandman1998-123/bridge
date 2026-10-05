@@ -91,6 +91,22 @@ test('attorney view receives attorney-scoped internal activity', () => {
   assert.deepEqual(build('attorney').activity.map((item) => item.id), ['internal', 'professional', 'seller-client', 'buyer-client'])
 })
 
+test('private activity follows the qualified lane while shared milestones remain visible', () => {
+  const rows = ['transfer', 'bond', 'cancellation'].flatMap(lane => [
+    { id: `${lane}-private`, lane_key: lane, visibility: 'internal', audience_json: [`${lane}_attorney`] },
+    { id: `${lane}-shared`, lane_key: lane, visibility: 'professional_shared', audience_json: ['transfer_attorney', 'bond_attorney', 'cancellation_attorney'] },
+  ])
+  for (const lane of ['transfer', 'bond', 'cancellation']) {
+    const model = buildTransactionSyncReadModel({ viewerRole: `${lane}_attorney`, activityRows: rows })
+    assert.deepEqual(model.activity.filter(row => row.visibility === 'internal').map(row => row.id), [`${lane}-private`])
+    assert.equal(model.activity.filter(row => row.visibility === 'professional_shared').length, 3)
+  }
+  const delegated = buildTransactionSyncReadModel({ viewerRole: 'bond_attorney', viewerLaneKeys: ['bond', 'transfer'], activityRows: rows })
+  assert.deepEqual(delegated.activity.filter(row => row.visibility === 'internal').map(row => row.id).sort(), ['bond-private', 'transfer-private'])
+  const generic = buildTransactionSyncReadModel({ viewerRole: 'attorney', activityRows: rows })
+  assert.deepEqual(generic.activity.filter(row => row.visibility === 'internal').map(row => row.id), ['transfer-private'])
+})
+
 test('all views carry the same transaction version and lane snapshot', () => {
   for (const role of ['buyer', 'seller', 'agent', 'bond_originator', 'attorney']) {
     const model = build(role)

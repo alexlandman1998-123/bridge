@@ -24,7 +24,7 @@ export function resolveWizardHandoffNextAction(handoffChecklist = {}, fallbackNe
 }
 
 export function resolveWizardInitialTransactionStage(handoffChecklist = {}, fallback = {}) {
-  if (handoffChecklist?.signedOtpStatus === 'uploaded') {
+  if (handoffChecklist?.signedOtpStatus === 'uploaded' && !fallback.preserveCapturedStage) {
     const stage = normalizeTransactionStage('Finance')
     return {
       stage,
@@ -37,7 +37,7 @@ export function resolveWizardInitialTransactionStage(handoffChecklist = {}, fall
   return {
     stage,
     mainStage: text(fallback.mainStage) || getMainStageFromDetailedStage(stage),
-    onboardingStatus: handoffChecklist?.signedOtpStatus === 'pending_upload'
+    onboardingStatus: handoffChecklist?.signedOtpStatus === 'uploaded' ? 'signed_otp_received' : handoffChecklist?.signedOtpStatus === 'pending_upload'
       ? 'awaiting_signed_otp'
       : 'awaiting_client_onboarding',
   }

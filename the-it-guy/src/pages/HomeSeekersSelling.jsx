@@ -15,7 +15,6 @@ const nav = [
   ["Selling", "selling"],
   ["Buying", "buying"],
   ["Renting", "renting"],
-  ["Areas", "areas"],
   ["About", "about"],
   ["Join us", "join"],
 ];

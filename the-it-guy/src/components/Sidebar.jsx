@@ -37,6 +37,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useOrganisation } from '../context/OrganisationContext'
 import { useWorkspace } from '../context/WorkspaceContext'
+import OrganisationWorkspaceSwitcher from './OrganisationWorkspaceSwitcher'
 import useAttorneyModuleSettings from '../hooks/useAttorneyModuleSettings'
 import { filterAttorneyModuleNavigationItems } from '../lib/attorneyModuleSettings'
 import { getRoleNavItems } from '../lib/roles'
@@ -50,6 +51,7 @@ import { preloadAgentTransactionsRoute } from '../routes/transactionsRouteLoader
 import { isWorkspaceExtensionFeatureEnabled, REVO_EXTENSION_KEY } from '../modules/revo/revoExtensionRegistry'
 
 const ICON_BY_KEY = {
+  agency_recruitment: Users,
   dashboard: LayoutDashboard,
   deals: SwitchCamera,
   developments: Building2,
@@ -701,6 +703,11 @@ function Sidebar() {
               <p className="ui-sidebar-brand-copy">{BRIDGE_BRAND_SUBTITLE}</p>
             </>
           )}
+          <OrganisationWorkspaceSwitcher
+            currentWorkspace={workspaceContext.currentWorkspace}
+            memberships={workspaceContext.activeMemberships}
+            onChange={(workspaceId) => workspaceContext.setWorkspace({ id: workspaceId })}
+          />
           {role !== 'bond_originator' ? (
             <>
               <BusinessWorkspaceSwitcher

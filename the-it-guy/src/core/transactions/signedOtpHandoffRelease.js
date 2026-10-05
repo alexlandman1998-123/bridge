@@ -83,6 +83,7 @@ function buildNotificationPayload({
 }
 
 export function buildSignedOtpHandoffReleaseDecision({
+  durableDispatch = false,
   transaction = {},
   financeType = '',
   financeManagedBy = '',
@@ -105,6 +106,20 @@ export function buildSignedOtpHandoffReleaseDecision({
   const resolvedOriginatorManagedFinance = originatorManagedFinance === null
     ? bondFinance && normalizedFinanceManagedBy === 'bond_originator'
     : Boolean(originatorManagedFinance)
+  if (durableDispatch) {
+    const status = 'organisation_handoff_queued'
+    const eventData = { version: SIGNED_OTP_HANDOFF_RELEASE_VERSION, status, source, durableDispatch: true,
+      financeType: normalizedFinanceType, financeManagedBy: normalizedFinanceManagedBy,
+      releasedLanes: [], deliveryConfirmed: false, stageAdvanced: Boolean(stageResult?.advanced) }
+    return { version: SIGNED_OTP_HANDOFF_RELEASE_VERSION, transactionId, releasedAt, status,
+      workflow: resolvedOriginatorManagedFinance ? 'finance' : 'attorney', originatorManagedFinance: resolvedOriginatorManagedFinance,
+      bondOriginatorActivated: false, releasedLanes: [], gatedLanes: [], nextAction,
+      event: { type: 'signed_otp_handoff_release_decision', data: eventData },
+      notification: { roleTypes: ['agent', 'developer'], title: 'Partner handoff queued',
+        message: 'Signed OTP finalised. Partner handoffs are persisted for background processing. Check Organisation handoffs for missing destinations or delivery failures.',
+        notificationType: 'readiness_updated', eventType: 'signed_otp_handoff_release_decision', eventData,
+        dedupePrefix: `signed-otp-handoff:${status}` } }
+  }
   const bondOriginatorActivated = isBondOriginatorActivated(bondOriginatorActivation)
   const activatedAttorneyLanes = attorneyActivationLanes(attorneyActivation)
   const releasedLanes = unique([

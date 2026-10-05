@@ -149,3 +149,27 @@ export function buildRentalListingQueryOptions(scope = {}) {
     includeAllOrganisationListings: scope.includeAllOrganisationListings === true,
   }
 }
+
+// Include permission scope as well as organisation: changing branch or role must
+// invalidate editors and requests even when the user stays in the same agency.
+export function buildRentalWorkspaceKey(scope = {}, listingId = '') {
+  return JSON.stringify([scope.organisationId || '', scope.assignedAgentId || '',
+    scope.scopeLevel || 'assigned', scope.branchId || '', scope.listingBranchId || '',
+    scope.departmentId || '', scope.teamId || '', scope.workspaceUnitId || '',
+    scope.includeAllOrganisationListings === true, listingId])
+}
+
+export function buildRentalListingDraftStorageKey(scope, { leadId = '', portfolioPropertyId = '' } = {}) {
+  return `arch9:rental-listing:create-draft:v2:${encodeURIComponent(buildRentalWorkspaceKey(scope))}:${encodeURIComponent(leadId)}:${encodeURIComponent(portfolioPropertyId)}`
+}
+
+export function isRentalListingInWorkspace(listing, agentId, options = {}) {
+  const organisationId = normalizeText(options.organisationId)
+  if (!listing || !organisationId || !normalizeText(agentId)) return false
+  if (normalizeText(listing.organisationId || listing.organisation_id) !== organisationId) return false
+  const branchId = options.scopeLevel && options.scopeLevel !== 'branch' ? '' : normalizeText(options.listingBranchId || options.branchId)
+  if (branchId && normalizeText(listing.branchId || listing.branch_id) !== branchId) return false
+  if (options.includeAllOrganisationListings === true) return true
+  const agents = [agentId, ...(options.assignedAgentIds || [])].map(normalizeText).filter(Boolean)
+  return agents.includes(normalizeText(listing.assignedAgentId || listing.assigned_agent_id))
+}

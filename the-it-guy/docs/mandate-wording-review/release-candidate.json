@@ -1,0 +1,585 @@
+{
+  "contract": "arch9-seller-document-release-candidate-v1",
+  "product": "Arch9 primary transaction workspace",
+  "projectRef": "isdowlnollckzvltkasn",
+  "generatedAt": "2026-10-04T19:05:55.011Z",
+  "source": {
+    "fingerprint": "sha256:177c3835a68ed3ff98f23d2d1e7d7de01e1f93f386ab9a2dfdf0ee95763489f6",
+    "files": [
+      {
+        "name": "docs/seller-document-review-runtime-rollback.sql",
+        "sha256": "eb956c7305a678a7960a08ce9660b8f32cb89b9b1f4edcc37045ae65f063e5a2",
+        "bytes": 1358
+      },
+      {
+        "name": "supabase/functions/seller-portal-document-signing/deno.json",
+        "sha256": "16e955fcba53e4d922ab6556155768547307c31c3c53a507e9af31160d0d4cdf",
+        "bytes": 74
+      },
+      {
+        "name": "supabase/functions/seller-portal-document-signing/index.ts",
+        "sha256": "3000c5bb643744ec17523e6d828d2917a6d270284f1ef8e6b300904248bf0196",
+        "bytes": 37913
+      },
+      {
+        "name": "supabase/functions/send-email/content/bridgeEmailLayout.ts",
+        "sha256": "1201b2d8adda2de73c9738b42f20dc5df0f0c59d2d3cfd9717af41cb7b0c094f",
+        "bytes": 13383
+      },
+      {
+        "name": "supabase/functions/send-email/services/emailBranding.ts",
+        "sha256": "d46b77a20d13161f17bdbaff464fbb6394c9f92d1a2aff1597c1c1d79df85a28",
+        "bytes": 27431
+      },
+      {
+        "name": "supabase/functions/send-email/services/resend.ts",
+        "sha256": "03c5c953a6f9553c194c264021ae1b7c99a2ffef0072d485002bd5cdfa93b9ea",
+        "bytes": 3148
+      },
+      {
+        "name": "supabase/functions/send-email/utils/controlledTestRecipient.ts",
+        "sha256": "39b26e30519b75c8648ca7c8c6f92e8f2fd19287ba2889120612b7e927560614",
+        "bytes": 2047
+      },
+      {
+        "name": "supabase/functions/send-email/utils/db.ts",
+        "sha256": "402a481c38c13f958152d9dd266c4820818ec391345382689964ab08d3d346b6",
+        "bytes": 1101
+      },
+      {
+        "name": "supabase/functions/send-email/utils/text.ts",
+        "sha256": "0c1d65a3779594c148ba7cafa21d39ba2f294192636937ee6da4e978a9932e54",
+        "bytes": 845
+      },
+      {
+        "name": "supabase/migrations/20261004121736_seller_document_review_runtime_reconciliation.sql",
+        "sha256": "4810d094bcaa7f5698473d46a6cdb015dffeddb36baffec61b7fc642949ca48d",
+        "bytes": 27714
+      },
+      {
+        "name": "supabase/migrations/20261004181626_seller_portal_signed_upload_version_binding.sql",
+        "sha256": "5e050cb4eef4997d3a4d949717c3d5425960b2e95530e66cd5ae079cc43682eb",
+        "bytes": 4897
+      },
+      {
+        "name": "the-it-guy/docs/mandate-wording-review/dual-mandate-draft.md",
+        "sha256": "fb86cb6ac2ef90da9adbfa4bf3a074a08ea92fd644c22209cc15076e52a5a6a0",
+        "bytes": 19121
+      },
+      {
+        "name": "the-it-guy/docs/mandate-wording-review/exclusive-mandate-draft.md",
+        "sha256": "8e7830475ceb4376ea21c78655605f0b4f98a7c7f2cc6f13fb66718fc9348913",
+        "bytes": 15194
+      },
+      {
+        "name": "the-it-guy/docs/mandate-wording-review/open-mandate-draft.md",
+        "sha256": "1f1cd90a9fdb2cb2f745c909508dc9a978e0e47d006f7dc08a58f3e49800c4b3",
+        "bytes": 14401
+      },
+      {
+        "name": "the-it-guy/package-lock.json",
+        "sha256": "9ff8df64997f817b3376c3a266a7cedb3a87ebb9500a5079438c18ea83388be7",
+        "bytes": 261748
+      },
+      {
+        "name": "the-it-guy/package.json",
+        "sha256": "3887587b6ac53f103b9cdf637a68b4a36d45492fbdcc83e8d387d2ddbc80d548",
+        "bytes": 243461
+      },
+      {
+        "name": "the-it-guy/postcss.config.js",
+        "sha256": "190c877db466995bf1482f4a16abd06e04a89ede3119341e2a86ff96e1737b27",
+        "bytes": 80
+      },
+      {
+        "name": "the-it-guy/scripts/fixtures/seller-document-corrections.mjs",
+        "sha256": "f49cb701790b71b9b7006791b1af5dbd7ebd252bd145a98d835e007b2352e686",
+        "bytes": 7637
+      },
+      {
+        "name": "the-it-guy/scripts/fixtures/seller-document-journey-browser.jsx",
+        "sha256": "a6ec8b83f4efd4c74294a99fff4846e1aa2e118d9d24a8829cde0f82a66d97a3",
+        "bytes": 2262
+      },
+      {
+        "name": "the-it-guy/scripts/fixtures/seller-mandate-capture.mjs",
+        "sha256": "2826afe4efa80b967870be435d859ad7ed43e222f0e8a67c35f9a64e474460bb",
+        "bytes": 2973
+      },
+      {
+        "name": "the-it-guy/scripts/fixtures/seller-mandate-review.mjs",
+        "sha256": "1d838913f62c14d31f68b861684447080919a3ce1db4f358bdb23fa548933de7",
+        "bytes": 3219
+      },
+      {
+        "name": "the-it-guy/scripts/fixtures/seller-mandate-signing.mjs",
+        "sha256": "ded30656aa596c0a160a3d0cdd1d0e392b430c79ba5537d7ec389d8dc886c522",
+        "bytes": 3503
+      },
+      {
+        "name": "the-it-guy/scripts/seller-document-journey.test.mjs",
+        "sha256": "7e132ec8d3473190c7f6efae088d234960289917d615ab85c0485d647eb50f4a",
+        "bytes": 79474
+      },
+      {
+        "name": "the-it-guy/scripts/seller-document-release-candidate.mjs",
+        "sha256": "4653c088edf5fbd2efda973806d2c702f2250a99376753ce6907c746e4a14a95",
+        "bytes": 11649
+      },
+      {
+        "name": "the-it-guy/scripts/seller-document-release-check.mjs",
+        "sha256": "1e084799b70e7eb50ebe258b7b551d2d5583b25c932da1c4c42e019b958ab5ee",
+        "bytes": 9967
+      },
+      {
+        "name": "the-it-guy/src/App.css",
+        "sha256": "8413ead55daf00f77b0cc5fe582d959fe27d675efc174cbf77188dbe7e6e14b3",
+        "bytes": 190141
+      },
+      {
+        "name": "the-it-guy/src/components/documents/SellerDocumentReviewActions.jsx",
+        "sha256": "0e53a1a21bfd01f16f440e827905b9aaef3b9aa3de0ba5dcfc00e978ed1b142a",
+        "bytes": 8800
+      },
+      {
+        "name": "the-it-guy/src/components/documents/SellerMandateDetailsEditor.jsx",
+        "sha256": "4fec5aada06bc6d5ae7447d68f54106950b01e79fe0e43d478d7d342365db061",
+        "bytes": 12044
+      },
+      {
+        "name": "the-it-guy/src/core/documents/conditionalPackDataRules.js",
+        "sha256": "9aed2b249ac107833436e3e5ea7d44a6cfe23e2334f465b7e123f65af95e3c53",
+        "bytes": 19585
+      },
+      {
+        "name": "the-it-guy/src/core/documents/documentPartyClassification.js",
+        "sha256": "ff39dffc48a605ececbf715a83a17673cfacdb03fece8ce48d49f58d546f9d36",
+        "bytes": 8508
+      },
+      {
+        "name": "the-it-guy/src/core/documents/ficaDeclarationDocumentMarkup.js",
+        "sha256": "07499a07a277f7d2663313553fdeae153aca6389ac784380d2e20ba4c50419ad",
+        "bytes": 10133
+      },
+      {
+        "name": "the-it-guy/src/core/documents/ficaDeclarationDocumentModel.js",
+        "sha256": "f25c1a951ffc32c77e23537ca7c84cef818609d772baac1bad22ff9a20aa96f2",
+        "bytes": 8685
+      },
+      {
+        "name": "the-it-guy/src/core/documents/sellerComplianceDocumentModel.js",
+        "sha256": "fa4f4b9e4a898356a36d91d6b7b023ffbfcf4c414aa6efa4ba709619472a18a2",
+        "bytes": 13182
+      },
+      {
+        "name": "the-it-guy/src/core/documents/sellerDisclosureAcknowledgements.js",
+        "sha256": "43e47d8fdd371dfcbd82a0a66ecca2bce3b9ddd4af2e6de18f3a8d9b1c7f2b64",
+        "bytes": 4156
+      },
+      {
+        "name": "the-it-guy/src/core/documents/sellerDocumentSignatureEvidence.js",
+        "sha256": "0df47bfd92ffcda13ed9c903326e53daba69bbb7887c8761371f239ffc4ade6c",
+        "bytes": 5965
+      },
+      {
+        "name": "the-it-guy/src/core/documents/sellerDocumentSigningContract.js",
+        "sha256": "df939f98c53313ba73dca8de8c0d662fa616cd4122e692524ea4b34cdfe3f1f8",
+        "bytes": 6990
+      },
+      {
+        "name": "the-it-guy/src/core/documents/sellerFicaDueDiligenceMarkup.js",
+        "sha256": "804bf2b180eafc3bc4a658df6d3895dcfa5c052b31c694747f3a30ba919d32d8",
+        "bytes": 1777
+      },
+      {
+        "name": "the-it-guy/src/core/documents/sellerMandateDocumentMarkup.js",
+        "sha256": "091bfdeb7e7a2b8c7e422b199414f5163ad308da2a742b4b0ba2883bc54cd988",
+        "bytes": 1875
+      },
+      {
+        "name": "the-it-guy/src/core/documents/sellerMandateReviewDocumentMarkup.js",
+        "sha256": "042918a6d56564b925060ae9e0e803b6a69e21fd0d145495c9544d4d73eac157",
+        "bytes": 19503
+      },
+      {
+        "name": "the-it-guy/src/core/documents/sellerMandateSignatureEvidence.js",
+        "sha256": "27f965d06094c22c077c44fe24697aafde9c4baba34a1c7ffa51262ddf0c1f64",
+        "bytes": 2657
+      },
+      {
+        "name": "the-it-guy/src/core/documents/sellerMandateSigningApproval.js",
+        "sha256": "1d10851aaadedbe4fe73de29f3a310691e280fe64764bc792cd4440e916a6aa6",
+        "bytes": 11128
+      },
+      {
+        "name": "the-it-guy/src/core/documents/sellerMandateWordingMarkup.js",
+        "sha256": "c8daec9024b5f5305c580b26fd7e29f3207bfe965902ba8125e929b42a277c0c",
+        "bytes": 18496
+      },
+      {
+        "name": "the-it-guy/src/core/documents/sellerMandateWordingRelease.js",
+        "sha256": "15b2e258040c418f06c3cb8acea8ac3703c56eac5b6fc4787b303581ee24c413",
+        "bytes": 52170
+      },
+      {
+        "name": "the-it-guy/src/core/documents/sellerOnboardingManualSigningPack.js",
+        "sha256": "8c083ab125a0f50995877c68d9fba3afc764331ed54d116ba518bb27ef69d0d5",
+        "bytes": 12940
+      },
+      {
+        "name": "the-it-guy/src/core/documents/sellerOnboardingSigningPackSnapshot.js",
+        "sha256": "cc3fed599d6449f82b5ed5aadcac212d7282cd7968e0d87331bba51a254fd171",
+        "bytes": 15024
+      },
+      {
+        "name": "the-it-guy/src/core/documents/sellerPhysicalSigningCopy.js",
+        "sha256": "1ba6e49a93d119dc51954ea8d931450693849f8118a9b7a1a97279f91ba4c0ea",
+        "bytes": 2990
+      },
+      {
+        "name": "the-it-guy/src/core/documents/sellerPortalSigningPolicy.js",
+        "sha256": "e0a54ef989c37a19ce9e8f766317bd901ad4449f3da198bf84675aa66a772d92",
+        "bytes": 849
+      },
+      {
+        "name": "the-it-guy/src/core/documents/sellerPostOnboardingDrafts.js",
+        "sha256": "9ab76ba744e0662c78762fef1ca87b55085d8cfd4509d48dd0ad7427b360a27e",
+        "bytes": 13980
+      },
+      {
+        "name": "the-it-guy/src/core/documents/sellerReviewedDocumentVersions.js",
+        "sha256": "80aea387dd70f68753537413d8adaa6877fd5b3e1b12d07ace9d17857c7ad51c",
+        "bytes": 11827
+      },
+      {
+        "name": "the-it-guy/src/core/documents/sellerSigningDocumentCorrections.js",
+        "sha256": "982e851ecae13e4d0ea457664669c7eb86c70330bc6a49161b5c198417f0f867",
+        "bytes": 21487
+      },
+      {
+        "name": "the-it-guy/src/core/documents/signingClassificationPolicy.js",
+        "sha256": "0192ded852901b23c9cf3abe010929bb351ebcb145598606259a4b7ed2391fb5",
+        "bytes": 4444
+      },
+      {
+        "name": "the-it-guy/src/index.css",
+        "sha256": "7d73b409fd18cd78a093036ee770018e2042330001de2c25d078effe986dba9e",
+        "bytes": 268520
+      },
+      {
+        "name": "the-it-guy/src/lib/arch9TermsAcceptance.js",
+        "sha256": "0062bccdb8061663d090c81ab18ef2e49a2bf29b89623c7caa6580ef6b4a9364",
+        "bytes": 3437
+      },
+      {
+        "name": "the-it-guy/src/lib/featureFlags.js",
+        "sha256": "f992ed3e682ac4784e79820cc28b1d4acdaf9860ce7773a846c7bcab191bc10b",
+        "bytes": 521
+      },
+      {
+        "name": "the-it-guy/src/lib/htmlDocumentPdf.js",
+        "sha256": "39145b560b4d12da530ff131e2c02eb693e61d9ca4fc0422026334f72fd6aeb7",
+        "bytes": 7522
+      },
+      {
+        "name": "the-it-guy/src/lib/onboardingBranding.js",
+        "sha256": "72a73c0c33fb4c2221a961b06eed9ba0ef6d5ca66c236f3d8caa8e96e17fbb9a",
+        "bytes": 10018
+      },
+      {
+        "name": "the-it-guy/src/lib/propertyDisclosure.js",
+        "sha256": "8320d90906dca50737bf85803f077076716b215b1736e2c6814056e6c6130422",
+        "bytes": 51836
+      },
+      {
+        "name": "the-it-guy/src/lib/propertyTaxonomy.js",
+        "sha256": "e2bfbb5154e6566506ddcb4ddbdfa6c7e4637422553613a473a7ecb0916d9feb",
+        "bytes": 8535
+      },
+      {
+        "name": "the-it-guy/src/lib/sellerBasePackContract.js",
+        "sha256": "f7275d828cdfd3720c48b3c59653f0a58b4a475bcb92ed31f7d9dc146cd5e072",
+        "bytes": 15489
+      },
+      {
+        "name": "the-it-guy/src/lib/sellerBondStatus.js",
+        "sha256": "1e299b19d446fc413677335c9c799ed35224f91d0bd01431f66748a0971fdf6a",
+        "bytes": 719
+      },
+      {
+        "name": "the-it-guy/src/lib/sellerMandateCapture.js",
+        "sha256": "7bb2e9e1ae3b8105f2b6168a52ae29a272a93b771f9698d6a922d9c164871eb7",
+        "bytes": 19282
+      },
+      {
+        "name": "the-it-guy/src/lib/sellerMandateReviewPagination.js",
+        "sha256": "fdf74d79ebc5ab9b5b67bbf843337d60925e3a0908f71483a2946229a11b43ca",
+        "bytes": 5013
+      },
+      {
+        "name": "the-it-guy/src/lib/sellerMandateReviewPreview.js",
+        "sha256": "ca7a555aec342fb4ef38f7c1d10a44fca223c36947f2eb091a08f83118110c8b",
+        "bytes": 1494
+      },
+      {
+        "name": "the-it-guy/src/lib/sellerOnboardingFlow.js",
+        "sha256": "d93442ccaf44d09b427e0f9fc9e2f7b779225c15eb8a3960dc6e4acb5f51f394",
+        "bytes": 6547
+      },
+      {
+        "name": "the-it-guy/src/lib/sellerOnboardingFlowContract.js",
+        "sha256": "a14f8c3476244db1a6d169f2ebb9e120f0a2b1558b426b715088973ac15a3b19",
+        "bytes": 45861
+      },
+      {
+        "name": "the-it-guy/src/lib/sellerPropertyAddress.js",
+        "sha256": "d2639aa35cb08d3bb8caf4dcc6422d821a77aed2ea913ceaedaee4e0d11a45d0",
+        "bytes": 5986
+      },
+      {
+        "name": "the-it-guy/src/pages/AgentListingDetail.jsx",
+        "sha256": "3d66ca5eb1bb0cd3d8d1b8dc5c9002dc7e89cb8244ab5d076ea1a55bbffb8fc7",
+        "bytes": 1048806
+      },
+      {
+        "name": "the-it-guy/src/pages/ClientPortal.jsx",
+        "sha256": "346f2704c81abce51c0c78186b6b82605566596c647519be9a14f59bbf708ed7",
+        "bytes": 860585
+      },
+      {
+        "name": "the-it-guy/src/pages/SellerDocumentSigning.jsx",
+        "sha256": "d20df63af69ae10cd99f8a22fe1eeed7c7165f78c4b52ddf9575e8a589a7ba77",
+        "bytes": 20179
+      },
+      {
+        "name": "the-it-guy/src/pages/agency/AgencyPipelinePage.jsx",
+        "sha256": "0aa3aa61a1d6e4aff1b1ebc17aa4b5c3dc4308ca2e752b7991c50bfc933cb196",
+        "bytes": 2322550
+      },
+      {
+        "name": "the-it-guy/src/services/documents/sellerOnboardingFactTransformer.js",
+        "sha256": "522f5ab7eebf1bec4284e54c769d2e03061550ed76282ad906b798edb6fb4478",
+        "bytes": 68619
+      },
+      {
+        "name": "the-it-guy/src/services/listings/listingSellerCanonicalUpdateService.js",
+        "sha256": "07ccc611f40746d1e6c2a6cedb9c84def616d0bd8ec5dd955c5d3114979a0736",
+        "bytes": 5139
+      },
+      {
+        "name": "the-it-guy/src/services/privateListingService.js",
+        "sha256": "fb732b04c5f511c4e6e5061532b354646a443976d60fa316af7a189fb52d0dc5",
+        "bytes": 406466
+      },
+      {
+        "name": "the-it-guy/src/services/sellerDocumentRequirementsService.js",
+        "sha256": "a2a0f64195b3f73e37e2fb6f01519bc58380caa48dcf87cdc7aa88cc0b0d8aee",
+        "bytes": 138457
+      },
+      {
+        "name": "the-it-guy/src/services/sellerPortalDocumentSigningService.js",
+        "sha256": "40ec102260271ab356b3cc22b35adf9a0c8936aa9656cc169a89f04ed3257d65",
+        "bytes": 1538
+      },
+      {
+        "name": "the-it-guy/tailwind.config.js",
+        "sha256": "a4d8bc48042215178a10a595f3e9d2c6a2c9f90f2b0bf06636a898cbfbe800a2",
+        "bytes": 5357
+      },
+      {
+        "name": "the-it-guy/vite.config.js",
+        "sha256": "4377d6e30efaab5b8df50b1ebc598f57e304b38eeafc5e599b0744879ac8d1da",
+        "bytes": 17131
+      }
+    ]
+  },
+  "wording": [
+    {
+      "variant": "sole",
+      "label": "exclusive",
+      "version": "seller-mandate-exclusive-2026-10-04-v1",
+      "name": "the-it-guy/docs/mandate-wording-review/exclusive-mandate-draft.md",
+      "wordingDigest": "sha256:8e7830475ceb4376ea21c78655605f0b4f98a7c7f2cc6f13fb66718fc9348913",
+      "approval": {
+        "status": "approved",
+        "wordingDigest": "sha256:8e7830475ceb4376ea21c78655605f0b4f98a7c7f2cc6f13fb66718fc9348913",
+        "businessApprover": "thread:user-confirmed-approval",
+        "counselApprover": "thread:user-confirmed-counsel-approval",
+        "reference": "USER-CONFIRMED-PRETORIA-20261004",
+        "approvedAt": "2026-10-04",
+        "source": "User confirmation for the three exact 4 October drafts: approved, pretoria, 4 oct"
+      }
+    },
+    {
+      "variant": "open",
+      "label": "open",
+      "version": "seller-mandate-open-2026-10-04-v1",
+      "name": "the-it-guy/docs/mandate-wording-review/open-mandate-draft.md",
+      "wordingDigest": "sha256:1f1cd90a9fdb2cb2f745c909508dc9a978e0e47d006f7dc08a58f3e49800c4b3",
+      "approval": {
+        "status": "approved",
+        "wordingDigest": "sha256:1f1cd90a9fdb2cb2f745c909508dc9a978e0e47d006f7dc08a58f3e49800c4b3",
+        "businessApprover": "thread:user-confirmed-approval",
+        "counselApprover": "thread:user-confirmed-counsel-approval",
+        "reference": "USER-CONFIRMED-PRETORIA-20261004",
+        "approvedAt": "2026-10-04",
+        "source": "User confirmation for the three exact 4 October drafts: approved, pretoria, 4 oct"
+      }
+    },
+    {
+      "variant": "dual",
+      "label": "dual",
+      "version": "seller-mandate-dual-2026-10-04-v1",
+      "name": "the-it-guy/docs/mandate-wording-review/dual-mandate-draft.md",
+      "wordingDigest": "sha256:fb86cb6ac2ef90da9adbfa4bf3a074a08ea92fd644c22209cc15076e52a5a6a0",
+      "approval": {
+        "status": "approved",
+        "wordingDigest": "sha256:fb86cb6ac2ef90da9adbfa4bf3a074a08ea92fd644c22209cc15076e52a5a6a0",
+        "businessApprover": "thread:user-confirmed-approval",
+        "counselApprover": "thread:user-confirmed-counsel-approval",
+        "reference": "USER-CONFIRMED-PRETORIA-20261004",
+        "approvedAt": "2026-10-04",
+        "source": "User confirmation for the three exact 4 October drafts: approved, pretoria, 4 oct"
+      }
+    }
+  ],
+  "proofs": [
+    {
+      "name": "output/pdf/exclusive-mandate-review.pdf",
+      "sha256": "1277a531cdf00987c264e151a31efceca34c45b87c30fb5815a924e20a600a84",
+      "bytes": 5480836,
+      "pages": 7,
+      "synthetic": true
+    },
+    {
+      "name": "output/pdf/open-mandate-review.pdf",
+      "sha256": "21167a56352ca94c4281d468f1e21b203724b9ff80e9ea50442a76adfdbe91fb",
+      "bytes": 5200007,
+      "pages": 7,
+      "synthetic": true
+    },
+    {
+      "name": "output/pdf/dual-mandate-review.pdf",
+      "sha256": "9e94d2ceeb26a55aa13eb61df35e5e9a176cb29418e56ef27309fecd03ad516e",
+      "bytes": 6987020,
+      "pages": 10,
+      "synthetic": true
+    },
+    {
+      "name": "the-it-guy/test-results/seller-document-journey/connected-individual-signed_mandate-final.pdf",
+      "sha256": "90c9f01dd86e557980cc166ab0e01cf4a534b40e6b2896b9360bf6f54f2a9624",
+      "bytes": 6181317,
+      "pages": 9,
+      "synthetic": true
+    },
+    {
+      "name": "the-it-guy/test-results/seller-document-journey/connected-individual-signed_disclosure_form-final.pdf",
+      "sha256": "473c4c709c87f8eee4fbc44fd1bcd095b1cbfc3c6bf1b13eb027733a801530f4",
+      "bytes": 1902135,
+      "pages": 6,
+      "synthetic": true
+    },
+    {
+      "name": "the-it-guy/test-results/seller-document-journey/connected-individual-signed_fica_declaration-final.pdf",
+      "sha256": "b6048461d7cbb2b5e49c1750955f828cbff785647ff4489d91a8a95d4bddbfc2",
+      "bytes": 1100681,
+      "pages": 4,
+      "synthetic": true
+    },
+    {
+      "name": "the-it-guy/test-results/seller-document-journey/connected-company-signed_mandate-final.pdf",
+      "sha256": "3e6f901a32cf8c7375101f6c875b67353867bd1395848899359270a0b34f9518",
+      "bytes": 6003941,
+      "pages": 9,
+      "synthetic": true
+    },
+    {
+      "name": "the-it-guy/test-results/seller-document-journey/connected-company-signed_disclosure_form-final.pdf",
+      "sha256": "bf4cb1ad4e2f0e6816089762ec52c53b1eed48edb51e035d2c583df6cbdab081",
+      "bytes": 2039352,
+      "pages": 6,
+      "synthetic": true
+    },
+    {
+      "name": "the-it-guy/test-results/seller-document-journey/connected-company-signed_fica_declaration-final.pdf",
+      "sha256": "273f2df6d2b4acb6a2a1d6185670df4b268e8919d4d4f1c2cf00c4310334ed87",
+      "bytes": 1376707,
+      "pages": 4,
+      "synthetic": true
+    },
+    {
+      "name": "the-it-guy/test-results/seller-document-journey/connected-multiple_owners-signed_mandate-final.pdf",
+      "sha256": "7f0d560069f8a4f26267da3cbc8207fc9d0e5dbcaaf8eb2183ab1017779308e0",
+      "bytes": 7840890,
+      "pages": 11,
+      "synthetic": true
+    },
+    {
+      "name": "the-it-guy/test-results/seller-document-journey/connected-multiple_owners-signed_disclosure_form-final.pdf",
+      "sha256": "44b055ba7118266a076f50128f2ca903b90f5ea0f8b4206e1945b3f91215257b",
+      "bytes": 2078754,
+      "pages": 6,
+      "synthetic": true
+    },
+    {
+      "name": "the-it-guy/test-results/seller-document-journey/connected-multiple_owners-signed_fica_declaration-final.pdf",
+      "sha256": "d05fee2e7e2662ae283f3117a53eb47e6856a81c07352cc3dc6f147c4fcb0783",
+      "bytes": 1275786,
+      "pages": 4,
+      "synthetic": true
+    },
+    {
+      "name": "the-it-guy/test-results/seller-document-journey/connected-trust-signed_mandate-physical.pdf",
+      "sha256": "2ed4a6da6453bc26bbc662c555a3b7864faf3f34a03afd94e05d58f5b3308cad",
+      "bytes": 5967257,
+      "pages": 8,
+      "synthetic": true
+    },
+    {
+      "name": "the-it-guy/test-results/seller-document-journey/connected-trust-signed_disclosure_form-physical.pdf",
+      "sha256": "5a240297c509fdc71a56d783140cd7bf0a058efec653a9d40cc617d0921e5976",
+      "bytes": 1624410,
+      "pages": 5,
+      "synthetic": true
+    },
+    {
+      "name": "the-it-guy/test-results/seller-document-journey/connected-trust-signed_fica_declaration-final.pdf",
+      "sha256": "b6fdcc4ac3a4c787a37ed51fd4d4849dd787aaa54d3d937dd13a36752e3a2868",
+      "bytes": 1368148,
+      "pages": 4,
+      "synthetic": true
+    }
+  ],
+  "migrations": [
+    {
+      "name": "supabase/migrations/20261004121736_seller_document_review_runtime_reconciliation.sql",
+      "sha256": "4810d094bcaa7f5698473d46a6cdb015dffeddb36baffec61b7fc642949ca48d",
+      "bytes": 27714
+    },
+    {
+      "name": "supabase/migrations/20261004181626_seller_portal_signed_upload_version_binding.sql",
+      "sha256": "5e050cb4eef4997d3a4d949717c3d5425960b2e95530e66cd5ae079cc43682eb",
+      "bytes": 4897
+    }
+  ],
+  "rollback": {
+    "name": "docs/seller-document-review-runtime-rollback.sql",
+    "sha256": "eb956c7305a678a7960a08ce9660b8f32cb89b9b1f4edcc37045ae65f063e5a2",
+    "bytes": 1358
+  },
+  "localAcceptance": {
+    "name": "the-it-guy/test-results/seller-document-journey/report.json",
+    "sha256": "9b8e316947e1000351840e863b633391de35942861bf6654c6d2dc71357cbcc7",
+    "bytes": 4235,
+    "result": "passed",
+    "localOnly": true,
+    "sourceMatches": true,
+    "journeys": 15,
+    "downloads": 51,
+    "pages": 280,
+    "browserSignatures": 9,
+    "browserPhysicalReviews": 2,
+    "localRollbackVerified": true
+  },
+  "candidateDigest": "sha256:12fe7c47608ff3b6a4b820d676d3576f45c43b463c056ff8b8cfe735026c491a"
+}

@@ -155,7 +155,7 @@ const statusResponse = await createPrivatePropertyApiResponse({
   headers: authHeaders,
   env: baseEnv,
   dependencies: {
-    createSupabase: () => ({ type: 'supabase' }),
+    createSupabase: () => ({ type: 'supabase',from: () => { const query={select:()=>query,eq:()=>query,maybeSingle:async()=>({data:{listing_category:'sales'},error:null})}; return query } }),
     runPostSubmitMonitor: async (args) => {
       monitorArgs = args
       return {

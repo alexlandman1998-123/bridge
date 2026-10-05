@@ -36,8 +36,8 @@ function verifyReleaseGateReport() {
   assert.deepEqual(report.structuralBlockers, [])
   assert.deepEqual(report.reviewItems, [])
   assert.equal(report.signoff.requiredChecklistCount, 9)
-  assert.equal(report.signoff.requiredActionCount, 19)
-  assert.equal(report.signoff.commandBackedActionCount, 19)
+  assert.equal(report.signoff.requiredActionCount, 22)
+  assert.equal(report.signoff.commandBackedActionCount, 22)
   assert.equal(report.signoff.scenarioCount, CANCELLATION_PHASE6_SCENARIO_MATRIX.length)
   assert.equal(report.signoff.goScenarioCount, 6)
   assert.equal(report.signoff.reviewScenarioCount, 2)
@@ -51,8 +51,8 @@ function verifyReleaseGateReport() {
 function verifyCommandPresetCoverage() {
   const report = buildCancellationLanePhase9ActionCommandReleaseReport()
 
-  assert.equal(Object.keys(CANCELLATION_ATTORNEY_STAGE_COMMAND_PRESETS).length, 19)
-  assert.equal(report.stageSpecificCommands.length, 19)
+  assert.equal(Object.keys(CANCELLATION_ATTORNEY_STAGE_COMMAND_PRESETS).length, 22)
+  assert.equal(report.stageSpecificCommands.length, 22)
   assert.equal(report.actionCommandProof.allCancellationActionsCommandBacked, true)
   assert.deepEqual(report.actionCommandProof.noteOnlyStageKeys, [
     'notice_period_captured',

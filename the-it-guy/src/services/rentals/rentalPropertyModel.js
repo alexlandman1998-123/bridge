@@ -10,8 +10,8 @@ function lower(value) { return text(value).toLowerCase() }
 
 export function normalizeRentalPropertyAddress(values = {}) {
   const address = {
-    line1: text(values.line1 || values.addressLine1), line2: text(values.line2 || values.addressLine2),
-    suburb: text(values.suburb), city: text(values.city), province: text(values.province), postalCode: text(values.postalCode),
+    line1: text(values.line1 || values.addressLine1 || values.address_line_1), line2: text(values.line2 || values.addressLine2 || values.address_line_2),
+    suburb: text(values.suburb), city: text(values.city), province: text(values.province), postalCode: text(values.postalCode || values.postal_code),
   }
   return { ...address, normalized: [address.line1, address.line2, address.suburb, address.city, address.province, address.postalCode].map(lower).filter(Boolean).join('|') }
 }

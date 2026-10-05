@@ -613,10 +613,11 @@ export function getRoleNavItems(role, { baseRole = null, profile = null, members
       key: 'agency',
       label: 'Organisation',
       to: '/agency/branches',
-      activeMatch: ['/agency/branches', '/agency/agents', '/agency/commission', '/agency/partners', '/partners'],
+      activeMatch: ['/agency/branches', '/agency/agents', '/agency/recruitment', '/agency/commission', '/agency/partners', '/partners'],
       children: [
         { key: 'agency_branches', label: 'Branches', to: '/agency/branches' },
         ...(!isBranchManager ? [{ key: 'agency_people', label: 'Agents', to: '/agency/agents' }] : []),
+        ...(!isBranchManager ? [{ key: 'agency_recruitment', label: 'Recruitment', to: '/agency/recruitment' }] : []),
         ...(!isBranchManager ? [{ key: 'agency_partners', label: 'Partners', to: '/agency/partners', activeMatch: ['/agency/partners', '/partners'] }] : []),
         ...(!isBranchManager ? [{ key: 'agency_commission', label: 'Commission', to: '/agency/commission' }] : []),
       ],

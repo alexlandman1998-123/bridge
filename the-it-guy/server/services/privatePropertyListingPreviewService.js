@@ -1,3 +1,4 @@
+import { refreshListingPhotoUrls } from '../../src/services/listings/listingPhotoStorage.js'
 import { createPrivatePropertyListingPlan } from './privatePropertyListingMapper.js'
 import { normalizePrivatePropertyText } from './privatePropertyClient.js'
 import {
@@ -116,7 +117,7 @@ export async function fetchArch9ListingForPrivatePropertyPreview({ client, listi
   return {
     listing: hydratePrivatePropertyListingFromOnboarding(listing, onboarding || {}),
     publication: publication || {},
-    media,
+    media: listing.listing_category === 'rental' ? await refreshListingPhotoUrls(client, media, { strict: true }) : media,
     existingSync: existingSync || {},
   }
 }

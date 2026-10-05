@@ -1,3 +1,4 @@
+import { beginRentalPublicationAttempt, updateRentalPublicationAttempt, retainUncertainRentalPublication, isDefinitePortalRejection, publicRentalPublicationAttempt } from '../services/rentalPublicationAttemptService.js'
 import { createHash } from 'node:crypto'
 import {
   createRedactedProperty24Payload,
@@ -320,7 +321,7 @@ export async function applyControlledProperty24ListingPublish({
   const completedAttempt = await completeProperty24SyncAttempt({
     client: supabase,
     attemptId: attempt.id,
-    status: nextReport.status === 'FAILED' ? 'failed' : 'succeeded',
+    status: ['FAILED','UNCERTAIN'].includes(nextReport.status) ? 'failed' : 'succeeded',
     responseSummary: {
       property24Response: nextReport.property24Response?.summary || null,
       portalCheck: nextReport.portalCheck?.summary || nextReport.portalCheck || null,
@@ -385,9 +386,14 @@ export async function applyControlledProperty24StatusUpdate({
     actorUserId: config.actorUserId,
   })
 
+  const journal = config.listingId ? await beginRentalPublicationAttempt({ client:supabase,listingId:config.listingId,channel:'property24',environment,
+    operation:'status_update',identity:{ agencyId:config.agencyId,listingNumber:normalizedListingNumber,status:normalizedStatus },payload:payloadSummary }) : null
+  let receipt = {}
   try {
     const startedAt = Date.now()
     const result = await property24.updateListingStatus(normalizedListingNumber, normalizedStatus)
+    receipt = { accepted:true,reference:normalizedListingNumber }
+    if (journal) await updateRentalPublicationAttempt(supabase,journal,{ state:'uncertain',receipt })
     let isOnPortal = false
     let portalCheck = null
     try {
@@ -426,6 +432,12 @@ export async function applyControlledProperty24StatusUpdate({
       publishWithoutMandateReason: 'Property24 status update accepted before mandate evidence upload.',
     })
 
+    if (journal) {
+      if (portalCheck?.status === 'FAILED' || syncRecord.statusUpdateWarning || syncRecord.externalLinkWarning) throw new Error('The portal accepted the status change but its final state or local record is unconfirmed. Reconcile before sending again.')
+      const withdrawing = ['withdrawn','expired','rented'].includes(normalizedStatus.toLowerCase())
+      if (withdrawing && isOnPortal) throw new Error('The portal accepted the withdrawal but still reports the rental live. Reconcile before sending again.')
+      await updateRentalPublicationAttempt(supabase,journal,{ state:'accepted',receipt })
+    }
     const completedAttempt = await completeProperty24SyncAttempt({
       client: supabase,
       attemptId: attempt.id,
@@ -477,6 +489,11 @@ export async function applyControlledProperty24StatusUpdate({
       syncAttempt: completedAttempt || attempt,
     }
   } catch (error) {
+    const uncertain = journal && (receipt.accepted || !isDefinitePortalRejection(error))
+    if (journal) {
+      if (uncertain) await retainUncertainRentalPublication(supabase,journal,error,receipt)
+      else await updateRentalPublicationAttempt(supabase,journal,{ state:'rejected',last_error:error.message })
+    }
     const completedAttempt = await completeProperty24SyncAttempt({
       client: supabase,
       attemptId: attempt.id,
@@ -488,7 +505,8 @@ export async function applyControlledProperty24StatusUpdate({
     return {
       phase: 'property24-status-update',
       generatedAt: new Date().toISOString(),
-      status: 'FAILED',
+      status: uncertain ? 'UNCERTAIN' : 'FAILED',
+      submissionAttempt: journal ? publicRentalPublicationAttempt({ ...journal,state:uncertain ? 'uncertain' : 'rejected',receipt }) : null,
       listingId: normalizeProperty24Text(config.listingId),
       listingNumber: normalizedListingNumber,
       listingStatus: normalizedStatus,

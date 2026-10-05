@@ -1,0 +1,126 @@
+{
+  "verifiedAt": "2026-10-05T16:54:52.995825+02:00",
+  "product": "Primary Arch9 recruitment workspace",
+  "target": {
+    "environment": "production",
+    "projectRef": "isdowlnollckzvltkasn",
+    "name": "Arch9 SaaS"
+  },
+  "authorization": "User requested applying the recruitment migration in this chat on 5 October 2026. Earlier recruitment migrations were absent and required by Phase 8.",
+  "method": "Exact nine-file recruitment batch, applied atomically through linked db query. No Vault, seed data, unrelated migrations, emails, account invitations, or frontend deployment.",
+  "migrations": [
+    {
+      "version": "20261005124526",
+      "name": "recruitment_workspace",
+      "sha256": "b49438b6f700beaa0a612c84f1a2bb4843711e1c511ac24685b9e34db651cea4"
+    },
+    {
+      "version": "20261005131321",
+      "name": "recruitment_lead_received",
+      "sha256": "ee53e390f9cd5afb4218334441bec027b930a727b2f78af9b12283b9b25a457a"
+    },
+    {
+      "version": "20261005132145",
+      "name": "recruitment_application_submitted",
+      "sha256": "848f079d1edfd14585052370f4d263cc1e54779cb9065ab41ddce7df63d0121b"
+    },
+    {
+      "version": "20261005133548",
+      "name": "recruitment_under_review",
+      "sha256": "ff7b0212ba4c60b6a7777c1e462f515308ed0c67b655b72babb20037acf3455d"
+    },
+    {
+      "version": "20261005134622",
+      "name": "recruitment_application_approved",
+      "sha256": "86ed97962ef2183a12c2e7f29c813604889285d9fec53babd250144b30cd7f13"
+    },
+    {
+      "version": "20261005135634",
+      "name": "recruitment_contract_sent",
+      "sha256": "ae31200743cd1f4ba3ea6a13c3206b5d96d1c3678f1428397c5e33ff5adf00b3"
+    },
+    {
+      "version": "20261005140352",
+      "name": "recruitment_contract_signed",
+      "sha256": "a8f0e947cd1dae78613bea7762ee963f08439d97eb61144413e297910ecc041a"
+    },
+    {
+      "version": "20261005141618",
+      "name": "recruitment_onboarding_complete",
+      "sha256": "3527b3c5f9b81fbc692e29c523cd23bdb4831fcb4604089348ed8c757b4db1ef"
+    },
+    {
+      "version": "20261005142636",
+      "name": "recruitment_agent_activated",
+      "sha256": "91a9845d2dcc929c19eb61540769d85d9f02ecb05a8f8a7fca42ba7bdbdf05b4"
+    }
+  ],
+  "history": [
+    {
+      "name": "recruitment_workspace",
+      "recorded_statement_count": 16,
+      "version": "20261005124526"
+    },
+    {
+      "name": "recruitment_lead_received",
+      "recorded_statement_count": 16,
+      "version": "20261005131321"
+    },
+    {
+      "name": "recruitment_application_submitted",
+      "recorded_statement_count": 22,
+      "version": "20261005132145"
+    },
+    {
+      "name": "recruitment_under_review",
+      "recorded_statement_count": 10,
+      "version": "20261005133548"
+    },
+    {
+      "name": "recruitment_application_approved",
+      "recorded_statement_count": 13,
+      "version": "20261005134622"
+    },
+    {
+      "name": "recruitment_contract_sent",
+      "recorded_statement_count": 16,
+      "version": "20261005135634"
+    },
+    {
+      "name": "recruitment_contract_signed",
+      "recorded_statement_count": 19,
+      "version": "20261005140352"
+    },
+    {
+      "name": "recruitment_onboarding_complete",
+      "recorded_statement_count": 19,
+      "version": "20261005141618"
+    },
+    {
+      "name": "recruitment_agent_activated",
+      "recorded_statement_count": 13,
+      "version": "20261005142636"
+    }
+  ],
+  "checks": {
+    "guard": "passed; no duplicate timestamps",
+    "recovery": "RECOVERY_LOCKED",
+    "recruitmentTests": "96 passed across 11 files",
+    "productionDdlRollbackNoResidue": true,
+    "productionBehaviorSmokeNoResidue": true,
+    "verifiedRlsTables": 3,
+    "verifiedPrivateBuckets": 4,
+    "activationExecute": "authenticated allowed; anon denied",
+    "securityAdvisor": {
+      "totalFindings": 1723,
+      "recruitmentFindings": 0
+    },
+    "migrationHistory": "nine exact versions recorded with SQL statements"
+  },
+  "knownLimitations": [
+    "Normal broad dry run blocked by unrelated remote-only migration 20261005075454; that migration history was not altered.",
+    "A real applicant invitation/acceptance and document-upload journey was not exercised.",
+    "Application deployment and public intake endpoint deployment were not performed."
+  ],
+  "recoveryPlan": "DDL was rehearsed in a rollback-only transaction, then applied in one transaction. Since these objects were absent before release, no pre-existing recruitment data or function definitions were replaced. If an issue appears after committed user data, preserve rows and document evidence and use a reviewed forward correction; never drop populated tables or buckets."
+}

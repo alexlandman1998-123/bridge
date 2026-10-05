@@ -103,6 +103,14 @@ assert.equal(selectStablePortalWorkspace(latest, workspace(1, 'other')).transact
 const unavailable = { transactionJourneySnapshot: { legalJourney: { status: 'unavailable', snapshot: null } } }
 assert.equal(selectStablePortalWorkspace(latest, unavailable), unavailable)
 assert.equal(selectStablePortalWorkspace(latest, null), null)
+const savedAppointments = [{ id: 'booking', status: 'Confirmed', participants: [{ rsvpStatus: 'Accepted' }] }]
+const savedWorkspace = { ...latest, appointments: savedAppointments, legacyPortalData: { appointments: savedAppointments } }
+const olderWorkspace = { ...stale, appointments: [{ id: 'booking', status: 'Pending Confirmation' }], legacyPortalData: { appointments: [{ id: 'booking', status: 'Pending Confirmation' }] } }
+assert.deepEqual(selectStablePortalWorkspace(savedWorkspace, olderWorkspace).appointments, savedAppointments)
+assert.deepEqual(selectStablePortalWorkspace(savedWorkspace, olderWorkspace).legacyPortalData.appointments, savedAppointments)
+assert.equal(selectStablePortalWorkspace(savedWorkspace, unavailable), unavailable, 'A denied or unavailable read must not revive older appointments.')
+const nextWorkspace = { ...workspace(10), appointments: [{ id: 'booking', status: 'Cancelled' }] }
+assert.equal(selectStablePortalWorkspace(savedWorkspace, nextWorkspace), nextWorkspace)
 console.log('Live refresh: retry, acknowledgement, coalescing, disposal and portal revision guards passed.')
 
 // Exercise the actual background loader: a seller reconciliation must request

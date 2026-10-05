@@ -13,7 +13,7 @@ const pages = {
   join: { label: 'JOIN US', title: 'Build a career that moves you forward.', copy: 'The training academy and recruitment journey will live here.' },
   valuation: { label: 'FREE VALUATION', title: 'Find out what your home is worth.', copy: 'The valuation enquiry flow and guarantee eligibility will live here.' },
 }
-const navigation = [['Selling', 'selling'], ['Buying', 'buying'], ['Renting', 'renting'], ['Areas', 'areas'], ['About', 'about'], ['Join us', 'join']]
+const navigation = [['Selling', 'selling'], ['Buying', 'buying'], ['Renting', 'renting'], ['About', 'about'], ['Join us', 'join']]
 
 export default function HomeSeekersPageShell({ page }) {
   const [valuationOpen, setValuationOpen] = useState(false)

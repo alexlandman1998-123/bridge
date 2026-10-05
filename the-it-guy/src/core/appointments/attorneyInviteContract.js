@@ -312,6 +312,7 @@ export function buildAttorneyInviteContract(input = {}, options = {}) {
       notes: normalizeText(input.notes),
       attorneyName: normalizeText(input.attorneyName || input.senderName),
       attorneyEmail: normalizeLower(input.attorneyEmail),
+      sendNotifications: input.sendNotifications !== false,
       attachCalendarInvite: input.attachCalendarInvite !== false,
     },
   }

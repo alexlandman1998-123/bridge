@@ -1,6 +1,7 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Button from '../../ui/Button.jsx'
 import Field from '../../ui/Field.jsx'
+import { buildAttorneyInviteOutcome } from '../../../core/appointments/attorneyInviteDelivery.js'
 
 export default function LegalTaskAppointmentForm({ task, recipient = {}, onCreate, onResend, onBusyChange }) {
   const [draft, setDraft] = useState({ recipientName: recipient.name || '', recipientEmail: recipient.email || '', date: '', startTime: '', locationMode: 'physical_address', location: '', instructions: '' })
@@ -8,6 +9,11 @@ export default function LegalTaskAppointmentForm({ task, recipient = {}, onCreat
   const pending = useRef(false)
   const [error, setError] = useState('')
   const [result, setResult] = useState(null)
+  const mounted = useRef(true)
+  useEffect(() => {
+    mounted.current = true
+    return () => { mounted.current = false }
+  }, [])
   async function submit(event) {
     event.preventDefault()
     if (pending.current || result) return
@@ -15,8 +21,25 @@ export default function LegalTaskAppointmentForm({ task, recipient = {}, onCreat
     setBusy(true)
     onBusyChange?.(true)
     setError('')
-    try { setResult(await onCreate(draft)) } catch (error) { setError(error.message || 'Appointment could not be saved.') }
-    finally { pending.current = false; setBusy(false); onBusyChange?.(false) }
+    try {
+      const saved = await onCreate(draft)
+      if (!mounted.current) return
+      setResult(saved)
+      if (saved.refreshCompletion) {
+        void saved.refreshCompletion.then(refreshed => {
+          if (mounted.current && refreshed?.ok === false) setError(refreshed.message)
+        })
+      }
+      if (saved.deliveryCompletion) {
+        void saved.deliveryCompletion.then(completed => {
+          if (!mounted.current) return
+          setResult(previous => previous?.appointmentId === saved.appointmentId
+            ? { ...previous, ...completed, message: buildAttorneyInviteOutcome(completed.delivery).message }
+            : previous)
+        })
+      }
+    } catch (error) { if (mounted.current) setError(error.message || 'Appointment could not be saved.') }
+    finally { pending.current = false; if (mounted.current) { setBusy(false); onBusyChange?.(false) } }
   }
   async function resend() {
     if (pending.current) return
@@ -29,7 +52,7 @@ export default function LegalTaskAppointmentForm({ task, recipient = {}, onCreat
     finally { pending.current = false; setBusy(false); onBusyChange?.(false) }
   }
   const change = key => event => setDraft(previous => ({ ...previous, [key]: event.target.value }))
-  if (result) return <div className="space-y-3"><p role="status">{result.message}</p>{error ? <p role="alert" className="text-red-700">{error}</p> : null}<p className="text-sm text-slate-600">This appointment is linked to {task.label}. Confirm the task outcome when ready.</p>{result.delivery?.status !== 'sent' ? <Button type="button" disabled={busy} onClick={resend}>{busy ? 'Sending…' : 'Resend invite'}</Button> : null}</div>
+  if (result) return <div className="space-y-3"><p role="status">{result.message}</p>{error ? <p role="alert" className="text-red-700">{error}</p> : null}<p className="text-sm text-slate-600">This appointment is linked to {task.label}. Confirm the task outcome when ready.</p>{!['sent', 'processing', 'disabled'].includes(result.delivery?.status) ? <Button type="button" disabled={busy} onClick={resend}>{busy ? 'Sending…' : 'Resend invite'}</Button> : null}</div>
   return <form onSubmit={submit} className="space-y-4">
     {error ? <p role="alert" className="text-red-700">{error}</p> : null}
     <div className="grid gap-4 sm:grid-cols-2">

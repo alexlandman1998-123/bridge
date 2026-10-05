@@ -96,6 +96,12 @@ assert.deepEqual({
   visibility: (await db.query("select lane_key,step_key,definition->'client' client,definition->'clientVisibleAllowed' allowed from journey_private.task_catalog order by lane_key,step_key")).rows,
 }, savedBeforeReconciliation, 'reconciliation must preserve saved tasks, active plans, historical keys and client visibility')
 const catalogueComparisons = []
+const reviewCatalogue = migration('20261003185915_attorney_conveyancing_review_corrections.sql')
+const reviewCatalogueStart = reviewCatalogue.indexOf('update journey_private.task_catalog')
+const reviewCatalogueEnd = reviewCatalogue.indexOf(';', reviewCatalogue.indexOf('update journey_private.task_catalog', reviewCatalogueStart + 1))
+await db.exec(reviewCatalogue.slice(reviewCatalogueStart, reviewCatalogueEnd + 1))
+const privateCatalogue = migration('20261004102741_attorney_internal_workspace_boundaries.sql')
+await db.exec(privateCatalogue.slice(privateCatalogue.indexOf('update journey_private.task_catalog'), privateCatalogue.lastIndexOf("notify pgrst")))
 for (const key of ['transfer','bond','cancellation']) {
   const rows = (await db.query('select step_key,definition from journey_private.task_catalog where lane_key=$1 order by step_key',[key])).rows
   const expected = getAttorneyStageDefinitionsForLane(key).map(t=>({step_key:t.key,definition:t.sharedProgress})).sort((a,b)=>a.step_key.localeCompare(b.step_key))

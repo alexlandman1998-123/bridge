@@ -145,7 +145,7 @@ function resolveStepStatus(step, visibleScreens, completedScreenKeys, state, con
 
 function resolveProgress(visibleScreens, state, contract) {
   const guidedScreens = visibleScreens.filter((screen) => !screen.transitionOnly && !['documents', 'review_sign'].includes(screen.stepKey))
-  const requiredQuestions = guidedScreens.flatMap((screen) => screen.questions.filter((question) => question.required))
+  const requiredQuestions = [...new Map(guidedScreens.flatMap((screen) => screen.questions.filter((question) => question.required)).map((question) => [question.path, question])).values()]
   const completedRequired = requiredQuestions.filter((question) => isBondApplicationQuestionComplete(question, state, contract))
   const guidedRatio = requiredQuestions.length ? completedRequired.length / requiredQuestions.length : 0
   const guidedStageWeight = 6 / Math.max(contract.steps.length, 1)

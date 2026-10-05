@@ -1,0 +1,428 @@
+import { activateRecruitmentAgent } from '../../../services/recruitmentService'
+import { onboardingChecks, recruitmentOnboardingDraft } from '../recruitmentOnboardingModel'
+import { saveRecruitmentOnboarding } from '../../../services/recruitmentService'
+// @vitest-environment jsdom
+import { afterEach, expect, it, vi } from 'vitest'
+import { cleanup, fireEvent, render, screen, within, waitFor } from '@testing-library/react'
+import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import RecruitmentPage, { RecruitmentList, RecruitmentWorkspace } from '../RecruitmentPage'
+import { WorkspaceContext } from '../../../context/WorkspaceContextBase'
+import { recruitmentLocalDate } from '../recruitmentSigningModel'
+import { emptyRecruitmentLead, recruitmentReadiness } from '../recruitmentModel'
+import { recruitmentReviewDraft } from '../recruitmentReviewModel'
+import { recordRecruitmentContractSignature, approveRecruitmentApplication, getRecruitmentLead, saveRecruitmentLead } from '../../../services/recruitmentService'
+vi.mock('../../../services/recruitmentIntakeService', () => ({ createRecruitmentIntakeLink: vi.fn(), listRecruitmentIntakeLinks: vi.fn().mockResolvedValue([]), revokeRecruitmentIntakeLink: vi.fn() }))
+vi.mock('../../../services/recruitmentService', () => ({ activateRecruitmentAgent: vi.fn(), getRecruitmentAgentAccessLink: vi.fn(), saveRecruitmentOnboarding: vi.fn(), uploadRecruitmentOnboardingDocument: vi.fn(), downloadRecruitmentOnboardingDocument: vi.fn(), recordRecruitmentContractDelivery: vi.fn(), recordRecruitmentContractSignature: vi.fn(), downloadRecruitmentSignedContract: vi.fn(), prepareRecruitmentContract: vi.fn(), downloadRecruitmentContract: vi.fn(), approveRecruitmentApplication: vi.fn(), getRecruitmentLead: vi.fn(), listRecruitmentLeads: vi.fn().mockResolvedValue([]), startRecruitmentReview: vi.fn(), saveRecruitmentReview: vi.fn(), saveRecruitmentLead: vi.fn(), uploadRecruitmentDocument: vi.fn(), openRecruitmentDocument: vi.fn() }))
+afterEach(() => { cleanup(); vi.clearAllMocks() })
+const lead = { ...emptyRecruitmentLead(), id: 'agent-1', name: 'Sam Agent', email: 'sam@example.test', phone: '0821234567', area: 'Pretoria', version: 1 }
+const wrap = (element) => render(<MemoryRouter>{element}</MemoryRouter>)
+it('keeps active and closed leads separate and filters contact details', () => {
+  wrap(<RecruitmentList leads={[lead, { ...lead, id: 'closed', name: 'Joined Agent', status: 'legacy_joined' }]} onRefresh={vi.fn()} />)
+  expect(screen.getByText('Sam Agent')).toBeTruthy()
+  expect(screen.queryByText('Joined Agent')).toBeNull()
+  fireEvent.click(screen.getByRole('tab', { name: /Closed Leads/ }))
+  expect(screen.queryByText('Sam Agent')).toBeNull()
+  expect(screen.getByText('Joined Agent')).toBeTruthy()
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'no-match' } })
+  expect(screen.getByText('No leads match these filters')).toBeTruthy()
+})
+it('captures details and prevents losing edits through upload', () => {
+  const onSave = vi.fn()
+  wrap(<RecruitmentWorkspace lead={lead} onSave={onSave} onUpload={vi.fn()} onDownload={vi.fn()} />)
+  expect(screen.getByRole('heading', { name: 'Sam Agent' })).toBeTruthy()
+  expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['Overview', 'Agent Details', 'Documents'])
+  fireEvent.click(screen.getByRole('tab', { name: 'Agent Details' }))
+  fireEvent.change(screen.getByLabelText('Experience & track record'), { target: { value: 'Five years in residential sales' } })
+  expect(screen.getByRole('button', { name: 'Close Lead' }).disabled).toBe(true)
+  fireEvent.click(screen.getByRole('tab', { name: 'Documents' }))
+  expect(screen.getByLabelText('Upload document').disabled).toBe(true)
+  fireEvent.click(screen.getByRole('tab', { name: 'Agent Details' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Save Agent Details' }))
+  expect(onSave.mock.calls[0][0].details_json).toMatchObject({ onboardingCaptured: false, experience: 'Five years in residential sales' })
+  expect(recruitmentReadiness(lead).score).toBe(20)
+})
+it('reopens closed leads and uploads the selected document type', () => {
+  const onSave = vi.fn(), onUpload = vi.fn()
+  wrap(<RecruitmentWorkspace lead={{ ...lead, status: 'closed_lost' }} onSave={onSave} onUpload={onUpload} />)
+  fireEvent.click(screen.getByRole('button', { name: 'Reopen Lead' }))
+  expect(onSave.mock.calls[0][0].status).toBe('lead_received')
+  fireEvent.click(screen.getByRole('tab', { name: 'Documents' }))
+  fireEvent.change(screen.getByLabelText('Document type'), { target: { value: 'Qualifications' } })
+  const file = new File(['test'], 'certificate.pdf', { type: 'application/pdf' })
+  fireEvent.change(screen.getByLabelText('Upload document'), { target: { files: [file] } })
+  expect(onUpload).toHaveBeenCalledWith(file, 'Qualifications')
+})
+it('shows load failure with recovery, without inventing an empty lead', async () => {
+  vi.mocked(getRecruitmentLead).mockRejectedValue(new Error('Agent lead not found or you do not have access.'))
+  render(<WorkspaceContext.Provider value={{ currentWorkspace: { id: 'org' }, organisationMembershipRole: 'principal' }}><MemoryRouter initialEntries={['/agency/recruitment/agent-1']}><Routes><Route path="/agency/recruitment/:leadId" element={<RecruitmentPage />} /></Routes></MemoryRouter></WorkspaceContext.Provider>)
+  expect(await screen.findByRole('alert')).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Reload' })).toBeTruthy()
+  expect(screen.queryByRole('heading', { name: 'New Agent Lead' })).toBeNull()
+})
+it('restricts recruitment to organisation management', () => {
+  wrap(<WorkspaceContext.Provider value={{ currentWorkspace: { id: 'org' }, organisationMembershipRole: 'agent' }}><RecruitmentPage /></WorkspaceContext.Provider>)
+  expect(screen.getByText('Recruitment is available to organisation principals and administrators.')).toBeTruthy()
+  expect(getRecruitmentLead).not.toHaveBeenCalled()
+})
+it('paginates without dropping the final page', () => {
+  wrap(<RecruitmentList leads={Array.from({ length: 12 }, (_, i) => ({ ...lead, id: `lead-${i}`, name: `Candidate ${i}` }))} />)
+  expect(within(screen.getByRole('table')).getAllByRole('row')).toHaveLength(11)
+  fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+  expect(within(screen.getByRole('table')).getAllByRole('row')).toHaveLength(3)
+})
+
+it('captures a referral at Lead Received without exposing future stage controls', () => {
+  const onSave = vi.fn()
+  wrap(<RecruitmentWorkspace lead={emptyRecruitmentLead()} isNew onSave={onSave} />)
+  fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'New Agent' } })
+  fireEvent.change(screen.getByLabelText('Phone'), { target: { value: '0821234567' } })
+  fireEvent.change(screen.getByLabelText('Source'), { target: { value: 'Referral' } })
+  fireEvent.change(screen.getByLabelText('Referred by'), { target: { value: 'Sam' } })
+  expect(screen.getByLabelText('Stage').readOnly).toBe(true)
+  fireEvent.click(screen.getByRole('button', { name: 'Create Agent Lead' }))
+  expect(onSave.mock.calls[0][0]).toMatchObject({ status: 'lead_received', source: 'Referral', details_json: { referredBy: 'Sam' } })
+})
+it('shows all eight journey stages and the authoritative receipt history', () => {
+  wrap(<RecruitmentWorkspace lead={{ ...lead, received_at: '2026-10-05T12:00:00Z', activity_json: [{ type: 'lead_received', at: '2026-10-05T12:00:00Z' }] }} />)
+  expect(screen.getByText('Agent Activated')).toBeTruthy()
+  expect(screen.getByText('Application Submitted')).toBeTruthy()
+  expect(document.querySelector('[aria-current="step"]').textContent).toBe('1Lead Received')
+  expect(screen.getByText('Staff capture')).toBeTruthy()
+  expect(screen.getByText('Lead received')).toBeTruthy()
+})
+
+it('feeds the submitted answers and review requirements into the recruitment workspace', () => {
+  const application = { version:'recruitment-application-v1', channel:'website', answers:{yearsExperience:'3',dealsPerMonth:'2',activeMandates:'no',practitionerStatus:'candidate',ffcStatus:'pending',qualificationRoute:'occupational',qualificationStatus:'in_progress',pdeStatus:'not_started',practicalStatus:'in_progress',cpdStatus:'not_applicable',motivation:'Training'} }
+  const onSave = vi.fn()
+  wrap(<RecruitmentWorkspace lead={{...lead,status:'closed_lost',application_submitted_at:'2026-10-05',application_json:application}} onSave={onSave} />)
+  expect(screen.getByText('Application requirements')).toBeTruthy()
+  expect(screen.getByText('PPRA / FFC evidence')).toBeTruthy()
+  fireEvent.click(screen.getByRole('button',{name:'Reopen Lead'}))
+  expect(onSave.mock.calls[0][0].status).toBe('application_submitted')
+  fireEvent.click(screen.getByRole('tab',{name:'Agent Details'}))
+  expect(screen.getByText('Submitted application')).toBeTruthy()
+  expect(screen.getByText('3 years')).toBeTruthy()
+})
+
+const submitted = {...lead,status:'application_submitted',application_submitted_at:'2026-10-05',application_json:{version:'recruitment-application-v1',answers:{practitionerStatus:'candidate',ffcStatus:'pending',activeMandates:'no'}}}
+it('starts review from a submitted application and disables the action while agent details are unsaved', () => {
+  const start = vi.fn()
+  wrap(<RecruitmentWorkspace lead={submitted} onStartReview={start} />)
+  fireEvent.click(screen.getByRole('button',{name:'Start review'}))
+  expect(start).toHaveBeenCalledOnce()
+  expect(screen.queryByRole('button',{name:'Approve application'})).toBeNull()
+  fireEvent.click(screen.getByRole('tab',{name:'Agent Details'}))
+  fireEvent.change(screen.getByLabelText('Name'),{target:{value:'Updated Agent'}})
+  fireEvent.click(screen.getByRole('tab',{name:'Overview'}))
+  expect(screen.getByRole('button',{name:'Start review'}).disabled).toBe(true)
+})
+it('saves review findings and protects unsaved review work from other mutations', () => {
+  const save = vi.fn()
+  const reviewed = {...submitted,status:'under_review',review_started_at:'2026-10-05'}
+  wrap(<RecruitmentWorkspace lead={reviewed} onSaveReview={save} />)
+  fireEvent.change(screen.getByLabelText('PPRA / FFC evidence status'),{target:{value:'needs_information'}})
+  fireEvent.change(screen.getByLabelText('PPRA / FFC evidence findings'),{target:{value:'Request the current FFC and renewal details'}})
+  fireEvent.change(screen.getByLabelText('Follow-up date (optional)'),{target:{value:'2026-10-12'}})
+  expect(screen.getByRole('button',{name:'Close Lead'}).disabled).toBe(true)
+  fireEvent.click(screen.getByRole('tab',{name:'Documents'}))
+  expect(screen.getByLabelText('Upload document').disabled).toBe(true)
+  fireEvent.click(screen.getByRole('tab',{name:'Agent Details'}))
+  expect(screen.getByRole('button',{name:'Save Agent Details'}).disabled).toBe(true)
+  fireEvent.click(screen.getByRole('tab',{name:'Overview'}))
+  fireEvent.click(screen.getByRole('button',{name:'Save review'}))
+  expect(save.mock.calls[0][0]).toMatchObject({checks:{registration:{status:'needs_information',notes:'Request the current FFC and renewal details'}},followUpOn:'2026-10-12'})
+})
+it('shows saved document findings and restores Under Review on reopening', () => {
+  const onSave = vi.fn(), path = 'org/lead/file'
+  const reviewed = {...submitted,status:'closed_lost',review_started_at:'2026-10-05',documents_json:[{path,name:'ffc.pdf',type:'Registration evidence'}]}
+  reviewed.review_json = recruitmentReviewDraft(reviewed)
+  for (const check of Object.values(reviewed.review_json.checks)) { check.status='verified'; check.notes='Checked by the reviewer' }
+  reviewed.review_json.documents[0] = {path,status:'reviewed',notes:'File opened and details checked'}
+  wrap(<RecruitmentWorkspace lead={reviewed} onSave={onSave} />)
+  expect(screen.getByText('Ready for approval')).toBeTruthy()
+  fireEvent.click(screen.getByRole('button',{name:'Reopen Lead'}))
+  expect(onSave.mock.calls[0][0].status).toBe('under_review')
+  expect(screen.queryByRole('button',{name:'Save review'})).toBeNull()
+  fireEvent.click(screen.getByRole('tab',{name:'Documents'}))
+  expect(screen.getByText(/Registration evidence.*Reviewed/)).toBeTruthy()
+})
+
+const approvalReady = () => {
+  const ready={...submitted,status:'under_review',review_started_at:'2026-10-05',review_status:'ready_for_approval'}
+  ready.review_json=recruitmentReviewDraft(ready)
+  for (const check of Object.values(ready.review_json.checks)) {check.status='verified';check.notes='Evidence reviewed by staff'}
+  return ready
+}
+it('requires a saved resolved review, reason and deliberate confirmation before approval', () => {
+  const approve=vi.fn()
+  wrap(<RecruitmentWorkspace lead={approvalReady()} onApprove={approve} />)
+  expect(screen.getByRole('button',{name:'Approve application'}).disabled).toBe(true)
+  fireEvent.change(screen.getByLabelText('Approval reason'),{target:{value:'Approved following the evidence review'}})
+  expect(screen.getByRole('button',{name:'Approve application'}).disabled).toBe(true)
+  fireEvent.click(screen.getByRole('checkbox',{name:/I have reviewed the application/}))
+  expect(screen.getByRole('button',{name:'Close Lead'}).disabled).toBe(true)
+  fireEvent.click(screen.getByRole('button',{name:'Approve application'}))
+  expect(approve).toHaveBeenCalledWith({notes:'Approved following the evidence review',confirmed:true})
+})
+it('blocks approval while review findings or agent details are unsaved', () => {
+  wrap(<RecruitmentWorkspace lead={approvalReady()} />)
+  fireEvent.change(screen.getByLabelText('Overall review / interview notes'),{target:{value:'Unsaved interview'}})
+  expect(screen.getByLabelText('Approval reason').matches(':disabled')).toBe(true)
+  expect(screen.getByRole('button',{name:'Approve application'}).disabled).toBe(true)
+})
+it('shows the approval decision and locks review evidence while retaining the approved stage on reopen', () => {
+  const onSave=vi.fn()
+  wrap(<RecruitmentWorkspace lead={{...approvalReady(),status:'closed_lost',approved_at:'2026-10-05',approved_by:'manager',approval_notes:'Approved following the evidence review'}} onSave={onSave} />)
+  expect(screen.getByText('Approved following the evidence review')).toBeTruthy()
+  expect(screen.queryByRole('button',{name:'Approve application'})).toBeNull()
+  fireEvent.click(screen.getByRole('button',{name:'Reopen Lead'}))
+  expect(onSave.mock.calls[0][0].status).toBe('application_approved')
+  fireEvent.click(screen.getByRole('tab',{name:'Documents'}))
+  expect(screen.getByLabelText('Upload document').disabled).toBe(true)
+})
+
+it.each([false,true])('handles an approval response and preserves the decision on failure (failure=%s)', async (failure) => {
+  const ready=approvalReady(), reason='Approved after the complete review'
+  vi.mocked(getRecruitmentLead).mockResolvedValue(ready)
+  if(failure) vi.mocked(approveRecruitmentApplication).mockRejectedValue(new Error('Approval was not saved. Reload and review.'))
+  else vi.mocked(approveRecruitmentApplication).mockResolvedValue({...ready,status:'application_approved',approved_at:'2026-10-05',approved_by:'manager',approval_notes:reason})
+  render(<WorkspaceContext.Provider value={{currentWorkspace:{id:'org'},organisationMembershipRole:'principal'}}><MemoryRouter initialEntries={['/agency/recruitment/agent-1']}><Routes><Route path='/agency/recruitment/:leadId' element={<RecruitmentPage />} /></Routes></MemoryRouter></WorkspaceContext.Provider>)
+  await screen.findByLabelText('Approval reason')
+  fireEvent.change(screen.getByLabelText('Approval reason'),{target:{value:reason}})
+  fireEvent.click(screen.getByRole('checkbox',{name:/I have reviewed the application/}))
+  fireEvent.click(screen.getByRole('button',{name:'Approve application'}))
+  if(failure){
+    expect(await screen.findByRole('alert')).toBeTruthy()
+    expect(screen.getByLabelText('Approval reason').value).toBe(reason)
+  }else{
+    expect(await screen.findByText('Application approved.')).toBeTruthy()
+    expect(screen.queryByLabelText('Approval reason')).toBeNull()
+    expect(document.querySelector('[aria-current="step"]').textContent).toBe('4Application Approved')
+  }
+  expect(approveRecruitmentApplication).toHaveBeenCalledWith('org',ready,{notes:reason,confirmed:true})
+})
+
+it('prepares contract PDFs separately from locked review evidence and protects unsaved agent edits', () => {
+  const prepare=vi.fn(), download=vi.fn(), ready={...approvalReady(),status:'application_approved',approved_at:'2026-10-05',contracts_json:[{path:'org/lead/contract',version:1,name:'Agreement.pdf',preparedAt:'2026-10-05'}]}
+  wrap(<RecruitmentWorkspace lead={ready} onPrepareContract={prepare} onDownloadContract={download} />)
+  fireEvent.click(screen.getByRole('button',{name:'Download version 1'}))
+  expect(download).toHaveBeenCalledWith(ready.contracts_json[0])
+  const file=new File(['%PDF- sample'],'Agreement.pdf',{type:'application/pdf'})
+  fireEvent.change(screen.getByLabelText('Prepare contract PDF'),{target:{files:[file]}})
+  expect(prepare).toHaveBeenCalledWith(file)
+  fireEvent.click(screen.getByRole('tab',{name:'Agent Details'}))
+  fireEvent.change(screen.getByLabelText('Name'),{target:{value:'Unsaved correction'}})
+  fireEvent.click(screen.getByRole('tab',{name:'Overview'}))
+  expect(screen.getByLabelText('Prepare contract PDF').disabled).toBe(true)
+})
+
+const sentForSigning=()=>({...approvalReady(),status:'contract_sent',approved_at:recruitmentLocalDate(),contracts_json:[{version:2,path:'org/lead/contract-v2',name:'Agreement.pdf'}],contract_delivery_json:{contractVersion:2,contractPath:'org/lead/contract-v2',recipientName:'Sam Agent',recipientContact:'sam@example.test',channel:'email',sentOn:recruitmentLocalDate(),notes:'Email reference 1234',recordedAt:'2026-10-05'}})
+function fillSignatureForm(){
+  fireEvent.change(screen.getByLabelText('Organisation representative'),{target:{value:'Agency Principal'}})
+  fireEvent.change(screen.getByLabelText('Signing completed on'),{target:{value:recruitmentLocalDate()}})
+  fireEvent.change(screen.getByLabelText('Signature verification findings'),{target:{value:'Compared every page against version 2 and checked both signatures'}})
+  for(const label of ['The signed copy matches the delivered contract version','All contract pages and annexures are included','The agent’s signature is complete','The organisation representative’s signature is complete'])fireEvent.click(screen.getByRole('checkbox',{name:label}))
+  const file=new File(['%PDF- signed sample'],'Signed agreement.pdf',{type:'application/pdf'})
+  fireEvent.change(screen.getByLabelText('Complete signed PDF'),{target:{files:[file]}})
+  return file
+}
+it('records prior delivery explicitly and blocks it while agent details are unsaved',()=>{
+  const sent=sentForSigning(), record=vi.fn(), ready={...sent,status:'application_approved',contract_delivery_json:{}}
+  wrap(<RecruitmentWorkspace lead={ready} onRecordDelivery={record} />)
+  expect(screen.getByRole('button',{name:'Record prior delivery'}).disabled).toBe(true)
+  fireEvent.change(screen.getByLabelText('Date provided to agent'),{target:{value:recruitmentLocalDate()}})
+  fireEvent.change(screen.getByLabelText('Delivery evidence / reference'),{target:{value:'Provided by email, reference 1234'}})
+  fireEvent.click(screen.getByRole('checkbox',{name:/I confirm this prepared version/}))
+  fireEvent.click(screen.getByRole('button',{name:'Record prior delivery'}))
+  expect(record.mock.calls[0][0]).toMatchObject({contractVersion:2,confirmed:true})
+  expect(screen.getByRole('button',{name:'Close Lead'}).disabled).toBe(true)
+})
+it('requires a complete verified signed copy and retains the selected file across tabs',()=>{
+  const record=vi.fn()
+  wrap(<RecruitmentWorkspace lead={sentForSigning()} onRecordSignature={record} />)
+  expect(screen.getByRole('button',{name:'Verify signed contract'}).disabled).toBe(true)
+  const file=fillSignatureForm()
+  expect(screen.getByRole('button',{name:'Close Lead'}).disabled).toBe(true)
+  fireEvent.click(screen.getByRole('tab',{name:'Agent Details'}))
+  expect(screen.getByRole('button',{name:'Save Agent Details'}).disabled).toBe(true)
+  fireEvent.click(screen.getByRole('tab',{name:'Overview'}))
+  expect(screen.getByText('Selected: Signed agreement.pdf')).toBeTruthy()
+  fireEvent.click(screen.getByRole('button',{name:'Verify signed contract'}))
+  expect(record.mock.calls[0][0]).toMatchObject({contractVersion:2,organisationSigner:'Agency Principal',checks:{allPages:true},file})
+})
+it('shows retained signed evidence and restores Contract Signed on reopening',()=>{
+  const save=vi.fn(), download=vi.fn()
+  wrap(<RecruitmentWorkspace lead={{...sentForSigning(),status:'closed_lost',contract_signature_json:{contractVersion:2,recordedAt:'2026-10-05',signedOn:'2026-10-05',agentSigner:'Sam Agent',organisationSigner:'Agency Principal',notes:'Verified against version 2',method:'wet_ink'}}} onSave={save} onDownloadSigned={download} />)
+  expect(screen.getByText('Signed contract verified · Version 2')).toBeTruthy()
+  expect(screen.queryByRole('button',{name:'Verify signed contract'})).toBeNull()
+  fireEvent.click(screen.getByRole('button',{name:'Download signed contract'}))
+  expect(download).toHaveBeenCalledOnce()
+  fireEvent.click(screen.getByRole('button',{name:'Reopen Lead'}))
+  expect(save.mock.calls[0][0].status).toBe('contract_signed')
+})
+it('keeps signature findings and the selected file after a failed save',async()=>{
+  const sent=sentForSigning()
+  vi.mocked(getRecruitmentLead).mockResolvedValue(sent)
+  vi.mocked(recordRecruitmentContractSignature).mockRejectedValue(new Error('Signatures were not recorded. Reload before trying again.'))
+  render(<WorkspaceContext.Provider value={{currentWorkspace:{id:'org'},organisationMembershipRole:'principal'}}><MemoryRouter initialEntries={['/agency/recruitment/agent-1']}><Routes><Route path='/agency/recruitment/:leadId' element={<RecruitmentPage />} /></Routes></MemoryRouter></WorkspaceContext.Provider>)
+  await screen.findByLabelText('Organisation representative')
+  const file=fillSignatureForm()
+  fireEvent.click(screen.getByRole('button',{name:'Verify signed contract'}))
+  expect(await screen.findByRole('alert')).toBeTruthy()
+  expect(screen.getByLabelText('Organisation representative').value).toBe('Agency Principal')
+  expect(screen.getByText('Selected: Signed agreement.pdf')).toBeTruthy()
+  expect(recordRecruitmentContractSignature.mock.calls[0][2].file).toBe(file)
+})
+
+const signedForOnboarding=()=>({...sentForSigning(),status:'contract_signed',contract_signature_json:{contractVersion:2,recordedAt:'2026-10-05',signedOn:'2026-10-05',agentSigner:'Sam Agent',organisationSigner:'Agency Principal',method:'wet_ink',notes:'Signed copy checked'},onboarding_documents_json:[{path:'org/agent-1/identity',name:'Joining identity.pdf',type:'Identity document',uploadedAt:'2026-10-05'}]})
+function completeOnboardingForm(){
+  for(const [,label] of onboardingChecks){fireEvent.change(within(screen.getByRole('region',{name:'Agent onboarding'})).getByLabelText(`${label} status`),{target:{value:'complete'}});fireEvent.change(within(screen.getByRole('region',{name:'Agent onboarding'})).getByLabelText(`${label} findings`),{target:{value:'Joining requirement checked and arrangements confirmed'}})}
+  fireEvent.change(screen.getByLabelText('Joining identity.pdf onboarding review status'),{target:{value:'reviewed'}})
+  fireEvent.change(screen.getByLabelText('Joining identity.pdf onboarding findings'),{target:{value:'File opened and checked against the agent record'}})
+  fireEvent.change(screen.getByLabelText('Agreed joining date'),{target:{value:'2026-10-12'}})
+  fireEvent.change(screen.getByLabelText('Onboarding completion findings'),{target:{value:'All joining requirements and final documents completed'}})
+  fireEvent.click(screen.getByRole('checkbox',{name:'I confirm the joining requirements and final document pack are complete.'}))
+}
+it('saves onboarding progress, guards dirty writes and completes only a resolved final pack',()=>{
+  const save=vi.fn(),complete=vi.fn()
+  wrap(<RecruitmentWorkspace lead={signedForOnboarding()} onSaveOnboarding={save} onCompleteOnboarding={complete} />)
+  expect(screen.getByRole('button',{name:'Complete onboarding'}).disabled).toBe(true)
+  fireEvent.change(screen.getByLabelText('Identity & contact details findings'),{target:{value:'Identity review in progress'}})
+  fireEvent.click(screen.getByRole('button',{name:'Save onboarding progress'}))
+  expect(save.mock.calls[0][0].checks.identity.notes).toBe('Identity review in progress')
+  fireEvent.click(screen.getByRole('button',{name:'Open onboarding documents'}))
+  expect(screen.getByLabelText('Upload onboarding document').disabled).toBe(true)
+  fireEvent.click(screen.getByRole('tab',{name:'Agent Details'}))
+  expect(screen.getByRole('button',{name:'Save Agent Details'}).disabled).toBe(true)
+  fireEvent.click(screen.getByRole('tab',{name:'Overview'}))
+  expect(screen.getByLabelText('Identity & contact details findings').value).toBe('Identity review in progress')
+  completeOnboardingForm()
+  expect(screen.getByRole('button',{name:'Complete onboarding'}).disabled).toBe(false)
+  fireEvent.click(screen.getByRole('button',{name:'Complete onboarding'}))
+  expect(complete.mock.calls[0][0]).toMatchObject({confirmed:true,startDate:'2026-10-12',documents:[{status:'reviewed'}]})
+})
+it('shows final pack uploads only after signatures, downloads retained evidence and restores completed stage',()=>{
+  const signed=signedForOnboarding(),save=vi.fn(),download=vi.fn(),upload=vi.fn()
+  const draft=recruitmentOnboardingDraft(signed)
+  wrap(<RecruitmentWorkspace lead={{...signed,status:'closed_lost',onboarding_completed_at:'2026-10-05',onboarding_json:{...draft,startDate:'2026-10-12',notes:'Final arrangements confirmed'}}} onSave={save} onDownloadOnboarding={download} onUploadOnboarding={upload} />)
+  expect(screen.getByText('Onboarding completed')).toBeTruthy()
+  expect(screen.queryByRole('button',{name:'Complete onboarding'})).toBeNull()
+  fireEvent.click(screen.getByRole('button',{name:'Reopen Lead'}))
+  expect(save.mock.calls[0][0].status).toBe('onboarding_complete')
+  fireEvent.click(screen.getByRole('button',{name:'Open onboarding documents'}))
+  expect(screen.queryByLabelText('Upload onboarding document')).toBeNull()
+  fireEvent.click(screen.getByRole('button',{name:'Download Joining identity.pdf'}))
+  expect(download).toHaveBeenCalledWith(signed.onboarding_documents_json[0])
+})
+it('keeps onboarding findings after a failed completion save',async()=>{
+  vi.mocked(getRecruitmentLead).mockResolvedValue(signedForOnboarding())
+  vi.mocked(saveRecruitmentOnboarding).mockRejectedValue(new Error('Onboarding changed. Your findings were not saved.'))
+  render(<WorkspaceContext.Provider value={{currentWorkspace:{id:'org'},organisationMembershipRole:'principal'}}><MemoryRouter initialEntries={['/agency/recruitment/agent-1']}><Routes><Route path='/agency/recruitment/:leadId' element={<RecruitmentPage />} /></Routes></MemoryRouter></WorkspaceContext.Provider>)
+  await screen.findByLabelText('Agreed joining date')
+  completeOnboardingForm()
+  fireEvent.click(screen.getByRole('button',{name:'Complete onboarding'}))
+  expect(await screen.findByRole('alert')).toBeTruthy()
+  expect(screen.getByLabelText('Agreed joining date').value).toBe('2026-10-12')
+  expect(screen.getByRole('button',{name:'Close Lead'}).disabled).toBe(true)
+  expect(saveRecruitmentOnboarding.mock.calls[0][3]).toBe(true)
+})
+it('uploads the final pack through Documents after signatures without changing approved evidence',()=>{
+  const upload=vi.fn()
+  wrap(<RecruitmentWorkspace lead={signedForOnboarding()} onUploadOnboarding={upload} />)
+  fireEvent.click(screen.getByRole('tab',{name:'Documents'}))
+  expect(screen.getByLabelText('Upload document').disabled).toBe(true)
+  expect(screen.getByLabelText('Upload onboarding document').disabled).toBe(false)
+  fireEvent.change(screen.getByLabelText('Onboarding document type'),{target:{value:'Training / CPD'}})
+  const file=new File(['evidence'],'Training.pdf',{type:'application/pdf'})
+  fireEvent.change(screen.getByLabelText('Upload onboarding document'),{target:{files:[file]}})
+  expect(upload).toHaveBeenCalledWith(file,'Training / CPD')
+})
+
+const readyForActivation=()=>({...signedForOnboarding(),status:'onboarding_complete',onboarding_completed_at:'2026-10-05',onboarding_json:{...recruitmentOnboardingDraft(signedForOnboarding()),notes:'Final joining requirements completed',startDate:'2026-10-12'},onboarding_snapshot:{version:'recruitment-onboarding-completion-v1'}})
+const fillActivation=()=>{fireEvent.change(screen.getByLabelText('Activation findings'),{target:{value:'Joining record reviewed and agent access authorised'}});fireEvent.click(screen.getByRole('checkbox',{name:'I confirm the agent identity, completed onboarding and organisation access.'}))}
+it('requires explicit activation findings and preserves dirty work across tabs while blocking other writes',()=>{
+  const activate=vi.fn()
+  wrap(<RecruitmentWorkspace lead={readyForActivation()} onActivate={activate} />)
+  expect(screen.getByRole('button',{name:'Prepare agent access'}).disabled).toBe(true)
+  fillActivation()
+  expect(screen.getByRole('button',{name:'Close Lead'}).disabled).toBe(true)
+  fireEvent.click(screen.getByRole('tab',{name:'Agent Details'}))
+  expect(screen.getByRole('button',{name:'Save Agent Details'}).disabled).toBe(true)
+  fireEvent.click(screen.getByRole('tab',{name:'Overview'}))
+  fireEvent.click(screen.getByRole('button',{name:'Prepare agent access'}))
+  expect(activate.mock.calls[0][0]).toEqual({notes:'Joining record reviewed and agent access authorised',confirmed:true})
+})
+it('shows pending access without claiming activation and exposes a shareable link on demand',async()=>{
+  const getLink=vi.fn().mockResolvedValue('https://app.example.test/invite/sample-token')
+  wrap(<RecruitmentWorkspace lead={{...readyForActivation(),activation_json:{state:'awaiting_acceptance',inviteId:'invite',email:'sam@example.test',preparedAt:'2026-10-05'}}} onGetAgentLink={getLink} />)
+  expect(screen.getByText('Awaiting acceptance')).toBeTruthy()
+  expect(screen.queryByRole('link',{name:'Open agent'})).toBeNull()
+  fireEvent.click(screen.getByRole('button',{name:'Get agent access link'}))
+  expect((await screen.findByLabelText('Agent access link')).value).toBe('https://app.example.test/invite/sample-token')
+  expect(screen.getByText('No email was sent when this link was prepared.')).toBeTruthy()
+  fireEvent.click(screen.getByRole('tab',{name:'Agent Details'}))
+  expect(screen.getByLabelText('Email').readOnly).toBe(true)
+  fireEvent.click(screen.getByRole('tab',{name:'Overview'}))
+  expect(screen.getByRole('button',{name:'Confirm agent activation'}).disabled).toBe(true)
+})
+it('shows a preserved activation link and closes the recruitment journey without further stage controls',()=>{
+  const active={...readyForActivation(),status:'agent_activated',activated_at:'2026-10-05',activation_json:{state:'active',email:'sam@example.test',role:'agent',userId:'actual-user',notes:'Activation checked'}}
+  wrap(<RecruitmentWorkspace lead={active} />)
+  expect(screen.getByRole('link',{name:'Open agent'}).getAttribute('href')).toBe('/agency/agents/actual-user')
+  expect(screen.queryByRole('button',{name:'Close Lead'})).toBeNull()
+  expect(screen.queryByRole('button',{name:'Prepare agent access'})).toBeNull()
+  expect(screen.getByText('Agent activated. Recruitment is complete.')).toBeTruthy()
+})
+it.each([false,true])('handles activation responses and retains findings on failure (failure=%s)',async failure=>{
+  const ready=readyForActivation()
+  vi.mocked(getRecruitmentLead).mockResolvedValue(ready)
+  if(failure) vi.mocked(activateRecruitmentAgent).mockRejectedValue(new Error('Activation was not saved.'))
+  else vi.mocked(activateRecruitmentAgent).mockResolvedValue({...ready,status:'agent_activated',activated_at:'2026-10-05',activation_json:{userId:'actual-user',email:ready.email,role:'agent',notes:'Recorded'}})
+  render(<WorkspaceContext.Provider value={{currentWorkspace:{id:'org'},organisationMembershipRole:'principal'}}><MemoryRouter initialEntries={['/agency/recruitment/agent-1']}><Routes><Route path='/agency/recruitment/:leadId' element={<RecruitmentPage />} /></Routes></MemoryRouter></WorkspaceContext.Provider>)
+  await screen.findByLabelText('Activation findings')
+  fillActivation()
+  fireEvent.click(screen.getByRole('button',{name:'Prepare agent access'}))
+  if(failure){expect(await screen.findByRole('alert')).toBeTruthy();expect(screen.getByLabelText('Activation findings').value).toBe('Joining record reviewed and agent access authorised')}
+  else expect(await screen.findByRole('link',{name:'Open agent'})).toBeTruthy()
+})
+
+function renderRecruitmentTable() {
+  return render(<WorkspaceContext.Provider value={{ currentWorkspace: { id: 'org' }, organisationMembershipRole: 'principal' }}><MemoryRouter initialEntries={['/agency/recruitment']}><Routes><Route path="/agency/recruitment" element={<RecruitmentPage />} /><Route path="/agency/recruitment/:leadId" element={<RecruitmentPage />} /></Routes></MemoryRouter></WorkspaceContext.Provider>)
+}
+it('creates an agent lead in a popup and stays on the recruitment table', async () => {
+  vi.mocked(saveRecruitmentLead).mockResolvedValue(lead)
+  renderRecruitmentTable()
+  fireEvent.click(await screen.findByRole('button', { name: 'Add Agent Lead' }))
+  const dialog = within(screen.getByRole('dialog', { name: 'Add Agent Lead' }))
+  expect(screen.getByRole('table')).toBeTruthy()
+  fireEvent.change(dialog.getByLabelText('Name'), { target: { value: 'Sam Agent' } })
+  fireEvent.change(dialog.getByLabelText('Email'), { target: { value: 'sam@example.test' } })
+  fireEvent.click(dialog.getByRole('button', { name: 'Create Agent Lead' }))
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  expect(saveRecruitmentLead).toHaveBeenCalledWith('org', expect.objectContaining({ name: 'Sam Agent', email: 'sam@example.test', status: 'lead_received' }))
+  expect(within(screen.getByRole('table')).getByRole('link', { name: 'Sam Agent' }).getAttribute('href')).toBe('/agency/recruitment/agent-1')
+  expect(screen.getByRole('heading', { name: 'Recruitment' })).toBeTruthy()
+  expect(getRecruitmentLead).not.toHaveBeenCalled()
+})
+it('retains popup details after a failed save and resets them after cancellation', async () => {
+  vi.mocked(saveRecruitmentLead).mockRejectedValue(new Error('Save unavailable. Try again.'))
+  renderRecruitmentTable()
+  fireEvent.click(await screen.findByRole('button', { name: 'Add Agent Lead' }))
+  fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Sam Agent' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Create Agent Lead' }))
+  expect(await screen.findByRole('alert')).toHaveProperty('textContent', 'Enter an email address or phone number.')
+  expect(saveRecruitmentLead).not.toHaveBeenCalled()
+  fireEvent.change(screen.getByLabelText('Phone'), { target: { value: '0821234567' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Create Agent Lead' }))
+  expect(await screen.findByText('Save unavailable. Try again.')).toBeTruthy()
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Create Agent Lead' }).disabled).toBe(false))
+  expect(screen.getByLabelText('Name').value).toBe('Sam Agent')
+  expect(screen.getByLabelText('Phone').value).toBe('0821234567')
+  fireEvent.keyDown(document, { key: 'Escape' })
+  expect(screen.queryByRole('dialog')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Add Agent Lead' }))
+  expect(screen.getByLabelText('Name').value).toBe('')
+  expect(screen.queryByRole('alert')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+  expect(screen.queryByRole('dialog')).toBeNull()
+})

@@ -294,7 +294,16 @@ export const BOND_APPLICATION_PREFILL_SOURCE_MATRIX = Object.freeze([
     required: true,
     sources: [
       source(savedBondApplication, 'formData.bond_application.applicants[primary].marital_status'),
-      source(buyerOnboarding, 'formData.marital_status'),
+      source(buyerOnboarding, ['formData.marital_status', 'formData.purchasers.0.marital_status']),
+    ],
+  }),
+  field({
+    path: 'applicants.primary.marital_regime',
+    legacyPath: 'applicants[primary].marital_regime',
+    label: 'Marriage regime', section: 'personal_details', originatorField: 'Marriage regime',
+    sources: [
+      source(savedBondApplication, 'formData.bond_application.applicants[primary].marital_regime'),
+      source(buyerOnboarding, ['formData.marital_regime', 'formData.purchasers.0.marital_regime']),
     ],
   }),
   field({

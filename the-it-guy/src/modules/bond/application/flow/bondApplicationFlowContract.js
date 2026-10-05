@@ -1,3 +1,4 @@
+import { MARITAL_STATUS_OPTIONS, MARITAL_REGIME_OPTIONS } from '../../../../lib/buyerOnboardingFlowContract.js'
 export const GUIDED_BOND_APPLICATION_PHASE3_FLOW_VERSION = 'phase-3-v1'
 export const GUIDED_BOND_APPLICATION_PHASE3_DOCUMENTS_HANDOFF_REASON = 'phase_3_documents'
 export const GUIDED_BOND_APPLICATION_PHASE3_DOCUMENTS_HANDOFF_SECTION = 'documents'
@@ -108,7 +109,7 @@ export const BOND_APPLICATION_REPEATABLE_GROUPS = {
     summaryLabelPath: 'bankName',
     itemFields: [
       q({ key: 'bank_account_bank', path: 'bankName', label: 'Bank', requiredWhen: true }),
-      q({ key: 'bank_account_type', path: 'accountType', label: 'Account type', requiredWhen: true }),
+      q({ key: 'bank_account_type', path: 'accountType', label: 'Account type', requiredWhen: false }),
       q({ key: 'bank_account_holder', path: 'accountHolderName', label: 'Account holder name', requiredWhen: false }),
       q({ key: 'bank_account_number', path: 'accountNumber', label: 'Account number', requiredWhen: false }),
       q({ key: 'bank_account_balance', path: 'currentBalance', label: 'Current balance', type: 'currency', requiredWhen: false }),
@@ -131,9 +132,9 @@ export const BOND_APPLICATION_REPEATABLE_GROUPS = {
         { value: 'other', label: 'Other credit agreement' },
       ] }),
       q({ key: 'debt_institution', path: 'bank', label: 'Financial institution', requiredWhen: true }),
-      q({ key: 'debt_balance', path: 'outstandingBalance', label: 'Outstanding balance', type: 'currency', requiredWhen: true }),
-      q({ key: 'debt_instalment', path: 'monthlyInstalment', label: 'Monthly instalment', type: 'currency', requiredWhen: true }),
-      q({ key: 'debt_settlement', path: 'settled', label: 'Will this be settled before registration?', type: 'yes_no', requiredWhen: false, options: yesNoOptions }),
+      q({ key: 'debt_balance', path: 'outstandingBalance', label: 'Outstanding balance', type: 'currency', requiredWhen: true, validation: { min: 0 } }),
+      q({ key: 'debt_instalment', path: 'monthlyInstalment', label: 'Monthly instalment', type: 'currency', requiredWhen: true, validation: { min: 0 } }),
+      q({ key: 'debt_settlement', path: 'settled', label: 'Will this be settled before registration?', type: 'yes_no', requiredWhen: true, options: yesNoOptions }),
     ],
   },
   existing_properties: {
@@ -144,10 +145,11 @@ export const BOND_APPLICATION_REPEATABLE_GROUPS = {
     summaryLabelPath: 'address',
     itemFields: [
       q({ key: 'existing_property_address', path: 'address', label: 'Property address', requiredWhen: true }),
-      q({ key: 'existing_property_value', path: 'estimatedValue', label: 'Estimated value', type: 'currency', requiredWhen: true }),
-      q({ key: 'existing_property_bond', path: 'outstandingBondBalance', label: 'Outstanding bond balance', type: 'currency', requiredWhen: false }),
-      q({ key: 'existing_property_repayment', path: 'monthlyBondRepayment', label: 'Monthly bond repayment', type: 'currency', requiredWhen: false }),
-      q({ key: 'existing_property_sold', path: 'willBeSold', label: 'Will this property be sold?', type: 'yes_no', requiredWhen: false, options: yesNoOptions }),
+      q({ key: 'existing_property_value', path: 'estimatedValue', label: 'Estimated value', type: 'currency', requiredWhen: true, validation: { min: 0 } }),
+      q({ key: 'existing_property_has_bond', path: 'hasBond', label: 'Does this property have an outstanding bond?', type: 'yes_no', requiredWhen: true, options: yesNoOptions }),
+      q({ key: 'existing_property_bond', path: 'outstandingBondBalance', label: 'Outstanding bond balance', type: 'currency', requiredWhen: { field: 'hasBond', equals: 'yes' }, visibleWhen: { field: 'hasBond', equals: 'yes' }, validation: { min: 0 } }),
+      q({ key: 'existing_property_repayment', path: 'monthlyBondRepayment', label: 'Monthly bond repayment', type: 'currency', requiredWhen: { field: 'hasBond', equals: 'yes' }, visibleWhen: { field: 'hasBond', equals: 'yes' }, validation: { min: 0 } }),
+      q({ key: 'existing_property_sold', path: 'willBeSold', label: 'Will this property be sold?', type: 'yes_no', requiredWhen: true, options: yesNoOptions }),
     ],
   },
   assets: {
@@ -166,7 +168,9 @@ export const BOND_APPLICATION_REPEATABLE_GROUPS = {
         { value: 'other', label: 'Other asset' },
       ] }),
       q({ key: 'asset_description', path: 'description', label: 'Description', requiredWhen: true }),
-      q({ key: 'asset_value', path: 'value', label: 'Estimated value', type: 'currency', requiredWhen: true }),
+      q({ key: 'asset_value', path: 'value', label: 'Estimated value', type: 'currency', requiredWhen: true, validation: { min: 0 } }),
+      q({ key: 'asset_vehicle_year', path: 'year', label: 'Vehicle year', type: 'integer', requiredWhen: false, visibleWhen: { field: 'type', equals: 'vehicle' }, validation: { min: 1900, max: new Date().getFullYear() + 1 } }),
+      q({ key: 'asset_business_share', path: 'ownershipPercentage', label: 'Ownership share', type: 'currency', requiredWhen: false, visibleWhen: { field: 'type', equals: 'business_interest' }, validation: { min: 0, max: 100 } }),
     ],
   },
   liabilities: {
@@ -177,7 +181,8 @@ export const BOND_APPLICATION_REPEATABLE_GROUPS = {
     summaryLabelPath: 'description',
     itemFields: [
       q({ key: 'liability_description', path: 'description', label: 'Liability', requiredWhen: true }),
-      q({ key: 'liability_value', path: 'value', label: 'Amount', type: 'currency', requiredWhen: true }),
+      q({ key: 'liability_value', path: 'value', label: 'Amount', type: 'currency', requiredWhen: true, validation: { min: 0 } }),
+      q({ key: 'liability_monthly_payment', path: 'monthlyPayment', label: 'Monthly repayment', type: 'currency', requiredWhen: false, validation: { min: 0 } }),
     ],
   },
 }
@@ -202,8 +207,8 @@ export const BOND_APPLICATION_QUESTIONS = [
   q({ key: 'phone', path: 'participants.primaryApplicant.contact.phone', label: 'Mobile number', type: 'phone', requiredWhen: true }),
   q({ key: 'residential_street', path: 'participants.primaryApplicant.address.residential_address_street', label: 'Residential street', requiredWhen: false }),
   q({ key: 'residential_city', path: 'participants.primaryApplicant.address.residential_address_city', label: 'Residential city', requiredWhen: false }),
-  q({ key: 'marital_status', path: 'participants.primaryApplicant.personal.marital_status', label: 'Marital status', requiredWhen: false }),
-  q({ key: 'marital_regime', path: 'participants.primaryApplicant.marital.regime', label: 'Marital regime', requiredWhen: { field: 'participants.primaryApplicant.personal.marital_status', equals: 'married' }, visibleWhen: { field: 'participants.primaryApplicant.personal.marital_status', equals: 'married' } }),
+  q({ key: 'marital_status', path: 'participants.primaryApplicant.personal.marital_status', label: 'Marital status', type: 'select', options: MARITAL_STATUS_OPTIONS.filter(item => item.value), requiredWhen: false }),
+  q({ key: 'marital_regime', path: 'participants.primaryApplicant.marital.regime', label: 'Marriage regime', type: 'select', options: MARITAL_REGIME_OPTIONS.filter(item => item.value && item.value !== 'not_applicable'), requiredWhen: { field: 'participants.primaryApplicant.personal.marital_status', equals: 'married' }, visibleWhen: { field: 'participants.primaryApplicant.personal.marital_status', equals: 'married' } }),
   q({ key: 'employment_type', path: 'participants.primaryApplicant.employment.occupation_status', label: 'How do you currently earn your main income?', type: 'single_select', requiredWhen: true, options: mainIncomeOptions }),
   q({ key: 'employer_name', path: 'participants.primaryApplicant.employment.employer_name', label: 'Employer or organisation', requiredWhen: true, visibleWhen: { any: [isEmploymentType('permanent'), isEmploymentType('contract'), isEmploymentType('commission')] } }),
   q({ key: 'occupation', path: 'participants.primaryApplicant.employment.nature_of_occupation', label: 'Job title or occupation', requiredWhen: true, visibleWhen: { any: [isEmploymentType('permanent'), isEmploymentType('contract'), isEmploymentType('commission')] } }),
@@ -211,7 +216,7 @@ export const BOND_APPLICATION_QUESTIONS = [
   q({ key: 'net_salary', path: 'participants.primaryApplicant.expenses.net_salary', label: 'Net monthly income', type: 'currency', requiredWhen: false, visibleWhen: { any: [isEmploymentType('permanent'), isEmploymentType('contract'), isEmploymentType('commission')] } }),
   q({ key: 'employment_years', path: 'participants.primaryApplicant.employment.employment_years', label: 'Years', type: 'integer', requiredWhen: { any: [{ field: 'participants.primaryApplicant.employment.employment_months', notExists: true }, { field: 'participants.primaryApplicant.employment.employment_years', exists: true }] }, visibleWhen: { any: [isEmploymentType('permanent'), isEmploymentType('commission')] }, validation: { min: 0 } }),
   q({ key: 'employment_months', path: 'participants.primaryApplicant.employment.employment_months', label: 'Months', type: 'integer', requiredWhen: false, visibleWhen: { any: [isEmploymentType('permanent'), isEmploymentType('commission')] }, validation: { min: 0, max: 11 } }),
-  q({ key: 'works_in_south_africa', path: 'participants.primaryApplicant.employment.works_in_south_africa', label: 'Do you work in South Africa?', type: 'yes_no', requiredWhen: true, visibleWhen: { any: [isEmploymentType('permanent'), isEmploymentType('contract'), isEmploymentType('commission')] }, options: yesNoOptions }),
+  q({ key: 'works_in_south_africa', path: 'participants.primaryApplicant.employment.works_in_south_africa', label: 'Is your current work based in South Africa?', type: 'yes_no', requiredWhen: true, visibleWhen: { any: [isEmploymentType('permanent'), isEmploymentType('contract'), isEmploymentType('commission')] }, options: yesNoOptions }),
   q({ key: 'contract_start_date', path: 'participants.primaryApplicant.employment.contract_start_date', label: 'Contract start date', type: 'date', requiredWhen: true, visibleWhen: isEmploymentType('contract') }),
   q({ key: 'contract_end_date', path: 'participants.primaryApplicant.employment.contract_end_date', label: 'Contract end date', type: 'date', requiredWhen: true, visibleWhen: isEmploymentType('contract'), validation: { afterOrEqualPath: 'participants.primaryApplicant.employment.contract_start_date' } }),
   q({ key: 'business_name', path: 'participants.primaryApplicant.employment.employer_name', label: 'Business or trading name', requiredWhen: true, visibleWhen: isEmploymentType('selfEmployed') }),
@@ -236,7 +241,7 @@ export const BOND_APPLICATION_QUESTIONS = [
   q({ key: 'medical_aid', path: 'participants.primaryApplicant.expenses.medical_aid', label: 'Medical aid and healthcare', type: 'currency', requiredWhen: false }),
   q({ key: 'education', path: 'participants.primaryApplicant.expenses.education', label: 'Education and childcare', type: 'currency', requiredWhen: false }),
   q({ key: 'other_commitments', path: 'participants.primaryApplicant.monthlyCommitments', label: 'Other recurring commitments', type: 'repeatable_group', groupKey: 'monthly_commitments', requiredWhen: false }),
-  q({ key: 'bank_accounts', path: 'participants.primaryApplicant.bankAccounts', label: 'Bank accounts', type: 'repeatable_group', groupKey: 'bank_accounts', requiredWhen: true }),
+  q({ key: 'bank_accounts', path: 'participants.primaryApplicant.bankAccounts', label: 'Income bank', type: 'repeatable_group', groupKey: 'bank_accounts', requiredWhen: true }),
   q({ key: 'has_debts', path: 'participants.primaryApplicant.credit.has_debts', label: 'Do you currently have loans, credit agreements or other debt?', type: 'yes_no', requiredWhen: true, options: yesNoOptions }),
   q({ key: 'debts', path: 'participants.primaryApplicant.debts', label: 'Existing debts', type: 'repeatable_group', groupKey: 'debts', requiredWhen: { field: 'participants.primaryApplicant.credit.has_debts', equals: 'yes' }, visibleWhen: { field: 'participants.primaryApplicant.credit.has_debts', equals: 'yes' } }),
   q({ key: 'owns_property', path: 'participants.primaryApplicant.credit.owns_property', label: 'Do you currently own any property?', type: 'yes_no', requiredWhen: true, options: yesNoOptions }),
@@ -255,7 +260,7 @@ export const BOND_APPLICATION_QUESTIONS = [
 export const BOND_APPLICATION_SCREENS = [
   { key: 'application_confirmation', stepKey: 'your_application', title: 'Your purchase', questionKeys: ['purchase_price', 'deposit_amount', 'requested_bond_amount', 'finance_type', 'buyer_entity_type', 'buyer_entity_name', 'buyer_entity_registration_number'], custom: true },
   { key: 'applicant_structure', stepKey: 'applicants', title: 'How are you applying?', questionKeys: ['applicant_structure'], custom: true },
-  { key: 'about_you_confirmation', stepKey: 'about_you', title: 'Confirm your details', questionKeys: ['first_name', 'surname', 'identity_number', 'email', 'phone', 'residential_street', 'residential_city', 'marital_status'], custom: true },
+  { key: 'about_you_confirmation', stepKey: 'about_you', title: 'Confirm your details', questionKeys: ['first_name', 'surname', 'identity_number', 'email', 'phone', 'residential_street', 'residential_city', 'marital_status', 'marital_regime'], custom: true },
   { key: 'about_you_edit', stepKey: 'about_you', title: 'Update your details', questionKeys: ['first_name', 'surname', 'identity_number', 'email', 'phone', 'residential_street', 'residential_city', 'marital_status', 'marital_regime'], custom: true, editOnly: true },
   { key: 'employment_type', stepKey: 'employment_income', title: 'Your main income', questionKeys: ['employment_type'], custom: true },
   { key: 'employment_details', stepKey: 'employment_income', title: 'Employment details', questionKeys: ['employer_name', 'occupation', 'gross_salary', 'net_salary'], visibleWhen: { any: [isEmploymentType('permanent'), isEmploymentType('contract'), isEmploymentType('commission')] } },
@@ -271,7 +276,7 @@ export const BOND_APPLICATION_SCREENS = [
   { key: 'monthly_living_costs', stepKey: 'monthly_commitments', title: 'Living costs', questionKeys: ['groceries', 'transport', 'medical_aid', 'education'] },
   { key: 'monthly_other_commitments', stepKey: 'monthly_commitments', title: 'Other commitments', questionKeys: ['other_commitments'] },
   { key: 'monthly_commitments_summary', stepKey: 'monthly_commitments', title: 'Monthly commitment summary', questionKeys: [], custom: true },
-  { key: 'bank_accounts', stepKey: 'accounts_assets', title: 'Bank accounts', questionKeys: ['bank_accounts'] },
+  { key: 'bank_accounts', stepKey: 'accounts_assets', title: 'Where do you receive your income?', questionKeys: ['bank_accounts'] },
   { key: 'debts_gate', stepKey: 'accounts_assets', title: 'Existing debts', questionKeys: ['has_debts'] },
   { key: 'debts', stepKey: 'accounts_assets', title: 'Debt details', questionKeys: ['debts'], visibleWhen: { field: 'participants.primaryApplicant.credit.has_debts', equals: 'yes' } },
   { key: 'existing_properties_gate', stepKey: 'accounts_assets', title: 'Existing properties', questionKeys: ['owns_property'] },

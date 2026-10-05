@@ -57,6 +57,11 @@ export const SIGNING_WORKFLOW_INVENTORY = Object.freeze([
     'the-it-guy/src/modules/rentals/shared/tenancies/RentalLeaseSigningPanel.jsx',
     'the-it-guy/src/services/rentals/rentalLeaseSigningRepository.js',
   ]),
+  inventoryItem('buyer_bond_application', 'provider_not_connected_release_gated', [
+    'the-it-guy/server/services/bond/bondOnlineSigningService.js',
+    'the-it-guy/api/public/bond-online-signing.js',
+    'the-it-guy/src/modules/bond/application/guided/BondOnlineSigningPanel.jsx',
+  ]),
   inventoryItem('buyer_onboarding', 'acknowledgement_only', [
     'the-it-guy/src/lib/buyerOnboardingFlow.js',
     'the-it-guy/src/pages/mobile/MobileOnboardingPage.jsx',

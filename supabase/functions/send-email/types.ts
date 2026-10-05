@@ -1508,6 +1508,8 @@ export type SendTransactionRoleplayerHandoffPayload = {
 };
 
 export type SendAppointmentEmailPayload = {
+  calendarSequence?: number;
+  calendarTimestamp?: string;
   type:
     | "appointment_scheduled"
     | "appointment_confirmed"

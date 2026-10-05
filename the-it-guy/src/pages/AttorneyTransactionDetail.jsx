@@ -59,6 +59,12 @@ import { buildDeveloperJourneySnapshot } from '../core/transactions/highLevelJou
 import { buildLegalOverviewSummary } from '../core/transactions/legalOverviewSummary.js'
 import MatterConversation from '../components/transaction/MatterConversation'
 import { matterMessageRequest } from '../core/transactions/matterMessageRequest.js'
+import { refreshAfterDocumentSave } from '../services/documents/attorneyDocumentPersistence.js'
+import { buildAttorneyDocumentRequestRows, buildAttorneyRequestRequirementOptions, getAttorneyRequestUploadAudience } from '../services/documents/attorneyDocumentRequestModel.js'
+import AttorneyDocumentRequestForm from '../components/attorney/operations/AttorneyDocumentRequestForm.jsx'
+import AttorneyMatterDocumentRequests from '../components/attorney/operations/AttorneyMatterDocumentRequests.jsx'
+import AttorneyDocumentVersions from '../components/attorney/operations/AttorneyDocumentVersions.jsx'
+import { mergeSavedAttorneyDocumentVersion } from '../services/documents/attorneyDocumentVersionModel.js'
 import { sharedJourneyHeaderPhases, sharedJourneyLaneTasks } from '../services/sharedMatterJourneyReader.js'
 import {
   BOND_APPLICATION_INTENTS,
@@ -185,6 +191,7 @@ import {
   recordBuyerOnboardingSent,
   reassignDeclinedTransferAttorneyInstruction,
   reviewCanonicalDocumentRequirement,
+  reviewAttorneyMatterDocumentRequest,
   runWorkflowAction,
   saveTransactionRoleplayerSelections,
   saveTransactionRoutingProfile,
@@ -2095,7 +2102,7 @@ function buildAttorneyDailyActionQueueItems(workflows = []) {
   })
 
   getAttorneyCoordinationWorkflowItems(workflows)
-    .filter((entry) => entry.item?.status !== 'ready' && (!entry.item?.actioned || entry.item?.escalationNeeded))
+    .filter((entry) => entry.item?.progressAvailable !== false && entry.item?.status !== 'ready' && (!entry.item?.actioned || entry.item?.escalationNeeded))
     .forEach((entry) => {
       const workflow = entry.workflow
       const item = entry.item
@@ -3480,7 +3487,7 @@ function AttorneyCoordinationBoard({
                 laneKey: entry.summary?.laneKey || workflow?.lane?.laneKey,
                 stageKey: workflow?.lane?.currentStage || workflow?.lane?.summary?.currentStage || '',
               })
-              const canAct = item.status !== 'ready' && (!item.actioned || item.escalationNeeded)
+              const canAct = Boolean(command) && item.status !== 'ready' && (!item.actioned || item.escalationNeeded)
               return (
                 <article key={entry.key} className={`rounded-[12px] border bg-white px-3 py-3 ${meta.border}`}>
                   <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
@@ -8476,7 +8483,7 @@ function ArchlineTransferWorkspace({
       requiresReason: Boolean(action?.requiresReason || ['blocked', 'waiting'].includes(action?.status)),
       showReason: manualCompletion,
       requiresNote: Boolean(action?.requiresNote),
-      visibility: task.key === 'post_registration_closeout_review' ? 'internal' : 'professional_shared',
+      visibility: task.defaultVisibility === 'internal' || task.key === 'post_registration_closeout_review' ? 'internal' : 'professional_shared',
       workPacket: manualCompletion ? {
         ...(action?.command?.draft?.workPacket || action?.command?.workPacket || {}),
         completionMethod: 'manual', overrideScope: 'task', overrideGroupId: globalThis.crypto?.randomUUID?.() || String(Date.now()),
@@ -8743,7 +8750,7 @@ function ArchlineTransferWorkspace({
     try {
       if (!canUpdateSteps) throw new Error('You do not have access to update this task.')
       const saved = await onUpdateStep(task, status, note, workPacket,
-        task.key === 'post_registration_closeout_review' ? 'internal' : visibility)
+        task.defaultVisibility === 'internal' || task.key === 'post_registration_closeout_review' ? 'internal' : visibility)
       if (saved !== true) throw new Error('The task could not be saved. Review the workflow error and try again.')
       setTaskSaveMessage(`${task.label || 'Task'} saved.`)
       return true
@@ -16467,6 +16474,8 @@ function AttorneyTransactionDetail() {
   const currentMatterAccessKey = `${workspaceRole || 'unknown'}:${transactionId || ''}`
   const liveMatterScopeRef = useRef(currentMatterAccessKey)
   const discussionMessageRequestRef = useRef(null)
+  const documentRequestCommandRef = useRef(null)
+  const documentReviewCommandRef = useRef(null)
   liveMatterScopeRef.current = currentMatterAccessKey
   const canonicalRefreshSequenceRef = useRef(0)
   const canonicalRefreshRequestRef = useRef({ key: '', promise: null })
@@ -16517,6 +16526,8 @@ function AttorneyTransactionDetail() {
   const [uploadDocumentModalOpen, setUploadDocumentModalOpen] = useState(false)
   const [requestDocumentModalOpen, setRequestDocumentModalOpen] = useState(false)
   const [documentRequestSaving, setDocumentRequestSaving] = useState(false)
+  const [documentActionMessage, setDocumentActionMessage] = useState('')
+  useEffect(() => { setDocumentActionMessage('') }, [currentMatterAccessKey])
   const [documentRequestForm, setDocumentRequestForm] = useState({
     title: '',
     canonicalRequirementInstanceId: '',
@@ -16540,6 +16551,7 @@ function AttorneyTransactionDetail() {
     requiredDocumentId: '',
     canonicalRequirementInstanceId: '',
     documentRequestId: '',
+    attorneyPreviousVersionId: null,
     notes: '',
     requestTitle: '',
     stageTwoPartyId: '',
@@ -18677,6 +18689,14 @@ function AttorneyTransactionDetail() {
   const documentReadiness = matterDocumentWorkspaceModel.readiness
   const documentHealthSummary = matterDocumentWorkspaceModel.healthSummary
   const documentLibraryRows = matterDocumentWorkspaceModel.libraryRows
+  const attorneyDocumentRequestRows = useMemo(() => buildAttorneyDocumentRequestRows({
+    requests: matterDocumentWorkspaceModel.documentRequests,
+    documents: allDocumentLibraryRows,
+    requiredRows: requiredDocumentRows,
+  }), [matterDocumentWorkspaceModel.documentRequests, allDocumentLibraryRows, requiredDocumentRows])
+  const attorneyRequestRequirementOptions = useMemo(() => buildAttorneyRequestRequirementOptions(
+    requiredDocumentRows, matterDocumentWorkspaceModel.documentRequests,
+  ), [requiredDocumentRows, matterDocumentWorkspaceModel.documentRequests])
   const archlineDocumentsByWorkflow = matterDocumentWorkspaceModel.documentsByWorkflow
   const archlineTransferDocumentsForWorkflow = useMemo(
     () => {
@@ -20038,19 +20058,29 @@ function AttorneyTransactionDetail() {
       setError('Document request title is required.')
       return
     }
+    const selectedRequirement = attorneyRequestRequirementOptions.find(option => option.id === documentRequestForm.canonicalRequirementInstanceId)
+    if (workspaceRole === 'attorney' && selectedRequirement?.disabled) {
+      setError('This checklist requirement already has a request or a received document. Use its existing request or review the file.')
+      return
+    }
 
     try {
       setDocumentRequestSaving(true)
       setError('')
-      await createTransactionDocumentRequests({
+      documentRequestCommandRef.current = matterMessageRequest(documentRequestCommandRef.current, {
+        scope: currentMatterAccessKey, body: JSON.stringify(documentRequestForm), audience: documentRequestForm.visibility,
+      })
+      const savedRequests = await createTransactionDocumentRequests({
         transactionId: transaction.id,
         createdByRole: workspaceRole,
+        commandId: documentRequestCommandRef.current.commandId,
         requests: [
           {
             title,
             canonicalRequirementInstanceId: documentRequestForm.canonicalRequirementInstanceId || null,
             notes: String(documentRequestForm.notes || '').trim(),
             category: 'Additional Requests',
+            documentType: selectedRequirement?.documentType || null,
             requestedFrom: documentRequestForm.requestedFrom || 'buyer',
             visibility: documentRequestForm.visibility || 'client_visible',
             priority: documentRequestForm.priority || 'normal',
@@ -20059,6 +20089,14 @@ function AttorneyTransactionDetail() {
           },
         ],
       })
+      if (liveMatterScopeRef.current !== currentMatterAccessKey) return
+      documentRequestCommandRef.current = null
+      if (workspaceRole === 'attorney' && liveMatterScopeRef.current === currentMatterAccessKey) {
+        setData(previous => previous?.transaction?.id === transaction.id ? { ...previous,
+          documentRequests: [...(previous.documentRequests || []).filter(request => !savedRequests.some(saved => saved.id === request.id)), ...savedRequests],
+        } : previous)
+      }
+      setDocumentActionMessage('Document request saved.')
       setDocumentRequestForm({
         title: '',
         canonicalRequirementInstanceId: '',
@@ -20070,7 +20108,13 @@ function AttorneyTransactionDetail() {
       })
       setRequestDocumentModalOpen(false)
       window.dispatchEvent(new Event('itg:transaction-updated'))
-      await refreshTransactionDatasets(['documents', 'activity'], { reason: 'document_request_created' })
+      void refreshAfterDocumentSave(
+        async () => {
+          await refreshTransactionDatasets(['documents', 'workflow', 'activity'], { reason: 'document_request_created' })
+          await refreshCanonicalTransactionSnapshot()
+        },
+        () => { if (liveMatterScopeRef.current === currentMatterAccessKey) setError('Document request saved. Updates could not refresh yet; reopen the matter to see the saved request.') },
+      )
     } catch (requestError) {
       setError(requestError?.message || 'Unable to request this document.')
     } finally {
@@ -20223,6 +20267,7 @@ function AttorneyTransactionDetail() {
       laneKey: targetLane?.laneKey || workflowDrawerLaneKey || 'transfer',
       stageKey: targetLane?.currentStage || targetLane?.summary?.currentStage || '',
     })
+    if (!command) return
     const action = {
       id: item?.id || command.actionId || command.id,
       label: item?.title || command.workPacket?.title || command.label,
@@ -21441,14 +21486,17 @@ function AttorneyTransactionDetail() {
   }
 
   function handleLegalTaskDocumentRequest(task, documents = [], requirement = null) {
-    const missingDocument = (documents || []).find((document) => document?.missing || document?.ready === false) || null
-    const documentLabel = requirement?.label || missingDocument?.displayName || missingDocument?.label || missingDocument?.name || task?.label || 'the required document'
+    const targetRequirement = resolveLegalTaskUploadRequirement(documents, requirement)
+    const missingDocument = targetRequirement
+      ? (documents || []).find(document => document.requirement === targetRequirement || (getRequirementCanonicalId(targetRequirement) && getRequirementCanonicalId(document.requirement) === getRequirementCanonicalId(targetRequirement)))
+      : null
+    const documentLabel = targetRequirement?.label || missingDocument?.displayName || task?.label || 'the required document'
     openConveyancingDocumentRequest({
       ...(missingDocument || {}),
-      ...(requirement || {}),
+      ...(targetRequirement || {}),
       label: documentLabel,
       displayName: documentLabel,
-      requestedFrom: missingDocument?.requiredFrom || missingDocument?.required_from || missingDocument?.requiredParty || requirement?.requiredFromRole || requirement?.requestedFromRole || requirement?.requestedFrom || '',
+      requestedFrom: targetRequirement?.requiredFromRole || targetRequirement?.requestedFromRole || targetRequirement?.requested_from_role || missingDocument?.requiredFrom || missingDocument?.required_from || missingDocument?.requiredParty || '',
       visibility: missingDocument?.visibilityDefault || task?.defaultVisibility || 'client_visible',
       notes: `Please provide ${documentLabel} for ${task?.label || 'this legal task'}.`,
       blocksStage: false,
@@ -22998,6 +23046,7 @@ function AttorneyTransactionDetail() {
       requiredDocumentId: linkedRequirement?.id || '',
       canonicalRequirementInstanceId,
       documentRequestId: requirement?.documentRequestId || requirement?.document_request_id || '',
+      attorneyPreviousVersionId: null,
       notes: '',
       requestTitle: requirement?.label || requirement?.documentLabel || requirement?.document_label || '',
       stageTwoPartyId,
@@ -23010,7 +23059,9 @@ function AttorneyTransactionDetail() {
   }
 
   function openConveyancingDocumentRequest(source = {}) {
-    const rawParty = normalizeDetailKey(source.requestedFrom || source.requiredFromRole || source.requestedFromRole || source.requiredParty || '')
+    setError('')
+    setDocumentActionMessage('')
+    const rawParty = normalizeDetailKey(source.requestedFrom || source.requiredFromRole || source.requestedFromRole || source.requested_from_role || source.requiredParty || '')
     const requestedFrom = ADDITIONAL_DOCUMENT_REQUESTED_FROM_OPTIONS.some((option) => option.value === rawParty)
       ? rawParty
       : rawParty.includes('buyer') && rawParty.includes('seller')
@@ -23060,6 +23111,7 @@ function AttorneyTransactionDetail() {
       requiredDocumentId: '',
       canonicalRequirementInstanceId: '',
       documentRequestId: '',
+      attorneyPreviousVersionId: null,
       notes: shortcut.notes || '',
       requestTitle: shortcut.label || '',
       stageTwoPartyId: '', stageTwoPartyName: '', stageTwoPartyNeedsLink: false, stageTwoParticipantId: '',
@@ -23104,8 +23156,11 @@ function AttorneyTransactionDetail() {
         return
       }
     }
-    const visibilityScope = selectedVisibility === 'internal' ? 'internal' : selectedVisibility === 'client_visible' ? 'client' : 'shared'
     const uploadedByParty = String(uploadDraft.uploadedByParty || 'client').trim()
+    const uploadRequest = documentRequests.find(request => request.id === uploadDraft.documentRequestId)
+    const uploadAudience = uploadRequest ? getAttorneyRequestUploadAudience(uploadRequest, selectedVisibility) : null
+    const visibilityScope = uploadAudience?.visibilityScope || (selectedVisibility === 'internal' ? 'internal' : selectedVisibility === 'client_visible' ? 'client' : 'shared')
+    const clientRecipientRole = uploadAudience?.clientRecipientRole || null
     const isAttorneyUpload = String(workspaceRole || '').trim().toLowerCase() === 'attorney'
     const attorneyLane = isAttorneyUpload
       ? resolveAttorneyDocumentUploadLane({
@@ -23129,26 +23184,34 @@ function AttorneyTransactionDetail() {
         stage: 'preparing',
         message: 'Checking the document and preparing a secure upload…',
       })
-      await uploadDocument({
+      const savedDocument = await uploadDocument({
         transactionId: transaction.id,
         file: uploadDraft.file,
         inferCanonicalRequirement: uploadDraft.satisfiesRequiredDocument === 'yes',
         category: uploadDraft.category,
         isClientVisible: selectedVisibility === 'client_visible',
+        clientRecipientRole,
         visibilityScope,
         stageKey: uploadDraft.relatedWorkflow || attorneyLane?.laneKey || transferStageKey,
         requiredDocumentKey: linkedRequirement ? (uploadDraft.requiredDocumentKey || linkedRequirement?.key || null) : null,
         documentType: uploadDraft.documentType || uploadDraft.requiredDocumentKey || null,
         canonicalRequirementInstanceId: linkedRequirement ? (uploadDraft.canonicalRequirementInstanceId || null) : null,
         documentRequestId: uploadDraft.documentRequestId || null,
+        notes: uploadDraft.notes || null,
         source: isAttorneyUpload ? 'attorney_workspace' : 'internal',
         uploadedByParty,
         relatedEntityType: uploadDraft.stageTwoParticipantId ? 'transaction_participant' : null,
         relatedEntityId: uploadDraft.stageTwoParticipantId || null,
         attorneyLaneKey: attorneyLane?.laneKey || null,
         attorneyRole: attorneyLane?.attorneyRole || null,
+        attorneyPreviousVersionId: isAttorneyUpload ? uploadDraft.attorneyPreviousVersionId || null : null,
         onProgress: setDocumentUploadProgress,
       })
+      if (liveMatterScopeRef.current !== currentMatterAccessKey) return
+      setData(previous => previous?.transaction?.id === transaction.id ? { ...previous,
+        documents: mergeSavedAttorneyDocumentVersion(previous.documents || [], savedDocument),
+      } : previous)
+      setDocumentActionMessage('Document saved. The matter will refresh in the background.')
       setUploadDraft((previous) => ({
         ...previous,
         file: null,
@@ -23159,6 +23222,7 @@ function AttorneyTransactionDetail() {
         requiredDocumentId: '',
         canonicalRequirementInstanceId: '',
         documentRequestId: '',
+        attorneyPreviousVersionId: null,
         requestTitle: '',
         uploadedByParty: 'client',
         stageTwoPartyId: '',
@@ -23172,10 +23236,10 @@ function AttorneyTransactionDetail() {
       // The storage object and document record have already been saved. A
       // full workspace reload can be slow, so refresh it without holding the
       // upload dialog open or implying that the file was not persisted.
-      void loadData().catch((refreshError) => {
-        console.warn('[AttorneyTransactionDetail] document saved but refresh failed', refreshError)
-        setError('Document uploaded successfully, but the document list could not refresh yet. Reopen this category to see it.')
-      })
+      void refreshAfterDocumentSave(async () => {
+        await refreshTransactionDatasets(['documents', 'workflow', 'activity'], { reason: 'document_uploaded' })
+        await refreshCanonicalTransactionSnapshot()
+      }, () => { if (liveMatterScopeRef.current === currentMatterAccessKey) setError('Document saved. Updates could not refresh yet; reopen the matter to see the saved document.') })
     } catch (uploadError) {
       setError(uploadError.message || 'Unable to upload document.')
     } finally {
@@ -23207,6 +23271,7 @@ function AttorneyTransactionDetail() {
   }
 
   function openReviewAction(action, document, requirement) {
+    setError('')
     setReviewActionDraft({
       open: true,
       action,
@@ -23214,6 +23279,65 @@ function AttorneyTransactionDetail() {
       requirement,
       reason: '',
     })
+  }
+
+  async function handleSaveAttorneyDocumentVersion(form) {
+    const matterId = transaction?.id
+    const scopeKey = currentMatterAccessKey
+    const lane = workflowLanes.find(item => item.laneKey === form.attorneyLaneKey && item.permissions?.canUploadDocuments)
+    if (!matterId || workspaceRole !== 'attorney' || !lane) throw new Error('This attorney workflow does not allow document uploads.')
+    const requirementId = form.canonicalRequirementInstanceId || null
+    if (requirementId && !requiredDocumentRows.some(row => row.canonicalRequirementInstanceId === requirementId)) {
+      throw new Error('Refresh the matter and select an available checklist requirement.')
+    }
+    const request = matterDocumentWorkspaceModel.documentRequests.find(row => row.id === form.documentRequestId)
+    const working = ['draft', 'final'].includes(form.attorneyVersionKind)
+    const requestVisibility = request?.visibility || request?.visibility_scope
+    const audience = request ? getAttorneyRequestUploadAudience(request,
+      requestVisibility === 'client_visible' ? 'client_visible' : requestVisibility === 'internal_only' ? 'internal' : 'shared') : null
+    const visibilityScope = working ? 'internal' : audience?.visibilityScope || form.visibilityScope || 'internal'
+    const savedDocument = await uploadDocument({
+      transactionId: matterId, file: form.file, documentType: form.documentType,
+      category: form.category || 'Drafting Documents', notes: form.notes,
+      attorneyLaneKey: lane.laneKey, attorneyRole: lane.attorneyRole,
+      attorneyVersionKind: form.attorneyVersionKind, attorneyPreviousVersionId: form.attorneyPreviousVersionId || null,
+      canonicalRequirementInstanceId: requirementId, inferCanonicalRequirement: Boolean(requirementId),
+      documentRequestId: form.documentRequestId || null,
+      visibilityScope, isClientVisible: !working && ['client','client_visible'].includes(visibilityScope),
+      clientRecipientRole: working ? null : audience ? audience.clientRecipientRole : form.clientRecipientRole || null,
+      uploadedByParty: form.uploadedByParty || 'attorney', source: 'attorney_workspace', stageKey: lane.laneKey,
+      relatedEntityType: form.relatedEntityType || null, relatedEntityId: form.relatedEntityId || null,
+      onProgress: form.onProgress,
+    })
+    if (liveMatterScopeRef.current !== scopeKey) return savedDocument
+    setData(previous => previous?.transaction?.id === matterId ? { ...previous,
+      documents: mergeSavedAttorneyDocumentVersion(previous.documents || [], savedDocument),
+    } : previous)
+    setDocumentActionMessage(`Version ${savedDocument.attorney_version_number} saved. ${working ? 'The unsigned copy remains internal.' : 'The updated evidence is ready for review.'}`)
+    window.dispatchEvent(new Event('itg:transaction-updated'))
+    void refreshAfterDocumentSave(async () => {
+      await refreshTransactionDatasets(['documents','workflow','activity'], { reason: 'document_version_saved' })
+      await refreshCanonicalTransactionSnapshot()
+    }, () => { if (liveMatterScopeRef.current === scopeKey) setError('Version saved. Reopen the matter if the checklist has not refreshed yet.') })
+    return savedDocument
+  }
+
+  function canUseAttorneyRequestAction(row, permission) {
+    const laneKey = normalizeAttorneyDocumentLaneKey(row.requirement?.reviewerRole || row.requirement?.reviewer_role || row.requirement?.laneKey || row.requirement?.owningWorkflow || row.document?.lane_key)
+    return workflowLanes.some(lane => (!laneKey || normalizeAttorneyDocumentLaneKey(lane.laneKey) === laneKey) && lane.permissions?.[permission])
+  }
+
+  async function openAttorneyRequestDocument(row) {
+    const document = row.document || {}
+    const targetWindow = window.open('about:blank', '_blank')
+    try {
+      const url = document.file_path ? await createTransactionDocumentSignedUrl({
+        filePath: document.file_path, fileBucket: document.file_bucket || '', filename: document.name || row.displayName,
+      }) : row.fileUrl
+      if (!url) throw new Error('This received file is not available yet.')
+      if (targetWindow) targetWindow.location.href = url
+      else window.open(url, '_blank', 'noopener,noreferrer')
+    } catch (error) { targetWindow?.close(); throw error }
   }
 
   function handleReplaceDocument(document, requirement) {
@@ -23228,13 +23352,21 @@ function AttorneyTransactionDetail() {
     })
     setUploadDraft((previous) => ({
       ...previous,
+      file: null, fileName: '', notes: '',
+      attorneyPreviousVersionId: document?.id || null,
+      documentRequestId: document?.attorney_target_request_id || '',
       canonicalRequirementInstanceId: canonicalRequirementInstanceId || '',
+      satisfiesRequiredDocument: canonicalRequirementInstanceId ? 'yes' : 'no',
+      requiredDocumentId: requirement?.id || '',
       requiredDocumentKey: requirement?.key || document?.document_type || '',
-      category: requirement ? getAttorneyCategoryForRequiredDocument(requirement) : previous.category,
-      visibility: document?.visibility_scope === 'internal' ? 'internal' : previous.visibility,
+      documentType: document?.attorney_version_document_type || requirement?.key || document?.document_type || '',
+      category: document?.category || (requirement ? getAttorneyCategoryForRequiredDocument(requirement) : previous.category),
+      visibility: ['internal','internal_only'].includes(document?.visibility_scope) ? 'internal'
+        : ['client','client_visible'].includes(document?.visibility_scope) ? 'client_visible' : 'shared',
+      uploadedByParty: document?.uploaded_by_party || 'client',
       relatedWorkflow: attorneyLane?.laneKey || previous.relatedWorkflow,
       attorneyLaneKey: attorneyLane?.laneKey || '',
-      stageTwoPartyId: '', stageTwoPartyName: '', stageTwoPartyNeedsLink: false, stageTwoParticipantId: '',
+      stageTwoPartyId: '', stageTwoPartyName: '', stageTwoPartyNeedsLink: false, stageTwoParticipantId: document?.related_entity_id || '',
     }))
     setWorkspaceMenu('documents')
     setUploadDocumentModalOpen(true)
@@ -23242,6 +23374,23 @@ function AttorneyTransactionDetail() {
   }
 
   function openDocumentRequestUploadModal(row = {}) {
+    const request = row.rawRequest || row.raw || row
+    const requestId = row.documentRequestId || request.id || ''
+    const canonicalRequirementInstanceId = row.canonicalRequirementInstanceId || request.canonicalRequirementInstanceId || request.canonical_requirement_instance_id || getRequirementCanonicalId(row.requirement) || ''
+    const visibility = (row.visibility || request.visibility || request.visibility_scope) === 'internal_only' ? 'internal'
+      : (row.visibility || request.visibility || request.visibility_scope) === 'client_visible' ? 'client_visible' : 'shared'
+    if (canonicalRequirementInstanceId) {
+      openDocumentUploadModal({ requirement: { ...(row.requirement || {}), canonicalRequirementInstanceId,
+        documentRequestId: requestId, key: row.requiredDocumentKey || row.requirement?.key || '',
+        label: row.displayName || request.title || '',
+      } })
+      setUploadDraft(previous => ({ ...previous, documentRequestId: requestId, visibility,
+        attorneyPreviousVersionId: row.document?.id || null,
+        uploadedByParty: row.requestedFrom || request.requestedFrom || 'client',
+        stageTwoParticipantId: row.document?.related_entity_id || previous.stageTwoParticipantId,
+      }))
+      return
+    }
     const attorneyLane = resolveAttorneyDocumentUploadLane({
       laneKey: row.laneKey || row.lane_key || row.attorneyRole || row.attorney_role,
       relatedWorkflow: row.relatedWorkflow,
@@ -23256,18 +23405,19 @@ function AttorneyTransactionDetail() {
       fileName: '',
       category: getUploadCategoryForLibraryFilter(row.category || 'finance'),
       documentType: row.requiredDocumentKey || row.displayName || previous.documentType || '',
-      visibility: previous.visibility || 'client_visible',
-      uploadedByParty: previous.uploadedByParty || 'client',
+      visibility,
+      uploadedByParty: row.requestedFrom || request.requestedFrom || 'client',
       relatedWorkflow: row.relatedWorkflow || attorneyLane?.laneKey || 'finance',
       attorneyLaneKey: attorneyLane?.laneKey || '',
       satisfiesRequiredDocument: 'no',
       requiredDocumentKey: '',
       requiredDocumentId: '',
       canonicalRequirementInstanceId: '',
-      documentRequestId: row.documentRequestId || '',
+      documentRequestId: requestId,
+      attorneyPreviousVersionId: row.document?.id || null,
       notes: '',
       requestTitle: row.displayName || '',
-      stageTwoPartyId: '', stageTwoPartyName: '', stageTwoPartyNeedsLink: false, stageTwoParticipantId: '',
+      stageTwoPartyId: '', stageTwoPartyName: '', stageTwoPartyNeedsLink: false, stageTwoParticipantId: row.document?.related_entity_id || '',
     }))
     setUploadInputVersion((previous) => previous + 1)
     setUploadDocumentModalOpen(true)
@@ -23277,20 +23427,48 @@ function AttorneyTransactionDetail() {
     const requirement = reviewActionDraft.requirement || null
     const document = reviewActionDraft.document || null
     const action = reviewActionDraft.action
+    const requestId = reviewActionDraft.requestId || null
     const requirementInstanceId = getRequirementCanonicalId(requirement) || getDocumentCanonicalId(document)
-    if (!requirementInstanceId || !action) return
+    if ((!requirementInstanceId && !requestId) || !action) return
+    if (['reject', 'waive'].includes(action) && !reviewActionDraft.reason.trim()) {
+      setError('Explain the correction or waiver required.')
+      return
+    }
 
     try {
       setSaving(true)
       setError('')
-      await reviewCanonicalDocumentRequirement({
+      documentReviewCommandRef.current = matterMessageRequest(documentReviewCommandRef.current, {
+        scope: currentMatterAccessKey,
+        body: JSON.stringify({ requestId, requirementInstanceId, documentId: document?.id || getRequirementDocumentId(requirement), action, reason: reviewActionDraft.reason }),
+        audience: 'document_review',
+      })
+      if (requestId) {
+        const savedRequest = await reviewAttorneyMatterDocumentRequest({
+          requestId, documentId: document?.id, action, reason: reviewActionDraft.reason,
+          commandId: documentReviewCommandRef.current.commandId,
+        })
+        if (liveMatterScopeRef.current === currentMatterAccessKey) {
+          setData(previous => previous ? { ...previous,
+            documentRequests: (previous.documentRequests || []).map(request => request.id === requestId ? savedRequest : request),
+          } : previous)
+        }
+      } else await reviewCanonicalDocumentRequirement({
         requirementInstanceId,
         documentId: document?.id || getRequirementDocumentId(requirement),
         action,
         reason: reviewActionDraft.reason,
+        attorneyLaneKey: requirement?.laneKey || document?.lane_key || '',
+        commandId: documentReviewCommandRef.current.commandId,
       })
+      if (liveMatterScopeRef.current !== currentMatterAccessKey) return
+      documentReviewCommandRef.current = null
+      setDocumentActionMessage(action === 'approve' ? 'Document approved.' : action === 'reject' ? 'Document marked for correction. The reason was saved.' : 'Requirement waived.')
       setReviewActionDraft({ open: false, action: '', document: null, requirement: null, reason: '' })
-      await loadData()
+      void refreshAfterDocumentSave(async () => {
+        await refreshTransactionDatasets(['documents', 'workflow', 'activity'], { reason: 'document_reviewed' })
+        await refreshCanonicalTransactionSnapshot()
+      }, () => { if (liveMatterScopeRef.current === currentMatterAccessKey) setError('Document review saved. Updates could not refresh yet; reopen the matter to see the saved review.') })
     } catch (reviewError) {
       setError(reviewError.message || 'Unable to update canonical document review.')
     } finally {
@@ -23746,13 +23924,17 @@ function AttorneyTransactionDetail() {
                 const documentId = row.linkedDocument?.id || row.document?.id || row.documentId || row.uploadedDocumentId || getRequirementDocumentId(requirement) || raw.id
                 if (!requirementInstanceId || !documentId) throw new Error('Link this file to its required document before approving it.')
                 if (action === 'reject' && !reason.trim()) throw new Error('Add a reason for the correction request.')
-                await reviewCanonicalDocumentRequirement({ requirementInstanceId, documentId, action, reason, attorneyLaneKey: archlineActiveLegalTaskWorkflowKey })
-                try {
+                documentReviewCommandRef.current = matterMessageRequest(documentReviewCommandRef.current, {
+                  scope: currentMatterAccessKey,
+                  body: JSON.stringify({ requirementInstanceId, documentId, action, reason, lane: archlineActiveLegalTaskWorkflowKey }),
+                  audience: 'document_review',
+                })
+                await reviewCanonicalDocumentRequirement({ requirementInstanceId, documentId, action, reason, attorneyLaneKey: archlineActiveLegalTaskWorkflowKey, commandId: documentReviewCommandRef.current.commandId })
+                documentReviewCommandRef.current = null
+                void refreshAfterDocumentSave(async () => {
                   await refreshTransactionDatasets(['documents', 'workflow', 'activity'], { reason: 'task_document_review' })
                   await refreshCanonicalTransactionSnapshot()
-                } catch {
-                  return { message: 'Review saved. Refresh the workspace to see the latest document status.' }
-                }
+                }, () => { if (liveMatterScopeRef.current === currentMatterAccessKey) setError('Document review saved. Updates could not refresh yet; reopen the matter to see the saved review.') })
                 return { message: action === 'approve' ? 'Document approved.' : 'Document marked for correction.' }
               }}
               onAddNote={(task) => handleWorkflowActionCommand(archlineActiveLegalTaskWorkflow?.lane, { stageKey: task?.key, label: `Note: ${task?.label || 'legal task'}` })}
@@ -23822,6 +24004,7 @@ function AttorneyTransactionDetail() {
 
         {(workspaceRole === 'attorney' || isTransactionOperatorView) && activeWorkspaceMenu === 'documents' ? (
           <section className="space-y-4">
+            {documentActionMessage ? <p role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">{documentActionMessage}</p> : null}
             {documentDataHydrated && documentWorkspaceLoad.status === 'error' ? (
               <div role="status" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
                 Documents could not be refreshed. Showing the last loaded documents.
@@ -23861,6 +24044,30 @@ function AttorneyTransactionDetail() {
               sellerPartyLabels={sellerPartyLabels}
             />
 
+            {workspaceRole === 'attorney' && documentDataHydrated ? <AttorneyDocumentVersions
+              key={`versions:${currentMatterAccessKey}`}
+              documents={matterDocumentWorkspaceModel.versionDocuments}
+              requirements={requiredDocumentRows.filter(row => row.canonicalRequirementInstanceId)}
+              editableLanes={workflowLanes.filter(lane => lane.permissions?.canUploadDocuments)}
+              onSave={handleSaveAttorneyDocumentVersion}
+              onOpen={openAttorneyRequestDocument}
+            /> : null}
+
+            {workspaceRole === 'attorney' && documentDataHydrated ? <AttorneyMatterDocumentRequests
+              key={currentMatterAccessKey}
+              rows={attorneyDocumentRequestRows}
+              onUpload={openDocumentRequestUploadModal}
+              onOpen={openAttorneyRequestDocument}
+              onReview={(action, row) => {
+                setError('')
+                setReviewActionDraft({ open: true, action, document: row.document, requirement: row.requirement,
+                  requestId: row.id, requestTitle: row.displayName, reason: '',
+                })
+              }}
+              canUpload={row => canUseAttorneyRequestAction(row, 'canUploadDocuments')}
+              canReview={row => canUseAttorneyRequestAction(row, 'canReviewDocuments')}
+            /> : null}
+
             <Modal
               open={requestDocumentModalOpen}
               onClose={documentRequestSaving ? undefined : () => setRequestDocumentModalOpen(false)}
@@ -23872,47 +24079,24 @@ function AttorneyTransactionDetail() {
                   <Button type="button" variant="secondary" onClick={() => setRequestDocumentModalOpen(false)} disabled={documentRequestSaving}>
                     Cancel
                   </Button>
-                  <Button type="submit" form="archline-transaction-document-request-form" disabled={documentRequestSaving}>
+                  <Button type="submit" form="archline-transaction-document-request-form" disabled={documentRequestSaving || Boolean(attorneyRequestRequirementOptions.find(option => option.id === documentRequestForm.canonicalRequirementInstanceId)?.disabled)}>
                     <Send size={14} />
                     {documentRequestSaving ? 'Requesting...' : 'Request Document'}
                   </Button>
                 </div>
               )}
             >
-              <form id="archline-transaction-document-request-form" onSubmit={handleCreateDocumentRequest} className="grid gap-4">
-                <label className="flex flex-col gap-1.5">
-                  <span className="text-label font-semibold uppercase text-textMuted">Document requested</span>
-                  <Field value={documentRequestForm.title} onChange={(event) => setDocumentRequestForm((previous) => ({ ...previous, title: event.target.value }))} placeholder="e.g. Rates clearance certificate" autoFocus />
-                </label>
-                <div className="grid gap-3 md:grid-cols-2">
-                  <label className="flex flex-col gap-1.5">
-                    <span className="text-label font-semibold uppercase text-textMuted">Requested from</span>
-                    <Field as="select" value={documentRequestForm.requestedFrom} onChange={(event) => setDocumentRequestForm((previous) => ({ ...previous, requestedFrom: event.target.value, canonicalRequirementInstanceId: '' }))}>
-                      {additionalDocumentRequestedFromOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                    </Field>
-                  </label>
-                  <label className="flex flex-col gap-1.5">
-                    <span className="text-label font-semibold uppercase text-textMuted">Visibility</span>
-                    <Field as="select" value={documentRequestForm.visibility} onChange={(event) => setDocumentRequestForm((previous) => ({ ...previous, visibility: event.target.value }))}>
-                      {additionalDocumentVisibilityOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                    </Field>
-                  </label>
-                  <label className="flex flex-col gap-1.5">
-                    <span className="text-label font-semibold uppercase text-textMuted">Priority</span>
-                    <Field as="select" value={documentRequestForm.priority} onChange={(event) => setDocumentRequestForm((previous) => ({ ...previous, priority: event.target.value }))}>
-                      {ADDITIONAL_DOCUMENT_PRIORITY_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                    </Field>
-                  </label>
-                  <label className="flex flex-col gap-1.5">
-                    <span className="text-label font-semibold uppercase text-textMuted">Due date</span>
-                    <Field type="date" value={documentRequestForm.dueDate} onChange={(event) => setDocumentRequestForm((previous) => ({ ...previous, dueDate: event.target.value }))} />
-                  </label>
-                </div>
-                <label className="flex flex-col gap-1.5">
-                  <span className="text-label font-semibold uppercase text-textMuted">Notes</span>
-                  <Field as="textarea" rows={4} value={documentRequestForm.notes} onChange={(event) => setDocumentRequestForm((previous) => ({ ...previous, notes: event.target.value }))} placeholder="Add context for the buyer or roleplayer..." />
-                </label>
-              </form>
+              <AttorneyDocumentRequestForm
+                formId="archline-transaction-document-request-form"
+                form={documentRequestForm}
+                onChange={setDocumentRequestForm}
+                onSubmit={handleCreateDocumentRequest}
+                requirementOptions={attorneyRequestRequirementOptions}
+                requestedFromOptions={additionalDocumentRequestedFromOptions}
+                visibilityOptions={additionalDocumentVisibilityOptions.map(option => option.value === 'client_visible' ? { ...option, label: 'Client portal' } : option)}
+                disabled={documentRequestSaving}
+                error={error}
+              />
             </Modal>
 
             <Modal open={uploadDocumentModalOpen} onClose={() => { if (!saving) setUploadDocumentModalOpen(false) }} title="Upload Document" className="max-w-2xl">
@@ -26224,10 +26408,13 @@ function AttorneyTransactionDetail() {
           recipient={/seller/.test(legalTaskDrawer.task?.key || '') ? { name: sellerDisplayName, email: sellerEmail } : { name: buyerDisplayName, email: buyerEmail }}
           onCreate={async draft => {
             const laneKey = archlineActiveLegalTaskWorkflowKey
-            const result = await createAttorneyAppointmentInvite({ ...draft, organisationId: workspaceOrganisationId, transactionId: transaction.id, appointmentType: laneKey === 'bond' ? 'bond_signing' : 'transfer_signing', linkedWorkflow: laneKey, linkedWorkflowStage: legalTaskDrawer.task?.key, attachCalendarInvite: true })
-            let message = buildAttorneyInviteOutcome(result.delivery).message
-            try { await refreshWorkflowAfterChange() } catch { message += ' Refresh the matter to load the saved appointment.' }
-            return { ...result, message }
+            const result = await createAttorneyAppointmentInvite({ ...draft, organisationId: transaction.organisation_id || workspaceOrganisationId, transactionId: transaction.id, appointmentType: laneKey === 'bond' ? 'bond_signing' : 'transfer_signing', linkedWorkflow: laneKey, linkedWorkflowStage: legalTaskDrawer.task?.key, attachCalendarInvite: true })
+            const message = buildAttorneyInviteOutcome(result.delivery).message
+            const refreshCompletion = refreshWorkflowAfterChange().then(
+              () => ({ ok: true }),
+              () => ({ ok: false, message: 'Appointment saved. Refresh the matter to load the latest appointment details.' }),
+            )
+            return { ...result, message, refreshCompletion }
           }}
           onResend={appointmentId => resendAttorneyAppointmentCommunication(appointmentId)}
         /> : null}
@@ -26913,11 +27100,13 @@ function AttorneyTransactionDetail() {
                 return <div key={party.id} className="mt-3 rounded-lg border border-border p-3">
                   <p className="text-sm font-semibold text-text">{party.name || party.id} · {party.entityType} · {party.taxResidence}</p>
                   <div className="mt-2 grid gap-2 md:grid-cols-2">
-                    {[['applicable', 'Withholding applies', ['unknown', 'yes', 'no']], ['directiveStatus', 'SARS directive', ['unknown', 'issued', 'not_required']], ['withholdingRequired', 'Payment required', ['unknown', 'yes', 'no']]].map(([field, label, options]) =>
+                    {[['applicable', 'Withholding applies', ['unknown', 'yes', 'no']], ['directiveStatus', 'SARS directive', ['unknown', 'issued', 'not_required']], ['withholdingRequired', 'Withholding required', ['unknown', 'yes', 'no']], ['remittanceStatus', 'Remittance status', ['unknown', 'planned', 'withheld', 'paid']], ['purchaserResidence', 'Purchaser tax residence', ['unknown', 'resident', 'non_resident']]].map(([field, label, options]) =>
                       <label key={field} className="flex flex-col gap-1"><span className="text-label text-textMuted">{label}</span><Field as="select" value={review[field] || 'unknown'} onChange={(event) => updateReview(field, event.target.value)}>{options.map((option) => <option key={option} value={option}>{option.replaceAll('_', ' ')}</option>)}</Field></label>)}
-                    {[['directiveReference', 'Directive proof'], ['paymentReference', 'Withholding payment proof'], ['proofReference', 'Review evidence'], ['basisNote', 'Seller-specific basis']].map(([field, label]) =>
+                    {[['directiveReference', 'Directive proof'], ['paymentReference', 'Remittance payment proof (when paid / due)'], ['reservedFundsReference', 'Reserved funds evidence'], ['remittanceOwner', 'Remittance owner'], ['paymentEvent', 'Payment event and directive terms'], ['proofReference', 'Review evidence'], ['basisNote', 'Seller-specific basis']].map(([field, label]) =>
                       <label key={field} className="flex flex-col gap-1"><span className="text-label text-textMuted">{label}</span><Field value={review[field] || ''} onChange={(event) => updateReview(field, event.target.value)} /></label>)}
+                    {[['withheldOn', 'Actually withheld on'], ['dueOn', 'Reviewed remittance deadline']].map(([field, label]) => <label key={field} className="flex flex-col gap-1"><span className="text-label text-textMuted">{label}</span><Field type="date" value={review[field] || ''} onChange={event => updateReview(field, event.target.value)} /></label>)}
                   </div>
+                  <p className="mt-2 text-xs text-textMuted">Before lodgement, record reserved funds, an owner, the payment event and a future remittance deadline. Once withholding has occurred, record its actual date and purchaser residence. Payment proof is needed when due and before final accounts close.</p>
                 </div>
               })}
               <label className="mt-3 flex flex-col gap-1.5">
@@ -26927,16 +27116,18 @@ function AttorneyTransactionDetail() {
             </div>
             <div className="md:col-span-2 rounded-xl border border-border bg-surfaceMuted/35 p-4">
               <p className="text-sm font-semibold text-text">Property conditions and clearances</p>
-              <p className="mt-1 text-sm text-textMuted">Electrical compliance remains in the standard document checklist. Classify any additional certificates here.</p>
+              <p className="mt-1 text-sm text-textMuted">Review whether an electrical installation and certificate requirement apply. Record the basis where none applies. Other certificates follow installation, municipal and agreement requirements.</p>
               <div className="mt-3 grid gap-3 md:grid-cols-2">
                 {[['titleRestrictions', 'Title restrictions apply'], ['complianceCertificates', 'Additional compliance certificates apply']].map(([field, label]) =>
                   <label key={field} className="flex flex-col gap-1"><span className="text-label text-textMuted">{label}</span><Field as="select" value={routingProfileDraft.mvpProfile?.propertyConditions?.[field] || 'unknown'} onChange={(event) => setRoutingProfileDraft((previous) => ({ ...previous, mvpProfile: { ...previous.mvpProfile, propertyConditions: { ...previous.mvpProfile?.propertyConditions, [field]: event.target.value } } }))}><option value="unknown">Review needed</option><option value="yes">Yes</option><option value="no">No</option></Field></label>)}
+                <label className="flex flex-col gap-1"><span className="text-label text-textMuted">Electrical certificate required</span><Field as="select" value={routingProfileDraft.mvpProfile?.propertyConditions?.certificates?.electrical || 'unknown'} onChange={event => setRoutingProfileDraft(previous => ({ ...previous, mvpProfile: { ...previous.mvpProfile, propertyConditions: { ...previous.mvpProfile?.propertyConditions, certificates: { ...previous.mvpProfile?.propertyConditions?.certificates, electrical: event.target.value } } } }))}><option value="unknown">Review needed</option><option value="yes">Required</option><option value="no">Not required after review</option></Field></label>
+                {routingProfileDraft.mvpProfile?.propertyConditions?.certificates?.electrical === 'no' ? <label className="flex flex-col gap-1"><span className="text-label text-textMuted">Electrical non-applicability basis / evidence reference</span><Field value={routingProfileDraft.mvpProfile?.propertyConditions?.electricalBasisNote || ''} onChange={event => setRoutingProfileDraft(previous => ({ ...previous, mvpProfile: { ...previous.mvpProfile, propertyConditions: { ...previous.mvpProfile?.propertyConditions, electricalBasisNote: event.target.value } } }))} /></label> : null}
                 {routingProfileDraft.mvpProfile?.propertyConditions?.titleRestrictions === 'yes' ? <label className="flex flex-col gap-1">
                   <span className="text-label text-textMuted">Title condition evidence reference</span>
                   <Field value={routingProfileDraft.mvpProfile?.propertyConditions?.titleConditionsReference || ''} onChange={(event) => setRoutingProfileDraft((previous) => ({ ...previous, mvpProfile: { ...previous.mvpProfile, propertyConditions: { ...previous.mvpProfile?.propertyConditions, titleConditionsReference: event.target.value } } }))} />
                 </label> : null}
                 {routingProfileDraft.mvpProfile?.propertyConditions?.complianceCertificates === 'yes'
-                  ? [['gas', 'Gas'], ['electricFence', 'Electric fence'], ['beetle', 'Beetle / wood-borer']].map(([type, label]) =>
+                  ? [['gas', 'Gas'], ['electricFence', 'Electric fence'], ['beetle', 'Beetle / wood-borer'], ['water', 'Municipality / contract water']].map(([type, label]) =>
                     <label key={type} className="flex flex-col gap-1"><span className="text-label text-textMuted">{label} certificate</span><Field as="select" value={routingProfileDraft.mvpProfile?.propertyConditions?.certificates?.[type] || 'unknown'} onChange={(event) => setRoutingProfileDraft((previous) => ({ ...previous, mvpProfile: { ...previous.mvpProfile, propertyConditions: { ...previous.mvpProfile?.propertyConditions, certificates: { ...previous.mvpProfile?.propertyConditions?.certificates, [type]: event.target.value } } } }))}><option value="unknown">Review needed</option><option value="yes">Required</option><option value="no">Not required</option></Field></label>) : null}
                 {[
                   ['municipal', 'Municipal'],
@@ -26948,7 +27139,7 @@ function AttorneyTransactionDetail() {
                     ['issuer', 'Issuer', 'text'],
                     ['reference', 'Certificate reference', 'text'],
                     ...(type === 'municipal' ? [['issuedOn', 'Issued on (if shown)', 'date']] : []),
-                    ['validUntil', 'Valid until', 'date'],
+                    ['validUntil', 'Usable before (conservative cutoff)', 'date'],
                   ].map(([field, fieldLabel, inputType]) =>
                     <label key={field} className="mt-2 flex flex-col gap-1"><span className="text-label text-textMuted">{fieldLabel}</span><Field type={inputType} value={routingProfileDraft.mvpProfile?.propertyConditions?.clearances?.[type]?.[field] || ''} onChange={(event) => updateClearanceDraft(type, field, event.target.value)} /></label>)}
                   {type === 'municipal' ? <p className="mt-2 text-xs text-textMuted">If the issue date is recorded, the municipal certificate must expire within 60 days of issue. Other clearances follow their own stated validity dates.</p> : null}
@@ -26986,7 +27177,7 @@ function AttorneyTransactionDetail() {
             ['issuer', 'Issuer', 'text'],
             ['reference', 'Certificate reference', 'text'],
             ...(routingProfileModalScope === 'municipal' ? [['issuedOn', 'Issued on (if shown)', 'date']] : []),
-            ['validUntil', 'Valid until', 'date'],
+            ['validUntil', 'Usable before (conservative cutoff)', 'date'],
           ].map(([field, label, inputType]) => <label key={field} className="grid gap-1 text-sm font-medium text-text">
             {label}
             <Field type={inputType} value={routingProfileDraft.mvpProfile?.propertyConditions?.clearances?.[routingProfileModalScope]?.[field] || ''}
@@ -27004,9 +27195,9 @@ function AttorneyTransactionDetail() {
             ? 'Approve Document'
             : reviewActionDraft.action === 'waive'
               ? 'Waive Requirement'
-              : 'Reject Document'
+              : 'Request Document Correction'
         }
-        subtitle={reviewActionDraft.requirement?.label || reviewActionDraft.requirement?.key || reviewActionDraft.document?.name || ''}
+        subtitle={reviewActionDraft.requestTitle || reviewActionDraft.requirement?.label || reviewActionDraft.requirement?.key || reviewActionDraft.document?.name || ''}
         footer={(
           <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-end">
             <Button
@@ -27029,11 +27220,14 @@ function AttorneyTransactionDetail() {
                   ? 'Approve'
                   : reviewActionDraft.action === 'waive'
                     ? 'Waive'
-                    : 'Reject'}
+                    : 'Request correction'}
             </Button>
           </div>
         )}
       >
+        {error ? <p role="alert" className="mb-3 rounded-lg bg-rose-50 p-3 text-sm text-rose-800">{error}</p> : null}
+        {reviewActionDraft.document?.name ? <p className="mb-3 text-sm text-textMuted">Reviewing: {reviewActionDraft.document.name}</p> : null}
+        {reviewActionDraft.requestId && reviewActionDraft.action === 'reject' ? <p className="mb-3 text-sm text-textMuted">The correction reason stays with this request. A replacement returns it for review.</p> : null}
         <label className="flex flex-col gap-1.5">
           <span className="text-label font-semibold uppercase text-textMuted">
             {reviewActionDraft.action === 'approve' ? 'Review note (optional)' : 'Reason (required)'}

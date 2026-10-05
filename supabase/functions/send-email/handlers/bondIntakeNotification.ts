@@ -1,3 +1,4 @@
+import { transactionHandoffManagedByWorker } from '../services/transactionHandoffDispatch.ts';
 import {
   renderBridgeCta,
   renderBridgeEmailLayout,
@@ -25,6 +26,9 @@ export async function handleBondIntakeNotificationEmail(
   const emailsEnabled = envEnabled(Deno.env.get("BOND_INTAKE_EMAILS_ENABLED"), true);
   const transactionId = normalizeText(payload.transactionId);
   const recipientEmail = normalizeText(payload.to).toLowerCase();
+  if (payload.metadata?.source === 'signed_otp_received' && await transactionHandoffManagedByWorker(transactionId)) {
+    return jsonResponse(200,{ok:true,sent:false,queued:true,reason:'durable_handoff_dispatch',transactionId});
+  }
 
   if (!emailsEnabled) {
     return jsonResponse(200, {

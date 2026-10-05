@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { ArrowRight } from 'lucide-react'
-import { submitHomeSeekersLead } from './homeSeekersWebsiteData'
+import { useHomeSeekersLeadSubmission } from './homeSeekersWebsiteData'
 import './HomeSeekersLeadForm.css'
 
-export default function HomeSeekersLeadForm({ listingId = null, subject = 'Your enquiry', buttonLabel = 'Send enquiry' }) {
+export default function HomeSeekersLeadForm({ listingId = null, leadIntent = 'other', subject = 'Your enquiry', buttonLabel = 'Send enquiry' }) {
+  const submitLead = useHomeSeekersLeadSubmission()
   const [sending, setSending] = useState(false)
   const [message, setMessage] = useState('')
 
@@ -14,8 +15,9 @@ export default function HomeSeekersLeadForm({ listingId = null, subject = 'Your 
     setSending(true)
     setMessage('')
     try {
-      await submitHomeSeekersLead({
+      await submitLead({
         type: listingId ? 'property_enquiry' : 'general_enquiry', listingId,
+        leadIntent,
         name: form.get('name'), email: form.get('email'), phone: form.get('phone'),
         message: `${subject}: ${String(form.get('message') || '').trim()}`,
         privacyAccepted: form.get('privacy') === 'on', companyWebsite: form.get('website'),

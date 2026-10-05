@@ -1,3 +1,4 @@
+import { appointmentStartIso, appointmentEndIso, calendarOperationalStatus, isClosedAppointment } from '../core/appointments/attorneyCalendarModel.js'
 import { getClientPortalWorkspaceData } from './clientPortalWorkspaceService'
 
 function toArray(value) {
@@ -7,18 +8,6 @@ function toArray(value) {
 function toText(value, fallback = '') {
   const normalized = String(value || '').trim()
   return normalized || fallback
-}
-
-function normalizeStatus(value = '') {
-  const normalized = String(value || '').trim().toLowerCase().replace(/\s+/g, '_')
-  if (['confirmed', 'awaiting_confirmation', 'reschedule_requested', 'completed', 'cancelled'].includes(normalized)) {
-    return normalized
-  }
-  if (['pending', 'proposed', 'pending_confirmation'].includes(normalized)) return 'awaiting_confirmation'
-  if (['declined', 'cancelled_by_client', 'cancelled_by_agent'].includes(normalized)) return 'cancelled'
-  if (['done', 'complete'].includes(normalized)) return 'completed'
-  if (['needs_reschedule', 'proposed_new_time'].includes(normalized)) return 'reschedule_requested'
-  return 'confirmed'
 }
 
 function normalizeMethod(appointment = {}) {
@@ -88,29 +77,6 @@ function resolveAppointmentType(appointment = {}) {
     .replace(/\b\w/g, (match) => match.toUpperCase())
 }
 
-function resolveStartTime(appointment = {}) {
-  return toText(
-    appointment.startTime ||
-      appointment.start_time ||
-      appointment.dateTime ||
-      appointment.date_time ||
-      appointment.scheduledAt ||
-      appointment.scheduled_at,
-  )
-}
-
-function resolveDurationMinutes(appointment = {}, startTime = '') {
-  const explicit = Number(appointment.durationMinutes || appointment.duration_minutes || appointment.duration || 0)
-  if (Number.isFinite(explicit) && explicit > 0) return explicit
-  const endTime = toText(appointment.endTime || appointment.end_time)
-  const start = Date.parse(startTime)
-  const end = Date.parse(endTime)
-  if (!Number.isNaN(start) && !Number.isNaN(end) && end > start) {
-    return Math.round((end - start) / 60000)
-  }
-  return 60
-}
-
 function isSellerSafeAppointment(appointment = {}) {
   const visibility = toText(appointment.visibility || appointment.visibility_scope).toLowerCase()
   if (visibility === 'internal' || visibility === 'internal_only' || visibility === 'staff_only') return false
@@ -122,8 +88,8 @@ function isSellerSafeAppointment(appointment = {}) {
 }
 
 export function normalizeSellerPortalAppointment(appointment = {}, index = 0) {
-  const startTime = resolveStartTime(appointment)
-  const endTime = toText(appointment.endTime || appointment.end_time)
+  const startTime = appointmentStartIso(appointment)
+  const endTime = appointmentEndIso(appointment)
   const method = normalizeMethod(appointment)
   const appointmentType = resolveAppointmentType(appointment)
 
@@ -142,11 +108,11 @@ export function normalizeSellerPortalAppointment(appointment = {}, index = 0) {
     appointmentType,
     startTime,
     endTime,
-    durationMinutes: resolveDurationMinutes(appointment, startTime),
+    durationMinutes: startTime && endTime ? Math.max(0, Math.round((Date.parse(endTime)-Date.parse(startTime))/60000)) : 45,
     method,
     methodLabel: getMethodLabel(method),
     location: toText(appointment.location || appointment.address || appointment.venue || appointment.virtualUrl || appointment.meetingUrl),
-    status: normalizeStatus(appointment.status),
+    status: calendarOperationalStatus(appointment),
     assignedAgent: resolveAgent(appointment),
     raw: appointment,
   }
@@ -170,7 +136,7 @@ export function buildSellerPortalAppointmentsPayload(appointments = []) {
   const now = Date.now()
   const upcomingAppointments = sortByStartTime(
     normalized.filter((appointment) => {
-      if (appointment.status === 'completed' || appointment.status === 'cancelled') return false
+      if (isClosedAppointment(appointment)) return false
       const time = Date.parse(appointment.startTime || '')
       return Number.isNaN(time) || time >= now - (1000 * 60 * 60 * 2)
     }),

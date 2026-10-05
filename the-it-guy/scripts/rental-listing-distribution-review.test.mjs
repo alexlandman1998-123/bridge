@@ -42,3 +42,10 @@ assert.match(createPage, /key: 'review'/)
 assert.match(detailPage, /Selected distribution/)
 
 console.log('Rental listing distribution review checks passed')
+
+// Exercise the real atomic rental save against local Postgres, including RLS and rollback.
+await import('../src/services/rentals/__tests__/rentalListingPersistence.test.mjs')
+
+await import('../src/services/rentals/__tests__/rentalListingExpiry.test.mjs')
+
+await import('../src/services/rentals/__tests__/rentalListingInventory.test.mjs')

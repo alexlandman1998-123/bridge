@@ -1,3 +1,4 @@
+import { transactionHandoffManagedByWorker } from '../services/transactionHandoffDispatch.ts';
 import {
   renderBridgeCta,
   renderBridgeEmailLayout,
@@ -619,6 +620,15 @@ async function dispatchQueuedEvents(
   const results: Array<Record<string, unknown>> = [];
   for (const event of claim.data || []) {
     const eventPayload = payloadFromEvent(event);
+    const managedRole = firstText(eventPayload.workflowLabel).toLowerCase().replace(/\s+/g,'_');
+    if (normalizeEventKind(eventPayload)==='attorney_instruction_ready' &&
+      await transactionHandoffManagedByWorker(normalizeText(event.transaction_id),supabase,managedRole || 'transfer_attorney')) {
+      const deferred = await supabase.from('notification_events').update({status:'cancelled',error_message:'Delivery managed by the organisation handoff queue.',updated_at:new Date().toISOString()}).eq('id',event.id);
+      if (deferred.error) throw deferred.error;
+      results.push({eventId:event.id,sent:false,queued:true,reason:'durable_handoff_dispatch'});
+      continue;
+    }
+
     const branding = await resolveEmailBranding({
       supabase,
       payload: {
@@ -740,6 +750,11 @@ export async function handleBondAttorneyLegalNotificationEmail(
     return await dispatchQueuedEvents(req, payload);
   }
 
+  const managedRole = firstText(payload.workflowLabel).toLowerCase().replace(/\s+/g,'_');
+  if (normalizeEventKind(payload)==='attorney_instruction_ready' &&
+    await transactionHandoffManagedByWorker(firstText(payload.transactionId,payload.transaction_id),undefined,managedRole || 'transfer_attorney')) {
+    return jsonResponse(200,{ok:true,sent:false,queued:true,reason:'durable_handoff_dispatch'});
+  }
   const recipientEmail = normalizeText(payload.to).toLowerCase();
   if (!recipientEmail) {
     return jsonResponse(400, { error: "Missing required field: to" });

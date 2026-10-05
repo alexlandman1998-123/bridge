@@ -1,3 +1,4 @@
+import { normalizeSellerMandateCapture, readSellerMandateTerms } from '../../lib/sellerMandateCapture.js'
 import { transformSellerOnboardingToFacts } from '../../services/documents/sellerOnboardingFactTransformer.js'
 
 export const SELLER_ONBOARDING_SIGNING_PACK_SNAPSHOT_CONTRACT = 'arch9-seller-onboarding-signing-pack-snapshot-v1'
@@ -184,13 +185,21 @@ export function buildSellerOnboardingSigningPackSnapshot({
     canonicalFacts.property?.address,
     propertyAddress(form, currentListing),
   )
-  const safeMandate = record(mandate)
+  const safeMandate = { ...record(mandate) }
+  const capture = normalizeSellerMandateCapture(safeMandate.mandateCapture ?? form.mandateCapture)
+  if (capture) safeMandate.mandateCapture = capture
+  if (form.mandateAcceptanceReview) safeMandate.mandateAcceptanceReview = structuredClone(form.mandateAcceptanceReview)
+  if (safeMandate.mandateDuration !== undefined || form.mandateDuration !== undefined) {
+    safeMandate.mandateDuration = safeMandate.mandateDuration ?? form.mandateDuration
+    if (readSellerMandateTerms({ ...form, ...safeMandate }).mandateType === 'open' && safeMandate.mandateDuration === 'until_cancelled') safeMandate.endDate = ''
+  }
   const normalizedRecipients = (Array.isArray(recipients) ? recipients : []).map((recipient) => ({
     name: text(recipient?.name), email: text(recipient?.email).toLowerCase(), role: text(recipient?.role) || 'Seller',
   })).filter((recipient) => recipient.name || recipient.email)
 
   return {
     contract: SELLER_ONBOARDING_SIGNING_PACK_SNAPSHOT_CONTRACT,
+    ...(form.mandateAcceptanceReview ? { mandateAcceptanceReview: structuredClone(form.mandateAcceptanceReview) } : {}),
     version: 'seller_signing_pack_v1',
     frozenAt: generatedAt,
     selectedDocuments: Array.isArray(selectedDocuments) ? selectedDocuments.filter((key) => ['fica', 'disclosure', 'mandate'].includes(key)) : [],
@@ -202,6 +211,7 @@ export function buildSellerOnboardingSigningPackSnapshot({
     branding: record(branding),
     practitioner: record(practitioner),
     documentReference: firstText(currentListing.listingReference, currentListing.listing_reference, currentListing.reference, currentListing.id),
+    ...(safeMandate.mandateAcceptanceReview?.disclosureReference ? { disclosureReference: text(safeMandate.mandateAcceptanceReview.disclosureReference) } : {}),
     seller,
     property: {
       address,

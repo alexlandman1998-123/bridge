@@ -72,7 +72,7 @@ const files = {
   packageJson: await readFile(new URL('../package.json', import.meta.url), 'utf8'),
 }
 
-assert.match(files.settingsPage, /saveAgencyOnboardingDraft\(\{[\s\S]*\.\.\.state\.onboarding[\s\S]*\}, \{ syncCommercialAccess: true \}\)/)
+assert.match(files.settingsPage, /saveAgencyOnboardingDraft\(\{[\s\S]*\.\.\.stateToSave\.onboarding[\s\S]*\}, \{ syncCommercialAccess: true \}\)/)
 assert.match(files.settingsPage, /window\.dispatchEvent\(new Event\('itg:organisation-branding-updated'\)\)/)
 assert.match(files.settingsApi, /agencyOnboarding:\s*mergedDraft/)
 assert.match(files.settingsApi, /\.from\('organisation_settings'\)[\s\S]*settings_json:\s*mergedSettings/)
@@ -87,8 +87,8 @@ assert.match(files.sellerService, /resolveSellerOnboardingBrandingSnapshot\(clie
 assert.match(files.sellerService, /mergeSellerOnboardingBrandingSnapshots\(initialBranding, publicBranding\)/, 'seller onboarding should merge token-scoped public branding when anonymous settings reads are incomplete')
 assert.match(files.sellerBrandingApi, /seller_portal_token/, 'public seller branding API should resolve stable portal tokens')
 assert.match(files.sellerBrandingApi, /seller_portal_invite_token_hash/, 'public seller branding API should resolve invite tokens by hash without exposing token material')
-assert.match(files.sellerBrandingApi, /function fetchSellerBrandingListing[\s\S]*listing_status, status[\s\S]*listing_status, listing_visibility, seller_lead_id/, 'public seller branding API should retry older private_listings schemas without status/deleted_at')
-assert.match(files.sellerBrandingApi, /isMissingColumnError\(error, 'status'\)[\s\S]*isMissingColumnError\(error, 'deleted_at'\)/, 'public seller branding API should tolerate missing optional listing columns')
+assert.match(files.sellerBrandingApi, /const selectAttempts = \[[\s\S]*listing_status, listing_visibility, seller_lead_id[\s\S]*status, listing_visibility, seller_lead_id, deleted_at/, 'public seller branding should read canonical lifecycle columns first, with a legacy fallback')
+assert.match(files.sellerBrandingApi, /if \(!isMissingColumnError\(error\)\)/, 'schema fallback should apply only to missing-column errors')
 assert.match(files.sellerBrandingApi, /createSignedUrl\(normalizedPath, 60 \* 60 \* 24 \* 7\)/, 'public seller branding API should mint fresh logo URLs from storage paths')
 assert.match(files.sellerBrandingApi, /resolveOnboardingBranding\(/, 'public seller branding API should use the shared onboarding branding resolver')
 assert.match(files.sellerBrandingRoute, /createSellerOnboardingBrandingResponse/, 'seller branding route should delegate to the token-scoped API service')

@@ -1,3 +1,5 @@
+import { getRentalPublicationAttempt, publicRentalPublicationAttempt } from '../services/rentalPublicationAttemptService.js'
+import { reconcileRentalProperty24Publication } from '../services/rentalPublicationReconciliationService.js'
 import fs from 'node:fs'
 import path from 'node:path'
 import process from 'node:process'
@@ -1549,7 +1551,8 @@ export async function createProperty24ApiResponse({
       })
       const property24 = statusRouteConfig.refresh ? createProperty24(statusRouteConfig) : null
       const status = await fetchListingStatus({ supabase, property24, config: statusRouteConfig })
-      return buildJsonResponse(200, { route: route.name, status, lifecycle: status.lifecycle })
+      const submissionAttempt = route.name.startsWith('rental') ? publicRentalPublicationAttempt(await getRentalPublicationAttempt(supabase,config.listingId,'property24',statusRouteConfig.environment)) : null
+      return buildJsonResponse(200, { route: route.name, status, lifecycle: status.lifecycle,submissionAttempt })
     }
 
     if (['updateListingStatus', 'withdrawListing', 'updateRentalStatus', 'withdrawRentalListing'].includes(route.name)) {
@@ -1639,6 +1642,8 @@ export async function createProperty24ApiResponse({
       const resolvedConfig = await resolvePublishConfig({ supabase, config, listingId: config.listingId })
       const statusConfig = await resolveProperty24StatusActionConfig({ supabase, resolvedConfig })
       if (!statusConfig.agencyId) missing.push('PROPERTY24_DEFAULT_AGENCY_ID or agencyId')
+      const reconciliation = await reconcileRentalProperty24Publication({ client:supabase,property24:createProperty24(statusConfig),config:statusConfig })
+      if (reconciliation) return buildJsonResponse(200,{ route:route.name,listingId:config.listingId,...reconciliation })
       if (!statusConfig.listingNumber) missing.push('listingNumber')
       if (missing.length) {
         return buildJsonResponse(400, {

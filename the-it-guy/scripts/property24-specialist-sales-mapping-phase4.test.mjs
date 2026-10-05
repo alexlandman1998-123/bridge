@@ -81,6 +81,10 @@ for (const entry of cases) {
     assert.equal(plan.previewPayload.propertyInfo.propertyTypeId, 11)
     assert.equal(plan.previewPayload.commercialInfo.grossLettableAreaSqm, 1250)
     assert.deepEqual(plan.technicalBlockers, [])
+  } else if (entry.category === 'agricultural') {
+    assert.equal(plan.canSubmit, true)
+    assert.equal(plan.previewPayload.propertyInfo.propertyTypeId, 10)
+    assert.deepEqual(plan.previewPayload.propertyInfo.erf, { size: 425000, areaUnit: 'SquareMetres' })
   } else {
     assert.ok(plan.dataBlockers.includes(`property24_${entry.category === 'vacant_land' ? 'land' : entry.category}_mapping_not_verified`))
   }

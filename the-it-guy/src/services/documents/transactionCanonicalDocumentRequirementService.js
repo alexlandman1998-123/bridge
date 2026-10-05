@@ -1,4 +1,7 @@
+import { resolveCanonicalDocumentRequestsForScenario } from '../../core/documents/documentRequestCanonicalMatrix.js'
+import { getTransactionParties, transactionPartyDocumentSubjects } from '../../core/transactions/transactionPartyProfile.js'
 import { isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
+import { electricalNotApplicable } from '../attorneyWorkflow/conveyancingReviewPolicy.js'
 import {
   deriveOnboardingConfiguration,
   normalizePurchaserType,
@@ -284,7 +287,7 @@ function hybridFinanceType(value) {
   return normalized
 }
 
-function inferPropertyFacts(transaction = {}, transactionFacts = {}) {
+function inferPropertyFacts(transaction = {}, transactionFacts = {}, propertySource = {}) {
   const propertyType = normalizeKey(
     transaction.property_type ||
     transaction.propertyType ||
@@ -292,9 +295,15 @@ function inferPropertyFacts(transaction = {}, transactionFacts = {}) {
     transaction.unit?.propertyType,
   )
   const propertyTenure = normalizeKey(transactionFacts.propertyTenure || transaction.property_tenure || transaction.propertyTenure)
+  const sourceFacts = propertySource.seller_canonical_facts || propertySource.canonical_facts || {}
   return {
     type: propertyType || 'unknown',
     tenure: propertyTenure || 'unknown',
+    municipality: normalizeText(
+      transaction.property_municipality || transaction.municipality || transaction.unit?.municipality ||
+      propertySource.municipality || sourceFacts.property?.municipality ||
+      propertySource.property_address_details?.municipality,
+    ),
     sectional_title: transactionFacts.isSectionalTitle || propertyTenure === 'sectional_title' || propertyType.includes('sectional') || propertyType.includes('body_corporate'),
     hoa: transactionFacts.isEstateHoa || propertyTenure === 'estate_hoa' || propertyType.includes('estate') || propertyType.includes('hoa'),
     freehold: transactionFacts.isFreehold || propertyTenure === 'freehold' || propertyType.includes('freehold'),
@@ -361,6 +370,16 @@ async function loadTransactionRow(client, transactionId) {
   return query.data || null
 }
 
+async function loadTransactionPropertySource(client, transaction) {
+  if (transaction.privateListing || transaction.listing) return transaction.privateListing || transaction.listing
+  const listingId = transaction.private_listing_id || transaction.listing_id
+  if (!listingId) return {}
+  const query = await client.from('private_listings').select('*').eq('id', listingId).maybeSingle()
+  // Some attorney assignments can access the matter but not the originating listing.
+  // Keep the saved attorney applicability review available when source data is unavailable.
+  return query.error ? {} : query.data || {}
+}
+
 function requireClient(client = supabase) {
   if (!client || !isSupabaseConfigured) throw new Error('Supabase is required for transaction canonical document resolution.')
   return client
@@ -368,6 +387,7 @@ function requireClient(client = supabase) {
 
 export function buildTransactionDocumentFacts({
   transaction = {},
+  propertySource = transaction.privateListing || transaction.listing || {},
   formData = {},
   documents = [],
   subprocesses = [],
@@ -388,9 +408,12 @@ export function buildTransactionDocumentFacts({
     purchaserType,
     financeType,
   })
+  const partySnapshot = getTransactionParties(formData, transaction)
   const transactionFacts = resolveTransactionFacts({
     ...transaction,
+    ...(partySnapshot ? { buyer_entity_type: partySnapshot.buyer.entityType, seller_entity_type: partySnapshot.seller.entityType } : {}),
     onboardingFormData: formData,
+    ...(['yes', 'no'].includes(formData.__bridge_finance?.captureSnapshot?.sellerBondStatus) ? { seller_has_existing_bond: formData.__bridge_finance.captureSnapshot.sellerBondStatus === 'yes' } : {}),
     buyer_onboarding_flow: buyerOnboardingFlow,
   })
   const salesSnapshot = resolveSalesWorkflowSnapshot({
@@ -406,7 +429,7 @@ export function buildTransactionDocumentFacts({
     salesReadyForFinance: salesSnapshot.readyForFinance || currentMainStageIndex >= getMainStageIndex('FIN'),
     salesBlockers: salesSnapshot.blockers || [],
   })
-  const property = inferPropertyFacts(transaction, transactionFacts)
+  const property = inferPropertyFacts(transaction, transactionFacts, propertySource)
 
   return {
     buyer: {
@@ -424,13 +447,18 @@ export function buildTransactionDocumentFacts({
           ? 'foreign'
           : 'local',
       purchaser_type: purchaserType,
+      parties: partySnapshot?.buyer || null,
     },
     seller: {
       legal_type: transactionFacts.sellerEntityType,
       type: transactionFacts.sellerEntityType,
       existing_bond: Boolean(transactionFacts.sellerHasExistingBond),
+      parties: partySnapshot?.seller || null,
     },
     property,
+    compliance: {
+      electrical_not_applicable: electricalNotApplicable(transaction?.routing_profile_json?.mvpProfile?.propertyConditions),
+    },
     purchase: {
       finance_type: financeType,
       vat_treatment: transactionFacts.vatTreatment,
@@ -568,7 +596,7 @@ function buildProjectionRow({
     rule_id: normalizeText(rule?.id) || explicitMeta.ruleId || `adapter:${source}:${definitionKey}`,
     rule_version: Number(rule?.rule_version || explicitMeta.ruleVersion || 1),
     document_key: definitionKey,
-    document_name: definition.display_label || explicitMeta.documentName || definitionKey,
+    document_name: explicitMeta.documentName || definition.display_label || definitionKey,
     document_category: definition.category || explicitMeta.documentCategory || packKey || null,
     owning_workflow: explicitMeta.owningWorkflow || normalizeText(rule?.owning_workflow) || baseMeta.owningWorkflow,
     workflow_stage: explicitMeta.workflowStage || normalizeText(rule?.workflow_stage) || baseMeta.workflowStage,
@@ -581,6 +609,7 @@ function buildProjectionRow({
     status,
     source,
     trigger_snapshot: {
+      ...(explicitMeta.party ? { party: explicitMeta.party } : {}),
       stage_gates: normalizeArray(generated.stage_gates || rule?.stage_gates),
       pre_collection_allowed: preCollectionAllowed,
       trace,
@@ -797,6 +826,45 @@ function attorneyRequirementMeta(requirement = {}, definition = {}, facts = {}) 
   }
 }
 
+function buildCapturedPartyCandidates({ transaction, formData, facts, definitionsByKey }) {
+  const parties = getTransactionParties(formData, transaction)
+  if (!parties) return []
+  return resolveCanonicalDocumentRequestsForScenario({ transactionParties: parties, financeType: facts.purchase.finance_type, sellerHasExistingBond: facts.seller.existing_bond }, { includePendingPolicy: false })
+    .filter((requirement) => /^(buyer|seller)_/.test(requirement.key))
+    .map((requirement) => {
+      const definitionKey = definitionsByKey.has(requirement.key) ? requirement.key : resolveCrossModuleDocumentKey(requirement.key)
+      const definition = definitionsByKey.get(definitionKey)
+      if (!definition) return null
+      const side = requirement.requestedFrom || requirement.ownerRole
+      return {
+        generated: buildRequirementInstance({ document_definition_key: definitionKey, pack_key: definition.pack_key, requirement_level: requirement.level === 'optional' ? 'optional' : 'required', stage_gates: ['otp_ready'], requested_from_role: side, reviewer_role: 'agent', visible_to_roles: definition.default_visibility, uploadable_by_roles: definition.default_upload_roles }, {
+          contextType: 'transaction', contextId: transaction.id, transactionId: transaction.id,
+          options: { sourceSystem: TRANSACTION_CANONICAL_DOCUMENT_ENGINE_SOURCE, resolverVersion: TRANSACTION_CANONICAL_DOCUMENT_ENGINE_VERSION },
+        }),
+        definition, trace: [{ adapter: 'captured_transaction_parties', matrix_key: requirement.key }],
+        source: 'captured_transaction_parties_adapter',
+        explicitMeta: { visibleSection: side === 'seller' ? 'seller_documents' : 'buyer_documents', requestedFrom: side, blockingStage: 'OTP' },
+      }
+    }).filter(Boolean)
+}
+
+function scopeCapturedPartyCandidates(candidates, parties) {
+  if (!parties) return candidates
+  const applicableKeys = new Set(resolveCanonicalDocumentRequestsForScenario({ transactionParties: parties }, { includePendingPolicy: false }).map((requirement) => requirement.key))
+  return candidates.flatMap((candidate) => {
+    const matrixKey = candidate.trace?.find((trace) => trace.matrix_key)?.matrix_key || candidate.generated.document_definition_key
+    if (/^(buyer|seller)_/.test(matrixKey) && /(_id_document|_proof_of_address|_passport|_marriage_certificate|_anc_document|_company_|_trust_|_director_fica|_trustee_fica|_letters_of_authority|_executor_authority)/.test(matrixKey) && !applicableKeys.has(matrixKey)) return []
+    const subjects = transactionPartyDocumentSubjects(matrixKey, parties)
+    if (!subjects.length) return [candidate]
+    return subjects.map((person) => ({
+      ...candidate,
+      generated: { ...candidate.generated, requested_from_contact_id: person.id },
+      trace: [...(candidate.trace || []), { party_id: person.id, party_name: person.name, party_role: person.role, matrix_key: matrixKey }],
+      explicitMeta: { ...(candidate.explicitMeta || {}), party: { id: person.id, name: person.name, role: person.role }, documentName: `${candidate.definition.display_label || matrixKey} — ${person.name || 'Unnamed person'}` },
+    }))
+  })
+}
+
 function dedupeCandidateRows(candidates = []) {
   return mergeRequirementCandidates(candidates, buildInstanceSignature)
 }
@@ -847,6 +915,8 @@ export function mapProjectionRowToRequirement(row = {}) {
     rejectionReason: '',
     rejection_reason: '',
     sortOrder: Number(row.sort_order || 999),
+    partyId: row.trigger_snapshot?.party?.id || null,
+    partyName: row.trigger_snapshot?.party?.name || null,
     canonicalRequirementInstanceId: row.canonical_requirement_instance_id || null,
     canonical_requirement_instance_id: row.canonical_requirement_instance_id || null,
     owningWorkflow: row.owning_workflow,
@@ -907,14 +977,14 @@ async function syncProjectionRows({
 
   const existingRows = currentQuery.data || []
   const existingBySignature = new Map(existingRows.map((row) => [
-    `${row.document_key}::${row.requested_from || ''}::${row.visible_section || ''}`,
+    `${row.document_key}::${row.requested_from || ''}::${row.visible_section || ''}::${row.trigger_snapshot?.party?.id || ''}`,
     row,
   ]))
 
   const seenSignatures = new Set()
   const toUpsert = []
   for (const row of sortProjectionRows(projectionRows)) {
-    const signature = `${row.document_key}::${row.requested_from || ''}::${row.visible_section || ''}`
+    const signature = `${row.document_key}::${row.requested_from || ''}::${row.visible_section || ''}::${row.trigger_snapshot?.party?.id || ''}`
     seenSignatures.add(signature)
     const existing = existingBySignature.get(signature)
     toUpsert.push({
@@ -936,7 +1006,7 @@ async function syncProjectionRows({
   }
 
   const stale = existingRows
-    .filter((row) => !seenSignatures.has(`${row.document_key}::${row.requested_from || ''}::${row.visible_section || ''}`))
+    .filter((row) => !seenSignatures.has(`${row.document_key}::${row.requested_from || ''}::${row.visible_section || ''}::${row.trigger_snapshot?.party?.id || ''}`))
     .map((row) => row.id)
     .filter(Boolean)
 
@@ -966,6 +1036,7 @@ async function syncProjectionRows({
 
 export function buildProjectedTransactionRequirementCandidates({
   transaction = {},
+  propertySource = transaction.privateListing || transaction.listing || {},
   formData = {},
   documents = [],
   subprocesses = [],
@@ -974,6 +1045,7 @@ export function buildProjectedTransactionRequirementCandidates({
 } = {}) {
   const facts = buildTransactionDocumentFacts({
     transaction,
+    propertySource,
     formData,
     documents,
     subprocesses,
@@ -1010,13 +1082,14 @@ export function buildProjectedTransactionRequirementCandidates({
 
   const adapterCandidates = [
     ...buildBuyerAdapterCandidates({ transaction, facts, formData, definitionsByKey }),
+    ...buildCapturedPartyCandidates({ transaction, facts, formData, definitionsByKey }),
     ...buildAttorneyAdapterCandidates({ transaction, facts, definitionsByKey }),
   ]
 
-  const candidates = dedupeCandidateRows([
+  const candidates = dedupeCandidateRows(scopeCapturedPartyCandidates([
     ...canonicalCandidates,
     ...adapterCandidates,
-  ])
+  ], getTransactionParties(formData, transaction)))
 
   return {
     facts,
@@ -1053,10 +1126,11 @@ export async function resolveTransactionDocumentRequirements({
     }
   }
 
-  const [onboardingRow, loadedDocuments, loadedSubprocesses] = await Promise.all([
+  const [onboardingRow, loadedDocuments, loadedSubprocesses, propertySource] = await Promise.all([
     formData ? { form_data: formData } : loadOnboardingFormData(db, transactionRow.id),
     Array.isArray(documents) ? documents : loadTransactionDocuments(db, transactionRow.id),
     Array.isArray(subprocesses) ? subprocesses : loadTransactionSubprocesses(db, transactionRow.id),
+    loadTransactionPropertySource(db, transactionRow),
   ])
 
   const loadedRules = await loadActiveRequirementRules(db, {
@@ -1074,6 +1148,7 @@ export async function resolveTransactionDocumentRequirements({
     candidates,
   } = buildProjectedTransactionRequirementCandidates({
     transaction: transactionRow,
+    propertySource,
     formData: onboardingRow?.form_data || {},
     documents: loadedDocuments,
     subprocesses: loadedSubprocesses,

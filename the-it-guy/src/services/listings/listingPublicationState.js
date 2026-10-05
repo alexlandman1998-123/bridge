@@ -165,7 +165,17 @@ function displayValue(value) {
   return text(value) || 'Not set'
 }
 
-export function diffListingPublicationSnapshots(current = {}, published = {}) {
+function publicationStatusComparable(value, channel) {
+  const status = text(value).toLowerCase().replace(/[\s-]+/g, '_')
+  // Publishing promotes the internal seller workflow without changing the
+  // sale/letting status sent to either portal. Normalize historical snapshots
+  // at comparison time; website eligibility still uses the original status.
+  if (['property24', 'private_property'].includes(channelKey(channel)) &&
+    ['seller_lead', 'mandate_signed', 'active'].includes(status)) return 'active'
+  return status
+}
+
+export function diffListingPublicationSnapshots(current = {}, published = {}, { channel = '' } = {}) {
   return SNAPSHOT_FIELDS.flatMap(([key, label, group]) => {
     const media = ['coverImage', 'gallery', 'floorplans'].includes(key)
     const area = ['erfSize', 'floorSize'].includes(key)
@@ -174,7 +184,9 @@ export function diffListingPublicationSnapshots(current = {}, published = {}) {
       (!text(current[`${key}Unit`]) || !text(published[`${key}Unit`]))) return []
     const normalize = (snapshot) => media
       ? comparable(Array.isArray(snapshot[key]) ? snapshot[key].map(mediaIdentity) : mediaIdentity(snapshot[key] || ''))
-      : area ? areaComparable(snapshot, key) : comparable(snapshot[key])
+      : area ? areaComparable(snapshot, key)
+      : key === 'listingStatus' ? publicationStatusComparable(snapshot[key], channel)
+      : comparable(snapshot[key])
     if (normalize(current) === normalize(published)) return []
     const previousItems = media ? mediaNames(published[key]) : undefined
     const currentItems = media ? mediaNames(current[key]) : undefined
@@ -252,7 +264,7 @@ export function deriveListingPublicationStates(activityRows = [], currentSnapsho
     state.changes = ['withdrawn', 'withdrawal_failed'].includes(state.stage)
       ? []
       : state.publishedSnapshot
-      ? diffListingPublicationSnapshots(currentSnapshot, state.publishedSnapshot)
+      ? diffListingPublicationSnapshots(currentSnapshot, state.publishedSnapshot, { channel: state.key })
       : []
     state.changeCount = state.changes.length
   }

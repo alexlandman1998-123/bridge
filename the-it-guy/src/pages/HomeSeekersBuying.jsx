@@ -23,7 +23,6 @@ const navigation = [
   ["Selling", "selling"],
   ["Buying", "buying"],
   ["Renting", "renting"],
-  ["Areas", "areas"],
   ["About", "about"],
   ["Join us", "join"],
 ];
@@ -66,7 +65,7 @@ function PropertyCard({ listing, featured }) {
             </span>
           )}
         </div>
-        <a href={`/demo/homeseekers/buying/${listing.id}`}>
+        <a href={`/demo/homeseekers/properties/${listing.id}`}>
           View property <ArrowUpRight size={17} />
         </a>
       </div>
@@ -305,7 +304,7 @@ export default function HomeSeekersBuying() {
             Some of the best homes never spend long on the market. Tell us what
             you are looking for and we will keep an eye out.
           </p>
-          <HomeSeekersLeadForm subject="Property search" buttonLabel="Start a property search" />
+          <HomeSeekersLeadForm leadIntent="buy" subject="Property search" buttonLabel="Start a property search" />
         </div>
       </section>
 

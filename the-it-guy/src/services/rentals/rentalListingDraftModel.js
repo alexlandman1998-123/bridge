@@ -1,4 +1,5 @@
 import { captureRentalPortalFacts, validateRentalPortalFacts } from './rentalPortalFieldContract.js'
+import { isRentalMediaLink } from './rentalListingMediaModel.js'
 
 export const RENTAL_LISTING_CAPTURE_VERSION = 'arch9_rental_listing_capture_v1'
 
@@ -127,6 +128,8 @@ export const RENTAL_LISTING_INITIAL_FORM = Object.freeze({
   description: '',
   selectedFeatures: [],
   amenities: [],
+  videoLink: '',
+  virtualTourLink: '',
   galleryImages: [],
   coverImageId: '',
   internalNotes: '',
@@ -342,6 +345,9 @@ export function validateRentalListingDraftForm(form = {}, context = {}) {
   if (normalizeRentalDepositPolicy(form.depositPolicy) === 'not_captured') errors.push('Choose whether a deposit is required.')
   if (!normalizeText(form.availableFrom) && !normalizeText(form.occupationDate)) errors.push('Available from or occupation date is required.')
   if (!normalizeText(form.description)) errors.push('Public rental description is required.')
+  for (const [field, label] of [['videoLink', 'Video link'], ['virtualTourLink', 'Virtual tour link']]) {
+    if (normalizeText(form[field]) && !isRentalMediaLink(form[field])) errors.push(`${label} must be a valid HTTP or HTTPS URL.`)
+  }
   errors.push(...validateRentalPortalFacts(form))
   return errors
 }
@@ -376,6 +382,10 @@ export function buildRentalCanonicalFacts(form = {}) {
   }
 
   return {
+    ...(Object.hasOwn(form, 'videoLink') || Object.hasOwn(form, 'virtualTourLink') ? { marketingMedia: {
+      ...(Object.hasOwn(form, 'videoLink') ? { videoLink: normalizeText(form.videoLink) } : {}),
+      ...(Object.hasOwn(form, 'virtualTourLink') ? { virtualTourLink: normalizeText(form.virtualTourLink) } : {}),
+    } } : {}),
     captureVersion: RENTAL_LISTING_CAPTURE_VERSION,
     rentalPortalFacts: captureRentalPortalFacts(form),
     listingType: 'Rental',
@@ -454,6 +464,7 @@ export function buildRentalCanonicalFacts(form = {}) {
       mandateStatus: normalizeText(form.mandateStatus) || 'not_started',
       mandateStartDate: normalizeText(form.mandateStartDate),
       mandateEndDate: normalizeText(form.mandateEndDate),
+      property24ExpiryDate: normalizeText(form.property24ExpiryDate),
       marketingApprovalStatus: normalizeText(form.marketingApprovalStatus) || 'draft',
     },
     distribution: {
@@ -588,6 +599,8 @@ export function buildRentalPrivateListingPayload(form = {}, context = {}) {
   const title = buildRentalListingTitle(form)
   const notes = buildRentalListingNotes(form)
   const canonicalFacts = buildRentalCanonicalFacts(form)
+  if (context.canonicalPropertyId) canonicalFacts.propertyId = context.canonicalPropertyId
+  if (context.canonicalUnitId) canonicalFacts.unitId = context.canonicalUnitId
   return {
     organisationId: normalizeText(context.organisationId),
     branchId: normalizeText(context.branchId),

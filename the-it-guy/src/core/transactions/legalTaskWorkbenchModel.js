@@ -1,5 +1,6 @@
 import { buildLegalWorkflowOperationalHealthModel } from './legalWorkflowOperationalHealthModel.js'
 import { documentBelongsToParty, ficaDocumentAppliesToParty } from './stageTwoPartyEvidence.js'
+import { AGREEMENT_CONDITION_REGISTER, SECURITY_ACCOUNT_REGISTER, SETTLEMENT_REGISTER, COMMUNICATION_REGISTER } from '../../services/attorneyWorkflow/conveyancingReviewPolicy.js'
 
 const WORK_ACTION_PRIORITY = Object.freeze([
   'request_document',
@@ -184,7 +185,7 @@ function matchConfirmationRequirement(confirmation, requirement) {
 function buildConfirmationRows({ confirmations, requirements, actions, documents, workActions }) {
   const assigned = new Set()
   const rows = confirmations.map(confirmation => {
-    const requirement = requirements.find(item => !assigned.has(item.id) && matchConfirmationRequirement(confirmation, item))
+    const requirement = confirmation.register || confirmation.id.startsWith('rmcp_review:') ? null : requirements.find(item => !assigned.has(item.id) && matchConfirmationRequirement(confirmation, item))
     if (requirement) assigned.add(requirement.id)
     return { ...confirmation, allowNote: true, requirement }
   })
@@ -476,8 +477,8 @@ export function buildLegalTaskWorkbenchModel({
       if (!isOtpRequirement(requirement)) return [requirement.id, requirementActions[requirement.id]]
       return [requirement.id, {
         id: 'review_document',
-        label: 'Review OTP',
-        description: 'Review the OTP in this workspace.',
+        label: 'View instruction source',
+        description: 'Check that the instruction source is available or requested; substantive agreement review follows in the OTP task.',
         requirementId: requirement.id,
         requirementLabel: 'Signed OTP / sale agreement',
         requirement: { ...requirement, label: 'Signed OTP / sale agreement' },
@@ -504,12 +505,13 @@ export function buildLegalTaskWorkbenchModel({
   const stageOneConfirmations = transferInstructionTask
     ? [
         { id: 'transfer_instruction_received', label: 'Transfer instruction received from the instructing party.', answers: ['yes', 'no'], allowNote: false },
-        { id: 'otp_received_and_reviewed', label: 'Received and reviewed OTP.', answers: ['yes', 'no'], allowNote: false },
+        { id: 'otp_received_and_reviewed', label: 'Source agreement received or requested. Substantive review follows in the OTP task.', answers: ['yes', 'no'], allowNote: true },
       ]
     : transferOtpSourceTask
       ? [
           { id: 'otp_or_sale_agreement_reviewed', label: 'OTP or sale agreement reviewed.', answers: ['yes', 'no'], allowNote: false },
           { id: 'source_details_checked', label: 'Parties, property, price, and suspensive conditions checked.', answers: ['yes', 'no'], allowNote: false },
+          { id: 'agreement_conditions_review', label: 'Applicable agreement conditions and payment dates reviewed against the current agreement.', answers: ['yes', 'no', 'not_applicable'], allowNote: true, register: AGREEMENT_CONDITION_REGISTER },
         ]
       : transferTitleDeedTask
         ? [
@@ -522,7 +524,7 @@ export function buildLegalTaskWorkbenchModel({
               { id: 'cancellation_lane_required', label: 'Cancellation lane is required or explicitly not required.', answers: ['yes', 'no', 'not_applicable'], allowNote: false },
             ]
           : transferFicaReviewTask && stageTwoParties.length
-            ? []
+            ? stageTwoParties.map(party => ({ id: `rmcp_review:${party.partyId}`, label: `${party.partyName || party.partyId}: firm RMCP risk, sanctions and prominent-person screening reviewed; enhanced review recorded where required. Use an internal evidence reference.`, answers: ['yes', 'no'], allowNote: true }))
           : transferFicaReviewTask
             ? [{
                 id: `${task.key}_documents_checked`,
@@ -556,7 +558,7 @@ export function buildLegalTaskWorkbenchModel({
                     : task.key === 'in_prep'
                       ? 'Deeds Office prep status has been confirmed.'
                       : 'Transfer registration has been confirmed and registration evidence reviewed.',
-                answers: ['yes', 'no', 'not_applicable'],
+                answers: ['yes', 'no'],
                 allowNote: false,
               }]
           : transferPostRegistrationTask
@@ -569,7 +571,7 @@ export function buildLegalTaskWorkbenchModel({
                   label: 'Matter closure is confirmed and the file is ready to be archived.',
                   answers: ['yes', 'no'],
                   allowNote: true,
-                }]
+                }, { id: 'registration_communication_review', label: 'Registration communication recorded for all appropriate recipients.', answers: ['yes', 'no'], allowNote: true, register: COMMUNICATION_REGISTER }]
           : confirmationRequirements
   const confirmationRows = buildConfirmationRows({
     confirmations: stageOneConfirmations,
@@ -578,6 +580,9 @@ export function buildLegalTaskWorkbenchModel({
     documents: taskContext.relatedDocuments || [],
     workActions: normalizedWorkActions,
   })
+  if (task.key === 'seller_cancellation_documents_signed') confirmationRows.push({ id: 'seller_signature_applicability', label: 'Does the lender instruction or reviewed instrument require seller signatures? Record the basis for Yes or No.', answers: ['yes', 'no'], allowNote: true })
+  if (task.key === 'cancellation_guarantee_allocation_review') confirmationRows.push({ id: 'registered_securities_review', label: 'All registered bonds and linked settlement accounts are recorded and reconciled.', answers: ['yes', 'no'], allowNote: true, register: SECURITY_ACCOUNT_REGISTER })
+  if (task.key === 'settlement_proof_captured') confirmationRows.push({ id: 'security_settlement_review', label: 'Each security account has registration and settlement evidence.', answers: ['yes', 'no'], allowNote: true, register: SETTLEMENT_REGISTER })
   if (!confirmationRows.length) confirmationRows.push({
     id: `task:${task.key}`,
     label: `${task.label || 'Task'} reviewed`,

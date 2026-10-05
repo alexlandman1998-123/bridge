@@ -1,3 +1,4 @@
+import { isNaturalParty } from '../transactions/transactionPartyProfile.js'
 import checklist from '../../../config/document-request-phase1-legal-checklist.json' with { type: 'json' }
 
 export const DOCUMENT_REQUEST_CANONICAL_MATRIX_VERSION = 'document_request_canonical_matrix_v1'
@@ -242,13 +243,26 @@ function propertyScenarioTokens(input = {}) {
 }
 
 export function buildCanonicalDocumentRequestScenarioTokens(input = {}) {
+  const partyTokens = (side) => {
+    const profile = input.transactionParties?.[side]
+    const resolve = side === 'buyer' ? buyerScenarioTokens : sellerScenarioTokens
+    if (!profile) return resolve(input)
+    if (!profile.entityType || profile.entityType === 'unknown' || profile.entityType === 'other') return []
+    const type = { close_corporation: 'company', foreign_company: 'company', foreign_trust: 'trust', multiple_owners: 'individual', foreign_individual: side === 'buyer' ? 'foreign_purchaser' : 'individual' }[profile.entityType] || profile.entityType
+    const scenario = (regime = '') => resolve({ [`${side}EntityType`]: type, [`${side}MaritalRegime`]: regime })
+    if (!isNaturalParty(profile.entityType)) return scenario()
+    return [
+      ...scenario(),
+      ...(profile.people || []).filter((person) => person.isOwner && person.maritalStatus === 'married').flatMap((person) => scenario(person.maritalRegime === 'out_of_community_with_accrual' ? 'out_of_community' : person.maritalRegime)),
+    ]
+  }
   const tokens = [
     'transaction',
     'buyer',
     'seller',
     'property',
-    ...buyerScenarioTokens(input),
-    ...sellerScenarioTokens(input),
+    ...partyTokens('buyer'),
+    ...partyTokens('seller'),
     ...financeScenarioTokens(input),
     ...propertyScenarioTokens(input),
   ]

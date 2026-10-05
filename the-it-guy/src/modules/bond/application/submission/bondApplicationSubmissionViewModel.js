@@ -100,8 +100,8 @@ export function buildBondApplicationReviewSections({
       status: statusFor('accounts_assets'),
       summary: [
         countLabel((primary.bankAccounts || []).length, 'bank account'),
-        countLabel((primary.debts || []).length, 'debt'),
-        countLabel((primary.existingProperties || []).length, 'property', 'properties'),
+        countLabel(primary.credit?.has_debts === 'no' ? 0 : (primary.debts || []).length, 'debt'),
+        countLabel(primary.credit?.owns_property === 'no' ? 0 : (primary.existingProperties || []).length, 'property', 'properties'),
         calculateAssetTotal(applicationState) ? `Assets ${calculateAssetTotal(applicationState)}` : '',
         calculateLiabilityTotal(applicationState) ? `Liabilities ${calculateLiabilityTotal(applicationState)}` : '',
       ].filter(Boolean),

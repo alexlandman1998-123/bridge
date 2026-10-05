@@ -1,20 +1,18 @@
+import { calendarOperationalStatus } from '../../../core/appointments/attorneyCalendarModel.js'
+
 function normalizeAppointmentStatus(value = '') {
-  const normalized = String(value || '').trim().toLowerCase().replace(/\s+/g, '_')
-  if (['pending', 'proposed', 'awaiting_confirmation', 'confirmed', 'completed', 'cancelled', 'declined', 'reschedule_requested'].includes(normalized)) {
-    return normalized
-  }
-  if (normalized === 'pending_confirmation') return 'awaiting_confirmation'
-  if (normalized === 'needs_reschedule') return 'reschedule_requested'
-  return 'pending'
+  if (String(value).trim().toLowerCase() === 'proposed') return 'proposed'
+  return calendarOperationalStatus({ status: value })
 }
 
 function getAppointmentStatusLabel(status) {
-  if (status === 'awaiting_confirmation') return 'Awaiting Your Confirmation'
+  if (status === 'awaiting_confirmation') return 'Awaiting Confirmation'
   if (status === 'reschedule_requested') return 'Reschedule Requested'
   if (status === 'confirmed') return 'Confirmed'
   if (status === 'completed') return 'Completed'
   if (status === 'cancelled') return 'Cancelled'
   if (status === 'declined') return 'Declined'
+  if (status === 'no_show') return 'No-show'
   if (status === 'proposed') return 'Proposed'
   return 'Pending'
 }

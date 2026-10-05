@@ -26,7 +26,7 @@ function removeStorage(storage, key) {
 
 export function isPartnerInviteReturnPath(path = '') {
   const safePath = String(path || '').trim()
-  return safePath.startsWith('/partners/invite/') || safePath.startsWith('/developer/partner-invite/')
+  return /^\/(?:partners\/invite|developer\/partner-invite|transaction-invite)\/[^/?#]+(?:[?#].*)?$/.test(safePath)
 }
 
 export function rememberPendingPartnerInvitePath(path = '') {
@@ -38,7 +38,15 @@ export function rememberPendingPartnerInvitePath(path = '') {
   return safePath
 }
 
-export function readPendingPartnerInvitePath() {
+export function getPartnerHandoffPathFromIntent(intent = null) {
+  if (!intent || intent.source !== 'invite_link' || !['create_workspace', 'join_or_request_workspace'].includes(intent.workspace_action)) return ''
+  const token = String(intent.invite_token || '').trim()
+  return token ? `/transaction-invite/${encodeURIComponent(token)}` : ''
+}
+
+export function readPendingPartnerInvitePath(intent = null) {
+  const savedPath = getPartnerHandoffPathFromIntent(intent)
+  if (savedPath) return savedPath
   if (typeof window === 'undefined') return ''
   const path =
     readStorage(window.sessionStorage, PENDING_PARTNER_INVITE_PATH_STORAGE_KEY) ||

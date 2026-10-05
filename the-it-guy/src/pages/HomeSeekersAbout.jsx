@@ -10,7 +10,6 @@ const nav = [
   ["Selling", "selling"],
   ["Buying", "buying"],
   ["Renting", "renting"],
-  ["Areas", "areas"],
   ["About", "about"],
   ["Join us", "join"],
 ];
@@ -229,8 +228,8 @@ export default function HomeSeekersAbout() {
             with a genuine understanding of what makes an address feel like
             home.
           </p>
-          <a href="/demo/homeseekers/areas">
-            Explore our local atlas <ArrowRight size={18} />
+          <a href="/demo/homeseekers/contact">
+            Talk to our local team <ArrowRight size={18} />
           </a>
         </div>
         <aside>

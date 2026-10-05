@@ -1,3 +1,7 @@
+import { appointmentStartIso, calendarOperationalStatus, sastDateKey, sastParts } from '../core/appointments/attorneyCalendarModel.js'
+import ConnectedBuyerBondApplication from '../modules/bond/application/workspace/ConnectedBuyerBondApplication.jsx'
+import { fetchBuyerBondApplicationRuntime, saveBuyerBondApplicationRuntimeDraft } from '../lib/clientPortalApi.js'
+import BondApplicationTaskWorkspace from '../modules/bond/application/workspace/BondApplicationTaskWorkspace.jsx'
 import ClientDocumentUploadButton from '../components/client-portal/documents/ClientDocumentUploadButton'
 import SellerChecklistSummary from '../components/client-portal/documents/SellerChecklistSummary.jsx'
 import { sellerContactEmail } from '../core/clientPortal/sellerContactDetails.js'
@@ -118,12 +122,14 @@ import {
 import { buildBuyerJourneyPresentationModel } from '../core/clientPortal/buyerJourneyPresentationModel'
 import { buildTransactionJourneyPresentation } from '../core/transactions/transactionJourneyPresentation'
 import { buildDeveloperTransactionOperationsSummary } from '../core/transactions/developerTransactionOperationsProfile'
+import { isBondStatementHandoff } from '../modules/bond/application/documents/bondDocumentWorkspacePresentation.js'
 import { BUYER_DOCUMENT_CATEGORIES, buildBuyerDocumentPresentationModel, resolveBuyerDocumentCategory } from '../core/clientPortal/buyerDocumentPresentationModel'
 import { buildBuyerFinancePresentationModel } from '../core/clientPortal/buyerFinancePresentationModel'
 import { buildBuyerTeamPresentationModel } from '../core/clientPortal/buyerTeamPresentationModel'
 import { buildBuyerPortalCutoverReadiness } from '../core/clientPortal/buyerPortalCutoverReadiness'
 import { resolveSellerPortalWorkflowProjection } from '../core/clientPortal/sellerPortalWorkflowProjection'
 import { resolveSellerPortalSyncPolicy } from '../core/clientPortal/sellerPortalSyncPolicy'
+import { getSellerPortalSignedUploadReference } from '../core/documents/sellerPhysicalSigningCopy'
 import { getSystemBanks } from '../services/bondOriginatorBankService'
 import {
   createClientPortalDocumentSignedUrl,
@@ -1542,12 +1548,6 @@ const PORTAL_DESIGN_TOKENS = {
     link: 'inline-flex items-center gap-2 text-sm font-semibold text-[#0f65b7] transition hover:text-[#084d8e]',
   },
 }
-
-const BOND_APPLICATION_TABS = [
-  { key: 'application', label: 'Application' },
-  { key: 'offers', label: 'Offers' },
-  { key: 'grant', label: 'Grant' },
-]
 
 const BOND_APPLICATION_SECTION_TABS = [
   { key: 'summary', label: 'Application Summary' },
@@ -3520,18 +3520,18 @@ function formatBuyerMobileAppointmentDate(value, fallback = 'Date TBC') {
   if (!value) return fallback
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return fallback
-  return date.toLocaleDateString('en-ZA', { weekday: 'short', day: '2-digit', month: 'short' })
+  return date.toLocaleDateString('en-ZA', { timeZone: 'Africa/Johannesburg', weekday: 'short', day: '2-digit', month: 'short' })
 }
 
 function formatBuyerMobileAppointmentTime(value, fallback = 'Time TBC') {
   if (!value) return fallback
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return fallback
-  return date.toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' })
+  return date.toLocaleTimeString('en-ZA', { timeZone: 'Africa/Johannesburg', hour: '2-digit', minute: '2-digit' })
 }
 
 function getBuyerMobileAppointmentStatusMeta(status) {
-  const normalized = normalizePortalStatus(status)
+  const normalized = calendarOperationalStatus({ status })
   if (['confirmed', 'accepted'].includes(normalized)) {
     return { label: 'Confirmed', tone: 'border-[#cfe4d8] bg-[#eef9f2] text-[#2f7a51]' }
   }
@@ -3554,9 +3554,12 @@ function buildBuyerMobileAppointmentItems(appointments = []) {
   return (Array.isArray(appointments) ? appointments : [])
     .filter((appointment) => String(appointment?.visibility || appointment?.visibility_scope || '').trim().toLowerCase() !== 'internal_only')
     .map((appointment, index) => {
-      const dateTime = appointment?.dateTime || appointment?.date_time || appointment?.startTime || appointment?.start_time || ''
-      const normalizedStatus = normalizePortalStatus(appointment?.status)
+      const dateTime = appointmentStartIso(appointment) || ''
+      const normalizedStatus = calendarOperationalStatus(appointment)
       const participants = Array.isArray(appointment?.participants) ? appointment.participants : []
+      const ownParticipant = participants.find(participant => String(participant?.participantRole || participant?.participant_role || '').toLowerCase() === 'buyer')
+        || (participants.filter(participant => String(participant?.participantRole || participant?.participant_role || '').toLowerCase() === 'client').length === 1
+          ? participants.find(participant => String(participant?.participantRole || participant?.participant_role || '').toLowerCase() === 'client') : null)
       const teamParticipant = participants.find((participant) => {
         const role = String(participant?.participantRole || participant?.role || '').trim().toLowerCase()
         return role.includes('agent') || role.includes('attorney') || role.includes('bond') || role.includes('developer')
@@ -3572,7 +3575,8 @@ function buildBuyerMobileAppointmentItems(appointments = []) {
         description: appointment?.description || appointment?.instructions || 'Your team will confirm the purpose and any documents needed.',
         teamLabel: teamParticipant?.displayName || teamParticipant?.name || appointment?.assignedToName || appointment?.assigned_to_name || 'Transaction team',
         normalizedStatus,
-        canRespond: ['pending', 'proposed', 'awaiting_confirmation'].includes(normalizedStatus),
+        canRespond: ['pending', 'proposed', 'awaiting_confirmation'].includes(normalizedStatus)
+          && String(ownParticipant?.rsvpStatus || ownParticipant?.rsvp_status || '').toLowerCase() !== 'accepted',
       }
     })
     .sort((left, right) => {
@@ -4182,7 +4186,7 @@ function BuyerMobilePortal({
   function openBuyerAppointmentReschedule(appointment) {
     const initialDate = appointment?.dateTime ? new Date(appointment.dateTime) : null
     const localDate = initialDate && !Number.isNaN(initialDate.getTime())
-      ? new Date(initialDate.getTime() - initialDate.getTimezoneOffset() * 60000).toISOString().slice(0, 16)
+      ? `${sastDateKey(initialDate)}T${String(sastParts(initialDate).hour).padStart(2,'0')}:${String(sastParts(initialDate).minute).padStart(2,'0')}`
       : ''
     setSelectedBuyerAppointment(appointment)
     setBuyerAppointmentRescheduleDraft({
@@ -7688,7 +7692,7 @@ function ClientPortal() {
   const [activeBondApplicationTab, setActiveBondApplicationTab] = useState('application')
   const [activeBondApplicationSectionTab, setActiveBondApplicationSectionTab] = useState('summary')
   const [activeBondApplicantKey, setActiveBondApplicantKey] = useState('primary')
-  const [showBondApplicationWorkspace, setShowBondApplicationWorkspace] = useState(false)
+  const [showBondApplicationWorkspace, setShowBondApplicationWorkspace] = useState(true)
   const [guidedBondApplicationSuppressed, setGuidedBondApplicationSuppressed] = useState(false)
   const [bondApplicationConfirmedSectionKeys, setBondApplicationConfirmedSectionKeys] = useState([])
   const [bondApplicationExpandedSectionKeys, setBondApplicationExpandedSectionKeys] = useState([])
@@ -7705,6 +7709,7 @@ function ClientPortal() {
   const [showAdvancedDocuments, setShowAdvancedDocuments] = useState(false)
   const [openingDocumentPath, setOpeningDocumentPath] = useState('')
   const [appointmentActionPending, setAppointmentActionPending] = useState('')
+  const appointmentResponseCommandsRef = useRef(new Map())
   const [appointmentFeedback, setAppointmentFeedback] = useState('')
   const notificationsRef = useRef(null)
   const reservationProofInputRef = useRef(null)
@@ -7779,6 +7784,16 @@ function ClientPortal() {
   )
   const isSellerPortalToken = useMemo(() => String(token || '').trim().toLowerCase().startsWith('seller-'), [token])
   const isDemoMode = isDemoRoute || Boolean(workspaceData?.permissions?.demoOnly)
+  const bondRuntimeRevision = useRef(null)
+  useEffect(() => {
+    bondRuntimeRevision.current = null
+    if (!location.pathname.endsWith('/bond-application') || isDemoMode) return undefined
+    let active = true
+    void fetchBuyerBondApplicationRuntime({ token }).then((result) => {
+      if (active) bondRuntimeRevision.current = result.application.revision
+    }).catch(() => { if (active) bondRuntimeRevision.current = null })
+    return () => { active = false }
+  }, [location.pathname, isDemoMode, token])
   const sellerListingSyncId = pickFirstText(
     workspaceData?.listing?.id,
     workspaceData?.property?.id,
@@ -8667,16 +8682,15 @@ function ClientPortal() {
         return
       }
 
-      const { draftToPersist, formData: nextFormData } = buildLegacyBondApplicationPersistencePayload({
+      const { draftToPersist, formData: _nextFormData } = buildLegacyBondApplicationPersistencePayload({
         existingFormData: portal?.onboardingFormData?.formData || {},
         legacyBondApplication: draftWithConfirmationMetadata,
         submitted,
       })
 
-      await saveClientPortalOnboardingDraft({
-        token,
-        formData: nextFormData,
-      })
+      if (bondRuntimeRevision.current === null) throw new Error('The application is not ready for saving. Reload it and try again.')
+      const saved = await saveBuyerBondApplicationRuntimeDraft({ token, draft: draftToPersist, expectedRevision: bondRuntimeRevision.current })
+      bondRuntimeRevision.current = saved.revision
 
       setBondApplicationDraft(draftToPersist)
       setBondApplicationDirty(false)
@@ -8697,14 +8711,6 @@ function ClientPortal() {
     setActiveBondApplicationSectionTab(nextSectionKey)
   }
 
-  async function handleBondApplicationTabChange(nextTabKey) {
-    if (nextTabKey === activeBondApplicationTab) return
-    if (bondApplicationDirty && activeBondApplicationTab === 'application') {
-      await persistBondApplicationDraft()
-    }
-    setActiveBondApplicationTab(nextTabKey)
-  }
-
   function handleGuidedBondApplicationSaveAndExit() {
     navigate(getPortalWorkspacePath(token, workspaceNavigationScope, 'overview'))
   }
@@ -8722,14 +8728,24 @@ function ClientPortal() {
 
   async function handleGuidedBondApplicationDocumentReconciliation({ requirements = [], fingerprint = '' } = {}) {
     if (isDemoMode) {
-      const rows = Array.isArray(requirements) ? requirements : []
-      setPortal((previous) => previous ? { ...previous, requiredDocuments: rows } : previous)
+      const rows = (Array.isArray(requirements) ? requirements : []).map(requirement => ({
+        ...requirement,
+        document_key: requirement.key,
+        document_label: requirement.title,
+        description: requirement.description,
+        group_key: 'bond_application_documents',
+        is_required: requirement.required !== false,
+        required_from_role: 'buyer',
+        status: 'missing',
+      }))
+      const mergeRows = existing => [...(existing || []).filter(row => !rows.some(item => item.document_key === (row.document_key || row.key))), ...rows]
+      setPortal((previous) => previous ? { ...previous, requiredDocuments: mergeRows(previous.requiredDocuments) } : previous)
       setWorkspaceData((previous) => previous?.documentCenter
         ? {
             ...previous,
             documentCenter: {
               ...previous.documentCenter,
-              requiredDocuments: rows,
+              requiredDocuments: mergeRows(previous.documentCenter.requiredDocuments),
             },
           }
         : previous)
@@ -8830,13 +8846,12 @@ function ClientPortal() {
       return
     }
 
-    await persistBondApplicationDraft(
-      {
-        ...bondApplicationDraft,
-        status: 'Submitted',
-      },
-      { submitted: true },
-    )
+    if (isDemoMode) {
+      setError('This preview does not send a real application. Use the secure buyer application link supplied by your finance team.')
+      return
+    }
+    await persistBondApplicationDraft(bondApplicationDraft)
+    navigate(`/client/${encodeURIComponent(token)}/bond-application`)
   }
 
   async function handleAcceptBondOffer(offer) {
@@ -9170,6 +9185,9 @@ function ClientPortal() {
   }
 
   async function handleUploadRequiredDocument(documentKey, file, options = {}) {
+    if (effectiveWorkspace !== 'seller' && isBondStatementHandoff({ key: documentKey, canonicalDocumentType: options.documentType })) {
+      return { ok: false, error: 'Use the secure bank-statement handoff in Bond Application. Your consultant’s connection is not set up yet.' }
+    }
     if (!file) {
       return { ok: false, error: 'Choose a file to upload.' }
     }
@@ -9227,6 +9245,7 @@ function ClientPortal() {
             documentRequestId: options.documentRequestId || null,
             category: options.category || 'Seller Document',
             documentType: options.documentType || documentKey,
+            ...(await getSellerPortalSignedUploadReference(sellerOnboardingFormData, requiredDocumentKey)),
           })
         : await uploadClientPortalDocument({
             token,
@@ -9367,6 +9386,7 @@ function ClientPortal() {
 
     const normalizedAction = String(action || '').trim().toLowerCase()
     const pendingKey = `${appointmentId}:${normalizedAction}`
+    const responseScope = portalLoadScopeRef.current
     try {
       setError('')
       setAppointmentFeedback('')
@@ -9415,28 +9435,40 @@ function ClientPortal() {
         )
         return
       }
+      const expectedStart = appointmentStartIso(appointment)
+      const requestKey = JSON.stringify([token, appointmentId, normalizedAction, expectedStart, options?.preferredDateTime, options?.notes])
+      if (!appointmentResponseCommandsRef.current.has(requestKey)) appointmentResponseCommandsRef.current.set(requestKey, crypto.randomUUID())
       const response = await respondToClientPortalAppointment({
-        token,
-        appointmentId,
-        action: normalizedAction,
-        clientRole: effectiveWorkspace === 'seller' ? 'seller' : 'buyer',
+        token, appointmentId, action: normalizedAction, expectedStart,
+        sellerPortalAccessToken,
+        commandId: appointmentResponseCommandsRef.current.get(requestKey),
         preferredDateTime: options?.preferredDateTime || null,
         notes: options?.notes || '',
       })
+      appointmentResponseCommandsRef.current.delete(requestKey)
+      if (portalLoadScopeRef.current !== responseScope) return
+      if (!response.replayed && !response.refreshOnly) {
+        const merge = items => Array.isArray(items) ? items.map(item =>
+          String(item.appointmentId || item.appointment_id || item.id) === appointmentId ? { ...item, status: response.status,
+            participants: (item.participants || []).map(participant => String(participant.participantId || participant.participant_id) === response.participantId
+              ? { ...participant, rsvpStatus: response.rsvpStatus } : participant) } : item) : items
+        setPortal(previous => previous ? { ...previous, appointments: merge(previous.appointments) } : previous)
+        setWorkspaceData(previous => previous ? { ...previous, appointments: merge(previous.appointments) } : previous)
+      }
       setAppointmentFeedback(
         normalizedAction === 'confirm'
-          ? 'Appointment confirmed. Your team has been updated.'
+          ? (String(response.status).toLowerCase() === 'confirmed' ? 'Appointment confirmed. Your team has been updated.' : 'Your attendance is confirmed. Awaiting the other required attendees.')
           : normalizedAction === 'decline'
             ? 'Appointment declined. Your team has been updated.'
             : (Array.isArray(response?.suggestedSlots) && response.suggestedSlots.length
                 ? `Reschedule request sent. ${response.suggestedSlots.length} alternative slots were shared with your team.`
                 : 'Reschedule request sent. The team will confirm a new time shortly.'),
       )
-      await loadPortal({ background: true })
+      void loadPortal({ background: true }).catch(() => {})
     } catch (responseError) {
-      setError(responseError?.message || 'Unable to update appointment response right now.')
+      if (portalLoadScopeRef.current === responseScope) setError(responseError?.message || 'Unable to update appointment response right now.')
     } finally {
-      setAppointmentActionPending('')
+      setAppointmentActionPending(previous => previous === pendingKey ? '' : previous)
     }
   }
 
@@ -10514,7 +10546,7 @@ function ClientPortal() {
   const bondApplicationData = bondApplicationDraft || buildBondApplicationPrefillDraft(portal).application
   const guidedBondApplicationState = buildBondApplicationState(portal)
   const guidedBondApplicationEligibility = shouldUseGuidedBondApplicationV2({
-    featureFlags: FEATURE_FLAGS,
+    featureFlags: { ...FEATURE_FLAGS, guidedBondApplicationV2: true, guided_bond_application_v2: true },
     portal,
     applicationState: guidedBondApplicationState,
     activeBondApplicationTab,
@@ -10527,7 +10559,7 @@ function ClientPortal() {
   const shouldRenderGuidedBondApplication =
     activeBondApplicationTab === 'application' &&
     !guidedBondApplicationSuppressed &&
-    guidedBondApplicationEligibility.eligible
+    (guidedBondApplicationEligibility.eligible || (!isDemoMode && !['joint', 'surety'].includes(guidedBondApplicationState.application.applicantStructure) && ['submitted', 'approved', 'under review'].includes(String(guidedBondApplicationState.meta?.status || '').toLowerCase())))
   const bondApplicationStatus = resolveBondApplicationStatus(bondApplicationData?.status)
   const bondApplicationStatusClasses =
     bondApplicationStatus === 'Submitted' || bondApplicationStatus === 'Under Review'
@@ -12622,6 +12654,41 @@ function ClientPortal() {
     )
   }
 
+  const renderGuidedApplication = () => (
+!isDemoMode && !['joint', 'surety'].includes(guidedBondApplicationState.application.applicantStructure) ? <ConnectedBuyerBondApplication
+                      key={token}
+                      token={token}
+                      onOpenDocument={handleOpenPortalDocument}
+                      onOpenDocuments={() => navigate(getPortalWorkspacePath(token, workspaceNavigationScope, 'documents'))}
+                      onBackToPortal={() => navigate(getPortalWorkspacePath(token, workspaceNavigationScope, 'overview'))}
+                      onSaveAndExit={handleGuidedBondApplicationSaveAndExit}
+                      onLegacyHandoff={handleGuidedBondApplicationHandoff}
+                      onInviteCoApplicant={handleGuidedBondApplicationInviteCoApplicant}
+                      participantModeEnabled={guidedBondApplicationParticipantFlag.enabled}
+                    /> : <GuidedBondApplication
+                      preview={isDemoMode}
+                      showHandoffNotices={!isDemoMode}
+                      portal={portal}
+                      token={token}
+                      saveClientPortalOnboardingDraft={isDemoMode ? async () => ({ ok: true, demo: true }) : saveClientPortalOnboardingDraft}
+                      requiredDocuments={portalRequiredDocuments}
+                      documents={portalDocumentLookupRows}
+                      onReconcileDocumentRequirements={handleGuidedBondApplicationDocumentReconciliation}
+                      onUploadRequiredDocument={handleUploadRequiredDocument}
+                      onRefreshDocuments={() => isDemoMode ? Promise.resolve({ requiredDocuments: portalRequiredDocuments, documents: portalDocumentLookupRows }) : loadPortal({ background: true })}
+                      onPrepareSubmission={handleGuidedBondApplicationPrepareSubmission}
+                      onRefreshSubmission={handleGuidedBondApplicationRefreshSubmission}
+                      onCancelPendingSubmission={handleGuidedBondApplicationCancelPendingSubmission}
+                      participantModeEnabled={guidedBondApplicationParticipantFlag.enabled}
+                      onInviteCoApplicant={handleGuidedBondApplicationInviteCoApplicant}
+                      onOpenDocument={handleOpenPortalDocument}
+                      onOpenDocuments={() => navigate(getPortalWorkspacePath(token, workspaceNavigationScope, 'documents'))}
+                      onBackToPortal={() => navigate(getPortalWorkspacePath(token, workspaceNavigationScope, 'overview'))}
+                      onSaveAndExit={handleGuidedBondApplicationSaveAndExit}
+                      onLegacyHandoff={handleGuidedBondApplicationHandoff}
+                    />
+  )
+
   const renderBondApplicationTaskWorkspace = () => {
     const workspace = bondApplicationUxWorkspace
     const nextAction = workspace.nextAction || {}
@@ -12649,137 +12716,12 @@ function ClientPortal() {
         void handleBondApplicationSectionChange('declarations_consents')
       }
     }
-    const getSectionStateClasses = (state, active) => {
-      if (active) return 'border-[#9fb8d1] bg-[#eef4fb] text-[#1f3449] shadow-[0_10px_22px_rgba(47,84,120,0.12)]'
-      if (state === 'buyer_confirmed') return 'border-[#c6dfcf] bg-[#f4fbf6] text-[#2f7a51]'
-      if (state === 'ready_to_confirm') return 'border-[#ead9c6] bg-[#fffaf3] text-[#8a5a22]'
-      if (state === 'needs_input') return 'border-[#f1ddd0] bg-[#fff6f0] text-[#a15b31]'
-      return 'border-[#e3ebf4] bg-white text-[#5f7086]'
-    }
-    const getSummaryToneClasses = (tone) => {
-      if (tone === 'success') return 'border-[#c6dfcf] bg-[#eef8f1] text-[#2b7a53]'
-      if (tone === 'warning') return 'border-[#ead9c6] bg-[#fffaf3] text-[#8a5a22]'
-      if (tone === 'danger') return 'border-[#f1ddd0] bg-[#fff6f0] text-[#a15b31]'
-      return 'border-[#dbe5ef] bg-white text-[#35546c]'
-    }
-
-    return (
-      <section className="space-y-4 rounded-[22px] border border-[#dbe5ef] bg-white px-4 py-4 shadow-[0_14px_34px_rgba(15,23,42,0.06)] sm:px-5" data-bond-ux-task-workspace="phase-10">
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
-          <div className="min-w-0">
-            <span className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#718196]">Guided application path</span>
-            <h4 className="mt-1 text-[1.15rem] font-semibold tracking-[-0.03em] text-[#142132]">
-              {workspace.activeSection?.label || 'Application'}
-            </h4>
-            <p className="mt-1 max-w-3xl text-sm leading-6 text-[#5f7288]">
-              Confirm what is already filled first, then complete only the details still blocking submission.
-            </p>
-          </div>
-          <div className="grid gap-2 sm:grid-cols-3 xl:grid-cols-1">
-            {workspace.summaryCards.map((card) => (
-              <article key={card.key} className={`rounded-[14px] border px-3 py-2.5 ${getSummaryToneClasses(card.tone)}`}>
-                <span className="block text-[0.64rem] font-semibold uppercase tracking-[0.1em] opacity-75">{card.label}</span>
-                <strong className="mt-1 block text-lg font-semibold tracking-[-0.03em]">{card.value}</strong>
-              </article>
-            ))}
-          </div>
-        </div>
-
-        <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(220px,320px)]">
-          <div className="rounded-[16px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-3">
-            <div className="mb-2 flex items-center justify-between gap-3 text-xs font-semibold uppercase tracking-[0.12em] text-[#718196]">
-              <span>Submission progress</span>
-              <span>{workspace.progressPercent}%</span>
-            </div>
-            <div className="h-2.5 overflow-hidden rounded-full bg-[#e4ebf3]">
-              <div
-                className="h-full rounded-full bg-[linear-gradient(90deg,#3f78b1_0%,#2f8a64_100%)] transition-all duration-300"
-                style={{ width: `${workspace.progressPercent}%` }}
-              />
-            </div>
-            <div className="mt-3 flex flex-wrap gap-1.5">
-              {workspace.blockerSections.slice(0, 4).map((section) => (
-                <button
-                  key={section.key}
-                  type="button"
-                  onClick={() => {
-                    void handleBondApplicationSectionChange(section.key)
-                  }}
-                  className="inline-flex min-h-[30px] items-center rounded-full border border-[#f1ddd0] bg-white px-2.5 py-1 text-[0.68rem] font-semibold text-[#a15b31]"
-                >
-                  {section.label}
-                </button>
-              ))}
-              {workspace.documentBlockers.length ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    void handleBondApplicationSectionChange('documents')
-                  }}
-                  className="inline-flex min-h-[30px] items-center gap-1.5 rounded-full border border-[#f1ddd0] bg-white px-2.5 py-1 text-[0.68rem] font-semibold text-[#a15b31]"
-                >
-                  <FileText size={12} />
-                  {workspace.documentBlockers.length} document{workspace.documentBlockers.length === 1 ? '' : 's'}
-                </button>
-              ) : null}
-              {!workspace.blockerCount ? (
-                <span className="inline-flex min-h-[30px] items-center rounded-full border border-[#c6dfcf] bg-white px-2.5 py-1 text-[0.68rem] font-semibold text-[#2f7a51]">
-                  No tracked blockers
-                </span>
-              ) : null}
-            </div>
-          </div>
-
-          <div className="sticky bottom-3 z-10 rounded-[16px] border border-[#cbd9e8] bg-white px-4 py-3 shadow-[0_16px_34px_rgba(15,23,42,0.14)]" data-bond-ux-next-action-bar="true">
-            <span className="block text-[0.64rem] font-semibold uppercase tracking-[0.12em] text-[#718196]">Next action</span>
-            <strong className="mt-1 block text-sm font-semibold text-[#142132]">{nextAction.label}</strong>
-            <p className="mt-1 text-xs leading-5 text-[#6b7d93]">{nextAction.detail}</p>
-            <button
-              type="button"
-              onClick={handleNextAction}
-              disabled={nextAction.disabled}
-              className="mt-3 inline-flex min-h-[40px] w-full items-center justify-center gap-2 rounded-[12px] bg-[#2f5478] px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-[#244463] disabled:cursor-not-allowed disabled:bg-[#9aa9b8]"
-            >
-              {nextAction.label}
-              <ArrowRight size={15} />
-            </button>
-          </div>
-        </div>
-
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4" data-bond-ux-section-stepper="true">
-          {workspace.sectionCards.map((section, index) => (
-            <button
-              key={section.key}
-              type="button"
-              onClick={() => {
-                void handleBondApplicationSectionChange(section.key)
-              }}
-              className={`min-h-[104px] rounded-[15px] border px-3 py-3 text-left transition hover:border-[#b9ccdf] ${getSectionStateClasses(section.state, section.active)}`}
-            >
-              <span className="flex items-start justify-between gap-3">
-                <span className="min-w-0">
-                  <span className="block text-[0.62rem] font-semibold uppercase tracking-[0.1em] opacity-70">
-                    {index + 1}. {section.group}
-                  </span>
-                  <strong className="mt-1 block text-sm font-semibold">{section.label}</strong>
-                </span>
-                {section.confirmed ? (
-                  <CheckCircle2 size={16} className="shrink-0" />
-                ) : section.state === 'needs_input' ? (
-                  <AlertTriangle size={16} className="shrink-0" />
-                ) : (
-                  <Clock3 size={16} className="shrink-0" />
-                )}
-              </span>
-              <span className="mt-2 block text-xs leading-5 opacity-80">{section.description}</span>
-              <span className="mt-2 inline-flex rounded-full bg-white/70 px-2 py-0.5 text-[0.66rem] font-semibold">
-                {section.stateLabel}
-              </span>
-            </button>
-          ))}
-        </div>
-      </section>
-    )
+    return <BondApplicationTaskWorkspace
+      workspace={workspace}
+      onNextAction={handleNextAction}
+      onSectionChange={(key) => void handleBondApplicationSectionChange(key)}
+      submitted={bondApplicationProgressPercent === 100 && bondApplicationStatus === 'Submitted'}
+    />
   }
 
   const renderBondInputField = ({
@@ -14083,24 +14025,6 @@ function ClientPortal() {
                 className="space-y-5"
                 aria-label="Bond application"
               >
-                <header className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                  <div>
-                    <span className="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Finance</span>
-                    <h1 className="mt-2 text-3xl font-semibold tracking-[-0.06em] text-[#142132]">Bond application</h1>
-                    <p className="mt-2 max-w-2xl text-base leading-6 text-[#52657b]">Complete the application and review offers here. Your finance progress is summarised once in Finance.</p>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] ${bondApplicationStatusClasses}`}>
-                      {bondApplicationStatus}
-                    </span>
-                    <Link
-                      to={getPortalWorkspacePath(token, workspaceNavigationScope, 'account')}
-                      className="inline-flex min-h-10 items-center justify-center rounded-[10px] border border-[#dbe5ef] bg-white px-3 text-xs font-semibold text-[#35546c]"
-                    >
-                      Finance overview
-                    </Link>
-                  </div>
-                </header>
                 <div className="space-y-5">
                 <header className="hidden">
                   <div className="flex flex-wrap items-start justify-between gap-4">
@@ -14237,113 +14161,27 @@ function ClientPortal() {
                         </div>
                       </aside>
                     </section>
-                  ) : (
+                  ) : shouldRenderGuidedBondApplication ? renderGuidedApplication() : (
                     <>
-                  <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-                    <article className="rounded-[18px] border border-[#dbe5ef] bg-white px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
-                      <div className="flex flex-wrap items-start justify-between gap-4">
-                        <div>
-                          <span className="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Finance status</span>
-                          <h4 className="mt-1 text-[1.2rem] font-semibold tracking-[-0.03em] text-[#142132]">
-                            {bondApplicationStatus === 'Not Started' ? 'Ready to start your bond application' : bondApplicationStatus}
-                          </h4>
-                          <p className="mt-2 max-w-3xl text-sm leading-6 text-[#5f7288]">
-                            Review the basics here. Open the application only when you need to complete or check finance details.
-                          </p>
-                        </div>
-                        <span className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] ${bondApplicationStatusClasses}`}>
-                          {bondApplicationStatus}
-                        </span>
-                      </div>
-
-                      <div className="mt-5 grid gap-3 md:grid-cols-4">
-                        {[
-                          ['Completion', `${bondApplicationProgressPercent}%`, `${missingBondApplicationSectionLabels.length} section${missingBondApplicationSectionLabels.length === 1 ? '' : 's'} need review`],
-                          ['Documents', `${bondApplicationRequiredDocuments.length}`, 'Finance requirements'],
-                          ['Offers', displayedBondOfferCards.length || 0, displayedBondOfferCards.length ? 'Published offers' : 'None yet'],
-                          ['Grant', displayedBondGrantCards.length || 0, displayedBondGrantCards.length ? 'Grant documents ready' : 'Not uploaded yet'],
-                        ].map(([label, value, detail]) => (
-                          <article key={label} className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-3">
-                            <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">{label}</span>
-                            <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{value}</strong>
-                            <p className="mt-1 text-xs leading-5 text-[#6b7d93]">{detail}</p>
-                          </article>
-                        ))}
-                      </div>
-                    </article>
-
-                    <aside className="rounded-[18px] border border-[#dbe5ef] bg-[#fbfdff] px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
-                      <span className="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Next</span>
-                      <h4 className="mt-1 text-[1.05rem] font-semibold tracking-[-0.02em] text-[#142132]">Continue when you are ready</h4>
-                      <p className="mt-2 text-sm leading-6 text-[#5f7288]">
-                        The application opens below and keeps your progress on this page.
-                      </p>
-                      <div className="mt-4 space-y-2">
-                        <button
-                          type="button"
-                          onClick={() => setShowBondApplicationWorkspace((current) => !current)}
-                          className="inline-flex w-full min-h-[40px] items-center justify-center gap-2 rounded-[12px] bg-[#123f3a] px-3 py-2 text-sm font-semibold text-white transition hover:bg-[#0b312d]"
-                        >
-                          <FileSignature size={15} />
-                          {showBondApplicationWorkspace ? 'Hide application' : 'Continue application'}
-                        </button>
-                        <Link
-                          to={getClientPortalPath(token, 'team')}
-                          className="inline-flex w-full min-h-[40px] items-center justify-center gap-2 rounded-[12px] border border-[#d1deeb] bg-white px-3 py-2 text-sm font-semibold text-[#21384d] transition hover:border-[#b9cbde] hover:bg-[#f8fbff]"
-                        >
-                          <Users size={15} />
-                          Team Contacts
-                        </Link>
-                      </div>
-                    </aside>
+                  <section className="flex flex-wrap items-center justify-between gap-4 rounded-[20px] border border-[#dbe5ef] bg-white p-5">
+                    <div className="min-w-0">
+                      <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">Your bond application</h4>
+                      <p className="mt-1 text-sm leading-6 text-[#61748a]">Complete your details, add supporting documents and review before submitting.</p>
+                      <span className="mt-2 inline-flex items-center gap-2 text-xs font-medium text-[#61748a]">
+                        <span className="h-1.5 w-1.5 rounded-full bg-[#123f3a]" />{bondApplicationStatus}
+                        {bondApplicationDirty ? ' · Unsaved changes' : ''}
+                      </span>
+                    </div>
+                    <button type="button" onClick={() => setShowBondApplicationWorkspace((current) => !current)} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#123f3a] px-5 py-2.5 text-sm font-semibold text-white sm:w-auto">
+                      <FileSignature size={16} />{showBondApplicationWorkspace ? 'Hide application' : 'Continue application'}
+                    </button>
                   </section>
 
                   {showBondApplicationWorkspace ? (
                     <>
-                  <div className="overflow-x-auto">
-                    <nav className="inline-flex min-w-full gap-2 rounded-[18px] border border-[#e2eaf3] bg-[#f8fbff] p-2">
-                    {BOND_APPLICATION_TABS.map((tab) => {
-                      const isActive = activeBondApplicationTab === tab.key
-                      return (
-                        <button
-                          key={tab.key}
-                          type="button"
-                          onClick={() => {
-                            void handleBondApplicationTabChange(tab.key)
-                          }}
-                          className={`inline-flex min-h-[44px] min-w-[150px] items-center justify-center rounded-[14px] px-4 py-2 text-sm font-semibold transition ${
-                            isActive
-                              ? 'border border-[#d1deeb] bg-white text-[#142132] shadow-[0_10px_22px_rgba(15,23,42,0.08)]'
-                              : 'border border-transparent text-[#5f7086] hover:border-[#d8e4ef] hover:bg-white hover:text-[#142132]'
-                          }`}
-                        >
-                          {tab.label}
-                        </button>
-                      )
-                    })}
-                  </nav>
-                </div>
-
                 {activeBondApplicationTab === 'application' ? (
                   shouldRenderGuidedBondApplication ? (
-                    <GuidedBondApplication
-                      portal={portal}
-                      token={token}
-                      saveClientPortalOnboardingDraft={saveClientPortalOnboardingDraft}
-                      requiredDocuments={portalRequiredDocuments}
-                      documents={portalDocumentLookupRows}
-                      onReconcileDocumentRequirements={handleGuidedBondApplicationDocumentReconciliation}
-                      onUploadRequiredDocument={handleUploadRequiredDocument}
-                      onRefreshDocuments={() => loadPortal({ background: true })}
-                      onPrepareSubmission={handleGuidedBondApplicationPrepareSubmission}
-                      onRefreshSubmission={handleGuidedBondApplicationRefreshSubmission}
-                      onCancelPendingSubmission={handleGuidedBondApplicationCancelPendingSubmission}
-                      participantModeEnabled={guidedBondApplicationParticipantFlag.enabled}
-                      onInviteCoApplicant={handleGuidedBondApplicationInviteCoApplicant}
-                      onBackToPortal={() => navigate(getPortalWorkspacePath(token, workspaceNavigationScope, 'overview'))}
-                      onSaveAndExit={handleGuidedBondApplicationSaveAndExit}
-                      onLegacyHandoff={handleGuidedBondApplicationHandoff}
-                    />
+                    renderGuidedApplication()
                   ) : (
                   <>
                   {renderBondApplicationTaskWorkspace()}
@@ -14352,7 +14190,7 @@ function ClientPortal() {
                       <div>
                         <h4 className="text-[1.04rem] font-semibold tracking-[-0.03em] text-[#142132]">Application</h4>
                         <p className="mt-1 text-sm leading-6 text-[#6b7d93]">
-                          Structured around the OOBA interview flow. Prefilled values come from onboarding and My Details.
+                          Check your saved answers and complete any missing details.
                         </p>
                       </div>
                       <button
@@ -14367,45 +14205,15 @@ function ClientPortal() {
                       </button>
                     </div>
 
-                    <div className="grid gap-5 lg:grid-cols-[260px_minmax(0,1fr)]">
-                      <aside className="rounded-[16px] border border-[#e3ebf4] bg-white p-3 lg:sticky lg:top-6 lg:h-fit">
-                        <nav className="space-y-1.5">
-                          {BOND_APPLICATION_SECTION_TABS.map((section) => {
-                            const isActive = section.key === activeBondApplicationSectionTab
-                            const status = bondApplicationSectionStatusByKey[section.key]
-                            const statusLabel = status?.isComplete ? 'Complete' : status?.hasMissing ? `${status.complete}/${status.total}` : 'Pending'
-                            return (
-                              <button
-                                key={section.key}
-                                type="button"
-                                onClick={() => {
-                                  void handleBondApplicationSectionChange(section.key)
-                                }}
-                                className={`flex w-full items-center justify-between rounded-[12px] border px-3 py-2 text-left transition ${
-                                  isActive
-                                    ? 'border-[#b9ccdf] bg-[#eef4fb] text-[#1f3449]'
-                                    : status?.isComplete
-                                      ? 'border-[#d4e8dc] bg-[#f5fbf7] text-[#2f7a51] hover:border-[#c8dfd2]'
-                                      : status?.hasMissing
-                                        ? 'border-[#ead9c6] bg-[#fffaf3] text-[#8a5a22] hover:border-[#e2c9ab]'
-                                        : 'border-[#e3ebf4] bg-white text-[#5f7086] hover:border-[#d3e0ed]'
-                                }`}
-                              >
-                                <span className="pr-3 text-sm font-semibold">{section.label}</span>
-                                <span className="text-[0.66rem] font-semibold uppercase tracking-[0.08em]">{statusLabel}</span>
-                              </button>
-                            )
-                          })}
-                        </nav>
-                      </aside>
-
+                    <div className="min-w-0">
                       <div className="space-y-4 rounded-[18px] border border-[#e3ebf4] bg-white p-4">
                         <div className="border-b border-[#e6edf5] pb-3">
                           <h5 className="text-[1.05rem] font-semibold text-[#142132]">{activeBondApplicationSectionMeta?.label}</h5>
                         </div>
 
                         {bondApplicationPrefillReview.hasMetadata && activeBondApplicationSectionTab !== 'documents' ? (
-                          <section className="rounded-[16px] bg-[#f4f8fc] px-4 py-3" data-bond-prefill-review-panel="true">
+                          <details className="rounded-[16px] bg-[#f4f8fc] px-4 py-3" data-bond-prefill-review-panel="true">
+                            <summary className="cursor-pointer text-xs font-semibold text-[#61748a]">Where your prefilled information comes from</summary>
                             <div className="flex flex-wrap items-center justify-between gap-3">
                               <div>
                                 <span className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#6f8297]">Already filled</span>
@@ -14442,7 +14250,7 @@ function ClientPortal() {
                                 </span>
                               ) : null}
                             </div>
-                          </section>
+                          </details>
                         ) : null}
 
                         {renderBondConfirmationCards(activeBondApplicationConfirmationCards)}
@@ -14849,7 +14657,7 @@ function ClientPortal() {
                                 disabled={bondApplicationSaving || bondApplicationStatus === 'Submitted' || bondApplicationStatus === 'Approved'}
                                 className="inline-flex min-h-[42px] items-center rounded-[12px] bg-[#2f5478] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#244463] disabled:cursor-not-allowed disabled:bg-[#9aa9b8]"
                               >
-                                {bondApplicationSaving ? 'Submitting...' : bondApplicationStatus === 'Submitted' ? 'Submitted' : 'Submit Application'}
+                                {bondApplicationSaving ? 'Saving…' : bondApplicationStatus === 'Submitted' ? 'Submitted' : 'Review and sign application'}
                               </button>
                             </div>
                           </div>

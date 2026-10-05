@@ -1,3 +1,4 @@
+import { appointmentStartIso } from '../core/appointments/attorneyCalendarModel.js'
 import {
   fetchClientPortalAttorneyLaneUpdatesByToken,
   fetchClientPortalOriginatorFinanceByToken,
@@ -308,9 +309,7 @@ function attachSellerMandateFinalAccess(mandatePacket = null, finalSignedAccess 
 }
 
 function mapSellerPortalAppointment(row = {}) {
-  const startsAt = row?.date_time || row?.dateTime || (
-    row?.appointment_date && row?.start_time ? `${row.appointment_date}T${row.start_time}` : null
-  )
+  const startsAt = appointmentStartIso(row)
   return {
     ...row,
     id: row?.appointment_id || row?.appointmentId || row?.id || '',

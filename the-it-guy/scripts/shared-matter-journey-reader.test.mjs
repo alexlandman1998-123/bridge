@@ -75,6 +75,13 @@ await db.exec(migration('20260926194845_reconcile_attorney_workbench_catalogue.s
 await db.exec(migration('20261002081358_reconcile_municipal_clearance_journey_copy.sql'))
 await db.exec(migration('20261002081455_reconcile_attorney_journey_task_order.sql'))
 await db.exec(migration('20261002081455_reconcile_attorney_journey_task_order.sql'))
+// Apply the current forward catalogue corrections without unrelated gate triggers.
+const reviewCatalogue = migration('20261003185915_attorney_conveyancing_review_corrections.sql')
+const reviewCatalogueStart = reviewCatalogue.indexOf('update journey_private.task_catalog')
+const reviewCatalogueEnd = reviewCatalogue.indexOf(';', reviewCatalogue.indexOf('update journey_private.task_catalog', reviewCatalogueStart + 1))
+await db.exec(reviewCatalogue.slice(reviewCatalogueStart, reviewCatalogueEnd + 1))
+const privateCatalogue = migration('20261004102741_attorney_internal_workspace_boundaries.sql')
+await db.exec(privateCatalogue.slice(privateCatalogue.indexOf('update journey_private.task_catalog'), privateCatalogue.lastIndexOf("notify pgrst")))
 // Exercise the real SQL migrations in isolated PostgreSQL with scoped permission fixtures.
 for (const [route, financeKeys] of Object.entries({ cash: ['proof_of_funds_reviewed','cash_confirmation_approved'],
   bond: ['quote_approved','instruction_sent'], hybrid: ['cash_portion_confirmed','quote_approved','instruction_sent'] })) {

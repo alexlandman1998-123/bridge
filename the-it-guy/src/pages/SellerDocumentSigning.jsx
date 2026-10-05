@@ -1,3 +1,5 @@
+import SellerMandateDetailsEditor from '../components/documents/SellerMandateDetailsEditor.jsx'
+import { prepareSellerMandateReviewPreview } from '../lib/sellerMandateReviewPreview.js'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { correctSellerDocumentInPortal, signSellerDocumentInPortal, viewSellerDocumentForSignature } from '../services/sellerPortalDocumentSigningService'
@@ -11,7 +13,7 @@ const titles = {
 const fieldLabels = {
   sellerName: 'Seller name', idNumber: 'ID or passport number', residentialAddress: 'Residential address', email: 'Contact email', phone: 'Mobile number', propertyAddress: 'Property address',
   idType: 'ID type', saResident: 'South African resident', incomeTaxNumber: 'Income tax number', maritalStatus: 'Marital status', employer: 'Employer', jobTitle: 'Job title', occupation: 'Main occupation', industryOfBusiness: 'Industry of business', countriesOfTrade: 'Countries of trade', dualUseGoods: 'Dual use goods', armsWeapons: 'Arms or weapons', actingOnBehalfOfAnother: 'Acting for another person', heirInEstate: 'Heir in an estate', sourceOfWealth: 'Source of wealth', sourceOfIncome: 'Source of income or funds', politicallyInfluentialPerson: 'Politically influential person', bankName: 'Bank name', accountName: 'Account name', accountNumber: 'Account number', accountType: 'Account type',
-  mandateType: 'Mandate type', askingPrice: 'Asking price', startDate: 'Start date', endDate: 'End date', protectionPeriod: 'Protection period', specialConditions: 'Special conditions', commissionBasis: 'Commission basis', commissionPercentage: 'Commission percentage', commissionAmount: 'Fixed commission amount', vatHandling: 'VAT handling',
+  mandateType: 'Mandate type', otherAgencyName: 'Second agency', askingPrice: 'Asking price', startDate: 'Start date', endDate: 'End date', protectionPeriod: 'Protection period', specialConditions: 'Special conditions', commissionBasis: 'Commission basis', commissionPercentage: 'Commission percentage', commissionAmount: 'Fixed commission amount', vatHandling: 'VAT handling',
   comments: 'Other disclosures or comments', remoteControlsQuantity: 'Number of remote controls',
 }
 
@@ -20,7 +22,7 @@ function EditableDetails({ document, data, onChange, onSave, saving, dirty }) {
   const update = (group, key, value) => onChange({ ...data, [group]: { ...data[group], [key]: value } })
   const inputClass = 'mt-1 w-full rounded-lg border border-[#aaa] bg-white px-3 py-3 text-base text-[#171717]'
   const choices = {
-    mandateType: [['sole', 'Exclusive'], ['open', 'Open']],
+    mandateType: [['sole', 'Sole / Exclusive'], ['open', 'Open'], ['dual', 'Dual']],
     commissionBasis: [['percentage', 'Percentage'], ['fixed', 'Fixed amount']],
     vatHandling: [['inclusive', 'VAT inclusive'], ['exclusive', 'VAT exclusive']],
     saResident: [['yes', 'Yes'], ['no', 'No'], ['unsure', 'Unsure']], dualUseGoods: [['yes', 'Yes'], ['no', 'No'], ['unsure', 'Unsure']], armsWeapons: [['yes', 'Yes'], ['no', 'No'], ['unsure', 'Unsure']], actingOnBehalfOfAnother: [['yes', 'Yes'], ['no', 'No'], ['unsure', 'Unsure']], heirInEstate: [['yes', 'Yes'], ['no', 'No'], ['unsure', 'Unsure']], politicallyInfluentialPerson: [['yes', 'Yes'], ['no', 'No'], ['unsure', 'Unsure']],
@@ -32,7 +34,7 @@ function EditableDetails({ document, data, onChange, onSave, saving, dirty }) {
   return <section className="space-y-5 rounded-xl border border-[#ddd] bg-white p-5 sm:p-7">
     <div><h2 className="text-xl font-semibold">Check and correct your details</h2><p className="mt-1 text-sm leading-6 text-[#555]">Your changes go into the document everyone signs. Shared details lock after the first signature.</p></div>
     <div className="grid gap-4 sm:grid-cols-2">{Object.entries(data.common || {}).map(([key, value]) => renderField('common', key, value))}</div>
-    {section !== 'disclosure' ? <div className="grid gap-4 border-t border-[#ddd] pt-5 sm:grid-cols-2">{Object.entries(data[section] || {}).map(([key, value]) => renderField(section, key, value))}</div> : <>
+    {section === 'mandate' ? <SellerMandateDetailsEditor value={data.mandate} allowExtendedCapture={false} captureReadOnly onChange={mandate => onChange({ ...data, mandate })} /> : section !== 'disclosure' ? <div className="grid gap-4 border-t border-[#ddd] pt-5 sm:grid-cols-2">{Object.entries(data[section] || {}).filter(([key]) => key !== 'otherAgencyName' || data.mandate?.mandateType === 'dual').map(([key, value]) => renderField(section, key, value))}</div> : <>
       <div className="space-y-4 border-t border-[#ddd] pt-5"><h3 className="font-semibold">Property disclosure questions</h3>{(data.questions || []).map((question) => {
         const response = data.disclosure?.responses?.[question.key] || { answer: '', note: '' }
         const changeResponse = (key, value) => onChange({ ...data, disclosure: { ...data.disclosure, responses: { ...data.disclosure.responses, [question.key]: { ...response, [key]: value } } } })
@@ -162,6 +164,7 @@ export default function SellerDocumentSigning() {
   const [saving, setSaving] = useState(false)
   const [complete, setComplete] = useState(false)
   const [error, setError] = useState('')
+  const [reviewReady, setReviewReady] = useState(false)
 
   useEffect(() => {
     let active = true
@@ -173,18 +176,22 @@ export default function SellerDocumentSigning() {
   }, [token])
 
   useEffect(() => () => previewObserverRef.current?.disconnect(), [])
+  useEffect(() => { setReviewReady(false); setAccepted(false); setSignature('') }, [document?.reviewedHtml])
 
   const reviewHtml = useMemo(() => mobileReviewHtml(document?.reviewedHtml || ''), [document?.reviewedHtml])
-  const resizePreview = () => {
+  const resizePreview = async () => {
     const iframe = previewRef.current
+    try { await prepareSellerMandateReviewPreview(iframe) }
+    catch { setError('The complete mandate could not be displayed. Reload before signing.'); return }
     const body = iframe?.contentDocument?.body
     if (!body) return
-    const content = body.querySelector('.document, .property-disclosure-document') || body.firstElementChild || body
+    const content = body.querySelector('.mandate-review-document, .document, .property-disclosure-document') || body.firstElementChild || body
     const updateHeight = () => { iframe.style.height = `${Math.max(400, content.getBoundingClientRect().height + 16)}px` }
     previewObserverRef.current?.disconnect()
     previewObserverRef.current = new ResizeObserver(updateHeight)
     previewObserverRef.current.observe(content)
     updateHeight()
+    setReviewReady(true)
   }
   const changeDetails = (value) => { setEditData(value); setDirty(true); setAccepted(false); setSignature('') }
   const saveDetails = async () => {
@@ -199,7 +206,7 @@ export default function SellerDocumentSigning() {
     } catch (reason) { setError(reason?.message || 'Your changes could not be saved.') }
     finally { setSaving(false) }
   }
-  const canSign = !dirty && accepted && signature && signedDate && signedPlace.trim() && name.trim().toLowerCase() === String(document?.signerName || '').trim().toLowerCase()
+  const canSign = reviewReady && !dirty && accepted && signature && signedDate && signedPlace.trim() && name.trim().toLowerCase() === String(document?.signerName || '').trim().toLowerCase()
   const submit = async (event) => {
     event.preventDefault()
     if (!document || !canSign || saving) return
@@ -220,11 +227,11 @@ export default function SellerDocumentSigning() {
     <header className="rounded-xl border border-[#ddd] bg-white p-5 sm:p-7"><p className="text-xs font-bold uppercase tracking-[0.16em] text-[#555]">Seller documents</p><h1 className="mt-2 text-2xl font-semibold">{complete ? 'Signature received' : document ? `Review and sign ${titles[document.documentKey] || 'your document'}` : 'Seller document signing'}</h1>{document ? <p className="mt-3 text-sm leading-6 text-[#555]">This private request is for {document.signerName} ({document.signerRole}). Read the reviewed information below before signing.</p> : null}</header>
     {loading ? <p role="status" className="rounded-xl bg-white p-5">Loading your reviewed document…</p> : null}
     {error ? <p role="alert" className="rounded-xl border border-[#999] bg-[#eee] p-5 text-[#171717]">{error}</p> : null}
-    {complete ? <p role="status" className="rounded-xl border border-[#ccc] bg-white p-5">Your signature was saved. Your agent will review the document after every required seller has signed.</p> : null}
-    {document ? <>{document.canEdit && editData ? <EditableDetails document={document} data={editData} onChange={changeDetails} onSave={saveDetails} saving={saving} dirty={dirty} /> : <p className="rounded-xl border border-[#ddd] bg-white p-5 text-sm text-[#555]">Shared document details are locked because a seller has signed.</p>}<section className="overflow-hidden rounded-xl border border-[#ddd] bg-white"><div className="border-b border-[#ddd] px-5 py-3 text-sm font-semibold">Current document for review</div><iframe ref={previewRef} title={titles[document.documentKey] || 'Reviewed seller document'} srcDoc={reviewHtml} sandbox="allow-same-origin" referrerPolicy="no-referrer" onLoad={resizePreview} className="min-h-[400px] w-full border-0" /></section>
+    {complete ? <p role="status" className="rounded-xl border border-[#ccc] bg-white p-5">Your signature was saved. Your agent will review the document after every required signer, including each contracting agency on a mandate, has signed.</p> : null}
+    {document ? <>{document.canEdit && editData ? <EditableDetails document={document} data={editData} onChange={changeDetails} onSave={saveDetails} saving={saving} dirty={dirty} /> : <p className="rounded-xl border border-[#ddd] bg-white p-5 text-sm text-[#555]">{document.requiresReplacementForChanges ? 'These details are frozen into the mandate. Ask your agent for a replacement copy if anything needs to change.' : 'Shared document details are locked because a signer has signed.'}</p>}<section className="overflow-hidden rounded-xl border border-[#ddd] bg-white"><div className="border-b border-[#ddd] px-5 py-3 text-sm font-semibold">Current document for review</div><iframe ref={previewRef} title={titles[document.documentKey] || 'Reviewed seller document'} srcDoc={reviewHtml} sandbox="allow-same-origin" referrerPolicy="no-referrer" onLoad={resizePreview} className="min-h-[400px] w-full border-0" /></section>
       <form onSubmit={submit} className="space-y-5 rounded-xl border border-[#ddd] bg-white p-5 sm:p-7">
         <p className="break-all text-xs text-[#666]">Document version: {document.versionDigest}</p>{dirty ? <p className="text-sm font-semibold">Save your changes before signing.</p> : null}
-        <label className="flex items-start gap-3 text-sm leading-6"><input type="checkbox" checked={accepted} onChange={(event) => setAccepted(event.target.checked)} className="mt-1" /><span>I have reviewed this document and sign it as the named seller or authorised representative.</span></label>
+        <label className="flex items-start gap-3 text-sm leading-6"><input type="checkbox" checked={accepted} onChange={(event) => setAccepted(event.target.checked)} className="mt-1" /><span>I have reviewed this complete document and sign it as the named seller or authorised representative. {String(document.signerRole).includes('Agency') ? 'I accept the mandate on behalf of the contracting agency shown in my acceptance block.' : ''}</span></label>
         <label className="block text-sm font-semibold">Confirm your full name<input type="text" autoComplete="name" value={name} onChange={(event) => setName(event.target.value)} className="mt-2 w-full rounded-lg border border-[#aaa] px-4 py-3 font-normal" /></label>
         <SignaturePad value={signature} onChange={setSignature} signerName={document.signerName} />
         <div className="grid gap-4 sm:grid-cols-2"><label className="block text-sm font-semibold">Date of signature<input type="date" required value={signedDate} onChange={(event) => setSignedDate(event.target.value)} className="mt-2 w-full rounded-lg border border-[#aaa] px-4 py-3 font-normal" /></label><label className="block text-sm font-semibold">Place of signature<input type="text" required value={signedPlace} onChange={(event) => setSignedPlace(event.target.value)} placeholder="City or town" className="mt-2 w-full rounded-lg border border-[#aaa] px-4 py-3 font-normal" /></label></div>

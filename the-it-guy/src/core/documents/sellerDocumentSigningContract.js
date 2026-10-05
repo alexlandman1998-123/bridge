@@ -54,6 +54,14 @@ export function hasCompletedOnboardingDisclosureSignature(formData = {}) {
   return true
 }
 
+/** Use the workspace's evidence projection for signatures returned after onboarding. */
+export function hasCompletedSellerDisclosure({ formData = {}, documentRows = [] } = {}) {
+  return hasCompletedOnboardingDisclosureSignature(formData) ||
+    (Array.isArray(documentRows) && documentRows.some((row) =>
+      normalizeSellerBasePackKey(row?.key || row?.requirementKey || row?.requirement_key) === SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM && row.complete === true,
+    ))
+}
+
 export function getSellerDocumentSigningDefinition(documentKey = '') {
   const key = normalizeSellerBasePackKey(documentKey)
   return key ? SELLER_DOCUMENT_SIGNING_DEFINITIONS[key] || null : null

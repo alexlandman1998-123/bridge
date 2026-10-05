@@ -1,3 +1,4 @@
+import { buildSellerMandateTermsFormPatch } from './sellerMandateCapture.js'
 import { resolveSellerBondStatus } from './sellerBondStatus.js'
 import {
   buildListingSellerProfileCapturePayload,
@@ -85,6 +86,7 @@ export function buildSellerLeadManualCapturePayload({ form = {}, listing = {}, l
     mandateType: text(source.mandateType),
     otherAgencyName: text(source.otherAgencyName),
     popiConsent: text(source.popiConsent),
+    ...buildSellerMandateTermsFormPatch(source),
   }
 
   return {
@@ -123,7 +125,7 @@ export function createSellerLeadAgentOnboardingDraft({ lead = {}, contact = {}, 
     sellerOnboardingFormData: source,
     seller_onboarding_form_data: source,
   })
-  for (const field of EXTRA_ONBOARDING_FIELDS) draft[field] = text(formData[field] || listing[field] || draft[field])
+  for (const field of EXTRA_ONBOARDING_FIELDS) draft[field] = text(formData[field] ?? listing[field] ?? draft[field])
   draft.incomeTaxNumber = text(formData.incomeTaxNumber || formData.sellerTaxNumber || formData.taxNumber)
   draft.saResident = text(formData.saResident || formData.taxResident)
   draft.propertySuburb = text(formData.propertySuburb || formData.suburb || listing.suburb)
@@ -179,30 +181,7 @@ export function buildSellerLeadAgentOnboardingSubmission({ draft = {}, listing =
 }
 
 export function buildSellerLeadSigningPackTermsPatch(terms = {}) {
-  const protectionDays = text(terms.protectionPeriod ?? terms.protectionPeriodDays)
-  const percentage = terms.commissionBasis === 'percentage' ? text(terms.commissionPercentage) : ''
-  const amount = terms.commissionBasis === 'fixed' ? text(terms.commissionAmount) : ''
-  return {
-    mandateType: text(terms.mandateType),
-    otherAgencyName: text(terms.otherAgencyName),
-    coAgencyName: text(terms.otherAgencyName),
-    askingPrice: text(terms.askingPrice),
-    mandateStartDate: text(terms.startDate),
-    mandate_start_date: text(terms.startDate),
-    mandateEndDate: text(terms.endDate),
-    mandate_end_date: text(terms.endDate),
-    mandateProtectionPeriod: protectionDays,
-    mandate_protection_period: protectionDays,
-    protectionPeriodDays: protectionDays,
-    commissionBasis: text(terms.commissionBasis),
-    commission_basis: text(terms.commissionBasis),
-    commissionPercentage: percentage,
-    commission_percent: percentage,
-    mandateCommissionPercentage: percentage,
-    commissionAmount: amount,
-    commission_amount: amount,
-    vatHandling: text(terms.vatHandling),
-  }
+  return buildSellerMandateTermsFormPatch(terms)
 }
 
 export default {

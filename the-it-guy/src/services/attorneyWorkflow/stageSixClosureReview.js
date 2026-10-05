@@ -1,4 +1,5 @@
 const COMPLETE = 'completed'
+import { sellerWithholdingReviewIssues, validReviewDate, sastToday } from './conveyancingReviewPolicy.js'
 const text = (value) => String(value || '').trim()
 
 function task(tasks, key) {
@@ -22,7 +23,7 @@ function registrationCommunication(updates, registeredAt) {
 }
 
 /** The saved task and update rows explain Stage 6; the database remains the final gate. */
-export function buildStageSixClosureReview({ taskKey = '', tasks = [], updates = [], plannedLanes = [], lanes = [] } = {}) {
+export function buildStageSixClosureReview({ taskKey = '', tasks = [], updates = [], plannedLanes = [], lanes = [], routingProfile = {}, now = new Date() } = {}) {
   if (!['post_registration_closeout_review', 'matter_closed'].includes(taskKey)) return null
   const registeredTask = task(tasks, 'registered')
   const registered = registeredTask?.status === COMPLETE
@@ -30,11 +31,23 @@ export function buildStageSixClosureReview({ taskKey = '', tasks = [], updates =
   const closureTask = task(tasks, 'matter_closed')
   const financialDecision = answer(financialTask, 'final_account_position_reviewed')
   const closureDecision = answer(closureTask, 'matter_closure_confirmed')
-  const communication = registrationCommunication(updates, registeredTask?.completedAt || registeredTask?.completed_at)
+  const registeredAt = registeredTask?.completedAt || registeredTask?.completed_at
+  const communication = registrationCommunication(updates, registeredAt)
   const financialDecisionValid = financialDecision.value === 'yes' ||
     (financialDecision.value === 'not_applicable' && Boolean(financialDecision.note))
   const financialComplete = financialTask?.status === COMPLETE && financialDecisionValid
   const communicationRecipients = communication?.clientRecipients || communication?.client_recipients || []
+  const recorded = closureTask?.taskConfirmations?.registration_communication_review
+  const records = recorded?.answer === 'yes' ? (recorded.items || []).filter(row => validReviewDate(row.sentOn) &&
+    (!registeredAt || row.sentOn >= sastToday(registeredAt)) && row.sentOn <= sastToday(now) &&
+    ['email', 'letter', 'phone', 'meeting', 'portal', 'other'].includes(row.channel) && text(row.reference) && text(row.recipients)) : []
+  const covered = new Set([...communicationRecipients, ...records.flatMap(row => row.audience === 'both' ? ['buyer', 'seller'] : [row.audience])])
+  // Several portal updates can together cover both client audiences.
+  for (const update of updates) if (registrationCommunication([update], registeredAt)) {
+    for (const recipient of update.clientRecipients || update.client_recipients || []) covered.add(recipient)
+  }
+  const expected = [...new Set((routingProfile.scenarioProfile?.parties || []).filter(p => ['buyer', 'seller'].includes(p.role)).map(p => p.role))]
+  const communicated = expected.length ? expected.every(role => covered.has(role)) : covered.has('buyer') || covered.has('seller')
   const crossLaneIssues = (plannedLanes || []).filter((lane) => ['bond', 'cancellation'].includes(lane.laneKey)).flatMap((plannedLane) => {
     const key = plannedLane.laneKey === 'bond' ? 'bond_close_out_complete' : 'cancellation_close_out_complete'
     const lane = (lanes || []).find((item) => (item.laneKey || item.process_type) === plannedLane.laneKey)
@@ -43,13 +56,18 @@ export function buildStageSixClosureReview({ taskKey = '', tasks = [], updates =
   })
   const issues = []
   if (!registered) issues.push('Transfer registration has not been confirmed.')
+  for (const party of routingProfile.scenarioProfile?.parties || []) {
+    if (party.role !== 'seller' || party.taxResidence === 'south_africa') continue
+    issues.push(...sellerWithholdingReviewIssues(routingProfile.transferTaxDecision?.nonResidentSellers?.[party.id], { now, closing: true })
+      .map(issue => `${party.name || party.id}: ${issue}.`))
+  }
   if (taskKey === 'post_registration_closeout_review') {
     if (!financialDecisionValid) {
       issues.push('Review the final account, or record why it does not apply.')
     }
   } else {
     if (!financialComplete) issues.push('Financial close-out has not been completed.')
-    if (!communication) issues.push('Publish a registration-stage update to the applicable buyer or seller portal.')
+    if (!communicated) issues.push('Record registration communication evidence for all appropriate buyer and seller audiences.')
     if (closureDecision.value !== 'yes') issues.push('Confirm the administrative closure checklist.')
     issues.push(...crossLaneIssues)
   }
@@ -57,8 +75,9 @@ export function buildStageSixClosureReview({ taskKey = '', tasks = [], updates =
     ready: issues.length === 0,
     issues,
     financial: { complete: financialComplete, decision: financialDecision.value },
-    communication: { published: Boolean(communication), recipients: communicationRecipients,
-      publishedAt: communication?.createdAt || communication?.created_at || null },
+    communication: { published: communicated, recipients: [...covered].filter(role => ['buyer', 'seller'].includes(role)),
+      channel: communication ? 'portal' : records[0]?.channel || null,
+      publishedAt: communication?.createdAt || communication?.created_at || records[0]?.sentOn || null },
     administrative: { complete: closureTask?.status === COMPLETE, decision: closureDecision.value },
   }
 }

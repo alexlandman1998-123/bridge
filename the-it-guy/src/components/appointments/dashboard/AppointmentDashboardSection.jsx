@@ -1,3 +1,4 @@
+import { CALENDAR_TIMEZONE, sastDayStart, addCalendarDays, sameSastDay, sastMonthStart, sastWeekStart, shiftCalendarMonth, sastDateKey, sastParts } from '../../../core/appointments/attorneyCalendarModel.js'
 import {
   AlertTriangle,
   Building2,
@@ -31,65 +32,21 @@ function toDate(value) {
   return Number.isNaN(parsed.getTime()) ? null : parsed
 }
 
-function cloneDate(value = new Date()) {
-  return new Date(value.getTime())
-}
-
-function startOfDay(value = new Date()) {
-  const date = cloneDate(toDate(value) || new Date())
-  date.setHours(0, 0, 0, 0)
-  return date
-}
-
-function addDays(value = new Date(), amount = 0) {
-  const date = cloneDate(toDate(value) || new Date())
-  date.setDate(date.getDate() + amount)
-  return date
-}
-
-function isSameDay(left = null, right = null) {
-  const leftDate = toDate(left)
-  const rightDate = toDate(right)
-  if (!leftDate || !rightDate) return false
-  return leftDate.getFullYear() === rightDate.getFullYear()
-    && leftDate.getMonth() === rightDate.getMonth()
-    && leftDate.getDate() === rightDate.getDate()
-}
-
+function startOfDay(value = new Date()) { return sastDayStart(toDate(value) || new Date()) }
+function addDays(value = new Date(), amount = 0) { return addCalendarDays(toDate(value) || new Date(), amount) }
+function isSameDay(left = null, right = null) { return Boolean(left && right) && sameSastDay(left, right) }
 function isSameMonth(left = null, right = null) {
-  const leftDate = toDate(left)
-  const rightDate = toDate(right)
-  if (!leftDate || !rightDate) return false
-  return leftDate.getFullYear() === rightDate.getFullYear()
-    && leftDate.getMonth() === rightDate.getMonth()
+  return Boolean(left && right) && sastDateKey(left).slice(0, 7) === sastDateKey(right).slice(0, 7)
 }
-
-function startOfMonth(value = new Date()) {
-  const date = cloneDate(toDate(value) || new Date())
-  date.setDate(1)
-  date.setHours(0, 0, 0, 0)
-  return date
-}
-
-function endOfMonth(value = new Date()) {
-  const date = startOfMonth(value)
-  date.setMonth(date.getMonth() + 1)
-  date.setDate(0)
-  date.setHours(23, 59, 59, 999)
-  return date
-}
-
-function startOfWeekMonday(value = new Date()) {
-  const date = startOfDay(value)
-  const dayOfWeek = date.getDay()
-  const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek
-  return addDays(date, mondayOffset)
-}
+function startOfMonth(value = new Date()) { return sastMonthStart(toDate(value) || new Date()) }
+function endOfMonth(value = new Date()) { return new Date(shiftCalendarMonth(startOfMonth(value), 1).getTime() - 1) }
+function startOfWeekMonday(value = new Date()) { return sastWeekStart(value) }
 
 function formatCompactDate(value) {
   const date = toDate(value)
   if (!date) return 'Date pending'
   return date.toLocaleDateString('en-ZA', {
+    timeZone: CALENDAR_TIMEZONE,
     weekday: 'short',
     day: 'numeric',
     month: 'short',
@@ -99,7 +56,7 @@ function formatCompactDate(value) {
 function dateKey(value = new Date()) {
   const date = toDate(value)
   if (!date) return ''
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+  return sastDateKey(date)
 }
 
 function initials(value = '') {
@@ -456,7 +413,7 @@ function buildCompactCalendarDays(appointments = [], selectedDate = null, now = 
 
   for (const appointment of Array.isArray(appointments) ? appointments : []) {
     const statusKey = normalizeText(appointment?.statusKey || appointment?.status).toLowerCase()
-    if (['completed', 'cancelled', 'canceled', 'no_show'].includes(statusKey)) continue
+    if (['completed', 'cancelled', 'canceled', 'declined', 'no_show'].includes(statusKey)) continue
     const date = toDate(appointment?.dateTime)
     if (!date || !isSameMonth(date, referenceDate)) continue
     const key = dateKey(date)
@@ -481,7 +438,7 @@ function buildCompactCalendarDays(appointments = [], selectedDate = null, now = 
     return {
       key,
       date,
-      dayNumber: date.getDate(),
+      dayNumber: sastParts(date).day,
       inMonth: date >= monthStart && date <= monthEnd,
       isToday: isSameDay(date, referenceDate),
       isSelected: isSameDay(date, focusDate),
@@ -490,7 +447,7 @@ function buildCompactCalendarDays(appointments = [], selectedDate = null, now = 
   })
 
   return {
-    monthLabel: referenceDate.toLocaleDateString('en-ZA', { month: 'long', year: 'numeric' }),
+    monthLabel: referenceDate.toLocaleDateString('en-ZA', { timeZone: CALENDAR_TIMEZONE, month: 'long', year: 'numeric' }),
     weekdays,
     days,
   }

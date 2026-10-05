@@ -7,5 +7,8 @@ assert.equal(property.address_normalized, '10 oak road|cape town|western cape|80
 assert.equal(validateRentalProperty({ organisationId: 'org-1', name: 'No address', propertyType: 'house' }).valid, false)
 const mapped = mapRentalProperty({ id: 'property-1', ...property })
 assert.equal(mapped.address.city, 'Cape Town')
+assert.equal(mapped.address.line1, '10 Oak Road')
+assert.equal(mapped.address.postalCode, '8001')
+assert.equal(mapped.address.normalized, property.address_normalized)
 assert.deepEqual(buildRentalPropertyListQuery({ organisationId: 'org-1', limit: 999 }), { organisationId: 'org-1', branchId: '', status: '', search: '', limit: 100 })
 console.log('Rental property model tests passed.')

@@ -7,6 +7,7 @@ function formatDateTime(value, fallback = 'Date and time to be confirmed') {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return fallback
   return date.toLocaleString('en-ZA', {
+    timeZone: 'Africa/Johannesburg',
     weekday: 'long',
     day: '2-digit',
     month: 'long',

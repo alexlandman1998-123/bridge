@@ -116,7 +116,9 @@ const lifecycle = await createProperty24ApiResponse({
       from: () => {
         const query = {
           select: () => query,
-          eq: () => Promise.resolve({ data: [], error: null }),
+          eq: () => query, in: () => query, order: () => query, limit: () => query,
+          maybeSingle: async () => ({ data:null,error:null }),
+          then: (resolve,reject) => Promise.resolve({ data:[],error:null }).then(resolve,reject),
         }
         return query
       },

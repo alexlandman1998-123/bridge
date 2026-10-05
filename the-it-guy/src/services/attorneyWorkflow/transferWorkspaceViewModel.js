@@ -2235,6 +2235,7 @@ export function buildTransferWorkspaceViewModel({
       closureReview: workflowKey === 'transfer' ? buildStageSixClosureReview({
         taskKey: task.key, tasks: workflowTasks, updates: lane?.updates || [],
         plannedLanes: activeWorkflowPlan?.lanes || [], lanes: savedLanes,
+        routingProfile: savedRoutingProfile, now,
       }) : null,
     }
     return {

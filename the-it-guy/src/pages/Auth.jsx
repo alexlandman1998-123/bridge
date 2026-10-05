@@ -16,6 +16,7 @@ import {
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
+import Arch9AccessLayout from '../components/auth/Arch9AccessLayout'
 import { setStoredDevAuthRole } from '../lib/devAuth'
 import { isDevAuthBypassEnabled } from '../lib/devAuth'
 import { clearPostLoginRedirect, getPostLoginRedirect } from '../lib/resolveMobileAwareRedirect'
@@ -482,6 +483,12 @@ function Auth({ onDevBypass = null }) {
 
   const redirectTo = useMemo(() => getRedirectPath(location), [location])
   const inviteToken = useMemo(() => resolveInviteTokenFromLocation(location), [location])
+  const partnerHandoffToken = useMemo(() => {
+    const path = new URLSearchParams(location.search).get('next') || ''
+    const match = path.match(/^\/transaction-invite\/([^/?#]+)(?:[?#].*)?$/)
+    if (!match) return ''
+    try { return decodeURIComponent(match[1]) } catch { return '' }
+  }, [location.search])
   const invitedEmail = initialInvitedEmail
   const inviteDrivenSignup = Boolean(inviteToken)
   const currentIntent = useMemo(() => {
@@ -490,9 +497,10 @@ function Auth({ onDevBypass = null }) {
     return buildSignupIntent({
       position: resolvedPosition,
       inviteToken,
-      source: inviteDrivenSignup ? SIGNUP_INTENT_SOURCE.inviteLink : SIGNUP_INTENT_SOURCE.publicSignup,
+      source: inviteDrivenSignup || partnerHandoffToken ? SIGNUP_INTENT_SOURCE.inviteLink : SIGNUP_INTENT_SOURCE.publicSignup,
+      overrides: partnerHandoffToken ? { invite_token: partnerHandoffToken } : {},
     })
-  }, [inviteDrivenSignup, inviteSignupPosition, inviteToken, position])
+  }, [inviteDrivenSignup, inviteSignupPosition, inviteToken, partnerHandoffToken, position])
   const positionOptions = POSITION_OPTIONS_BY_BUSINESS_TYPE[businessType] || []
   const selectedBusinessTypeLabel = ROLE_DISPLAY_COPY[businessType]?.label || BUSINESS_TYPE_OPTIONS.find((option) => option.value === businessType)?.label || ''
   const selectedPositionLabel = positionOptions.find((option) => option.value === position)?.label || ''
@@ -854,38 +862,7 @@ function Auth({ onDevBypass = null }) {
   const showingAuthFields = mode === 'login' || mode === 'forgot_password' || signupStep === 2
 
   return (
-    <div className={`auth-page auth-page-${mode}`}>
-      <main className="auth-shell">
-        <section className="auth-hero">
-          <div className="auth-hero-glow" aria-hidden="true" />
-          <div className="auth-network-pattern" aria-hidden="true" />
-          <div className="auth-hero-orbit" aria-hidden="true" />
-          <div className="auth-hero-top">
-            <p className="auth-brand">Arch9</p>
-          </div>
-          <div className="auth-hero-copy">
-            <h1>The property industry, <span>connected.</span></h1>
-            <p>Infrastructure for every property transaction.</p>
-          </div>
-
-          <div className="auth-architecture" aria-hidden="true">
-            <span className="auth-building auth-building-one" />
-            <span className="auth-building auth-building-two" />
-            <span className="auth-building auth-building-three" />
-            <span className="auth-connection auth-connection-one" />
-            <span className="auth-connection auth-connection-two" />
-            <span className="auth-connection auth-connection-three" />
-            <i className="auth-node auth-node-one" />
-            <i className="auth-node auth-node-two" />
-            <i className="auth-node auth-node-three" />
-          </div>
-
-          <div className="auth-hero-trust">
-            <ShieldCheck size={22} />
-            <span>Trusted by 18,000+ property professionals across South Africa</span>
-          </div>
-        </section>
-
+    <Arch9AccessLayout mode={mode} audience={mode === 'login' ? '' : undefined}>
         <section className={`auth-card ${mode === 'signup' ? 'auth-card-signup' : 'auth-card-login'} ${inviteDrivenSignup ? 'invite-auth-card' : ''}`}>
           {mode === 'login' && securityLogoutMessage ? (
             <div className="auth-security-notice" role="status">
@@ -926,7 +903,7 @@ function Auth({ onDevBypass = null }) {
                   <section className="signup-choice-stack signup-step-panel">
                     <div className="auth-card-head compact">
                       <span className="auth-card-eyebrow">STEP 1 OF 3</span>
-                      <h2>Welcome to Arch9 👋</h2>
+                      <h2>Create your workspace.</h2>
                       <p>Let&apos;s build your workspace.</p>
                     </div>
                     <div className="signup-section-heading">
@@ -1044,8 +1021,8 @@ function Auth({ onDevBypass = null }) {
               <>
                 {mode === 'login' ? (
                   <div className="auth-card-head compact">
-                    <h2>Welcome back</h2>
-                    <p>Sign in to continue to your Arch9 workspace.</p>
+                    <h2>Welcome back.</h2>
+                    <p>Sign in and make your next move.</p>
                   </div>
                 ) : null}
 
@@ -1127,6 +1104,9 @@ function Auth({ onDevBypass = null }) {
                     Email
                     <input
                       type="email"
+                      inputMode="email"
+                      autoCapitalize="none"
+                      spellCheck={false}
                       value={email}
                       onChange={(event) => setEmail(event.target.value)}
                       placeholder="you@company.com"
@@ -1165,7 +1145,7 @@ function Auth({ onDevBypass = null }) {
                     {mode === 'login' ? (
                       <button
                         type="button"
-                        className="mt-2 text-sm font-semibold text-[#2f5478] underline-offset-4 hover:underline"
+                        className="auth-recovery-link underline-offset-4 hover:underline"
                         onClick={() => {
                           setMode('forgot_password')
                           setError('')
@@ -1295,8 +1275,7 @@ function Auth({ onDevBypass = null }) {
             </div>
           ) : null}
         </section>
-      </main>
-    </div>
+    </Arch9AccessLayout>
   )
 }
 

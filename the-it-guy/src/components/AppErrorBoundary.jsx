@@ -253,7 +253,7 @@ class AppErrorBoundary extends Component {
     void reportError(error, {
       category: 'ui_error',
       operation: this.props.scope || 'app_error_boundary',
-      route: typeof window !== 'undefined' ? window.location.pathname : '',
+      route: typeof window !== 'undefined' ? (window.location.pathname.startsWith('/join-us/') ? '/join-us/:token' : window.location.pathname) : '',
       metadata: { componentStack: info?.componentStack || '' },
     })
 

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
+import { verifyAttorneyInternalAccess } from './helpers/attorneyInternalAccessFixture.mjs'
 
 const { PGlite } = await import(process.env.PGLITE_MODULE || '@electric-sql/pglite')
 const db = new PGlite()
@@ -228,3 +229,5 @@ try {
 } finally {
   await db.close()
 }
+
+await verifyAttorneyInternalAccess(PGlite)

@@ -1,3 +1,4 @@
+import { transactionPartyDocumentSubjects } from '../../core/transactions/transactionPartyProfile.js'
 import {
   buildCanonicalDocumentRequestAudiencePlan,
 } from '../../core/documents/documentRequestCanonicalPlanner.js'
@@ -233,14 +234,15 @@ export function buildCanonicalRequiredDocumentRows({
     if (includePendingPolicyRows && request.pendingPolicy) return request.clientVisible === true
     return isRequestableCanonicalRow(request)
   })
-  const rows = requests.map((request, index) =>
-    buildRequiredDocumentRowFromRequest({
+  const rows = requests.map((request, index) => {
+    const subjects = transactionPartyDocumentSubjects(request.key, scenario.transactionParties)
+    return { ...buildRequiredDocumentRowFromRequest({
       transactionId,
       request,
       existing: existingByKey.get(normalizeKey(request.key)) || null,
       index,
-    }),
-  )
+    }), ...(subjects.length ? { allow_multiple: subjects.length > 1, description: `Required for: ${subjects.map((person) => person.name || 'Unnamed person').join(', ')}. Each person’s evidence must be checked separately.` } : {}) }
+  })
 
   return {
     version: DOCUMENT_REQUEST_CANONICAL_REQUIRED_DOCUMENT_SYNC_VERSION,

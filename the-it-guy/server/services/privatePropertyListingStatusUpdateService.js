@@ -1,3 +1,4 @@
+import { beginRentalPublicationAttempt, updateRentalPublicationAttempt, retainUncertainRentalPublication, isDefinitePortalRejection } from './rentalPublicationAttemptService.js'
 import { createPrivatePropertyClient, extractPrivatePropertyXmlTag, normalizePrivatePropertyText, validatePrivatePropertySoapResult } from './privatePropertyClient.js'
 import { resolvePrivatePropertyAgencyConfig, resolvePrivatePropertyCredentials } from './privatePropertyAgencyConfigService.js'
 import { recordPrivatePropertyListingSync, resolvePrivatePropertyExternalStatus } from './privatePropertyListingSyncService.js'
@@ -55,6 +56,10 @@ export async function updatePrivatePropertyListingStatus({
     if (!eligible) throw new Error(readiness.recovery?.message || readiness.nextStep || 'Check this existing Private Property record before reactivation.')
     if (readiness.recovery.propertyId !== sync.property_id || readiness.recovery.branchGuid !== sync.branch_guid) throw new Error('The Private Property record changed during review. Refresh before reactivation.')
   }
+  const attempt = await beginRentalPublicationAttempt({ client,listingId:normalizedListingId,channel:'private_property',environment:syncEnvironment,
+    operation:'status_update',identity:{ propertyId:sync.property_id,branchGuid:sync.branch_guid || agency.config.branchGuid,listingType:sync.listing_type || 'Sale',existed:true,status:propertyStatus },payload:{ propertyStatus } })
+  let receipt = {}
+  try {
   const response = await portal.listingStatusUpdate({
     branchGuid: sync.branch_guid || agency.config.branchGuid,
     propertyId: sync.property_id,
@@ -62,6 +67,8 @@ export async function updatePrivatePropertyListingStatus({
     propertyStatus,
   })
   const responseSummary = validatePrivatePropertySoapResult(response, 'ListingStatusUpdate')
+  receipt = { accepted:true,reference:sync.private_property_ref || '' }
+  if (attempt) await updateRentalPublicationAttempt(client,attempt,{ state:'uncertain',receipt })
   let observed
   try {
     observed = await portal.getListingStatus({ branchGuid: sync.branch_guid || agency.config.branchGuid, propertyId: sync.property_id })
@@ -85,11 +92,26 @@ export async function updatePrivatePropertyListingStatus({
   })
   if (key(propertyStatus) === 'inactive' && !['inactive', 'removed'].includes(externalStatus)) throw new Error('Private Property acknowledged the withdrawal but still reports the listing as active or processing. Refresh its status before treating it as withdrawn.')
   const confirmed = reactivation ? externalStatus === 'active' : true
+  if (attempt) {
+    if (!confirmed || externalStatus === 'unknown' || !recorded.sync?.id || recorded.externalLinkWarning) throw new Error('Private Property accepted this status request but its final result is unconfirmed. Reconcile before sending again.')
+    await updateRentalPublicationAttempt(client,attempt,{ state:'accepted',receipt })
+  }
   return {
     status: confirmed ? 'UPDATED' : 'NOT_CONFIRMED', confirmed, externalStatus, propertyStatus,
     message: reactivation
       ? confirmed ? 'Private Property confirms this listing is active.' : `Private Property accepted the reactivation request but still reports ${externalStatus}. The listing is not confirmed live. Refresh status before trying again.`
       : '',
     response: { status: response.status, durationMs: response.durationMs, summary: responseSummary }, syncResult: recorded,
+  }
+  } catch (error) {
+    if (attempt) {
+      if (!receipt.accepted && isDefinitePortalRejection(error)) await updateRentalPublicationAttempt(client,attempt,{ state:'rejected',last_error:error.message })
+      else {
+        await retainUncertainRentalPublication(client,attempt,error,receipt)
+        error.code = 'RENTAL_PUBLICATION_PENDING'
+        error.message = 'The Private Property status outcome is unconfirmed. Reconcile the saved request before sending again.'
+      }
+    }
+    throw error
   }
 }

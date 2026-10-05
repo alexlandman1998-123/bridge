@@ -1,3 +1,7 @@
+import { readSellerMandateTerms } from '../lib/sellerMandateCapture.js'
+import { normalizeListingExternalLinkStatus } from '../lib/listingExternalLinkStatus.js'
+import { getSellerPortalSignedUploadReference } from '../core/documents/sellerPhysicalSigningCopy.js'
+import { insertRentalListingOnce } from './rentals/rentalListingCreationRecovery.js'
 import { assertDocumentGeneratorAvailable } from '../core/documents/documentGeneratorRetirement'
 import { advanceSellerWorkflowState, createSellerWorkflowState, SELLER_WORKFLOW_STAGES } from '../core/documents/sellerWorkflowState'
 import {
@@ -44,6 +48,7 @@ import { hasSignedMandateEvidence } from '../core/clientAccess/clientAccessPolic
 import { resolveSellerPortalFinalSignedArtifactAccess } from '../core/documents/finalSignedArtifactAccess'
 import { fetchOrganisationSettings } from '../lib/settingsApi'
 import { uploadToStorageCandidateBuckets } from '../lib/storageFallbacks'
+import { refreshListingPhotoUrls } from './listings/listingPhotoStorage.js'
 import { queueListingMediaUpload, retryStorageOperation } from '../lib/listingMediaUploads.js'
 import { sanitizeDocumentFileName, validateDocumentUploadFile } from '../lib/documentUploadPolicy'
 import {
@@ -76,6 +81,7 @@ import {
 } from './sellerDocumentSatisfactionAssuranceService.js'
 import { normalizeSellerPortalActivationTermsConfig } from '../lib/sellerPortalActivationTerms.js'
 import { buildPrivateListingDocumentPersistenceReceipt } from './listings/listingSellerDocumentPersistenceModel.js'
+import { buildListingSellerCanonicalSavePayload, isMatchingSellerCanonicalSaveReceipt } from './listings/listingSellerCanonicalUpdateModel.js'
 
 const LISTING_STATUSES = PRIVATE_LISTING_LIFECYCLE.STATUSES
 
@@ -107,6 +113,8 @@ let sellerOnboardingPrepareRpcUnavailable = false
 const ORGANISATION_BRANDING_CACHE_TTL_MS = 60_000
 const SELLER_ONBOARDING_COMPLETION_TIMEOUT_MS = 12_000
 const SELLER_ONBOARDING_RECOVERY_TIMEOUT_MS = 3_000
+const SELLER_CANONICAL_SAVE_TIMEOUT_MS = 40_000
+const SELLER_CANONICAL_SAVE_RECOVERY_TIMEOUT_MS = 8_000
 const organisationBrandingSnapshotCache = new Map()
 let clientPortalNotificationServicePromise = null
 function loadClientPortalNotificationService() {
@@ -661,16 +669,18 @@ function isArchivedPrivateListingRow(row = {}) {
   return visibility === 'archived' || status === 'archived'
 }
 
-function isVisiblePrivateListingRow(row = {}, { includeArchivedImports = false, includeArchivedListings = false } = {}) {
+function isVisiblePrivateListingRow(row = {}, { includeArchivedImports = false, includeArchivedListings = false, includeWithdrawnListings = false } = {}) {
   if (!isDeletedPrivateListingRow(row)) return true
   if (row.deleted_at || row.deletedAt || row.is_deleted || row.isDeleted) return false
+  if (includeWithdrawnListings && (normalizeKey(row.listing_status || row.listingStatus) === 'deleted' || normalizeKey(row.listing_visibility || row.listingVisibility) === 'deleted')) return false
   if (includeArchivedListings && isArchivedPrivateListingRow(row)) return true
+  if (includeWithdrawnListings && normalizeKey(row.listing_status || row.listingStatus) === 'withdrawn' && normalizeKey(row.listing_visibility || row.listingVisibility) !== 'deleted') return true
   if (!includeArchivedImports || !isProperty24MigrationImportRow(row)) return false
   return true
 }
 
-function applyVisiblePrivateListingFilters(queryBuilder, { includeArchivedImports = false, includeArchivedListings = false } = {}) {
-  if (includeArchivedImports || includeArchivedListings) return queryBuilder
+function applyVisiblePrivateListingFilters(queryBuilder, { includeArchivedImports = false, includeArchivedListings = false, includeWithdrawnListings = false } = {}) {
+  if (includeArchivedImports || includeArchivedListings || includeWithdrawnListings) return queryBuilder
   return queryBuilder
     .neq('listing_status', 'withdrawn')
     .neq('listing_visibility', 'archived')
@@ -804,21 +814,24 @@ function normalizeListingMediaRows(rows = []) {
       name: normalizeText(row?.caption || `Property image ${index + 1}`),
       label: normalizeText(row?.caption),
       url: normalizeText(row?.file_url),
+      bucket: normalizeText(row?.storage_bucket),
+      path: normalizeText(row?.storage_path),
       isCover: Boolean(row?.is_cover),
       sortOrder: Number(row?.sort_order || 0),
     }))
 }
 
-async function fetchMediaRowsForListings(client, listingIds = []) {
+async function fetchMediaRowsForListings(client, listingIds = [], { strict = false } = {}) {
   const ids = [...new Set((Array.isArray(listingIds) ? listingIds : []).map((id) => normalizeUuid(id)).filter(Boolean))]
   if (!ids.length) return new Map()
 
   const query = await client
     .from('listing_media')
-    .select('id, listing_id, media_type, file_url, caption, sort_order, is_cover')
+    .select('id, listing_id, media_type, file_url, caption, sort_order, is_cover, storage_bucket, storage_path')
     .in('listing_id', ids)
     .order('sort_order', { ascending: true })
   if (query.error) {
+    if (strict) throw query.error
     if (
       isMissingTableError(query.error, 'listing_media') ||
       isMissingSchemaError(query.error) ||
@@ -828,7 +841,7 @@ async function fetchMediaRowsForListings(client, listingIds = []) {
   }
 
   const mediaByListingId = new Map()
-  for (const row of query.data || []) {
+  for (const row of await refreshListingPhotoUrls(client, query.data || [], { strict })) {
     const listingId = normalizeText(row?.listing_id)
     if (!listingId) continue
     if (!mediaByListingId.has(listingId)) mediaByListingId.set(listingId, [])
@@ -843,7 +856,7 @@ export async function getPrivateListingCoverImageUrls(listingIds = [], { client 
 
   const coverQuery = await client
     .from('listing_media')
-    .select('listing_id, media_type, file_url, is_cover, sort_order')
+    .select('listing_id, media_type, file_url, is_cover, sort_order, storage_bucket, storage_path')
     .in('listing_id', ids)
     .eq('media_type', 'image')
     .eq('is_cover', true)
@@ -858,7 +871,7 @@ export async function getPrivateListingCoverImageUrls(listingIds = [], { client 
   }
 
   const coverUrls = {}
-  for (const row of coverQuery.data || []) {
+  for (const row of await refreshListingPhotoUrls(client, coverQuery.data || [])) {
     const listingId = normalizeText(row?.listing_id)
     if (listingId && !coverUrls[listingId]) coverUrls[listingId] = normalizeText(row?.file_url)
   }
@@ -905,11 +918,12 @@ export function getListingCardImageSource(originalUrl = '', { client = supabase 
 function attachDistributionMediaToListing(listing = null, rows = []) {
   if (!listing) return listing
   const galleryImages = normalizeListingMediaRows(rows)
-  if (!galleryImages.length) return listing
+  const listingWithMedia = { ...listing, listingMedia: rows }
+  if (!galleryImages.length) return listingWithMedia
   const coverImage = galleryImages.find((image) => image.isCover) || galleryImages[0]
 
   return {
-    ...listing,
+    ...listingWithMedia,
     heroImageUrl: coverImage.url,
     images: galleryImages,
     galleryImages,
@@ -1740,11 +1754,11 @@ function buildPrivateListingRequirementMutationPayload(row = {}, columns = []) {
     requested_from_role: normalizeText(row?.requested_from_role || row?.requestedFromRole || ''),
     request_stage: normalizeText(row?.request_stage || row?.requestStage || ''),
     request_priority: normalizeText(row?.request_priority || row?.requestPriority || ''),
-    request_due_date: normalizeText(row?.request_due_date || row?.requestDueDate || ''),
+    request_due_date: normalizeNullableText(row?.request_due_date || row?.requestDueDate),
     request_delivery_channels: requestDeliveryChannels,
     request_dedupe_key: normalizeText(row?.request_dedupe_key || row?.requestDedupeKey || ''),
     request_source: normalizeText(row?.request_source || row?.requestSource || ''),
-    requested_at: normalizeText(row?.requested_at || row?.requestedAt || ''),
+    requested_at: normalizeNullableText(row?.requested_at || row?.requestedAt),
     request_revision: Number(row?.request_revision || row?.requestRevision || 0),
     last_request_reason: normalizeText(row?.last_request_reason || row?.lastRequestReason || ''),
     request_metadata: isPlainObject(row?.request_metadata)
@@ -1776,10 +1790,26 @@ async function upsertPrivateListingRequirementRows(client, rows = []) {
       .filter(Boolean)
     if (!payload.length) return { data: [], mutationVariant: variant.name }
 
-    const query = await client
-      .from('private_listing_document_requirements')
-      .upsert(payload, { onConflict: 'private_listing_id,requirement_key' })
-      .select(variant.selectFields)
+    // Keep absent optional columns absent. Mixing rows with/without an id or
+    // request date in one REST batch would turn omitted values into NULLs.
+    const batches = new Map()
+    for (const row of payload) {
+      const shape = Object.keys(row).sort().join(',')
+      if (!batches.has(shape)) batches.set(shape, [])
+      batches.get(shape).push(row)
+    }
+    const query = { data: [], error: null }
+    for (const batch of batches.values()) {
+      const result = await client
+        .from('private_listing_document_requirements')
+        .upsert(batch, { onConflict: 'private_listing_id,requirement_key' })
+        .select(variant.selectFields)
+      if (result?.error) {
+        query.error = result.error
+        break
+      }
+      query.data.push(...(result?.data || []))
+    }
 
     if (!query?.error) {
       return {
@@ -2879,14 +2909,7 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
     onboardingFormData.listingDate,
     quickAddMandateDates.startDate,
   )
-  const mandateEndDate = pickFirstText(
-    onboardingFormData.mandateEndDate,
-    onboardingFormData.mandate_end_date,
-    onboardingFormData.mandateExpiryDate,
-    onboardingFormData.mandate_expiry_date,
-    onboardingFormData.expiryDate,
-    quickAddMandateDates.endDate,
-  )
+  const mandateEndDate = readSellerMandateTerms(onboardingFormData, { mandateType: row.mandate_type, endDate: quickAddMandateDates.endDate }).endDate
   const mandateDocumentUrl = pickFirstText(
     primaryMandateDocument?.url,
     primaryMandateDocument?.fileUrl,
@@ -2948,6 +2971,8 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
     originatingCrmLeadId: row.originating_crm_lead_id || null,
     sellerProfileId: row.seller_profile_id || null,
     propertyProfileId: row.property_profile_id || null,
+    rentalPortfolioPropertyId: row.rental_property_id || null,
+    rentalPortfolioUnitId: row.rental_unit_id || null,
     listingReference: row.listing_reference || '',
     listingStatus,
     listingVisibility: normalizeStatus(row.listing_visibility, LISTING_VISIBILITY, 'internal'),
@@ -3284,6 +3309,8 @@ function mapPrivateListingSummaryRow(row = {}, onboardingCommissionByListingId =
     sellerLeadId: row.seller_lead_id || null,
     sellerProfileId: row.seller_profile_id || null,
     propertyProfileId: row.property_profile_id || null,
+    rentalPortfolioPropertyId: row.rental_property_id || null,
+    rentalPortfolioUnitId: row.rental_unit_id || null,
     listingReference: row.listing_reference || '',
     listingStatus,
     listingVisibility: normalizeStatus(row.listing_visibility, LISTING_VISIBILITY, 'internal'),
@@ -5327,15 +5354,16 @@ async function fetchDocumentRowsForListings(client, listingIds = []) {
   return map
 }
 
-async function fetchExternalLinkRowsForListings(client, listingIds = []) {
+async function fetchExternalLinkRowsForListings(client, listingIds = [], { strict = false } = {}) {
   const ids = normalizeUuidList(listingIds)
-  if (!ids.length || hasMissingTableCache('listing_external_links')) return new Map()
+  if (!ids.length || (!strict && hasMissingTableCache('listing_external_links'))) return new Map()
   const query = await client
     .from('listing_external_links')
     .select('id, listing_id, platform, url, status, published_at, last_checked_at, notes, visible_to_seller, created_at, updated_at')
     .in('listing_id', ids)
     .order('created_at', { ascending: true })
   if (query.error) {
+    if (strict) throw query.error
     if (isMissingTableError(query.error, 'listing_external_links') || isMissingColumnError(query.error)) {
       rememberMissingTable('listing_external_links')
       return new Map()
@@ -5353,9 +5381,9 @@ async function fetchExternalLinkRowsForListings(client, listingIds = []) {
   return map
 }
 
-async function fetchPublicationRowsForListings(client, listingIds = []) {
+async function fetchPublicationRowsForListings(client, listingIds = [], { strict = false } = {}) {
   const ids = normalizeUuidList(listingIds)
-  if (!ids.length || hasMissingTableCache('listing_publication_data')) return new Map()
+  if (!ids.length || (!strict && hasMissingTableCache('listing_publication_data'))) return new Map()
   let query = await client
     .from('listing_publication_data')
     .select('listing_id, title, address, suburb, province, property_type, listing_type, asking_price, bedrooms, bathrooms, garages, parking_bays, floor_size, erf_size, rates_taxes, levies, description, features, amenities, status, created_at, updated_at')
@@ -5367,6 +5395,7 @@ async function fetchPublicationRowsForListings(client, listingIds = []) {
       .in('listing_id', ids)
   }
   if (query.error) {
+    if (strict) throw query.error
     if (isMissingTableError(query.error, 'listing_publication_data') || isMissingColumnError(query.error)) {
       rememberMissingTable('listing_publication_data')
       return new Map()
@@ -5481,7 +5510,7 @@ export async function createPrivateListing(payload = {}, options = {}) {
   const skipRequirementSync = options?.syncRequirements === false
 
   const originatingCrmLeadId = normalizeUuid(payload.originatingCrmLeadId)
-  if (originatingCrmLeadId) {
+  if (originatingCrmLeadId && !options.rentalCreationId) {
     const existingQuery = await client
       .from('private_listings')
       .select('*')
@@ -5503,7 +5532,9 @@ export async function createPrivateListing(payload = {}, options = {}) {
   }
 
   const listingPayload = buildPrivateListingPayload(payload, user.id)
-  let insert = await client.from('private_listings').insert(listingPayload).select('*').single()
+  let insert = options.rentalCreationId
+    ? await insertRentalListingOnce(client, listingPayload, options.rentalCreationId, user.id)
+    : await client.from('private_listings').insert(listingPayload).select('*').single()
   const rentalCaptureColumns = isRentalPrivateListingPayload(payload) ? missingRentalCaptureColumns(insert.error) : []
   if (rentalCaptureColumns.length) {
     throw new Error(
@@ -5563,6 +5594,12 @@ export async function createPrivateListing(payload = {}, options = {}) {
     throw insert.error
   }
 
+  if (options.rentalCreationId) {
+    const shell = mapPrivateListingRow(insert.data, new Map(), new Map(), new Map(), null, null, new Map())
+    options.onListingCreated?.(shell.id, shell)
+    if (insert.existing) return { listing: shell, existing: true }
+  }
+
   const [onboardingMap, requirementsMap, documentsMap, mandatePacketsMap] = await Promise.all([
     includeRequirementsAndDocuments ? fetchOnboardingRowsForListings(client, [insert.data.id]) : Promise.resolve(new Map()),
     includeRequirementsAndDocuments ? fetchRequirementRowsForListings(client, [insert.data.id]) : Promise.resolve(new Map()),
@@ -5607,7 +5644,7 @@ export async function createPrivateListing(payload = {}, options = {}) {
     .then(({ queueListingSuggestionGeneration }) => queueListingSuggestionGeneration(listingWithRequirements))
     .catch((generationError) => console.warn('[privateListingService] listing suggestion generation skipped', generationError))
 
-  return { listing: listingWithRequirements, existing: false }
+  return { listing: listingWithRequirements, existing: insert.existing === true }
 }
 
 export async function updatePrivateListing(listingId, payload = {}, options = {}) {
@@ -5925,6 +5962,64 @@ export async function updatePrivateListingOnboardingFormData(listingId, formData
   }
 }
 
+async function runSellerCanonicalRequest(request, timeoutMs) {
+  const timeout = createRequestTimeout(timeoutMs)
+  let onAbort
+  const expired = new Promise((_, reject) => {
+    onAbort = () => {
+      const error = new Error('The seller save request timed out. Check the listing before retrying because the save may have completed.')
+      error.code = 'SELLER_PROFILE_SAVE_TIMEOUT'
+      reject(error)
+    }
+    timeout.signal.addEventListener('abort', onAbort, { once: true })
+  })
+  try {
+    // AbortSignal only cancels fetch. The race also bounds a stalled auth read
+    // before fetch starts, so the preparation button always becomes usable again.
+    return await Promise.race([Promise.resolve().then(() => request(timeout.signal)), expired])
+  } finally {
+    timeout.clear()
+    timeout.signal.removeEventListener('abort', onAbort)
+  }
+}
+
+async function recoverSellerCanonicalSave(client, update) {
+  try {
+    // The server can commit just after fetch is aborted. Give that receipt a
+    // short chance to become visible, within the same total recovery deadline.
+    // Recovery only reads: it never repeats a write or dispatches a document.
+    return await runSellerCanonicalRequest(async (signal) => {
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const [listing, onboarding] = await Promise.all([
+          client.from('private_listings').select('*').eq('id', update.listingId).maybeSingle().abortSignal(signal),
+          client.from('private_listing_seller_onboarding').select('*').eq('private_listing_id', update.listingId).maybeSingle().abortSignal(signal),
+        ])
+        if (signal.aborted || listing.error || onboarding.error) return null
+        const receipt = { listing: listing.data, onboarding: onboarding.data, mutationId: update.mutationId, recoveredAfterTimeout: true }
+        if (isMatchingSellerCanonicalSaveReceipt(receipt, update)) return receipt
+        // A visible receipt for this mutation with altered data cannot safely
+        // authorize sending the local copies, even after another read.
+        if (onboarding.data?.canonical_facts_json?.context?.canonical_update?.mutation_id === update.mutationId) return null
+        if (attempt < 2) {
+          await new Promise((resolve) => {
+            const done = () => {
+              clearTimeout(timer)
+              signal.removeEventListener('abort', done)
+              resolve()
+            }
+            const timer = setTimeout(done, 500)
+            signal.addEventListener('abort', done, { once: true })
+          })
+          if (signal.aborted) return null
+        }
+      }
+      return null
+    }, SELLER_CANONICAL_SAVE_RECOVERY_TIMEOUT_MS)
+  } catch {
+    return null
+  }
+}
+
 export async function savePrivateListingSellerCanonicalUpdate(update = {}, options = {}) {
   const client = requireClient()
   const listingId = normalizeUuid(update.listingId)
@@ -5932,15 +6027,15 @@ export async function savePrivateListingSellerCanonicalUpdate(update = {}, optio
   if (!listingId) throw new Error('Listing id is required.')
   if (!mutationId) throw new Error('A valid seller update id is required.')
 
-  const saveTimeout = createRequestTimeout(25000)
+  const payload = buildListingSellerCanonicalSavePayload(update)
   let result
   try {
-    result = await client.rpc('save_private_listing_seller_canonical_update', {
+    result = await runSellerCanonicalRequest((signal) => client.rpc('save_private_listing_seller_canonical_update', {
       p_listing_id: listingId,
-      p_form_data: update.nextFormData && typeof update.nextFormData === 'object' ? update.nextFormData : {},
+      p_form_data: payload.formData,
       p_canonical_facts: update.canonicalFacts && typeof update.canonicalFacts === 'object' ? update.canonicalFacts : {},
       p_canonical_readiness: update.readiness && typeof update.readiness === 'object' ? update.readiness : {},
-      p_listing_patch: update.listingPatch && typeof update.listingPatch === 'object' ? update.listingPatch : {},
+      p_listing_patch: payload.listingPatch,
       p_onboarding_status: normalizeNullableText(update.onboardingStatus) || 'not_started',
       p_seller_type: normalizeNullableText(update.sellerType),
       p_ownership_structure: normalizeNullableText(update.ownershipStructure),
@@ -5950,22 +6045,22 @@ export async function savePrivateListingSellerCanonicalUpdate(update = {}, optio
       p_source: normalizeNullableText(update.source) || 'agent_listing_workspace',
       p_changed_fields: Array.isArray(update.changedFields) ? update.changedFields.map(normalizeText).filter(Boolean) : [],
       p_expected_updated_at: normalizeNullableText(update.expectedUpdatedAt),
-    }).abortSignal(saveTimeout.signal)
+    }).abortSignal(signal), SELLER_CANONICAL_SAVE_TIMEOUT_MS)
   } catch (error) {
-    if (saveTimeout.signal.aborted) {
-      const timeoutError = new Error('The seller save request timed out. Check the listing before retrying because the save may have completed.')
-      timeoutError.code = 'SELLER_PROFILE_SAVE_TIMEOUT'
-      throw timeoutError
-    }
-    throw error
-  } finally {
-    saveTimeout.clear()
+    if (error.code !== 'SELLER_PROFILE_SAVE_TIMEOUT' && !isSellerOnboardingCompletionTimeoutError(error)) throw error
+    result = { error }
   }
 
-  if (saveTimeout.signal.aborted) {
-    const timeoutError = new Error('The seller save request timed out. Check the listing before retrying because the save may have completed.')
-    timeoutError.code = 'SELLER_PROFILE_SAVE_TIMEOUT'
-    throw timeoutError
+  if (result.error && (result.error.code === 'SELLER_PROFILE_SAVE_TIMEOUT' || isSellerOnboardingCompletionTimeoutError(result.error))) {
+    const recoveredReceipt = await recoverSellerCanonicalSave(client, update)
+    if (!recoveredReceipt) {
+      const timeoutError = new Error('The seller save request timed out and its completion could not be confirmed. Your entries are still in this form. Reload the listing before retrying because the save may have completed.')
+      timeoutError.code = 'SELLER_PROFILE_SAVE_TIMEOUT'
+      timeoutError.mutationId = mutationId
+      timeoutError.cause = result.error
+      throw timeoutError
+    }
+    result = { data: recoveredReceipt, error: null }
   }
 
   if (result.error) {
@@ -5993,14 +6088,14 @@ export async function savePrivateListingSellerCanonicalUpdate(update = {}, optio
   })
 
   let requirementSyncResult = null
-  if (update.requirementsAffected && options.syncRequirements !== false) {
+  if ((update.requirementsAffected || options.forceRequirementSync === true) && options.syncRequirements !== false) {
     try {
-      requirementSyncResult = await syncPrivateListingRequirements(listingId, {
+      requirementSyncResult = await syncPrivateListingRequirements(options.includeRequirementsAndDocuments === false ? committedListing : listingId, {
         emitActivity: false,
         reason: options.requirementSyncReason || `seller_canonical_update:${normalizeKey(update.mutationType || 'seller_edit')}`,
       })
     } catch (error) {
-      const syncError = new Error('Seller details were saved, but the document requirements could not be refreshed. Retry the seller save before sending documents.')
+      const syncError = new Error('Seller details were saved, but the document checklist could not be refreshed. Reload the listing before preparing or sending documents again.')
       syncError.code = 'SELLER_REQUIREMENT_SYNC_FAILED'
       syncError.committed = true
       syncError.recoverable = true
@@ -6015,9 +6110,9 @@ export async function savePrivateListingSellerCanonicalUpdate(update = {}, optio
 
   let listing
   try {
-    listing = requirementSyncResult?.listing || await getPrivateListingById(listingId, {
+    listing = requirementSyncResult?.listing || (options.includeRequirementsAndDocuments === false ? committedListing : await getPrivateListingById(listingId, {
       includeRequirementsAndDocuments: options.includeRequirementsAndDocuments !== false,
-    })
+    }))
     if (!listing) throw new Error('The committed listing could not be read back.')
   } catch (error) {
     throw postCommitError('Seller details were saved, but the refreshed listing could not be loaded. Reload before sending documents.', 'SELLER_READBACK_FAILED', error)
@@ -6026,9 +6121,47 @@ export async function savePrivateListingSellerCanonicalUpdate(update = {}, optio
   return {
     receipt: result.data || {},
     listing,
+    snapshotOnly: options.includeRequirementsAndDocuments === false,
     requirementSyncResult,
     syncedRequirements: requirementSyncResult?.requirements || listing?.documentRequirements || [],
   }
+}
+
+export async function saveRentalListingExpiry(listingId, { expectedUpdatedAt, expiryDate }, { client = null } = {}) {
+  const activeClient = client || requireClient()
+  const rpc = 'save_rental_listing_expiry_v1'
+  const { data, error } = await activeClient.rpc(rpc, { p_listing_id: listingId, p_expected_updated_at: expectedUpdatedAt, p_expiry_date: expiryDate })
+  if (error) {
+    if (isMissingRpcError(error, rpc)) throw new Error('Safe rental expiry saving is not available yet. Apply the isolated expiry save migration before saving.')
+    throw error
+  }
+  if (!normalizeUuid(data?.activityId) || data?.listingId !== listingId || !data?.updatedAt || data?.facts?.rentalInfo?.property24ExpiryDate !== expiryDate) {
+    throw new Error('Rental expiry save returned no confirmation. Reload before retrying; the save may have completed.')
+  }
+  return data
+}
+
+export async function saveRentalListingSnapshot(listingId, payload, { client = null } = {}) {
+  const activeClient = client || requireClient()
+  const rpc = payload.galleryOnly ? 'save_rental_listing_gallery_v2' : 'save_rental_listing_snapshot_v2'
+  const args = {
+    p_listing_id: listingId,
+    p_expected_updated_at: payload.expectedUpdatedAt,
+    p_gallery: payload.galleryImages,
+    p_cover_index: payload.galleryImages.length ? payload.coverIndex : null,
+  }
+  if (!payload.galleryOnly) Object.assign(args, { p_listing_patch: payload.listingPatch, p_publication: payload.publicationData, p_media_edits: payload.mediaEdits || [] })
+  const { data, error } = await activeClient.rpc(rpc, args)
+  if (error) {
+    if (isMissingRpcError(error, rpc)) {
+      throw new Error('Safe rental media saving is not available in this environment yet. Apply the rental listing persistence, media controls and durable history migrations before saving.')
+    }
+    throw error
+  }
+  if (!normalizeUuid(data?.activityId) || data?.listingId !== listingId || !data?.updatedAt || (!payload.galleryOnly && !data?.publication) || !Array.isArray(data?.media) || !Array.isArray(data?.externalLinks)) {
+    throw new Error('Rental save returned no confirmation. Reload before retrying; the save may have completed.')
+  }
+  return data
 }
 
 export async function syncPrivateListingDistributionData(listingId, payload = {}) {
@@ -6112,7 +6245,7 @@ export async function syncPrivateListingDistributionData(listingId, payload = {}
       listing_id: normalizedId,
       platform: item.platform || 'Other',
       url: item.url,
-      status: item.status || 'Draft',
+      status: normalizeListingExternalLinkStatus(item.status),
       published_at: item.publishedAt || null,
       last_checked_at: item.lastCheckedAt || null,
       notes: normalizeNullableText(item.notes),
@@ -6219,7 +6352,7 @@ export async function getPrivateListing(listingId, options = {}) {
   return getPrivateListingById(listingId, options)
 }
 
-async function getPrivateListingById(listingId, { includeRequirementsAndDocuments = true } = {}) {
+async function getPrivateListingById(listingId, { includeRequirementsAndDocuments = true, requireDistributionData = false, includePreviousListings = false } = {}) {
   const client = requireClient()
   const normalizedId = normalizeUuid(listingId)
   if (!normalizedId) throw new Error('Listing id is required.')
@@ -6228,15 +6361,19 @@ async function getPrivateListingById(listingId, { includeRequirementsAndDocument
     if (isMissingTableError(query.error, 'private_listings')) return null
     throw query.error
   }
-  if (!query.data || isDeletedPrivateListingRow(query.data)) return null
+  if (!query.data || !isVisiblePrivateListingRow(query.data, {
+    includeArchivedListings: includePreviousListings,
+    includeArchivedImports: includePreviousListings,
+    includeWithdrawnListings: includePreviousListings,
+  })) return null
   const [onboardingMap, requirementsMap, documentsMap, externalLinksMap, publicationMap, mandatePacketsMap, mediaMap, assignedAgentsMap] = await Promise.all([
     fetchOnboardingRowsForListings(client, [query.data.id]),
     includeRequirementsAndDocuments ? fetchRequirementRowsForListings(client, [query.data.id]) : Promise.resolve(new Map()),
     includeRequirementsAndDocuments ? fetchDocumentRowsForListings(client, [query.data.id]) : Promise.resolve(new Map()),
-    fetchExternalLinkRowsForListings(client, [query.data.id]),
-    fetchPublicationRowsForListings(client, [query.data.id]),
+    fetchExternalLinkRowsForListings(client, [query.data.id], { strict: requireDistributionData }),
+    fetchPublicationRowsForListings(client, [query.data.id], { strict: requireDistributionData }),
     includeRequirementsAndDocuments ? fetchMandatePacketRowsForListings(client, [query.data]) : Promise.resolve(new Map()),
-    fetchMediaRowsForListings(client, [query.data.id]),
+    fetchMediaRowsForListings(client, [query.data.id], { strict: requireDistributionData }),
     fetchAssignedAgentProfilesForListings(client, [query.data]),
   ])
   const listing = mapPrivateListingRow(query.data, onboardingMap, requirementsMap, documentsMap, externalLinksMap, publicationMap, mandatePacketsMap, assignedAgentsMap)
@@ -6384,6 +6521,8 @@ export async function getAgentPrivateListings(
     includeMedia = false,
     includeArchivedImports = false,
     includeArchivedListings = false,
+    includeWithdrawnListings = false,
+    requireAvailable = false,
   } = {},
 ) {
   const client = requireClient()
@@ -6394,7 +6533,7 @@ export async function getAgentPrivateListings(
   if (!includeAllOrganisationListings && !normalizedAgentIds.length) return []
 
   const buildQuery = ({ includeBranchFilter = true } = {}) => {
-    const queryBuilder = applyVisiblePrivateListingFilters(client.from('private_listings').select('*'), { includeArchivedImports, includeArchivedListings })
+    const queryBuilder = applyVisiblePrivateListingFilters(client.from('private_listings').select('*', requireAvailable ? { count: 'exact' } : {}), { includeArchivedImports, includeArchivedListings, includeWithdrawnListings })
 
     if (normalizedOrgId) {
       queryBuilder.eq('organisation_id', normalizedOrgId)
@@ -6415,24 +6554,28 @@ export async function getAgentPrivateListings(
 
   let query = await buildQuery({ includeBranchFilter: true })
   if (query.error && normalizedBranchId && isMissingColumnError(query.error, 'branch_id')) {
+    if (requireAvailable) throw query.error
     if (includeAllOrganisationListings) return []
     query = await buildQuery({ includeBranchFilter: false })
   }
   if (query.error) {
-    if (isMissingTableError(query.error, 'private_listings')) return []
+    if (!requireAvailable && isMissingTableError(query.error, 'private_listings')) return []
     throw query.error
   }
-  const rows = (Array.isArray(query.data) ? query.data : []).filter((row) => isVisiblePrivateListingRow(row, { includeArchivedImports, includeArchivedListings }))
+  if (requireAvailable && (typeof query.count !== 'number' || query.count > (query.data || []).length)) {
+    throw new Error('The stock review could not read all accessible records. Narrow the workspace scope before reviewing again.')
+  }
+  const rows = (Array.isArray(query.data) ? query.data : []).filter((row) => isVisiblePrivateListingRow(row, { includeArchivedImports, includeArchivedListings, includeWithdrawnListings }))
   const listingIds = rows.map((row) => row.id)
   const [onboardingMap, requirementsMap, documentsMap, externalLinksMap, publicationMap, mandatePacketsMap, assignedAgentsMap, mediaMap] = await Promise.all([
     fetchOnboardingRowsForListings(client, listingIds),
     fetchRequirementRowsForListings(client, listingIds),
     fetchDocumentRowsForListings(client, listingIds),
-    fetchExternalLinkRowsForListings(client, listingIds),
-    fetchPublicationRowsForListings(client, listingIds),
+    fetchExternalLinkRowsForListings(client, listingIds, { strict: requireAvailable }),
+    fetchPublicationRowsForListings(client, listingIds, { strict: requireAvailable }),
     fetchMandatePacketRowsForListings(client, rows),
     fetchAssignedAgentProfilesForListings(client, rows),
-    includeMedia ? fetchMediaRowsForListings(client, listingIds) : Promise.resolve(new Map()),
+    includeMedia ? fetchMediaRowsForListings(client, listingIds, { strict: requireAvailable }) : Promise.resolve(new Map()),
   ])
   return rows
     .map((row) => {
@@ -6602,6 +6745,20 @@ export async function getPrivateListingActivity(listingId, { requireAvailable = 
   }
   const normalizedId = normalizeUuid(listingId)
   if (!normalizedId) throw new Error('Listing id is required.')
+  if (requireAvailable) {
+    const rows = []
+    const pageSize = 500
+    for (let offset = 0; offset < 10000; offset += pageSize) {
+      const page = await client.from('private_listing_activity')
+        .select('id, private_listing_id, activity_type, activity_title, activity_description, performed_by, visibility, metadata, created_at')
+        .eq('private_listing_id', normalizedId).order('created_at', { ascending: false }).order('id', { ascending: false })
+        .range(offset, offset + pageSize - 1)
+      if (page.error) throw page.error
+      rows.push(...(page.data || []))
+      if ((page.data || []).length < pageSize) return rows
+    }
+    throw new Error('This rental has more history than can be reviewed at once. The review is incomplete.')
+  }
   const query = await client
     .from('private_listing_activity')
     .select('id, private_listing_id, activity_type, activity_title, activity_description, performed_by, visibility, metadata, created_at')
@@ -8511,6 +8668,8 @@ export async function uploadSellerClientPortalDocument({
   documentRequestId = '',
   documentType = '',
   category = 'Seller Document',
+  reviewedSigningVersionId = '',
+  reviewedSigningVersionDigest = '',
 } = {}) {
   const client = requireClient()
   const normalizedToken = normalizeText(token)
@@ -8526,6 +8685,13 @@ export async function uploadSellerClientPortalDocument({
   })
   const listing = context?.listing || null
   if (!listing?.id) throw new Error('Seller client portal link is invalid or inactive.')
+  const currentSignedCopy = await getSellerPortalSignedUploadReference(
+    context?.onboardingFormData?.formData || context?.onboarding?.formData || listing?.sellerOnboarding?.formData || {}, requirementKey,
+  )
+  if (Boolean(reviewedSigningVersionId) !== Boolean(reviewedSigningVersionDigest) ||
+    (currentSignedCopy && (currentSignedCopy.reviewedSigningVersionId !== reviewedSigningVersionId || currentSignedCopy.reviewedSigningVersionDigest !== reviewedSigningVersionDigest))) {
+    throw new Error('Reopen the current signing copy before uploading its signed file. The reviewed version changed or is missing.')
+  }
   const storageClient = requireSellerPortalStorageClient(normalizedToken, resolvedAccessToken)
   const filePolicy = validateDocumentUploadFile(file, { surface: 'seller_portal', listingId: listing.id })
 
@@ -8575,7 +8741,7 @@ export async function uploadSellerClientPortalDocument({
 
   let rpc
   try {
-    rpc = await client.rpc('bridge_upload_private_listing_seller_document', {
+    rpc = await client.rpc(reviewedSigningVersionId ? 'bridge_upload_private_listing_seller_signed_copy' : 'bridge_upload_private_listing_seller_document', {
       p_token: normalizedToken,
       p_requirement_key: normalizedRequirementKey || null,
       p_document_name: safeOriginalName,
@@ -8585,6 +8751,10 @@ export async function uploadSellerClientPortalDocument({
       p_canonical_requirement_instance_id: canonicalRequirementInstanceId || null,
       p_category: category || 'Seller Document',
       p_access_token: resolvedAccessToken || null,
+      ...(reviewedSigningVersionId ? {
+        p_reviewed_signing_version_id: reviewedSigningVersionId,
+        p_reviewed_signing_version_digest: reviewedSigningVersionDigest,
+      } : {}),
     })
     if (rpc.error) throw rpc.error
     if (!rpc.data?.document?.id) {

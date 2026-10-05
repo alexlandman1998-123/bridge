@@ -1,6 +1,6 @@
 import { ArrowRight, ChevronDown, Mail, MapPin, Phone } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { submitHomeSeekersLead, useHomeSeekersPageTracking } from './homeSeekersWebsiteData'
+import { useHomeSeekersLeadSubmission, useHomeSeekersPageTracking } from './homeSeekersWebsiteData'
 import './HomeSeekersDemo.css'
 import './HomeSeekersContact.css'
 
@@ -8,6 +8,7 @@ const nav = ['Buy', 'Sell', 'Rent', 'Developments', 'Our people', 'About', 'Cont
 const hrefFor = (item) => ({ Buy: '/demo/homeseekers/buy', Sell: '/demo/homeseekers/sell', Rent: '/demo/homeseekers/rent', Developments: '/demo/homeseekers/developments', 'Our people': '/demo/homeseekers/people', About: '/demo/homeseekers/about', Contact: '/demo/homeseekers/contact' }[item] || '/demo/homeseekers')
 
 function HomeSeekersContact() {
+  const submitLead = useHomeSeekersLeadSubmission()
   const [headerScrolled, setHeaderScrolled] = useState(false)
   const [sent, setSent] = useState(false)
   const [sending, setSending] = useState(false)
@@ -20,7 +21,7 @@ function HomeSeekersContact() {
     setSending(true)
     setError('')
     try {
-      await submitHomeSeekersLead({ type: 'general_enquiry', name: form.get('name'), email: form.get('email'), leadIntent: form.get('interest') === 'Selling a home' ? 'sell' : undefined, message: `${form.get('interest')}: ${form.get('message')}`, privacyAccepted: form.get('privacy') === 'on', companyWebsite: form.get('website') })
+      await submitLead({ type: 'general_enquiry', name: form.get('name'), email: form.get('email'), leadIntent: ({ 'Buying a home': 'buy', 'Selling a home': 'sell', 'Renting a home': 'rent' })[form.get('interest')] || 'other', message: `${form.get('interest')}: ${form.get('message')}`, privacyAccepted: form.get('privacy') === 'on', companyWebsite: form.get('website') })
       setSent(true)
     } catch (submitError) { setError(submitError.message || 'Your enquiry could not be sent.') }
     finally { setSending(false) }
@@ -37,7 +38,7 @@ function HomeSeekersContact() {
 
     <section className="hs-contact-visit"><img src="https://images.unsplash.com/photo-1600607687920-4e2a09cf159d?auto=format&fit=crop&w=1400&q=88" alt="Home Seekers area" /><div><p className="hs-eyebrow">People who know the area</p><h2>Prefer a face-to-face?</h2><p>Our local team is always happy to make time for a proper property conversation.</p><a href="/demo/homeseekers/people">Meet our people <ArrowRight size={17} /></a></div></section>
 
-    <footer className="hs-footer"><div><img src="/brand/homeseekers/logo.png" alt="Home Seekers" /><p>Gauteng property. Done differently.</p></div><div><h3>Properties</h3><a href="/demo/homeseekers/buy">Buy</a><a href="/demo/homeseekers/rent">Rent</a><a href="/demo/homeseekers/developments">Developments</a><a href="/demo/homeseekers">Areas</a></div><div><h3>Sell</h3><a href="/demo/homeseekers/sell">Sell with Home Seekers</a><a href="/demo/homeseekers/sell#valuation">Request a valuation</a><a href="/demo/homeseekers/sell#promise">45 Day Promise</a></div><div><h3>Company</h3><a href="/demo/homeseekers/about">About</a><a href="/demo/homeseekers/people">Our people</a><a href="/demo/homeseekers/contact">Contact</a></div><div className="hs-footer-bottom"><span>© Home Seekers</span><span>Privacy · Terms · POPIA</span><span>Powered by Arch9</span></div></footer>
+    <footer className="hs-footer"><div><img src="/brand/homeseekers/logo.png" alt="Home Seekers" /><p>Gauteng property. Done differently.</p></div><div><h3>Properties</h3><a href="/demo/homeseekers/buy">Buy</a><a href="/demo/homeseekers/rent">Rent</a><a href="/demo/homeseekers/developments">Developments</a></div><div><h3>Sell</h3><a href="/demo/homeseekers/sell">Sell with Home Seekers</a><a href="/demo/homeseekers/sell#valuation">Request a valuation</a><a href="/demo/homeseekers/sell#promise">45 Day Promise</a></div><div><h3>Company</h3><a href="/demo/homeseekers/about">About</a><a href="/demo/homeseekers/people">Our people</a><a href="/demo/homeseekers/contact">Contact</a></div><div className="hs-footer-bottom"><span>© Home Seekers</span><span>Privacy · Terms · POPIA</span><span>Powered by Arch9</span></div></footer>
   </main>
 }
 

@@ -1021,6 +1021,18 @@ export async function scheduleAppointmentReminders(appointmentId, options = {}) 
     }
 
     if (existing.data) {
+      if (existing.data.status === 'cancelled' && options.reactivateCancelled === true) {
+        const reactivated = await supabase.from('appointment_reminders')
+          .update({ status: 'pending', sent_at: null, metadata: row.metadata, updated_at: new Date().toISOString() })
+          .eq('id', existing.data.id)
+          .eq('status', 'cancelled')
+          .select('id, appointment_id, recipient_id, recipient_role, recipient_email, recipient_phone, reminder_type, scheduled_for, status, sent_at, metadata, created_at, updated_at')
+          .maybeSingle()
+        if (reactivated.error) throw reactivated.error
+        if (!reactivated.data) throw new Error('Reminder scheduling could not be confirmed.')
+        inserted.push(reactivated.data)
+        continue
+      }
       inserted.push(existing.data)
       continue
     }

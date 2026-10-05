@@ -2,6 +2,7 @@ import { AlertCircle, CheckCircle2, Clock3, FileText, Folder, UploadCloud } from
 import { useState } from 'react'
 import { buyerPortalHexToRgba, createBuyerPortalTheme } from '../buyerPortalTheme'
 import ClientDocumentUploadButton from './ClientDocumentUploadButton'
+import { isBondStatementHandoff } from '../../../modules/bond/application/documents/bondDocumentWorkspacePresentation.js'
 
 const STATUS_STYLES = {
   action: 'border-amber-200 bg-amber-50 text-amber-800',
@@ -18,6 +19,7 @@ function DocumentStatusIcon({ status = 'upcoming', size = 18 }) {
 }
 
 function UploadAction({ item, uploadingDocumentKey, onUpload, label = 'Upload', className = '' }) {
+  if (isBondStatementHandoff({ key: item?.uploadSpec?.requirementKey || item?.sourceId, canonicalDocumentType: item?.uploadSpec?.documentType || item?.uploadSpec?.documentDefinitionKey })) return <p className="text-xs leading-5 text-[#52657b]">Bank statements use your bond consultant’s secure handoff in Bond Application. Shared document uploads are not used for these files.</p>
   if (!item?.uploadSpec || typeof onUpload !== 'function') return null
   return (
     <ClientDocumentUploadButton

@@ -15,6 +15,18 @@ test('coordination requires the saved target outcome, not position or lane summa
   }
 })
 
+test('received guarantees cannot mask an unfinished acceptance review through historical aliases', () => {
+  const historical = [{ stepKey: 'guarantees_received', status: 'completed' },
+    { stepKey: 'transfer_guarantees_accepted', status: 'waiting' }]
+  const result = steps => buildAttorneyWorkflowCoordinationSummary({ laneKey: 'bond', lanes: [{
+    laneKey: 'transfer', assignmentId: 'appointed', currentStage: 'registered', steps,
+  }] }).items.find(item => item.targetStage === 'payment_security_review')
+  assert.equal(result(historical).status, 'waiting')
+  assert.equal(result([...historical, { stepKey: 'payment_security_review', status: 'completed' }]).status, 'ready')
+  assert.equal(result([{ stepKey: 'payment_security_review', status: 'waiting' },
+    { stepKey: 'transfer_guarantees_accepted', status: 'completed' }]).status, 'waiting')
+})
+
 for (const commit of [commitSharedJourneyTask, commitSharedJourneyLaneUpdate]) {
   test(`${commit.name}: retries transient failures only, preserving command identity`, async () => {
     const payload = { p_command_id: 'same-command' }

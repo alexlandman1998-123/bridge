@@ -1,3 +1,4 @@
+import { getPurchaserEntityType, normalizePurchaserType } from '../../../../lib/purchaserPersonas.js'
 import {
   BOND_APPLICATION_PREFILL_SOURCE_KEYS,
   BOND_APPLICATION_PREFILL_SOURCE_MATRIX,
@@ -15,10 +16,10 @@ export const BOND_APPLICATION_PREFILL_CONFIRMATION_CARD_DEFINITIONS = Object.fre
       { path: 'summary.applicant_name', label: 'Applicant' },
       { path: 'summary.finance_type', label: 'Finance type' },
       { path: 'summary.purchase_price', label: 'Purchase price' },
-      { path: 'summary.deposit_contribution', label: 'Deposit' },
+      { path: 'summary.deposit_contribution', label: 'Deposit', optional: true },
       { path: 'summary.buyer_entity_type', label: 'Purchaser type' },
-      { path: 'summary.buyer_entity_name', label: 'Entity name' },
-      { path: 'summary.buyer_entity_registration_number', label: 'Registration number' },
+      { path: 'summary.buyer_entity_name', label: 'Entity name', entityOnly: true },
+      { path: 'summary.buyer_entity_registration_number', label: 'Registration number', entityOnly: true },
     ],
   },
   {
@@ -29,8 +30,8 @@ export const BOND_APPLICATION_PREFILL_CONFIRMATION_CARD_DEFINITIONS = Object.fre
     fields: [
       { path: 'applicants.primary.first_name', label: 'First names' },
       { path: 'applicants.primary.last_name', label: 'Surname' },
-      { path: 'applicants.primary.id_number', label: 'ID number' },
-      { path: 'applicants.primary.passport_number', label: 'Passport number' },
+      { path: 'applicants.primary.id_number', label: 'ID number', alternativePath: 'applicants.primary.passport_number' },
+      { path: 'applicants.primary.passport_number', label: 'Passport number', alternativePath: 'applicants.primary.id_number' },
       { path: 'applicants.primary.marital_status', label: 'Marital status' },
       { path: 'applicants.primary.nationality', label: 'Nationality' },
     ],
@@ -56,8 +57,8 @@ export const BOND_APPLICATION_PREFILL_CONFIRMATION_CARD_DEFINITIONS = Object.fre
     description: 'Review the property and requested bond amount from the OTP and transaction setup.',
     fields: [
       { path: 'summary.property_reference', label: 'Property' },
-      { path: 'summary.development_name', label: 'Development' },
-      { path: 'summary.unit_reference', label: 'Unit' },
+      { path: 'summary.development_name', label: 'Development', optional: true },
+      { path: 'summary.unit_reference', label: 'Unit', optional: true },
       { path: 'loan_details.street_or_complex', label: 'Street or complex' },
       { path: 'loan_details.suburb', label: 'Suburb' },
       { path: 'loan_details.amount_to_be_registered', label: 'Requested bond' },
@@ -289,7 +290,18 @@ export function buildBondApplicationPrefillConfirmationCards(application = {}, m
   return definitions
     .filter((card) => !activeSectionKey || normalizeSectionKey(card.section) === activeSectionKey)
     .map((card) => {
-      const fields = card.fields.map((field) => {
+      const entityType = getPurchaserEntityType(normalizePurchaserType(application?.summary?.buyer_entity_type || 'individual'))
+      const fields = card.fields.filter((field) => {
+        if (field.entityOnly && !['company', 'trust'].includes(entityType)) return false
+        const value = getApplicationValue(application, field.path)
+        if (field.optional && !isMeaningfulValue(value)) return false
+        // Either identity document satisfies review; preserve both when supplied.
+        if (field.alternativePath && !isMeaningfulValue(value)
+          && isMeaningfulValue(getApplicationValue(application, field.alternativePath))) return false
+        // When neither is supplied, offer one identity action rather than requiring both.
+        if (field.path === 'applicants.primary.passport_number' && !isMeaningfulValue(value)) return false
+        return true
+      }).map((field) => {
         const value = getApplicationValue(application, field.path)
         const review = getBondApplicationPrefillFieldReview(metadata, field.path, {
           label: field.label,

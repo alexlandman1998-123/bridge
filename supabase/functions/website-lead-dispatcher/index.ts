@@ -41,7 +41,9 @@ async function serviceRoleRequest(
   // submissions table instead of treating any signed-in caller as trusted.
   if (!token || !supabaseUrl) return false;
   const response = await fetch(
-    `${supabaseUrl.replace(/\/$/, "")}/rest/v1/website_lead_submissions?select=id&limit=1`,
+    `${
+      supabaseUrl.replace(/\/$/, "")
+    }/rest/v1/website_lead_submissions?select=id&limit=1`,
     {
       headers: {
         authorization: `Bearer ${token}`,
@@ -250,11 +252,17 @@ Deno.serve(async (request) => {
   });
 
   try {
-    const reset = await client.rpc(
-      "website_reset_stale_lead_notification_claims",
-      {},
-    );
-    if (reset.error) throw reset.error;
+    let staleClaimsReset = 0;
+    // A targeted delivery must not mutate another agency's queue. Scoped retry
+    // workers recover their own interrupted claims before requesting an event.
+    if (!requestedEventId) {
+      const reset = await client.rpc(
+        "website_reset_stale_lead_notification_claims",
+        {},
+      );
+      if (reset.error) throw reset.error;
+      staleClaimsReset = Number(reset.data || 0);
+    }
     const events = await claimEvents(
       client,
       limit,
@@ -272,7 +280,7 @@ Deno.serve(async (request) => {
     }
     return jsonResponse(200, {
       ok: true,
-      staleClaimsReset: Number(reset.data || 0),
+      staleClaimsReset,
       claimed: events.length,
       results,
     });

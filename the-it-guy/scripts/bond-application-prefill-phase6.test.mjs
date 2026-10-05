@@ -105,6 +105,33 @@ async function runStaticChecks() {
   assert.match(docSource, /Editing any field/)
 }
 
+function runConditionalReviewChecks() {
+  const application = {
+    summary: { applicant_name: 'Buyer', finance_type: 'bond', purchase_price: 1000000, buyer_entity_type: 'individual' },
+    applicants: [{ key: 'primary', first_name: 'Buyer', last_name: 'Example', id_number: '9001010000000', marital_status: 'single', nationality: 'South African' }],
+    loan_details: { street_or_complex: '12 Street', suburb: 'Town', amount_to_be_registered: 1000000 },
+  }
+  const card = (key) => buildBondApplicationPrefillConfirmationCards(application).find((item) => item.key === key)
+  assert.equal(card('application_summary').complete, true, 'Individual does not require entity details or a deposit')
+  assert.equal(card('primary_applicant').complete, true, 'ID does not also require a passport')
+  application.applicants[0].passport_number = 'P123456'
+  delete application.applicants[0].id_number
+  assert.equal(card('primary_applicant').complete, true, 'Passport satisfies identity review')
+  delete application.applicants[0].passport_number
+  assert.equal(card('primary_applicant').missingFields, 1, 'Missing identity produces a single action')
+  application.summary.property_reference = '12 Street'
+  assert.equal(card('finance_property').complete, true, 'Existing property does not require development or unit')
+  for (const type of ['company', 'trust']) {
+    application.summary.buyer_entity_type = type
+    assert.equal(card('application_summary').missingFields, 2, `${type} still requires entity name and registration`)
+  }
+  application.summary.buyer_entity_name = 'Saved entity'
+  application.summary.buyer_entity_type = 'individual'
+  card('application_summary')
+  assert.equal(application.summary.buyer_entity_name, 'Saved entity', 'Review never deletes saved answers')
+}
+
+runConditionalReviewChecks()
 runFirstMissingFieldChecks()
 await runStaticChecks()
 

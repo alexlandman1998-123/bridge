@@ -47,15 +47,32 @@ function toIso(value) {
   return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString()
 }
 
-function canRoleSeeActivity(activity, viewerRole) {
+const ATTORNEY_LANES = Object.freeze({
+  attorney: 'transfer', conveyancer: 'transfer', transfer: 'transfer', transfer_attorney: 'transfer',
+  bond: 'bond', bond_registration: 'bond', bond_attorney: 'bond',
+  cancellation: 'cancellation', seller_bond_cancellation: 'cancellation', cancellation_attorney: 'cancellation',
+})
+
+function canRoleSeeActivity(activity, viewerRole, viewerLaneKeys) {
   const role = normalizeRole(viewerRole)
   const visibility = normalizeRole(activity?.visibility)
   const audience = normalizeAudience(activity?.audience_json || activity?.audience)
-  const acceptedAudiences = ROLE_AUDIENCE[role] || []
+  const acceptedAudiences = [...(ROLE_AUDIENCE[role] || [])]
+  if (visibility === 'internal' && INTERNAL_ROLES.has(role) && Array.isArray(viewerLaneKeys)) {
+    for (const lane of viewerLaneKeys) {
+      const key = ATTORNEY_LANES[normalizeRole(lane)]
+      if (key) acceptedAudiences.push(`${key}_attorney`)
+    }
+  }
 
   if (!acceptedAudiences.some((candidate) => audience.includes(candidate))) return false
   if (CLIENT_ROLES.has(role)) return visibility === 'client_visible'
   if (visibility === 'internal') {
+    const privateLane = ATTORNEY_LANES[normalizeRole(activity?.lane_key || activity?.laneKey)]
+    if (privateLane && !['admin', 'platform_admin', 'internal_admin', 'developer'].includes(role)) {
+      const lanes = Array.isArray(viewerLaneKeys) ? viewerLaneKeys : [ATTORNEY_LANES[role]]
+      if (!lanes.some((lane) => ATTORNEY_LANES[normalizeRole(lane)] === privateLane)) return false
+    }
     if (role === 'agent') {
       return activity?.canonical_event_type === 'AgentWorkflowOverrideApplied' || activity?.eventType === 'AgentWorkflowOverrideApplied'
     }
@@ -95,6 +112,7 @@ function mapLane(lane = {}) {
 export function buildTransactionSyncReadModel({
   transactionId,
   viewerRole,
+  viewerLaneKeys,
   workflowReadModel = null,
   activityRows = [],
   refreshSignal = null,
@@ -102,7 +120,7 @@ export function buildTransactionSyncReadModel({
 } = {}) {
   const role = normalizeRole(viewerRole)
   const activities = (activityRows || [])
-    .filter((row) => canRoleSeeActivity(row, role))
+    .filter((row) => canRoleSeeActivity(row, role, viewerLaneKeys))
     .map(mapActivity)
     .sort((left, right) => String(right.occurredAt || '').localeCompare(String(left.occurredAt || '')))
 
@@ -171,6 +189,7 @@ export async function getTransactionSyncReadModel(transactionId, options = {}) {
   return buildTransactionSyncReadModel({
     transactionId: normalizedTransactionId,
     viewerRole: options.viewerRole,
+    viewerLaneKeys: options.viewerLaneKeys,
     workflowReadModel: options.workflowReadModel,
     activityRows,
     refreshSignal,
@@ -214,5 +233,7 @@ export function getBondOriginatorTransactionSyncReadModel(transactionId, options
 }
 
 export function getAttorneyTransactionSyncReadModel(transactionId, options = {}) {
-  return getRoleTransactionSyncReadModel(transactionId, 'attorney', options)
+  const role = normalizeRole(options.viewerRole)
+  return getRoleTransactionSyncReadModel(transactionId,
+    ['attorney', 'conveyancer', 'transfer_attorney', 'bond_attorney', 'cancellation_attorney'].includes(role) ? role : 'attorney', options)
 }

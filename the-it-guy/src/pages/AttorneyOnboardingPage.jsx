@@ -94,7 +94,7 @@ function AttorneyOnboardingPage() {
 
   function openAttorneyDashboard() {
     authState.refreshAuthState?.()
-    const pendingPartnerInvitePath = readPendingPartnerInvitePath()
+    const pendingPartnerInvitePath = readPendingPartnerInvitePath(authState.signupIntent)
     const target = pendingPartnerInvitePath
       ? buildPartnerInviteAutoAcceptPath(pendingPartnerInvitePath)
       : '/attorney/dashboard'

@@ -29,7 +29,7 @@ const snapshot = {
   selectedBanks: ['Example Bank'],
   participants: [{ participantRole: 'primary_applicant', answers: person }, { participantRole: 'co_applicant', answers: { ...person, personal: { first_name: 'André', surname: 'Example' } } }],
   signerManifest: [{ participantRole: 'primary_applicant', fullName: 'Zoë Mokoena', email: 'zoe@example.test', identityReference: 'TEST-IDENTITY' }],
-  signatureEvidence: { method: 'html_canvas', signerName: 'Zoë Mokoena', signedAt: '2026-09-13T10:00:00.000Z', confirmed: true, dataUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwI/4BvG8wAAAABJRU5ErkJggg==' },
+  signatureEvidence: { method: 'html_canvas', signerName: 'Zoë Mokoena', signedAt: '2026-09-13T10:00:00.000Z', confirmed: true, dataUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAFAAAAAeCAYAAAC7Q5mxAAAA00lEQVR4nO2WMRKDMAwE/YjU1Pz/g85Q0MFEJietboZiOyytDmM85pzj5Tm4gDu4gDu4gDu4gDu4gDu4gDu4gDu4wMln2+cvaMeWAUaC6xyiTXBdg2wT3pN1dHiHAx5e9Xr1HFh49ItQ9R7ZApnnV/XZeNVLuiuIAatCvOuR9il02B0Vc1w+qGyaGVp2kJFa0ubd/pD/eERrLG/ZSLMud7SKu2a4+Qp0eKpZIvWlzemwlCFGa0sE6ICUQa7WxIdyBxdwBxdwBxdwBxdwBxdwBxdw5wtLInunfWQt6gAAAABJRU5ErkJggg==' },
   declarations: [{ key: 'accuracy', title: 'Accuracy of information', text: 'I confirm that these sample answers are accurate.', version: 'test-v1', accepted: true, acceptedAt: '2026-09-13T10:00:00Z', participantRole: 'primary_applicant' }, { key: 'marketing', title: 'Marketing preference', text: 'Optional sample marketing consent.', version: 'test-v1', accepted: false, participantRole: 'primary_applicant' }],
   documentManifest: [{ title: 'Bank statements', requirementKey: 'statements', documents: [{ id: 'statement1', filePath: 'test/one.pdf' }, { id: 'statement2', filePath: 'test/two.pdf' }] }],
 }
@@ -85,3 +85,22 @@ assert.equal(resolveBondSignedDocumentId(olderSubmission, exactVersion), 'signed
 assert.equal(resolveBondSignedDocumentId(olderSubmission, { ...exactVersion, id: 'newer-version' }), null)
 assert.equal(resolveBondSignedDocumentId(olderSubmission, { ...exactVersion, packet_id: 'another-packet' }), null)
 assert.equal(resolveBondSignedDocumentId(olderSubmission, { ...exactVersion, finalised_at: null }), null)
+
+// Current on-page signing retains the captured evidence and hash-verified answers.
+const capturedSnapshot = { ...snapshot, participants: snapshot.participants.slice(0, 1) }
+const capturedSubmission = { ...submission, signed_document_id: null, snapshot_json: capturedSnapshot, snapshot_hash: await hashBondApplicationSnapshot(capturedSnapshot), metadata: { signingMethod: 'html_canvas' } }
+const capturedPlan = buildBondApplicationDownloadPlan({ ...context, submission: capturedSubmission })
+assert.equal(capturedPlan.capturedSignature, true)
+assert.equal(capturedPlan.files.some(file => file.signed), false)
+const capturedPack = await createBondApplicationDownload({ plan: capturedPlan, renderPdf, loadFile: async () => original })
+const capturedArchive = unzipSync(capturedPack.zip)
+assert.ok(capturedArchive['signed-evidence/captured-signature.png'].length)
+assert.deepEqual(JSON.parse(strFromU8(capturedArchive['application-data.json'])), capturedSnapshot)
+assert.equal(capturedPack.manifest.signingEvidence, 'captured_html_signature')
+assert.equal(capturedPack.manifest.files.find(file => file.documentId === 'later').source, 'collected_after_signing')
+assert.ok(!strFromU8(capturedArchive['READ-ME.txt']).includes('unchanged original signed PDF'))
+assert.throws(() => buildBondApplicationDownloadPlan({ ...context, submission: { ...capturedSubmission, snapshot_json: snapshot } }), /original signed/)
+assert.throws(() => buildBondApplicationDownloadPlan({ ...context, submission: { ...capturedSubmission, snapshot_json: { ...capturedSnapshot, signatureEvidence: { ...capturedSnapshot.signatureEvidence, confirmed: false } } } }), /original signed/)
+await assert.rejects(createBondApplicationDownload({ plan: { ...capturedPlan, snapshot: { ...capturedSnapshot, finance: { ...capturedSnapshot.finance, requestedBondAmount: 1 } } }, renderPdf, loadFile: async () => original }), /verified/)
+await assert.rejects(renderPdf({ snapshot: { ...capturedSnapshot, signatureEvidence: { ...capturedSnapshot.signatureEvidence, dataUrl: 'data:image/png;base64,YWJj' } }, manifest: capturedPack.manifest, submission: capturedSubmission }), /signature could not be rendered/)
+console.log('Captured-signature final pack, late uploads, altered evidence and rendering failure checks passed')

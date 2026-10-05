@@ -1,0 +1,58 @@
+.agent-dashboard { color: #152621; padding-top: 20px; }
+.agent-dashboard-intro p { margin: 0; color: #627068; font-size: 13px; }
+.agent-dashboard-intro h1 { margin: 7px 0 25px; color: #152621; font-size: 30px; font-weight: 550; line-height: 1.15; letter-spacing: -.055em; }
+.agent-book-tabs { display: flex; gap: 22px; border-bottom: 1px solid #dce4de; margin-bottom: 18px; }
+.agent-book-tabs button { position: relative; display: flex; align-items: center; gap: 7px; min-height: 44px; padding: 0 0 11px; color: #627068; font-size: 14px; font-weight: 550; background: transparent; border: 0; }
+.agent-book-tabs button > span { font-size: 9px; font-weight: 400; opacity: .8; }
+.agent-book-tabs button[aria-current] { color: #166b50; }
+.agent-book-tabs button[aria-current]::after { content: ''; position: absolute; bottom: -1px; inset-inline: 0; height: 2px; background: #166b50; }
+.agent-book { display: flex; gap: 12px; overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x mandatory; scrollbar-width: none; padding-right: 20px; margin-right: -20px; }
+.agent-book::-webkit-scrollbar { display: none; }
+.agent-book::after { content: ''; flex: 0 0 20px; }
+.agent-book-page { overflow-wrap: anywhere; }
+.agent-book-page { display: flex; flex-direction: column; flex: 0 0 calc(100% - 32px); min-width: 0; height: clamp(360px, calc(100dvh - 430px), 580px); padding: 24px; overflow-y: auto; overscroll-behavior-y: contain; scroll-snap-align: start; scroll-snap-stop: always; border: 1px solid #dce4de; border-radius: 18px; background: #fff; scrollbar-width: thin; }
+.agent-book-page-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: #627068; font-size: 11px; }
+.agent-book-today { background: #0b2c23; color: #fff; border-color: #0b2c23; }
+.agent-book-today .agent-book-page-top { color: #bceacc; }
+.agent-next-move { width: 100%; text-align: left; border: 0; background: transparent; color: inherit; padding: 25px 0 22px; }
+.agent-next-move h2 { margin: 0; color: #fff; font-size: 27px; font-weight: 500; line-height: 1.18; letter-spacing: -.045em; overflow-wrap: anywhere; }
+.agent-next-move p { margin: 12px 0 0; color: #d0ded7; font-size: 13px; line-height: 1.6; }
+.agent-next-meta { display: block; margin-top: 12px; color: #bceacc; font-size: 11px; }
+.agent-next-cta { display: flex; align-items: center; justify-content: space-between; min-height: 44px; margin-top: 20px; font-size: 13px; color: #bceacc; }
+.agent-today-list { margin-top: auto; padding-top: 18px; border-top: 1px solid #ffffff26; }
+.agent-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.agent-section-heading h3 { margin: 0; color: #fff; font-size: 13px; font-weight: 550; }
+.agent-section-heading button { min-height: 44px; color: #bceacc; font-size: 11px; background: none; border: 0; }
+.agent-radar-empty { margin: 4px 0 12px; color: #d0ded7; font-size: 12px; line-height: 1.7; }
+.agent-capture-link { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 44px; color: #bceacc; font-size: 12px; background: none; border: 0; text-align: left; }
+.agent-work-row { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; min-height: 44px; text-align: left; background: none; border: 0; color: #fff; }
+.agent-work-row strong, .agent-work-row small { display: block; font-size: 12px; }
+.agent-work-row small { margin-top: 5px; color: #d0ded7; font-size: 11px; }
+.agent-page-title { margin: 26px 0 8px; color: #152621; font-size: 29px; font-weight: 500; letter-spacing: -.05em; line-height: 1.1; }
+.agent-page-description { margin: 0 0 22px; color: #627068; font-size: 12px; line-height: 1.6; }
+.agent-deal-list, .agent-listing-list { flex: 1; }
+.agent-deal-row { display: block; width: 100%; padding: 17px 0; text-align: left; background: none; border: 0; border-top: 1px solid #e5ebe6; }
+.agent-deal-stage { display: block; color: #166b50; font-size: 10px; line-height: 1.5; text-transform: capitalize; }
+.agent-deal-row > strong { display: block; margin-top: 6px; color: #152621; font-size: 17px; font-weight: 550; letter-spacing: -.025em; line-height: 1.3; }
+.agent-deal-next { display: block; margin-top: 7px; color: #627068; font-size: 12px; line-height: 1.6; }
+.agent-deal-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 13px; color: #33493e; font-size: 12px; }
+.agent-listing-row { display: flex; align-items: flex-start; gap: 15px; padding: 20px 0; border-top: 1px solid #e5ebe6; }
+.agent-listing-number { color: #627068; font-size: 11px; padding-top: 2px; }
+.agent-listing-row h3 { margin: 7px 0; color: #152621; font-size: 17px; font-weight: 550; letter-spacing: -.025em; line-height: 1.3; }
+.agent-listing-row p { margin: 0 0 8px; color: #627068; font-size: 12px; }
+.agent-listing-row strong { color: #33493e; font-size: 12px; font-weight: 500; }
+.agent-page-link { display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; gap: 16px; width: 100%; min-height: 48px; margin-top: 12px; padding-top: 8px; border: 0; border-top: 1px solid #e5ebe6; background: none; color: #166b50; font-size: 12px; text-align: left; }
+.agent-book-empty { padding: 25px 0; color: #166b50; }
+.agent-book-empty h3 { margin: 15px 0 8px; color: #152621; font-size: 18px; line-height: 1.35; font-weight: 500; }
+.agent-book-empty p { margin: 0; color: #627068; font-size: 12px; line-height: 1.7; }
+.agent-book-position { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 17px 0 24px; color: #627068; font-size: 10px; }
+.agent-book-position > span:nth-child(2) { display: flex; gap: 5px; }
+.agent-book-position i { width: 4px; height: 4px; border-radius: 50%; background: #bdc9c0; }
+.agent-book-position i.is-current { width: 16px; border-radius: 4px; background: #166b50; }
+.agent-dashboard-summary { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; padding: 0 0 10px; }
+.agent-dashboard-summary > div + div { border-left: 1px solid #dce4de; padding-left: 24px; }
+.agent-dashboard-summary strong { display: block; color: #152621; font-size: 23px; font-weight: 500; line-height: 1.2; letter-spacing: -.04em; }
+.agent-dashboard-summary span { display: block; margin-top: 5px; color: #627068; font-size: 11px; }
+.agent-dashboard button { cursor: pointer; }
+.agent-dashboard button:focus-visible { outline: 2px solid #5eaf86; outline-offset: 3px; }
+@media (max-width: 360px) { .agent-book-page { padding: 20px; } .agent-next-move h2 { font-size: 24px; } .agent-dashboard-intro h1 { font-size: 27px; } }

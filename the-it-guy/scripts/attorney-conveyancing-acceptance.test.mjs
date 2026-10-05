@@ -117,6 +117,33 @@ for (const entry of cases) {
   if (entry.cancellation) includesAll(steps(plan, 'cancellation'), entry.cancellation, entry.name)
 }
 
+// Applicability coverage is independent of legal/evidence approval: assemble
+// the common spine from party, funding, security, tenure and tax facts.
+let applicabilityCombinations = 0
+for (const buyerType of ['individual','company','trust','close_corporation'])
+for (const sellerType of ['individual','company','trust','close_corporation'])
+for (const financeType of ['cash','bond','hybrid'])
+for (const sellerHasExistingBond of [false,true])
+for (const propertyTenure of ['freehold','sectional_title','estate_hoa'])
+for (const taxRoute of ['transfer_duty','vat','zero_rated_going_concern','exempt']) {
+  const input = profile([
+    individual('buyer','buyer',{entityType:buyerType}), individual('seller','seller',{entityType:sellerType}),
+  ],{financeType,sellerHasExistingBond,propertyTenure,hoaApplicable:propertyTenure==='estate_hoa'?'yes':'no',
+    transferTaxDecision:{route:taxRoute,dutyPaymentRequired:'yes'}})
+  const plan=planFor(input)
+  assert.deepEqual(plan.laneKeys,['transfer',...(financeType==='cash'?[]:['bond']),...(sellerHasExistingBond?['cancellation']:[])])
+  const transfer=steps(plan)
+  assert.equal(transfer.has('cash_funding_source_review'),financeType!=='bond')
+  assert.equal(transfer.has('body_corporate_levy_clearance_review'),propertyTenure==='sectional_title')
+  assert.equal(transfer.has('hoa_clearance_review'),propertyTenure==='estate_hoa')
+  for (const [route,task] of Object.entries({transfer_duty:'transfer_duty_tdc01_submission',vat:'ordinary_vat_basis_verified',zero_rated_going_concern:'going_concern_zero_rate_verified',exempt:'transfer_duty_exemption_basis_verified'}))
+    assert.equal(transfer.has(task),route===taxRoute)
+  for (const lane of plan.lanes) assert.equal(new Set(lane.stepKeys).size,lane.stepKeys.length)
+  assert.ok(plan.lanes[0].stepKeys.indexOf('title_deed_checked')<plan.lanes[0].stepKeys.indexOf('buyer_fica_review'))
+  applicabilityCombinations+=1
+}
+assert.equal(applicabilityCombinations,1152)
+
 const reviewPacketPath = process.argv.find(arg => arg.startsWith('--review-packet='))?.slice('--review-packet='.length)
 function writeReviewPacket() {
   const packet = {
@@ -264,4 +291,4 @@ try {
 }
 
 if (reviewPacketPath) writeReviewPacket()
-console.log(`Conveyancing acceptance matrix passed: ${cases.length} scenarios, corrections, specialist holds, history and readiness inspection.`)
+console.log(`Conveyancing acceptance matrix passed: ${cases.length} detailed scenarios, ${applicabilityCombinations} applicability combinations, corrections, specialist holds, history and readiness inspection.`)

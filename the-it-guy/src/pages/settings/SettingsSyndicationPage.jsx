@@ -1,9 +1,20 @@
 import { ChevronRight, IdCard, MessageCircle, PlugZap, Radio } from 'lucide-react'
+import { useOrganisation } from '../../context/OrganisationContext'
+import { REVO_ORGANISATION_ID } from '../../modules/revo/revoExtensionRegistry'
 import { createElement } from 'react'
 import { Link } from 'react-router-dom'
 import { settingsPageClass } from './settingsUi'
 
 const INTEGRATION_CARDS = [
+  {
+    to: '/settings/integrations/external-websites',
+    label: 'External Websites',
+    description: 'Connect Revo websites to approved listings, scoped enquiries and listing updates.',
+    icon: PlugZap,
+    brandLabel: 'External websites',
+    brandClassName: 'text-[#0f7f4f]',
+    revoOnly: true,
+  },
   {
     to: '/settings/syndication/property24',
     label: 'Property24',
@@ -90,10 +101,11 @@ function IntegrationCard({ to, label, description, logoSrc, logoAlt, icon: Icon 
 }
 
 export default function SettingsSyndicationPage() {
+  const { organisation } = useOrganisation()
   return (
     <div className={`${settingsPageClass} settings-dashboard-page`}>
       <section className="grid gap-5 md:grid-cols-2">
-        {INTEGRATION_CARDS.map((card) => (
+        {INTEGRATION_CARDS.filter((card) => !card.revoOnly || organisation?.id === REVO_ORGANISATION_ID).map((card) => (
           <IntegrationCard key={card.label} {...card} />
         ))}
       </section>

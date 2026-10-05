@@ -3,6 +3,7 @@ import {
   readArch9SellerTermsAcceptance,
 } from './arch9TermsAcceptance.js'
 import { areRequiredSellerDisclosureAcknowledgementsAccepted } from '../core/documents/sellerDisclosureAcknowledgements.js'
+import { resolveDocumentBrandPalette } from './onboardingBranding.js'
 
 export const PROPERTY_DISCLOSURE_DECISION = Object.freeze({
   none: 'none',
@@ -748,6 +749,7 @@ export function buildPropertyDisclosureDocumentMarkup(disclosure = {}, context =
   const documentReference = firstNonEmpty(context.documentReference, context.listingReference, context.listingId, propertyAddress, snapshot.title)
   const documentTitle = compliancePack?.title || snapshot.title
   const branding = resolvePropertyDisclosureBranding(context)
+  const palette = resolveDocumentBrandPalette(context.branding, context)
   const sellerSignatureIsImage = isImageSignature(snapshot.sellerSignature)
   const sellerSignatureMarkup = sellerSignatureIsImage
     ? `<img class="signature-image" src="${escapeHtml(snapshot.sellerSignature)}" alt="Seller signature" />`
@@ -820,18 +822,18 @@ export function buildPropertyDisclosureDocumentMarkup(disclosure = {}, context =
     * { box-sizing: border-box; }
     :root { color-scheme: light; font-family: Helvetica, Arial, sans-serif; }
     body { margin: 0; padding: 0; background: #ffffff; color: #1f2937; font-family: Helvetica, Arial, sans-serif; }
-    .property-disclosure-document { width: 210mm; margin: 0 auto; background: #ffffff; }
+    .property-disclosure-document { --doc-primary: ${palette.primaryColour}; --doc-accent: ${palette.accentColour}; --doc-primary-ink: ${palette.primaryInk}; --doc-accent-ink: ${palette.accentInk}; --doc-tint: ${palette.primaryTint}; --doc-accent-tint: ${palette.accentTint}; width: 210mm; margin: 0 auto; background: #ffffff; }
     .property-disclosure-page { width: 210mm; height: 296mm; min-height: 296mm; margin: 0 auto; background: #ffffff; color: #1f2937; position: relative; overflow: hidden; }
-    .doc-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10mm; padding: 11mm 18mm 6mm; border-bottom: 1px solid #e1e6e3; }
-    .agency-brand { display: inline-flex; align-items: center; justify-content: flex-start; min-width: 0; color: #1f2937; font-size: 16px; font-weight: 800; letter-spacing: 0; }
+    .doc-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10mm; padding: 11mm 18mm 6mm; border-bottom: 2px solid var(--doc-accent); }
+    .agency-brand { display: inline-flex; align-items: center; justify-content: flex-start; min-width: 0; color: var(--doc-primary-ink); font-size: 16px; font-weight: 800; letter-spacing: 0; }
     .agency-brand img { max-width: 54mm; max-height: 17mm; object-fit: contain; }
     .company-details { display: grid; justify-items: end; gap: 1px; max-width: 74mm; color: #43546a; font-size: 8.3pt; line-height: 1.25; text-align: right; }
     .company-details span:first-child { color: #111827; font-weight: 800; }
     .doc-title { padding: 7mm 18mm 5mm; text-align: center; border-bottom: 1px solid #e6ebe8; }
-    .doc-title h1 { margin: 0; color: #111827; font-size: 20px; font-weight: 800; letter-spacing: 0; line-height: 1.2; text-transform: uppercase; }
+    .doc-title h1 { margin: 0; color: var(--doc-primary-ink); font-size: 20px; font-weight: 800; letter-spacing: 0; line-height: 1.2; text-transform: uppercase; }
     .doc-title p { margin: 5px 0 0; color: #66758a; font-size: 10.5px; line-height: 1.4; }
-    .doc-title .eyebrow { margin: 0 0 2mm; color: #176c43; font-size: 8.5pt; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; }
-    .compliance-title h1 { color: #0f2f22; letter-spacing: -0.01em; }
+    .doc-title .eyebrow { margin: 0 0 2mm; color: var(--doc-accent-ink); font-size: 8.5pt; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; }
+    .compliance-title h1 { color: var(--doc-primary-ink); letter-spacing: -0.01em; }
     .doc-body { padding: 7mm 18mm 24mm; }
     .compliance-body { padding-top: 7mm; }
     .intro { margin: 0 0 3mm; color: #1f2937; font-size: 11.5px; line-height: 1.5; }
@@ -839,7 +841,7 @@ export function buildPropertyDisclosureDocumentMarkup(disclosure = {}, context =
     .meta { margin: 0 0 5mm; color: #3f4a56; font-size: 11px; line-height: 1.45; }
     .compliance-section-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4.5mm; align-items: start; }
     .compliance-section { break-inside: avoid; page-break-inside: avoid; border: 1px solid #dfe9e3; border-radius: 3mm; overflow: hidden; background: #ffffff; }
-    .compliance-section h2 { margin: 0; padding: 3mm 4mm; background: #edf8f1; color: #14543a; font-size: 9.2pt; font-weight: 800; letter-spacing: 0.03em; text-transform: uppercase; }
+    .compliance-section h2 { margin: 0; padding: 3mm 4mm; background: var(--doc-tint); color: var(--doc-primary-ink); font-size: 9.2pt; font-weight: 800; letter-spacing: 0.03em; text-transform: uppercase; }
     .compliance-list { display: grid; gap: 0; margin: 0; font-size: 8.4pt; line-height: 1.32; }
     .compliance-row { display: grid; grid-template-columns: 38% 1fr; gap: 2.5mm; padding: 2mm 3.5mm; border-top: 1px solid #edf1ee; }
     .compliance-row:first-child { border-top: 0; }
@@ -850,7 +852,7 @@ export function buildPropertyDisclosureDocumentMarkup(disclosure = {}, context =
     .compliance-person { padding: 2mm; border: 1px solid #e1e8e3; border-radius: 2mm; background: #fbfdfb; }
     .compliance-person strong { display: block; color: #111827; font-size: 8.8pt; }
     .compliance-person span { display: block; margin-top: 0.7mm; color: #66758a; font-size: 7.8pt; line-height: 1.3; }
-    .compliance-summary { display: flex; align-items: center; justify-content: space-between; gap: 5mm; margin: 0 0 5mm; padding: 3.5mm 5mm; border: 1px solid #b8dcc8; border-radius: 3mm; background: #f1fbf4; color: #0f5132; }
+    .compliance-summary { display: flex; align-items: center; justify-content: space-between; gap: 5mm; margin: 0 0 5mm; padding: 3.5mm 5mm; border: 1px solid var(--doc-tint); border-radius: 3mm; background: var(--doc-tint); color: var(--doc-primary-ink); }
     .compliance-summary span { font-size: 8.3pt; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; }
     .compliance-summary strong { font-size: 11.5pt; }
     .signer-card-grid { display: grid; gap: 4mm; }
@@ -858,8 +860,8 @@ export function buildPropertyDisclosureDocumentMarkup(disclosure = {}, context =
     .signer-card-main, .signer-card-meta { display: grid; align-content: start; gap: 1mm; min-width: 0; }
     .signer-card-main strong { color: #111827; font-size: 11pt; line-height: 1.2; }
     .signer-card-main span, .signer-card-meta span { color: #64748b; font-size: 8.2pt; line-height: 1.3; overflow-wrap: anywhere; }
-    .signer-role { color: #176c43 !important; font-size: 7.8pt !important; font-weight: 800; letter-spacing: 0.09em; text-transform: uppercase; }
-    .signer-status { width: max-content; max-width: 100%; padding: 1mm 2mm; border-radius: 999px; background: #e9f8ee; color: #136d42 !important; font-weight: 800; }
+    .signer-role { color: var(--doc-accent-ink) !important; font-size: 7.8pt !important; font-weight: 800; letter-spacing: 0.09em; text-transform: uppercase; }
+    .signer-status { width: max-content; max-width: 100%; padding: 1mm 2mm; border-radius: 999px; background: var(--doc-accent-tint); color: var(--doc-accent-ink) !important; font-weight: 800; }
     .signer-card-signature { display: flex; align-items: center; justify-content: center; min-height: 18mm; border: 1px solid #d5ddd8; border-radius: 2mm; color: #64748b; font-size: 8pt; font-weight: 700; text-align: center; }
     .signer-signature-image { max-width: 30mm; max-height: 16mm; object-fit: contain; }
     .annexure-table { width: 100%; border-collapse: collapse; table-layout: fixed; color: #1f2937; font-size: 9.35pt; line-height: 1.34; }
@@ -872,14 +874,14 @@ export function buildPropertyDisclosureDocumentMarkup(disclosure = {}, context =
     .question-cell { color: #1f2937; }
     .question-number { display: inline-block; min-width: 5mm; color: #111827; font-weight: 700; }
     .question-extra { display: block; margin-top: 1.5mm; padding-left: 5mm; color: #3f4a56; font-size: 8.8pt; }
-    .question-note { display: block; margin-top: 1.5mm; padding-left: 5mm; color: #7c3f13; font-size: 8.8pt; line-height: 1.35; }
+    .question-note { display: block; margin-top: 1.5mm; padding-left: 5mm; color: var(--doc-accent-ink); font-size: 8.8pt; line-height: 1.35; }
     .answer-cell { text-align: center; vertical-align: middle; color: #111827; }
     .answer-mark { display: inline-block; font-size: 12pt; font-weight: 700; line-height: 1; }
     .disclosure-details { white-space:pre-wrap; overflow-wrap:anywhere; font-size:10pt; line-height:1.5; }
     .comments-title { color: #111827; font-weight: 700; text-transform: uppercase; }
     .comments-box { min-height: 32mm; color: #1f2937; line-height: 1.45; }
     .signature-section { margin-top: 5mm; color: #1f2937; font-size: 10.5pt; line-height: 1.5; }
-    .signature-section h2 { margin: 0 0 4mm; padding-bottom: 2mm; border-bottom: 1px solid #d7d7d7; color: #111827; font-size: 11pt; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
+    .signature-section h2 { margin: 0 0 4mm; padding-bottom: 2mm; border-bottom: 1px solid #d7d7d7; color: var(--doc-primary-ink); font-size: 11pt; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
     .execution-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4mm; margin-top: 5mm; }
     .execution-field { min-height: 15mm; border: 1px solid #dce2de; border-radius: 1.5mm; padding: 3mm; }
     .execution-label { display: block; color: #5c6670; font-size: 8.5pt; font-weight: 700; text-transform: uppercase; }

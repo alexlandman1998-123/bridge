@@ -4,7 +4,7 @@ import { recordAuditEvent } from '../lib/activityAudit'
 import { clearPostLoginRedirect, getPostLoginRedirect } from '../lib/resolveMobileAwareRedirect'
 import { clearSupabaseLocalAuthState, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { loadSignupIntentForUser, markSignupIntentReadyForOnboarding, resolveSignupIntentRoute } from '../lib/signupIntent'
-import { isPartnerInviteReturnPath, rememberPendingPartnerInvitePath } from '../lib/pendingPartnerInvite'
+import { getPartnerHandoffPathFromIntent, isPartnerInviteReturnPath, rememberPendingPartnerInvitePath } from '../lib/pendingPartnerInvite'
 
 const AUTH_CALLBACK_TIMEOUT_MS = 15000
 const PENDING_ORG_INVITE_TOKEN_STORAGE_KEY = 'itg:pending-org-invite-token'
@@ -147,6 +147,8 @@ export default function AuthCallback() {
         const user = userData?.user || session.user
         const loadedIntent = await loadSignupIntentForUser({ user })
         const readyIntent = loadedIntent ? await markSignupIntentReadyForOnboarding({ user, intent: loadedIntent }) : null
+        const savedHandoffPath = getPartnerHandoffPathFromIntent(readyIntent)
+        if (savedHandoffPath) rememberPendingPartnerInvitePath(savedHandoffPath)
         const pendingInvitePath = resolvePendingInvitePath()
         const callbackInvitePath = resolveCallbackInvitePath(location.search)
         let partnerInviteSignupPath = ''

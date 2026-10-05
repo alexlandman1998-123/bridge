@@ -94,7 +94,7 @@ const instructionModel = buildLegalTaskWorkbenchModel({
     sourceRequirementKey: 'sales_agreement_or_otp', missing: true }] },
   workActions, statusActions,
 })
-assert.equal(instructionModel.requirementActions['document:sales_agreement_or_otp'].label, 'Review OTP')
+assert.equal(instructionModel.requirementActions['document:sales_agreement_or_otp'].label, 'View instruction source')
 assert.equal(instructionModel.requirementActions['document:sales_agreement_or_otp'].requirement.label, 'Signed OTP / sale agreement',
   'the document request must name the missing file, not the task milestone')
 

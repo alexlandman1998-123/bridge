@@ -5,8 +5,7 @@ import HomeSeekersMobileNav from "./HomeSeekersMobileNav";
 import HomeSeekersFooter from "./HomeSeekersFooter";
 import HomeSeekersFastTrack from "./HomeSeekersFastTrack";
 import HomeSeekersFeaturedHomes from "./HomeSeekersFeaturedHomes";
-import HomeSeekersAreaAtlas from "./HomeSeekersAreaAtlas";
-import { homeSeekersCard, submitHomeSeekersLead, useHomeSeekersWebsiteData } from './homeSeekersWebsiteData';
+import { homeSeekersCard, useHomeSeekersLeadSubmission, useHomeSeekersWebsiteData } from './homeSeekersWebsiteData';
 import "./HomeSeekersDemo.css";
 import "./HomeSeekersEditorial.css";
 import "./HomeSeekersProcess.css";
@@ -24,43 +23,10 @@ const images = {
   guarantee: "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1920&q=88",
   careers: `${asset}pages/2025/12/869_424ce675e29a4906a0d709d7ef138c88_t_w_639_h_728.avif`,
 };
-const localAreas = [
-  {
-    name: "Moreleta Park",
-    number: "01",
-    image:
-      "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1200&q=88",
-  },
-  {
-    name: "Garsfontein",
-    number: "02",
-    image:
-      "https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?auto=format&fit=crop&w=1200&q=88",
-  },
-  {
-    name: "Olympus",
-    number: "03",
-    image:
-      "https://images.unsplash.com/photo-1600607687920-4e2a09cf159d?auto=format&fit=crop&w=1200&q=88",
-  },
-  {
-    name: "Faerie Glen",
-    number: "04",
-    image:
-      "https://d21tw07c6rnmp0.cloudfront.net/media/uploads/869/residential/2025/8/869_97bcc14546414da09ea8ba586b858759_t_w_505_h_490.avif",
-  },
-  {
-    name: "Menlyn",
-    number: "05",
-    image:
-      "https://images.unsplash.com/photo-1600047509807-ba8f99d2cdde?auto=format&fit=crop&w=1200&q=88",
-  },
-];
 const nav = [
   ["Selling", "/demo/homeseekers/selling"],
   ["Buying", "/demo/homeseekers/buying"],
   ["Renting", "/demo/homeseekers/renting"],
-  ["Areas", "/demo/homeseekers/areas"],
   ["About", "/demo/homeseekers/about"],
   ["Join us", "/demo/homeseekers/join"],
 ];
@@ -103,7 +69,7 @@ function ListingCard({ listing }) {
             </>
           )}
         </span>
-        <a href={`/demo/homeseekers/buying/${listing.id}`}>
+        <a href={`/demo/homeseekers/properties/${listing.id}`}>
           View property <ArrowRight size={15} />
         </a>
       </div>
@@ -112,6 +78,7 @@ function ListingCard({ listing }) {
 }
 
 export default function HomeSeekersDemo({ guaranteePage = false }) {
+  const submitLead = useHomeSeekersLeadSubmission();
   const { listings: websiteListings, loading: listingsLoading, error: listingsError } = useHomeSeekersWebsiteData();
   const listings = websiteListings.filter((listing) => listing.transactionType === 'sale').slice(0, 9).map(homeSeekersCard);
   const [valuationOpen, setValuationOpen] = useState(false);
@@ -125,15 +92,16 @@ export default function HomeSeekersDemo({ guaranteePage = false }) {
     setContactSending(true);
     setContactStatus("");
     try {
-      await submitHomeSeekersLead({
+      await submitLead({
         type: 'general_enquiry', name: form.get('name'), email: form.get('email'),
+        leadIntent: form.get('interest'),
         message: form.get('message'), privacyAccepted: form.get('privacy') === 'on',
         companyWebsite: form.get('website'),
       });
       setContactStatus("Message received. We will be in touch shortly.");
       formElement.reset();
-    } catch {
-      setContactStatus("We could not send that just now. Please call us on +27 12 880 3127.");
+    } catch (error) {
+      setContactStatus(error.message || "We could not send that just now. Your details are still here; please try again.");
     } finally {
       setContactSending(false);
     }
@@ -232,7 +200,6 @@ export default function HomeSeekersDemo({ guaranteePage = false }) {
       </>}
 
       {!guaranteePage && <HomeSeekersFeaturedHomes listings={listings} loading={listingsLoading} error={listingsError} />}
-      {!guaranteePage && <div className="hs-home-areas"><HomeSeekersAreaAtlas id="areas" /></div>}
 
       <section className="hs-brief-problem hs-editorial-problem">
         <div className="hs-editorial-problem__story">
@@ -406,52 +373,6 @@ export default function HomeSeekersDemo({ guaranteePage = false }) {
         </article>
       </section>
 
-      {guaranteePage && <section className="hs-brief-areas" id="areas">
-        <header>
-          <div>
-            <Eyebrow>
-              YOUR SUBURB, NOT <strong>“THE AREA”</strong>
-            </Eyebrow>
-            <h2>
-              Because “Pretoria East”
-              <br />
-              is not a suburb.
-            </h2>
-          </div>
-          <p>
-            Different streets. Different school runs. Different coffee orders.
-            Local knowledge should be more specific than a pin on a map.
-          </p>
-        </header>
-        <div className="hs-brief-areas__atlas">
-          {localAreas.map((area, index) => (
-            <a
-              href="/demo/homeseekers/areas"
-              key={area.name}
-              className={index === 0 ? "is-featured" : ""}
-            >
-              <img src={area.image} alt="" />
-              <span>{area.number}</span>
-              <strong>{area.name}</strong>
-              <i>
-                <ArrowRight size={17} />
-              </i>
-            </a>
-          ))}
-          <a className="hs-brief-areas__more" href="/demo/homeseekers/areas">
-            <span>06</span>
-            <strong>
-              More than
-              <br />a postcode.
-            </strong>
-            <p>Explore the local atlas</p>
-            <i>
-              <ArrowRight size={17} />
-            </i>
-          </a>
-        </div>
-      </section>}
-
       <section className="hs-brief-home-values">
         <header>
           <Eyebrow>
@@ -600,6 +521,7 @@ export default function HomeSeekersDemo({ guaranteePage = false }) {
         <form onSubmit={submitContact}>
           <input name="name" aria-label="Your name" placeholder="Your name" required />
           <input name="email" type="email" aria-label="Email address" placeholder="Email address" required />
+          <select name="interest" aria-label="I'm interested in" defaultValue="other"><option value="other">How can we help?</option><option value="buy">Buying a home</option><option value="sell">Selling a home</option><option value="rent">Renting a home</option></select>
           <textarea
             name="message"
             aria-label="Your message"

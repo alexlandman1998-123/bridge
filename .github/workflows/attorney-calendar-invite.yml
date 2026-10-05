@@ -13,12 +13,33 @@ on:
       - 'the-it-guy/src/services/appointmentRescheduleService.js'
       - 'the-it-guy/src/services/appointmentTemplateService.js'
       - 'the-it-guy/src/services/attorneyOperations.js'
+      - 'the-it-guy/src/services/clientAppointmentResponseService.js'
+      - 'the-it-guy/src/services/appointmentDashboardService.js'
+      - 'the-it-guy/src/services/sellerPortalAppointmentsService.js'
+      - 'the-it-guy/src/components/appointments/dashboard/**'
+      - 'the-it-guy/src/pages/ClientPortal.jsx'
+      - 'the-it-guy/src/hooks/useTransactionLiveRefresh.js'
+      - 'the-it-guy/src/core/transactions/stablePortalWorkspace.js'
+      - 'the-it-guy/scripts/helpers/appointmentResponseFixture.mjs'
+      - 'the-it-guy/scripts/shared-matter-journey-live-**'
+      - 'supabase/migrations/*attorney_cross_role_appointment*'
+      - 'the-it-guy/src/services/attorneyAppointmentManagement.js'
+      - 'the-it-guy/src/services/__tests__/attorneyAppointmentManagement.test.js'
+      - 'the-it-guy/src/services/__tests__/appointmentReminderReschedule.test.js'
+      - 'the-it-guy/src/pages/AttorneySchedulingPage.jsx'
+      - 'the-it-guy/src/pages/__tests__/AttorneySchedulingPage.test.jsx'
       - 'the-it-guy/supabase-tests/**'
       - 'the-it-guy/scripts/appointment-**'
       - 'the-it-guy/scripts/attorney-calendar-**'
       - 'the-it-guy/vitest.attorney-calendar.config.js'
       - 'supabase/functions/send-email/**'
+      - 'supabase/functions/attorney-appointment-delivery-worker/**'
+      - 'supabase/functions/_shared/attorneyAppointmentDelivery.ts'
+      - 'the-it-guy/src/services/attorneyAppointmentDelivery.js'
+      - 'the-it-guy/src/services/appointmentCalendarInviteService.js'
+      - 'supabase/config.toml'
       - 'supabase/migrations/*attorney_calendar*'
+      - 'supabase/migrations/*attorney_appointment_management*'
       - '.github/workflows/attorney-calendar-invite.yml'
   workflow_dispatch:
     inputs:
@@ -47,6 +68,11 @@ jobs:
           cache-dependency-path: the-it-guy/package-lock.json
       - run: npm ci
       - run: npm run test:attorney-calendar-invite
+      - run: node --test scripts/shared-matter-journey-live-hook.test.mjs scripts/shared-matter-journey-live-refresh.test.mjs scripts/appointment-dashboard.test.mjs
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - run: deno test --allow-env ../supabase/functions/attorney-appointment-delivery-worker/index.test.ts
 
   certify-staging:
     if: github.event_name == 'workflow_dispatch' && inputs.certify_staging

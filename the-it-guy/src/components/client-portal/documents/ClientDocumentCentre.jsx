@@ -504,6 +504,21 @@ export function buildDocumentCentreSections(documentCenter = {}, workspace = 'bu
   )
 
   if (typedItems.length) {
+    // Bond requests may arrive after the Document Centre's typed snapshot.
+    // Include them immediately, while reusing any matching canonical request.
+    if (workspace === 'buying') {
+      const uploads = toArray(documentCenter.uploadedDocuments).filter(isClientVisible)
+      const uploadedById = new Map(uploads.flatMap(document => getDocumentLookupKeys(document).map(key => [key, document])))
+      for (const row of toArray(documentCenter.requiredDocuments)) {
+        if (!String(row.document_key || row.key || '').startsWith('bond_application_') || !isClientVisible(row)) continue
+        const aliases = [row.document_key, row.key, row.canonicalDocumentType, ...(row.matching?.canonicalTypes || [])].map(normalizeDocumentMatchKey).filter(Boolean)
+        const exists = typedItems.some(item => {
+          const keys = [...getRequirementMatchSignals(item), item.uploadSpec?.requirementKey, item.uploadSpec?.documentDefinitionKey].map(normalizeDocumentMatchKey)
+          return aliases.some(key => keys.includes(key)) || (row.canonical_requirement_instance_id && item.uploadSpec?.requirementInstanceId === row.canonical_requirement_instance_id)
+        })
+        if (!exists) typedItems.push({ ...normalizeRequiredDocument({ ...row, key: row.document_key || row.key, label: row.document_label || row.title || row.label, requirement_group: row.category || row.group_label || row.group_key }, uploadedById, uploads), sourceType: 'required_document' })
+      }
+    }
     const requirementItems = typedItems.filter((item) =>
       ['required_document', 'additional_request'].includes(item.sourceType),
     )

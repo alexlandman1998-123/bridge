@@ -1,5 +1,6 @@
 import { PHASE4_PROPERTY_TASKS, PHASE4_TAX_TASKS, phase4PropertyTaskKeys, phase4TaxTaskKeys, isClearanceValidUntil, isMunicipalClearanceValidUntil } from './transferPhase4Policy.js'
 import { resolveTransferTaxDecision } from '../transferTaxDecisionService.js'
+import { withholdingRemittanceIssues } from './conveyancingReviewPolicy.js'
 
 const ROUTE_LABELS = {
   transfer_duty: 'Transfer duty', vat: 'Ordinary VAT',
@@ -102,8 +103,11 @@ export function buildStageThreeFinancialReview({ taskKey = '', routingProfile = 
         add(check(`${name}: review evidence`, review.proofReference))
         if (taskKey === 'non_resident_seller_directive_review' || review.directiveStatus === 'issued')
           add(check(`${name}: directive reference`, review.directiveReference))
-        if (taskKey === 'non_resident_seller_withholding_payment_review' || review.withholdingRequired === 'yes')
-          add(check(`${name}: payment proof`, review.paymentReference))
+        if (review.withholdingRequired === 'yes') {
+          const issues = withholdingRemittanceIssues(review, { now })
+          add(check(`${name}: remittance payment or reserved funds and deadline`, review.paymentReference || review.reservedFundsReference, { valid: !issues.length }))
+          issues.forEach(issue => add(check(`${name}: ${issue}`, '')))
+        }
       }
     })
   } else if (CLEARANCE_TYPES[taskKey]) {
@@ -116,12 +120,14 @@ export function buildStageThreeFinancialReview({ taskKey = '', routingProfile = 
     add(answerCheck('HOA applies', hoa))
     add(answerCheck('Title restrictions apply', conditions.titleRestrictions))
     add(answerCheck('Additional certificates apply', conditions.complianceCertificates))
+    add(answerCheck('Electrical certificate applies', conditions.certificates?.electrical))
+    if (conditions.certificates?.electrical === 'no') add(check('Electrical non-applicability basis', conditions.electricalBasisNote))
   } else if (taskKey === 'title_conditions_review') {
     add(check('Title-condition evidence reference', conditions.titleConditionsReference))
   } else if (taskKey === 'property_compliance_review') {
     add(answerCheck('Additional certificates apply', conditions.complianceCertificates))
     if (conditions.complianceCertificates === 'yes') {
-      for (const [type, label] of [['gas', 'Gas'], ['electricFence', 'Electric fence'], ['beetle', 'Beetle / wood-borer']])
+      for (const [type, label] of [['gas', 'Gas'], ['electricFence', 'Electric fence'], ['beetle', 'Beetle / wood-borer'], ['water', 'Municipality / contract water']])
         add(answerCheck(`${label} certificate applies`, conditions.certificates?.[type]))
     }
   }

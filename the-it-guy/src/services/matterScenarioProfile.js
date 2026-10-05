@@ -12,7 +12,7 @@ export function partyCapacityCheckRequirements(party = {}) {
     { key: 'tax_residence', label: 'Tax residence confirmed' },
   ]
   if (party.entityType === 'individual') {
-    checks.push({ key: 'marital_capacity', label: 'Marital capacity and signing route resolved' })
+    checks.push({ key: 'marital_capacity', label: 'Marital and contractual capacity resolved, including minority / guardianship, impaired capacity and customary or foreign-law questions where applicable' })
     if (party.maritalRegime === 'in_community') checks.push({ key: 'spouse_consent', label: 'Spouse consent / assistance reviewed' })
     if (party.maritalRegime === 'foreign') checks.push({ key: 'foreign_law', label: 'Foreign-law marital consequences reviewed' })
     if (party.identityRoute === 'foreign_passport' && party.role === 'buyer') checks.push({ key: 'foreign_tax_entry', label: 'Passport and SARS purchaser tax entry checked' })
@@ -20,14 +20,14 @@ export function partyCapacityCheckRequirements(party = {}) {
   if (['company', 'close_corporation'].includes(party.entityType)) {
     checks.push({ key: 'registration', label: 'CIPC registration and members / directors reviewed' })
     checks.push({ key: 'beneficial_ownership', label: 'Beneficial owners identified and reviewed' })
-    checks.push({ key: 'resolution', label: 'Entity resolution and authority reviewed' })
+    checks.push({ key: 'resolution', label: 'Entity authority reviewed for this transaction; additional disposal approval (where applicable), business rescue or liquidation restrictions resolved' })
     checks.push({ key: 'signatories', label: 'Every named signatory and capacity reviewed' })
   }
   if (party.entityType === 'trust') {
     checks.push({ key: 'trust_deed', label: 'Trust deed reviewed' })
-    checks.push({ key: 'letters_of_authority', label: 'Master’s letters of authority reviewed' })
+    checks.push({ key: 'letters_of_authority', label: 'Current Master’s authority for all acting trustees reviewed' })
     checks.push({ key: 'beneficial_ownership', label: 'Trust beneficial owners identified and reviewed' })
-    checks.push({ key: 'resolution', label: 'Trustee resolution and authority reviewed' })
+    checks.push({ key: 'resolution', label: 'Trustee decision, deed powers, quorum and authority at agreement conclusion reviewed' })
     checks.push({ key: 'signatories', label: 'Every named trustee signatory and capacity reviewed' })
   }
   return checks

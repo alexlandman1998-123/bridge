@@ -1,3 +1,4 @@
+import { readSellerMandateTerms, buildSellerMandateTermsFormPatch, getSellerMandatePreparationIssues, normalizeSellerMandateType } from './sellerMandateCapture.js'
 import { resolveSellerBondStatus, sellerBondDeclaration } from './sellerBondStatus.js'
 import {
   buildSellerEntityProfileAliases,
@@ -256,6 +257,7 @@ export function resolveListingSellerProfileBranch(form = {}, listing = {}) {
 
 export function createListingSellerProfileBuilderDraft(listing = {}) {
   const form = getListingSellerFormData(listing)
+  const mandateTerms = readSellerMandateTerms(form, listing)
   const mandateDraft = listing?.mandateDraft && typeof listing.mandateDraft === 'object' ? listing.mandateDraft : {}
   const facts = getCanonicalFacts(listing)
   const sellerFacts = facts.seller && typeof facts.seller === 'object' ? facts.seller : facts
@@ -382,11 +384,19 @@ export function createListingSellerProfileBuilderDraft(listing = {}) {
     levies: normalizeText(pickFirst(form.levies, listing?.levies)),
     leviesNotApplicable: Boolean(form.leviesNotApplicable ?? form.levies_not_applicable ?? false),
     waterBillingType: normalizeText(pickFirst(form.waterBillingType, form.water_billing_type, 'municipal')),
-    mandateType: normalizeText(pickFirst(form.mandateType, listing?.mandateType, listing?.mandate?.type, 'sole')),
+    mandateType: Object.hasOwn(form, 'mandateType') ? mandateTerms.mandateType : mandateTerms.mandateType || normalizeText(listing?.mandate?.type) || 'sole',
     otherAgencyName: normalizeText(form.otherAgencyName ?? form.coAgencyName),
-    askingPrice: normalizeText(pickFirst(form.askingPrice, form.price, listing?.askingPrice)),
-    mandateStartDate: normalizeText(pickFirst(form.mandateStartDate, listing?.mandateStartDate)),
-    expiryDate: normalizeText(pickFirst(form.expiryDate, form.mandateEndDate, listing?.expiryDate)),
+    askingPrice: mandateTerms.askingPrice,
+    mandateStartDate: mandateTerms.startDate,
+    expiryDate: mandateTerms.endDate,
+    mandateDuration: mandateTerms.mandateDuration,
+    protectionPeriod: mandateTerms.protectionPeriod,
+    commissionBasis: mandateTerms.commissionBasis,
+    commissionPercentage: mandateTerms.commissionPercentage,
+    commissionAmount: mandateTerms.commissionAmount,
+    vatHandling: mandateTerms.vatHandling,
+    ...(form.mandateCapture !== undefined ? { mandateCapture: mandateTerms.mandateCapture } : {}),
+    ...(mandateTerms.mandateAcceptanceReview ? { mandateAcceptanceReview: mandateTerms.mandateAcceptanceReview } : {}),
     commissionPreference: normalizeText(pickFirst(form.commissionPreference, form.commissionType, form.commissionStructure)),
     mandateTerms: normalizeText(pickFirst(form.mandateTerms, form.mandateCommissionTerms)),
     popiConsent: normalizeText(pickFirst(form.popiConsent, form.privacyConsent)),
@@ -446,6 +456,7 @@ function resolveOwnerModel(branch) {
 }
 
 export function buildListingSellerProfileFormPatch(draft = {}) {
+  const capturedMandateTerms = buildSellerMandateTermsFormPatch({ ...draft, mandateType: draft.mandateType ?? 'sole', startDate: draft.mandateStartDate, endDate: draft.expiryDate, specialConditions: draft.mandateTerms })
   const branch = normalizeBranch(draft.branch, '')
   const ownerModel = resolveOwnerModel(branch)
   const bondStatus = resolveSellerBondStatus(draft.bondStatus)
@@ -570,6 +581,7 @@ export function buildListingSellerProfileFormPatch(draft = {}) {
     politicallyExposedPerson: normalizeText(draft.politicallyExposedPerson),
     politicallyExposedDetails: normalizeText(draft.politicallyExposedDetails),
     privacyConsent: normalizeText(draft.popiConsent),
+    ...capturedMandateTerms,
   }
 
   if (branch === 'multiple_owners') {
@@ -657,7 +669,7 @@ export function buildListingSellerProfileFormPatch(draft = {}) {
   if (branch !== 'power_of_attorney') Object.assign(base, { powerOfAttorneyRepresentatives: [], power_of_attorney: {}, power_of_attorney_name: '', power_of_attorney_email: '', power_of_attorney_principal_name: '', power_of_attorney_principal_id_number: '' })
   if (branch !== 'other') base.other_entity = {}
   const aliases = buildSellerEntityProfileAliases(base)
-  const patch = { ...compactObject(base), ...aliases }
+  const patch = { ...compactObject(base), ...aliases, ...capturedMandateTerms }
   for (const fields of Object.values(BRANCH_DETAIL_FIELDS)) {
     for (const field of fields) patch[field] = base[field]
   }
@@ -762,15 +774,14 @@ export function buildListingMandateReadiness(listing = {}, commission = {}, { re
   }
 
   require(Boolean(normalizeText(form.propertyAddress || form.addressLine1 || listing.propertyAddress || listing.addressLine1)), 'Add the property address.')
-  require(Boolean(normalizeText(form.mandateType || listing.mandateType)), 'Choose the mandate type.')
-  require(Number(form.askingPrice || form.price || listing.askingPrice) > 0, 'Add the asking price.')
-  require(Boolean(normalizeText(form.mandateStartDate || listing.mandateStartDate)), 'Add the mandate start date.')
-  require(Boolean(normalizeText(form.expiryDate || form.mandateEndDate || listing.expiryDate)), 'Add the mandate expiry date.')
-
-  const basis = normalizeText(commission.basis)
-  const hasCommission = basis === 'fixed' ? Number(commission.amount) > 0 : Number(commission.percentage) > 0
-  require(hasCommission, `Add the ${basis === 'fixed' ? 'fixed Rand commission' : 'commission percentage'}.`)
-  require(Boolean(normalizeText(commission.vatHandling)), 'Choose the VAT treatment.')
+  const terms = readSellerMandateTerms(form, listing)
+  const issues = getSellerMandatePreparationIssues({ ...terms,
+    commissionBasis: commission.basis ?? terms.commissionBasis,
+    commissionPercentage: commission.percentage ?? terms.commissionPercentage,
+    commissionAmount: commission.amount ?? terms.commissionAmount,
+    vatHandling: commission.vatHandling ?? terms.vatHandling,
+  }, { ownershipType: form.ownerStructureType || form.ownershipType || legalType })
+  for (const issue of issues) require(false, issue)
 
   return {
     version: 'listing_mandate_readiness_v1',
@@ -784,14 +795,8 @@ export function buildListingMandateReadiness(listing = {}, commission = {}, { re
 export function buildListingSellerDocumentReadiness(listing = {}, commission = {}) {
   const mandate = buildListingMandateReadiness(listing, commission)
   const form = getListingSellerFormData(listing)
-  const mandateType = normalizeKey(form.mandateType || listing?.mandateType || 'sole')
-  const mandateTitle = mandateType === 'dual'
-    ? 'Dual mandate'
-    : mandateType === 'tri'
-      ? 'Tri mandate'
-      : mandateType === 'open'
-        ? 'Open mandate'
-        : 'Sole mandate'
+  const mandateType = normalizeSellerMandateType(form.mandateType || listing?.mandateType || 'sole')
+  const mandateTitle = mandateType === 'dual' ? 'Dual mandate' : mandateType === 'open' ? 'Open mandate' : 'Exclusive mandate'
 
   const documents = [
     { key: 'mandate', title: mandateTitle, copy: 'Uses the saved mandate, commission and VAT details.', ready: mandate.ready, missing: mandate.missing },

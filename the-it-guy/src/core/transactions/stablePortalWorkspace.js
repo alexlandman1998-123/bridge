@@ -6,7 +6,14 @@ export function selectStablePortalWorkspace(previous, incoming) {
   if (before?.status !== 'ready' || after?.status !== 'ready'
     || before.snapshot.transactionId !== after.snapshot.transactionId
     || after.snapshot.revision >= before.snapshot.revision) return incoming
-  return { ...incoming, transactionJourneySnapshot: {
+  // The matter watermark now covers appointments too. A late older workspace
+  // must not roll back a saved response while retaining the newer journey.
+  return { ...incoming,
+    ...(Array.isArray(previous.appointments) ? { appointments: previous.appointments } : {}),
+    ...(Array.isArray(previous.legacyPortalData?.appointments) ? { legacyPortalData: {
+      ...incoming.legacyPortalData, appointments: previous.legacyPortalData.appointments,
+    } } : {}),
+    transactionJourneySnapshot: {
     ...incoming.transactionJourneySnapshot, legalJourney: before,
   } }
 }

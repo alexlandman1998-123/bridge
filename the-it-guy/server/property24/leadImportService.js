@@ -26,8 +26,8 @@ async function sendPortalLeadNotifications({ lead = {}, listing = {}, contact = 
   const acknowledgement = await send({
     type: 'property_enquiry_acknowledgement', to: recipient,
     recipientName: leadName, organisationId, leadId: lead.leadId || undefined, source: 'Property24',
-    originalMessage: `Thank you for your enquiry about ${propertyLabel}. A Kingdom Real Estate agent has received your enquiry and will be in touch shortly.`,
-    agentName: agentEmail || 'Kingdom Real Estate agent', agentEmail: agentEmail || undefined, replyTo: agentEmail || undefined,
+    originalMessage: `Thank you for your enquiry about ${propertyLabel}. An agent has received your enquiry and will be in touch shortly.`,
+    agentName: agentEmail || 'Your property agent', agentEmail: agentEmail || undefined, replyTo: agentEmail || undefined,
     subject: `Thanks for your enquiry about ${propertyLabel}`, idempotencyKey: `portal-lead-introduction:${stableReference}`,
   })
   const operations = agentEmail ? await send({
@@ -179,6 +179,7 @@ function buildLeadNotes(lead = {}) {
   return [
     lead.message,
     lead.listingNumber ? `Property24 listing number: ${lead.listingNumber}` : '',
+    lead.listingType ? `Property24 enquiry type: ${lead.listingType}` : '',
     lead.receivedAt ? `Received: ${lead.receivedAt}` : '',
     lead.externalReference ? `Property24 reference: ${lead.externalReference}` : '',
   ].map(normalizeText).filter(Boolean).join('\n')
@@ -235,6 +236,8 @@ function buildCrmRows(lead = {}, listing = {}) {
         externalReference: lead.externalReference || null,
         listingNumber: lead.listingNumber || null,
         receivedAt: lead.receivedAt || null,
+        listingType: lead.listingType || null,
+        agencyVerification: lead.agencyVerification || null,
         lead: lead.raw || {},
       },
       notes: notes || null,
@@ -465,6 +468,7 @@ export async function importProperty24PreparedLeads({
   supabase,
   leads = [],
   listingDetailsById,
+  sendNotifications = true,
 } = {}) {
   if (!supabase) throw new Error('Supabase client is required.')
   const listingsById = listingDetailsById || await fetchListingDetailsByIds(
@@ -520,7 +524,9 @@ export async function importProperty24PreparedLeads({
       )
       const developerMirror = await persistDeveloperLeadMirror(supabase, persisted, lead, listing)
         .catch((error) => ({ developerLeadId: null, warning: error?.message || 'Unable to mirror this development lead.' }))
-      const notifications = await sendPortalLeadNotifications({
+      const notifications = !sendNotifications || persisted.duplicate
+        ? { acknowledgement: { skipped: true, reason: 'recovery_or_duplicate' }, operations: { skipped: true, reason: 'recovery_or_duplicate' } }
+        : await sendPortalLeadNotifications({
         lead: { ...lead, leadId: persisted.leadId },
         listing,
         contact: { email: lead.email, phone: lead.phone },
@@ -563,11 +569,12 @@ export async function importProperty24PreparedLeads({
   }
 }
 
-export async function importProperty24LeadPlan({ supabase, plan } = {}) {
+export async function importProperty24LeadPlan({ supabase, plan, sendNotifications = true } = {}) {
   if (!plan) throw new Error('Property24 lead import plan is required.')
   const importResult = await importProperty24PreparedLeads({
     supabase,
     leads: plan.leads || [],
+    sendNotifications,
   })
   return {
     ...plan,
@@ -599,7 +606,7 @@ export async function pullAndImportProperty24Leads({
       },
     }
   }
-  return importProperty24LeadPlan({ supabase, plan })
+  return importProperty24LeadPlan({ supabase, plan, sendNotifications: config.sendNotifications !== false })
 }
 
 export async function importProperty24ListingLeadPayload({

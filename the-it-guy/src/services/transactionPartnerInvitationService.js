@@ -334,12 +334,17 @@ function buildInvitationAcceptanceError(result = {}) {
     invitation_declined: 'This invitation has already been declined.',
     invitation_expired: 'This invitation has expired.',
     email_mismatch: 'This invitation is locked to a different email address.',
+    email_verification_required: 'Confirm your email address before connecting this matter.',
     organisation_required: 'Complete workspace setup before accepting this transaction invitation.',
     not_active_member: 'You must be an active member of the accepting workspace before accepting this invitation.',
     wrong_workspace: 'This invitation belongs to another workspace.',
     self_relationship: 'The accepting workspace must be different from the transaction owner workspace.',
     transaction_owner_missing: 'This transaction is missing its owner workspace.',
     transaction_not_found: 'This transaction is no longer available.',
+    transaction_unavailable: 'This matter is closed or unavailable. Contact the transaction owner.',
+    organisation_selection_required: 'Choose which organisation will receive this matter.',
+    organisation_authority_required: 'An organisation administrator must accept this invitation for a matching attorney or bond workspace.',
+    nomination_changed: 'The nominated partner has changed. Ask the transaction owner to review the invitation.',
   }
   const error = new Error(messages[code] || 'Unable to accept this invitation.')
   error.code = code || 'acceptance_failed'
@@ -923,7 +928,7 @@ export async function listPartnerProspects(options = {}) {
   return filterProspectRows(result.data || [], { roleType, limit })
 }
 
-export async function listTransactionPartnerInvitations(transactionId) {
+export async function listTransactionPartnerInvitations(transactionId, { strict = false } = {}) {
   const client = requireClient()
   const safeTransactionId = normalizeText(transactionId)
   if (!safeTransactionId) return []
@@ -937,7 +942,7 @@ export async function listTransactionPartnerInvitations(transactionId) {
     .order('created_at', { ascending: false })
 
   if (result.error) {
-    if (result.error.code === '42P01' || result.error.code === '42501') return []
+    if (!strict && (result.error.code === '42P01' || result.error.code === '42501')) return []
     throw result.error
   }
   return (result.data || []).map(normalizeTransactionPartnerInvitation)
@@ -1008,6 +1013,9 @@ export async function applyPartnerProspectToTransaction({ transactionId, partner
 
 export async function getTransactionPartnerInvitationByToken(token) {
   const client = requireClient()
+  const handoff = await client.rpc('bridge_get_partner_handoff_invitation', { p_token: normalizeText(token) })
+  if (!handoff.error && handoff.data?.reason !== 'unsupported_role') return handoff.data || { ok: false, reason: 'not_found' }
+  if (handoff.error && !['42883', 'PGRST202'].includes(handoff.error.code)) throw handoff.error
   const result = await client.rpc('bridge_get_transaction_partner_invitation', { p_token: normalizeText(token) })
   if (result.error) throw result.error
   return result.data || { ok: false, reason: 'not_found' }
@@ -1033,7 +1041,10 @@ export async function acceptTransactionPartnerInvitation({ token, profile = {}, 
 
 export async function declineTransactionPartnerInvitation(token) {
   const client = requireClient()
-  const result = await client.rpc('bridge_decline_transaction_partner_invitation', { p_token: normalizeText(token) })
+  let result = await client.rpc('bridge_decline_partner_handoff_invitation', { p_token: normalizeText(token) })
+  if ((result.error && ['42883', 'PGRST202'].includes(result.error.code)) || result.data?.code === 'unsupported_role') {
+    result = await client.rpc('bridge_decline_transaction_partner_invitation', { p_token: normalizeText(token) })
+  }
   if (result.error) throw result.error
   if (!result.data?.success) throw new Error(result.data?.code || 'Unable to decline this invitation.')
   await dispatchTransactionPartnerNotification({

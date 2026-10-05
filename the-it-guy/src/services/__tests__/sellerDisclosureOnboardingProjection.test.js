@@ -19,6 +19,8 @@ const disclosure = {
 
 function projectDisclosure(formOverrides = {}, documents = []) {
   const formData = {
+    sellerFirstName: 'Seller',
+    sellerSurname: 'One',
     ownershipType: 'individual',
     maritalStatus: 'not_married',
     propertyDisclosure: disclosure,
@@ -62,6 +64,13 @@ test('a second required owner keeps the disclosure awaiting signatures without a
   assert.equal(row.canDownload, false)
   assert.equal(row.canUpload, false)
   assert.equal(row.upload.generatedHtml, '<html>frozen signed disclosure</html>')
+})
+
+test('a signature without a named seller cannot complete disclosure', () => {
+  const row = projectDisclosure({ sellerFirstName: '', sellerSurname: '' })
+  assert.equal(row.status, 'awaiting_required_signatures')
+  assert.equal(row.complete, false)
+  assert.equal(row.canDownload, false)
 })
 
 test('an agent reviewed route replaces the partial onboarding disclosure placeholder', () => {

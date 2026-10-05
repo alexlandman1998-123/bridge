@@ -39,6 +39,52 @@ function valuesDiffer(before, after) {
   return before !== after
 }
 
+function sameJsonValue(left, right) {
+  if (left === right) return true
+  if (!left || !right || typeof left !== 'object' || typeof right !== 'object') return false
+  if (Array.isArray(left) !== Array.isArray(right)) return false
+  const keys = Object.keys(left)
+  return keys.length === Object.keys(right).length && keys.every((key) =>
+    Object.hasOwn(right, key) && sameJsonValue(left[key], right[key]))
+}
+
+// The RPC merges form fields into the saved onboarding row. Send only changed
+// fields, including normalized aliases, without resending unchanged signed HTML.
+export function buildListingSellerCanonicalSavePayload(update = {}) {
+  const patch = object(update.listingPatch)
+  return {
+    formData: object(update.persistedFormPatch || update.nextFormData),
+    listingPatch: Object.fromEntries([
+      'addressLine1', 'propertyAddress', 'askingPrice', 'mandateType',
+      'authorityProfile', 'requirementsAffected',
+    ].filter((key) => Object.hasOwn(patch, key)).map((key) => [key, patch[key]])),
+  }
+}
+
+export function isMatchingSellerCanonicalSaveReceipt(receipt, update) {
+  const { listing, onboarding } = receipt || {}
+  const marker = (facts) => facts?.context?.canonical_update?.mutation_id
+  if (listing?.id !== update.listingId || !onboarding?.id || onboarding.private_listing_id !== update.listingId ||
+      marker(listing.seller_canonical_facts_json) !== update.mutationId ||
+      marker(onboarding.canonical_facts_json) !== update.mutationId) return false
+  const patch = buildListingSellerCanonicalSavePayload(update).listingPatch
+  const address = text(patch.addressLine1 ?? patch.propertyAddress)
+  const price = text(patch.askingPrice)
+  if (listing.seller_onboarding_status !== update.onboardingStatus ||
+      (text(update.sellerType) && listing.seller_type !== update.sellerType) ||
+      (address && listing.address_line_1 !== address) ||
+      (text(patch.mandateType) && listing.mandate_type !== text(patch.mandateType)) ||
+      (/^-?[0-9]+([.][0-9]+)?$/.test(price) && Number(listing.asking_price) !== Number(price))) return false
+  // Compare the JSON sent over the wire; nested undefined values are omitted
+  // by serialization, and PostgreSQL does not preserve object key order.
+  const expected = JSON.parse(JSON.stringify({ facts: object(update.canonicalFacts), formData: object(update.nextFormData) }))
+  // A later edit must never authorize dispatch of the versions in this request.
+  return sameJsonValue(listing.seller_canonical_facts_json, expected.facts) &&
+    sameJsonValue(onboarding.canonical_facts_json, expected.facts) &&
+    onboarding.status === update.onboardingStatus &&
+    Object.entries(expected.formData).every(([key, value]) => sameJsonValue(onboarding.form_data?.[key], value))
+}
+
 function sellerTypeForAuthority(authority = {}, form = {}) {
   const explicit = text(first(form.sellerLegalType, form.seller_legal_type, form.sellerType))
   if (authority.profileType === 'married' || authority.profileType === 'power_of_attorney') return 'individual'
@@ -159,6 +205,8 @@ export function buildListingSellerCanonicalUpdate({
   nextFormData.canonicalSellerFacts = canonicalFacts
   nextFormData.canonical_seller_facts = canonicalFacts
   nextFormData.canonicalSellerFactReadiness = readiness
+  const persistedFormPatch = Object.fromEntries(Object.entries(nextFormData).filter(([key, value]) =>
+    value !== undefined && !sameJsonValue(existingFormData[key], value)))
   const currentStatus = text(first(listing.sellerOnboardingStatus, listing.seller_onboarding_status, listing.sellerOnboarding?.status, 'not_started'))
   const status = text(onboardingStatus) || (currentStatus === 'not_started' && authority.identified ? 'in_progress' : currentStatus)
   const sellerType = sellerTypeForAuthority(authority, nextFormData)
@@ -175,7 +223,7 @@ export function buildListingSellerCanonicalUpdate({
     askingPrice: first(nextFormData.askingPrice, nextFormData.price, listing.askingPrice),
     mandateType: text(first(nextFormData.mandateType, listing.mandateType)),
     mandateStartDate: text(first(nextFormData.mandateStartDate, listing.mandateStartDate)),
-    expiryDate: text(first(nextFormData.expiryDate, nextFormData.mandateEndDate, listing.expiryDate, listing.mandateEndDate)),
+    expiryDate: nextFormData.mandateDuration === 'until_cancelled' && nextFormData.mandateType === 'open' ? '' : text(nextFormData.expiryDate ?? nextFormData.mandateEndDate ?? listing.expiryDate ?? listing.mandateEndDate),
     authorityProfile: authority.profileType,
     requirementsAffected,
   }
@@ -190,6 +238,7 @@ export function buildListingSellerCanonicalUpdate({
     expectedUpdatedAt: text(listing.updatedAt || listing.updated_at),
     formPatch: normalizedPatch,
     nextFormData,
+    persistedFormPatch,
     listingPatch,
     canonicalFacts,
     readiness,

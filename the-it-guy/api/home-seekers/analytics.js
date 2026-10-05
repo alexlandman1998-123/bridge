@@ -1,5 +1,5 @@
 import { getHomeSeekersWebsiteConnection, isHomeSeekersPageUrl } from '../../server/services/homeSeekersWebsiteBridge.js'
-import { writeNodeJsonResponse } from '../../server/services/hqMissionControlApi.js'
+import { writeHomeSeekersJsonResponse as writeNodeJsonResponse } from '../../server/services/homeSeekersApiResponse.js'
 
 async function readBody(request) {
   if (request.body && typeof request.body === 'object') return request.body

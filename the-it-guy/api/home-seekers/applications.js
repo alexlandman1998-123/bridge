@@ -1,5 +1,5 @@
 import { createHomeSeekersRecruitmentResponse } from '../../server/services/homeSeekersRecruitmentApi.js'
-import { writeNodeJsonResponse } from '../../server/services/hqMissionControlApi.js'
+import { writeHomeSeekersJsonResponse as writeNodeJsonResponse } from '../../server/services/homeSeekersApiResponse.js'
 
 export default async function handler(request, response) {
   if (request.method !== 'POST') return writeNodeJsonResponse(response, await createHomeSeekersRecruitmentResponse({ method: request.method }))

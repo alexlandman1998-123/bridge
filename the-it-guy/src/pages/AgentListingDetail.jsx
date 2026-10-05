@@ -1,3 +1,6 @@
+import { prepareSellerMandateReviewPreview } from '../lib/sellerMandateReviewPreview.js'
+import SellerMandateDetailsEditor from '../components/documents/SellerMandateDetailsEditor.jsx'
+import { getSellerMandatePreparationIssues } from '../lib/sellerMandateCapture.js'
 import SellerPortalAccessControls from '../components/client-portal/SellerPortalAccessControls.jsx'
 import '../components/listings/property24-manage.css'
 import ListingChannelManageMenu from '../components/listings/ListingChannelManageMenu'
@@ -163,7 +166,7 @@ import { createSellerReviewedDocumentVersions, buildSellerReviewedDocumentVersio
 import { downloadSellerPhysicalSigningCopy, getSellerPhysicalSigningCopy, requireSellerPhysicalSigningCopy } from '../core/documents/sellerPhysicalSigningCopy'
 import { SELLER_PORTAL_SIGNING_ENABLED } from '../core/documents/sellerPortalSigningPolicy'
 import { listSellerPortalSigningRequests, previewSellerPortalSignedDocument, reviewSellerPortalSignedDocument, sendSellerDocumentForSignature } from '../services/sellerPortalDocumentSigningService'
-import { hasCompletedOnboardingDisclosureSignature } from '../core/documents/sellerDocumentSigningContract'
+import { hasCompletedSellerDisclosure } from '../core/documents/sellerDocumentSigningContract'
 import { ONLINE_SIGNING_DISABLED, ONLINE_SIGNING_DISABLED_MESSAGE } from '../core/documents/onlineSigningPolicy'
 import { buildSellerOnboardingSigningPackSnapshot } from '../core/documents/sellerOnboardingSigningPackSnapshot'
 import { createSellerOnboardingCorrectionControl } from '../core/documents/sellerOnboardingCorrectionControl'
@@ -7785,7 +7788,7 @@ function AgentListingDetail() {
     const { byKey } = getSellerSigningDocumentOptions()
     const form = getListingSellerFormData(listingRecord)
     setSellerDocumentOtherAgencyName(String(form.otherAgencyName || form.coAgencyName || '').trim())
-    setSellerDocumentProtectionPeriodDays(String(form.protectionPeriodDays || '').trim())
+    setSellerDocumentProtectionPeriodDays(String(form.protectionPeriodDays ?? form.mandateProtectionPeriod ?? '').trim())
     setSellerDocumentSendSelection(normalizeSellerOnboardingFormalSigningSelection({
       fica: byKey.fica.ready,
       mandate: byKey.mandate.ready,
@@ -8014,13 +8017,13 @@ function AgentListingDetail() {
         return
       }
     }
-    if (sellerDocumentSendSelection.mandate && mandateType === 'dual' && !sellerDocumentOtherAgencyName.trim()) {
-      setDetailError('Name the second agency before preparing a dual mandate.')
-      return
-    }
-    if (sellerDocumentSendSelection.mandate && sellerDocumentProtectionPeriodDays && (!Number.isInteger(Number(sellerDocumentProtectionPeriodDays)) || Number(sellerDocumentProtectionPeriodDays) < 0)) {
-      setDetailError('Enter a whole number of protection days, or leave it blank for none.')
-      return
+    if (selected.includes('mandate')) {
+      const snapshot = buildSellerSigningPackSnapshot(selected)
+      const issues = getSellerMandatePreparationIssues(snapshot.mandate, { ownershipType: snapshot.seller?.ownershipType })
+      if (issues.length) {
+        setDetailError(`Complete the mandate details before preparing copies: ${issues.join('; ')}.`)
+        return
+      }
     }
     try {
       setSellerDocumentSendSaving(true)
@@ -8064,7 +8067,7 @@ function AgentListingDetail() {
             formalPackApproval,
             signingPack: signingPackSnapshot,
             postOnboardingDrafts,
-            disclosureSigned: hasCompletedOnboardingDisclosureSignature(existingForm),
+            disclosureSigned: hasCompletedSellerDisclosure({ formData: existingForm, documentRows: sellerDocumentSource?.rows }),
             actor: String(listingActor?.id || profile?.id || ''),
           })
       const reviewedDocuments = await createSellerReviewedDocumentVersions({
@@ -12468,7 +12471,7 @@ function AgentListingDetail() {
         subtitle="Check the listing requirements before submitting it to Private Property."
         className="max-w-3xl"
         footer={(
-          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <div className="flex w-full min-w-0 flex-col-reverse gap-2 sm:flex-row sm:flex-wrap sm:justify-end [&>button]:h-auto [&>button]:min-h-11 [&>button]:max-w-full [&>button]:whitespace-normal [&>button]:py-2 [&>button>svg]:shrink-0">
             <Button type="button" variant="secondary" onClick={() => setPrivatePropertyManageOpen(false)}>Close</Button>
             <Button type="button" variant="secondary" className="border-[#f3c9c9] text-[#a43d35] hover:bg-[#fff5f5]" onClick={() => expirePrivatePropertyListing()} disabled={Boolean(privatePropertyAction) || !privatePropertyReferenceValue || ['inactive', 'expired', 'removed', 'withdrawn'].includes(privatePropertyStatusKey)}>{privatePropertyAction === 'expire' ? <Loader2 size={15} className="animate-spin" /> : <X size={15} />}Withdraw</Button>
             <Button type="button" onClick={previewPrivatePropertyListing} disabled={Boolean(privatePropertyAction)}>
@@ -13239,7 +13242,7 @@ function AgentListingDetail() {
           </div>
         )}
       >
-        <iframe title="Signed seller document preview" srcDoc={sellerPortalSignedPreview?.html || ''} sandbox="" referrerPolicy="no-referrer" className="h-[68vh] min-h-[420px] w-full rounded-xl border border-[#dbe4ee] bg-white" />
+        <iframe title="Signed seller document preview" srcDoc={sellerPortalSignedPreview?.html || ''} onLoad={event => prepareSellerMandateReviewPreview(event.currentTarget).catch(() => setDetailError('The complete mandate could not be displayed. Reload the preview.'))} sandbox="allow-same-origin" referrerPolicy="no-referrer" className="h-[68vh] min-h-[420px] w-full rounded-xl border border-[#dbe4ee] bg-white" />
       </Modal>
       <Modal
         open={sellerOnboardingSendOpen}
@@ -13571,7 +13574,7 @@ function AgentListingDetail() {
             <Field value={sellerDocumentOtherAgencyName} onChange={(event) => setSellerDocumentOtherAgencyName(event.target.value)} placeholder="Other agency name" />
           </label> : null}
           <label className="grid gap-1.5 rounded-[16px] border border-[#dce6f2] bg-white p-4 text-sm font-semibold text-[#243d56]">Introduced-buyer protection period (calendar days)
-            <Field type="number" min="0" step="1" value={sellerDocumentProtectionPeriodDays} onChange={(event) => setSellerDocumentProtectionPeriodDays(event.target.value)} placeholder="Blank means no post-mandate protection" />
+            <Field type="number" min="0" step="1" value={sellerDocumentProtectionPeriodDays} onChange={(event) => setSellerDocumentProtectionPeriodDays(event.target.value)} placeholder="Enter 0 for none" />
           </label>
         </div>
       </Modal>
@@ -13740,15 +13743,6 @@ function AgentListingDetail() {
 
           {sellerProfileBuilderStep === 2 ? <>
           <section className="grid gap-4 rounded-[18px] border border-[#dce6f2] bg-white p-4 sm:grid-cols-2">
-            <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
-              Mandate type
-              <Field as="select" value={sellerProfileBuilderDraft.mandateType || 'sole'} onChange={(event) => updateSellerProfileBuilderDraft('mandateType', event.target.value)}>
-                <option value="sole">Exclusive</option>
-                <option value="dual">Dual</option>
-                <option value="tri">Tri</option>
-                <option value="open">Open</option>
-              </Field>
-            </label>
             <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
               Contact first name
               <Field value={sellerProfileBuilderDraft.sellerFirstName || ''} onChange={(event) => updateSellerProfileBuilderDraft('sellerFirstName', event.target.value)} />
@@ -14008,10 +14002,6 @@ function AgentListingDetail() {
               <label className="inline-flex min-h-[42px] items-center gap-2 rounded-[12px] border border-[#dbe6f2] bg-[#fbfdff] px-3 text-sm font-semibold text-[#2d445e]"><input type="checkbox" checked={Boolean(sellerProfileBuilderDraft.cancellationRequired)} onChange={(event) => updateSellerProfileBuilderDraft('cancellationRequired', event.target.checked)} />Bond cancellation required</label>
             </> : null}
             <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
-              Asking price
-              <Field type="number" min="0" step="1000" value={sellerProfileBuilderDraft.askingPrice || ''} onChange={(event) => updateSellerProfileBuilderDraft('askingPrice', event.target.value)} />
-            </label>
-            <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
               Rates and taxes
               <Field value={sellerProfileBuilderDraft.ratesTaxes || ''} onChange={(event) => updateSellerProfileBuilderDraft('ratesTaxes', event.target.value)} />
             </label>
@@ -14037,18 +14027,6 @@ function AgentListingDetail() {
               </Field>
             </label>
             <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
-              Mandate start date
-              <Field type="date" value={sellerProfileBuilderDraft.mandateStartDate || ''} onChange={(event) => updateSellerProfileBuilderDraft('mandateStartDate', event.target.value)} />
-            </label>
-            <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
-              Mandate expiry date
-              <Field type="date" value={sellerProfileBuilderDraft.expiryDate || ''} onChange={(event) => updateSellerProfileBuilderDraft('expiryDate', event.target.value)} />
-            </label>
-            <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
-              Commission preference
-              <Field value={sellerProfileBuilderDraft.commissionPreference || ''} onChange={(event) => updateSellerProfileBuilderDraft('commissionPreference', event.target.value)} placeholder="e.g. 5% plus VAT or R50,000" />
-            </label>
-            <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
               POPI consent
               <Field as="select" value={sellerProfileBuilderDraft.popiConsent || ''} onChange={(event) => updateSellerProfileBuilderDraft('popiConsent', event.target.value)}>
                 <option value="">Not captured</option>
@@ -14056,11 +14034,13 @@ function AgentListingDetail() {
                 <option value="no">No</option>
               </Field>
             </label>
-            <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e] sm:col-span-2">
-              Mandate terms
-              <Field as="textarea" value={sellerProfileBuilderDraft.mandateTerms || ''} onChange={(event) => updateSellerProfileBuilderDraft('mandateTerms', event.target.value)} />
-            </label>
+
           </section>
+
+          <SellerMandateDetailsEditor ownershipType={sellerProfileBuilderDraft.branch} value={{ ...sellerProfileBuilderDraft, startDate: sellerProfileBuilderDraft.mandateStartDate, endDate: sellerProfileBuilderDraft.expiryDate, specialConditions: sellerProfileBuilderDraft.mandateTerms }} onChange={next => {
+            const fields = { startDate: 'mandateStartDate', endDate: 'expiryDate', specialConditions: 'mandateTerms' }
+            for (const [key, value] of Object.entries(next)) updateSellerProfileBuilderDraft(fields[key] || key, value)
+          }} />
 
           </> : null}
         </form>

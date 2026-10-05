@@ -107,3 +107,8 @@ assert.equal(recoveredAudit?.auditEventCreatedAt, '2026-08-24T12:00:00.000Z')
 assert.equal(recoveredAudit?.auditEventLogged, true)
 
 console.log('new transaction setup health tests passed')
+
+assert.deepEqual(
+  resolveWizardInitialTransactionStage({ signedOtpStatus: 'uploaded' }, { stage: 'Registered', preserveCapturedStage: true }),
+  { stage: 'Registered', mainStage: 'REG', onboardingStatus: 'signed_otp_received' },
+)

@@ -106,6 +106,11 @@ assert.ok(state.lastErrorAt)
 succeed = true
 await poll(60_000)
 assert.equal(state.lastErrorAt, null)
+const beforeLocal = reads
+await flush(() => window.dispatchEvent(new window.CustomEvent('itg:transaction-updated', { detail: { transactionId: 'another-matter' } })))
+assert.equal(reads, beforeLocal, 'local signals for another matter must be ignored')
+await flush(() => window.dispatchEvent(new window.CustomEvent('itg:transaction-updated', { detail: { transactionId: 'matter', source: 'appointment_response' } })))
+assert.equal(reads, beforeLocal + 1, 'a saved appointment response must refresh its open matter')
 const recovered = reads
 queryError = true
 await poll()
@@ -117,7 +122,7 @@ assert.equal(intervals.size, 0)
 assert.equal(timeouts.size, 0)
 assert.equal(removed, 1)
 const stopped = reads
-await flush(() => window.dispatchEvent(new window.Event('focus')))
+await flush(() => { window.dispatchEvent(new window.Event('focus')); window.dispatchEvent(new window.CustomEvent('itg:transaction-updated', { detail: { transactionId: 'matter' } })) })
 assert.equal(reads, stopped)
 dom.window.close()
 Date.now = realNow

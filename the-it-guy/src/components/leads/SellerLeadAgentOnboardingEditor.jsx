@@ -81,14 +81,6 @@ export default function SellerLeadAgentOnboardingEditor({
             <option value="">Select</option><option value="municipal">Municipal</option><option value="prepaid">Prepaid</option><option value="body_corporate">Body corporate</option><option value="other">Other</option>
           </Field>
         </label>
-        <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
-          Mandate type
-          <Field as="select" value={draft.mandateType || ''} onChange={(event) => onChange('mandateType', event.target.value)}>
-            <option value="">Select</option><option value="sole">Sole</option><option value="open">Open</option><option value="dual">Dual</option>
-          </Field>
-        </label>
-        {draft.mandateType === 'dual' ? <Input label="Second agency name" field="otherAgencyName" draft={draft} onChange={onChange} /> : null}
-        <Input label="Estimated asking price" field="askingPrice" type="number" draft={draft} onChange={onChange} />
         <label className="flex items-center gap-2 text-sm font-semibold text-[#2d445e] sm:col-span-2">
           <input type="checkbox" checked={Boolean(draft.leaseExists)} onChange={(event) => onChange('leaseExists', event.target.checked)} />A lease exists
         </label>

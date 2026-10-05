@@ -1,6 +1,7 @@
 import { resolveTransactionFacts } from './transactionFactsResolver.js'
 import { resolveScenarioRequirementFacts, scopeScenarioRequirements } from './scenarioRequirementsEngine.js'
 import { withCanonicalDocumentRequestMetadata } from '../../core/documents/documentRequestCanonicalAdapter.js'
+import { electricalNotApplicable } from './conveyancingReviewPolicy.js'
 
 // Phase 9 canonical document consolidation:
 // This attorney document resolver is retained as a compatibility fallback.
@@ -851,7 +852,7 @@ export function resolveLegalDocumentRequirements(transactionOrFacts = {}) {
   return {
     transactionId: facts.transactionId,
     facts,
-    requirements: scopeScenarioRequirements(dedupeById(requirements), facts),
+    requirements: scopeScenarioRequirements(dedupeById(requirements).filter(item => item.id !== 'electrical_compliance_certificate' || !electricalNotApplicable(transactionOrFacts?.routing_profile_json?.mvpProfile?.propertyConditions || transactionOrFacts?.propertyConditions || transactionOrFacts?.mvpProfile?.propertyConditions)), facts),
     signingRequirements: scopeScenarioRequirements(dedupeById(signingRequirements), facts),
     warnings: [...(facts.confidenceWarnings || [])],
     missingFields: [...(facts.missingFields || [])],

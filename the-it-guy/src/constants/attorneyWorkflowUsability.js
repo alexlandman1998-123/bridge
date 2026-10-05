@@ -228,6 +228,24 @@ export const CANCELLATION_ATTORNEY_STAGE_COMMAND_PRESETS = Object.freeze({
     note: 'Cancellation document pack prepared. Seller, property, bank, and authority requirements checked.',
     checklist: ['Prepare cancellation documents.', 'Check seller capacity and authority evidence.', 'Confirm bank and property details are correct.'],
   }),
+  cancellation_guarantee_allocation_review: Object.freeze({
+    label: 'Review Settlement Allocation',
+    description: 'Review every registered security and linked settlement account.',
+    note: 'Current figures, consent, instrument and full payment allocation reviewed for every security account.',
+    checklist: ['Reconcile every bond and account.', 'Review current figures and bondholder consent.', 'Resolve each allocation and shortfall.'],
+  }),
+  cancellation_consent_confirmed: Object.freeze({
+    label: 'Confirm Bondholder Consent',
+    description: 'Confirm current consent and resolve its conditions.',
+    note: 'Bondholder consent and any conditions verified against the current instrument and figures.',
+    checklist: ['Review bondholder authority.', 'Resolve consent conditions.', 'Retain the current consent reference.'],
+  }),
+  cancellation_simultaneous_lodgement_confirmed: Object.freeze({
+    label: 'Confirm Linked Lodgement',
+    description: 'Confirm the linked attorneys, batch and lodgement arrangement.',
+    note: 'Applicable transfer, new bond and cancellation attorneys agreed the linked lodgement arrangement.',
+    checklist: ['Confirm the linked attorneys.', 'Record the batch or arrangement reference.', 'Review current readiness and timing.'],
+  }),
   seller_cancellation_documents_signed: Object.freeze({
     commandType: 'request_document',
     requestedFrom: 'seller',
@@ -1562,19 +1580,12 @@ function getLaneFromCollection(lanes = [], laneKey = 'transfer') {
 }
 
 function laneAssignmentPresent(lane = {}) {
+  if (Object.hasOwn(lane, 'assigned')) return lane.assigned
   return Boolean(lane?.assignment || lane?.assignmentId || lane?.assignedFirm || lane?.firmName)
 }
 
 function getLaneCurrentStage(lane = {}) {
   return lane?.currentStage || lane?.summary?.currentStage || ''
-}
-
-function getLaneStepIndex(steps = [], laneKey = 'transfer', stageKey = '') {
-  const normalizedStageKey = normalizeAttorneyStageKey(stageKey || '', laneKey)
-  if (!normalizedStageKey) return -1
-  return (steps || []).findIndex((step) =>
-    normalizeAttorneyStageKey(step?.stepKey || step?.step_key || step?.key || '', laneKey) === normalizedStageKey,
-  )
 }
 
 function laneStageReached(lane = {}, targetStages = []) {
@@ -1586,10 +1597,19 @@ function laneStageReached(lane = {}, targetStages = []) {
     .filter(Boolean)
 
   return targetKeys.some((targetKey) => {
-    const targetIndex = getLaneStepIndex(steps, laneKey, targetKey)
-    const targetStep = targetIndex >= 0 ? steps[targetIndex] : null
-    const targetStatus = normalizeStatus(targetStep?.status || '')
-    if (targetStatus === 'completed' || targetStatus === 'approved') return true
+    const matching = steps.filter(step =>
+      normalizeAttorneyStageKey(step?.stepKey || step?.step_key || step?.key || '', laneKey) === targetKey)
+    const canonical = matching.filter(step => (step.stepKey || step.step_key || step.key) === targetKey)
+    // Several retired task keys can collapse into one current review. An earlier
+    // receipt must not mask unfinished acceptance; an exact current record is
+    // authoritative when old rows remain alongside it.
+    const targets = canonical.length ? canonical : matching
+    if (!targets.length) return false
+    if (targets.every(step => {
+      const status = normalizeStatus(step.status || '')
+      return status === 'completed' || status === 'approved' ||
+        (lane.source === 'shared_journey' && status === 'completed_externally')
+    })) return true
     // Work is non-linear; later stages and stale summaries prove nothing about
     // a dependency that may have been reopened.
     return false
@@ -1603,9 +1623,18 @@ function buildCoordinationItem(rule = {}, lanes = []) {
   const targetStageLabel = targetStage ? getAttorneyStageLabel(targetStage, dependencyLaneKey) : ''
   if (!dependencyLane) return null
 
+  const targetSteps = (dependencyLane.steps || []).filter(step =>
+    (rule.targetStages || []).some(key => normalizeAttorneyStageKey(key, dependencyLaneKey) ===
+      normalizeAttorneyStageKey(step.stepKey || step.step_key || step.key, dependencyLaneKey)))
+  if (dependencyLane.source === 'shared_journey' && dependencyLane.progressAvailable !== false &&
+    ((dependencyLane.planned && !targetSteps.length) ||
+      (targetSteps.length && targetSteps.every(step => step.status === 'not_applicable')))) return null
+
   const ready = laneStageReached(dependencyLane, rule.targetStages)
   const assigned = laneAssignmentPresent(dependencyLane)
-  const status = ready ? 'ready' : assigned ? 'waiting' : 'blocked'
+  const progressAvailable = dependencyLane.progressAvailable !== false
+  const waiting = !progressAvailable || assigned === null || assigned === true
+  const status = ready ? 'ready' : waiting ? 'waiting' : 'blocked'
   const currentStage = normalizeAttorneyStageKey(getLaneCurrentStage(dependencyLane), dependencyLaneKey)
 
   return {
@@ -1615,12 +1644,14 @@ function buildCoordinationItem(rule = {}, lanes = []) {
     title: rule.title,
     description: rule.description,
     status,
-    statusLabel: status === 'ready' ? 'Ready' : status === 'blocked' ? 'Assignment Needed' : 'Waiting',
+    statusLabel: !progressAvailable ? 'Progress unavailable' : status === 'ready' ? 'Ready' :
+      assigned === null ? 'Assignment unconfirmed' : status === 'blocked' ? 'Assignment Needed' : 'Waiting',
     targetStage,
     targetStageLabel,
     currentStage,
     currentStageLabel: dependencyLane.currentStageLabel || (currentStage ? getAttorneyStageLabel(currentStage, dependencyLaneKey) : 'Not started'),
     assigned,
+    progressAvailable,
   }
 }
 
@@ -1790,6 +1821,8 @@ function getCoordinationCommandPreset(item = {}) {
 export function buildAttorneyWorkflowCoordinationSummary({
   laneKey = 'transfer',
   lanes = [],
+  requiredLaneKeys = null,
+  sourceRevision = null,
   timeline = [],
   now = null,
 } = {}) {
@@ -1797,7 +1830,13 @@ export function buildAttorneyWorkflowCoordinationSummary({
   const rules = COORDINATION_RULES[normalizedLaneKey] || []
   const actioned = buildCoordinationActionIndex(timeline)
   const items = rules
-    .map((rule) => buildCoordinationItem(rule, lanes))
+    .filter(rule => !Array.isArray(requiredLaneKeys) || requiredLaneKeys.includes(rule.dependencyLaneKey))
+    .map(rule => {
+      const requiredMissing = Array.isArray(requiredLaneKeys) && !getLaneFromCollection(lanes, rule.dependencyLaneKey)
+      return buildCoordinationItem(rule, requiredMissing ? [...lanes, {
+        laneKey: rule.dependencyLaneKey, assigned: null, progressAvailable: false, steps: [],
+      }] : lanes)
+    })
     .filter(Boolean)
     .map((item) => applyCoordinationActionState(item, actioned, now))
 
@@ -1834,6 +1873,7 @@ export function buildAttorneyWorkflowCoordinationSummary({
 
   return {
     laneKey: normalizedLaneKey,
+    sourceRevision,
     health,
     counts,
     actionedCoordinationIds: [...actioned.keys()],
@@ -1850,6 +1890,7 @@ export function buildAttorneyWorkflowCoordinationSummary({
 }
 
 export function buildAttorneyWorkflowCoordinationCommand(item = {}, context = {}) {
+  if (item.progressAvailable === false) return null
   const laneKey = normalizeLaneKey(context.laneKey)
   const dependencyLaneKey = normalizeLaneKey(item.laneKey || item.dependencyLaneKey)
   const blocked = item.status === 'blocked'

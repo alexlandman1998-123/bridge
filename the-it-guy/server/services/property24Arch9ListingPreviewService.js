@@ -1,3 +1,4 @@
+import { refreshListingPhotoUrls } from '../../src/services/listings/listingPhotoStorage.js'
 import { execFile } from 'node:child_process'
 import fs from 'node:fs/promises'
 import os from 'node:os'
@@ -178,7 +179,7 @@ export async function fetchArch9ListingForProperty24Preview({ client, listingId 
   return {
     listing: hydrateListingFromOnboarding(listing, onboarding || {}),
     publication: publication || {},
-    media,
+    media: listing.listing_category === 'rental' ? await refreshListingPhotoUrls(client, media, { strict: true }) : media,
     existingSync: existingSync || {},
   }
 }

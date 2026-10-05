@@ -1,6 +1,9 @@
 import { getBondApplicationSigningAvailability } from '../../submission/bondApplicationSigningAvailability.js'
 import { isBondApplicationSignature } from '../bondApplicationSignature.js'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { sealBondReviewedVersion, getBondReviewedContent } from '../../submission/bondApplicationReviewedVersion.js'
+import { canonicalizeBondApplicationSnapshot } from '../../submission/bondApplicationSnapshotHash.js'
+import { buildBondApplicationDocumentPresentation } from '../../exports/bondApplicationDocumentPresentation.js'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   BOND_APPLICATION_SUBMISSION_STATUSES,
   buildBondApplicationDeclarationEvidence,
@@ -30,6 +33,8 @@ export function useBondApplicationSubmission({
   saveStatus = 'saved',
   saveLatestApplication,
   onPrepareSubmission,
+  onPrepareWetInk,
+  onPrepareOnlineSigning,
   onRefreshSubmission,
   onCancelPendingSubmission,
   onFinalized,
@@ -41,6 +46,15 @@ export function useBondApplicationSubmission({
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState('')
   const [readinessAttempted, setReadinessAttempted] = useState(false)
+  const reviewedAnswers = useMemo(() => canonicalizeBondApplicationSnapshot(getBondReviewedContent(buildBondApplicationSubmissionSnapshot({ applicationState, declarations }))), [applicationState, declarations])
+  const previousReviewedAnswers = useRef(reviewedAnswers)
+
+  useEffect(() => {
+    if (previousReviewedAnswers.current !== reviewedAnswers) {
+      setDeclarationValues(defaultDeclarationValues(declarations))
+      previousReviewedAnswers.current = reviewedAnswers
+    }
+  }, [declarations, reviewedAnswers])
 
   useEffect(() => {
     setDeclarationValues((current) => ({
@@ -86,9 +100,12 @@ export function useBondApplicationSubmission({
         sourceUpdatedAt: applicationState?.compatibility?.legacyBase?._source?.updated_at || null,
       },
     })
-    const snapshotHash = await hashBondApplicationSnapshot(snapshot)
-    return { snapshot, snapshotHash }
+    const reviewedSnapshot = await sealBondReviewedVersion(snapshot)
+    const snapshotHash = await hashBondApplicationSnapshot(reviewedSnapshot)
+    return { snapshot: reviewedSnapshot, snapshotHash }
   }, [acceptedDeclarationEvidence, applicationState, documentChecklist, signerIdentity, submission])
+
+  const reviewDocument = useMemo(() => buildBondApplicationDocumentPresentation(buildBondApplicationSubmissionSnapshot({ applicationState, declarations: acceptedDeclarationEvidence, documentChecklist, signerIdentity })), [applicationState, acceptedDeclarationEvidence, documentChecklist, signerIdentity])
 
   const updateDeclaration = useCallback((declarationKey, accepted) => {
     setDeclarationValues((current) => ({ ...current, [declarationKey]: Boolean(accepted) }))
@@ -116,6 +133,10 @@ export function useBondApplicationSubmission({
 
   const prepareForSignature = useCallback(async () => {
     setReadinessAttempted(true)
+    if (typeof onPrepareSubmission !== 'function') {
+      setError('Application signing is not available here yet. Your saved information is unchanged.')
+      return { ok: false, reason: 'submission_unavailable' }
+    }
     const availability = getBondApplicationSigningAvailability()
     if (!availability.available) { setError(availability.message); return { ok: false, reason: availability.code } }
     setError('')
@@ -133,7 +154,7 @@ export function useBondApplicationSubmission({
     try {
       if (saveLatestApplication) await saveLatestApplication()
       await localSnapshotPreview()
-      const result = await onPrepareSubmission?.({
+      const result = await onPrepareSubmission({
         acceptedDeclarations: acceptedDeclarationEvidence,
         declarationValues,
         expectedSourceHash: '',
@@ -150,6 +171,32 @@ export function useBondApplicationSubmission({
     }
   }, [acceptedDeclarationEvidence, applicationState?.application?.signatureEvidence, declarationValues, localSnapshotPreview, onPrepareSubmission, readiness, saveLatestApplication])
 
+  const prepareOnline = useCallback(async () => {
+    setReadinessAttempted(true); setError('')
+    if (readiness.issues.some((issue) => issue.category !== 'declarations')) return { ok: false, reason: 'readiness' }
+    if (!onPrepareOnlineSigning) return { ok: false, reason: 'unavailable' }
+    setPreparing(true)
+    try { if (saveLatestApplication) await saveLatestApplication(); await onPrepareOnlineSigning(); return { ok: true } }
+    catch (failure) { setError(failure.message || 'Online signing could not be prepared.'); return { ok: false } }
+    finally { setPreparing(false) }
+  }, [readiness, saveLatestApplication, onPrepareOnlineSigning])
+
+  const prepareWetInk = useCallback(async () => {
+    setReadinessAttempted(true)
+    setError('')
+    if (!readiness.ready) return { ok: false, reason: 'readiness' }
+    if (!onPrepareWetInk) return { ok: false, reason: 'unavailable' }
+    setPreparing(true)
+    try {
+      if (saveLatestApplication) await saveLatestApplication()
+      await onPrepareWetInk({ declarationValues })
+      return { ok: true }
+    } catch (failure) {
+      setError(failure.message || 'The signing copy could not be prepared. Please retry.')
+      return { ok: false }
+    } finally { setPreparing(false) }
+  }, [readiness, onPrepareWetInk, saveLatestApplication, declarationValues])
+
   const startSigning = useCallback(() => {
     const availability = getBondApplicationSigningAvailability()
     if (!availability.available) { setError(availability.message); return false }
@@ -164,9 +211,13 @@ export function useBondApplicationSubmission({
 
   const makeChanges = useCallback(async () => {
     if (!submission?.id) return { ok: true }
+    if (typeof onCancelPendingSubmission !== 'function') {
+      setError('We could not unlock the application for changes right now.')
+      return { ok: false, reason: 'cancellation_unavailable' }
+    }
     setError('')
     try {
-      const result = await onCancelPendingSubmission?.({ submissionId: submission.id })
+      const result = await onCancelPendingSubmission({ submissionId: submission.id })
       const nextSubmission = result?.submission || result || { ...submission, status: BOND_APPLICATION_SUBMISSION_STATUSES.cancelled }
       setSubmission(nextSubmission)
       return { ok: true, submission: nextSubmission }
@@ -179,6 +230,7 @@ export function useBondApplicationSubmission({
   return {
     signingAvailability: getBondApplicationSigningAvailability(),
     reviewSections,
+    reviewDocument,
     readiness,
     readinessAttempted,
     declarations,
@@ -191,6 +243,9 @@ export function useBondApplicationSubmission({
     error,
     updateDeclaration,
     prepareForSignature,
+    prepareWetInk,
+    prepareOnline,
+    wetInkAvailable: typeof onPrepareWetInk === 'function',
     startSigning,
     resumeSigning: startSigning,
     makeChanges,

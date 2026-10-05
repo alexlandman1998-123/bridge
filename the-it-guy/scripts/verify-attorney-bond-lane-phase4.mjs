@@ -118,7 +118,7 @@ function verifyBondRequestsTransferAcceptance() {
   assert.equal(command.workPacket.visibility, 'professional_shared')
   assert.equal(command.workPacket.sourceCoordinationId, 'transfer_transfer_guarantee_acceptance')
   assert.equal(command.workPacket.sourceCoordinationLaneKey, 'transfer')
-  assert.equal(command.workPacket.sourceCoordinationTargetStage, 'transfer_guarantees_accepted')
+  assert.equal(command.workPacket.sourceCoordinationTargetStage, 'payment_security_review')
   assert.match(command.draft.message, /Guarantee wording request for Transfer Attorney/)
   assert.match(command.workPacket.checklist.join(' '), /wording and amount acceptance/)
 }

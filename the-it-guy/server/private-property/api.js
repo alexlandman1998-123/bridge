@@ -1,3 +1,5 @@
+import { getRentalPublicationAttempt, publicRentalPublicationAttempt } from '../services/rentalPublicationAttemptService.js'
+import { reconcileRentalPrivatePropertyPublication } from '../services/rentalPublicationReconciliationService.js'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -456,7 +458,7 @@ export async function createPrivatePropertyApiResponse({
         confirmation: config.confirmation,
       })
       const submitted = report.status === 'SUBMITTED'
-      return buildJsonResponse(submitted ? 200 : 422, {
+      return buildJsonResponse(submitted || report.status === 'UNCERTAIN' ? 200 : 422, {
         route: route.name,
         status: report.status,
         listingId: config.listingId,
@@ -468,9 +470,18 @@ export async function createPrivatePropertyApiResponse({
     }
 
     if (route.name === 'listingStatus') {
+      const rentalRow = await supabase.from('private_listings').select('listing_category').eq('id',config.listingId).maybeSingle()
+      if (rentalRow.error) throw rentalRow.error
+      const isRental = rentalRow.data?.listing_category === 'rental'
+      const pendingAttempt = isRental ? await getRentalPublicationAttempt(supabase,config.listingId,'private_property',config.environment) : null
+      const submissionAttempt = publicRentalPublicationAttempt(pendingAttempt)
+      if (!config.cachedStatus && pendingAttempt) {
+        const reconciliation = await reconcileRentalPrivatePropertyPublication({ client:supabase,listingId:config.listingId,environment:config.environment,secrets:env || getRuntimeEnv() })
+        return buildJsonResponse(200,{ route:route.name,listingId:config.listingId,...reconciliation })
+      }
       if (config.cachedStatus) {
         const monitor = await readPrivatePropertyStoredStatus({ client: supabase, listingId: config.listingId, environment: config.environment })
-        return buildJsonResponse(200, { route: route.name, listingId: config.listingId, status: monitor.status, monitor })
+        return buildJsonResponse(200, { route: route.name, listingId: config.listingId, status: monitor.status, monitor,submissionAttempt })
       }
       const monitor = await runPostSubmitMonitor({
         client: supabase,
@@ -487,6 +498,7 @@ export async function createPrivatePropertyApiResponse({
         status: monitor.status,
         listingId: config.listingId,
         monitor,
+        submissionAttempt,
         report: monitor,
       })
     }

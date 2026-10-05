@@ -4,9 +4,17 @@ import { createClient } from "supabase";
 import { sendViaResendApi } from "../send-email/services/resend.ts";
 import { resolveAudienceEmailSender, resolveEmailBranding } from "../send-email/services/emailBranding.ts";
 import { renderBridgeCta, renderBridgeEmailLayout, renderBridgeIntroParagraphs } from "../send-email/content/bridgeEmailLayout.ts";
-import { buildSellerMandateDocumentMarkup } from "../../../the-it-guy/src/core/documents/sellerMandateDocumentMarkup.js";
-import { buildSellerFicaDueDiligenceMarkup } from "../../../the-it-guy/src/core/documents/sellerFicaDueDiligenceMarkup.js";
-import { buildPropertyDisclosureDocumentMarkup, normalizePropertyDisclosure, PROPERTY_DISCLOSURE_QUESTIONS } from "../../../the-it-guy/src/lib/propertyDisclosure.js";
+import {
+  assertSellerMandateCorrectionSchedules,
+  buildSellerSigningCorrectionEditData as editData,
+  validateSellerSigningDocumentCorrections as validatedCorrections,
+  renderSellerSigningDocumentCorrections as renderCorrectedHtml,
+} from "../../../the-it-guy/src/core/documents/sellerSigningDocumentCorrections.js";
+import { computeSellerReviewedDocumentVersionDigest } from "../../../the-it-guy/src/core/documents/sellerReviewedDocumentVersions.js";
+import { verifyMandateSigningContract, isCurrentMandateSigningContract, mandateCanonicalJson, mandateCertificatesCurrent, isFullMandateSigningCopy } from "../../../the-it-guy/src/core/documents/sellerMandateSigningApproval.js";
+import { buildSellerMandateFrozenDocumentMarkup } from "../../../the-it-guy/src/core/documents/sellerMandateDocumentMarkup.js";
+import { applySellerDocumentSignatureEvidence } from "../../../the-it-guy/src/core/documents/sellerDocumentSignatureEvidence.js";
+import { applyMandateSignatureEvidence } from "../../../the-it-guy/src/core/documents/sellerMandateSignatureEvidence.js";
 
 type Row = Record<string, unknown>;
 const createAdmin = (url: string, key: string) => createClient(url, key, { auth: { persistSession: false } });
@@ -52,21 +60,9 @@ function newToken() {
   return btoa(String.fromCharCode(...bytes)).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
 }
 
-function escapeHtml(value: unknown) {
-  return text(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;").replaceAll("'", "&#39;");
-}
-
 function signedHtml(reviewedHtml: string, evidence: Row[], versionDigest: string) {
-  const blocks = evidence.map((row) => {
-    const signature = text(row.signature_value);
-    const drawn = text(row.signature_type) === "drawn" && /^data:image\/(png|jpeg);base64,[a-z0-9+/=]+$/i.test(signature);
-    const signedAt = text(row.signed_date) || text(row.accepted_at);
-    const signedPlace = text(row.signed_place);
-    return `<div style="border-top:1px solid #152338;padding:12px 0;margin-top:18px"><strong>${escapeHtml(row.signed_name)}</strong><br>${drawn ? `<img alt="Signature" src="${signature}" style="max-height:90px;max-width:280px" />` : `<em>${escapeHtml(signature)}</em>`}<br>Signed ${signedPlace ? `at ${escapeHtml(signedPlace)} ` : ""}on ${escapeHtml(signedAt)} · Recorded ${escapeHtml(row.accepted_at)} · Evidence ${escapeHtml(row.evidence_digest)}</div>`;
-  }).join("");
-  const section = `<section style="max-width:820px;margin:28px auto;padding:24px;border:1px solid #dbe4df;page-break-before:always"><h2>Electronic signatures</h2><p>Reviewed document version: ${escapeHtml(versionDigest)}</p>${blocks}</section>`;
-  return /<\/body>/i.test(reviewedHtml) ? reviewedHtml.replace(/<\/body>/i, `${section}</body>`) : `${reviewedHtml}${section}`;
+  if (reviewedHtml.includes('data-mandate-signing-copy="full-v1"')) return applyMandateSignatureEvidence(reviewedHtml, evidence, versionDigest);
+  return applySellerDocumentSignatureEvidence(reviewedHtml, evidence, versionDigest);
 }
 
 async function staffContext(req: Request, admin: AdminClient, url: string, anonKey: string, organisationId: string) {
@@ -124,127 +120,27 @@ async function reviewedCopy(admin: AdminClient, listingId: string, documentKey: 
     !text(signer.name) || !text(signer.role) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text(signer.email)))) return null;
   if (new Set(signers.map((signer) => text(signer.email).toLowerCase())).size !== signers.length) return null;
   const mandateTerms = documentKey === "signed_mandate" ? object(document.mandateTerms) : null;
-  const versionDigest = `sha256:${await sha256(JSON.stringify(canonical({
-    key: documentKey,
-    contentDigest,
-    sourceDraftFingerprint: text(document.sourceDraftFingerprint),
-    signers,
-    mandateTerms,
-  })))}`;
+  const mandateContract = object(document.mandateContract);
+  if (documentKey === "signed_mandate" && isFullMandateSigningCopy(document, html)) {
+    if (!await verifyMandateSigningContract(mandateContract) ||
+        mandateCanonicalJson(mandateContract) !== mandateCanonicalJson(indexRow.mandateContract) ||
+        mandateCanonicalJson(mandateContract.requiredSigners) !== mandateCanonicalJson(signers) ||
+        mandateCanonicalJson(object(mandateContract.inputs).mandate) !== mandateCanonicalJson(mandateTerms)) return null;
+    if (html !== buildSellerMandateFrozenDocumentMarkup(mandateContract)) return null;
+  }
+  const versionDigest = await computeSellerReviewedDocumentVersionDigest({
+    ...document, key: documentKey, contentDigest, requiredSigners: signers, mandateTerms,
+  });
   if (contentDigest !== text(document.contentDigest) || versionDigest !== text(document.versionDigest) ||
       versionDigest !== text(indexRow.versionDigest) || contentDigest !== text(indexRow.contentDigest) ||
       text(document.versionId) !== text(indexRow.versionId) ||
+      text(document.sourceDraftFingerprint) !== text(indexRow.sourceDraftFingerprint) ||
+      text(document.sourceFactsFingerprint) !== text(indexRow.sourceFactsFingerprint) ||
       JSON.stringify(canonical(signers)) !== JSON.stringify(canonical(indexRow.requiredSigners)) ||
       JSON.stringify(canonical(mandateTerms)) !== JSON.stringify(canonical(indexRow.mandateTerms))) return null;
   return { document, html, signers, contentDigest, versionDigest, form, approval, pack };
 }
 
-const correctionFields = {
-  common: ["sellerName", "idNumber", "residentialAddress", "email", "phone", "propertyAddress"],
-  fica: ["idType", "saResident", "incomeTaxNumber", "maritalStatus", "employer", "jobTitle", "occupation", "industryOfBusiness", "countriesOfTrade", "dualUseGoods", "armsWeapons", "actingOnBehalfOfAnother", "heirInEstate", "sourceOfWealth", "sourceOfIncome", "politicallyInfluentialPerson", "bankName", "accountName", "accountNumber", "accountType"],
-  mandate: ["mandateType", "askingPrice", "startDate", "endDate", "protectionPeriod", "specialConditions", "commissionBasis", "commissionPercentage", "commissionAmount", "vatHandling"],
-  disclosure: ["comments", "remoteControlsQuantity"],
-} as const;
-
-function editData(copy: NonNullable<Awaited<ReturnType<typeof reviewedCopy>>>, key: string, saved: Row = {}) {
-  const pack = object(copy.pack.signingPackSnapshot);
-  const seller = object(pack.seller), property = object(pack.property), mandate = object(pack.mandate);
-  const form = copy.form, fica = object(form.fica || form.ficaDetails || form.fica_details);
-  const disclosure = normalizePropertyDisclosure(object(form.propertyDisclosure || form.property_disclosure));
-  const common = { sellerName: text(seller.name), idNumber: text(seller.idNumber), residentialAddress: text(seller.residentialAddress), email: text(seller.email), phone: text(seller.phone), propertyAddress: text(property.address) };
-  const ficaValues: Row = {};
-  const booleanFields = new Set(["saResident", "dualUseGoods", "armsWeapons", "actingOnBehalfOfAnother", "heirInEstate", "politicallyInfluentialPerson"]);
-  for (const field of correctionFields.fica) {
-    const value = text(fica[field] ?? form[field] ?? seller[field] ?? (field === "sourceOfIncome" ? seller.sourceOfFunds : ""));
-    ficaValues[field] = booleanFields.has(field)
-      ? (["true", "yes", "1"].includes(value.toLowerCase()) ? "yes" : ["false", "no", "0"].includes(value.toLowerCase()) ? "no" : value)
-      : value;
-  }
-  const mandateValues: Row = {};
-  const commission = object(copy.approval.commission);
-  for (const field of correctionFields.mandate) mandateValues[field] = text(mandate[field] ?? ({ commissionBasis: commission.basis, commissionPercentage: commission.percentage, commissionAmount: commission.amount, vatHandling: commission.vatHandling } as Row)[field]);
-  const disclosureValues = { comments: disclosure.comments, remoteControlsQuantity: disclosure.remoteControlsQuantity, responses: disclosure.responses };
-  return {
-    common: { ...common, ...object(saved.common) },
-    ...(key === "signed_fica_declaration" ? { fica: { ...ficaValues, ...object(saved.fica) } } : {}),
-    ...(key === "signed_mandate" ? { mandate: { ...mandateValues, ...object(saved.mandate) } } : {}),
-    ...(key === "signed_disclosure_form" ? { disclosure: { ...disclosureValues, ...object(saved.disclosure) }, questions: PROPERTY_DISCLOSURE_QUESTIONS.map(({ key: questionKey, text: label, number }) => ({ key: questionKey, label, number })) } : {}),
-  };
-}
-
-function validatedCorrections(value: Row, key: string) {
-  const result: Row = {};
-  for (const section of ["common", key === "signed_fica_declaration" ? "fica" : key === "signed_mandate" ? "mandate" : "disclosure"] as const) {
-    const input = object(value[section]);
-    const clean: Row = {};
-    for (const field of correctionFields[section]) {
-      const entry = text(input[field]);
-      if (entry.length > (field === "comments" || field === "specialConditions" ? 4000 : 500)) throw new Error("A corrected field is too long.");
-      clean[field] = entry;
-    }
-    if (section === "disclosure") {
-      const answers = object(input.responses), responses: Row = {};
-      for (const question of PROPERTY_DISCLOSURE_QUESTIONS) {
-        const response = object(answers[question.key]);
-        const answer = text(response.answer).toLowerCase();
-        const note = text(response.note);
-        if (!["", "yes", "no", "unsure"].includes(answer) || note.length > 2000) throw new Error("A disclosure answer is invalid.");
-        responses[question.key] = { answer, note };
-      }
-      clean.responses = responses;
-    }
-    if (section === "common" && (text(clean.sellerName).length < 2 || text(clean.propertyAddress).length < 5)) {
-      throw new Error("Enter the seller name and property address before saving.");
-    }
-    if (section === "mandate") {
-      if (!["sole", "exclusive", "sole_mandate", "open"].includes(text(clean.mandateType).toLowerCase()) ||
-        !(Number(text(clean.askingPrice).replace(/[^\d.-]/g, "")) > 0) ||
-        !/^\d{4}-\d{2}-\d{2}$/.test(text(clean.startDate)) ||
-        !/^\d{4}-\d{2}-\d{2}$/.test(text(clean.endDate)) ||
-        text(clean.endDate) < text(clean.startDate)) throw new Error("Enter a valid mandate type, price, and dates.");
-      if (!["percentage", "fixed"].includes(text(clean.commissionBasis)) ||
-        !(Number(text(clean.commissionBasis) === "fixed" ? clean.commissionAmount : clean.commissionPercentage) > 0) ||
-        !text(clean.vatHandling)) throw new Error("Enter valid commission and VAT terms.");
-    }
-    result[section] = clean;
-  }
-  return result;
-}
-
-function renderCorrectedHtml(copy: NonNullable<Awaited<ReturnType<typeof reviewedCopy>>>, key: string, corrections: Row, listingId: string) {
-  const pack = structuredClone(object(copy.pack.signingPackSnapshot));
-  const seller = object(pack.seller), property = object(pack.property), common = object(corrections.common);
-  seller.name = text(common.sellerName); seller.idNumber = text(common.idNumber);
-  seller.residentialAddress = text(common.residentialAddress); seller.email = text(common.email); seller.phone = text(common.phone);
-  const parties = Array.isArray(seller.parties) ? seller.parties : [];
-  if (parties.length) parties[0] = { ...object(parties[0]), name: seller.name, idNumber: seller.idNumber, residentialAddress: seller.residentialAddress, email: seller.email, phone: seller.phone };
-  property.address = text(common.propertyAddress);
-  pack.seller = seller; pack.property = property;
-  const branding = object(pack.branding);
-  if (key === "signed_mandate") {
-    pack.mandate = { ...object(pack.mandate), ...object(corrections.mandate), propertyAddress: property.address };
-    const terms = object(corrections.mandate);
-    const approval = { ...copy.approval, commission: { ...object(copy.approval.commission), basis: terms.commissionBasis,
-      percentage: terms.commissionPercentage, amount: terms.commissionAmount, vatHandling: terms.vatHandling } };
-    return buildSellerMandateDocumentMarkup({ signingPack: pack, formalPackApproval: approval });
-  }
-  if (key === "signed_fica_declaration") {
-    seller.incomeTaxNumber = text(object(corrections.fica).incomeTaxNumber);
-    seller.maritalStatus = text(object(corrections.fica).maritalStatus);
-    const drafts = object(copy.form.sellerPostOnboardingDrafts || copy.form.seller_post_onboarding_drafts);
-    const ficaDraft = (Array.isArray(drafts.documents) ? drafts.documents : []).find((row: Row) => text(row.targetRequirementKey || row.requirementKey) === key);
-    const ficaModel = object(object(ficaDraft?.metadata).ficaDeclarationModel);
-    const formData = { ...copy.form, ...object(corrections.fica), fica: { ...object(copy.form.fica || copy.form.ficaDetails || copy.form.fica_details), ...object(corrections.fica) } };
-    return buildSellerFicaDueDiligenceMarkup({ model: ficaModel as never, formData, signingPack: pack, branding, generatedAt: text(pack.frozenAt) });
-  }
-  const original = normalizePropertyDisclosure(object(copy.form.propertyDisclosure || copy.form.property_disclosure));
-  const disclosure = { ...original, ...object(corrections.disclosure), signature: "", signedAt: "", signedPlace: "" };
-  const responses = object(disclosure.responses);
-  disclosure.decision = PROPERTY_DISCLOSURE_QUESTIONS.some((question) =>
-    ["yes", "unsure"].includes(text(object(responses[question.key]).answer))) ? "disclose" : "none";
-  return buildPropertyDisclosureDocumentMarkup(disclosure, { sellerName: seller.name, sellerIdNumber: seller.idNumber,
-    propertyAddress: property.address, listingId, documentReference: pack.documentReference, branding });
-}
 
 async function expireStaleRequests(admin: AdminClient, listingId: string) {
   const pending = await admin.from("private_listing_seller_portal_signing_documents")
@@ -299,6 +195,8 @@ async function issue(req: Request, admin: AdminClient, url: string, anonKey: str
   if (!context) return respond(403, { error: "Agent access to this listing is required." });
   const copy = await reviewedCopy(admin, listingId, documentKey);
   if (!copy) return respond(409, { error: "Approve and freeze this document and all signer details before sending it." });
+  if (copy.document.mandateContract && !await isCurrentMandateSigningContract(copy.document.mandateContract)) return respond(409, { error: "Prepare and review the currently approved mandate wording before creating a new signing request." });
+  if (copy.document.mandateContract && !mandateCertificatesCurrent(copy.document.mandateContract)) return respond(409, { error: "Refresh and review the contracting agencies' expired FFC records before sending this mandate." });
   if (text(copy.document.signingRoute) !== "digital_pack") return respond(409, { error: "This document was approved for physical signing." });
   await expireStaleRequests(admin, listingId);
   await revokeSupersededRequests(admin, listingId, documentKey, text(copy.document.versionId));
@@ -413,6 +311,7 @@ async function signerDocument(admin: AdminClient, token: string) {
       current.versionDigest !== text(document.data.source_version_digest) ||
       current.contentDigest !== text(document.data.source_content_digest) ||
       `sha256:${await sha256(String(document.data.reviewed_html || ""))}` !== text(document.data.content_digest)) return null;
+  if (current.document.mandateContract && !mandateCertificatesCurrent(current.document.mandateContract)) return null;
   return { recipient: recipient.data, document: document.data, tokenHash };
 }
 
@@ -434,6 +333,8 @@ async function view(admin: AdminClient, payload: Row) {
   const correctedName = text(object(object(signing.document.seller_corrections).common).sellerName);
   const signerName = text(firstSigner.email).toLowerCase() === text(signing.recipient.signer_email).toLowerCase() && correctedName
     ? correctedName : signing.recipient.signer_name;
+  const sharedDetailsFrozen = Boolean(current.document.mandateContract) ||
+    (Array.isArray(current.pack.documents) && current.pack.documents.some((row: Row) => text(row.key) === "signed_mandate" && Boolean(row.mandateContract)));
   return respond(200, {
     documentKey: signing.document.document_key,
     versionId: signing.document.version_id,
@@ -441,8 +342,9 @@ async function view(admin: AdminClient, payload: Row) {
     reviewedHtml: signing.document.reviewed_html,
     signerName,
     signerRole: signing.recipient.signer_role,
-    editData: editData(current, text(signing.document.document_key), object(signing.document.seller_corrections)),
-    canEdit: !signed.data?.length && text(signing.document.status) === "sent",
+    editData: sharedDetailsFrozen ? null : editData(current, text(signing.document.document_key), object(signing.document.seller_corrections)),
+    canEdit: !sharedDetailsFrozen && !signed.data?.length && text(signing.document.status) === "sent",
+    requiresReplacementForChanges: sharedDetailsFrozen,
   });
 }
 
@@ -453,8 +355,12 @@ async function correct(admin: AdminClient, payload: Row) {
   if (text(signing.document.status) !== "sent") return respond(409, { error: "Details are locked after the first signature." });
   const current = await reviewedCopy(admin, text(signing.document.private_listing_id), text(signing.document.document_key));
   if (!current) return respond(409, { error: "The approved document has changed. Ask your agent for a new link." });
+  if (current.document.mandateContract) return respond(409, { error: "These details are frozen into the full mandate. Ask your agent for a replacement copy and fresh approvals before changing them." });
   let corrections: Row;
-  try { corrections = validatedCorrections(object(payload.corrections), text(signing.document.document_key)); }
+  try {
+    corrections = validatedCorrections(object(payload.corrections), text(signing.document.document_key));
+    assertSellerMandateCorrectionSchedules(current, text(signing.document.document_key), corrections);
+  }
   catch (error) { return respond(400, { error: error instanceof Error ? error.message : "Invalid corrected details." }); }
   const active = await admin.from("private_listing_seller_portal_signing_documents")
     .select("id, document_key, version_digest, source_version_digest, seller_corrections")
@@ -468,6 +374,7 @@ async function correct(admin: AdminClient, payload: Row) {
     if (!source || source.versionDigest !== text(row.source_version_digest)) {
       return respond(409, { error: "An approved document changed. Ask your agent for a new link." });
     }
+    if (source.document.mandateContract) return respond(409, { error: "These details are frozen into the full mandate. Ask your agent for a replacement copy and fresh approvals before changing them." });
     const values = key === text(signing.document.document_key) ? corrections
       : validatedCorrections({ ...editData(source, key, object(row.seller_corrections)), common: corrections.common }, key);
     const reviewedHtml = renderCorrectedHtml(source, key, values, text(signing.document.private_listing_id));
@@ -541,6 +448,18 @@ async function list(req: Request, admin: AdminClient, url: string, anonKey: stri
   return respond(200, { documents: documents.data || [] });
 }
 
+async function completeSignatureEvidence(admin: AdminClient, id: string, current: Row) {
+  const evidence = await admin.from("private_listing_seller_portal_signature_evidence")
+    .select("recipient_id, document_version_digest, signed_name, signature_type, signature_value, signed_date, signed_place, accepted_at, evidence_digest")
+    .eq("signing_document_id", id).order("accepted_at", { ascending: true });
+  const document = object(current.document);
+  if (evidence.error || evidence.data?.length !== (Array.isArray(document.requiredSigners) ? document.requiredSigners.length : 0)) return null;
+  const recipients = await admin.from("private_listing_seller_portal_signing_recipients")
+    .select("id, signer_email, signer_role, status").eq("signing_document_id", id);
+  if (recipients.error || recipients.data?.length !== evidence.data.length || recipients.data.some((row: Row) => text(row.status) !== "signed")) return null;
+  return evidence.data.map((row) => ({ ...row, ...object(recipients.data.find((recipient: Row) => recipient.id === row.recipient_id)) }));
+}
+
 async function preview(req: Request, admin: AdminClient, url: string, anonKey: string, payload: Row) {
   const id = text(payload.signingDocumentId);
   const document = await admin.from("private_listing_seller_portal_signing_documents")
@@ -555,16 +474,12 @@ async function preview(req: Request, admin: AdminClient, url: string, anonKey: s
       current.versionDigest !== text(document.data.source_version_digest)) {
     return respond(409, { error: "A newer reviewed document replaced this signing request." });
   }
-  const evidence = await admin.from("private_listing_seller_portal_signature_evidence")
-    .select("signed_name, signature_type, signature_value, signed_date, signed_place, accepted_at, evidence_digest")
-    .eq("signing_document_id", id).order("accepted_at", { ascending: true });
-  if (evidence.error || evidence.data?.length !== (Array.isArray(document.data.required_signers) ? document.data.required_signers.length : 0)) {
-    return respond(409, { error: "Signature evidence is incomplete." });
-  }
+  const signatureEvidence = await completeSignatureEvidence(admin, id, current);
+  if (!signatureEvidence) return respond(409, { error: "Every seller and contracting agency must sign the same copy before review." });
   return respond(200, {
     documentKey: document.data.document_key,
     versionDigest: document.data.version_digest,
-    signedHtml: signedHtml(String(document.data.reviewed_html || ""), evidence.data, text(document.data.version_digest)),
+    signedHtml: signedHtml(String(document.data.reviewed_html || ""), signatureEvidence, text(document.data.version_digest)),
   });
 }
 
@@ -582,11 +497,9 @@ async function review(req: Request, admin: AdminClient, url: string, anonKey: st
       current.versionDigest !== text(document.data.source_version_digest)) {
     return respond(409, { error: "A newer reviewed document replaced this signing request." });
   }
-  const evidence = await admin.from("private_listing_seller_portal_signature_evidence")
-    .select("signed_name, signature_type, signature_value, signed_date, signed_place, accepted_at, evidence_digest")
-    .eq("signing_document_id", id).order("accepted_at", { ascending: true });
-  if (evidence.error || !evidence.data?.length) return respond(409, { error: "Signature evidence is unavailable." });
-  const html = signedHtml(String(document.data.reviewed_html || ""), evidence.data, text(document.data.version_digest));
+  const signatureEvidence = await completeSignatureEvidence(admin, id, current);
+  if (!signatureEvidence) return respond(409, { error: "Every seller and contracting agency must sign the same copy before review." });
+  const html = signedHtml(String(document.data.reviewed_html || ""), signatureEvidence, text(document.data.version_digest));
   const digest = `sha256:${await sha256(html)}`;
   const saved = await admin.rpc("bridge_review_seller_portal_signed_document", {
     p_signing_document_id: id,

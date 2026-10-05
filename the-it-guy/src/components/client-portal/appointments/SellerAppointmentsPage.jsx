@@ -1,3 +1,4 @@
+import { CALENDAR_TIMEZONE, sastDateKey, sameSastDay, addCalendarDays, sastMonthStart, sastWeekStart, sastParts } from '../../../core/appointments/attorneyCalendarModel.js'
 import {
   CalendarClock,
   Camera,
@@ -24,7 +25,7 @@ function formatDate(value, options = {}) {
   if (!value) return ''
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return ''
-  return date.toLocaleDateString('en-ZA', options)
+  return date.toLocaleDateString('en-ZA', { ...options, timeZone: CALENDAR_TIMEZONE })
 }
 
 function formatTime(value) {
@@ -32,6 +33,7 @@ function formatTime(value) {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return 'Time TBC'
   return date.toLocaleTimeString('en-ZA', {
+    timeZone: CALENDAR_TIMEZONE,
     hour: '2-digit',
     minute: '2-digit',
   })
@@ -49,31 +51,26 @@ function formatNextAppointmentDetail(appointment) {
   const date = new Date(appointment.startTime)
   if (Number.isNaN(date.getTime())) return 'No upcoming'
   const today = new Date()
-  const isToday = date.toDateString() === today.toDateString()
-  const tomorrow = new Date(today)
-  tomorrow.setDate(today.getDate() + 1)
+  const isToday = sameSastDay(date, today)
+  const tomorrow = addCalendarDays(today, 1)
   const dayLabel = isToday
     ? 'Today'
-    : date.toDateString() === tomorrow.toDateString()
+    : sameSastDay(date, tomorrow)
       ? 'Tomorrow'
       : formatDate(appointment.startTime, { weekday: 'short', day: '2-digit', month: 'short' })
   return `Next: ${dayLabel}, ${formatTime(appointment.startTime)}`
 }
 
-function getLocalDateKey(value) {
-  const date = value instanceof Date ? value : new Date(value)
-  if (Number.isNaN(date.getTime())) return ''
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
+function getLocalDateKey(value) { return sastDateKey(value) }
 
 function getStatusLabel(status = '') {
   if (status === 'awaiting_confirmation') return 'Awaiting Confirmation'
   if (status === 'reschedule_requested') return 'Reschedule Requested'
   if (status === 'completed') return 'Completed'
   if (status === 'cancelled') return 'Cancelled'
+  if (status === 'declined') return 'Declined'
+  if (status === 'no_show') return 'No-show'
+  if (status === 'blocked') return 'Blocked'
   return 'Confirmed'
 }
 
@@ -135,13 +132,13 @@ function DateBlock({ appointment }) {
   return (
     <div className="flex min-h-[232px] w-full flex-col items-center justify-center rounded-[16px] border-r border-[#e1e9f2] bg-[#fbfdff] px-4 py-5 text-center sm:w-[118px]">
       <span className="text-[0.72rem] font-semibold uppercase text-[#10a06e]">
-        {isValid ? date.toLocaleDateString('en-ZA', { weekday: 'short' }) : 'Date'}
+        {isValid ? date.toLocaleDateString('en-ZA', { timeZone: CALENDAR_TIMEZONE, weekday: 'short' }) : 'Date'}
       </span>
       <strong className="mt-2 text-[2rem] font-semibold leading-none text-[#142132]">
-        {isValid ? date.toLocaleDateString('en-ZA', { day: '2-digit' }) : '--'}
+        {isValid ? date.toLocaleDateString('en-ZA', { timeZone: CALENDAR_TIMEZONE, day: '2-digit' }) : '--'}
       </strong>
       <span className="mt-2 text-xs font-semibold uppercase text-[#38536d]">
-        {isValid ? date.toLocaleDateString('en-ZA', { month: 'short' }) : 'TBC'}
+        {isValid ? date.toLocaleDateString('en-ZA', { timeZone: CALENDAR_TIMEZONE, month: 'short' }) : 'TBC'}
       </span>
       <span className="my-4 h-px w-4 bg-[#c8d5e3]" />
       <span className="text-sm font-semibold text-[#142132]">{formatTime(value)}</span>
@@ -156,7 +153,8 @@ function DateBlock({ appointment }) {
 function SellerAppointmentCard({ appointment, onConfirm, onReschedule, pendingAction = '', completed = false }) {
   const appointmentId = appointment.id
   const actionBusy = pendingAction && pendingAction.startsWith(`${appointmentId}:`)
-  const canConfirm = appointment.status === 'awaiting_confirmation'
+  const ownResponse = appointment.raw?.clientParticipant?.rsvpStatus || appointment.raw?.clientParticipant?.rsvp_status
+  const canConfirm = appointment.status === 'awaiting_confirmation' && String(ownResponse || '').toLowerCase() !== 'accepted'
   const canReschedule = !completed && appointment.status !== 'cancelled'
 
   return (
@@ -317,12 +315,9 @@ function SellerUpcomingAppointments({ appointments, onConfirm, onReschedule, pen
 }
 
 function buildCalendarDays(monthDate) {
-  const year = monthDate.getFullYear()
-  const month = monthDate.getMonth()
-  const firstDay = new Date(year, month, 1)
-  const startOffset = (firstDay.getDay() + 6) % 7
-  const startDate = new Date(year, month, 1 - startOffset)
-  return Array.from({ length: 42 }, (_, index) => new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate() + index))
+  const firstDay = sastMonthStart(monthDate)
+  const startDate = sastWeekStart(firstDay)
+  return Array.from({ length: 42 }, (_, index) => addCalendarDays(startDate, index))
 }
 
 function SellerAppointmentCalendar({ events }) {
@@ -331,7 +326,7 @@ function SellerAppointmentCalendar({ events }) {
     const parsed = firstEvent ? new Date(firstEvent.date) : new Date()
     return Number.isNaN(parsed.getTime()) ? new Date() : parsed
   }, [events])
-  const monthLabel = monthDate.toLocaleDateString('en-ZA', { month: 'long', year: 'numeric' })
+  const monthLabel = monthDate.toLocaleDateString('en-ZA', { timeZone: CALENDAR_TIMEZONE, month: 'long', year: 'numeric' })
   const days = buildCalendarDays(monthDate)
   const eventMap = new Map()
   events.forEach((event) => {
@@ -372,7 +367,7 @@ function SellerAppointmentCalendar({ events }) {
         {days.map((day) => {
           const key = getLocalDateKey(day)
           const dayEvents = eventMap.get(key) || []
-          const inMonth = day.getMonth() === monthDate.getMonth()
+          const inMonth = sastParts(day).month === sastParts(monthDate).month
           const hasUpcoming = dayEvents.some((event) => event.status !== 'completed' && event.status !== 'reschedule_requested')
           const hasCompleted = dayEvents.some((event) => event.status === 'completed')
           const hasReschedule = dayEvents.some((event) => event.status === 'reschedule_requested')
@@ -392,7 +387,7 @@ function SellerAppointmentCalendar({ events }) {
                     : 'text-[#a8b7c7]'
               }`}
             >
-              <span>{day.getDate()}</span>
+              <span>{sastParts(day).day}</span>
               {dayEvents.length ? (
                 <span className={`mt-0.5 h-1 w-1 rounded-full ${highlighted && hasUpcoming ? 'bg-white' : 'bg-current'}`} />
               ) : null}

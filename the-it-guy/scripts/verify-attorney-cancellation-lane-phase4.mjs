@@ -128,7 +128,7 @@ function verifyCancellationRequestsTransferAlignment() {
   assert.equal(command.workPacket.visibility, 'professional_shared')
   assert.equal(command.workPacket.sourceCoordinationId, 'transfer_transfer_cancellation_alignment')
   assert.equal(command.workPacket.sourceCoordinationLaneKey, 'transfer')
-  assert.equal(command.workPacket.sourceCoordinationTargetStage, 'transfer_guarantees_accepted')
+  assert.equal(command.workPacket.sourceCoordinationTargetStage, 'payment_security_review')
   assert.match(command.draft.message, /Cancellation guarantee alignment request for Transfer Attorney/)
   assert.match(command.workPacket.checklist.join(' '), /cancellation settlement requirements/)
   assert.match(command.workPacket.checklist.join(' '), /target lodgement date/)

@@ -202,6 +202,10 @@ export function resolveProperty24CategoryPropertyTypeId(value, category, mapping
   if (category === 'commercial' && (!resolved || RESIDENTIAL_DWELLING_PROPERTY_TYPE_IDS.has(resolved))) {
     return PROPERTY24_COMMERCIAL_PROPERTY_TYPE_ID
   }
+  // A dwelling on a farm does not change the agricultural portal category.
+  if (category === 'agricultural' && (!resolved || RESIDENTIAL_DWELLING_PROPERTY_TYPE_IDS.has(resolved))) {
+    return 10
+  }
   return resolved
 }
 

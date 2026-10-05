@@ -1,6 +1,7 @@
 import { getDocumentReadiness } from '../documentReadinessService.js'
 import { resolveRequirementReviewStatus } from './requirementReviewStatus.js'
 import { resolveCrossModuleDocumentReference } from './crossModuleDocumentKeyMapService.js'
+import { getCurrentAttorneyEvidenceDocuments } from './attorneyDocumentVersionModel.js'
 
 const RETIRED_MATTER_DOCUMENT_REQUIREMENT_KEYS = new Set(['information_sheet'])
 
@@ -375,6 +376,7 @@ export function resolveMatterDocumentTypeLabel(document = {}, fallback = '') {
 
 export function resolveMatterDocumentVersionLabel(document = {}) {
   const value = firstPresent(
+    document?.attorney_version_number,
     document?.version_label,
     document?.versionLabel,
     document?.version_number,
@@ -921,8 +923,8 @@ export function buildRequiredDocumentRows({
       const canonicalId = getRequirementCanonicalId(requirement)
       const uploadedDocumentId = getRequirementDocumentId(requirement)
       const linkedDocument =
-        (canonicalId ? lookup.byCanonicalId.get(String(canonicalId)) : null) ||
         (uploadedDocumentId ? lookup.byDocumentId.get(String(uploadedDocumentId)) : null) ||
+        (canonicalId ? lookup.byCanonicalId.get(String(canonicalId)) : null) ||
         requirement?.matchedDocument ||
         null
       const status = normalizeDocumentCommandStatus(resolveRequirementReviewStatus(requirement, linkedDocument), {
@@ -1438,14 +1440,16 @@ export function buildMatterDocumentWorkspaceModel({
   const transactionRecord = transaction || {}
   const scopedVisibleLaneKeys = getScopedDocumentVisibleLaneKeys(matterScope)
   const scopedActiveFilter = resolveScopedDocumentFilter(activeFilter, scopedVisibleLaneKeys)
+  const versionDocuments = filterRowsForMatterDocumentScope(documents, scopedVisibleLaneKeys)
+  const evidenceDocuments = getCurrentAttorneyEvidenceDocuments(versionDocuments)
   const groupedDocuments = buildGroupedDocuments({
-    documents: filterRowsForMatterDocumentScope(documents, scopedVisibleLaneKeys),
+    documents: evidenceDocuments,
     getLinkedRequirementForDocument,
     documentGroups,
     documentCategories,
   })
   const requirementDocumentLookup = buildRequirementDocumentLookup({
-    documents: filterRowsForMatterDocumentScope(documents, scopedVisibleLaneKeys),
+    documents: evidenceDocuments,
     getLinkedRequirementForDocument,
   })
   const requiredRows = buildRequiredDocumentRows({
@@ -1454,7 +1458,7 @@ export function buildMatterDocumentWorkspaceModel({
     transaction: transactionRecord,
   })
   const allLibraryRows = buildAllDocumentLibraryRows({
-    documents: filterRowsForMatterDocumentScope(documents, scopedVisibleLaneKeys),
+    documents: evidenceDocuments,
     getLinkedRequirementForDocument,
     transaction: transactionRecord,
     transactionParticipants,
@@ -1510,6 +1514,8 @@ export function buildMatterDocumentWorkspaceModel({
     categorySummaries,
     libraryRows,
     documentsByWorkflow,
+    documentRequests: scopedDocumentRequests,
+    versionDocuments,
     activeFilter: scopedActiveFilter,
     requestedFilter: activeFilter,
     scope: {

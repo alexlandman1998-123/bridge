@@ -1,5 +1,6 @@
 import { hashBondApplicationSnapshot } from '../submission/bondApplicationSnapshotHash.js'
 import { isDocumentUploaded } from '../documents/bondApplicationDocumentStatus.js'
+import { assertBondReviewedVersionIntegrity, buildBondDocumentChangeRegister } from '../submission/bondApplicationReviewedVersion.js'
 
 export const BOND_DOWNLOAD_LIMITS = { fileBytes: 25 * 1024 * 1024, totalBytes: 100 * 1024 * 1024, files: 100 }
 
@@ -21,6 +22,18 @@ export function resolveBondSignedDocumentId(submission, version) {
   return version.final_signed_document_id || null
 }
 
+// The current single-applicant flow captures evidence in the immutable snapshot.
+// Older packet flows must still supply their original signed PDF.
+export function hasBondApplicationCapturedSignature(submission = {}, snapshot = submission.snapshot_json || {}) {
+  const signature = snapshot.signatureEvidence
+  const signers = submission.signer_manifest_json || snapshot.signerManifest || []
+  return submission.metadata?.signingMethod === 'html_canvas' &&
+    signers.length === 1 && signers[0].participantRole === 'primary_applicant' &&
+    snapshot.participants?.length === 1 && signature?.confirmed === true &&
+    /^data:image\/png;base64,[a-z0-9+/=]+$/i.test(signature.dataUrl || '') &&
+    signature.dataUrl.length <= 1024 * 1024
+}
+
 export function buildBondApplicationDownloadPlan({ mode = 'draft', transactionId, draftSnapshot, submission, readiness, documentChecklist = {}, documents = [] } = {}) {
   if (!['draft', 'final'].includes(mode)) throw new Error('Choose a draft or final application pack.')
   const final = mode === 'final'
@@ -35,7 +48,8 @@ export function buildBondApplicationDownloadPlan({ mode = 'draft', transactionId
   if (final && (!submission?.id || submission.transaction_id !== transactionId || !['signed', 'submitted'].includes(submission.status) || !submission.signed_at || !submission.snapshot_hash)) {
     throw new Error('A verified signed submission is required for the final pack.')
   }
-  if (final && !submission.signed_document_id) throw new Error('The original signed application PDF is not linked. Link the signed evidence before downloading a final pack; a draft is available.')
+  const capturedSignature = final && !submission.signed_document_id && hasBondApplicationCapturedSignature(submission, snapshot)
+  if (final && !submission.signed_document_id && !capturedSignature) throw new Error('The original signed application PDF is not linked. Link the signed evidence before downloading a final pack; a draft is available.')
   const lookup = new Map(documents.map((document) => [String(document.id), document]))
   const entries = new Map()
   const warnings = []
@@ -55,7 +69,7 @@ export function buildBondApplicationDownloadPlan({ mode = 'draft', transactionId
     if (existing) { existing.requirements = [...new Set([...existing.requirements, requirement])]; return }
     entries.set(String(id), { id: String(id), document, requirements: [requirement], source, signed })
   }
-  if (final) add(submission.signed_document_id, 'Original signed application', 'signed_evidence', null, true)
+  if (final && submission.signed_document_id) add(submission.signed_document_id, 'Original signed application', 'signed_evidence', null, true)
   for (const item of snapshot.documentManifest || []) {
     const files = item.documents?.length ? item.documents : (item.matchedDocumentId ? [{ id: item.matchedDocumentId }] : [])
     files.forEach((file) => add(file.id, item.title || item.requirementKey || 'Supporting document', final ? 'recorded_at_signing' : 'draft', file))
@@ -72,10 +86,11 @@ export function buildBondApplicationDownloadPlan({ mode = 'draft', transactionId
     ...entry,
     archivePath: entry.signed ? 'signed-evidence/original-signed-application.pdf' : `supporting-documents/${String(index + 1).padStart(3, '0')}-${documentFilename(entry.document)}`,
   }))
-  return { mode, transactionId, snapshot, submission: final ? submission : null, files, warnings, readiness, filename: `bond-application-${safeName(transactionId)}-${final ? `signed-v${submission.submission_version || snapshot.submissionVersion || 1}` : 'draft'}` }
+  return { mode, transactionId, snapshot, documentChanges: buildBondDocumentChangeRegister(snapshot, documentChecklist), capturedSignature, submission: final ? submission : null, files, warnings, readiness, filename: `bond-application-${safeName(transactionId)}-${final ? `signed-v${submission.submission_version || snapshot.submissionVersion || 1}` : 'draft'}` }
 }
 
 export async function createBondApplicationDownload({ plan, brand = {}, loadFile, renderPdf, generatedAt = new Date().toISOString() } = {}) {
+  if (plan.snapshot.reviewedVersion) await assertBondReviewedVersionIntegrity(plan.snapshot)
   const snapshotHash = await hashBondApplicationSnapshot(plan.snapshot)
   if (plan.mode === 'final' && snapshotHash !== plan.submission.snapshot_hash) throw new Error('The signed snapshot could not be verified. Refresh the application before downloading.')
   const { zipSync, strToU8 } = await import('fflate')
@@ -93,15 +108,20 @@ export async function createBondApplicationDownload({ plan, brand = {}, loadFile
     const digest = await globalThis.crypto.subtle.digest('SHA-256', bytes)
     fileIndex.push({ path: entry.archivePath, documentId: entry.id, requirements: entry.requirements, source: entry.source, bytes: bytes.length, sha256: [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, '0')).join('') })
   }
-  const manifest = { formatVersion: 'bond-download-v1', mode: plan.mode, transactionId: plan.transactionId, submissionId: plan.submission?.id || null, submissionVersion: plan.submission?.submission_version || null, signedAt: plan.submission?.signed_at || null, snapshotHash, generatedAt, files: fileIndex, warnings: plan.warnings }
+  const manifest = { formatVersion: 'bond-download-v1', mode: plan.mode, transactionId: plan.transactionId, submissionId: plan.submission?.id || null, submissionVersion: plan.submission?.submission_version || null, reviewedVersion: plan.snapshot.reviewedVersion || null, signedAt: plan.submission?.signed_at || null, snapshotHash, generatedAt, signingEvidence: plan.capturedSignature ? 'captured_html_signature' : (plan.mode === 'final' ? 'original_signed_pdf' : null), files: fileIndex, warnings: plan.warnings }
+  if (plan.capturedSignature) {
+    if (!hasBondApplicationCapturedSignature(plan.submission, plan.snapshot)) throw new Error('The captured signing evidence is no longer valid.')
+    zipFiles['signed-evidence/captured-signature.png'] = Uint8Array.from(atob(plan.snapshot.signatureEvidence.dataUrl.split(',')[1]), (character) => character.charCodeAt(0))
+  }
   const pdf = await renderPdf({ snapshot: plan.snapshot, manifest, brand, submission: plan.submission, readiness: plan.readiness })
   zipFiles['application.pdf'] = pdf
   zipFiles['application-data.json'] = strToU8(JSON.stringify(plan.snapshot, null, 2))
   zipFiles['document-index.json'] = strToU8(JSON.stringify(manifest, null, 2))
+  zipFiles['document-changes.json'] = strToU8(JSON.stringify(plan.documentChanges || buildBondDocumentChangeRegister(plan.snapshot), null, 2))
   zipFiles['READ-ME.txt'] = strToU8([
     plan.mode === 'final' ? 'SIGNED APPLICATION PACK' : 'DRAFT - NOT FOR BANK SUBMISSION',
     'application.pdf is a readable rendering of the captured application. It is not a newly signed document.',
-    plan.mode === 'final' ? 'The unchanged original signed PDF is in signed-evidence/. Supporting documents collected after signing are identified in the index.' : 'This draft may be incomplete and has not been certified for submission.',
+    plan.capturedSignature ? 'The captured signature is in signed-evidence/captured-signature.png. The unchanged signed answers and evidence are in application-data.json. application.pdf renders that saved confirmation; it is not a digital signature certificate.' : plan.mode === 'final' ? 'The unchanged original signed PDF is in signed-evidence/. Supporting documents collected after signing are identified in the index.' : 'This draft may be incomplete and has not been certified for submission.',
     `Application version: ${manifest.submissionVersion || 'draft'}`, `Snapshot SHA-256: ${snapshotHash}`,
     '', ...fileIndex.map((file) => `${file.path} | ${file.requirements.join('; ')} | ${file.source} | SHA-256 ${file.sha256}`),
     '', ...plan.warnings,

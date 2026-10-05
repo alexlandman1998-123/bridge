@@ -5,7 +5,6 @@ import {
   canRequestAttorneyDocuments,
   canUploadAttorneyDocuments,
   canSeeAttorneyUpdateVisibility,
-  canUpdateAttorneyLanePermission,
   getAttorneyLegalPermissionContext,
   getAttorneyLegalPermissionContexts,
 } from '../permissions/attorneyPermissionService'
@@ -51,7 +50,7 @@ import {
   dispatchCommittedProgressNotifications,
 } from '../transactionSharedProgressService.js'
 import { commitSharedJourneyLaneUpdate, commitSharedJourneyTask } from './sharedJourneyCommandService.js'
-import { fetchSharedMatterJourney, alignWorkStepsWithSharedJourney } from '../sharedMatterJourneyReader.js'
+import { fetchSharedMatterJourney, alignWorkStepsWithSharedJourney, sharedJourneyLaneTasks } from '../sharedMatterJourneyReader.js'
 import {
   buildAttorneyDelegationAttribution,
   getActiveAttorneyLaneDelegation,
@@ -96,25 +95,6 @@ const UPDATE_TYPE_BY_VISIBILITY = {
   internal: 'internal_note',
   professional_shared: 'shared_professional_update',
   client_visible: 'client_safe_update',
-}
-
-// The atomic RPC is the source of truth for an attorney action.  Its follow-up
-// operational projection is useful for an optimistic refresh, but must never
-// keep a completed task button spinning indefinitely when a read is slow.
-const POST_COMMIT_OPERATIONS_READ_TIMEOUT_MS = 3500
-
-async function readOperationsWithinBudget(operation) {
-  let timeoutId = null
-  try {
-    return await Promise.race([
-      Promise.resolve().then(operation),
-      new Promise((resolve) => {
-        timeoutId = setTimeout(() => resolve(null), POST_COMMIT_OPERATIONS_READ_TIMEOUT_MS)
-      }),
-    ])
-  } finally {
-    if (timeoutId) clearTimeout(timeoutId)
-  }
 }
 
 const TIMELINE_FILTERS = [
@@ -470,6 +450,47 @@ function mapAssignmentForLane(assignments = [], laneKey) {
     ) ||
     null
   )
+}
+
+// Coordination reads the authorized shared journey, never another firm's Work
+// model. Keep this projection explicit so private documents, notes and controls
+// cannot cross the lane boundary with the dependency summary.
+export function buildSharedAttorneyCoordinationLanes({
+  sharedJourney,
+  assignments = [],
+  requiredLaneKeys = [],
+  assignmentLookupAvailable = true,
+  assignmentLookupComplete = false,
+} = {}) {
+  const snapshot = sharedJourney?.status === 'ready' ? sharedJourney.snapshot : null
+  const planned = Array.isArray(snapshot?.requiredLaneKeys)
+  const keys = [...new Set(planned ? snapshot.requiredLaneKeys : requiredLaneKeys)]
+    .filter(key => Object.hasOwn(LANE_META, key))
+  const activeAssignments = assignments.filter(assignment =>
+    String(assignment.assignmentStatus || assignment.assignment_status || assignment.status || '').toLowerCase() !== 'removed')
+
+  return {
+    requiredLaneKeys: keys,
+    sourceRevision: snapshot?.revision ?? null,
+    lanes: keys.map(laneKey => {
+      const tasks = sharedJourneyLaneTasks(sharedJourney, laneKey)
+      const assignment = mapAssignmentForLane(activeAssignments, laneKey)
+      const currentTask = tasks?.find(task => !isAttorneyTaskResolved(task.status))
+      return {
+        laneKey,
+        source: 'shared_journey',
+        planned,
+        progressAvailable: tasks !== null,
+        // RLS can return a successful but partial assignment list. A visible
+        // appointment proves assignment; an omitted row does not prove absence.
+        assigned: !assignmentLookupAvailable ? null : assignment ? true : assignmentLookupComplete ? false : null,
+        currentStage: currentTask?.key || '',
+        currentStageLabel: tasks === null ? 'Progress unavailable' : currentTask?.label ||
+          (tasks.length ? 'No outstanding tasks' : 'Not started'),
+        steps: (tasks || []).map(task => ({ stepKey: task.key, status: task.status })),
+      }
+    }),
+  }
 }
 
 function getLaneKeyForAssignment(assignment = {}) {
@@ -1064,10 +1085,13 @@ export async function getAttorneyWorkflowOperationsForTransaction(transactionId,
   // Read exactly the manifest used by the shared journey. Scenario updates
   // reconcile it explicitly; reads must not silently regenerate another plan.
   const workflowPlan = storedWorkflowPlan?.status === 'active' ? storedWorkflowPlan : null
-  const [assignments, delegations] = await Promise.all([
-    getTransactionAttorneyAssignments(normalizedTransactionId).catch(() => []),
+  const [assignmentRead, delegations] = await Promise.all([
+    getTransactionAttorneyAssignments(normalizedTransactionId)
+      .then(items => ({ items, available: true }))
+      .catch(() => ({ items: [], available: false })),
     actor?.id ? getAttorneyLaneDelegations({ transactionId: normalizedTransactionId }, { client }).catch(() => []) : [],
   ])
+  const assignments = assignmentRead.items
   const workflow = resolveAttorneyWorkflowForTransaction(transaction, assignments)
   const legalDocuments = resolveLegalDocumentRequirements(transaction)
   const requiredLaneKeys = workflowPlan?.status === 'active' ? workflowPlan.laneKeys : Object.entries(workflow.lanes)
@@ -1323,11 +1347,19 @@ export async function getAttorneyWorkflowOperationsForTransaction(transactionId,
     })
     .filter((lane) => visibleLaneKeys.has(lane.laneKey))
 
+  const coordination = buildSharedAttorneyCoordinationLanes({
+    sharedJourney,
+    assignments,
+    requiredLaneKeys,
+    assignmentLookupAvailable: assignmentRead.available,
+  })
   const lanes = baseLanes.map((lane) => ({
     ...lane,
     coordinationSummary: buildAttorneyWorkflowCoordinationSummary({
       laneKey: lane.laneKey,
-      lanes: baseLanes,
+      lanes: coordination.lanes,
+      requiredLaneKeys: coordination.requiredLaneKeys,
+      sourceRevision: coordination.sourceRevision,
       timeline: lane.coordinationTimeline || lane.timeline,
       now: coordinationSummaryNow,
     }),
@@ -1335,6 +1367,8 @@ export async function getAttorneyWorkflowOperationsForTransaction(transactionId,
 
   const transactionSync = await getAttorneyTransactionSyncReadModel(normalizedTransactionId, {
     client,
+    viewerRole: baselineContext.attorneyRole,
+    viewerLaneKeys: [...visibleLaneKeys],
     workflowReadModel: {
       mainStage: { key: transaction.current_main_stage || null },
       detailedStage: { key: transaction.stage || null },
@@ -1478,10 +1512,15 @@ export async function reconcileAttorneyWorkflowPlanForTransaction(transactionId,
 
 async function assertCanUpdateLane({ user, transactionId, laneKey }) {
   const meta = LANE_META[laneKey]
-  const canUpdate = await canUpdateAttorneyLanePermission(user?.id || user, transactionId, meta.attorneyRole)
-  if (!canUpdate) {
+  const permissionContext = await getAttorneyLegalPermissionContext({
+    userId: user?.id || user,
+    transactionId,
+    attorneyRole: meta.attorneyRole,
+  })
+  if (!permissionContext.canUpdateLane) {
     throw new Error('You do not have permission to update this attorney workflow.')
   }
+  return permissionContext
 }
 
 async function assertCanRequestLaneDocument({ user, transactionId, laneKey }) {
@@ -1806,7 +1845,9 @@ export async function updateAttorneyWorkflowStepStatus({
   if (!normalizedTransactionId) throw new Error('Transaction id is required.')
   if (!stepId && !normalizedStepKey) throw new Error('Workflow step is required.')
 
-  await assertCanUpdateLane({ user: actor, transactionId: normalizedTransactionId, laneKey: normalizedLaneKey })
+  // Reuse this save's permission result for visibility validation as well.
+  // A later save still resolves fresh access; the RPC also enforces permission.
+  const permissionContext = await assertCanUpdateLane({ user: actor, transactionId: normalizedTransactionId, laneKey: normalizedLaneKey })
   const lane = await fetchLaneForUpdate(client, normalizedTransactionId, normalizedLaneKey)
   let stepQuery = client
     .from('transaction_subprocess_steps')
@@ -1838,11 +1879,6 @@ export async function updateAttorneyWorkflowStepStatus({
   const normalizedVisibility = normalizeVisibility(
     visibility || operationalWorkPacket?.visibility || operationalContract?.visibilityPolicy?.defaultVisibility || stageDefinition?.defaultVisibility || 'professional_shared',
   )
-  const permissionContext = await getAttorneyLegalPermissionContext({
-    userId: actor.id,
-    transactionId: normalizedTransactionId,
-    attorneyRole: LANE_META[normalizedLaneKey].attorneyRole,
-  })
   assertCanPublishVisibility(permissionContext, normalizedVisibility)
 
   if (['completed_externally', 'not_applicable'].includes(normalizedStatus) && !normalizedNote) {
@@ -1887,18 +1923,15 @@ export async function updateAttorneyWorkflowStepStatus({
   // durable outcome and an email/provider delay must not leave the attorney's
   // task dialog in a perpetual saving state.
   void dispatchCommittedProgressNotifications(client, normalizedTransactionId).catch(() => {})
-  // The command has committed. A failed follow-up read is not a failed save.
-  const operations = await readOperationsWithinBudget(() => (
-    getAttorneyWorkflowOperationsForTransaction(normalizedTransactionId, { initialize: false }).catch(() => null)
-  ))
-  const canonicalTransaction = operations?.transaction || {
+  // Return the durable receipt immediately. The page refreshes the workspace
+  // in the background; a slow read must not delay acknowledgement of the save.
+  const canonicalTransaction = {
     id: normalizedTransactionId,
     current_main_stage: atomicUpdate.data?.matterStage,
     updated_at: atomicUpdate.data?.updatedAt,
   }
   return {
-    ...operations,
-    refreshRequired: !operations,
+    refreshRequired: true,
     canonicalMatter: {
       id: canonicalTransaction.id,
       lifecycleState: canonicalTransaction.lifecycle_state || null,

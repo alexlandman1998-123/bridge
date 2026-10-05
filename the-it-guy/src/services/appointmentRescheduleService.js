@@ -2,9 +2,7 @@ import { supabase, isSupabaseConfigured } from '../lib/supabaseClient'
 import { checkAppointmentSchedulingIntegrityAsync } from '../lib/agencyPipelineService'
 import { getSuggestedRescheduleSlots } from '../lib/appointmentAvailabilityEngine'
 import {
-  cancelAppointmentReminders,
   notifyAppointmentParticipants,
-  scheduleAppointmentReminders,
 } from './appointmentNotificationService'
 import {
   buildAppointmentRescheduleProposalContract,
@@ -88,7 +86,7 @@ function buildDateTimeFromAppointment(row = {}) {
   const date = normalizeText(row?.appointment_date)
   const startTime = normalizeText(row?.start_time).slice(0, 5)
   if (date && startTime) {
-    const parsed = new Date(`${date}T${startTime}`)
+    const parsed = new Date(`${date}T${startTime}+02:00`)
     if (!Number.isNaN(parsed.getTime())) return parsed.toISOString()
   }
   return null
@@ -99,7 +97,7 @@ function computeDurationMinutes(row = {}) {
   const date = normalizeText(row?.appointment_date)
   const endTime = normalizeText(row?.end_time).slice(0, 5)
   if (!startDateTime || !date || !endTime) return 45
-  const endDate = new Date(`${date}T${endTime}`)
+  const endDate = new Date(`${date}T${endTime}+02:00`)
   const startDate = new Date(startDateTime)
   if (Number.isNaN(endDate.getTime()) || Number.isNaN(startDate.getTime())) return 45
   const minutes = Math.round((endDate.getTime() - startDate.getTime()) / (1000 * 60))
@@ -111,7 +109,7 @@ async function fetchAppointmentById(appointmentId) {
   const scopedAppointmentId = normalizeText(appointmentId)
   const query = await supabase
     .from('appointments')
-    .select('appointment_id, organisation_id, transaction_id, appointment_type, title, appointment_date, start_time, end_time, date_time, status, resource_id, allow_outside_business_hours, linked_workflow_stage, linked_transaction_stage, visibility_scope, notes')
+    .select('appointment_id, organisation_id, transaction_id, appointment_type, title, appointment_date, start_time, end_time, date_time, status, resource_id, allow_outside_business_hours, linked_workflow_stage, linked_transaction_stage, visibility_scope, attorney_delivery_enabled, notes')
     .eq('appointment_id', scopedAppointmentId)
     .maybeSingle()
 
@@ -124,7 +122,7 @@ async function fetchParticipantsByAppointmentIds(appointmentIds = []) {
   if (!ids.length) return {}
   const query = await supabase
     .from('appointment_participants')
-    .select('appointment_id, participant_id, name, email, participant_role, rsvp_status')
+    .select('appointment_id, participant_id, user_id, name, email, participant_role, rsvp_status')
     .in('appointment_id', ids)
 
   if (query.error) throw query.error
@@ -137,6 +135,7 @@ async function fetchParticipantsByAppointmentIds(appointmentIds = []) {
     }
     accumulator[appointmentId].push({
       participantId: normalizeText(row?.participant_id),
+      userId: normalizeText(row?.user_id) || null,
       name: normalizeText(row?.name),
       email: normalizeText(row?.email).toLowerCase(),
       participantRole: normalizeText(row?.participant_role),
@@ -151,7 +150,7 @@ async function fetchAppointmentsForTransaction(transactionId) {
   if (!scopedTransactionId) return []
   const query = await supabase
     .from('appointments')
-    .select('appointment_id, transaction_id, appointment_type, title, appointment_date, start_time, end_time, date_time, status, resource_id, allow_outside_business_hours, linked_workflow_stage, linked_transaction_stage, visibility_scope, notes')
+    .select('appointment_id, transaction_id, appointment_type, title, appointment_date, start_time, end_time, date_time, status, resource_id, allow_outside_business_hours, linked_workflow_stage, linked_transaction_stage, visibility_scope, attorney_delivery_enabled, notes')
     .eq('transaction_id', scopedTransactionId)
     .order('date_time', { ascending: true })
 
@@ -347,7 +346,7 @@ export async function createAppointmentRescheduleRequest(payload = {}) {
     })
     .eq('appointment_id', appointmentId)
 
-  await runRescheduleNotificationTask('reschedule_requested', async () => {
+  if (appointmentRow.attorney_delivery_enabled == null) await runRescheduleNotificationTask('reschedule_requested', async () => {
     await notifyAppointmentParticipants(appointmentId, 'appointment_reschedule_requested', {
       visibility: appointmentRow?.visibility_scope || 'shared_role_players',
       metadata: {
@@ -409,7 +408,7 @@ export async function proposeAppointmentReschedule(requestId, payload = {}) {
       allowOutsideBusinessHours: appointmentRow.allow_outside_business_hours === true,
       linkedWorkflowStage: appointmentRow.linked_workflow_stage || null,
       linkedTransactionStage: appointmentRow.linked_transaction_stage || null,
-      participants: [],
+      participants: (await fetchParticipantsByAppointmentIds([appointmentRow.appointment_id]))[appointmentRow.appointment_id] || [],
     },
     {
       excludeAppointmentId: appointmentRow.appointment_id,
@@ -437,19 +436,6 @@ export async function proposeAppointmentReschedule(requestId, payload = {}) {
   if (mutation.error) throw mutation.error
   const result = Array.isArray(mutation.data) ? mutation.data[0] : null
   if (!result?.request_id) throw new Error('Reschedule proposal could not be saved.')
-
-  await runRescheduleNotificationTask('reschedule_proposed', async () => {
-    await notifyAppointmentParticipants(appointmentRow.appointment_id, 'appointment_reschedule_proposed', {
-      visibility: appointmentRow?.visibility_scope || 'shared_role_players',
-      metadata: {
-        preferredStart: proposal.value.preferredStart,
-        preferredEnd: proposal.value.preferredEnd,
-        reason: proposal.value.reason || normalizeText(requestRowQuery.data?.reason),
-        requestId: scopedRequestId,
-        source: 'attorney_calendar_phase5',
-      },
-    })
-  })
 
   return normalizeRescheduleRequestRow({
     ...requestRowQuery.data,
@@ -525,6 +511,7 @@ export async function resolveAppointmentRescheduleRequest(requestId, payload = {
         allowOutsideBusinessHours: appointmentRow.allow_outside_business_hours === true,
         linkedWorkflowStage: appointmentRow.linked_workflow_stage || null,
         linkedTransactionStage: appointmentRow.linked_transaction_stage || null,
+        participants: (await fetchParticipantsByAppointmentIds([appointmentRow.appointment_id]))[appointmentRow.appointment_id] || [],
       },
       {
         excludeAppointmentId: appointmentRow.appointment_id,
@@ -552,25 +539,6 @@ export async function resolveAppointmentRescheduleRequest(requestId, payload = {
   if (mutation.error) throw mutation.error
   const result = Array.isArray(mutation.data) ? mutation.data[0] : null
   if (!result?.request_id) throw new Error('Reschedule resolution could not be saved.')
-
-  await runRescheduleNotificationTask(`reschedule_${decision}`, async () => {
-    const eventType = decision === 'accepted' ? 'appointment_rescheduled' : 'appointment_reschedule_rejected'
-    await notifyAppointmentParticipants(appointmentRow.appointment_id, eventType, {
-      visibility: appointmentRow?.visibility_scope || 'shared_role_players',
-      metadata: {
-        requestId: scopedRequestId,
-        resolution: decision,
-        confirmedStart: result.confirmed_start,
-        confirmedEnd: result.confirmed_end,
-        reason: resolution.value.reason || normalizeText(requestQuery.data?.reason),
-        source: 'attorney_calendar_phase5',
-      },
-    })
-    if (decision === 'accepted') {
-      await cancelAppointmentReminders(appointmentRow.appointment_id)
-      await scheduleAppointmentReminders(appointmentRow.appointment_id)
-    }
-  })
 
   return normalizeRescheduleRequestRow({
     ...requestQuery.data,

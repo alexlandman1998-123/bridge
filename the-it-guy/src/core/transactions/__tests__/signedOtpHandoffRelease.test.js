@@ -89,4 +89,12 @@ assert.equal(cashTransfer.status, 'transfer_handoff_released')
 assert.equal(cashTransfer.workflow, 'attorney')
 assert.deepEqual(cashTransfer.gatedLanes, [])
 
+const durableQueued = buildSignedOtpHandoffReleaseDecision({ durableDispatch: true,
+  transaction: { id: 'durable-matter', finance_type: 'bond', finance_managed_by: 'bond_originator' }, stageResult: { advanced: true } })
+assert.equal(durableQueued.status, 'organisation_handoff_queued')
+assert.deepEqual(durableQueued.releasedLanes, [])
+assert.equal(durableQueued.event.data.deliveryConfirmed, false)
+assert.equal(durableQueued.notification.title, 'Partner handoff queued')
+assert.deepEqual(durableQueued.notification.roleTypes, ['agent', 'developer'])
+
 console.log('signed OTP handoff release tests passed')

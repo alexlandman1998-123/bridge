@@ -1,3 +1,4 @@
+import { beginRentalPublicationAttempt, updateRentalPublicationAttempt, retainUncertainRentalPublication, isDefinitePortalRejection, publicRentalPublicationAttempt } from '../services/rentalPublicationAttemptService.js'
 import {
   createProperty24Arch9ListingPreview,
   fetchArch9ListingForProperty24Preview,
@@ -542,9 +543,19 @@ export async function applyProperty24ListingPublish({
   if (!preview?.payload) throw new Error('Property24 submit payload is required.')
   const nextReport = report || createProperty24PublishReport({ config, preview, apply: true })
 
+  const rental = preview.summary?.listingType === 'Rental' || nextReport.phase === 'property24-rental-publish-listing'
+  const attempt = rental ? await beginRentalPublicationAttempt({ client:supabase,listingId:config.listingId,channel:'property24',
+    environment:config.environment || resolveProperty24Environment(config.property24BaseUrl),
+    identity:{ agencyId:config.agencyId,agentId:config.agentId,sourceReference:preview.payload.sourceReference,
+      listingNumber:preview.payload.listingNumber || config.listingNumber || '', listingType:'Rental' },payload:preview.payload }) : null
+  if (rental && !attempt) throw new Error('The rental listing changed during publishing. Reload and recheck it before sending.')
+  let receipt = {}
   let result
   try {
     result = await property24.saveListing(preview.payload)
+    const reference = result.data?.listingNumber || result.data?.ListingNumber || (typeof result.data !== 'object' ? result.data : '')
+    receipt = { accepted:true,reference:Number.isInteger(Number(reference)) && Number(reference) > 0 ? String(reference) : '',publicUrl:resolveProperty24PublicUrl(result.data) }
+    if (attempt) await updateRentalPublicationAttempt(supabase,attempt,{ state:'uncertain',receipt })
     nextReport.status = 'SUBMITTED'
     nextReport.safety.property24ApiCalled = true
     nextReport.safety.listingPublished = true
@@ -555,7 +566,12 @@ export async function applyProperty24ListingPublish({
       data: result.data,
     }
   } catch (error) {
-    nextReport.status = 'FAILED'
+    if (attempt) {
+      if (!receipt.accepted && isDefinitePortalRejection(error)) await updateRentalPublicationAttempt(supabase,attempt,{ state:'rejected',last_error:error.message })
+      else await retainUncertainRentalPublication(supabase,attempt,error,receipt)
+    }
+    nextReport.status = attempt && (receipt.accepted || !isDefinitePortalRejection(error)) ? 'UNCERTAIN' : 'FAILED'
+    nextReport.submissionAttempt = publicRentalPublicationAttempt({ ...attempt,state:nextReport.status === 'UNCERTAIN' ? 'uncertain' : 'rejected',receipt })
     nextReport.safety.property24ApiCalled = true
     nextReport.error = {
       name: error.name || 'Error',
@@ -566,6 +582,12 @@ export async function applyProperty24ListingPublish({
     return nextReport
   }
 
+  if (attempt && !receipt.reference) {
+    nextReport.status = 'UNCERTAIN'
+    nextReport.submissionAttempt = publicRentalPublicationAttempt({ ...attempt,state:'uncertain',receipt })
+    nextReport.error = { message:'Property24 returned no usable listing number. Reconcile before sending again.' }
+    return nextReport
+  }
   const listingNumber = result.data?.listingNumber || result.data?.ListingNumber || result.data
   let portalIsOnPortal = Boolean(result.data?.isOnPortal ?? result.data?.IsOnPortal)
   if (listingNumber && typeof listingNumber !== 'object') {
@@ -587,6 +609,7 @@ export async function applyProperty24ListingPublish({
       }
     }
 
+    try {
     const syncRecord = await recordProperty24ListingSync({
       client: supabase,
       listingId: config.listingId,
@@ -615,6 +638,22 @@ export async function applyProperty24ListingPublish({
       ...(syncRecord.externalLinkWarning ? { externalLinkWarning: syncRecord.externalLinkWarning } : {}),
     }
     nextReport.safety.databaseWritten = true
+    if (attempt) {
+      if (syncRecord.statusUpdateWarning || syncRecord.externalLinkWarning) throw new Error('The portal accepted the rental but its local channel details are incomplete.')
+      await updateRentalPublicationAttempt(supabase,attempt,{ state:'accepted',receipt })
+      nextReport.submissionAttempt = publicRentalPublicationAttempt({ ...attempt,state:'accepted',receipt })
+    }
+    } catch (error) {
+      if (!attempt) throw error
+      await retainUncertainRentalPublication(supabase,attempt,error,receipt)
+      nextReport.status = 'UNCERTAIN'
+      nextReport.submissionAttempt = publicRentalPublicationAttempt({ ...attempt,state:'uncertain',receipt })
+      nextReport.error = { message:'The portal accepted the rental but saving its local result failed. Reconcile before sending again.' }
+    }
+  } else if (attempt) {
+    nextReport.status = 'UNCERTAIN'
+    nextReport.submissionAttempt = publicRentalPublicationAttempt({ ...attempt,state:'uncertain',receipt })
+    nextReport.error = { message:'Property24 returned no usable listing number. Reconcile before sending again.' }
   }
 
   return nextReport

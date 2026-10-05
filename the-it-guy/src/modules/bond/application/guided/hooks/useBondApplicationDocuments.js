@@ -1,4 +1,5 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { isBondStatementHandoff } from '../../documents/bondDocumentWorkspacePresentation.js'
 import {
   buildBondApplicationDocumentChecklist,
   buildBondApplicationDocumentReconciliationPlan,
@@ -10,18 +11,21 @@ export function useBondApplicationDocuments({
   applicationState,
   requiredDocuments = [],
   documents = [],
+  additionalRequirements = [],
   onReconcileDocumentRequirements,
   onUploadRequiredDocument,
   onRefreshDocuments,
+  saveLatestApplication,
+  active = false,
 } = {}) {
   const [error, setError] = useState('')
   const [uploadState, setUploadState] = useState({})
   const [reconciling, setReconciling] = useState(false)
 
-  const resolved = useMemo(() => resolveBondApplicationDocumentRequirements({
-    applicationState,
-    participantRole: 'primary_applicant',
-  }), [applicationState])
+  const resolved = useMemo(() => {
+    const result = resolveBondApplicationDocumentRequirements({ applicationState, participantRole: 'primary_applicant' })
+    return { ...result, activeRequirements: [...result.activeRequirements, ...additionalRequirements.filter((item) => !result.activeRequirements.some((rule) => rule.key === item.key))] }
+  }, [applicationState, additionalRequirements])
 
   const reconciliationPlan = useMemo(() => buildBondApplicationDocumentReconciliationPlan({
     transactionId: applicationState?.application?.transactionId || null,
@@ -37,25 +41,36 @@ export function useBondApplicationDocuments({
 
   const progress = useMemo(() => calculateBondApplicationDocumentProgress(checklist), [checklist])
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async ({ persist = true, reconcile = true } = {}) => {
     setError('')
     setReconciling(true)
     try {
-      if (onReconcileDocumentRequirements) {
+      if (persist) await saveLatestApplication?.()
+      if (reconcile && onReconcileDocumentRequirements) {
         await onReconcileDocumentRequirements({
           requirements: resolved.activeRequirements,
           fingerprint: reconciliationPlan.fingerprint,
         })
       }
-      await onRefreshDocuments?.()
-      return { ok: true }
+      const refreshed = await onRefreshDocuments?.()
+      return { ok: true, ...(refreshed || {}) }
     } catch (refreshError) {
       setError(refreshError?.message || 'We could not refresh your document checklist. Try again.')
       return { ok: false, error: refreshError }
     } finally {
       setReconciling(false)
     }
-  }, [onReconcileDocumentRequirements, onRefreshDocuments, reconciliationPlan.fingerprint, resolved.activeRequirements])
+  }, [saveLatestApplication, onReconcileDocumentRequirements, onRefreshDocuments, reconciliationPlan.fingerprint, resolved.activeRequirements])
+
+  const refreshRef = useRef(refresh)
+  refreshRef.current = refresh
+  useEffect(() => {
+    if (!active) return undefined
+    void refreshRef.current()
+    const onFocus = () => { void refreshRef.current({ persist: false, reconcile: false }) }
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [active, reconciliationPlan.fingerprint])
 
   const uploadDocument = useCallback(async (item, file) => {
     const requirement = item?.requirement || item
@@ -63,13 +78,22 @@ export function useBondApplicationDocuments({
       setError('Choose a file to upload.')
       return { ok: false, error: 'Choose a file to upload.' }
     }
+    if (isBondStatementHandoff(requirement)) {
+      const message = 'Bank statements must be sent through your consultant’s secure connection. It is not connected yet.'
+      setError(message)
+      return { ok: false, error: message }
+    }
     setError('')
     setUploadState((current) => ({
       ...current,
       [requirement.key]: { status: 'uploading', error: '' },
     }))
     try {
-      const result = await onUploadRequiredDocument?.(requirement.key, file, {
+      if (typeof onUploadRequiredDocument !== 'function') {
+        throw new Error('Document upload is not available in this application yet.')
+      }
+      await saveLatestApplication?.()
+      const result = await onUploadRequiredDocument(requirement.key, file, {
         category: requirement.category || 'Bond application documents',
         documentType: requirement.canonicalDocumentType || requirement.key,
         uploadingKey: requirement.key,
@@ -81,7 +105,7 @@ export function useBondApplicationDocuments({
         ...current,
         [requirement.key]: { status: 'uploaded', error: '' },
       }))
-      await refresh()
+      await refresh({ persist: false })
       return { ok: true, document: result?.document || result }
     } catch (uploadError) {
       const message = uploadError?.message || 'Upload failed. Please try again.'
@@ -92,7 +116,7 @@ export function useBondApplicationDocuments({
       }))
       return { ok: false, error: message }
     }
-  }, [onUploadRequiredDocument, refresh])
+  }, [onUploadRequiredDocument, refresh, saveLatestApplication])
 
   const retryUpload = useCallback(async (item) => {
     const requirement = item?.requirement || item
@@ -106,8 +130,8 @@ export function useBondApplicationDocuments({
     if (!refreshResult.ok) return refreshResult
     const nextChecklist = buildBondApplicationDocumentChecklist({
       activeRequirements: resolved.activeRequirements,
-      existingRequiredDocuments: requiredDocuments,
-      existingDocuments: documents,
+      existingRequiredDocuments: refreshResult.requiredDocuments || requiredDocuments,
+      existingDocuments: refreshResult.documents || documents,
     })
     const nextProgress = calculateBondApplicationDocumentProgress(nextChecklist)
     return { ok: true, fingerprint: reconciliationPlan.fingerprint, outstandingDocuments: nextProgress.blockingMissing }

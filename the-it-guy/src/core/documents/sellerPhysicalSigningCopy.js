@@ -36,6 +36,17 @@ export async function requireSellerPhysicalSigningCopy(row) {
   return document
 }
 
+/** Bind a returned file to the copy the seller currently has open. */
+export async function getSellerPortalSignedUploadReference(formData = {}, documentKey = '') {
+  const key = normalizeSellerBasePackKey(documentKey)
+  if (!SIGNING_KEYS.has(key)) return null
+  const pack = formData.sellerOnboardingManualSigningPack || formData.seller_onboarding_manual_signing_pack || {}
+  const copy = (Array.isArray(pack.documents) ? pack.documents : []).find((document) => normalizeSellerBasePackKey(document.key) === key)
+  if (!copy) return null
+  const reviewed = await requireSellerPhysicalSigningCopy({ ...copy, source: 'seller_onboarding.manual_signing_pack' })
+  return { reviewedSigningVersionId: reviewed.versionId, reviewedSigningVersionDigest: reviewed.versionDigest }
+}
+
 export async function downloadSellerPhysicalSigningCopy(row, downloadPdf) {
   const document = await requireSellerPhysicalSigningCopy(row)
   const key = normalizeSellerBasePackKey(document.key || document.requirementKey || document.requirement_key || document.document_type)

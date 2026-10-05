@@ -1,4 +1,5 @@
 import { normalizeProperty24ListingText, toProperty24Integer } from './property24ListingMapper.js'
+import { normalizeListingExternalLinkStatus } from '../../src/lib/listingExternalLinkStatus.js'
 
 export function resolveArch9Property24Status({ isOnPortal = false, externalStatus = '' } = {}) {
   const status = normalizeProperty24ListingText(externalStatus).toLowerCase()
@@ -156,7 +157,7 @@ export async function recordProperty24ListingSync({
         listing_id: privateListingId,
         platform: 'Property24',
         url: normalizedProperty24ListingUrl,
-        status: nextProperty24Status === 'published' ? 'Published' : nextProperty24Status,
+        status: normalizeListingExternalLinkStatus(nextProperty24Status),
         published_at: nextProperty24Status === 'published' ? now : null,
         last_checked_at: now,
         notes: 'Managed by Property24 syndication.',

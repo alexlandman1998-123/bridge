@@ -1,0 +1,56 @@
+{
+  "environment": "production",
+  "projectRef": "isdowlnollckzvltkasn",
+  "projectName": "Arch9 SaaS",
+  "checkedAt": "2026-10-04 19:02:56.948919+00",
+  "readOnly": true,
+  "catalog": {
+    "checked_at": "2026-10-04 19:02:56.948919+00",
+    "applied_scoped_versions": null,
+    "review_rpc_present": false,
+    "review_queue_present": false,
+    "version_upload_rpc_present": false,
+    "migration_count": 1349
+  },
+  "signing": {
+    "projectRef": "isdowlnollckzvltkasn",
+    "checkedAt": "2026-10-04T19:01:29.952Z",
+    "deployedVersion": 11,
+    "deployedFiles": 15,
+    "candidateFiles": 39,
+    "signingVerified": false,
+    "reason": "Signing bundle file set differs\n\n15 !== 39\n"
+  },
+  "localReplay": {
+    "status": "blocked",
+    "reason": "Docker daemon unavailable; approximately 7.4 GiB free, below the 10 GiB replay minimum"
+  },
+  "remoteMutationPerformed": false,
+  "appDeploymentPerformed": false,
+  "functionDeploymentPerformed": false,
+  "emailDeliveryPerformed": false,
+  "approvalEvidenceSource": "User confirmation in this task; exact agency schedule approval remains required",
+  "localVerification": {
+    "sourceFingerprint": "sha256:177c3835a68ed3ff98f23d2d1e7d7de01e1f93f386ab9a2dfdf0ee95763489f6",
+    "completedAt": "2026-10-04T19:13:01.597Z",
+    "appCheck": "passed",
+    "lintErrors": 0,
+    "existingLintWarnings": 566,
+    "appBaselineChecks": 9,
+    "build": "passed",
+    "journeys": 15,
+    "pdfDownloads": 51,
+    "pdfPages": 280,
+    "browserSignatures": 9,
+    "browserPhysicalReviews": 2,
+    "localRollback": "passed",
+    "releaseVerifierTests": 10,
+    "reviewedVersionModels": 18,
+    "versionEndpointFlows": 24,
+    "tamperingCases": 18,
+    "captureModels": 18,
+    "editorInteractions": 9,
+    "edgeTypeCheck": "passed",
+    "focusedLint": "passed"
+  }
+}

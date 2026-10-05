@@ -1,3 +1,4 @@
+import { appointmentStartIso, calendarOperationalStatus, sameSastDay, sastDayStart, sastParts, addCalendarDays } from '../core/appointments/attorneyCalendarModel.js'
 import { normalizeAppointmentTypeKey } from '../lib/appointmentTypeDefinitions.js'
 
 function normalizeText(value) {
@@ -14,29 +15,10 @@ function toDate(value) {
   return Number.isNaN(parsed.getTime()) ? null : parsed
 }
 
-function startOfDay(value) {
-  const date = new Date(value)
-  date.setHours(0, 0, 0, 0)
-  return date
-}
-
-function endOfDay(value) {
-  const date = new Date(value)
-  date.setHours(23, 59, 59, 999)
-  return date
-}
-
-function addDays(value, amount) {
-  const next = new Date(value)
-  next.setDate(next.getDate() + amount)
-  return next
-}
-
-function isSameDay(left, right) {
-  return left.getFullYear() === right.getFullYear()
-    && left.getMonth() === right.getMonth()
-    && left.getDate() === right.getDate()
-}
+function startOfDay(value) { return sastDayStart(value) }
+function endOfDay(value) { return new Date(addCalendarDays(sastDayStart(value), 1).getTime()-1) }
+function addDays(value, amount) { return addCalendarDays(value, amount) }
+function isSameDay(left, right) { return sameSastDay(left, right) }
 
 function titleCase(value = '') {
   return normalizeText(value)
@@ -113,7 +95,7 @@ function getAddress(appointment = {}) {
 }
 
 function getStatusValue(appointment = {}) {
-  return normalizeKey(appointment?.status)
+  return calendarOperationalStatus(appointment)
 }
 
 function isClosedStatus(status = '') {
@@ -121,7 +103,7 @@ function isClosedStatus(status = '') {
 }
 
 function isPendingConfirmationStatus(status = '') {
-  return ['draft', 'requested', 'accepted'].includes(status)
+  return ['draft', 'requested', 'accepted', 'awaiting_confirmation'].includes(status)
 }
 
 function isRescheduleStatus(status = '') {
@@ -129,7 +111,7 @@ function isRescheduleStatus(status = '') {
 }
 
 export function getAppointmentStatusPresentation(status = '') {
-  const key = normalizeKey(status)
+  const key = calendarOperationalStatus({ status })
   if (isRescheduleStatus(key)) {
     return { key: 'reschedule_requested', label: 'Reschedule Requested', tone: 'red' }
   }
@@ -140,12 +122,12 @@ export function getAppointmentStatusPresentation(status = '') {
     return { key: 'completed', label: 'Completed', tone: 'slate' }
   }
   if (key === 'cancelled' || key === 'declined') {
-    return { key: 'cancelled', label: 'Cancelled', tone: 'slate' }
+    return { key, label: key === 'declined' ? 'Declined' : 'Cancelled', tone: 'slate' }
   }
   if (key === 'no_show') {
     return { key: 'no_show', label: 'No-show', tone: 'red' }
   }
-  return { key: 'pending', label: 'Pending', tone: 'amber' }
+  return { key: 'awaiting_confirmation', label: 'Awaiting Confirmation', tone: 'amber' }
 }
 
 const TYPE_LABELS = {
@@ -223,7 +205,7 @@ function getTypeIconKey(type = '', module = 'default') {
 function getTimeLabel(dateTime) {
   const date = toDate(dateTime)
   if (!date) return '—'
-  return date.toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' })
+  return date.toLocaleTimeString('en-ZA', { timeZone: 'Africa/Johannesburg', hour: '2-digit', minute: '2-digit' })
 }
 
 function getDateAnchorLabel(dateTime, now = new Date()) {
@@ -232,7 +214,7 @@ function getDateAnchorLabel(dateTime, now = new Date()) {
   if (isSameDay(date, now)) return 'Today'
   const tomorrow = addDays(startOfDay(now), 1)
   if (isSameDay(date, tomorrow)) return 'Tomorrow'
-  return date.toLocaleDateString('en-ZA', { day: '2-digit', month: 'short' }).toUpperCase()
+  return date.toLocaleDateString('en-ZA', { timeZone: 'Africa/Johannesburg', day: '2-digit', month: 'short' }).toUpperCase()
 }
 
 function getCountdownLabel(dateTime, now = new Date()) {
@@ -264,13 +246,14 @@ function isOverdueAppointment(appointment = {}, now = new Date()) {
 function appointmentMatchesAgent(appointment = {}, { userId = '', userEmail = '' } = {}) {
   const normalizedUserId = normalizeText(userId)
   const normalizedUserEmail = normalizeText(userEmail).toLowerCase()
-  const appointmentAgentId = normalizeText(appointment?.assignedAgentId || appointment?.agentId)
-  const appointmentAgentEmail = normalizeText(appointment?.assignedAgentEmail || appointment?.agentEmail).toLowerCase()
-  const createdBy = normalizeText(appointment?.createdBy).toLowerCase()
-  return (
-    (normalizedUserId && appointmentAgentId === normalizedUserId) ||
-    (normalizedUserEmail && (appointmentAgentEmail === normalizedUserEmail || createdBy === normalizedUserEmail))
-  )
+  const userKeys = new Set([normalizedUserId, normalizedUserEmail].map((value) => value.toLowerCase()).filter(Boolean))
+  const appointmentKeys = [
+    appointment?.assignedAgentId || appointment?.agentId,
+    appointment?.assignedAgentEmail || appointment?.agentEmail,
+    appointment?.createdBy,
+    ...extractParticipants(appointment).flatMap((participant) => [participant?.userId, participant?.email]),
+  ].map((value) => normalizeText(value).toLowerCase()).filter(Boolean)
+  return appointmentKeys.some((key) => userKeys.has(key))
 }
 
 function appointmentMatchesLeadScope(appointment = {}, leadId = '') {
@@ -353,7 +336,7 @@ function sortAppointments(rows = []) {
 
 function buildWeekDays(appointments = [], now = new Date()) {
   const weekStart = startOfDay(now)
-  const dayOfWeek = weekStart.getDay()
+  const dayOfWeek = sastParts(weekStart).weekday
   const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek
   const monday = addDays(weekStart, mondayOffset)
   return Array.from({ length: 7 }).map((_, index) => {
@@ -364,8 +347,8 @@ function buildWeekDays(appointments = [], now = new Date()) {
     }).length
     return {
       date: date.toISOString(),
-      dayLabel: date.toLocaleDateString('en-ZA', { weekday: 'short' }),
-      dayNumber: date.getDate(),
+      dayLabel: date.toLocaleDateString('en-ZA', { timeZone: 'Africa/Johannesburg', weekday: 'short' }),
+      dayNumber: sastParts(date).day,
       isToday: isSameDay(date, now),
       isSelected: isSameDay(date, now),
       count,
@@ -411,9 +394,10 @@ function normalizeDashboardAppointment(appointment = {}, params = {}) {
     customTypeLabel: appointment?.customTypeLabel,
   })
   const status = getAppointmentStatusPresentation(appointment?.status)
-  const dateTime = appointment?.dateTime || appointment?.date_time || null
+  const dateTime = appointmentStartIso(appointment)
   return {
     ...appointment,
+    dateTime,
     id: normalizeText(appointment?.appointmentId || appointment?.id),
     typeLabel,
     typeIconKey: getTypeIconKey(appointment?.appointmentType, module),
@@ -427,7 +411,7 @@ function normalizeDashboardAppointment(appointment = {}, params = {}) {
     timeLabel: getTimeLabel(dateTime),
     dateAnchorLabel: getDateAnchorLabel(dateTime, now),
     countdownLabel: getCountdownLabel(dateTime, now),
-    isOverdue: isOverdueAppointment(appointment, now),
+    isOverdue: isOverdueAppointment({ ...appointment, dateTime }, now),
     isUrgent: isUrgent(dateTime, now),
   }
 }
@@ -452,7 +436,8 @@ export async function getAppointmentDashboardData(params = {}) {
   const now = params.now instanceof Date ? params.now : new Date()
   const module = normalizeKey(params.module) || 'default'
   const rows = await loadRows(params)
-  const scopedRows = sortAppointments(scopeAppointmentRows(rows, { ...params, module }))
+  const datedRows = rows.map((appointment) => ({ ...appointment, dateTime: appointmentStartIso(appointment) }))
+  const scopedRows = sortAppointments(scopeAppointmentRows(datedRows, { ...params, module }))
   const normalizedAppointments = scopedRows.map((appointment) => normalizeDashboardAppointment(appointment, { ...params, module, now }))
   const todayAppointments = normalizedAppointments.filter((appointment) => {
     const date = toDate(appointment?.dateTime)
@@ -480,7 +465,7 @@ export async function getAppointmentDashboardData(params = {}) {
     },
     calendarStrip: {
       selectedDate: startOfDay(now).toISOString(),
-      currentMonthLabel: now.toLocaleDateString('en-ZA', { month: 'long', year: 'numeric' }),
+      currentMonthLabel: now.toLocaleDateString('en-ZA', { timeZone: 'Africa/Johannesburg', month: 'long', year: 'numeric' }),
       weekDays: buildWeekDays(normalizedAppointments, now),
       appointmentsToday: todayAppointments.length,
     },

@@ -8,6 +8,7 @@ const notifications = readFileSync(resolve(root, 'src/services/appointmentNotifi
 const component = readFileSync(resolve(root, 'src/components/attorney/scheduling/AttorneySchedulingWorkspace.jsx'), 'utf8')
 const delivery = readFileSync(resolve(root, 'src/core/appointments/attorneyInviteDelivery.js'), 'utf8')
 const appointmentEmail = readFileSync(resolve(root, '../supabase/functions/send-email/handlers/appointment.ts'), 'utf8')
+const queue = readFileSync(resolve(root, '../supabase/migrations/20261003204422_attorney_calendar_durable_delivery.sql'), 'utf8')
 const emailTypes = readFileSync(resolve(root, '../supabase/functions/send-email/types.ts'), 'utf8')
 
 function includes(source, token, message) {
@@ -15,12 +16,12 @@ function includes(source, token, message) {
 }
 
 for (const [source, token, message] of [
-  [operations, "recipientParticipantIds: [recipientParticipantId]", 'Initial delivery must target only the intended invitee.'],
-  [operations, ".from('appointments').delete().eq('appointment_id', appointmentId)", 'Participant persistence failure must roll back the incomplete appointment.'],
-  [operations, 'ATTORNEY_INVITE_PARTICIPANT_PERSISTENCE_FAILED', 'Rollback failures must expose a diagnostic error code.'],
-  [operations, 'summarizeAttorneyInviteDelivery({', 'Creation must return a canonical delivery result.'],
-  [operations, 'forceDelivery: true', 'Explicit resend must bypass delivery deduplication.'],
-  [operations, 'excludeRecipientEmails: [user?.email]', 'Attorney resend must exclude the organizing user.'],
+  [operations, "client.rpc('create_attorney_appointment_invite'", 'Invite and recipient persistence must share one database transaction.'],
+  [operations, 'p_send_notifications: invite.sendNotifications', 'Notification preference must be persisted with the appointment.'],
+  [operations, "client.rpc('retry_attorney_appointment_delivery'", 'Retry must reuse saved delivery jobs.'],
+  [queue, 'for update skip locked', 'Concurrent workers must lease separate jobs.'],
+  [queue, "j.attempt_count=p_attempt", 'Late receipts must not complete a newer lease.'],
+  [queue, 'and not p.is_scheduling_owner', 'Initial delivery must exclude accepted organisers.'],
   [notifications, "reason: 'duplicate_notification'", 'Already-sent events must not send duplicate email.'],
   [notifications, "insert.error?.code === '23505'", 'Concurrent notification inserts must recover from dedupe races.'],
   [notifications, 'organizerName: normalizeText(metadata?.organizerName', 'Calendar email must receive organizer identity.'],

@@ -1,9 +1,10 @@
 import { ArrowUpRight, X } from 'lucide-react'
 import { useState } from 'react'
-import { submitHomeSeekersLead } from './homeSeekersWebsiteData'
+import { useHomeSeekersLeadSubmission } from './homeSeekersWebsiteData'
 import './HomeSeekersValuationModal.css'
 
 export default function HomeSeekersValuationModal({ onClose }) {
+  const submitLead = useHomeSeekersLeadSubmission()
   const [status, setStatus] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
@@ -14,15 +15,15 @@ export default function HomeSeekersValuationModal({ onClose }) {
     setSubmitting(true)
     setStatus('')
     try {
-      await submitHomeSeekersLead({
+      await submitLead({
         type: 'valuation_request', name: form.get('name'), phone: form.get('phone'),
         email: form.get('email'), message: `Property address: ${form.get('propertyAddress')}`,
         privacyAccepted: form.get('privacy') === 'on', companyWebsite: form.get('website'),
       })
       setStatus('Thank you — a Home Seekers agent will be in touch shortly.')
       formElement.reset()
-    } catch {
-      setStatus('We could not send that just now. Please call us on +27 12 880 3127.')
+    } catch (error) {
+      setStatus(error.message || 'We could not send that just now. Your details are still here; please try again.')
     } finally {
       setSubmitting(false)
     }

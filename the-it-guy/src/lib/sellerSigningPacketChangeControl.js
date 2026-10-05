@@ -1,3 +1,4 @@
+import { normalizeSellerMandateCapture } from './sellerMandateCapture.js'
 const text = (value) => String(value ?? '').trim()
 
 export function buildSellerSigningPacketFingerprint({ seller = {}, mandate = {}, selectedDocuments = [] } = {}) {
@@ -12,6 +13,9 @@ export function buildSellerSigningPacketFingerprint({ seller = {}, mandate = {},
     commissionAmount: text(mandate.commissionAmount),
     vatHandling: text(mandate.vatHandling),
     selectedDocuments: [...selectedDocuments].map(text).sort(),
+    ...(mandate.mandateCapture !== undefined ? { mandateCapture: normalizeSellerMandateCapture(mandate.mandateCapture) } : {}),
+    ...(mandate.mandateDuration !== undefined ? { mandateDuration: text(mandate.mandateDuration) } : {}),
+    ...(mandate.mandateAcceptanceReview !== undefined ? { mandateAcceptanceReview: mandate.mandateAcceptanceReview } : {}),
   })
 }
 

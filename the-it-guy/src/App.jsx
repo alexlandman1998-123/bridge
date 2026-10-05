@@ -1,5 +1,6 @@
 import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 import AppErrorBoundary from './components/AppErrorBoundary'
+import WorkspaceLoadingScreen from './components/auth/WorkspaceLoadingScreen'
 import AccessState from './components/access/AccessState'
 import MobileLoginRedirectGate from './components/mobile-shell/MobileLoginRedirectGate'
 import MobileRouteGuard from './components/mobile-shell/MobileRouteGuard'
@@ -354,7 +355,6 @@ const HomeSeekersSelling = lazy(() => import('./pages/HomeSeekersSelling'))
 const HomeSeekersBuying = lazy(() => import('./pages/HomeSeekersBuying'))
 const HomeSeekersProperty = lazy(() => import('./pages/HomeSeekersProperty'))
 const HomeSeekersRenting = lazy(() => import('./pages/HomeSeekersRenting'))
-const HomeSeekersAreas = lazy(() => import('./pages/HomeSeekersAreas'))
 const HomeSeekersJoin = lazy(() => import('./pages/HomeSeekersJoin'))
 const PublicDevelopmentLandingPage = lazy(() => import('./pages/PublicDevelopmentResponsiveRoute'))
 const BondDashboardPage = lazy(() => import('./pages/bond/BondDashboardPage'))
@@ -468,6 +468,8 @@ const OnboardingLinksDemoPage = lazy(() => import('./pages/OnboardingLinksDemoPa
 const Pipeline = lazy(() => import('./pages/Pipeline'))
 const RevoSharedInboxPage = lazy(() => import('./pages/revo/RevoSharedInboxPage'))
 const RevoSharedInboxSettingsPage = lazy(() => import('./pages/revo/RevoSharedInboxSettingsPage'))
+const RecruitmentApplicationPage = lazy(() => import('./pages/recruitment/RecruitmentApplicationPage'))
+const RecruitmentPage = lazy(() => import('./pages/recruitment/RecruitmentPage'))
 const AgencyLeadListRoutePage = lazy(loadAgencyLeadListRouteModule)
 const AgencyLeadWorkspaceRoutePage = lazy(loadAgencyLeadWorkspaceRouteModule)
 const PipelineCanvassingPage = lazy(() => import('./pages/PipelineCanvassingPage'))
@@ -498,6 +500,7 @@ const SettingsPreferredPartnersPage = lazy(() => import('./pages/settings/Settin
 const SettingsPartnerProspectsPage = lazy(() => import('./pages/settings/SettingsPartnerProspectsPage'))
 const SettingsPartnerRoutingRulesPage = lazy(() => import('./pages/settings/SettingsPartnerRoutingRulesPage'))
 const SettingsProperty24Page = lazy(() => import('./pages/settings/SettingsProperty24Page'))
+const SettingsExternalWebsitesPage = lazy(() => import('./pages/settings/SettingsExternalWebsitesPage'))
 const SettingsSyndicationPage = lazy(() => import('./pages/settings/SettingsSyndicationPage'))
 const SettingsUsersPage = lazy(() => import('./pages/settings/SettingsUsersPage'))
 const SettingsWorkflowsPage = lazy(() => import('./pages/settings/SettingsWorkflowsPage'))
@@ -1095,10 +1098,7 @@ function AuthGate({ onRetryBootstrap = null, onLogout = null }) {
   if (waitingOnWorkspace) {
     if (loadingSlow) {
       return (
-        <section className="auth-loading-screen">
-          <div className="auth-loading-card">
-            <h2>Still preparing your workspace…</h2>
-            <p>Arch9 is still loading your profile, workspace, and permissions. This can take longer after schema updates.</p>
+        <WorkspaceLoadingScreen slow>
             <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
               <button
                 type="button"
@@ -1122,18 +1122,12 @@ function AuthGate({ onRetryBootstrap = null, onLogout = null }) {
                 Restart Sign-in
               </button>
             </div>
-          </div>
-        </section>
+        </WorkspaceLoadingScreen>
       )
     }
 
     return (
-      <section className="auth-loading-screen">
-        <div className="auth-loading-card">
-          <h2>Loading secure workspace…</h2>
-          <p>Authenticating session and preparing your dashboard.</p>
-        </div>
-      </section>
+      <WorkspaceLoadingScreen />
     )
   }
 
@@ -1310,7 +1304,7 @@ function AuthGate({ onRetryBootstrap = null, onLogout = null }) {
   }
 
   if (onAnyOnboardingRoute && onboardingCompleted && hasResolvedWorkspaceMembership) {
-    const pendingPartnerInvitePath = readPendingPartnerInvitePath()
+    const pendingPartnerInvitePath = readPendingPartnerInvitePath(authState.signupIntent)
     const target = pendingPartnerInvitePath
       ? buildPartnerInviteAutoAcceptPath(pendingPartnerInvitePath)
       : hasCommercialAccess ? '/commercial' : baseRole === 'attorney' ? '/attorney/dashboard' : '/dashboard'
@@ -1826,10 +1820,11 @@ function EnvironmentValidationBanner() {
 
 function RouteObservability() {
   const location = useLocation()
+  const observedRoute = location.pathname.startsWith('/join-us/') ? '/join-us/:token' : location.pathname
   const { authState } = useAuthSession()
 
   useEffect(() => {
-    const marker = createRoutePerformanceMarker(location.pathname)
+    const marker = createRoutePerformanceMarker(observedRoute)
     const frameId = window.requestAnimationFrame(() => {
       marker.finish({
         userId: authState.user?.id || '',
@@ -1837,14 +1832,14 @@ function RouteObservability() {
       })
     })
     return () => window.cancelAnimationFrame(frameId)
-  }, [authState.currentWorkspace?.id, authState.user?.id, location.pathname])
+  }, [authState.currentWorkspace?.id, authState.user?.id, observedRoute])
 
   useEffect(() => {
     function handleError(event) {
       void reportError(event.error || new Error(event.message || 'Unhandled browser error'), {
         userId: authState.user?.id || '',
         workspaceId: authState.currentWorkspace?.id || '',
-        route: location.pathname,
+        route: observedRoute,
         category: 'ui_error',
         operation: 'window_error',
       })
@@ -1854,7 +1849,7 @@ function RouteObservability() {
       void reportError(reason, {
         userId: authState.user?.id || '',
         workspaceId: authState.currentWorkspace?.id || '',
-        route: location.pathname,
+        route: observedRoute,
         category: 'ui_error',
         operation: 'unhandled_rejection',
       })
@@ -1865,7 +1860,7 @@ function RouteObservability() {
       window.removeEventListener('error', handleError)
       window.removeEventListener('unhandledrejection', handleRejection)
     }
-  }, [authState.currentWorkspace?.id, authState.user?.id, location.pathname])
+  }, [authState.currentWorkspace?.id, authState.user?.id, observedRoute])
 
   return null
 }
@@ -1890,6 +1885,7 @@ function AppRoutes() {
         <Suspense fallback={<PageSkeleton label="Loading Arch9" />}>
           <Routes>
           <Route path="/" element={<PublicAwareRootRoute />} />
+          <Route path="/join-us/:token" element={<AppErrorBoundary scope="recruitment-application" title="Application failed to load"><RecruitmentApplicationPage /></AppErrorBoundary>} />
           <Route path="/join" element={<Arch9JoinRedirect />} />
           <Route path="/buy" element={<BridgeBuyPage />} />
           <Route path="/buy/:slug" element={<BridgeBuyPage />} />
@@ -1941,8 +1937,9 @@ function AppRoutes() {
           <Route path="/demo/homeseekers/selling" element={<AppErrorBoundary scope="homeseekers-selling" title="HomeSeekers selling page failed to load"><HomeSeekersSelling /></AppErrorBoundary>} />
           <Route path="/demo/homeseekers/buying" element={<AppErrorBoundary scope="homeseekers-buying" title="HomeSeekers buying page failed to load"><HomeSeekersBuying /></AppErrorBoundary>} />
           <Route path="/demo/homeseekers/buying/:propertyId" element={<AppErrorBoundary scope="homeseekers-property" title="HomeSeekers property page failed to load"><HomeSeekersProperty /></AppErrorBoundary>} />
+          <Route path="/demo/homeseekers/properties/:propertyId" element={<AppErrorBoundary scope="homeseekers-property" title="HomeSeekers property page failed to load"><HomeSeekersProperty /></AppErrorBoundary>} />
           <Route path="/demo/homeseekers/renting" element={<AppErrorBoundary scope="homeseekers-renting" title="HomeSeekers renting page failed to load"><HomeSeekersRenting /></AppErrorBoundary>} />
-          <Route path="/demo/homeseekers/areas" element={<AppErrorBoundary scope="homeseekers-areas" title="HomeSeekers areas page failed to load"><HomeSeekersAreas /></AppErrorBoundary>} />
+          <Route path="/demo/homeseekers/areas" element={<Navigate to="/demo/homeseekers" replace />} />
           <Route path="/demo/homeseekers/join" element={<AppErrorBoundary scope="homeseekers-join" title="HomeSeekers join page failed to load"><HomeSeekersJoin /></AppErrorBoundary>} />
           <Route path="/demo/homeseekers/valuation" element={<Navigate to="/demo/homeseekers/selling" replace />} />
           <Route path="/referrals/invite/:token" element={<AppErrorBoundary scope="referral-invite" title="Referral invite failed to load"><ReferralInvitePage /></AppErrorBoundary>} />
@@ -3382,6 +3379,8 @@ function AppRoutes() {
                   </RoleRoute>
                 }
               />
+              <Route path="/agency/recruitment" element={<SalesWorkspaceGuard><RoleRoute allowedRoles={['agent']} requiredPermission="manage_users"><RecruitmentPage /></RoleRoute></SalesWorkspaceGuard>} />
+              <Route path="/agency/recruitment/:leadId" element={<SalesWorkspaceGuard><RoleRoute allowedRoles={['agent']} requiredPermission="manage_users"><RecruitmentPage /></RoleRoute></SalesWorkspaceGuard>} />
               <Route
                 path="/pipeline/leads"
                 element={
@@ -3926,6 +3925,16 @@ function AppRoutes() {
                     <OrganisationSettingsManageRoute>
                       <RoleRoute allowedRoles={['agent', 'developer']}>
                         <SettingsSyndicationPage />
+                      </RoleRoute>
+                    </OrganisationSettingsManageRoute>
+                  }
+                />
+                <Route
+                  path="integrations/external-websites"
+                  element={
+                    <OrganisationSettingsManageRoute>
+                      <RoleRoute allowedRoles={['agent']}>
+                        <SettingsExternalWebsitesPage />
                       </RoleRoute>
                     </OrganisationSettingsManageRoute>
                   }

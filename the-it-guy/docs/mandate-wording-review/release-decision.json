@@ -1,0 +1,113 @@
+{
+  "contract": "arch9-seller-document-release-decision-v1",
+  "candidateDigest": "sha256:12fe7c47608ff3b6a4b820d676d3576f45c43b463c056ff8b8cfe735026c491a",
+  "status": "pending",
+  "decidedAt": "",
+  "releaseOwner": "",
+  "reference": "",
+  "projectRef": "isdowlnollckzvltkasn",
+  "scope": "Exclusive, Open, Dual, disclosure and FICA",
+  "wording": [
+    {
+      "variant": "sole",
+      "wordingDigest": "sha256:8e7830475ceb4376ea21c78655605f0b4f98a7c7f2cc6f13fb66718fc9348913",
+      "status": "approved",
+      "businessApprover": "thread:user-confirmed-approval",
+      "counselApprover": "thread:user-confirmed-counsel-approval",
+      "reference": "USER-CONFIRMED-PRETORIA-20261004",
+      "approvedAt": "2026-10-04",
+      "source": "User confirmation for the three exact 4 October drafts: approved, pretoria, 4 oct"
+    },
+    {
+      "variant": "open",
+      "wordingDigest": "sha256:1f1cd90a9fdb2cb2f745c909508dc9a978e0e47d006f7dc08a58f3e49800c4b3",
+      "status": "approved",
+      "businessApprover": "thread:user-confirmed-approval",
+      "counselApprover": "thread:user-confirmed-counsel-approval",
+      "reference": "USER-CONFIRMED-PRETORIA-20261004",
+      "approvedAt": "2026-10-04",
+      "source": "User confirmation for the three exact 4 October drafts: approved, pretoria, 4 oct"
+    },
+    {
+      "variant": "dual",
+      "wordingDigest": "sha256:fb86cb6ac2ef90da9adbfa4bf3a074a08ea92fd644c22209cc15076e52a5a6a0",
+      "status": "approved",
+      "businessApprover": "thread:user-confirmed-approval",
+      "counselApprover": "thread:user-confirmed-counsel-approval",
+      "reference": "USER-CONFIRMED-PRETORIA-20261004",
+      "approvedAt": "2026-10-04",
+      "source": "User confirmation for the three exact 4 October drafts: approved, pretoria, 4 oct"
+    }
+  ],
+  "agencySchedules": [],
+  "design": {
+    "status": "pending",
+    "reviewer": "",
+    "reference": "",
+    "reviewedAt": "",
+    "candidateDigest": "sha256:12fe7c47608ff3b6a4b820d676d3576f45c43b463c056ff8b8cfe735026c491a"
+  },
+  "checks": {
+    "build": {
+      "status": "passed",
+      "reference": "PRIMARY-APP-CHECK-20261004",
+      "checkedAt": "2026-10-04T19:13:01.597Z",
+      "sourceFingerprint": "sha256:177c3835a68ed3ff98f23d2d1e7d7de01e1f93f386ab9a2dfdf0ee95763489f6"
+    },
+    "migrationReplay": {
+      "status": "blocked",
+      "reference": "LOCAL-REPLAY-20261004-Docker-unavailable-disk-below-10GiB",
+      "checkedAt": "2026-10-04T19:13:01.597Z",
+      "sourceFingerprint": "sha256:177c3835a68ed3ff98f23d2d1e7d7de01e1f93f386ab9a2dfdf0ee95763489f6"
+    },
+    "targetIdentity": {
+      "status": "passed",
+      "reference": "release-environment.json:Arch9-SaaS-isdowlnollckzvltkasn",
+      "checkedAt": "2026-10-04T19:02:56.948Z",
+      "sourceFingerprint": "sha256:177c3835a68ed3ff98f23d2d1e7d7de01e1f93f386ab9a2dfdf0ee95763489f6"
+    },
+    "recovery": {
+      "status": "pending",
+      "reference": "",
+      "checkedAt": "",
+      "sourceFingerprint": "sha256:177c3835a68ed3ff98f23d2d1e7d7de01e1f93f386ab9a2dfdf0ee95763489f6"
+    },
+    "scopedDryRun": {
+      "status": "pending",
+      "reference": "",
+      "checkedAt": "",
+      "sourceFingerprint": "sha256:177c3835a68ed3ff98f23d2d1e7d7de01e1f93f386ab9a2dfdf0ee95763489f6"
+    },
+    "schemaCatalog": {
+      "status": "blocked",
+      "reference": "release-environment.json:review-and-version-bound-upload-absent",
+      "checkedAt": "2026-10-04T19:02:56.948Z",
+      "sourceFingerprint": "sha256:177c3835a68ed3ff98f23d2d1e7d7de01e1f93f386ab9a2dfdf0ee95763489f6"
+    },
+    "securityReview": {
+      "status": "pending",
+      "reference": "",
+      "checkedAt": "",
+      "sourceFingerprint": "sha256:177c3835a68ed3ff98f23d2d1e7d7de01e1f93f386ab9a2dfdf0ee95763489f6"
+    },
+    "rollbackRehearsal": {
+      "status": "pending",
+      "reference": "",
+      "checkedAt": "",
+      "sourceFingerprint": "sha256:177c3835a68ed3ff98f23d2d1e7d7de01e1f93f386ab9a2dfdf0ee95763489f6"
+    },
+    "hostedAcceptance": {
+      "status": "pending",
+      "reference": "",
+      "checkedAt": "",
+      "sourceFingerprint": "sha256:177c3835a68ed3ff98f23d2d1e7d7de01e1f93f386ab9a2dfdf0ee95763489f6"
+    },
+    "emailDelivery": {
+      "status": "pending",
+      "reference": "",
+      "checkedAt": "",
+      "sourceFingerprint": "sha256:177c3835a68ed3ff98f23d2d1e7d7de01e1f93f386ab9a2dfdf0ee95763489f6"
+    }
+  },
+  "notes": "Only record performed checks. Agency entries must match the server-owned exact schedule approvals. Synthetic PDFs support design review; they are not executed agreements. This decision never authorizes or performs deployment."
+}

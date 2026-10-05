@@ -110,6 +110,12 @@ export default function useTransactionLiveRefresh({
       recover()
     }
     const offline = () => setStatus((previous) => ({ ...previous, connectionState: 'offline' }))
+    const localUpdate = event => {
+      const changedId = event.detail?.transactionId
+      if (changedId && String(changedId) !== id) return
+      schedule('local_transaction_updated')
+    }
+    window.addEventListener('itg:transaction-updated', localUpdate)
     window.addEventListener('focus', recover)
     window.addEventListener('online', online)
     window.addEventListener('offline', offline)
@@ -123,6 +129,7 @@ export default function useTransactionLiveRefresh({
       window.removeEventListener('focus', recover)
       window.removeEventListener('online', online)
       window.removeEventListener('offline', offline)
+      window.removeEventListener('itg:transaction-updated', localUpdate)
       document.removeEventListener('visibilitychange', recover)
       if (channel) void supabase.removeChannel(channel)
     }

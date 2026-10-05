@@ -1,3 +1,19 @@
+export const MARITAL_STATUS_OPTIONS = [
+  { value: '', label: 'Select status' },
+  { value: 'single', label: 'Single' },
+  { value: 'married', label: 'Married' },
+  { value: 'divorced', label: 'Divorced' },
+  { value: 'widowed', label: 'Widowed' },
+]
+
+export const MARITAL_REGIME_OPTIONS = [
+  { value: '', label: 'Select regime' },
+  { value: 'not_applicable', label: 'Not applicable' },
+  { value: 'in_community', label: 'In community of property' },
+  { value: 'out_of_community', label: 'Out of community of property' },
+  { value: 'out_of_community_with_accrual', label: 'Out of community with accrual' },
+]
+
 import { normalizeFinanceType } from '../core/transactions/financeType.js'
 
 export const BUYER_ONBOARDING_FLOW_VERSION = 'buyer_onboarding_flow_v2'

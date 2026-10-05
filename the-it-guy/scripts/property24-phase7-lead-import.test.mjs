@@ -299,6 +299,77 @@ assert.equal(overlappingPlan.summary.receivedCount, 2)
 assert.equal(overlappingPlan.summary.readyForCrmIngestionCount, 1)
 assert.equal(overlappingPlan.leads[1].duplicateInResponse, true)
 
+// Actual v55 agency response uses messages/contactNumber. Published seller
+// leads still need the per-listing fallback, and pages must all be read.
+const officialLead = { listingNumber: 116565928, name: 'Portal Buyer', contactNumber: '0821234567', date: '2026-09-27T09:00:00Z', message: 'Please call' }
+const pageRequests = []
+let fallbackChecks = 0
+const officialPlan = await pullAndImportProperty24Leads({
+  supabase: createFakeSupabase({
+    property24_listing_syncs: [{ private_listing_id: listing.id, environment: 'production', agency_id: 40067, listing_number: 116565928, is_on_portal: true }],
+    private_listings: [{ ...listing, listing_status: 'seller_lead', property24_status: 'published' }],
+  }),
+  property24: {
+    fetchListingLeads: async ({ after }) => { pageRequests.push(after); return { status: 200, data: pageRequests.length === 1
+      ? { messages: Array.from({ length: 1000 }, (_, i) => ({ ...officialLead, message: 'Enquiry '+i })), nextAfter: '2026-09-27T09:01:00Z' }
+      : { messages: [officialLead, { ...officialLead, agencyId: 99999 }, { ...officialLead, listingNumber: 99999999, agencyId: 40067, message: 'Unlinked' }], nextAfter: '2026-09-27T10:00:00Z' } } },
+    fetchListingLeadsForListing: async () => { fallbackChecks++; return { status: 200, data: [officialLead] } },
+  },
+  config: { environment: 'production', agencyId: 40067, organisationId: listing.organisation_id, applyLeads: false },
+  now: new Date('2026-09-27T12:00:00Z'),
+})
+assert.equal(pageRequests.length, 2)
+assert.equal(pageRequests[1], '2026-09-27T09:01:00.000Z')
+assert.equal(fallbackChecks, 1)
+assert.equal(officialPlan.summary.receivedCount, 1003)
+assert.equal(officialPlan.leads[0].phone, '0821234567')
+assert.equal(officialPlan.leads[1001].listingId, null)
+assert.equal(officialPlan.leads[1001].organisationId, listing.organisation_id)
+assert.equal(officialPlan.leads[1001].readyForCrmIngestion, true)
+assert.equal(officialPlan.leads[1002].duplicateInResponse, true)
+
+const historicalChecks = []
+const historicalSupabase = createFakeSupabase()
+const historicalPlan = await pullAndImportProperty24Leads({
+  supabase: historicalSupabase,
+  property24: {
+    fetchListingLeads: async () => ({ status: 200, data: { messages: [70001, 70002, 70003, 70004]
+      .map((listingNumber) => ({ ...officialLead, listingNumber })) } }),
+    fetchAgencyListingStatistics: async (params) => {
+      historicalChecks.push(params)
+      return { status: 200, data: params.listingType === 'Sale'
+        ? [{ listingNumber: 70001, agencyId: 40067 }, { listingNumber: 70002, agencyId: 99999 }, { listingNumber: 70004, agencyId: 40067 }]
+        : [{ listingNumber: 70003, agencyId: 40067 }, { listingNumber: 70004, agencyId: 99999 }] }
+    },
+  },
+  config: { environment: 'production', agencyId: 40067, organisationId: listing.organisation_id, applyLeads: true, sendNotifications: false },
+  now: new Date('2026-09-27T12:00:00Z'),
+})
+assert.equal(historicalChecks.length, 2)
+assert.ok(historicalChecks.every((check) => check.agencyIds[0] === 40067 && check.startDate === '2026-08-27' && check.endDate === '2026-09-28'))
+assert.equal(historicalPlan.import.summary.importedCount, 2)
+assert.equal(historicalPlan.import.summary.needsReviewCount, 2)
+assert.equal(historicalPlan.leads[0].listingId, null)
+assert.equal(historicalPlan.leads[0].organisationId, listing.organisation_id)
+assert.equal(historicalPlan.leads[1].readyForCrmIngestion, false)
+assert.equal(historicalPlan.leads[2].listingType, 'Rental')
+assert.equal(historicalPlan.leads[3].readyForCrmIngestion, false)
+assert.equal(historicalPlan.leads[2].agencyVerification.source, 'property24_listing_statistics')
+assert.equal(historicalSupabase.rowsByTable.leads[1].raw_enquiry_payload.listingType, 'Rental')
+assert.equal(historicalSupabase.rowsByTable.leads[1].raw_enquiry_payload.agencyVerification.agencyId, 40067)
+assert.match(historicalSupabase.rowsByTable.leads[1].notes, /Property24 enquiry type: Rental/)
+const unavailableHistory = await pullAndImportProperty24Leads({
+  supabase: createFakeSupabase(),
+  property24: {
+    fetchListingLeads: async () => ({ status: 200, data: { messages: [{ ...officialLead, listingNumber: 70001 }] } }),
+    fetchAgencyListingStatistics: async () => { throw new Error('Provider unavailable') },
+  },
+  config: { environment: 'production', agencyId: 40067, organisationId: listing.organisation_id, applyLeads: false },
+  now: new Date('2026-09-27T12:00:00Z'),
+})
+assert.equal(unavailableHistory.leads[0].readyForCrmIngestion, false)
+assert.equal(unavailableHistory.property24.ownershipChecks.length, 2)
+
 const apiApply = await createProperty24ApiResponse({
   method: 'POST',
   url: '/api/property24/leads/pull',
