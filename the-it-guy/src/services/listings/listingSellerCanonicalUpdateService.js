@@ -5,7 +5,7 @@ import {
 
 const CONTACT_FIELD_PATTERN = /^(?:primaryContactName|contactName|firstName|lastName|fullName|sellerName|sellerFirstName|sellerSurname|email|sellerEmail|phone|sellerPhone|mobile)$/
 
-export function limitSellerCanonicalSaveWait(savePromise, timeoutMs = 40000) {
+export function limitSellerCanonicalSaveWait(savePromise, timeoutMs = 60000) {
   let timeoutId
   const timeout = new Promise((_, reject) => {
     timeoutId = setTimeout(() => {
@@ -80,6 +80,7 @@ export async function saveListingSellerCanonicalUpdate(input = {}, dependencies 
   try {
     persisted = await deps.savePrivateListingSellerCanonicalUpdate(update, {
       syncRequirements: input.syncRequirements !== false,
+      forceRequirementSync: input.forceRequirementSync === true,
       requirementSyncReason: input.requirementSyncReason,
       includeRequirementsAndDocuments: input.includeRequirementsAndDocuments !== false,
     })
@@ -114,9 +115,21 @@ export async function saveListingSellerCanonicalUpdate(input = {}, dependencies 
     }
   }
 
+  // A receipt contains the committed seller rows, without a fresh media or
+  // publication read. Keep the caller's loaded listing details in this path.
+  const remoteListing = persisted.snapshotOnly ? {
+    updatedAt: persisted.listing.updatedAt,
+    sellerCanonicalFactsUpdatedAt: persisted.listing.sellerCanonicalFactsUpdatedAt,
+    sellerOnboarding: persisted.listing.sellerOnboarding,
+    ...(persisted.requirementSyncResult?.listing ? {
+      documentRequirements: persisted.listing.documentRequirements,
+      documents: persisted.listing.documents,
+      readinessSummary: persisted.listing.readinessSummary,
+    } : {}),
+  } : persisted.listing
   return {
     update,
-    listing: applyListingSellerCanonicalUpdateSnapshot(input.listing, update, persisted.listing),
+    listing: applyListingSellerCanonicalUpdateSnapshot(input.listing, update, remoteListing),
     receipt: persisted.receipt,
     syncedRequirements: persisted.syncedRequirements,
     warnings,
