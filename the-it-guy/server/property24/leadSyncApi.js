@@ -1,10 +1,13 @@
 import process from 'node:process'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
-import { normalizeProperty24Text } from './client.js'
-import { createProperty24ApiResponse } from './api.js'
+import { createProperty24Client, normalizeProperty24Text } from './client.js'
+import { resolveProperty24EnvironmentCredentials } from './environmentService.js'
+import { fetchOrganisationProperty24Credentials } from './organisationCredentialService.js'
+import { pullAndImportProperty24Leads } from './leadImportService.js'
 
 const DEFAULT_LOOKBACK_MS = 24 * 60 * 60 * 1000
 const CURSOR_OVERLAP_MS = 10 * 60 * 1000
+const INITIAL_LOOKBACK_MS = 30 * DEFAULT_LOOKBACK_MS
 
 function buildJsonResponse(status, body, headers = {}) {
   return {
@@ -52,6 +55,7 @@ function positiveInteger(value, fallback, maximum) {
 }
 
 function scheduledEnvironment(env = {}) {
+  if (env.VERCEL_ENV === 'production') return 'production'
   const explicit = normalizeProperty24Text(env.PROPERTY24_ENVIRONMENT).toLowerCase()
   if (explicit === 'production') return 'production'
   if (explicit === 'exdev') return 'exdev'
@@ -79,20 +83,22 @@ function latestCursor(...values) {
   return values.map(asValidIso).filter(Boolean).sort().at(-1) || null
 }
 
-function leadCounts(body = {}) {
-  const summary = body?.leads?.import?.summary || body?.leads?.summary || {}
-  const importResults = body?.leads?.import?.results || []
-  const listingChecks = Array.isArray(body?.leads?.property24?.listingChecks)
-    ? body.leads.property24.listingChecks
+function leadCounts(leads = {}) {
+  const summary = leads?.import?.summary || leads?.summary || {}
+  const importResults = leads?.import?.results || []
+  const listingChecks = Array.isArray(leads?.property24?.listingChecks)
+    ? leads.property24.listingChecks
     : []
   return {
     received: Number(summary.receivedCount || 0) || 0,
     imported: Number(summary.importedCount || 0) || 0,
     unresolved: importResults.length
       ? importResults.filter((result) => ['needs_review', 'failed'].includes(result.status)).length
-      : Number(summary.failedCount || 0) + Number(summary.needsReviewCount || 0),
+      : Array.isArray(leads.leads)
+        ? leads.leads.filter((lead) => !lead.readyForCrmIngestion).length
+        : Number(summary.failedCount || 0) + Number(summary.needsReviewCount || 0),
     lookaheadFallbacks: listingChecks.filter((check) => check.lookaheadFallback).length,
-    nextAfter: asValidIso(body?.leads?.nextAfter || body?.leads?.summary?.nextAfter || ''),
+    nextAfter: asValidIso(leads?.nextAfter || leads?.summary?.nextAfter || ''),
   }
 }
 
@@ -184,25 +190,8 @@ export async function createProperty24LeadSyncResponse({
     })
   }
 
-  const internalToken = normalizeProperty24Text(env.PROPERTY24_API_INTERNAL_TOKEN)
-  const cronSecret = normalizeProperty24Text(env.PROPERTY24_LEAD_SYNC_CRON_SECRET || env.CRON_SECRET)
-  if (!internalToken) {
-    return buildJsonResponse(503, {
-      error: 'property24_api_token_not_configured',
-      message: 'Set PROPERTY24_API_INTERNAL_TOKEN before scheduled Property24 lead sync can run.',
-    })
-  }
-  if (!cronSecret && !getHeader(headers, 'x-property24-api-token')) {
-    return buildJsonResponse(503, {
-      error: 'property24_lead_sync_secret_not_configured',
-      message: 'Set PROPERTY24_LEAD_SYNC_CRON_SECRET or CRON_SECRET before enabling the scheduled sync.',
-    })
-  }
   if (!isAuthorized({ headers, env })) {
-    return buildJsonResponse(401, {
-      error: 'unauthorized',
-      message: 'Scheduled Property24 lead sync token is missing or invalid.',
-    })
+    return buildJsonResponse(401, { error: 'unauthorized', message: 'Scheduled Property24 lead sync token is missing or invalid.' })
   }
 
   let requestUrl
@@ -211,18 +200,14 @@ export async function createProperty24LeadSyncResponse({
     requestUrl = parseUrl(url, headers)
     payload = parseBody(body)
   } catch (error) {
-    return buildJsonResponse(Number(error?.status || 400), {
-      error: error?.code || 'property24_lead_sync_invalid_request',
-      message: error?.message || 'Scheduled Property24 lead sync request is invalid.',
-    })
+    return buildJsonResponse(Number(error?.status || 400), { error: error?.code || 'invalid_request', message: error.message })
   }
   const query = requestUrl.searchParams
   const dryRun = normalizeBoolean(firstValue(payload.dryRun, query.get('dryRun')), false)
   const environment = scheduledEnvironment(env)
-  const agencyId = normalizeProperty24Text(firstValue(payload.agencyId, query.get('agencyId'), env.PROPERTY24_DEFAULT_AGENCY_ID, '31382'))
-  const stateClient = dependencies.createLeadSyncStateClient
-    ? dependencies.createLeadSyncStateClient(env)
-    : createLeadSyncStateClient(env)
+  const agencyId = normalizeProperty24Text(firstValue(payload.agencyId, query.get('agencyId')))
+  const organisationId = normalizeProperty24Text(firstValue(payload.organisationId, query.get('organisationId')))
+  const stateClient = (dependencies.createLeadSyncStateClient || createLeadSyncStateClient)(env)
   if (!stateClient) {
     return buildJsonResponse(503, {
       error: 'property24_lead_sync_state_not_configured',
@@ -230,104 +215,102 @@ export async function createProperty24LeadSyncResponse({
     })
   }
 
-  let lock = null
   try {
-    lock = await acquireLeadSync({
-      client: stateClient,
-      environment,
-      agencyId,
-      ttlSeconds: positiveInteger(env.PROPERTY24_LEAD_SYNC_LOCK_TTL_SECONDS, 240, 900),
-    })
-    if (!lock?.acquired) {
-      return buildJsonResponse(202, {
-        route: 'syncLeads',
-        mode: 'SKIPPED_OVERLAP',
-        scheduled: true,
-        message: 'A Property24 lead sync is already running.',
-      })
+    // Discover connections on every invocation, including newly onboarded agencies.
+    // The platform's legacy default agency and credentials cannot select a tenant.
+    const connections = []
+    for (let offset = 0; ; offset += 100) {
+      let accountQuery = stateClient.from('property24_accounts')
+        .select('organisation_id, environment, agency_id')
+        .eq('enabled', true).eq('environment', environment)
+        .order('organisation_id').range(offset, offset + 99)
+      if (agencyId) accountQuery = accountQuery.eq('agency_id', Number(agencyId))
+      if (organisationId) accountQuery = accountQuery.eq('organisation_id', organisationId)
+      const page = await accountQuery
+      if (page.error) throw page.error
+      connections.push(...(page.data || []))
+      if ((page.data || []).length < 100) break
     }
-    const apiPayload = {
-      applyLeads: !dryRun,
-      agencyId: firstValue(payload.agencyId, query.get('agencyId'), agencyId),
-      after: firstValue(
-        payload.after,
-        query.get('after'),
-        lock.cursor_after ? resolveScheduledProperty24After({ cursorAfter: lock.cursor_after }) : env.PROPERTY24_LEAD_SYNC_AFTER,
-        resolveScheduledProperty24After(),
-      ),
-      limit: firstValue(payload.limit, query.get('limit'), env.PROPERTY24_LEAD_SYNC_LIMIT),
-      source: 'property24-lead-sync',
+    if ((agencyId || organisationId) && !connections.length) {
+      return buildJsonResponse(404, { error: 'property24_account_not_configured', message: 'No enabled Property24 account matches this agency.' })
     }
 
-    const createApiResponse = dependencies.createProperty24ApiResponse || createProperty24ApiResponse
-    const leadPullResponse = await createApiResponse({
-      method: 'POST',
-      url: '/api/property24/leads/pull',
-      headers: {
-        host: getHeader(headers, 'host'),
-        'x-property24-api-token': internalToken,
-      },
-      body: JSON.stringify(apiPayload),
-      env,
-    })
-
-    const counts = leadCounts(leadPullResponse.body)
-    const succeeded = leadPullResponse.status >= 200 && leadPullResponse.status < 300 &&
-      (dryRun || (counts.unresolved === 0 && counts.lookaheadFallbacks === 0))
-    const failureReason = counts.unresolved
-      ? `${counts.unresolved} Property24 lead(s) could not be imported.`
-      : counts.lookaheadFallbacks
-        ? `${counts.lookaheadFallbacks} Property24 listing lead window(s) rejected the two-hour lookahead and fell back to the original window.`
-        : leadPullResponse.body?.message || `Property24 returned HTTP ${leadPullResponse.status}.`
-    // Empty responses and dry runs must not move the checkpoint. A replayed
-    // older lead must not move it backwards either.
-    const cursorAfter = succeeded && !dryRun
-      ? counts.received > 0 ? latestCursor(counts.nextAfter, lock.cursor_after) || apiPayload.after : lock.cursor_after || null
-      : succeeded ? lock.cursor_after || null : null
-    await completeLeadSync({
-      client: stateClient,
-      environment,
-      agencyId,
-      lockToken: lock.lock_token,
-      status: succeeded ? 'complete' : 'failed',
-      cursorAfter,
-      received: counts.received,
-      imported: counts.imported,
-      error: succeeded ? null : failureReason,
-    })
-    console.info('[Property24] lead sync result', {
-      agencyId,
-      status: succeeded ? 'complete' : 'failed',
-      received: counts.received,
-      imported: counts.imported,
-      unresolved: counts.unresolved,
-      lookaheadFallbacks: counts.lookaheadFallbacks,
-      cursorAdvanced: Boolean(cursorAfter && cursorAfter !== lock.cursor_after),
-    })
-    return buildJsonResponse(succeeded ? leadPullResponse.status : Math.max(leadPullResponse.status, 502), {
-      route: 'syncLeads',
-      mode: dryRun ? 'DRY_RUN' : 'APPLY',
-      scheduled: true,
-      after: apiPayload.after,
-      received: counts.received,
-      imported: counts.imported,
-      unresolved: counts.unresolved,
-      lookaheadFallbacks: counts.lookaheadFallbacks,
-      cursorAdvanced: Boolean(cursorAfter && cursorAfter !== lock.cursor_after),
-      leadPull: leadPullResponse.body || null,
-    })
-  } catch (error) {
-    if (lock?.lock_token) {
+    const reports = []
+    for (const connection of connections) {
+      const accountAgencyId = String(connection.agency_id)
+      let lock = null
       try {
-        await completeLeadSync({ client: stateClient, environment, agencyId, lockToken: lock.lock_token, status: 'failed', error: error?.message || 'Scheduled Property24 lead sync failed.' })
-      } catch (completionError) {
-        console.error('[Property24] Unable to record scheduled lead sync failure.', completionError)
+        const endpoint = resolveProperty24EnvironmentCredentials({ env, environment })
+        if (!endpoint.environmentMatches) throw new Error('The Property24 endpoint does not match the account environment.')
+        const credentials = await (dependencies.fetchOrganisationCredentials || fetchOrganisationProperty24Credentials)({
+          supabase: stateClient, organisationId: connection.organisation_id, environment,
+        })
+        if (!credentials) throw new Error('This agency has no saved Property24 credentials. Configure its account in the Admin Console.')
+        if (dryRun) {
+          const checkpoint = await stateClient.from('property24_lead_sync_checkpoints')
+            .select('cursor_after').eq('environment', environment).eq('agency_id', accountAgencyId).maybeSingle()
+          if (checkpoint.error) throw checkpoint.error
+          lock = checkpoint.data || {}
+        } else {
+          lock = await acquireLeadSync({ client: stateClient, environment, agencyId: accountAgencyId,
+            ttlSeconds: positiveInteger(env.PROPERTY24_LEAD_SYNC_LOCK_TTL_SECONDS, 360, 900) })
+          if (!lock?.acquired) {
+            reports.push({ organisationId: connection.organisation_id, agencyId: accountAgencyId, status: 'skipped_overlap' })
+            continue
+          }
+        }
+        const after = asValidIso(firstValue(payload.after, query.get('after'))) || (lock.cursor_after
+          ? resolveScheduledProperty24After({ cursorAfter: lock.cursor_after })
+          : new Date(Date.now() - INITIAL_LOOKBACK_MS).toISOString())
+        const property24 = (dependencies.createProperty24 || createProperty24Client)({
+          baseUrl: endpoint.baseUrl, apiVersion: endpoint.apiVersion,
+          username: credentials.username, password: credentials.password, userGroupId: credentials.userGroupId,
+        })
+        const leads = await (dependencies.pullAndImportLeads || pullAndImportProperty24Leads)({
+          supabase: stateClient, property24,
+          config: { organisationId: connection.organisation_id, environment, agencyId: accountAgencyId,
+            after, applyLeads: !dryRun, sendNotifications: Boolean(lock.cursor_after),
+            limit: positiveInteger(firstValue(payload.limit, query.get('limit'), env.PROPERTY24_LEAD_SYNC_LIMIT), 1000, 5000) },
+        })
+        const counts = leadCounts(leads)
+        const succeeded = dryRun || (counts.unresolved === 0 && counts.lookaheadFallbacks === 0)
+        const failureReason = counts.unresolved
+          ? `${counts.unresolved} Property24 lead(s) could not be imported.`
+          : `${counts.lookaheadFallbacks} Property24 listing lead window(s) rejected the two-hour lookahead and fell back to the original window.`
+        const cursorAfter = succeeded && !dryRun && counts.received > 0
+          ? latestCursor(counts.nextAfter, lock.cursor_after) || after : lock.cursor_after || null
+        if (!dryRun) await completeLeadSync({ client: stateClient, environment, agencyId: accountAgencyId,
+          lockToken: lock.lock_token, status: succeeded ? 'complete' : 'failed', cursorAfter: succeeded ? cursorAfter : null,
+          received: counts.received, imported: counts.imported, error: succeeded ? null : failureReason })
+        const report = { organisationId: connection.organisation_id, agencyId: accountAgencyId,
+          status: succeeded ? 'complete' : 'failed', after, received: counts.received, imported: counts.imported,
+          unresolved: counts.unresolved, lookaheadFallbacks: counts.lookaheadFallbacks,
+          cursorAdvanced: !dryRun && Boolean(cursorAfter && cursorAfter !== lock.cursor_after),
+          ...(succeeded ? {} : { error: failureReason }) }
+        reports.push(report)
+        console.info('[Property24] lead sync result', report)
+      } catch (error) {
+        if (!dryRun && lock?.lock_token) {
+          try {
+            await completeLeadSync({ client: stateClient, environment, agencyId: accountAgencyId,
+              lockToken: lock.lock_token, status: 'failed', error: error.message })
+          } catch {
+            console.error('[Property24] Unable to record scheduled lead sync failure.', { agencyId: accountAgencyId })
+          }
+        }
+        // One agency's configuration or portal outage must not block other agencies.
+        reports.push({ organisationId: connection.organisation_id, agencyId: accountAgencyId, status: 'failed',
+          error: error.message || 'Scheduled Property24 lead sync failed.' })
       }
     }
-    const status = Number(error?.status || 500)
-    return buildJsonResponse(status, {
-      error: error?.code || 'property24_lead_sync_error',
-      message: error?.message || 'Scheduled Property24 lead sync failed.',
+    const failed = reports.some((report) => report.status === 'failed')
+    return buildJsonResponse(failed ? 502 : 200, {
+      route: 'syncLeads', mode: dryRun ? 'DRY_RUN' : 'APPLY', scheduled: true,
+      status: failed ? 'partial' : 'complete', connectionCount: connections.length,
+      received: reports.reduce((sum, report) => sum + (report.received || 0), 0),
+      imported: reports.reduce((sum, report) => sum + (report.imported || 0), 0), reports,
     })
+  } catch (error) {
+    return buildJsonResponse(500, { error: 'property24_lead_sync_error', message: error.message || 'Unable to load Property24 accounts.' })
   }
 }

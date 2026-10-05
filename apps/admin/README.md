@@ -123,3 +123,17 @@ audit primary-key claim blocks repeat attempts across deployments, including aft
 timeouts or failed preflights. It does not grant client access or validate customer
 pricing. Only billing metadata is saved; report data stays in the private page's
 memory. The 12,000-credit preflight budget is not a supplier-enforced billing cap.
+
+## Private Property lead delivery
+
+Executives can save each agency’s numeric Private Property agency ID and webhook
+signing secret in the existing Private Property production panel. This saves
+lead authentication separately and preserves publishing approval. The signing
+secret is stored in Vault and is never returned to the browser. The panel shows
+the receiver URL, last delivery and failed delivery count.
+
+The agency principal/group owner must first register the receiver in
+[Private Property Admin](https://admin.privateproperty.co.za) and provide the
+issued secret. The listing API credentials do not enable this lead webhook.
+Release the primary app API, the shared migration and receiver before the admin
+UI. Run `npm run check:admin` to verify the console build.

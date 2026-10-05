@@ -984,3 +984,33 @@ src/pages/rentals/__tests__/RentalStockReviewPanel.test.jsx
 src/pages/rentals/__tests__/RentalListingsPage.agentContact.test.jsx`, plus the
 existing `scripts/agent-listings-delete-ui.test.mjs` and rental distribution review.
 No phase 5 migration is required.
+
+### Portal lead delivery
+
+Property24 also verifies unmatched historical adverts against per-agency Sale and Rental statistics. Only an explicit matching agency can admit an unlinked enquiry; foreign, conflicting, or unavailable ownership records remain pending, preserving the recovery checkpoint. The CRM enquiry payload retains the advert number, listing type and verification source for follow-up.
+
+The scheduled Property24 import discovers all enabled accounts in its own
+environment, reads each account’s encrypted credentials and keeps an independent
+agency checkpoint. New accounts recover the latest 30 days of published listing
+enquiries without sending historical introduction emails. The agency feed uses
+Property24’s `messages` response, follows all pages, and replays a recent window
+with duplicate protection. A failed agency does not stop other accounts.
+
+Private Property lead delivery uses the `private-property-webhook` Edge Function
+and migrations `20261005060708_portal_lead_intake_global_fix.sql` and
+`20261005064727_private_property_lead_channel_correction.sql`. An agency
+principal or group owner must register its HTTPS endpoint in the supplier admin
+portal and obtain the numeric agency ID and signing secret. The executive Admin
+Console’s Private Property section stores these separately from publishing
+credentials in Vault and shows last delivery and failures. Listing API access
+alone does not register a lead webhook. The receiver verifies HMAC SHA-256 over
+the exact body, checks agency ownership, resolves all three supplier listing
+references and retries failed deliveries. CRM writes and duplicate protection
+run in one transaction.
+
+Run the existing Property24 phase 5, 7 and 9 checks,
+`node scripts/portal-lead-intake.test.mjs`, and from the repository root
+`deno test --config supabase/functions/private-property-webhook/deno.json
+supabase/functions/_shared/privatePropertyLeadWebhook.test.ts`. These checks
+use local fixtures and send no communications. Supplier registration and a real
+signed delivery remain required for Private Property acceptance.
