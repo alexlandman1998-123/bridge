@@ -1,3 +1,5 @@
+import type { LeadEnquiryKind } from "../services/leadAcknowledgementContext.ts";
+
 function cleanText(value: unknown) {
   return String(value ?? "").trim();
 }
@@ -88,6 +90,7 @@ function responseText(expectation: unknown, customText: unknown, agentName: stri
 }
 
 export type LeadAcknowledgementContentInput = {
+  enquiryKind?: LeadEnquiryKind;
   recipientName?: string;
   organisationName?: string;
   organisationLogoUrl?: string;
@@ -113,11 +116,35 @@ export type LeadAcknowledgementContentInput = {
   customResponseText?: string;
 };
 
+function enquiryCopy(kind: LeadEnquiryKind = "general") {
+  if (kind === "rental") return {
+    heading: "Arrange your rental viewing",
+    details: "Tell us when you would like to view the rental property. We’ll also confirm your monthly rental budget, preferred area, intended move-in date, and rental requirements.",
+    introduction: "Finding a rental home is an important decision. We are here to help you arrange a viewing, understand the rental requirements and discuss the next steps.",
+  };
+  if (kind === "landlord") return {
+    heading: "Discuss letting your property",
+    details: "Tell us when you would like to discuss your property. We’ll confirm its availability, expected monthly rent, and your letting or management requirements.",
+    introduction: "We are here to help you let your property and discuss the rental process and management options.",
+  };
+  if (kind === "sale") return {
+    heading: "Arrange your viewing",
+    details: "Tell us when you would like to view the property. We’ll also confirm your budget, preferred area, move timeframe, finance readiness, and whether you need to sell another property first.",
+    introduction: "Buying a home is a big decision, and we are here to make the process as smooth and straightforward as possible. Whether you would like to arrange a viewing, ask a question or receive more information, we will be happy to assist.",
+  };
+  return {
+    heading: "Discuss your property enquiry",
+    details: "Tell us what you need help with and when you would like to speak to your property practitioner.",
+    introduction: "Whether you would like to ask a question or receive more information, we will be happy to assist with your property enquiry.",
+  };
+}
+
 export function buildLeadAcknowledgementSubject() {
   return "Thanks for your property enquiry";
 }
 
 export function buildLeadAcknowledgementEmailHtml(input: LeadAcknowledgementContentInput) {
+  const copy = enquiryCopy(input.enquiryKind);
   const primary = normalizeColor(input.organisationBrandPrimaryColor, "#07152f");
   const accent = normalizeColor(input.organisationBrandSecondaryColor, "#b48a42");
   const organisationName = cleanText(input.organisationName) || "Arch9";
@@ -172,9 +199,9 @@ export function buildLeadAcknowledgementEmailHtml(input: LeadAcknowledgementCont
             <tr>
               <td style="padding:8px 4px 22px;">
                 <div style="padding:22px 24px;border:1px solid ${accent};border-radius:12px;background:#fffaf1;">
-                  <h2 style="margin:0 0 10px;font-size:20px;line-height:1.3;color:${primary};">Arrange your viewing</h2>
-                  <p style="margin:0 0 14px;font-size:15px;line-height:1.65;color:#111827;">Tell us when you would like to view the property. We’ll also confirm your budget, preferred area, move timeframe, finance readiness, and whether you need to sell another property first.</p>
-                  ${viewingHref ? `<a href="${escapeHtml(viewingHref)}" style="display:inline-block;background:${primary};color:#ffffff;text-decoration:none;border-radius:7px;padding:12px 18px;font-size:14px;font-weight:700;">Arrange a viewing</a>` : ""}
+                  <h2 style="margin:0 0 10px;font-size:20px;line-height:1.3;color:${primary};">${escapeHtml(copy.heading)}</h2>
+                  <p style="margin:0 0 14px;font-size:15px;line-height:1.65;color:#111827;">${escapeHtml(copy.details)}</p>
+                  ${viewingHref ? `<a href="${escapeHtml(viewingHref)}" style="display:inline-block;background:${primary};color:#ffffff;text-decoration:none;border-radius:7px;padding:12px 18px;font-size:14px;font-weight:700;">${input.enquiryKind === "landlord" || !input.enquiryKind || input.enquiryKind === "general" ? "Contact your agent" : "Arrange a viewing"}</a>` : ""}
                 </div>
               </td>
             </tr>
@@ -183,7 +210,7 @@ export function buildLeadAcknowledgementEmailHtml(input: LeadAcknowledgementCont
                 <h1 style="margin:0 0 14px;font-size:30px;line-height:1.15;color:${primary};font-weight:800;">Thanks for your enquiry!</h1>
                 <p style="margin:0 0 18px;font-size:16px;line-height:1.65;color:#111827;">Hi ${escapeHtml(recipientFirstName)},</p>
                 <p style="margin:0 0 16px;font-size:16px;line-height:1.65;color:#111827;">Thank you for your interest in one of our properties. We have received your enquiry and our team will be in touch with you shortly.</p>
-                <p style="margin:0 0 16px;font-size:16px;line-height:1.65;color:#111827;">Buying a home is a big decision, and we are here to make the process as smooth and straightforward as possible. Whether you would like to arrange a viewing, ask a question or receive more information, we will be happy to assist.</p>
+                <p style="margin:0 0 16px;font-size:16px;line-height:1.65;color:#111827;">${escapeHtml(copy.introduction)}</p>
                 <p style="margin:0;font-size:16px;line-height:1.65;color:#111827;">Your enquiry has been sent to the property practitioner best placed to assist you.</p>
               </td>
             </tr>
@@ -244,6 +271,7 @@ export function buildLeadAcknowledgementEmailHtml(input: LeadAcknowledgementCont
 }
 
 export function buildLeadAcknowledgementEmailText(input: LeadAcknowledgementContentInput) {
+  const copy = enquiryCopy(input.enquiryKind);
   const organisationName = cleanText(input.organisationName) || "Arch9";
   const recipientFirstName = cleanText(input.recipientName).split(/\s+/)[0] || "there";
   const agentName = cleanText(input.agentName) || "Your agent";
@@ -262,6 +290,11 @@ export function buildLeadAcknowledgementEmailText(input: LeadAcknowledgementCont
     `Hi ${recipientFirstName},`,
     "",
     "Thank you for your interest in one of our properties. We have received your enquiry and our team will be in touch with you shortly.",
+    "",
+    copy.introduction,
+    "",
+    copy.heading,
+    copy.details,
     "",
     "Your enquiry details",
     input.enquiryReceivedAt ? `Date of enquiry: ${formatDateTime(input.enquiryReceivedAt, input.timezone)}` : null,

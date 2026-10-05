@@ -1,4 +1,5 @@
 import { createClient } from "supabase";
+import { resolveLeadEnquiryKind } from "../services/leadAcknowledgementContext.ts";
 import type { SendLeadAcknowledgementPayload } from "../types.ts";
 import {
   buildLeadAcknowledgementEmailText,
@@ -134,7 +135,13 @@ export async function handleLeadAcknowledgementEmail(
   const responseExpectation = content.customResponseText ||
     content.responseExpectation ||
     `${agentFirstName} will review your enquiry and contact you shortly.`;
+  const enquiryKind = await resolveLeadEnquiryKind(
+    supabase,
+    normalizeText(payload.organisationId || payload.organisation_id),
+    normalizeText(payload.leadId || payload.lead_id),
+  );
   const html = buildLeadAcknowledgementEmailHtml({
+    enquiryKind,
     ...content,
     organisationName: branding.organisationName,
     organisationLogoUrl: branding.logoDarkUrl || branding.logoLightUrl || branding.logoUrl || branding.logoIconUrl,
@@ -160,7 +167,7 @@ export async function handleLeadAcknowledgementEmail(
     bcc: content.agentEmail,
     subject,
     html,
-    text: buildLeadAcknowledgementEmailText(content),
+    text: buildLeadAcknowledgementEmailText({ ...content, enquiryKind }),
     replyTo: replyTo || undefined,
     idempotencyKey:
       normalizeText(payload.idempotencyKey || payload.idempotency_key) ||

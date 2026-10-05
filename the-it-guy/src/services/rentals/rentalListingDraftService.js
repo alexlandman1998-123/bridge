@@ -249,7 +249,9 @@ export async function listRentalListingsForAgent(agentId, options = {}) {
     branchId: options.branchId,
     assignedAgentIds: options.assignedAgentIds,
     includeAllOrganisationListings: options.includeAllOrganisationListings,
-    includeWithdrawnListings: options.includeWithdrawnListings,
+    includeArchivedListings: options.includePreviousListings === true,
+    includeArchivedImports: options.includePreviousListings === true,
+    includeWithdrawnListings: options.includePreviousListings === true || options.includeWithdrawnListings,
     includeMedia: true,
   })
   return rows.filter(isRentalListingRecord)

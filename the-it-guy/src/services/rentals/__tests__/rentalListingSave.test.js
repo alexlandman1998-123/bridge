@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 import { beforeEach, expect, it, vi } from 'vitest'
-import { createRentalListingDraft, updateRentalListingDraft, updateRentalListingGallery, uploadRentalGalleryImages } from '../rentalListingDraftService'
+import { listRentalListingsForAgent, createRentalListingDraft, updateRentalListingDraft, updateRentalListingGallery, uploadRentalGalleryImages } from '../rentalListingDraftService'
 import { buildRentalListingEditForm } from '../rentalListingEditModel'
 import { buildRentalListingIndexRow } from '../rentalListingIndexModel'
 
-const mocks = vi.hoisted(() => ({ create: vi.fn(), update: vi.fn(), get: vi.fn(), upload: vi.fn(), sign: vi.fn(), sync: vi.fn(), saved: null }))
+const mocks = vi.hoisted(() => ({ listings: vi.fn(), create: vi.fn(), update: vi.fn(), get: vi.fn(), upload: vi.fn(), sign: vi.fn(), sync: vi.fn(), saved: null }))
 vi.mock('../../privateListingService', () => ({
   createPrivateListing: mocks.create,
   updatePrivateListing: mocks.update,
@@ -12,7 +12,7 @@ vi.mock('../../privateListingService', () => ({
   signPrivateListingMediaAsset: mocks.sign,
   saveRentalListingSnapshot: mocks.sync,
   createPrivateListingActivity: async () => null,
-  getAgentPrivateListings: async () => [],
+  getAgentPrivateListings: mocks.listings,
   getPrivateListing: mocks.get,
 }))
 vi.mock('../../../lib/supabaseClient', () => ({ isSupabaseConfigured: false, supabase: null }))
@@ -181,4 +181,14 @@ it('rejects a refreshed snapshot that is missing saved media', async () => {
     return receipt
   })
   await expect(createRentalListingDraft(form([photo(0)]), context)).rejects.toMatchObject({ code: 'RENTAL_SAVE_READBACK_FAILED', committed: true })
+})
+
+
+it('requests previous rental stock within the existing organisation and agent query', async () => {
+  mocks.listings.mockResolvedValue([{ id: 'archive', listingCategory: 'rental', listingVisibility: 'archived' }])
+  const rows = await listRentalListingsForAgent('agent-1', { organisationId: context.organisationId, includePreviousListings: true })
+  expect(rows.map(row => row.id)).toEqual(['archive'])
+  expect(mocks.listings).toHaveBeenCalledWith('agent-1', expect.objectContaining({ organisationId: context.organisationId, includeArchivedListings: true, includeArchivedImports: true, includeWithdrawnListings: true }))
+  await listRentalListingsForAgent('agent-1', { organisationId: context.organisationId })
+  expect(mocks.listings.mock.calls[1][1]).toMatchObject({ includeArchivedListings: false, includeArchivedImports: false })
 })

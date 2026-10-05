@@ -14,7 +14,7 @@ import {
 import {
   buildRentalListingEditForm,
 } from '../src/services/rentals/rentalListingEditModel.js'
-import { buildRentalListingIndexRow } from '../src/services/rentals/rentalListingIndexModel.js'
+import { buildRentalListingIndexRow, buildRentalListingIndexRows, filterRentalListingIndexRows, summarizeRentalListingIndexRows } from '../src/services/rentals/rentalListingIndexModel.js'
 
 assert.equal(RENTAL_LISTING_INITIAL_FORM.rentalPriceFrequency, 'monthly')
 assert.equal(RENTAL_LISTING_INITIAL_FORM.rentalMandateType, 'standard_rental')
@@ -133,3 +133,15 @@ assert.equal(legacyFacts.rentalInfo.rentalMandateType, 'standard_rental')
 assert.equal(legacyFacts.propertyProfile.retirementAccommodation, 'not_captured')
 
 console.log('Rental listing data contract Phase 2 passed')
+
+const collectionRows = buildRentalListingIndexRows([
+  { id: 'draft', listingStatus: 'draft' },
+  { id: 'live', property24Status: 'published', listingStatus: 'active' },
+  { id: 'archive', listingVisibility: 'archived', property24Status: 'published' },
+  { id: 'withdrawn', listing_status: 'withdrawn', stock_source: 'property24_migration_import' },
+  { id: 'let', listingStatus: 'let' },
+])
+assert.deepEqual(filterRentalListingIndexRows(collectionRows, { status: 'current' }).map(row => row.id), ['draft', 'live'])
+assert.deepEqual(filterRentalListingIndexRows(collectionRows, { status: 'previous' }).map(row => row.id), ['archive', 'withdrawn', 'let'])
+assert.equal(summarizeRentalListingIndexRows(collectionRows).current, 2)
+assert.equal(summarizeRentalListingIndexRows(collectionRows).previous, 3)

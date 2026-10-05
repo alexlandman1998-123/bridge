@@ -1,9 +1,8 @@
 export const RENTAL_LISTING_INDEX_VERSION = 'arch9_rental_listing_index_v1'
 
 export const RENTAL_LISTING_STATUS_TABS = Object.freeze([
-  { key: 'all', label: 'All' },
-  { key: 'draft', label: 'Drafts' },
-  { key: 'published', label: 'Published' },
+  { key: 'current', label: 'Current', description: 'Working stock, drafts, and live listings' },
+  { key: 'previous', label: 'Previous Listings', description: 'Past listings and historical imports' },
 ])
 
 const MANDATE_READY_STATUSES = new Set(['signed', 'signed_uploaded'])
@@ -99,6 +98,13 @@ export function getRentalListingRentalInfo(listing = {}) {
   )
 }
 
+function rentalListingCollection(listing = {}) {
+  const status = normalizeKey(firstText(listing.listingStatus, listing.listing_status, listing.status, listing.lifecycleStatus))
+  const visibility = normalizeKey(firstText(listing.listingVisibility, listing.listing_visibility))
+  return visibility === 'archived' || ['archived', 'withdrawn', 'let', 'rented', 'leased', 'sold'].includes(status)
+    ? 'previous' : 'current'
+}
+
 function resolveStatusGroup(row = {}) {
   const property24Status = normalizeKey(row.property24Status)
   if (PROPERTY24_PUBLISHED_STATUSES.has(property24Status)) return 'published'
@@ -152,6 +158,7 @@ export function buildRentalListingIndexRow(listing = {}) {
   const row = {
     id: firstText(listing.id, listing.listingId, listing.listing_id, listing.listingReference, listing.listing_reference, title),
     raw: listing,
+    collection: rentalListingCollection(listing),
     title,
     address,
     unitNumber: firstText(listing.unitNumber, listing.unit_number, publication.unitNumber, publication.unit_number, addressProfile.unitNumber, addressProfile.unit_number),
@@ -259,6 +266,8 @@ export function buildRentalListingIndexRows(listings = []) {
 export function summarizeRentalListingIndexRows(rows = []) {
   const summary = {
     total: 0,
+    current: 0,
+    previous: 0,
     draft: 0,
     mandate: 0,
     ready: 0,
@@ -267,6 +276,7 @@ export function summarizeRentalListingIndexRows(rows = []) {
   }
   for (const row of Array.isArray(rows) ? rows : []) {
     summary.total += 1
+    summary[row.collection === 'previous' ? 'previous' : 'current'] += 1
     if (summary[row.statusGroup] !== undefined) summary[row.statusGroup] += 1
     if (Number(row.applicationCount || 0) > 0) summary.applications += 1
   }
@@ -279,6 +289,8 @@ export function filterRentalListingIndexRows(rows = [], filters = {}) {
   return (Array.isArray(rows) ? rows : []).filter((row) => {
     const statusMatch = status === 'all'
       ? true
+      : ['current', 'previous'].includes(status)
+        ? (row.collection || 'current') === status
       : status === 'applications'
         ? Number(row.applicationCount || 0) > 0
         : row.statusGroup === status
