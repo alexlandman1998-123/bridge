@@ -3,6 +3,8 @@ import { normalizeProperty24PreviewText } from './listingDataService.js'
 export function summarizeProperty24LeadPayload(payload) {
   const leads = Array.isArray(payload)
     ? payload
+    : Array.isArray(payload?.messages)
+      ? payload.messages
     : Array.isArray(payload?.leads)
       ? payload.leads
       : Array.isArray(payload?.items)
@@ -14,10 +16,10 @@ export function summarizeProperty24LeadPayload(payload) {
     nextAfter: normalizeProperty24PreviewText(payload?.nextAfter || payload?.NextAfter),
     sample: leads.slice(0, 3).map((lead) => ({
       listingNumber: lead.listingNumber || lead.ListingNumber || null,
-      receivedAt: lead.receivedAt || lead.ReceivedAt || lead.createdAt || lead.CreatedAt || null,
+      receivedAt: lead.receivedAt || lead.ReceivedAt || lead.createdAt || lead.CreatedAt || lead.date || lead.Date || null,
       contactName: lead.contactName || lead.ContactName || lead.name || lead.Name || null,
       email: lead.email || lead.Email || lead.emailAddress || lead.EmailAddress || null,
-      mobile: lead.mobile || lead.Mobile || lead.phoneNumber || lead.PhoneNumber || null,
+      mobile: lead.contactNumber || lead.ContactNumber || lead.mobile || lead.Mobile || lead.phoneNumber || lead.PhoneNumber || null,
     })),
   }
 }

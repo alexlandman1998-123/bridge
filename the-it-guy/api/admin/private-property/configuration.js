@@ -28,6 +28,20 @@ function executive(user = {}) { const meta = user.app_metadata || {}; return [me
 function cors(request) { const origin = header(request.headers, 'origin'); return { 'Cache-Control': 'no-store', 'Content-Type': 'application/json; charset=utf-8', ...(new Set(['https://admin.arch9.co.za', 'http://localhost:5173']).has(origin) ? { 'Access-Control-Allow-Origin': origin, Vary: 'Origin' } : {}), 'Access-Control-Allow-Headers': 'authorization, content-type', 'Access-Control-Allow-Methods': 'OPTIONS, GET, PUT' } }
 async function body(request) { const chunks = []; for await (const chunk of request) chunks.push(chunk); const value = chunks.length ? Buffer.concat(chunks).toString('utf8') : ''; return value.trim() ? JSON.parse(value) : {} }
 
+async function leadWebhookState(supabase, config, projectUrl) {
+  const endpoint = `${projectUrl.replace(/\/+$/, '')}/functions/v1/private-property-webhook`
+  if (!config?.id) return { endpoint, agencyId: '', secretConfigured: false, lastReceivedAt: null, failedCount: 0 }
+  const [state, latest, failed] = await Promise.all([
+    supabase.from('private_property_agency_configs').select('webhook_secret_id').eq('id', config.id).single(),
+    supabase.from('private_property_webhook_events').select('received_at,status').eq('organisation_id', config.organisationId).order('received_at', { ascending: false }).limit(1).maybeSingle(),
+    supabase.from('private_property_webhook_events').select('id', { count: 'exact', head: true }).eq('organisation_id', config.organisationId).eq('status', 'failed'),
+  ])
+  for (const result of [state, latest, failed]) if (result.error) throw result.error
+  return { endpoint, agencyId: config.metadata?.private_property_agency_id || '',
+    secretConfigured: Boolean(state.data?.webhook_secret_id), lastReceivedAt: latest.data?.received_at || null,
+    lastEventStatus: latest.data?.status || null, failedCount: failed.count || 0 }
+}
+
 export default async function handler(request, responseWriter) {
   const reply = (status, body) => writeNodeJsonResponse(responseWriter, { status, headers: cors(request), body })
   if (request.method === 'OPTIONS') return reply(204, null)
@@ -50,10 +64,24 @@ export default async function handler(request, responseWriter) {
         : { data: null, error: null }
       if (credentialState.error) throw credentialState.error
       const vaultCredentialsConfigured = Boolean(credentialState.data?.username_secret_id && credentialState.data?.password_secret_id)
-      return reply(200, { ...result, credentialsConfigured: vaultCredentialsConfigured || Boolean(result.config?.id && result.config.metadata?.credentialsConfigured) })
+      return reply(200, { ...result, credentialsConfigured: vaultCredentialsConfigured || Boolean(result.config?.id && result.config.metadata?.credentialsConfigured),
+        leadWebhook: await leadWebhookState(supabase, result.config, url) })
     }
     const input = await body(request)
     const existing = await resolvePrivatePropertyAgencyConfig({ client: supabase, organisationId, environment: 'production', allowDisabled: true })
+    if (input.action === 'lead_webhook') {
+      if (!existing.config?.id) return reply(409, { error: 'private_property_connection_required', message: 'Save the production connection before configuring lead delivery.' })
+      const agencyId = normalizePrivatePropertyText(input.agencyId)
+      if (!/^\d+$/.test(agencyId)) return reply(400, { error: 'private_property_agency_id_required', message: 'Enter the numeric agency ID from Private Property.' })
+      const secret = typeof input.signingSecret === 'string' && input.signingSecret.trim() ? input.signingSecret : null
+      const saved = await supabase.rpc('set_private_property_webhook_configuration', {
+        p_config_id: existing.config.id, p_agency_id: agencyId, p_secret: secret,
+      })
+      if (saved.error) return reply(400, { error: 'private_property_webhook_configuration_invalid', message: saved.error.message })
+      const refreshed = await resolvePrivatePropertyAgencyConfig({ client: supabase, organisationId, environment: 'production', allowDisabled: true })
+      return reply(200, { leadWebhook: await leadWebhookState(supabase, refreshed.config, url),
+        message: 'Lead signing configuration saved securely. Complete webhook setup in the Private Property Admin Portal to start delivery.' })
+    }
     const connection = await upsertPrivatePropertyAgencyConfig({ client: supabase, organisationId, environment: 'production', branchGuid: input.branchGuid, baseUrl: input.baseUrl || productionUrl, usernameSecretName: 'PRIVATE_PROPERTY_USERNAME', passwordSecretName: 'PRIVATE_PROPERTY_PASSWORD', enabled: false, status: 'pending', metadataJson: { ...(existing.config?.metadata || {}), credentialsConfigured: Boolean(input.username && input.password) || Boolean(existing.config?.metadata?.credentialsConfigured) } })
     let credentials = null
     if (normalizePrivatePropertyText(input.username) || normalizePrivatePropertyText(input.password)) credentials = await savePrivatePropertyAgencyCredentials({ supabase, configId: connection.config.id, username: input.username, password: input.password })

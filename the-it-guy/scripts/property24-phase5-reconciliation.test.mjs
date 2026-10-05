@@ -71,7 +71,7 @@ function createFakeSupabase(rows) {
 const now = new Date('2026-08-20T10:00:00.000Z')
 assert.equal(clampProperty24UpdatesFromDate('2026-08-01T00:00:00.000Z', now), '2026-08-13T10:00:00.000Z')
 assert.equal(clampProperty24UpdatesFromDate('2026-09-01T00:00:00.000Z', now), '2026-08-20T10:00:00.000Z')
-assert.equal(clampProperty24LeadsAfter('2026-07-01T00:00:00.000Z', now), '2026-07-21T10:00:00.000Z')
+assert.equal(clampProperty24LeadsAfter('2026-07-01T00:00:00.000Z', now), '2026-07-21T12:05:00.000Z')
 
 const comparison = createProperty24ReconciliationComparison({
   localRows: [
@@ -251,7 +251,7 @@ assert.equal(report.organisationId, 'org-1')
 assert.equal(report.safety.databaseWritten, false)
 assert.equal(report.status, 'NEEDS_REVIEW')
 assert.equal(report.updates.fromDate, '2026-08-13T10:00:00.000Z')
-assert.equal(report.leadImportPlan.after, '2026-07-21T10:00:00.000Z')
+assert.equal(report.leadImportPlan.after, '2026-07-21T12:05:00.000Z')
 assert.equal(report.leadImportPlan.summary.receivedCount, 2)
 assert.equal(report.leadImportPlan.summary.readyForCrmIngestionCount, 1)
 assert.equal(report.leadImportPlan.summary.needsReviewCount, 1)

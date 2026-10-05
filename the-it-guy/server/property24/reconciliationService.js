@@ -30,7 +30,11 @@ export function clampProperty24UpdatesFromDate(value, now = new Date()) {
 }
 
 export function clampProperty24LeadsAfter(value, now = new Date()) {
-  return clampDateWindow({ value, now, maxAgeDays: 30, fallbackAgeDays: 1 })
+  // The provider compares South African clock values at its strict 30-day
+  // boundary. Leave two hours plus request latency; listing checks still
+  // recover the full 30-day history for published adverts.
+  const clamped = clampDateWindow({ value, now, maxAgeDays: 30, fallbackAgeDays: 1 })
+  return new Date(Math.max(new Date(clamped).getTime(), now.getTime() - 30 * DAY_MS + 125 * 60 * 1000)).toISOString()
 }
 
 function asArray(value) {
@@ -41,6 +45,8 @@ function asArray(value) {
   if (Array.isArray(value?.Items)) return value.Items
   if (Array.isArray(value?.leads)) return value.leads
   if (Array.isArray(value?.Leads)) return value.Leads
+  if (Array.isArray(value?.messages)) return value.messages
+  if (Array.isArray(value?.Messages)) return value.Messages
   return []
 }
 
@@ -509,7 +515,7 @@ export function normalizeProperty24LeadForImport(lead = {}, listingMap = new Map
   const local = listingMap.get(listingNumber) || null
   const contactName = normalizeProperty24Text(extractLeadValue(lead, 'contactName', 'ContactName', 'name', 'Name', 'fullName', 'FullName'))
   const email = normalizeProperty24Text(extractLeadValue(lead, 'email', 'Email', 'emailAddress', 'EmailAddress'))
-  const phone = normalizeProperty24Text(extractLeadValue(lead, 'mobile', 'Mobile', 'phoneNumber', 'PhoneNumber', 'telephone', 'Telephone'))
+  const phone = normalizeProperty24Text(extractLeadValue(lead, 'contactNumber', 'ContactNumber', 'mobile', 'Mobile', 'phoneNumber', 'PhoneNumber', 'telephone', 'Telephone'))
   const message = normalizeProperty24Text(extractLeadValue(lead, 'message', 'Message', 'comments', 'Comments', 'body', 'Body'))
   const receivedAt = toIsoDate(extractLeadValue(lead, 'receivedAt', 'ReceivedAt', 'createdAt', 'CreatedAt', 'date', 'Date'))
   const externalReference = normalizeProperty24Text(extractLeadValue(lead, 'id', 'Id', 'leadId', 'LeadId', 'reference', 'Reference'))
@@ -552,14 +558,26 @@ export async function createProperty24LeadImportPlan({
     const summary = summarizeLocalSync(sync, listing)
     return [summary.listingNumber, summary]
   }))
-  const result = await property24.fetchListingLeads({ after })
-  const rawLeads = [...asArray(result.data)]
+  let result
+  let pageAfter = after
+  const rawLeads = []
+  for (let page = 0; ; page++) {
+    result = await property24.fetchListingLeads({ after: pageAfter })
+    const messages = asArray(result.data)
+    rawLeads.push(...messages)
+    if (messages.length < 1000) break
+    const nextAfter = toIsoDate(result.data?.nextAfter || result.data?.NextAfter)
+    if (!nextAfter || nextAfter <= pageAfter || page >= 19) {
+      throw new Error('Property24 lead pagination did not complete; the checkpoint has been preserved.')
+    }
+    pageAfter = nextAfter
+  }
   const listingChecks = []
   // The agency feed can omit enquiries that are present on a live listing.
-  // Check each active published listing through Property24's listing endpoint
+  // Check each published listing through Property24's listing endpoint
   // and merge the results before the normal deduplicated import.
   for (const { sync, listing } of localRows) {
-    if (!sync?.listing_number || listing?.listing_status !== 'active' || listing?.property24_status !== 'published') continue
+    if (!sync?.listing_number || !(sync.is_on_portal === true || listing?.property24_status === 'published')) continue
     const listingResult = await fetchProperty24ListingLeads({
       property24,
       listingNumber: sync.listing_number,
@@ -577,7 +595,19 @@ export async function createProperty24LeadImportPlan({
       listingNumber: Number(sync.listing_number),
     })))
   }
-  const leads = rawLeads.map((lead) => normalizeProperty24LeadForImport(lead, listingMap))
+  const leads = rawLeads.filter((lead) => {
+    const remoteAgencyId = normalizeProperty24Text(lead.agencyId || lead.AgencyId)
+    return !remoteAgencyId || !config.agencyId || remoteAgencyId === String(config.agencyId)
+  }).map((lead) => {
+    const normalized = normalizeProperty24LeadForImport(lead, listingMap)
+    // A group credential may see multiple agencies. An unlinked advert can
+    // only inherit ownership when the provider explicitly names this agency.
+    const remoteAgencyId = normalizeProperty24Text(lead.agencyId || lead.AgencyId)
+    const organisationId = normalized.organisationId || (remoteAgencyId && remoteAgencyId === String(config.agencyId)
+      ? normalizeProperty24Text(config.organisationId) : '') || null
+    return { ...normalized, organisationId,
+      readyForCrmIngestion: Boolean(organisationId && (normalized.email || normalized.phone || normalized.contactName)) }
+  })
   const duplicateKeys = new Set()
   const prepared = leads.map((lead) => {
     const duplicateInResponse = duplicateKeys.has(lead.dedupeKey)
