@@ -4,7 +4,10 @@ import {
   CalendarDays,
   CheckCircle2,
   Loader2,
+  MoreVertical,
   Plus,
+  Trash2,
+  X,
 } from 'lucide-react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import RentalStockReviewPanel from './RentalStockReviewPanel'
@@ -12,6 +15,9 @@ import { useWorkspace } from '../../context/WorkspaceContext'
 import FinalListingModuleOverview from '../../components/listings/FinalListingModuleOverview'
 import { buildFinalListingModuleOverview } from '../../services/listings/finalListingModuleModel'
 import { listRentalListingsForAgent } from '../../services/rentals/rentalListingDraftService'
+import { deleteRentalListing, inspectRentalListingDeletion } from '../../services/rentals/rentalListingDeletionService'
+import Modal from '../../components/ui/Modal'
+import Button from '../../components/ui/Button'
 import {
   buildRentalListingIndexRows,
   filterRentalListingIndexRows,
@@ -82,7 +88,7 @@ function RentalAgentAvatar({ row = {} }) {
   )
 }
 
-function RentalListingIndexCard({ row, onOpen }) {
+function RentalListingIndexCard({ row, onOpen, menuOpen, onMenu, onDelete, onWithdraw }) {
   const facts = [
     row.bedrooms !== null && row.bedrooms !== undefined ? `${row.bedrooms} Beds` : '',
     row.bathrooms !== null && row.bathrooms !== undefined ? `${row.bathrooms} Baths` : '',
@@ -92,13 +98,37 @@ function RentalListingIndexCard({ row, onOpen }) {
   return (
     <article
       onClick={onOpen}
-      className="group flex h-full cursor-pointer flex-col overflow-hidden rounded-[8px] border border-[#dce6f2] bg-white shadow-[0_6px_16px_rgba(15,23,42,0.05)] transition hover:-translate-y-0.5 hover:shadow-[0_10px_24px_rgba(15,23,42,0.09)]"
+      className="group flex h-full cursor-pointer flex-col rounded-[8px] border border-[#dce6f2] bg-white shadow-[0_6px_16px_rgba(15,23,42,0.05)] transition hover:-translate-y-0.5 hover:shadow-[0_10px_24px_rgba(15,23,42,0.09)]"
     >
-      <div className="relative h-[132px] w-full overflow-hidden border-b border-[#e5edf6]">
-        <ListingCardImage src={row.imageUrl} alt={row.title} />
+      <div className="relative h-[132px] w-full border-b border-[#e5edf6]">
+        <div className="absolute inset-0 overflow-hidden rounded-t-[8px]">
+          <ListingCardImage src={row.imageUrl} alt={row.title} />
+        </div>
         <div className="absolute left-3 right-14 top-3 inline-flex max-w-[calc(100%-4.5rem)] items-center gap-2 rounded-full border border-white/25 bg-[#091322]/58 px-3 py-1 text-[0.68rem] font-semibold uppercase text-white shadow-[0_8px_18px_rgba(9,19,34,0.18)] backdrop-blur">
           <span className={`h-2 w-2 rounded-full ${rentalDotClass(row.statusGroup)}`} />
           <span className="truncate">{formatRentalIndexStatusLabel(row.statusGroup)}</span>
+        </div>
+        <div className="absolute right-3 top-3 z-10" onClick={event => event.stopPropagation()}>
+          <button
+            type="button"
+            aria-label={`Open actions for ${row.title}`}
+            aria-expanded={menuOpen}
+            aria-haspopup="menu"
+            onClick={onMenu}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/45 bg-white/90 text-[#607387] shadow-sm hover:bg-white"
+          >
+            <MoreVertical size={16} />
+          </button>
+          {menuOpen ? (
+            <div role="menu" className="absolute right-0 top-9 z-20 w-48 rounded-[12px] border border-[#dce6f2] bg-white py-1 shadow-lg">
+              <button type="button" role="menuitem" onClick={onWithdraw} className="flex min-h-10 w-full items-center gap-2 px-3 text-left text-sm font-semibold text-[#7a4e12] hover:bg-[#fff9ed]">
+                <X size={14} />Withdraw listing
+              </button>
+              <button type="button" role="menuitem" onClick={onDelete} className="flex min-h-10 w-full items-center gap-2 px-3 text-left text-sm font-semibold text-[#a13b35] hover:bg-[#fff5f5]">
+                <Trash2 size={14} />Delete listing
+              </button>
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -162,6 +192,12 @@ export default function RentalListingsPage() {
   const [error, setError] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
   const [statusTab, setStatusTab] = useState('all')
+  const [menuId, setMenuId] = useState('')
+  const [pendingDeletion, setPendingDeletion] = useState(null)
+  const [deletionState, setDeletionState] = useState(null)
+  const [deletionError, setDeletionError] = useState('')
+  const [checkingDeletion, setCheckingDeletion] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   const rentalRows = useMemo(() => buildRentalListingIndexRows(listings), [listings])
   const summary = useMemo(() => summarizeRentalListingIndexRows(rentalRows), [rentalRows])
@@ -188,7 +224,7 @@ export default function RentalListingsPage() {
     try {
       setLoading(true)
       setError('')
-      const rows = await listRentalListingsForAgent(assignedAgentId, buildRentalListingQueryOptions(rentalScope))
+      const rows = await listRentalListingsForAgent(assignedAgentId, { ...buildRentalListingQueryOptions(rentalScope), includeWithdrawnListings: true })
       setListings(rows)
     } catch (loadError) {
       setError(loadError?.message || 'Unable to load rental listings.')
@@ -201,6 +237,56 @@ export default function RentalListingsPage() {
   useEffect(() => {
     void loadListings()
   }, [loadListings])
+
+  useEffect(() => {
+    if (!menuId) return undefined
+    const close = event => {
+      if (event.type === 'click' || event.key === 'Escape') setMenuId('')
+    }
+    window.addEventListener('click', close)
+    window.addEventListener('keydown', close)
+    return () => {
+      window.removeEventListener('click', close)
+      window.removeEventListener('keydown', close)
+    }
+  }, [menuId])
+
+  useEffect(() => {
+    let cancelled = false
+    setDeletionState(null)
+    setDeletionError('')
+    if (!pendingDeletion) return undefined
+    setCheckingDeletion(true)
+    void inspectRentalListingDeletion(pendingDeletion.id, buildRentalListingQueryOptions(rentalScope))
+      .then(state => { if (!cancelled) setDeletionState(state) })
+      .catch(error => { if (!cancelled) setDeletionError(error.message || 'Unable to check this listing.') })
+      .finally(() => { if (!cancelled) setCheckingDeletion(false) })
+    return () => { cancelled = true }
+  }, [pendingDeletion, rentalScope])
+
+  const openWithdrawal = row => {
+    setMenuId('')
+    setPendingDeletion(null)
+    navigate(`/agent/rentals/listings/${encodeURIComponent(row.id)}/marketing`)
+  }
+
+  async function confirmDeletion() {
+    if (deleting || checkingDeletion || !deletionState?.canDelete) return
+    setDeleting(true)
+    setDeletionError('')
+    try {
+      await deleteRentalListing(pendingDeletion.id, buildRentalListingQueryOptions(rentalScope))
+      setListings(rows => rows.filter(row => row.id !== pendingDeletion.id))
+      setSuccessMessage(`“${pendingDeletion.title}” was permanently deleted.`)
+      setPendingDeletion(null)
+      window.dispatchEvent(new Event('itg:listings-updated'))
+    } catch (error) {
+      setDeletionError(error.message || 'Unable to delete this rental listing.')
+      if (error.deletionState) setDeletionState(error.deletionState)
+    } finally {
+      setDeleting(false)
+    }
+  }
 
   useEffect(() => {
     const params = new URLSearchParams(location.search || '')
@@ -286,6 +372,10 @@ export default function RentalListingsPage() {
                   key={row.id}
                   row={row}
                   onOpen={() => navigate(`/agent/rentals/listings/${encodeURIComponent(row.id)}`)}
+                  menuOpen={menuId === row.id}
+                  onMenu={() => setMenuId(previous => previous === row.id ? '' : row.id)}
+                  onDelete={() => { setMenuId(''); setPendingDeletion(row) }}
+                  onWithdraw={() => openWithdrawal(row)}
                 />
               ))}
             </div>
@@ -306,6 +396,33 @@ export default function RentalListingsPage() {
           )}
         </section>
       </div>
+      <Modal
+        open={Boolean(pendingDeletion)}
+        onClose={() => { if (!deleting) setPendingDeletion(null) }}
+        title="Delete rental listing?"
+        footer={(
+          <div className="flex w-full flex-wrap items-center justify-end gap-3">
+            <Button type="button" variant="secondary" disabled={deleting} onClick={() => setPendingDeletion(null)}>Cancel</Button>
+            {deletionState && !deletionState.canDelete ? (
+              <Button type="button" onClick={() => openWithdrawal(pendingDeletion)}>Manage withdrawal</Button>
+            ) : null}
+            <Button
+              type="button"
+              disabled={deleting || checkingDeletion || !deletionState?.canDelete}
+              onClick={confirmDeletion}
+              className="!bg-[#a13b35] !border-[#a13b35]"
+            >
+              {deleting ? 'Deleting…' : 'Delete listing'}
+            </Button>
+          </div>
+        )}
+      >
+        <p>Permanently delete “{pendingDeletion?.title}”? This cannot be undone.</p>
+        {checkingDeletion ? <p role="status" className="mt-3">Checking publishing status…</p> : null}
+        {deletionState?.liveChannels.length ? <p role="alert" className="mt-3">Withdraw this listing from {deletionState.liveChannels.join(', ')} before deleting it.</p> : null}
+        {deletionState?.unconfirmedChannels.length ? <p role="alert" className="mt-3">Confirm removal from {deletionState.unconfirmedChannels.join(', ')} before deleting it.</p> : null}
+        {deletionError ? <p role="alert" className="mt-3 text-[#a13b35]">{deletionError}</p> : null}
+      </Modal>
     </section>
   )
 }
