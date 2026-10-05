@@ -11933,6 +11933,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }, [sellerOnboardingReviewRoute])
   const [sellerSigningPackModalOpen, setSellerSigningPackModalOpen] = useState(false)
   const [sellerSigningPackSaving, setSellerSigningPackSaving] = useState(false)
+  const [sellerSigningPackProgress, setSellerSigningPackProgress] = useState('')
   const [sellerSigningPackError, setSellerSigningPackError] = useState('')
   const [sellerPortalSigningRequests, setSellerPortalSigningRequests] = useState([])
   const [sellerPortalSigningBusy, setSellerPortalSigningBusy] = useState('')
@@ -27560,6 +27561,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
     setSellerSigningPackError('')
     setSellerSigningPackSaving(true)
+    setSellerSigningPackProgress('Preparing reviewed documents…')
     let dispatchedDocuments = 0
     try {
     let listingSnapshot = selectedLeadLinkedListing?.sourceListing || selectedLeadLinkedListing
@@ -27713,6 +27715,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
     nextFormData.seller_onboarding_signing_lifecycle = nextFormData.sellerOnboardingSigningLifecycle
 
+      setSellerSigningPackProgress('Saving approved copies and refreshing the checklist…')
       const canonicalSaveResult = await saveListingSellerCanonicalUpdate({
         listing: listingSnapshot,
         formPatch: nextFormData,
@@ -27721,6 +27724,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         source: 'seller_lead_signing_pack',
         organisationId,
         syncLinkedCrmContact: false,
+        forceRequirementSync: true,
         includeRequirementsAndDocuments: false,
       })
       setSelectedLeadHydratedListing(canonicalSaveResult.listing)
@@ -27730,6 +27734,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
       const sent = []
       for (const documentKey of digitalKeys) {
+        setSellerSigningPackProgress(`Sending signing links (${sent.length + 1} of ${digitalKeys.length})…`)
         const result = await sendSellerDocumentForSignature(listingId, documentKey)
         sent.push({ documentKey, sentCount: result.sentCount })
         dispatchedDocuments += 1
@@ -27739,6 +27744,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         setSellerPortalSigningRequests(requests.documents || [])
       }
 
+      setSellerSigningPackProgress('Finishing the seller workflow…')
       await updatePrivateListing(listingId, {
         mandateStatus: 'generated',
       }, { includeRequirementsAndDocuments: false })
@@ -27760,6 +27766,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setSellerSigningPackModalOpen(true)
     } finally {
       setSellerSigningPackSaving(false)
+      setSellerSigningPackProgress('')
     }
   }
 
@@ -41049,13 +41056,30 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               ['signed_fica_declaration', 'Seller FICA declaration'],
               ['signed_mandate', 'Seller mandate'],
             ].map(([documentKey, label]) => (
-              <label key={documentKey} className="grid gap-2 rounded-xl border border-[#dce6f2] p-3 text-sm font-semibold text-[#243d56] sm:grid-cols-[1fr_auto] sm:items-center">
+              <div key={documentKey} className="grid gap-3 rounded-xl border border-[#dce6f2] p-3 text-sm font-semibold text-[#243d56]">
                 <span>{label}</span>
-                <select aria-label={`${label} signing route`} className="rounded-lg border border-[#cfdceb] bg-white px-3 py-2" value={sellerOnboardingDocumentRoutes[documentKey]} onChange={(event) => setSellerOnboardingDocumentRoutes((previous) => ({ ...previous, [documentKey]: event.target.value }))}>
-                  <option value="manual_upload">Sign physically · upload original</option>
-                  <option value="digital_pack" disabled={!SELLER_PORTAL_SIGNING_ENABLED}>Sign digitally · send private links</option>
-                </select>
-              </label>
+                <div role="group" aria-label={`${label} signing route`} className="grid gap-2 sm:grid-cols-2">
+                  {[
+                    ['manual_upload', 'Sign physically', 'Upload the signed original'],
+                    ['digital_pack', 'Sign digitally', 'Send private signing links'],
+                  ].map(([route, title, description]) => {
+                    const selected = sellerOnboardingDocumentRoutes[documentKey] === route
+                    return (
+                      <button
+                        key={route}
+                        type="button"
+                        aria-pressed={selected}
+                        disabled={sellerOnboardingReviewSaving || (route === 'digital_pack' && !SELLER_PORTAL_SIGNING_ENABLED)}
+                        onClick={() => setSellerOnboardingDocumentRoutes((previous) => ({ ...previous, [documentKey]: route }))}
+                        className={`rounded-xl border px-3 py-3 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#13784f] disabled:cursor-not-allowed disabled:opacity-50 ${selected ? 'border-[#13784f] bg-[#eaf7ef] text-[#126946]' : 'border-[#cfdceb] bg-white text-[#243d56] hover:border-[#b9cde3]'}`}
+                      >
+                        <span className="flex items-center gap-2">{selected ? <Check className="h-4 w-4" aria-hidden="true" /> : null}{title}</span>
+                        <span className="mt-1 block text-xs font-normal">{description}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
             ))}
             {!SELLER_PORTAL_SIGNING_ENABLED ? <p className="text-xs text-[#6a8098]">Digital signing is awaiting portal release configuration.</p> : null}
             {hasCompletedOnboardingDisclosureSignature(getLeadSellerOnboardingFormData(selectedLead)) ? <p className="rounded-xl bg-[#eaf7ee] px-3 py-2 text-sm text-[#176842]">The defects disclosure was signed during onboarding. It will not be sent again.</p> : null}
@@ -41065,7 +41089,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
       <Modal
         open={sellerSigningPackModalOpen}
-        onClose={() => setSellerSigningPackModalOpen(false)}
+        onClose={() => { if (!sellerSigningPackSaving) setSellerSigningPackModalOpen(false) }}
         title="Prepare seller signing pack"
         subtitle="This stays on the seller lead. It does not create, publish, or activate a market listing."
         className="max-w-3xl"
@@ -41073,12 +41097,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <Button type="button" variant="secondary" disabled={sellerSigningPackSaving} onClick={() => setSellerSigningPackModalOpen(false)}>Cancel</Button>
             <Button type="button" disabled={sellerSigningPackSaving} onClick={() => void sendSellerLeadSigningPack()}>
-              {sellerSigningPackSaving ? 'Preparing…' : Object.values(sellerOnboardingDocumentRoutes).includes('digital_pack') ? 'Approve and send selected links' : 'Prepare physical copies'}
+              {sellerSigningPackSaving ? sellerSigningPackProgress || 'Preparing…' : Object.values(sellerOnboardingDocumentRoutes).includes('digital_pack') ? 'Approve and send selected links' : 'Prepare physical copies'}
             </Button>
           </div>
         )}
       >
         <div className="space-y-5">
+          {sellerSigningPackSaving ? <p role="status" aria-live="polite" className="text-sm font-semibold text-[#47637d]">{sellerSigningPackProgress}</p> : null}
           {sellerSigningPackError ? (
             <div role="alert" className="rounded-[16px] border border-[#f3c6c1] bg-[#fff6f5] px-4 py-3 text-sm leading-6 text-[#a33c32]">
               {sellerSigningPackError}

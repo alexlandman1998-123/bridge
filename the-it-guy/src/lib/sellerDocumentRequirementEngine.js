@@ -1594,6 +1594,7 @@ export function syncSellerDocumentRequirements(listing = {}, existingRequirement
         ? normalizeRequirementStatus(existingStatus, generated.status || 'required')
         : normalizeRequirementStatus(generated.status || 'required')
     return {
+      ...(existing || {}),
       id: existing?.id || undefined,
       private_listing_id: listing?.id || listing?.private_listing_id || null,
       requirement_key: generated.requirement_key,
@@ -1612,6 +1613,7 @@ export function syncSellerDocumentRequirements(listing = {}, existingRequirement
   const markNotApplicableRows = existingRows
     .filter((row) => !generatedKeys.has(normalizeKey(row?.requirement_key || row?.key)))
     .map((row) => ({
+      ...row,
       id: row?.id || undefined,
       private_listing_id: listing?.id || listing?.private_listing_id || null,
       requirement_key: row?.requirement_key || row?.key,

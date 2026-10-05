@@ -1,3 +1,4 @@
+import { buildListingSellerCanonicalSavePayload, isMatchingSellerCanonicalSaveReceipt } from './listings/listingSellerCanonicalUpdateModel.js'
 import { assertDocumentGeneratorAvailable } from '../core/documents/documentGeneratorRetirement'
 import { advanceSellerWorkflowState, createSellerWorkflowState, SELLER_WORKFLOW_STAGES } from '../core/documents/sellerWorkflowState'
 import {
@@ -107,6 +108,8 @@ let sellerOnboardingPrepareRpcUnavailable = false
 const ORGANISATION_BRANDING_CACHE_TTL_MS = 60_000
 const SELLER_ONBOARDING_COMPLETION_TIMEOUT_MS = 12_000
 const SELLER_ONBOARDING_RECOVERY_TIMEOUT_MS = 3_000
+const SELLER_CANONICAL_SAVE_TIMEOUT_MS = 40_000
+const SELLER_CANONICAL_SAVE_RECOVERY_TIMEOUT_MS = 8_000
 const organisationBrandingSnapshotCache = new Map()
 let clientPortalNotificationServicePromise = null
 function loadClientPortalNotificationService() {
@@ -1744,11 +1747,11 @@ function buildPrivateListingRequirementMutationPayload(row = {}, columns = []) {
     requested_from_role: normalizeText(row?.requested_from_role || row?.requestedFromRole || ''),
     request_stage: normalizeText(row?.request_stage || row?.requestStage || ''),
     request_priority: normalizeText(row?.request_priority || row?.requestPriority || ''),
-    request_due_date: normalizeText(row?.request_due_date || row?.requestDueDate || ''),
+    request_due_date: normalizeNullableText(row?.request_due_date || row?.requestDueDate),
     request_delivery_channels: requestDeliveryChannels,
     request_dedupe_key: normalizeText(row?.request_dedupe_key || row?.requestDedupeKey || ''),
     request_source: normalizeText(row?.request_source || row?.requestSource || ''),
-    requested_at: normalizeText(row?.requested_at || row?.requestedAt || ''),
+    requested_at: normalizeNullableText(row?.requested_at || row?.requestedAt),
     request_revision: Number(row?.request_revision || row?.requestRevision || 0),
     last_request_reason: normalizeText(row?.last_request_reason || row?.lastRequestReason || ''),
     request_metadata: isPlainObject(row?.request_metadata)
@@ -1780,10 +1783,26 @@ async function upsertPrivateListingRequirementRows(client, rows = []) {
       .filter(Boolean)
     if (!payload.length) return { data: [], mutationVariant: variant.name }
 
-    const query = await client
-      .from('private_listing_document_requirements')
-      .upsert(payload, { onConflict: 'private_listing_id,requirement_key' })
-      .select(variant.selectFields)
+    // Keep absent optional columns absent. Mixing rows with/without an id or
+    // request date in one REST batch would turn omitted values into NULLs.
+    const batches = new Map()
+    for (const row of payload) {
+      const shape = Object.keys(row).sort().join(',')
+      if (!batches.has(shape)) batches.set(shape, [])
+      batches.get(shape).push(row)
+    }
+    const query = { data: [], error: null }
+    for (const batch of batches.values()) {
+      const result = await client
+        .from('private_listing_document_requirements')
+        .upsert(batch, { onConflict: 'private_listing_id,requirement_key' })
+        .select(variant.selectFields)
+      if (result?.error) {
+        query.error = result.error
+        break
+      }
+      query.data.push(...(result?.data || []))
+    }
 
     if (!query?.error) {
       return {
@@ -5931,6 +5950,64 @@ export async function updatePrivateListingOnboardingFormData(listingId, formData
   }
 }
 
+async function runSellerCanonicalRequest(request, timeoutMs) {
+  const timeout = createRequestTimeout(timeoutMs)
+  let onAbort
+  const expired = new Promise((_, reject) => {
+    onAbort = () => {
+      const error = new Error('The seller save request timed out. Check the listing before retrying because the save may have completed.')
+      error.code = 'SELLER_PROFILE_SAVE_TIMEOUT'
+      reject(error)
+    }
+    timeout.signal.addEventListener('abort', onAbort, { once: true })
+  })
+  try {
+    // AbortSignal only cancels fetch. The race also bounds a stalled auth read
+    // before fetch starts, so the preparation button always becomes usable again.
+    return await Promise.race([Promise.resolve().then(() => request(timeout.signal)), expired])
+  } finally {
+    timeout.clear()
+    timeout.signal.removeEventListener('abort', onAbort)
+  }
+}
+
+async function recoverSellerCanonicalSave(client, update) {
+  try {
+    // The server can commit just after fetch is aborted. Give that receipt a
+    // short chance to become visible, within the same total recovery deadline.
+    // Recovery only reads: it never repeats a write or dispatches a document.
+    return await runSellerCanonicalRequest(async (signal) => {
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const [listing, onboarding] = await Promise.all([
+          client.from('private_listings').select('*').eq('id', update.listingId).maybeSingle().abortSignal(signal),
+          client.from('private_listing_seller_onboarding').select('*').eq('private_listing_id', update.listingId).maybeSingle().abortSignal(signal),
+        ])
+        if (signal.aborted || listing.error || onboarding.error) return null
+        const receipt = { listing: listing.data, onboarding: onboarding.data, mutationId: update.mutationId, recoveredAfterTimeout: true }
+        if (isMatchingSellerCanonicalSaveReceipt(receipt, update)) return receipt
+        // A visible receipt for this mutation with altered data cannot safely
+        // authorize sending the local copies, even after another read.
+        if (onboarding.data?.canonical_facts_json?.context?.canonical_update?.mutation_id === update.mutationId) return null
+        if (attempt < 2) {
+          await new Promise((resolve) => {
+            const done = () => {
+              clearTimeout(timer)
+              signal.removeEventListener('abort', done)
+              resolve()
+            }
+            const timer = setTimeout(done, 500)
+            signal.addEventListener('abort', done, { once: true })
+          })
+          if (signal.aborted) return null
+        }
+      }
+      return null
+    }, SELLER_CANONICAL_SAVE_RECOVERY_TIMEOUT_MS)
+  } catch {
+    return null
+  }
+}
+
 export async function savePrivateListingSellerCanonicalUpdate(update = {}, options = {}) {
   const client = requireClient()
   const listingId = normalizeUuid(update.listingId)
@@ -5938,15 +6015,15 @@ export async function savePrivateListingSellerCanonicalUpdate(update = {}, optio
   if (!listingId) throw new Error('Listing id is required.')
   if (!mutationId) throw new Error('A valid seller update id is required.')
 
-  const saveTimeout = createRequestTimeout(25000)
+  const payload = buildListingSellerCanonicalSavePayload(update)
   let result
   try {
-    result = await client.rpc('save_private_listing_seller_canonical_update', {
+    result = await runSellerCanonicalRequest((signal) => client.rpc('save_private_listing_seller_canonical_update', {
       p_listing_id: listingId,
-      p_form_data: update.nextFormData && typeof update.nextFormData === 'object' ? update.nextFormData : {},
+      p_form_data: payload.formData,
       p_canonical_facts: update.canonicalFacts && typeof update.canonicalFacts === 'object' ? update.canonicalFacts : {},
       p_canonical_readiness: update.readiness && typeof update.readiness === 'object' ? update.readiness : {},
-      p_listing_patch: update.listingPatch && typeof update.listingPatch === 'object' ? update.listingPatch : {},
+      p_listing_patch: payload.listingPatch,
       p_onboarding_status: normalizeNullableText(update.onboardingStatus) || 'not_started',
       p_seller_type: normalizeNullableText(update.sellerType),
       p_ownership_structure: normalizeNullableText(update.ownershipStructure),
@@ -5956,22 +6033,22 @@ export async function savePrivateListingSellerCanonicalUpdate(update = {}, optio
       p_source: normalizeNullableText(update.source) || 'agent_listing_workspace',
       p_changed_fields: Array.isArray(update.changedFields) ? update.changedFields.map(normalizeText).filter(Boolean) : [],
       p_expected_updated_at: normalizeNullableText(update.expectedUpdatedAt),
-    }).abortSignal(saveTimeout.signal)
+    }).abortSignal(signal), SELLER_CANONICAL_SAVE_TIMEOUT_MS)
   } catch (error) {
-    if (saveTimeout.signal.aborted) {
-      const timeoutError = new Error('The seller save request timed out. Check the listing before retrying because the save may have completed.')
-      timeoutError.code = 'SELLER_PROFILE_SAVE_TIMEOUT'
-      throw timeoutError
-    }
-    throw error
-  } finally {
-    saveTimeout.clear()
+    if (error.code !== 'SELLER_PROFILE_SAVE_TIMEOUT' && !isSellerOnboardingCompletionTimeoutError(error)) throw error
+    result = { error }
   }
 
-  if (saveTimeout.signal.aborted) {
-    const timeoutError = new Error('The seller save request timed out. Check the listing before retrying because the save may have completed.')
-    timeoutError.code = 'SELLER_PROFILE_SAVE_TIMEOUT'
-    throw timeoutError
+  if (result.error && (result.error.code === 'SELLER_PROFILE_SAVE_TIMEOUT' || isSellerOnboardingCompletionTimeoutError(result.error))) {
+    const recoveredReceipt = await recoverSellerCanonicalSave(client, update)
+    if (!recoveredReceipt) {
+      const timeoutError = new Error('The seller save request timed out and its completion could not be confirmed. Your entries are still in this form. Reload the listing before retrying because the save may have completed.')
+      timeoutError.code = 'SELLER_PROFILE_SAVE_TIMEOUT'
+      timeoutError.mutationId = mutationId
+      timeoutError.cause = result.error
+      throw timeoutError
+    }
+    result = { data: recoveredReceipt, error: null }
   }
 
   if (result.error) {
@@ -5999,14 +6076,14 @@ export async function savePrivateListingSellerCanonicalUpdate(update = {}, optio
   })
 
   let requirementSyncResult = null
-  if (update.requirementsAffected && options.syncRequirements !== false) {
+  if ((update.requirementsAffected || options.forceRequirementSync === true) && options.syncRequirements !== false) {
     try {
-      requirementSyncResult = await syncPrivateListingRequirements(listingId, {
+      requirementSyncResult = await syncPrivateListingRequirements(options.includeRequirementsAndDocuments === false ? committedListing : listingId, {
         emitActivity: false,
         reason: options.requirementSyncReason || `seller_canonical_update:${normalizeKey(update.mutationType || 'seller_edit')}`,
       })
     } catch (error) {
-      const syncError = new Error('Seller details were saved, but the document requirements could not be refreshed. Retry the seller save before sending documents.')
+      const syncError = new Error('Seller details were saved, but the document checklist could not be refreshed. Reload the listing before preparing or sending documents again.')
       syncError.code = 'SELLER_REQUIREMENT_SYNC_FAILED'
       syncError.committed = true
       syncError.recoverable = true
@@ -6021,9 +6098,9 @@ export async function savePrivateListingSellerCanonicalUpdate(update = {}, optio
 
   let listing
   try {
-    listing = requirementSyncResult?.listing || await getPrivateListingById(listingId, {
+    listing = requirementSyncResult?.listing || (options.includeRequirementsAndDocuments === false ? committedListing : await getPrivateListingById(listingId, {
       includeRequirementsAndDocuments: options.includeRequirementsAndDocuments !== false,
-    })
+    }))
     if (!listing) throw new Error('The committed listing could not be read back.')
   } catch (error) {
     throw postCommitError('Seller details were saved, but the refreshed listing could not be loaded. Reload before sending documents.', 'SELLER_READBACK_FAILED', error)
@@ -6032,6 +6109,7 @@ export async function savePrivateListingSellerCanonicalUpdate(update = {}, optio
   return {
     receipt: result.data || {},
     listing,
+    snapshotOnly: options.includeRequirementsAndDocuments === false,
     requirementSyncResult,
     syncedRequirements: requirementSyncResult?.requirements || listing?.documentRequirements || [],
   }
