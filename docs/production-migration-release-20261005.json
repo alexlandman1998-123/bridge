@@ -1,0 +1,247 @@
+{
+  "releasedAt": "2026-10-05T19:54:18.543299+00:00",
+  "target": "production",
+  "projectRef": "isdowlnollckzvltkasn",
+  "products": [
+    "Shared Supabase",
+    "Primary Arch9 workspace"
+  ],
+  "baseApplicationCommit": "a244b486acf2442302ed23c2e68179e33fb29cce",
+  "userAuthorization": "Retry application of outstanding migrations in the current production release task",
+  "method": "Supabase API via linked CLI db query; exact source SQL and new migration ledger entries committed together in transactions after direct pooler connections timed out",
+  "compatibilityCorrections": [
+    {
+      "version": "20261005193801",
+      "reason": "Production retained a two-argument partner invitation RPC; the pending handoff wrapper requires the three-argument signature. Restore that reviewed implementation without historical row backfills, remove the ambiguous old overload and preserve current wrappers on reapplication."
+    },
+    {
+      "version": "20261005195031",
+      "reason": "Older buyer portal links lacked optional expires_at used by buyer application and wet ink runtimes. Add nullable expiry without changing existing link records."
+    }
+  ],
+  "migrations": [
+    {
+      "version": "20261005193801",
+      "name": "partner_invitation_runtime_compatibility",
+      "file": "20261005193801_partner_invitation_runtime_compatibility.sql",
+      "sha256": "f26a786e71f846181e2e3bbec1b3389ad32cc03cfad44e03e0f0f3f225963544"
+    },
+    {
+      "version": "20261003173649",
+      "name": "attorney_document_persistence",
+      "file": "20261003173649_attorney_document_persistence.sql",
+      "sha256": "35424f2f167d63387502fdd846a9300c1900938b974249ba272c0d9f67d7b423"
+    },
+    {
+      "version": "20261003180814",
+      "name": "attorney_document_request_review",
+      "file": "20261003180814_attorney_document_request_review.sql",
+      "sha256": "4c6d13856c66015be7e232a10b6ad626509430de58cc39d110af1013ab9bbe2f"
+    },
+    {
+      "version": "20261003182500",
+      "name": "buyer_bond_application_runtime",
+      "file": "20261003182500_buyer_bond_application_runtime.sql",
+      "sha256": "5606f6d6afd2f09535b95f20d82f1165a383c03c451af32b5935bfa7324a35cd"
+    },
+    {
+      "version": "20261003183115",
+      "name": "attorney_document_versions",
+      "file": "20261003183115_attorney_document_versions.sql",
+      "sha256": "872c39eb8609f5693faedce795b00681d33c562bd0705640c9dd59598764b5f0"
+    },
+    {
+      "version": "20261003185915",
+      "name": "attorney_conveyancing_review_corrections",
+      "file": "20261003185915_attorney_conveyancing_review_corrections.sql",
+      "sha256": "16813a7b1e70b23f2202be7f30c3f85944595d4f3c7df614407c994a6eceec40"
+    },
+    {
+      "version": "20261003201121",
+      "name": "attorney_appointment_management",
+      "file": "20261003201121_attorney_appointment_management.sql",
+      "sha256": "bcef573e5c89944f5f31362bc70934ca729ca3a12abd14511108c6db9f9a0904"
+    },
+    {
+      "version": "20261003202419",
+      "name": "bond_wet_ink_application_signing",
+      "file": "20261003202419_bond_wet_ink_application_signing.sql",
+      "sha256": "ec08042c184540fcb5d00382d5b6db0a30474bdb6cab75033a8fead8dc840993"
+    },
+    {
+      "version": "20261003204422",
+      "name": "attorney_calendar_durable_delivery",
+      "file": "20261003204422_attorney_calendar_durable_delivery.sql",
+      "sha256": "252168c4e0d6e98c1eafe9598d624650e3f7fcccd3d036dde4f6ca85365484ce"
+    },
+    {
+      "version": "20261003204821",
+      "name": "attorney_calendar_delivery_worker_schedule",
+      "file": "20261003204821_attorney_calendar_delivery_worker_schedule.sql",
+      "sha256": "74453f3e13633d8b2b29fce6c866db3a35c32692307a1afd116acd05b871a505"
+    },
+    {
+      "version": "20261004001000",
+      "name": "bond_submission_pack_original",
+      "file": "20261004001000_bond_submission_pack_original.sql",
+      "sha256": "53b74ed9405e68f279672e5dd76743bdb62cd01db227a40200b67eaeb9bf554e"
+    },
+    {
+      "version": "20261004002000",
+      "name": "bond_submission_consultant_review",
+      "file": "20261004002000_bond_submission_consultant_review.sql",
+      "sha256": "74f5f106f6a0a0df0950a64071a77cdc10f35aa449a288889c02d59714220095"
+    },
+    {
+      "version": "20261004074909",
+      "name": "transaction_handoff_register",
+      "file": "20261004074909_transaction_handoff_register.sql",
+      "sha256": "6c3d591b3317b38366e1a1448e38bf9e0f6ffbe7dc45b8a6ab370066bff3cb30"
+    },
+    {
+      "version": "20261004080223",
+      "name": "transaction_handoff_durable_dispatch",
+      "file": "20261004080223_transaction_handoff_durable_dispatch.sql",
+      "sha256": "03e3cdaa658ad566dc4aaf4d80caac91e4d25fee42e8278793b9278333bd815a"
+    },
+    {
+      "version": "20261004080224",
+      "name": "transaction_handoff_dispatch_schedule",
+      "file": "20261004080224_transaction_handoff_dispatch_schedule.sql",
+      "sha256": "b387e6d9a9508bc779ecf6a13b63c3017f1b05c4df1b81b47ed565d5724b1301"
+    },
+    {
+      "version": "20261004082510",
+      "name": "transaction_partner_handoff_signup_binding",
+      "file": "20261004082510_transaction_partner_handoff_signup_binding.sql",
+      "sha256": "fa6ebc7bcc49dba9ab9efdc203b128b7fdbbaf7c35027ea7632720884c267e19"
+    },
+    {
+      "version": "20261004083851",
+      "name": "transaction_handoff_assignment_retirement",
+      "file": "20261004083851_transaction_handoff_assignment_retirement.sql",
+      "sha256": "fa296bdf757a62416a23560e5f50a697db0949627ae90246b98d9dd95cd70f66"
+    },
+    {
+      "version": "20261004085417",
+      "name": "transaction_handoff_operator_recovery",
+      "file": "20261004085417_transaction_handoff_operator_recovery.sql",
+      "sha256": "6a3e3c4c072e676ce4435c6fe1be8bced7183666bcce7ce0c2297a2e74a9a8a8"
+    },
+    {
+      "version": "20261004090057",
+      "name": "transaction_handoff_organisation_queue",
+      "file": "20261004090057_transaction_handoff_organisation_queue.sql",
+      "sha256": "eae64d78b1cae079af8c419bcab8dca54a169a7e54152e33979d2c9f1d7fa07a"
+    },
+    {
+      "version": "20261004102741",
+      "name": "attorney_internal_workspace_boundaries",
+      "file": "20261004102741_attorney_internal_workspace_boundaries.sql",
+      "sha256": "c72771f0860571de8c4ad7f01719a39a013793961d9a7c80bbdd6839d7256b07"
+    },
+    {
+      "version": "20261004104401",
+      "name": "home_seekers_lead_notification_queue",
+      "file": "20261004104401_home_seekers_lead_notification_queue.sql",
+      "sha256": "4d0fe286c47bf17e7777dd3e684d71d7b5cced22a55dddfc1e62a273af1c3bcb"
+    },
+    {
+      "version": "20261004110204",
+      "name": "attorney_cross_role_appointment_responses",
+      "file": "20261004110204_attorney_cross_role_appointment_responses.sql",
+      "sha256": "d7b0becddb1818b0fe282e176b06fc9d1cef79fd23442d5a6b09de8205659dc7"
+    },
+    {
+      "version": "20261004121736",
+      "name": "seller_document_review_runtime_reconciliation",
+      "file": "20261004121736_seller_document_review_runtime_reconciliation.sql",
+      "sha256": "4810d094bcaa7f5698473d46a6cdb015dffeddb36baffec61b7fc642949ca48d"
+    },
+    {
+      "version": "20261004151831",
+      "name": "rental_photo_storage_identity",
+      "file": "20261004151831_rental_photo_storage_identity.sql",
+      "sha256": "f3c6295df111f67e261f2f917f7f7292a6c16b7d6aa2765d9a9c517574d5cbfc"
+    },
+    {
+      "version": "20261004154517",
+      "name": "external_website_integrations",
+      "file": "20261004154517_external_website_integrations.sql",
+      "sha256": "06a63f1daf4eefb101279a7a578ac30555210a2931888272208bb0883df6ae2a"
+    },
+    {
+      "version": "20261004154901",
+      "name": "rental_listing_durable_history",
+      "file": "20261004154901_rental_listing_durable_history.sql",
+      "sha256": "2f1c90d18709568a19a4c11e736a75500c4142a4d412e38fdc601087525ad98f"
+    },
+    {
+      "version": "20261004155515",
+      "name": "rental_publication_attempt_recovery",
+      "file": "20261004155515_rental_publication_attempt_recovery.sql",
+      "sha256": "185167ce00a6b4bb02d87b66bcf82df6b10f092e6774b3d5509ebe8feadee125"
+    },
+    {
+      "version": "20261004163134",
+      "name": "rental_listing_expiry_isolated_save",
+      "file": "20261004163134_rental_listing_expiry_isolated_save.sql",
+      "sha256": "120c72ad8d2926f2021148b5b66146c1af319a969e7687cde8a3e28c6a77b917"
+    },
+    {
+      "version": "20261004165101",
+      "name": "rental_listing_property_registration",
+      "file": "20261004165101_rental_listing_property_registration.sql",
+      "sha256": "78a9fdb28ba94c336ae3a751a9a67984b399db7accfdc58dd66e285e7fbf00b7"
+    },
+    {
+      "version": "20261004181626",
+      "name": "seller_portal_signed_upload_version_binding",
+      "file": "20261004181626_seller_portal_signed_upload_version_binding.sql",
+      "sha256": "5e050cb4eef4997d3a4d949717c3d5425960b2e95530e66cd5ae079cc43682eb"
+    },
+    {
+      "version": "20261005195031",
+      "name": "buyer_portal_runtime_schema_compatibility",
+      "file": "20261005195031_buyer_portal_runtime_schema_compatibility.sql",
+      "sha256": "72628c4bd8325e15aaa1f43f0d4a0a3d9abada4d5b4e5942bcda44b39dc42f78"
+    }
+  ],
+  "checks": {
+    "targetGuard": "passed; no duplicate migration versions",
+    "recoveryLock": "RECOVERY_LOCKED",
+    "initialDryRun": "exact reviewed 29 migration set",
+    "productionRollbackCompile": "passed for compatibility prerequisite plus all 29 pending migrations; final expiry correction also validated with rollback",
+    "partnerHandoffBinding": "passed all existing authority, acceptance, retirement, recovery, queue and rollback checks; added old-signature upgrade and current-wrapper reapplication coverage",
+    "buyerBondRuntime": "13 tests passed including legacy links, expiry preservation on reapplication, expired links and missing credentials",
+    "ledger": {
+      "pending_local": null,
+      "recorded_count": 1392,
+      "reviewed_count": 31,
+      "reviewed_mismatches": null
+    },
+    "objects": {
+      "expected": 192,
+      "missing": 0,
+      "newTables": 25,
+      "newTablesWithoutRls": 0
+    },
+    "securityAdvisor": {
+      "errors": 0,
+      "newSearchPathWarnings": 0,
+      "warningCountBeforeBatch": 1722,
+      "warningCountAfterBatch": 1772,
+      "newWarningKinds": [
+        "anon_security_definer_function_executable",
+        "authenticated_security_definer_function_executable"
+      ]
+    },
+    "fullIsolatedMigrationReplay": "failed to start isolated Docker stack: connection category; not claimed as passed",
+    "productionAccessSmoke": "Passed as anon: buyer runtime returns no protected data without credentials, wet ink rejects missing credentials, anonymous consultant access denied. Verified read-only via Supabase API after the expiry correction."
+  },
+  "recovery": "Captured prior affected function definitions and privileges and a scoped rollback privately before applying. Additive tables and the optional expiry column are retained in recovery to preserve records.",
+  "remainingOperationalWork": [
+    "Attorney appointment delivery and transaction handoff dispatch Edge workers were not deployed as part of this database retry; their migration-created schedules are active.",
+    "Historical migration drift remains a separate reconciliation task."
+  ]
+}

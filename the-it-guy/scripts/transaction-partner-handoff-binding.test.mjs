@@ -36,12 +36,19 @@ insert into attorney_firms values(gen_random_uuid(),'${other}');
 `)
 const roleShape = sql('202606300002_transaction_partner_legal_invites_phase1.sql')
 await db.exec(roleShape.slice(roleShape.indexOf('create or replace function public.bridge_transaction_partner_invite_role_shape')))
-const legacy = sql('202607080005_transaction_partner_invite_partner_org_binding.sql')
-await db.exec(legacy.slice(legacy.indexOf('create or replace function public.bridge_accept_transaction_partner_invitation'), legacy.indexOf('do $$')))
+// Production can retain the older two-argument RPC despite the historical ledger.
+await db.exec(`create function public.bridge_accept_transaction_partner_invitation(text,jsonb default '{}') returns jsonb language sql as $$select jsonb_build_object('legacy',true)$$`)
+const compatibility = sql('20261005193801_partner_invitation_runtime_compatibility.sql')
+await db.exec(compatibility)
+assert.equal((await query("select to_regprocedure('public.bridge_accept_transaction_partner_invitation(text,jsonb)') as old")).rows[0].old, null)
+assert.equal((await query("select bridge_accept_transaction_partner_invitation('invalid','{}',null) as result")).rows[0].result.code, 'not_authenticated')
 const repair = sql('202607080006_invite_acceptance_reconciliation_phase5.sql')
 await db.exec(repair.slice(repair.indexOf('create or replace function public.bridge_repair_transaction_partner_invitation_acceptance'), repair.indexOf('revoke all on function')))
 await db.exec(sql('202606300004_canonical_transaction_partner_invites_phase3.sql'))
 await db.exec(sql('20261004082510_transaction_partner_handoff_signup_binding.sql'))
+const activeWrapper = (await query("select pg_get_functiondef('public.bridge_accept_transaction_partner_invitation(text,jsonb,uuid)'::regprocedure) as definition")).rows[0].definition
+await db.exec(compatibility)
+assert.equal((await query("select pg_get_functiondef('public.bridge_accept_transaction_partner_invitation(text,jsonb,uuid)'::regprocedure) as definition")).rows[0].definition, activeWrapper)
 const accept = async (token, org = null) => (await query('select bridge_accept_transaction_partner_invitation($1,$2,$3) as result', [token, {}, org])).rows[0].result
 const preview = async token => (await query('select bridge_get_partner_handoff_invitation($1) as result', [token])).rows[0].result
 const invite = async (transactionId, role = 'bond_originator', status = 'pending') => {

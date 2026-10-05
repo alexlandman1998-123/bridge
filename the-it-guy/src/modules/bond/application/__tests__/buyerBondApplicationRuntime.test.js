@@ -16,7 +16,7 @@ beforeAll(async()=>{
  -- Test substitute for pgcrypto's hash primitive only; production uses SHA256.
  create function extensions.digest(text,text) returns bytea language sql as $$ select decode(md5($1)||md5($1),'hex') $$;
  create table transactions(id uuid primary key,buyer_id uuid,development_id uuid,unit_id uuid,primary_bond_consultant_user_id uuid);
- create table client_portal_links(id uuid default gen_random_uuid(),token text,transaction_id uuid,buyer_id uuid,development_id uuid,unit_id uuid,is_active boolean default true,expires_at timestamptz);
+ create table client_portal_links(id uuid default gen_random_uuid(),token text,transaction_id uuid,buyer_id uuid,development_id uuid,unit_id uuid,is_active boolean default true);
  create table bond_application_portal_access_links(id uuid,bond_application_id uuid,token text,is_active boolean default true,expires_at timestamptz);
  create function bridge_request_header(text) returns text language sql as $$ select nullif(current_setting('request.headers',true),'')::jsonb->>$1 $$;
  create function bridge_client_portal_request_token() returns text language sql as $$ select public.bridge_request_header('x-bridge-client-portal-token') $$;
@@ -51,6 +51,7 @@ beforeAll(async()=>{
  insert into bond_application_portal_access_links values(gen_random_uuid(),'${app}','scoped',true,null);
  select set_config('request.headers','{"x-bridge-bond-application-token":"scoped"}',false);
  `)
+ await db.exec(readFileSync(new URL('../../../../../../supabase/migrations/20261005195031_buyer_portal_runtime_schema_compatibility.sql',import.meta.url),'utf8'))
  await db.exec(readFileSync(new URL('../../../../../../supabase/migrations/20261003182500_buyer_bond_application_runtime.sql',import.meta.url),'utf8'))
  await db.exec(readFileSync(new URL('../../../../../../supabase/migrations/20261003202419_bond_wet_ink_application_signing.sql',import.meta.url),'utf8'))
  await db.exec(readFileSync(new URL('../../../../../../supabase/migrations/20261004001000_bond_submission_pack_original.sql',import.meta.url),'utf8'))
@@ -58,6 +59,17 @@ beforeAll(async()=>{
  await db.exec(readFileSync(new URL('../../../../../../supabase/migrations/20261004002000_bond_submission_consultant_review.sql',import.meta.url),'utf8'))
 },30000)
 afterAll(async()=>{await db?.close()})
+it('preserves legacy buyer links and enforces optional expiry without portal credentials',async()=>{
+ await db.exec(`select set_config('request.headers','{"x-bridge-client-portal-token":"buyer"}',false)`)
+ expect((await call('bridge_buyer_bond_application_runtime_context')).application.id).toBe(app)
+ await db.exec(`update client_portal_links set expires_at=now()-interval '1 minute'`)
+ await db.exec(readFileSync(new URL('../../../../../../supabase/migrations/20261005195031_buyer_portal_runtime_schema_compatibility.sql',import.meta.url),'utf8'))
+ await expect(call('bridge_buyer_bond_application_runtime_context')).rejects.toMatchObject({code:'42501'})
+ await db.exec(`update client_portal_links set expires_at=null; select set_config('request.headers','{}',false)`)
+ await expect(call('bridge_buyer_bond_application_runtime_context')).rejects.toMatchObject({code:'42501'})
+ await expect(call('bridge_bond_wet_ink_context')).rejects.toMatchObject({code:'42501'})
+ await db.exec(`select set_config('request.headers','{"x-bridge-bond-application-token":"scoped"}',false)`)
+})
 it('rejects revoked access without leaking credentials',async()=>{
  const ctx=await call('bridge_buyer_bond_application_runtime_context');expect(ctx.application.id).toBe(app);expect(JSON.stringify(ctx)).not.toContain('scoped')
  await db.exec('update bond_application_portal_access_links set is_active=false')
