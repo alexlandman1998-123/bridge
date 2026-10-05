@@ -114,8 +114,10 @@ test('preparing a sign-off template grants no agency approval, hosted acceptance
 
 function syntheticReleaseEvidence() {
   const current = structuredClone(candidate)
-  current.localAcceptance.sourceMatches = true
-  current.localAcceptance.localRollbackVerified = true
+  Object.assign(current.localAcceptance, {
+    result: 'passed', localOnly: true, sourceMatches: true, localRollbackVerified: true,
+    journeys: 15, browserSignatures: 9, browserPhysicalReviews: 2,
+  })
   const decision = createSellerReleaseDecision(current)
   const time = '2026-10-04T00:00:00Z'
   Object.assign(decision, { status: 'approved', decidedAt: time, releaseOwner: 'synthetic-release-owner', reference: 'TEST-ONLY-RELEASE' })

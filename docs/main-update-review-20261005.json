@@ -1,0 +1,197 @@
+{
+  "reviewDate": "2026-10-05",
+  "scope": "Outstanding source updates through 5 October, including earlier prerequisite migrations and current origin/main changes",
+  "products": [
+    "Arch9 workspace",
+    "Public websites",
+    "Admin console",
+    "Shared Supabase"
+  ],
+  "generatedOutputsCommitted": false,
+  "databaseAudit": {
+    "projectRef": "isdowlnollckzvltkasn",
+    "readOnly": true,
+    "localMigrationCount": 1390,
+    "recordedMigrationCount": 1361,
+    "duplicateLocalVersions": [],
+    "missingSources": [],
+    "pendingMigrations": [
+      {
+        "version": "20261003173649",
+        "name": "attorney_document_persistence",
+        "file": "20261003173649_attorney_document_persistence.sql"
+      },
+      {
+        "version": "20261003180814",
+        "name": "attorney_document_request_review",
+        "file": "20261003180814_attorney_document_request_review.sql"
+      },
+      {
+        "version": "20261003182500",
+        "name": "buyer_bond_application_runtime",
+        "file": "20261003182500_buyer_bond_application_runtime.sql"
+      },
+      {
+        "version": "20261003183115",
+        "name": "attorney_document_versions",
+        "file": "20261003183115_attorney_document_versions.sql"
+      },
+      {
+        "version": "20261003185915",
+        "name": "attorney_conveyancing_review_corrections",
+        "file": "20261003185915_attorney_conveyancing_review_corrections.sql"
+      },
+      {
+        "version": "20261003201121",
+        "name": "attorney_appointment_management",
+        "file": "20261003201121_attorney_appointment_management.sql"
+      },
+      {
+        "version": "20261003202419",
+        "name": "bond_wet_ink_application_signing",
+        "file": "20261003202419_bond_wet_ink_application_signing.sql"
+      },
+      {
+        "version": "20261003204422",
+        "name": "attorney_calendar_durable_delivery",
+        "file": "20261003204422_attorney_calendar_durable_delivery.sql"
+      },
+      {
+        "version": "20261003204821",
+        "name": "attorney_calendar_delivery_worker_schedule",
+        "file": "20261003204821_attorney_calendar_delivery_worker_schedule.sql"
+      },
+      {
+        "version": "20261004001000",
+        "name": "bond_submission_pack_original",
+        "file": "20261004001000_bond_submission_pack_original.sql"
+      },
+      {
+        "version": "20261004002000",
+        "name": "bond_submission_consultant_review",
+        "file": "20261004002000_bond_submission_consultant_review.sql"
+      },
+      {
+        "version": "20261004074909",
+        "name": "transaction_handoff_register",
+        "file": "20261004074909_transaction_handoff_register.sql"
+      },
+      {
+        "version": "20261004080223",
+        "name": "transaction_handoff_durable_dispatch",
+        "file": "20261004080223_transaction_handoff_durable_dispatch.sql"
+      },
+      {
+        "version": "20261004080224",
+        "name": "transaction_handoff_dispatch_schedule",
+        "file": "20261004080224_transaction_handoff_dispatch_schedule.sql"
+      },
+      {
+        "version": "20261004082510",
+        "name": "transaction_partner_handoff_signup_binding",
+        "file": "20261004082510_transaction_partner_handoff_signup_binding.sql"
+      },
+      {
+        "version": "20261004083851",
+        "name": "transaction_handoff_assignment_retirement",
+        "file": "20261004083851_transaction_handoff_assignment_retirement.sql"
+      },
+      {
+        "version": "20261004085417",
+        "name": "transaction_handoff_operator_recovery",
+        "file": "20261004085417_transaction_handoff_operator_recovery.sql"
+      },
+      {
+        "version": "20261004090057",
+        "name": "transaction_handoff_organisation_queue",
+        "file": "20261004090057_transaction_handoff_organisation_queue.sql"
+      },
+      {
+        "version": "20261004102741",
+        "name": "attorney_internal_workspace_boundaries",
+        "file": "20261004102741_attorney_internal_workspace_boundaries.sql"
+      },
+      {
+        "version": "20261004104401",
+        "name": "home_seekers_lead_notification_queue",
+        "file": "20261004104401_home_seekers_lead_notification_queue.sql"
+      },
+      {
+        "version": "20261004110204",
+        "name": "attorney_cross_role_appointment_responses",
+        "file": "20261004110204_attorney_cross_role_appointment_responses.sql"
+      },
+      {
+        "version": "20261004121736",
+        "name": "seller_document_review_runtime_reconciliation",
+        "file": "20261004121736_seller_document_review_runtime_reconciliation.sql"
+      },
+      {
+        "version": "20261004151831",
+        "name": "rental_photo_storage_identity",
+        "file": "20261004151831_rental_photo_storage_identity.sql"
+      },
+      {
+        "version": "20261004154517",
+        "name": "external_website_integrations",
+        "file": "20261004154517_external_website_integrations.sql"
+      },
+      {
+        "version": "20261004154901",
+        "name": "rental_listing_durable_history",
+        "file": "20261004154901_rental_listing_durable_history.sql"
+      },
+      {
+        "version": "20261004155515",
+        "name": "rental_publication_attempt_recovery",
+        "file": "20261004155515_rental_publication_attempt_recovery.sql"
+      },
+      {
+        "version": "20261004163134",
+        "name": "rental_listing_expiry_isolated_save",
+        "file": "20261004163134_rental_listing_expiry_isolated_save.sql"
+      },
+      {
+        "version": "20261004165101",
+        "name": "rental_listing_property_registration",
+        "file": "20261004165101_rental_listing_property_registration.sql"
+      },
+      {
+        "version": "20261004181626",
+        "name": "seller_portal_signed_upload_version_binding",
+        "file": "20261004181626_seller_portal_signed_upload_version_binding.sql"
+      }
+    ],
+    "historicalRecordedStatementsDiffer": 101,
+    "historicalRecordedSqlUnavailable": 30,
+    "remoteWritesPerformed": false,
+    "futureDatabasePushRequiresEarlierPendingMigrations": true
+  },
+  "migrationReplay": {
+    "status": "blocked",
+    "reason": "Local replay guard requires 10 GiB free; host has 8.3 GiB available. Docker is running.",
+    "guardTestsPassed": 19
+  },
+  "verification": {
+    "website": "passed",
+    "admin": "passed",
+    "appLint": "passed with existing warnings",
+    "appBaselineTests": "passed",
+    "appBuild": "passed",
+    "affectedNodeChecks": "88 passed, including reruns after fixing stale tests and removing the harness timeout",
+    "edgeFunctionTests": "20 passed",
+    "rentalIntegration": "passed after merging, deduplicating tests and resetting fixtures",
+    "operationalDeploymentAudit": "passed",
+    "schemaCompatibilityContract": "passed",
+    "sellerDocumentJourney": {
+      "journeys": 15,
+      "pdfDownloads": 51,
+      "downloadedPages": 280,
+      "localRollback": "passed"
+    },
+    "bundleBudget": "passed",
+    "affectedVitestFiles": "82 passed across the focused run and affected reruns; calendar transport tests used the existing Supabase alias configuration"
+  },
+  "gitPush": "Reviewed source prepared for a normal, non-force push to main",
+  "productionDeployment": "Not verified as part of this Git push"
+}

@@ -74,4 +74,3 @@ export function downloadBondSigningBytes(bytes, filename) {
   link.href = url; link.download = filename; document.body.appendChild(link)
   try { link.click() } finally { link.remove(); setTimeout(() => URL.revokeObjectURL(url), 30000) }
 }
-

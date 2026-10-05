@@ -258,12 +258,9 @@ export async function listRentalListingsForAgent(agentId, options = {}) {
     includeAllOrganisationListings: options.includeAllOrganisationListings,
     includeArchivedListings: options.includePreviousListings === true,
     includeArchivedImports: options.includePreviousListings === true,
-    includeWithdrawnListings: options.includePreviousListings === true || options.includeWithdrawnListings,
+    includeWithdrawnListings: options.includePreviousListings === true || options.includeWithdrawnListings === true,
     includeMedia: true,
     requireAvailable: true,
-    includeArchivedListings: options.includePreviousListings === true,
-    includeArchivedImports: options.includePreviousListings === true,
-    includeWithdrawnListings: options.includePreviousListings === true,
   })
   return rows.filter(row => isRentalListingRecord(row) && isRentalListingInWorkspace(row, agentId, options))
 }

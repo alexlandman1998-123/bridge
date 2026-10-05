@@ -33,19 +33,7 @@ it('edits, reviews and submits optional video and virtual-tour links', async () 
   expect(mocks.create.mock.calls[0][0]).toMatchObject({ videoLink: 'https://video.test/watch', virtualTourLink: 'https://tour.test/view' })
 })
 
-it('edits, reviews and submits optional video and virtual-tour links', async () => {
-  window.sessionStorage.setItem('arch9:rental-listing:create-draft', JSON.stringify({ activeStep: 'marketing', form: { landlordName: 'Test Owner', propertyAddress: '12 Example Road', monthlyRent: '11000', rentalPriceFrequency: 'monthly', depositPolicy: 'no_deposit', availableFrom: '2026-10-01', description: 'Rental home' } }))
-  mocks.create.mockResolvedValue({ listing: { id: 'listing-1' } })
-  render(<MemoryRouter><RentalListingCreatePage /></MemoryRouter>)
-  fireEvent.change(await screen.findByLabelText('Video link'), { target: { value: 'https://video.test/watch' } })
-  fireEvent.change(screen.getByLabelText('Virtual tour link'), { target: { value: 'https://tour.test/view' } })
-  fireEvent.click(screen.getByRole('button', { name: /Review/ }))
-  expect(screen.getByText('Video:')).toBeTruthy()
-  expect(screen.getByText('Virtual tour:')).toBeTruthy()
-  fireEvent.click(screen.getByRole('button', { name: 'Create rental listing' }))
-  await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1))
-  expect(mocks.create.mock.calls[0][0]).toMatchObject({ videoLink: 'https://video.test/watch', virtualTourLink: 'https://tour.test/view' })
-})
+
 
 it('searches and selects an address, wires property cards and neutral counters, and restores the saved fields', async () => {
   const address = '81 Wild Avenue, Newlands, Pretoria, South Africa'

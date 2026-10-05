@@ -23,6 +23,7 @@ const safe = { canDelete: true, liveChannels: [], unconfirmedChannels: [] }
 function Location() { return <output data-testid="location">{useLocation().pathname}</output> }
 async function openMenu() {
   render(<MemoryRouter initialEntries={['/agent/rentals/listings']}><RentalListingsPage /><Location /></MemoryRouter>)
+  fireEvent.click(screen.getByRole('button', { name: /^Previous/ }))
   fireEvent.click(await screen.findByRole('button', { name: 'Open actions for Rental home' }))
 }
 async function openDelete() {
@@ -41,7 +42,7 @@ afterEach(cleanup)
 it('opens the three-dot menu without opening the card and routes withdrawal to Marketing', async () => {
   await openMenu()
   expect(screen.getByTestId('location').textContent).toBe('/agent/rentals/listings')
-  expect(mocks.listings).toHaveBeenCalledWith('agent-1', { organisationId: 'org-1', includeWithdrawnListings: true })
+  expect(mocks.listings).toHaveBeenCalledWith('agent-1', { organisationId: 'org-1', includeWithdrawnListings: true, includePreviousListings: true })
   fireEvent.click(screen.getByRole('menuitem', { name: 'Withdraw listing' }))
   expect(screen.getByTestId('location').textContent).toBe('/agent/rentals/listings/rental-1/marketing')
   expect(mocks.delete).not.toHaveBeenCalled()
