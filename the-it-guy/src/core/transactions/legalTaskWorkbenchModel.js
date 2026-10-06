@@ -1,3 +1,4 @@
+import { getLegalTaskContent } from './legalTaskContent.js'
 import { buildLegalWorkflowOperationalHealthModel } from './legalWorkflowOperationalHealthModel.js'
 import { documentBelongsToParty, ficaDocumentAppliesToParty } from './stageTwoPartyEvidence.js'
 import { AGREEMENT_CONDITION_REGISTER, SECURITY_ACCOUNT_REGISTER, SETTLEMENT_REGISTER, COMMUNICATION_REGISTER } from '../../services/attorneyWorkflow/conveyancingReviewPolicy.js'
@@ -589,6 +590,33 @@ export function buildLegalTaskWorkbenchModel({
     answers: ['yes', 'no', 'not_applicable'],
     allowNote: true,
   })
+  const taskContent = getLegalTaskContent(task.operationalContract?.laneKey || task.operationalContract?.lane, task.key)
+  const contentRow = taskContent && confirmationRows.find(row => row.id === taskContent.rowId)
+  if (contentRow && !contentRow.register) contentRow.register = taskContent.spec
+  if (contentRow && taskContent.carryFrom) {
+    for (const sourceKey of taskContent.carryFrom) {
+      const sourceTask = workflowTasks.find(candidate => candidate.key === sourceKey && candidate.operationalContract?.laneKey === task.operationalContract?.laneKey)
+      const sourceContent = getLegalTaskContent(task.operationalContract?.laneKey, sourceKey)
+      const sourceItems = sourceTask?.taskConfirmations?.[sourceContent?.rowId]?.items
+      if (!sourceItems?.length) continue
+      contentRow.register = { ...taskContent.spec, initialItems: sourceItems.map(row => ({ ...row })),
+        help: `${taskContent.spec.help} Starting from the saved ${sourceTask.label} record; review and save the current position for this task.` }
+      break
+    }
+  }
+  const recordAction = contentRow ? {
+    id: 'edit_task_record', source: 'work', label: `Edit ${taskContent.spec.label.toLowerCase()}`,
+    recordLabel: taskContent.spec.label,
+    disabled: !effectiveStatusActions.some(action => !action.disabled) || ['completed', 'completed_externally', 'not_applicable'].includes(task.displayStatus),
+  } : null
+  if (recordAction) for (const row of confirmationRows) {
+    const requirementId = text(row.requirement?.id).replace(/^data:/, '')
+    if (taskContent.inputs[requirementId]) {
+      row.action = recordAction
+      requirementActions[row.requirement.id] = recordAction
+      stageOneRequirementActions[row.requirement.id] = recordAction
+    }
+  }
   const matterNumberRequirement = requirements.find((requirement) => /matter_number/i.test(requirement.id || '')) || null
 
   return {
@@ -601,6 +629,7 @@ export function buildLegalTaskWorkbenchModel({
     taskLabel: task.label,
     taskDescription: task.description,
     note: text(task.comment),
+    completionRecord: task.completionRecord || null,
     applicabilitySuggestion: task.applicabilitySuggestion || '',
     outcomeReason: ['completed_externally', 'not_applicable'].includes(task.status) ? text(task.comment) : '',
     status: task.displayStatus,
@@ -609,8 +638,8 @@ export function buildLegalTaskWorkbenchModel({
     ownerLabel: task.ownerLabel,
     showOwner,
     dueDate: task.dueDate,
-    primaryAction,
-    secondaryActions,
+    primaryAction: primaryAction?.id === 'capture_data' && recordAction ? recordAction : primaryAction,
+    secondaryActions: recordAction ? secondaryActions.filter(action => action.id !== 'capture_data') : secondaryActions,
     contextualActions: normalizedWorkActions.filter(action => ['open_parties', 'open_finance', 'schedule_signing'].includes(action.id) && !((transferInstructionTask || transferOtpSourceTask || transferTitleDeedTask || transferExistingBondTask) && action.id === 'open_parties')),
     completeAction,
     statusActions: effectiveStatusActions.map(action => action.id === 'mark_complete' ? completeAction : action),

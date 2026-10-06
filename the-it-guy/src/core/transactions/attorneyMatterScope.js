@@ -75,7 +75,7 @@ export function buildAttorneyMatterScope({
   const canAssignLane = requiredLanes.some((laneKey) => Boolean(laneAccessFor(laneAccessContexts, laneKey).canAssignLane))
   const hasTransferAssignment = assignedLaneKeys.includes('transfer')
   const canSeeFullMatter = Boolean(isManagementUser || canManageMatter || hasTransferAssignment)
-  const visibleLaneKeys = canSeeFullMatter ? requiredLanes : assignedLaneKeys
+  const visibleLaneKeys = canSeeFullMatter ? requiredLanes : uniqueLanes([...assignedLaneKeys, ...editableLaneKeys])
   const summaryLaneKeys = canSeeFullMatter
     ? []
     : requiredLanes.filter((laneKey) => !visibleLaneKeys.includes(laneKey))

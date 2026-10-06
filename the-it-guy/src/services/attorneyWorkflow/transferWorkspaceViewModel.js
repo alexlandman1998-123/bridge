@@ -1,3 +1,5 @@
+import { readLegalTaskInput } from '../../core/transactions/legalTaskContent.js'
+import { isLegalTaskActivity, readLegalTaskOutcome } from '../../core/transactions/legalTaskActivity.js'
 import {
   getAttorneyJourneyPhaseForStage,
   getAttorneyJourneyPhasesForLane,
@@ -850,7 +852,9 @@ function buildWorkflowTasks({ workflowKey = 'transfer', lane = null, workflow = 
   )
   if (snapshotTasks) {
     for (const [taskKey, task] of snapshotTasks) {
-      storedStepMap.set(taskKey, { ...(storedStepMap.get(taskKey) || {}), stepKey: taskKey, status: task.status })
+      const savedStep = laneSteps.find(step => text(step.stepKey || step.step_key || step.key) === taskKey)
+        || storedStepMap.get(taskKey) || {}
+      storedStepMap.set(taskKey, { ...savedStep, ...task, stepKey: taskKey, status: task.status })
     }
   }
   // A fresh saved journey outranks the lane's older current-stage pointer.
@@ -875,8 +879,11 @@ function buildWorkflowTasks({ workflowKey = 'transfer', lane = null, workflow = 
     }
 
     const savedTask = snapshotTasks?.get(definition.key)
-    const phase = getLegalWorkspacePhases(workflowKey).find(phase => phase.key === savedTask?.phaseKey)
-      || findPhaseForTask(definition.key, workflowKey)
+    const knownPhases = getLegalWorkspacePhases(workflowKey)
+    const phase = knownPhases.find(phase => phase.key === savedTask?.phaseKey)
+      || (savedTask && !definition.operationalContract
+        ? { key: 'other_saved_tasks', label: 'Other saved tasks' }
+        : findPhaseForTask(definition.key, workflowKey))
 
     const derivedCompletion = buildFicaTaskDerivedCompletion(definition.key, documents)
     const partyRole = definition.key.startsWith('buyer_') ? 'buyer' : definition.key.startsWith('seller_') ? 'seller' : ''
@@ -942,7 +949,11 @@ function buildWorkflowTasks({ workflowKey = 'transfer', lane = null, workflow = 
 }
 
 function buildPhases(tasks = [], workflowKey = 'transfer', useSavedJourney = false) {
-  return getLegalWorkspacePhases(workflowKey).map((phase, index) => {
+  const phases = [...getLegalWorkspacePhases(workflowKey)]
+  if (tasks.some(task => !phases.some(phase => phase.key === task.phaseKey))) {
+    phases.push({ key: 'other_saved_tasks', label: 'Other saved tasks', stageKeys: [] })
+  }
+  return phases.map((phase, index) => {
     const phaseTasks = tasks.filter((task) => task.phaseKey === phase.key)
     const completed = phaseTasks.filter((task) => isAttorneyTaskCompleted(task.status)).length
     const blocked = phaseTasks.filter((task) => task.displayStatus === 'blocked').length
@@ -988,9 +999,8 @@ function buildPhases(tasks = [], workflowKey = 'transfer', useSavedJourney = fal
 
 function resolveSelectedTask(tasks = [], selectedTaskKey = '', workflowKey = 'transfer') {
   const normalized = normalizeAttorneyStageKey(selectedTaskKey, workflowKey)
-  const selected = normalized
-    ? tasks.find((task) => task.key === normalized || task.id === selectedTaskKey)
-    : null
+  const selected = tasks.find((task) => task.key === selectedTaskKey || task.id === selectedTaskKey)
+    || (normalized ? tasks.find((task) => task.key === normalized) : null)
 
   return (
     selected ||
@@ -1188,7 +1198,8 @@ function buildTaskNotes(activityFeed = []) {
     return (
       kind === 'comment' ||
       category === 'notes' ||
-      category === 'internal' ||
+      messageType === 'internal_note' ||
+      entry?.metadata?.updateCategory === 'note' ||
       messageType === 'comment' ||
       title.includes('note')
     )
@@ -2204,12 +2215,17 @@ export function buildTransferWorkspaceViewModel({
       })
     : null
   const tasks = workflowTasks.map((task) => {
+    const taskConfirmations = task.taskConfirmations ?? readTaskConfirmations(activityFeed, workflowKey, task.key)
     const laneDataRequirements = Array.isArray(lane?.dataRequirements) ? lane.dataRequirements : []
     const dataRequirements = (task.requiredData || []).map((requirement) => {
       const runtimeRequirement = laneDataRequirements.find((item) => item.id === requirement.id)
-      return runtimeRequirement
+      const resolved = runtimeRequirement
         ? { ...requirement, ...runtimeRequirement }
         : resolveDataRequirementFromSources(requirement, scenarioSources)
+      // Shared matter facts retain priority. An explicitly confirmed task record
+      // supplies otherwise uncaptured lane information through the same RPC store.
+      const recorded = !resolved.complete && readLegalTaskInput(workflowKey, task.key, taskConfirmations, requirement.id)
+      return recorded ? { ...resolved, ...recorded, complete: true, missing: false } : resolved
     })
     const sourceRelatedDocuments = buildRelatedDocuments(task, lane, documents)
     const relatedDocuments = task.derivedCompletion?.relatedDocuments?.length
@@ -2220,6 +2236,7 @@ export function buildTransferWorkspaceViewModel({
       : sourceRelatedDocuments
     const taskWithDocuments = {
       ...task,
+      taskConfirmations,
       dataRequirements,
       relatedDocuments,
       missingDocumentCount: relatedDocuments.filter((document) => document.missing || document.ready === false).length,
@@ -2259,18 +2276,9 @@ export function buildTransferWorkspaceViewModel({
   const selectedRelatedDocuments = selectedTask ? selectedTask.relatedDocuments : []
   const selectedChecklistItems = buildChecklistItems(selectedTask)
   const selectedActivityFeed = Array.isArray(activityFeed)
-    ? activityFeed.filter((entry) => {
-        const haystack = key([
-          entry?.stepKey,
-          entry?.step_key,
-          entry?.title,
-          entry?.body,
-          entry?.message,
-          ...(entry?.filterKeys || []),
-        ].join(' '))
-        return !selectedTask || haystack.includes(selectedTask.key) || haystack.includes(lane?.laneKey || workflowKey)
-      })
+    ? activityFeed.filter(entry => isLegalTaskActivity(entry, lane?.laneKey || workflowKey, selectedTask?.key))
     : []
+  if (selectedTask) selectedTask.completionRecord = readLegalTaskOutcome(selectedActivityFeed, workflowKey, selectedTask.key, selectedTask.status)
   const selectedNotes = buildTaskNotes(selectedActivityFeed)
   const selectedKeyDates = normalizeKeyDateRows(keyDates)
   const selectedParties = normalizePartyRows({ parties, workflow, selectedTask })

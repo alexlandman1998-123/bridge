@@ -69,6 +69,7 @@ export function resolveAttorneyActionPermissions({
   const assignment = attorneyAccess?.assignment || null
   const isAssignedParticipant = Boolean(attorneyAccess?.isAssignedParticipant)
   const teamWorkflowEligible = Boolean(attorneyAccess?.teamWorkflowEligible)
+  const matterWorkflowEligible = Boolean(attorneyAccess?.matterWorkflowEligible)
   const managementOverrideEnabled = Boolean(
     attorneyAccess?.isManagementUser &&
       attorneyAccess?.managementOverrideEnabled &&
@@ -80,6 +81,7 @@ export function resolveAttorneyActionPermissions({
   const mayActOnBehalf = Boolean(permissions.can_act_on_behalf_of_attorney && delegatedCapabilities.size)
   const hasLaneAuthority = Boolean(isAssignedParticipant || teamWorkflowEligible || managementOverrideEnabled || mayActOnBehalf)
   const actionBase = Boolean(isAttorneyAppUser && hasActiveMembership && canViewAsAttorney && hasLaneAuthority)
+  const workflowActionBase = Boolean(isAttorneyAppUser && hasActiveMembership && canViewAsAttorney && (hasLaneAuthority || matterWorkflowEligible))
   const documentsAllowed = assignmentAllows(assignment, 'can_manage_documents', 'canManageDocuments')
   const signingAllowed = assignmentAllows(assignment, 'can_manage_signing', 'canManageSigning')
   const laneUpdateAllowed = assignmentAllows(assignment, 'can_update_workflow_lane', 'canUpdateWorkflowLane')
@@ -96,9 +98,10 @@ export function resolveAttorneyActionPermissions({
     managementOverrideEnabled,
     hasLaneAuthority,
     canUpdateLane: Boolean(
-      actionBase &&
-        ((laneUpdateAllowed && (teamWorkflowEligible || roleCanEditLane(permissions, attorneyRole) || managementOverrideEnabled))
-          || delegated('workflow')),
+      workflowActionBase &&
+        (attorneyAccess?.workflowPermissionResolved
+          ? matterWorkflowEligible
+          : (laneUpdateAllowed && (teamWorkflowEligible || roleCanEditLane(permissions, attorneyRole) || managementOverrideEnabled)) || delegated('workflow')),
     ),
     canRequestDocuments: Boolean(actionBase && permissions.can_request_documents && (documentsAllowed || delegated('documents'))),
     canUploadDocuments: Boolean(actionBase && permissions.can_upload_documents && (documentsAllowed || delegated('documents'))),
@@ -476,8 +479,11 @@ export function canSeeAttorneyUpdateVisibility(context = {}, visibility = ATTORN
   return Boolean(context.canViewInternalNotes)
 }
 
-export function assertCanPublishVisibility(context = {}, visibility = ATTORNEY_VISIBILITY_SCOPES.internal) {
+export function assertCanPublishVisibility(context = {}, visibility = ATTORNEY_VISIBILITY_SCOPES.internal, { workflowMutation = false } = {}) {
   const normalized = normalizeAttorneyVisibility(visibility)
+  // Saved workflow outcomes have their own authorised audit updates. Posting
+  // standalone notes or publishing to clients still uses the separate grants.
+  if (workflowMutation && context.canUpdateLane && normalized !== ATTORNEY_VISIBILITY_SCOPES.clientVisible) return
   if (normalized === ATTORNEY_VISIBILITY_SCOPES.clientVisible && !context.canPublishClientVisibleUpdate) {
     throw new Error('Client-visible updates require permission.')
   }

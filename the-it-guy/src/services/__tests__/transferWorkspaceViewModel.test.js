@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { isLegalTaskActivity, readLegalTaskOutcome } from '../../core/transactions/legalTaskActivity.js'
 
 import {
   buildTransferTaskWorkActions,
@@ -54,7 +55,9 @@ const viewModel = buildTransferWorkspaceViewModel({
   activityFeed: [
     { id: 'activity-1', laneKey: 'transfer', stepKey: 'buyer_fica_review', title: 'Buyer FICA reviewed' },
     { id: 'activity-2', laneKey: 'bond', stepKey: 'bond_instruction_received', title: 'Bond instruction' },
-    { id: 'activity-3', kind: 'comment', visibility: 'internal', filterKeys: ['transfer'], title: 'Internal note added', body: 'Authority note' },
+    { id: 'activity-3', kind: 'comment', visibility: 'internal', metadata: { workPacket: { laneKey: 'transfer', stageKey: 'buyer_fica_review' } }, title: 'Internal note added', body: 'Authority note' },
+    { id: 'lane-note', kind: 'comment', visibility: 'internal', filterKeys: ['transfer'], title: 'General note', body: 'buyer_fica_review is mentioned in prose' },
+    { id: 'other-task', kind: 'comment', laneKey: 'transfer', stepKey: 'seller_fica_review', title: 'Other task note', body: 'buyer_fica_review' },
   ],
 })
 
@@ -563,3 +566,18 @@ for (const saved of sharedTasks) {
 assert.deepEqual(sharedModel.tasks.filter(task => sharedTasks.some(saved => saved.key === task.key)).map(task => task.key), sharedTasks.map(task => task.key))
 
 console.log('transferWorkspaceViewModel tests passed')
+
+for (const laneKey of ['transfer', 'bond', 'cancellation']) {
+  const taskKey = 'saved-task'
+  assert.equal(isLegalTaskActivity({ title: taskKey, body: taskKey, filterKeys: [laneKey] }, laneKey, taskKey), false)
+  assert.equal(isLegalTaskActivity({ laneKey, stepKey: 'other-task', filterKeys: [taskKey] }, laneKey, taskKey), false)
+  assert.equal(isLegalTaskActivity({ metadata: { workPacket: { laneKey: 'another-lane', stageKey: taskKey } } }, laneKey, taskKey), false)
+  assert.equal(isLegalTaskActivity({ metadata: { workPacket: { laneKey, stageKey: taskKey } } }, laneKey, taskKey), true)
+  const entries = [
+    { createdAt: '2026-10-01', metadata: { workPacket: { laneKey, stageKey: taskKey, completionMethod: 'manual', overrideReason: 'Imported matter' } } },
+    { createdAt: '2026-10-02', metadata: { workPacket: { laneKey, stageKey: 'other-task', completionMethod: 'manual', overrideReason: 'Wrong task' } } },
+    { createdAt: '2026-10-03', metadata: { workPacket: { laneKey, stageKey: taskKey, taskConfirmations: {} } } },
+  ]
+  assert.equal(readLegalTaskOutcome(entries, laneKey, taskKey, 'completed').reason, 'Imported matter')
+  assert.equal(readLegalTaskOutcome(entries, laneKey, taskKey, 'in_progress'), null)
+}

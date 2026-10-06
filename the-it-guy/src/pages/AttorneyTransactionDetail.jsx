@@ -82,6 +82,7 @@ import DealSetupPanel from '../components/transaction/DealSetupPanel'
 import BondDealSetupHandoffPanel from '../components/bond/BondDealSetupHandoffPanel'
 import LegalTaskWorkbench from '../components/attorney/workflow/LegalTaskWorkbench.jsx'
 import TransferStageOverview from '../components/attorney/workflow/TransferStageOverview.jsx'
+import LegacyLegalTaskReview from '../components/attorney/workflow/LegacyLegalTaskReview.jsx'
 import TransferStageTaskNavigation from '../components/attorney/workflow/TransferStageTaskNavigation.jsx'
 import {
   getNextTransferStageTask,
@@ -174,7 +175,7 @@ import {
   createTransactionDocumentSignedUrl,
   createTransactionWorkspaceHydrationContext,
   declineBondQuote,
-  fetchTransactionCoreById,
+  fetchTransactionPropertyContextById,
   fetchTransactionRouteCoreById,
   fetchTransactionById,
   fetchTransactionReferralIncentive,
@@ -5844,6 +5845,8 @@ function humanizeLegalTimelineActivity(item = {}) {
     visibility,
     internal: category === 'internal' || visibility === 'internal',
     laneKey: item.laneKey || item.lane_key || '',
+    stepKey: item.stepKey || item.step_key || item.metadata?.workPacket?.stageKey || '',
+    metadata: item.metadata || {},
   }
 }
 
@@ -8194,6 +8197,7 @@ function ArchlineTransferWorkspace({
   onUploadDocument,
   onRequestDocument,
   onAddNote,
+  onSaveTaskComment,
   onOpenDocuments,
   onOpenDocumentLibrary,
   onOpenRoutingProfile,
@@ -8202,6 +8206,7 @@ function ArchlineTransferWorkspace({
   onPublishJourneyUpdate,
   canPublishJourneyUpdate = false,
   onDirtyAnswersChange,
+  onTaskSavingChange,
   onOpenParties,
   onOpenFinance,
   onOpenMatter,
@@ -8229,11 +8234,18 @@ function ArchlineTransferWorkspace({
   })
   const selectedTaskKeyRef = useRef(selectedTaskKey)
   const unsavedAnswersTaskRef = useRef('')
+  const [taskDraftDirty, setTaskDraftDirty] = useState(false)
+  const taskDirtyRef = useRef(false)
+  const stageDirtyRef = useRef(false)
+  const [taskEditorBusy, setTaskEditorBusy] = useState(false)
   const selectTaskWithUnsavedGuard = useCallback((nextTaskKey) => {
     if (nextTaskKey === selectedTaskKeyRef.current) return true
-    if (unsavedAnswersTaskRef.current === selectedTaskKeyRef.current &&
-      typeof window !== 'undefined' && !window.confirm('You have unsaved answers. Leave this task and discard them?')) return false
+    if ((taskDirtyRef.current || stageDirtyRef.current) &&
+      typeof window !== 'undefined' && !window.confirm('You have unsaved task changes. Leave this task and discard them?')) return false
     unsavedAnswersTaskRef.current = ''
+    taskDirtyRef.current = false
+    stageDirtyRef.current = false
+    setTaskDraftDirty(false)
     onDirtyAnswersChange?.(false)
     selectedTaskKeyRef.current = nextTaskKey
     setSelectedTaskKey(nextTaskKey)
@@ -8242,7 +8254,15 @@ function ArchlineTransferWorkspace({
   const handleConfirmationDirtyChange = useCallback((taskKey, dirty) => {
     if (dirty) unsavedAnswersTaskRef.current = taskKey
     else if (unsavedAnswersTaskRef.current === taskKey) unsavedAnswersTaskRef.current = ''
-    onDirtyAnswersChange?.(dirty)
+  }, [])
+  const handleTaskDirtyChange = useCallback((_taskKey, dirty) => {
+    taskDirtyRef.current = dirty
+    setTaskDraftDirty(dirty)
+    onDirtyAnswersChange?.(dirty || stageDirtyRef.current)
+  }, [onDirtyAnswersChange])
+  const handleStageDirtyChange = useCallback((dirty) => {
+    stageDirtyRef.current = dirty
+    onDirtyAnswersChange?.(dirty || taskDirtyRef.current)
   }, [onDirtyAnswersChange])
   const [search, setSearch] = useState('')
   const [attentionFilter, setAttentionFilter] = useState('')
@@ -8286,6 +8306,10 @@ function ArchlineTransferWorkspace({
   const [taskSaveBusy, setTaskSaveBusy] = useState(false)
   const [taskSaveError, setTaskSaveError] = useState('')
   const [taskSaveMessage, setTaskSaveMessage] = useState('')
+  useEffect(() => {
+    onTaskSavingChange?.(saving || taskSaveBusy || taskEditorBusy)
+    return () => onTaskSavingChange?.(false)
+  }, [onTaskSavingChange, saving, taskSaveBusy, taskEditorBusy])
   const [stageActionOpen, setStageActionOpen] = useState(false)
   const [stageActionReason, setStageActionReason] = useState('')
   const [stageActionBusy, setStageActionBusy] = useState(false)
@@ -8321,6 +8345,8 @@ function ArchlineTransferWorkspace({
   useEffect(() => {
     if (!transferNavigation) return
     unsavedAnswersTaskRef.current = ''
+    taskDirtyRef.current = false
+    setTaskDraftDirty(false)
     onDirtyAnswersChange?.(false)
     if (transferNavigation.view === 'workspace' && transferNavigation.taskKey) {
       selectedTaskKeyRef.current = transferNavigation.taskKey
@@ -8789,7 +8815,6 @@ function ArchlineTransferWorkspace({
       setTaskSaveError('This outcome cannot be published as a client update.')
       return
     }
-    const nextTaskKey = statusDraft.status === 'completed' ? viewModel.nextActionableTask?.key : ''
     const updateSucceeded = await persistTaskUpdate(
       statusDraft.task,
       statusDraft.status,
@@ -8807,10 +8832,6 @@ function ArchlineTransferWorkspace({
       outcome: updateSucceeded === false ? 'failure' : 'success',
     })
     if (updateSucceeded === false) return
-    if (nextTaskKey && navigateTaskWithGuard(nextTaskKey)) {
-      setExpandedPhaseKeys((previous) => ({ ...previous, [viewModel.nextActionableTask.phaseKey]: true }))
-      setActiveTaskTab('checklist')
-    }
     closeStatusDraft()
   }
 
@@ -8848,18 +8869,26 @@ function ArchlineTransferWorkspace({
       setStageActionBusy(false)
     }
   }
-  if (resolvedTransferNavigation?.view === 'overview') {
+  function renderStageWorkspace(taskPanel = null) {
     return <TransferStageOverview
       phases={viewModel.phases}
       workflowKey={workflowKey}
       selectedPhase={resolvedTransferNavigation.phase}
+      selectedTaskKey={resolvedTransferNavigation.task?.key || ''}
+      taskPanel={taskPanel}
+      navigationBusy={saving || taskSaveBusy || taskEditorBusy}
+      onCloseTask={() => onNavigateTransfer?.({ view: 'overview', stageKey: resolvedTransferNavigation.phase.key })}
       onSelectStage={(stageKey) => onNavigateTransfer?.({ view: 'overview', stageKey })}
       onOpenStage={(stageKey, taskKey) => onNavigateTransfer?.({ view: 'workspace', stageKey, taskKey })}
-      canUpdate={canUpdateSteps && !saving && !taskSaveBusy}
+      canUpdate={canUpdateSteps}
+      writesPaused={saving || taskSaveBusy || taskEditorBusy || taskDraftDirty}
+      onBusyChange={setTaskEditorBusy}
+      onDirtyChange={handleStageDirtyChange}
       onUpdateTask={(task, status, note, workPacket) => persistTaskUpdate(task, status, note, workPacket, 'internal')}
       onSaveMatterNumber={onSaveMatterNumber}
     />
   }
+  if (resolvedTransferNavigation?.view === 'overview') return renderStageWorkspace()
   const stageWorkspaceHeader = resolvedTransferNavigation?.view === 'workspace' ? <>
     <header className="rounded-2xl border border-slate-200 bg-white px-5 py-5 shadow-[0_8px_26px_rgba(15,23,42,0.035)] sm:px-7">
       <div className="flex flex-wrap items-start justify-between gap-4"><div className="min-w-0"><span className="text-xs font-bold uppercase tracking-[0.1em] text-emerald-800">Stage {viewModel.phases.findIndex((phase) => phase.key === resolvedTransferNavigation.phase.key) + 1} of {viewModel.phases.length}</span><h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-950 sm:text-3xl">{resolvedTransferNavigation.phase.label}</h1></div>
@@ -8873,22 +8902,23 @@ function ArchlineTransferWorkspace({
   </> : null
 
   if (selectedTask?.operationalContract) {
-    return (
-      <>
-      {stageWorkspaceHeader}
+    const panel = (
       <LegalTaskWorkbench
         model={taskWorkbenchModel}
         phases={viewModel.phases}
         selectedTaskKey={selectedTask.key}
         selectedPhaseKey={selectedTask.phaseKey}
         focusedStage={Boolean(resolvedTransferNavigation)}
+        embedded={Boolean(resolvedTransferNavigation)}
         taskMeta={selectedTask}
         saving={saving || taskSaveBusy}
         error={workflowError || taskSaveError}
         successMessage={taskSaveMessage}
         onSelectTask={navigateTaskWithGuard}
-        onBackToStages={onNavigateTransfer ? () => onNavigateTransfer({ view: 'overview', stageKey: selectedTask.phaseKey }) : undefined}
+        onBackToStages={!resolvedTransferNavigation && onNavigateTransfer ? () => onNavigateTransfer({ view: 'overview', stageKey: selectedTask.phaseKey }) : undefined}
         onConfirmationDirtyChange={handleConfirmationDirtyChange}
+        onTaskDirtyChange={handleTaskDirtyChange}
+        onTaskBusyChange={setTaskEditorBusy}
         onRunAction={handleTaskWorkbenchAction}
         onOpenDocuments={workflow?.lane?.permissions?.canUploadDocuments
           ? (document, requirement, file) => onUploadDocument?.(selectedTask, document ? [document] : selectedDocuments, requirement || document?.requirement || null, file)
@@ -8902,7 +8932,8 @@ function ArchlineTransferWorkspace({
         onRequestDocument={workflow?.lane?.permissions?.canRequestDocuments
           ? (requirement) => onRequestDocument?.(selectedTask, selectedDocuments, requirement)
           : undefined}
-        onAddNote={() => onAddNote?.(selectedTask)}
+        onSaveTaskComment={workflow?.lane?.permissions?.canAddNotes === true && onSaveTaskComment
+          ? (draft) => onSaveTaskComment(selectedTask, draft) : undefined}
         onMarkInProgress={markTaskInProgress}
         onQuickComplete={async () => persistTaskUpdate(selectedTask, 'completed', 'Task completed from the matter workspace.')}
         onPersistTaskResponses={async (note) => persistTaskUpdate(
@@ -8931,9 +8962,14 @@ function ArchlineTransferWorkspace({
           true,
         )}
       />
-      </>
     )
+    return resolvedTransferNavigation ? renderStageWorkspace(panel) : panel
   }
+
+  if (resolvedTransferNavigation) return renderStageWorkspace(
+    <LegacyLegalTaskReview task={selectedTask} laneKey={workflowKey} documents={selectedDocuments}
+      notes={taskNotes} activity={taskActivity} onOpenDocumentLibrary={onOpenDocumentLibrary} />,
+  )
 
   return (
     <>
@@ -16505,6 +16541,7 @@ function AttorneyTransactionDetail() {
     return navigation.active ? ({ bond: 'bond-registration', cancellation: 'bond-cancellation' }[navigation.laneKey] || '') : ''
   })
   const unsavedAttorneyAnswersRef = useRef(false)
+  const attorneyTaskSavingRef = useRef(false)
   const [transferNavigation, setTransferNavigation] = useState(() => readTransferWorkspaceNavigation(location.search))
   const acceptedTransferNavigationRef = useRef(transferNavigation)
   const [legalTaskReturnContext, setLegalTaskReturnContext] = useState(null)
@@ -17440,20 +17477,24 @@ function AttorneyTransactionDetail() {
   const buyer = data?.buyer || null
   const development = data?.development || null
   const unit = data?.unit || null
-  const sectionalPropertyRequestRef = useRef('')
+  const sectionalTitleIdentity = resolveSectionalTitleIdentity({
+    transaction,
+    unit,
+    development,
+    listing: data?.listing,
+    onboardingFormData: data?.onboardingFormData,
+  })
+  const hasSectionalTitleHeader = String(resolveMatterPropertyType(transaction, unit)).toLowerCase().includes('sectional')
 
   useEffect(() => {
     if (workspaceRole !== 'attorney' || !matterAccessAllowed || !transaction?.id || !data?.__coreHydrated) return
-    if (!String(resolveMatterPropertyType(transaction, unit)).toLowerCase().includes('sectional')) return
+    if (!hasSectionalTitleHeader) return
     if (!transaction.unit_id && !transaction.development_id) return
-    if (unit?.unit_number && (development?.scheme_name || development?.name)) return
+    if (sectionalTitleIdentity.unitNumber && sectionalTitleIdentity.complexName) return
 
-    const requestKey = `${transaction.id}:${transaction.updated_at || ''}`
-    if (sectionalPropertyRequestRef.current === requestKey) return
-    sectionalPropertyRequestRef.current = requestKey
     const matterId = transaction.id
     let active = true
-    void fetchTransactionCoreById(matterId)
+    void fetchTransactionPropertyContextById(matterId)
       .then((detail) => {
         if (!active || detail?.transaction?.id !== matterId) return
         if (!detail.unit && !detail.development) return
@@ -17465,7 +17506,7 @@ function AttorneyTransactionDetail() {
       })
       .catch(() => {})
     return () => { active = false }
-  }, [data?.__coreHydrated, development?.name, development?.scheme_name, matterAccessAllowed, transaction?.development_id, transaction?.id, transaction?.property_tenure, transaction?.property_type, transaction?.unit_id, transaction?.updated_at, unit?.unit_number, workspaceRole])
+  }, [data?.__coreHydrated, hasSectionalTitleHeader, matterAccessAllowed, sectionalTitleIdentity.complexName, sectionalTitleIdentity.unitNumber, transaction?.development_id, transaction?.id, transaction?.unit_id, transaction?.updated_at, workspaceRole])
 
   useEffect(() => {
     let active = true
@@ -18475,13 +18516,6 @@ function AttorneyTransactionDetail() {
         transaction?.city,
       ].filter(Boolean).join(', ') || propertyAddress
     : propertyAddress
-  const sectionalTitleIdentity = resolveSectionalTitleIdentity({
-    transaction,
-    unit,
-    development,
-    listing: data?.listing,
-    onboardingFormData: data?.onboardingFormData,
-  })
   const propertyImageUrl = [
     ...(!isPrivateMatter ? [resolveDevelopmentCoverImage(development)] : []),
     transaction?.propertyImageUrl,
@@ -20301,10 +20335,16 @@ function AttorneyTransactionDetail() {
     unsavedAttorneyAnswersRef.current = dirty
   }, [])
 
+  const handleAttorneyTaskSavingChange = useCallback((busy) => { attorneyTaskSavingRef.current = busy }, [])
+
   const confirmDiscardAttorneyAnswers = useCallback(() => {
+    if (attorneyTaskSavingRef.current) {
+      setWorkflowError('Wait for the task save to finish before leaving this workspace.')
+      return false
+    }
     if (!unsavedAttorneyAnswersRef.current) return true
     if (typeof window !== 'undefined' &&
-      !window.confirm('You have unsaved answers. Leave this task and discard them?')) return false
+      !window.confirm('You have unsaved task changes. Leave this task and discard them?')) return false
     unsavedAttorneyAnswersRef.current = false
     return true
   }, [])
@@ -23940,6 +23980,21 @@ function AttorneyTransactionDetail() {
                 }, () => { if (liveMatterScopeRef.current === currentMatterAccessKey) setError('Document review saved. Updates could not refresh yet; reopen the matter to see the saved review.') })
                 return { message: action === 'approve' ? 'Document approved.' : 'Document marked for correction.' }
               }}
+              onSaveTaskComment={async (task, { message, commandId }) => {
+                if (!transaction?.id || !task?.key || !commandId) throw new Error('Load the current task before saving a comment.')
+                const scope = currentMatterAccessKey
+                const next = await addAttorneyTransactionUpdate({
+                  transactionId: transaction.id,
+                  laneKey: archlineActiveLegalTaskWorkflowKey,
+                  updateType: 'internal_note', visibility: 'internal', message,
+                  workPacket: { laneKey: archlineActiveLegalTaskWorkflowKey, stageKey: task.key, stageLabel: task.label, commandType: 'add_note' },
+                  idempotencyKey: commandId, returnReceipt: true,
+                })
+                void refreshWorkflowAfterChange(next).catch(() => {
+                  if (liveMatterScopeRef.current === scope) setWorkflowError('Comment saved. Reopen the matter to refresh its history.')
+                })
+                return { commandId, updateId: next.savedUpdate?.updateId, message, visibility: 'internal' }
+              }}
               onAddNote={(task) => handleWorkflowActionCommand(archlineActiveLegalTaskWorkflow?.lane, { stageKey: task?.key, label: `Note: ${task?.label || 'legal task'}` })}
               onCaptureDetails={(task, requirement) => {
                 setLegalTaskReturnContext({
@@ -23970,6 +24025,7 @@ function AttorneyTransactionDetail() {
               }}
               onOpenDocumentLibrary={() => openWorkspaceMenu('documents')}
               onDirtyAnswersChange={handleAttorneyAnswersDirtyChange}
+              onTaskSavingChange={handleAttorneyTaskSavingChange}
               onOpenRoutingProfile={openRoutingProfileModal}
               onOpenParties={(task) => openTaskLinkedWorkspace('stakeholders', task)}
               onOpenFinance={(task) => {

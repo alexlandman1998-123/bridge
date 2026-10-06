@@ -186,8 +186,8 @@ export function resolvePortalBuyerName(row = {}, { fallback = 'Buyer pending' } 
 
 export function resolveSectionalTitleIdentity(row = {}) {
   const transaction = isPlainObject(row.transaction) ? row.transaction : {}
-  const unit = isPlainObject(row.unit) ? row.unit : {}
-  const development = isPlainObject(row.development) ? row.development : {}
+  const unit = [row.unit, transaction.property_unit, transaction.propertyUnit].find(isPlainObject) || {}
+  const development = [row.development, transaction.property_development, transaction.propertyDevelopment].find(isPlainObject) || {}
   const listing = isPlainObject(row.listing) ? row.listing : {}
   const onboarding = isPlainObject(row.onboardingFormData?.formData)
     ? row.onboardingFormData.formData
@@ -205,6 +205,8 @@ export function resolveSectionalTitleIdentity(row = {}) {
     onboarding.complexName, onboarding.complex_name, onboarding.schemeName, onboarding.scheme_name,
     development.scheme_name, development.schemeName, profile.scheme_name, profile.schemeName,
     development.development_name, development.developmentName, development.name,
+    transaction.complex_name, transaction.complexName, transaction.scheme_name, transaction.schemeName,
+    transaction.development_name, transaction.developmentName,
   )
   const unitNumber = firstText(
     unit.unit_label, unit.unitLabel, unit.unit_number, unit.unitNumber,

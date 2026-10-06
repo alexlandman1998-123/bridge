@@ -1,3 +1,4 @@
+import { legalTaskRecordIssues } from '../../../core/transactions/legalTaskContent.js'
 import { useEffect, useRef, useState } from 'react'
 import { CheckCircle2, Circle, FileText, MessageSquarePlus, Download } from 'lucide-react'
 import Button from '../../ui/Button.jsx'
@@ -5,21 +6,25 @@ import Field from '../../ui/Field.jsx'
 import { getLegalTaskChecklistProgress } from '../../../core/transactions/legalTaskWorkbenchModel.js'
 
 function ReviewRegister({ spec, items = [], disabled, onChange }) {
-  const update = (index, field, value) => onChange(items.map((row, i) => i === index ? { ...row, [field]: value } : row))
-  return <div className="ml-8 space-y-3" aria-label={spec.label}>
+  // A single task record is immediately editable; repeated registers retain
+  // their existing add/remove behaviour and all saved/unknown fields.
+  const multiple = spec.multiple !== false
+  const rows = !multiple && !items.length ? [{}] : items
+  const update = (index, field, value) => onChange(rows.map((row, i) => i === index ? { ...row, [field]: value } : row))
+  return <div className="ml-8 space-y-3" aria-label={spec.label} data-task-record={spec.label}>
     <p className="text-xs text-slate-600">{spec.help}</p>
-    {items.map((row, index) => <fieldset key={row.id || index} disabled={disabled} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-      <legend className="px-1 text-xs font-semibold">Item {index + 1}</legend>
+    {rows.map((row, index) => <fieldset key={row.id || index} disabled={disabled} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+      <legend className="px-1 text-xs font-semibold">{spec.itemLabel || 'Item'}{multiple || rows.length > 1 ? ` ${index + 1}` : ''}</legend>
       <div className="grid min-w-0 gap-3 sm:grid-cols-2">
         {spec.fields.map(field => <label key={field.key} className="grid min-w-0 gap-1 text-xs text-slate-700">{field.label}
           {field.type === 'select' ? <Field as="select" value={row[field.key] || ''} onChange={event => update(index, field.key, event.target.value)}>
-            <option value="">Review needed</option>{field.options.map(option => <option key={option} value={option}>{option.replaceAll('_', ' ')}</option>)}
+            <option value="">Select position</option>{field.options.map(option => <option key={option} value={option}>{option.replaceAll('_', ' ')}</option>)}
           </Field> : <Field type={field.type} min={field.type === 'number' ? '0' : undefined} step={field.type === 'number' ? '0.01' : undefined} maxLength={4000} value={row[field.key] || ''} onChange={event => update(index, field.key, event.target.value)} />}
         </label>)}
       </div>
-      <button type="button" className="mt-3 text-xs font-semibold text-red-700 disabled:opacity-50" onClick={() => onChange(items.filter((_, i) => i !== index))}>Remove item {index + 1}</button>
+      {multiple ? <button type="button" className="mt-3 text-xs font-semibold text-red-700 disabled:opacity-50" onClick={() => onChange(items.filter((_, i) => i !== index))}>Remove {spec.itemLabel?.toLowerCase() || 'item'} {index + 1}</button> : null}
     </fieldset>)}
-    <Button type="button" variant="secondary" size="sm" disabled={disabled || items.length >= 100} onClick={() => onChange([...items, { id: crypto.randomUUID() }])}>Add item</Button>
+    {multiple ? <Button type="button" variant="secondary" size="sm" disabled={disabled || items.length >= 100} onClick={() => onChange([...items, { id: crypto.randomUUID() }])}>{spec.addLabel || 'Add item'}</Button> : null}
   </div>
 }
 
@@ -57,7 +62,7 @@ function ConfirmationRow({ item, response, noteOpen, disabled, busy, error, onCh
     </div> : item.action ? <div className="ml-8"><button type="button" disabled={busy || item.action.disabled} className="text-xs font-semibold text-emerald-800 hover:underline disabled:opacity-50" onClick={() => onRunAction?.(item.action)}>{item.action.label}</button></div> : null}
     {linkedFiles.length ? <div className="legal-task-linked-files" aria-label={`Files for ${item.label}`}>{linkedFiles.map((document, index) => <a key={document.id || document.key || index} href={document.fileUrl || document.file_url || document.signedUrl || document.signed_url || document.url} target="_blank" rel="noreferrer" className="legal-task-file-link"><FileText size={18} aria-hidden="true" /><span><strong>{document.displayName || document.label || document.name || 'Supporting document'}</strong><span>Open / download</span></span><Download size={17} aria-hidden="true" /></a>)}</div> : null}
     {item.additionalAction ? <div className="ml-8"><button type="button" disabled={busy || item.additionalAction.disabled} className="text-xs font-semibold text-emerald-800 hover:underline disabled:opacity-50" onClick={() => onRunAction?.(item.additionalAction)}>{item.additionalAction.label}</button></div> : null}
-    {item.requirement && !documentStatus ? <p className={`ml-8 text-xs ${item.requirement.complete ? 'text-emerald-800' : 'text-amber-800'}`}>{item.requirement.complete ? 'Requirement present' : 'Requirement still outstanding'}</p> : null}
+    {item.requirement && !documentStatus ? <p className={`ml-8 text-xs ${item.requirement.complete ? 'text-emerald-800' : 'text-amber-800'}`}>{item.requirement.complete ? 'Requirement present' : 'Requirement still outstanding'}{item.requirement.type === 'data' && item.requirement.value !== null && item.requirement.value !== undefined ? `: ${String(item.requirement.value)}` : ''}</p> : null}
     {details ? <div className="ml-8 rounded-lg border border-slate-200 bg-slate-50/60 p-3">{details}</div> : null}
     {item.register ? <ReviewRegister spec={item.register} items={response?.items || []} disabled={disabled || busy} onChange={items => onChange({ items })} /> : null}
     {!item.authoritative ? <button type="button" disabled={disabled || busy} className="ml-8 inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-emerald-800 disabled:opacity-50" onClick={onToggleNote}><MessageSquarePlus size={13} />{response?.note ? 'Edit note' : 'Add note'}</button> : null}
@@ -66,8 +71,16 @@ function ConfirmationRow({ item, response, noteOpen, disabled, busy, error, onCh
   </div>
 }
 
-export default function TaskConfirmations({ taskKey, items, saved = {}, disabled, compact = false, title = 'Task checklist', onSave, onDirtyChange, onRunAction, renderRowDetails }) {
-  const [draft, setDraft] = useState(saved)
+function confirmationDraft(saved, items) {
+  const draft = { ...saved }
+  for (const item of items) if (!Object.hasOwn(draft, item.id) && item.register?.initialItems?.length) {
+    draft[item.id] = { items: item.register.initialItems.map(row => ({ ...row })) }
+  }
+  return draft
+}
+
+export default function TaskConfirmations({ taskKey, items, saved = {}, disabled, compact = false, title = 'Task checklist', onSave, onBusyChange, onDirtyChange, onRunAction, renderRowDetails }) {
+  const [draft, setDraft] = useState(() => confirmationDraft(saved, items))
   const [notes, setNotes] = useState({})
   const [dirty, setDirty] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -77,9 +90,15 @@ export default function TaskConfirmations({ taskKey, items, saved = {}, disabled
   const pending = useRef(false)
   const saveAttempt = useRef(0)
   const onDirtyChangeRef = useRef(onDirtyChange)
+  const busyCallbackRef = useRef(onBusyChange)
+  busyCallbackRef.current = onBusyChange
+  useEffect(() => {
+    busyCallbackRef.current?.(busy)
+    return () => busyCallbackRef.current?.(false)
+  }, [busy])
   const currentTaskKey = useRef(taskKey)
   currentTaskKey.current = taskKey
-  const snapshot = JSON.stringify(saved)
+  const snapshot = JSON.stringify(confirmationDraft(saved, items))
   const savedSnapshotRef = useRef(snapshot)
   savedSnapshotRef.current = snapshot
   useEffect(() => { onDirtyChangeRef.current = onDirtyChange }, [onDirtyChange])
@@ -109,9 +128,13 @@ export default function TaskConfirmations({ taskKey, items, saved = {}, disabled
   }
   async function save() {
     if (disabled || pending.current) return
-    const invalidRows = Object.fromEntries(items.filter(item => (draft[item.id]?.note?.trim() || draft[item.id]?.items?.length) && !draft[item.id]?.answer)
-      .map(item => [item.id, 'Choose an answer before saving this note.']))
-    if (Object.keys(invalidRows).length) { setRowErrors(invalidRows); setError('Answer the highlighted row before saving.'); return }
+    const invalidRows = Object.fromEntries(items.flatMap(item => {
+      const response = draft[item.id]
+      const issues = item.register ? legalTaskRecordIssues(item.register, response?.items) : []
+      if ((response?.note?.trim() || response?.items?.length) && !response?.answer) issues.unshift(response?.items?.length ? 'Choose Yes, No or Not applicable before saving the record.' : 'Choose an answer before saving this note.')
+      return issues.length ? [[item.id, issues.join(' ')]] : []
+    }))
+    if (Object.keys(invalidRows).length) { setRowErrors(invalidRows); setError('Check the highlighted record before saving.'); return }
     const savingTaskKey = taskKey
     const attempt = ++saveAttempt.current
     pending.current = true; setBusy(true); setError('')

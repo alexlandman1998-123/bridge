@@ -165,7 +165,11 @@ function getBridgeBootstrapRetryReason(error) {
   if (error?.code === 'AUTH_BOOT_STEP_TIMEOUT') return 'step_timeout'
   if (message.includes('authentication bootstrap timed out')) return 'bootstrap_timeout'
   if (message.includes('workspace.resolvecurrentworkspace') && message.includes('timed out')) return 'workspace_timeout'
-  if (message.includes('schema cache') && message.includes('retry')) return 'schema_cache'
+  if (
+    ['PGRST002', 'PGRST003'].includes(String(error?.code || '').toUpperCase()) ||
+    message.includes('could not query the database for the schema cache') ||
+    (message.includes('schema cache') && message.includes('retry'))
+  ) return 'schema_cache'
   if (['timeout', 'schema_cache_unavailable', 'query_error', 'probe_failed'].includes(bootHealthStatus)) {
     return `boot_health_${bootHealthStatus}`
   }

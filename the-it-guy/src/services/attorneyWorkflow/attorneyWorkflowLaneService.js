@@ -1879,7 +1879,7 @@ export async function updateAttorneyWorkflowStepStatus({
   const normalizedVisibility = normalizeVisibility(
     visibility || operationalWorkPacket?.visibility || operationalContract?.visibilityPolicy?.defaultVisibility || stageDefinition?.defaultVisibility || 'professional_shared',
   )
-  assertCanPublishVisibility(permissionContext, normalizedVisibility)
+  assertCanPublishVisibility(permissionContext, normalizedVisibility, { workflowMutation: true })
 
   if (['completed_externally', 'not_applicable'].includes(normalizedStatus) && !normalizedNote) {
     throw new Error('Record a reason for this task outcome.')
@@ -1969,6 +1969,7 @@ export async function addAttorneyTransactionUpdate({
   workPacket = null,
   journeyBrief = null,
   idempotencyKey = '',
+  returnReceipt = false,
 } = {}) {
   const client = requireClient()
   const actor = await getAuthenticatedUser(client)
@@ -2047,6 +2048,21 @@ export async function addAttorneyTransactionUpdate({
   assertCanPublishVisibility(permissionContext, normalizedVisibility)
   const lane = await fetchLaneForUpdate(client, normalizedTransactionId, normalizedLaneKey)
 
+  if (isGenericInternalNote && normalizedVisibility === 'internal' && workPacketMetadata.workPacket?.stageKey) {
+    const stableKey = idempotencyKey || globalThis.crypto.randomUUID()
+    const atomicComment = await client.rpc('bridge_add_attorney_task_comment_and_sync_v1', {
+      p_transaction_id: normalizedTransactionId,
+      p_lane_key: normalizedLaneKey,
+      p_task_key: workPacketMetadata.workPacket.stageKey,
+      p_message: normalizedMessage,
+      p_idempotency_key: stableKey,
+    })
+    if (atomicComment.error) throw atomicComment.error
+    if (!atomicComment.data?.updateId) throw new Error('No saved comment was returned. Reload the matter to verify before retrying.')
+    if (returnReceipt) return { refreshRequired: true, savedUpdate: atomicComment.data, commandId: stableKey }
+    return getAttorneyWorkflowOperationsForTransaction(normalizedTransactionId, { initialize: false })
+  }
+
   if (isGenericInternalNote && normalizedVisibility === 'internal') {
     const actionKey = normalizedLaneKey === 'bond'
       ? 'BOND_ATTORNEY_COMMENT_ADDED'
@@ -2113,6 +2129,7 @@ export async function addAttorneyTransactionUpdate({
   })
   if (atomicUpdate.error) throw atomicUpdate.error
 
+  if (returnReceipt) return { refreshRequired: true, savedUpdate: atomicUpdate.data || {}, commandId: stableKey }
   return getAttorneyWorkflowOperationsForTransaction(normalizedTransactionId, { initialize: false })
 }
 

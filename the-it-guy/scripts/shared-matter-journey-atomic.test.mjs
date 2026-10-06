@@ -51,6 +51,32 @@ await db.exec(migration('20260910153517_reconcile_shared_journey_reader_contract
 const laneSecurity = migration('202607230008_attorney_three_lane_transaction_spine.sql')
 await db.exec(laneSecurity.slice(laneSecurity.indexOf('create or replace function public.bridge_attorney_lane_role'), laneSecurity.indexOf('create or replace function public.bridge_can_mutate_attorney_lane')))
 await db.exec(migration('20260909144454_attorney_task_confirmation_state.sql'))
+// Reproduce an instructed attorney team with only a transfer appointment. Task
+// editing must work without separate lane or standalone-comment capabilities.
+const firm = '00000000-0000-0000-0000-000000000005'
+await db.exec(`
+alter table attorney_firm_members add column role text, add column professional_role text;
+insert into attorney_firm_members(user_id,status,firm_id,role,professional_role)
+  values('${actor}','active','${firm}','firm_admin','firm_admin');
+alter table transaction_attorney_assignments add column attorney_role text, add column assignment_type text,
+  add column matter_type text, add column can_update_workflow_lane boolean,
+  add column can_manage_documents boolean, add column can_add_internal_notes boolean,
+  add column can_add_shared_updates boolean;
+update transaction_attorney_assignments set firm_id='${firm}',attorney_role='transfer_attorney',
+  assignment_type='transfer',assignment_status='pending',status='pending',
+  can_update_workflow_lane=true,can_manage_documents=false,
+  can_add_internal_notes=false,can_add_shared_updates=false;
+create table attorney_matter_team_members(transaction_id uuid,firm_id uuid,user_id uuid,removed_at timestamptz);
+create table attorney_lane_delegations(transaction_id uuid,attorney_role text,responsible_firm_id uuid,
+  delegate_user_id uuid,status text,starts_at timestamptz,expires_at timestamptz,capabilities text[]);
+`)
+const pendingTeam = migration('20260927074804_attorney_pending_firm_workflow_access.sql')
+await db.exec(pendingTeam.slice(pendingTeam.indexOf('create or replace function'), pendingTeam.indexOf('-- The review RPC')))
+await assert.rejects(db.query('select bridge_update_attorney_workflow_step_v4($1,$2,$3,$4,$5,$6,$7,$8,$9)',
+  [matter,'transfer',step,'in_progress',randomUUID(),null,'Outcome audit','internal',null]), /permission to publish/,
+  'the original atomic guard wrongly treats a workflow audit as a standalone note')
+assert.equal((await db.query("select bridge_can_mutate_attorney_lane($1,'bond_attorney','workflow') allowed", [matter])).rows[0].allowed, false)
+await db.exec(migration('20261006143422_attorney_matter_workflow_lane_access.sql'))
 // The historical catalogue insert omitted required phase columns. Use the
 // forward replacement, which covers every current transfer definition, rather
 // than rewriting the already-applied migration to make this fixture pass.
@@ -110,10 +136,10 @@ for (const key of ['transfer','bond','cancellation']) {
   const activeRows = rows.filter((row) => expected.some((item) => item.step_key === row.step_key))
   catalogueComparisons.push({ lane: key, activeRows, expected })
 }
-const update = async (status, command = randomUUID(), expected = undefined, note = '', packet = null, targetStep = step) => {
+const update = async (status, command = randomUUID(), expected = undefined, note = '', packet = null, targetStep = step, targetLane = 'transfer', visibility = 'internal') => {
   if (expected === undefined) expected = (await db.query('select updated_at from transaction_subprocess_steps where id=$1',[targetStep])).rows[0].updated_at
   return (await db.query('select bridge_update_attorney_workflow_step_v4($1,$2,$3,$4,$5,$6,$7,$8,$9) result',
-    [matter,'transfer',targetStep,status,command,expected,note,'internal',packet])).rows[0].result
+    [matter,targetLane,targetStep,status,command,expected,note,visibility,packet])).rows[0].result
 }
 const verifySavedJourney = async (saved, taskKey = 'instruction_received') => {
   const source = (await db.query('select bridge_read_professional_matter_journey($1) result', [matter])).rows[0].result
@@ -207,7 +233,7 @@ assert.strictEqual(calls[0].args,calls[1].args)
 calls=[]
 await commitSharedJourneyTask({rpc:async()=>{calls.push(1);return {error:{code:'40001'}}}},payload)
 assert.equal(calls.length,1)
-const confirmations = { 'evidence:instruction_received:0': { answer: 'yes', note: 'Reviewed locally' } }
+const confirmations = { 'evidence:instruction_received:0': { answer: 'yes', note: 'Reviewed locally', items: [{ date: '2026-10-06', reference: 'TRANSFER-RECORD-1', source: 'Instructing attorney' }] } }
 await update('not_started', randomUUID(), undefined, '', { taskConfirmations: confirmations })
 assert.equal((await db.query('select status from transaction_subprocess_steps where id=$1',[step])).rows[0].status, 'not_started',
   'saving answers must not implicitly mark the task in progress')
@@ -224,6 +250,31 @@ assert.deepEqual(confirmationPrivileges, { anonymous_read: false, direct_write: 
 await db.exec('grant usage on schema auth to authenticated; grant select on transaction_subprocesses, transaction_attorney_assignments to authenticated; set role authenticated')
 assert.equal((await db.query('select count(*)::int n from attorney_task_confirmations')).rows[0].n, 1)
 await db.exec('reset role')
+// Save and reload real bond/cancellation outcomes and answers using the same
+// pending transfer instruction. No appointment or comment grant is fabricated.
+await db.exec('begin')
+for (const [laneKey, taskKey] of [['bond','bond_instruction_received'], ['cancellation','cancellation_instruction_received']]) {
+  const targetLane = randomUUID(), targetStep = randomUUID()
+  await db.query("update transactions set routing_profile_json=jsonb_set(routing_profile_json,'{workflowPlan,lanes}',(routing_profile_json #> '{workflowPlan,lanes}') || $2::jsonb) where id=$1",
+    [matter, JSON.stringify([{ laneKey, stepKeys: [taskKey] }])])
+  await db.query("insert into transaction_subprocesses(id,transaction_id,process_type,status) values($1,$2,$3,'not_started')", [targetLane,matter,laneKey])
+  await db.query("insert into transaction_subprocess_steps(id,subprocess_id,transaction_id,step_key,status,sort_order) values($1,$2,$3,$4,'not_started',1)", [targetStep,targetLane,matter,taskKey])
+  const answers = { [`evidence:${taskKey}:1`]: { answer: 'yes', note: 'Instruction checked', items: [{ date: '2026-10-06', reference: `${laneKey}-RECORD-1`, source: 'Bank instruction', retainedOlderField: 'preserve' }] } }
+  for (const visibility of ['internal','professional_shared']) {
+    const saved = await update('in_progress',randomUUID(),undefined,'Instruction checked',{taskConfirmations:answers},targetStep,laneKey,visibility)
+    assert.equal(saved.stepStatus,'in_progress')
+    assert.equal(saved.committedSnapshot.laneSnapshots[laneKey].steps[0].status,'in_progress')
+  }
+  await db.exec('set role authenticated')
+  assert.deepEqual((await db.query('select task_confirmations from attorney_task_confirmations where step_id=$1',[targetStep])).rows[0].task_confirmations, answers,
+    `${laneKey} answers must survive the real command and authenticated reload`)
+  await db.exec('reset role')
+  await db.exec('savepoint denied_client_publication')
+  await assert.rejects(update('completed',randomUUID(),undefined,'Client publication',null,targetStep,laneKey,'client_visible'), /permission to publish/)
+  await db.exec('rollback to savepoint denied_client_publication')
+  assert.equal((await db.query('select status from transaction_subprocess_steps where id=$1',[targetStep])).rows[0].status,'in_progress')
+}
+await db.exec('rollback')
 await db.exec('delete from transaction_attorney_assignments')
 await db.exec('set role authenticated')
 assert.equal((await db.query('select count(*)::int n from attorney_task_confirmations')).rows[0].n, 0, 'unassigned readers must not see private confirmation notes')
@@ -231,7 +282,7 @@ await db.exec('reset role')
 await assert.rejects(update('completed'),/permission/)
 await assert.rejects(update('completed',id,null,'Private note'),/permission/, 'replays must recheck authority')
 await db.close()
-console.log('Shared journey atomic: PostgreSQL commits, structured confirmations, reload, rollback, outcomes, revisions, ACL and transport retry PASS')
+console.log('Shared journey atomic: all three lanes, PostgreSQL commits, structured confirmations, reload, rollback, outcomes, revisions, ACL and transport retry PASS')
 for (const { lane, activeRows, expected } of catalogueComparisons) {
   const actualByKey = new Map(activeRows.map((row) => [row.step_key, row.definition]))
   const differences = expected.flatMap(({ step_key, definition }) => {

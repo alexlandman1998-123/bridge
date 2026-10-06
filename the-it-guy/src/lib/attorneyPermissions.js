@@ -479,10 +479,21 @@ export async function getAttorneyLaneAccessContext({ userId = null, transactionI
     : { data: false }
   // A missing migration must fail closed for the new multi-person team path.
   const teamWorkflowEligible = !teamPermission.error && teamPermission.data === true
-  const canActAsAttorney = Boolean(
+  // Workflow editing follows the authenticated matter team. The database also
+  // checks paused assignments and explicit restrictions on the requested lane.
+  const matterWorkflowPermission = activeMembership && canViewMatter
+    ? await client.rpc('bridge_can_mutate_attorney_lane', {
+        p_transaction_id: resolvedTransactionId,
+        p_attorney_role: `${laneRole}_attorney`,
+        p_capability: 'workflow',
+      })
+    : { data: false }
+  const matterWorkflowEligible = !matterWorkflowPermission.error && matterWorkflowPermission.data === true
+  const workflowPermissionResolved = !matterWorkflowPermission.error && typeof matterWorkflowPermission.data === 'boolean' && Boolean(activeMembership && canViewMatter)
+  const canActAsAttorney = workflowPermissionResolved ? matterWorkflowEligible : Boolean(
     (isAssignedAttorney && activeLaneAssignment?.can_update_workflow_lane !== false) ||
       (isManagementUser && managementOverrideEnabled && canViewMatter && overrideFirmId) ||
-      teamWorkflowEligible,
+      teamWorkflowEligible || matterWorkflowEligible,
   )
 
   return {
@@ -494,16 +505,18 @@ export async function getAttorneyLaneAccessContext({ userId = null, transactionI
     isAssignedAttorney,
     isAssignedParticipant,
     teamWorkflowEligible,
+    matterWorkflowEligible,
+    workflowPermissionResolved,
     isManagementUser,
     managementOverrideEnabled,
     laneRole,
-    firmId: overrideFirmId || null,
+    firmId: (matterWorkflowEligible ? activeMembership?.firmId : overrideFirmId) || null,
     firmRole: activeMembership?.professionalRole || null,
     assignment: activeLaneAssignment,
     reason: canActAsAttorney
       ? isAssignedAttorney
         ? 'assigned_attorney'
-        : teamWorkflowEligible ? 'matter_team' : 'management_override'
+        : matterWorkflowEligible ? 'matter_workflow' : teamWorkflowEligible ? 'matter_team' : 'management_override'
       : canManageMatter
         ? 'management_view_only'
         : canViewMatter

@@ -1,3 +1,4 @@
+import { verifyAttorneyTaskComments } from './helpers/attorneyTaskCommentFixture.mjs'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { verifyAttorneyInternalAccess } from './helpers/attorneyInternalAccessFixture.mjs'
@@ -22,6 +23,7 @@ const ids = {
 const teamMigration = readFileSync(new URL('../../supabase/migrations/20260926131822_attorney_matter_team_scope.sql', import.meta.url), 'utf8')
 const contractMigration = readFileSync(new URL('../../supabase/migrations/20260926175324_attorney_workbench_permission_contract.sql', import.meta.url), 'utf8')
 const pendingFirmMigration = readFileSync(new URL('../../supabase/migrations/20260927074804_attorney_pending_firm_workflow_access.sql', import.meta.url), 'utf8')
+const matterWorkflowMigration = readFileSync(new URL('../../supabase/migrations/20261006143422_attorney_matter_workflow_lane_access.sql', import.meta.url), 'utf8')
 const atomicMigration = readFileSync(new URL('../../supabase/migrations/20260908144636_shared_matter_journey_atomic_commands.sql', import.meta.url), 'utf8')
 function definition(source, functionName) {
   const start = source.indexOf(`create or replace function public.${functionName}(`)
@@ -83,13 +85,14 @@ try {
       public.bridge_can_mutate_attorney_lane(uuid,text,text) to authenticated;
     create function public.test_workbench_write(p_step_id uuid, p_status text, p_answers jsonb)
     returns void language plpgsql security definer set search_path = '' as $$
-    declare v_transaction_id uuid;
+    declare v_transaction_id uuid; v_lane_role text;
     begin
-      select lane.transaction_id into v_transaction_id
+      select lane.transaction_id, case lane.process_type when 'attorney' then 'transfer_attorney'
+        else lane.process_type || '_attorney' end into v_transaction_id, v_lane_role
       from public.transaction_subprocess_steps step
       join public.transaction_subprocesses lane on lane.id = step.subprocess_id
       where step.id = p_step_id;
-      if not public.bridge_can_mutate_attorney_lane(v_transaction_id, 'transfer_attorney', 'workflow') then
+      if not public.bridge_can_mutate_attorney_lane(v_transaction_id, v_lane_role, 'workflow') then
         raise exception 'You do not have permission to update this attorney workflow.' using errcode = '42501';
       end if;
       update public.transaction_subprocess_steps set status = p_status where id = p_step_id;
@@ -136,9 +139,9 @@ try {
   const access = async (actor, capability) => (await as(actor,
     'select public.bridge_attorney_matter_team_access($1,$2,$3) as allowed',
     [ids.matter, ids.firm, capability])).rows[0].allowed
-  const canMutate = async (actor, capability) => (await as(actor,
+  const canMutate = async (actor, capability, laneRole = 'transfer_attorney') => (await as(actor,
     'select public.bridge_can_mutate_attorney_lane($1,$2,$3) as allowed',
-    [ids.matter, 'transfer_attorney', capability])).rows[0].allowed
+    [ids.matter, laneRole, capability])).rows[0].allowed
   const savedAnswers = async (actor) => (await as(actor,
     'select task_confirmations from public.attorney_task_confirmations where step_id=$1', [ids.step])).rows
   const review = (actor, action = 'approve', claimedRole = 'transferring_attorney') => as(actor,
@@ -146,6 +149,25 @@ try {
     [ids.requirement, action, claimedRole, ids[actor]])
   const write = (actor, status, answers) => as(actor,
     'select public.test_workbench_write($1,$2,$3)', [ids.step, status, answers])
+
+  for (const laneRole of ['bond_attorney', 'cancellation_attorney']) {
+    assert.equal(await canMutate('principal', 'workflow', laneRole), false,
+      'baseline reproduces the separate-assignment lock on other lanes')
+  }
+  await db.exec('reset role')
+  // This focused fixture covers lane permissions and answer RLS. The atomic
+  // journey suite loads the whole migration and exercises its real save guard.
+  await db.exec(matterWorkflowMigration.slice(0, matterWorkflowMigration.indexOf('-- Atomic task saves')) + '\ncommit;')
+  for (const actor of ['principal', 'conveyancer', 'secretary', 'unassigned']) {
+    for (const laneRole of ['transfer_attorney', 'bond_attorney', 'cancellation_attorney']) {
+      assert.equal(await canMutate(actor, 'workflow', laneRole), true,
+        `${actor} can work in ${laneRole} on an instructed firm matter`)
+    }
+  }
+  assert.equal(await canMutate('principal', 'documents', 'bond_attorney'), false,
+    'workflow editing does not create a bond document approval grant')
+  assert.equal(await canMutate('principal', 'internal_notes', 'cancellation_attorney'), false,
+    'workflow editing does not create a cancellation private-comment grant')
 
   for (const actor of ['principal', 'conveyancer', 'secretary', 'unassigned']) {
     assert.equal(await access(actor, 'view'), true, `${actor} can see an unallocated firm matter`)
@@ -168,6 +190,11 @@ try {
   'team allocation reloads from the database')
   assert.equal(await access('unassigned', 'view'), false, 'allocation hides the matter from unassigned colleagues')
   assert.equal(await canMutate('unassigned', 'workflow'), false)
+  for (const laneRole of ['bond_attorney', 'cancellation_attorney']) {
+    assert.equal(await canMutate('unassigned', 'workflow', laneRole), false)
+    assert.equal(await canMutate('otherFirmUser', 'workflow', laneRole), false)
+    assert.equal(await canMutate('client', 'workflow', laneRole), false)
+  }
   assert.equal(await access('principal', 'manage'), true)
   assert.equal(await access('secretary', 'manage'), false)
   await write('secretary', 'in_progress', { received: { answer: 'no' } })
@@ -210,11 +237,42 @@ try {
   assert.equal((await as('principal', `select has_table_privilege('authenticated',
     'public.attorney_task_confirmations', 'UPDATE') as allowed`)).rows[0].allowed, false,
   'direct Data API answer writes remain unavailable')
+  // Save and reload task answers in lanes with no separate appointment.
+  await db.exec('reset role')
+  for (const [index, processType] of ['bond', 'cancellation'].entries()) {
+    const laneId = `00000000-0000-0000-0000-00000000302${index}`
+    const stepId = `00000000-0000-0000-0000-00000000303${index}`
+    await db.query('insert into public.transaction_subprocesses values ($1,$2,$3)', [laneId, ids.matter, processType])
+    await db.query('insert into public.transaction_subprocess_steps values ($1,$2,$3)', [stepId, laneId, 'not_started'])
+    await db.query('insert into public.attorney_task_confirmations values ($1,$2,$3)', [stepId, laneId, {}])
+    await as('secretary', 'select public.test_workbench_write($1,$2,$3)', [stepId, 'in_progress', { received: { answer: 'yes' } }])
+    const answers = await as('principal', 'select task_confirmations from public.attorney_task_confirmations where step_id=$1', [stepId])
+    assert.equal(answers.rows[0].task_confirmations.received.answer, 'yes', `${processType} answers reload for the matter team`)
+    await assert.rejects(as('unassigned', 'select public.test_workbench_write($1,$2,$3)', [stepId, 'completed', {}]), /permission/)
+    assert.equal((await as('otherFirmUser', 'select task_confirmations from public.attorney_task_confirmations where step_id=$1', [stepId])).rows.length, 0)
+    await db.exec('reset role')
+  }
+  // Explicit target-lane restrictions must also hold for combined assignments.
+  await db.query(`insert into public.transaction_attorney_assignments
+    (transaction_id,firm_id,assignment_status,status,attorney_role,can_update_workflow_lane)
+    values ($1,$2,'active','active','bond_attorney',false)`, [ids.matter, ids.firm])
+  assert.equal(await canMutate('principal', 'workflow', 'bond_attorney'), false)
+  await db.exec('reset role')
+  await db.query("update public.transaction_attorney_assignments set assignment_type='transfer_and_bond' where attorney_role='transfer_attorney'")
+  assert.equal(await canMutate('principal', 'workflow', 'bond_attorney'), false)
+  await db.exec('reset role')
+  await db.query("update public.transaction_attorney_assignments set assignment_status='paused',can_update_workflow_lane=true where attorney_role='bond_attorney'")
+  assert.equal(await canMutate('principal', 'workflow', 'bond_attorney'), false)
+  await db.exec('reset role')
+  await db.query("delete from public.transaction_attorney_assignments where attorney_role='bond_attorney'")
+  await db.query("update public.transaction_attorney_assignments set assignment_type='transfer' where attorney_role='transfer_attorney'")
   await db.exec('reset role')
   await db.query('update public.transaction_attorney_assignments set assignment_status=$2 where transaction_id=$1',
     [ids.matter, 'pending'])
   assert.equal((await savedAnswers('secretary')).length, 1, 'pending assignments remain readable')
   assert.equal(await canMutate('secretary', 'workflow'), true, 'instructed firm team can work before acceptance')
+  assert.equal(await canMutate('secretary', 'workflow', 'bond_attorney'), true)
+  assert.equal(await canMutate('secretary', 'workflow', 'cancellation_attorney'), true)
   await write('secretary', 'in_progress', { received: { answer: 'yes' } })
   assert.equal((await savedAnswers('principal'))[0].task_confirmations.received.answer, 'yes',
     'a pending-firm confirmation saves and reloads')
@@ -225,9 +283,13 @@ try {
   await db.query('update public.transaction_attorney_assignments set assignment_status=$2 where transaction_id=$1',
     [ids.matter, 'paused'])
   assert.equal(await canMutate('secretary', 'workflow'), false, 'paused matters stay read-only')
-  console.log('Attorney Work permission contract: team allocation, answer reads, lane writes and document review PASS')
+  assert.equal(await canMutate('secretary', 'workflow', 'bond_attorney'), false)
+  assert.equal(await canMutate('secretary', 'workflow', 'cancellation_attorney'), false)
+  console.log('Attorney Work permission contract: three-lane editing, team allocation, answer reads, restrictions and document review PASS')
 } finally {
   await db.close()
 }
 
 await verifyAttorneyInternalAccess(PGlite)
+
+await verifyAttorneyTaskComments(PGlite)

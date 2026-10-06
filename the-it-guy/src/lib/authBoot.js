@@ -695,26 +695,17 @@ async function loadBridgeAuthStateUncoalesced({ session, selectedWorkspaceId = '
         })
       }
 
-      try {
-        return await withTransientSchemaRetry(
-          () => withStepTimeout(getOrCreateUserProfile({ user }), {
-            label: 'profile.getOrCreate',
-            timeoutMs: AUTH_BOOT_REQUIRED_STEP_TIMEOUT_MS,
-          }),
-          { label: 'profile.getOrCreate', userId: user.id },
-        )
-      } catch (error) {
-        if (!isAuthBootStepTimeout(error) && !isTransientSchemaCacheError(error)) throw error
-        console.warn('[AUTH] profile load unavailable; using session metadata fallback for this boot.', {
-          userId: user.id,
-          reason: isTransientSchemaCacheError(error) ? 'schema_cache_unavailable' : 'timeout',
-        })
-        return {
-          ...buildDefaultProfileFromUser(user),
-          bootFallback: true,
-          bootFallbackReason: isTransientSchemaCacheError(error) ? 'profile_schema_cache_unavailable' : 'profile_timeout',
-        }
-      }
+      // Session metadata does not establish the saved role or onboarding state.
+      // Propagate an unavailable profile to the bounded retry/cache recovery in
+      // AuthSessionContext, instead of completing boot with a default profile
+      // that would redirect an existing workspace back to onboarding.
+      return withTransientSchemaRetry(
+        () => withStepTimeout(getOrCreateUserProfile({ user }), {
+          label: 'profile.getOrCreate',
+          timeoutMs: AUTH_BOOT_REQUIRED_STEP_TIMEOUT_MS,
+        }),
+        { label: 'profile.getOrCreate', userId: user.id },
+      )
     },
     { userId: user.id },
   )

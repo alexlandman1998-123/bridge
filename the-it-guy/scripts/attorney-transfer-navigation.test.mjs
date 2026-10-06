@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { createElement } from 'react'
+import { createElement, useState } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { createServer } from 'vite'
 import { JSDOM } from 'jsdom'
@@ -10,8 +10,9 @@ import {
   resolveTransferWorkspaceNavigation,
   writeTransferWorkspaceNavigation,
 } from '../src/core/transactions/transferWorkspaceNavigation.js'
+import { buildLegalTaskWorkbenchModel } from '../src/core/transactions/legalTaskWorkbenchModel.js'
 import { normalizeAttorneyWorkflowWorkPacket } from '../src/constants/attorneyWorkflowUsability.js'
-import { getAttorneyStageDefinitionsForLane } from '../src/constants/attorneyWorkflowStages.js'
+import { getAttorneyStageDefinitionsForLane, getAttorneyStageDefinition } from '../src/constants/attorneyWorkflowStages.js'
 import { projectSharedMatterJourneyRead, sharedJourneyHeaderPhases, sharedJourneyLaneTasks } from '../src/services/sharedMatterJourneyReader.js'
 import { buildTransferWorkspaceViewModel, getLegalWorkspacePhases } from '../src/services/attorneyWorkflow/transferWorkspaceViewModel.js'
 
@@ -27,6 +28,8 @@ const phases = [
     { key: 'closure_review', label: 'Closure Review', status: 'completed', displayStatus: 'completed', statusLabel: 'Completed' },
   ] },
 ]
+
+for (const phase of phases) for (const task of phase.tasks) task.operationalContract = getAttorneyStageDefinition(task.key, 'transfer')?.operationalContract
 
 const deepLink = writeTransferWorkspaceNavigation('?source=matter', {
   view: 'workspace', stageKey: 'instruction', taskKey: 'instruction_received',
@@ -136,6 +139,48 @@ try {
   const { default: TransferStageOverview } = await server.ssrLoadModule('/src/components/attorney/workflow/TransferStageOverview.jsx')
   const { default: TransferStageTaskNavigation } = await server.ssrLoadModule('/src/components/attorney/workflow/TransferStageTaskNavigation.jsx')
   const { default: LegalTaskWorkbench } = await server.ssrLoadModule('/src/components/attorney/workflow/LegalTaskWorkbench.jsx')
+  const { default: Modal } = await server.ssrLoadModule('/src/components/ui/Modal.jsx')
+  const { default: LegacyLegalTaskReview } = await server.ssrLoadModule('/src/components/attorney/workflow/LegacyLegalTaskReview.jsx')
+  const rendered = new JSDOM('<div></div>')
+  let coveredTasks = 0
+  for (const laneKey of ['transfer', 'bond', 'cancellation']) {
+    const definitions = getAttorneyStageDefinitionsForLane(laneKey)
+    const savedTasks = definitions.map(task => ({ key: task.key, status: 'not_started',
+      phaseKey: getLegalWorkspacePhases(laneKey).find(phase => phase.stageKeys.includes(task.key)).key }))
+    for (const definition of definitions) {
+      const vm = buildTransferWorkspaceViewModel({ workflowKey: laneKey, sharedJourneyTasks: savedTasks, selectedTaskKey: definition.key })
+      assert.equal(vm.selectedTask.key, definition.key)
+      const model = buildLegalTaskWorkbenchModel({ task: vm.selectedTask, taskContext: vm.selectedTaskContext,
+        workActions: vm.selectedTaskContext.workActions, statusActions: vm.availableActions.primary })
+      const panel = createElement(LegalTaskWorkbench, { model, phases: vm.phases, focusedStage: true, embedded: true,
+        selectedTaskKey: definition.key, selectedPhaseKey: vm.selectedTask.phaseKey, onSaveConfirmations: async () => true })
+      const markup = renderToStaticMarkup(createElement(TransferStageOverview, { phases: vm.phases,
+        workflowKey: laneKey, selectedPhase: vm.currentPhase, selectedTaskKey: definition.key, taskPanel: panel }))
+      const document = rendered.window.document
+      document.body.innerHTML = markup
+      assert.equal(document.querySelectorAll('.legal-workflow-stage-grid > li').length, laneKey === 'transfer' ? 6 : 4)
+      assert.equal(document.querySelector('[aria-label="Task workspace"] h2').textContent, definition.label)
+      assert.equal(document.querySelectorAll('.legal-stage-task-row[aria-current="step"]').length, 1)
+      assert.doesNotMatch(document.querySelector('[aria-label="Task workspace"]').textContent, /Transfer Coverage|Lane Command Queue|Outcome Checkpoint|Choose a task in/)
+      coveredTasks++
+    }
+    for (const definition of definitions) for (const alias of definition.aliases || []) {
+      const vm = buildTransferWorkspaceViewModel({ workflowKey: laneKey, sharedJourneyTasks: [
+        { key: 'future_saved_work', label: 'Future saved work', status: 'blocked', phaseKey: 'unknown_phase' },
+        { key: alias, label: 'Earlier task', status: 'completed_externally', comment: 'Earlier work retained', phaseKey: getLegalWorkspacePhases(laneKey)[0].key },
+      ], selectedTaskKey: alias })
+      assert.equal(vm.selectedTask.key, alias, 'an exact saved alias takes precedence over a different blocked task')
+      assert.equal(vm.selectedTask.comment, 'Earlier work retained')
+      assert.equal(vm.selectedTask.status, 'completed_externally')
+      assert.equal(vm.selectedTask.operationalContract, null, 'older tasks do not inherit a newer combined completion contract')
+      const legacy = renderToStaticMarkup(createElement(LegacyLegalTaskReview, { task: vm.selectedTask, laneKey }))
+      assert.match(legacy, /Earlier work retained/)
+      assert.doesNotMatch(legacy, /Complete task|Mark complete|Lane Command Queue/)
+      assert.equal(vm.phases.find(phase => phase.key === 'other_saved_tasks').tasks[0].key, 'future_saved_work')
+    }
+  }
+  assert.equal(coveredTasks, 89)
+  rendered.window.close()
   const html = renderToStaticMarkup(createElement(TransferStageOverview, { phases, selectedPhase: phases[0] }))
   assert.match(html, /Transfer stages/)
   assert.match(html, /Instruction &amp; File Opening/)
@@ -164,6 +209,7 @@ try {
   const notApplicableHtml = renderToStaticMarkup(createElement(TransferStageOverview, { phases: [notApplicablePhase], selectedPhase: notApplicablePhase }))
   assert.match(notApplicableHtml, /Not applicable/)
   assert.match(notApplicableHtml, /View/, 'not applicable tasks remain reviewable')
+  assert.doesNotMatch(notApplicableHtml, /0 \/ 0 complete/, 'all-not-applicable stage cards have no misleading completion count')
   assert.doesNotMatch(notApplicableHtml, /role="progressbar"/, 'zero applicable tasks do not expose a progress range')
   const emptyPhase = { key: 'empty', label: 'No work in this phase', status: 'not_applicable', completed: 0, total: 0, percent: 0, tasks: [] }
   const emptyHtml = renderToStaticMarkup(createElement(TransferStageOverview, { phases: [emptyPhase], selectedPhase: emptyPhase, workflowKey: 'bond', canUpdate: true }))
@@ -202,8 +248,10 @@ try {
       canComplete: true, requirementsSatisfied: true,
     },
     phases: [phases[0]], selectedPhaseKey: 'instruction', selectedTaskKey: 'instruction_received', focusedStage: true,
+    onBackToStages: () => {},
   }))
   assert.match(readOnlyHtml, /Read-only workflow/)
+  assert.match(readOnlyHtml, /Back to Instruction &amp; File Opening/, 'read-only tasks retain the stage return path')
   assert.doesNotMatch(readOnlyHtml, /Complete task|Mark in progress|Mark blocked|Edit matter/, 'read-only review hides write controls even if actions are supplied')
   const browser = new JSDOM('<div id="root"></div>', { url: 'https://test.invalid' })
   const previous = { window: globalThis.window, document: globalThis.document, HTMLElement: globalThis.HTMLElement }
@@ -212,7 +260,73 @@ try {
   globalThis.HTMLElement = browser.window.HTMLElement
   browser.window.scrollTo = () => {}
   try {
-    const { render, fireEvent, cleanup, waitFor, within } = await import('@testing-library/react')
+    const { render, fireEvent, cleanup, waitFor, within, act } = await import('@testing-library/react')
+    for (const laneKey of ['transfer', 'bond', 'cancellation']) {
+      const definitions = new Map(getAttorneyStageDefinitionsForLane(laneKey).map(task => [task.key, task]))
+      const lanePhases = getLegalWorkspacePhases(laneKey).map(phase => {
+        const task = definitions.get(phase.stageKeys.find(key => definitions.has(key)))
+        return { ...phase, status: 'not_started', completed: 0, total: 1, percent: 0,
+          tasks: [{ key: task.key, label: task.label, status: 'not_started', displayStatus: 'not_started' }] }
+      })
+      const openedPhase = lanePhases[Math.min(3, lanePhases.length - 1)]
+      let allowDiscard = false
+      const prompts = []
+      const saved = []
+      browser.window.confirm = message => { prompts.push(message); return allowDiscard }
+      function WorkflowNavigationHarness() {
+        const [navigation, setNavigation] = useState({ active: true, laneKey, view: 'overview', stageKey: openedPhase.key })
+        const [dirty, setDirty] = useState(false)
+        const resolved = resolveTransferWorkspaceNavigation(navigation, lanePhases)
+        function navigate(next) {
+          if (dirty && !window.confirm('You have unsaved answers. Leave this task and discard them?')) return false
+          setDirty(false)
+          setNavigation(readTransferWorkspaceNavigation(writeTransferWorkspaceNavigation('', { ...next, laneKey })))
+          return true
+        }
+        return resolved.view === 'overview'
+          ? createElement(TransferStageOverview, { phases: lanePhases, workflowKey: laneKey, selectedPhase: resolved.phase,
+            onSelectStage: stageKey => navigate({ view: 'overview', stageKey }),
+            onOpenStage: (stageKey, taskKey) => navigate({ view: 'workspace', stageKey, taskKey }) })
+          : createElement(LegalTaskWorkbench, {
+            model: { taskKey: resolved.task.key, taskLabel: resolved.task.label, workflowLabel: laneKey,
+              phaseLabel: resolved.phase.label, status: 'not_started', readOnly: false, documents: [], notes: [], activity: [],
+              confirmationRows: [{ id: 'reviewed', label: 'Evidence reviewed' }], confirmationRequirements: [],
+              outstandingRequirements: [], requirementActions: {}, contextualActions: [], outcomeActions: [], followUpActions: [] },
+            phases: lanePhases, selectedPhaseKey: resolved.phase.key, selectedTaskKey: resolved.task.key, focusedStage: true,
+            onBackToStages: () => navigate({ view: 'overview', stageKey: resolved.phase.key }),
+            onSelectTask: taskKey => navigate({ view: 'workspace', stageKey: resolved.phase.key, taskKey }),
+            onConfirmationDirtyChange: (_taskKey, isDirty) => setDirty(isDirty),
+            onSaveConfirmations: async answers => { saved.push(answers); return true },
+          })
+      }
+      const hierarchy = render(createElement(WorkflowNavigationHarness))
+      fireEvent.click(hierarchy.getByRole('button', { name: `Open task: ${openedPhase.tasks[0].label}` }))
+      const back = hierarchy.getByRole('button', { name: `Back to ${openedPhase.label}` })
+      const returnNavigation = hierarchy.getByRole('navigation', { name: 'Workflow return navigation' })
+      const taskNavigation = hierarchy.getByRole('navigation', { name: `${openedPhase.label} tasks` })
+      assert.ok(returnNavigation.compareDocumentPosition(taskNavigation) & 4, 'return control precedes the task picker')
+      fireEvent.click(hierarchy.getByRole('button', { name: 'Yes' }))
+      assert.equal(back.disabled, false, 'unsaved answers must offer a guarded return rather than trapping the attorney')
+      fireEvent.click(back)
+      assert.equal(prompts.length, 1)
+      assert.equal(hierarchy.getByRole('button', { name: 'Yes' }).getAttribute('aria-pressed'), 'true', 'cancel preserves the draft and task')
+      fireEvent.click(hierarchy.getByRole('button', { name: 'Save answers' }))
+      await waitFor(() => assert.ok(hierarchy.getByText('Answers saved')))
+      assert.equal(saved[0].reviewed.answer, 'yes')
+      fireEvent.click(back)
+      assert.ok(hierarchy.getByRole('heading', { name: openedPhase.label }), 'return restores the originating stage item list')
+      assert.equal(prompts.length, 1, 'saved answers return without another warning')
+      fireEvent.click(hierarchy.getByRole('button', { name: `Open task: ${openedPhase.tasks[0].label}` }))
+      fireEvent.click(hierarchy.getByRole('button', { name: 'No' }))
+      allowDiscard = true
+      fireEvent.click(hierarchy.getByRole('button', { name: `Back to ${openedPhase.label}` }))
+      assert.ok(hierarchy.getByRole('heading', { name: openedPhase.label }), 'confirmed discard returns to the stage')
+      const previousPhase = lanePhases[lanePhases.indexOf(openedPhase) - 1]
+      fireEvent.click(within(hierarchy.getByRole('navigation', { name: /stages$/ })).getByRole('button', { name: new RegExp(previousPhase.label.replace(/[&]/g, '.')) }))
+      assert.ok(hierarchy.getByRole('heading', { name: previousPhase.label }), 'the previous stage remains accessible as an item list')
+      assert.equal(hierarchy.queryByRole('navigation', { name: 'Task sections' }), null, 'stage navigation does not skip into a task')
+      cleanup()
+    }
     const selections = []
     const openings = []
     const view = render(createElement(TransferStageOverview, {
@@ -226,11 +340,8 @@ try {
     fireEvent.click(view.getByRole('navigation', { name: 'Transfer stages' }).querySelectorAll('button')[2])
     fireEvent.click(view.getByRole('button', { name: 'Open task: Instruction Received' }))
     fireEvent.click(view.getByRole('button', { name: 'Open' }))
-    assert.deepEqual(selections, [], 'clicking a stage enters its task workspace')
+    assert.deepEqual(selections, ['instruction', 'lodgement_registration', 'closure'], 'clicking a stage opens its item list, including completed stages')
     assert.deepEqual(openings, [
-      ['instruction', 'instruction_received'],
-      ['lodgement_registration', 'lodgement_ready'],
-      ['closure', 'closure_review'],
       ['instruction', 'instruction_received'],
       ['instruction', 'instruction_received'],
     ])
@@ -249,17 +360,107 @@ try {
       const stageButtons = laneView.getByRole('navigation', { name: navigationName }).querySelectorAll('button')
       fireEvent.click(stageButtons[0])
       fireEvent.click(stageButtons[1])
-      assert.deepEqual(laneOpenings, [[stageKey, taskKey]], `${workflowKey} stage opens the task workspace`)
-      assert.deepEqual(laneSelections, ['empty'], `${workflowKey} empty phase remains reviewable`)
+      assert.deepEqual(laneOpenings, [], `${workflowKey} stage selection does not skip its item list`)
+      assert.deepEqual(laneSelections, [stageKey, 'empty'], `${workflowKey} applicable and empty stages remain reviewable`)
       cleanup()
     }
+    const continuationSelections = []
     const continuation = render(createElement(TransferStageOverview, {
       phases: [completedPhase, emptyPhase, phases[1], phases[2]], selectedPhase: completedPhase,
       onOpenStage: (stageKey, taskKey) => openings.push([stageKey, taskKey]),
+      onSelectStage: stageKey => continuationSelections.push(stageKey),
     }))
     fireEvent.click(continuation.getByRole('button', { name: /Continue to Lodgement & Registration/ }))
-    assert.deepEqual(openings.at(-1), ['lodgement_registration', 'lodgement_ready'], 'continuing opens the next stage workspace')
+    assert.deepEqual(continuationSelections, ['lodgement_registration'], 'continuing opens the next stage item list')
     cleanup()
+    // The same shell stays mounted when opening, switching and closing work.
+    for (const laneKey of ['transfer', 'bond', 'cancellation']) {
+      let allowDiscard = false
+      const prompts = [], scrollReturns = [], saves = []
+      browser.window.confirm = message => { prompts.push(message); return allowDiscard }
+      browser.window.scrollTo = position => scrollReturns.push(position)
+      Object.defineProperty(browser.window, 'scrollY', { configurable: true, value: 84 })
+      let refreshMatterNumber, failNumberSave = true
+      function SharedPanelHarness() {
+        const [navigation, setNavigation] = useState({ active: true, laneKey, view: 'overview', stageKey: getLegalWorkspacePhases(laneKey)[0].key })
+        const [dirty, setDirty] = useState(false)
+        const [answers, setAnswers] = useState({})
+        const [matterNumber, setMatterNumber] = useState('')
+        refreshMatterNumber = () => setMatterNumber('Background update')
+        const definitions = getAttorneyStageDefinitionsForLane(laneKey)
+        const sharedTasks = definitions.map(task => ({ key: task.key, status: 'not_started',
+          phaseKey: getLegalWorkspacePhases(laneKey).find(phase => phase.stageKeys.includes(task.key)).key }))
+        const vm = buildTransferWorkspaceViewModel({ workflowKey: laneKey, sharedJourneyTasks: sharedTasks,
+          selectedTaskKey: navigation.taskKey, workflow: { lane: { laneKey, permissions: { canUpdateStage: true },
+            steps: sharedTasks.map(task => ({ stepKey: task.key, status: task.status, taskConfirmations: answers[task.key] })) } } })
+        const resolved = resolveTransferWorkspaceNavigation(navigation, vm.phases)
+        function navigate(next) {
+          if (dirty && !window.confirm('Discard unsaved task changes?')) return false
+          setDirty(false)
+          setNavigation(readTransferWorkspaceNavigation(writeTransferWorkspaceNavigation('', { ...next, laneKey })))
+          return true
+        }
+        const model = buildLegalTaskWorkbenchModel({ task: vm.selectedTask, taskContext: vm.selectedTaskContext,
+          workActions: vm.selectedTaskContext.workActions, statusActions: vm.availableActions.primary })
+        model.matterNumber = matterNumber
+        model.confirmations = answers[vm.selectedTask.key] || {}
+        const panel = resolved.view === 'workspace' ? createElement(LegalTaskWorkbench, {
+          model, taskMeta: vm.selectedTask, phases: vm.phases, selectedPhaseKey: resolved.phase.key,
+          selectedTaskKey: resolved.task.key, focusedStage: true, embedded: true,
+          onTaskDirtyChange: (_key, value) => setDirty(value),
+          onSelectTask: taskKey => navigate({ view: 'workspace', stageKey: vm.tasks.find(task => task.key === taskKey).phaseKey, taskKey }),
+          onSaveConfirmations: async value => { saves.push(value); setAnswers(previous => ({ ...previous, [resolved.task.key]: value })); return true },
+          onSaveMatterNumber: async value => { if (failNumberSave) throw new Error('Number save failed'); setMatterNumber(value) },
+        }) : null
+        return createElement(TransferStageOverview, { phases: vm.phases, workflowKey: laneKey,
+          selectedPhase: resolved.phase, selectedTaskKey: resolved.task?.key, taskPanel: panel,
+          canUpdate: !dirty, onOpenStage: (stageKey, taskKey) => navigate({ view: 'workspace', stageKey, taskKey }),
+          onSelectStage: stageKey => navigate({ view: 'overview', stageKey }),
+          onCloseTask: () => navigate({ view: 'overview', stageKey: resolved.phase.key }) })
+      }
+      const shared = render(createElement(SharedPanelHarness))
+      const first = getAttorneyStageDefinitionsForLane(laneKey)[0]
+      fireEvent.click(shared.getByRole('button', { name: `Open task: ${first.label}` }))
+      const panel = shared.getByRole('region', { name: 'Task workspace' })
+      assert.ok(document.activeElement === panel, 'opening a task places keyboard focus in its panel')
+      assert.ok(shared.getByRole('navigation', { name: /stages$/ }), 'stages stay in the shared shell')
+      assert.ok(shared.getByRole('button', { name: `Open task: ${first.label}` }), 'task list stays mounted beside the panel')
+      assert.ok(!shared.queryByRole('navigation', { name: /tasks$/ }), 'embedded work does not repeat the task navigator')
+      fireEvent.click(within(panel).getByRole('button', { name: 'Task options' }))
+      fireEvent.keyDown(within(panel).getByRole('button', { name: 'Task options' }), { key: 'Escape' })
+      assert.equal(within(panel).getByRole('button', { name: 'Task options' }).getAttribute('aria-expanded'), 'false', 'Escape dismisses options before returning to the stage')
+      assert.ok(document.activeElement === within(panel).getByRole('button', { name: 'Task options' }))
+      fireEvent.click(within(panel).getAllByRole('button', { name: 'Yes' })[0])
+      fireEvent.keyDown(panel, { key: 'Escape' })
+      assert.equal(prompts.length, 1)
+      assert.equal(within(shared.getByRole('region', { name: 'Task workspace' })).getAllByRole('button', { name: 'Yes' })[0].getAttribute('aria-pressed'), 'true', 'cancelled close preserves the answer')
+      await act(async () => fireEvent.click(within(panel).getByRole('button', { name: 'Save answers' })))
+      await waitFor(() => assert.equal(saves.length, 1))
+      await waitFor(() => assert.ok(shared.getByText('Answers saved')))
+      fireEvent.keyDown(panel, { key: 'Escape' })
+      await waitFor(() => assert.ok(!shared.queryByRole('region', { name: 'Task workspace' })))
+      assert.ok(document.activeElement === shared.getByRole('button', { name: `Open task: ${first.label}` }), 'close restores focus to the originating task row')
+      assert.equal(scrollReturns.at(-1).top, 84, 'close restores the list viewport position')
+      assert.equal(prompts.length, 1, 'saved answers do not prompt again')
+      if (laneKey === 'transfer') {
+        fireEvent.click(shared.getByRole('button', { name: 'Open task: File Opened and Matter Number Assigned' }))
+        fireEvent.change(shared.getByPlaceholderText('Enter the firm matter number'), { target: { value: 'MAT-DRAFT' } })
+        fireEvent.click(shared.getByRole('button', { name: 'Close task panel' }))
+        assert.equal(shared.getByPlaceholderText('Enter the firm matter number').value, 'MAT-DRAFT', 'cancelled navigation preserves an inline field')
+        fireEvent.click(shared.getByRole('button', { name: 'Save matter number' }))
+        await waitFor(() => assert.ok(shared.getByRole('alert').textContent.includes('Number save failed')))
+        assert.equal(shared.getByPlaceholderText('Enter the firm matter number').value, 'MAT-DRAFT', 'failed save keeps the field draft')
+        await act(async () => refreshMatterNumber())
+        assert.equal(shared.getByPlaceholderText('Enter the firm matter number').value, 'MAT-DRAFT', 'background refresh does not overwrite unsaved fields')
+        failNumberSave = false
+        await act(async () => fireEvent.click(shared.getByRole('button', { name: 'Save matter number' })))
+        await waitFor(() => assert.ok(!shared.getByRole('button', { name: 'Save matter number' }).disabled))
+        fireEvent.click(shared.getByRole('button', { name: 'Close task panel' }))
+        await waitFor(() => assert.ok(!shared.queryByRole('region', { name: 'Task workspace' })))
+      }
+      cleanup()
+    }
+
     const updates = []
     const controlOpenings = []
     const editable = render(createElement(TransferStageOverview, {
@@ -301,6 +502,97 @@ try {
     assert.equal(stageUpdates[0][3].overrideScope, 'stage')
     assert.equal(stageUpdates[0][3].overrideReason, 'Historical file already progressed')
     cleanup()
+    // A failed batch keeps its draft and acknowledged receipts in every lane.
+    for (const laneKey of ['transfer', 'bond', 'cancellation']) {
+      const taskDefinitions = getAttorneyStageDefinitionsForLane(laneKey).slice(0, 2)
+      const retryPhase = { ...bulkPhase, tasks: taskDefinitions.map(task => ({ ...task, status: 'not_started' })) }
+      const attempts = [], busyStates = [], dirtyStates = []
+      let fail = true, finishFirst
+      const props = { phases: [retryPhase], selectedPhase: retryPhase, workflowKey: laneKey, canUpdate: true,
+        onBusyChange: value => busyStates.push(value), onDirtyChange: value => dirtyStates.push(value),
+        onUpdateTask: async (...args) => {
+          attempts.push(args)
+          if (attempts.length === 1) await new Promise(resolve => { finishFirst = resolve })
+          return !(fail && args[0].key === taskDefinitions[1].key)
+        } }
+      const retry = render(createElement(TransferStageOverview, props))
+      fireEvent.click(retry.getByRole('button', { name: 'Mark stage complete' }))
+      const note = retry.getByPlaceholderText('Imported matter already progressed beyond this stage.')
+      fireEvent.change(note, { target: { value: 'Already signed in the original file' } })
+      assert.equal(dirtyStates.at(-1), true, 'stage reasons join the host draft guard')
+      const refreshDraft = new browser.window.Event('beforeunload', { cancelable: true })
+      browser.window.dispatchEvent(refreshDraft)
+      assert.equal(refreshDraft.defaultPrevented, true, 'refresh warns about an unsaved stage reason')
+      fireEvent.click(within(retry.getByRole('dialog')).getByRole('button', { name: 'Mark stage complete' }))
+      assert.equal(busyStates.at(-1), true, 'the whole batch joins the host save guard')
+      assert.ok(within(retry.getByRole('navigation')).getAllByRole('button').every(button => button.disabled))
+      assert.ok(note.disabled, 'the reason cannot change during the batch')
+      fireEvent.keyDown(note, { key: 'Escape' })
+      assert.ok(retry.queryByRole('dialog'), 'Escape cannot dismiss a pending save')
+      await act(async () => finishFirst())
+      await waitFor(() => assert.match(retry.getByRole('alert').textContent, /1 of 2 tasks saved/))
+      assert.equal(note.value, 'Already signed in the original file')
+      assert.equal(busyStates.at(-1), false)
+      fail = false
+      fireEvent.click(within(retry.getByRole('dialog')).getByRole('button', { name: 'Mark stage complete' }))
+      await waitFor(() => assert.ok(!retry.queryByRole('dialog')))
+      assert.deepEqual(attempts.map(args => args[0].key), [taskDefinitions[0].key, taskDefinitions[1].key, taskDefinitions[1].key], 'retry does not repeat a task already acknowledged')
+      assert.equal(new Set(attempts.map(args => args[3].overrideGroupId)).size, 1, 'retry keeps the same audit group')
+      assert.ok(attempts.every(args => args[3].overrideReason === 'Already signed in the original file'))
+      assert.equal(dirtyStates.at(-1), false)
+      const refreshSaved = new browser.window.Event('beforeunload', { cancelable: true })
+      browser.window.dispatchEvent(refreshSaved)
+      assert.equal(refreshSaved.defaultPrevented, false, 'successful save removes the stage refresh guard')
+      cleanup()
+    }
+
+    const permissionAttempts = []
+    let finishAllowedTask
+    const permissionProps = { phases: [bulkPhase], selectedPhase: bulkPhase, canUpdate: true,
+      onUpdateTask: async task => { permissionAttempts.push(task.key); await new Promise(resolve => { finishAllowedTask = resolve }); return true } }
+    const permissionChange = render(createElement(TransferStageOverview, permissionProps))
+    fireEvent.click(permissionChange.getByRole('button', { name: 'Mark stage complete' }))
+    fireEvent.change(permissionChange.getByRole('textbox'), { target: { value: 'Keep this reason' } })
+    fireEvent.click(within(permissionChange.getByRole('dialog')).getByRole('button', { name: 'Mark stage complete' }))
+    permissionChange.rerender(createElement(TransferStageOverview, { ...permissionProps, canUpdate: false }))
+    await act(async () => finishAllowedTask())
+    await waitFor(() => assert.match(permissionChange.getByRole('alert').textContent, /access or selected stage changed/))
+    assert.equal(permissionAttempts.length, 1, 'revoked access stops the remaining batch writes')
+    assert.equal(permissionChange.getByRole('textbox').value, 'Keep this reason')
+    assert.ok(within(permissionChange.getByRole('dialog')).getByRole('button', { name: 'Mark stage complete' }).disabled)
+    assert.match(permissionChange.getByRole('status').textContent, /read-only/)
+    cleanup()
+
+    const gateUpdates = []
+    const gateProps = { phases: [bulkPhase], selectedPhase: bulkPhase, canUpdate: true,
+      onUpdateTask: async task => { gateUpdates.push(task.key); return true } }
+    const gateChange = render(createElement(TransferStageOverview, gateProps))
+    fireEvent.click(gateChange.getByRole('button', { name: 'Mark stage complete' }))
+    const blockedPhase = { ...bulkPhase, tasks: bulkPhase.tasks.map(task => ({ ...task, lodgementReview: { ready: false } })) }
+    gateChange.rerender(createElement(TransferStageOverview, { ...gateProps, phases: [blockedPhase], selectedPhase: blockedPhase }))
+    fireEvent.click(within(gateChange.getByRole('dialog')).getByRole('button', { name: 'Mark stage complete' }))
+    await waitFor(() => assert.match(gateChange.getByRole('alert').textContent, /required legal check/))
+    assert.deepEqual(gateUpdates, [], 'a refreshed hard gate cannot be bypassed by a previously opened confirmation')
+    cleanup()
+
+    let panelClosed = 0, modalClosed = 0
+    const escapeProps = { phases: [bulkPhase], selectedPhase: bulkPhase, selectedTaskKey: bulkPhase.tasks[0].key,
+      taskPanel: createElement(Modal, { open: true, title: 'Task document', onClose: () => { modalClosed++ } }, createElement('input', { 'aria-label': 'Document detail' })),
+      onCloseTask: () => { panelClosed++ } }
+    const nestedEscape = render(createElement(TransferStageOverview, escapeProps))
+    fireEvent.keyDown(nestedEscape.getByRole('textbox', { name: 'Document detail' }), { key: 'Escape' })
+    assert.equal(modalClosed, 1)
+    assert.equal(panelClosed, 0, 'a document modal consumes Escape without closing its task')
+    nestedEscape.rerender(createElement(TransferStageOverview, { ...escapeProps, navigationBusy: true, taskPanel: createElement('input', { 'aria-label': 'Task draft' }) }))
+    fireEvent.keyDown(nestedEscape.getByRole('textbox', { name: 'Task draft' }), { key: 'Escape' })
+    assert.equal(panelClosed, 0, 'a saving task cannot be closed using Escape')
+    fireEvent.keyDown(document.body, { key: 'Escape' })
+    assert.equal(panelClosed, 0, 'the page-body Escape fallback also respects pending saves')
+    nestedEscape.rerender(createElement(TransferStageOverview, { ...escapeProps, taskPanel: createElement('input', { 'aria-label': 'Task draft' }) }))
+    fireEvent.keyDown(document.body, { key: 'Escape' })
+    assert.equal(panelClosed, 1, 'Escape still returns when a just-saved disabled button releases focus to the body')
+    cleanup()
+
     const taskSelections = []
     const stageTasks = render(createElement(TransferStageTaskNavigation, {
       phase: phases[0], selectedTaskKey: 'instruction_received', onSelectTask: (taskKey) => taskSelections.push(taskKey),
@@ -313,7 +605,7 @@ try {
     Object.assign(globalThis, previous)
     browser.window.close()
   }
-  console.log('Attorney Transfer navigation: deep links, fallback, stage entry and read-only overview passed')
+  console.log('Attorney workflow navigation: stage/item/task return, three lanes, guarded drafts, Escape/focus, partial-save recovery, live access checks and read-only review passed')
 } finally {
   await server.close()
 }

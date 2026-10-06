@@ -1,5 +1,6 @@
 import { Building2, CalendarDays, ChevronLeft, ChevronRight, Home, User2, Users } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { getMainStageFromDetailedStage, normalizeTransactionStage } from '../../lib/stages.js'
 
 const currencyCompact = new Intl.NumberFormat('en-ZA', {
   style: 'currency',
@@ -162,19 +163,67 @@ function resolveRecordImage(record = {}) {
   )
 }
 
-function useModeConfig(mode) {
+function getModeConfig(mode) {
   return MODE_CONFIG[mode] || MODE_CONFIG.residential_sales
 }
 
+function resolvePipelineStage(mode, ...values) {
+  const config = getModeConfig(mode)
+  // Transaction dashboards provide canonical codes (FIN, XFER, etc.), while
+  // listing pipelines already provide the five display-stage keys.
+  const salesStageByMainStage = {
+    AVAIL: 'new_listing',
+    DEP: 'under_offer',
+    OTP: 'under_offer',
+    FIN: 'conditional',
+    ATTY: 'unconditional',
+    XFER: 'unconditional',
+    REG: 'settled_pending_registration',
+  }
+  const salesStageAliases = {
+    buyer_onboarding: 'new_listing',
+    ready_for_registration: 'settled_pending_registration',
+    awaiting_registration: 'settled_pending_registration',
+    lodged: 'settled_pending_registration',
+    pending_reg: 'settled_pending_registration',
+  }
+
+  for (const value of values) {
+    const normalizedKey = normalizeStageKey(value)
+    const displayStage = config.stages.find((stage) => stage.key === normalizedKey)
+    if (displayStage) return displayStage
+    if (config !== MODE_CONFIG.residential_sales) continue
+
+    const transactionStage = normalizeTransactionStage(value)
+    const salesKey = transactionStage === 'Transfer Lodged'
+      ? 'settled_pending_registration'
+      : transactionStage
+        ? salesStageByMainStage[getMainStageFromDetailedStage(transactionStage)]
+        : salesStageAliases[normalizedKey]
+    const salesStage = config.stages.find((stage) => stage.key === salesKey)
+    if (salesStage) return salesStage
+  }
+
+  return config.stages[0]
+}
+
 export function StageProgressTracker({ mode, currentStageKey }) {
-  const config = useModeConfig(mode)
+  const config = getModeConfig(mode)
   const stages = config.stages
-  const normalizedCurrentStage = normalizeStageKey(currentStageKey) || stages[0].key
-  const currentIndex = Math.max(0, stages.findIndex((stage) => stage.key === normalizedCurrentStage))
+  const currentStage = resolvePipelineStage(mode, currentStageKey)
+  const currentIndex = stages.findIndex((stage) => stage.key === currentStage.key)
   const progressPercent = stages.length > 1 ? (currentIndex / (stages.length - 1)) * 100 : 0
 
   return (
-    <div className="space-y-2.5">
+    <div
+      className="space-y-2.5"
+      role="progressbar"
+      aria-label="Transaction progress"
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={progressPercent}
+      aria-valuetext={currentStage.label}
+    >
       <div className="relative px-1">
         <div className="absolute left-3 right-3 top-[7px] h-[2px] rounded-full bg-[#dbe4ee]" />
         <div
@@ -192,6 +241,7 @@ export function StageProgressTracker({ mode, currentStageKey }) {
               <div key={stage.key} className="min-w-0 text-center">
                 <span
                   className="mx-auto block h-4 w-4 rounded-full border-2 bg-white"
+                  aria-current={current ? 'step' : undefined}
                   style={{
                     borderColor: complete || current ? config.accent : '#d0d7e2',
                     backgroundColor: complete ? config.accent : '#ffffff',
@@ -209,7 +259,7 @@ export function StageProgressTracker({ mode, currentStageKey }) {
 }
 
 function PipelineImage({ mode, record, compact = false }) {
-  const config = useModeConfig(mode)
+  const config = getModeConfig(mode)
   const [broken, setBroken] = useState(false)
   const imageUrl = broken ? '' : resolveRecordImage(record)
   const PlaceholderIcon = mode.startsWith('commercial') ? Building2 : Home
@@ -235,9 +285,8 @@ function PipelineImage({ mode, record, compact = false }) {
 }
 
 export function ActivePipelineCard({ mode, record, onOpenRecord, compact = false }) {
-  const config = useModeConfig(mode)
-  const normalizedStageKey = normalizeStageKey(record.stageKey)
-  const currentStage = config.stages.find((stage) => stage.key === normalizedStageKey) || config.stages[0]
+  const config = getModeConfig(mode)
+  const currentStage = resolvePipelineStage(mode, record.stageKey, record.statusLabel)
   const badgeClass = currentStage.badgeClass || config.badgeFallback
   const ownerName = normalizeText(record.ownerName) || 'Unassigned'
   const ownerRole = normalizeText(record.ownerRoleLabel) || (mode.startsWith('commercial') ? 'Broker' : 'Agent')
@@ -332,7 +381,7 @@ export default function ActivePipelineCarousel({
   viewAllLabel = 'View all transactions',
   compactCards = false,
 }) {
-  const config = useModeConfig(mode)
+  const config = getModeConfig(mode)
   const scrollRef = useRef(null)
   const safeRecords = useMemo(() => (Array.isArray(records) ? records.filter(Boolean) : []), [records])
   const [scrollState, setScrollState] = useState({ canScrollLeft: false, canScrollRight: false })

@@ -35737,6 +35737,19 @@ export async function fetchTransactionRouteCoreById(transactionId) {
   return fetchTransactionRouteCoreById(resolvedTransactionId)
 }
 
+// Header identity must not depend on buyer, finance or other optional workspace
+// metadata. Resolve the verified route, then read only its linked property data.
+export async function fetchTransactionPropertyContextById(transactionId) {
+  const core = await fetchTransactionRouteCoreById(transactionId)
+  if (!core?.transaction?.id) return null
+  const [transaction] = await hydrateMatterPropertyContext(requireClient(), [core.transaction])
+  return {
+    transaction,
+    unit: transaction?.property_unit || transaction?.propertyUnit || null,
+    development: transaction?.property_development || transaction?.propertyDevelopment || null,
+  }
+}
+
 export async function getTransactionRollup(transactionId, options = {}) {
   if (!transactionId) {
     return null

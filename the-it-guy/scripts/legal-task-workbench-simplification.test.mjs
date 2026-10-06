@@ -45,7 +45,7 @@ try {
   assert.match(html, /Stage progress/)
   assert.match(html, /xl:max-h-\[calc\(100dvh-7rem\)\]/, 'the stage menu should scroll within a viewport-height rail')
   assert.doesNotMatch(html, /Current task/)
-  assert.match(html, /Confirmations/)
+  assert.match(html, /Task checklist/)
   assert.equal((html.match(/Upload document<\/button>/g) || []).length, 1)
   assert.doesNotMatch(html, /sales_agreement_or_otp|applicable tasks complete|Outstanding items are advisory:/)
   assert.doesNotMatch(html, /Required action/)
@@ -79,7 +79,7 @@ try {
     taskKey: 'instruction_received', items: [{ id: 'received', label: 'Instruction received' }, { id: 'otp', label: 'OTP reviewed' }],
     saved: { received: { answer: 'no' } }, onSave: async () => true,
   }))
-  assert.match(confirmationHtml, /1 of 2 answered/)
+  assert.match(confirmationHtml, /1 of 2 items answered/)
   assert.match(confirmationHtml, /Save answers/)
   const financialProfile = {
     propertyTenure: 'sectional_title', hoaApplicable: 'yes',
@@ -139,7 +139,7 @@ try {
     } },
   }, now })
   assert.equal(nonResident.applicable, true)
-  assert.ok(nonResident.checks.some(item => item.label === 'Seller One: payment proof' && item.state === 'missing'))
+  assert.ok(nonResident.checks.some(item => item.label === 'Seller One: remittance payment or reserved funds and deadline' && item.state === 'missing'))
   assert.ok(phase4DecisionIssues(dutyProfile.transferTaxDecision, {}, {
     ...dutyProfile.mvpProfile.propertyConditions, clearances: { municipal: { issuer: 'City', validUntil: '2030-01-01' } },
   }, { propertyTenure: 'freehold', hoaApplicable: 'no' }).includes('municipal clearance reference'))
@@ -236,6 +236,9 @@ try {
   }
   const stageFiveLanes = [
     { laneKey: 'transfer', steps: [
+      { stepKey: 'otp_source_docs_checked', status: 'completed', taskConfirmations: {
+        agreement_conditions_review: { answer: 'not_applicable', note: 'No agreement conditions or material payment dates apply to this fixture.' },
+      } },
       { stepKey: 'sars_transfer_tax_receipt_verified', status: 'completed' },
       { stepKey: 'lodgement_ready', status: 'not_started' },
       { stepKey: 'lodged_at_deeds_office', status: 'not_started' },
@@ -253,7 +256,7 @@ try {
   assert.ok(stageFiveReview.issues.some(item => item.label.includes('Bond lodgement readiness')))
   assert.ok(stageFiveReview.issues.some(item => item.label.includes('rates_clearance_certificate: expired')))
   assert.match(render({ lodgementReview: stageFiveReview }), /Lodgement readiness review/)
-  assert.match(render({ lodgementReview: stageFiveReview }), /Unresolved items \(2\)/)
+  assert.ok(render({ lodgementReview: stageFiveReview }).includes(`Unresolved items (${stageFiveReview.issueCount})`))
   const currentDocuments = stageFiveDocuments.map(row => ({ ...row, expiry_date: '2030-09-25T00:00:00Z' }))
   const readyLanes = structuredClone(stageFiveLanes)
   readyLanes[1].steps[0].status = 'completed'
@@ -305,7 +308,7 @@ try {
   const closeoutHtml = render({ closureReview: closeoutReview })
   assert.match(closeoutHtml, /1 · Financial close-out/)
   assert.match(closeoutHtml, /2 · Registration communication/)
-  assert.match(closeoutHtml, /Published to buyer/)
+  assert.match(closeoutHtml, /Recorded for buyer/)
   assert.match(closeoutHtml, /3 · Administrative closure/)
   const crossLaneClosure = buildStageSixClosureReview({ taskKey: 'matter_closed', tasks: closureTasks,
     updates: clientCommunication, plannedLanes: [{ laneKey: 'bond' }], lanes: [{ laneKey: 'bond', steps: [{ stepKey: 'bond_close_out_complete', status: 'not_started' }] }] })
@@ -338,7 +341,7 @@ try {
     statusActions: [{ id: 'mark_complete', label: 'Complete task', status: 'completed' }],
   })
   assert.equal(rowModel.confirmationRows.length, 3, 'each non-matching requirement needs its own editable row')
-  assert.equal(rowModel.confirmationRows.find(row => row.id === 'otp_received_and_reviewed')?.action?.label, 'Review OTP')
+  assert.equal(rowModel.confirmationRows.find(row => row.id === 'otp_received_and_reviewed')?.action?.label, 'View instruction source')
   assert.equal(rowModel.confirmationRows.find(row => row.id === 'otp_received_and_reviewed')?.documentStatus?.attached, 1)
   assert.equal(rowModel.confirmationRows.find(row => row.id === 'requirement:data:matter_number')?.action?.id, 'open_matter')
   assert.equal(rowModel.completeAction?.id, 'mark_complete', 'task completion remains separate from row answers')
@@ -440,7 +443,7 @@ try {
       { id: 'document:uploaded-row', sourceRequirementId: 'document:buyer_id_document', label: 'Buyer ID upload', type: 'document' },
     ], relatedDocuments: twoPartyDocuments },
   })
-  assert.equal(duplicateSourceModel.confirmationRows.length, 1, 'requirement and upload rows produce one decision per person')
+  assert.equal(duplicateSourceModel.confirmationRows.filter(row => row.requirement?.type === 'document').length, 1, 'requirement and upload rows produce one document decision per person')
   assert.notEqual(aliceRow.id, aliceRow.id.replace('v1', 'v2'), 'changed facts must not reuse an old answer key')
   const reviewed = resolveMatterScenarioProfile({ parties: [{ id: 'buyer-1', role: 'buyer', name: 'Buyer', entityType: 'company',
     ownershipShare: 100, taxResidence: 'south_africa', representatives: [{ id: 'director-1', name: 'Director', capacity: 'Director' }],
@@ -478,7 +481,7 @@ try {
     items: capacityModel.confirmationRows, saved: Object.fromEntries(capacityModel.confirmationRows.map(row => [row.id, { answer: 'yes' }])),
     onSave: async () => true }))
   assert.match(staleMarkup, /Prior approval is stale/)
-  assert.match(staleMarkup, /0 of \d+ answered/, 'historical Yes answers must not appear current after party facts change')
+  assert.match(staleMarkup, /0 of \d+ items answered/, 'historical Yes answers must not appear current after party facts change')
   const pageSource = readFileSync(new URL('../src/pages/AttorneyTransactionDetail.jsx', import.meta.url), 'utf8')
   assert.match(pageSource, /onSaveConfirmations=\{async \(responses\) => persistTaskUpdate\(\s*selectedTask,\s*selectedTask\.status,/,
     'Save answers must persist without changing task status')
@@ -546,7 +549,7 @@ try {
     assert.match(rowView.getByText('Choose an answer before saving this note.').textContent, /Choose an answer/)
     fireEvent.click(rowView.getByRole('button', { name: 'No' }))
     assert.match(rowView.getByText('Answered No · work may still be needed').textContent, /Answered No/)
-    assert.match(rowView.getByText('1 of 1 answered').textContent, /1 of 1 answered/)
+    assert.match(rowView.getByText(/1 of 1 items answered/).textContent, /1 of 1 items answered/)
     fireEvent.click(rowView.getByRole('button', { name: 'Save answers' }))
     await waitFor(() => assert.equal(rowSaves.length, 1))
     assert.deepEqual(rowSaves[0].otp, { answer: 'no', note: 'Needs signed page' })
