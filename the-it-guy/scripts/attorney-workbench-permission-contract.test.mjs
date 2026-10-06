@@ -293,3 +293,5 @@ try {
 await verifyAttorneyInternalAccess(PGlite)
 
 await verifyAttorneyTaskComments(PGlite)
+
+await (await import('./helpers/attorneyTaskCommentFixture.mjs')).verifyLegacyAttorneyTaskComments(PGlite)

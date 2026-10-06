@@ -11781,4 +11781,3 @@ body .auth-page-login:not(.onboarding-page) .auth-footer {
 @media (min-width: 1024px) { .legal-workflow-stage-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (min-width: 1536px) { .legal-workflow-stage-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
 @media (max-width: 480px) { .legal-workflow-stage-grid { grid-template-columns: minmax(0, 1fr); } }
-
