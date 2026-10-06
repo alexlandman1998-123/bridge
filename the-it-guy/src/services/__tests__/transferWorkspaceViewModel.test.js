@@ -550,4 +550,16 @@ assert.equal(verifiedTransferDutyLodgementModel.availableActions.primary.find((a
   'verified tax evidence alone cannot bypass a missing current matter workflow plan')
 assert.ok(verifiedTransferDutyLodgementModel.selectedTask.lodgementReview.issues.some(item => item.kind === 'plan'))
 
+const sharedTasks = [
+  { key: 'instruction_received', label: 'Saved instruction title', status: 'not_started', phaseKey: 'instruction_file_opening', phaseLabel: 'Instruction & File Opening' },
+  { key: 'matter_opened', label: 'Saved matter opening title', status: 'completed_externally', phaseKey: 'instruction_file_opening', phaseLabel: 'Instruction & File Opening' },
+]
+const sharedModel = buildTransferWorkspaceViewModel({ workflow, sharedJourneyTasks: sharedTasks })
+for (const saved of sharedTasks) {
+  const task = sharedModel.tasks.find(task => task.key === saved.key)
+  assert.equal(task.label, saved.label, 'attorney and observer titles must come from the same saved task')
+  assert.equal(task.status, saved.status, 'saved shared status must outrank older lane status')
+}
+assert.deepEqual(sharedModel.tasks.filter(task => sharedTasks.some(saved => saved.key === task.key)).map(task => task.key), sharedTasks.map(task => task.key))
+
 console.log('transferWorkspaceViewModel tests passed')

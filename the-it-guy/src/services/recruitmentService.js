@@ -82,7 +82,7 @@ export async function openRecruitmentDocument(organisationId, leadId, document) 
 export async function startRecruitmentReview(organisationId, lead) {
   if (!lead.id || lead.status !== 'application_submitted' || !lead.application_submitted_at) throw new Error('A submitted application is required to start review.')
   const { data, error } = await clientFor(organisationId).rpc('recruitment_start_review', { p_organisation_id: organisationId, p_lead_id: lead.id, p_version: lead.version }).maybeSingle()
-  if (error?.code === '40001') throw new Error('This application changed or access was removed. Reload before starting review.')
+  if (['40001', 'PT409'].includes(error?.code)) throw new Error('This application changed or access was removed. Reload before starting review.')
   if (error) fail(error)
   if (!data) throw new Error('This application changed or access was removed. Reload before starting review.')
   return data
@@ -100,7 +100,7 @@ export async function approveRecruitmentApplication(organisationId, lead, draft)
   const errors = recruitmentApprovalErrors(lead, draft)
   if (errors.length) throw new Error(errors.join(' '))
   const { data, error } = await clientFor(organisationId).rpc('recruitment_approve_application', { p_organisation_id: organisationId, p_lead_id: lead.id, p_version: lead.version, p_notes: draft.notes.trim() }).maybeSingle()
-  if (error?.code === '40001' || (!error && !data)) throw new Error('This application changed or access was removed. Approval was not saved. Reload and review it before trying again.')
+  if (['40001', 'PT409'].includes(error?.code) || (!error && !data)) throw new Error('This application changed or access was removed. Approval was not saved. Reload and review it before trying again.')
   if (error) fail(error)
   return data
 }
@@ -116,7 +116,7 @@ export async function prepareRecruitmentContract(organisationId, lead, file) {
   if (uploaded.error) throw new Error('Contract upload failed. Please try again.')
   try {
     const {data,error} = await clientFor(organisationId).rpc('recruitment_prepare_contract',{p_organisation_id:organisationId,p_lead_id:lead.id,p_version:lead.version,p_document:{path,name:file.name,size:file.size}}).maybeSingle()
-    if (error?.code === '40001' || (!error && !data)) throw new Error('This application changed or access was removed. Reload before preparing the contract again.')
+    if (['40001', 'PT409'].includes(error?.code) || (!error && !data)) throw new Error('This application changed or access was removed. Reload before preparing the contract again.')
     if (error) fail(error)
     return data
   } catch(error) {
@@ -139,7 +139,7 @@ export async function recordRecruitmentContractDelivery(organisationId, lead, dr
   if(errors.length) throw new Error(errors.join(' '))
   const payload=Object.fromEntries(['contractVersion','recipientName','recipientContact','channel','sentOn','notes','confirmed'].map(key=>[key,typeof draft[key]==='string' ? draft[key].trim() : draft[key]]))
   const {data,error}=await clientFor(organisationId).rpc('recruitment_record_contract_delivery',{p_organisation_id:organisationId,p_lead_id:lead.id,p_version:lead.version,p_delivery:payload}).maybeSingle()
-  if(error?.code==='40001' || (!error && !data)) throw new Error('This contract changed or access was removed. Delivery was not recorded. Reload before trying again.')
+  if(['40001', 'PT409'].includes(error?.code) || (!error && !data)) throw new Error('This contract changed or access was removed. Delivery was not recorded. Reload before trying again.')
   if(error) fail(error)
   return data
 }
@@ -158,7 +158,7 @@ export async function recordRecruitmentContractSignature(organisationId, lead, d
     payload.checks=Object.fromEntries(['sameVersion','allPages','agentSignature','organisationSignature'].map(key=>[key,draft.checks[key]===true]))
     Object.assign(payload,{path,name:file.name,size:file.size})
     const {data,error}=await clientFor(organisationId).rpc('recruitment_record_contract_signature',{p_organisation_id:organisationId,p_lead_id:lead.id,p_version:lead.version,p_signature:payload}).maybeSingle()
-    if(error?.code==='40001' || (!error && !data)) throw new Error('This contract changed or access was removed. Signatures were not recorded. Reload before trying again.')
+    if(['40001', 'PT409'].includes(error?.code) || (!error && !data)) throw new Error('This contract changed or access was removed. Signatures were not recorded. Reload before trying again.')
     if(error) fail(error)
     return data
   } catch(error) {
@@ -181,7 +181,7 @@ export async function saveRecruitmentOnboarding(organisationId,lead,draft,comple
   if(errors.length) throw new Error(errors.join(' '))
   const payload={version:draft.version,checks:Object.fromEntries(onboardingChecks.map(([key])=>[key,{status:draft.checks[key].status,notes:draft.checks[key].notes.trim(),evidence:draft.checks[key].evidence}])),documents:draft.documents.map(doc=>({path:doc.path,status:doc.status,notes:doc.notes.trim()})),startDate:draft.startDate,notes:draft.notes.trim(),confirmed:complete && draft.confirmed===true}
   const {data,error}=await clientFor(organisationId).rpc('recruitment_save_onboarding',{p_organisation_id:organisationId,p_lead_id:lead.id,p_version:lead.version,p_onboarding:payload,p_complete:complete}).maybeSingle()
-  if(error?.code==='40001' || (!error && !data)) throw new Error('This onboarding record changed or access was removed. Your findings were not saved. Reload before trying again.')
+  if(['40001', 'PT409'].includes(error?.code) || (!error && !data)) throw new Error('This onboarding record changed or access was removed. Your findings were not saved. Reload before trying again.')
   if(error) fail(error)
   return data
 }
@@ -193,7 +193,7 @@ export async function uploadRecruitmentOnboardingDocument(organisationId,lead,fi
   if(uploaded.error) throw new Error('Onboarding document upload failed. Please try again.')
   try {
     const {data,error}=await clientFor(organisationId).rpc('recruitment_add_onboarding_document',{p_organisation_id:organisationId,p_lead_id:lead.id,p_version:lead.version,p_document:{path,name:file.name,type,mimeType:file.type,size:file.size}}).maybeSingle()
-    if(error?.code==='40001' || (!error && !data)) throw new Error('This onboarding record changed or access was removed. Reload before uploading again.')
+    if(['40001', 'PT409'].includes(error?.code) || (!error && !data)) throw new Error('This onboarding record changed or access was removed. Reload before uploading again.')
     if(error) fail(error)
     return data
   } catch(error) {
@@ -214,7 +214,7 @@ export async function activateRecruitmentAgent(organisationId,lead,draft) {
   const errors=recruitmentActivationErrors(lead,draft)
   if(errors.length) throw new Error(errors.join(' '))
   const {data,error}=await clientFor(organisationId).rpc('recruitment_activate_agent',{p_organisation_id:organisationId,p_lead_id:lead.id,p_version:lead.version,p_notes:draft.notes.trim(),p_confirmed:draft.confirmed===true}).maybeSingle()
-  if(error?.code==='40001' || (!error && !data)) throw new Error('This recruitment record changed or access was removed. Activation was not saved. Reload before trying again.')
+  if(['40001', 'PT409'].includes(error?.code) || (!error && !data)) throw new Error('This recruitment record changed or access was removed. Activation was not saved. Reload before trying again.')
   if(error) fail(error)
   return data
 }

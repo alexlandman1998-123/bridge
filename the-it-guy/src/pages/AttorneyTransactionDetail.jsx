@@ -17189,6 +17189,9 @@ function AttorneyTransactionDetail() {
 
   const refreshActiveWorkspaceDataset = useCallback(async ({ reason = 'active_workspace_refresh', includeDatasets = [] } = {}) => {
     const requestedMenu = String(workspaceMenu || '').toLowerCase()
+    if (requestedMenu === 'conveyancing') {
+      return requestTransactionRollup(transactionId, { force: true })
+    }
     const dataset = requestedMenu === 'documents'
       ? 'documents'
       : ['finance', 'bond', 'application', 'quotes_grant', 'reconciliation'].includes(requestedMenu)
@@ -17201,7 +17204,7 @@ function AttorneyTransactionDetail() {
               ? 'workflow'
               : 'activity'
     return refreshTransactionDatasets([...includeDatasets, dataset], { reason })
-  }, [refreshTransactionDatasets, workspaceMenu])
+  }, [refreshTransactionDatasets, requestTransactionRollup, transactionId, workspaceMenu])
 
   // The transaction route shell is the canonical snapshot used by the header,
   // lifecycle summary, and matter cards. Dataset refreshes intentionally avoid

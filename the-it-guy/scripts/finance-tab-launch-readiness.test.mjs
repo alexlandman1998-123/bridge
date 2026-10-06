@@ -68,7 +68,7 @@ try {
   assert.deepEqual(hybridWorkspace.railGroups.map((group) => group.label), ['Bond Portion', 'Cash Portion'])
   assert.equal(hybridWorkspace.bond.stage, 'intake')
   assert.equal(hybridWorkspace.cash.proofUploaded, false)
-  assert.equal(hybridWorkspace.permissions.canProxyFinanceWorkflow, true)
+  assert.equal(hybridWorkspace.permissions.canProxyFinanceWorkflow, false)
   assert.equal(hybridWorkspace.permissions.canManageApplications, false)
   assert.equal(hybridWorkspace.summaryBlocks.find((item) => item.key === 'finance_owner')?.value, 'Bond Originator')
 
@@ -153,16 +153,77 @@ try {
 
   for (const expectedText of [
     'Bond Workflow',
-    'Bond Workflow Stage',
     'Bond Originator',
     'Bank Applications',
     'Offers / Buyer Decision',
-    'Grant Milestones',
     'Instruction to Attorney',
     'Agent proxy',
   ]) {
     assert.ok(hybridMarkup.includes(expectedText), `expected rendered finance command center to include "${expectedText}"`)
   }
+
+  const developerBondMarkup = ReactDOMServer.renderToStaticMarkup(
+    React.createElement(FinanceCommandCenter, {
+      transaction: { id: 'tx-developer-bond', finance_type: 'bond', finance_managed_by: 'bond_originator' },
+      workflowData: {
+        workflow: { current_stage: 'submitted_to_banks', status: 'active' },
+        applications: [], quotes: [], decisions: [],
+      },
+      viewerRole: 'developer',
+    }),
+  )
+  const historicalGrantWorkspace = financeService.buildTransactionFinanceWorkspace({
+    transaction: { id: 'historical-grant', finance_type: 'bond', finance_managed_by: 'client' },
+    workflowData: {
+      workflow: { currentStage: 'grant_signed', status: 'active' },
+      instruction: { grantReceived: true, grantSigned: true, instructionSent: true, instructionSentAt: '2026-10-05T00:00:00+02:00' },
+      applications: [], quotes: [],
+    },
+    viewerRole: 'developer',
+  })
+  assert.equal(historicalGrantWorkspace.bond.stage, 'grant_signed', 'historical instruction must not replace the current saved grant milestone')
+  for (const removedText of ['Finance Workspace', 'Operational bond stages, task requirements, documents and actions.', 'Agent proxy', 'bond lane']) {
+    assert.ok(!developerBondMarkup.includes(removedText), `developer bond view should omit ${removedText}`)
+  }
+  assert.ok(!developerBondMarkup.includes('<aside'), 'developer bond stages should be above their task workspace')
+  assert.ok(developerBondMarkup.includes('overflow-x-auto'), 'developer bond journey should scroll horizontally on narrow screens')
+  assert.ok(!developerBondMarkup.includes('aria-pressed'), 'overview stages should not expose selection controls without a detail panel')
+  assert.ok(developerBondMarkup.includes('aria-current="step"'), 'current workflow stage should be identifiable')
+  assert.ok(!developerBondMarkup.includes('Bond Workflow Stage'), 'developer overview should omit the operational stage panel')
+  for (const role of ['developer', 'agent']) {
+    const props = {
+      transaction: { id: `tx-${role}-read-only`, finance_type: 'bond', finance_managed_by: 'bond_originator' },
+      workflowData: { workflow: { current_stage: 'intake', status: 'active' }, applications: [], quotes: [], decisions: [] },
+      viewerRole: role,
+      activeViewerPermissions: { canUploadDocuments: true, canEditFinanceWorkflow: true, canProxyFinanceWorkflow: true },
+    }
+    const permissions = financeService.buildTransactionFinanceWorkspace(props).permissions
+    for (const [key, value] of Object.entries(permissions)) {
+      if (key !== 'role') assert.equal(value, false, `${role} must not gain ${key} from legacy permissions`)
+    }
+    const markup = ReactDOMServer.renderToStaticMarkup(React.createElement(FinanceCommandCenter, props))
+    for (const action of ['Mark Complete', 'Mark Blocked', 'Mark Waiting', 'More Actions', 'Submit bank application', 'Capture offer', 'Record grant received', 'Mark instruction sent']) {
+      assert.ok(!markup.includes(action), `${role} must not see ${action}`)
+    }
+    assert.ok(!markup.includes('<form'), `${role} finance must not expose edit forms`)
+    assert.ok(!markup.includes('type="file"'), `${role} finance must not expose uploads`)
+    assert.ok(!markup.includes('Bond Workflow Stage'), `${role} overview must omit the operational stage panel`)
+    for (const summary of ['Bond Workflow', 'Bank Applications', 'Offers / Buyer Decision', 'Instruction to Attorney']) {
+      assert.ok(markup.includes(summary), `${role} overview should retain ${summary}`)
+    }
+    assert.ok(!markup.includes('<aside'), `${role} process tracker should be horizontal`)
+    assert.ok(!markup.includes('Grant Milestones'), `${role} overview should omit the separate grant card`)
+    assert.ok(markup.includes('lg:grid-cols-3'), `${role} overview should arrange its summaries in three columns`)
+  }
+
+  const originatorMarkup = ReactDOMServer.renderToStaticMarkup(
+    React.createElement(FinanceCommandCenter, {
+      transaction: { id: 'tx-originator-stage', finance_type: 'bond', finance_managed_by: 'bond_originator' },
+      workflowData: { workflow: { current_stage: 'intake', status: 'active' }, applications: [], quotes: [], decisions: [] },
+      viewerRole: 'bond_originator',
+    }),
+  )
+  assert.ok(originatorMarkup.includes('Bond Workflow Stage'), 'originators should retain their operational stage panel')
 
   const cashMarkup = ReactDOMServer.renderToStaticMarkup(
     React.createElement(FinanceCommandCenter, {

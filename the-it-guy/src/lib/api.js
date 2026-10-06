@@ -1,4 +1,5 @@
 import { buildTransactionPartiesSnapshot, transactionPartiesOnboardingSeed } from '../core/transactions/transactionPartyProfile.js'
+import { fetchDashboardOverview as fetchScopedDashboardOverview } from '../domains/reporting/api.js'
 import { readTransactionHandoffDispatchMode } from '../services/transactionHandoffRegisterService.js'
 import { sealBondReviewedVersion } from '../modules/bond/application/submission/bondApplicationReviewedVersion.js'
 import { createBuyerBondApplicationRuntimeService } from '../modules/bond/application/workspace/bondApplicationRuntimeService.js'
@@ -9417,6 +9418,18 @@ async function fetchTransactionRequiredDocumentsByTransactionIds(client, transac
 
 async function fetchTransactionRequiredDocumentsByTransactionIdsLegacy(client, transactionIds = []) {
   if (isOptionalRelationKnownMissing('transaction_required_documents')) return {}
+  // Each requirement evaluates transaction access. Keep portfolio-sized reads
+  // below the API statement timeout without dropping checklist rows.
+  if (transactionIds.length > 5) {
+    const grouped = {}
+    for (let offset = 0; offset < transactionIds.length; offset += 5) {
+      Object.assign(grouped, await fetchTransactionRequiredDocumentsByTransactionIdsLegacy(
+        client,
+        transactionIds.slice(offset, offset + 5),
+      ))
+    }
+    return grouped
+  }
   let query = await client
     .from('transaction_required_documents')
     .select(
@@ -19619,7 +19632,7 @@ export async function fetchExecutiveSnapshotByToken(token) {
 export async function fetchDevelopmentsData({ organisationId = null } = {}) {
   // The index only needs unit and transaction summaries. Avoid loading the
   // attorney, handover and snag workspaces before the cards can render.
-  const overview = await fetchDashboardOverview({ organisationId, includeSecondaryData: false })
+  const overview = await fetchScopedDashboardOverview({ organisationId, includeSecondaryData: false })
   const client = requireClient()
   const normalizedOrganisationId = String(organisationId || '').trim()
   const summaries = overview.developmentSummaries || []

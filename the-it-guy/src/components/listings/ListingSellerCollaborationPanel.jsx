@@ -116,7 +116,7 @@ export default function ListingSellerCollaborationPanel({
       setFeedback({
         tone: "error",
         message:
-          error?.code === "40001"
+          ["40001", "PT409"].includes(error?.code)
             ? "A concurrent edit was detected. Nothing was overwritten; refresh and review again."
             : error?.message || "The review could not be saved.",
       });

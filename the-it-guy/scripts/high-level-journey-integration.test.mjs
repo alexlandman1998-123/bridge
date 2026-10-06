@@ -21,8 +21,12 @@ for(const mutate of [
  x=>x.plan.lanes[0].stepKeys.pop(),
  x=>x.rollup.transactionJourneySnapshot.legalJourney.snapshot.planRevision=9,
  x=>x.rollup.transactionJourneySnapshot.legalJourney.snapshot.lanes[0].phases[0].tasks[0].revision=9,
- x=>x.plan=null,
 ]){const x=structuredClone(input);mutate(x);const r=buildDeveloperJourneySnapshot(x);assert.equal(r.legalJourney.status,'unavailable');assert.ok(r.highLevelJourney.milestones.slice(2).every(m=>m.status==='unknown'))}
+const imported=structuredClone(input);imported.plan=null
+const importedResult=buildDeveloperJourneySnapshot(imported)
+assert.equal(importedResult.legalJourney.status,'ready')
+assert.equal(importedResult.legalJourney.planRequired,true)
+assert.ok(importedResult.highLevelJourney.milestones.slice(2).every(m=>m.status==='unknown'),'Readable imported tasks must not prove legal milestones without a confirmed plan')
 const legacy=structuredClone(input);legacy.rollup.usedLegacyFallback=true
 assert.deepEqual(buildDeveloperJourneySnapshot(legacy).highLevelJourney.milestones.slice(0,2).map(m=>m.status),['unknown','unknown'])
 const reopened=structuredClone(input)
@@ -37,11 +41,19 @@ try{
  const {default:Overview}=await server.ssrLoadModule('/src/components/transaction/DeveloperOverviewJourney.jsx')
  const {default:Detail}=await server.ssrLoadModule('/src/components/transaction/DeveloperConveyancingJourney.jsx')
  const beforeHtml=renderToStaticMarkup(createElement(Overview,{model:result}))
+ const completedFinance={...result,highLevelJourney:{...result.highLevelJourney,milestones:result.highLevelJourney.milestones.map(m=>m.id==='finance'?{...m,status:'complete',isComplete:true}:m)},currentStepId:'finance',currentStep:{id:'finance',label:'Finance'}}
+ const completedFinanceHtml=renderToStaticMarkup(createElement(Overview,{model:completedFinance}))
+ assert.match(completedFinanceHtml,/data-milestone="finance" data-milestone-status="complete"[\s\S]*?Completed/)
+ assert.doesNotMatch(completedFinanceHtml,/data-milestone="finance"[^>]*aria-current="step"/,'A stale rollup focus must not override a completed finance milestone')
  const afterHtml=renderToStaticMarkup(createElement(Overview,{model:after}))
  assert.match(beforeHtml,/data-milestone="registration" data-milestone-status="complete"/)
  assert.match(afterHtml,/data-milestone="registration" data-milestone-status="pending"/)
  assert.match(afterHtml,/>Waiting</)
  assert.match(renderToStaticMarkup(createElement(Detail,{result:after.legalJourney})),/data-task-status="not_started"/)
+ const importedHtml=renderToStaticMarkup(createElement(Detail,{result:importedResult.legalJourney}))
+ assert.doesNotMatch(importedHtml,/Confirm the matter plan|View updates/)
+ assert.match(importedHtml,/data-task-status="completed"/)
+ assert.doesNotMatch(importedHtml,/Legal journey unavailable/)
  const unavailable=renderToStaticMarkup(createElement(Overview,{model:{steps:[{id:'otp_signed',isComplete:true}]}}))
  assert.doesNotMatch(unavailable,/>Completed</)
  console.log('High-level integration: shared sources, revision/plan guards, legacy rejection and reopening parity PASS')

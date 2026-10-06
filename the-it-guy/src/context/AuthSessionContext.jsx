@@ -156,6 +156,9 @@ function buildBootstrapTimeoutMessage({ phase = '', diagnostics = [] } = {}) {
 function getBridgeBootstrapRetryReason(error) {
   const message = String(error?.message || '').toLowerCase()
   const bootHealthStatus = String(error?.bootHealth?.status || '').toLowerCase()
+  if (error?.code === '57014' || message.includes('canceling statement due to statement timeout')) {
+    return 'database_statement_timeout'
+  }
   if (message.includes('failed to fetch') || message.includes('networkerror') || message.includes('network request failed')) {
     return 'network_failure'
   }

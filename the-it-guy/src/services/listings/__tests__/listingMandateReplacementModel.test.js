@@ -60,4 +60,19 @@ describe('listing mandate replacement workflow', () => {
     })
     expect(revision.changedFields).toEqual(['specialConditions'])
   })
+
+  it('requires a reviewed replacement when the agreed protection period changes to zero', () => {
+    const revision = createListingMandateTermsRevision({
+      previous: { protectionPeriodDays: '60' },
+      next: { protectionPeriod: '0' },
+    })
+    expect(revision.changedFields).toEqual(['protectionPeriod'])
+    expect(revision.previous.protectionPeriod).toBe('60')
+    expect(revision.next.protectionPeriod).toBe('0')
+    const result = buildListingMandateReplacementWorkflow({ sessions: [oldSigned], revisions: [revision] })
+    expect(result.status).toBe('amendment_required')
+    expect(result.sourceSigningGroupId).toBe('old-group')
+    expect(result.changedFieldLabels).toContain('Buyer protection period')
+    expect(oldSigned.status).toBe('signed')
+  })
 })

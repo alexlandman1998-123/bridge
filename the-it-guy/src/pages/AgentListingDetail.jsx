@@ -1,6 +1,6 @@
 import { prepareSellerMandateReviewPreview } from '../lib/sellerMandateReviewPreview.js'
 import SellerMandateDetailsEditor from '../components/documents/SellerMandateDetailsEditor.jsx'
-import { getSellerMandatePreparationIssues } from '../lib/sellerMandateCapture.js'
+import { buildSellerMandateTermsFormPatch, getSellerMandatePreparationIssues, isMandateCalendarDate, readSellerMandateTerms } from '../lib/sellerMandateCapture.js'
 import SellerPortalAccessControls from '../components/client-portal/SellerPortalAccessControls.jsx'
 import '../components/listings/property24-manage.css'
 import ListingChannelManageMenu from '../components/listings/ListingChannelManageMenu'
@@ -497,6 +497,7 @@ const SELLER_PROFILE_SECTION_FIELDS = [
       { key: 'askingPrice', label: 'Asking price', type: 'number' },
       { key: 'mandateStartDate', label: 'Mandate start date', type: 'date' },
       { key: 'expiryDate', label: 'Expiry date', type: 'date' },
+      { key: 'protectionPeriod', label: 'Protection period (calendar days; 0 means none)', type: 'number' },
       { key: 'commissionBasis', label: 'Commission type', as: 'select', options: ['percentage', 'fixed'] },
       { key: 'commissionPercentage', label: 'Commission percentage', type: 'number' },
       { key: 'commissionAmount', label: 'Fixed commission amount (R)', type: 'number' },
@@ -3783,6 +3784,7 @@ function AgentListingDetail() {
   const [sellerOnboardingCorrectionReason, setSellerOnboardingCorrectionReason] = useState('')
   const [sellerDocumentOtherAgencyName, setSellerDocumentOtherAgencyName] = useState('')
   const [sellerDocumentProtectionPeriodDays, setSellerDocumentProtectionPeriodDays] = useState('')
+  const [sellerDocumentMandateEndDate, setSellerDocumentMandateEndDate] = useState('')
   const [sellerDocumentSendSelection, setSellerDocumentSendSelection] = useState({ disclosure: false, fica: false, mandate: false })
   const [sellerDocumentReplacementGroupId, setSellerDocumentReplacementGroupId] = useState('')
   const [sellerDocumentReplacementReason, setSellerDocumentReplacementReason] = useState('')
@@ -6032,6 +6034,7 @@ function AgentListingDetail() {
   }
 
   const privatePropertyListingId = listingRecord?.id
+
   const callPrivatePropertyListingAction = useCallback(async (action, body = {}, options = {}) => {
     if (!privatePropertyListingId) throw new Error('Open a saved listing before using Private Property.')
     if (!isSupabaseConfigured || !supabase) throw new Error('Sign in before using Private Property publishing.')
@@ -7739,13 +7742,31 @@ function AgentListingDetail() {
     return buildSellerSigningPlan({ sellerType: listingRecord?.sellerType || form.sellerType, form })
   }
 
+  function getSellerDocumentMandateTerms() {
+    const terms = readSellerMandateTerms(getListingSellerFormData(listingRecord), listingRecord || {})
+    if (!sellerDocumentSendOpen) return terms
+    return {
+      ...terms,
+      endDate: sellerDocumentMandateEndDate.trim(),
+      protectionPeriod: sellerDocumentProtectionPeriodDays.trim(),
+      otherAgencyName: sellerDocumentOtherAgencyName.trim(),
+    }
+  }
+
+  function resetSellerDocumentMandateTerms(listing = listingRecord) {
+    const terms = readSellerMandateTerms(getListingSellerFormData(listing), listing || {})
+    setSellerDocumentOtherAgencyName(terms.otherAgencyName)
+    setSellerDocumentProtectionPeriodDays(terms.protectionPeriod)
+    setSellerDocumentMandateEndDate(terms.endDate)
+  }
+
   function getListingMandateReadiness() {
     return buildListingMandateReadiness(listingRecord || {}, {
       basis: commissionDraft.basis === 'fixed' ? 'fixed' : 'percentage',
       percentage: commissionDraft.percentage,
       amount: commissionDraft.amount,
       vatHandling: commissionDraft.vatHandling,
-    })
+    }, { mandateTerms: getSellerDocumentMandateTerms() })
   }
 
   function getSellerSigningDocumentOptions() {
@@ -7754,11 +7775,12 @@ function AgentListingDetail() {
       percentage: commissionDraft.percentage,
       amount: commissionDraft.amount,
       vatHandling: commissionDraft.vatHandling,
-    })
+    }, { mandateTerms: getSellerDocumentMandateTerms() })
   }
 
   function buildSellerSigningPackSnapshot(selectedDocuments = ['mandate']) {
     const form = getListingSellerFormData(listingRecord)
+    const terms = getSellerDocumentMandateTerms()
     const signingPlan = getSellerSigningPlan()
     const signedRequirementKeys = new Set(selectedDocuments.flatMap((documentKey) => {
       if (documentKey === 'mandate') return ['signed_mandate', 'mandate_to_sell']
@@ -7788,11 +7810,12 @@ function AgentListingDetail() {
       sellerPortalTasks,
       mandate: {
         mandateType: marketingDraft.mandateType || listingRecord?.mandateType || form.mandateType || 'sole',
-        otherAgencyName: sellerDocumentOtherAgencyName.trim(),
-        protectionPeriodDays: sellerDocumentProtectionPeriodDays.trim(),
+        otherAgencyName: terms.otherAgencyName,
+        protectionPeriodDays: terms.protectionPeriod,
+        mandateDuration: terms.mandateDuration,
         askingPrice: formatCurrency(Number(listingRecord?.askingPrice || marketingDraft.price || 0) || 0),
-        startDate: String(form.mandateStartDate || form.startDate || ''),
-        endDate: String(form.mandateEndDate || form.expiryDate || ''),
+        startDate: terms.startDate,
+        endDate: terms.endDate,
         commissionBasis: commissionDraft.basis === 'fixed' ? 'fixed' : 'percentage',
         commissionPercentage: commissionDraft.basis === 'fixed' ? '' : String(commissionDraft.percentage || ''),
         commissionAmount: commissionDraft.basis === 'fixed' ? String(commissionDraft.amount || '') : '',
@@ -7803,13 +7826,10 @@ function AgentListingDetail() {
   }
 
   function openSellerDocumentSend(selectionOverride = null, correctionRequest = null) {
-    const { byKey } = getSellerSigningDocumentOptions()
-    const form = getListingSellerFormData(listingRecord)
-    setSellerDocumentOtherAgencyName(String(form.otherAgencyName || form.coAgencyName || '').trim())
-    setSellerDocumentProtectionPeriodDays(String(form.protectionPeriodDays ?? form.mandateProtectionPeriod ?? '').trim())
+    resetSellerDocumentMandateTerms()
     setSellerDocumentSendSelection(normalizeSellerOnboardingFormalSigningSelection({
-      fica: byKey.fica.ready,
-      mandate: byKey.mandate.ready,
+      fica: true,
+      mandate: true,
       ...(selectionOverride || {}),
     }))
     setDetailError('')
@@ -8100,6 +8120,7 @@ function AgentListingDetail() {
       const reviewedDocumentIndex = buildSellerReviewedDocumentVersionIndex(reviewedDocuments)
       const nextFormData = {
         ...existingForm,
+        ...(selected.includes('mandate') ? buildSellerMandateTermsFormPatch(signingPackSnapshot.mandate) : {}),
         sellerOnboardingReview: packReview,
         seller_onboarding_review: packReview,
         sellerOnboardingFormalPackApproval: formalPackApproval,
@@ -10962,6 +10983,7 @@ function AgentListingDetail() {
           ? 'Seller information updated. The saved ownership model and document requirements are now in sync.'
           : 'Seller profile captured. Document requirements have been recalculated from the saved seller model.'))
       if (returnToDocuments) {
+        resetSellerDocumentMandateTerms(result.listing)
         setSellerDocumentSendOpen(true)
       }
     } catch (error) {
@@ -11057,6 +11079,7 @@ function AgentListingDetail() {
       draft.askingPrice = String(listingRecord?.askingPrice || draft.askingPrice || '')
       draft.mandateStartDate = listingRecord?.mandateStartDate || draft.mandateStartDate || ''
       draft.expiryDate = listingRecord?.expiryDate || listingRecord?.mandateEndDate || draft.expiryDate || ''
+      draft.protectionPeriod = readSellerMandateTerms(getListingSellerFormData(listingRecord), listingRecord || {}).protectionPeriod
       draft.commissionBasis = commissionWorkspace.basis === 'fixed' ? 'fixed' : 'percentage'
       draft.commissionPercentage = commissionWorkspace.percentage ? String(commissionWorkspace.percentage) : ''
       draft.commissionAmount = commissionWorkspace.amount ? String(commissionWorkspace.amount) : ''
@@ -11160,6 +11183,14 @@ function AgentListingDetail() {
     }
 
     const existingFormData = getListingSellerFormData(listingRecord)
+    if (sellerSectionEditorKey === 'mandate_details') {
+      Object.assign(formPatch, buildSellerMandateTermsFormPatch({
+        ...existingFormData,
+        ...formPatch,
+        startDate: formPatch.mandateStartDate,
+        endDate: formPatch.expiryDate,
+      }))
+    }
     const nextFormData = { ...existingFormData, ...formPatch }
     let nextCommissionDraft = null
     const existingMandateRevisions = Array.isArray(existingFormData.mandateTermsRevisions)
@@ -11172,6 +11203,7 @@ function AgentListingDetail() {
       askingPrice: listingRecord?.askingPrice || existingFormData.askingPrice,
       mandateStartDate: listingRecord?.mandateStartDate || existingFormData.mandateStartDate,
       expiryDate: listingRecord?.expiryDate || listingRecord?.mandateEndDate || existingFormData.expiryDate,
+      protectionPeriod: readSellerMandateTerms(existingFormData, listingRecord || {}).protectionPeriod,
       commissionBasis: commissionWorkspace.basis,
       commissionPercentage: commissionWorkspace.percentage,
       commissionAmount: commissionWorkspace.amount,
@@ -11258,6 +11290,7 @@ function AgentListingDetail() {
       setSellerSectionReturnToDocuments(false)
       setDetailMessage(result.warnings?.[0]?.message || `${SELLER_PROFILE_SECTION_BY_KEY.get(sellerSectionEditorKey)?.title || 'Seller details'} saved.`)
       if (returnToDocuments) {
+        resetSellerDocumentMandateTerms(result.listing)
         setSellerDocumentSendOpen(true)
       }
     } catch (error) {
@@ -13548,7 +13581,7 @@ function AgentListingDetail() {
         footer={(
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <Button type="button" variant="secondary" disabled={sellerDocumentSendSaving} onClick={() => { setSellerDocumentSendOpen(false); setMandateReplacementIntent(false) }}>Cancel</Button>
-            <Button type="button" disabled={sellerDocumentSendSaving || (sellerDocumentSendOpen && !mandateReplacementIntent && (readSellerOnboardingReview(getListingSellerFormData(listingRecord).sellerOnboardingReview || getListingSellerFormData(listingRecord).seller_onboarding_review).status !== SELLER_ONBOARDING_REVIEW_STATUS.approved || !sellerOnboardingReviewChecklist?.ready))} onClick={() => void saveSellerDocumentSendSelection()}>
+            <Button type="button" disabled={sellerDocumentSendSaving || (sellerDocumentSendOpen && sellerDocumentSendSelection.mandate && !getListingMandateReadiness().ready) || (sellerDocumentSendOpen && !mandateReplacementIntent && (readSellerOnboardingReview(getListingSellerFormData(listingRecord).sellerOnboardingReview || getListingSellerFormData(listingRecord).seller_onboarding_review).status !== SELLER_ONBOARDING_REVIEW_STATUS.approved || !sellerOnboardingReviewChecklist?.ready))} onClick={() => void saveSellerDocumentSendSelection()}>
               {sellerDocumentSendSaving ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
               {sellerDocumentSendSaving ? 'Preparing...' : sellerMandateSignatureRoute === 'manual_upload' ? 'Approve and prepare physical copies' : 'Approve and prepare portal copies'}
             </Button>
@@ -13590,6 +13623,16 @@ function AgentListingDetail() {
           {ONLINE_SIGNING_DISABLED ? <div className="rounded-[16px] border border-[#f2dfbd] bg-[#fff9ec] p-4 text-sm leading-6 text-[#7a5a17]"><p className="font-semibold">Wet-ink signatures required</p><p className="mt-1">We will prepare printable FICA and mandate copies. Download them, arrange physical signatures, then upload the signed originals in Documents.</p></div> : null}
           {(marketingDraft.mandateType || listingRecord?.mandateType || getListingSellerFormData(listingRecord).mandateType) === 'dual' ? <label className="grid gap-1.5 rounded-[16px] border border-[#dce6f2] bg-white p-4 text-sm font-semibold text-[#243d56]">Second agency named in the dual mandate
             <Field value={sellerDocumentOtherAgencyName} onChange={(event) => setSellerDocumentOtherAgencyName(event.target.value)} placeholder="Other agency name" />
+          </label> : null}
+          {getSellerDocumentMandateTerms().mandateDuration === 'fixed' ? <label className="grid gap-1.5 rounded-[16px] border border-[#dce6f2] bg-white p-4 text-sm font-semibold text-[#243d56]">Mandate end date
+            <Field type="date" value={sellerDocumentMandateEndDate} onChange={(event) => setSellerDocumentMandateEndDate(event.target.value)} />
+            {(() => {
+              const form = getListingSellerFormData(listingRecord)
+              const savedExpiry = String(form.expiryDate || form.mandateEndDate || '').slice(0, 10)
+              return !sellerDocumentMandateEndDate && isMandateCalendarDate(savedExpiry)
+                ? <span className="text-xs font-normal text-[#607387]">Saved expiry: {formatDate(savedExpiry)}. <button type="button" className="font-semibold underline" onClick={() => setSellerDocumentMandateEndDate(savedExpiry)}>Use this date for the new copy</button></span>
+                : null
+            })()}
           </label> : null}
           <label className="grid gap-1.5 rounded-[16px] border border-[#dce6f2] bg-white p-4 text-sm font-semibold text-[#243d56]">Introduced-buyer protection period (calendar days)
             <Field type="number" min="0" step="1" value={sellerDocumentProtectionPeriodDays} onChange={(event) => setSellerDocumentProtectionPeriodDays(event.target.value)} placeholder="Enter 0 for none" />
@@ -17030,10 +17073,6 @@ function AgentListingDetail() {
               .filter((activity) => String(activity?.activity_type || '') === 'seller_signing_pack_post_signature_correction_requested')
               .filter((activity) => !correctionResolutionRequestIds.has(String(activity?.id || '')))
             const portalTasks = Array.isArray(sellerPortalTaskPlan.task_plan) ? sellerPortalTaskPlan.task_plan : []
-            const statusDotClass = (complete, required = true) => {
-              if (complete) return 'bg-[#1f9d61]'
-              return required ? 'bg-[#f29f33]' : 'bg-[#aebdca]'
-            }
             if (sellerOwnershipUnidentified) {
               return (
                 <section className="grid items-stretch gap-5 lg:grid-cols-2" data-testid="listing-seller-setup-required">
@@ -17423,20 +17462,20 @@ function AgentListingDetail() {
                         <div className="min-w-0">
                           <h3 className="break-words text-base font-semibold text-[#142132]">Documents & Compliance</h3>
                           <p className="mt-1 text-sm font-semibold text-[#607387]">{completedDocumentCount} of {documentTotalCount} complete</p>
+                          <p className="mt-1 text-xs text-[#2f628d]">{listingSellerDocumentSummary.readyForReview} awaiting agent / compliance review</p>
                         </div>
                       </div>
-                      <StatusPill status={documentTotalCount && completedDocumentCount === documentTotalCount ? 'complete' : completedDocumentCount ? 'in_progress' : 'pending'} label={documentTotalCount ? `${Math.round((completedDocumentCount / documentTotalCount) * 100)}%` : 'No docs'} />
+                      <StatusPill status={documentTotalCount && completedDocumentCount === documentTotalCount ? 'complete' : completedDocumentCount || listingSellerDocumentSummary.readyForReview ? 'in_progress' : 'pending'} label={documentTotalCount ? `${Math.round((completedDocumentCount / documentTotalCount) * 100)}% approved` : 'No docs'} />
                     </div>
                     <div className="mt-5 divide-y divide-[#edf2f7]">
                       {visibleDocumentRows.length ? visibleDocumentRows.map((document) => {
-                        const complete = isListingDocumentComplete(document)
+                        const status = resolveListingSellerDocumentStatus(document)
                         return (
                           <div key={document.key || document.id || document.label} className="flex items-center justify-between gap-3 py-2">
                             <div className="flex min-w-0 items-center gap-3">
-                              <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${statusDotClass(complete, document.required !== false)}`} />
                               <span className="min-w-0 break-words text-sm font-semibold leading-5 text-[#243d56]">{document.label}</span>
                             </div>
-                            <span className="shrink-0 text-xs font-semibold text-[#607387]">{complete ? 'Complete' : document.required === false ? 'Not provided' : 'Outstanding'}</span>
+                            <span className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold ${status.classes}`}>{status.label}</span>
                           </div>
                         )
                       }) : (
@@ -17445,10 +17484,15 @@ function AgentListingDetail() {
                         </div>
                       )}
                     </div>
-                    <Button type="button" size="sm" variant="secondary" className="mt-5" onClick={() => setSellerDocumentUploadModalOpen(true)}>
-                      <Upload size={14} />
-                      Upload Documents
-                    </Button>
+                    <div className="mt-5 flex flex-wrap gap-2">
+                      <Button type="button" size="sm" variant="secondary" onClick={() => setSellerDocumentUploadModalOpen(true)}>
+                        <Upload size={14} />
+                        Upload Documents
+                      </Button>
+                      <Button type="button" size="sm" variant="secondary" onClick={() => setSellerWorkspaceTab('documents')}>
+                        View all {documentTotalCount} requirements
+                      </Button>
+                    </div>
                   </article>
 
                   <article className="min-h-0 overflow-y-auto rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">

@@ -724,7 +724,7 @@ function personName(person = {}) {
  * does not require FICA evidence or a completed disclosure: those are separate
  * documents that can be requested later in the seller-document flow.
  */
-export function buildListingMandateReadiness(listing = {}, commission = {}, { requireEmail = false } = {}) {
+export function buildListingMandateReadiness(listing = {}, commission = {}, { requireEmail = false, mandateTerms = null } = {}) {
   const form = getListingSellerFormData(listing)
   const branch = resolveListingSellerProfileBranch(form, listing)
   const missing = []
@@ -774,7 +774,7 @@ export function buildListingMandateReadiness(listing = {}, commission = {}, { re
   }
 
   require(Boolean(normalizeText(form.propertyAddress || form.addressLine1 || listing.propertyAddress || listing.addressLine1)), 'Add the property address.')
-  const terms = readSellerMandateTerms(form, listing)
+  const terms = readSellerMandateTerms(mandateTerms || form, listing)
   const issues = getSellerMandatePreparationIssues({ ...terms,
     commissionBasis: commission.basis ?? terms.commissionBasis,
     commissionPercentage: commission.percentage ?? terms.commissionPercentage,
@@ -792,8 +792,8 @@ export function buildListingMandateReadiness(listing = {}, commission = {}, { re
   }
 }
 
-export function buildListingSellerDocumentReadiness(listing = {}, commission = {}) {
-  const mandate = buildListingMandateReadiness(listing, commission)
+export function buildListingSellerDocumentReadiness(listing = {}, commission = {}, options = {}) {
+  const mandate = buildListingMandateReadiness(listing, commission, options)
   const form = getListingSellerFormData(listing)
   const mandateType = normalizeSellerMandateType(form.mandateType || listing?.mandateType || 'sole')
   const mandateTitle = mandateType === 'dual' ? 'Dual mandate' : mandateType === 'open' ? 'Open mandate' : 'Exclusive mandate'

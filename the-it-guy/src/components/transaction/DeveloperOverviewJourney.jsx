@@ -6,8 +6,14 @@ const MILESTONES = HIGH_LEVEL_MILESTONES
 // Render explicit rule outcomes without the legacy index-based normalizer.
 export default function DeveloperOverviewJourney({ model, loading = false, onOpenWorkspace, title = 'Transaction Journey', action = null }) {
   const steps = model?.highLevelJourney?.ruleVersion === 1 ? model.highLevelJourney.milestones : []
-  const currentMilestone = steps.find((step) => ['in_progress', 'waiting', 'blocked'].includes(step?.status)) || model?.currentStep || null
-  const currentWorkflowItem = model?.currentWorkflowItem || null
+  const transferTasks = model?.legalJourney?.status === 'ready'
+    ? (model.legalJourney.snapshot?.lanes || []).filter(lane => lane.key === 'transfer').flatMap(lane => (lane.phases || []).flatMap(phase => phase.tasks || []))
+    : []
+  const completed = key => transferTasks.some(task => task.key === key && ['completed', 'complete', 'completed_externally'].includes(task.status))
+  // Readiness belongs to Transfer. Only a recorded lodgement advances this rail.
+  const legalCurrent = completed('registered') ? 'registration'
+    : completed('lodged_at_deeds_office') ? 'lodgement'
+      : transferTasks.some(task => ['completed', 'complete', 'completed_externally', 'in_progress', 'waiting', 'blocked'].includes(task.status)) ? 'transfer' : null
   return (
     <section data-developer-overview-journey aria-label="Transaction journey" aria-busy={loading} className="min-w-0 rounded-[20px] border border-borderDefault bg-white p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -21,12 +27,12 @@ export default function DeveloperOverviewJourney({ model, loading = false, onOpe
           {MILESTONES.map(milestone => {
             const Item = onOpenWorkspace ? 'button' : 'div'
             const step = steps.find(item => (item.id || item.key) === milestone.id || (milestone.alternate && (item.id || item.key) === milestone.alternate))
-            const complete = !loading && Boolean(step?.isComplete)
-            const current = !loading && (
-              ['in_progress', 'waiting', 'blocked'].includes(step?.status) ||
-              milestone.id === model?.currentStepId
-            )
-            const status = loading ? 'Loading…' : current && !['in_progress', 'waiting', 'blocked'].includes(step?.status)
+            const complete = !loading && Boolean(step?.isComplete) && !(legalCurrent === 'transfer' && milestone.id === 'transfer')
+            const isLegal = ['transfer', 'lodgement', 'registration'].includes(milestone.id)
+            const current = !loading && !complete && (legalCurrent && isLegal
+              ? milestone.id === legalCurrent
+              : ['in_progress', 'waiting', 'blocked'].includes(step?.status) || milestone.id === model?.currentStepId)
+            const status = loading ? 'Loading…' : legalCurrent === 'transfer' && ['lodgement', 'registration'].includes(milestone.id) ? 'Pending' : current && !['in_progress', 'waiting', 'blocked'].includes(step?.status)
               ? 'In progress'
               : ({ complete: 'Completed', blocked: 'Needs attention', waiting: 'Waiting', in_progress: 'In progress', pending: 'Pending' }[step?.status] || 'Not available')
             return <li key={milestone.id} className="relative">
@@ -41,20 +47,7 @@ export default function DeveloperOverviewJourney({ model, loading = false, onOpe
           })}
         </ol>
       </nav>
-      {currentMilestone || currentWorkflowItem ? (
-        <section className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3" aria-label="Current transaction focus">
-          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-textMuted">Current stage</p>
-          <p className="mt-1 text-sm font-semibold text-textStrong">{currentMilestone?.label || model?.currentStageLabel || 'In progress'}</p>
-          {currentWorkflowItem?.label ? (
-            <>
-              <p className="mt-3 text-xs font-semibold uppercase tracking-[0.12em] text-textMuted">Current matter item</p>
-              <p className="mt-1 text-sm font-semibold text-textStrong">{currentWorkflowItem.label}</p>
-            </>
-          ) : null}
-          {currentWorkflowItem?.summary ? <p className="mt-1 text-sm leading-6 text-textMuted">{currentWorkflowItem.summary}</p> : null}
-          {currentWorkflowItem?.ownerLabel ? <p className="mt-2 text-xs font-semibold text-textMuted">With: {currentWorkflowItem.ownerLabel}</p> : null}
-        </section>
-      ) : null}
+
     </section>
   )
 }

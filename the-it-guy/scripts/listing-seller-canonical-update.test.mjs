@@ -2,6 +2,7 @@ import { getSellerMandatePreparationIssues } from '../src/lib/sellerMandateCaptu
 import assert from 'node:assert/strict'
 import { createListingSellerProfileBuilderDraft, buildListingSellerProfileFormPatch, selectListingSellerProfileBranch } from '../src/lib/listingSellerProfileBuilderModel.js'
 import { readFile } from 'node:fs/promises'
+import { PGlite } from '@electric-sql/pglite'
 
 import {
   applyListingSellerCanonicalUpdateSnapshot,
@@ -29,6 +30,97 @@ function test(name, fn) {
     })
 }
 
+await test('stale seller saves return a non-retryable conflict without writes, while valid saves and replay retain RLS', async () => {
+  const db = new PGlite()
+  const actor = '11111111-1111-4111-8111-111111111111'
+  const owned = '22222222-2222-4222-8222-222222222222'
+  const foreign = '33333333-3333-4333-8333-333333333333'
+  const mutation = '44444444-4444-4444-8444-444444444444'
+  const initial = '2026-10-01T00:00:00Z'
+  const signature = 'public.save_private_listing_seller_canonical_update(uuid,jsonb,jsonb,jsonb,jsonb,text,text,text,text,uuid,text,text,text[],timestamptz)'
+  const [original, correction] = await Promise.all([
+    readFile(new URL('../../supabase/migrations/20260924151653_listing_seller_canonical_update_phase2.sql', import.meta.url), 'utf8'),
+    readFile(new URL('../../supabase/migrations/20261006095510_seller_save_non_retryable_conflict.sql', import.meta.url), 'utf8'),
+  ])
+  try {
+    await db.exec(`
+      create role authenticated; create role anon; create schema auth; create schema extensions;
+      create function auth.uid() returns uuid language sql stable as
+        $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
+      -- Token entropy is irrelevant to this isolated conflict fixture.
+      create function extensions.gen_random_bytes(n integer) returns bytea language sql as $$select decode(repeat('ab',n),'hex')$$;
+      grant usage on schema auth,extensions to authenticated;
+      create table private_listings(id uuid primary key, owner_id uuid, seller_type text,
+        seller_onboarding_status text, seller_canonical_facts_json jsonb,
+        seller_canonical_fact_readiness_json jsonb, seller_canonical_facts_updated_at timestamptz,
+        address_line_1 text, asking_price numeric, mandate_type text, updated_at timestamptz);
+      create table private_listing_seller_onboarding(id uuid primary key default gen_random_uuid(),
+        private_listing_id uuid unique references private_listings(id), token text,
+        form_data jsonb, status text, seller_type text, ownership_structure text, marital_regime text,
+        canonical_facts_json jsonb, canonical_fact_readiness_json jsonb,
+        canonical_facts_updated_at timestamptz, submitted_at timestamptz, updated_at timestamptz);
+      create table private_listing_activity(id uuid primary key default gen_random_uuid(),
+        private_listing_id uuid references private_listings(id), activity_type text, activity_title text,
+        activity_description text, performed_by uuid, visibility text, metadata jsonb);
+      alter table private_listings enable row level security;
+      alter table private_listing_seller_onboarding enable row level security;
+      alter table private_listing_activity enable row level security;
+      grant select,insert,update on private_listings,private_listing_seller_onboarding,private_listing_activity to authenticated;
+      create policy owned_listing on private_listings to authenticated using(owner_id=auth.uid()) with check(owner_id=auth.uid());
+      create policy owned_onboarding on private_listing_seller_onboarding to authenticated
+        using(exists(select 1 from private_listings p where p.id=private_listing_id))
+        with check(exists(select 1 from private_listings p where p.id=private_listing_id));
+      create policy owned_activity on private_listing_activity to authenticated
+        using(exists(select 1 from private_listings p where p.id=private_listing_id))
+        with check(performed_by=auth.uid() and exists(select 1 from private_listings p where p.id=private_listing_id));
+      insert into private_listings(id,owner_id,updated_at) values('${owned}','${actor}','${initial}'),('${foreign}','${foreign}','${initial}');
+    `)
+    await db.exec(original)
+    const definition = async () => (await db.query('select prosrc,prosecdef,proacl::text as acl,proconfig from pg_proc where oid=$1::regprocedure', [signature])).rows[0]
+    const before = await definition()
+    const enterActor = () => db.exec(`set role authenticated; select set_config('request.jwt.claim.sub','${actor}',false);`)
+    const save = async (id, expected, mutationId = mutation) => (await db.query(
+      `select public.save_private_listing_seller_canonical_update($1,$2::jsonb,$3::jsonb,$4::jsonb,$5::jsonb,$6,$7,$8,$9,$10::uuid,$11,$12,$13::text[],$14::timestamptz) as receipt`,
+      [id, '{"sellerFirstName":"Updated"}', '{"seller":{"name":"Updated Owner"}}', '{}', '{"askingPrice":"1250000"}', 'in_progress', 'individual', null, null, mutationId, 'seller_edit', 'test_fixture', ['sellerFirstName'], expected],
+    )).rows[0].receipt
+    const state = async () => (await db.query(`select jsonb_build_object(
+      'listing',(select to_jsonb(p) from private_listings p where id=$1),
+      'onboarding',(select jsonb_agg(o) from private_listing_seller_onboarding o),
+      'activity',(select jsonb_agg(a) from private_listing_activity a)) as snapshot`, [owned])).rows[0].snapshot
+    await enterActor()
+    const untouched = await state()
+    await assert.rejects(save(owned, '2026-09-30T00:00:00Z'), error => error.code === '40001')
+    await db.exec('reset role')
+    await db.exec(correction)
+    const after = await definition()
+    assert.equal(after.prosrc, before.prosrc.replace("errcode = '40001'", "errcode = 'PT409'"))
+    assert.equal(after.prosecdef, false)
+    assert.deepEqual(after.proconfig, before.proconfig)
+    assert.equal(after.acl, before.acl)
+    await enterActor()
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await assert.rejects(save(owned, '2026-09-30T00:00:00Z'), error => error.code === 'PT409' && /changed after you opened/.test(error.message))
+      assert.deepEqual(await state(), untouched)
+    }
+    await assert.rejects(save(foreign, initial), error => error.code === 'P0002')
+    const saved = await save(owned, initial)
+    assert.equal(saved.idempotentReplay, false)
+    assert.equal(saved.listing.asking_price, 1250000)
+    assert.equal(saved.onboarding.form_data.sellerFirstName, 'Updated')
+    const committed = await state()
+    const replay = await save(owned, initial)
+    assert.equal(replay.idempotentReplay, true)
+    assert.deepEqual(await state(), committed)
+    await assert.rejects(save(owned, initial, '55555555-5555-4555-8555-555555555555'), error => error.code === 'PT409')
+    assert.deepEqual(await state(), committed)
+    await db.exec('reset role')
+    await db.exec(correction)
+    assert.deepEqual(await definition(), after)
+  } finally {
+    await db.close()
+  }
+})
+
 const listing = {
   id: '11111111-1111-4111-8111-111111111111',
   organisationId: '22222222-2222-4222-8222-222222222222',
@@ -54,6 +146,37 @@ await test('releases a stalled seller profile save without claiming it failed', 
     limitSellerCanonicalSaveWait(new Promise(() => {}), 5),
     (error) => error.code === 'SELLER_PROFILE_SAVE_TIMEOUT' && /may have completed/.test(error.message),
   )
+})
+
+await test('the existing seller client handles PT409 once and keeps the reload-before-saving conflict', async () => {
+  const source = await readFile(new URL('../src/services/privateListingService.js', import.meta.url), 'utf8')
+  const start = source.indexOf('export async function savePrivateListingSellerCanonicalUpdate(')
+  const end = source.indexOf('\nexport async function ', start + 1)
+  assert.ok(start >= 0 && end > start)
+  let calls = 0
+  const scope = {
+    requireClient: () => ({ rpc: () => {
+      calls += 1
+      return { abortSignal: async () => ({ error: {
+        code: 'PT409',
+        message: 'This seller record changed after you opened it. Reload the listing and review the latest details before saving.',
+      } }) }
+    } }),
+    normalizeUuid: value => value,
+    normalizeText: value => String(value || '').trim(),
+    normalizeNullableText: value => String(value || '').trim() || null,
+    buildListingSellerCanonicalSavePayload,
+    runSellerCanonicalRequest: request => request(new AbortController().signal),
+    SELLER_CANONICAL_SAVE_TIMEOUT_MS: 1000,
+    isMissingRpcError: () => false,
+    isSellerOnboardingCompletionTimeoutError: () => false,
+  }
+  const save = Function(...Object.keys(scope), `${source.slice(start, end).replace(/^export /, '')}\nreturn savePrivateListingSellerCanonicalUpdate`)(...Object.values(scope))
+  const update = buildListingSellerCanonicalUpdate({ listing, formPatch: { sellerFirstName: 'Updated' },
+    mutationId: '33333333-3333-4333-8333-333333333333' })
+  await assert.rejects(save(update), error => error.code === 'SELLER_UPDATE_CONFLICT' && error.recoverable === true && /Reload the listing/.test(error.message))
+  assert.equal(calls, 1)
+  assert.equal(listing.sellerOnboarding.formData.sellerFirstName, 'Old')
 })
 
 await test('builds one canonical seller mutation with provenance and optimistic concurrency', () => {

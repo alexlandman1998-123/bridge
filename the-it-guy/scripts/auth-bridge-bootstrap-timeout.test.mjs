@@ -3,6 +3,11 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
 const source = await readFile(new URL('../src/context/AuthSessionContext.jsx', import.meta.url), 'utf8')
+const retryClassifierSource = source.slice(source.indexOf('function getBridgeBootstrapRetryReason('), source.indexOf('function canKeepAuthenticatedWorkspaceDuringBridgeBoot('))
+const retryReason = new Function(`${retryClassifierSource}; return getBridgeBootstrapRetryReason`)()
+assert.equal(retryReason({code:'57014',message:'canceling statement due to statement timeout'}),'database_statement_timeout')
+assert.equal(retryReason({message:'canceling statement due to statement timeout'}),'database_statement_timeout')
+assert.equal(retryReason({code:'42501',message:'permission denied'}),'','Denied access must not be retried as a database timeout')
 
 assert.match(
   source,

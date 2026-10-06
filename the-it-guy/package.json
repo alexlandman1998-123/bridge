@@ -185,7 +185,7 @@
     "verify:multi-buyer-transaction": "npm run test:multi-buyer-transaction-phase1 && npm run test:multi-buyer-transaction-phase2 && npm run test:multi-buyer-transaction-phase3 && npm run test:multi-buyer-transaction-phase4 && npm run test:multi-buyer-transaction-phase5 && npm run test:multi-buyer-transaction-phase6 && npm run test:multi-buyer-transaction-phase7 && npm run test:multi-buyer-transaction-phase8",
     "test:direct-listing-intake-model-phase1": "node scripts/direct-listing-intake-model-phase1.test.mjs",
     "test:direct-listing-quick-add-phase2": "node scripts/direct-listing-quick-add-phase2.test.mjs",
-    "test:direct-listing-persistence-phase3": "node scripts/direct-listing-persistence-phase3.test.mjs",
+    "test:direct-listing-persistence-phase3": "node scripts/direct-listing-persistence-phase3.test.mjs && node --test scripts/create-listing-save-recovery.test.mjs",
     "test:direct-listing-requirement-sync-phase4": "node scripts/direct-listing-requirement-sync-phase4.test.mjs",
     "test:direct-listing-seller-portal-phase5": "node scripts/direct-listing-seller-portal-phase5.test.mjs",
     "test:direct-listing-seller-portal-phase6": "node scripts/direct-listing-seller-portal-phase6.test.mjs",

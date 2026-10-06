@@ -13,6 +13,12 @@ try {
   assert.match(html,/min-w-\[640px\]/)
   assert.match(html,/aria-current="step"/)
   assert.doesNotMatch(html,/Legal journey|Matter updates|conversation|Never rendered|data-task-id/)
+  const preparation={...model,currentStepId:'lodgement',legalJourney:{status:'ready',snapshot:{lanes:[{key:'transfer',phases:[{tasks:[{key:'lodgement_ready',status:'waiting'},{key:'lodged_at_deeds_office',status:'not_started'},{key:'registered',status:'not_started'}]}]}]}},currentWorkflowItem:{label:'Ready for lodgement',summary:'Preparing for lodgement',ownerLabel:'Attorney'}}
+  const preparationHtml=renderToStaticMarkup(createElement(Journey,{model:preparation}))
+  assert.match(preparationHtml,/data-milestone="transfer"[^>]*aria-current="step"/)
+  assert.doesNotMatch(preparationHtml,/data-milestone="lodgement"[^>]*aria-current|Current stage|Current matter item|Ready for lodgement|With: Attorney|Current transaction focus/)
+  const lodged={...preparation,legalJourney:{status:'ready',snapshot:{lanes:[{key:'transfer',phases:[{tasks:[{key:'lodged_at_deeds_office',status:'completed'},{key:'registered',status:'not_started'}]}]}]}}}
+  assert.match(renderToStaticMarkup(createElement(Journey,{model:lodged})),/data-milestone="lodgement"[^>]*aria-current="step"/)
   const opened=[]
   function walk(node){if(!node||typeof node!=='object')return;if(node.type==='button')node.props.onClick();const children=node.props?.children;for(const child of [children].flat(Infinity))walk(child)}
   walk(Journey({model,onOpenWorkspace:target=>opened.push(target)}))

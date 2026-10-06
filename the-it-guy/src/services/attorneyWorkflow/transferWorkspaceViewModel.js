@@ -904,7 +904,7 @@ function buildWorkflowTasks({ workflowKey = 'transfer', lane = null, workflow = 
       id: storedStep?.id || definition.key,
       key: definition.key,
       stepKey: definition.key,
-      label: definition.label,
+      label: savedTask?.label || definition.label,
       description: definition.description || '',
       applicabilitySuggestion: getAttorneyTaskSuggestion(definition.key, { ...workflow?.facts, ...workflow?.workflowPlan?.configuration }),
       actionLabel: definition.actionLabel || definition.label,

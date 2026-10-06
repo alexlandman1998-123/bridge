@@ -81,12 +81,14 @@ export default function SellerCollaborationPortal() {
       setLoading(true);
       setError("");
       setPayload(await getListingSellerParticipantPayload(id, token));
+      return true;
     } catch (loadError) {
       localStorage.removeItem(storageKey(id));
       setAccessToken("");
       setError(
         loadError?.message || "Your secure session could not be opened.",
       );
+      return false;
     } finally {
       setLoading(false);
     }
@@ -154,12 +156,15 @@ export default function SellerCollaborationPortal() {
       );
       await load();
     } catch (submitError) {
-      setError(
-        submitError?.code === "40001"
-          ? "Another change was saved first. The latest record has been loaded; please review and submit again."
-          : submitError?.message || "The change could not be submitted.",
-      );
-      if (submitError?.code === "40001") await load();
+      if (["40001", "PT409"].includes(submitError?.code)) {
+        if (await load()) {
+          setError(
+            "Another change was saved first. The latest record has been loaded; please review and submit again.",
+          );
+        }
+      } else {
+        setError(submitError?.message || "The change could not be submitted.");
+      }
     } finally {
       setSaving(false);
     }

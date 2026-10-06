@@ -35,7 +35,6 @@ import {
   ResidentialDashboardModeToggle,
 } from '../components/residential/ResidentialDashboard'
 import FicTrainingPanel from '../components/training/FicTrainingPanel'
-import OrganisationHandoffQueue from '../components/transactions/OrganisationHandoffQueue'
 import PartnerBusinessDistributionPanel from '../components/dashboard/PartnerBusinessDistributionPanel'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { canAccessPrincipalExperience } from '../lib/organisationAccess'
@@ -2622,7 +2621,6 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '', digitalCardPanel 
 
         {isInitialLoading ? <DashboardSkeleton /> : null}
 
-        <OrganisationHandoffQueue key={`${profile?.id || profile?.userId || ''}:${agencyId || resolvedAgencyId}`} organisationId={agencyId || (agencyResolutionComplete ? resolvedAgencyId : '')} />
 
         {data ? (
           <div className={`space-y-4 transition-opacity ${isRefreshing ? 'opacity-60' : 'opacity-100'}`} aria-busy={isRefreshing}>

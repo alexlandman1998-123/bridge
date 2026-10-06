@@ -1014,7 +1014,7 @@ async function buildQuickListingImageDrafts(files = []) {
     files.map(async (file, index) => ({
       id: typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `listing-image-${Date.now()}-${index + 1}`,
       name: file.name || `Image ${index + 1}`,
-      url: await readQuickListingImageAsDataUrl(file),
+      url: typeof URL.createObjectURL === 'function' ? URL.createObjectURL(file) : await readQuickListingImageAsDataUrl(file),
       contentType: file.type || '',
       size: Number(file.size || 0) || 0,
       file,
@@ -1095,7 +1095,7 @@ async function syncQuickListingDistributionData(listingId = '', form = {}, conte
       description,
       features: publicationFeatures,
       amenities: [],
-      status: shouldAutoPublishToAgencyWebsite(context.listingStatus, form.selectedSyndicationChannels) ? 'Published' : 'Draft',
+      status: !uploadError && shouldAutoPublishToAgencyWebsite(context.listingStatus, form.selectedSyndicationChannels) ? 'Published' : 'Draft',
     },
     media: {
       galleryImages: uploadedImages,
@@ -1383,10 +1383,17 @@ function buildListingEditorFormFromListing(listing = {}, profile = {}, workspace
   }
 }
 
-function saveCreateListingDraftToStorage(storageKey = '', form = {}) {
+function saveCreateListingDraftToStorage(storageKey = '', form = {}, recovery = {}) {
   if (typeof window === 'undefined' || !storageKey) return false
   try {
-    window.localStorage.setItem(storageKey, JSON.stringify(serializeCreateListingDraftForm(form)))
+    window.localStorage.setItem(storageKey, JSON.stringify({
+      ...serializeCreateListingDraftForm(form),
+      __draftRecovery: {
+        ...recovery,
+        missingPhotoCount: (Array.isArray(form.listingImages) ? form.listingImages : [])
+          .filter((image) => isUnstorableCreateListingImageUrl(image.url)).length || recovery.missingPhotoCount || 0,
+      },
+    }))
     return true
   } catch (storageError) {
     console.warn('[Listings] create listing draft autosave skipped', storageError)
@@ -3791,6 +3798,12 @@ function AgentListings({ initialTab = null } = {}) {
   const [quickAddSuccess, setQuickAddSuccess] = useState(null)
   const [retryingQuickAddDocumentKey, setRetryingQuickAddDocumentKey] = useState('')
   const [isListingSaving, setIsListingSaving] = useState(false)
+  const listingSaveInFlightRef = useRef(false)
+  const pendingCreatedListingIdRef = useRef('')
+  const completedCreateListingRef = useRef(false)
+  const listingImagePreviewUrlsRef = useRef(new Set())
+  const [createListingDraftHydratedKey, setCreateListingDraftHydratedKey] = useState('')
+  const [missingDraftPhotoCount, setMissingDraftPhotoCount] = useState(0)
   const [quickAddGuideOpen, setQuickAddGuideOpen] = useState(false)
   const [quickAddAdditionalDetailsOpen, setQuickAddAdditionalDetailsOpen] = useState(false)
   const [createListingStep, setCreateListingStep] = useState('seller')
@@ -3841,6 +3854,15 @@ function AgentListings({ initialTab = null } = {}) {
     () => resolveSelectedWorkspaceOrganisationId({ workspace, currentMembership }),
     [currentMembership, workspace],
   )
+  const createListingDraftScopeKey = `${listingEditorDraftStorageKey}:${selectedWorkspaceOrganisationId || organisationId || 'local'}`
+
+  useEffect(() => {
+    const previewUrls = listingImagePreviewUrlsRef.current
+    return () => {
+      previewUrls.forEach((url) => URL.revokeObjectURL(url))
+      previewUrls.clear()
+    }
+  }, [])
   const gridEditListingRecord = useMemo(
     () => (isEditListingWorkspace ? findListingForEditor(privateListings, editListingId) : null),
     [editListingId, isEditListingWorkspace, privateListings],
@@ -4177,16 +4199,37 @@ function AgentListings({ initialTab = null } = {}) {
   }, [hydratedEditListingId, isEditListingWorkspace])
 
   useEffect(() => {
-    if (!isListingEditorWorkspace || typeof window === 'undefined') return
+    if (!isListingEditorWorkspace || typeof window === 'undefined') {
+      setCreateListingDraftHydratedKey('')
+      return
+    }
     // An edit form must always open from the listing's durable record. An old
     // browser draft can contain the initial empty/default form and previously
     // overlaid that state onto saved listing details on every revisit.
-    if (isEditListingWorkspace) return
-    const stored = window.localStorage.getItem(listingEditorDraftStorageKey)
-    if (!stored) return
+    if (isEditListingWorkspace) {
+      setCreateListingDraftHydratedKey('')
+      return
+    }
+    if (isSupabaseConfigured && !MOCK_DATA_ENABLED && !selectedWorkspaceOrganisationId && !organisationId) return
+    pendingCreatedListingIdRef.current = ''
+    completedCreateListingRef.current = false
+    setMissingDraftPhotoCount(0)
     try {
+      const stored = window.localStorage.getItem(listingEditorDraftStorageKey)
+      if (!stored) return
       const parsed = JSON.parse(stored)
       if (parsed && typeof parsed === 'object') {
+        const recovery = parsed.__draftRecovery || {}
+        if (recovery.organisationId && recovery.organisationId !== (selectedWorkspaceOrganisationId || organisationId)) return
+        delete parsed.__draftRecovery
+        pendingCreatedListingIdRef.current = normalizeText(recovery.pendingListingId)
+        const restoredStep = resolveListingEditorStep(recovery.step || new URLSearchParams(window.location.search || '').get('step'), 'seller')
+        setCreateListingStep(restoredStep)
+        setCreateListingMaxVisitedStep(Math.max(
+          listingEditorSteps.findIndex((step) => step.key === restoredStep),
+          Math.min(Number(recovery.maxVisitedStep) || 0, listingEditorSteps.length - 1),
+        ))
+        setMissingDraftPhotoCount(Number(recovery.missingPhotoCount) || 0)
         const restoredDraft = serializeCreateListingDraftForm(parsed)
         setForm((previous) => {
           const draftImages = Array.isArray(restoredDraft.listingImages) ? restoredDraft.listingImages : []
@@ -4218,15 +4261,24 @@ function AgentListings({ initialTab = null } = {}) {
         })
       }
     } catch {
-      window.localStorage.removeItem(listingEditorDraftStorageKey)
+      // A blocked browser store must not take the listing editor down.
+    } finally {
+      setCreateListingDraftHydratedKey(createListingDraftScopeKey)
     }
-  }, [isEditListingWorkspace, isListingEditorWorkspace, listingEditorDraftStorageKey])
+  }, [createListingDraftScopeKey, isEditListingWorkspace, isListingEditorWorkspace, listingEditorDraftStorageKey, listingEditorSteps, organisationId, selectedWorkspaceOrganisationId])
 
   useEffect(() => {
     if (!isListingEditorWorkspace || typeof window === 'undefined') return
     if (isEditListingWorkspace) return
-    saveCreateListingDraftToStorage(listingEditorDraftStorageKey, form)
-  }, [form, isEditListingWorkspace, isListingEditorWorkspace, listingEditorDraftStorageKey])
+    if (createListingDraftHydratedKey !== createListingDraftScopeKey || completedCreateListingRef.current) return
+    saveCreateListingDraftToStorage(listingEditorDraftStorageKey, form, {
+      pendingListingId: pendingCreatedListingIdRef.current,
+      organisationId: selectedWorkspaceOrganisationId || organisationId || '',
+      step: createListingStep,
+      maxVisitedStep: createListingMaxVisitedStep,
+      missingPhotoCount: missingDraftPhotoCount,
+    })
+  }, [form, createListingStep, createListingMaxVisitedStep, createListingDraftHydratedKey, createListingDraftScopeKey, missingDraftPhotoCount, isEditListingWorkspace, isListingEditorWorkspace, listingEditorDraftStorageKey, organisationId, selectedWorkspaceOrganisationId])
 
   useEffect(() => {
     if (isDeveloperWorkspace) {
@@ -4475,7 +4527,7 @@ function AgentListings({ initialTab = null } = {}) {
     const targetIndex = listingEditorSteps.findIndex((step) => step.key === stepKey)
     if (targetIndex < 0 || (!isEditListingWorkspace && !allowForward && targetIndex > createListingMaxVisitedStep)) return
     setCreateListingStep(stepKey)
-    if (isEditListingWorkspace) {
+    if (isListingEditorWorkspace) {
       const params = new URLSearchParams(window.location.search || location.search || '')
       params.set('step', stepKey)
       window.history.replaceState(window.history.state, '', `${location.pathname}?${params.toString()}`)
@@ -4580,6 +4632,9 @@ function AgentListings({ initialTab = null } = {}) {
   }
 
   function retainUploadedListingImage(uploaded, original) {
+    if (uploaded.url !== original.url && listingImagePreviewUrlsRef.current.delete(original.url)) {
+      URL.revokeObjectURL(original.url)
+    }
     setForm((previous) => ({
       ...previous,
       listingImages: previous.listingImages.map((image) => image.id === original.id ? uploaded : image),
@@ -4587,23 +4642,32 @@ function AgentListings({ initialTab = null } = {}) {
   }
 
   async function handleCreateListingImageUpload(event) {
-    const files = Array.from(event.target.files || [])
+    const input = event.target
+    const files = Array.from(input.files || [])
     if (!files.length) return
     try {
       const nextImages = await buildQuickListingImageDrafts(files)
+      nextImages.forEach((image) => {
+        if (image.url.startsWith('blob:')) listingImagePreviewUrlsRef.current.add(image.url)
+      })
       setForm((previous) => ({
         ...previous,
         listingImages: [...(Array.isArray(previous.listingImages) ? previous.listingImages : []), ...nextImages],
         coverImageId: previous.coverImageId || nextImages[0]?.id || '',
       }))
+      setMissingDraftPhotoCount(0)
     } catch (imageError) {
       setError(imageError?.message || 'Unable to load selected images.')
     } finally {
-      event.target.value = ''
+      input.value = ''
     }
   }
 
   function removeCreateListingImage(imageId) {
+    const removedImage = form.listingImages.find((image) => String(image.id) === String(imageId))
+    if (removedImage && listingImagePreviewUrlsRef.current.delete(removedImage.url)) {
+      URL.revokeObjectURL(removedImage.url)
+    }
     setForm((previous) => {
       const nextImages = (Array.isArray(previous.listingImages) ? previous.listingImages : []).filter((image) => String(image.id) !== String(imageId))
       return {
@@ -4627,11 +4691,23 @@ function AgentListings({ initialTab = null } = {}) {
     })
   }
 
+  function saveCurrentCreateListingDraft(draftForm = form) {
+    if (!isCreateListingWorkspace) return false
+    return saveCreateListingDraftToStorage(listingEditorDraftStorageKey, draftForm, {
+      pendingListingId: pendingCreatedListingIdRef.current,
+      organisationId: selectedWorkspaceOrganisationId || organisationId || '',
+      step: createListingStep,
+      maxVisitedStep: createListingMaxVisitedStep,
+      missingPhotoCount: missingDraftPhotoCount,
+    })
+  }
+
   async function saveCreateListingDraft() {
+    if (listingSaveInFlightRef.current) return
     // Retain a browser copy while the request is in flight. This is a safety
     // net only; a saved draft must be a real listing record so it appears in
     // Listings and can be resumed on another device.
-    const savedLocally = saveCreateListingDraftToStorage(listingEditorDraftStorageKey, form)
+    const savedLocally = saveCurrentCreateListingDraft()
     const listingOrganisationId = selectedWorkspaceOrganisationId || organisationId
 
     if (!isSupabaseConfigured || MOCK_DATA_ENABLED || !listingOrganisationId) {
@@ -4667,10 +4743,11 @@ function AgentListings({ initialTab = null } = {}) {
       mobile: sellerPhone,
     }
 
+    listingSaveInFlightRef.current = true
     setIsListingSaving(true)
     setError('')
     try {
-      const created = await createPrivateListing({
+      const draftPayload = {
         organisationId: listingOrganisationId,
         developmentId: form.developmentId || linkedDevelopmentId || null,
         unitId: form.unitId || linkedUnitId || null,
@@ -4717,9 +4794,14 @@ function AgentListings({ initialTab = null } = {}) {
         sellerCanonicalFactsUpdatedAt: new Date().toISOString(),
         source: 'listing_draft',
         origin: 'listing_draft',
-      }, { includeRequirementsAndDocuments: false, syncRequirements: false })
+      }
+      const created = pendingCreatedListingIdRef.current
+        ? { listing: await updatePrivateListing(pendingCreatedListingIdRef.current, draftPayload, { includeRequirementsAndDocuments: false }) }
+        : await createPrivateListing(draftPayload, { includeRequirementsAndDocuments: false, syncRequirements: false })
       const listingId = normalizeText(created?.listing?.id)
       if (!listingId) throw new Error('Unable to save this listing draft.')
+      pendingCreatedListingIdRef.current = listingId
+      saveCurrentCreateListingDraft()
 
       const savedOnboarding = await persistSellerProfileOnboardingFormData({
         listingId,
@@ -4730,10 +4812,21 @@ function AgentListings({ initialTab = null } = {}) {
       })
       if (!savedOnboarding?.id) throw new Error('The listing was created, but seller and mandate details could not be saved. Your browser copy has been kept.')
 
+      const savedDistribution = await syncQuickListingDistributionData(listingId, form, {
+        onImageUploaded: retainUploadedListingImage,
+        title: listingTitle,
+        address: formattedAddress || propertyAddress,
+        listingStatus: 'seller_lead',
+      })
+      if (savedDistribution?.skipped || !savedDistribution?.publication?.listing_id) {
+        throw new Error('The listing draft exists, but its photos and marketing details could not be saved. Retry to finish saving the same draft.')
+      }
+
       // Move the full in-progress form to the record-specific key before
       // redirecting. The database is the durable source; this preserves
       // uncommitted UI-only choices during the current browser session.
       saveCreateListingDraftToStorage(`${CREATE_LISTING_DRAFT_STORAGE_KEY}:edit:${listingId}`, form)
+      completedCreateListingRef.current = true
       if (typeof window !== 'undefined') window.localStorage.removeItem(createListingDraftStorageKey)
       setPrivateListings((previous) => mergePrivateListingRows([created.listing], previous, deletedListingIds))
       window.dispatchEvent(new Event('itg:listings-updated'))
@@ -4744,6 +4837,7 @@ function AgentListings({ initialTab = null } = {}) {
     } catch (draftError) {
       setError(draftError?.message || 'Unable to save this draft to Listings. Your browser copy has been kept so you can retry.')
     } finally {
+      listingSaveInFlightRef.current = false
       setIsListingSaving(false)
     }
   }
@@ -6097,7 +6191,7 @@ function AgentListings({ initialTab = null } = {}) {
       }
       const duplicateMatches = findQuickListingDuplicates({
         form,
-        listings: privateListings,
+        listings: privateListings.filter((listing) => !isCreateListingWorkspace || normalizeText(listing.id) !== pendingCreatedListingIdRef.current),
         transactions: transactionRows,
       })
       if (duplicateMatches.length && !quickAddDuplicateOverride) {
@@ -6177,7 +6271,7 @@ function AgentListings({ initialTab = null } = {}) {
           sellerCanonicalFactReadiness,
           sellerCanonicalFactsUpdatedAt: new Date().toISOString(),
         }
-        const created = await createPrivateListing({
+        const listingPayload = {
           organisationId: listingOrganisationId,
           developmentId: form.developmentId || linkedDevelopmentId || null,
           unitId: form.unitId || linkedUnitId || null,
@@ -6223,7 +6317,10 @@ function AgentListings({ initialTab = null } = {}) {
           sellerCanonicalFactsUpdatedAt: new Date().toISOString(),
           completeness,
           canonicalStructure: CANONICAL_LISTING_STRUCTURE,
-        }, {
+        }
+        const created = isCreateListingWorkspace && pendingCreatedListingIdRef.current
+          ? { listing: await updatePrivateListing(pendingCreatedListingIdRef.current, listingPayload, { includeRequirementsAndDocuments: false }) }
+          : await createPrivateListing(listingPayload, {
           // Requirements are created once below alongside the other post-create
           // work. Avoid hydrating and synchronising them twice before showing
           // the user that the listing exists.
@@ -6235,6 +6332,8 @@ function AgentListings({ initialTab = null } = {}) {
         }
         createdListingId = created.listing.id
         createdListingTitle = created.listing.listingTitle || created.listing.title || listingTitle
+        if (isCreateListingWorkspace) pendingCreatedListingIdRef.current = createdListingId
+        saveCurrentCreateListingDraft()
         let propertySaveIssue = ''
         try {
           const savedOnboarding = await persistSellerProfileOnboardingFormData({
@@ -6267,6 +6366,7 @@ function AgentListings({ initialTab = null } = {}) {
         } catch (persistenceError) {
           propertySaveIssue = persistenceError?.message || 'Property details could not be verified.'
           console.warn('[Listings] quick listing property save needs attention', persistenceError)
+          throw new Error(`The listing record was created, but saving is incomplete: ${propertySaveIssue} Your form has been kept. Retry to finish saving the same listing.`)
         }
         // The listing already exists. Only non-essential follow-up work runs
         // in the background; property data is saved and verified above.
@@ -6391,7 +6491,12 @@ function AgentListings({ initialTab = null } = {}) {
         setWorkflowMessage(propertySaveIssue ? '' : 'Listing and property details saved. Documents and any requested seller invitation are finishing in the background.')
         window.dispatchEvent(new Event('itg:listings-updated'))
         if (isCreateListingWorkspace && createdListingId) {
+          completedCreateListingRef.current = true
           if (typeof window !== 'undefined') window.localStorage.removeItem(createListingDraftStorageKey)
+          navigate(`/agent/listings/${encodeURIComponent(createdListingId)}?tab=marketing`, {
+            replace: true,
+            state: { message: 'Listing saved. Review Listing Channels to submit to Property24 or Private Property.' },
+          })
         }
         return
       } else {
@@ -6891,7 +6996,8 @@ function AgentListings({ initialTab = null } = {}) {
 
   async function handleSaveListing(event) {
     event.preventDefault()
-    if (isListingSaving) return
+    if (isListingSaving || listingSaveInFlightRef.current || (isCreateListingWorkspace && completedCreateListingRef.current)) return
+    listingSaveInFlightRef.current = true
 
     setError('')
     setWorkflowMessage('')
@@ -6909,6 +7015,7 @@ function AgentListings({ initialTab = null } = {}) {
       console.error('[Listings] listing save failed', saveError)
       setError(saveError?.message || (isEditListingWorkspace ? 'Unable to save listing changes right now.' : 'Unable to create listing right now.'))
     } finally {
+      listingSaveInFlightRef.current = false
       setIsListingSaving(false)
     }
   }
@@ -7875,6 +7982,7 @@ function AgentListings({ initialTab = null } = {}) {
         />
 
         {error ? <p className="rounded-[8px] border border-[#f6d4d4] bg-[#fff5f5] px-4 py-3 text-sm font-semibold text-[#b42318]">{error}</p> : null}
+        {missingDraftPhotoCount > 0 ? <p className="rounded-[8px] border border-[#f3d7a8] bg-[#fff8ea] px-4 py-3 text-sm font-semibold text-[#88531a]">Your listing draft and current step have been restored. Select the {missingDraftPhotoCount} photo{missingDraftPhotoCount === 1 ? '' : 's'} again; files that had not uploaded cannot be restored after a refresh.</p> : null}
         {workflowMessage ? <p className="rounded-[8px] border border-[#d8ecdf] bg-[#eefbf3] px-4 py-3 text-sm font-semibold text-[#1f7d44]">{workflowMessage}</p> : null}
 
         <ListingWizard
@@ -8357,10 +8465,11 @@ function AgentListings({ initialTab = null } = {}) {
                     </div>
                   </section>
                   <section className="rounded-[8px] border border-[#dce6f2] bg-[#fbfdff] p-4">
-                    <p className="text-sm font-bold text-[#142132]">Publishing</p>
+                    <p className="text-sm font-bold text-[#142132]">Publishing readiness</p>
+                    <p className="mt-1 text-xs text-[#607387]">Creating this listing saves its details and photos. Submit to Property24 or Private Property from Listing Channels after saving.</p>
                     <div className="mt-3 grid gap-2">
                       {selectedCreateListingPortalStatuses.map((portal) => (
-                        <CreateListingStatusRow key={portal.key} label={portal.label} complete={portal.missing.length === 0} detail={portal.missing.length ? `${portal.missing.length} missing` : 'Ready'} />
+                        <CreateListingStatusRow key={portal.key} label={portal.label} complete={portal.missing.length === 0} detail={portal.missing.length ? `${portal.missing.length} missing` : 'Ready for review'} />
                       ))}
                     </div>
                   </section>

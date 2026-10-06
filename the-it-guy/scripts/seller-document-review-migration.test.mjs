@@ -165,3 +165,99 @@ test('permissions, active membership and listing assignment protect review comma
   const permissions = (await query("select has_table_privilege('authenticated','seller_document_review_events','INSERT') as can_insert, has_function_privilege('anon','bridge_send_seller_document_manual_reminder_p1_8(uuid,text)','EXECUTE') as can_remind"))[0]
   assert.deepEqual(permissions, { can_insert: false, can_remind: false })
 })
+
+test('the signed-file linker and evidence guards approve all three document types only after evidence is saved', async () => {
+  const oldContract = await fs.readFile(new URL('../../supabase/migrations/20260921063704_enforce_signed_seller_document_requirement_contract.sql', import.meta.url), 'utf8')
+  const correction = await fs.readFile(new URL('../../supabase/migrations/20261006104746_seller_signed_document_approval_trigger_order.sql', import.meta.url), 'utf8')
+  await db.exec(`
+    alter table private_listing_documents add column signing_session_id uuid;
+    alter table private_listing_document_requirements alter column id set default gen_random_uuid();
+    alter table private_listing_document_requirements add column requirement_description text,
+      add column requirement_group text, add column document_visibility text,
+      add column generated_from jsonb default '{}', add column updated_at timestamptz default now(),
+      add constraint fixture_listing_requirement_key unique(private_listing_id,requirement_key);
+  `)
+  // Install the real historical BEFORE linker alongside the already-installed
+  // review, physical-version, exact-link, assurance and false-completion guards.
+  await db.exec(oldContract.slice(oldContract.indexOf('create or replace function'), oldContract.indexOf('-- Repair existing rows')))
+  await db.exec('revoke all on function bridge_link_signed_seller_document_requirement() from public,anon,authenticated;')
+  const keys = ['signed_mandate', 'signed_fica_declaration', 'signed_disclosure_form']
+  const rows = []
+  for (const key of keys) {
+    const row = await seed({ key, signed: true })
+    rows.push(row)
+    const before = await snapshot()
+    await assert.rejects(query("select bridge_review_private_listing_seller_document_p1_8($1,'approve','Signatures reviewed',0)", [row.document]), /without approved, listing-scoped evidence/)
+    assert.deepEqual(await snapshot(), before, 'Failed approval must roll back file, checklist and frozen-copy changes')
+  }
+  const contract = async () => (await query(`select oid,prosecdef,proconfig,proacl::text as acl,
+    proowner::regrole::text as owner,md5(prosrc) as body_md5
+    from pg_proc where oid='bridge_link_signed_seller_document_requirement()'::regprocedure`))[0]
+  const originalContract = await contract()
+  const guards = async () => query(`select proname,md5(prosrc) as hash from pg_proc where proname in (
+    'bridge_prevent_false_requirement_completion_p0_4','bridge_validate_private_listing_document_link_p0_4',
+    'bridge_check_seller_physical_signing_review_version','bridge_sync_private_listing_requirement_assurance_p0_4',
+    'bridge_review_private_listing_seller_document_p1_8') order by proname`)
+  const originalGuards = await guards()
+  const untouched = await snapshot()
+  await db.exec(correction)
+  assert.deepEqual(await snapshot(), untouched, 'Deploying the correction must not backfill or alter existing evidence')
+  const correctedContract = await contract()
+  assert.equal(correctedContract.body_md5, '52d9933aaf7021ae0177c865ffcf1ae5')
+  assert.deepEqual({ ...correctedContract, body_md5: null }, { ...originalContract, body_md5: null })
+  assert.deepEqual(await guards(), originalGuards)
+  await db.exec(correction)
+  assert.deepEqual(await contract(), correctedContract, 'Replaying the correction must be safe')
+  const correctedDefinition = (await query("select pg_get_functiondef('bridge_link_signed_seller_document_requirement()'::regprocedure) as definition"))[0].definition
+  await db.exec(correctedDefinition.replace('\nbegin\n', '\nbegin\n  -- Changed after review\n'))
+  await assert.rejects(db.exec(correction), /changed since review/)
+  await db.exec('rollback')
+  await db.exec(correctedDefinition)
+
+  // A linker that does not complete requirements needs the existing AFTER
+  // projection. Fail safely if that prerequisite is disabled, even on replay.
+  await db.exec('alter table private_listing_documents disable trigger trg_sync_private_listing_requirement_assurance_p0_4')
+  await assert.rejects(db.exec(correction), /requires the active AFTER assurance trigger/)
+  await db.exec('rollback; alter table private_listing_documents enable trigger trg_sync_private_listing_requirement_assurance_p0_4')
+
+  for (const row of rows) {
+    const beforeCopy = (await query('select form_data from private_listing_seller_onboarding where private_listing_id=$1', [row.listing]))[0].form_data
+    await db.exec('set role authenticated')
+    const result = (await query("select bridge_review_private_listing_seller_document_p1_8($1,'approve','Signatures reviewed',0) as result", [row.document]))[0].result
+    assert.equal(result.document.status, 'approved')
+    assert.equal(result.document.requirement_id, row.requirement)
+    assert.equal(result.requirement.status, 'approved')
+    assert.equal(result.requirement.assurance_state, 'satisfied')
+    assert.equal(result.requirement.satisfied_by_document_id, row.document)
+    assert.equal(result.document.review_revision, 1)
+    const retry = (await query("select bridge_review_private_listing_seller_document_p1_8($1,'approve','Signatures reviewed',1) as result", [row.document]))[0].result
+    assert.equal(retry.idempotent, true)
+    await assert.rejects(query("select bridge_review_private_listing_seller_document_p1_8($1,'approve','Signatures reviewed',0)", [row.document]), error => error.code === '40001')
+    await db.exec('reset role')
+    assert.deepEqual((await query('select form_data from private_listing_seller_onboarding where private_listing_id=$1', [row.listing]))[0].form_data, beforeCopy)
+  }
+  await db.exec('reset role')
+  // Trusted completed-file inserts with no existing slot must also link first
+  // and satisfy the exact new requirement only once the file is visible.
+  for (const key of keys) {
+    const row = await seed({ key, signed: true, draft: true })
+    await query('delete from private_listing_document_requirements where id=$1', [row.requirement])
+    await query(`insert into private_listing_documents(id,private_listing_id,document_type,document_name,status,storage_path)
+      values($1,$2,$3,$3,'completed','synthetic/completed.pdf')`, [row.document,row.listing,key])
+    const linked = (await query(`select r.id,r.private_listing_id,r.requirement_key,r.status,r.assurance_state,r.satisfied_by_document_id
+      from private_listing_document_requirements r join private_listing_documents d on d.requirement_id=r.id where d.id=$1`, [row.document]))[0]
+    assert.equal(linked.private_listing_id, row.listing)
+    assert.equal(linked.requirement_key, key)
+    assert.equal(linked.status, 'completed')
+    assert.equal(linked.assurance_state, 'satisfied')
+    assert.equal(linked.satisfied_by_document_id, row.document)
+  }
+  const pending = await seed({ key: 'signed_fica_declaration', signed: true })
+  await query("update private_listing_documents set reviewed_signing_version_digest='old-digest' where id=$1", [pending.document])
+  await assert.rejects(query("select bridge_review_private_listing_seller_document_p1_8($1,'approve','Signatures reviewed',0)", [pending.document]), error => error.code === '23514')
+  await assert.rejects(query("update private_listing_document_requirements set status='approved' where id=$1", [pending.requirement]), /without approved, listing-scoped evidence/)
+  await query("update private_listing_documents set reviewed_signing_version_digest='current-digest' where id=$1", [pending.document])
+  await setting('app.uid', outsider)
+  await assert.rejects(query("select bridge_review_private_listing_seller_document_p1_8($1,'approve','Signatures reviewed',0)", [pending.document]), error => error.code === '42501')
+  await setting('app.uid', owner)
+})

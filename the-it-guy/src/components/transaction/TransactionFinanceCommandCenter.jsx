@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   BadgeCheck,
   CheckCircle2,
@@ -32,6 +32,33 @@ function formatCurrency(value, fallback = 'Not captured') {
   return Number.isFinite(parsed) ? currency.format(parsed) : fallback
 }
 
+const bondCurrency = new Intl.NumberFormat('en-ZA', {
+  style: 'currency', currency: 'ZAR', minimumFractionDigits: 2, maximumFractionDigits: 2,
+})
+
+const bankBrands = [
+  { match: /fnb|first national/i, logo: '/brand/banks/fnb.png' },
+  { match: /absa/i, logo: '/brand/banks/absa.png' },
+  { match: /nedbank/i, logo: '/brand/banks/nedbank.png' },
+  { match: /standard/i, logo: '/brand/banks/standard-bank.png' },
+  { match: /investec/i, logo: '/brand/banks/investec.webp' },
+  { match: /capitec/i, logo: '/brand/banks/capitec.svg' },
+  { match: /sa[ -]*home[ -]*loans/i, logo: '/brand/banks/sa-home-loans.svg' },
+]
+
+function BankIdentity({ name }) {
+  const logo = bankBrands.find(brand => brand.match.test(name || ''))?.logo
+  const [failedLogo, setFailedLogo] = useState('')
+  return <div className="flex min-w-0 items-center gap-3">
+    <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-[#dbe5ef] bg-white p-1.5">
+      {logo && failedLogo !== logo
+        ? <img src={logo} alt={`${name} logo`} className="h-full w-full object-contain" onError={() => setFailedLogo(logo)} />
+        : <Landmark size={22} className="text-[#08734f]" />}
+    </span>
+    <strong className="text-base font-semibold text-[#142132]">{name || 'Bank not captured'}</strong>
+  </div>
+}
+
 function formatDate(value, fallback = 'Not set') {
   if (!value) return fallback
   const parsed = new Date(value)
@@ -57,7 +84,7 @@ function getStepTone(status = 'upcoming') {
 
 function getStatusTone(status = '') {
   const normalized = String(status || '').trim().toLowerCase()
-  if (['approved', 'accepted', 'verified', 'completed', 'instruction_sent', 'ready_for_transfer'].includes(normalized)) {
+  if (['approved', 'buyer_approved', 'approved_by_buyer', 'accepted', 'verified', 'completed', 'instruction_sent', 'ready_for_transfer'].includes(normalized)) {
     return 'border-[#cde4d5] bg-[#edf8f1] text-[#2f7a51]'
   }
   if (['rejected', 'declined', 'missing', 'blocked', 'expired', 'withdrawn'].includes(normalized)) {
@@ -198,17 +225,18 @@ function titleCaseStatus(value = '') {
   return title(String(value || 'pending').replaceAll('-', '_'))
 }
 
-function SectionCard({ title, copy, children, actions = null }) {
+function SectionCard({ title, copy, children, actions = null, overview = false, icon: Icon = null }) {
   return (
-    <section className="rounded-[8px] border border-[#dbe5ef] bg-white p-3.5 shadow-[0_10px_22px_rgba(15,23,42,0.045)]">
-      <header className="flex flex-wrap items-start justify-between gap-2.5">
+    <section className={`min-w-0 rounded-[8px] border border-[#dbe5ef] bg-white shadow-[0_10px_22px_rgba(15,23,42,0.045)] ${overview ? 'flex flex-col rounded-2xl p-5' : 'p-3.5'}`}>
+      <header className={`flex flex-wrap items-start justify-between gap-2.5 ${overview ? 'border-b border-[#edf1f5] pb-4' : ''}`} >
         <div>
+          {Icon ? <span className="mb-3 inline-flex rounded-lg bg-emerald-50 p-2 text-[#08734f]"><Icon size={18} /></span> : null}
           <h3 className="text-[1rem] font-semibold tracking-[-0.02em] text-[#142132]">{title}</h3>
           {copy ? <p className="mt-1 text-sm leading-5 text-[#6b7d93]">{copy}</p> : null}
         </div>
         {actions}
       </header>
-      <div className="mt-3">{children}</div>
+      <div className={overview ? "mt-4 flex-1" : "mt-3"}>{children}</div>
     </section>
   )
 }
@@ -222,9 +250,19 @@ function EmptyState({ message, action = null }) {
   )
 }
 
-function ProgressRail({ groups = [] }) {
+function ProgressRail({ groups = [], selectedStepKey = '', onSelectStep = null, spacious = false }) {
+  const StepElement = onSelectStep ? 'button' : 'article'
+  const railRef = useRef(null)
+  const currentStages = groups.map(group => group.steps?.find(step => step.status === 'current')?.key || '').join('|')
+  useEffect(() => {
+    if (!spacious) return
+    railRef.current?.querySelectorAll('[data-stage-rail]').forEach(rail => {
+      const current = rail.querySelector('[aria-current="step"]')
+      if (current) rail.scrollLeft = Math.max(0, current.offsetLeft + current.offsetWidth / 2 - rail.clientWidth / 2)
+    })
+  }, [spacious, currentStages])
   return (
-    <section className="rounded-[8px] border border-[#dbe5ef] bg-white p-3.5 shadow-[0_10px_22px_rgba(15,23,42,0.045)]">
+    <section ref={railRef} className="rounded-[8px] border border-[#dbe5ef] bg-white p-3.5 shadow-[0_10px_22px_rgba(15,23,42,0.045)]">
       <div className="space-y-4">
         {groups.map((group) => (
           <div key={group.key}>
@@ -237,25 +275,32 @@ function ProgressRail({ groups = [] }) {
                 {(group.steps || []).filter((item) => item.status === 'completed').length}/{group.steps?.length || 0}
               </span>
             </div>
-            <div className="overflow-x-auto pb-1">
+            <div data-stage-rail role={spacious ? 'region' : undefined} aria-label={spacious ? `${group.label} stages` : undefined} tabIndex={spacious ? 0 : undefined} className="overflow-x-auto pb-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#08734f]">
               <div
-                className="relative grid min-w-[680px] gap-0"
-                style={{ gridTemplateColumns: `repeat(${Math.max(group.steps?.length || 1, 1)}, minmax(112px, 1fr))` }}
+                className={`relative grid ${spacious ? 'w-max min-w-full gap-4' : 'min-w-[680px] gap-0'}`}
+                style={{ gridTemplateColumns: `repeat(${Math.max(group.steps?.length || 1, 1)}, minmax(${spacious ? 180 : 112}px, 1fr))` }}
               >
-                <div className="absolute left-12 right-12 top-[16px] h-px bg-[#cfddeb]" aria-hidden="true" />
+                <div className={`absolute h-px bg-slate-200 ${spacious ? 'top-6' : 'left-12 right-12 top-[16px]'}`} style={spacious ? { left: 90, right: 90 } : undefined} aria-hidden="true" />
                 {(group.steps || []).map((step) => {
                   const Icon = step.status === 'completed' ? CheckCircle2 : step.status === 'current' ? Clock3 : Circle
                   return (
-                    <article key={step.key} className="relative z-10 flex min-w-0 flex-col items-center px-2 text-center">
+                    <StepElement
+                      key={step.key}
+                      type={onSelectStep ? 'button' : undefined}
+                      aria-pressed={onSelectStep ? step.key === selectedStepKey : undefined}
+                      aria-current={step.status === 'current' ? 'step' : undefined}
+                      onClick={onSelectStep ? () => onSelectStep(step.key) : undefined}
+                      className={`relative z-10 flex min-w-0 flex-col items-center rounded-lg px-2 py-2 text-center ${onSelectStep ? 'transition hover:bg-[#f7fbff] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#08734f]' : ''} ${(onSelectStep && step.key === selectedStepKey) || (spacious && step.status === 'current') ? 'bg-emerald-50' : ''}`}
+                    >
                       <span className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border ${getStepTone(step.status)}`}>
                           <Icon size={14} />
                         </span>
-                      <strong className="mt-2.5 block text-sm font-semibold leading-5 text-[#142132]">{step.label}</strong>
+                      <strong className={`mt-2.5 block text-sm font-semibold leading-5 text-[#142132] ${spacious ? 'min-h-10' : ''}`}>{step.label}</strong>
                       <span className="mt-1 block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8ca0b6]">
                         {step.status === 'completed' ? formatDate(step.completedAt, 'Completed') : step.status === 'current' ? 'Current' : 'Upcoming'}
                       </span>
-                      <span className="mt-1 block max-w-[140px] truncate text-xs text-[#6f8299]">{step.responsibleRole || group.responsibleRole || 'Finance team'}</span>
-                    </article>
+                      <span className={`mt-1 block w-full min-w-0 text-xs leading-5 text-[#6f8299] ${spacious ? 'min-h-10 whitespace-normal' : 'max-w-[140px] truncate'}`}>{step.responsibleRole || group.responsibleRole || 'Finance team'}</span>
+                    </StepElement>
                   )
                 })}
               </div>
@@ -384,6 +429,7 @@ function FinanceDocumentList({ rows = [], emptyMessage = 'No finance documents u
 
 function ApplicationsSection({
   rows = [],
+  overview = false,
   canManage = false,
   loadingAction = '',
   onSubmit,
@@ -396,6 +442,24 @@ function ApplicationsSection({
     status: 'submitted',
     notes: '',
   })
+
+  if (overview) return (
+    <div className="space-y-3">
+      {rows.length ? rows.map((row) => (
+        <article key={row.id} className="space-y-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <BankIdentity name={row.bankName} />
+            <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${getStatusTone(row.status)}`}>{row.statusLabel || title(row.status)}</span>
+          </div>
+          <dl className="space-y-3 rounded-xl bg-[#f7f9fc] p-4 text-sm">
+            <div className="flex flex-wrap justify-between gap-2"><dt className="text-[#6b7d93]">Submitted</dt><dd className="font-medium text-[#31475c]">{row.submittedAt ? formatDate(row.submittedAt) : 'Date not captured'}</dd></div>
+            {row.applicationReference ? <div className="flex flex-wrap justify-between gap-2"><dt className="text-[#6b7d93]">Reference</dt><dd className="break-all font-medium text-[#31475c]">{row.applicationReference}</dd></div> : null}
+            {row.submittedByName || row.createdByName ? <div className="flex flex-wrap justify-between gap-2"><dt className="text-[#6b7d93]">Recorded by</dt><dd className="font-medium text-[#31475c]">{row.submittedByName || row.createdByName}</dd></div> : null}
+          </dl>
+        </article>
+      )) : <p className="rounded-xl bg-[#f7f9fc] p-4 text-sm leading-6 text-[#6b7d93]">No bank applications submitted yet.</p>}
+    </div>
+  )
 
   return (
     <div className="space-y-3">
@@ -445,13 +509,13 @@ function ApplicationsSection({
                         <Eye size={14} />
                         View
                       </Button>
-                      <Button type="button" variant="secondary" size="sm" disabled={!canManage}>
+                      {canManage ? <><Button type="button" variant="secondary" size="sm">
                         <MessageSquarePlus size={14} />
                         Add Note
                       </Button>
-                      <Button type="button" variant="secondary" size="sm" disabled={!canManage}>
+                      <Button type="button" variant="secondary" size="sm">
                         <MoreHorizontal size={14} />
-                      </Button>
+                      </Button></> : null}
                     </div>
                   </td>
                 </tr>
@@ -566,6 +630,7 @@ function RegistrationHandoffCard({ transaction = {} }) {
 
 function OffersSection({
   rows = [],
+  overview = false,
   acceptedOfferId = '',
   canManage = false,
   canAccept = false,
@@ -585,6 +650,26 @@ function OffersSection({
     notes: '',
     quoteFile: null,
   })
+
+  if (overview) return (
+    <div className="space-y-3">
+      {rows.length ? rows.map((row) => (
+        <article key={row.id} className="space-y-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <BankIdentity name={row.bankName} />
+            <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${getStatusTone(row.id === acceptedOfferId ? 'accepted' : row.quoteStatus)}`}>{row.id === acceptedOfferId ? 'Accepted' : row.quoteStatusLabel || title(row.quoteStatus)}</span>
+          </div>
+          <div className={`rounded-xl border p-4 ${row.id === acceptedOfferId ? 'border-[#cde4d5] bg-[#f2f8f5]' : 'border-[#e5ecf4] bg-[#f7f9fc]'}`}>
+            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#6b7d93]">Bond amount</p>
+            <strong className="mt-2 block break-words text-2xl font-semibold tracking-[-0.025em] text-[#142132]">{row.quotedAmount == null ? 'Amount not captured' : bondCurrency.format(Number(row.quotedAmount))}</strong>
+            {row.quoteReceivedAt ? <p className="mt-3 text-xs text-[#6b7d93]">Received {formatDate(row.quoteReceivedAt)}</p> : null}
+            {row.interestRateDisplay ? <p className="mt-2 text-xs text-[#6b7d93]">Interest: {row.interestRateDisplay}</p> : null}
+          </div>
+          {row.quoteDocumentId ? <Button type="button" variant="secondary" size="sm" onClick={() => onOpenDocument?.(row)}>View offer</Button> : null}
+        </article>
+      )) : <p className="rounded-xl bg-[#f7f9fc] p-4 text-sm leading-6 text-[#6b7d93]">No bank offers received yet.</p>}
+    </div>
+  )
 
   return (
     <div className="space-y-3">
@@ -790,6 +875,7 @@ function DecisionCard({
 
 function InstructionCard({
   instruction,
+  overview = false,
   acceptedOffer,
   canMark = false,
   loadingAction = '',
@@ -801,6 +887,23 @@ function InstructionCard({
   const sent = Boolean(instruction?.instructionSent || instruction?.instruction_sent)
   const grantSubmitted = Boolean(instruction?.grantSubmitted || instruction?.grant_submitted)
   const existingInstructionDocumentId = instruction?.instructionDocumentId || instruction?.instruction_document_id || null
+
+  if (overview) return (
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${sent ? 'bg-[#edf8f1] text-[#2f7a51]' : 'bg-[#f7f9fc] text-[#6b7d93]'}`}>{sent ? <CheckCircle2 size={24} /> : <Clock3 size={24} />}</span>
+          <strong className="text-base text-[#142132]">Transfer attorney</strong>
+        </div>
+        <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${getStatusTone(sent ? 'instruction_sent' : 'pending')}`}>{sent ? 'Instruction sent' : 'Awaiting instruction'}</span>
+      </div>
+      {sent ? <dl className="space-y-3 rounded-xl bg-[#f7f9fc] p-4 text-sm">
+        <div className="flex flex-wrap justify-between gap-2"><dt className="text-[#6b7d93]">Sent on</dt><dd className="font-medium text-[#31475c]">{formatDate(instruction?.instructionSentAt || instruction?.instruction_sent_at, 'Date not captured')}</dd></div>
+        {instruction?.instructionSentByName ? <div className="flex flex-wrap justify-between gap-2"><dt className="text-[#6b7d93]">Recorded by</dt><dd className="font-medium text-[#31475c]">{instruction.instructionSentByName}</dd></div> : null}
+      </dl> : <p className="rounded-xl bg-[#f7f9fc] p-4 text-sm leading-6 text-[#6b7d93]">Awaiting the bond instruction to the transfer attorney.</p>}
+      {existingInstructionDocumentId ? <Button type="button" variant="secondary" size="sm" onClick={() => onOpenDocument?.(instruction)}>View instruction</Button> : null}
+    </div>
+  )
 
   return (
     <div className="space-y-3">
@@ -1113,6 +1216,7 @@ function withBondOriginatorWorkflowRail(workspace, workflowData) {
           },
         }).map((step) => ({
           ...step,
+          status: step.key === 'instruction_sent' && (workflowData?.instruction?.instructionSent || workflowData?.instruction?.instruction_sent) && step.status === 'upcoming' ? 'completed' : step.status,
           responsibleRole: BOND_ORIGINATOR_STAGE_ROLES[step.key] || 'Bond Originator',
         })),
       },
@@ -1130,14 +1234,14 @@ function MetricStrip({ items = [] }) {
   )
 }
 
-function FinanceWorkspaceFrame({ title, copy, children }) {
+function FinanceWorkspaceFrame({ title, copy, children, showHeader = true }) {
   return (
     <section className="space-y-4">
-      <div>
+      {showHeader ? <div>
         <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#08734f]">Finance Workspace</p>
         <h3 className="mt-1 text-xl font-semibold tracking-[-0.02em] text-[#101b2d]">{title}</h3>
         {copy ? <p className="mt-1 text-sm leading-6 text-[#66758b]">{copy}</p> : null}
-      </div>
+      </div> : null}
       {children}
     </section>
   )
@@ -1480,6 +1584,8 @@ function getBondStageRequirements(stageKey, selectedStep, workspace) {
 
 function BondWorkflowWorkspace({
   workspace,
+  horizontal = false,
+  overviewOnly = false,
   documents,
   loadingAction,
   onStageChange,
@@ -1507,9 +1613,16 @@ function BondWorkflowWorkspace({
   const editable = workspace.permissions.canManageApplications || workspace.permissions.canMarkInstructionSent || workspace.permissions.canAcceptOffer
 
   return (
-    <FinanceWorkspaceFrame title="Bond Workflow" copy="Operational bond stages, task requirements, documents and actions.">
-      <div className="grid gap-4 xl:grid-cols-[360px_minmax(0,1fr)]">
-        <aside className="rounded-[8px] border border-[#dbe5ef] bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.045)]">
+    <FinanceWorkspaceFrame title="Bond Workflow" copy="Operational bond stages, task requirements, documents and actions." showHeader={!horizontal}>
+      <div className={horizontal ? 'space-y-4' : 'grid gap-4 xl:grid-cols-[360px_minmax(0,1fr)]'}>
+        {horizontal ? (
+          <ProgressRail
+            groups={[{ ...bondGroup, label: 'Bond Workflow' }]}
+            spacious
+            selectedStepKey={selectedStep?.key}
+            onSelectStep={overviewOnly ? null : setSelectedStageKey}
+          />
+        ) : <aside className="rounded-[8px] border border-[#dbe5ef] bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.045)]">
           <div className="flex items-start justify-between gap-3">
             <div>
               <h4 className="text-base font-semibold text-[#142132]">Bond Workflow</h4>
@@ -1528,7 +1641,7 @@ function BondWorkflowWorkspace({
                   key={step.key}
                   type="button"
                   className={`flex w-full items-start gap-3 rounded-[8px] px-3 py-3 text-left transition ${
-                    active ? 'border border-[#ccebdc] bg-[#effbf5]' : 'border border-transparent hover:bg-[#f7fbff]'
+                    active ? 'border border-[#ccebdc] bg-emerald-50' : 'border border-transparent hover:bg-[#f7fbff]'
                   }`}
                   onClick={() => setSelectedStageKey(step.key)}
                 >
@@ -1543,9 +1656,9 @@ function BondWorkflowWorkspace({
               )
             })}
           </div>
-        </aside>
+        </aside>}
 
-        <main className="rounded-[8px] border border-[#dbe5ef] bg-white shadow-[0_10px_22px_rgba(15,23,42,0.045)]">
+        {!overviewOnly ? <main className="rounded-[8px] border border-[#dbe5ef] bg-white shadow-[0_10px_22px_rgba(15,23,42,0.045)]">
           <div className="border-b border-[#e5ecf4] px-5 py-4">
             <p className="text-xs font-semibold text-[#35546c]">Bond Workflow Stage</p>
             <div className="mt-1 flex flex-wrap items-center gap-3">
@@ -1624,7 +1737,7 @@ function BondWorkflowWorkspace({
               <BankOutcomeHistory rows={workspace.bond.bankOutcomes} />
             ) : null}
 
-            <div className="sticky bottom-0 -mx-5 -mb-4 flex flex-wrap items-center gap-3 border-t border-[#e5ecf4] bg-white px-5 py-4">
+            {editable ? <div className="sticky bottom-0 -mx-5 -mb-4 flex flex-wrap items-center gap-3 border-t border-[#e5ecf4] bg-white px-5 py-4">
               <Button type="button" disabled={!editable || !selectedStep || Boolean(loadingAction)} onClick={() => onStageChange?.(selectedStep?.key)}>
                 <CheckCircle2 size={15} />
                 Mark Complete
@@ -1641,14 +1754,15 @@ function BondWorkflowWorkspace({
                 More Actions
                 <MoreHorizontal size={15} />
               </Button>
-            </div>
+            </div> : null}
           </div>
-        </main>
+        </main> : null}
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-2">
-        <SectionCard title="Bank Applications" copy="Submitted applications, references, originator, and status.">
+      <div className={`grid gap-5 ${overviewOnly ? 'lg:grid-cols-3' : 'xl:grid-cols-2'}`}>
+        <SectionCard title="Bank Applications" copy={overviewOnly ? 'Bank submissions and their latest status.' : 'Submitted applications, references, originator, and status.'} overview={overviewOnly} icon={overviewOnly ? Landmark : null}>
           <ApplicationsSection
+            overview={overviewOnly}
             rows={workspace.bond.applications}
             canManage={workspace.permissions.canManageApplications}
             loadingAction={loadingAction}
@@ -1656,8 +1770,9 @@ function BondWorkflowWorkspace({
             onUpdateStatus={(row, status) => onUpdateBankApplication?.(row, { status })}
           />
         </SectionCard>
-        <SectionCard title="Offers / Buyer Decision" copy="Received bank offers, quote documents, and buyer outcome.">
+        <SectionCard title="Offers / Buyer Decision" copy={overviewOnly ? 'Bank offers and the buyer’s decision.' : 'Received bank offers, quote documents, and buyer outcome.'} overview={overviewOnly} icon={overviewOnly ? BadgeCheck : null}>
           <OffersSection
+            overview={overviewOnly}
             rows={workspace.bond.offers}
             acceptedOfferId={workspace.bond.acceptedOffer?.id || ''}
             canManage={workspace.permissions.canManageOffers}
@@ -1669,7 +1784,7 @@ function BondWorkflowWorkspace({
             onOpenDocument={onOpenDocument}
           />
         </SectionCard>
-        <SectionCard title="Grant Milestones" copy="Grant received, signed and submitted.">
+        {!overviewOnly ? <SectionCard title="Grant Milestones" copy="Grant received, signed and submitted.">
           <GrantMilestoneCard
             instruction={workspace.bond.instruction}
             acceptedOffer={workspace.bond.acceptedOffer}
@@ -1679,9 +1794,10 @@ function BondWorkflowWorkspace({
             onSubmit={(payload) => onMarkGrantMilestone?.(payload)}
             onOpenDocument={onOpenDocument}
           />
-        </SectionCard>
-        <SectionCard title="Instruction to Attorney" copy="Bond instruction handoff to the transfer attorneys.">
+        </SectionCard> : null}
+        <SectionCard title="Instruction to Attorney" copy={overviewOnly ? 'Handoff to the transfer attorney.' : 'Bond instruction handoff to the transfer attorneys.'} overview={overviewOnly} icon={overviewOnly ? FileText : null}>
           <InstructionCard
+            overview={overviewOnly}
             instruction={workspace.bond.instruction}
             acceptedOffer={workspace.bond.acceptedOffer}
             canMark={workspace.permissions.canMarkInstructionSent}
@@ -1997,6 +2113,8 @@ function FinanceCommandCenter({
   const simplifiedFinanceWorkspace = hasBondLikeFinance ? (
     <BondWorkflowWorkspace
       workspace={withBondOriginatorWorkflowRail(workspace, workflowData)}
+      horizontal={['developer', 'agent'].includes(viewerRole)}
+      overviewOnly={['developer', 'agent'].includes(viewerRole)}
       documents={documents}
       loadingAction={loadingAction}
       onStageChange={onStageChange}
@@ -2022,7 +2140,7 @@ function FinanceCommandCenter({
   ) : activeFinanceWorkspace
 
   const showFinanceSubnav = !hasBondLikeFinance && workspace.financeType !== 'cash' && workspace.financeType !== 'unknown'
-  const showOwnershipStrip = hasBondLikeFinance || showFinanceSubnav
+  const showOwnershipStrip = (hasBondLikeFinance || showFinanceSubnav) && !(viewerRole === 'developer' && hasBondLikeFinance)
 
   return (
     <div className="space-y-5">

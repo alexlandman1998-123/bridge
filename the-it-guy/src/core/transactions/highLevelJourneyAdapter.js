@@ -50,6 +50,14 @@ export function buildDeveloperJourneySnapshot({ transaction, rollup, plan, finan
       stepKeys:l.phases.flatMap(p=>p.tasks.map(t=>t.key))})) }
   }
   let legalJourney = { status: 'unavailable', snapshot: null }
+  // Imported matters can have authorised saved tasks before a plan is confirmed.
+  // Show those records read-only without treating them as an applicability manifest.
+  const legacyTasksReadable = !plan && snapshot?.requiredLaneKeys == null &&
+    snapshot?.transactionId === id && Number.isSafeInteger(snapshot.revision) && snapshot.revision >= 0 &&
+    snapshot.planRevision === snapshot.revision && Array.isArray(snapshot.lanes) &&
+    snapshot.lanes.every(l => Array.isArray(l.phases) && l.phases.every(p =>
+      Array.isArray(p.tasks) && p.tasks.every(t => t.revision === snapshot.revision)))
+  if (legacyTasksReadable) legalJourney = { ...source, planRequired: true }
   const validPlan = plan?.status === 'active' && Array.isArray(plan.lanes) && plan.lanes.length > 0 &&
     plan.lanes.every(l => Array.isArray(l.stepKeys) && l.stepKeys.length > 0)
   if (validPlan && snapshot?.transactionId === id && Number.isSafeInteger(snapshot.revision) && snapshot.revision >= 0 &&

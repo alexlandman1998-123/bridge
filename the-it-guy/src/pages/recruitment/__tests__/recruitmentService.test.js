@@ -68,6 +68,12 @@ it('starts review with organisation, application and expected version only', asy
   expect(mocks.rpc).toHaveBeenCalledWith('recruitment_start_review',{p_organisation_id:'org',p_lead_id:'lead',p_version:3})
   await expect(startRecruitmentReview('org',lead)).rejects.toThrow('submitted application')
 })
+it.each(['40001', 'PT409'])('reports a stale review once without retrying (%s)', async (code) => {
+  const application = {...lead,status:'application_submitted',application_submitted_at:'2026-10-05'}
+  mocks.rpc.mockReturnValue({maybeSingle:vi.fn().mockResolvedValue({data:null,error:{code}})})
+  await expect(startRecruitmentReview('org',application)).rejects.toThrow('changed')
+  expect(mocks.rpc).toHaveBeenCalledTimes(1)
+})
 it('does not overwrite review findings after a concurrent save', async () => {
   const chain = query({data:null,error:null})
   const review = {version:'recruitment-review-v1',checks:Object.fromEntries(['registration','qualifications','training','handover'].map(key=>[key,{status:'pending',notes:'',evidence:[]}])),documents:[],notes:'Awaiting interview',followUpOn:''}
@@ -76,7 +82,7 @@ it('does not overwrite review findings after a concurrent save', async () => {
   expect(chain.eq.mock.calls).toEqual([['organisation_id','org'],['id','lead'],['version',3]])
 })
 
-it('approves only saved resolved applications with a confirmed reason and protects stale decisions', async () => {
+it.each(['40001', 'PT409'])('approves only saved resolved applications with a confirmed reason and protects stale decisions (%s)', async (code) => {
   const review={version:'recruitment-review-v1',checks:Object.fromEntries(['registration','qualifications','training','handover'].map(key=>[key,{status:'verified',notes:'Reviewed by management',evidence:[]}])),documents:[],notes:'',followUpOn:''}
   const ready={...lead,status:'under_review',application_submitted_at:'2026-10-05',review_started_at:'2026-10-05',review_status:'ready_for_approval',review_json:review}
   const draft={notes:'  Approved after evidence review  ',confirmed:true}
@@ -85,12 +91,12 @@ it('approves only saved resolved applications with a confirmed reason and protec
   expect(mocks.rpc).toHaveBeenCalledWith('recruitment_approve_application',{p_organisation_id:'org',p_lead_id:'lead',p_version:3,p_notes:'Approved after evidence review'})
   await expect(approveRecruitmentApplication('org',ready,{...draft,confirmed:false})).rejects.toThrow('Confirm')
   await expect(approveRecruitmentApplication('org',{...ready,review_status:'in_progress'},draft)).rejects.toThrow('Resolve')
-  mocks.rpc.mockReturnValue({maybeSingle:vi.fn().mockResolvedValue({data:null,error:{code:'40001'}})})
+  mocks.rpc.mockReturnValue({maybeSingle:vi.fn().mockResolvedValue({data:null,error:{code}})})
   await expect(approveRecruitmentApplication('org',ready,draft)).rejects.toThrow('Approval was not saved')
   await expect(uploadRecruitmentDocument('org',{...ready,approved_at:'2026-10-05'},{type:'application/pdf',size:10},'CV')).rejects.toThrow('locked')
 })
 
-it('prepares a genuine PDF for the approved application using an immutable private upload and expected version', async () => {
+it.each(['40001', 'PT409'])('prepares a genuine PDF for the approved application using an immutable private upload and expected version (%s)', async (code) => {
   const ready={...lead,status:'application_approved',approved_at:'2026-10-05'}
   const storage={upload:vi.fn().mockResolvedValue({error:null}),remove:vi.fn().mockResolvedValue({error:null})}
   mocks.storage.mockReturnValue(storage)
@@ -102,7 +108,7 @@ it('prepares a genuine PDF for the approved application using an immutable priva
   expect(mocks.rpc).toHaveBeenCalledWith('recruitment_prepare_contract',{p_organisation_id:'org',p_lead_id:'lead',p_version:3,p_document:{path:storage.upload.mock.calls[0][0],name:file.name,size:512}})
   await expect(prepareRecruitmentContract('org',lead,file)).rejects.toThrow('Approve')
   await expect(prepareRecruitmentContract('org',ready,{...file,slice:()=>({arrayBuffer:async()=>new TextEncoder().encode('wrong').buffer})})).rejects.toThrow('not a PDF')
-  mocks.rpc.mockReturnValue({maybeSingle:vi.fn().mockResolvedValue({data:null,error:{code:'40001'}})})
+  mocks.rpc.mockReturnValue({maybeSingle:vi.fn().mockResolvedValue({data:null,error:{code}})})
   await expect(prepareRecruitmentContract('org',ready,file)).rejects.toThrow('changed or access')
   expect(storage.remove).toHaveBeenCalled()
   await expect(downloadRecruitmentContract('org',ready,{path:'other/lead/private.pdf'})).rejects.toThrow('does not belong')
@@ -118,8 +124,14 @@ it('records confirmed prior delivery with scope and current version; never repre
   expect(args.p_delivery.source).toBeUndefined()
   expect(args.p_delivery.recordedBy).toBeUndefined()
   await expect(recordRecruitmentContractDelivery('org',ready,{...draft,confirmed:false})).rejects.toThrow('Confirm')
+  for (const code of ['40001', 'PT409']) {
+    mocks.rpc.mockReturnValue({maybeSingle:vi.fn().mockResolvedValue({data:null,error:{code}})})
+    const calls = mocks.rpc.mock.calls.length
+    await expect(recordRecruitmentContractDelivery('org',ready,draft)).rejects.toThrow('Delivery was not recorded')
+    expect(mocks.rpc).toHaveBeenCalledTimes(calls + 1)
+  }
 })
-it('records only a complete signed PDF and verified findings; cleans up a conflicted upload', async () => {
+it.each(['40001', 'PT409'])('records only a complete signed PDF and verified findings; cleans up a conflicted upload (%s)', async (code) => {
   const sent={...lead,status:'contract_sent',contract_delivery_json:{contractVersion:2,recordedAt:'2026-10-05',sentOn:recruitmentLocalDate()}}
   const file={type:'application/pdf',size:512,name:'signed.pdf',slice:()=>({arrayBuffer:async()=>new TextEncoder().encode('%PDF-').buffer})}
   const draft={contractVersion:2,agentSigner:'Sam Agent',organisationSigner:'Agency Principal',signedOn:recruitmentLocalDate(),method:'wet_ink',reference:'',notes:'Compared all pages and both signatures',checks:{sameVersion:true,allPages:true,agentSignature:true,organisationSignature:true},file,recordedBy:'forged'}
@@ -134,13 +146,13 @@ it('records only a complete signed PDF and verified findings; cleans up a confli
   expect(storage.upload.mock.calls[0][2].upsert).toBe(false)
   await expect(recordRecruitmentContractSignature('org',sent,{...draft,checks:{...draft.checks,allPages:false}})).rejects.toThrow('Verify')
   await expect(recordRecruitmentContractSignature('org',sent,{...draft,file:{...file,slice:()=>({arrayBuffer:async()=>new TextEncoder().encode('wrong').buffer})}})).rejects.toThrow('not a PDF')
-  mocks.rpc.mockReturnValue({maybeSingle:vi.fn().mockResolvedValue({data:null,error:{code:'40001'}})})
+  mocks.rpc.mockReturnValue({maybeSingle:vi.fn().mockResolvedValue({data:null,error:{code}})})
   await expect(recordRecruitmentContractSignature('org',sent,draft)).rejects.toThrow('Signatures were not recorded')
   expect(storage.remove).toHaveBeenCalled()
   await expect(downloadRecruitmentSignedContract('org',{...sent,contract_signature_json:{recordedAt:'2026-10-05',path:'other/lead/signed'}})).rejects.toThrow('No signed contract')
 })
 
-it('saves partial onboarding with expected version and strips client audit fields',async()=>{
+it.each(['40001', 'PT409'])('saves partial onboarding with expected version and strips client audit fields (%s)',async(code)=>{
   const signed={...lead,status:'contract_signed',contract_signature_json:{recordedAt:'2026-10-05'}}
   const draft={...recruitmentOnboardingDraft(signed),notes:'Joining arrangements to confirm',updatedBy:'forged',confirmed:true}
   mocks.rpc.mockReturnValue({maybeSingle:vi.fn().mockResolvedValue({data:signed,error:null})})
@@ -149,10 +161,10 @@ it('saves partial onboarding with expected version and strips client audit field
   expect(args).toMatchObject({p_organisation_id:'org',p_lead_id:'lead',p_version:3,p_complete:false,p_onboarding:{confirmed:false}})
   expect(args.p_onboarding.updatedBy).toBeUndefined()
   await expect(saveRecruitmentOnboarding('org',signed,draft,true)).rejects.toThrow('Resolve all six')
-  mocks.rpc.mockReturnValue({maybeSingle:vi.fn().mockResolvedValue({data:null,error:{code:'40001'}})})
+  mocks.rpc.mockReturnValue({maybeSingle:vi.fn().mockResolvedValue({data:null,error:{code}})})
   await expect(saveRecruitmentOnboarding('org',signed,draft)).rejects.toThrow('findings were not saved')
 })
-it('uploads final documents into a separate immutable private pack and cleans up a conflicted upload',async()=>{
+it.each(['40001', 'PT409'])('uploads final documents into a separate immutable private pack and cleans up a conflicted upload (%s)',async(code)=>{
   const signed={...lead,status:'contract_signed',contract_signature_json:{recordedAt:'2026-10-05'}}
   const storage={upload:vi.fn().mockResolvedValue({error:null}),remove:vi.fn().mockResolvedValue({error:null})}
   const file={type:'application/pdf',size:512,name:'Joining evidence.pdf'}
@@ -164,20 +176,20 @@ it('uploads final documents into a separate immutable private pack and cleans up
   expect(mocks.rpc.mock.calls[0][1]).toMatchObject({p_organisation_id:'org',p_lead_id:'lead',p_version:3,p_document:{name:file.name,type:'Identity document',mimeType:'application/pdf',size:512}})
   await expect(uploadRecruitmentOnboardingDocument('org',{...signed,status:'onboarding_complete'},file,'Identity document')).rejects.toThrow('Verify the signed')
   await expect(uploadRecruitmentOnboardingDocument('org',signed,{...file,size:10485761},'Identity document')).rejects.toThrow('up to 10 MB')
-  mocks.rpc.mockReturnValue({maybeSingle:vi.fn().mockResolvedValue({data:null,error:{code:'40001'}})})
+  mocks.rpc.mockReturnValue({maybeSingle:vi.fn().mockResolvedValue({data:null,error:{code}})})
   await expect(uploadRecruitmentOnboardingDocument('org',signed,file,'Identity document')).rejects.toThrow('changed or access')
   expect(storage.remove).toHaveBeenCalled()
   await expect(downloadRecruitmentOnboardingDocument('org',signed,{path:'other/lead/file'})).rejects.toThrow('does not belong')
 })
 
-it('prepares or records activation with current organisation/version and never sends or creates an arbitrary privileged member',async()=>{
+it.each(['40001', 'PT409'])('prepares or records activation with current organisation/version and never sends or creates an arbitrary privileged member (%s)',async(code)=>{
   const ready={...lead,status:'onboarding_complete',onboarding_completed_at:'2026-10-05',onboarding_snapshot:{version:'recruitment-onboarding-completion-v1'}}
   const draft={notes:'  Joining record reviewed and agent access confirmed  ',confirmed:true,userId:'forged',role:'principal'}
   mocks.rpc.mockReturnValue({maybeSingle:vi.fn().mockResolvedValue({data:{...ready,activation_json:{state:'awaiting_acceptance'}},error:null})})
   expect((await activateRecruitmentAgent('org',ready,draft)).status).toBe('onboarding_complete')
   expect(mocks.rpc).toHaveBeenCalledWith('recruitment_activate_agent',{p_organisation_id:'org',p_lead_id:'lead',p_version:3,p_notes:'Joining record reviewed and agent access confirmed',p_confirmed:true})
   await expect(activateRecruitmentAgent('org',ready,{...draft,confirmed:false})).rejects.toThrow('Confirm')
-  mocks.rpc.mockReturnValue({maybeSingle:vi.fn().mockResolvedValue({data:null,error:{code:'40001'}})})
+  mocks.rpc.mockReturnValue({maybeSingle:vi.fn().mockResolvedValue({data:null,error:{code}})})
   await expect(activateRecruitmentAgent('org',ready,draft)).rejects.toThrow('Activation was not saved')
   mocks.rpc.mockReturnValue({maybeSingle:vi.fn().mockResolvedValue({data:null,error:{code:'23505'}})})
   await expect(activateRecruitmentAgent('org',ready,draft)).rejects.toThrow('another recruitment record')

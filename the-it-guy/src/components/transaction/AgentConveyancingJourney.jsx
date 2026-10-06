@@ -2,7 +2,7 @@ import SharedLegalJourney from './SharedLegalJourney'
 import { useState } from 'react'
 
 // Observe the persisted journey; never reconstruct tasks from a fallback template.
-export default function AgentConveyancingJourney({ result, loading = false, onOpenActivity, partnerOptions = [], canAssignPartner = false, partnerPending = false, assignedPartner = '', onAssignPartner }) {
+export default function AgentConveyancingJourney({ result, loading = false, partnerOptions = [], canAssignPartner = false, partnerPending = false, assignedPartner = '', onAssignPartner }) {
   const [partnerId, setPartnerId] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -22,10 +22,6 @@ export default function AgentConveyancingJourney({ result, loading = false, onOp
   }
 
   return <section className="space-y-4" data-agent-conveyancing>
-    <header className="flex flex-wrap items-center justify-between gap-3">
-      <h2 className="text-xl font-semibold text-textStrong">Conveyancing</h2>
-      <button type="button" onClick={onOpenActivity} className="rounded-lg border border-borderDefault bg-white px-4 py-2 text-sm font-semibold text-textStrong focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-700">View updates</button>
-    </header>
     {!loading && !hasJourney && canAssignPartner ? <form onSubmit={assignPartner} className="space-y-3 rounded-xl border border-borderDefault bg-white p-4">
       <h3 className="font-semibold text-textStrong">Allocate a transfer partner</h3>
       <p className="text-sm text-textMuted">Use this when the transaction was imported partway through the process. The partner can be allocated before buyer onboarding.</p>
@@ -41,6 +37,6 @@ export default function AgentConveyancingJourney({ result, loading = false, onOp
     {!loading && !hasJourney && partnerPending ? <p role="status" className="rounded-xl border border-borderDefault bg-white p-4 text-sm text-textMuted">Transfer partner: {assignedPartner || 'Nominated firm'}. The legal workflow is still pending; check the firm’s instruction status in Roleplayers.</p> : null}
     {loading && result?.status !== 'ready'
       ? <p role="status" className="rounded-xl border border-borderDefault bg-white p-4 text-sm text-textMuted">Loading legal journey…</p>
-      : <SharedLegalJourney result={result} showConversation={false} />}
+      : <SharedLegalJourney result={result} showConversation={false} horizontal />}
   </section>
 }

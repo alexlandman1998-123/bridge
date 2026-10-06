@@ -306,6 +306,8 @@ function deriveBondStage(workflowData = {}, buyerDocumentRows = []) {
   const uploadedBuyerDocs = buyerDocumentRows.filter((item) => item.status !== 'missing').length > 0
 
   if (workflowStage === 'complete') return 'complete'
+  // Imported instruction dates can precede the current grant milestone.
+  if (workflowStage === 'grant_signed' && grantSigned) return 'grant_signed'
   if (instructionSent) return 'instruction_sent'
   if (workflowStage === 'grant_submitted' || grantSubmitted) return 'grant_submitted'
   if (workflowStage === 'grant_signed' || grantSigned) return 'grant_signed'
@@ -579,6 +581,7 @@ function enrichBondRailSteps(steps = [], workflowData = {}, buyerDocumentRows = 
       ...step,
       completedAt: step.status === 'completed' || step.status === 'current' ? completedAt : null,
       responsibleRole: responsibleRole || roleByStage[step.key] || 'Finance team',
+      status: step.key === 'instruction_sent' && (instruction?.instructionSent || instruction?.instruction_sent) && step.status === 'upcoming' ? 'completed' : step.status,
     }
   })
 }
@@ -603,7 +606,7 @@ export function resolveTransactionFinancePermissions({
     ['agent', 'admin', 'internal_admin'].includes(role)
   const canUploadFromPermissions = Boolean(activeViewerPermissions?.canUploadDocuments)
 
-  return {
+  const permissions = {
     role,
     canUploadDocuments: canUploadFromPermissions || ['developer', 'admin', 'bond_originator', 'buyer'].includes(role),
     canReviewDocuments: canEditFinanceWorkflow || ['developer', 'admin', 'bond_originator'].includes(role),
@@ -615,6 +618,10 @@ export function resolveTransactionFinancePermissions({
     canUpdateBlockers: canEditFinanceWorkflow || ['developer', 'admin', 'bond_originator'].includes(role),
     canProxyFinanceWorkflow,
   }
+  if (['developer', 'agent'].includes(role)) {
+    return Object.fromEntries(Object.entries(permissions).map(([key, value]) => [key, key === 'role' ? value : false]))
+  }
+  return permissions
 }
 
 function deriveSummary({
