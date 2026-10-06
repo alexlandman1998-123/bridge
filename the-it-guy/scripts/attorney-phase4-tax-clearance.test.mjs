@@ -92,6 +92,43 @@ for (const [route, tenure, hoa, mixedSellers] of [
   assert.deepEqual(fromSql, fromPlan, `${route}/${tenure} SQL and application applicability must agree`)
 }
 
+// An imported matter may start with the tax route undecided. Earlier transfer
+// work must remain editable while lodgement still waits for an attorney decision.
+const importedMatter = '00000000-0000-0000-0000-000000000403'
+const importedLane = '00000000-0000-0000-0000-000000000404'
+const importedProfile = {
+  ...updated,
+  transferTaxDecision: {
+    ...updated.transferTaxDecision,
+    route: 'needs_tax_advice',
+    status: 'needs_confirmation',
+    sarsStatus: 'not_started',
+  },
+}
+await db.query('insert into transactions values ($1,$2,$3)', [importedMatter, importedProfile, 'active'])
+await db.query('insert into transaction_subprocesses values ($1,$2,$3)', [importedLane, importedMatter, 'transfer'])
+for (const stepKey of ['instruction_received', 'lodgement_ready']) await db.query(
+  'insert into transaction_subprocess_steps(subprocess_id,step_key,status) values ($1,$2,$3)',
+  [importedLane, stepKey, 'not_started'],
+)
+const completeImportedStep = (stepKey) => db.query(
+  "update transaction_subprocess_steps set status='completed', comment='Reviewed imported matter.' where subprocess_id=$1 and step_key=$2",
+  [importedLane, stepKey],
+)
+await assert.rejects(completeImportedStep('instruction_received'), /case not found/)
+await db.exec(readFileSync(new URL('../../supabase/migrations/20260929081502_handle_unconfirmed_transfer_tax_route.sql', import.meta.url), 'utf8'))
+for (const route of ['needs_tax_advice', 'pending_attorney_decision', null]) {
+  const candidate = { ...importedProfile, transferTaxDecision: { ...importedProfile.transferTaxDecision, route } }
+  const fromSql = (await db.query('select journey_private.phase4_required_transfer_steps($1::jsonb) as steps', [candidate])).rows[0].steps
+  const fromPlan = buildMatterWorkflowPlan({ routingProfile: candidate }).lanes[0].stepKeys
+    .filter((key) => PHASE4_TAX_TASKS.includes(key) || PHASE4_PROPERTY_TASKS.includes(key))
+  assert.deepEqual(fromSql, fromPlan, `unconfirmed ${route} SQL and application applicability must agree`)
+}
+await completeImportedStep('instruction_received')
+assert.equal((await db.query('select status from transaction_subprocess_steps where subprocess_id=$1 and step_key=$2',
+  [importedLane, 'instruction_received'])).rows[0].status, 'completed')
+await assert.rejects(completeImportedStep('lodgement_ready'), /Confirmed tax basis and SARS proof/)
+
 const complete = (step, comment = 'Reviewed supporting evidence.') => db.query(
   "update transaction_subprocess_steps set status='completed', comment=$3 where subprocess_id=$1 and step_key=$2",
   [lane, step, comment],
