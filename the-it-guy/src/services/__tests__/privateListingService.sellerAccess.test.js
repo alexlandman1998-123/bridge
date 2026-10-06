@@ -8,7 +8,8 @@ vi.mock('../../lib/supabaseClient', () => ({
   BRANDING_BUCKET_CANDIDATES: ['branding'], PROFILE_AVATAR_BUCKET_CANDIDATES: ['avatars'],
   LEGAL_TEMPLATES_BUCKET_CANDIDATES: ['legal-templates'],
 }))
-import { getSellerOnboardingByToken, submitSellerOnboarding, updateSellerOnboardingProgress, savePrivateListingSellerCanonicalUpdate, syncPrivateListingRequirements, ensurePrivateListingDocumentRequirements } from '../privateListingService'
+import { getSellerOnboardingByToken, submitSellerOnboarding, updateSellerOnboardingProgress, savePrivateListingSellerCanonicalUpdate, syncPrivateListingRequirements, ensurePrivateListingDocumentRequirements, resolvePrivateListingDocumentRequirement } from '../privateListingService'
+import { repairSellerDocumentRequirementLinks, isUnlinkedSellerReviewDocument } from '../sellerDocumentReviewWorkflowService.js'
 import { buildListingSellerCanonicalUpdate } from '../listings/listingSellerCanonicalUpdateModel.js'
 import { syncSellerDocumentRequirements } from '../../lib/sellerDocumentRequirementEngine.js'
 
@@ -151,7 +152,9 @@ describe('seller checklist persistence with PostgreSQL date fields', () => {
       request_revision integer, last_request_reason text, request_metadata jsonb,
       satisfied_by_document_id uuid, satisfaction_verified_at timestamptz, assurance_metadata jsonb,
       created_at timestamptz default now(), updated_at timestamptz default now(),
-      unique(private_listing_id,requirement_key))`)
+      unique(private_listing_id,requirement_key));
+      create unique index private_listing_document_requirements_request_dedupe_idx
+      on private_listing_document_requirements(request_dedupe_key) where request_dedupe_key is not null`)
     client.from.mockImplementation((table) => {
       let payload = null
       let single = false
@@ -196,12 +199,12 @@ describe('seller checklist persistence with PostgreSQL date fields', () => {
 
   it('keeps existing request dates and metadata when refreshing approved rows', async () => {
     const seed = syncSellerDocumentRequirements(savedListing, []).upsertRows.map(row => ({ ...row, id: crypto.randomUUID(), status: 'approved',
-      request_due_date: '2026-10-12', requested_at: '2026-10-05T07:00:00Z', request_dedupe_key: 'saved-request',
+      request_due_date: '2026-10-12', requested_at: '2026-10-05T07:00:00Z', request_dedupe_key: `saved-request:${row.requirement_key}`,
       canonical_requirement_instance_id: crypto.randomUUID(), request_revision: 3, request_metadata: { delivery: 'recorded' } }))
     await writeRows(seed)
     await syncPrivateListingRequirements(savedListing, { emitActivity: false })
     for (const row of await readRows()) expect(row).toMatchObject({ request_due_date: '2026-10-12',
-      requested_at: '2026-10-05T07:00:00+00:00', request_dedupe_key: 'saved-request', request_revision: 3,
+      requested_at: '2026-10-05T07:00:00+00:00', request_dedupe_key: `saved-request:${row.requirement_key}`, request_revision: 3,
       canonical_requirement_instance_id: seed.find(item => item.requirement_key === row.requirement_key).canonical_requirement_instance_id,
       request_metadata: { delivery: 'recorded' } })
   })
@@ -235,6 +238,48 @@ describe('seller checklist persistence with PostgreSQL date fields', () => {
     expect(result.find(row => row.requirement_key === 'id_document').id).toMatch(/^[0-9a-f-]{36}$/)
     expect((await readRows()).find(row => row.requirement_key === 'id_document').request_due_date).toBe('2026-10-12')
     for (const batch of batches) expect(new Set(batch.map(row => Object.keys(row).sort().join(','))).size).toBe(1)
+  })
+
+  it('creates a separate spouse request without reusing the seller identity or its dedupe key', async () => {
+    const id = crypto.randomUUID()
+    await writeRows([{ id, private_listing_id: listingId, requirement_key: 'id_document', status: 'approved',
+      request_dedupe_key: 'seller-id-request', satisfied_by_document_id: crypto.randomUUID() }])
+    const before = await readRows()
+    const result = await ensurePrivateListingDocumentRequirements(listingId, [{ requirementKey: 'spouse_id_document', requirementName: 'Spouse identity' }])
+    expect(result).toHaveLength(2)
+    expect((await readRows()).find(row => row.requirement_key === 'id_document')).toEqual(before[0])
+    expect(result.find(row => row.requirement_key === 'spouse_id_document')).toMatchObject({ status: 'required' })
+    expect(result.find(row => row.requirement_key === 'spouse_id_document').id).not.toBe(id)
+    expect(result.find(row => row.requirement_key === 'spouse_id_document').request_dedupe_key).not.toBe('seller-id-request')
+  })
+
+  it('prefers each exact request over a similar document key and preserves their approvals', async () => {
+    await writeRows(['id_document', 'spouse_id_document'].map(key => ({ id: crypto.randomUUID(), private_listing_id: listingId,
+      requirement_key: key, status: 'approved', request_dedupe_key: `${key}-request`, satisfied_by_document_id: crypto.randomUUID() })))
+    const before = await readRows()
+    await ensurePrivateListingDocumentRequirements(listingId, ['id_document','spouse_id_document'].map(requirementKey => ({ requirementKey })))
+    for (const row of await readRows()) {
+      const old = before.find(item => item.requirement_key === row.requirement_key)
+      expect(row).toMatchObject({ id: old.id, status: old.status, request_dedupe_key: old.request_dedupe_key, satisfied_by_document_id: old.satisfied_by_document_id })
+    }
+  })
+
+  it('reuses explicit legacy aliases without renaming or inserting the same request twice', async () => {
+    const id = crypto.randomUUID()
+    await writeRows([{ id, private_listing_id: listingId, requirement_key: 'signed_defect_form', status: 'approved', request_dedupe_key: 'disclosure-request' }])
+    const result = await ensurePrivateListingDocumentRequirements(listingId, [{ requirementKey: 'signed_disclosure_form' }, { requirementKey: 'signed_defect_form' }])
+    expect(result).toHaveLength(1)
+    expect(result[0]).toMatchObject({ id, requirement_key: 'signed_defect_form', status: 'approved', request_dedupe_key: 'disclosure-request' })
+  })
+
+  it('does not create requests when existing checklist identities cannot be read', async () => {
+    const error = { code: '42501', message: 'Checklist read denied' }
+    const query = { select: () => query, eq: () => query, order: () => query,
+      then: (resolve) => Promise.resolve({ data: null, error }).then(resolve) }
+    client.from.mockImplementationOnce(() => query)
+    await expect(ensurePrivateListingDocumentRequirements(listingId, [{ requirementKey: 'id_document' }])).rejects.toEqual(error)
+    expect(batches).toHaveLength(0)
+    expect(await readRows()).toHaveLength(0)
   })
 
   it('still rejects a nonblank invalid date without claiming the checklist saved', async () => {
@@ -385,4 +430,59 @@ describe('canonical seller save confirmation', () => {
     await expect(savePrivateListingSellerCanonicalUpdate({ listingId, mutationId: '00000000-0000-4000-8000-000000000099' })).rejects.toMatchObject({ code: 'SELLER_SAVE_UNCONFIRMED' })
     expect(client.from).not.toHaveBeenCalled()
   })
+})
+
+
+describe('exact upload requirement resolution', () => {
+  const requirement = (key, id = listingId, extra = {}) => ({ id, requirement_key: key, is_required: true, status: 'required', ...extra })
+  it('prefers an exact key over a legacy alias and retains the persisted id', () => {
+    const rows = [requirement('seller_id', onboardingId), requirement('id_document')]
+    expect(resolvePrivateListingDocumentRequirement(rows, { requirementKey: 'id_document' }).id).toBe(listingId)
+  })
+  it('never links a spouse file to the main identity requirement by substring', () => {
+    expect(() => resolvePrivateListingDocumentRequirement([requirement('id_document')], { requirementKey: 'spouse_id_document' })).toThrow(/No active/)
+  })
+  it('supports explicit aliases, while refusing multiple alias candidates', () => {
+    expect(resolvePrivateListingDocumentRequirement([requirement('seller_id')], { requirementKey: 'id_document' }).id).toBe(listingId)
+    expect(() => resolvePrivateListingDocumentRequirement([requirement('seller_id'), requirement('passport', onboardingId)], { requirementKey: 'id_document' })).toThrow(/More than one/)
+  })
+  it.each([{ is_required: false }, { status: 'not_applicable' }])('never attaches an inactive requirement: %j', (extra) => {
+    expect(() => resolvePrivateListingDocumentRequirement([requirement('id_document', listingId, extra)], { requirementId: listingId, documentType: 'id_document' })).toThrow(/unavailable/)
+  })
+  it('rejects a missing explicit id even when another requirement has the same key', () => {
+    expect(() => resolvePrivateListingDocumentRequirement([requirement('id_document')], { requirementId: onboardingId, requirementKey: 'id_document' })).toThrow(/unavailable/)
+  })
+  it('rejects an explicit id paired with another document type', () => {
+    expect(() => resolvePrivateListingDocumentRequirement([requirement('id_document')], { requirementId: listingId, requirementKey: 'company_address_proof' })).toThrow(/does not match/)
+  })
+  it('permits generic internal files without inventing a requirement', () => {
+    expect(resolvePrivateListingDocumentRequirement([], { documentType: 'listing_document', required: false })).toBeNull()
+  })
+})
+
+
+describe('seller document repair receipt', () => {
+  it('uses the scoped command and returns a verified repair receipt', async () => {
+    client.rpc.mockReturnValue(rpcResult({ ok: true, linkedCount: 1, remainingCount: 2 }))
+    await expect(repairSellerDocumentRequirementLinks({ listingId })).resolves.toEqual({ ok: true, linkedCount: 1, remainingCount: 2 })
+    expect(client.rpc).toHaveBeenCalledWith('bridge_repair_private_listing_seller_document_links', { p_listing_id: listingId })
+    expect(client.from).not.toHaveBeenCalled()
+  })
+  it('refuses an unavailable command without using direct table updates', async () => {
+    client.rpc.mockReturnValue(rpcResult(null, { code: 'PGRST202', message: 'Could not find the function' }))
+    await expect(repairSellerDocumentRequirementLinks({ listingId })).rejects.toThrow(/must be deployed/)
+    expect(client.from).not.toHaveBeenCalled()
+  })
+  it('does not claim success for an empty command response', async () => {
+    client.rpc.mockReturnValue(rpcResult(null))
+    await expect(repairSellerDocumentRequirementLinks({ listingId })).rejects.toThrow(/could not be verified/)
+  })
+})
+
+
+it('flags pending seller files while retaining generic internal and buyer offer evidence', () => {
+  expect(isUnlinkedSellerReviewDocument({ document_type:'cipc_documents',status:'uploaded' })).toBe(true)
+  expect(isUnlinkedSellerReviewDocument({ document_type:'listing_document',status:'uploaded' })).toBe(false)
+  expect(isUnlinkedSellerReviewDocument({ document_type:'wet_ink_otp_buyer',category:'buyer_offer',status:'uploaded' })).toBe(false)
+  expect(isUnlinkedSellerReviewDocument({ document_type:'cipc_documents',status:'approved' })).toBe(false)
 })

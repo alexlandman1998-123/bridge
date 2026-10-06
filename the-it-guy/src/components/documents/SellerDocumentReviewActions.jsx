@@ -19,7 +19,8 @@ function SellerDocumentReviewActions({
   const status = String(item?.status || '').trim().toLowerCase()
   const lifecycleStatus = String(item?.lifecycleStatus || item?.lifecycle_status || '').trim().toLowerCase()
   const isMandate = [item?.key, item?.requirementKey, item?.requirement_key, document?.document_type, document?.documentType].includes('signed_mandate')
-  const canReview = Boolean(documentId && ['uploaded', 'under_review'].includes(status) && typeof onReview === 'function')
+  const hasExactRequirement = Boolean(document?.requirement_id || document?.requirementId)
+  const canReview = Boolean(documentId && hasExactRequirement && ['uploaded', 'under_review'].includes(status) && typeof onReview === 'function')
   const canRemind = Boolean(
     item?.actionRequired &&
     requirementId &&
@@ -52,6 +53,9 @@ function SellerDocumentReviewActions({
     }
   }
 
+  if (documentId && !hasExactRequirement && ['uploaded', 'under_review'].includes(status)) {
+    return <p role="status" className="mt-3 text-xs text-[#8a5b16]">This file needs an exact checklist link before review. Confirm the seller details and refresh the checklist; then upload it against the correct requirement.</p>
+  }
   if (!canReview && !canRemind) return null
 
   return (

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 vi.mock('../../lib/supabaseClient', () => ({ supabase: null }))
-import { readTransactionHandoffRegister, readTransactionHandoffDispatchMode } from '../transactionHandoffRegisterService'
+import { readTransactionHandoffRegister, readTransactionHandoffDispatchMode, readOrganisationHandoffQueueAccess } from '../transactionHandoffRegisterService'
 describe('handoff register read boundary', () => {
  it('reads the authorised persisted register', async () => {
   const client = { rpc: vi.fn().mockResolvedValue({ data: { items: [] }, error: null }) }
@@ -54,5 +54,20 @@ describe('organisation queue read boundary', () => {
   }
   await expect(readOrganisationHandoffQueue('agency', { client: { rpc: async () => ({ data: { code: 'organisation_authority_required' } }) } })).rejects.toThrow('agency headquarters')
   await expect(readOrganisationHandoffQueue('agency', { client: { rpc: async () => ({ error: { code: 'PGRST202' } }) } })).rejects.toThrow('not available yet')
+ })
+})
+
+
+describe('organisation handoff authority boundary', () => {
+ it.each([true,false])('returns the server access decision: %s', async canManage => {
+  const client={rpc:vi.fn().mockResolvedValue({data:{success:true,organisationId:'agency',canManage}})}
+  await expect(readOrganisationHandoffQueueAccess('agency',{client})).resolves.toBe(canManage)
+  expect(client.rpc).toHaveBeenCalledWith('bridge_read_organisation_handoff_queue_access',{p_organisation_id:'agency'})
+ })
+ it.each([null,{success:true,organisationId:'other',canManage:true},{success:true,organisationId:'agency',canManage:'true'}])('rejects an unverified access receipt: %j', async data => {
+  await expect(readOrganisationHandoffQueueAccess('agency',{client:{rpc:async()=>({data})}})).rejects.toThrow('could not be confirmed')
+ })
+ it('fails closed while the migration is unavailable', async () => {
+  await expect(readOrganisationHandoffQueueAccess('agency',{client:{rpc:async()=>({error:{code:'PGRST202'}})}})).rejects.toThrow('not available yet')
  })
 })

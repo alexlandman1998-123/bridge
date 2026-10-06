@@ -1,3 +1,4 @@
+import usePipelineAppointments from '../../hooks/usePipelineAppointments'
 import { prepareSellerMandateReviewPreview } from '../../lib/sellerMandateReviewPreview.js'
 import SellerMandateDetailsEditor from '../../components/documents/SellerMandateDetailsEditor.jsx'
 import { getSellerMandatePreparationIssues, readSellerMandateTerms } from '../../lib/sellerMandateCapture.js'
@@ -90,7 +91,6 @@ import {
   getAgencyCrmUpdatedEventName,
   getAgencyPipelineSnapshot,
   checkAppointmentSchedulingIntegrityAsync,
-  listAppointmentsAsync,
   recoverAgencyPipelineStoreForOrganisation,
   resolveAgencyPipelineStorageScope,
   updateAppointmentAsync,
@@ -9855,7 +9855,7 @@ function mergeAppointmentRowsForReload(previousRows = [], nextRows = [], { range
   const rowsWithoutId = []
   const keepPreviousRow = (row) => {
     const rowOrganisationId = normalizeText(row?.organisationId || row?.organisation_id)
-    if (scopedOrganisationId && rowOrganisationId && rowOrganisationId !== scopedOrganisationId) return true
+    if (scopedOrganisationId && rowOrganisationId && rowOrganisationId !== scopedOrganisationId) return false
     return !isAppointmentWithinReloadRange(row, range)
   }
 
@@ -11996,6 +11996,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [taskForm, setTaskForm] = useState(LEAD_DETAIL_DEFAULT_TASK)
   const [editingTaskId, setEditingTaskId] = useState('')
   const [appointmentForm, setAppointmentForm] = useState(() => buildDefaultAppointmentFormForType('', LEAD_DETAIL_DEFAULT_APPOINTMENT))
+  const [appointmentRefreshRevision, setAppointmentRefreshRevision] = useState(0)
   const [calendarView, setCalendarView] = useState('week')
   const [calendarCursorDate, setCalendarCursorDate] = useState(() => new Date())
   const [calendarAgentFilter, setCalendarAgentFilter] = useState(() => normalizeText(new URLSearchParams(location.search).get('agent')) || 'all')
@@ -12341,6 +12342,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         window.clearTimeout(reloadTimerRef.current)
         reloadTimerRef.current = null
       }
+      setAppointmentRefreshRevision((value) => value + 1)
       const requestId = reloadRequestRef.current + 1
       reloadRequestRef.current = requestId
       const localFallbackAvailable = isUnsafeFallbackAllowed()
@@ -12403,8 +12405,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
       const applySnapshotRecords = (
         sourceSnapshot,
-        appointmentRows = sourceSnapshot?.appointments || [],
-        { preserveAppointmentsOutsideRange = false } = {},
+        appointmentRows = null,
+        { preserveAppointmentsOutsideRange = true } = {},
       ) => {
         const effectiveSnapshot = mergeActiveRouteLeadSnapshot(sourceSnapshot)
         const sourceContacts = Array.isArray(effectiveSnapshot?.contacts) ? effectiveSnapshot.contacts : []
@@ -12434,7 +12436,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         const scopedDeals = sourceDeals.filter((row) => scopedLeadIds.has(normalizeLeadIdentityKey(row?.leadId)))
         const scopedInboundEmails = sourceInboundEmails.filter((row) => scopedLeadIds.has(normalizeLeadIdentityKey(row?.leadId)))
         setRecords((previous) => {
-          const nextAppointments = preserveAppointmentsOutsideRange
+          const nextAppointments = appointmentRows === null
+            ? previous.appointments.filter((row) => normalizeText(row?.organisationId || row?.organisation_id) === normalizeText(orgId))
+            : preserveAppointmentsOutsideRange
             ? mergeAppointmentRowsForReload(previous.appointments, scopedAppointments, {
                 range: resolvedAppointmentRange,
                 organisationId: orgId,
@@ -12610,27 +12614,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       } else {
         markPrimaryRecordsReady()
       }
-      let appointmentRows = []
-      try {
-        appointmentRows = await withPipelineTimeout(
-          listAppointmentsAsync(orgId, {
-            includeAll: isPrincipal,
-            agentId: isPrincipal ? '' : currentAgent.id,
-            agentEmail: isPrincipal ? '' : currentAgent.email,
-            agentKeys: isPrincipal ? [] : [currentAgent.id, currentAgent.email],
-            from: resolvedAppointmentRange?.from || null,
-            to: resolvedAppointmentRange?.to || null,
-          }),
-          'Appointment data is taking too long to load.',
-          PIPELINE_APPOINTMENT_RECORDS_TIMEOUT_MS,
-        )
-      } catch (appointmentLoadError) {
-        console.warn('[PIPELINE] appointment load failed; continuing without appointment rows.', appointmentLoadError)
-      }
-      appointmentRows = mergeCalendarAppointmentRows(
-        appointmentRows,
-        buildLocalCalendarAppointments({ organisationId: orgId, currentAgent, includeAll: isPrincipal }),
-      )
 
       if (requestId !== reloadRequestRef.current) {
         markPrimaryRecordsReady()
@@ -12648,14 +12631,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         ...pinnedRouteLinkedListingOptions,
         ...buildListingOptionsFromLeads(mergedSnapshot.leads),
       ]))
-      applySnapshotRecords(mergedSnapshot, appointmentRows, { preserveAppointmentsOutsideRange: true })
+      applySnapshotRecords(mergedSnapshot)
       markPrimaryRecordsReady()
       recordSellerLeadsPerformance('background_settled', orgId, {
         leadCount: Array.isArray(mergedSnapshot?.leads) ? mergedSnapshot.leads.length : 0,
         contactCount: Array.isArray(mergedSnapshot?.contacts) ? mergedSnapshot.contacts.length : 0,
         activityCount: Array.isArray(mergedSnapshot?.leadActivities) ? mergedSnapshot.leadActivities.length : 0,
         taskCount: Array.isArray(mergedSnapshot?.tasks) ? mergedSnapshot.tasks.length : 0,
-        appointmentCount: Array.isArray(appointmentRows) ? appointmentRows.length : 0,
+        appointmentCount: null,
       })
     },
     [currentAgent, isPrincipal, recordSellerLeadsPerformance],
@@ -14733,17 +14716,47 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }, [organisationId, selectedLead, selectedLeadCategory])
 
-  const selectedLeadAppointments = useMemo(() => {
-    if (!selectedLead) return []
+  const appointmentRange = useMemo(
+    () => buildAppointmentReloadRange({ isCalendarMode, calendarView, calendarCursorDate }),
+    [isCalendarMode, calendarView, calendarCursorDate],
+  )
+  const calendarAppointmentLoad = usePipelineAppointments({
+    organisationId, from: appointmentRange.from, to: appointmentRange.to,
+    includeAll: isPrincipal, agentId: isPrincipal ? '' : currentAgent.id,
+    agentEmail: isPrincipal ? '' : currentAgent.email, revision: appointmentRefreshRevision,
+    timeoutMs: PIPELINE_APPOINTMENT_RECORDS_TIMEOUT_MS,
+  })
+  const leadAppointmentLoad = usePipelineAppointments({
+    organisationId, leadId: selectedLead?.leadId || '',
+    includeAll: isPrincipal, agentId: isPrincipal ? '' : currentAgent.id,
+    agentEmail: isPrincipal ? '' : currentAgent.email, revision: appointmentRefreshRevision,
+    enabled: Boolean(selectedLead?.leadId) && !isCalendarMode,
+    timeoutMs: PIPELINE_APPOINTMENT_RECORDS_TIMEOUT_MS,
+  })
+  useEffect(() => {
+    if (calendarAppointmentLoad.status !== 'ready') return
+    const scopedAppointments = mergeCalendarAppointmentRows(
+      calendarAppointmentLoad.rows,
+      buildLocalCalendarAppointments({ organisationId, currentAgent, includeAll: isPrincipal }),
+    )
+    setRecords((previous) => ({ ...previous, appointments: mergeAppointmentRowsForReload(previous.appointments, scopedAppointments, { range: appointmentRange, organisationId }) }))
+  }, [calendarAppointmentLoad.status, calendarAppointmentLoad.rows, appointmentRange, organisationId, currentAgent, isPrincipal])
+  useEffect(() => {
+    if (leadAppointmentLoad.status !== 'ready' || !selectedLead?.leadId) return
     const leadKey = normalizeLeadIdentityKey(selectedLead.leadId)
-    return records.appointments
-      .filter((row) => {
-        const appointmentLeadKey = normalizeLeadIdentityKey(row?.leadId)
-        const appointmentRelatedKey = normalizeLeadIdentityKey(row?.relatedEntityId)
-        return appointmentLeadKey === leadKey || appointmentRelatedKey === leadKey
-      })
-      .sort((a, b) => new Date(a.dateTime || a.createdAt || 0) - new Date(b.dateTime || b.createdAt || 0))
-  }, [records.appointments, selectedLead])
+    setRecords((previous) => ({
+      ...previous,
+      appointments: mergeCalendarAppointmentRows(
+        previous.appointments.filter((row) => {
+          if (normalizeText(row?.organisationId || row?.organisation_id) !== normalizeText(organisationId)) return false
+          return normalizeLeadIdentityKey(row?.leadId) !== leadKey &&
+            !(row?.relatedEntityType === 'lead' && normalizeLeadIdentityKey(row?.relatedEntityId) === leadKey)
+        }),
+        leadAppointmentLoad.rows,
+      ),
+    }))
+  }, [leadAppointmentLoad.status, leadAppointmentLoad.rows, selectedLead?.leadId, organisationId])
+  const selectedLeadAppointments = leadAppointmentLoad.rows
   const selectedLeadAppointmentFilterOptions = useMemo(
     () => getLeadAppointmentFilterOptions(selectedLeadAppointments),
     [selectedLeadAppointments],
@@ -17278,12 +17291,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   const calendarScopedAppointments = useMemo(() => {
     if (!isCalendarMode) return records.appointments
-    if (!isPrincipal) return records.appointments
+    const calendarRows = calendarAppointmentLoad.rows
+    if (!isPrincipal) return calendarRows
     const filterKey = normalizeKey(calendarAgentFilter)
-    if (!filterKey || filterKey === 'all') return records.appointments
+    if (!filterKey || filterKey === 'all') return calendarRows
     const selectedAgent = agentOptions.find((agent) => [agent.id, agent.userId, agent.email].some((key) => normalizeKey(key) === filterKey))
     const filterKeys = [filterKey, selectedAgent?.id, selectedAgent?.userId, selectedAgent?.email].map(normalizeKey).filter(Boolean)
-    return records.appointments.filter((appointment) => {
+    return calendarRows.filter((appointment) => {
       const appointmentKeys = [
         appointment?.assignedAgentId,
         appointment?.assignedAgentEmail,
@@ -17301,7 +17315,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         .filter(Boolean)
       return filterKeys.some((key) => appointmentKeys.includes(key))
     })
-  }, [agentOptions, calendarAgentFilter, isCalendarMode, isPrincipal, records.appointments])
+  }, [agentOptions, calendarAgentFilter, isCalendarMode, isPrincipal, records.appointments, calendarAppointmentLoad.rows])
 
   const appointmentSummary = useMemo(() => {
     if (!organisationId) {
@@ -32946,7 +32960,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       ) : null}
 
       {isCalendarMode ? (
-        <section className="space-y-4" data-testid="agent-calendar-ready" aria-busy="false">
+        <section className="space-y-4" data-testid="agent-calendar-ready" aria-busy={calendarAppointmentLoad.status === 'loading'}>
+          {calendarAppointmentLoad.status === 'loading' ? <p role="status">Loading appointments…</p> : null}
+          {calendarAppointmentLoad.error ? <div role="alert" className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm">{calendarAppointmentLoad.error} Previously loaded appointments remain visible. <button type="button" className="underline" onClick={calendarAppointmentLoad.reload}>Retry appointments</button></div> : null}
           <article className="rounded-[22px] border border-[#dde4ee] bg-white p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
@@ -39503,7 +39519,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   ) : null}
 
                   {leadWorkspaceTab === 'appointments' ? (
-                    selectedLeadIsSeller ? (
+                    <>
+                    {leadAppointmentLoad.status === 'loading' ? <p role="status">Loading appointment history…</p> : null}
+                    {leadAppointmentLoad.error ? <div role="alert" className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm">{leadAppointmentLoad.error} <button type="button" className="underline" onClick={leadAppointmentLoad.reload}>Retry appointments</button></div> : null}
+                    {((leadAppointmentLoad.status === 'ready') || selectedLeadAppointments.length > 0) ? (selectedLeadIsSeller ? (
                       <Suspense
                         fallback={(
                           <div className="rounded-[20px] border border-[#dce7f2] bg-white p-6 shadow-[0_10px_30px_rgba(31,54,78,0.045)]">
@@ -39546,7 +39565,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       getAppointmentTypeLabel={getAppointmentTypeLabel}
                     />
                       </Suspense>
-                    )
+                    )) : null}
+                    </>
                   ) : null}
 
                   {resolveBuyerWorkspaceTabKey(leadWorkspaceTab) === BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY && !selectedLeadIsSeller ? (

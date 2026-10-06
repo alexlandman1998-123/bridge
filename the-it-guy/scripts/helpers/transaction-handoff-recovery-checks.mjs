@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 export async function runHandoffRecoveryChecks({ db, owner, partner, another, user }) {
   const q = (sql, args = []) => db.query(sql, args)
   await db.exec(readFileSync(new URL('../../../supabase/migrations/20261004085417_transaction_handoff_operator_recovery.sql', import.meta.url),'utf8'))
+  await db.exec(readFileSync(new URL('../../../supabase/migrations/20261006071528_handoff_queue_canonical_authority.sql', import.meta.url),'utf8'))
   const tx=(await q(`insert into transactions(id,organisation_id,finance_type,finance_managed_by,onboarding_status) values(gen_random_uuid(),$1,'bond','bond_originator','signed_otp_received') returning id`,[owner])).rows[0].id
   await q(`insert into transaction_role_players(id,transaction_id,role_type,assigned_organisation_id,status,assignment_status) values(gen_random_uuid(),$1,'bond_originator',$2,'active','active')`,[tx,partner])
   const h=(await q("select * from transaction_handoffs where transaction_id=$1 and role_type='bond_originator'",[tx])).rows[0]

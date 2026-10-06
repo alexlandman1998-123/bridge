@@ -61,3 +61,19 @@ export async function readOrganisationHandoffQueue(organisationId, { bucket = 'a
   }
   return data
 }
+
+
+export async function readOrganisationHandoffQueueAccess(organisationId, { client = supabase } = {}) {
+  if (!client || !organisationId) throw new Error('Connect to the workspace to check handoff queue access.')
+  const { data, error } = await client.rpc('bridge_read_organisation_handoff_queue_access', {
+    p_organisation_id: organisationId,
+  })
+  if (error) {
+    if (['42883', 'PGRST202'].includes(error.code)) throw new Error('The handoff queue access update is not available yet. Contact your workspace administrator.')
+    throw error
+  }
+  if (data?.success !== true || data.organisationId !== organisationId || typeof data.canManage !== 'boolean') {
+    throw new Error('Handoff queue access could not be confirmed. Refresh before acting.')
+  }
+  return data.canManage
+}

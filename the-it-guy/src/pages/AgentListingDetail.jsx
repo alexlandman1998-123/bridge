@@ -358,7 +358,7 @@ import {
   readSellerOnboardingAttorneyRecommendation,
   reviseSellerOnboardingAttorneyRecommendation,
 } from '../core/documents/sellerOnboardingAttorneyRecommendation'
-import { reviewSellerDocument, sendSellerDocumentManualReminder } from '../services/sellerDocumentReviewWorkflowService'
+import { reviewSellerDocument, sendSellerDocumentManualReminder, repairSellerDocumentRequirementLinks, isUnlinkedSellerReviewDocument } from '../services/sellerDocumentReviewWorkflowService'
 import { issueSelectedSellerDocumentRequests } from '../services/sellerDocumentRequestOrchestrationService'
 import {
   getSellerBasePackAliases,
@@ -7133,6 +7133,24 @@ function AgentListingDetail() {
       setDetailError(error?.message || 'Unable to open this document.')
     } finally {
       setOpeningSellerDocumentKey('')
+    }
+  }
+
+  const handleRepairSellerDocumentLinks = async () => {
+    setSellerDocumentWorkflowAction('repair_links')
+    setDetailError('')
+    setDetailMessage('')
+    try {
+      const result = await repairSellerDocumentRequirementLinks({ listingId: listingRecord?.id })
+      await loadListingData()
+      setDetailMessage(`${result.linkedCount} file(s) linked to their exact checklist requirements. Files remain pending review.`)
+      if (result.remainingCount > 0) {
+        setDetailError(`${result.linkedCount} file(s) linked. ${result.remainingCount} file(s) still need a matching active seller requirement. Confirm the ownership details and refresh the checklist before retrying.`)
+      }
+    } catch (error) {
+      setDetailError(error?.message || 'Unable to repair document checklist links.')
+    } finally {
+      setSellerDocumentWorkflowAction('')
     }
   }
 
@@ -17559,6 +17577,25 @@ function AgentListingDetail() {
                   })}
                 </nav>
               </article>
+
+              {(listingRecord?.documents || []).some(isUnlinkedSellerReviewDocument) ? (
+                <div role="status" className="rounded-[20px] border border-[#e5d2ad] bg-[#fffaf0] p-4 text-sm text-[#8a5b16]">
+                  <p className="font-semibold">Files need a checklist link</p>
+                  <p className="mt-1">Confirm the seller’s ownership details and refresh the document checklist. Files without an exact requirement cannot be reviewed. If the correct requirement is missing, correct the seller details first.</p>
+                  <Button type="button" size="sm" variant="secondary" className="mt-3" onClick={() => void handleRepairSellerDocumentLinks()} disabled={Boolean(sellerDocumentWorkflowAction || sellerDocumentUploadKey)}>
+                    {sellerDocumentWorkflowAction === 'repair_links' ? 'Checking checklist links…' : 'Repair exact checklist links'}
+                  </Button>
+                  <p className="mt-2 text-xs">Only a unique exact match on this listing is linked. Files stay pending review.</p>
+                  <ul className="mt-2 list-disc pl-5">
+                    {(listingRecord?.documents || []).filter(isUnlinkedSellerReviewDocument).map((document) => (
+                      <li key={document.id}>
+                        {document.document_name || document.document_type || 'Uploaded file'}
+                        <button type="button" className="ml-2 text-xs font-semibold underline disabled:opacity-60" disabled={Boolean(openingSellerDocumentKey)} onClick={() => void handleOpenSellerDocument({ key: document.id, filePath: document.storage_path || document.file_path, url: document.file_url || document.url })}>View file</button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
 
               {detailError && /document|upload|requirement|checklist/i.test(detailError) ? (
                 <div role="alert" className="flex items-start gap-3 rounded-[16px] border border-[#efcbc8] bg-[#fff7f6] px-4 py-3 text-[#963d35]">

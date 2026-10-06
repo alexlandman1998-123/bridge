@@ -10,6 +10,50 @@ export async function runHandoffQueueChecks({ db, owner, partner, user }) {
   await q("update organisation_users set scope_level='branch' where organisation_id=$1 and user_id=$2",[owner,user])
   assert.equal((await read()).success,false)
   await q("update organisation_users set scope_level='workspace_hq' where organisation_id=$1 and user_id=$2",[owner,user])
+  // Exercise authority through the real queue and metadata commands. Roll back
+  // every membership change so later dispatch and recovery checks keep their fixture.
+  await db.exec(`alter table organisation_users
+    add column if not exists workspace_role text,
+    add column if not exists organisation_role text,
+    add column if not exists primary_branch_id uuid,
+    add column if not exists branch_scope text`)
+  await q('begin')
+  try {
+    const cases = [
+      { label:'canonical owner with home branch and missing scope',role:'agent',workspace:'owner',scope:null,branch:true,expected:true },
+      { label:'Kingdom owner with all-branches scope and home branch',role:'owner',workspace:'owner',scope:null,branch:true,branchScope:'all_branches',expected:true },
+      { label:'legacy all-branches manager',role:'manager',scope:null,branch:true,branchScope:'all_branches',expected:true },
+      { label:'unknown branch scope fails closed',role:'owner',scope:null,branchScope:'unknown',expected:false },
+      { label:'organisation role fallback',role:'agent',organisation:'owner',scope:null,branch:true,expected:true },
+      { label:'canonical downgrade wins over legacy owner',role:'owner',workspace:'agent',scope:'workspace_hq',expected:false },
+      { label:'explicit branch owner',role:'owner',workspace:'owner',scope:'branch',expected:false },
+      { label:'explicit assigned owner',role:'owner',workspace:'owner',scope:'assigned',expected:false },
+      { label:'legacy branch scope restriction',role:'owner',scope:null,branchScope:'assigned_branch',expected:false },
+      { label:'HQ manager',role:'agent',workspace:'hq_manager',scope:'workspace_hq',branch:true,expected:true },
+      { label:'manager without a home branch is not automatically HQ',role:'manager',scope:null,expected:false },
+      { label:'manager at home branch without HQ scope',role:'manager',scope:null,branch:true,expected:false },
+      { label:'explicit organisation manager',role:'manager',scope:'organisation',branch:true,expected:true },
+      { label:'inactive member',role:'owner',scope:'workspace_hq',membership:'inactive',expected:false },
+      { label:'suspended membership',role:'owner',scope:'workspace_hq',status:'suspended',expected:false },
+      { label:'principal without a populated scope',role:'agent',workspace:'principal',scope:null,branch:true,expected:true },
+      { label:'ordinary agent with HQ scope',role:'agent',scope:'workspace_hq',expected:false },
+    ]
+    for (const entry of cases) {
+      await q(`update organisation_users set role=$3,workspace_role=$4,organisation_role=$5,
+        scope_level=$6,primary_branch_id=$7,branch_scope=$8,membership_status=$9,status=$10,branch_id=null
+        where organisation_id=$1 and user_id=$2`,
+        [owner,user,entry.role,entry.workspace || null,entry.organisation || null,entry.scope,
+          entry.branch ? owner : null,entry.branchScope || null,entry.membership || null,entry.status || 'active'])
+      const access=(await q('select bridge_read_organisation_handoff_queue_access($1) result',[owner])).rows[0].result
+      assert.deepEqual(access,{success:true,organisationId:owner,canManage:entry.expected},entry.label)
+      assert.equal((await read()).success,entry.expected,entry.label)
+    }
+    await q("select set_config('test.uid','',false)")
+    assert.equal((await read()).success,false,'anonymous user cannot read organisation work')
+    assert.equal((await q('select bridge_read_organisation_handoff_queue_access($1) result',[owner])).rows[0].result.canManage,false)
+    const privileges=(await q("select has_function_privilege('anon','bridge_read_organisation_handoff_queue_access(uuid)','EXECUTE') as anonymous,has_function_privilege('authenticated','bridge_read_organisation_handoff_queue_access(uuid)','EXECUTE') as member")).rows[0]
+    assert.deepEqual(privileges,{anonymous:false,member:true})
+  } finally { await q('rollback') }
   const create=async (org=owner)=>(await q(`insert into transactions(id,organisation_id,finance_type,finance_managed_by,onboarding_status,transaction_reference) values(gen_random_uuid(),$1,'bond','bond_originator','signed_otp_received','Queue matter') returning id`,[org])).rows[0].id
   const tx=await create()
   await q(`insert into transaction_role_players(id,transaction_id,role_type,assigned_organisation_id,status,assignment_status) values(gen_random_uuid(),$1,'bond_originator',$2,'active','active')`,[tx,partner])

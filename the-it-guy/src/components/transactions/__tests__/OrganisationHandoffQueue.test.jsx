@@ -1,14 +1,15 @@
 // @vitest-environment jsdom
 import React from 'react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
-vi.mock('../../../services/transactionHandoffRegisterService', () => ({ readOrganisationHandoffQueue: vi.fn() }))
+vi.mock('../../../services/transactionHandoffRegisterService', () => ({ readOrganisationHandoffQueue: vi.fn(), readOrganisationHandoffQueueAccess: vi.fn() }))
 vi.mock('../TransactionHandoffRegisterPanel', () => ({ default: ({ transactionId }) => <div>Reviewing {transactionId}</div> }))
-import { readOrganisationHandoffQueue } from '../../../services/transactionHandoffRegisterService'
+import { readOrganisationHandoffQueue, readOrganisationHandoffQueueAccess } from '../../../services/transactionHandoffRegisterService'
 import OrganisationHandoffQueue from '../OrganisationHandoffQueue'
 const row = { queue_id: 'handoff', handoff_id: 'handoff', transaction_id: 'matter', matter_label: 'A9-123', role_type: 'bond_originator', bucket: 'data_gap', queue_reason: 'provider_receipt_missing', pending_since: '2026-10-04T08:00:00Z', destination_company_name: 'Beta Bond', exception_keys: [] }
 const result = { success: true, organisationId: 'agency', total: 1, hasMore: false, counts: { data_gap: 1 }, items: [row] }
+beforeEach(() => readOrganisationHandoffQueueAccess.mockResolvedValue(true))
 afterEach(() => { cleanup(); vi.resetAllMocks() })
 const view = org => <MemoryRouter><OrganisationHandoffQueue organisationId={org} /></MemoryRouter>
 describe('organisation handoff queue', () => {
@@ -48,6 +49,7 @@ describe('organisation handoff queue', () => {
   let resolveOld
   readOrganisationHandoffQueue.mockImplementationOnce(() => new Promise(resolve => { resolveOld = resolve })).mockResolvedValueOnce({ ...result, organisationId: 'current', items: [{ ...row, matter_label: 'Current agency' }] })
   const { rerender } = render(view('old'))
+  await vi.waitFor(() => expect(readOrganisationHandoffQueue).toHaveBeenCalledWith('old', { bucket:'all',offset:0 }))
   rerender(view('current'))
   await screen.findByText('Current agency · Bond originator')
   await act(async () => resolveOld(result))
@@ -57,4 +59,28 @@ describe('organisation handoff queue', () => {
   rerender(view('next'))
   expect(screen.queryByText('Reviewing matter')).toBeNull()
  })
+})
+
+
+it('does not show organisation controls or load handoffs for a branch user', async () => {
+  readOrganisationHandoffQueueAccess.mockResolvedValue(false)
+  render(view('agency'))
+  await vi.waitFor(() => expect(screen.queryByRole('status')).toBeNull())
+  expect(readOrganisationHandoffQueue).not.toHaveBeenCalled()
+  expect(screen.queryByRole('region', { name:'Organisation handoff queue' })).toBeNull()
+  expect(screen.queryByText('An organisation manager at agency headquarters must view this queue.')).toBeNull()
+})
+it('reports an unavailable access check and never loads agency data', async () => {
+  readOrganisationHandoffQueueAccess.mockRejectedValue(new Error('Queue access update unavailable'))
+  render(view('agency'))
+  expect((await screen.findByRole('alert')).textContent).toBe('Queue access update unavailable')
+  expect(readOrganisationHandoffQueue).not.toHaveBeenCalled()
+})
+it('ignores a late access grant for the previous organisation', async () => {
+  let resolveOld
+  readOrganisationHandoffQueueAccess.mockImplementationOnce(() => new Promise(resolve => { resolveOld=resolve })).mockResolvedValueOnce(false)
+  const { rerender }=render(view('old'))
+  rerender(view('current'))
+  await act(async () => resolveOld(true))
+  expect(readOrganisationHandoffQueue).not.toHaveBeenCalled()
 })

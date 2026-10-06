@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
+import vm from 'node:vm'
 
 const pagePath = path.resolve('src/pages/agency/AgencyPipelinePage.jsx')
 const servicePath = path.resolve('src/lib/agencyPipelineService.js')
@@ -66,7 +67,7 @@ assert.match(
 )
 assert.match(
   pageSource,
-  /from: resolvedAppointmentRange\?\.from \|\| null,[\s\S]*to: resolvedAppointmentRange\?\.to \|\| null,/,
+  /from: appointmentRange\.from, to: appointmentRange\.to,/,
   'pipeline appointment reloads should pass from/to to listAppointmentsAsync',
 )
 assert.match(
@@ -101,3 +102,26 @@ assert.match(
 )
 
 console.log('appointment query range phase 2 checks passed')
+
+// Exercise the actual calendar helpers for the reported far-future date.
+const context = vm.createContext({ Date, normalizeText: value => String(value || '').trim() })
+vm.runInContext(`
+const PIPELINE_APPOINTMENT_ROLLING_PAST_DAYS = 45;
+const PIPELINE_APPOINTMENT_ROLLING_FUTURE_DAYS = 180;
+const PIPELINE_CALENDAR_RANGE_PADDING_DAYS = 7;
+${['toDateOnlyIso', 'addCalendarDays', 'getStartOfLocalDay', 'getEndExclusiveOfLocalDay', 'getStartOfWeek', 'getMonthGridDays', 'getWeekDays', 'getCalendarRangeDays', 'getVisibleCalendarDateRange', 'buildAppointmentReloadRange', 'parseAppointmentDate', 'isAppointmentWithinReloadRange', 'mergeAppointmentRowsForReload'].map(name => extractFunctionBlock(pageSource, name)).join('\n')}
+`, context)
+const range = vm.runInContext("buildAppointmentReloadRange({ isCalendarMode: true, calendarView: 'month', calendarCursorDate: new Date(2027, 9, 1) })", context)
+for (const view of ['day', 'week', 'three_day', 'month']) {
+  const visible = context.buildAppointmentReloadRange({ isCalendarMode: true, calendarView: view, calendarCursorDate: new Date(2027, 9, 1) })
+  assert.equal(context.isAppointmentWithinReloadRange({ date: '2027-10-01', startTime: '11:40' }, visible), true)
+  assert.equal(context.isAppointmentWithinReloadRange({ dateTime: visible.to }, visible), false, 'upper calendar bound must remain exclusive')
+}
+const future = { appointmentId: 'future', organisationId: 'agency', date: '2027-10-01', startTime: '11:40' }
+assert.equal(context.isAppointmentWithinReloadRange(future, range), true, 'October 1, 2027 must be included in the navigated calendar range')
+const retained = context.mergeAppointmentRowsForReload([
+  future, { appointmentId: 'past', organisationId: 'agency', date: '2025-10-01', startTime: '11:40' },
+  { appointmentId: 'other-org', organisationId: 'other', date: '2025-10-01', startTime: '11:40' },
+], [], { range, organisationId: 'agency' })
+assert.deepEqual(Array.from(retained, row => row.appointmentId), ['past'], 'a verified empty range removes deleted rows but retains history only in this organisation')
+console.log('future date navigation and scoped merge checks passed')

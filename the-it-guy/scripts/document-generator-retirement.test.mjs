@@ -101,6 +101,7 @@ test('signed mandate and OTP uploads persist files and requirement links with no
       sanitizeDocumentFileName: value => value,
       uploadToPrivateListingDocumentsBucket: async () => 'documents',
       getPrivateListingDocumentRequirements: async () => [requirement],
+      resolvePrivateListingDocumentRequirement: () => requirement,
       privateListingDocumentKeysOverlap: (a, b) => a === b,
       isMandateDocumentRow: row => row.document_type === 'signed_mandate',
       insertPrivateListingDocumentRow: async (_, row) => {
@@ -135,5 +136,45 @@ test('bond signing refuses before accessing clients, writing submissions or crea
   for (const name of ['prepareClientPortalBondApplicationSubmission', 'prepareClientPortalJointBondApplicationSubmission', 'createOrReuseBondApplicationSigningPacket']) {
     const fn = vm.runInNewContext(`(${functionSource('../src/lib/api.js', name)})`, { assertBondApplicationSigningAvailable })
     await assert.rejects(fn(), { code: 'bond_application_signing_unavailable' })
+  }
+})
+
+test('seller upload preflight refuses unreadable or missing requirements before Storage is touched', async () => {
+  const resolveRequirement = vm.runInNewContext(`(${functionSource('../src/services/privateListingService.js', 'resolvePrivateListingDocumentRequirement')})`, {
+    normalizeUuid: value => String(value || ''), normalizeCompatibilityKey: value => String(value || ''),
+    getPrivateListingDocumentMatchAliases: key => [key],
+  })
+  for (const unreadable of [false, true]) {
+    let storageCalls = 0
+    const upload = vm.runInNewContext(`(${functionSource('../src/services/privateListingService.js', 'uploadPrivateListingDocument')})`, {
+      requireClient: () => ({}), getCurrentUser: async () => ({ id: 'agent' }),
+      normalizeUuid: value => String(value || ''), normalizeCompatibilityKey: value => String(value || ''),
+      validateDocumentUploadFile: file => ({ safeName: file.name }), getPrivateListingById: async () => ({ id: 'listing' }),
+      getPrivateListingDocumentRequirements: async () => { if (unreadable) throw Error('Checklist unavailable'); return [] },
+      resolvePrivateListingDocumentRequirement: resolveRequirement,
+      sanitizeDocumentFileName: value => value,
+      uploadToPrivateListingDocumentsBucket: async () => { storageCalls++; throw Error('Storage touched') },
+    })
+    await assert.rejects(upload('listing', { name:'company.pdf' }, { requirementKey:'cipc_documents', documentType:'cipc_documents' }), unreadable ? /Checklist unavailable/ : /No active seller requirement/)
+    assert.equal(storageCalls, 0)
+    if (!unreadable) {
+      await assert.rejects(upload('listing', { name:'offer.pdf' }, { requirementKey:'wet_ink_otp_buyer_offer',documentType:'wet_ink_otp_buyer',documentCategory:'buyer_offer',visibility:'internal' }), /Storage touched/)
+      assert.equal(storageCalls, 1)
+    }
+  }
+})
+
+test('schema fallback cannot discard persisted requirement identity', async () => {
+  const insert = vm.runInNewContext(`(${functionSource('../src/services/privateListingService.js', 'insertPrivateListingDocumentRow')})`, {
+    getMissingPrivateListingDocumentInsertColumn: error => error.column,
+  })
+  for (const column of ['requirement_id', 'canonical_requirement_instance_id']) {
+    const attempts = []
+    const error = { column, code:'PGRST204' }
+    const client = { from: () => ({ insert(payload) { attempts.push(payload); return { select: () => ({ single: async () => ({ error }) }) } } }) }
+    const result = await insert(client, { requirement_id:'requirement', canonical_requirement_instance_id:'canonical' }, { requiredColumns:['requirement_id','canonical_requirement_instance_id'] })
+    assert.equal(result.error, error)
+    assert.equal(attempts.length, 1)
+    assert.equal(attempts[0][column], column === 'requirement_id' ? 'requirement' : 'canonical')
   }
 })

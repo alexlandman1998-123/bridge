@@ -1756,7 +1756,7 @@ function buildPrivateListingRequirementMutationPayload(row = {}, columns = []) {
     request_priority: normalizeText(row?.request_priority || row?.requestPriority || ''),
     request_due_date: normalizeNullableText(row?.request_due_date || row?.requestDueDate),
     request_delivery_channels: requestDeliveryChannels,
-    request_dedupe_key: normalizeText(row?.request_dedupe_key || row?.requestDedupeKey || ''),
+    request_dedupe_key: normalizeNullableText(row?.request_dedupe_key || row?.requestDedupeKey),
     request_source: normalizeText(row?.request_source || row?.requestSource || ''),
     requested_at: normalizeNullableText(row?.requested_at || row?.requestedAt),
     request_revision: Number(row?.request_revision || row?.requestRevision || 0),
@@ -2190,6 +2190,31 @@ function getPrivateListingDocumentMatchAliases(key = '') {
   const basePackCanonicalKey = normalizeSellerBasePackKey(normalized)
   if (basePackCanonicalKey) return getSellerBasePackAliases(basePackCanonicalKey)
   return PRIVATE_LISTING_DOCUMENT_MATCH_ALIASES[normalized] || [normalized]
+}
+
+// Upload links must identify one active requirement. Display matching may be
+// permissive for legacy files; persistence must never use substring matching.
+export function resolvePrivateListingDocumentRequirement(requirements = [], {
+  requirementId = '', requirementKey = '', documentType = '', required = true,
+} = {}) {
+  const active = requirements.filter((row) => row?.id && row.is_required !== false && row.isRequired !== false && normalizeCompatibilityKey(row.status) !== 'not_applicable')
+  const requestedId = normalizeUuid(requirementId)
+  const requestedKey = normalizeCompatibilityKey(requirementKey || documentType)
+  const aliases = getPrivateListingDocumentMatchAliases(requestedKey)
+  const matchesKey = (row) => aliases.includes(normalizeCompatibilityKey(row.requirement_key || row.key))
+  if (requestedId) {
+    const row = active.find((candidate) => normalizeUuid(candidate.id) === requestedId)
+    if (!row || (requestedKey && requestedKey !== 'listing_document' && !matchesKey(row))) {
+      throw new Error('The selected document requirement is unavailable or does not match this file. Refresh the seller checklist before uploading.')
+    }
+    return row
+  }
+  const exact = active.filter((row) => normalizeCompatibilityKey(row.requirement_key || row.key) === requestedKey)
+  const candidates = exact.length ? exact : active.filter(matchesKey)
+  if (candidates.length > 1) throw new Error('More than one seller requirement matches this file. Select the exact checklist item before uploading.')
+  if (candidates.length === 1) return candidates[0]
+  if (required) throw new Error('No active seller requirement matches this file. Confirm the seller details and refresh the checklist before uploading.')
+  return null
 }
 
 function privateListingDocumentKeysOverlap(left = '', right = '') {
@@ -6840,15 +6865,19 @@ export async function ensurePrivateListingDocumentRequirements(listingId, requir
   const sourceRows = Array.isArray(requirementRows) ? requirementRows : []
   if (!sourceRows.length) return getPrivateListingDocumentRequirements(normalizedListingId)
 
-  const existingRequirements = await getPrivateListingDocumentRequirements(normalizedListingId).catch(() => [])
-  const ensuredRows = sourceRows
+  const existingRequirements = await getPrivateListingDocumentRequirements(normalizedListingId)
+  const mappedRows = sourceRows
     .map((row) => {
       const requirementKey = normalizeCompatibilityKey(row?.requirementKey || row?.requirement_key || row?.key)
       if (!requirementKey) return null
-      const existing = existingRequirements.find((requirement) => {
-        const rowKey = normalizeCompatibilityKey(requirement?.requirement_key || requirement?.key)
-        return privateListingDocumentKeysOverlap(requirementKey, rowKey)
-      })
+      // Request identity must be exact: a spouse/owner identity request cannot
+      // borrow the seller request's id, approval or unique delivery key.
+      const aliases = getPrivateListingDocumentMatchAliases(requirementKey)
+      const existing = existingRequirements.find((requirement) =>
+        normalizeCompatibilityKey(requirement?.requirement_key || requirement?.key) === requirementKey,
+      ) || existingRequirements.find((requirement) =>
+        aliases.includes(normalizeCompatibilityKey(requirement?.requirement_key || requirement?.key)),
+      )
       const generatedFrom = {
         ...(existing?.generated_from && typeof existing.generated_from === 'object' ? existing.generated_from : {}),
         ...(row?.generatedFrom && typeof row.generatedFrom === 'object' ? row.generatedFrom : {}),
@@ -6883,7 +6912,7 @@ export async function ensurePrivateListingDocumentRequirements(listingId, requir
       return {
         ...(existing?.id ? { id: existing.id } : {}),
         private_listing_id: normalizedListingId,
-        requirement_key: requirementKey,
+        requirement_key: existing?.requirement_key || normalizeSellerBasePackKey(requirementKey) || requirementKey,
         requirement_name: normalizeText(row?.requirementName || row?.requirement_name || row?.label || row?.name) || requirementKey,
         requirement_description: normalizeText(row?.requirementDescription || row?.requirement_description || row?.description),
         requirement_group: normalizeText(row?.requirementGroup || row?.requirement_group || row?.group || 'compliance'),
@@ -6910,6 +6939,7 @@ export async function ensurePrivateListingDocumentRequirements(listingId, requir
       }
     })
     .filter(Boolean)
+  const ensuredRows = [...new Map(mappedRows.map((row) => [row.requirement_key, row])).values()]
 
   if (!ensuredRows.length) return existingRequirements
 
@@ -7105,6 +7135,9 @@ export async function linkPrivateListingDocument(listingId, {
     )
   })
   if (existingRow) {
+    if (!existingRow.requirement_id && (requirementKey || ['seller_visible', 'client_visible'].includes(visibility))) {
+      throw new Error('This existing file has no exact seller requirement link. Use Repair exact checklist links before reviewing it.')
+    }
     if (pendingTransactionPromotion) {
       await markPrivateListingDocumentsPendingTransactionPromotion(normalizedListingId, {
         requirementKeys: [requirementKey || documentType || documentCategory].filter(Boolean),
@@ -7124,20 +7157,11 @@ export async function linkPrivateListingDocument(listingId, {
   }
 
   const normalizedRequirementKey = normalizeCompatibilityKey(requirementKey || documentType || documentCategory)
-  const requirements = await getPrivateListingDocumentRequirements(normalizedListingId).catch(() => [])
-  const matchedRequirement = requirements.find((requirement) => {
-    const rowKey = normalizeCompatibilityKey(requirement?.requirement_key || requirement?.key)
-    if (normalizedRequirementKey && privateListingDocumentKeysOverlap(normalizedRequirementKey, rowKey)) return true
-    return isMandateDocumentRow({
-      document_type: rowKey,
-      category: requirement?.requirement_group,
-      document_name: requirement?.requirement_name,
-    }) && isMandateDocumentRow({
-      document_type: documentType,
-      category: documentCategory,
-      document_name: documentName,
-    })
-  }) || null
+  const requirements = await getPrivateListingDocumentRequirements(normalizedListingId)
+  const matchedRequirement = resolvePrivateListingDocumentRequirement(requirements, {
+    requirementKey, documentType: documentType || documentCategory,
+    required: Boolean(requirementKey) || ['seller_visible', 'client_visible'].includes(visibility),
+  })
   const mandateDocument = isMandateDocumentRow({
     document_type: documentType || matchedRequirement?.requirement_key,
     category: documentCategory || matchedRequirement?.requirement_group,
@@ -7148,7 +7172,7 @@ export async function linkPrivateListingDocument(listingId, {
   const insertPayload = {
     private_listing_id: normalizedListingId,
     requirement_id: matchedRequirement?.id || null,
-    document_type: normalizeText(documentType) || 'listing_document',
+    document_type: matchedRequirement?.requirement_key || normalizeText(documentType) || 'listing_document',
     category: normalizeText(documentCategory || documentType) || 'Other',
     document_name: normalizeText(documentName) || normalizeText(documentType) || 'Listing document',
     storage_path: normalizedFilePath || null,
@@ -7165,16 +7189,21 @@ export async function linkPrivateListingDocument(listingId, {
     insertPayload.promotion_error = null
   }
 
-  const inserted = await insertPrivateListingDocumentRow(client, insertPayload)
+  const inserted = await insertPrivateListingDocumentRow(client, insertPayload, {
+    requiredColumns: matchedRequirement ? ['requirement_id', 'canonical_requirement_instance_id'] : [],
+  })
   if (inserted.error) {
     if (isMissingTableError(inserted.error, 'private_listing_documents')) {
       rememberMissingTable('private_listing_documents')
       return null
     }
-    if (!isMissingColumnError(inserted.error)) throw inserted.error
+    throw inserted.error
   }
 
   const documentRow = normalizeDocumentRows(inserted.data ? [{ ...insertPayload, ...inserted.data }] : [insertPayload])[0] || null
+  if (!documentRow?.id || (matchedRequirement && documentRow.requirement_id !== matchedRequirement.id)) {
+    throw new Error('The document checklist link could not be verified after saving. Refresh before retrying.')
+  }
   const enrichedRows = documentRow ? await enrichPrivateListingDocumentRows(client, [documentRow]) : []
   const linkedDocument = enrichedRows[0] || documentRow
   const linkedRequirementId = linkedDocument?.requirement_id || matchedRequirement?.id || null
@@ -8918,6 +8947,18 @@ export async function uploadPrivateListingDocument(listingId, file, {
     throw new Error('This listing is unavailable or you do not have permission to upload documents to it.')
   }
 
+  // Resolve before Storage so a missing or unreadable checklist leaves no file behind.
+  const requirements = await getPrivateListingDocumentRequirements(normalizedListingId)
+  const normalizedRequirementId = normalizeUuid(requirementId)
+  const normalizedRequirementKey = normalizeCompatibilityKey(requirementKey || documentType || documentCategory)
+  // Internal buyer-offer evidence uses offer-specific references rather than
+  // seller checklist requirements (for example a wet-ink OTP pack).
+  const isInternalOfferEvidence = normalizeCompatibilityKey(documentCategory) === 'buyer_offer' && visibility === 'internal' && !requirementId && !reviewedSigningVersionId
+  const matchedRequirement = resolvePrivateListingDocumentRequirement(requirements, {
+    requirementId, requirementKey, documentType: documentType || documentCategory,
+    required: !isInternalOfferEvidence && (Boolean(requirementId || requirementKey || reviewedSigningVersionId) || documentType !== 'listing_document' || ['seller_visible', 'client_visible'].includes(visibility)),
+  })
+
   const safeOriginalName = sanitizeDocumentFileName(documentName || filePolicy.safeName, 'listing-document')
   const filePath = `private-listings/${normalizedListingId}/documents/${Date.now()}-${safeOriginalName}`
 
@@ -8926,23 +8967,6 @@ export async function uploadPrivateListingDocument(listingId, file, {
     contentType: file.type || undefined,
   })
 
-  const requirements = await getPrivateListingDocumentRequirements(normalizedListingId).catch(() => [])
-  const normalizedRequirementId = normalizeUuid(requirementId)
-  const normalizedRequirementKey = normalizeCompatibilityKey(requirementKey || documentType || documentCategory)
-  const matchedRequirement = requirements.find((requirement) => {
-    if (normalizedRequirementId && normalizeUuid(requirement?.id) === normalizedRequirementId) return true
-    const rowKey = normalizeCompatibilityKey(requirement?.requirement_key || requirement?.key)
-    if (normalizedRequirementKey && privateListingDocumentKeysOverlap(normalizedRequirementKey, rowKey)) return true
-    return isMandateDocumentRow({
-      document_type: rowKey,
-      category: requirement?.requirement_group,
-      document_name: requirement?.requirement_name,
-    }) && isMandateDocumentRow({
-      document_type: documentType,
-      category: documentCategory,
-      document_name: documentName || file.name,
-    })
-  }) || null
   const uploadedStatus = normalizeText(status) || 'uploaded'
   const mandateUpload = isMandateDocumentRow({
     document_type: documentType || matchedRequirement?.requirement_key,
@@ -8953,7 +8977,7 @@ export async function uploadPrivateListingDocument(listingId, file, {
   const insertPayload = {
     private_listing_id: normalizedListingId,
     requirement_id: matchedRequirement?.id || normalizedRequirementId || null,
-    document_type: normalizeText(documentType) || 'listing_document',
+    document_type: matchedRequirement?.requirement_key || normalizeText(documentType) || 'listing_document',
     category: normalizeText(documentCategory || documentType) || 'Other',
     document_name: safeOriginalName,
     storage_path: filePath,
@@ -8970,7 +8994,10 @@ export async function uploadPrivateListingDocument(listingId, file, {
   }
 
   const inserted = await insertPrivateListingDocumentRow(client, insertPayload, {
-    requiredColumns: reviewedSigningVersionId ? ['reviewed_signing_version_id', 'reviewed_signing_version_digest'] : [],
+    requiredColumns: [
+      ...(matchedRequirement ? ['requirement_id', 'canonical_requirement_instance_id'] : []),
+      ...(reviewedSigningVersionId ? ['reviewed_signing_version_id', 'reviewed_signing_version_digest'] : []),
+    ],
   })
   if (inserted.error) {
     try {

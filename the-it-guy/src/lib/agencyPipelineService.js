@@ -1981,7 +1981,7 @@ function applyAppointmentScope(rows = [], { includeAll = false, agentId = '', ag
   })
 }
 
-async function listAppointmentsFromSupabase(organisationId, { includeAll = false, agentId = '', agentEmail = '', agentKeys = [], listingId = '', from = null, to = null } = {}) {
+async function listAppointmentsFromSupabase(organisationId, { includeAll = false, agentId = '', agentEmail = '', agentKeys = [], listingId = '', leadId = '', from = null, to = null } = {}) {
   const scopedOrganisationId = normalizeText(organisationId)
   const scopedListingId = normalizeText(listingId)
   const selectModern =
@@ -2011,15 +2011,19 @@ async function listAppointmentsFromSupabase(organisationId, { includeAll = false
 
   let appointmentRows = []
   let appointmentError = null
-  const rpcResult = await supabase.rpc('bridge_list_calendar_appointments', {
+  const rpcResult = await supabase.rpc(leadId ? 'bridge_list_lead_appointments' : 'bridge_list_calendar_appointments', {
     p_organisation_id: scopedOrganisationId,
     p_include_all: includeAll === true,
-    p_listing_id: scopedListingId || null,
-    p_from: from || null,
-    p_to: to || null,
+    ...(leadId ? { p_lead_id: normalizeText(leadId) } : {
+      p_listing_id: scopedListingId || null,
+      p_from: from || null,
+      p_to: to || null,
+    }),
   })
+  if (leadId && rpcResult.error) throw rpcResult.error
   if (!rpcResult.error) {
-    appointmentRows = Array.isArray(rpcResult.data) ? rpcResult.data : []
+    if (!Array.isArray(rpcResult.data)) throw new Error('Appointment data could not be verified. Please retry.')
+    appointmentRows = rpcResult.data
   } else {
     if (!['PGRST202', '42883'].includes(normalizeText(rpcResult.error?.code))) {
       console.warn('[appointments] calendar RPC failed; falling back to direct appointment query.', rpcResult.error)
@@ -2093,7 +2097,9 @@ async function listAppointmentsFromSupabase(organisationId, { includeAll = false
     }
   })
 
-  return applyAppointmentScope(rows, { includeAll, agentId, agentEmail, agentKeys, listingId: scopedListingId, from, to })
+  // The lead reader has already applied the canonical calendar access rules.
+  // A lead owner can see bookings assigned to another agent.
+  return applyAppointmentScope(rows, { includeAll: leadId ? true : includeAll, agentId, agentEmail, agentKeys, listingId: scopedListingId, from: leadId ? null : from, to: leadId ? null : to })
 }
 
 async function replaceAppointmentParticipantsInSupabase({
@@ -3655,11 +3661,11 @@ export function getAppointmentsDashboardSummary(
   return buildAppointmentsDashboardSummary(rows, { now })
 }
 
-export async function listAppointmentsAsync(organisationId, { includeAll = false, agentId = '', agentEmail = '', agentKeys = [], listingId = '', from = null, to = null } = {}) {
+export async function listAppointmentsAsync(organisationId, { includeAll = false, agentId = '', agentEmail = '', agentKeys = [], listingId = '', leadId = '', from = null, to = null } = {}) {
   const fallbackReason = resolveAppointmentsDemoFallbackReason(organisationId)
   if (fallbackReason) {
     assertLocalFallbackAllowed('agencyPipelineService.listAppointmentsAsync', organisationId, fallbackReason)
-    return listAppointments(organisationId, { includeAll, agentId, agentEmail, agentKeys, listingId, from, to })
+    return listAppointments(organisationId, { includeAll, agentId, agentEmail, agentKeys, listingId, from: leadId ? null : from, to: leadId ? null : to }).filter((row) => !leadId || row.leadId === leadId || (row.relatedEntityType === 'lead' && row.relatedEntityId === leadId))
   }
   if (!isUuidLike(normalizeText(organisationId))) {
     throw new WorkspaceContextError('invalid_service_workspace_context', {
@@ -3671,10 +3677,10 @@ export async function listAppointmentsAsync(organisationId, { includeAll = false
     throw new Error('Appointment scheduling requires the database connection.')
   }
   try {
-    return await listAppointmentsFromSupabase(organisationId, { includeAll, agentId, agentEmail, agentKeys, listingId, from, to })
+    return await listAppointmentsFromSupabase(organisationId, { includeAll, agentId, agentEmail, agentKeys, listingId, leadId, from, to })
   } catch (error) {
     if (isPermissionDeniedError(error) && isUnsafeFallbackAllowed()) {
-      return listAppointments(organisationId, { includeAll, agentId, agentEmail, agentKeys, listingId, from, to })
+      return listAppointments(organisationId, { includeAll, agentId, agentEmail, agentKeys, listingId, from: leadId ? null : from, to: leadId ? null : to }).filter((row) => !leadId || row.leadId === leadId || (row.relatedEntityType === 'lead' && row.relatedEntityId === leadId))
     }
     throw error
   }

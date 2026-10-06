@@ -91,3 +91,27 @@ export async function listSellerDocumentReviewQueue({ listingId = '', client = s
 }
 
 export { REVIEW_ACTIONS, REVIEWABLE_STATUSES }
+
+
+export async function repairSellerDocumentRequirementLinks({ listingId = '', client = supabase } = {}) {
+  if (!text(listingId)) throw new Error('Listing id is required.')
+  const result = await requireClient(client).rpc('bridge_repair_private_listing_seller_document_links', {
+    p_listing_id: text(listingId),
+  })
+  if (result.error) {
+    if (/function .* does not exist|could not find the function|PGRST202/i.test(text(result.error.message))) {
+      throw new Error('The seller document link repair update must be deployed before repairing these files.')
+    }
+    throw workflowError(result.error, 'Unable to repair seller document links.')
+  }
+  if (result.data?.ok !== true) throw new Error('The document link repair could not be verified. Refresh and try again.')
+  return result.data
+}
+
+
+export function isUnlinkedSellerReviewDocument(document = {}) {
+  return !text(document.requirement_id || document.requirementId)
+    && REVIEWABLE_STATUSES.has(key(document.status))
+    && key(document.document_type || document.documentType) !== 'listing_document'
+    && key(document.category || document.documentCategory) !== 'buyer_offer'
+}

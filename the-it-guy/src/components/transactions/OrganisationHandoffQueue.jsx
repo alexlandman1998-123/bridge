@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { readOrganisationHandoffQueue } from '../../services/transactionHandoffRegisterService'
+import { readOrganisationHandoffQueue, readOrganisationHandoffQueueAccess } from '../../services/transactionHandoffRegisterService'
 import { buildTransactionHandoffRegisterItems } from '../../core/transactions/transactionHandoffRegister'
 import TransactionHandoffRegisterPanel from './TransactionHandoffRegisterPanel'
 
@@ -30,8 +30,16 @@ export default function OrganisationHandoffQueue({ organisationId }) {
   useEffect(() => {
     if (!organisationId) return undefined
     let active = true
-    readOrganisationHandoffQueue(organisationId, { bucket, offset }).then(
-      data => { if (active) setSnapshot({ key, data }) },
+    readOrganisationHandoffQueueAccess(organisationId).then(async allowed => {
+      if (!active) return
+      if (!allowed) { setSnapshot({ key, denied: true }); return }
+      try {
+        const data = await readOrganisationHandoffQueue(organisationId, { bucket, offset })
+        if (active) setSnapshot({ key, data })
+      } catch (error) {
+        if (active) setSnapshot({ key, error: error.message || 'Unable to load organisation handoffs.' })
+      }
+    },
       error => { if (active) setSnapshot({ key, error: error.message || 'Unable to load organisation handoffs.' }) },
     )
     return () => { active = false }
@@ -45,6 +53,8 @@ export default function OrganisationHandoffQueue({ organisationId }) {
   }, [organisationId])
   if (!organisationId) return null
   const current = snapshot?.key === key ? snapshot : null
+  if (current?.denied) return null
+  if (!current) return <p role="status" className="text-sm text-slate-600">Checking handoff queue access…</p>
   return <section aria-label="Organisation handoff queue" className="rounded-[18px] border border-[#dfe9f4] bg-white p-5">
     <div className="flex flex-wrap items-center justify-between gap-3">
       <h2 className="text-lg font-semibold">Organisation handoff queue</h2>
