@@ -1,3 +1,4 @@
+import './attorney-stage-workspace.css'
 import { useEffect, useRef, useState } from 'react'
 import { ArrowLeft, ArrowRight, Check, CheckCircle2, ChevronRight, MoreVertical, X } from 'lucide-react'
 import Button from '../../ui/Button.jsx'
