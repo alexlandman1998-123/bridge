@@ -57,7 +57,7 @@ globalThis.fetch = async (input) => {
   }
 
   if (request.table === 'transaction_participants') {
-    const isScopedRelationQuery = request.select.includes('transaction:transactions!inner(organisation_id)')
+    const isScopedRelationQuery = /transaction:transactions!(?:transaction_participants_transaction_id_fkey!)?inner\(organisation_id\)/.test(request.select)
     const isUserIdentity = url.searchParams.get('user_id') === 'eq.user-1'
 
     if (participantResponseMode === 'relationship-cache' && isScopedRelationQuery) {
@@ -187,7 +187,7 @@ try {
   for (const request of participantRequests()) {
     assert.match(
       request.select,
-      /transaction:transactions!inner\(organisation_id\)/,
+      /transaction:transactions!(?:transaction_participants_transaction_id_fkey!)?inner\(organisation_id\)/,
       'each scoped participant query must join its parent transaction',
     )
     assert.equal(
@@ -256,7 +256,7 @@ try {
   )
   for (const request of participantRequests()) {
     assert.equal(
-      request.select.includes('transaction:transactions!inner(organisation_id)'),
+      /transaction:transactions!(?:transaction_participants_transaction_id_fkey!)?inner\(organisation_id\)/.test(request.select),
       false,
       'an unscoped compatibility caller must retain the compact legacy participant projection',
     )
