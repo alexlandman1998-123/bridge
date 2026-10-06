@@ -1,0 +1,53 @@
+.mobile-transactions { color: #152621; padding-top: 18px; }
+.mobile-transactions-intro { margin-bottom: 24px; }
+.mobile-transactions-intro h1 { margin: 0; font-size: 30px; font-weight: 550; letter-spacing: -.05em; line-height: 1.2; }
+.mobile-transactions-intro p { margin: 8px 0 0; color: #627068; font-size: 12px; line-height: 1.5; }
+.mobile-transactions-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 22px; }
+.mobile-property-deal { display: block; width: 100%; padding: 0; overflow: hidden; border: 1px solid #dce4de; border-radius: 20px; background: #fff; color: #152621; text-align: left; cursor: pointer; box-shadow: 0 8px 24px #15262106; }
+.mobile-property-deal-media { position: relative; display: block; width: 100%; aspect-ratio: 1.9; overflow: hidden; background: linear-gradient(135deg, #edf3ef, #dce8df); }
+.mobile-property-deal-media > img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.mobile-property-deal-media.has-photo::after { content: ''; position: absolute; inset: 0; background: linear-gradient(180deg, #00000018, transparent 40%, #00000065); pointer-events: none; }
+.mobile-property-deal-placeholder { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px; padding: 40px 20px; color: #81978a; }
+.mobile-property-deal-placeholder > span { font-size: 10px; }
+.mobile-property-deal-stage { position: absolute; z-index: 1; top: 14px; left: 14px; max-width: calc(100% - 28px); padding: 6px 10px; border: 1px solid #ffffff80; border-radius: 8px; background: #ffffffed; color: #166b50; font-size: 11px; font-weight: 550; line-height: 1.5; overflow-wrap: anywhere; }
+.mobile-property-deal-type { position: absolute; z-index: 1; bottom: 14px; left: 16px; right: 16px; color: #526a5d; font-size: 10px; line-height: 1.4; text-transform: capitalize; }
+.mobile-property-deal-media.has-photo .mobile-property-deal-type { color: #fff; }
+.mobile-property-deal-body { display: block; padding: 20px 20px 0; }
+.mobile-property-deal-unit { display: inline-block; margin-bottom: 10px; padding: 5px 9px; border-radius: 7px; background: #edf5ef; color: #166b50; font-size: 13px; font-weight: 550; line-height: 1.4; }
+.mobile-property-deal-title { display: block; color: #152621; font-size: 21px; font-weight: 550; line-height: 1.3; letter-spacing: -.035em; overflow-wrap: anywhere; }
+.mobile-property-deal-location { display: flex; align-items: flex-start; gap: 5px; margin-top: 7px; color: #627068; font-size: 12px; line-height: 1.5; }
+.mobile-property-deal-location > svg { flex-shrink: 0; margin-top: 2px; }
+.mobile-property-deal-facts { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 20px; margin-top: 20px; }
+.mobile-property-deal-label { display: block; margin-bottom: 6px; color: #627068; font-size: 10px; font-weight: 400; line-height: 1.4; }
+.mobile-property-deal-price { display: block; color: #152621; font-size: 20px; font-weight: 550; line-height: 1.3; letter-spacing: -.03em; overflow-wrap: anywhere; }
+.mobile-property-deal-buyer { display: block; color: #33493e; font-size: 13px; font-weight: 500; line-height: 1.6; overflow-wrap: anywhere; }
+.mobile-property-deal-action { display: block; margin-top: 18px; padding-top: 16px; border-top: 1px solid #e5ebe6; color: #33493e; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.mobile-property-deal-footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 52px; margin-top: 18px; border-top: 1px solid #e5ebe6; color: #166b50; font-size: 11px; line-height: 1.5; }
+.mobile-property-deal-footer > span { overflow-wrap: anywhere; }
+.mobile-property-deal-footer > svg { flex-shrink: 0; }
+.mobile-property-deal:focus-visible { outline: 2px solid #5eaf86; outline-offset: 4px; }
+.mobile-property-deal:active { background: #f7faf7; }
+a.mobile-property-deal { text-decoration: none; }
+article.mobile-property-deal { cursor: default; }
+article.mobile-property-deal .mobile-property-deal-body { padding-bottom: 20px; }
+.mobile-development-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 22px; }
+.mobile-development-facts strong { display: block; font-size: 22px; font-weight: 500; line-height: 1.4; }
+.mobile-development-facts .mobile-property-deal-label { margin: 4px 0 0; }
+.mobile-transactions-intro h1 { overflow-wrap: anywhere; }
+.mobile-detail-back { display: flex; align-items: center; gap: 8px; min-height: 44px; margin: -8px 0 12px; padding: 0; border: 0; background: none; color: #166b50; font-size: 12px; }
+.mobile-portfolio-section { margin-top: 30px; }
+.mobile-portfolio-section h2 { margin: 0 0 18px; color: #152621; font-size: 21px; font-weight: 550; letter-spacing: -.035em; }
+.mobile-portfolio-empty { color: #627068; font-size: 13px; line-height: 1.7; }
+.mobile-unit-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; padding: 18px 0; border-top: 1px solid #dce4de; font-size: 12px; line-height: 1.6; }
+.mobile-unit-row > div { min-width: 0; }
+.mobile-unit-row strong { display: block; font-size: 14px; font-weight: 500; overflow-wrap: anywhere; }
+.mobile-unit-row > div > span { display: block; margin-top: 5px; color: #627068; }
+.mobile-unit-row > span { flex-shrink: 0; color: #166b50; }
+.mobile-deal-details { margin: 0; }
+.mobile-deal-details > div { display: grid; grid-template-columns: 80px minmax(0, 1fr); gap: 20px; padding: 16px 0; border-top: 1px solid #dce4de; font-size: 13px; line-height: 1.6; }
+.mobile-deal-details dt { color: #627068; }
+.mobile-deal-details dd { margin: 0; overflow-wrap: anywhere; }
+.mobile-detail-link { display: flex; align-items: center; justify-content: space-between; gap: 16px; width: 100%; min-height: 52px; margin-top: 24px; border: 0; background: none; color: #166b50; text-align: left; font-size: 13px; }
+.mobile-lead-status { display: inline-block; margin-bottom: 12px; border-radius: 8px; background: #edf5ef; padding: 6px 10px; color: #166b50; font-size: 11px; text-transform: capitalize; }
+.mobile-developer-lead .mobile-portfolio-empty { display: block; margin-top: 12px; }
+@media (max-width: 360px) { .mobile-property-deal-body { padding-inline: 16px; } .mobile-property-deal-facts { gap: 14px; } .mobile-property-deal-price { font-size: 18px; } }

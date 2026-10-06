@@ -33,8 +33,9 @@ export function MobileDraftCard({ draft, actionLabel = 'Pending sync' }) {
   )
 }
 
-export default function MobileCreateSheet({ open = false, type = '', route = '', onClose, onSaved }) {
-  const config = getMobileCreateConfig(type)
+export default function MobileCreateSheet({ open = false, type = '', route = '', onClose, onSaved, copyOverrides = null, draftContext = null }) {
+  const baseConfig = getMobileCreateConfig(type)
+  const config = baseConfig ? { ...baseConfig, ...copyOverrides } : null
 
   useEffect(() => {
     if (!open || typeof document === 'undefined') return undefined
@@ -49,17 +50,18 @@ export default function MobileCreateSheet({ open = false, type = '', route = '',
 
   return (
     <MobileCreateSheetForm
-      key={type}
+      key={`${type}:${draftContext?.developerOrgId || ''}`}
       config={config}
       type={type}
       route={route}
       onClose={onClose}
       onSaved={onSaved}
+      draftContext={draftContext}
     />
   )
 }
 
-function MobileCreateSheetForm({ config, type, route, onClose, onSaved }) {
+function MobileCreateSheetForm({ config, type, route, onClose, onSaved, draftContext }) {
   const [form, setForm] = useState(() => createInitialForm())
   const [savedDraft, setSavedDraft] = useState(null)
   const Icon = config.icon || Plus
@@ -75,6 +77,7 @@ function MobileCreateSheetForm({ config, type, route, onClose, onSaved }) {
       title: form.primary.trim() || config.title,
       module: config.module,
       payload: {
+        ...draftContext,
         actionType: type,
         primary: form.primary.trim(),
         secondary: form.secondary.trim(),

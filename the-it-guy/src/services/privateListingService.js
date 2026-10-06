@@ -2953,9 +2953,9 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
   )
   const canonicalSellerEmail = pickFirstText(canonicalSellerFacts.email, canonicalSellerFacts.sellerEmail).toLowerCase()
   const canonicalSellerPhone = pickFirstText(canonicalSellerFacts.phone, canonicalSellerFacts.sellerPhone, canonicalSellerFacts.mobile)
-  const unitNumber = pickFirstText(canonicalPropertyFacts.unitNumber, canonicalPropertyFacts.unit_number, canonicalSellerFacts.unitNumber, canonicalSellerFacts.unit_number, canonicalSellerFacts.property_unit_number)
-  const sectionNumber = pickFirstText(canonicalPropertyFacts.sectionNumber, canonicalPropertyFacts.section_number, canonicalSellerFacts.sectionNumber, canonicalSellerFacts.section_number, canonicalSellerFacts.property_section_number)
-  const complexName = pickFirstText(canonicalPropertyFacts.complexName, canonicalPropertyFacts.complex_name, canonicalPropertyFacts.schemeName, canonicalPropertyFacts.scheme_name, canonicalSellerFacts.complexName, canonicalSellerFacts.complex_name, canonicalSellerFacts.property_complex_name)
+  const unitNumber = pickFirstText(canonicalPropertyFacts.unitNumber, canonicalPropertyFacts.unit_number, canonicalPropertyFacts.scheme?.unit_number, canonicalSellerFacts.unitNumber, canonicalSellerFacts.unit_number, canonicalSellerFacts.property_unit_number)
+  const sectionNumber = pickFirstText(canonicalPropertyFacts.sectionNumber, canonicalPropertyFacts.section_number, canonicalPropertyFacts.scheme?.section_number, canonicalSellerFacts.sectionNumber, canonicalSellerFacts.section_number, canonicalSellerFacts.property_section_number)
+  const complexName = pickFirstText(canonicalPropertyFacts.complexName, canonicalPropertyFacts.complex_name, canonicalPropertyFacts.scheme?.name, canonicalPropertyFacts.scheme?.complex_name, canonicalPropertyFacts.schemeName, canonicalPropertyFacts.scheme_name, canonicalSellerFacts.complexName, canonicalSellerFacts.complex_name, canonicalSellerFacts.property_complex_name)
   const estateName = pickFirstText(canonicalPropertyFacts.estateName, canonicalPropertyFacts.estate_name, canonicalSellerFacts.estateName, canonicalSellerFacts.estate_name, canonicalSellerFacts.property_estate_name)
   const sectionalTitleNumber = pickFirstText(canonicalPropertyFacts.sectionalTitleNumber, canonicalPropertyFacts.sectional_title_number, canonicalPropertyFacts.sectionalTitleScheme, canonicalSellerFacts.sectionalTitleNumber, canonicalSellerFacts.sectional_title_number)
   const streetNumber = pickFirstText(row.street_number, onboardingFormData.streetNumber, onboardingFormData.street_number, canonicalPropertyFacts.streetNumber, canonicalPropertyFacts.street_number)
@@ -3320,9 +3320,9 @@ function mapPrivateListingSummaryRow(row = {}, onboardingCommissionByListingId =
   const canonicalPropertyFacts = canonicalSellerFacts.property && typeof canonicalSellerFacts.property === 'object'
     ? canonicalSellerFacts.property
     : {}
-  const unitNumber = pickFirstText(canonicalPropertyFacts.unitNumber, canonicalPropertyFacts.unit_number, canonicalSellerFacts.unitNumber, canonicalSellerFacts.unit_number, canonicalSellerFacts.property_unit_number)
-  const sectionNumber = pickFirstText(canonicalPropertyFacts.sectionNumber, canonicalPropertyFacts.section_number, canonicalSellerFacts.sectionNumber, canonicalSellerFacts.section_number, canonicalSellerFacts.property_section_number)
-  const complexName = pickFirstText(canonicalPropertyFacts.complexName, canonicalPropertyFacts.complex_name, canonicalPropertyFacts.schemeName, canonicalPropertyFacts.scheme_name, canonicalSellerFacts.complexName, canonicalSellerFacts.complex_name, canonicalSellerFacts.property_complex_name)
+  const unitNumber = pickFirstText(canonicalPropertyFacts.unitNumber, canonicalPropertyFacts.unit_number, canonicalPropertyFacts.scheme?.unit_number, canonicalSellerFacts.unitNumber, canonicalSellerFacts.unit_number, canonicalSellerFacts.property_unit_number)
+  const sectionNumber = pickFirstText(canonicalPropertyFacts.sectionNumber, canonicalPropertyFacts.section_number, canonicalPropertyFacts.scheme?.section_number, canonicalSellerFacts.sectionNumber, canonicalSellerFacts.section_number, canonicalSellerFacts.property_section_number)
+  const complexName = pickFirstText(canonicalPropertyFacts.complexName, canonicalPropertyFacts.complex_name, canonicalPropertyFacts.scheme?.name, canonicalPropertyFacts.scheme?.complex_name, canonicalPropertyFacts.schemeName, canonicalPropertyFacts.scheme_name, canonicalSellerFacts.complexName, canonicalSellerFacts.complex_name, canonicalSellerFacts.property_complex_name)
   const estateName = pickFirstText(canonicalPropertyFacts.estateName, canonicalPropertyFacts.estate_name, canonicalSellerFacts.estateName, canonicalSellerFacts.estate_name, canonicalSellerFacts.property_estate_name)
   const sectionalTitleNumber = pickFirstText(canonicalPropertyFacts.sectionalTitleNumber, canonicalPropertyFacts.sectional_title_number, canonicalPropertyFacts.sectionalTitleScheme, canonicalSellerFacts.sectionalTitleNumber, canonicalSellerFacts.sectional_title_number)
 
@@ -6621,15 +6621,18 @@ export async function getAgentPrivateListingSummaries(
     coreFieldsOnly = false,
     includeArchivedImports = false,
     includeArchivedListings = false,
+    fetchAll = false,
+    includePublicationDetails = false,
+    requireAvailable = false,
+    client = requireClient(),
   } = {},
 ) {
-  const client = requireClient()
   const normalizedAgentId = normalizeUuid(agentId)
   const normalizedOrgId = normalizeUuid(organisationId)
   const normalizedAgentIds = normalizeUuidList([normalizedAgentId, ...assignedAgentIds])
   if (!includeAllOrganisationListings && !normalizedAgentIds.length) return []
 
-  const createSummaryQuery = ({ includeIsActive = true } = {}) => {
+  const createSummaryQuery = ({ includeIsActive = true, offset = 0 } = {}) => {
     const coreSelectColumns = [
       'id',
       'listing_reference',
@@ -6709,7 +6712,8 @@ export async function getAgentPrivateListingSummaries(
       }
     }
 
-    return queryBuilder.order('updated_at', { ascending: false })
+    const ordered = queryBuilder.order('updated_at', { ascending: false })
+    return fetchAll ? ordered.order('id', { ascending: true }).range(offset, offset + 199) : ordered
   }
 
   let includeIsActive = true
@@ -6722,15 +6726,36 @@ export async function getAgentPrivateListingSummaries(
       query = await createSummaryQuery({ includeIsActive })
       continue
     }
-    if (isMissingTableError(query.error, 'private_listings')) return []
+    if (!requireAvailable && isMissingTableError(query.error, 'private_listings')) return []
     throw query.error
   }
 
-  const rows = (Array.isArray(query.data) ? query.data : []).filter((row) => isVisiblePrivateListingRow(row, { includeArchivedImports, includeArchivedListings }))
+  const allRows = [...(Array.isArray(query.data) ? query.data : [])]
+  if (fetchAll) {
+    while ((query.data || []).length === 200) {
+      query = await createSummaryQuery({ includeIsActive, offset: allRows.length })
+      if (query.error) throw query.error
+      allRows.push(...(query.data || []))
+    }
+  }
+  const rows = allRows.filter((row) => isVisiblePrivateListingRow(row, { includeArchivedImports, includeArchivedListings }))
   const onboardingCommissionByListingId = includeCommissionTerms
     ? await fetchOnboardingCommissionRowsForListings(client, rows.map((row) => row.id))
     : null
-  return rows.map((row) => mapPrivateListingSummaryRow(row, onboardingCommissionByListingId)).filter(Boolean)
+  const publicationMap = includePublicationDetails ? new Map() : null
+  if (includePublicationDetails) {
+    for (let offset = 0; offset < rows.length; offset += 200) {
+      const page = await fetchPublicationRowsForListings(client, rows.slice(offset, offset + 200).map((row) => row.id), { strict: true })
+      for (const [id, publication] of page) publicationMap.set(id, publication)
+    }
+  }
+  return rows.map((row) => {
+    const listing = mapPrivateListingSummaryRow(row, onboardingCommissionByListingId)
+    if (!includePublicationDetails) return listing
+    const publication = publicationMap.get(String(row.id)) || {}
+    const property = listing.sellerCanonicalFacts?.property || {}
+    return { ...listing, bedrooms: publication.bedrooms ?? property.bedrooms ?? null, bathrooms: publication.bathrooms ?? property.bathrooms ?? null, garages: publication.garages ?? property.garages ?? null, floorSize: publication.floor_size ?? property.floorSize ?? null, erfSize: publication.erf_size ?? property.erfSize ?? null, priceOnApplication: Boolean(property.price_on_application || property.priceOnApplication) }
+  }).filter(Boolean)
 }
 
 export async function createPrivateListingActivity(payload = {}) {

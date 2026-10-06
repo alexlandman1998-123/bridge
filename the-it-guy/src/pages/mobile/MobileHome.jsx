@@ -9,14 +9,15 @@ import {
   Target,
   UserPlus,
 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { useOptionalOrganisation } from '../../context/OrganisationContext'
 import { MobileCard, MobileErrorState, MobileLoadingState } from '../../components/mobile-shell/MobileShellStates'
-import { getMobileDashboardSnapshot, getMobileDashboardSnapshotAsync } from '../../services/mobileDashboardService'
+import { getCachedMobileDashboardSnapshot, getMobileDashboardSnapshot, getMobileDashboardSnapshotAsync, MOBILE_DASHBOARD_UPDATED_EVENTS } from '../../services/mobileDashboardService'
 import { trackMobileMetric } from '../../services/observability/monitoring'
 import AgentDashboard from '../../components/mobile-shell/AgentDashboard'
+import { addCalendarDays, sastDayStart } from '../../core/appointments/attorneyCalendarModel.js'
 
 const CARD_TONES = {
   green: 'bg-[#e5f6ed] text-[#1f8b65]',
@@ -293,17 +294,20 @@ export default function MobileHome() {
   const organisation = organisationContext?.organisation || null
   const organisationLoading = Boolean(organisationContext?.loading)
   const navigate = useNavigate()
+  const requestRef = useRef(0)
   const [searchParams] = useSearchParams()
   const [state, setState] = useState(() => {
     try {
-      return { loading: true, error: '', snapshot: getMobileDashboardSnapshot({ workspace }) }
+      const cached = getCachedMobileDashboardSnapshot({ workspace, organisation, allowStale: true })
+      return { workspace, organisation, loading: !cached, error: '', snapshot: cached || getMobileDashboardSnapshot({ workspace }) }
     } catch (error) {
-      return { loading: false, error: error?.message || "We couldn't load your dashboard.", snapshot: null }
+      return { workspace, organisation, loading: false, error: error?.message || "We couldn't load your dashboard.", snapshot: null }
     }
   })
   const showUnsupportedNotice = searchParams.get('mobileNotice') === 'unsupported'
 
   const load = useCallback(() => {
+    const current = ++requestRef.current
     if (organisationLoading) {
       setState((previous) => ({ ...previous, loading: true, error: '' }))
       return () => {}
@@ -311,21 +315,22 @@ export default function MobileHome() {
 
     let active = true
     setState((previous) => ({ ...previous, loading: !previous.snapshot, error: '' }))
-    getMobileDashboardSnapshotAsync({ workspace, organisation })
+    getMobileDashboardSnapshotAsync({ workspace, organisation, force: true })
       .then((snapshot) => {
-        if (!active) return
-        setState({ loading: false, error: '', snapshot })
+        if (!active || current !== requestRef.current) return
+        setState({ workspace, organisation, loading: false, error: '', snapshot })
       })
       .catch((error) => {
-        if (!active) return
+        if (!active || current !== requestRef.current) return
         try {
           setState({
+            workspace, organisation,
             loading: false,
             error: '',
             snapshot: getMobileDashboardSnapshot({ workspace }),
           })
         } catch {
-          setState({ loading: false, error: error?.message || "We couldn't load your dashboard.", snapshot: null })
+          setState({ workspace, organisation, loading: false, error: error?.message || "We couldn't load your dashboard.", snapshot: null })
         }
       })
 
@@ -338,27 +343,54 @@ export default function MobileHome() {
     if (organisationLoading) return undefined
 
     let active = true
-    Promise.resolve()
-      .then(() => getMobileDashboardSnapshotAsync({ workspace, organisation }))
-      .then((snapshot) => {
-        if (!active) return
-        setState({ loading: false, error: '', snapshot })
-      })
-      .catch((error) => {
-        if (!active) return
-        try {
-          setState({
-            loading: false,
-            error: '',
-            snapshot: getMobileDashboardSnapshot({ workspace }),
-          })
-        } catch {
-          setState({ loading: false, error: error?.message || "We couldn't load your dashboard.", snapshot: null })
-        }
-      })
+    function refresh({ reset = false, force = false } = {}) {
+      const current = ++requestRef.current
+      Promise.resolve()
+        .then(() => {
+          if (!active || current !== requestRef.current) return null
+          if (reset) {
+            const cached = getCachedMobileDashboardSnapshot({ workspace, organisation, allowStale: true })
+            setState({ workspace, organisation, loading: !cached, error: '', snapshot: cached })
+          }
+          return getMobileDashboardSnapshotAsync({ workspace, organisation, force })
+        })
+        .then((snapshot) => {
+          if (!active || current !== requestRef.current) return
+          setState({ workspace, organisation, loading: false, error: '', snapshot })
+        })
+        .catch((error) => {
+          if (!active || current !== requestRef.current) return
+          try {
+            setState({
+              workspace, organisation,
+              loading: false,
+              error: '',
+              snapshot: getMobileDashboardSnapshot({ workspace }),
+            })
+          } catch {
+            setState({ workspace, organisation, loading: false, error: error?.message || "We couldn't load your dashboard.", snapshot: null })
+          }
+        })
+    }
+    function refreshAfterUpdate() { refresh({ force: true }) }
+    function resume() { if (document.visibilityState === 'visible') refresh() }
+    function cancelPendingRequests() { ++requestRef.current }
+    refresh({ reset: true })
+    MOBILE_DASHBOARD_UPDATED_EVENTS.forEach((event) => window.addEventListener(event, refreshAfterUpdate))
+    document.addEventListener('visibilitychange', resume)
+    let midnightTimer
+    function scheduleDayRefresh() {
+      const nextDay = addCalendarDays(sastDayStart(new Date()), 1)
+      midnightTimer = window.setTimeout(() => { refresh({ force: true }); scheduleDayRefresh() }, nextDay.getTime() - Date.now() + 1000)
+    }
+    scheduleDayRefresh()
 
     return () => {
       active = false
+      cancelPendingRequests()
+      MOBILE_DASHBOARD_UPDATED_EVENTS.forEach((event) => window.removeEventListener(event, refreshAfterUpdate))
+      document.removeEventListener('visibilitychange', resume)
+      window.clearTimeout(midnightTimer)
     }
   }, [organisation, organisationLoading, workspace])
 
@@ -400,13 +432,13 @@ export default function MobileHome() {
     navigate(action.to)
   }
 
-  if (state.loading) return <MobileLoadingState label="Loading mobile dashboard" />
+  if (organisationLoading || state.workspace !== workspace || state.organisation !== organisation || state.loading) return <MobileLoadingState label="Loading mobile dashboard" />
   if (state.error) return <MobileErrorState title="We couldn't load your dashboard." body={state.error} onRetry={load} />
 
-  if (['agent', 'principal', 'default'].includes(snapshot?.category)) {
+  if (['agent', 'principal', 'developer', 'default'].includes(snapshot?.category)) {
     return <>
       {showUnsupportedNotice && <MobileCard><h2>That page is not available on mobile yet.</h2><p>You can continue from your mobile workspace.</p></MobileCard>}
-      <AgentDashboard snapshot={snapshot} onOpen={handlePriorityOpen} onAction={handleQuickAction} />
+      <AgentDashboard snapshot={snapshot} onOpen={handlePriorityOpen} onRefresh={load} />
     </>
   }
 

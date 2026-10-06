@@ -1,0 +1,11 @@
+.mobile-page-menu { position: fixed; inset: auto 12px calc(100px + env(safe-area-inset-bottom)); width: calc(100% - 24px); max-width: 360px; max-height: calc(100dvh - 150px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); margin: 0 auto; overflow-y: auto; overscroll-behavior: contain; padding: 14px 18px 8px; border: 1px solid #dce4de; border-radius: 22px; background: #fff; color: #152621; box-shadow: 0 12px 40px #15262126; }
+.mobile-page-menu::backdrop { background: #15262138; }
+.mobile-page-menu-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.mobile-page-menu-header h2 { margin: 0; font-size: 19px; font-weight: 550; letter-spacing: -.03em; }
+.mobile-page-menu-header button { display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; border: 0; border-radius: 50%; background: #f3f6f3; color: #627068; }
+.mobile-page-menu nav { margin-top: 10px; }
+.mobile-page-menu nav a { display: flex; align-items: center; gap: 12px; min-height: 66px; padding: 10px 0; border-top: 1px solid #e5ebe6; color: #152621; font-size: 14px; font-weight: 500; text-decoration: none; }
+.mobile-page-menu nav a > svg { margin-left: auto; flex-shrink: 0; color: #81978a; }
+.mobile-page-menu-icon { display: flex; align-items: center; justify-content: center; flex-shrink: 0; width: 40px; height: 40px; border-radius: 12px; background: #edf5ef; color: #166b50; }
+.mobile-page-menu nav a[aria-current] { color: #166b50; }
+.mobile-page-menu button:focus-visible, .mobile-page-menu a:focus-visible { outline: 2px solid #5eaf86; outline-offset: 2px; }

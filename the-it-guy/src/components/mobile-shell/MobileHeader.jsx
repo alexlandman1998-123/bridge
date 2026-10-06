@@ -1,8 +1,9 @@
-import { Bell, UserCircle } from 'lucide-react'
+import { UserCircle } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useOptionalOrganisation } from '../../context/OrganisationContext'
 import { useWorkspace } from '../../context/WorkspaceContext'
+import MobileNotificationBell from './MobileNotificationBell.jsx'
 
 function normalizeText(value = '') {
   return String(value || '').trim()
@@ -38,7 +39,6 @@ export default function MobileHeader() {
   const initials = getInitials(workspaceName)
   const [logoLoadFailure, setLogoLoadFailure] = useState({ url: '', failed: false })
   const showLogo = Boolean(logoUrl) && !(logoLoadFailure.url === logoUrl && logoLoadFailure.failed)
-  const unreadCount = 3
 
   return (
     <header className="sticky top-0 z-30 border-b border-[#e4ebf2]/80 bg-[#f7f9fc]/94 px-5 pb-4 pt-[max(0.9rem,env(safe-area-inset-top))] backdrop-blur-xl" data-mobile-header>
@@ -62,24 +62,13 @@ export default function MobileHeader() {
               </span>
               <span className="ml-2.5 min-w-0">
                 <span className="block max-w-[190px] truncate text-[14px] font-semibold leading-tight text-[#10243a]">{workspaceName}</span>
-                <span className="block text-[10px] font-medium uppercase tracking-[0.08em] text-[#6f8192]">Agency workspace</span>
+                <span className="block text-[10px] font-medium uppercase tracking-[0.08em] text-[#6f8192]">{workspace.role === 'developer' ? 'Developer workspace' : 'Agency workspace'}</span>
               </span>
             </>
           )}
         </Link>
 
-        <Link
-          to="/mobile/notifications"
-          className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[#e4ebf2] bg-white text-[#10243a] shadow-[0_10px_24px_rgba(15,23,42,0.07)]"
-          aria-label="Notifications"
-        >
-          <Bell className="h-[22px] w-[22px]" strokeWidth={1.8} />
-          {unreadCount ? (
-            <span className="absolute -right-0.5 -top-1 flex h-6 min-w-6 items-center justify-center rounded-full bg-[#1f8b65] px-1.5 text-[12px] font-semibold text-white">
-              {unreadCount}
-            </span>
-          ) : null}
-        </Link>
+        <MobileNotificationBell />
         <Link
           to="/mobile/more"
           className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[#e4ebf2] bg-white text-[#10243a] shadow-[0_10px_24px_rgba(15,23,42,0.07)]"

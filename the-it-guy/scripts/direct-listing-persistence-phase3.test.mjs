@@ -315,7 +315,7 @@ test('publication sync can still save description when feature columns are missi
 test('approved listings publish their selected agency-website channel after the public projection is ready', () => {
   assert.match(agentListingsSource, /import \{ setWebsiteListingPublication \} from '..\/services\/websiteListingPublicationService'/)
   assert.match(agentListingsSource, /function shouldAutoPublishToAgencyWebsite\(listingStatus = '', selectedChannels = \[\]\)/)
-  assert.match(agentListingsSource, /status: !uploadError && shouldAutoPublishToAgencyWebsite\(context\.listingStatus, form\.selectedSyndicationChannels\) \? 'Published' : 'Draft'/)
+  assert.match(agentListingsSource, /status: !context\.deferPublication && !uploadError && shouldAutoPublishToAgencyWebsite\(context\.listingStatus, form\.selectedSyndicationChannels\) \? 'Published' : 'Draft'/)
   assert.match(agentListingsSource, /setWebsiteListingPublication\(created\.listing\.id, 'publish'\)/)
   assert.match(agentListingsSource, /setWebsiteListingPublication\(listingId, 'publish'\)/)
 })

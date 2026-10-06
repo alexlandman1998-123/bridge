@@ -1,0 +1,59 @@
+.mobile-calendar { min-width: 0; }
+.mobile-calendar-controls { min-width: 0; padding: 12px; border: 1px solid #dce4de; border-radius: 20px; background: #fff; }
+.mobile-calendar-month-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.mobile-calendar-jump { flex: 1; min-width: 0; }
+.mobile-calendar-jump summary { display: flex; align-items: center; gap: 8px; min-height: 44px; width: fit-content; max-width: 100%; cursor: pointer; list-style: none; font-size: 17px; font-weight: 550; letter-spacing: -.025em; }
+.mobile-calendar-jump summary::-webkit-details-marker { display: none; }
+.mobile-calendar-jump summary svg { flex-shrink: 0; color: #627068; }
+.mobile-calendar-jump[open] summary svg { transform: rotate(180deg); }
+.mobile-calendar-jump summary:focus-visible { outline: 2px solid #5eaf86; outline-offset: 2px; border-radius: 8px; }
+.mobile-calendar-jump label { display: grid; gap: 6px; margin: 4px 0 10px; color: #627068; font-size: 11px; }
+.mobile-calendar-jump form > button { width: 100%; min-height: 44px; margin-bottom: 10px; border: 0; border-radius: 10px; background: #166b50; color: #fff; font-size: 12px; }
+.mobile-calendar-jump input { box-sizing: border-box; width: 100%; min-width: 0; min-height: 44px; padding: 8px; border: 1px solid #dce4de; border-radius: 10px; background: #f6f8f6; color: #152621; font: inherit; font-size: 16px; }
+.mobile-calendar-today { flex-shrink: 0; min-height: 44px; padding: 0 12px; border: 0; border-radius: 12px; background: #edf5ef; color: #166b50; font-size: 12px; font-weight: 550; }
+.mobile-calendar-week-nav { display: flex; align-items: center; justify-content: space-between; margin: 4px -4px 8px; gap: 6px; }
+.mobile-calendar-week-nav button { display: flex; align-items: center; justify-content: center; flex-shrink: 0; width: 44px; height: 44px; border: 0; border-radius: 12px; background: transparent; color: #33493e; }
+.mobile-calendar-week-nav button:hover { background: #f3f6f3; }
+.mobile-calendar-week-nav p { margin: 0; color: #627068; font-size: 11px; text-align: center; }
+.mobile-calendar-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; }
+.mobile-calendar-days button { display: flex; min-width: 0; min-height: 70px; flex-direction: column; align-items: center; justify-content: center; gap: 7px; padding: 6px 0; border: 1px solid transparent; border-radius: 12px; background: transparent; color: #627068; }
+.mobile-calendar-days button[aria-current="date"] { border-color: #bddacb; color: #166b50; }
+.mobile-calendar-days button[aria-pressed="true"] { border-color: #166b50; background: #166b50; color: #fff; }
+.mobile-calendar-days span { font-size: 10px; }
+.mobile-calendar-days strong { font-size: 16px; font-weight: 550; }
+.mobile-calendar-days i { width: 4px; height: 4px; border-radius: 50%; }
+.mobile-calendar-days i.has-appointments { background: currentColor; }
+.mobile-calendar-agenda { margin-top: 24px; }
+.mobile-calendar-agenda-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
+.mobile-calendar-agenda-heading h2 { margin: 0; font-size: 17px; font-weight: 550; letter-spacing: -.025em; line-height: 1.4; }
+.mobile-calendar-agenda-heading p { margin: 5px 0 0; color: #627068; font-size: 11px; }
+.mobile-calendar-timezone { flex-shrink: 0; padding: 5px 7px; border: 1px solid #dce4de; border-radius: 7px; color: #627068; font-size: 9px; letter-spacing: .04em; }
+.mobile-calendar-timeline { padding: 0; margin: 0; list-style: none; }
+.mobile-calendar-timeline > li { position: relative; display: grid; grid-template-columns: 47px minmax(0, 1fr); gap: 12px; padding-bottom: 16px; }
+.mobile-calendar-timeline > li:not(:last-child)::before { content: ''; position: absolute; top: 35px; bottom: -1px; left: 23px; width: 1px; background: #d4e0d7; }
+.mobile-calendar-time { display: flex; flex-direction: column; align-items: center; gap: 12px; padding-top: 15px; }
+.mobile-calendar-time time { color: #33493e; font-size: 12px; font-weight: 550; font-variant-numeric: tabular-nums; }
+.mobile-calendar-time > span { z-index: 1; width: 7px; height: 7px; border: 3px solid #f4f8fa; border-radius: 50%; box-sizing: content-box; background: #8bb79e; }
+.mobile-calendar-appointment { min-width: 0; padding: 16px; border: 1px solid #dce4de; border-radius: 16px; background: #fff; }
+.mobile-calendar-appointment-top { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 8px; justify-content: space-between; }
+.mobile-calendar-appointment h3 { margin: 0; font-size: 16px; font-weight: 550; letter-spacing: -.025em; line-height: 1.4; overflow-wrap: anywhere; }
+.mobile-appointment-status { padding: 3px 7px; border-radius: 6px; font-size: 10px; line-height: 1.5; overflow-wrap: anywhere; }
+.mobile-appointment-status.green { background: #edf5ef; color: #166b50; }
+.mobile-appointment-status.amber { background: #fff4df; color: #896215; }
+.mobile-appointment-status.red { background: #fff0ed; color: #a24430; }
+.mobile-appointment-status.slate { background: #f1f4f2; color: #627068; }
+.mobile-calendar-appointment p { margin: 10px 0 0; color: #627068; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.mobile-calendar-appointment .mobile-calendar-client { color: #33493e; font-size: 13px; }
+.mobile-calendar-location, .mobile-calendar-assigned { display: flex; align-items: flex-start; gap: 6px; }
+.mobile-calendar-location svg, .mobile-calendar-assigned svg { margin-top: 3px; flex-shrink: 0; }
+.mobile-calendar-appointment .mobile-calendar-assigned { margin-top: 14px; padding-top: 12px; border-top: 1px solid #e5ebe6; font-size: 11px; }
+.mobile-calendar-empty-icon { display: inline-flex; align-items: center; justify-content: center; width: 48px; height: 48px; border-radius: 16px; background: #edf5ef; color: #166b50; }
+@media (max-width: 350px) {
+  .mobile-calendar-controls { padding: 10px; }
+  .mobile-calendar-jump summary { font-size: 16px; }
+  .mobile-calendar-days { gap: 2px; }
+  .mobile-calendar-days span { font-size: 9px; }
+  .mobile-calendar-timeline > li { grid-template-columns: 40px minmax(0, 1fr); gap: 8px; }
+  .mobile-calendar-timeline > li:not(:last-child)::before { left: 19px; }
+  .mobile-calendar-appointment { padding: 14px; }
+}

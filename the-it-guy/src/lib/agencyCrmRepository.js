@@ -968,6 +968,7 @@ export async function listAgencyCrmLeadContacts(organisationId, options = {}) {
       leads: remoteLeads,
       leadActivities: remoteLeadActivities,
       tasks: remoteTasks,
+      tasksAvailable: !taskResult.error,
       source: 'remote',
     }
   }
@@ -989,6 +990,7 @@ export async function listAgencyCrmLeadContacts(organisationId, options = {}) {
     leads: Array.isArray(reconciled.leads) ? reconciled.leads : remoteLeads,
     leadActivities: Array.isArray(reconciled.leadActivities) ? reconciled.leadActivities : remoteLeadActivities,
     tasks: Array.isArray(reconciled.tasks) ? reconciled.tasks : remoteTasks,
+    tasksAvailable: !taskResult.error,
     source: 'remote',
   }
 }

@@ -3030,6 +3030,17 @@ function DevelopmentDetail() {
         const matchesStage = transactionStageFilter === 'all' || normalizeUnitStatusKey(stageLabel) === normalizeUnitStatusKey(transactionStageFilter)
         return matchesSearch && matchesStage
       })
+      .sort((left, right) => {
+        const leftUnitNumber = String(left?.unit?.unit_number ?? left?.unit?.unitNumber ?? '').trim()
+        const rightUnitNumber = String(right?.unit?.unit_number ?? right?.unit?.unitNumber ?? '').trim()
+        if (!leftUnitNumber) return rightUnitNumber ? 1 : 0
+        if (!rightUnitNumber) return -1
+
+        return leftUnitNumber.localeCompare(rightUnitNumber, undefined, {
+          numeric: true,
+          sensitivity: 'base'
+        })
+      })
       .map(row => {
         const mainStageKey = resolveDevelopmentTrackerMainStage(row)
         const isManualUnitStatus = !row?.transaction?.id

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { File } from 'node:buffer'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
+import { buildDirectListingIntakePayload } from '../src/lib/directListingIntakeModel.js'
 import { settleListingImageUploads } from '../src/lib/listingMediaUploads.js'
 
 const source = readFileSync(new URL('../src/pages/AgentListings.jsx', import.meta.url), 'utf8')
@@ -194,7 +195,7 @@ function saveContext() {
     selectedSyndicationChannels: ['private_property'], listingImages: [],
   }
   Object.assign(context, {
-    form, calls, failure: '', listingTitle: 'Test listing', propertyAddress: '18 Test Avenue',
+    mobileEditor: false, form, calls, failure: '', listingTitle: 'Test listing', propertyAddress: '18 Test Avenue',
     formattedAddress: '18 Test Avenue', addressLine2: '', streetAddress: '18 Test Avenue',
     country: 'South Africa', postalCode: '', latitude: null, longitude: null, googlePlaceId: '',
     selectedWorkspaceOrganisationId: 'org-1', organisationId: 'org-1', listingOrganisationId: 'org-1',
@@ -276,9 +277,10 @@ test('retry updates the original listing and opens it only after verified persis
   assert.equal(context.completedCreateListingRef.current, true)
 })
 
-test('saving a photo draft retries the same record and waits for saved marketing details', async () => {
+for (const mobile of [false, true]) test(`saving a ${mobile ? 'mobile developer' : 'desktop'} photo draft retries the same record and waits for saved marketing details`, async () => {
   const { context, data, calls, createdCount } = saveContext()
   Object.assign(context, {
+    mobileEditor: mobile, isDeveloperWorkspace: mobile, workspace: {}, buildDeveloperSellerFacts: () => ({ sellerRole: 'developer' }),
     isSupabaseConfigured: true, MOCK_DATA_ENABLED: false,
     listingSaveInFlightRef: { current: false }, currentBranchId: '',
     createListingStep: 'marketing', CREATE_LISTING_DRAFT_STORAGE_KEY: 'draft-prefix',
@@ -299,7 +301,7 @@ test('saving a photo draft retries the same record and waits for saved marketing
   await saveDraft()
   assert.equal(createdCount(), 1)
   assert.ok(calls.findIndex(([action]) => action === 'navigate') > calls.findLastIndex(([action]) => action === 'media'))
-  assert.deepEqual(calls.find(([action]) => action === 'navigate'), ['navigate', '/listings/listing-1/edit?step=marketing'])
+  assert.deepEqual(calls.find(([action]) => action === 'navigate'), ['navigate', `${mobile ? '/mobile/listings' : '/listings'}/listing-1/edit?step=marketing`])
 })
 
 test('two immediate submit events cannot create two listings', async () => {
@@ -318,4 +320,75 @@ test('two immediate submit events cannot create two listings', async () => {
   finishSave()
   await first
   assert.equal(context.listingSaveInFlightRef.current, false)
+})
+
+ test('mobile creation returns to saved listings only after persistence and photo verification', async () => {
+  const { context, save, calls } = saveContext()
+  context.mobileEditor = true
+  await save()
+  assert.deepEqual(calls.find(([action]) => action === 'navigate'), ['navigate', '/mobile/listings'])
+  assert.ok(calls.findIndex(([action]) => action === 'navigate') > calls.findIndex(([action]) => action === 'verify'))
+ })
+
+const developerStart = source.indexOf('const developerPayload = {', source.indexOf('async function performSaveListing()'))
+const developerEnd = source.indexOf('await createPrivateListingActivity({', developerStart)
+const developerSaveBody = source.slice(developerStart, developerEnd)
+
+test('mobile developer creation saves unit assignment, marketing and photos, and reuses the record on retry', async () => {
+  const { context, calls, data, createdCount } = saveContext()
+  Object.assign(context, {
+    mobileEditor: true, developerTitle: 'Unit 001 - Oak Court', developerListingStatus: 'active',
+    developerVisibility: 'public', estimatedPrice: 2500000, developerNotes: 'Developer listing',
+    developerSellerFacts: { sellerRole: 'developer', unitNumber: '001' }, developerReadinessWarnings: [],
+    developerCompleteness: {}, sourceMode: 'development_unit',
+    buildQuickAddDirectListingPersistencePayload: () => context.directListingPersistence,
+    listingPropertySaveErrorMessage: () => 'Property mismatch',
+    createdListingId: '', createdListingTitle: '',
+  })
+  context.form.developmentId = 'development-1'; context.form.unitId = 'unit-1'; context.form.notes = ''
+  const saveDeveloper = bind(context, '', `async () => { ${developerSaveBody} }`)
+  context.failure = 'photos'
+  await assert.rejects(saveDeveloper(), /Photo upload failed/)
+  assert.equal(context.pendingCreatedListingIdRef.current, 'listing-1')
+  assert.equal(JSON.parse(data.get('draft')).__draftRecovery.pendingListingId, 'listing-1')
+  context.failure = ''
+  await saveDeveloper()
+  assert.equal(createdCount(), 1)
+  const payload = calls.find(([action]) => action === 'create')[1]
+  assert.equal(payload.developmentId, 'development-1')
+  assert.equal(payload.unitId, 'unit-1')
+  assert.equal(payload.assignedAgentId, 'agent-1')
+  assert.equal(payload.sellerType, 'developer')
+  assert.equal(payload.listingCategory, 'development_unit')
+  assert.ok(calls.findLastIndex(([action]) => action === 'verify') > calls.findLastIndex(([action]) => action === 'media'))
+})
+
+test('mobile channel preferences leave publication as a draft even for an active listing', async () => {
+  let saved
+  const context = {
+    normalizeText, normalizeKey,
+    uploadQuickListingImages: async () => [], buildQuickListingPublicationFeatures: () => [],
+    shouldAutoPublishToAgencyWebsite: () => true,
+    syncPrivateListingDistributionData: async (_id, payload) => { saved = payload; return { publication: { listing_id: 'listing-1' } } },
+  }
+  const sync = bind(context, between("async function syncQuickListingDistributionData(", 'function serializeCreateListingDraftForm('), 'syncQuickListingDistributionData')
+  await sync('listing-1', {}, { listingStatus: 'active', deferPublication: true })
+  assert.equal(saved.publicationData.status, 'Draft')
+  await sync('listing-1', {}, { listingStatus: 'active' })
+  assert.equal(saved.publicationData.status, 'Published', 'the existing desktop publishing path is preserved')
+})
+
+test('the real creation mapper persists the listing price and developer stock references in onboarding', () => {
+  const context = {
+    normalizeText, buildDirectListingIntakePayload,
+    buildDirectListingMapperForm: (form) => form, normalizeDirectListingFeatureSelections: () => [],
+    normalizePropertyCategory: () => 'residential', buildQuickListingPublicationFeatures: () => [],
+    serializeListingFeatureFacts: () => ({}), normalizeListingFeatureFacts: () => ({}), buildDirectListingCanonicalFactReadiness: () => ({}),
+  }
+  const mapper = bind(context, between('function buildQuickAddDirectListingPersistencePayload(', 'function summarizeQuickAddRequirementSync('), 'buildQuickAddDirectListingPersistencePayload')
+  const saved = mapper({ listingPrice: '2190000', unitNumber: '001', developmentId: 'development-1', unitId: 'unit-1' }).sellerOnboardingFormData
+  assert.equal(saved.askingPrice, '2190000')
+  assert.equal(saved.unitNumber, '001')
+  assert.equal(saved.developmentId, 'development-1')
+  assert.equal(saved.unitId, 'unit-1')
 })

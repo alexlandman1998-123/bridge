@@ -3,6 +3,7 @@ const HOME_MAPPINGS = new Set([
   '/dashboard',
   '/agent/dashboard',
   '/principal/dashboard',
+  '/developer/dashboard',
   '/attorney/dashboard',
   '/bond/dashboard',
   '/commercial',
@@ -14,6 +15,9 @@ const DIRECT_MAPPINGS = Object.freeze({
   '/units': '/mobile/transactions',
   '/pipeline/leads': '/mobile/leads',
   '/leads': '/mobile/leads',
+  '/developer/leads': '/mobile/developer/leads',
+  '/developer/developments': '/mobile/developments',
+  '/developments': '/mobile/developments',
   '/documents': '/mobile/documents',
   '/notifications': '/mobile/notifications',
   '/attorney/matters': '/mobile/matters',
@@ -23,6 +27,8 @@ const DIRECT_MAPPINGS = Object.freeze({
   '/commercial/leads': '/mobile/leads',
   '/commercial/deals': '/mobile/deals',
   '/commercial/listings': '/mobile/listings',
+  '/listings': '/mobile/listings',
+  '/listings/new': '/mobile/listings/new',
   '/commercial/pipeline': '/mobile/pipeline',
 })
 
@@ -72,6 +78,13 @@ export function mapDesktopRouteToMobile(path = '') {
   if (pathname.startsWith('/mobile')) return pathname
   if (HOME_MAPPINGS.has(pathname)) return '/mobile/home'
   if (DIRECT_MAPPINGS[pathname]) return DIRECT_MAPPINGS[pathname]
+  const listingEdit = pathname.match(/^\/listings\/([^/]+)\/edit$/)
+  if (listingEdit) return `/mobile/listings/${encodeURIComponent(listingEdit[1])}/edit`
+
+  const developmentMatch = pathname.match(/^\/(?:developer\/)?developments\/([^/]+)/)
+  if (developmentMatch?.[1]) return `/mobile/development/${encodeURIComponent(developmentMatch[1])}`
+  const developerLeadMatch = pathname.match(/^\/developer\/leads\/([^/]+)/)
+  if (developerLeadMatch?.[1]) return `/mobile/developer/leads/${encodeURIComponent(developerLeadMatch[1])}`
 
   const transactionMatch = pathname.match(/^\/transactions\/([^/]+)/) || pathname.match(/^\/units\/([^/]+)/)
   if (transactionMatch?.[1]) return `/mobile/transaction/${encodeURIComponent(transactionMatch[1])}`

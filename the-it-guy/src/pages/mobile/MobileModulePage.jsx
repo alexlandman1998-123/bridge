@@ -2,12 +2,14 @@ import { BriefcaseBusiness, ChevronRight, Upload } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import MobileCreateSheet, { MobileDraftCard } from '../../components/mobile-shell/MobileCreateSheet'
+import MobileTransactionCard from '../../components/mobile-shell/MobileTransactionCard'
 import { isMobileCreateType, mobileDraftMatchesModule } from '../../components/mobile-shell/mobileCreateConfig'
 import { MobileCard, MobileEmptyState, MobileErrorState, MobileLoadingState, MobileSearchBar } from '../../components/mobile-shell/MobileShellStates'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { useOptionalOrganisation } from '../../context/OrganisationContext'
-import { getMobileDashboardSnapshot, getMobileDashboardSnapshotAsync } from '../../services/mobileDashboardService'
+import { getCachedMobileDashboardSnapshot, getMobileDashboardSnapshot, getMobileDashboardSnapshotAsync } from '../../services/mobileDashboardService'
 import { getOfflineDrafts } from '../../services/mobileProductivityService'
+import { resolveMobileRoleCategory } from '../../config/mobileShell.js'
 import { listAgentLeadWorkspaceRows } from '../../services/agentLeadWorkspaceService'
 
 const MODULE_COPY = {
@@ -142,49 +144,6 @@ function getPlatformLogo(source = '') {
   return null
 }
 
-function TransactionThumb({ title = '' }) {
-  return (
-    <span className="relative h-[78px] w-[78px] shrink-0 overflow-hidden rounded-[22px] bg-[#dce8f2]">
-      <span className="absolute inset-0 bg-[linear-gradient(135deg,#dce8f2_0%,#1f7a5a_58%,#10243a_100%)]" />
-      <span className="absolute bottom-2 left-2 flex h-8 w-8 items-center justify-center rounded-full bg-white/90 text-xs font-bold text-[#10243a]">
-        {String(title || 'A').slice(0, 1).toUpperCase()}
-      </span>
-    </span>
-  )
-}
-
-function MobileTransactionCard({ item, onOpen }) {
-  return (
-    <button
-      type="button"
-      className="flex w-full gap-4 rounded-[28px] border border-white/80 bg-white p-4 text-left shadow-[0_14px_34px_rgba(15,23,42,0.07)]"
-      onClick={() => onOpen(item)}
-    >
-      <TransactionThumb title={item.title} />
-      <span className="min-w-0 flex-1">
-        <span className="flex items-start justify-between gap-2">
-          <span className="min-w-0">
-            <span className="block truncate text-[16px] font-semibold text-[#10243a]">{item.title}</span>
-            <span className="mt-1 block truncate text-[13px] text-[#60758d]">{item.eyebrow}</span>
-          </span>
-          <ChevronRight className="h-5 w-5 shrink-0 text-[#94a3b8]" />
-        </span>
-        <span className="mt-3 flex items-center justify-between gap-2">
-          <span className="rounded-full bg-[#e8f6ef] px-3 py-1 text-[12px] font-semibold text-[#1f7a5a]">{item.stage}</span>
-          <span className="text-[12px] font-semibold text-[#60758d]">{item.progress || 0}%</span>
-        </span>
-        <span className="mt-2 block h-2 overflow-hidden rounded-full bg-[#edf3f8]">
-          <span className="block h-full rounded-full bg-[#1f7a5a]" style={{ width: `${Math.max(Math.min(item.progress || 0, 100), 4)}%` }} />
-        </span>
-        <span className="mt-3 flex items-center justify-between gap-3">
-          <span className="min-w-0 truncate text-[13px] font-semibold text-[#10243a]">{item.status}</span>
-          {item.value ? <span className="shrink-0 text-[13px] font-semibold text-[#10243a]">{item.value}</span> : null}
-        </span>
-      </span>
-    </button>
-  )
-}
-
 function getLeadDisplay(row = {}) {
   const contact = row.contact || {}
   const title = normalizeText(
@@ -230,17 +189,13 @@ function MobileLeadCard({ item, onOpen }) {
       onClick={() => onOpen(item)}
     >
       <span className="block bg-[linear-gradient(135deg,#fff6e5_0%,#f8fafc_45%,#e8f6ef_100%)] px-4 py-3">
-        <span className="flex items-start justify-between gap-3">
-          <span className="min-w-0">
-            <span className="mt-1 block truncate text-[18px] font-semibold text-[#10243a]">{display.title}</span>
-          </span>
-          <span className="flex h-10 w-16 shrink-0 items-center justify-center rounded-2xl border border-white/80 bg-white px-2 shadow-[0_8px_18px_rgba(15,23,42,0.06)]">
-            {platformLogo ? (
-              <img src={platformLogo.src} alt={platformLogo.alt} className="max-h-7 max-w-full object-contain" loading="lazy" />
-            ) : (
-              <span className="text-[11px] font-bold uppercase text-[#1f7a5a]">{display.source.slice(0, 2) || 'PL'}</span>
-            )}
-          </span>
+        <span className="flex min-h-10 items-center gap-3">
+          <span className="min-w-0 truncate text-[18px] font-semibold text-[#10243a]">{display.title}</span>
+          {platformLogo ? (
+            <img src={platformLogo.src} alt={platformLogo.alt} className="h-5 w-16 shrink-0 object-contain" loading="lazy" />
+          ) : (
+            <span className="shrink-0 text-[11px] font-bold uppercase text-[#1f7a5a]">{display.source.slice(0, 2) || 'PL'}</span>
+          )}
         </span>
       </span>
       <span className="block p-4">
@@ -289,12 +244,16 @@ export default function MobileModulePage({ moduleKey }) {
   const copy = MODULE_COPY[moduleKey] || MODULE_COPY.transactions
   const ActionIcon = copy.actionIcon
   const [drafts, setDrafts] = useState(() => getOfflineDrafts())
-  const [state, setState] = useState(() => ({
-    loading: moduleKey === 'transactions' || moduleKey === 'leads',
-    error: '',
-    snapshot: moduleKey === 'transactions' ? getMobileDashboardSnapshot({ workspace }) : null,
-    leads: [],
-  }))
+  const [state, setState] = useState(() => {
+    const cached = moduleKey === 'transactions' ? getCachedMobileDashboardSnapshot({ workspace, organisation: organisationContext?.organisation, allowStale: true }) : null
+    return {
+      workspace, organisation: organisationContext?.organisation,
+      loading: moduleKey === 'leads' || (moduleKey === 'transactions' && !cached),
+      error: '',
+      snapshot: cached || (moduleKey === 'transactions' ? getMobileDashboardSnapshot({ workspace }) : null),
+      leads: [],
+    }
+  })
   const createType = searchParams.get('create') || ''
   const createOpen = isMobileCreateType(createType) && (
     (moduleKey === 'transactions' && createType === 'transaction') ||
@@ -307,14 +266,18 @@ export default function MobileModulePage({ moduleKey }) {
     getMobileDashboardSnapshotAsync({ workspace, organisation: organisationContext?.organisation || null })
       .then((snapshot) => {
         if (!active) return
-        setState({ loading: false, error: '', snapshot })
+        setState({ workspace, organisation: organisationContext?.organisation, loading: false, error: '', snapshot, leads: [] })
       })
       .catch((error) => {
         if (!active) return
+        if (resolveMobileRoleCategory(workspace) === 'developer') {
+          setState({ workspace, organisation: organisationContext?.organisation, loading: false, error: error?.message || "We couldn't load transactions.", snapshot: null, leads: [] })
+          return
+        }
         try {
-          setState({ loading: false, error: '', snapshot: getMobileDashboardSnapshot({ workspace }) })
+          setState({ workspace, organisation: organisationContext?.organisation, loading: false, error: '', snapshot: getMobileDashboardSnapshot({ workspace }), leads: [] })
         } catch {
-          setState({ loading: false, error: error?.message || "We couldn't load transactions.", snapshot: null })
+          setState({ workspace, organisation: organisationContext?.organisation, loading: false, error: error?.message || "We couldn't load transactions.", snapshot: null, leads: [] })
         }
       })
     return () => {
@@ -326,7 +289,7 @@ export default function MobileModulePage({ moduleKey }) {
     if (moduleKey !== 'leads') return undefined
     const organisationId = resolveMobileOrganisationId(workspace, organisationContext)
     if (!organisationId) {
-      setState({ loading: false, error: '', snapshot: null, leads: [] })
+      setState({ workspace, organisation: organisationContext?.organisation, loading: false, error: '', snapshot: null, leads: [] })
       return undefined
     }
     let active = true
@@ -337,11 +300,11 @@ export default function MobileModulePage({ moduleKey }) {
     })
       .then((payload) => {
         if (!active) return
-        setState({ loading: false, error: '', snapshot: null, leads: Array.isArray(payload?.rows) ? payload.rows : [] })
+        setState({ workspace, organisation: organisationContext?.organisation, loading: false, error: '', snapshot: null, leads: Array.isArray(payload?.rows) ? payload.rows : [] })
       })
       .catch((error) => {
         if (!active) return
-        setState({ loading: false, error: error?.message || "We couldn't load leads.", snapshot: null, leads: [] })
+        setState({ workspace, organisation: organisationContext?.organisation, loading: false, error: error?.message || "We couldn't load leads.", snapshot: null, leads: [] })
       })
     return () => {
       active = false
@@ -349,13 +312,13 @@ export default function MobileModulePage({ moduleKey }) {
   }, [moduleKey, organisationContext, workspace])
 
   const rows = useMemo(() => {
-    return state.snapshot?.activeWork || []
-  }, [state.snapshot?.activeWork])
+    return state.snapshot?.transactions || state.snapshot?.activeWork || []
+  }, [state.snapshot?.transactions, state.snapshot?.activeWork])
   const pendingDrafts = useMemo(() => (
     drafts.filter((draft) => mobileDraftMatchesModule(draft, moduleKey))
   ), [drafts, moduleKey])
   const leadRows = useMemo(() => {
-    return state.leads || []
+    return Array.isArray(state.leads) ? state.leads : []
   }, [state.leads])
 
   function openTransaction(item) {
@@ -384,17 +347,18 @@ export default function MobileModulePage({ moduleKey }) {
     }
   }
 
-  if (state.loading) return <MobileLoadingState label={`Loading ${copy.title}`} />
+  if (state.loading || ((moduleKey === 'transactions' || moduleKey === 'leads') && (state.workspace !== workspace || state.organisation !== organisationContext?.organisation))) return <MobileLoadingState label={`Loading ${copy.title}`} />
   if (state.error) return <MobileErrorState body={state.error} />
 
   if (moduleKey === 'transactions') {
     return (
-      <div className="space-y-6">
-        <section className="pt-2">
-          <h1 className="text-[34px] font-bold leading-tight text-[#10243a]">Transactions</h1>
+      <div className="mobile-transactions">
+        <section className="mobile-transactions-intro">
+          <h1>Transactions</h1>
+          <p>{rows.length} active transaction{rows.length === 1 ? '' : 's'}</p>
         </section>
 
-        <section className="space-y-3">
+        <section className="mobile-transactions-list" aria-label="Active transactions">
           {pendingDrafts.map((draft) => <MobileDraftCard key={draft.id} draft={draft} />)}
           {rows.length ? (
             rows.map((item) => <MobileTransactionCard key={item.id} item={item} onOpen={openTransaction} />)
@@ -435,8 +399,8 @@ export default function MobileModulePage({ moduleKey }) {
           ) : (
             pendingDrafts.length ? null : (
               <MobileEmptyState
-                title={state.leads.length ? 'No matching leads.' : copy.emptyTitle}
-                body={state.leads.length ? 'Try another source, stage, or search term.' : copy.emptyBody}
+                title={copy.emptyTitle}
+                body={copy.emptyBody}
               />
             )
           )}

@@ -1,6 +1,7 @@
 const MOBILE_NAV_ITEMS = Object.freeze({
   home: { key: 'home', label: 'Home', to: '/mobile/home' },
   transactions: { key: 'transactions', label: 'Transactions', to: '/mobile/transactions' },
+  developments: { key: 'developments', label: 'Developments', to: '/mobile/developments' },
   create: { key: 'create', label: 'Create', to: '/mobile/create' },
   activity: { key: 'activity', label: 'Activity', to: '/mobile/activity' },
   leads: { key: 'leads', label: 'Leads', to: '/mobile/leads' },
@@ -12,12 +13,14 @@ const MOBILE_NAV_ITEMS = Object.freeze({
   applications: { key: 'applications', label: 'Applications', to: '/mobile/applications' },
   pipeline: { key: 'pipeline', label: 'Pipeline', to: '/mobile/pipeline' },
   listings: { key: 'listings', label: 'Listings', to: '/mobile/listings' },
+  calendar: { key: 'calendar', label: 'Calendar', to: '/mobile/calendar' },
   deals: { key: 'deals', label: 'Deals', to: '/mobile/deals' },
 })
 
 const MOBILE_NAV_BY_CATEGORY = Object.freeze({
   agent: ['home', 'transactions', 'create', 'leads', 'more'],
   principal: ['home', 'transactions', 'create', 'leads', 'more'],
+  developer: ['home', 'transactions', 'create', 'developments', 'more'],
   attorney: ['home', 'transactions', 'create', 'leads', 'more'],
   bond_originator: ['home', 'transactions', 'create', 'leads', 'more'],
   commercial: ['home', 'transactions', 'create', 'leads', 'more'],
@@ -102,6 +105,14 @@ export function resolveMobileRoleCategory(workspace = {}) {
 export function getMobileNavItems(workspace = {}) {
   const category = resolveMobileRoleCategory(workspace)
   return (MOBILE_NAV_BY_CATEGORY[category] || MOBILE_NAV_BY_CATEGORY.default).map((key) => MOBILE_NAV_ITEMS[key])
+}
+
+export function getMobilePageMenuItems(workspace = {}) {
+  return [
+    { ...MOBILE_NAV_ITEMS.leads, to: resolveMobileRoleCategory(workspace) === 'developer' ? '/mobile/developer/leads' : MOBILE_NAV_ITEMS.leads.to },
+    MOBILE_NAV_ITEMS.listings,
+    MOBILE_NAV_ITEMS.calendar,
+  ]
 }
 
 export function getMobileWorkLabel(workspace = {}) {

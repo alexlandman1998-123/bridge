@@ -1,10 +1,13 @@
 import {
+  ArrowUpLeft,
   BriefcaseBusiness,
+  Building2,
   FileText,
   Home,
   LayoutGrid,
   MessageCircle,
-  MoreHorizontal,
+  CalendarDays,
+  ChevronRight,
   Plus,
   StickyNote,
   Upload,
@@ -12,22 +15,28 @@ import {
   UsersRound,
   X,
 } from 'lucide-react'
-import { useState } from 'react'
-import { NavLink, useLocation, useNavigate } from 'react-router-dom'
-import { getMobileNavItems } from '../../config/mobileShell'
+import { useEffect, useRef, useState } from 'react'
+import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
+import { getMobileNavItems, getMobilePageMenuItems, resolveMobileRoleCategory } from '../../config/mobileShell'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { isMobileCreateType } from './mobileCreateConfig'
+import './mobile-navigation.css'
 
 const ICONS = {
   home: Home,
   transactions: BriefcaseBusiness,
+  developments: Building2,
   create: Plus,
   activity: MessageCircle,
   leads: UsersRound,
-  more: MoreHorizontal,
+  more: ArrowUpLeft,
+  listings: Building2,
+  calendar: CalendarDays,
   pipeline: LayoutGrid,
   deals: BriefcaseBusiness,
 }
+
+const NAV_ITEM_CLASS = 'flex min-h-[54px] min-w-0 flex-col items-center justify-center gap-1 rounded-[18px] px-0.5 text-[10px] font-medium leading-[1.2] transition-colors max-[360px]:text-[9px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1f8b65]'
 
 const CREATE_ACTIONS = [
   { key: 'lead', label: 'New Lead', body: 'Capture a buyer or seller lead.', icon: UsersRound, to: '/mobile/leads?create=lead' },
@@ -43,17 +52,43 @@ export default function MobileBottomNav() {
   const navigate = useNavigate()
   const location = useLocation()
   const items = getMobileNavItems(workspace)
+  const menuItems = getMobilePageMenuItems(workspace)
   const [createOpen, setCreateOpen] = useState(false)
+  const [menuLocation, setMenuLocation] = useState(null)
+  const menuOpen = menuLocation === location.key
+  const menuRef = useRef(null)
   const activeCreateType = new URLSearchParams(location.search).get('create') || ''
   const createSheetOpen = isMobileCreateType(activeCreateType)
+  const matchesPage = (item) => location.pathname === item.to || location.pathname.startsWith(`${item.to}/`)
+  const menuActive = menuOpen || (menuItems.some(matchesPage) && !items.some((item) => item.key !== 'more' && matchesPage(item)))
+
+  useEffect(() => {
+    if (!menuOpen) return undefined
+    const dialog = menuRef.current
+    dialog.showModal()
+    return () => { if (dialog.open) dialog.close() }
+  }, [menuOpen])
 
   function openAction(action) {
     setCreateOpen(false)
-    navigate(action.to)
+    navigate(action.key === 'lead' && resolveMobileRoleCategory(workspace) === 'developer' ? '/mobile/developer/leads?create=lead' : action.to)
   }
 
   return (
     <>
+      <dialog ref={menuRef} id="mobile-page-menu" className="mobile-page-menu" aria-labelledby="mobile-page-menu-title" onCancel={() => setMenuLocation(null)} onClick={(event) => {
+        if (event.target !== menuRef.current) return
+        const rect = event.currentTarget.getBoundingClientRect()
+        if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) setMenuLocation(null)
+      }}>
+        <div className="mobile-page-menu-header"><h2 id="mobile-page-menu-title">Pages</h2><button type="button" aria-label="Close page menu" onClick={() => setMenuLocation(null)}><X size={19} aria-hidden="true" /></button></div>
+        <nav aria-label="More pages">
+          {menuItems.map((item) => {
+            const Icon = ICONS[item.key]
+            return <Link key={item.key} to={item.to} onClick={() => setMenuLocation(null)} aria-current={matchesPage(item) ? 'page' : undefined}><span className="mobile-page-menu-icon"><Icon size={20} strokeWidth={1.8} aria-hidden="true" /></span><span>{item.label}</span><ChevronRight size={17} aria-hidden="true" /></Link>
+          })}
+        </nav>
+      </dialog>
       {createOpen ? (
         <div className="fixed inset-0 z-50 bg-[#10243a]/28 backdrop-blur-sm" onClick={() => setCreateOpen(false)}>
           <div
@@ -103,21 +138,24 @@ export default function MobileBottomNav() {
       ) : null}
 
       {!createSheetOpen ? (
-        <nav className="fixed inset-x-0 bottom-0 z-40 px-3 pb-[max(0.625rem,env(safe-area-inset-bottom))] pt-2" aria-label="Mobile navigation" data-mobile-bottom-nav>
-          <div className="mx-auto grid max-w-[520px] grid-cols-5 items-end gap-1 rounded-[28px] border border-[#dfe7ef]/80 bg-white/94 px-2.5 py-2 shadow-[0_-12px_34px_rgba(15,23,42,0.11)] backdrop-blur-xl">
+        <nav className="relative z-40 shrink-0 px-2 pb-[max(0.625rem,env(safe-area-inset-bottom))] pt-2" aria-label="Mobile navigation" data-mobile-bottom-nav>
+          <div className="mx-auto grid max-w-[520px] grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)_48px_minmax(0,1.25fr)_minmax(0,1fr)] items-center rounded-[26px] border border-[#dfe7ef] bg-white px-1 py-2 shadow-[0_-6px_24px_rgba(15,23,42,0.07)]">
             {items.map((item) => {
               const Icon = ICONS[item.key] || LayoutGrid
+              if (item.key === 'more') {
+                return <button key={item.key} type="button" className={`${NAV_ITEM_CLASS} ${menuActive ? 'bg-[#e5f6ed] text-[#1f8b65]' : 'text-[#60758d] active:bg-[#f1f5f9]'}`} onClick={() => { setCreateOpen(false); setMenuLocation(location.key) }} aria-label="Open page menu" aria-haspopup="dialog" aria-expanded={menuOpen} aria-controls="mobile-page-menu"><ArrowUpLeft className="h-5 w-5 shrink-0" strokeWidth={1.85} aria-hidden="true" /><span>Menu</span></button>
+              }
               if (item.key === 'create') {
                 return (
                   <button
                     key={item.key}
                     type="button"
-                    className="-mt-6 flex flex-col items-center justify-center gap-1 text-[10px] font-semibold text-[#1f8b65]"
+                    className="flex h-[54px] w-12 items-center justify-center justify-self-center rounded-[18px] text-[#1f8b65] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1f8b65]"
                     onClick={() => setCreateOpen(true)}
                     aria-label="Open create menu"
                   >
-                    <span className="flex h-[58px] w-[58px] items-center justify-center rounded-full border-[4px] border-[#f6f8fb] bg-[#1f8b65] text-white shadow-[0_14px_24px_rgba(31,139,101,0.24)]">
-                      <Plus className="h-7 w-7" strokeWidth={1.9} />
+                    <span className="flex h-12 w-12 items-center justify-center rounded-full bg-[#1f8b65] text-white shadow-[0_4px_12px_rgba(31,139,101,0.16)]">
+                      <Plus className="h-6 w-6" strokeWidth={1.9} aria-hidden="true" />
                     </span>
                     <span className="sr-only">Create</span>
                   </button>
@@ -127,15 +165,16 @@ export default function MobileBottomNav() {
                 <NavLink
                   key={item.key}
                   to={item.to}
+                  aria-label={item.label}
                   className={({ isActive }) =>
                     [
-                      'flex min-h-[54px] flex-col items-center justify-center gap-1 rounded-[19px] px-1 text-[10px] font-semibold transition',
+                      NAV_ITEM_CLASS,
                       isActive ? 'bg-[#e5f6ed] text-[#1f8b65]' : 'text-[#60758d] active:bg-[#f1f5f9]',
                     ].join(' ')
                   }
                 >
-                  <Icon className="h-5 w-5" strokeWidth={1.85} />
-                  <span className="max-w-full">{item.label}</span>
+                  <Icon className="h-5 w-5 shrink-0" strokeWidth={1.85} aria-hidden="true" />
+                  <span className="block w-full min-w-0 truncate text-center">{item.label}</span>
                 </NavLink>
               )
             })}

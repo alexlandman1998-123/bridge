@@ -280,6 +280,7 @@ const AgentIntelligencePipelinePage = lazy(() => import('./pages/agent-intellige
 const AgentIntelligencePricingPage = lazy(() => import('./pages/agent-intelligence/PricingPage'))
 const AgentListingDetail = lazy(() => import('./pages/AgentListingDetail'))
 const AgentListings = lazy(() => import('./pages/AgentListings'))
+const MobileListingEditorPage = lazy(() => import('./pages/mobile/MobileListingEditorPage.jsx'))
 const AgentEnquiriesPage = lazy(() => import('./pages/AgentEnquiriesPage'))
 const AgentsPage = lazy(() => import('./pages/Agents'))
 const AgentWorkspacePage = lazyNamed(() => import('./pages/Agents'), 'AgentWorkspacePage')
@@ -450,7 +451,12 @@ const MobileDevelopmentsPage = lazy(() => import('./pages/mobile/MobileDevelopme
 const MobileDemoHomePage = lazy(() => import('./pages/mobile/MobileDemoHomePage'))
 const MobileHome = lazy(() => import('./pages/mobile/MobileHome'))
 const MobileModulePage = lazy(() => import('./pages/mobile/MobileModulePage'))
+const MobileDeveloperPortfolioPage = lazy(() => import('./pages/mobile/MobileDeveloperPortfolioPage'))
+const MobileDeveloperTransactionPage = lazy(() => import('./pages/mobile/MobileDeveloperTransactionPage'))
+const MobileDeveloperLeadsPage = lazy(() => import('./pages/mobile/MobileDeveloperLeadsPage'))
 const MobileMore = lazy(() => import('./pages/mobile/MobileMore'))
+const MobileCalendarPage = lazy(() => import('./pages/mobile/MobileCalendarPage'))
+const MobileListingsPage = lazy(() => import('./pages/mobile/MobileListingsPage'))
 const MobileActivityPage = lazy(() => import('./pages/mobile/MobileActivityPage'))
 const MobileDocumentsPage = lazy(() => import('./pages/mobile/MobileDocumentsPage'))
 const MobileInboxPage = lazy(() => import('./pages/mobile/MobileInboxPage'))
@@ -1754,6 +1760,11 @@ function MobileProtectedLayout({ onLogout, session }) {
   return <MobileLayout onLogout={onLogout} />
 }
 
+function MobileTransactionWorkspacePage() {
+  const workspace = useWorkspace()
+  return workspace.role === 'developer' ? <MobileDeveloperTransactionPage /> : <MobileWorkspacePage workspaceType="transaction" />
+}
+
 function MobilePublicPortalShell({ children }) {
   return (
     <div className="min-h-[100dvh] overflow-x-hidden bg-[#eef2f0] text-[#101820] antialiased">
@@ -1988,6 +1999,10 @@ function AppRoutes() {
                   <Route path="/mobile" element={<Navigate to="/mobile/home" replace />} />
                   <Route path="/mobile/home" element={<AppErrorBoundary scope="mobile-home" title="Mobile home failed to load"><MobileHome /></AppErrorBoundary>} />
                   <Route path="/mobile/transactions" element={<AppErrorBoundary scope="mobile-transactions" title="Mobile transactions failed to load"><MobileModulePage moduleKey="transactions" /></AppErrorBoundary>} />
+                  <Route path="/mobile/developments" element={<AppErrorBoundary scope="mobile-developments" title="Mobile developments failed to load"><MobileDeveloperPortfolioPage /></AppErrorBoundary>} />
+                  <Route path="/mobile/development/:developmentId" element={<AppErrorBoundary scope="mobile-development" title="Mobile development failed to load"><MobileDeveloperPortfolioPage /></AppErrorBoundary>} />
+                  <Route path="/mobile/developer/leads" element={<AppErrorBoundary scope="mobile-developer-leads" title="Mobile leads failed to load"><MobileDeveloperLeadsPage /></AppErrorBoundary>} />
+                  <Route path="/mobile/developer/leads/:leadId" element={<AppErrorBoundary scope="mobile-developer-lead" title="Mobile lead failed to load"><MobileDeveloperLeadsPage /></AppErrorBoundary>} />
                   <Route path="/mobile/leads" element={<AppErrorBoundary scope="mobile-leads" title="Mobile leads failed to load"><MobileModulePage moduleKey="leads" /></AppErrorBoundary>} />
                   <Route path="/mobile/documents" element={<AppErrorBoundary scope="mobile-documents" title="Mobile documents failed to load"><MobileDocumentsPage /></AppErrorBoundary>} />
                   <Route path="/mobile/notifications" element={<AppErrorBoundary scope="mobile-notifications" title="Mobile notifications failed to load"><MobileInboxPage /></AppErrorBoundary>} />
@@ -1997,11 +2012,14 @@ function AppRoutes() {
                   <Route path="/mobile/matters" element={<AppErrorBoundary scope="mobile-matters" title="Mobile matters failed to load"><MobileModulePage moduleKey="matters" /></AppErrorBoundary>} />
                   <Route path="/mobile/applications" element={<AppErrorBoundary scope="mobile-applications" title="Mobile applications failed to load"><MobileModulePage moduleKey="applications" /></AppErrorBoundary>} />
                   <Route path="/mobile/pipeline" element={<AppErrorBoundary scope="mobile-pipeline" title="Mobile pipeline failed to load"><MobileModulePage moduleKey="pipeline" /></AppErrorBoundary>} />
-                  <Route path="/mobile/listings" element={<AppErrorBoundary scope="mobile-listings" title="Mobile listings failed to load"><MobileModulePage moduleKey="listings" /></AppErrorBoundary>} />
+                  <Route path="/mobile/listings" element={<AppErrorBoundary scope="mobile-listings" title="Mobile listings failed to load"><MobileListingsPage /></AppErrorBoundary>} />
+                  <Route path="/mobile/listings/new" element={<SalesWorkspaceGuard><RoleRoute allowedRoles={['developer', 'agent']}><AppErrorBoundary scope="mobile-listing-create" title="Listing form failed to load"><MobileListingEditorPage /></AppErrorBoundary></RoleRoute></SalesWorkspaceGuard>} />
+                  <Route path="/mobile/listings/:listingId/edit" element={<SalesWorkspaceGuard><RoleRoute allowedRoles={['developer', 'agent']}><AppErrorBoundary scope="mobile-listing-edit" title="Listing form failed to load"><MobileListingEditorPage /></AppErrorBoundary></RoleRoute></SalesWorkspaceGuard>} />
+                  <Route path="/mobile/calendar" element={<AppErrorBoundary scope="mobile-calendar" title="Mobile calendar failed to load"><MobileCalendarPage /></AppErrorBoundary>} />
                   <Route path="/mobile/deals" element={<AppErrorBoundary scope="mobile-deals" title="Mobile deals failed to load"><MobileModulePage moduleKey="deals" /></AppErrorBoundary>} />
                   <Route path="/mobile/tasks" element={<AppErrorBoundary scope="mobile-tasks" title="Mobile tasks failed to load"><MobileTasksPage /></AppErrorBoundary>} />
                   <Route path="/mobile/activity" element={<AppErrorBoundary scope="mobile-activity" title="Mobile activity failed to load"><MobileActivityPage /></AppErrorBoundary>} />
-                  <Route path="/mobile/transaction/:workspaceId" element={<AppErrorBoundary scope="mobile-transaction-workspace" title="Mobile transaction failed to load"><MobileWorkspacePage workspaceType="transaction" /></AppErrorBoundary>} />
+                  <Route path="/mobile/transaction/:workspaceId" element={<AppErrorBoundary scope="mobile-transaction-workspace" title="Mobile transaction failed to load"><MobileTransactionWorkspacePage /></AppErrorBoundary>} />
                   <Route path="/mobile/lead/:workspaceId" element={<AppErrorBoundary scope="mobile-lead-workspace" title="Mobile lead failed to load"><MobileWorkspacePage workspaceType="lead" /></AppErrorBoundary>} />
                   <Route path="/mobile/matter/:workspaceId" element={<AppErrorBoundary scope="mobile-matter-workspace" title="Mobile matter failed to load"><MobileWorkspacePage workspaceType="matter" /></AppErrorBoundary>} />
                   <Route path="/mobile/application/:workspaceId" element={<AppErrorBoundary scope="mobile-application-workspace" title="Mobile application failed to load"><MobileWorkspacePage workspaceType="application" /></AppErrorBoundary>} />

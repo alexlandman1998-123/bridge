@@ -1,4 +1,4 @@
-import { Building2, CalendarDays, CircleHelp, FileText, Inbox, LogOut, Search, Settings, TrendingUp, UserCircle } from 'lucide-react'
+import { Building2, CalendarDays, CircleHelp, FileText, Inbox, LogOut, Search, Settings, TrendingUp, UserCircle, UsersRound } from 'lucide-react'
 import { useNavigate, useOutletContext } from 'react-router-dom'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { MobileFieldModePanel } from '../../components/mobile-shell/MobileProductivity'
@@ -11,7 +11,7 @@ import { trackMobileMetric } from '../../services/observability/monitoring'
 
 const MORE_ITEMS = [
   { key: 'profile', label: 'Profile', icon: UserCircle, meta: 'Account and mobile preferences' },
-  { key: 'calendar', label: 'Calendar', icon: CalendarDays, meta: 'Appointments and follow-ups' },
+  { key: 'calendar', label: 'Calendar', icon: CalendarDays, meta: 'Saved appointments', to: '/mobile/calendar' },
   { key: 'insights', label: 'Reports / Insights', icon: TrendingUp, meta: 'Pipeline, commission and team snapshot', to: '/mobile/reports' },
   { key: 'documents', label: 'Documents', icon: FileText, meta: 'Upload and review', to: '/mobile/documents' },
   { key: 'search', label: 'Search', icon: Search, meta: 'Find work fast', to: '/mobile/search' },
@@ -29,6 +29,11 @@ export default function MobileMore() {
   const workspaceName = workspace.workspace?.name || 'Workspace'
   const prefersDesktop = userPrefersDesktopOnMobile()
   const desktopLandingRoute = getDesktopLandingRoute(workspace)
+  const moreItems = workspace.role === 'developer' ? [
+    { key: 'developments', label: 'Developments', icon: Building2, meta: 'Portfolio and available units', to: '/mobile/developments' },
+    { key: 'leads', label: 'Leads', icon: UsersRound, meta: 'Buyer interest and development enquiries', to: '/mobile/developer/leads' },
+    ...MORE_ITEMS,
+  ] : MORE_ITEMS
 
   async function handleLogout() {
     await Promise.resolve(onLogout?.())
@@ -83,7 +88,7 @@ export default function MobileMore() {
       />
 
       <section className="space-y-3">
-        {MORE_ITEMS.map((item) => {
+        {moreItems.map((item) => {
           const Icon = item.icon
           return (
             <button

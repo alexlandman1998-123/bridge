@@ -1,6 +1,6 @@
 import { resolveMobileRoleCategory } from '../config/mobileShell.js'
 
-const MOBILE_ENABLED_ROLES = new Set(['agent', 'principal', 'attorney', 'bond_originator', 'commercial'])
+const MOBILE_ENABLED_ROLES = new Set(['agent', 'principal', 'developer', 'attorney', 'bond_originator', 'commercial'])
 
 export function userCanAccessMobile(userContext = {}) {
   const role = String(userContext.role || userContext.baseRole || userContext.appRole || userContext.profile?.role || '').trim().toLowerCase()

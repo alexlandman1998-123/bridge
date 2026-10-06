@@ -2386,3 +2386,24 @@ and has not been applied remotely. Focused checks use isolated database membersh
 and canonical-invitation fixtures; live invite acceptance/delivery and production
 integration still need verification after an explicitly approved release. No real
 account, access grant, email, deployment or remote database write is performed here.
+
+### Mobile sales listings
+
+Agents and developers can open **Menu → Listings**, browse their accessible active
+sales listings, search and filter the full inventory, or continue saved drafts.
+Photo cards show saved price, address, unit number, beds, baths and floor/erf size;
+unrecorded values remain visibly unknown. Inventory reads retain organisation and
+assignment scope and paginate beyond the API's first page.
+
+**Create new listing** reuses the full listing editor in six mobile steps, with
+large inputs, draft recovery, photo ordering/cover selection and a final review.
+Developers begin with development, unit and sales assignment. Saving waits for
+property and marketing persistence; retries retain the original record. Mobile
+channel choices save preferences; portal submission remains separate. Rentals
+retain their existing creation workflow.
+
+Focused checks:
+`npx vitest run src/pages/mobile/__tests__/MobileListingsPage.test.jsx src/pages/mobile/__tests__/MobileListingFields.test.jsx src/pages/mobile/__tests__/MobileListingWizardKeyboard.test.jsx src/services/__tests__/mobileListingsService.test.js`,
+`node --test src/services/__tests__/privateListingService.mobileInventory.test.js`,
+`npm run test:direct-listing-persistence-phase3`, and
+`npm run test:mobile-shell-routing`.

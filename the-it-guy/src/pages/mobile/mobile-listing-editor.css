@@ -1,0 +1,23 @@
+.mobile-listing-editor{padding-top:18px;color:#152621}
+.mobile-listing-editor-intro>p{margin:0 0 8px;color:#627068;font-size:11px}.mobile-listing-editor-intro>h1{margin:0;font-size:30px;font-weight:550;letter-spacing:-.05em;line-height:1.2}.mobile-listing-editor-intro>span{display:block;margin-top:10px;color:#627068;font-size:12px;line-height:1.6}
+.mobile-listing-progress{padding:16px;border:1px solid #dce4de;border-radius:18px;background:white}
+.mobile-listing-progress-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}.mobile-listing-progress-heading>span{color:#627068;font-size:11px}.mobile-listing-progress-heading strong{font-size:13px;font-weight:550;overflow-wrap:anywhere}
+.mobile-listing-progress-track{display:flex;gap:5px;margin:16px 0 8px}.mobile-listing-progress-track>span{flex:1;height:4px;border-radius:4px;background:#e5ebe6}.mobile-listing-progress-track .complete{background:#166b50}
+.mobile-listing-progress summary{display:flex;align-items:center;justify-content:space-between;min-height:44px;color:#627068;font-size:11px;list-style:none;cursor:pointer}.mobile-listing-progress summary::-webkit-details-marker{display:none}
+.mobile-listing-progress details>div{display:grid;gap:6px;padding-top:6px}.mobile-listing-progress details button{display:flex;align-items:center;gap:12px;min-height:48px;border:0;border-radius:10px;background:#f6f8f6;padding:8px 12px;color:#33493e;text-align:left;font-size:12px}.mobile-listing-progress details button:disabled{opacity:.45}.mobile-listing-progress details button[aria-current=step]{color:#166b50;background:#edf5ef}.mobile-listing-progress details button>span{display:flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:white;font-size:11px}
+.mobile-listing-editor>div.overflow-hidden{overflow:visible;border-radius:20px;border-color:#dce4de;box-shadow:none}
+.mobile-listing-editor>div.overflow-hidden>div{padding:20px 16px}
+.mobile-listing-editor h2{font-size:21px;font-weight:550;letter-spacing:-.03em;color:#152621}.mobile-listing-editor h3{color:#33493e;font-weight:550}
+.mobile-listing-editor input:not([type=checkbox]):not([type=radio]):not([type=file]),.mobile-listing-editor select,.mobile-listing-editor textarea{min-height:48px;min-width:0;max-width:100%;font-size:16px;border-radius:12px;border-color:#dce4de;color:#152621}
+.mobile-listing-editor textarea{min-height:128px;line-height:1.7}
+.mobile-listing-editor label{min-width:0}.mobile-listing-editor p,.mobile-listing-editor span{overflow-wrap:anywhere}
+.mobile-listing-editor .sales-property-categories{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.mobile-listing-editor .sales-property-categories button{padding:12px 8px;gap:5px}.mobile-listing-editor .sales-property-categories button>span:last-child{display:none}.mobile-listing-editor .sales-property-categories button>span:first-child{flex-direction:column;align-items:flex-start;gap:8px}
+.mobile-listing-editor footer{position:sticky;bottom:0;display:grid;grid-template-columns:auto minmax(0,1fr);gap:8px;padding:12px;background:#fffffff5;border-radius:0 0 20px 20px}
+.mobile-listing-editor footer>div{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.mobile-listing-editor footer button{min-height:48px;padding:10px 9px;font-size:11px;justify-content:center}
+.mobile-listing-editor button:focus-visible,.mobile-listing-editor summary:focus-visible{outline:2px solid #5eaf86;outline-offset:2px}
+.mobile-listing-editor .mobile-listing-more-fields{margin-top:20px;padding:16px;border:1px solid #dce4de;border-radius:14px;background:#f8faf8}.mobile-listing-more-fields>summary{min-height:28px;cursor:pointer;color:#166b50;font-size:13px;font-weight:550}.mobile-listing-more-fields>div{display:grid;gap:16px;margin-top:18px}
+
+
+.mobile-listing-editor>.flex{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px}.mobile-listing-editor footer>div>button:only-child{grid-column:1/-1}

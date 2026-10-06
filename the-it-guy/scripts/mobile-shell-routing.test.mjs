@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
 import { resolveMobileAwareRedirect } from '../src/lib/resolveMobileAwareRedirect.js'
+import { getMobileNavItems } from '../src/config/mobileShell.js'
 import {
   MOBILE_DESKTOP_PREFERENCE_KEY,
   setPreferDesktopOnMobile,
@@ -44,6 +45,16 @@ global.window = {
 }
 
 assert.equal(resolve('/dashboard'), '/mobile/home', 'mobile agents should land on mobile home from dashboard')
+const developer = { role: 'developer' }
+assert.equal(resolve('/dashboard', { user: developer }), '/mobile/home', 'mobile developers should use the same mobile home shell')
+assert.equal(resolve('/developer/developments', { user: developer }), '/mobile/developments')
+assert.equal(resolve('/developer/developments/project-1', { user: developer }), '/mobile/development/project-1')
+assert.equal(resolve('/developer/leads/lead-1', { user: developer }), '/mobile/developer/leads/lead-1')
+assert.equal(resolve('/transactions/tx-1', { user: developer }), '/mobile/transaction/tx-1')
+assert.equal(resolve('/dashboard', { user: developer, deviceType: 'desktop' }), '/dashboard', 'desktop developers should keep their existing dashboard')
+assert.equal(resolve('/dashboard', { user: developer, featureFlags: { enableMobileShell: false, enableMobileLoginRedirect: true } }), '/dashboard')
+assert.equal(resolve('/buyer-portal/example', { user: developer }), '/buyer-portal/example', 'public portals must not be captured by developer mobile redirects')
+assert.deepEqual(getMobileNavItems(developer).map((item) => item.key), ['home', 'transactions', 'create', 'developments', 'more'])
 assert.equal(resolve('/transactions/tx-123'), '/mobile/transaction/tx-123', 'transaction deep links should map to mobile transaction workspaces')
 assert.equal(resolve('/auth'), '/auth', 'public auth routes should not be forced into mobile shell')
 assert.equal(
