@@ -1,5 +1,6 @@
 import { readSellerMandateTerms } from '../lib/sellerMandateCapture.js'
 import { normalizeListingExternalLinkStatus } from '../lib/listingExternalLinkStatus.js'
+import { normalizePortalStatus } from '../lib/listingDataMapper.js'
 import { getSellerPortalSignedUploadReference } from '../core/documents/sellerPhysicalSigningCopy.js'
 import { insertRentalListingOnce } from './rentals/rentalListingCreationRecovery.js'
 import { assertDocumentGeneratorAvailable } from '../core/documents/documentGeneratorRetirement'
@@ -5506,11 +5507,11 @@ function buildPrivateListingPayload(payload = {}, userId = null) {
     created_by: normalizeUuid(payload.createdBy || userId),
     property24_listing_url: normalizeNullableText(payload.property24ListingUrl),
     property24_reference: normalizeNullableText(payload.property24Reference),
-    property24_status: normalizeNullableText(payload.property24Status) || 'not_published',
+    property24_status: normalizePortalStatus(payload.property24Status, { strict: true }),
     private_property_listing_url: normalizeNullableText(payload.privatePropertyListingUrl),
     private_property_reference: normalizeNullableText(payload.privatePropertyReference),
-    private_property_status: normalizeNullableText(payload.privatePropertyStatus) || 'not_published',
-    bridge_listing_status: normalizeNullableText(payload.bridgeListingStatus) || 'not_published',
+    private_property_status: normalizePortalStatus(payload.privatePropertyStatus, { strict: true }),
+    bridge_listing_status: normalizePortalStatus(payload.bridgeListingStatus, { strict: true }),
     bridge_listing_public_url: normalizeNullableText(payload.bridgeListingPublicUrl),
     listing_preview_description: normalizeNullableText(payload.listingPreviewDescription),
     internal_listing_notes: normalizeNullableText(payload.internalListingNotes),
@@ -5751,11 +5752,11 @@ export async function updatePrivateListing(listingId, payload = {}, options = {}
   if (payload.isActive !== undefined) patch.is_active = Boolean(payload.isActive)
   if (payload.property24ListingUrl !== undefined) patch.property24_listing_url = normalizeNullableText(payload.property24ListingUrl)
   if (payload.property24Reference !== undefined) patch.property24_reference = normalizeNullableText(payload.property24Reference)
-  if (payload.property24Status !== undefined) patch.property24_status = normalizeNullableText(payload.property24Status) || 'not_published'
+  if (payload.property24Status !== undefined) patch.property24_status = normalizePortalStatus(payload.property24Status, { strict: true })
   if (payload.privatePropertyListingUrl !== undefined) patch.private_property_listing_url = normalizeNullableText(payload.privatePropertyListingUrl)
   if (payload.privatePropertyReference !== undefined) patch.private_property_reference = normalizeNullableText(payload.privatePropertyReference)
-  if (payload.privatePropertyStatus !== undefined) patch.private_property_status = normalizeNullableText(payload.privatePropertyStatus) || 'not_published'
-  if (payload.bridgeListingStatus !== undefined) patch.bridge_listing_status = normalizeNullableText(payload.bridgeListingStatus) || 'not_published'
+  if (payload.privatePropertyStatus !== undefined) patch.private_property_status = normalizePortalStatus(payload.privatePropertyStatus, { strict: true })
+  if (payload.bridgeListingStatus !== undefined) patch.bridge_listing_status = normalizePortalStatus(payload.bridgeListingStatus, { strict: true })
   if (payload.bridgeListingPublicUrl !== undefined) patch.bridge_listing_public_url = normalizeNullableText(payload.bridgeListingPublicUrl)
   if (payload.listingPreviewDescription !== undefined) {
     const nextPreviewDescription = normalizeNullableText(payload.listingPreviewDescription)

@@ -54,7 +54,7 @@ export function resolvePrivatePropertyExternalStatus({
 
 export function resolveArch9PrivatePropertyStatus({ externalStatus = '', isOnPortal = false } = {}) {
   const status = normalizeStatusKey(externalStatus)
-  if (status === 'removed') return 'removed'
+  if (['removed', 'inactive'].includes(status)) return 'removed'
   if (status === 'paused') return 'paused'
   if (status === 'active' || isOnPortal) return 'published'
   return 'draft'

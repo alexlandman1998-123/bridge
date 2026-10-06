@@ -13,11 +13,19 @@ function firstValue(...values) {
   return ''
 }
 
-export function normalizePortalStatus(value) {
-  const normalized = toText(value).toLowerCase()
-  return ['not_published', 'draft', 'published', 'paused', 'removed'].includes(normalized)
-    ? normalized
-    : PORTAL_STATUS_FALLBACK
+export function normalizePortalStatus(value, { strict = false } = {}) {
+  const normalized = toText(value).toLowerCase().replace(/[\s-]+/g, '_')
+  if (!normalized) return PORTAL_STATUS_FALLBACK
+  if (['not_published', 'draft', 'published', 'paused', 'removed'].includes(normalized)) return normalized
+
+  // Provider and workflow statuses must use the private_listings vocabulary.
+  if (['active', 'live', 'on_portal'].includes(normalized)) return 'published'
+  if (['inactive', 'expired', 'withdrawn', 'archived'].includes(normalized)) return 'removed'
+  if (['submitted', 'pending', 'processing', 'queued', 'failed'].includes(normalized)) return 'draft'
+  if (strict) {
+    throw new Error('Portal listing status is invalid. Choose Not published, Draft, Published, Paused or Removed before saving.')
+  }
+  return PORTAL_STATUS_FALLBACK
 }
 
 export function mapSellerOnboardingToListingDetails(listing = {}) {

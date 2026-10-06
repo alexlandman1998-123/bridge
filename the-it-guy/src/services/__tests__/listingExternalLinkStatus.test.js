@@ -38,7 +38,7 @@ beforeEach(() => {
 it.each([
   ['published', 'Published'], [' live ', 'Live'], ['active', 'Live'],
   ['draft', 'Draft'], ['removed', 'Removed'], ['paused', 'Removed'],
-  ['inactive', 'Removed'], ['expired', 'Expired'], ['submitted', 'Draft'],
+  ['inactive', 'Removed'], ['withdrawn', 'Removed'], ['expired', 'Expired'], ['submitted', 'Draft'],
   ['failed', 'Draft'], ['on_portal', 'Published'], ['', 'Draft'],
 ])('saves external links with database-compatible status %s', async (status, expected) => {
   const result = await syncPrivateListingDistributionData(id, {

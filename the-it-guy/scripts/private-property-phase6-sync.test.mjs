@@ -97,6 +97,7 @@ assert.equal(resolvePrivatePropertyExternalStatus({ eventType: 'ErrorDownloading
 assert.equal(resolvePrivatePropertyExternalStatus({ privatePropertyStatus: 'Inactive' }), 'inactive')
 assert.equal(resolvePrivatePropertyExternalStatus({ fallback: 'Active' }), 'active')
 assert.equal(resolveArch9PrivatePropertyStatus({ externalStatus: 'active' }), 'published')
+assert.equal(resolveArch9PrivatePropertyStatus({ externalStatus: 'inactive', isOnPortal: true }), 'removed')
 assert.equal(resolveArch9PrivatePropertyStatus({ externalStatus: 'failed' }), 'draft')
 assert.deepEqual(summarizePrivatePropertySyncPayload({
   propertyId: 'PRV-1',

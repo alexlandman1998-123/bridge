@@ -13,6 +13,7 @@ export function normalizeListingExternalLinkStatus(value = '') {
     removed: 'Removed',
     paused: 'Removed',
     inactive: 'Removed',
+    withdrawn: 'Removed',
     expired: 'Expired',
   }
   if (!Object.hasOwn(statuses, status)) {
