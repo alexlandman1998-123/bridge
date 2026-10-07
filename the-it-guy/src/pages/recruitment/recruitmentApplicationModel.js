@@ -1,4 +1,4 @@
-import { profileVersion, recruitmentProfileSummary } from './recruitmentProfileModel'
+import { profileVersion, recruitmentProfileSummary } from './recruitmentProfileModel.js'
 
 export const applicationVersion = 'recruitment-application-v1'
 export const practitionerStatuses = [['new_entrant', 'New to real estate'], ['candidate', 'Candidate practitioner'], ['non_principal', 'Non-principal practitioner'], ['principal', 'Principal practitioner']]
