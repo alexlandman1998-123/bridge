@@ -84,7 +84,10 @@ export async function createRecruitmentIntakeResponse({ method = 'POST', headers
     if (signingUp) {
       try {
         const account = await createRecruitmentApplicant(db, link, body.submissionKey, normalizeRecruitmentContact(body.contact), body.password)
-        return reply(account.duplicate ? 202 : 201, { accepted: true, contactAccepted: true, verificationRequired: true, duplicate: account.duplicate, stage: 'lead_received', emailVerification: 'pending' })
+        // Keep the v1 readiness acknowledgement for forms opened before the
+        // verification-required contract was released. It grants no session;
+        // both existing and new accounts still require email ownership proof.
+        return reply(account.duplicate ? 202 : 201, { accepted: true, contactAccepted: true, accountCreated: true, verificationRequired: true, duplicate: account.duplicate, stage: 'lead_received', emailVerification: 'pending' })
       } catch {
         return reply(503, { contactAccepted: true, error: 'Your contact details are saved. Your account could not be created. Please retry, or contact the agency if you already have an account.' })
       }

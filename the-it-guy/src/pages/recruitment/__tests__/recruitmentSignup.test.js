@@ -52,7 +52,9 @@ it('continues existing Arch9 emails through verification without changing or exp
   expect(result.body).toMatchObject({ accepted: true, contactAccepted: true, verificationRequired: true, emailVerification: 'pending' })
   expect(result.headers).not.toHaveProperty('Set-Cookie')
   expect(result.body).not.toHaveProperty('applicant')
-  expect(result.body).not.toHaveProperty('accountCreated')
+  // Already-open v1 forms require this acknowledgement before showing email
+  // verification; it is identical for existing and newly created accounts.
+  expect(result.body.accountCreated).toBe(true)
   expect(db.rpc).toHaveBeenCalledTimes(1)
   expect(db.rpc.mock.calls[0][0]).toBe('recruitment_capture_contact')
   expect(db.users.size).toBe(0)
