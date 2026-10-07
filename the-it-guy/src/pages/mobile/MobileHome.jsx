@@ -18,6 +18,7 @@ import { getCachedMobileDashboardSnapshot, getMobileDashboardSnapshot, getMobile
 import { trackMobileMetric } from '../../services/observability/monitoring'
 import AgentDashboard from '../../components/mobile-shell/AgentDashboard'
 import { addCalendarDays, sastDayStart } from '../../core/appointments/attorneyCalendarModel.js'
+import { getMobileBrandStyle } from '../../components/mobile-shell/mobileBrandStyle.js'
 
 const CARD_TONES = {
   green: 'bg-[#e5f6ed] text-[#1f8b65]',
@@ -167,7 +168,7 @@ function KpiCard({ card }) {
   const taskCount = card.key === 'tasks' ? Number(card.value || 0) : 0
   const sparkColor = SPARKLINE_TONES[card.key] || SPARKLINE_TONES.default
   return (
-    <div className="flex min-h-[148px] flex-col rounded-[22px] border border-[#dce5ef] bg-white px-4 py-4 shadow-[0_14px_32px_rgba(15,23,42,0.055)]">
+    <div className="mobile-glass-surface flex min-h-[148px] flex-col rounded-[22px] border border-[#dce5ef] bg-white px-4 py-4 shadow-[0_14px_32px_rgba(15,23,42,0.055)]">
       <div className="flex items-center justify-between gap-3">
         <span className={`flex h-10 w-10 items-center justify-center rounded-[15px] ${CARD_TONES[card.tone] || CARD_TONES.blue}`}>
           <Icon className="h-[18px] w-[18px]" strokeWidth={1.75} />
@@ -185,7 +186,7 @@ function KpiCard({ card }) {
   )
 }
 
-function AgencyCommandCard({ snapshot, priority, onOpen }) {
+function AgencyCommandCard({ snapshot, priority, onOpen, brandStyle }) {
   const action = getCommandAction(snapshot, priority)
   const pipelineValue = getSummaryValue(snapshot, 'pipeline', 'R0')
   const activeTransactions = getSummaryValue(snapshot, 'active', '0')
@@ -196,26 +197,24 @@ function AgencyCommandCard({ snapshot, priority, onOpen }) {
   const ringOffset = circumference - (healthScore / 100) * circumference
 
   return (
-    <section className="relative overflow-hidden rounded-[26px] bg-[#061f1f] p-4 text-white shadow-[0_18px_42px_rgba(15,23,42,0.16)] min-[430px]:p-5">
-      <span className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_18%,rgba(126,230,181,0.22),transparent_32%),linear-gradient(120deg,#0b3633_0%,#062323_48%,#041d22_100%)]" />
-      <span className="pointer-events-none absolute -right-16 -top-16 h-52 w-52 rounded-full border border-white/[0.06]" />
+    <section className="mobile-glass-surface mobile-home-priority-card relative overflow-hidden rounded-[26px] border p-4 min-[430px]:p-5" style={brandStyle}>
       <div className="relative flex items-start justify-between gap-3 min-[430px]:gap-5">
         <div className="min-w-0">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#9fe0bd] min-[430px]:text-[12px]">Agency Command</p>
-          <h1 className="mt-4 text-[27px] font-semibold leading-[1.08] tracking-[-0.055em] text-white min-[430px]:text-[31px]">{pipelineValue} Pipeline</h1>
-          <p className="mt-3 text-[13px] leading-5 text-[#d7e4ed] min-[430px]:text-[14px]">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-inherit min-[430px]:text-[12px]">Agency Command</p>
+          <h1 className="mt-4 text-[27px] font-semibold leading-[1.08] tracking-[-0.055em] text-inherit min-[430px]:text-[31px]">{pipelineValue} Pipeline</h1>
+          <p className="mt-3 text-[13px] leading-5 text-inherit min-[430px]:text-[14px]">
             {activeTransactions} active transactions · {mandates} mandates · {atRisk} at risk
           </p>
         </div>
         <div className="relative flex h-[76px] w-[76px] shrink-0 items-center justify-center min-[430px]:h-[88px] min-[430px]:w-[88px]">
           <svg viewBox="0 0 104 104" className="absolute inset-0 h-full w-full -rotate-90" aria-hidden="true">
-            <circle cx="52" cy="52" r="43" fill="none" stroke="rgba(159,224,189,0.22)" strokeWidth="8" />
+            <circle cx="52" cy="52" r="43" fill="none" stroke="currentColor" opacity="0.2" strokeWidth="8" />
             <circle
               cx="52"
               cy="52"
               r="43"
               fill="none"
-              stroke="#9fe0bd"
+              stroke="currentColor"
               strokeWidth="8"
               strokeLinecap="round"
               strokeDasharray={circumference}
@@ -224,25 +223,25 @@ function AgencyCommandCard({ snapshot, priority, onOpen }) {
           </svg>
           <span className="relative flex flex-col items-center justify-center text-center">
             <span className="text-[25px] font-semibold leading-none tracking-[-0.04em] min-[430px]:text-[30px]">{healthScore}</span>
-            <span className="mt-1 text-[9px] font-semibold uppercase tracking-[0.05em] text-[#b9ecd0] min-[430px]:text-[10px]">Health</span>
+            <span className="mt-1 text-[9px] font-semibold uppercase tracking-[0.05em] text-inherit min-[430px]:text-[10px]">Health</span>
           </span>
         </div>
       </div>
 
       <button
         type="button"
-        className="relative mt-5 grid w-full grid-cols-[44px_1fr] items-center gap-3 rounded-[22px] border border-white/12 bg-white/[0.095] p-3 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition active:bg-white/[0.14] min-[430px]:grid-cols-[50px_1fr_auto] min-[430px]:gap-4 min-[430px]:p-4"
+        className="relative mt-5 grid w-full grid-cols-[44px_1fr] items-center gap-3 rounded-[22px] border border-[var(--mobile-home-card-divider)] bg-transparent p-3 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] transition active:bg-white/5 min-[430px]:grid-cols-[50px_1fr_auto] min-[430px]:gap-4 min-[430px]:p-4"
         onClick={() => onOpen(action.to)}
       >
-        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[15px] bg-white text-[#1f8b65] shadow-[0_10px_22px_rgba(0,0,0,0.14)] min-[430px]:h-[50px] min-[430px]:w-[50px] min-[430px]:rounded-[17px]">
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[15px] bg-white text-[#1f8b65] shadow-[0_10px_22px_rgba(28,32,30,0.06)] min-[430px]:h-[50px] min-[430px]:w-[50px] min-[430px]:rounded-[17px]">
           <Target className="h-[22px] w-[22px] min-[430px]:h-6 min-[430px]:w-6" strokeWidth={1.8} />
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block text-[10px] font-semibold uppercase tracking-[0.1em] text-[#9fe0bd] min-[430px]:text-[11px]">{action.eyebrow}</span>
-          <span className="mt-1.5 block line-clamp-2 text-[15px] font-semibold leading-5 text-white min-[430px]:text-[16px] min-[430px]:leading-[1.35]">{action.title}</span>
-          <span className="mt-1 block line-clamp-1 text-[12px] leading-4 text-[#c4d4df] min-[430px]:line-clamp-2 min-[430px]:text-[13px]">{action.body}</span>
+          <span className="block text-[10px] font-semibold uppercase tracking-[0.1em] text-inherit min-[430px]:text-[11px]">{action.eyebrow}</span>
+          <span className="mt-1.5 block line-clamp-2 text-[15px] font-semibold leading-5 text-inherit min-[430px]:text-[16px] min-[430px]:leading-[1.35]">{action.title}</span>
+          <span className="mt-1 block line-clamp-1 text-[12px] leading-4 text-inherit min-[430px]:line-clamp-2 min-[430px]:text-[13px]">{action.body}</span>
         </span>
-        <span className="col-start-2 w-fit shrink-0 rounded-[15px] bg-white/10 px-3 py-1.5 text-center text-[12px] font-semibold leading-4 text-[#d7e4ed] min-[430px]:col-start-auto min-[430px]:text-[13px]">{action.meta}</span>
+        <span className="col-start-2 w-fit shrink-0 rounded-[15px] border border-[var(--mobile-home-card-divider)] bg-transparent px-3 py-1.5 text-center text-[12px] font-semibold leading-4 text-inherit min-[430px]:col-start-auto min-[430px]:text-[13px]">{action.meta}</span>
       </button>
     </section>
   )
@@ -269,7 +268,7 @@ function CommandActions({ actions = [], onAction }) {
             <button
               key={action.key}
               type="button"
-              className="flex min-h-[72px] items-center gap-3 rounded-[22px] border border-[#dce5ef] bg-white px-3.5 text-left shadow-[0_14px_32px_rgba(15,23,42,0.055)] active:bg-[#f8fafc]"
+              className="mobile-glass-surface flex min-h-[72px] items-center gap-3 rounded-[22px] border border-[#dce5ef] bg-white px-3.5 text-left shadow-[0_14px_32px_rgba(15,23,42,0.055)] active:bg-[#f8fafc]"
               onClick={() => onAction(action)}
             >
               <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[16px] bg-[#e5f6ed] text-[#1f8b65]">
@@ -293,6 +292,7 @@ export default function MobileHome() {
   const organisationContext = useOptionalOrganisation()
   const organisation = organisationContext?.organisation || null
   const organisationLoading = Boolean(organisationContext?.loading)
+  const brandStyle = getMobileBrandStyle(organisationContext, workspace)
   const navigate = useNavigate()
   const requestRef = useRef(0)
   const [searchParams] = useSearchParams()
@@ -438,7 +438,7 @@ export default function MobileHome() {
   if (['agent', 'principal', 'developer', 'default'].includes(snapshot?.category)) {
     return <>
       {showUnsupportedNotice && <MobileCard><h2>That page is not available on mobile yet.</h2><p>You can continue from your mobile workspace.</p></MobileCard>}
-      <AgentDashboard snapshot={snapshot} onOpen={handlePriorityOpen} onRefresh={load} />
+      <AgentDashboard snapshot={snapshot} onOpen={handlePriorityOpen} onRefresh={load} brandStyle={brandStyle} />
     </>
   }
 
@@ -452,7 +452,7 @@ export default function MobileHome() {
       ) : null}
 
       <section className="pt-3">
-        <AgencyCommandCard snapshot={snapshot} priority={priority} onOpen={handlePriorityOpen} />
+        <AgencyCommandCard snapshot={snapshot} priority={priority} onOpen={handlePriorityOpen} brandStyle={brandStyle} />
       </section>
 
       <section className="grid grid-cols-2 gap-3">

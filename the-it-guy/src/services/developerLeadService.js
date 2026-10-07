@@ -397,7 +397,7 @@ export async function listAgencyIntroducedDeveloperLeadsForAgency({ sourceAgency
   }))
 }
 
-export async function listDeveloperLeadIntake({ developerOrgId = '', status = 'all', source = 'all' } = {}) {
+export async function listDeveloperLeadIntake({ developerOrgId = '', status = 'all', source = 'all', throwOnUnavailable = false } = {}) {
   if (!isSupabaseConfigured || !supabase) return []
   const orgId = requireDeveloperOrgId(developerOrgId)
   const client = requireClient()
@@ -419,6 +419,7 @@ export async function listDeveloperLeadIntake({ developerOrgId = '', status = 'a
 
   const { data, error } = await query
   if (error) {
+    if (throwOnUnavailable) throw error
     if (isMissingDeveloperLeadSchema(error) || isPermissionError(error)) return []
     throw error
   }

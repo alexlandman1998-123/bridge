@@ -130,7 +130,7 @@ export default function LegalDocumentPreviewPage() {
             <span className="text-[11px] font-semibold uppercase tracking-[0.17em] text-[#7b8da2]">Safe scenario preview</span>
             <h1 id="legal-preview-title" className="mt-3 text-3xl font-semibold tracking-[-0.03em] text-[#101c2d]">Test {definition.label}</h1>
             <p className="mt-3 text-[15px] leading-7 text-[#62758a]">
-              Pick a real-world situation and Bridge will assemble the matching wording from this template.
+              Pick a real-world situation and Arch9 will assemble the matching wording from this template.
             </p>
           </div>
           <Link to={editorPath} className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-[11px] border border-[#d9e3ec] bg-white px-4 text-sm font-semibold text-[#31465d] transition hover:border-[#b9c9d8] hover:bg-[#f8fafc]">
@@ -241,7 +241,7 @@ export default function LegalDocumentPreviewPage() {
             <div className="flex min-h-[650px] flex-col items-center justify-center px-6 text-center">
               <div className="flex h-14 w-14 items-center justify-center rounded-full bg-[#f2f5f8] text-[#6e8195]"><FilePenLine className="h-6 w-6" aria-hidden="true" /></div>
               <h2 className="mt-4 text-lg font-semibold text-[#203248]">Set up this document first</h2>
-              <p className="mt-2 max-w-md text-sm leading-6 text-[#718398]">Add the standard wording and situation pieces before testing how Bridge assembles them.</p>
+              <p className="mt-2 max-w-md text-sm leading-6 text-[#718398]">Add the standard wording and situation pieces before testing how Arch9 assembles them.</p>
               <Link to={editorPath} className="mt-5 inline-flex min-h-11 items-center justify-center gap-2 rounded-[11px] bg-[#0f7f4f] px-5 text-sm font-semibold text-white">Set up document</Link>
             </div>
           ) : preview.error ? (
@@ -280,7 +280,7 @@ export default function LegalDocumentPreviewPage() {
           ) : (
             <div className="flex min-h-[650px] flex-col items-center justify-center px-6 text-center">
               <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[#edf8f2] text-[#16804d]"><Eye className="h-7 w-7" aria-hidden="true" /></div>
-              <h2 className="mt-5 text-lg font-semibold text-[#203248]">See exactly what Bridge will assemble</h2>
+              <h2 className="mt-5 text-lg font-semibold text-[#203248]">See exactly what Arch9 will assemble</h2>
               <p className="mt-2 max-w-md text-sm leading-6 text-[#718398]">Choose a situation, then build a sample preview. Change situations to compare the wording.</p>
             </div>
           )}

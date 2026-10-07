@@ -71,6 +71,7 @@ export default function BuyerPortalDesktopSidebar({
   statusByKey = {},
   supportContact = {},
   supportCopy = '',
+  showSupportPanel = true,
   headerControls = null,
   footerDescriptor = '',
 }) {
@@ -121,7 +122,7 @@ export default function BuyerPortalDesktopSidebar({
       </nav>
 
       <div className="mt-auto pt-6">
-        <BuyerPortalSupportPanel contact={supportContact} copy={supportCopy} />
+        {showSupportPanel ? <BuyerPortalSupportPanel contact={supportContact} copy={supportCopy} /> : null}
         <div className="px-1 pb-1 pt-4 text-xs leading-5 text-white/70">
           <p className="font-semibold text-white">{brandName}</p>
           {footerDescriptor ? <p>{footerDescriptor}</p> : null}

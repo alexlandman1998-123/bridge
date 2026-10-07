@@ -2,6 +2,10 @@
 .mobile-transactions-intro { margin-bottom: 24px; }
 .mobile-transactions-intro h1 { margin: 0; font-size: 30px; font-weight: 550; letter-spacing: -.05em; line-height: 1.2; }
 .mobile-transactions-intro p { margin: 8px 0 0; color: #627068; font-size: 12px; line-height: 1.5; }
+.mobile-transactions-header-card { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 80px; padding: 18px; border: 1px solid #dce4de; border-radius: 18px; background: #fff; box-shadow: 0 8px 24px #15262106; }
+.mobile-transactions-header-card h1 { min-width: 0; font-size: 24px; overflow-wrap: anywhere; }
+.mobile-transactions-header-card p { display: flex; flex-shrink: 0; align-items: center; gap: 6px; margin: 0; padding: 7px 10px; border-radius: 999px; background: #edf5ef; color: #166b50; font-size: 11px; font-weight: 550; white-space: nowrap; }
+.mobile-transactions-header-card p::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: #1f8b65; }
 .mobile-transactions-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 22px; }
 .mobile-property-deal { display: block; width: 100%; padding: 0; overflow: hidden; border: 1px solid #dce4de; border-radius: 20px; background: #fff; color: #152621; text-align: left; cursor: pointer; box-shadow: 0 8px 24px #15262106; }
 .mobile-property-deal-media { position: relative; display: block; width: 100%; aspect-ratio: 1.9; overflow: hidden; background: linear-gradient(135deg, #edf3ef, #dce8df); }

@@ -2,6 +2,7 @@ import { createHomeSeekersRecruitmentResponse } from '../../server/services/home
 import { writeHomeSeekersJsonResponse as writeNodeJsonResponse } from '../../server/services/homeSeekersApiResponse.js'
 
 export default async function handler(request, response) {
+  if (process.env.VERCEL_ENV === 'preview') return writeNodeJsonResponse(response, { status: 503, body: { error: 'This preview does not send applications. Your details have not been sent.' } })
   if (request.method !== 'POST') return writeNodeJsonResponse(response, await createHomeSeekersRecruitmentResponse({ method: request.method }))
   try {
     let body = request.body

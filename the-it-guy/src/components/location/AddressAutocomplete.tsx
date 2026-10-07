@@ -1,5 +1,5 @@
 import { Loader2, MapPin, Search, X } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { loadGoogleMaps, hasGoogleMapsApiKey } from '../../lib/googleMaps'
 import { cn } from '../../lib/utils'
 import { Input } from '../ui/input'
@@ -163,6 +163,7 @@ export default function AddressAutocomplete({
   error = '',
   hideUnavailableMessage = false,
 }: AddressAutocompleteProps) {
+  const inputId = useId()
   const [inputValue, setInputValue] = useState(value?.formattedAddress || '')
   const [predictions, setPredictions] = useState<Prediction[]>([])
   const [isLoadingMaps, setIsLoadingMaps] = useState(false)
@@ -518,7 +519,7 @@ export default function AddressAutocomplete({
   return (
     <div className="relative grid gap-2">
       {label ? (
-        <label className="text-sm font-semibold text-[#2d445e]">
+        <label htmlFor={inputId} className="text-sm font-semibold text-[#2d445e]">
           {label}
           {required ? <span className="ml-1 text-[#b42318]">*</span> : null}
         </label>
@@ -526,6 +527,7 @@ export default function AddressAutocomplete({
       <div className="relative">
         <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8aa0b6]" />
         <Input
+          id={inputId}
           value={inputValue}
           onChange={(event) => {
             const nextValue = event.target.value

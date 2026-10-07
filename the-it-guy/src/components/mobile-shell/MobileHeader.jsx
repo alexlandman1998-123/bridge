@@ -41,7 +41,7 @@ export default function MobileHeader() {
   const showLogo = Boolean(logoUrl) && !(logoLoadFailure.url === logoUrl && logoLoadFailure.failed)
 
   return (
-    <header className="sticky top-0 z-30 border-b border-[#e4ebf2]/80 bg-[#f7f9fc]/94 px-5 pb-4 pt-[max(0.9rem,env(safe-area-inset-top))] backdrop-blur-xl" data-mobile-header>
+    <header className="mobile-shell-header sticky top-0 z-30 border-b px-5 pb-4 pt-[max(0.9rem,env(safe-area-inset-top))] backdrop-blur-xl" data-mobile-header>
       <div className="mx-auto flex max-w-[520px] items-center gap-3">
         <Link to="/mobile/home" className="flex min-w-0 flex-1 items-center text-inherit" aria-label={`${workspaceName} mobile home`}>
           {showLogo ? (
@@ -71,7 +71,7 @@ export default function MobileHeader() {
         <MobileNotificationBell />
         <Link
           to="/mobile/more"
-          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[#e4ebf2] bg-white text-[#10243a] shadow-[0_10px_24px_rgba(15,23,42,0.07)]"
+          className="mobile-glass-control flex h-11 w-11 shrink-0 items-center justify-center rounded-full border bg-white text-[#10243a]"
           aria-label="Profile"
         >
           <UserCircle className="h-[22px] w-[22px]" strokeWidth={1.8} />

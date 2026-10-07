@@ -332,6 +332,7 @@ const PublicAgentDigitalCardPage = lazy(() => import('./pages/PublicAgentDigital
 const RentalModuleBoundary = lazy(() => import('./modules/rentals/shell/RentalModuleBoundary').then((module) => ({ default: module.RentalModuleBoundary })))
 const RentalApplicantJourneyPage = lazy(() => import('./pages/rentals/RentalApplicantJourneyPage'))
 const RentalLandlordOnboardingPage = lazy(() => import('./pages/rentals/RentalLandlordOnboardingPage'))
+const RentalApplicationFeeSettingsPage = lazy(() => import('./pages/rentals/RentalApplicationFeeSettingsPage'))
 const RentalApplicationWorkspacePage = lazy(() => import('./pages/rentals/RentalApplicationWorkspacePage'))
 const RentalApplicationDetailPage = lazy(() => import('./pages/rentals/RentalApplicationDetailPage'))
 const RetiredOfferWorkflowPage = lazy(() => import('./pages/RetiredOfferWorkflowPage'))
@@ -3200,6 +3201,7 @@ function AppRoutes() {
               <Route path="/agent/rentals/inspections/:inspectionId/follow-up" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.dashboard}><RentalInspectionFollowUpPage /></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>} />
               <Route path="/agent/rentals/tenancies/:tenancyId/move-out" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.management}><RentalMoveOutPage /></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>} />
               <Route path="/agent/rentals/tenancies/:tenancyId/closure" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.management}><RentalTenancyClosurePage /></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>} />
+              <Route path="/agent/rentals/settings" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.applications}><RentalApplicationFeeSettingsPage /></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>} />
               <Route path="/agent/rentals/notifications" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.management}><RentalNotificationsPage /></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>} />
               <Route path="/agent/rentals/reminders" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.management}><RentalRemindersPage /></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>} />
               <Route path="/agent/rentals/screening" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.management}><RentalScreeningPage /></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>} />

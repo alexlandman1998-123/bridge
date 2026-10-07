@@ -5,6 +5,7 @@ import {
   normalizeProperty24LeadForImport,
 } from './reconciliationService.js'
 import { normalizeProperty24Text } from './client.js'
+import { createRentalCrmLeadMetadata } from '../../src/services/rentals/rentalCrmLeadModel.js'
 
 async function sendPortalLeadNotifications({ lead = {}, listing = {}, contact = {}, organisationId = '' } = {}) {
   const supabaseUrl = normalizeText(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL)
@@ -194,6 +195,9 @@ function buildCrmRows(lead = {}, listing = {}) {
   const assignedAgentEmail = normalizeEmail(listing.assigned_agent_email)
   const title = normalizeText(listing.title)
   const notes = buildLeadNotes(lead)
+  const rentalMetadata = !lead.listingId && normalizeText(lead.listingType).toLowerCase() === 'rental'
+    ? createRentalCrmLeadMetadata({ leadId, organisationId: lead.organisationId, assignedAgentId, source: 'Property24', role: 'tenant' })
+    : {}
 
   return {
     organisationId: normalizeText(lead.organisationId),
@@ -239,6 +243,7 @@ function buildCrmRows(lead = {}, listing = {}) {
         listingType: lead.listingType || null,
         agencyVerification: lead.agencyVerification || null,
         lead: lead.raw || {},
+        ...rentalMetadata,
       },
       notes: notes || null,
       updated_at: nowIso,

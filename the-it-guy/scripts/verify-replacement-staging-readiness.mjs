@@ -6,6 +6,7 @@ const root = new URL('..', import.meta.url)
 const receipt = JSON.parse(readFileSync(new URL('../release/arch9-schema-baseline-rehearsal.json', import.meta.url), 'utf8'))
 const config = JSON.parse(readFileSync(new URL('../config/schema-baseline-staging.example.json', import.meta.url), 'utf8'))
 const checks = [
+  ['replacement staging is active', config.status !== 'retired' && Boolean(config.projectRef)],
   ['rehearsal project is isolated', receipt.projectRef === config.projectRef && receipt.projectRef !== receipt.productionProjectRef],
   ['legacy staging is not the target', receipt.stagingProjectRef !== config.projectRef],
   ['schema equivalence is verified', receipt.status === 'schema_equivalence_verified'],

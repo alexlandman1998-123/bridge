@@ -1,4 +1,4 @@
-import { isRentalMonthlyRate } from './rentalLeadMatchingModel.js'
+import { isRentalListingWithinBudget } from './rentalLeadMatchingModel.js'
 
 const text = (value) => String(value ?? '').trim()
 export const TENANT_WORKSPACE_TABS = [
@@ -96,7 +96,8 @@ export function tenantQualificationProgress(lead = {}) {
   const values = tenantQualificationValues(lead)
   const count = TENANT_QUESTIONS.filter(
     ({ key }) =>
-      text(values[key]) !== '' && text(values[key]) !== 'Not captured',
+      (text(values[key]) !== '' && text(values[key]) !== 'Not captured') ||
+      (key === 'additionalNotes' && lead.qualification?.source === 'tenant_qualification_link' && Boolean(lead.qualification?.submittedAt)),
   ).length
   return {
     count,
@@ -132,12 +133,7 @@ export function tenantJourneyStage(lead = {}, conversions = [], applications = [
   return { new: 0, contacted: 1, qualified: 2 }[lead.stage] ?? 0
 }
 export function tenantBudgetMatches(lead = {}, matches = []) {
-  const budget = Number(lead.monthlyBudget)
-  if (!(budget > 0)) return []
-  return matches.filter(
-    ({ listing }) =>
-      isRentalMonthlyRate(listing) && Number(listing.monthlyRent) > 0 && Number(listing.monthlyRent) <= budget,
-  )
+  return matches.filter(({ listing }) => isRentalListingWithinBudget(lead, listing))
 }
 export function tenantEnquiryProperty(lead = {}, matches = [], vacancies = []) {
   const id = text(

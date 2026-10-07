@@ -20,6 +20,9 @@ import {
 } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import { useWorkspace } from "../../context/WorkspaceContext";
+import { rentalApplicationReadinessStages } from '../../services/rentals/rentalApplicantPortalModel.js'
+import RentalApplicationCollectionLink from '../../modules/rentals/shared/applications/RentalApplicationCollectionLink.jsx'
+import RentalApplicationCostsPanel from '../../modules/rentals/shared/applications/RentalApplicationCostsPanel.jsx'
 import RentalApplicationWizard from "../../modules/rentals/shared/applications/RentalApplicationWizard.jsx";
 import RentalApplicationDocumentReviewPanel from "../../modules/rentals/shared/applications/RentalApplicationDocumentReviewPanel.jsx";
 import { rentalApplicationSavedDocumentSlots } from "../../services/rentals/rentalApplicationWizardModel.js";
@@ -264,6 +267,7 @@ export default function RentalApplicationDetailPage() {
   const screeningSubjects = RENTAL_REVIEW_CHECKS.flatMap((kind) => rentalReviewSubjects(application.data, kind).map((subject) => ({ kind, subject })));
   const passedChecks = screeningSubjects.filter(({ kind, subject }) => rentalReviewResultPassed(screeningChecks.find((check) => check.checkType === kind)?.result?.subjects?.[subject.id], application.submittedAt)).length;
   const readiness = rentalApplicationApprovalReadiness(application, screeningChecks);
+  const stages = rentalApplicationReadinessStages(application, readiness.ready);
   const totalRequirements = documents.required + 3 + screeningSubjects.length + 2;
   const progress = ["approved", "declined", "withdrawn"].includes(application.status) ? 100 : Math.max(0, Math.round((totalRequirements - readiness.blockers.length) / totalRequirements * 100));
   const [actionTitle, actionDetail] = nextAction(application.status);
@@ -433,6 +437,7 @@ export default function RentalApplicationDetailPage() {
       </section>
     </>
   );
+  const stageSummary = <dl className="mb-5 grid gap-3 rounded-2xl border bg-white p-4 sm:grid-cols-3"><div><dt className="text-xs text-slate-500">Application details</dt><dd className="mt-1 text-sm font-semibold">{stages.details}</dd></div><div><dt className="text-xs text-slate-500">Document collection</dt><dd className="mt-1 text-sm font-semibold">{stages.documents.uploaded}/{stages.documents.required} required received · {stages.documents.accepted} accepted</dd></div><div><dt className="text-xs text-slate-500">Review readiness</dt><dd className="mt-1 text-sm font-semibold">{stages.review}</dd></div></dl>;
   const content =
     tab === "Overview" ? (
       overview
@@ -452,6 +457,7 @@ export default function RentalApplicationDetailPage() {
           Review the submitted documents and the applicant’s recorded
           permissions before approving.
         </p>
+        <RentalApplicationCollectionLink key={application.id} application={application} />
         <RentalApplicationDocumentReviewPanel application={application} onSaved={() => load(true)} />
         <div className="mt-6 border-t border-[#edf2f7] pt-5">
           <div className="flex items-center justify-between gap-3">
@@ -497,6 +503,8 @@ export default function RentalApplicationDetailPage() {
       </>
     ) : tab === "Lease" ? (
       <RentalApplicationTenancyConversionPanel application={application} onConverted={() => load(true)} />
+    ) : tab === "Payments" ? (
+      <RentalApplicationCostsPanel application={application} />
     ) : tab === "Activity" ? (
       <section className="rounded-2xl border bg-white p-5"><h2 className="text-lg font-semibold">Review activity</h2>{events.length ? events.map((event) => <div key={event.id} className="mt-3 rounded-xl bg-[#f8fbfe] p-4"><p className="font-semibold">{title(event.event_type.replace(/^rental_application_/, ""))}</p><p className="mt-1 text-xs text-[#60758b]">{new Date(event.occurred_at).toLocaleString()} · Revision {event.aggregate_version}</p><p className="mt-2 text-sm text-[#29435d]">{event.payload_json?.message || event.payload_json?.note || event.payload_json?.evidenceNote || event.payload_json?.reason}</p></div>) : <p className="mt-3 text-sm text-[#60758b]">No review activity recorded yet.</p>}</section>
     ) : (
@@ -644,7 +652,7 @@ export default function RentalApplicationDetailPage() {
             ))}
           </div>
         </section>
-        {content}
+        {stageSummary}{content}
       </section>
     </main>
   );

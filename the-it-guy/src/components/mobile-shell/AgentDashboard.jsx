@@ -1,9 +1,13 @@
-import { ArrowUpRight, ArrowRight, Building2, Check, ChevronRight } from 'lucide-react'
+import { ArrowUpRight, ArrowRight, Building2, Check, ChevronRight, LockKeyhole, UserRound } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { buildMobileToday } from '../../services/mobileTodayModel.js'
 import AgentTodaySheet from './AgentTodaySheet'
 import MobileDevelopmentCard from './MobileDevelopmentCard.jsx'
+import MobileTransactionCard from './MobileTransactionCard.jsx'
+import { maskDeveloperLeadForDeveloper } from '../../core/developerLeads/developerLeadContract.js'
 import { WORKFLOW_MAIN_STAGE_LABELS } from '../../core/workflows/workflowConstants.js'
+import LeadSourceLogo from './LeadSourceLogo.jsx'
+import { getLeadSourcePresentation } from './leadSourcePresentation.js'
 import './agent-dashboard.css'
 
 function summary(snapshot, key, fallback = '0') {
@@ -14,13 +18,48 @@ function EmptyPage({ title, body }) {
   return <div className="agent-book-empty"><Check size={22} aria-hidden="true" /><h3>{title}</h3><p>{body}</p></div>
 }
 
-export default function AgentDashboard({ snapshot, onOpen, onRefresh }) {
+function DashboardLink({ to, onOpen }) {
+  return <a href={to} onClick={(event) => {
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+    event.preventDefault()
+    onOpen(to)
+  }}>View all<ArrowRight size={15} aria-hidden="true" /></a>
+}
+
+function DeveloperLeadCard({ item, onOpen }) {
+  const lead = maskDeveloperLeadForDeveloper(item)
+  const protectedContact = lead.accessProfile.requiresHandoverBeforePrivateDetails
+  const title = lead.buyerFullName || lead.publicReference || 'Buyer lead'
+  const { logo: sourceLogo } = getLeadSourcePresentation(lead.leadSource)
+  const interest = String(lead.unitTypeInterest || lead.protectedSummary || '').trim()
+  const isSourceOnlyInterest = Boolean(sourceLogo) && /^(?:property\s*24|private\s*property)(?:\s+development)?\s+(?:enquiry|inquiry)$/i.test(interest)
+  const to = `/mobile/developer/leads/${encodeURIComponent(lead.developerLeadId)}`
+  return <a className="mobile-property-deal agent-home-lead-card" href={to} onClick={(event) => {
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+    event.preventDefault()
+    onOpen(to)
+  }}>
+    <span className="mobile-property-deal-body">
+      <span className="agent-home-lead-top"><span className="agent-home-lead-avatar">{protectedContact ? <LockKeyhole size={22} aria-hidden="true" /> : <UserRound size={22} aria-hidden="true" />}</span><span className="mobile-lead-status">New</span></span>
+      <span className="mobile-property-deal-title" role="heading" aria-level="3">{title}</span>
+      <LeadSourceLogo className="agent-home-lead-source" source={lead.leadSource} />
+      {!isSourceOnlyInterest && <span className="agent-home-lead-interest">{interest || 'Property interest not recorded.'}</span>}
+      {protectedContact ? <span className="agent-home-lead-protected">Contact details protected until agency handover.</span> : lead.nextActionNote && <span className="mobile-property-deal-action"><span className="mobile-property-deal-label">Next action</span>{lead.nextActionNote}</span>}
+      <span className="mobile-property-deal-footer"><span>Open lead</span><ArrowUpRight size={18} aria-hidden="true" /></span>
+    </span>
+  </a>
+}
+
+export default function AgentDashboard({ snapshot, onOpen, onRefresh, brandStyle = {} }) {
   const bookRef = useRef(null)
   const [page, setPage] = useState(0)
   const [selection, setSelection] = useState(null)
   const deals = snapshot.activeWork || []
   const listings = snapshot.listings || []
   const developer = snapshot.category === 'developer'
+  const transactions = snapshot.transactions || deals
+  const newLeads = snapshot.newLeads || []
+  const newLeadsAvailable = snapshot.newLeadsAvailable !== false && Array.isArray(snapshot.newLeads)
   const pages = ['Today', 'Deals', developer ? 'Developments' : 'Listings']
   const developments = snapshot.developments || []
   const currentDevelopments = developments.filter((item) => !['archived', 'deleted', 'cancelled', 'canceled', 'closed', 'completed', 'inactive'].includes(String(item.status || '').trim().toLowerCase()))
@@ -52,15 +91,18 @@ export default function AgentDashboard({ snapshot, onOpen, onRefresh }) {
   }
 
   return (
-    <div className="agent-dashboard" data-mobile-home data-agent-dashboard>
-      <header className="agent-dashboard-intro">
+    <div className={`agent-dashboard${developer ? ' developer-dashboard' : ''}`} data-mobile-home data-agent-dashboard>
+      {developer ? <h1 className="sr-only">Developer dashboard</h1> : <header className="agent-dashboard-intro">
         <p>{snapshot.greeting || 'Welcome back'}, {snapshot.displayName || 'there'}</p>
         <div className="agent-today-title"><h1>Today</h1><span>{today.dateLabel}</span></div>
-      </header>
+      </header>}
 
-      <div className="agent-today-counts" aria-label="Today summary">
+      {developer ? <div className="agent-today-counts developer-dashboard-counts" aria-label="Developer summary">
+        <button type="button" onClick={() => onOpen('/mobile/developer/leads')}><strong>{newLeadsAvailable ? newLeads.length : '—'}</strong><span>New Leads</span></button>
+        <button type="button" onClick={() => onOpen('/mobile/transactions')}><strong>{summary(snapshot, 'active')}</strong><span>Active Deals</span></button>
+      </div> : <div className="agent-today-counts" aria-label="Today summary">
         {[["appointments", "Appointments today"], ["followUps", "Follow-ups due"], ["deals", "Deals to move"]].map(([key, label]) => <button type="button" key={key} onClick={() => setSelection({ category: key })}><strong>{today.counts[key] ?? '—'}</strong><span>{label}</span></button>)}
-      </div>
+      </div>}
       {incomplete && <p className="agent-today-unavailable">Some updates couldn’t load. <button type="button" onClick={onRefresh}>Try again</button></p>}
 
       <nav className="agent-book-tabs" aria-label="Dashboard pages" onKeyDown={(event) => {
@@ -74,7 +116,7 @@ export default function AgentDashboard({ snapshot, onOpen, onRefresh }) {
       </nav>
 
       <div className="agent-book" ref={bookRef} onScroll={syncPage} aria-label="Swipe through your dashboard">
-        <section className="agent-book-page agent-book-today" id="agent-book-0" aria-label="Today" inert={page !== 0}>
+        <section className="agent-book-page agent-book-today mobile-home-priority-card" style={brandStyle} id="agent-book-0" aria-label="Today" inert={page !== 0}>
           <div className="agent-book-page-top"><span>{action ? action.rank > 4 ? 'Coming up next' : 'Needs your attention' : 'Your day'}</span><ArrowUpRight size={18} aria-hidden="true" /></div>
           {action ? <button className="agent-next-move" type="button" onClick={() => openItem(action)}>
             <h2>{action.title}</h2>
@@ -114,13 +156,23 @@ export default function AgentDashboard({ snapshot, onOpen, onRefresh }) {
       </div>
 
       <div className="agent-book-position"><span>Swipe to explore</span><span aria-label={`Page ${page + 1} of 3`}>{pages.map((label, index) => <i key={label} className={page === index ? 'is-current' : ''} />)}</span><span>0{page + 1} / 03</span></div>
-      <div className="agent-dashboard-summary"><div><strong>{summary(snapshot, 'active')}</strong><span>Active deals</span></div><div><strong>{summary(snapshot, 'pipeline', '—')}</strong><span>Pipeline value</span></div></div>
+      {!developer && <div className="agent-dashboard-summary"><div><strong>{summary(snapshot, 'active')}</strong><span>Active deals</span></div><div><strong>{summary(snapshot, 'pipeline', '—')}</strong><span>Pipeline value</span></div></div>}
+      {developer && <>
+        <section className="agent-home-work" aria-label="Active transactions">
+          <div className="agent-home-developments-heading"><h2>Active transactions</h2><DashboardLink to="/mobile/transactions" onOpen={onOpen} /></div>
+          {transactions.length ? <div className="agent-home-card-scroller" role="region" aria-label="Swipe through active transactions" tabIndex={0}>
+            {transactions.map((transaction) => <MobileTransactionCard key={transaction.id} item={transaction} onOpen={(item) => onOpen(item.to || '/mobile/transactions')} />)}
+          </div> : <EmptyPage title="No active transactions yet." body="Your active deals will appear here when available." />}
+        </section>
+        <section className="agent-home-work" aria-label="New leads">
+          <div className="agent-home-developments-heading"><h2>New leads</h2><DashboardLink to="/mobile/developer/leads" onOpen={onOpen} /></div>
+          {!newLeadsAvailable ? <div className="agent-home-unavailable"><p>We couldn’t load new leads.</p><button type="button" onClick={onRefresh}>Try again</button></div> : newLeads.length ? <div className="agent-home-card-scroller" role="region" aria-label="Swipe through new leads" tabIndex={0}>
+            {newLeads.map((lead) => <DeveloperLeadCard key={lead.developerLeadId} item={lead} onOpen={onOpen} />)}
+          </div> : <EmptyPage title="No new leads yet." body="New buyer enquiries will appear here when available." />}
+        </section>
+      </>}
       {developer && currentDevelopments.length > 0 && <section className="agent-home-developments" aria-label="Current developments">
-        <div className="agent-home-developments-heading"><h2>Current developments</h2><a href="/mobile/developments" onClick={(event) => {
-          if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
-          event.preventDefault()
-          onOpen('/mobile/developments')
-        }}>View all<ArrowRight size={15} aria-hidden="true" /></a></div>
+        <div className="agent-home-developments-heading"><h2>Current developments</h2><DashboardLink to="/mobile/developments" onOpen={onOpen} /></div>
         <div className="agent-development-scroller" role="region" aria-label="Swipe through current developments" tabIndex={0}>
           {currentDevelopments.map((development) => <MobileDevelopmentCard key={development.id} item={development} compact onOpen={(item) => onOpen(item.to)} />)}
         </div>

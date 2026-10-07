@@ -1,0 +1,43 @@
+{
+  "status": "production_released",
+  "verified_at_utc": "2026-10-07T12:39:49.224724+00:00",
+  "product": "Primary Arch9 app \u2014 organisation recruitment CRM",
+  "production_url": "https://app.arch9.co.za/agency/recruitment",
+  "project_id": "prj_rbfXykMU6mU1eECbc0lJS9sPspmp",
+  "team_id": "team_ezJ5RCE7qwTf14fw215IhPs5",
+  "deployment_id": "dpl_Hv4cg6KbaQzgDvXnmu8EEy6vELwu",
+  "deployment_url": "https://bridge-enlfs0hwg-alexs-projects-f5496a21.vercel.app",
+  "source_commit": "7955d81a4b2ff0046a766ad360df6b01afd29253",
+  "rollback_deployment_id": "dpl_6TXk4shGwezpHDN1VruXRAXDGS9E",
+  "baseline_commit": "14f2cd95fa95174e5fdb2e6ea066c11faff326ea",
+  "source_scope": [
+    "the-it-guy/src/pages/recruitment/RecruitmentPage.jsx",
+    "the-it-guy/src/pages/recruitment/RecruitmentJourney.jsx",
+    "the-it-guy/src/pages/recruitment/__tests__/RecruitmentPage.test.jsx"
+  ],
+  "database_changes": false,
+  "checks": {
+    "focused_recruitment_page_tests": {
+      "passed": 36,
+      "failed": 0
+    },
+    "focused_eslint": "passed",
+    "diff_whitespace": "passed",
+    "production_build": "passed",
+    "login_bundle_probe": "passed",
+    "agent_bundle_budget": "passed",
+    "operational_script_deployment_audit": "passed",
+    "agent_schema_compatibility": "passed",
+    "vercel_state": "READY/PROMOTED",
+    "source_commit_verified": true,
+    "live_non_link_cell_opens_lead": true,
+    "live_journey_stage_count": 8,
+    "live_journey_single_row": true,
+    "live_current_stage": "Lead Received",
+    "live_summary_cards_side_by_side": true,
+    "live_removed_containers_absent": true,
+    "post_release_runtime_error_scan": "no errors returned",
+    "browser_errors_observed": 0
+  },
+  "screenshot": "output/playwright/recruitment-workspace-production-20261007/recruitment-workspace-live.png"
+}

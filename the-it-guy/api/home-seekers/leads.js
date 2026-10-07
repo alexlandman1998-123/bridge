@@ -28,6 +28,7 @@ async function readBody(request) {
 }
 
 export default async function handler(request, response) {
+  if (process.env.VERCEL_ENV === 'preview') return writeNodeJsonResponse(response, { status: 503, body: { error: 'This preview does not send enquiries. Your details have not been sent.' } })
   let body = {}
   try {
     if (request.method === 'POST') body = await readBody(request)

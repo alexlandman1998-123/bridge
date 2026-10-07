@@ -20,6 +20,10 @@ import { jsonResponse } from "../utils/http.ts";
 import { normalizeText } from "../utils/text.ts";
 
 const EVENT_LABELS: Record<string, { title: string; subject: string }> = {
+  tenant_qualification_submitted: {
+    title: "Tenant Qualification Received",
+    subject: "Tenant qualification and viewing request received",
+  },
   new_enquiry_assigned_agent: {
     title: "New Enquiry Assigned",
     subject: "New enquiry assigned to you",

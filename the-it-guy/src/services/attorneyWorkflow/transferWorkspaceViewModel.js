@@ -27,6 +27,7 @@ import { documentBelongsToParty, ficaDocumentAppliesToParty } from '../../core/t
 import { resolveMatterScenarioProfile, partyCapacityReviewReady, partyCapacityReviewStale, partyCapacityCheckRequirements, partyCapacityFacts } from '../matterScenarioProfile.js'
 import { buildLegalTaskWorkbenchModel, getLegalTaskChecklistProgress } from '../../core/transactions/legalTaskWorkbenchModel.js'
 import { readTaskConfirmations } from '../../core/transactions/legalTaskConfirmations.js'
+import { resolveTransferWorkspaceNavigation } from '../../core/transactions/transferWorkspaceNavigation.js'
 
 export const TRANSFER_WORKSPACE_PHASES = Object.freeze(getAttorneyJourneyPhasesForLane('transfer'))
 
@@ -2189,6 +2190,7 @@ export function buildTransferWorkspaceViewModel({
   parties = [],
   activityFeed = [],
   selectedTaskKey = '',
+  stageNavigation = null,
   filters = {},
   search = '',
   now = new Date(),
@@ -2268,7 +2270,9 @@ export function buildTransferWorkspaceViewModel({
     dependencySummary: buildDependencySummary(allTasks, task),
   }))
   const phases = buildPhases(tasks, workflowKey, Array.isArray(sharedJourneyTasks))
-  const selectedTask = resolveSelectedTask(tasks, selectedTaskKey, workflowKey)
+  const selectedTask = stageNavigation
+    ? resolveTransferWorkspaceNavigation(stageNavigation, phases).task
+    : resolveSelectedTask(tasks, selectedTaskKey, workflowKey)
   const visibleTasks = filterTasks(tasks, { ...filters, search })
   const completed = tasks.filter((task) => isAttorneyTaskCompleted(task.status)).length
   const total = tasks.filter(task => task.status !== 'not_applicable').length

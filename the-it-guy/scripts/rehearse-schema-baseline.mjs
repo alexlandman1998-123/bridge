@@ -5,13 +5,15 @@
  * rehearsal project. It never targets production or the legacy staging ref.
  * Run it in a user terminal so the long, single transaction is not interrupted.
  */
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { resolve } from 'node:path'
 
 const recoveryDirectory = '/Users/alexanderlandman/arch9-db-recovery'
 const schemaFile = resolve(recoveryDirectory, 'production-public-schema-20260906-1530.sql')
-const rehearsalRef = 'rlavzicedrilmpaamviu'
+const config = JSON.parse(readFileSync(new URL('../config/schema-baseline-staging.example.json', import.meta.url), 'utf8'))
+if (config.status === 'retired' || !config.projectRef) throw new Error('Schema baseline rehearsal is retired. Use Arch9 Staging for current staging work.')
+const rehearsalRef = config.projectRef
 const keychainService = 'Arch9 Schema Baseline Rehearsal Supabase DB'
 
 if (!existsSync(schemaFile)) throw new Error(`Missing verified schema capture: ${schemaFile}`)

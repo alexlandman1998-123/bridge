@@ -1,5 +1,6 @@
 import { createClient } from "supabase";
 import { resolveLeadEnquiryKind } from "../services/leadAcknowledgementContext.ts";
+import { createTenantQualificationLink } from "../services/tenantQualificationLink.ts";
 import type { SendLeadAcknowledgementPayload } from "../types.ts";
 import {
   buildLeadAcknowledgementEmailText,
@@ -140,6 +141,18 @@ export async function handleLeadAcknowledgementEmail(
     normalizeText(payload.organisationId || payload.organisation_id),
     normalizeText(payload.leadId || payload.lead_id),
   );
+  if (enquiryKind === "rental") {
+    try {
+      content.viewingAvailabilityUrl = await createTenantQualificationLink(supabase, {
+        organisationId: normalizeText(payload.organisationId || payload.organisation_id),
+        leadId: normalizeText(payload.leadId || payload.lead_id),
+        to, recipientName: content.recipientName, organisationName: branding.organisationName,
+        agentName: content.agentName, agentEmail: content.agentEmail,
+      });
+    } catch {
+      return jsonResponse(500, { error: "Unable to create the tenant qualification link. Please retry." });
+    }
+  }
   const html = buildLeadAcknowledgementEmailHtml({
     enquiryKind,
     ...content,

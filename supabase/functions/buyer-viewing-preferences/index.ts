@@ -1,5 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "supabase";
+import { resolveLeadEnquiryKind } from "../send-email/services/leadAcknowledgementContext.ts";
+import { buildTenantIntakeLeadPatch } from "../../../the-it-guy/src/services/rentals/rentalTenantIntakeModel.js";
 import {
   BUYER_INTAKE_QUALIFICATION_FIELDS,
   BUYER_INTAKE_MINIMUM_ANSWER_COUNT,
@@ -958,7 +960,13 @@ Deno.serve(async (req) => {
     supabase,
     normalizeUuid(link.organisation_id),
   );
+  // The persisted lead decides the form and write path, never the public request.
+  const enquiryKind = await resolveLeadEnquiryKind(supabase, normalizeUuid(link.organisation_id), normalizeUuid(link.lead_id));
+  if (enquiryKind !== "rental" && asRecord(link.response).enquiryKind === "rental") {
+    return jsonResponse(409, { error: "This tenant qualification link is unavailable. Please contact your rental agent." });
+  }
   const publicSession = {
+    enquiryKind,
     id: link.id,
     organisationName: link.organisation_name || branding.organisationName || "",
     organisationLogoUrl: branding.organisationLogoUrl || "",
@@ -993,6 +1001,75 @@ Deno.serve(async (req) => {
       code: "link_closed",
       session: publicSession,
     });
+  }
+
+  if (enquiryKind === "rental") {
+    const organisationId = normalizeUuid(link.organisation_id);
+    const leadId = normalizeUuid(link.lead_id);
+    const lead = await supabase.from("leads")
+      .select("lead_id,organisation_id,raw_enquiry_payload,stage,status")
+      .eq("organisation_id", organisationId).eq("lead_id", leadId).maybeSingle();
+    if (lead.error || !lead.data) return jsonResponse(409, { error: "This tenant lead is unavailable." });
+    const raw = asRecord(lead.data.raw_enquiry_payload);
+    const rental = asRecord(raw.rentalCrm || raw.rental_crm || raw);
+    const outcome = asRecord(rental.outcome);
+    if (outcome.status && outcome.status !== "open") return jsonResponse(409, { error: "This tenant lead is closed." });
+    const timezone = normalizeText(body.timezone, 80) || "Africa/Johannesburg";
+    const rawSlots = body.availabilitySlots || body.availability_slots;
+    const availabilitySlots = normalizeAvailabilitySlots(rawSlots, timezone);
+    if (!Array.isArray(rawSlots) || rawSlots.length < 1 || rawSlots.length > 3 || availabilitySlots.length !== rawSlots.length) {
+      return jsonResponse(400, { error: "Choose one to three viewing options with a date and an end time after the start time." });
+    }
+    if (availabilitySlots.some((slot) => !/^([01]\d|2[0-3]):[0-5]\d$/.test(slot.startTime) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(slot.endTime) || Number.isNaN(Date.parse(`${slot.date}T00:00:00Z`)) || new Date(`${slot.date}T00:00:00Z`).toISOString().slice(0, 10) !== slot.date)) {
+      return jsonResponse(400, { error: "Choose valid viewing dates and times." });
+    }
+    // Derive labels and timezone from the validated fields, not caller display text.
+    for (const slot of availabilitySlots) { slot.label = formatAvailabilitySlotLabel(slot); slot.timezone = "Africa/Johannesburg"; }
+    const allowedIds = new Set((Array.isArray(link.selected_property_ids) ? link.selected_property_ids : []).map((id) => normalizeText(id, 120)));
+    const confirmedPropertyIds = [...allowedIds];
+    const now = new Date().toISOString();
+    const viewingRequest = {
+      preferenceLinkId: link.id, confirmedPropertyIds, availabilitySlots,
+      availabilityWindows: availabilitySlots.map((slot) => slot.label), timezone: "Africa/Johannesburg",
+      responseNotes: normalizeText(body.responseNotes, 1200),
+    };
+    let patch;
+    try {
+      patch = buildTenantIntakeLeadPatch(lead.data, asRecord(body.qualificationAnswers), viewingRequest, now);
+    } catch (error) {
+      return jsonResponse(400, { error: error instanceof Error ? error.message : "Check your tenant answers." });
+    }
+    const nextRaw = asRecord(patch.raw_enquiry_payload);
+    const nextRental = asRecord(nextRaw.rentalCrm || nextRaw.rental_crm || nextRaw);
+    const response = { enquiryKind: "rental", tenantQualification: nextRental.qualification, viewingRequest: nextRental.viewingRequest, submittedAt: now };
+    const result = await supabase.rpc("rental_submit_tenant_qualification", {
+      p_link_id: link.id, p_expected_payload: raw, p_next_payload: patch.raw_enquiry_payload,
+      p_response: response, p_budget: patch.budget, p_area: patch.area_interest,
+    });
+    if (result.error) return jsonResponse(409, { error: "Your details could not be saved. The lead or link may have changed; please retry or contact your agent." });
+    const activity = await supabase.from("lead_activities").insert({
+      activity_id: crypto.randomUUID(), organisation_id: organisationId, lead_id: leadId,
+      agent_id: normalizeUuid(link.created_by) || null, activity_type: "Tenant qualification submitted",
+      activity_note: `Tenant answers and preferred viewing times received: ${viewingRequest.availabilityWindows.join("; ")}`,
+      activity_date: now, outcome: "Viewing requested",
+    });
+    if (activity.error) console.error("[tenant-qualification] activity could not be recorded", { code: activity.error.code });
+    if (normalizeText(link.agent_email)) {
+      try {
+        await invokeSendEmailFunction({
+          type: "lead_operations_notification", eventKind: "tenant_qualification_submitted",
+          to: link.agent_email, recipientName: link.agent_name, organisationId, leadId,
+          leadName: link.buyer_name, leadCategory: "Tenant", leadStatus: "Viewing requested",
+          subject: "Tenant qualification and viewing request received",
+          message: `Tenant qualification has been saved. Preferred viewing times: ${viewingRequest.availabilityWindows.join("; ")}. Review the request in Rentals before confirming an appointment.`,
+          actionLink: `${appOrigin()}/agent/rentals/pipeline/leads/${encodeURIComponent(leadId)}`,
+          idempotencyKey: `tenant-qualification-submitted:${link.id}`,
+        });
+      } catch {
+        console.error("[tenant-qualification] agent notification failed");
+      }
+    }
+    return jsonResponse(200, { ok: true, session: { ...publicSession, status: "submitted", response, submittedAt: result.data?.submittedAt || now } });
   }
 
   const properties = Array.isArray(link.properties)

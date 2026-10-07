@@ -2,6 +2,7 @@ import { AlertTriangle, ArrowRight, CalendarDays, CheckCircle2, Clock3, Home, Sh
 import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { invokeEdgeFunction } from '../lib/supabaseClient'
+import TenantQualificationPage from './rentals/TenantQualificationPage'
 import {
   BUYER_INTAKE_QUALIFICATION_FIELDS,
   buildBuyerQualificationIntake,
@@ -254,6 +255,8 @@ function BuyerViewingPreferencesPage() {
       </main>
     )
   }
+
+  if (session?.enquiryKind === 'rental') return <TenantQualificationPage key={token} token={token} session={session} />
 
   return (
     <main className="min-h-screen bg-[#F7F8F5] px-5 py-8 text-[#142132]">

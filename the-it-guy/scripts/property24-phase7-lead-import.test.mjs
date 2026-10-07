@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
+import { isRentalCrmLead } from '../src/services/rentals/rentalCrmLeadModel.js'
+import { getRentalLeadOutcome } from '../src/services/rentals/rentalLeadOutcomeModel.js'
 import {
   createProperty24ApiResponse,
   importProperty24PreparedLeads,
@@ -357,6 +359,11 @@ assert.equal(historicalPlan.leads[3].readyForCrmIngestion, false)
 assert.equal(historicalPlan.leads[2].agencyVerification.source, 'property24_listing_statistics')
 assert.equal(historicalSupabase.rowsByTable.leads[1].raw_enquiry_payload.listingType, 'Rental')
 assert.equal(historicalSupabase.rowsByTable.leads[1].raw_enquiry_payload.agencyVerification.agencyId, 40067)
+assert.equal(isRentalCrmLead(historicalSupabase.rowsByTable.leads[1]), true)
+assert.equal(historicalSupabase.rowsByTable.leads[1].raw_enquiry_payload.role, 'tenant')
+assert.equal(historicalSupabase.rowsByTable.leads[1].raw_enquiry_payload.consents.screening, 'not_captured')
+assert.equal(getRentalLeadOutcome(historicalSupabase.rowsByTable.leads[1]).status, 'open')
+assert.equal(isRentalCrmLead(historicalSupabase.rowsByTable.leads[0]), false, 'Historical sale enquiries stay in Sales.')
 assert.match(historicalSupabase.rowsByTable.leads[1].notes, /Property24 enquiry type: Rental/)
 const unavailableHistory = await pullAndImportProperty24Leads({
   supabase: createFakeSupabase(),

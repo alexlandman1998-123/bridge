@@ -2,25 +2,47 @@ import { beforeEach, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({ createClient: vi.fn() }))
 vi.mock('@supabase/supabase-js', () => ({ createClient: mocks.createClient }))
 import { handlePublicRentalApplication } from './publicRentalApplicationApi.js'
-let data, writes, savedRequirements
+let data, writes, savedRequirements, brandingSettings, brandingQueries
 beforeEach(() => {
   writes = []
+  brandingQueries = []
+  brandingSettings = { agencyOnboarding: { branding: { organisationName: 'Tenant Agency', logoDarkUrl: 'https://example.test/dark.svg', logoLightUrl: 'https://example.test/light.svg', primaryColour: '#113355', secondaryColour: '#224466', accentColour: '#ffcc00' } }, privateIntegrationSecret: 'never-public' }
   savedRequirements = ['identity','proof_of_income'].map((purpose) => ({ id: `primary-${purpose}`, scope_key: 'application', subject_id: 'primary', purpose, required: true, active: true, mode: 'active', generation: 1, state: 'received' }))
   data = { identity: { firstName: 'Alex', lastName: 'Tenant', email: 'alex@example.test' }, employment: { employmentType: 'employed' }, income: { monthlyIncome: 25000 }, rentalHistory: { currentAddress: '12 Road', reasonForMoving: 'Work' }, property: { monthlyRent: 12000 }, onboarding: { sentAt: 'original' }, internalNotes: 'Private note' }
   mocks.createClient.mockReturnValue({ from(table) {
     let patch
     const query = {
-      select: () => query, eq: () => query,
+      select: () => query, eq: (field, value) => { if (['organisations', 'organisation_settings'].includes(table)) brandingQueries.push({ table, field, value }); return query },
       update: (value) => { patch = value; writes.push({ table, value }); return query },
       upsert: (value) => { writes.push({ table, value }); return Promise.resolve({ data: [], error: null }) },
       order: async () => ({ data: [{ document_type: 'identity', status: 'uploaded' }, { document_type: 'proof_of_income', status: 'uploaded' }], error: null }),
-      maybeSingle: async () => table === 'rental_application_access_tokens' ? { data: { id: 'access', application_id: 'app', expires_at: '2099-01-01' } } : { data: { id: 'app', organisation_id: 'org', status: patch?.status || 'draft', version: patch?.version || 2, application_data: patch?.application_data || data } },
+      maybeSingle: async () => table === 'organisation_settings' ? { data: { settings_json: brandingSettings } } : table === 'organisations' ? { data: { name: 'Tenant Agency', logo_url: 'https://example.test/legacy.svg' } } : table === 'rental_application_access_tokens' ? { data: { id: 'access', application_id: 'app', expires_at: '2099-01-01' } } : { data: { id: 'app', organisation_id: 'org', status: patch?.status || 'draft', version: patch?.version || 2, application_data: patch?.application_data || data } },
       then: (resolve) => Promise.resolve({ data: table === 'rental_onboarding_requirement_summaries' ? savedRequirements : [], error: null }).then(resolve),
     }
     return query
   } })
 })
 const call = (method, body) => handlePublicRentalApplication({ method, body, token: 'test-token', env: { SUPABASE_URL: 'https://example.test', SUPABASE_SERVICE_ROLE_KEY: 'fake-test-key' } })
+it('returns current organisation CI from the token-owned application and only public branding fields', async () => {
+  const result = await handlePublicRentalApplication({ method: 'GET', body: { organisationId: 'other-org' }, token: 'test-token', env: { SUPABASE_URL: 'https://example.test', SUPABASE_SERVICE_ROLE_KEY: 'fake-test-key' } })
+  expect(result.status).toBe(200)
+  expect(result.body.branding).toMatchObject(brandingSettings.agencyOnboarding.branding)
+  expect(brandingQueries).toEqual([{ table: 'organisations', field: 'id', value: 'org' }, { table: 'organisation_settings', field: 'organisation_id', value: 'org' }])
+  expect(JSON.stringify(result.body)).not.toContain('never-public')
+  brandingSettings.agencyOnboarding.branding.accentColour = '#abcdef'
+  expect((await call('GET')).body.branding.accentColour).toBe('#abcdef')
+})
+it('signs configured private logo assets and keeps asset paths out of the response', async () => {
+  const branding = brandingSettings.agencyOnboarding.branding
+  branding.logoDarkBucket = 'documents'; branding.logoDarkPath = 'agency/private-logo.svg'
+  const createSignedUrl = vi.fn().mockResolvedValue({ data: { signedUrl: 'https://example.test/storage/v1/object/sign/documents/logo.svg?token=test' } })
+  mocks.createClient().storage = { from: vi.fn(() => ({ createSignedUrl })) }
+  const result = await call('GET')
+  expect(result.status).toBe(200)
+  expect(createSignedUrl).toHaveBeenCalledWith('agency/private-logo.svg', 604800)
+  expect(result.body.branding.logoDarkUrl).toContain('?token=test')
+  expect(JSON.stringify(result.body)).not.toContain('agency/private-logo.svg')
+})
 it('reopens only applicant-visible fields without exposing agent notes or invitation metadata', async () => {
   const result = await call('GET')
   expect(result.status).toBe(200)
@@ -94,11 +116,11 @@ it('persists stale evidence assignments after applicant identity changes and exp
   expect(reopened.body.application.data.documentLinks[0].invalidated).toBe(true)
   expect(reopened.body.application.data.documentInvalidations).toEqual([{ subjectId: 'primary' }])
 })
-it.each(['missing','rejected','expired'])('refuses submission when saved evidence is %s even if the old documents still look uploaded', async (state) => {
+it.each(['missing','rejected','expired'])('accepts details submission when saved evidence is %s without claiming it is complete', async (state) => {
   savedRequirements[0].state = state
   const result = await call('PUT', { action: 'submit', version: 2, consents: ['privacy', 'credit_check', 'identity_verification'] })
-  expect(result.status).toBe(400)
-  expect(writes.some((entry) => entry.table === 'rental_application_consents')).toBe(false)
+  expect(result.status).toBe(200)
+  expect(result.body.application.requirements[0].state).toBe(state)
 })
 it('exposes saved requirement IDs and generations without exposing internal discovery or storage paths', async () => {
   savedRequirements[0] = { ...savedRequirements[0], generation: 3, fingerprint_json: { confidential: 'private' }, storage_path: 'private/path' }

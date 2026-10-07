@@ -130,7 +130,7 @@ export function buildMatterFinancialSubmissionPackCsv(accounts = [], options = {
   const generatedAt = new Date().toISOString()
   const matterLabel = options.matterLabel || options.transactionId || 'Matter'
   const rows = [
-    ['Bridge attorney finance handover pack'],
+    ['Arch9 attorney finance handover pack'],
     ['Generated at', generatedAt],
     ['Matter', matterLabel],
     ['Purpose', 'Operational manifest for invoices, statements, POPs, client submissions, follow-ups, and attorney review actions.'],
@@ -254,7 +254,7 @@ export function buildMatterFinancialSubmissionPackCsv(accounts = [], options = {
 
 export function buildMatterFinancialSubmissionPackFileName({ matterLabel = 'matter' } = {}) {
   const date = new Date().toISOString().slice(0, 10)
-  return `bridge-${safeFilePart(matterLabel)}-finance-handover-pack-${date}.csv`
+  return `arch9-${safeFilePart(matterLabel)}-finance-handover-pack-${date}.csv`
 }
 
 export function downloadMatterFinancialSubmissionPack(accounts = [], options = {}) {

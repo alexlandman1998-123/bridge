@@ -1,4 +1,5 @@
 import { buildTransactionPartiesSnapshot, transactionPartiesOnboardingSeed } from '../core/transactions/transactionPartyProfile.js'
+import { validateDevelopmentStructureNodes } from '../core/developments/developmentStructureModel.js'
 import { fetchDashboardOverview as fetchScopedDashboardOverview } from '../domains/reporting/api.js'
 import { readTransactionHandoffDispatchMode } from '../services/transactionHandoffRegisterService.js'
 import { sealBondReviewedVersion } from '../modules/bond/application/submission/bondApplicationReviewedVersion.js'
@@ -7,6 +8,7 @@ import { assertBondApplicationSigningAvailable } from '../modules/bond/applicati
 import { isBondCorrectionResubmission } from '../modules/bond/application/submission/bondApplicationCorrection.js'
 import { DOCUMENTS_BUCKET_CANDIDATES, createScopedSupabaseClient, invokeEdgeFunction, supabase } from './supabaseClient'
 import { uploadToStorageCandidateBuckets } from './storageFallbacks'
+import { persistDevelopmentMedia, refreshDevelopmentMedia } from './developmentMediaStorage.js'
 import { validateDocumentUploadFile } from './documentUploadPolicy'
 import { reportDocumentUploadTelemetry } from './documentUploadObservability'
 import { createDocumentUploadProgressReporter } from './documentUploadLifecycle'
@@ -2621,6 +2623,7 @@ function normalizeMarketingContent(value) {
 
   return {
     listingOverview: {
+      developmentType: normalizeTextValue(listingOverviewSource.developmentType),
       listingTitle: normalizeTextValue(
         listingOverviewSource.listingTitle ?? source.listing_title ?? defaults.listingOverview.listingTitle,
       ),
@@ -3552,7 +3555,7 @@ function validateTrustInvestmentFormForSubmission(form = {}) {
   }
 }
 
-async function fetchDevelopmentProfile(client, developmentId) {
+async function fetchDevelopmentProfile(client, developmentId, { strictMedia = true } = {}) {
   let profileQuery = await client
     .from('development_profiles')
     .select(
@@ -3614,7 +3617,8 @@ async function fetchDevelopmentProfile(client, developmentId) {
     return { ...DEFAULT_DEVELOPMENT_PROFILE }
   }
 
-  return normalizeDevelopmentProfile(data)
+  const [profile] = await refreshDevelopmentMedia(client, [data], { strict: strictMedia })
+  return normalizeDevelopmentProfile(profile)
 }
 
 async function resolveSnapshotOwner(client) {
@@ -19050,7 +19054,7 @@ export async function fetchDashboardOverview({
       .select('development_id, image_links, location, status')
       .in('development_id', summaryDevelopmentIds)
     if (!profilesResult.error) {
-      profileByDevelopmentId = (profilesResult.data || []).reduce((accumulator, profile) => {
+      profileByDevelopmentId = (await refreshDevelopmentMedia(client, profilesResult.data || [], { strict: false })).reduce((accumulator, profile) => {
         accumulator[profile.development_id] = normalizeDevelopmentProfile(profile)
         return accumulator
       }, {})
@@ -19772,7 +19776,7 @@ export async function fetchDevelopmentsData({ organisationId = null } = {}) {
     }
 
     if (!profileQuery.error) {
-      profileByDevelopmentId = (profileQuery.data || []).reduce((accumulator, row) => {
+      profileByDevelopmentId = (await refreshDevelopmentMedia(client, profileQuery.data || [], { strict: false })).reduce((accumulator, row) => {
         accumulator[row.development_id] = normalizeDevelopmentProfile(row)
         return accumulator
       }, {})
@@ -20358,7 +20362,7 @@ export async function fetchDevelopmentDocuments(developmentId) {
     throw error
   }
 
-  return (data || []).map((row) => normalizeDevelopmentDocumentRow(row))
+  return (await refreshDevelopmentMedia(client, data || [])).map((row) => normalizeDevelopmentDocumentRow(row))
 }
 
 function normalizeDevelopmentMarketingAccessRow(row = {}) {
@@ -20699,7 +20703,7 @@ export async function saveDevelopmentDocument({
     document_type: normalizeTextValue(documentType) || 'other',
     title: normalizeTextValue(title),
     description: normalizeNullableText(description),
-    file_url: normalizeNullableText(fileUrl),
+    file_url: normalizeNullableText(persistDevelopmentMedia(client, fileUrl, developmentId)),
     linked_unit_id: linkedUnitId || null,
     linked_unit_type: normalizeNullableText(linkedUnitType),
     uploaded_at: new Date().toISOString(),
@@ -20733,7 +20737,8 @@ export async function saveDevelopmentDocument({
     throw error
   }
 
-  return normalizeDevelopmentDocumentRow(data)
+  const [document] = await refreshDevelopmentMedia(client, [data])
+  return normalizeDevelopmentDocumentRow(document)
 }
 
 export async function uploadDevelopmentDocumentAsset({
@@ -20813,8 +20818,9 @@ export async function deleteDevelopmentDocument(documentId) {
   }
 }
 
-export async function saveDevelopmentDetails(developmentId, input = {}, { allowNoopUpdate = false } = {}) {
+export async function saveDevelopmentDetails(developmentId, input = {}, { allowNoopUpdate = false, reportWarnings = false } = {}) {
   const client = requireClient()
+  const warnings = []
 
   if (!developmentId) {
     throw new Error('Development is required.')
@@ -20878,6 +20884,9 @@ export async function saveDevelopmentDetails(developmentId, input = {}, { allowN
       'Development details were not saved because this workspace does not have update access to the development.',
     )
   }
+  if (!updateResult.data) {
+    warnings.push({ message: 'The development was created, but its details update could not be confirmed.' })
+  }
 
   const profilePayload = {
     development_id: developmentId,
@@ -20914,6 +20923,8 @@ export async function saveDevelopmentDetails(developmentId, input = {}, { allowN
     }
   }
 
+  Object.assign(profilePayload, persistDevelopmentMedia(client, profilePayload, developmentId))
+
   let profileResult = await upsertByDevelopmentIdWithFallback(client, {
     table: 'development_profiles',
     payload: profilePayload,
@@ -20944,6 +20955,9 @@ export async function saveDevelopmentDetails(developmentId, input = {}, { allowN
   ]
 
   if (profileResult.error && modernProfileColumns.some((column) => isMissingColumnError(profileResult.error, column))) {
+    if (input.marketingContent !== undefined) {
+      warnings.push({ message: 'The development type could not be saved because this environment has an older development profile.' })
+    }
     const legacyPayload = { ...profilePayload }
     for (const column of modernProfileColumns) {
       delete legacyPayload[column]
@@ -20965,6 +20979,9 @@ export async function saveDevelopmentDetails(developmentId, input = {}, { allowN
       '[Developments] Development profile was not saved because development_profiles RLS blocked the write.',
       profileResult.error,
     )
+  }
+  if (profileResult.error) {
+    warnings.push({ message: 'The development profile, including its type, could not be saved. Check it in the development workspace.' })
   }
 
   // Keep development_settings feature toggles aligned with development-level module switches
@@ -20989,7 +21006,7 @@ export async function saveDevelopmentDetails(developmentId, input = {}, { allowN
 
   invalidateDevelopmentOptionsCache()
 
-  return true
+  return reportWarnings ? { saved: Boolean(updateResult.data), warnings } : true
 }
 
 export async function deleteDevelopment(developmentId) {
@@ -21218,6 +21235,9 @@ export async function saveDevelopmentUnit(input = {}) {
 
   if (error) {
     if (isMissingColumnError(error, 'unit_label') || isMissingColumnError(error, 'list_price') || isMissingColumnError(error, 'structure_node_id') || isMissingColumnError(error, 'unit_type_id') || isMissingColumnError(error, 'catalogue_floorplan_id')) {
+      if (input.requireStructureLink && normalized.structureNodeId) {
+        throw new Error('This environment cannot save the full building and floor stock yet. Unit setup stopped; check the development workspace before retrying.', { cause: error })
+      }
       const fallbackPayload = {
         id: normalized.id || undefined,
         development_id: input.developmentId,
@@ -21317,11 +21337,12 @@ async function fetchDevelopmentProductCatalogue(client, developmentId) {
   }
 
   const [unitTypes, floorplans, priceBooks, prices] = queries.map((query) => query.data || [])
+  const viewingFloorplans = await refreshDevelopmentMedia(client, floorplans)
   return {
     unitTypes: unitTypes.map((row) => ({
       id: row.id, code: row.code || '', name: row.name || '', description: row.description || '', bedrooms: row.bedrooms ?? '', bathrooms: row.bathrooms ?? '', parkingCount: row.parking_count ?? '', internalSizeSqm: row.internal_size_sqm ?? '', externalSizeSqm: row.external_size_sqm ?? '', vatApplicable: row.vat_applicable, noTransferDuty: Boolean(row.no_transfer_duty), isActive: row.is_active !== false, sortOrder: row.sort_order || 0,
     })),
-    floorplans: floorplans.map((row) => ({ id: row.id, unitTypeId: row.unit_type_id || '', code: row.code || '', name: row.name || '', documentId: row.document_id || '', fileUrl: row.file_url || '', thumbnailUrl: row.thumbnail_url || '', internalSizeSqm: row.internal_size_sqm ?? '', externalSizeSqm: row.external_size_sqm ?? '', isActive: row.is_active !== false, sortOrder: row.sort_order || 0 })),
+    floorplans: viewingFloorplans.map((row) => ({ id: row.id, unitTypeId: row.unit_type_id || '', code: row.code || '', name: row.name || '', documentId: row.document_id || '', fileUrl: row.file_url || '', thumbnailUrl: row.thumbnail_url || '', internalSizeSqm: row.internal_size_sqm ?? '', externalSizeSqm: row.external_size_sqm ?? '', isActive: row.is_active !== false, sortOrder: row.sort_order || 0 })),
     priceBooks: priceBooks.map((row) => ({ id: row.id, name: row.name || '', currencyCode: row.currency_code || 'ZAR', effectiveFrom: row.effective_from || '', effectiveTo: row.effective_to || '', status: row.status || 'draft', isDefault: Boolean(row.is_default) })),
     prices: prices.map((row) => ({ id: row.id, priceBookId: row.price_book_id, unitTypeId: row.unit_type_id || '', floorplanId: row.floorplan_id || '', unitId: row.unit_id || '', listPrice: row.list_price ?? '', priceFrom: row.price_from ?? '', priceTo: row.price_to ?? '', reservationFee: row.reservation_fee ?? '' })),
   }
@@ -21344,9 +21365,9 @@ export async function saveDevelopmentProductCatalogue({ developmentId, unitTypes
   const typeIdByKey = new Map((savedUnitTypes || []).flatMap((item) => [[String(item.id), item.id], [`code:${String(item.code || '').toLowerCase()}`, item.id], [`name:${String(item.name || '').toLowerCase()}`, item.id]]))
 
   const resolveUnitTypeId = (item) => typeIdByKey.get(String(item.unitTypeId || '')) || typeIdByKey.get(`code:${String(item.unitTypeCode || '').toLowerCase()}`) || typeIdByKey.get(`name:${String(item.unitTypeName || item.name || '').toLowerCase()}`) || null
-  const floorplanPayload = floorplans.filter((item) => normalizeTextValue(item.name)).map((item, index) => ({
+  const floorplanPayload = persistDevelopmentMedia(client, floorplans.filter((item) => normalizeTextValue(item.name)).map((item, index) => ({
     id: item.id || undefined, development_id: normalizedDevelopmentId, unit_type_id: resolveUnitTypeId(item), code: normalizeNullableText(item.code), name: normalizeTextValue(item.name), document_id: item.documentId || null, file_url: normalizeNullableText(item.fileUrl), thumbnail_url: normalizeNullableText(item.thumbnailUrl), internal_size_sqm: normalizeOptionalNumber(item.internalSizeSqm), external_size_sqm: normalizeOptionalNumber(item.externalSizeSqm), is_active: item.isActive !== false, sort_order: index,
-  }))
+  })), normalizedDevelopmentId)
   if (floorplanPayload.length) {
     const { error: floorplansError } = await client.from('development_floorplans').upsert(floorplanPayload, { onConflict: 'id' }).select('id, code, name')
     if (floorplansError) throw floorplansError
@@ -35638,7 +35659,7 @@ async function buildTransactionWorkspaceShellFromTransaction(client, transaction
       ? client.from('developments').select('id, name, location').eq('id', transaction.development_id).maybeSingle()
       : Promise.resolve({ data: null, error: null }),
     !routeOnly && transaction?.development_id
-      ? fetchDevelopmentProfile(client, transaction.development_id)
+      ? fetchDevelopmentProfile(client, transaction.development_id, { strictMedia: false })
       : Promise.resolve(null),
   ])
   timer?.mark('transaction_shell_relations_ready')
@@ -37392,7 +37413,7 @@ export async function fetchUnitDetail(unitId) {
 
   let developmentProfile = null
   try {
-    developmentProfile = await fetchDevelopmentProfile(client, unit.development_id)
+    developmentProfile = await fetchDevelopmentProfile(client, unit.development_id, { strictMedia: false })
   } catch (profileError) {
     if (!isMissingTableError(profileError, 'development_profiles') && !isPermissionDeniedError(profileError)) {
       throw profileError
@@ -52817,7 +52838,7 @@ export async function createDevelopment({ name, plannedUnits, profile = {} }) {
   }
 
   if (result.error) {
-    throw result.error
+    throw Object.assign(new Error('The development was created, but its saved record could not be loaded. Open its workspace to check the details.', { cause: result.error }), { developmentId: insertPayload.id })
   }
 
   try {
@@ -52846,7 +52867,7 @@ export async function createDevelopment({ name, plannedUnits, profile = {} }) {
     // Non-blocking for backwards compatibility where table may not exist yet.
   }
 
-  const normalizedProfile = normalizeDevelopmentProfile(profile)
+  const normalizedProfile = normalizeDevelopmentProfile(persistDevelopmentMedia(client, profile, result.data.id))
 
   try {
     await client.from('development_profiles').upsert(
@@ -52970,8 +52991,15 @@ export async function createDevelopmentWorkspace({
   legal = {},
   developmentSettings = {},
   units = [],
+  structureNodes = [],
   documents = [],
 } = {}) {
+  const structureErrors = validateDevelopmentStructureNodes(structureNodes)
+  if (structureErrors.length) throw new Error(structureErrors[0])
+  const structureIds = new Set(structureNodes.map((node) => node.id))
+  if (units.some((unit) => unit.structureNodeId && !structureIds.has(unit.structureNodeId))) {
+    throw new Error('A unit references a building or floor that is not included in the stock structure.')
+  }
   const warnings = []
   const created = await createDevelopment({
     name: details.name,
@@ -52998,111 +53026,127 @@ export async function createDevelopmentWorkspace({
       sitePlans: details.sitePlans || [],
       imageLinks: details.imageLinks || [],
       supportingDocuments: details.supportingDocuments || [],
+      marketingContent: details.marketingContent,
     },
   })
 
   const developmentId = created.id
 
-  await saveDevelopmentDetails(developmentId, details, {
-    allowNoopUpdate: true,
-  })
-  if (hasDevelopmentFinancialInputs(financials)) {
-    try {
-      await saveDevelopmentFinancials(developmentId, financials)
-    } catch (financialsError) {
-      if (!isPermissionDeniedError(financialsError)) {
-        throw financialsError
-      }
-      console.warn(
-        '[Developments] Financials were not saved because development_financials RLS blocked the write.',
-        financialsError,
-      )
-      warnings.push({
-        code: 'development_financials_rls_blocked',
-        message: 'Development financials were not saved because the database policy blocked this write.',
-      })
-    }
-  }
   try {
-    await updateDevelopmentSettings(developmentId, {
-      ...DEFAULT_DEVELOPMENT_SETTINGS,
-      ...(developmentSettings || {}),
+    const detailsResult = await saveDevelopmentDetails(developmentId, details, {
+      allowNoopUpdate: true,
+      reportWarnings: true,
     })
-  } catch {
-    // Non-blocking for environments where the latest development settings columns are not yet available.
-  }
-
-  if (
-    normalizeTextValue(legal.attorneyFirmName) ||
-    normalizeTextValue(legal.primaryContactName) ||
-    normalizeTextValue(legal.primaryContactEmail)
-  ) {
-    await saveDevelopmentAttorneyConfig(developmentId, {
-      attorneyFirmName: legal.attorneyFirmName,
-      primaryContactName: legal.primaryContactName,
-      primaryContactEmail: legal.primaryContactEmail,
-      primaryContactPhone: legal.primaryContactPhone,
-      defaultFeeAmount: legal.defaultFeeAmount,
-      vatIncluded: legal.vatIncluded !== false,
-      disbursementsIncluded: Boolean(legal.disbursementsIncluded),
-      overrideAllowed: legal.overrideAllowed !== false,
-    })
-  }
-
-  if (
-    normalizeTextValue(legal.bondOriginatorName) ||
-    normalizeTextValue(legal.bondPrimaryContactName) ||
-    normalizeTextValue(legal.bondPrimaryContactEmail)
-  ) {
-    await saveDevelopmentBondConfig(developmentId, {
-      bondOriginatorName: legal.bondOriginatorName,
-      primaryContactName: legal.bondPrimaryContactName,
-      primaryContactEmail: legal.bondPrimaryContactEmail,
-      primaryContactPhone: legal.bondPrimaryContactPhone,
-      commissionModelType: legal.bondCommissionModelType || 'fixed_fee',
-      defaultCommissionAmount: legal.defaultCommissionAmount,
-      vatIncluded: legal.bondVatIncluded !== false,
-      overrideAllowed: legal.bondOverrideAllowed !== false,
-    })
-  }
-
-  for (const unit of units) {
-    if (!normalizeTextValue(unit?.unitNumber)) {
-      continue
-    }
-    await saveDevelopmentUnit({
-      ...unit,
-      developmentId,
-    })
-  }
-
-  for (const document of documents) {
-    if (!normalizeTextValue(document?.title)) {
-      continue
+    warnings.push(...detailsResult.warnings)
+    if (hasDevelopmentFinancialInputs(financials)) {
+      try {
+        await saveDevelopmentFinancials(developmentId, financials)
+      } catch (financialsError) {
+        if (!isPermissionDeniedError(financialsError)) {
+          throw financialsError
+        }
+        console.warn(
+          '[Developments] Financials were not saved because development_financials RLS blocked the write.',
+          financialsError,
+        )
+        warnings.push({
+          code: 'development_financials_rls_blocked',
+          message: 'Development financials were not saved because the database policy blocked this write.',
+        })
+      }
     }
     try {
-      await saveDevelopmentDocument({
-        developmentId,
-        ...document,
+      await updateDevelopmentSettings(developmentId, {
+        ...DEFAULT_DEVELOPMENT_SETTINGS,
+        ...(developmentSettings || {}),
       })
-    } catch (documentError) {
-      if (!isPermissionDeniedError(documentError)) {
-        throw documentError
-      }
-      console.warn(
-        '[Developments] Development document was not saved because development_documents RLS blocked the write.',
-        documentError,
-      )
-      warnings.push({
-        code: 'development_documents_rls_blocked',
-        message: 'One or more development documents were not saved because the database policy blocked this write.',
+    } catch {
+      warnings.push({ message: 'The development was created, but developer access or transaction defaults could not be fully saved. Check Sales setup in its workspace.' })
+    }
+
+    if (
+      normalizeTextValue(legal.attorneyFirmName) ||
+      normalizeTextValue(legal.primaryContactName) ||
+      normalizeTextValue(legal.primaryContactEmail)
+    ) {
+      await saveDevelopmentAttorneyConfig(developmentId, {
+        attorneyFirmName: legal.attorneyFirmName,
+        primaryContactName: legal.primaryContactName,
+        primaryContactEmail: legal.primaryContactEmail,
+        primaryContactPhone: legal.primaryContactPhone,
+        defaultFeeAmount: legal.defaultFeeAmount,
+        vatIncluded: legal.vatIncluded !== false,
+        disbursementsIncluded: Boolean(legal.disbursementsIncluded),
+        overrideAllowed: legal.overrideAllowed !== false,
       })
     }
-  }
 
-  return {
-    ...created,
-    warnings,
+    if (
+      normalizeTextValue(legal.bondOriginatorName) ||
+      normalizeTextValue(legal.bondPrimaryContactName) ||
+      normalizeTextValue(legal.bondPrimaryContactEmail)
+    ) {
+      await saveDevelopmentBondConfig(developmentId, {
+        bondOriginatorName: legal.bondOriginatorName,
+        primaryContactName: legal.bondPrimaryContactName,
+        primaryContactEmail: legal.bondPrimaryContactEmail,
+        primaryContactPhone: legal.bondPrimaryContactPhone,
+        commissionModelType: legal.bondCommissionModelType || 'fixed_fee',
+        defaultCommissionAmount: legal.defaultCommissionAmount,
+        vatIncluded: legal.bondVatIncluded !== false,
+        overrideAllowed: legal.bondOverrideAllowed !== false,
+      })
+    }
+
+    if (structureNodes.length) {
+      const savedNodes = await saveDevelopmentStructureNodes({ developmentId, nodes: structureNodes })
+      const savedIds = new Set(savedNodes.map((node) => node.id))
+      if (structureNodes.some((node) => !savedIds.has(node.id))) {
+        throw new Error('The building and floor structure could not be fully saved. Unit creation was stopped.')
+      }
+    }
+
+    for (const unit of units) {
+      if (!normalizeTextValue(unit?.unitNumber)) {
+        continue
+      }
+      await saveDevelopmentUnit({
+        ...unit,
+        developmentId,
+        requireStructureLink: Boolean(unit.structureNodeId),
+      })
+    }
+
+    for (const document of documents) {
+      if (!normalizeTextValue(document?.title)) {
+        continue
+      }
+      try {
+        await saveDevelopmentDocument({
+          developmentId,
+          ...document,
+        })
+      } catch (documentError) {
+        if (!isPermissionDeniedError(documentError)) {
+          throw documentError
+        }
+        console.warn(
+          '[Developments] Development document was not saved because development_documents RLS blocked the write.',
+          documentError,
+        )
+        warnings.push({
+          code: 'development_documents_rls_blocked',
+          message: 'One or more development documents were not saved because the database policy blocked this write.',
+        })
+      }
+    }
+
+    return {
+      ...created,
+      warnings,
+    }
+  } catch (error) {
+    throw Object.assign(new Error(`The development was created, but some setup could not be saved: ${error.message || 'Please check its workspace.'}`, { cause: error }), { developmentId })
   }
 }
 

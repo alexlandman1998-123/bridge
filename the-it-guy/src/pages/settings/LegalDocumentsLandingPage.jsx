@@ -27,7 +27,7 @@ const BUILD_STEPS = Object.freeze([
     Icon: ClipboardList,
   },
   {
-    label: 'Bridge selects the wording',
+    label: 'Arch9 selects the wording',
     description: 'The right standard and situation clauses are assembled.',
     Icon: Puzzle,
   },
@@ -59,7 +59,7 @@ export default function LegalDocumentsLandingPage() {
         <div>
           <h1 id="legal-documents-title" className="text-3xl font-semibold tracking-[-0.03em] text-[#101c2d] sm:text-[2.15rem]">Legal Documents</h1>
           <p className="mt-2 max-w-3xl text-[15px] leading-7 text-[#62758a]">
-            Manage the wording Bridge uses to automatically build your legal documents.
+            Manage the wording Arch9 uses to automatically build your legal documents.
           </p>
         </div>
         <div className="flex flex-wrap gap-3">

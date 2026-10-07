@@ -14,11 +14,11 @@ function fixture({allowed=true, opened=true, error, verified=true, mismatch=fals
   return {db,authClient}
 }
 const request=(fixture,action,extra={})=>createRecruitmentIntakeResponse({client:fixture.db,authClient:fixture.authClient,env,headers,body:{action,token,email,code:'123456',password:'Fixture123',userId:'forged',emailVerified:true,...extra}})
-it('verifies a provider code and issues an opaque secure cookie after canonical ownership binding',async()=>{
-  const f=fixture(), result=await request(f,'verify_email')
+it.each(['123456','12345678'])('verifies provider code %s and issues an opaque secure cookie after canonical ownership binding',async(code)=>{
+  const f=fixture(), result=await request(f,'verify_email',{code})
   expect(result.body).toEqual({applicant})
   expect(result.headers['Set-Cookie']).toMatch(/=[a-f0-9]{64}; Path=\/api\/; HttpOnly; SameSite=Lax; Max-Age=604800; Secure$/)
-  expect(f.authClient.verifyOtp).toHaveBeenCalledWith({email,token:'123456',type:'email'})
+  expect(f.authClient.verifyOtp).toHaveBeenCalledWith({email,token:code,type:'email'})
   expect(f.authClient.getUser).toHaveBeenCalledWith('private-access')
   expect(f.db.rpc.mock.calls.find(([name])=>name==='recruitment_open_applicant_session')[1]).toMatchObject({p_user_id:userId,p_organisation_id:org})
   expect(JSON.stringify(result)).not.toMatch(/private-access|private-refresh|forged|abcdefab/)

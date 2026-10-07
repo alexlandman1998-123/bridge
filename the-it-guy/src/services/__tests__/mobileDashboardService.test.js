@@ -1,12 +1,14 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
-const api = vi.hoisted(() => ({ overview: vi.fn(), agentRows: vi.fn(), allRows: vi.fn(), crm: vi.fn(), appointments: vi.fn(), listings: vi.fn() }))
-vi.mock('../../lib/supabaseClient', () => ({ isSupabaseConfigured: true }))
+const api = vi.hoisted(() => ({ overview: vi.fn(), agentRows: vi.fn(), allRows: vi.fn(), crm: vi.fn(), appointments: vi.fn(), listings: vi.fn(), leads: vi.fn(), from: vi.fn(), rollup: vi.fn(), documents: vi.fn() }))
+vi.mock('../../lib/transactionWorkspaceApi.js', () => ({ getTransactionRollup: api.rollup, fetchTransactionDocumentsWorkspace: api.documents }))
+vi.mock('../../lib/supabaseClient', () => ({ isSupabaseConfigured: true, supabase: { from: api.from } }))
 vi.mock('../../domains/reporting/api.js', () => ({ fetchDashboardOverview: api.overview, fetchTransactionsByParticipantSummary: api.agentRows, fetchTransactionsListSummary: api.allRows }))
 vi.mock('../../lib/agencyCrmRepository.js', () => ({ listAgencyCrmLeadContacts: api.crm }))
 vi.mock('../appointmentDashboardService.js', () => ({ getAppointmentDashboardData: api.appointments }))
 vi.mock('../privateListingService.js', () => ({ getAgentPrivateListings: api.listings }))
+vi.mock('../developerLeadService.js', () => ({ listDeveloperLeadIntake: api.leads }))
 vi.mock('../../lib/agentDemoTransactionStorage.js', () => ({ getAgentDemoTransactionRowsFromStorage: () => [] }))
 import { buildResidentialActiveWork, clearMobileDashboardCache, getCachedMobileDashboardSnapshot, getMobileCalendarSnapshotAsync, getMobileDashboardSnapshot, getMobileDashboardSnapshotAsync, getMobileDeveloperTransactionSnapshotAsync } from '../mobileDashboardService.js'
 
@@ -21,6 +23,9 @@ beforeEach(() => {
   api.crm.mockResolvedValue({ tasks: [], tasksAvailable: true })
   api.appointments.mockResolvedValue({ appointments: [] })
   api.listings.mockResolvedValue([])
+  api.leads.mockResolvedValue([])
+  api.rollup.mockResolvedValue(null)
+  api.documents.mockResolvedValue(null)
 })
 afterEach(() => vi.restoreAllMocks())
 
@@ -31,6 +36,42 @@ it('loads real work for the current organisation and personal appointment scope 
   expect(api.appointments).toHaveBeenCalledWith(expect.objectContaining({ organisationId: 'org-one', includeAll: false, module: 'agent', userId: 'me', userEmail: 'me@example.test' }))
   expect(snapshot.today.counts.followUps).toBe(1)
   expect(snapshot.today.action.title).toBe('Call client')
+  expect(api.leads).not.toHaveBeenCalled()
+})
+
+it('loads new leads only for the selected developer organisation and retains every returned card', async () => {
+  const leads = Array.from({ length: 8 }, (_, index) => ({ developerLeadId: `lead-${index}`, leadStatus: 'new' }))
+  api.leads.mockResolvedValue(leads)
+  const developer = { ...workspace, role: 'developer' }
+  const snapshot = await getMobileDashboardSnapshotAsync({ workspace: developer, organisation })
+  expect(api.leads).toHaveBeenCalledWith({ developerOrgId: 'org-one', status: 'new', throwOnUnavailable: true })
+  expect(snapshot.newLeads).toEqual(leads)
+  expect(snapshot.newLeadsAvailable).toBe(true)
+})
+
+it('keeps the developer portfolio available when leads fail and recovers on refresh', async () => {
+  api.leads.mockRejectedValueOnce(new Error('Lead read unavailable'))
+  const options = { workspace: { ...workspace, role: 'developer' }, organisation }
+  const snapshot = await getMobileDashboardSnapshotAsync(options)
+  expect(snapshot.newLeads).toEqual([])
+  expect(snapshot.newLeadsAvailable).toBe(false)
+  expect(snapshot.today.available.deals).toBe(true)
+  api.leads.mockResolvedValue([{ developerLeadId: 'saved-lead', leadStatus: 'new' }])
+  const refreshed = await getMobileDashboardSnapshotAsync({ ...options, force: true })
+  expect(refreshed.newLeadsAvailable).toBe(true)
+  expect(refreshed.newLeads).toHaveLength(1)
+})
+
+it('lets the dashboard distinguish lead access failures from an empty result while preserving existing readers', async () => {
+  const { listDeveloperLeadIntake } = await vi.importActual('../developerLeadService.js')
+  const error = { code: '42501', message: 'permission denied' }
+  const query = { select: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(), order: vi.fn().mockReturnThis(), then: (resolve, reject) => Promise.resolve({ data: null, error }).then(resolve, reject) }
+  api.from.mockReturnValue(query)
+  const options = { developerOrgId: '11111111-1111-4111-8111-111111111111', status: 'new' }
+  await expect(listDeveloperLeadIntake({ ...options, throwOnUnavailable: true })).rejects.toEqual(error)
+  expect(query.eq).toHaveBeenCalledWith('developer_org_id', options.developerOrgId)
+  expect(query.eq).toHaveBeenCalledWith('lead_status', 'new')
+  await expect(listDeveloperLeadIntake(options)).resolves.toEqual([])
 })
 
 it('keeps the full transaction list while limiting the home preview to five deals', async () => {
@@ -153,11 +194,46 @@ it('opens saved developer deal details from the authorised portfolio, including 
   const detail = await getMobileDeveloperTransactionSnapshotAsync({ workspace: developer, organisation, transactionId: 'tx-one' })
   expect(api.overview).toHaveBeenCalledWith({ organisationId: 'org-one', developmentId: null, includeSecondaryData: false })
   expect(detail).toMatchObject({ item: { id: 'tx-one', title: 'Junoah · Unit 001', eyebrow: 'Saved buyer', valueRaw: 2190000 }, financeType: 'Cash', documentSummary: row.documentSummary })
+  expect(api.rollup).toHaveBeenCalledWith('tx-one', { actorRole: 'developer' })
+  expect(api.documents).toHaveBeenCalledWith('tx-one')
   expect(await getMobileDeveloperTransactionSnapshotAsync({ workspace: developer, organisation, transactionId: 'outside-portfolio' })).toBeNull()
+  expect(api.rollup).toHaveBeenCalledTimes(1)
+  expect(api.documents).toHaveBeenCalledTimes(1)
   api.overview.mockClear()
   await expect(getMobileDeveloperTransactionSnapshotAsync({ workspace: developer, transactionId: 'tx-one' })).rejects.toThrow('Select a developer workspace')
   await expect(getMobileDeveloperTransactionSnapshotAsync({ workspace, organisation, transactionId: 'tx-one' })).rejects.toThrow('Select a developer workspace')
   expect(api.overview).not.toHaveBeenCalled()
+})
+
+it('uses saved milestone facts rather than the card progress or captured stage and reads current documents', async () => {
+  const transaction = { id: 'tx-one', finance_type: 'Cash', current_stage: 'Registered', sales_price: 2190000 }
+  api.overview.mockResolvedValue({ rows: [{ transaction }] })
+  api.rollup.mockResolvedValue({ transactionId: 'tx-one', usedLegacyFallback: false, workflows: {
+    sales_otp: { requiredSteps: [{ key: 'signed_otp_received', status: 'completed' }] },
+    finance_cash: { requiredSteps: [{ key: 'proof_of_funds_reviewed', status: 'completed' }, { key: 'cash_confirmation_approved', status: 'waiting' }] },
+  } })
+  const documents = [{ id: 'file-one', name: 'Signed OTP.pdf' }]
+  const requiredDocuments = [{ key: 'otp', label: 'Signed OTP', status: 'approved' }]
+  const documentSummary = { totalRequired: 3, uploadedCount: 1, missingCount: 2 }
+  api.documents.mockResolvedValue({ transaction, documents, requiredDocumentChecklist: requiredDocuments, documentSummary })
+  const result = await getMobileDeveloperTransactionSnapshotAsync({ workspace: { ...workspace, role: 'developer' }, organisation, transactionId: 'tx-one' })
+  expect(result.journey.highLevelJourney.milestones.map((step) => step.status)).toEqual(['complete', 'waiting', 'unknown', 'unknown', 'unknown'])
+  expect(result).toMatchObject({ journeyAvailable: true, documentsAvailable: true, documents, requiredDocuments, documentSummary })
+})
+
+it('keeps the saved deal readable after secondary failures and rejects secondary responses for another transaction', async () => {
+  api.overview.mockResolvedValue({ rows: [{ transaction: { id: 'tx-one', finance_type: 'Cash' } }] })
+  api.rollup.mockRejectedValueOnce(new Error('Workflow unavailable'))
+  api.documents.mockRejectedValueOnce(new Error('Documents unavailable'))
+  const options = { workspace: { ...workspace, role: 'developer' }, organisation, transactionId: 'tx-one' }
+  const failed = await getMobileDeveloperTransactionSnapshotAsync(options)
+  expect(failed).toMatchObject({ item: { id: 'tx-one' }, journeyAvailable: false, documentsAvailable: false })
+  expect(failed.journey.highLevelJourney.milestones.every((step) => step.status === 'unknown')).toBe(true)
+  api.rollup.mockResolvedValue({ transactionId: 'other', usedLegacyFallback: false, workflows: { sales_otp: { requiredSteps: [{ key: 'signed_otp_received', status: 'completed' }] } } })
+  api.documents.mockResolvedValue({ transaction: { id: 'other', finance_type: 'Bond' }, documents: [{ name: 'Foreign file.pdf' }] })
+  const mismatched = await getMobileDeveloperTransactionSnapshotAsync(options)
+  expect(mismatched).toMatchObject({ financeType: 'Cash', journeyAvailable: false, documentsAvailable: false, documents: [] })
+  expect(mismatched.journey.highLevelJourney.milestones.every((step) => step.status === 'unknown')).toBe(true)
 })
 
 it('reuses a recent dashboard across visits and shares concurrent reads instead of repeating every source request', async () => {

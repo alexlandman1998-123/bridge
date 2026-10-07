@@ -28,6 +28,7 @@ import {
   selectWithoutKnownMissingColumns,
 } from './dashboardOverviewApi.js'
 import { hydrateMatterPropertyContext } from '../../services/matterPropertyContext.js'
+import { refreshDevelopmentMedia } from '../developmentMediaStorage.js'
 
 const TRANSACTION_ACCESS_LEVEL_VALUES = ['private', 'shared', 'restricted']
 const STAKEHOLDER_STATUS_VALUES = ['draft', 'invited', 'active', 'removed']
@@ -178,7 +179,7 @@ const BOND_HQ_WORKSPACE_ROLES = new Set(['owner', 'director', 'hq_manager'])
 
 function firstImageUrl(value) {
   if (!value) return ''
-  if (typeof value === 'string') return value.trim()
+  if (typeof value === 'string') return value.split(/\r?\n/).map((url) => url.trim()).find(Boolean) || ''
   if (Array.isArray(value)) {
     for (const item of value) {
       const imageUrl = firstImageUrl(item)
@@ -219,7 +220,7 @@ export async function fetchDashboardDevelopmentProfileImages(client, development
   }
 
   return new Map(
-    (query.data || [])
+    (await refreshDevelopmentMedia(client, query.data || [], { strict: false }))
       .map((profile) => [String(profile?.development_id || '').trim(), getDevelopmentProfileImage(profile)])
       .filter(([developmentId, imageUrl]) => developmentId && imageUrl),
   )
@@ -235,26 +236,6 @@ function isDashboardDevelopmentImageDocument(document = {}) {
   if (mimeType.startsWith('image/')) return true
   if (['marketing', 'image', 'gallery', 'hero', 'cover', 'logo'].includes(type)) return true
   return /\.(avif|gif|jpe?g|png|webp)(?:[?#]|$)/i.test(fileName)
-}
-
-async function resolveDashboardDevelopmentDocumentUrl(client, document = {}) {
-  const bucket = normalizeTextValue(document?.storage_bucket) || 'documents'
-  const path = normalizeTextValue(document?.storage_path)
-  const storedUrl = normalizeTextValue(document?.file_url)
-
-  // Development media is private. Prefer a fresh signed URL so an old URL
-  // saved on the document cannot cause all dashboard cards to fall back.
-  if (path && client?.storage?.from) {
-    try {
-      const { data, error } = await client.storage.from(bucket).createSignedUrl(path, 60 * 60 * 24)
-      if (!error && normalizeTextValue(data?.signedUrl)) return normalizeTextValue(data.signedUrl)
-    } catch {
-      // The document record remains the source of truth; use its existing
-      // URL when storage signing is unavailable to this dashboard actor.
-    }
-  }
-
-  return storedUrl
 }
 
 async function fetchDashboardDevelopmentDocumentImages(client, developmentIds = []) {
@@ -286,12 +267,8 @@ async function fetchDashboardDevelopmentDocumentImages(client, developmentIds = 
     if (!candidatesByDevelopmentId.has(developmentId)) candidatesByDevelopmentId.set(developmentId, document)
   }
 
-  const imageEntries = await Promise.all(
-    [...candidatesByDevelopmentId.entries()].map(async ([developmentId, document]) => [
-      developmentId,
-      await resolveDashboardDevelopmentDocumentUrl(client, document),
-    ]),
-  )
+  const documents = await refreshDevelopmentMedia(client, [...candidatesByDevelopmentId.values()], { strict: false })
+  const imageEntries = documents.map((document) => [document.development_id, document.file_url])
   return new Map(imageEntries.filter(([developmentId, imageUrl]) => developmentId && imageUrl))
 }
 

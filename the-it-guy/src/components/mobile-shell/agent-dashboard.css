@@ -1,4 +1,5 @@
 .agent-dashboard { color: #152621; padding-top: 20px; }
+.developer-dashboard { padding-top: 12px; }
 .agent-dashboard-intro p { margin: 0; color: #627068; font-size: 13px; }
 .agent-dashboard-intro h1 { margin: 7px 0 25px; color: #152621; font-size: 30px; font-weight: 550; line-height: 1.15; letter-spacing: -.055em; }
 .agent-today-title { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin: 8px 0 22px; }
@@ -9,9 +10,40 @@
 .agent-today-counts button:active { background: #f3f8f4; }
 .agent-today-counts strong { display: block; font-size: 25px; line-height: 1.2; font-weight: 500; letter-spacing: -.04em; }
 .agent-today-counts span { display: block; min-height: 29px; margin-top: 8px; color: #627068; font-size: 10px; line-height: 1.45; }
+.developer-dashboard-counts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.developer-dashboard-counts span { min-height: 0; font-size: 12px; }
 .agent-today-unavailable { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: -12px 0 10px; color: #627068; font-size: 11px; }
 .agent-today-unavailable button { flex-shrink: 0; min-height: 44px; border: 0; padding: 0; background: none; color: #166b50; font-size: 11px; }
 .agent-home-developments { margin: 28px 0 0; min-width: 0; }
+.agent-home-work { margin-top: 24px; min-width: 0; }
+.agent-home-card-scroller { display: flex; align-items: stretch; gap: 12px; overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x proximity; scrollbar-width: none; padding: 0 20px 4px 0; margin-right: -20px; }
+.agent-home-card-scroller::-webkit-scrollbar { display: none; }
+.agent-home-card-scroller .mobile-property-deal { flex: 0 0 min(280px, 82%); min-width: 0; scroll-snap-align: start; border-radius: 16px; }
+.agent-home-card-scroller .mobile-property-deal-media { aspect-ratio: auto; height: 110px; }
+.agent-home-card-scroller .mobile-property-deal-placeholder { padding: 16px; }
+.agent-home-card-scroller .mobile-property-deal-placeholder > svg { width: 28px; height: 28px; }
+.agent-home-card-scroller .mobile-property-deal-body { display: flex; flex-direction: column; height: calc(100% - 110px); padding: 16px 16px 0; }
+.agent-home-card-scroller .mobile-property-deal-title { font-size: 18px; }
+.agent-home-card-scroller .mobile-property-deal-unit { align-self: flex-start; }
+.agent-home-card-scroller .mobile-property-deal-facts { gap: 12px; margin-top: 16px; }
+.agent-home-card-scroller .mobile-property-deal-price { font-size: 18px; }
+.agent-home-card-scroller .mobile-property-deal-buyer { font-size: 12px; }
+.agent-home-card-scroller .mobile-property-deal-footer { margin-top: auto; min-height: 48px; }
+.agent-home-card-scroller .mobile-property-deal-action { margin-bottom: 16px; }
+.agent-home-card-scroller .agent-home-lead-card .mobile-property-deal-body { height: 100%; }
+.agent-home-lead-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+.agent-home-lead-avatar { display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: 14px; background: #edf5ef; color: #166b50; }
+.agent-home-lead-top .mobile-lead-status { margin: 0; }
+.agent-home-lead-source { margin-top: 6px; color: #166b50; font-size: 11px; text-transform: capitalize; }
+.agent-home-lead-source.has-logo { display: inline-flex; align-self: flex-start; align-items: center; min-height: 34px; margin-top: 12px; padding: 7px 10px; border: 1px solid #e5e7e6; border-radius: 9px; background: #fff; }
+.agent-home-lead-source img { display: block; width: auto; height: 24px; max-width: 112px; object-fit: contain; object-position: left; }
+.agent-home-lead-interest { margin: 16px 0; color: #627068; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.agent-home-lead-protected { margin-bottom: 16px; color: #627068; font-size: 11px; line-height: 1.6; }
+.agent-home-unavailable { padding: 20px; border: 1px solid #dce4de; border-radius: 16px; background: #fff; color: #627068; font-size: 12px; }
+.agent-home-unavailable p { margin: 0; }
+.agent-home-unavailable button { min-height: 44px; margin-top: 8px; padding: 0; border: 0; background: none; color: #166b50; }
+.agent-home-work .agent-book-empty { padding: 24px 20px; border: 1px solid #dce4de; border-radius: 16px; background: #fff; }
+.agent-home-card-scroller:focus-visible { outline: 2px solid #5eaf86; outline-offset: 3px; }
 .agent-home-developments-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
 .agent-home-developments-heading h2 { margin: 0; color: #152621; font-size: 17px; font-weight: 550; letter-spacing: -.025em; }
 .agent-home-developments-heading a { display: flex; align-items: center; gap: 6px; min-height: 44px; color: #166b50; font-size: 11px; text-decoration: none; white-space: nowrap; }

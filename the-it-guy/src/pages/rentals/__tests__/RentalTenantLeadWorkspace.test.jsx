@@ -6,6 +6,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import RentalTenantLeadWorkspace from "../RentalTenantLeadWorkspace";
@@ -130,6 +131,14 @@ function show(overrides = {}) {
   );
   return onReload;
 }
+it('shows submitted tenant qualification and preferred times on the rental overview', () => {
+  show({ lead: { ...lead, qualification: { ...lead.qualification, monthlyBudget: 12500, source: 'tenant_qualification_link', submittedAt: '2026-10-07T12:00:00Z', additionalNotes: '' },
+    viewingRequest: { status: 'requested', timezone: 'Africa/Johannesburg', availabilitySlots: [{ date: '2026-10-15', startTime: '10:00', endTime: '11:00', label: 'Thu, 15 Oct 2026, 10:00-11:00' }] } } })
+  expect(screen.getByText('Preferred times submitted by the tenant')).toBeTruthy()
+  expect(screen.getByText('Thu, 15 Oct 2026, 10:00-11:00')).toBeTruthy()
+  expect(screen.getByText('No additional notes provided')).toBeTruthy()
+  expect(createRentalViewing).not.toHaveBeenCalled()
+})
 beforeEach(() => {
   vi.clearAllMocks();
   listRentalLeadMatches.mockResolvedValue({
@@ -187,7 +196,9 @@ it("shows the requested workspace tabs, journey and overview cards, keeping the 
   expect(screen.getByText("Viewing planner")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Matches", exact: true }));
   await screen.findByText("Budget apartment");
-  expect(screen.queryByText("Original enquired home")).toBeNull();
+  expect(screen.getByText("Original enquired home")).toBeTruthy();
+  expect(screen.getByRole('heading', { name: /^Properties from R 10[\s,]000 to R 12[\s,]000 per month$/ })).toBeTruthy();
+  expect(screen.queryByRole('list', { name: 'Tenant journey stages' })).toBeNull();
   fireEvent.click(
     screen.getByRole("button", { name: "Application", exact: true }),
   );
@@ -373,11 +384,12 @@ it("opens matches, records the shortlist and hands the chosen listing to the vie
   await screen.findByText("Original enquired home");
   expect(listRentalLeadMatches).toHaveBeenCalledWith("org", "lead", expect.objectContaining({ organisationId: "org", assignedAgentId: "agent", scopeLevel: "agent" }));
   fireEvent.click(screen.getByRole("button", { name: "Matches", exact: true }));
-  expect(screen.getByRole("link", { name: "Open listing" }).getAttribute("href")).toBe("/agent/rentals/listings/match");
-  fireEvent.click(screen.getByRole("button", { name: "Shortlist", exact: true }));
+  const card = within(screen.getByText('Budget apartment').closest('article'));
+  expect(card.getByRole("link", { name: "Open listing" }).getAttribute("href")).toBe("/agent/rentals/listings/match");
+  fireEvent.click(card.getByRole("button", { name: "Shortlist", exact: true }));
   await waitFor(() => expect(recordRentalLeadListingShortlist).toHaveBeenCalledWith(lead, expect.objectContaining({ listing: expect.objectContaining({ id: "match" }) }), expect.objectContaining({ organisationId: "org", scope: expect.objectContaining({ assignedAgentId: "agent" }) })));
   await waitFor(() => expect(onReload).toHaveBeenCalled());
-  fireEvent.click(screen.getByRole("button", { name: "Plan viewing", exact: true }));
+  fireEvent.click(card.getByRole("button", { name: "Plan viewing", exact: true }));
   expect(screen.getByRole("combobox", { name: "Rental property" }).value).toBe("match");
 });
 it("shows failed matching as a retryable error instead of claiming there are no matches", async () => {

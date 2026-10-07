@@ -1,0 +1,780 @@
+{
+  "version": 1,
+  "capturedAt": "2026-10-07T11:05:49.981350+00:00",
+  "status": "production_released",
+  "owningProduct": "the-it-guy Home Seekers public website and shared Recruitment",
+  "source": {
+    "head": "904d53fad03ffef376f6a0101c78f8ea3bb76f34",
+    "workingTree": "contains unrelated work; dedicated public entry excludes private CRM/auth modules",
+    "releaseSnapshot": "14f2cd95fa95174e5fdb2e6ea066c11faff326ea",
+    "releaseBranch": "codex/homeseekers-production-20261007"
+  },
+  "database": {
+    "projectId": "isdowlnollckzvltkasn",
+    "projectName": "Arch9 SaaS",
+    "environment": "production",
+    "guard": "no duplicate timestamps; onboarding-critical migrations present",
+    "recovery": "RECOVERY_LOCKED",
+    "dryRun": {
+      "exactScope": true,
+      "seeds": [],
+      "roles": [],
+      "vaultChanges": false,
+      "migrations": [
+        {
+          "path": "supabase/migrations/20261007082653_recruitment_contact_capture.sql",
+          "sha256": "0ebf662d3e1d9a49054a3ab5e8a04e8a10289f8751475f6ef8d03dd6f118cd72"
+        },
+        {
+          "path": "supabase/migrations/20261007085627_recruitment_applicant_resume.sql",
+          "sha256": "c81f9aeccd40c98825e91f246296e0ef4398618a364fd1f0be6ebb9f78844f08"
+        },
+        {
+          "path": "supabase/migrations/20261007091149_recruitment_applicant_questionnaire.sql",
+          "sha256": "4fc7fabd91b84abfc0b31c3b1428d63e47c30811660480d8befa316f3a2c0339"
+        },
+        {
+          "path": "supabase/migrations/20261007092532_recruitment_verified_application_submission.sql",
+          "sha256": "03751681962cb79a4635007c348d6fcf53cd433f76a82198d569909c8d670c36"
+        }
+      ]
+    },
+    "mutationsPerformed": true,
+    "productionRelease": {
+      "appliedMigrations": [
+        "supabase/migrations/20261007082653_recruitment_contact_capture.sql",
+        "supabase/migrations/20261007085627_recruitment_applicant_resume.sql",
+        "supabase/migrations/20261007091149_recruitment_applicant_questionnaire.sql",
+        "supabase/migrations/20261007092532_recruitment_verified_application_submission.sql"
+      ],
+      "catalogAndServerOnlyPermissions": "verified",
+      "syntheticFlow": "contact capture, verified session, saved draft, same-lead submission, retry deduplication and resume passed; rolled back",
+      "syntheticRowsRemaining": 0,
+      "intakeLinkId": "212ff951-0fa5-4043-887a-6672d4b384f1",
+      "authConfiguration": "Only confirmation and magic-link subjects changed to include {{ .Token }}. Existing eight-digit OTP length, email bodies, links and SMTP settings preserved.",
+      "postReleaseVerified": {
+        "contactCaptureRpc": true,
+        "applicantSessionTable": true,
+        "saveProfileRpc": true,
+        "submitVerifiedProfileRpc": true,
+        "activeHomeSeekersIntakeLinks": 1,
+        "serverOnlyRpcPermissions": true
+      }
+    },
+    "preReleaseReadOnlyFindings": {
+      "contactCaptureRpc": false,
+      "applicantSessionTable": false,
+      "saveProfileRpc": false,
+      "submitVerifiedProfileRpc": false,
+      "activeHomeSeekersIntakeLinks": 0
+    }
+  },
+  "website": {
+    "projectId": "prj_uxIQ3zvHt7AM0iKSBXLa9ezBh5MA",
+    "teamId": "team_ezJ5RCE7qwTf14fw215IhPs5",
+    "organisationId": "2958d402-368e-43c9-b728-0098e10505f1",
+    "preview": {
+      "deploymentId": "dpl_EBYijBtqb7vMaEB62X5pkLF4EANS",
+      "url": "https://home-seekers-website-d1iaikbkn-alexs-projects-f5496a21.vercel.app/demo/homeseekers/join",
+      "status": "READY",
+      "writeAccess": "blocked by server environment before CRM/Auth access"
+    },
+    "production": {
+      "alias": "home-seekers-website-alpha.vercel.app",
+      "promoted": true,
+      "previousDeploymentId": "dpl_628Qacgm6TSjMXVFp1dodbESK1mr",
+      "previousDeploymentUrl": "https://home-seekers-website-g8jfrrn8t-alexs-projects-f5496a21.vercel.app",
+      "missingEnvironmentNames": [],
+      "deploymentId": "dpl_3oqTFLHHJeRWSGewsEZ4mVLPFSvv",
+      "url": "https://home-seekers-website-alpha.vercel.app/demo/homeseekers/join",
+      "contextVerified": true
+    },
+    "artifact": {
+      "directory": "/tmp/arch9-homeseekers-open-form-release-20261007/.vercel/output",
+      "inventorySha256": "2907735ba3be9cb887cd422e5f6c5f9b9bee80da4d146a036a6fa112e07460b1",
+      "files": [
+        {
+          "path": "config.json",
+          "bytes": 811,
+          "sha256": "f2ae6e58cfe42f6908a555e42b0437ae871d417f2011c5104840061038756dd2"
+        },
+        {
+          "path": "functions/api/home-seekers/analytics.func/.vc-config.json",
+          "bytes": 164,
+          "sha256": "7c7c8c56d95d7aa180171ad8129f86ebcf2aff652f19e478ccc6321a40851b6d"
+        },
+        {
+          "path": "functions/api/home-seekers/analytics.func/index.cjs",
+          "bytes": 433009,
+          "sha256": "893ced5bf614ae2c8d058520f28bb6072f37d75b0e74af6bb9f330e1a8e8ac33"
+        },
+        {
+          "path": "functions/api/home-seekers/applications.func/.vc-config.json",
+          "bytes": 164,
+          "sha256": "7c7c8c56d95d7aa180171ad8129f86ebcf2aff652f19e478ccc6321a40851b6d"
+        },
+        {
+          "path": "functions/api/home-seekers/applications.func/index.cjs",
+          "bytes": 435267,
+          "sha256": "73e2099f24ff1c1f3c36669a8c53450d89830bf3d681291acd970224afe63a3e"
+        },
+        {
+          "path": "functions/api/home-seekers/leads.func/.vc-config.json",
+          "bytes": 164,
+          "sha256": "7c7c8c56d95d7aa180171ad8129f86ebcf2aff652f19e478ccc6321a40851b6d"
+        },
+        {
+          "path": "functions/api/home-seekers/leads.func/index.cjs",
+          "bytes": 439841,
+          "sha256": "6c40dc9610728cfbdbfc5db32bfc2774599f942f39a97438cc19653c63fa79c7"
+        },
+        {
+          "path": "functions/api/home-seekers/recruitment.func/.vc-config.json",
+          "bytes": 164,
+          "sha256": "7c7c8c56d95d7aa180171ad8129f86ebcf2aff652f19e478ccc6321a40851b6d"
+        },
+        {
+          "path": "functions/api/home-seekers/recruitment.func/index.cjs",
+          "bytes": 474828,
+          "sha256": "d1f63ad584375f7096a2bd5a8ee649369400b2308554159bcd8e17855510bb89"
+        },
+        {
+          "path": "functions/api/home-seekers/site.func/.vc-config.json",
+          "bytes": 164,
+          "sha256": "7c7c8c56d95d7aa180171ad8129f86ebcf2aff652f19e478ccc6321a40851b6d"
+        },
+        {
+          "path": "functions/api/home-seekers/site.func/index.cjs",
+          "bytes": 433992,
+          "sha256": "2bc472e379a51a684853bcceaef1de1d578fbd316abb2396922131e289a6b5da"
+        },
+        {
+          "path": "static/api-not-found.json",
+          "bytes": 22,
+          "sha256": "fef916c279def93f790d739d8525fc7ffd697a4a492029472c5752bda04a4faf"
+        },
+        {
+          "path": "static/arch9-launch-preview.png",
+          "bytes": 263743,
+          "sha256": "9b4e0a34cb5519ba7edd4c7a9d6aa3c9316328b318d2c807b385d3e8e9dae228"
+        },
+        {
+          "path": "static/assets/HomeSeekersAbout-3I4vO_6E.js",
+          "bytes": 6756,
+          "sha256": "02fc668d7e93d96cf9f78e8438d9a8029ddfe4e0e4025ee78f09b17e9501af8e"
+        },
+        {
+          "path": "static/assets/HomeSeekersAbout-B7INYDRh.js",
+          "bytes": 6756,
+          "sha256": "a9e0c51bc1661ba9236f446c4623fd66c395b69fcb273185427da741be789ffe"
+        },
+        {
+          "path": "static/assets/HomeSeekersAbout-DuRXJbdJ.css",
+          "bytes": 11919,
+          "sha256": "b08e44250a9ef775fae88e88cf7d783a7c3e6d6d9bfda17f8dc32f295035e06a"
+        },
+        {
+          "path": "static/assets/HomeSeekersBrand-Cb9QtJUe.js",
+          "bytes": 2829,
+          "sha256": "aca2db4e8f1d0dcbdeb213261dfec7dde5786989daa041773a9e8149baa3596f"
+        },
+        {
+          "path": "static/assets/HomeSeekersBrand-CjQcZSIg.js",
+          "bytes": 2829,
+          "sha256": "42793fb37dddf90bba67f6318bcf32dc859c73c8fe23dcc2075c8803112f5ce6"
+        },
+        {
+          "path": "static/assets/HomeSeekersBrand-D_HLUzW6.css",
+          "bytes": 14493,
+          "sha256": "5acdb8b5d83cff618e834a778cf894e8f6c810916349a8cf141fa72598bbda7e"
+        },
+        {
+          "path": "static/assets/HomeSeekersBuying-BaOUPnR6.js",
+          "bytes": 2172,
+          "sha256": "3388cc91e834042f7ab7bf7706527f9c853724434a8c7a63166a18a30b28012a"
+        },
+        {
+          "path": "static/assets/HomeSeekersBuying-C1Z29XFK.css",
+          "bytes": 12241,
+          "sha256": "0f6e520e5ca96169bc03521362e75eb3d5ce464c74c960cf7f539b690ca12fa4"
+        },
+        {
+          "path": "static/assets/HomeSeekersBuying-CloF8Kks.js",
+          "bytes": 7125,
+          "sha256": "86b8a47b9a43d5bf1dc1158adc22a6b964d90b1d64531e6bd6063160b2e4bf83"
+        },
+        {
+          "path": "static/assets/HomeSeekersBuying-DiNZmFNj.js",
+          "bytes": 7125,
+          "sha256": "54adc62a588cd2a11adb775edc47d424f5689a81c0a39a55675e3d5a83771dc2"
+        },
+        {
+          "path": "static/assets/HomeSeekersBuying-Dj8Vtg96.js",
+          "bytes": 2172,
+          "sha256": "703b0faed55fe1124eb3b092c88dec5e87f0ca9579f6cf1b3ae91caa6f9d26c7"
+        },
+        {
+          "path": "static/assets/HomeSeekersContact-CPGFqQVJ.css",
+          "bytes": 5322,
+          "sha256": "b2bd2d43855b1fbce5410cff89051c936ac485c5710846fa412efa565272bdf4"
+        },
+        {
+          "path": "static/assets/HomeSeekersContact-DPOsbONH.js",
+          "bytes": 7289,
+          "sha256": "91f74463f766fdc1e49a0fdcc3e41d7809b0e5402a195c3256387e4f60c9a2da"
+        },
+        {
+          "path": "static/assets/HomeSeekersContact-DY4audNQ.js",
+          "bytes": 7289,
+          "sha256": "06585d2354e1371dc4d4e3dfc5383e95244e651159ff3ddca8ff943647eb99c5"
+        },
+        {
+          "path": "static/assets/HomeSeekersDemo-BPfaCI6h.css",
+          "bytes": 58345,
+          "sha256": "9621efc52902e980df6fae17ff9da374c0e233014180e9bf78bf88158c922a6a"
+        },
+        {
+          "path": "static/assets/HomeSeekersDemo-Bj3qsO6Q.css",
+          "bytes": 20890,
+          "sha256": "631d4c573e71f96113f937d1c3ad57c75848e33495d5014339e990e8b160bc67"
+        },
+        {
+          "path": "static/assets/HomeSeekersDemo-DqO_LO2y.js",
+          "bytes": 20054,
+          "sha256": "5e9c2e59a0989f286debc3d6e222cfb28d1d0437c4a0d40496439c655cde4800"
+        },
+        {
+          "path": "static/assets/HomeSeekersDemo-DyOlh_Yw.js",
+          "bytes": 20054,
+          "sha256": "8f806d2b79cb7bf9a53ef1f3ca831ce6fd9007afdc6dcaaf35b7ac7c8f83c22d"
+        },
+        {
+          "path": "static/assets/HomeSeekersFastTrack-Bd3DCulQ.js",
+          "bytes": 2067,
+          "sha256": "7b66a841828dbe0e7ba74f85abb1b26839412cd38d1b9fe807fd94bdcba1fb29"
+        },
+        {
+          "path": "static/assets/HomeSeekersFastTrack-BgYKbqEB.css",
+          "bytes": 5228,
+          "sha256": "e683429bab904c242b061909ae89113634dc3839e7df798b106cb56f481af371"
+        },
+        {
+          "path": "static/assets/HomeSeekersFastTrack-By8FgPJO.js",
+          "bytes": 2067,
+          "sha256": "c027e32fa452fb5030421559b10a7e1bffae9e7ab79c5d4998111a58c63d85ca"
+        },
+        {
+          "path": "static/assets/HomeSeekersFooter-BlNYnSfn.js",
+          "bytes": 1754,
+          "sha256": "a1a6f7d73f76f14364e14bdd6387096595601f7541d7ca09b5367a10e51c29cd"
+        },
+        {
+          "path": "static/assets/HomeSeekersFooter-Cg0_x3U0.js",
+          "bytes": 1754,
+          "sha256": "30ce829c4d5a4eb9d760f8911b8d794edbbb752691d46c81493f729a936fa602"
+        },
+        {
+          "path": "static/assets/HomeSeekersFooter-FwI9SO9i.css",
+          "bytes": 2619,
+          "sha256": "597f020b40d4279018a5930a05a264c41cb1827393e90ae8cbee3f8662e2b5e5"
+        },
+        {
+          "path": "static/assets/HomeSeekersJoin-CARTXZyH.js",
+          "bytes": 58580,
+          "sha256": "b570f0e10718b5055cc20eb76edd8c5d48f56f020588b34a04248cec6f59c702"
+        },
+        {
+          "path": "static/assets/HomeSeekersJoin-_O3lYzxI.js",
+          "bytes": 58522,
+          "sha256": "ac4cf0a650a687813645ddde1a5443df253378bc6e874fd2513aba520378d875"
+        },
+        {
+          "path": "static/assets/HomeSeekersJoin-gO47AfFz.css",
+          "bytes": 25006,
+          "sha256": "81ffe71a01ab16e53f969a976967506c03f813c6ada8d43e197ab6101e4ecf44"
+        },
+        {
+          "path": "static/assets/HomeSeekersMobileNav-BwpaNKRJ.js",
+          "bytes": 2357,
+          "sha256": "35897dffa2fec14e522c6a7796a7d728e58e739b9a3b9419c2e0b05cd27c84e7"
+        },
+        {
+          "path": "static/assets/HomeSeekersMobileNav-Co8xLctW.css",
+          "bytes": 2617,
+          "sha256": "b35c76397723695d8c9ec5de51767628749f09ff16f4c2be06d747938e47c208"
+        },
+        {
+          "path": "static/assets/HomeSeekersMobileNav-DIdMhktk.js",
+          "bytes": 2357,
+          "sha256": "da16568c9e77ae98df161992a9aa50c5445cbe12177d5609a880918c33890ef5"
+        },
+        {
+          "path": "static/assets/HomeSeekersProperty-BdVtOGgT.js",
+          "bytes": 6312,
+          "sha256": "ce81d08781530a86c0c1d6cd318782c01eebf80808d00a6808f9b3c450a99437"
+        },
+        {
+          "path": "static/assets/HomeSeekersProperty-CJ_Cvg-5.css",
+          "bytes": 20297,
+          "sha256": "19e9157c75bc869dd5f2533ca4f3c8d93b72fa3c1190052d640c383fe5935317"
+        },
+        {
+          "path": "static/assets/HomeSeekersProperty-CYbtVRUD.js",
+          "bytes": 6312,
+          "sha256": "640dbf99eab0429c8f7938e829274ed35e7b6ef4896d3395de27c4b2d7b3ec6d"
+        },
+        {
+          "path": "static/assets/HomeSeekersRenting-Bdc5VGpy.js",
+          "bytes": 7510,
+          "sha256": "4a2289f9a5b3db05f0b4511727eedaab378b4eabc723f8f149e13bafa7161ae2"
+        },
+        {
+          "path": "static/assets/HomeSeekersRenting-C5-2vvV6.css",
+          "bytes": 2024,
+          "sha256": "f51cb77a4721280acf25d0bbe5eefdd9c7802adbd1dfc388dbabbc04a9eb5ab4"
+        },
+        {
+          "path": "static/assets/HomeSeekersRenting-CDBuRZM2.js",
+          "bytes": 7510,
+          "sha256": "e5081a6c9e7252001cb6fa369f6295891a7dffd0431ea7f5c74559f82fe580a4"
+        },
+        {
+          "path": "static/assets/HomeSeekersSelling-3mAxjjJy.js",
+          "bytes": 7726,
+          "sha256": "0f22c4746c863ab57518bf64bd26361c40172ce70b9de526f6030fb1d2abdd91"
+        },
+        {
+          "path": "static/assets/HomeSeekersSelling-BCHD25Uk.js",
+          "bytes": 7726,
+          "sha256": "a4b364a5bef7d87a1c36ce97e806faba70179f9381eef93071b937c967fc93c9"
+        },
+        {
+          "path": "static/assets/HomeSeekersSelling-D6NDJ8Mn.css",
+          "bytes": 20401,
+          "sha256": "363da1662840e8e2bd5418dbe7819c48003b93d124bdc08fa513fe866e2b268c"
+        },
+        {
+          "path": "static/assets/arrow-up-right-CJfYOuyS.js",
+          "bytes": 185,
+          "sha256": "aa436007da58a8eac9c2649644aa66e8f5c61c66b4c9489521c16c14e5222df0"
+        },
+        {
+          "path": "static/assets/arrow-up-right-h6j6roay.js",
+          "bytes": 185,
+          "sha256": "9d5fea622bb81abf963442158f371662c96062d0f349e52c95e2cf015da3e8ba"
+        },
+        {
+          "path": "static/assets/car-C-jwHAx_.js",
+          "bytes": 957,
+          "sha256": "a25194938aafeaf0606c2b9a727882e022c89e9ab3e1c844a2aa88077d1b696a"
+        },
+        {
+          "path": "static/assets/car-DiRRT11d.js",
+          "bytes": 957,
+          "sha256": "8eb181457fc738e0316396810ef1eed593680a3b77c14ac9e6f085ef68b2a561"
+        },
+        {
+          "path": "static/assets/home-seekers-92D_nLnV.css",
+          "bytes": 1351567,
+          "sha256": "c4a1e6a8368d7db007cd270816e9bbfafc34a0c69cc89ad2af99516138a35b10"
+        },
+        {
+          "path": "static/assets/home-seekers-BBkEkzB2.js",
+          "bytes": 235047,
+          "sha256": "5e3a475488d1943401d5a281d62aef7f0759812ff61076fc5561a438fcb2a90c"
+        },
+        {
+          "path": "static/assets/home-seekers-CdIriez6.css",
+          "bytes": 1351658,
+          "sha256": "81bd82a80a7739a914498bfbcaf1debd33c89098275cbc4ed8ae3cd6f246c20d"
+        },
+        {
+          "path": "static/assets/home-seekers-aYGB2tiy.js",
+          "bytes": 235047,
+          "sha256": "57e8468fa27ae9da69f5c6874bba85bfab394628e2c26fe9e28e8e859c8cb48a"
+        },
+        {
+          "path": "static/assets/homeSeekersWebsiteData-B69pH3mD.js",
+          "bytes": 4352,
+          "sha256": "4724ff00adec20a40d42aa097ec62fd08f7afe7d7a449fcae5c2ba8cea960810"
+        },
+        {
+          "path": "static/assets/homeSeekersWebsiteData-C1_fPjE3.js",
+          "bytes": 4352,
+          "sha256": "66c98486570fa34eec526f0224b7c081f1e25caaba4f9e737a050bd0689e40a7"
+        },
+        {
+          "path": "static/assets/search-CmureNuD.js",
+          "bytes": 187,
+          "sha256": "248edf75ffd4fa2b45566bdf56be4a2de2120fe728cf5d449756b097070e30c8"
+        },
+        {
+          "path": "static/assets/search-Dk4h-veq.js",
+          "bytes": 187,
+          "sha256": "4d852e888ada0efc84eb6440bd984e7db2ec095530d3103462dc20523a8691f3"
+        },
+        {
+          "path": "static/brand/agency-intake-buy.jpg",
+          "bytes": 714,
+          "sha256": "16e725950c91b12ca382b3e72fc60c4dc15585566f1bb61ad5f5173b8eaceb87"
+        },
+        {
+          "path": "static/brand/agency-intake-buy.webp",
+          "bytes": 62110,
+          "sha256": "c8d9733ecb5580307d339a875ee31c7ea0aa157c0fa557772fc043fac8c8b059"
+        },
+        {
+          "path": "static/brand/agency-intake-contact.jpg",
+          "bytes": 714,
+          "sha256": "6777e71b161fe6a071637fe500842536a6778e5186ef149d85c71fb79a6bf50d"
+        },
+        {
+          "path": "static/brand/agency-intake-contact.webp",
+          "bytes": 48276,
+          "sha256": "a1a25cec1d64f8714fbb05213f78c541fcd3faa7acb4aa72dd8984ce94d05635"
+        },
+        {
+          "path": "static/brand/agency-intake-sell.jpg",
+          "bytes": 714,
+          "sha256": "8cba5f2d06bbf1b462a731cb212c555f327a84025ec5fa09e1e96edcb562f8dd"
+        },
+        {
+          "path": "static/brand/agency-intake-sell.webp",
+          "bytes": 57262,
+          "sha256": "f7d59d14d0828fbef1b2e4d085a0b0c4fd4c5af253af7df72dfc0e6f06475965"
+        },
+        {
+          "path": "static/brand/banks/absa.png",
+          "bytes": 11849,
+          "sha256": "fb409ef81686051caceb0ab894526a825884761675246f0d6770ee87514fbdec"
+        },
+        {
+          "path": "static/brand/banks/capitec.svg",
+          "bytes": 5383,
+          "sha256": "fb7ebd0b6e3bb9bc6175d628f6ba350db6ca6c3e75deda442aec5ef10dd40d3c"
+        },
+        {
+          "path": "static/brand/banks/fnb.png",
+          "bytes": 14890,
+          "sha256": "c9ac9188f9e82bca654fbcf043ab56da756482802b5e11d05df8085a2361654f"
+        },
+        {
+          "path": "static/brand/banks/investec.webp",
+          "bytes": 1548,
+          "sha256": "216a5e56293695e1db6c28960a35f81e14c9e88550770123157d6f764e665850"
+        },
+        {
+          "path": "static/brand/banks/nedbank.png",
+          "bytes": 8607,
+          "sha256": "42a94a0f7946d905d7b431d70a359cf8eb9be3414092871318b72c71d612da25"
+        },
+        {
+          "path": "static/brand/banks/sa-home-loans.svg",
+          "bytes": 5003,
+          "sha256": "a788da0617183f6b920da34d142a7397e4dd2a5afaa646a2920dbbbc53c88c7d"
+        },
+        {
+          "path": "static/brand/banks/standard-bank.png",
+          "bytes": 20788,
+          "sha256": "38c34b359559ca888e03e6679ed4a833a053a193cf975c717e07192ecce04bbe"
+        },
+        {
+          "path": "static/brand/future-of-property-preview.jpg",
+          "bytes": 51681,
+          "sha256": "2289b530ab16b47274e4e3039e57899b63d8b2c0b7c52a909273fc5f701b4f7f"
+        },
+        {
+          "path": "static/brand/harbour-heights-apartment-14.png",
+          "bytes": 2774362,
+          "sha256": "33649b9135d5de6a3cd843cfde742ac9fedc6954cc7334681e543f2bda7164a5"
+        },
+        {
+          "path": "static/brand/homeseekers/home-seekers-horizontal-black.svg",
+          "bytes": 5769,
+          "sha256": "ea6f29271a028cf6e345ec1766533ff2a42329517ea31cff9615c19ed18eb5f6"
+        },
+        {
+          "path": "static/brand/homeseekers/home-seekers-vertical-white-tag.svg",
+          "bytes": 13235,
+          "sha256": "a2da3ed3758b2baa1027beadd4f2c35afab69adb494df80492b62f7d0de6165d"
+        },
+        {
+          "path": "static/brand/homeseekers/join-property-hero.avif",
+          "bytes": 126787,
+          "sha256": "f8e767e471d9bab88b90df978cdd753ff6f52b72de1fcb96bf66e267b238b869"
+        },
+        {
+          "path": "static/brand/homeseekers/join-team-hero-v2.jpg",
+          "bytes": 488327,
+          "sha256": "8945a9acd295508affb9c6d209342a6a1add5a32cc783c86a35ab80c03cd2a74"
+        },
+        {
+          "path": "static/brand/homeseekers/logo.png",
+          "bytes": 378557,
+          "sha256": "af27a3088d773e362825dd17d57b0b412a79832324f7e54f4e03909fe4d29cb0"
+        },
+        {
+          "path": "static/brand/homeseekers/sold-black-solid.svg",
+          "bytes": 4485,
+          "sha256": "5f1f4f7e226abc4fca37e03b61b42722ffac83ea68b1c90ecbe77474d3a0380f"
+        },
+        {
+          "path": "static/brand/homeseekers/verkoop-white-solid.svg",
+          "bytes": 3899,
+          "sha256": "bccc4dfd4aa5e62f293bcb09452036564a4cf633eb22072dd75882c6d49b4975"
+        },
+        {
+          "path": "static/brand/kingstons-logo-cover.png",
+          "bytes": 231909,
+          "sha256": "bc2ef64fa706b874dbbb023c354527b217f90e0f7ea813a9eb75322be6c869f4"
+        },
+        {
+          "path": "static/brand/kingstons-logo-form.png",
+          "bytes": 276702,
+          "sha256": "30b00d077cd88fe4d50c9d05b324b09cc3e117f71269026aaad6837d85d5f094"
+        },
+        {
+          "path": "static/brand/landlord-demo/fernwood-studio-6.jpg",
+          "bytes": 177713,
+          "sha256": "d1e819f7f2b0ecefca6c4513f1189b047674c2be84491f32671b50611b555e73"
+        },
+        {
+          "path": "static/brand/landlord-demo/maple-grove-8.jpg",
+          "bytes": 223586,
+          "sha256": "f59a95284be291b0b885d8428784123306d113948cd8c23339dd1e9cb8302b61"
+        },
+        {
+          "path": "static/brand/landlord-demo/ocean-view-villa.jpg",
+          "bytes": 178043,
+          "sha256": "674138f98b8ed924bb4b45a3d6e6a6d696f083b734158939ebcaf3f65592d640"
+        },
+        {
+          "path": "static/brand/landlord-demo/the-mews-3.jpg",
+          "bytes": 260640,
+          "sha256": "c24281c5096fd36a6014601e77a967c1ad4f7239092e760fa85359d61dcabd9d"
+        },
+        {
+          "path": "static/brand/originators/SOURCES.md",
+          "bytes": 724,
+          "sha256": "f927908ecfea712909d9ca790855595c5c1532fd36626c4aa87845aac56af79d"
+        },
+        {
+          "path": "static/brand/originators/betterbond.svg",
+          "bytes": 6008,
+          "sha256": "449ec761b0708d883b5182d71f92102a2ea452b408a17b66993bd147624b4ac2"
+        },
+        {
+          "path": "static/brand/originators/ooba.webp",
+          "bytes": 6004,
+          "sha256": "233aaa053b442f82c1bd3c9187cc107460af1f17d781649b80e75956e293637f"
+        },
+        {
+          "path": "static/brand/produktive-realty-logo-white.svg",
+          "bytes": 820,
+          "sha256": "ac9397a7af47cb59bdbf0b654aa1534dc2eb7c388b393c1f5f9597d07ff343a5"
+        },
+        {
+          "path": "static/brand/revo-property-white.svg",
+          "bytes": 589,
+          "sha256": "b7d02d5cd2d422ab4ecbb6a3c822ee62836f1d5932cb99485fa69b1dd1a4c3e3"
+        },
+        {
+          "path": "static/brand/tuckers-attorneys-logo-transparent.png",
+          "bytes": 53817,
+          "sha256": "d8754d7ffb15a2cf963f8fc388e320d67ea8e30689e97f336b949a7828ac1382"
+        },
+        {
+          "path": "static/brand/young-law-logo-transparent.png",
+          "bytes": 45915,
+          "sha256": "b0d006cf9ea30b21357f539a7f55810f962313eff8b5320bdcfd5135c53d575b"
+        },
+        {
+          "path": "static/brand/young-law-logo.jpg",
+          "bytes": 81977,
+          "sha256": "10923795b7a43dd5398f8f912c45cb19e2d07ed01dbe52ab687dd94881d4f2af"
+        },
+        {
+          "path": "static/demo-listing-images/harbour-heights-site-plan-v2.png",
+          "bytes": 2594635,
+          "sha256": "a4a6f27f06c9cc0838218f54bb62a39b1a2d5ebb9b9e5e0cd9c5d1a0dc3b37d7"
+        },
+        {
+          "path": "static/demo-listing-images/harbour-heights-site-plan.svg",
+          "bytes": 4950,
+          "sha256": "ade9b6c1cbcc0fcb295efadb5f08571645fc74ce76597d1f82802f47f70f1629"
+        },
+        {
+          "path": "static/demo-listing-images/revo-rental-cover.png",
+          "bytes": 2418829,
+          "sha256": "af8564f3986aad19237d5a5726feb8e596d67ab3bfa280db6ca7f7589980167f"
+        },
+        {
+          "path": "static/demo-listing-images/revo-sales-cover.png",
+          "bytes": 2797878,
+          "sha256": "a77f4aa8191dd3218bfac0b1ff28387b3e7d012216446e19938e064690f2bd5b"
+        },
+        {
+          "path": "static/demo-listing-images/revo-short-stay-cover.png",
+          "bytes": 2568301,
+          "sha256": "5d63be73f8edc697fc8063e214e0b2068e6aa7040820ab750d8ea1c91fb2de7a"
+        },
+        {
+          "path": "static/favicon-dark.png",
+          "bytes": 27340,
+          "sha256": "607b49502731c186f94ff30c5beca0df5db90ef5735bf842f5d623872a2ccb4d"
+        },
+        {
+          "path": "static/favicon-dark.svg",
+          "bytes": 312,
+          "sha256": "851080d278b28e1f28973195067cd9aefc98166dc8feb257015bb99a4238d873"
+        },
+        {
+          "path": "static/favicon-light.png",
+          "bytes": 24497,
+          "sha256": "10b612c96e96aa6d1326dd27bf25eb25d6c9b568962de4e347c9b5571e4757da"
+        },
+        {
+          "path": "static/favicon-light.svg",
+          "bytes": 312,
+          "sha256": "da7d061c4afed3d26943d2aa735fdce388acfd1f3b37d0b9fba9a19c2e02fb07"
+        },
+        {
+          "path": "static/favicon.png",
+          "bytes": 27340,
+          "sha256": "607b49502731c186f94ff30c5beca0df5db90ef5735bf842f5d623872a2ccb4d"
+        },
+        {
+          "path": "static/favicon.svg",
+          "bytes": 693,
+          "sha256": "2b2998ec26b14232cd66bc9de3f88db72e9e6a78c562b88b71b05f1b67f4dc6e"
+        },
+        {
+          "path": "static/index.html",
+          "bytes": 1079,
+          "sha256": "35b1b420c45779af58522e06327d1e4b67bec19491baf3923c3d1bf50d657a1a"
+        },
+        {
+          "path": "static/lead-sources/private-property.jpeg",
+          "bytes": 18451,
+          "sha256": "655d6b3414b2e975cfd6a938960df91cac058e47949b37570a62ac1af779578e"
+        },
+        {
+          "path": "static/lead-sources/property24.png",
+          "bytes": 22006,
+          "sha256": "8cde6fa40d47ec3ecdb0d05b857943e78aa364098136ae5ea144c0beef83c04f"
+        },
+        {
+          "path": "static/not-found.html",
+          "bytes": 132,
+          "sha256": "bc8a97998399d261c61e2430a5506e21e16f7340498daf7d918923c54afded66"
+        },
+        {
+          "path": "static/vite.svg",
+          "bytes": 1497,
+          "sha256": "4a748afd443918bb16591c834c401dae33e87861ab5dbad0811c3a3b4a9214fb"
+        }
+      ],
+      "unchangedRuntimeArtifacts": "The four other published Home Seekers API functions and published non-code assets were retained byte-for-byte; no unrelated public assets were added."
+    }
+  },
+  "checks": {
+    "recruitmentTests": {
+      "passed": 192,
+      "failed": 0,
+      "log": "/tmp/arch9-homeseekers-existing-account-tests.log"
+    },
+    "packagedHandlers": {
+      "passed": 15,
+      "failed": 0,
+      "log": "/tmp/arch9-homeseekers-open-form-compat-packaged.log"
+    },
+    "productionBuild": "public website build and primary app cloud build with required deployment checks passed",
+    "lint": "passed",
+    "browser": {
+      "hostedSignup": true,
+      "simulatedVerificationOpensQuestionnaire": true,
+      "desktopScreenshot": "output/playwright/recruitment-phase6/application-desktop.png",
+      "mobileScreenshot": "output/playwright/recruitment-phase6/application-mobile.png",
+      "reviewScreenshot": "output/playwright/recruitment-phase6/signup-desktop.png",
+      "consoleErrors": 0,
+      "production": {
+        "url": "https://app.arch9.co.za/demo/homeseekers/join",
+        "contextLoaded": true,
+        "previewClutterAbsent": true,
+        "sectionBackgroundsVerified": true,
+        "primaryButtonBackground": "#ff6319",
+        "primaryButtonText": "#171717",
+        "consoleErrors": 0,
+        "desktopScreenshot": "/Users/alexanderlandman/the-it-guy/output/playwright/homeseekers-production-20261007/open-form-compatibility-live.png",
+        "mobileViewportCheck": "Browser viewport override did not resize this background tab; prior local responsive checks remain the mobile evidence."
+      }
+    },
+    "liveEmailDelivery": "not sent; real inbox verification remains a manual check",
+    "legacyServerChecks": {
+      "recruitmentAndBridge": 10,
+      "leads": 11,
+      "passed": true
+    },
+    "runtimeImport": "passed with native Node",
+    "importCorrectionTests": {
+      "passed": 24,
+      "failed": 0,
+      "log": "/tmp/arch9-homeseekers-production-import-tests.log"
+    },
+    "openFormCompatibility": {
+      "passed": 23,
+      "failed": 0,
+      "log": "/tmp/arch9-homeseekers-open-form-compat-tests.log",
+      "legacyClientSource": "6533b7b3e615822c9b806b587d2d89ad5e08dbe5",
+      "nativeLegacyClientChecks": "Actual previous client module accepts both new and existing account replies from the current server with fixture-only data; no session is granted before verification."
+    }
+  },
+  "productionPrerequisites": [
+    "Actual verification-email delivery and applicant ownership need a real inbox check; no verification email was sent during deployment checks."
+  ],
+  "recoveryPlan": {
+    "database": "Keep the new columns, tables, immutable snapshots and guards to preserve captured applicant data. Do not drop the signup schema as an application rollback.",
+    "website": "If launch fails, disable/revoke the new intake link through its manager flow, restore the recorded previous production website deployment, and stop processing until the failure is resolved.",
+    "crm": "Restore primary deployment dpl_FietQy1KBUoPNNk5Wk8cWdAtboq4 if required; preserve captured enquiries and database objects."
+  },
+  "primaryApp": {
+    "projectId": "prj_rbfXykMU6mU1eECbc0lJS9sPspmp",
+    "sourceBase": "0de373c51b5e0eb4911daf3a5613bb8775f22aae",
+    "sourceCommit": "14f2cd95fa95174e5fdb2e6ea066c11faff326ea",
+    "sourceDirectory": "/tmp/arch9-homeseekers-primary-20261007",
+    "previousProductionDeploymentId": "dpl_FietQy1KBUoPNNk5Wk8cWdAtboq4",
+    "deploymentId": "dpl_6TXk4shGwezpHDN1VruXRAXDGS9E",
+    "promoted": true,
+    "unrelatedWorkingTreeChanges": "excluded by clean production base and explicit recruitment/Home Seekers overlay",
+    "url": "https://app.arch9.co.za/demo/homeseekers/join",
+    "runtimeCorrection": "Native Node module resolution requires recruitmentProfileModel.js; explicit extension corrected and direct server-module import passed.",
+    "readyState": "READY",
+    "liveJoinContextVerified": true,
+    "productionProjectCommitVerified": true,
+    "runtimeResponse": {
+      "requests": [
+        {
+          "path": "/api/home-seekers/recruitment",
+          "status": 200
+        }
+      ],
+      "failedResponsesObserved": 0
+    },
+    "promotionLog": "/tmp/arch9-homeseekers-open-form-primary-promote.log"
+  },
+  "existingAccountCorrection": {
+    "cause": "All three observed attempts encountered Auth email_exists for accounts registered before today. The application incorrectly returned a fatal signup error after successful contact capture.",
+    "behavior": "New and existing Auth emails receive the same verification-required acknowledgement. Existing passwords, metadata, roles and memberships are untouched. Applicant binding and cookies remain dependent on verified Auth ownership.",
+    "tests": "192 recruitment tests and 15 packaged endpoint checks passed, including existing-user verification and no account mutation.",
+    "databaseChanges": false,
+    "emailsSentByAgent": false,
+    "liveChecks": "Both canonical Join popups load. Production target and source commit match the released fix. Real inbox signup/verification has not been performed by the agent."
+  },
+  "openFormCompatibilityCorrection": {
+    "cause": "Production signup returned HTTP 201 successfully, but a form loaded before the previous release rejected its missing v1 accountCreated readiness acknowledgement.",
+    "fix": "Restore the v1 readiness acknowledgement alongside verificationRequired for both new and existing accounts. Existing account identity and permissions remain unchanged, and email ownership proof remains necessary.",
+    "databaseChanges": false,
+    "emailsSentByAgent": false,
+    "productionTargetsAndCommit": "verified"
+  }
+}

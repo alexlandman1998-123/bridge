@@ -238,6 +238,7 @@ function GenericModuleCard({ copy }) {
 
 export default function MobileModulePage({ moduleKey }) {
   const workspace = useWorkspace()
+  const developer = resolveMobileRoleCategory(workspace) === 'developer'
   const organisationContext = useOptionalOrganisation()
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -353,9 +354,9 @@ export default function MobileModulePage({ moduleKey }) {
   if (moduleKey === 'transactions') {
     return (
       <div className="mobile-transactions">
-        <section className="mobile-transactions-intro">
+        <section className={`mobile-transactions-intro${developer ? ' mobile-transactions-header-card' : ''}`} aria-label="Transaction summary">
           <h1>Transactions</h1>
-          <p>{rows.length} active transaction{rows.length === 1 ? '' : 's'}</p>
+          <p>{developer ? <>{rows.length} Active<span className="sr-only"> transaction{rows.length === 1 ? '' : 's'}</span></> : <>{rows.length} active transaction{rows.length === 1 ? '' : 's'}</>}</p>
         </section>
 
         <section className="mobile-transactions-list" aria-label="Active transactions">

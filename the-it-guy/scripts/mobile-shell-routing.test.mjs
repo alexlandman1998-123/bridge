@@ -54,7 +54,8 @@ assert.equal(resolve('/transactions/tx-1', { user: developer }), '/mobile/transa
 assert.equal(resolve('/dashboard', { user: developer, deviceType: 'desktop' }), '/dashboard', 'desktop developers should keep their existing dashboard')
 assert.equal(resolve('/dashboard', { user: developer, featureFlags: { enableMobileShell: false, enableMobileLoginRedirect: true } }), '/dashboard')
 assert.equal(resolve('/buyer-portal/example', { user: developer }), '/buyer-portal/example', 'public portals must not be captured by developer mobile redirects')
-assert.deepEqual(getMobileNavItems(developer).map((item) => item.key), ['home', 'transactions', 'create', 'developments', 'more'])
+assert.deepEqual(getMobileNavItems(developer).map((item) => item.key), ['home', 'transactions', 'create', 'leads', 'more'])
+assert.equal(getMobileNavItems(developer).find((item) => item.key === 'leads').to, '/mobile/developer/leads')
 assert.equal(resolve('/transactions/tx-123'), '/mobile/transaction/tx-123', 'transaction deep links should map to mobile transaction workspaces')
 assert.equal(resolve('/auth'), '/auth', 'public auth routes should not be forced into mobile shell')
 assert.equal(

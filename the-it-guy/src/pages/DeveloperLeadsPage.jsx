@@ -64,8 +64,9 @@ import { listOrganisationUsers } from '../lib/settingsApi'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 import { useWorkspace } from '../context/WorkspaceContext'
 import Button from '../components/ui/Button'
+import DeveloperLeadDocuments from '../components/documents/DeveloperLeadDocuments.jsx'
 import { JOURNEY_ENTITY_TYPES } from '../core/journey/journeyStagePolicy.js'
-import { applyJourneyStageOverrides } from '../core/journey/journeyStageOverrideState.js'
+import { buildDeveloperLeadJourneyStages, getDeveloperLeadNextAction, getDeveloperLeadPrimaryAction, getNextManualLeadStatus } from '../core/developerLeads/developerLeadWorkspaceModel.js'
 import {
   DEVELOPER_LEAD_PHASE18_CONTRACT,
   convertDeveloperLeadToTransactionAndSendOnboarding,
@@ -744,55 +745,6 @@ function getLeadStagePresentation(status = 'new') {
   return { label: 'Captured', className: 'border-[#e4ebf4] bg-[#f8fafc] text-[#52677f]', Icon: ClipboardList }
 }
 
-function buildDeveloperLeadJourneyStages(lead = {}, overrides = []) {
-  const status = normalizeLower(lead.leadStatus || 'new')
-  const handoff = buildDeveloperLeadTransactionHandoff(lead)
-  const statusRank = {
-    new: 0,
-    contacted: 1,
-    qualified: 2,
-    viewing: 3,
-    reserved: 3,
-    onboarding_sent: 4,
-    onboarding_submitted: 5,
-    otp: 6,
-    converted: 6,
-    lost: 0,
-  }
-  const activeRank = statusRank[status] ?? 0
-  const reservationActive = status === 'reserved' || normalizeLower(lead.reservationState) === 'reserved'
-  const steps = [
-    { key: 'captured', label: 'Captured', detail: 'Lead created', rank: 0 },
-    { key: 'contacted', label: 'Contacted', detail: 'Buyer contacted', rank: 1 },
-    { key: 'qualified', label: 'Qualified', detail: handoff.eligible ? 'Ready for onboarding' : 'Buyer fit checked', rank: 2 },
-    { key: 'viewing', label: 'Viewing', detail: reservationActive ? 'Reservation relevant' : 'Viewing / selection', rank: 3 },
-    { key: 'onboarding_sent', label: 'Onboarding sent', detail: 'Buyer link sent', rank: 4 },
-    { key: 'onboarding_submitted', label: 'Onboarding submitted', detail: 'Buyer details complete', rank: 5 },
-    ...(reservationActive ? [{ key: 'reservation', label: 'Reservation deposit', detail: 'Deposit paid', rank: 5 }] : []),
-    { key: 'otp', label: 'OTP', detail: 'Upload signed OTP', rank: 6 },
-  ]
-
-  const staged = steps.map((step) => {
-    const state = step.rank < activeRank ? 'completed' : step.rank === activeRank ? 'current' : 'upcoming'
-    return { ...step, state }
-  })
-  return applyJourneyStageOverrides({
-    entityType: JOURNEY_ENTITY_TYPES.developerLead,
-    stages: staged,
-    overrides,
-  })
-}
-
-function getNextManualLeadStatus(lead = {}) {
-  const status = normalizeLower(lead.leadStatus || 'new')
-  if (status === 'new') return { status: 'contacted', label: 'Mark Contacted', detail: 'Buyer has been contacted.' }
-  if (status === 'contacted') return { status: 'qualified', label: 'Mark Qualified', detail: 'Buyer fit and development interest are qualified.' }
-  if (status === 'qualified') return { status: 'viewing', label: 'Mark Viewing', detail: 'Buyer is viewing or selecting a unit.' }
-  if (status === 'onboarding_sent') return { status: 'onboarding_submitted', label: 'Mark Onboarding Submitted', detail: 'Buyer onboarding has been submitted.' }
-  if (status === 'onboarding_submitted') return { status: 'otp', label: 'Mark Signed OTP Uploaded', detail: 'Signed OTP has been uploaded manually.' }
-  return null
-}
-
 function getStageCompletionStatus(stageKey = '', lead = {}) {
   const status = normalizeLower(lead.leadStatus || 'new')
   if (stageKey === 'captured' && status === 'new') return getNextManualLeadStatus(lead)
@@ -801,51 +753,6 @@ function getStageCompletionStatus(stageKey = '', lead = {}) {
   if (stageKey === 'onboarding_sent' && status === 'onboarding_sent') return getNextManualLeadStatus(lead)
   if (stageKey === 'onboarding_submitted' && status === 'onboarding_submitted') return getNextManualLeadStatus(lead)
   return null
-}
-
-function getDeveloperLeadNextAction(lead = {}) {
-  const handoff = buildDeveloperLeadTransactionHandoff(lead)
-  const leadStatus = normalizeLower(lead.leadStatus || 'new')
-  if (isConvertedLead(lead)) {
-    return {
-      label: 'Open the transaction workflow',
-      helper: 'The signed OTP has moved this lead into the transaction workflow.',
-    }
-  }
-  if (leadStatus === 'otp') {
-    return {
-      label: 'Open the transaction workflow',
-      helper: 'Signed OTP has been uploaded, so finance, transfer, and registration can continue from the transaction workflow.',
-    }
-  }
-  if (leadStatus === 'onboarding_submitted') {
-    return {
-      label: 'Upload signed OTP',
-      helper: 'Buyer onboarding is submitted. The next handoff is signed OTP upload, which starts the transaction workflow.',
-    }
-  }
-  if (leadStatus === 'onboarding_sent') {
-    return {
-      label: 'Wait for buyer onboarding submission',
-      helper: 'The buyer has the onboarding link. Once submitted, upload the signed OTP to start the transaction workflow.',
-    }
-  }
-  if (requiresAgencyHandover(lead)) {
-    return {
-      label: lead.visibilityState === 'consent_pending' ? 'Wait for agency handover' : 'Request agency handover',
-      helper: 'Buyer details stay protected until the source agency releases them.',
-    }
-  }
-  if (handoff.eligible) {
-    return {
-      label: 'Send buyer onboarding',
-      helper: 'This sends the buyer onboarding link and prepares the onboarding context before OTP.',
-    }
-  }
-  return {
-    label: handoff.blockers?.[0]?.message || 'Complete lead setup',
-    helper: 'Capture buyer details, development interest, and a qualified, viewing, or reserved status before sending onboarding.',
-  }
 }
 
 function getLeadWorkspaceReadiness(journeyStages = []) {
@@ -1745,9 +1652,8 @@ function DeveloperLeadWorkspacePanel({
   const warnings = handoff.warnings || []
   const journeyStages = buildDeveloperLeadJourneyStages(lead, journeyOverrides)
   const selectedStage = journeyStages.find((stage) => stage.key === selectedJourneyStage) || journeyStages.find((stage) => stage.state === 'current') || journeyStages[0]
-  const nextManualStatus = getNextManualLeadStatus(lead)
+  const primaryAction = getDeveloperLeadPrimaryAction(lead)
   const selectedStageCompletion = getStageCompletionStatus(selectedStage?.key, lead)
-  const needsPreferredUnit = ['qualified', 'viewing', 'reserved'].includes(leadStatus) && blockers.some((blocker) => blocker.code === 'unit_missing')
   const nextAction = getDeveloperLeadNextAction(lead)
   const displayedNextActionLabel = normalizeText(lead.nextActionNote) || nextAction.label
   const budget = lead.budgetMin || lead.budgetMax
@@ -1879,15 +1785,15 @@ function DeveloperLeadWorkspacePanel({
   }
 
   function renderPrimaryAction({ compact = false } = {}) {
-    if (onboardingStarted && !converted) {
+    if (primaryAction.key === 'open_transaction' && !converted) {
       return (
         <Button type="button" size={compact ? 'sm' : undefined} variant="secondary" onClick={() => onOpenTransaction(lead.convertedTransactionId)}>
           <ExternalLink size={16} />
-          {leadStatus === 'otp' ? 'Open Transaction Workflow' : 'Open Onboarding Context'}
+          {primaryAction.label}
         </Button>
       )
     }
-    if (converted) {
+    if (primaryAction.key === 'open_transaction') {
       return (
         <Button type="button" size={compact ? 'sm' : undefined} onClick={() => onOpenTransaction(lead.convertedTransactionId)}>
           <ExternalLink size={16} />
@@ -1895,7 +1801,7 @@ function DeveloperLeadWorkspacePanel({
         </Button>
       )
     }
-    if (handoverRequired) {
+    if (primaryAction.key === 'request_handover') {
       return (
         <Button type="button" size={compact ? 'sm' : undefined} variant="secondary" disabled={handoverPending || handoverSubmitting} onClick={() => onRequestHandover(lead.developerLeadId)}>
           <EyeOff size={16} />
@@ -1903,7 +1809,7 @@ function DeveloperLeadWorkspacePanel({
         </Button>
       )
     }
-    if (handoff.eligible) {
+    if (primaryAction.key === 'send_onboarding') {
       return (
         <Button type="button" size={compact ? 'sm' : undefined} disabled={converting} onClick={() => onConvertLead(lead)}>
           <ExternalLink size={16} />
@@ -1911,7 +1817,7 @@ function DeveloperLeadWorkspacePanel({
         </Button>
       )
     }
-    if (needsPreferredUnit) {
+    if (primaryAction.key === 'select_unit') {
       return (
         <Button type="button" size={compact ? 'sm' : undefined} variant="secondary" onClick={() => setActiveTab('development')}>
           <Home size={16} />
@@ -1919,8 +1825,8 @@ function DeveloperLeadWorkspacePanel({
         </Button>
       )
     }
-    if (nextManualStatus) {
-      return renderStageCompletionAction(nextManualStatus, { compact })
+    if (primaryAction.key === 'update_status') {
+      return renderStageCompletionAction(primaryAction, { compact })
     }
     return (
       <span className="inline-flex min-h-10 items-center rounded-[12px] border border-[#d9e5f2] bg-[#f8fafc] px-3 text-sm font-semibold text-[#52677f]">
@@ -2498,10 +2404,7 @@ function DeveloperLeadWorkspacePanel({
 
         {activeTab === 'documents' ? (
           <div>
-            <h3 className="text-xl font-semibold tracking-[-0.02em] text-[#102033]">Documents</h3>
-            <p className="mt-2 text-sm leading-6 text-[#60758b]">
-              Buyer onboarding documents stay with the onboarding context. Uploading the signed OTP starts the transaction workflow for finance, transfer, and registration.
-            </p>
+            <DeveloperLeadDocuments key={`${organisationId}:${lead.developerLeadId}:${lead.convertedTransactionId || ''}`} developerOrgId={organisationId} developerLeadId={lead.developerLeadId} />
             <div className="mt-4 flex flex-wrap gap-2">
               {renderCopyOnboardingAction()}
               {renderPrimaryAction()}

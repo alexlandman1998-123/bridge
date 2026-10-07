@@ -2,6 +2,7 @@
 // and ephemeral private file bytes. No hosted database or email is contacted.
 import { createServer } from 'node:http'
 import { createHash, randomBytes } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import {
   rentalOnboardingDatabase,
@@ -28,11 +29,18 @@ const db = await rentalOnboardingDatabase()
 const files = new Map(),
   links = new Map(),
   requests = []
-await db.exec(`alter table rental_application_documents add column storage_bucket text default 'rental-application-documents',add column storage_path text,add column mime_type text,add column file_size_bytes integer;
+await db.exec(`alter table rental_application_documents add column storage_bucket text default 'rental-application-documents',add column mime_type text,add column file_size_bytes integer;
+ alter table organisations add column name text,add column display_name text,add column logo_url text;
+ create table organisation_settings(organisation_id uuid primary key,settings_json jsonb);
  create table rental_application_access_tokens(id uuid default gen_random_uuid(),application_id uuid,token_hash text unique,expires_at timestamptz,revoked_at timestamptz,last_accessed_at timestamptz);
  create unique index fixture_consent_retry on rental_application_consents(application_id,consent_type,wording_version);
  alter table leads enable row level security; create policy fixture_leads_read on leads for select to authenticated using(organisation_id='${org}' and auth.uid()='${actor}');
  grant select on rental_onboarding_requirement_summaries to authenticated;`)
+await db.exec(`create function bridge_current_workspace_role(workspace_id uuid) returns text language sql as $$ select 'owner'::text $$;`)
+await db.exec(await readFile(new URL('../../supabase/migrations/20261007194611_rental_application_cost_confirmation.sql', import.meta.url), 'utf8'))
+await db.query('insert into rental_application_fee_settings(organisation_id,amount,payment_instructions) values($1,350,$2)', [org, 'Local preview only. Your rentals team would provide payment instructions here.'])
+await db.query('update organisations set name=$1 where id=$2', ['Arch9 Rentals', org])
+await db.query('insert into organisation_settings(organisation_id,settings_json) values($1,$2::jsonb)', [org, JSON.stringify({ agencyOnboarding: { branding: { organisationName: 'Arch9 Rentals', logoDarkUrl: `${origin}/favicon-light.svg`, primaryColour: '#001a3d', secondaryColour: '#001b44', accentColour: '#f7cf22' } } })])
 await db.query(
   'insert into rental_properties(id,organisation_id) values($1,$2)',
   [second, org],
@@ -71,6 +79,8 @@ await db.query(
     }),
   ],
 )
+await db.exec(readFileSync(new URL('../../supabase/migrations/20261007204950_rental_application_document_packs.sql', import.meta.url), 'utf8'))
+await db.exec(readFileSync(new URL('../../supabase/migrations/20261007212433_rental_empty_document_pack_readiness.sql', import.meta.url), 'utf8'))
 const data = {
   schemaVersion: 'arch9_rental_application_fields_v2',
   entity: { type: 'individual' },

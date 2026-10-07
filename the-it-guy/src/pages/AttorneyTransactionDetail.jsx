@@ -8272,10 +8272,12 @@ function ArchlineTransferWorkspace({
   const [expandedPhaseKeys, setExpandedPhaseKeys] = useState({})
   const [activeTaskTab, setActiveTaskTab] = useState('checklist')
   const handledFocusRequestRef = useRef(null)
+  const focusNavigationPendingRef = useRef(false)
   useEffect(() => {
     if (!focusRequest || focusRequest.workflowKey !== workflowKey || handledFocusRequestRef.current === focusRequest) return
     handledFocusRequestRef.current = focusRequest
     if (transferNavigation && focusRequest.phaseKey && focusRequest.taskKey) {
+      focusNavigationPendingRef.current = true
       if (onNavigateTransfer?.({ view: 'workspace', stageKey: focusRequest.phaseKey, taskKey: focusRequest.taskKey }) === false) return
     } else if (!selectTaskWithUnsavedGuard(focusRequest.taskKey || '')) {
       return
@@ -8332,13 +8334,14 @@ function ArchlineTransferWorkspace({
       keyDates,
       parties,
       activityFeed,
+      stageNavigation: transferNavigation,
       selectedTaskKey: transferNavigation?.view === 'workspace'
         ? transferNavigation.taskKey || selectedTaskKey
         : selectedTaskKey,
       search,
       filters: { attention: attentionFilter, phaseKey: phaseFilter, status: statusFilter },
     }),
-    [activityFeed, attentionFilter, bondApplicants, bondApplicationChecklist, documents, documentsLoaded, keyDates, parties, phaseFilter, requiredDocuments, routingProfile, search, securityDocuments, selectedTaskKey, sharedLegalJourney, statusFilter, transferNavigation?.taskKey, transferNavigation?.view, workflow, workflowKey, workflowLanes],
+    [activityFeed, attentionFilter, bondApplicants, bondApplicationChecklist, documents, documentsLoaded, keyDates, parties, phaseFilter, requiredDocuments, routingProfile, search, securityDocuments, selectedTaskKey, sharedLegalJourney, statusFilter, transferNavigation, workflow, workflowKey, workflowLanes],
   )
   const selectedTask = viewModel.selectedTask
   selectedTaskKeyRef.current = selectedTask?.key || selectedTaskKey
@@ -8838,6 +8841,18 @@ function ArchlineTransferWorkspace({
   const resolvedTransferNavigation = transferNavigation
     ? resolveTransferWorkspaceNavigation(transferNavigation, viewModel.phases)
     : null
+  const entryStageKey = resolvedTransferNavigation?.phase?.key || ''
+  const entryTaskKey = resolvedTransferNavigation?.task?.key || ''
+  useEffect(() => {
+    if (focusNavigationPendingRef.current) {
+      focusNavigationPendingRef.current = false
+      return
+    }
+    if (!transferNavigation || !entryTaskKey || (transferNavigation.active &&
+      transferNavigation.view === 'workspace' && transferNavigation.stageKey === entryStageKey &&
+      transferNavigation.taskKey === entryTaskKey)) return
+    onNavigateTransfer?.({ view: 'workspace', stageKey: entryStageKey, taskKey: entryTaskKey }, { replace: true })
+  }, [entryStageKey, entryTaskKey, onNavigateTransfer, transferNavigation])
   const nextStageTask = resolvedTransferNavigation?.view === 'workspace'
     ? getNextTransferStageTask(resolvedTransferNavigation.phase, selectedTask?.key)
     : null
@@ -8877,7 +8892,6 @@ function ArchlineTransferWorkspace({
       selectedTaskKey={resolvedTransferNavigation.task?.key || ''}
       taskPanel={taskPanel}
       navigationBusy={saving || taskSaveBusy || taskEditorBusy}
-      onCloseTask={() => onNavigateTransfer?.({ view: 'overview', stageKey: resolvedTransferNavigation.phase.key })}
       onSelectStage={(stageKey) => onNavigateTransfer?.({ view: 'overview', stageKey })}
       onOpenStage={(stageKey, taskKey) => onNavigateTransfer?.({ view: 'workspace', stageKey, taskKey })}
       canUpdate={canUpdateSteps}
@@ -23929,7 +23943,7 @@ function AttorneyTransactionDetail() {
               workflow={archlineActiveLegalTaskWorkflow}
               workflowKey={archlineActiveLegalTaskWorkflowKey}
               transferNavigation={transferNavigation.laneKey === archlineActiveLegalTaskWorkflowKey ? transferNavigation : { active: false, view: 'overview', laneKey: archlineActiveLegalTaskWorkflowKey }}
-              onNavigateTransfer={(navigation) => navigateTransferWorkspace({ ...navigation, laneKey: archlineActiveLegalTaskWorkflowKey })}
+              onNavigateTransfer={(navigation, options) => navigateTransferWorkspace({ ...navigation, laneKey: archlineActiveLegalTaskWorkflowKey }, options)}
               sharedLegalJourney={archlineSharedLegalJourney}
               selectionStorageKey={`arch9:attorney-workflow-selection:${transaction.id}:${archlineActiveLegalTaskWorkflowKey}`}
               focusRequest={journeyFocusRequest}

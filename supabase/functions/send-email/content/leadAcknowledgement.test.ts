@@ -11,6 +11,17 @@ function assert(value: unknown, message = "Assertion failed") {
   if (!value) throw new Error(message);
 }
 
+Deno.test("tenant acknowledgement has a rental design and a qualification CTA in both formats", () => {
+  const url = "https://example.test/viewing-preferences/tenant-token";
+  const html = buildLeadAcknowledgementEmailHtml({ enquiryKind: "rental", viewingAvailabilityUrl: url });
+  assert(html.includes("RENTAL ENQUIRY · TENANT QUALIFICATION"));
+  assert(html.includes("Complete tenant qualification"));
+  assert(html.includes(url));
+  assert(!html.includes("Arrange a viewing</a>"));
+  assert(buildLeadAcknowledgementEmailText({ enquiryKind: "rental", viewingAvailabilityUrl: url }).includes(url));
+  assert(!buildLeadAcknowledgementEmailHtml({ enquiryKind: "sale" }).includes("TENANT QUALIFICATION"));
+});
+
 Deno.test("rental and landlord acknowledgement replaces all sales wording in HTML and text", () => {
   for (const enquiryKind of ["rental", "landlord", "general"] as const) {
     for (

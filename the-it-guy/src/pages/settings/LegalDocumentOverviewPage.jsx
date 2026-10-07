@@ -89,7 +89,7 @@ export default function LegalDocumentOverviewPage() {
         <div className="max-w-3xl">
           <h1 id="document-overview-title" className="text-3xl font-semibold tracking-[-0.03em] text-[#101c2d] sm:text-[2.15rem]">{definition.label}</h1>
           <p className="mt-2 text-[15px] leading-7 text-[#62758a]">
-            Bridge automatically builds the correct {definition.shortLabel || definition.label} from your standard wording and situation clauses.
+            Arch9 automatically builds the correct {definition.shortLabel || definition.label} from your standard wording and situation clauses.
           </p>
         </div>
         <div className="flex flex-wrap gap-3">
@@ -157,7 +157,7 @@ export default function LegalDocumentOverviewPage() {
           />
           <LegalDocumentBuildingBlockCard
             title="Special situations"
-            description="Extra wording Bridge adds only when it applies."
+            description="Extra wording Arch9 adds only when it applies."
             countLabel={`${document?.situationClauseCount || 0} situation clauses`}
             items={situationItems}
             emptyLabel="No automatic situation wording has been set up yet."
@@ -216,7 +216,7 @@ export default function LegalDocumentOverviewPage() {
         <section className="flex flex-col gap-4 rounded-[18px] border border-[#dde6ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)] sm:flex-row sm:items-center sm:justify-between sm:p-6" aria-labelledby="test-result-heading">
           <div>
             <h2 id="test-result-heading" className="text-lg font-semibold tracking-[-0.01em] text-[#142033]">Test the result</h2>
-            <p className="mt-1 text-sm leading-6 text-[#6b7e92]">Choose a buyer, seller, property and finance situation to see the exact document Bridge will create.</p>
+            <p className="mt-1 text-sm leading-6 text-[#6b7e92]">Choose a buyer, seller, property and finance situation to see the exact document Arch9 will create.</p>
           </div>
           <Link to={previewPath} className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-[11px] border border-[#b9dcc7] bg-white px-5 text-sm font-semibold text-[#187348] transition hover:border-[#0f7f4f] hover:bg-[#f1faf5]">
             Open scenario preview

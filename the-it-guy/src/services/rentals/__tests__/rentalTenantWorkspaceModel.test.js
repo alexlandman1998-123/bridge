@@ -63,15 +63,17 @@ describe('tenant workspace model', () => {
     expect(tenantQualificationValues(lead).bedrooms).toBe(0)
     expect(tenantQualificationProgress({ pets: 'Not captured' }).count).toBe(0)
   })
-  it('shows only actual priced rentals within the captured rent budget', () => {
-    const matches = [0, 8000, 11000, 12000].map((monthlyRent, index) => ({
+  it('uses an inclusive R1,000 band around the saved monthly budget', () => {
+    const matches = [0, 8000, 9999, 10000, 11000, 12000, 12001].map((monthlyRent, index) => ({
       listing: { id: String(index), monthlyRent },
     }))
     expect(
       tenantBudgetMatches({ monthlyBudget: 11000 }, matches).map(
         (item) => item.listing.monthlyRent,
       ),
-    ).toEqual([8000, 11000])
+    ).toEqual([10000, 11000, 12000])
+    expect(tenantBudgetMatches({ monthlyBudget: 8000, qualification: { monthlyBudget: 11000 } }, matches).map((item) => item.listing.monthlyRent)).toEqual([10000, 11000, 12000])
+    expect(tenantBudgetMatches({ monthlyBudget: Infinity }, matches)).toEqual([])
     expect(tenantBudgetMatches({}, matches)).toEqual([])
     expect(tenantBudgetMatches({ monthlyBudget: 11000 }, ['daily', 'weekly', 'annual', 'per_square_metre'].map((rentalPriceFrequency) => ({ listing: { monthlyRent: 500, rentalPriceFrequency } })))).toEqual([])
   })

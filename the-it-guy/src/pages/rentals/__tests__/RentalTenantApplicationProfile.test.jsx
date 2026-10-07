@@ -4,11 +4,33 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import RentalTenantApplicationProfile from '../RentalTenantApplicationProfile'
 import { uploadRentalApplicationEvidence } from '../../../services/rentals/rentalApplicationEvidenceService.js'
 import { savePersistedRentalApplication, getRentalApplicationReview } from '../../../services/rentals/rentalApplicationRepository.js'
+import { rentalApplicationFieldScenario } from '../../../../server/tests/fixtures/rentalApplicationFieldScenario.js'
 vi.mock('../../../services/rentals/rentalApplicationRepository.js', () => ({ savePersistedRentalApplication: vi.fn(), getRentalApplicationReview: vi.fn().mockResolvedValue({ documents: [], version: 2, requirements: [] }) }))
 vi.mock('../../../services/rentals/rentalApplicationEvidenceService.js', () => ({ uploadRentalApplicationEvidence: vi.fn() }))
 afterEach(() => { cleanup(); vi.clearAllMocks() })
 const application = { id: 'app', status: 'draft', version: 2, vacancyId: 'vacancy', data: { identity: { firstName: 'Alex', email: 'a@example.test', customKey: 'retained' }, employment: { employer: 'Acme' }, income: { monthlyIncome: '20000' }, rentalHistory: { currentAddress: 'Saved address' }, property: { title: '12 Main Road' }, extra: { retained: true } } }
 const lead = { name: 'Alex Tenant', email: 'a@example.test' }
+it.each(['individual', 'joint_individuals', 'company', 'close_corporation', 'trust'])('displays saved %s applicant answers in the agent profile without allowing submitted edits', async (type) => {
+  const data = { ...rentalApplicationFieldScenario(type), property: { title: 'Confirmed rental home', monthlyRent: 11000, depositAmount: 22000 } }
+  render(<RentalTenantApplicationProfile applications={[{ id: 'mapped-app', status: 'submitted', version: 2, data }]} lead={lead} />)
+  if (['company', 'close_corporation', 'trust'].includes(type)) expect(screen.getByLabelText('Registered name').value).toBe(data.entity.legalName)
+  fireEvent.click(screen.getByRole('button', { name: /People & contacts/ }))
+  expect(screen.getAllByLabelText('First name')[0].value).toBe(data.identity.firstName)
+  expect(screen.getAllByLabelText('First name')[1].value).toBe(data.people[0].firstName)
+  expect(screen.getByLabelText('Emergency contact name').value).toBe(data.contacts.emergencyContactName)
+  expect(screen.getAllByLabelText('First name').every((input) => input.disabled)).toBe(true)
+  fireEvent.click(screen.getByRole('button', { name: /Household & property/ }))
+  expect(screen.getByText('Confirmed rental home')).toBeTruthy()
+  expect(screen.getByLabelText('Intended move date').value).toBe(data.household.intendedOccupationDate)
+  fireEvent.click(screen.getByRole('button', { name: /Affordability/ }))
+  expect(screen.getByLabelText('Monthly income').value).toBe('25000')
+  expect(screen.getByLabelText('Other monthly income').value).toBe('0')
+  fireEvent.click(screen.getByRole('button', { name: /Rental history & references/ }))
+  expect(screen.getByLabelText('Current address').value).toBe(data.rentalHistory.currentAddress)
+  expect(screen.getByLabelText('Reference type').value).toBe(data.references[0].type)
+  expect(screen.queryByRole('button', { name: 'Save application profile' })).toBeNull()
+  await waitFor(() => expect(getRentalApplicationReview).toHaveBeenCalledWith('mapped-app'))
+})
 it('keeps application answers across steps and saves to the same linked record without losing fields', async () => {
   const onReload = vi.fn().mockResolvedValue()
   savePersistedRentalApplication.mockResolvedValue(application)

@@ -108,7 +108,7 @@ const csv = buildMatterFinancialSubmissionPackCsv(sampleAccounts, {
   matterLabel: 'Matter ABC',
   today: new Date('2026-07-18T10:00:00Z'),
 })
-assert.match(csv, /Bridge attorney finance handover pack/, 'Phase 11 CSV must identify itself as the finance handover pack.')
+assert.match(csv, /Arch9 attorney finance handover pack/, 'Phase 11 CSV must identify itself as the finance handover pack.')
 assert.match(csv, /Client submission requests/, 'Phase 11 CSV must include client submission requests.')
 assert.match(csv, /Uploaded financial documents/, 'Phase 11 CSV must include uploaded financial documents.')
 assert.match(csv, /Attorney review queue/, 'Phase 11 CSV must include attorney review queue items.')
@@ -118,7 +118,7 @@ assert.match(csv, /Upload transfer cost POP/, 'Phase 11 CSV must include outstan
 assert.match(csv, /Attorney POP reconciliation required/, 'Phase 11 CSV must flag POPs requiring attorney reconciliation.')
 
 const fileName = buildMatterFinancialSubmissionPackFileName({ matterLabel: 'Matter ABC' })
-assert.match(fileName, /^bridge-matter-abc-finance-handover-pack-\d{4}-\d{2}-\d{2}\.csv$/, 'Phase 11 must produce a stable handover file name.')
+assert.match(fileName, /^arch9-matter-abc-finance-handover-pack-\d{4}-\d{2}-\d{2}\.csv$/, 'Phase 11 must produce a stable handover file name.')
 
 assert.match(
   submissionPackSource,

@@ -12,6 +12,9 @@ import { buildMobileToday } from './mobileTodayModel.js'
 import { getAppointmentDashboardData } from './appointmentDashboardService.js'
 import { AGENCY_CRM_UPDATED_EVENT } from '../lib/agencyCrmUpdateBus.js'
 import { sastDayStart } from '../core/appointments/attorneyCalendarModel.js'
+import { fetchTransactionDocumentsWorkspace, getTransactionRollup } from '../lib/transactionWorkspaceApi.js'
+import { buildDeveloperJourneySnapshot } from '../core/transactions/highLevelJourneyAdapter.js'
+import { normalizeFinanceType } from '../core/transactions/financeType.js'
 
 const DEFAULT_EMPTY = Object.freeze([])
 const MOBILE_DASHBOARD_CACHE_TTL_MS = 30_000
@@ -388,11 +391,29 @@ export async function getMobileDeveloperTransactionSnapshotAsync({ workspace = {
   const row = (overview.rows || []).find((item) => item.transaction?.id === transactionId)
   if (!row) return null
   const [item] = buildResidentialActiveWork([row], { includeUnitIdentity: true })
+  // Portfolio membership is checked before reading either workspace surface.
+  // These readers do not run the full workspace's document promotion writes.
+  const [journeyRead, documentsRead] = await Promise.allSettled([
+    getTransactionRollup(transactionId, { actorRole: 'developer' }),
+    fetchTransactionDocumentsWorkspace(transactionId),
+  ])
+  const rollup = journeyRead.status === 'fulfilled' && journeyRead.value?.transactionId === transactionId ? journeyRead.value : null
+  const documentsWorkspace = documentsRead.status === 'fulfilled' && documentsRead.value?.transaction?.id === transactionId ? documentsRead.value : null
+  const transaction = { ...row.transaction, ...documentsWorkspace?.transaction }
+  const journey = buildDeveloperJourneySnapshot({
+    transaction, rollup, plan: transaction.routing_profile_json?.workflowPlan,
+    financeType: normalizeFinanceType(transaction.finance_type, { allowUnknown: true }),
+  })
   return {
     item,
-    financeType: normalizeText(row.transaction.finance_type, 'Not recorded'),
-    updatedAt: row.transaction.updated_at || null,
-    documentSummary: row.documentSummary || null,
+    financeType: normalizeText(transaction.finance_type, 'Not recorded'),
+    updatedAt: transaction.updated_at || null,
+    journey,
+    journeyAvailable: Boolean(rollup),
+    documentsAvailable: Boolean(documentsWorkspace),
+    documents: documentsWorkspace?.documents || [],
+    requiredDocuments: documentsWorkspace?.requiredDocumentChecklist || [],
+    documentSummary: documentsWorkspace?.documentSummary || row.documentSummary || null,
   }
 }
 
@@ -457,8 +478,11 @@ async function loadMobileDashboardSnapshot({ workspace, organisation }) {
       organisationId, module: category === 'developer' ? 'developer' : includeAll ? 'default' : 'agent', includeAll,
       userId: profile.id || profile.userId || '', userEmail: profile.email || '',
     }),
+    category === 'developer'
+      ? import('./developerLeadService.js').then(({ listDeveloperLeadIntake }) => listDeveloperLeadIntake({ developerOrgId: organisationId, status: 'new', throwOnUnavailable: true }))
+      : Promise.resolve([]),
   ])
-  const [workData, listingRows, [crmResult, appointmentResult]] = await Promise.all([
+  const [workData, listingRows, [crmResult, appointmentResult, leadResult]] = await Promise.all([
     category === 'developer'
       ? fetchDashboardOverview({ developmentId: null, organisationId, includeSecondaryData: false })
       : getResidentialRows({ category, workspace, organisationId }),
@@ -560,6 +584,7 @@ async function loadMobileDashboardSnapshot({ workspace, organisation }) {
     ] : buildResidentialSummaryCards({ category, metrics, taskCount: today.counts.followUps ?? '—' }),
     activeWork: activeWork.slice(0, 5),
     transactions: activeWork,
+    ...(category === 'developer' ? { newLeads: leadResult.status === 'fulfilled' ? leadResult.value : [], newLeadsAvailable: leadResult.status === 'fulfilled' } : {}),
     developments,
     units,
     today,

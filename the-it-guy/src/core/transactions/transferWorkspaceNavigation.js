@@ -31,19 +31,22 @@ export function writeTransferWorkspaceNavigation(search = '', navigation = null)
 export function resolveTransferWorkspaceNavigation(navigation = {}, phases = []) {
   const fallbackPhase = phases.find((phase) => phase.hasCurrentTask)
     || phases.find((phase) => phase.status === 'in_progress')
+    || phases.find((phase) => phase.tasks?.length)
     || phases[0]
     || null
   const requestedPhase = phases.find((phase) => phase.key === navigation.stageKey)
   const phase = requestedPhase || fallbackPhase
   const requestedTask = phase?.tasks?.find((task) => task.key === navigation.taskKey) || null
-  const validWorkspace = navigation.view === 'workspace' && Boolean(requestedPhase && requestedTask)
+  // Older overview links and stage-only entry points open the same task workspace.
+  // Explicit task links keep their selection, including completed and legacy work.
+  const task = requestedTask || getTransferStageEntryTask(phase)
   return {
-    view: validWorkspace ? 'workspace' : 'overview',
+    view: task ? 'workspace' : 'overview',
     phase,
-    task: validWorkspace ? requestedTask : null,
+    task,
     invalid: Boolean(navigation.active && (
       (navigation.stageKey && !requestedPhase) ||
-      (navigation.view === 'workspace' && !validWorkspace)
+      (navigation.taskKey && !requestedTask)
     )),
   }
 }

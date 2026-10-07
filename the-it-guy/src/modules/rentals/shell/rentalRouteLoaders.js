@@ -65,3 +65,5 @@ export const RentalNotificationsPage = lazy(() => import('../../../pages/rentals
 export const RentalRemindersPage = lazy(() => import('../../../pages/rentals/RentalRemindersPage'))
 export const RentalScreeningPage = lazy(() => import('../../../pages/rentals/RentalScreeningPage'))
 export const RentalReportsPage = lazy(() => import('../../../pages/rentals/RentalReportsPage'))
+
+export const RentalApplicationFeeSettingsPage = lazy(() => import('../../../pages/rentals/RentalApplicationFeeSettingsPage'))

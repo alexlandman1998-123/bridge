@@ -3,7 +3,7 @@ import { listAgencyCrmLeadContacts } from '../../../lib/agencyCrmRepository'
 import { listAppointmentsAsync } from '../../../lib/agencyPipelineService'
 import { listCanvassingWorkspace } from '../../../lib/canvassingRepository'
 import { fetchOrganisationSettings, listOrganisationUsers } from '../../../lib/settingsApi'
-import { getBranches } from '../../../services/agencyBranchService'
+import { getBranchOptions } from '../../../services/agencyBranchService'
 import { getOrganisationPrivateListings } from '../../../services/privateListingService'
 
 const EMPTY_CRM_SOURCE = { contacts: [], leads: [], leadActivities: [], tasks: [] }
@@ -82,25 +82,36 @@ export async function loadAgentPerformanceSources({
   directory = null,
   localPrivateListings = [],
   localPipelineRows = [],
-  } = {}) {
-  const [transactions, organisationSettings, organisationUsers] = await Promise.all([
+  directorySummary = false,
+} = {}) {
+  // Organisation-scoped reads only depend on settings, not on completion of
+  // transaction hydration or the member directory.
+  const organisationSettingsPromise = fetchOrganisationSettings().catch(() => null)
+  const operationalSourcesPromise = organisationSettingsPromise.then(async (organisationSettings) => {
+    const organisationId = normalizeOrganisationId({ organisationSettings, directory, profile })
+    const [branches, crmRows, remotePrivateListings, appointments, canvassingRows] = await Promise.all([
+      canManageDirectory ? getBranchOptions().catch(() => []) : Promise.resolve([]),
+      organisationId ? listAgencyCrmLeadContacts(organisationId).catch(() => EMPTY_CRM_SOURCE) : Promise.resolve(EMPTY_CRM_SOURCE),
+      organisationId
+        ? getOrganisationPrivateListings(organisationId, {
+          includeRequirementsAndDocuments: false,
+          includeRelatedData: !directorySummary,
+        }).catch(() => localPrivateListings)
+        : Promise.resolve(localPrivateListings),
+      organisationId ? listAppointmentsAsync(organisationId, { includeAll: true }).catch(() => []) : Promise.resolve([]),
+      organisationId ? listCanvassingWorkspace(organisationId).catch(() => ({ prospects: [], activities: [] })) : Promise.resolve({ prospects: [], activities: [] }),
+    ])
+    return { organisationSettings, organisationId, branches, crmRows, remotePrivateListings, appointments, canvassingRows }
+  })
+
+  const [transactions, organisationUsers, operationalSources] = await Promise.all([
     canManageDirectory
       ? fetchTransactionsListSummary({ activeTransactionsOnly: false })
       : fetchTransactionsByParticipantSummary({ userId: profile?.id, roleType: role }),
-    fetchOrganisationSettings().catch(() => null),
     canManageDirectory ? listOrganisationUsers().catch(() => []) : Promise.resolve([]),
+    operationalSourcesPromise,
   ])
-
-  const organisationId = normalizeOrganisationId({ organisationSettings, directory, profile })
-  const [branches, crmRows, remotePrivateListings, appointments, canvassingRows] = await Promise.all([
-    canManageDirectory ? getBranches().catch(() => []) : Promise.resolve([]),
-    organisationId ? listAgencyCrmLeadContacts(organisationId).catch(() => EMPTY_CRM_SOURCE) : Promise.resolve(EMPTY_CRM_SOURCE),
-    organisationId
-      ? getOrganisationPrivateListings(organisationId, { includeRequirementsAndDocuments: false }).catch(() => localPrivateListings)
-      : Promise.resolve(localPrivateListings),
-    organisationId ? listAppointmentsAsync(organisationId, { includeAll: true }).catch(() => []) : Promise.resolve([]),
-    organisationId ? listCanvassingWorkspace(organisationId).catch(() => ({ prospects: [], activities: [] })) : Promise.resolve({ prospects: [], activities: [] }),
-  ])
+  const { organisationSettings, organisationId, branches, crmRows, remotePrivateListings, appointments, canvassingRows } = operationalSources
 
   const privateListings = Array.isArray(remotePrivateListings) && remotePrivateListings.length ? remotePrivateListings : localPrivateListings
   const pipelineRows = Array.isArray(crmRows?.leads) && crmRows.leads.length ? crmRows.leads : localPipelineRows

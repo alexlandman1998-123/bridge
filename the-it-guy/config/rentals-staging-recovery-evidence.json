@@ -22,22 +22,27 @@
     "containsCustomerRecords": false
   },
   "stagingRecovery": {
-    "confirmed": true,
+    "confirmed": false,
     "reference": "user_authorisation_2026-09-05_clean_staging_rebuild",
     "recordedAt": "2026-09-05T14:07:26Z",
-    "projectRef": "blhypeflxcrjbycpgfdk",
     "recoveryMode": "disposable",
     "containsSecrets": false,
-    "containsCustomerRecords": false
+    "containsCustomerRecords": false,
+    "previouslyConfirmed": true,
+    "retiredProjectRef": "blhypeflxcrjbycpgfdk"
   },
   "stagingFreeze": {
-    "confirmed": true,
+    "confirmed": false,
     "reference": "user_authorisation_2026-09-05_release_freeze",
     "recordedAt": "2026-09-05T14:07:26Z",
-    "projectRef": "blhypeflxcrjbycpgfdk",
     "deploymentsFrozen": true,
     "outboundIntegrationsFrozen": true,
     "containsSecrets": false,
-    "containsCustomerRecords": false
-  }
+    "containsCustomerRecords": false,
+    "previouslyConfirmed": true,
+    "retiredProjectRef": "blhypeflxcrjbycpgfdk"
+  },
+  "status": "retired",
+  "retiredOn": "2026-10-07",
+  "retirementReason": "Temporary project retired by user-authorised cleanup on 2026-10-07. Keep Arch9 SaaS and Arch9 Staging."
 }

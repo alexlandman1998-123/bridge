@@ -76,8 +76,9 @@ export async function handleKingstonsValuationDownloadEmail(
   const centralSender =
     normalizeText(payload.fromEmail || payload.from_email) ||
     normalizeText(Deno.env.get("RESEND_APPOINTMENTS_FROM_EMAIL")) ||
+    normalizeText(Deno.env.get("ARCH9_RESEND_FROM_EMAIL")) ||
     normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
-    "Arch9 Appointments <appointments@bridge.co.za>";
+    "Arch9 Appointments <no-reply@arch9.co.za>";
   const sender = formatEmailSender(
     centralSender,
     branding.fromName || branding.organisationName,

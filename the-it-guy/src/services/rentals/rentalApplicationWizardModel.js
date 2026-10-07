@@ -53,9 +53,13 @@ function compareEvidenceTime(a, b) {
 export function rentalApplicationSavedDocumentSlots(data, requirements) {
   const slots = rentalApplicationDocumentSlots(data)
   if (requirements === undefined) return slots // Older, non-checklist callers.
-  return slots.map((slot) => {
-    const requirement = (requirements || []).find((item) => item.active && item.mode === 'active' && item.scopeKey === 'application' && item.subjectId === slot.subjectId && item.purpose === slot.purpose)
-    return { ...slot, saved: true, requirementId: requirement?.id, generation: requirement?.generation, documentId: requirement?.documentId, state: requirement?.state || 'missing', expiresAt: requirement?.expiresAt }
+  if (!requirements?.length) return slots.map((slot) => ({ ...slot, saved: true, state: 'missing' }))
+  return (requirements || []).filter((item) => item.active && item.mode === 'active' && item.scopeKey === 'application').map((requirement) => {
+    const person = (data?.people || []).find((item) => item.id === requirement.subjectId)
+    const subject = requirement.subjectId === 'primary' ? 'Primary applicant' : requirement.subjectId === 'entity' ? 'Entity' : [person?.firstName, person?.lastName].filter(Boolean).join(' ') || 'Additional person'
+    const labels = { address: 'proof of address', beneficial_ownership: 'ownership and control evidence', trust_authority: 'Letters of Authority', authority: 'authority to act' }
+    const slot = slots.find((item) => item.subjectId === requirement.subjectId && item.purpose === requirement.purpose) || { key: `${requirement.subjectId}:${requirement.purpose}`, subjectId: requirement.subjectId, purpose: requirement.purpose, title: `${subject}: ${labels[requirement.purpose] || requirement.purpose.replaceAll('_', ' ')}`, type: 'other' }
+    return { ...slot, required: requirement.required, saved: true, requirementId: requirement.id, generation: requirement.generation, documentId: requirement.documentId, state: requirement.state || 'missing', expiresAt: requirement.expiresAt }
   })
 }
 export function rentalApplicationDocumentForSlot(slot, documents = [], data = {}) {
@@ -83,4 +87,12 @@ export function rentalApplicationDocumentProgress(application = {}) {
   const received = (slot, doc) => slot.saved ? ['received', 'accepted'].includes(slot.state) && (!slot.expiresAt || Date.parse(slot.expiresAt) > Date.now()) : ['uploaded', 'accepted'].includes(doc?.status)
   const uploaded = slots.filter((slot, index) => received(slot, current[index])).length
   return { uploaded, accepted: slots.filter((slot, index) => received(slot, current[index]) && (slot.saved ? slot.state === 'accepted' : current[index]?.status === 'accepted')).length, required: slots.length, progress: slots.length ? Math.round(uploaded / slots.length * 100) : 0 }
+}
+
+export function rentalApplicationDocumentsForSlot(slot, documents = [], data = {}) {
+  const current = rentalApplicationDocumentForSlot(slot, documents, data)
+  if (!current) return []
+  if (!current.intake_bundle_id) return [current]
+  const linked = new Set((data.documentLinks || []).filter((link) => !link.invalidated && link.subjectId === slot.subjectId && link.purpose === slot.purpose && (!slot.saved || link.requirementId === slot.requirementId && link.generation === slot.generation)).map((link) => link.documentId))
+  return documents.filter((document) => document.intake_bundle_id === current.intake_bundle_id && linked.has(document.id))
 }

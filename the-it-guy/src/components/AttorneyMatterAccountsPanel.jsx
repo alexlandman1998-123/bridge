@@ -1030,7 +1030,7 @@ export default function AttorneyMatterAccountsPanel({ transactionId, buyerName =
             </span>
             <div>
               <h4 className="text-sm font-semibold text-textStrong">Upload external financial document</h4>
-              <p className="mt-1 text-xs leading-5 text-textMuted">Use this for invoices, statements, receipts, or proof documents generated outside Bridge.</p>
+              <p className="mt-1 text-xs leading-5 text-textMuted">Use this for invoices, statements, receipts, or proof documents generated outside Arch9.</p>
             </div>
           </div>
 

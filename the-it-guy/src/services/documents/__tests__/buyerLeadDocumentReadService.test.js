@@ -24,6 +24,14 @@ test('canonical buyer file supersedes its staged lead mirror and remains unmatch
   assert.equal(model.uploads[0].statusLabel, 'Uploaded · awaiting matching')
 })
 
+test('developer-uploaded buyer files remain visible in the shared buyer lead read model', () => {
+  const model = buildBuyerLeadDocumentReadModel({ canonicalRows: [{ ...sharedBuyer, source: 'developer_buyer_document_upload' }], hasTransaction: true })
+  assert.equal(model.canonicalCount, 1)
+  assert.equal(model.uploads[0].status, 'uploaded_unmatched')
+  const linked = buildBuyerLeadDocumentReadModel({ canonicalRows: [{ ...sharedBuyer, source: 'developer_buyer_document_upload', canonical_requirement_instance_id: 'exact-buyer-id' }], hasTransaction: true })
+  assert.equal(linked.uploads[0].status, 'under_review')
+})
+
 test('portal-uploaded buyer files appear while seller files do not', () => {
   const model = buildBuyerLeadDocumentReadModel({ canonicalRows: [
     { ...sharedBuyer, id: 'portal', source: 'client_portal_atomic_upload' },

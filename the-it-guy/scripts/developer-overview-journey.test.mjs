@@ -12,6 +12,12 @@ try {
   assert.match(html,/overflow-x-auto/)
   assert.match(html,/min-w-\[640px\]/)
   assert.match(html,/aria-current="step"/)
+  const vertical=renderToStaticMarkup(createElement(Journey,{model,vertical:true}))
+  assert.equal((vertical.match(/data-milestone=/g)||[]).length,5)
+  assert.match(vertical,/data-orientation="vertical"/)
+  assert.doesNotMatch(vertical,/min-w-\[640px\]|overflow-x-auto/)
+  assert.match(vertical,/data-milestone="otp_signed" data-milestone-status="complete"/)
+  assert.match(vertical,/data-milestone="finance"[^>]*aria-current="step"/)
   assert.doesNotMatch(html,/Legal journey|Matter updates|conversation|Never rendered|data-task-id/)
   const preparation={...model,currentStepId:'lodgement',legalJourney:{status:'ready',snapshot:{lanes:[{key:'transfer',phases:[{tasks:[{key:'lodgement_ready',status:'waiting'},{key:'lodged_at_deeds_office',status:'not_started'},{key:'registered',status:'not_started'}]}]}]}},currentWorkflowItem:{label:'Ready for lodgement',summary:'Preparing for lodgement',ownerLabel:'Attorney'}}
   const preparationHtml=renderToStaticMarkup(createElement(Journey,{model:preparation}))

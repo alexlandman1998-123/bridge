@@ -1,8 +1,12 @@
 {
-  "approved": true,
+  "approved": false,
   "approvalReference": "user_authorisation_2026-09-05_fresh_staging_rebuild",
   "approvedAt": "2026-09-05T14:07:26Z",
   "mode": "fresh",
-  "projectRef": "blhypeflxcrjbycpgfdk",
-  "outboundIntegrationsFrozen": true
+  "projectRef": null,
+  "outboundIntegrationsFrozen": true,
+  "status": "retired",
+  "retiredOn": "2026-10-07",
+  "retirementReason": "Temporary project retired by user-authorised cleanup on 2026-10-07. Keep Arch9 SaaS and Arch9 Staging.",
+  "retiredProjectRef": "blhypeflxcrjbycpgfdk"
 }

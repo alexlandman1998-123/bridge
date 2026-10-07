@@ -23,9 +23,12 @@ import {
   MessageCircle,
   PhoneCall,
   Scale,
+  ShieldCheck,
+  Truck,
   UploadCloud,
   UserRound,
   Users,
+  Wrench,
 } from 'lucide-react'
 import BuyerPortalDesktopSidebar from '../components/client-portal/BuyerPortalDesktopSidebar'
 import {
@@ -38,6 +41,12 @@ import {
 import BuyerPortalJourney from '../components/client-portal/BuyerPortalJourney'
 import BuyerDocumentWorkspace, { BuyerDocumentSummary } from '../components/client-portal/documents/BuyerDocumentWorkspace'
 import BuyerFinanceWorkspace from '../components/client-portal/finance/BuyerFinanceWorkspace'
+import { DemoInsurancePromotion } from '../components/client-portal/insurance/DemoInsuranceComponents'
+import DemoBondLifeSection from '../components/client-portal/insurance/DemoBondLifeSection'
+import DemoInsuranceWorkspace from '../components/client-portal/insurance/DemoInsuranceWorkspace'
+import DemoMaintenanceWorkspace from '../components/client-portal/home-services/DemoMaintenanceWorkspace'
+import DemoMoveWorkspace from '../components/client-portal/home-services/DemoMoveWorkspace'
+import { DemoHomeSupportProvider } from '../components/client-portal/support/DemoHomeSupport'
 import BuyerTeamWorkspace from '../components/client-portal/team/BuyerTeamWorkspace'
 import {
   buyerPortalHexToRgba as hexToRgba,
@@ -53,6 +62,8 @@ import { buildBuyerFinancePresentationModel } from '../core/clientPortal/buyerFi
 import { buildBuyerTeamPresentationModel } from '../core/clientPortal/buyerTeamPresentationModel'
 import { buildBuyerPortalCutoverReadiness } from '../core/clientPortal/buyerPortalCutoverReadiness'
 import { resolveProspectDemoConfig } from '../lib/prospectDemoConfig'
+
+const DEMO_CURRENT_HOME_ADDRESS = '14 Ocean View Drive, Sea Point'
 
 const DEFAULT_BRAND = {
   agencyName: 'Demo Agency',
@@ -71,12 +82,15 @@ const DEMO_NAV = [
   { key: 'documents', label: 'Documents', icon: FileText },
   { key: 'finance', label: 'Finance', icon: HandCoins },
   { key: 'bond-application', label: 'Bond Application', icon: FileSignature },
+  { key: 'insurance', label: 'Insurance', icon: ShieldCheck },
+  { key: 'maintenance', label: 'Maintenance', icon: Wrench },
+  { key: 'move', label: 'Move', icon: Truck },
   { key: 'messages', label: 'Messages', icon: Mail },
   { key: 'team', label: 'Your Team', icon: Users },
 ]
 
 // Mobile navigation stays focused on the five destinations buyers use most.
-// Bond application remains reachable from Finance and the overflow menu.
+// Additional destinations remain reachable from the overflow menu.
 const MOBILE_DEMO_NAV = DEMO_NAV.filter((item) => ['overview', 'progress', 'documents', 'finance', 'team'].includes(item.key))
 
 const DEMO_JOURNEY_STAGES = [
@@ -494,7 +508,7 @@ const DEMO_BOND_APPLICATION_FIELD_GROUPS = {
       fields: [
         { key: 'cellphone_number', label: 'Cellphone number', value: '+27 82 555 0194', source: 'Prefilled from your buyer profile', required: true },
         { key: 'email_address', label: 'Email address', value: 'mia.demo@example.com', type: 'email', source: 'Prefilled from your buyer profile', required: true },
-        { key: 'residential_address', label: 'Residential address', value: '14 Ocean View Drive, Sea Point', source: 'Prefilled from onboarding', required: true },
+        { key: 'residential_address', label: 'Residential address', value: DEMO_CURRENT_HOME_ADDRESS, source: 'Prefilled from onboarding', required: true },
         { key: 'residential_city', label: 'City', value: 'Cape Town', source: 'Prefilled from onboarding', required: true },
         { key: 'postal_code', label: 'Postal code', value: '8005', source: 'Prefilled from onboarding', required: true },
         { key: 'legal_notice_delivery_method', label: 'Legal notice delivery method', value: 'Email', type: 'select', options: ['Email', 'Residential address', 'Postal address'], required: true },
@@ -802,12 +816,18 @@ function ProspectBuyerDemoLoading() {
 
 export default function ProspectBuyerDemo() {
   const { token = '', section = 'overview' } = useParams()
-  const activeSection = ['overview', 'progress', 'documents', 'finance', 'bond-application', 'messages', 'team'].includes(section) ? section : 'overview'
+  const activeSection = ['overview', 'progress', 'documents', 'finance', 'bond-application', 'messages', 'team', 'insurance', 'maintenance', 'move'].includes(section) ? section : 'overview'
   const [config, setConfig] = useState(DEFAULT_BRAND)
   const [loading, setLoading] = useState(true)
   const [loadedConfigToken, setLoadedConfigToken] = useState('')
   const demoUploadComplete = false
   const [demoUploadNotice, setDemoUploadNotice] = useState(false)
+
+  useEffect(() => {
+    if (!loading && ['finance', 'insurance', 'maintenance', 'move'].includes(activeSection)) {
+      window.scrollTo({ top: 0, left: 0, behavior: 'instant' })
+    }
+  }, [activeSection, loading, token])
 
   useEffect(() => {
     let cancelled = false
@@ -890,7 +910,6 @@ export default function ProspectBuyerDemo() {
       contactActions: true,
     },
   })
-  const mainContact = transactionTeam.find((member) => member.isMainContact) || transactionTeam[0]
   const handleDemoUploadRequest = () => {
     setDemoUploadNotice(true)
   }
@@ -901,6 +920,7 @@ export default function ProspectBuyerDemo() {
   const heroOverlayStyle = brand.heroOverlayStyle
 
   return (
+    <DemoHomeSupportProvider key={token}>
     <main
       className="min-h-screen bg-[#f3f6fb] text-[#142132]"
       data-buyer-portal-release={buyerPortalCutoverReadiness.phase}
@@ -910,14 +930,12 @@ export default function ProspectBuyerDemo() {
       <BuyerPortalDesktopSidebar
         brandName={config.agencyName}
         brandLogoUrl={config.logoDarkUrl}
-        brandDescriptor="Buyer Portal Demo"
+        brandDescriptor=""
         theme={brand}
         items={DEMO_NAV}
         activeItemKey={activeSection}
         getItemPath={(item) => getDemoPath(token, item.key)}
-        supportContact={mainContact}
-        supportCopy={`${mainContact.name} from ${mainContact.organisation} is here to help.`}
-        footerDescriptor="Buyer Portal Demo"
+        showSupportPanel={false}
       />
 
       <section className="lg:hidden">
@@ -954,6 +972,7 @@ export default function ProspectBuyerDemo() {
         </div>
       </section>
     </main>
+    </DemoHomeSupportProvider>
   )
 }
 
@@ -971,6 +990,9 @@ function MobileBuyerPortal({ activeSection, brand, config, token, loading, demoU
     progress: 'Transfer Journey',
     documents: 'Documents',
     finance: 'Finance',
+    insurance: 'Insurance',
+    maintenance: 'Maintenance',
+    move: 'Move',
     'bond-application': 'Bond application',
     messages: 'Messages & updates',
     team: 'Your team',
@@ -1012,6 +1034,9 @@ function MobileBuyerPortal({ activeSection, brand, config, token, loading, demoU
           />
         ) : null}
         {mobileSection === 'finance' ? <MobileFinance brand={brand} model={financeModel} onCompleteUpload={openDemoUploadSheet} token={token} /> : null}
+        {mobileSection === 'insurance' ? <DemoInsuranceWorkspace theme={brand} propertyAddress={config.samplePropertyAddress} /> : null}
+        {mobileSection === 'maintenance' ? <DemoMaintenanceWorkspace theme={brand} propertyAddress={config.samplePropertyAddress} /> : null}
+        {mobileSection === 'move' ? <DemoMoveWorkspace theme={brand} propertyAddress={config.samplePropertyAddress} currentAddress={`${DEMO_CURRENT_HOME_ADDRESS}, Cape Town`} /> : null}
         {mobileSection === 'bond-application' ? <MobileBondApplication brand={brand} demoUploadComplete={demoUploadComplete} token={token} /> : null}
         {mobileSection === 'messages' ? <MobileMessages brand={brand} token={token} /> : null}
         {mobileSection === 'team' ? <MobileTeam brand={brand} model={teamModel} /> : null}
@@ -1126,6 +1151,8 @@ function MobileOverview({ brand, config, loading, demoUploadComplete, onComplete
       </BuyerMobilePropertyHero>
 
       <MobilePurchaseJourneyStrip brand={brand} token={token} />
+
+      <DemoInsurancePromotion theme={brand} to={getDemoPath(token, 'insurance')} />
 
       <MobilePriorityCard
         icon={FileSignature}
@@ -1402,6 +1429,7 @@ function MobileFinance({ brand, model, onCompleteUpload, token }) {
           ))}
         </div>
       </section>
+      {model.isBondFinance ? <DemoBondLifeSection theme={brand} /> : null}
       {model.offers.length ? (
         <section>
           <h2 className="mb-2 text-base font-semibold text-[#142132]">Your bank offers</h2>
@@ -1560,6 +1588,15 @@ function MobileTeamRow({ member, brand }) {
 
 function DemoContent({ activeSection, brand, config, token, heroOverlayStyle, loading, demoUploadComplete, documentModel, financeModel, teamModel, demoUploadNotice, onCompleteUpload }) {
   const demoNotice = demoUploadNotice ? <DemoModeNotice /> : null
+  if (activeSection === 'insurance') {
+    return <DemoInsuranceWorkspace theme={brand} propertyAddress={config.samplePropertyAddress} />
+  }
+  if (activeSection === 'maintenance') {
+    return <DemoMaintenanceWorkspace theme={brand} propertyAddress={config.samplePropertyAddress} />
+  }
+  if (activeSection === 'move') {
+    return <DemoMoveWorkspace theme={brand} propertyAddress={config.samplePropertyAddress} currentAddress={`${DEMO_CURRENT_HOME_ADDRESS}, Cape Town`} />
+  }
   if (activeSection === 'documents') {
     return (
       <>{demoNotice}<DocumentsSection brand={brand} config={config} demoUploadComplete={demoUploadComplete} documentModel={documentModel} onCompleteUpload={onCompleteUpload} /></>
@@ -1698,6 +1735,7 @@ function DemoBuyerOverview({ brand, config, token, demoUploadComplete, documentM
         />
       )}
       progress={(<DemoBuyerJourney brand={brand} token={token} />)}
+      afterProgress={<DemoInsurancePromotion theme={brand} to={getDemoPath(token, 'insurance')} />}
       updates={(<TransactionUpdatesSection brand={brand} />)}
       documents={(<BuyerDocumentSummary
         model={documentModel}
@@ -2306,6 +2344,8 @@ function FinanceSection({ brand, model, token, onCompleteUpload }) {
     <BuyerFinanceWorkspace
       model={model}
       theme={brand}
+      lenderColumns={2}
+      afterLenders={<DemoBondLifeSection theme={brand} />}
       primaryAction={model?.firstAction ? (
         <button type="button" onClick={onCompleteUpload} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-[12px] bg-[#111827] px-5 text-sm font-semibold text-white transition hover:bg-black">
           <UploadCloud size={16} />

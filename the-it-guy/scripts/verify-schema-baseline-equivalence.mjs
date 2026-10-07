@@ -1,6 +1,10 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
+
+const config = JSON.parse(readFileSync(new URL('../config/schema-baseline-staging.example.json', import.meta.url), 'utf8'))
+if (config.status === 'retired' || !config.projectRef) throw new Error('Schema baseline rehearsal is retired. Use Arch9 Staging for current staging work.')
 
 const strict = process.argv.includes('--strict')
 const sql = `select json_build_object(
@@ -27,7 +31,7 @@ const production = parseProduction(run('supabase', ['db', 'query', '--linked', '
 const password = run('security', ['find-generic-password', '-a', process.env.USER || '', '-s', 'Arch9 Schema Baseline Rehearsal Supabase DB', '-w'])
 const rehearsalRaw = run('/opt/homebrew/opt/libpq/bin/psql', [
   '--host', 'aws-1-eu-west-1.pooler.supabase.com', '--port', '5432',
-  '--username', 'postgres.rlavzicedrilmpaamviu', '--dbname', 'postgres', '--no-password',
+  '--username', `postgres.${config.projectRef}`, '--dbname', 'postgres', '--no-password',
   '--tuples-only', '--no-align', '--set', 'ON_ERROR_STOP=1', '--command', sql,
 ], { env: { ...process.env, PGPASSWORD: password } })
 const rehearsal = JSON.parse(rehearsalRaw)

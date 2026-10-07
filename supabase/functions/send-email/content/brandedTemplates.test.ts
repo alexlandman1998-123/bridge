@@ -38,6 +38,7 @@ import { buildWeeklyDigestNotificationEmail } from "../handlers/weeklyDigestNoti
 import { buildCommercialEnterpriseNotificationEmail } from "../handlers/commercialEnterpriseNotification.ts";
 import { buildSellerOnboardingEmailHtml } from "./sellerOnboarding.ts";
 import { buildSellerOnboardingSubmittedSellerEmailHtml } from "./sellerOnboardingSubmitted.ts";
+import { buildIcsAttachment } from "../handlers/appointment.ts";
 
 function assertIncludes(source: string, expected: string, message?: string) {
   if (!source.includes(expected)) {
@@ -59,6 +60,35 @@ const branding = {
   supportEmail: "support@example.test",
   supportPhone: "+27 21 000 0000",
 };
+
+Deno.test("appointment calendar fallback uses Arch9 and retains its event identity", () => {
+  const attachment = buildIcsAttachment({
+    type: "appointment_scheduled",
+    to: "buyer@example.test",
+    appointmentId: "branding-check",
+    appointmentDate: "2026-10-08",
+    appointmentTime: "10:00",
+  });
+  if (!attachment) throw new Error("Expected a calendar invitation");
+  const calendar = atob(attachment.content);
+  assertIncludes(calendar, "SUMMARY:Arch9 Appointment");
+  assertIncludes(calendar, "ORGANIZER;CN=Arch9:MAILTO:no-reply@arch9.co.za");
+  assertIncludes(calendar, "UID:bridge-branding-check@bridge.app");
+  assertNotIncludes(calendar, "bridge.co.za");
+});
+
+Deno.test("appointment calendar retains the agency organiser", () => {
+  const attachment = buildIcsAttachment({
+    type: "appointment_scheduled",
+    to: "buyer@example.test",
+    appointmentDate: "2026-10-08",
+    appointmentTime: "10:00",
+    organizerName: "Kingstons Real Estate",
+    organizerEmail: "agent@example.test",
+  });
+  if (!attachment) throw new Error("Expected a calendar invitation");
+  assertIncludes(atob(attachment.content), "ORGANIZER;CN=Kingstons Real Estate:MAILTO:agent@example.test");
+});
 
 Deno.test("buyer onboarding template renders company branding and branded CTA", () => {
   const html = buildOnboardingEmailHtml({

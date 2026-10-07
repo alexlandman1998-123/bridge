@@ -1,0 +1,51 @@
+.tenant-guided-wizard .form-field input,
+.tenant-guided-wizard .form-field select {
+  min-height: 52px;
+  border: 1px solid #d9e2ee;
+  border-radius: 12px;
+  padding: 12px 16px;
+  background: white;
+  color: #162334;
+  font-size: 16px;
+}
+
+.tenant-guided-wizard .form-field input:focus,
+.tenant-guided-wizard .form-field select:focus {
+  border-color: var(--buyer-brand-action-border);
+  outline: 2px solid var(--buyer-brand-action-soft);
+  outline-offset: 1px;
+}
+
+.tenant-guided-wizard [data-rental-control='application-answer'][aria-pressed='true'] {
+  border-color: var(--buyer-brand-action);
+  background: var(--buyer-brand-action);
+  color: var(--buyer-brand-action-text);
+}
+
+.tenant-guided-wizard button:focus-visible {
+  outline: 2px solid var(--buyer-brand-action-border);
+  outline-offset: 3px;
+}
+
+.tenant-question-card .form-field {
+  min-width: 0;
+}
+
+.tenant-question-card input,
+.tenant-question-card select {
+  max-width: 100%;
+}
+
+@media (max-width: 767px) {
+  .tenant-guided-wizard nav {
+    display: flex;
+    overflow-x: auto;
+    padding: 3px 2px 8px;
+    scroll-snap-type: x proximity;
+  }
+
+  .tenant-guided-wizard nav button {
+    flex: 0 0 175px;
+    scroll-snap-align: start;
+  }
+}

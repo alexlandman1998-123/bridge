@@ -6,6 +6,15 @@ import { afterEach, expect, it, vi } from 'vitest'
 import BuyerFinanceWorkspace from '../BuyerFinanceWorkspace'
 const model = { source: 'production', mode:'bond', isBondFinance:true, stages:[], manager:{name:'Consultant'}, bankApplications:[{id:'bank',bankName:'Nedbank',status:'submitted'}], offers:[{id:'quote',bankName:'Nedbank',amountLabel:'R 2 000 000',quoteDocument:{id:'document'}}] }
 afterEach(()=>{cleanup();vi.restoreAllMocks();vi.unstubAllGlobals()})
+it('places optional content after lenders for bond buyers and omits it for cash buyers', () => {
+  const view = render(<BuyerFinanceWorkspace model={model} afterLenders={<h2>Demo bond protection</h2>} />)
+  const bank = screen.getByRole('button', { name: 'View Nedbank application' })
+  const protection = screen.getByRole('heading', { name: 'Demo bond protection' })
+  expect(bank.compareDocumentPosition(protection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  view.rerender(<BuyerFinanceWorkspace model={{ ...model, mode: 'cash', isBondFinance: false, isCashFinance: true }} afterLenders={<h2>Demo bond protection</h2>} />)
+  expect(screen.getByRole('heading', { name: 'Proof of funds' })).toBeTruthy()
+  expect(screen.queryByRole('heading', { name: 'Demo bond protection' })).toBeNull()
+})
 it('resolves ID-only PDFs on click and displays access failures in the popup', async()=>{
   const popup={opener:{},location:{replace:vi.fn()},close:vi.fn()}
   vi.spyOn(window,'open').mockReturnValue(popup)

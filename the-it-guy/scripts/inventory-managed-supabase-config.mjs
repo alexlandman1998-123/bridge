@@ -6,7 +6,8 @@ import { spawnSync } from 'node:child_process'
 
 const repoRoot = join(import.meta.dirname, '..', '..')
 const productionRef = 'isdowlnollckzvltkasn'
-const rehearsalRef = 'rlavzicedrilmpaamviu'
+const rehearsalConfig = JSON.parse(readFileSync(new URL('../config/schema-baseline-staging.example.json', import.meta.url), 'utf8'))
+const rehearsalRef = rehearsalConfig.projectRef
 
 function run(args) {
   const result = spawnSync('supabase', args, { cwd: repoRoot, encoding: 'utf8' })
@@ -27,6 +28,7 @@ const report = {
   version: 1,
   productionRef,
   rehearsalRef,
+  rehearsalStatus: rehearsalConfig.status || 'active',
   sourceFunctions,
   productionFunctions: run(['functions', 'list', '--project-ref', productionRef, '--output', 'json']),
   productionSecretNames: run(['secrets', 'list', '--project-ref', productionRef, '--output', 'json']),

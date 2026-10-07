@@ -1,0 +1,71 @@
+{
+  "version": 1,
+  "completedAt": "2026-10-07T14:54:35.133Z",
+  "owner": "shared Supabase environments and primary workspace release tooling",
+  "status": "completed",
+  "deleted": [
+    {
+      "name": "Arch9 Rentals Release Staging",
+      "projectRef": "blhypeflxcrjbycpgfdk"
+    },
+    {
+      "name": "Arch9 Schema Baseline Rehearsal",
+      "projectRef": "rlavzicedrilmpaamviu"
+    }
+  ],
+  "preDeletionChecks": {
+    "applicationTables": 0,
+    "authUsers": 0,
+    "storageObjects": 0,
+    "edgeFunctions": 0,
+    "apiOrFunctionLogEntriesLast24Hours": 0
+  },
+  "retained": [
+    {
+      "name": "Arch9 SaaS",
+      "projectRef": "isdowlnollckzvltkasn",
+      "status": "ACTIVE_HEALTHY"
+    },
+    {
+      "name": "Arch9 Staging",
+      "projectRef": "vaszuxjeoajeuhlcnzzf",
+      "status": "ACTIVE_HEALTHY"
+    },
+    {
+      "name": "Yakstack MVP v2",
+      "projectRef": "wsyaiunqhmdgtmeeyolb",
+      "status": "INACTIVE"
+    }
+  ],
+  "hostedConfiguration": {
+    "projectsInspected": 33,
+    "readableSettingsReferencingDeletedProjects": 0,
+    "primaryProductionRef": "isdowlnollckzvltkasn",
+    "primaryPreviewRef": "vaszuxjeoajeuhlcnzzf",
+    "limitation": "Home Seekers and arch9-websites-staging production SUPABASE_URL are hidden secrets. Home Seekers database-backed site GET passed after deletion. Protected arch9-websites-staging runtime could not be checked through CLI or connector authentication."
+  },
+  "localCleanup": {
+    "obsoleteTargetsDisabled": true,
+    "rehearsalScriptsRejectRetiredTargetBeforeExternalCommands": true,
+    "rentalRecoveryTarget": "vaszuxjeoajeuhlcnzzf",
+    "changesCommitted": false
+  },
+  "verification": {
+    "schemaRehearsalGuardTests": "passed",
+    "rentalRecoveryEvidenceContract": "passed",
+    "rentalStagingRebuildGateContract": "passed",
+    "rentalReleaseEvidenceClearanceContract": "passed",
+    "actualRetiredRentalConfigGuards": "passed",
+    "replacementStagingReadiness": "blocked as expected for retired configuration",
+    "finalProjectList": "deleted projects absent; retained projects present",
+    "liveAppManifest": {
+      "httpStatus": 200,
+      "supabaseOrigin": "https://isdowlnollckzvltkasn.supabase.co"
+    },
+    "homeSeekersSiteRead": {
+      "httpStatus": 200
+    },
+    "diffWhitespace": "passed"
+  },
+  "backups": "No application tables, auth users, or storage objects existed to export. Existing source schema captures were preserved."
+}

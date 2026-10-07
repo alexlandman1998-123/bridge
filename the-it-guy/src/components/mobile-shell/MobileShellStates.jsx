@@ -1,9 +1,9 @@
 import { AlertCircle, Archive, RefreshCw, Search, SlidersHorizontal } from 'lucide-react'
 
 const CARD_SURFACES = {
-  default: 'border-white/80 bg-white shadow-[0_14px_34px_rgba(15,23,42,0.07)]',
+  default: 'mobile-glass-surface border-white/80 bg-white shadow-[0_14px_34px_rgba(15,23,42,0.07)]',
   dark: 'border-[#17324c] bg-[#10243a] text-white shadow-[0_18px_42px_rgba(15,23,42,0.20)]',
-  soft: 'border-[#dfe7ef] bg-[#f8fbfd] shadow-[0_14px_34px_rgba(15,23,42,0.06)]',
+  soft: 'mobile-glass-surface border-[#dfe7ef] bg-white shadow-[0_14px_34px_rgba(15,23,42,0.06)]',
   danger: 'border-[#f3d4d1] bg-[#fff8f7] shadow-[0_14px_34px_rgba(180,35,24,0.07)]',
   custom: 'border-white/80 shadow-[0_14px_34px_rgba(15,23,42,0.07)]',
 }
@@ -99,7 +99,7 @@ export function MobileSearchPlaceholder({ label = 'Search and filters' }) {
 
 export function MobileSearchBar({ placeholder = 'Search', value = '', onChange = null, onFilter = null }) {
   return (
-    <label className="flex min-h-[56px] items-center gap-3 rounded-[22px] border border-white/80 bg-white px-4 text-sm font-medium text-[#60758d] shadow-[0_10px_28px_rgba(15,23,42,0.06)]">
+    <label className="mobile-glass-surface flex min-h-[56px] items-center gap-3 rounded-[22px] border border-white/80 bg-white px-4 text-sm font-medium text-[#60758d] shadow-[0_10px_28px_rgba(15,23,42,0.06)]">
       <Search className="h-5 w-5 shrink-0 text-[#60758d]" />
       <input
         value={value}

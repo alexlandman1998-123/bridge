@@ -6149,6 +6149,7 @@ export function AgentsPage() {
       const [performanceSources, commissionStructureRows, canonicalInvites] = await Promise.all([
         loadAgentPerformanceSources({
           canManageDirectory,
+          directorySummary: true,
           profile,
           role,
           directory,

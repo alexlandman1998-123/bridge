@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import MobileBottomNav from './MobileBottomNav'
 import MobileHeader from './MobileHeader'
+import './mobile-shell.css'
 
 export default function MobileLayout({ onLogout = null }) {
   const location = useLocation()
@@ -12,7 +13,7 @@ export default function MobileLayout({ onLogout = null }) {
   }, [location.pathname, location.search])
 
   return (
-    <div className="flex h-[100dvh] min-h-[100dvh] flex-col overflow-hidden bg-[radial-gradient(circle_at_18%_10%,rgba(31,122,90,0.08),transparent_32%),linear-gradient(180deg,#f8fbfe_0%,#f1f5f9_100%)] text-[#10243a]" data-mobile-shell>
+    <div className="mobile-shell flex h-[100dvh] min-h-[100dvh] flex-col overflow-hidden bg-white text-[#10243a]" data-mobile-shell>
       <MobileHeader />
       <main
         ref={scrollRootRef}

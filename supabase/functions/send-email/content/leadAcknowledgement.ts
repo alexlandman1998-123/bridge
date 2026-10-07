@@ -118,8 +118,8 @@ export type LeadAcknowledgementContentInput = {
 
 function enquiryCopy(kind: LeadEnquiryKind = "general") {
   if (kind === "rental") return {
-    heading: "Arrange your rental viewing",
-    details: "Tell us when you would like to view the rental property. We’ll also confirm your monthly rental budget, preferred area, intended move-in date, and rental requirements.",
+    heading: "Your next rental home starts here",
+    details: "Complete your tenant qualification: monthly rental budget, preferred area, move-in date, employment, deposit, screening consent, household and pets. Share your preferred viewing times in the same short form.",
     introduction: "Finding a rental home is an important decision. We are here to help you arrange a viewing, understand the rental requirements and discuss the next steps.",
   };
   if (kind === "landlord") return {
@@ -145,6 +145,7 @@ export function buildLeadAcknowledgementSubject() {
 
 export function buildLeadAcknowledgementEmailHtml(input: LeadAcknowledgementContentInput) {
   const copy = enquiryCopy(input.enquiryKind);
+  const isTenant = input.enquiryKind === "rental";
   const primary = normalizeColor(input.organisationBrandPrimaryColor, "#07152f");
   const accent = normalizeColor(input.organisationBrandSecondaryColor, "#b48a42");
   const organisationName = cleanText(input.organisationName) || "Arch9";
@@ -198,10 +199,11 @@ export function buildLeadAcknowledgementEmailHtml(input: LeadAcknowledgementCont
             </tr>
             <tr>
               <td style="padding:8px 4px 22px;">
-                <div style="padding:22px 24px;border:1px solid ${accent};border-radius:12px;background:#fffaf1;">
+                <div style="padding:22px 24px;border:1px solid ${accent};border-radius:${isTenant ? '20px' : '12px'};background:${isTenant ? '#edf7f4' : '#fffaf1'};">
+                  ${isTenant ? `<p style="margin:0 0 12px;font-size:12px;letter-spacing:2px;font-weight:800;color:${primary};">RENTAL ENQUIRY · TENANT QUALIFICATION</p><p style="margin:0 0 12px;color:${primary};font-size:13px;">01 Rental requirements &nbsp; 02 Household &nbsp; 03 Viewing times</p>` : ''}
                   <h2 style="margin:0 0 10px;font-size:20px;line-height:1.3;color:${primary};">${escapeHtml(copy.heading)}</h2>
                   <p style="margin:0 0 14px;font-size:15px;line-height:1.65;color:#111827;">${escapeHtml(copy.details)}</p>
-                  ${viewingHref ? `<a href="${escapeHtml(viewingHref)}" style="display:inline-block;background:${primary};color:#ffffff;text-decoration:none;border-radius:7px;padding:12px 18px;font-size:14px;font-weight:700;">${input.enquiryKind === "landlord" || !input.enquiryKind || input.enquiryKind === "general" ? "Contact your agent" : "Arrange a viewing"}</a>` : ""}
+                  ${viewingHref ? `<a href="${escapeHtml(viewingHref)}" style="display:inline-block;background:${primary};color:#ffffff;text-decoration:none;border-radius:7px;padding:12px 18px;font-size:14px;font-weight:700;">${isTenant && input.viewingAvailabilityUrl ? "Complete tenant qualification" : input.enquiryKind === "landlord" || !input.enquiryKind || input.enquiryKind === "general" || isTenant ? "Contact your agent" : "Arrange a viewing"}</a>` : ""}
                 </div>
               </td>
             </tr>
@@ -295,6 +297,7 @@ export function buildLeadAcknowledgementEmailText(input: LeadAcknowledgementCont
     "",
     copy.heading,
     copy.details,
+    input.viewingAvailabilityUrl ? `${input.enquiryKind === 'rental' ? 'Complete tenant qualification' : 'Arrange a viewing'}: ${input.viewingAvailabilityUrl}` : null,
     "",
     "Your enquiry details",
     input.enquiryReceivedAt ? `Date of enquiry: ${formatDateTime(input.enquiryReceivedAt, input.timezone)}` : null,

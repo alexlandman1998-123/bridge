@@ -2,6 +2,7 @@ import { BUYER_LEAD_DOCUMENT_TYPES, resolveBuyerLeadDocumentTarget } from '../..
 
 const buyerSources = new Set([
   'agent_buyer_document_upload',
+  'developer_buyer_document_upload',
   'client_portal_atomic_upload',
   'client_portal_requested_document_upload',
 ])
@@ -27,7 +28,7 @@ function canonicalUpload(row) {
   const reviewStatus = value(row.review_status || row.status).toLowerCase()
   const reviewed = ['approved', 'completed'].includes(reviewStatus) && linked
   const rejected = ['rejected', 'declined'].includes(reviewStatus)
-  const awaitingMatch = value(row.source) === 'agent_buyer_document_upload' && !linked
+  const awaitingMatch = ['agent_buyer_document_upload', 'developer_buyer_document_upload'].includes(value(row.source)) && !linked
   return {
     id: value(row.id),
     key,

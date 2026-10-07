@@ -181,6 +181,32 @@ try {
   transactions[0].primary_buyer_participant_id = null
   invalidateTransactionsListCache()
   assert.equal((await fetchTransactionsByParticipantSummary(options))[0].buyer.name, 'Buyer A', 'changed primary assignment must not inherit the correction')
+
+  const signedPaths = []
+  client.supabaseUrl = 'https://project.supabase.co'
+  client.storage = { from(bucket) { return { async createSignedUrls(paths) {
+    signedPaths.push(...paths)
+    return { data: paths.map((path) => ({ path, signedUrl: `${client.supabaseUrl}/storage/v1/object/sign/${bucket}/${path}?token=fresh` })) }
+  } } } }
+  const expiredHero = `${client.supabaseUrl}/storage/v1/object/sign/documents/developments/dev-a/marketing/hero.png?token=expired`
+  datasets.development_profiles = [{ development_id: 'dev-a', image_links: [expiredHero] }]
+  invalidateTransactionsListCache()
+  const renewed = await fetchTransactionsByParticipantSummary(options)
+  assert.match(renewed[0].development.cover_image_url, /token=fresh$/)
+  assert.match(renewed[0].transaction.property_development.profile.imageLinks[0], /token=fresh$/)
+  assert.deepEqual(signedPaths, ['developments/dev-a/marketing/hero.png'])
+  assert.equal(datasets.development_profiles[0].image_links[0], expiredHero)
+
+  datasets.development_profiles = [{ development_id: 'dev-a', image_links: [], marketing_content: { mediaLibrary: { galleryImageUrls: `${expiredHero}\n${expiredHero}` } } }]
+  invalidateTransactionsListCache()
+  const galleryOnly = await fetchTransactionsByParticipantSummary(options)
+  assert.match(galleryOnly[0].development.cover_image_url, /token=fresh$/)
+  assert.equal(galleryOnly[0].development.cover_image_url.includes('\n'), false, 'cards use one gallery image URL')
+
+  datasets.development_profiles = []
+  datasets.development_documents[0].file_url = expiredHero
+  invalidateTransactionsListCache()
+  assert.match((await fetchTransactionsByParticipantSummary(options))[0].development.cover_image_url, /token=fresh$/, 'legacy document cover URLs renew without storage metadata')
   console.log('Transactions scoped summary tests passed')
 } finally {
   await server.close()

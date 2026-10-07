@@ -167,7 +167,7 @@ export default function RentalOperationsDashboardPage() {
   const upcomingRenewals = useMemo(() => { const propertyById = new Map((renewalData.properties || []).map((property) => [property.id, property])); const cutoff = new Date(); cutoff.setDate(cutoff.getDate() + 90); return (renewalData.tenancies || []).map((tenancy) => ({ tenancy, dueDate: renewalDueDate(tenancy), property: propertyById.get(tenancy.propertyId) })).filter(({ tenancy, dueDate, property }) => tenancy.status === 'active' && property && dueDate && dueDate >= new Date() && dueDate <= cutoff).sort((left, right) => left.dueDate - right.dueDate) }, [renewalData])
   const kpis = [
     { key: 'applications', icon: ClipboardList, label: 'Active Applications', value: formatCount(metrics.active_applications), tone: 'blue', trend: null, trendLabel: 'Current review queue' },
-    { key: 'mandates', icon: FileText, label: 'Active Mandates', value: formatCount(metrics.active_mandates), tone: 'green', trend: null, trendLabel: 'Active, confirmed management mandates' },
+    { key: 'mandates', icon: FileText, label: 'Active Mandates', value: formatCount(metrics.active_mandates), tone: 'green', trend: null, trendLabel: 'Current rental listings' },
     { key: 'occupancy', icon: Home, label: 'Occupancy Rate', value: formatPercent(metrics.occupancy_rate), tone: 'orange', trend: null, trendLabel: 'Managed rentable units' },
     { key: 'rent', icon: CircleDollarSign, label: 'Monthly Rent Roll', value: formatRent(metrics.monthly_rent_roll), tone: 'purple', trend: null, trendLabel: 'Current contractual rent' },
     { key: 'leads', icon: UsersRound, label: 'New Leads', value: formatCount(metrics.new_leads), tone: 'slate', trend: null, trendLabel: `Received in the last ${rangeDays(dateRange)} days` },
@@ -176,9 +176,8 @@ export default function RentalOperationsDashboardPage() {
   return <main className="mx-auto w-full max-w-[1600px] py-2"><MobileDashboardShell>
     {error ? <section className="rounded-2xl border border-[#f7c9c9] bg-[#fff5f5] p-4 text-sm text-[#b42318]">{error}</section> : null}
     {!rentalScope.organisationId ? <section className="rounded-2xl border border-[#f4d7a9] bg-[#fffaf0] p-4 text-sm text-[#7a4b05]">Choose an agency workspace to load the Rentals dashboard.</section> : null}
-    <p className="mb-3 text-sm text-[#6f8298]">Rental listings automatically register in <Link className="underline" to="/agent/rentals/portfolio/properties">Properties &amp; units</Link>. Mandates count confirmed management authority; rent roll counts current lease rent. An advertised rental alone does not add a mandate or rent roll.</p>
     <section className="rental-summary-cards" aria-label="Rental summary">
-      {kpis.map(({ key, icon: Icon, label, value, tone, trendLabel }) => <Link key={key} to={key === 'applications' ? '/agent/rentals/applications' : key === 'leads' ? '/agent/rentals/pipeline/leads' : '/agent/rentals/portfolio/properties'} className={`rental-summary-card rental-summary-card--${tone}`}>
+      {kpis.map(({ key, icon: Icon, label, value, tone, trendLabel }) => <Link key={key} to={key === 'applications' ? '/agent/rentals/applications' : key === 'mandates' ? '/agent/rentals/listings' : key === 'leads' ? '/agent/rentals/pipeline/leads' : '/agent/rentals/portfolio/properties'} className={`rental-summary-card rental-summary-card--${tone}`}>
         <div className="rental-summary-heading">{createElement(Icon, { size: 19 })}<span>{label}</span></div>
         <strong>{loading ? '—' : value}</strong>
         <p>{trendLabel}</p>

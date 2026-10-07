@@ -3,6 +3,7 @@ import { CANONICAL_TRANSACTION_STAGES, MAIN_PROCESS_STAGES, getMainStageFromDeta
 import { financeTypeMatchesFilter } from '../core/transactions/financeType'
 import { supabase } from './supabaseClient'
 import { hydrateMatterPropertyContext } from '../services/matterPropertyContext'
+import { refreshDevelopmentMedia } from './developmentMediaStorage.js'
 
 const SELECT = 'transaction_origin_source, comment, buyer_name, deal_review_details, primary_buyer_participant_id, id, organisation_id, owner_user_id, matter_number, transaction_reference, arch9_listing_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, suburb, city, property_description, sales_price, purchase_price, finance_type, purchaser_type, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, next_action, expected_transfer_date, finance_status, attorney_stage, risk_status, operational_state, missing_documents_count, uploaded_documents_count, total_required_documents, updated_at, created_at, is_active'
 const FALLBACK_SELECT = 'transaction_origin_source, comment, id, organisation_id, development_id, unit_id, buyer_id, transaction_reference, arch9_listing_reference, finance_type, purchaser_type, purchase_price, sales_price, stage, attorney, bond_originator, next_action, updated_at, created_at'
@@ -22,7 +23,7 @@ const one = (value) => Array.isArray(value) ? value[0] || null : value || null
 
 function firstImageUrl(value) {
   if (!value) return ''
-  if (typeof value === 'string') return text(value)
+  if (typeof value === 'string') return value.split(/\r?\n/).map(text).find(Boolean) || ''
   if (Array.isArray(value)) {
     for (const item of value) {
       const url = firstImageUrl(item)
@@ -44,21 +45,6 @@ function isImageDocument(document = {}) {
   const mimeType = comparable(document.mime_type)
   const fileName = `${text(document.file_url)} ${text(document.storage_path)}`.toLowerCase()
   return mimeType.startsWith('image/') || ['marketing', 'image', 'gallery', 'hero', 'cover'].includes(type) || /\.(avif|gif|jpe?g|png|webp)(?:[?#]|$)/.test(fileName)
-}
-
-async function resolveDocumentImageUrl(client, document = {}) {
-  const bucket = text(document.storage_bucket) || 'documents'
-  const path = text(document.storage_path)
-  if (path && client?.storage?.from) {
-    try {
-      const result = await client.storage.from(bucket).createSignedUrl(path, 60 * 60 * 24)
-      const signedUrl = text(result?.data?.signedUrl)
-      if (!result?.error && signedUrl) return signedUrl
-    } catch {
-      // A saved public URL remains a valid fallback for clients without storage signing.
-    }
-  }
-  return text(document.file_url)
 }
 
 async function hydrateSummaryMedia(client, rows = []) {
@@ -88,7 +74,7 @@ async function hydrateSummaryMedia(client, rows = []) {
   const unitImages = new Map((unitResult.error ? [] : unitResult.data || []).map((item) => [item.id, item]))
   const developmentImages = new Map()
   if (!profileResult.error) {
-    for (const profile of profileResult.data || []) {
+    for (const profile of await refreshDevelopmentMedia(client, profileResult.data || [], { strict: false })) {
       const media = profile?.marketing_content || {}
       const library = media?.mediaLibrary || media?.media_library || {}
       const url = firstImageUrl([
@@ -104,12 +90,13 @@ async function hydrateSummaryMedia(client, rows = []) {
     }
   }
   if (!documentResult.error) {
+    const candidates = new Map()
     for (const document of documentResult.data || []) {
       if (document?.archived_at || comparable(document?.approval_status) === 'rejected' || !isImageDocument(document)) continue
-      if (!developmentImages.has(document.development_id)) {
-        const url = await resolveDocumentImageUrl(client, document)
-        if (url) developmentImages.set(document.development_id, url)
-      }
+      if (!developmentImages.has(document.development_id) && !candidates.has(document.development_id)) candidates.set(document.development_id, document)
+    }
+    for (const document of await refreshDevelopmentMedia(client, [...candidates.values()], { strict: false })) {
+      if (document.file_url) developmentImages.set(document.development_id, document.file_url)
     }
   }
 

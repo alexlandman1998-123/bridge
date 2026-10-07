@@ -13,6 +13,7 @@
 .legal-stage-task-panel .legal-task-header { border-top: 0; border-radius: 0; padding-top: 12px; }
 .legal-stage-task-panel .legal-task-tabs { padding-inline: 16px; }
 .legal-stage-task-panel .legal-task-tab { padding-inline: 8px; font-size: 13px; }
+.legal-stage-task-picker { display: none; padding: 16px 16px 0; }
 .legal-stage-panel-return { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 16px 20px 0; }
 .legal-stage-panel-return .legal-task-back { margin: 0; }
 .legal-stage-panel-close { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 36px; height: 36px; border: 1px solid #dce5e0; border-radius: 8px; color: #496256; }
@@ -22,12 +23,20 @@
   .has-task-panel .legal-stage-task-list { position: sticky; top: 96px; max-height: calc(100dvh - 112px); overflow-y: auto; align-self: start; padding-top: 16px; }
   .has-task-panel .legal-stage-task-list > ol { margin: 0; border: 0; border-radius: 0; }
   .legal-stage-task-panel { border-left: 1px solid #e1e9e5; }
+  .legal-workflow-stage-grid.is-task-open { grid-template-columns: repeat(var(--legal-workflow-stage-count, 6), minmax(0, 1fr)); gap: 8px; }
 }
 @media (max-width: 1279px) {
   .has-task-panel .legal-stage-task-list { display: none; }
+  .legal-stage-task-picker { display: block; }
   .legal-stage-panel-close { display: none; }
   .legal-stage-panel-return { padding-inline: 12px; }
 }
+
+.legal-workflow-stage-grid.is-task-open .legal-workflow-stage-card { min-height: 120px; gap: 6px; padding: 10px 12px; }
+.legal-workflow-stage-grid.is-task-open .legal-workflow-stage-card > span:first-child { width: 26px; height: 26px; font-size: 12px; }
+.legal-workflow-stage-grid.is-task-open .legal-workflow-stage-card strong { font-size: 12px; line-height: 17px; }
+.legal-workflow-stage-grid.is-task-open .legal-workflow-stage-progress { margin-top: 6px; gap: 6px; }
+.legal-workflow-stage-grid.is-task-open .legal-workflow-stage-card > svg { top: 14px; }
 
 /* Leave room for the task on smaller screens while keeping every stage reachable. */
 @media (max-width: 1279px) {

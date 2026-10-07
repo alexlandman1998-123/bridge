@@ -47,7 +47,8 @@ export function rentalOnboardingClient(db, storage, actor, scoped = false) {
         filters = [],
         ordering = [],
         single = false,
-        conflict
+        conflict,
+        rowLimit
       const q = {
         select: (selected = '*') => {
           fields = selected
@@ -61,6 +62,11 @@ export function rentalOnboardingClient(db, storage, actor, scoped = false) {
           ordering.push(
             `${name(key)} ${options.ascending === false ? 'desc' : 'asc'}`,
           )
+          return q
+        },
+        limit: (count) => {
+          if (!Number.isInteger(count) || count < 0) throw new Error('Invalid fixture row limit')
+          rowLimit = count
           return q
         },
         insert: (input) => {
@@ -133,6 +139,7 @@ export function rentalOnboardingClient(db, storage, actor, scoped = false) {
                 .join(' and ')
           if (operation === 'select' && ordering.length)
             sql += ' order by ' + ordering.join(',')
+          if (operation === 'select' && rowLimit !== undefined) sql += ` limit ${rowLimit}`
           if (operation !== 'select') sql += ' returning ' + columns
           const rows = (await tx.query(sql, params)).rows
           return single ? rows[0] || null : rows

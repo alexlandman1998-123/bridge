@@ -1278,6 +1278,7 @@ function normalizeMarketingContentForm(input = null) {
 
   return {
     listingOverview: {
+      developmentType: text(listingOverviewSource.developmentType),
       listingTitle: text(listingOverviewSource.listingTitle, defaults.listingOverview.listingTitle),
       listingHeading: text(listingOverviewSource.listingHeading, listingOverviewSource.shortTitle || defaults.listingOverview.listingHeading),
       ownershipType: text(listingOverviewSource.ownershipType, defaults.listingOverview.ownershipType),

@@ -20,7 +20,7 @@ const MOBILE_NAV_ITEMS = Object.freeze({
 const MOBILE_NAV_BY_CATEGORY = Object.freeze({
   agent: ['home', 'transactions', 'create', 'leads', 'more'],
   principal: ['home', 'transactions', 'create', 'leads', 'more'],
-  developer: ['home', 'transactions', 'create', 'developments', 'more'],
+  developer: ['home', 'transactions', 'create', 'leads', 'more'],
   attorney: ['home', 'transactions', 'create', 'leads', 'more'],
   bond_originator: ['home', 'transactions', 'create', 'leads', 'more'],
   commercial: ['home', 'transactions', 'create', 'leads', 'more'],
@@ -104,12 +104,16 @@ export function resolveMobileRoleCategory(workspace = {}) {
 
 export function getMobileNavItems(workspace = {}) {
   const category = resolveMobileRoleCategory(workspace)
-  return (MOBILE_NAV_BY_CATEGORY[category] || MOBILE_NAV_BY_CATEGORY.default).map((key) => MOBILE_NAV_ITEMS[key])
+  return (MOBILE_NAV_BY_CATEGORY[category] || MOBILE_NAV_BY_CATEGORY.default).map((key) =>
+    category === 'developer' && key === 'leads'
+      ? { ...MOBILE_NAV_ITEMS.leads, to: '/mobile/developer/leads' }
+      : MOBILE_NAV_ITEMS[key],
+  )
 }
 
 export function getMobilePageMenuItems(workspace = {}) {
   return [
-    { ...MOBILE_NAV_ITEMS.leads, to: resolveMobileRoleCategory(workspace) === 'developer' ? '/mobile/developer/leads' : MOBILE_NAV_ITEMS.leads.to },
+    resolveMobileRoleCategory(workspace) === 'developer' ? MOBILE_NAV_ITEMS.developments : MOBILE_NAV_ITEMS.leads,
     MOBILE_NAV_ITEMS.listings,
     MOBILE_NAV_ITEMS.calendar,
   ]

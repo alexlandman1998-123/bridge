@@ -133,7 +133,7 @@ it('invalidates raw database identity edits, keeps history, and permits a fresh 
     expect(retained.documentLinks.sort((a, b) => a.documentId.localeCompare(b.documentId))).toEqual(actual.documentLinks.filter((link) => link.invalidated).sort((a, b) => a.documentId.localeCompare(b.documentId)))
   }
 })
-it('selects a rejected replacement in SQL and blocks stale or incomplete v2 submissions', async () => {
+it('keeps rejected and superseded evidence separate from submission while blocking incomplete named people', async () => {
   const applicationId = '88888888-8888-4888-8888-888888888888'
   const initial = { schemaVersion: 'arch9_rental_application_fields_v2', identity: { identityNumber: 'A' }, entity: { type: 'individual' }, income: { monthlyIncome: 25000 } }
   await db.exec("select set_config('test.actor','',false)")
@@ -143,7 +143,12 @@ it('selects a rejected replacement in SQL and blocks stale or incomplete v2 subm
   await db.query("update rental_application_documents set status='accepted' where id=$1",[oldDocument])
   await db.query("update rental_application_documents set status='rejected' where id=$1",[newDocument])
   expect((await db.query("select rental_current_document_status($1,$2::jsonb,'primary','identity') status",[applicationId,JSON.stringify(initial)])).rows[0].status).toBe('rejected')
-  await expect(db.query("update rental_applications set status='submitted',submitted_at=now() where id=$1",[applicationId])).rejects.toThrow('Current required document')
+  await db.transaction(async (tx) => {
+    await tx.query("update rental_applications set status='submitted',submitted_at=now() where id=$1",[applicationId])
+    expect((await tx.query("select state from rental_onboarding_requirement_summaries where application_id=$1 and subject_id='primary' and purpose='identity'", [applicationId])).rows[0].state).toBe('rejected')
+    // Roll the local probe back so the following identity-edit checks stay draft-scoped.
+    throw new Error('Probe complete')
+  }).catch((cause) => { if (cause.message !== 'Probe complete') throw cause })
   await db.query("update rental_applications set application_data=jsonb_set(application_data,'{identity,identityNumber}','\"B\"') where id=$1",[applicationId])
   const changed = (await db.query('select application_data from rental_applications where id=$1',[applicationId])).rows[0].application_data
   expect(changed.documentInvalidations).toEqual([{ subjectId: 'primary' }])
@@ -301,14 +306,15 @@ it('rolls back forged requirement generations together with their proposed assig
   expect(summary.find((item) => item.id === r.id).generation).toBe(r.generation)
   expect(summary.find((item) => item.id === r.id).fingerprint_json).toBeUndefined()
 })
-it('rejects expired saved evidence on submission and preserves the draft and revision history', async () => {
+it('allows details submission with expired evidence while retaining the outstanding requirement', async () => {
   await db.exec("select set_config('test.actor','',false)")
   const id = '99999999-9999-4999-8999-999999999999'
   const r = (await db.query("select * from rental_onboarding_requirement_summaries where application_id=$1 and subject_id='primary' and purpose='identity'",[id])).rows[0]
   await db.query("update rental_onboarding_requirements set expires_at='2000-01-01' where id=$1",[r.id])
   const before = (await db.query('select status,version from rental_applications where id=$1',[id])).rows[0]
-  await expect(db.query("update rental_applications set status='submitted',submitted_at=now(),version=version+1 where id=$1",[id])).rejects.toThrow('Current saved evidence required')
-  expect((await db.query('select status,version from rental_applications where id=$1',[id])).rows[0]).toEqual(before)
+  await db.query("update rental_applications set status='submitted',submitted_at=now(),version=version+1 where id=$1",[id])
+  expect((await db.query('select status,version from rental_applications where id=$1',[id])).rows[0]).toEqual({ status: 'submitted', version: before.version + 1 })
+  expect((await db.query('select state from rental_onboarding_requirement_summaries where id=$1',[r.id])).rows[0].state).toBe('expired')
   await db.query('update rental_onboarding_requirements set expires_at=null where id=$1',[r.id])
 })
 

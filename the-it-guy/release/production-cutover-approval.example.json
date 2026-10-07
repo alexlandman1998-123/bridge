@@ -1,13 +1,16 @@
 {
   "version": 1,
-  "status": "template_not_approved",
+  "status": "retired",
   "productionProjectRef": "isdowlnollckzvltkasn",
-  "candidateProjectRef": "rlavzicedrilmpaamviu",
+  "candidateProjectRef": null,
   "changeWindow": null,
   "approver": null,
   "freezeConfirmed": false,
   "backupAndRollbackConfirmed": false,
   "stagingEvidenceReference": null,
   "productionSmokeChecks": ["authentication", "core transaction read/write", "document access", "public API error rate"],
-  "rollback": "restore the previous application deployment and disable the new API-domain flag; do not rewrite migration history"
+  "rollback": "restore the previous application deployment and disable the new API-domain flag; do not rewrite migration history",
+  "retiredOn": "2026-10-07",
+  "retirementReason": "Temporary project retired by user-authorised cleanup on 2026-10-07. Keep Arch9 SaaS and Arch9 Staging.",
+  "retiredProjectRef": "rlavzicedrilmpaamviu"
 }

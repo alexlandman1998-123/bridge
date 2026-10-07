@@ -36,7 +36,7 @@ const ICONS = {
   deals: BriefcaseBusiness,
 }
 
-const NAV_ITEM_CLASS = 'flex min-h-[54px] min-w-0 flex-col items-center justify-center gap-1 rounded-[18px] px-0.5 text-[10px] font-medium leading-[1.2] transition-colors max-[360px]:text-[9px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1f8b65]'
+const NAV_ITEM_CLASS = 'flex min-h-[54px] min-w-0 flex-col items-center justify-center gap-1 rounded-[18px] px-0.5 text-[10px] font-medium leading-[1.2] transition-colors max-[360px]:px-0 max-[360px]:text-[9px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1f8b65]'
 
 const CREATE_ACTIONS = [
   { key: 'lead', label: 'New Lead', body: 'Capture a buyer or seller lead.', icon: UsersRound, to: '/mobile/leads?create=lead' },
@@ -139,7 +139,7 @@ export default function MobileBottomNav() {
 
       {!createSheetOpen ? (
         <nav className="relative z-40 shrink-0 px-2 pb-[max(0.625rem,env(safe-area-inset-bottom))] pt-2" aria-label="Mobile navigation" data-mobile-bottom-nav>
-          <div className="mx-auto grid max-w-[520px] grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)_48px_minmax(0,1.25fr)_minmax(0,1fr)] items-center rounded-[26px] border border-[#dfe7ef] bg-white px-1 py-2 shadow-[0_-6px_24px_rgba(15,23,42,0.07)]">
+          <div className="mobile-glass-nav mx-auto grid max-w-[520px] grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)_64px_minmax(0,1.25fr)_minmax(0,1fr)] items-center gap-x-1 rounded-[26px] border bg-white px-1 py-2 max-[360px]:grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)_56px_minmax(0,1.25fr)_minmax(0,1fr)] max-[360px]:gap-x-0.5">
             {items.map((item) => {
               const Icon = ICONS[item.key] || LayoutGrid
               if (item.key === 'more') {

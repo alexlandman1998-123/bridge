@@ -1,0 +1,33 @@
+.developer-lead-documents { min-width: 0; color: #152621; }
+.developer-lead-documents > header, .developer-lead-documents > header > span { display: flex; align-items: center; gap: 9px; }
+.developer-lead-documents > header { justify-content: space-between; }
+.developer-lead-documents h2 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -.025em; }
+.developer-lead-documents h3 { margin: 22px 0 10px; font-size: 14px; font-weight: 600; }
+.developer-lead-documents p { margin: 12px 0 0; color: #627068; font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
+.developer-lead-documents > header > button, .developer-lead-document-files a { display: grid; flex-shrink: 0; place-items: center; width: 44px; height: 44px; border: 1px solid #e5e9e6; border-radius: 12px; background: #fff; color: #166b50; }
+.developer-lead-documents-empty { padding: 24px 4px; text-align: center; }
+.developer-lead-documents-empty > svg { margin: 0 auto; color: #81978a; }
+.developer-lead-documents-empty h3 { margin-top: 12px; font-size: 17px; }
+.developer-lead-documents-empty p { max-width: 330px; margin-inline: auto; }
+.developer-lead-documents form { display: grid; gap: 12px; margin-top: 20px; padding: 16px; border: 1px solid #e6eae7; border-radius: 16px; background: #fafbfa; }
+.developer-lead-documents form > label { display: grid; gap: 7px; font-size: 12px; font-weight: 500; }
+.developer-lead-documents select { min-width: 0; width: 100%; min-height: 44px; padding: 10px; border: 1px solid #dce4de; border-radius: 10px; background: #fff; font-size: 12px; }
+.developer-lead-documents .developer-lead-document-picker { display: flex; position: relative; align-items: center; gap: 8px; min-height: 48px; padding: 12px; border: 1px dashed #c9d6cd; border-radius: 10px; background: #fff; cursor: pointer; }
+.developer-lead-document-picker > span { min-width: 0; overflow-wrap: anywhere; }
+.developer-lead-document-picker svg { flex-shrink: 0; }
+.developer-lead-document-picker input { position: absolute; inset: 0; width: 100%; opacity: 0; cursor: pointer; }
+.developer-lead-documents small { color: #627068; font-size: 10px; line-height: 1.5; }
+.developer-lead-document-submit { min-height: 46px; border: 0; border-radius: 10px; background: var(--mobile-home-card-primary, #166b50); color: var(--mobile-home-card-ink, #fff); font-size: 12px; font-weight: 600; }
+.developer-lead-documents button:disabled, .developer-lead-documents input:disabled { opacity: .5; cursor: not-allowed; }
+.developer-lead-documents :is(button, a, select, input):focus-visible, .developer-lead-document-picker:focus-within { outline: 2px solid #152621; outline-offset: 3px; }
+.developer-lead-document-requirements, .developer-lead-document-files { list-style: none; margin: 16px 0 0; padding: 0; }
+.developer-lead-document-requirements li, .developer-lead-document-files li { display: flex; align-items: flex-start; gap: 10px; padding: 14px 0; border-top: 1px solid #e6eae7; }
+.developer-lead-document-requirements li > span:first-child, .developer-lead-document-files li > span { flex: 1; min-width: 0; }
+.developer-lead-documents strong { display: block; font-size: 12px; font-weight: 500; line-height: 1.6; overflow-wrap: anywhere; }
+.developer-lead-document-files small, .developer-lead-document-requirements small { display: block; margin-top: 4px; }
+.developer-lead-document-files li > svg { flex-shrink: 0; margin-top: 4px; color: #81978a; }
+.developer-lead-document-status { max-width: 100px; padding: 4px 7px; border-radius: 8px; background: #f5f2e9; color: #786447; font-size: 10px; line-height: 1.5; text-align: center; }
+.developer-lead-document-status:is(.is-approved, .is-completed, .is-waived) { background: #edf6f0; color: #166b50; }
+.developer-lead-documents p.developer-lead-documents-error { color: #9c482d; }
+.developer-lead-documents-error button { display: block; min-height: 44px; margin-top: 6px; padding: 0; border: 0; background: none; color: #166b50; font-size: 12px; font-weight: 600; }
+.developer-lead-documents p.developer-lead-document-receipt { padding: 12px; border: 1px solid #d6e7dd; border-radius: 10px; background: #f3f9f5; color: #166b50; }

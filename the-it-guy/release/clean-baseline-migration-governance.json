@@ -1,16 +1,20 @@
 {
   "version": 1,
-  "status": "blocked_pending_schema_equivalence",
+  "status": "retired",
   "historicalLedger": {
     "productionRef": "isdowlnollckzvltkasn",
     "evidence": "production-migration-ledger-reconciliation-2026-09-06-classified.json",
     "rule": "preserve as evidence; never mass-repair or rewrite it"
   },
   "forwardOnlyBaseline": {
-    "target": "rlavzicedrilmpaamviu",
     "rule": "create one reviewed baseline migration only after Phase 2 equivalence passes",
-    "subsequentChanges": "new timestamped migrations, reviewed and applied first to replacement staging"
+    "subsequentChanges": "new timestamped migrations, reviewed and applied first to replacement staging",
+    "retiredTarget": "rlavzicedrilmpaamviu",
+    "target": null
   },
   "prohibited": ["supabase migration repair against production", "backdating new migrations", "promoting legacy staging"],
-  "exitCriteria": ["schema equivalence verified", "baseline migration applied to an empty rehearsal", "new migration applies cleanly after baseline"]
+  "exitCriteria": ["schema equivalence verified", "baseline migration applied to an empty rehearsal", "new migration applies cleanly after baseline"],
+  "previousStatus": "blocked_pending_schema_equivalence",
+  "retiredOn": "2026-10-07",
+  "retirementReason": "Temporary project retired by user-authorised cleanup on 2026-10-07. Keep Arch9 SaaS and Arch9 Staging."
 }

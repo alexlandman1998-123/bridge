@@ -9629,7 +9629,7 @@ export default function SettingsSigningTemplatesPage({
                     description={normalizedEditorScope === 'situations'
                       ? editorSituation
                         ? `Select ${editorSituation.label.toLowerCase()} wording from the outline, or add an approved clause.`
-                        : 'Use the simple choices above to tell Bridge whether you are editing individual, company, trust, marriage, property or finance wording.'
+                        : 'Use the simple choices above to tell Arch9 whether you are editing individual, company, trust, marriage, property or finance wording.'
                       : 'Select a section from the outline to edit the document wording.'}
                   />
                 )}

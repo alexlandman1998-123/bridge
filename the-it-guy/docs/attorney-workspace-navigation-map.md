@@ -4,6 +4,16 @@ Date: 2026-09-27
 Owner: primary `the-it-guy/` application
 Scope: the Attorney Transfer tab's proposed stage overview and focused stage workspace. This is the current-state contract for the UI change; it makes no workflow, schema, or remote-data change.
 
+## Default task workspace — 7 October 2026
+
+Opening Work or choosing a stage now opens the shared stage/task workspace directly. Stage-only and older `transferView=overview` links select the first unfinished task in the requested stage; completed stages open a recorded task for review. Explicit task links retain that task, including after completion. The selected task and its content use the same resolved navigation, and the URL is replaced with the resolved task so refresh and browser history preserve the selection. Empty stages remain reviewable without a task panel.
+
+The shared desktop view keeps the task list beside the selected task and omits the redundant back/close controls. Below 1280 pixels, a task selector replaces the side list. Stage cards and the progress header are smaller. Mark stage complete and Override stage remain in the stage header; Stage options → Complete selected tasks opens a task selection followed by the existing completion confirmation. Draft/save guards, permissions, hard legal checks and partial-save recovery still apply. Navigation opens work without changing its saved status.
+
+Reuse `scripts/attorney-transfer-navigation.test.mjs` for default entry, older and explicit links, three-lane stage/task selection, mobile selection, draft guards and stage/bulk actions. The existing view-model, inline-work and header-phase checks cover task content and progress. This UI change needs no migration; production release remains a separate action.
+
+Local checks passed on 7 October: navigation, view-model, inline work, header phases, simplification, and permission contracts. Focused lint has no errors (the transaction page retains its 39 existing warnings); the app production build passed with existing build warnings. Browser checks use the actual shared components and local sample data at 1600, 390 and 320 pixels. They verify direct stage entry, task selection and reload, readable phone headings, a visible mobile task picker and stage menu, and no page overflow. Preview screenshots are in `output/playwright/attorney-default-*-20261007.png`. These checks do not write to live matters or establish a production release.
+
 
 ## All lane side panel audit
 

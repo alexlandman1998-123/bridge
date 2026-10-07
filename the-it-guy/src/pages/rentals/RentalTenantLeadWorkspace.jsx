@@ -43,6 +43,7 @@ import {
   getRentalApplicationReview,
 } from '../../services/rentals/rentalApplicationRepository.js'
 import { buildRentalListingQueryOptions } from '../../services/rentals/rentalWorkspaceScope'
+import { rentalMatchBudgetRange } from '../../services/rentals/rentalLeadMatchingModel.js'
 import {
   TENANT_JOURNEY,
   TENANT_QUESTIONS,
@@ -297,8 +298,9 @@ export default function RentalTenantLeadWorkspace({
     if (!current || typeof rail.scrollTo !== 'function') return
     const left = current.getBoundingClientRect().left - rail.getBoundingClientRect().left + rail.scrollLeft - (rail.clientWidth - current.clientWidth) / 2
     rail.scrollTo({ left: Math.max(0, left), behavior: 'smooth' })
-  }, [stage])
+  }, [stage, tab])
   const matches = tenantBudgetMatches(lead, extra.matches)
+  const matchBudgetRange = rentalMatchBudgetRange(lead.qualification?.monthlyBudget ?? lead.monthlyBudget)
   const enquiry = tenantEnquiryProperty(lead, extra.matches, vacancies)
   const eligibleUsers = extra.users.filter(
     (user) =>
@@ -502,7 +504,7 @@ export default function RentalTenantLeadWorkspace({
         <div>
           <p className="tenant-eyebrow">Tenant qualification</p>
           <h2 className="mt-1 text-lg font-semibold text-[#102033]">
-            Phone qualification questions
+            Tenant qualification questions
           </h2>
           <div className="mt-2 flex items-center gap-2">
             <span className="h-2 w-24 overflow-hidden rounded-full bg-[#e8eef5]">
@@ -663,7 +665,9 @@ export default function RentalTenantLeadWorkspace({
                       ? question.key === 'monthlyBudget'
                         ? money(value)
                         : value
-                      : 'Not captured'}
+                      : question.key === 'additionalNotes' && lead.qualification?.source === 'tenant_qualification_link' && lead.qualification?.submittedAt
+                        ? 'No additional notes provided'
+                        : 'Not captured'}
                   </p>
                 </div>
               </div>
@@ -1048,7 +1052,7 @@ export default function RentalTenantLeadWorkspace({
             )
           })}
         </nav>
-        <section className="min-w-0 overflow-hidden rounded-[24px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_16px_42px_rgba(31,54,78,0.06)]">
+        {tab !== 'Matches' ? <section className="min-w-0 overflow-hidden rounded-[24px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_16px_42px_rgba(31,54,78,0.06)]">
           <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[#edf3f8] px-5 py-5 sm:px-8">
             <div>
               <p className="tenant-eyebrow">Tenant journey</p>
@@ -1075,7 +1079,7 @@ export default function RentalTenantLeadWorkspace({
               })}
             </ol>
           </div>
-        </section>
+        </section> : null}
         {parentError || error ? (
           <p
             role="alert"
@@ -1189,6 +1193,11 @@ export default function RentalTenantLeadWorkspace({
                       ? `${extra.viewings.length} viewing appointments linked to this tenant.`
                       : 'Choose the enquired property or a rental match and agree on a suitable time.'}
                   </p>
+                  {lead.viewingRequest?.availabilitySlots?.length ? <div className="mt-4 rounded-xl bg-[#eaf6ef] p-4 text-sm text-[#18324b]">
+                    <p className="font-semibold">Preferred times submitted by the tenant</p>
+                    <ul className="mt-2 list-disc space-y-1 pl-5">{lead.viewingRequest.availabilitySlots.map((slot, index) => <li key={index}>{slot.label || `${slot.date}, ${slot.startTime}–${slot.endTime}`}</li>)}</ul>
+                    <p className="mt-2 text-xs text-[#60758b]">{lead.viewingRequest.timezone || 'Africa/Johannesburg'} · Request received; confirm a time before booking.</p>
+                  </div> : null}
                 </div>
                 <Button
                   type="button"
@@ -1210,9 +1219,9 @@ export default function RentalTenantLeadWorkspace({
           <section className="tenant-card">
             <p className="tenant-eyebrow">Rental matches</p>
             <h2 className="mt-1 text-lg font-semibold text-[#102033]">
-              Properties within {money(lead.monthlyBudget)} per month
+              {matchBudgetRange ? `Properties from ${money(matchBudgetRange.minimum)} to ${money(matchBudgetRange.maximum)} per month` : 'Capture a monthly budget to find rental matches'}
             </h2>
-            <p className="mt-2 text-sm text-[#60758b]">Monthly rates only. Confirm availability, pet policy and other requirements before arranging a viewing.</p>
+            <p className="mt-2 text-sm text-[#60758b]">Matches include rentals up to R1,000 below or above the tenant’s monthly budget. Confirm availability, pet policy and other requirements before arranging a viewing.</p>
             <Button type="button" variant="secondary" size="sm" className="mt-3" disabled={extra.loading} onClick={() => void loadExtra()}>
               Refresh matches
             </Button>
@@ -1222,7 +1231,7 @@ export default function RentalTenantLeadWorkspace({
               <p className="mt-4 text-sm text-[#9f3131]">Rental matches could not load. Refresh matches to retry.</p>
             ) : !matches.length ? (
               <p className="mt-4 text-sm text-[#60758b]">
-                {Number(lead.monthlyBudget) > 0
+                {matchBudgetRange
                   ? 'No rental listings match this budget in the current workspace.'
                   : 'Capture a monthly budget to find rentals in the tenant’s price class.'}
               </p>

@@ -6509,7 +6509,10 @@ async function fetchMandatePacketRowsForListings(client, listingRows = []) {
 }
 
 export async function getOrganisationPrivateListings(organisationId, options = {}) {
-  const includeRequirementsAndDocuments = options?.includeRequirementsAndDocuments !== false
+  // Directory metrics use the listing's own assignment, status and value.
+  // Detail screens retain the existing related-data hydration by default.
+  const includeRelatedData = options?.includeRelatedData !== false
+  const includeRequirementsAndDocuments = includeRelatedData && options?.includeRequirementsAndDocuments !== false
   const client = requireClient()
   const normalizedOrgId = normalizeUuid(organisationId)
   if (!normalizedOrgId) throw new Error('Organisation id is required.')
@@ -6526,13 +6529,13 @@ export async function getOrganisationPrivateListings(organisationId, options = {
   const rows = (Array.isArray(query.data) ? query.data : []).filter((row) => !isDeletedPrivateListingRow(row))
   const listingIds = rows.map((row) => row.id)
   const [onboardingMap, requirementsMap, documentsMap, externalLinksMap, publicationMap, mandatePacketsMap, assignedAgentsMap] = await Promise.all([
-    fetchOnboardingRowsForListings(client, listingIds),
+    includeRelatedData ? fetchOnboardingRowsForListings(client, listingIds) : Promise.resolve(new Map()),
     includeRequirementsAndDocuments ? fetchRequirementRowsForListings(client, listingIds) : Promise.resolve(new Map()),
     includeRequirementsAndDocuments ? fetchDocumentRowsForListings(client, listingIds) : Promise.resolve(new Map()),
-    fetchExternalLinkRowsForListings(client, listingIds),
-    fetchPublicationRowsForListings(client, listingIds),
+    includeRelatedData ? fetchExternalLinkRowsForListings(client, listingIds) : Promise.resolve(new Map()),
+    includeRelatedData ? fetchPublicationRowsForListings(client, listingIds) : Promise.resolve(new Map()),
     includeRequirementsAndDocuments ? fetchMandatePacketRowsForListings(client, rows) : Promise.resolve(new Map()),
-    fetchAssignedAgentProfilesForListings(client, rows),
+    includeRelatedData ? fetchAssignedAgentProfilesForListings(client, rows) : Promise.resolve(new Map()),
   ])
   return rows.map((row) => mapPrivateListingRow(row, onboardingMap, requirementsMap, documentsMap, externalLinksMap, publicationMap, mandatePacketsMap, assignedAgentsMap)).filter(Boolean)
 }

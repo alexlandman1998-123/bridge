@@ -4,7 +4,7 @@ import { HIGH_LEVEL_MILESTONES } from '../../core/transactions/highLevelJourneyR
 const MILESTONES = HIGH_LEVEL_MILESTONES
 
 // Render explicit rule outcomes without the legacy index-based normalizer.
-export default function DeveloperOverviewJourney({ model, loading = false, onOpenWorkspace, title = 'Transaction Journey', action = null }) {
+export default function DeveloperOverviewJourney({ model, loading = false, onOpenWorkspace, title = 'Transaction Journey', action = null, vertical = false }) {
   const steps = model?.highLevelJourney?.ruleVersion === 1 ? model.highLevelJourney.milestones : []
   const transferTasks = model?.legalJourney?.status === 'ready'
     ? (model.legalJourney.snapshot?.lanes || []).filter(lane => lane.key === 'transfer').flatMap(lane => (lane.phases || []).flatMap(phase => phase.tasks || []))
@@ -15,15 +15,15 @@ export default function DeveloperOverviewJourney({ model, loading = false, onOpe
     : completed('lodged_at_deeds_office') ? 'lodgement'
       : transferTasks.some(task => ['completed', 'complete', 'completed_externally', 'in_progress', 'waiting', 'blocked'].includes(task.status)) ? 'transfer' : null
   return (
-    <section data-developer-overview-journey aria-label="Transaction journey" aria-busy={loading} className="min-w-0 rounded-[20px] border border-borderDefault bg-white p-5">
+    <section data-developer-overview-journey data-orientation={vertical ? 'vertical' : 'horizontal'} aria-label="Transaction journey" aria-busy={loading} className="min-w-0 rounded-[20px] border border-borderDefault bg-white p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-xl font-semibold text-textStrong">{title}</h2>
         {action || (onOpenWorkspace ? <button type="button" onClick={() => onOpenWorkspace('transfer')} className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold text-emerald-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">
           View full journey <ChevronRight size={16} aria-hidden="true" />
         </button> : null)}
       </div>
-      <nav aria-label="Transaction milestones" tabIndex={0} className="mt-4 overflow-x-auto pb-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-700">
-        <ol className="relative grid min-w-[640px] grid-cols-5 gap-3 py-3" style={{ backgroundImage: 'linear-gradient(#e2e8f0, #e2e8f0)', backgroundSize: '80% 1px', backgroundPosition: 'center 36px', backgroundRepeat: 'no-repeat' }}>
+      <nav aria-label="Transaction milestones" tabIndex={vertical ? undefined : 0} className={vertical ? 'mt-4' : 'mt-4 overflow-x-auto pb-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-700'}>
+        <ol className={vertical ? 'developer-journey-vertical' : 'relative grid min-w-[640px] grid-cols-5 gap-3 py-3'} style={vertical ? undefined : { backgroundImage: 'linear-gradient(#e2e8f0, #e2e8f0)', backgroundSize: '80% 1px', backgroundPosition: 'center 36px', backgroundRepeat: 'no-repeat' }}>
           {MILESTONES.map(milestone => {
             const Item = onOpenWorkspace ? 'button' : 'div'
             const step = steps.find(item => (item.id || item.key) === milestone.id || (milestone.alternate && (item.id || item.key) === milestone.alternate))
@@ -35,8 +35,8 @@ export default function DeveloperOverviewJourney({ model, loading = false, onOpe
             const status = loading ? 'Loading…' : legalCurrent === 'transfer' && ['lodgement', 'registration'].includes(milestone.id) ? 'Pending' : current && !['in_progress', 'waiting', 'blocked'].includes(step?.status)
               ? 'In progress'
               : ({ complete: 'Completed', blocked: 'Needs attention', waiting: 'Waiting', in_progress: 'In progress', pending: 'Pending' }[step?.status] || 'Not available')
-            return <li key={milestone.id} className="relative">
-              <Item type={onOpenWorkspace ? 'button' : undefined} data-milestone={milestone.id} data-milestone-status={loading ? 'loading' : step?.status || 'unknown'} data-target={onOpenWorkspace ? milestone.target : undefined} onClick={onOpenWorkspace ? () => onOpenWorkspace(milestone.target) : undefined} aria-current={current ? 'step' : undefined} className="flex w-full flex-col items-center rounded-xl px-2 py-1 text-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-700">
+            return <li key={milestone.id} className="relative" data-complete={complete ? 'true' : undefined}>
+              <Item type={onOpenWorkspace ? 'button' : undefined} data-milestone={milestone.id} data-milestone-status={loading ? 'loading' : step?.status || 'unknown'} data-target={onOpenWorkspace ? milestone.target : undefined} onClick={onOpenWorkspace ? () => onOpenWorkspace(milestone.target) : undefined} aria-current={current ? 'step' : undefined} className={vertical ? 'developer-journey-vertical-step' : 'flex w-full flex-col items-center rounded-xl px-2 py-1 text-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-700'}>
                 <span aria-hidden="true" className={`inline-flex size-10 items-center justify-center rounded-full border-2 ${complete ? 'border-emerald-700 bg-emerald-700 text-white' : current ? 'border-emerald-700 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-white text-slate-400'}`}>
                   {complete ? <Check size={18} /> : <span className="size-2 rounded-full bg-current" />}
                 </span>

@@ -7,6 +7,7 @@ import {
 } from "../content/appointment.ts";
 import {
   isClientEmailRecipientRole,
+  normalizeEmailAddress,
   resolveAudienceEmailSender,
   resolveEmailBranding,
 } from "../services/emailBranding.ts";
@@ -83,7 +84,7 @@ export function buildIcsAttachment(payload: SendAppointmentEmailPayload) {
   ].filter(Boolean).join("\n\n");
   const organizerEmail = normalizeText(
     payload.organizerEmail || payload.agentEmail || payload.replyTo ||
-      "appointments@bridge.co.za",
+      "no-reply@arch9.co.za",
   );
   const organizerName = normalizeText(
     payload.organizerName || payload.agentName || payload.organisationName ||
@@ -197,8 +198,9 @@ export async function handleAppointmentEmail(
     defaults: { organisationName, supportEmail, supportPhone },
   });
   const baseSender = normalizeText(Deno.env.get("RESEND_APPOINTMENTS_FROM_EMAIL")) ||
+    normalizeText(Deno.env.get("ARCH9_RESEND_FROM_EMAIL")) ||
     normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
-    "Arch9 Appointments <appointments@bridge.co.za>";
+    "Arch9 Appointments <no-reply@arch9.co.za>";
   const participantRole = normalizeText(payload.participantRole).toLowerCase();
   const audience = participantRole && !isClientEmailRecipientRole(participantRole)
     ? "internal"
@@ -294,7 +296,12 @@ export async function handleAppointmentEmail(
     ),
   });
 
-  const icsAttachment = buildIcsAttachment(payload);
+  const icsAttachment = buildIcsAttachment({
+    ...payload,
+    organizerEmail: payload.organizerEmail || payload.agentEmail ||
+      payload.replyTo || branding.replyTo || normalizeEmailAddress(sender),
+    organizerName: payload.organizerName || payload.agentName || branding.organisationName,
+  });
 
   const emailResult = await sendViaResendApi({
     apiKey: resendApiKey,

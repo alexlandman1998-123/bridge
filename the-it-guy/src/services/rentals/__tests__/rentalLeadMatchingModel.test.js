@@ -12,8 +12,11 @@ assert.equal(scoreRentalLeadListingMatch(requirement, canonical).score, 100)
 assert.equal(scoreRentalLeadListingMatch(requirement, { ...canonical, sellerCanonicalFacts: { propertyProfile: { bedrooms: 0 }, rentalInfo: { monthlyRent: 10000 } } }).bedroomMatch, false)
 assert.equal(scoreRentalLeadListingMatch(requirement, { id: 'unknown' }).bedroomMatch, false)
 assert.equal(scoreRentalLeadListingMatch(requirement, { id: 'unknown' }).budgetMatch, false)
-assert.equal(scoreRentalLeadListingMatch(requirement, { monthlyRent: 12000 }).budgetMatch, false)
+assert.equal(scoreRentalLeadListingMatch(requirement, { monthlyRent: 12000 }).budgetMatch, true)
 assert.equal(scoreRentalLeadListingMatch(requirement, { monthlyRent: 12000 }).budgetNearMatch, true)
+for (const rent of [10000, 11000, 12000]) assert.equal(scoreRentalLeadListingMatch(requirement, { monthlyRent: rent }).budgetMatch, true)
+for (const rent of [0, 9999, 12001, 12100]) assert.equal(scoreRentalLeadListingMatch(requirement, { monthlyRent: rent }).budgetMatch, false)
+assert.equal(scoreRentalLeadListingMatch({ ...requirement, qualification: { monthlyBudget: 15000 } }, { monthlyRent: 16000 }).budgetMatch, true)
 
 assert.equal(scoreRentalLeadListingMatch(requirement, { monthlyRent: 500, rentalPriceFrequency: 'daily' }).budgetMatch, false)
 

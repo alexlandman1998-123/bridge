@@ -1,0 +1,23 @@
+.mobile-developer-leads .mobile-transactions-list { gap: 18px; }
+.mobile-developer-lead { border-radius: 24px; }
+.mobile-developer-lead-top { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 36px; }
+.mobile-developer-lead .mobile-lead-status { display: inline-flex; align-items: center; gap: 6px; margin: 0; max-width: 50%; padding: 6px 10px; border-radius: 999px; font-size: 10px; font-weight: 500; line-height: 1.5; overflow-wrap: anywhere; }
+.mobile-developer-lead .mobile-lead-status::before { content: ''; flex-shrink: 0; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.mobile-developer-lead .mobile-lead-status[data-status="lost"] { background: #f1f1f1; color: #666; }
+.mobile-developer-lead-source { display: inline-flex; align-items: center; justify-content: flex-end; max-width: 50%; margin-left: auto; color: #627068; font-size: 10px; font-weight: 500; line-height: 1.5; text-align: right; overflow-wrap: anywhere; }
+.mobile-developer-lead-source.has-logo { min-height: 36px; padding: 7px 9px; border: 1px solid #e9ebea; border-radius: 10px; background: #fff; }
+.mobile-developer-lead-source img { display: block; width: auto; max-width: 108px; height: 20px; object-fit: contain; }
+.mobile-developer-lead .mobile-property-deal-title { margin-top: 14px; font-size: 23px; font-weight: 600; line-height: 1.25; }
+.mobile-developer-lead-interest { display: flex; align-items: flex-start; gap: 7px; margin-top: 9px; color: #627068; font-size: 12px; line-height: 1.6; }
+.mobile-developer-lead-interest > svg { flex-shrink: 0; margin-top: 2px; color: #84918a; }
+.mobile-developer-lead-interest > span { min-width: 0; overflow-wrap: anywhere; }
+.mobile-developer-lead .mobile-property-deal-action { margin-top: 16px; padding: 12px; border: 1px solid #edf0ee; border-radius: 12px; background: #ffffff80; font-size: 12px; }
+.mobile-developer-lead .mobile-property-deal-action .mobile-property-deal-label { margin-bottom: 4px; font-size: 9px; }
+.mobile-developer-lead .mobile-property-deal-footer { min-height: 58px; margin-top: 17px; border-color: #e9edea; color: #33493e; font-size: 12px; font-weight: 500; }
+.mobile-developer-lead-open { display: grid; flex-shrink: 0; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: var(--mobile-home-card-primary, #0b2c23); color: var(--mobile-home-card-ink, #fff); }
+.mobile-developer-lead:focus-visible { outline-color: #152621; }
+@media (max-width: 360px) {
+  .mobile-developer-lead-top { gap: 10px; }
+  .mobile-developer-lead-source img { max-width: 94px; }
+  .mobile-developer-lead .mobile-property-deal-title { font-size: 21px; }
+}

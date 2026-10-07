@@ -1,9 +1,13 @@
 {
   "version": 1,
   "environment": "replacement-staging",
-  "projectRef": "rlavzicedrilmpaamviu",
+  "projectRef": null,
   "dataPolicy": "isolated-test-data-only",
   "trafficPolicy": "no-production-traffic",
   "requiredEnvironmentNames": ["VITE_SUPABASE_URL", "VITE_SUPABASE_ANON_KEY", "SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"],
-  "activationRequires": ["schema_equivalence_verified", "managed_configuration_verified", "application_smoke_tests_passed"]
+  "activationRequires": ["schema_equivalence_verified", "managed_configuration_verified", "application_smoke_tests_passed"],
+  "status": "retired",
+  "retiredOn": "2026-10-07",
+  "retirementReason": "Temporary project retired by user-authorised cleanup on 2026-10-07. Keep Arch9 SaaS and Arch9 Staging.",
+  "retiredProjectRef": "rlavzicedrilmpaamviu"
 }

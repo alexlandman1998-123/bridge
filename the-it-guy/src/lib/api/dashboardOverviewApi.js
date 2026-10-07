@@ -1,4 +1,5 @@
 import { supabase } from '../supabaseClient'
+import { refreshDevelopmentMedia } from '../developmentMediaStorage.js'
 import {
   CANONICAL_TRANSACTION_STAGES,
   MAIN_PROCESS_STAGES,
@@ -97,7 +98,7 @@ async function fetchDashboardDevelopmentProfiles(client, developmentIds = []) {
     throw query.error
   }
 
-  return new Map((query.data || []).map((profile) => [String(profile.development_id), profile]))
+  return new Map((await refreshDevelopmentMedia(client, query.data || [], { strict: false })).map((profile) => [String(profile.development_id), profile]))
 }
 
 function isDashboardImageDocument(document = {}) {
@@ -105,20 +106,6 @@ function isDashboardImageDocument(document = {}) {
   const mimeType = String(document?.mime_type || '').trim().toLowerCase()
   const fileName = `${document?.file_url || ''} ${document?.storage_path || ''}`.toLowerCase()
   return mimeType.startsWith('image/') || ['marketing', 'image', 'gallery', 'hero', 'cover'].includes(type) || /\.(avif|gif|jpe?g|png|webp)(?:[?#]|$)/.test(fileName)
-}
-
-async function resolveDashboardDocumentImageUrl(client, document = {}) {
-  const bucket = String(document?.storage_bucket || 'documents').trim() || 'documents'
-  const path = String(document?.storage_path || '').trim()
-  if (path && client?.storage?.from) {
-    try {
-      const signed = await client.storage.from(bucket).createSignedUrl(path, 60 * 60 * 24)
-      if (!signed?.error && signed?.data?.signedUrl) return String(signed.data.signedUrl).trim()
-    } catch {
-      // Keep the stored URL as a fallback when signing is unavailable.
-    }
-  }
-  return String(document?.file_url || '').trim()
 }
 
 async function fetchDashboardDevelopmentDocumentImages(client, developmentIds = []) {
@@ -133,15 +120,13 @@ async function fetchDashboardDevelopmentDocumentImages(client, developmentIds = 
     return new Map()
   }
 
-  const images = new Map()
+  const candidates = new Map()
   for (const document of query.data || []) {
     if (document?.archived_at || String(document?.approval_status || '').trim().toLowerCase() === 'rejected' || !isDashboardImageDocument(document)) continue
-    if (!images.has(String(document.development_id))) {
-      const imageUrl = await resolveDashboardDocumentImageUrl(client, document)
-      if (imageUrl) images.set(String(document.development_id), imageUrl)
-    }
+    if (!candidates.has(String(document.development_id))) candidates.set(String(document.development_id), document)
   }
-  return images
+  const documents = await refreshDevelopmentMedia(client, [...candidates.values()], { strict: false })
+  return new Map(documents.filter((document) => document.file_url).map((document) => [String(document.development_id), document.file_url]))
 }
 
 export function requireClient() {

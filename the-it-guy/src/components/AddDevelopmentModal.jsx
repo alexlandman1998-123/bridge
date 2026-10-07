@@ -1,5 +1,5 @@
-import { Plus, Trash2 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { Building2, Check, House, Layers3, Plus, Trash2, Trees } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { createDevelopmentWorkspace, fetchDeveloperAccessOptions, fetchDeveloperPartnersWorkspace } from '../lib/api'
 import { upsertAreaFromAddress } from '../lib/location/upsertArea'
@@ -8,23 +8,27 @@ import { formatSouthAfricanWhatsAppNumber, sendWhatsAppNotification } from '../l
 import AddressAutocomplete from './location/AddressAutocomplete'
 import Button from './ui/Button'
 import Modal from './ui/Modal'
+import StockMasterSetup from './developments/StockMasterSetup'
+import { buildStockSummary, buildStockTargets, createStockPlan, validateStockStep } from '../core/developments/developmentStockPlan.js'
+import './developments/development-create.css'
 
 const STEPS = [
-  { id: 'basic', label: 'Development Setup', description: 'Step 1' },
+  { id: 'basic', label: 'Development Details', description: 'Step 1' },
   { id: 'units', label: 'Units', description: 'Step 2' },
-  { id: 'financials', label: 'Defaults', description: 'Step 3' },
-  { id: 'review', label: 'Confirm', description: 'Step 4' },
+  { id: 'financials', label: 'Sales setup', description: 'Step 3' },
+  { id: 'review', label: 'Review', description: 'Step 4' },
+]
+
+const DEVELOPMENT_TYPES = [
+  { value: 'residential', label: 'Residential', icon: House },
+  { value: 'mixed_use', label: 'Mixed-use', icon: Building2 },
+  { value: 'estate', label: 'Estate', icon: Trees },
+  { value: 'sectional_title', label: 'Sectional title', icon: Layers3 },
 ]
 
 function getStepsForContext() {
   return STEPS
 }
-
-const STOCK_STEPS = [
-  { id: 'structure', label: 'Structure', description: 'Set up phases, blocks, and release groupings.' },
-  { id: 'unit-types', label: 'Unit Types', description: 'Define floorplans, pricing, quantities, and distribution.' },
-  { id: 'review-generate', label: 'Review & Generate', description: 'Confirm totals and generate the full unit inventory.' },
-]
 
 const DEFAULT_DETAILS = {
   name: '',
@@ -41,7 +45,6 @@ const DEFAULT_DETAILS = {
   latitude: null,
   longitude: null,
   googlePlaceId: '',
-  status: 'active',
   developerCompany: '',
   totalUnitsExpected: '',
   launchDate: '',
@@ -138,7 +141,7 @@ function buildInitialLegal(profile = null, workspace = null) {
 }
 
 const DEFAULT_DEVELOPER_ACCESS = {
-  mode: 'existing',
+  mode: 'later',
   selectedDeveloperId: '',
   selectedDeveloperEmail: '',
   selectedDeveloperName: '',
@@ -175,67 +178,6 @@ function buildEmptyBondOriginator() {
     phone: '',
     commission_type: 'purchase_price',
     commission_percentage: '',
-  }
-}
-
-function buildEmptyUnit() {
-  return {
-    unitNumber: '',
-    unitLabel: '',
-    unitType: '',
-    phase: '',
-    block: '',
-    sizeSqm: '',
-    listPrice: '',
-    status: 'Available',
-    floorplanId: '',
-  }
-}
-
-function createDraftId(prefix) {
-  return `${prefix}-${Math.random().toString(36).slice(2, 10)}`
-}
-
-function buildEmptyFloorplanDraft(distributionMode = 'all') {
-  return {
-    id: createDraftId('floorplan'),
-    name: '',
-    sizeSqm: '',
-    listPrice: '',
-    quantity: '',
-    fileUrl: '',
-    fileName: '',
-    distributionMode,
-    selectedTargetIds: [],
-    customDistribution: [],
-  }
-}
-
-function buildEmptyUnitTypeDraft(distributionMode = 'all') {
-  return {
-    id: createDraftId('unit-type'),
-    name: '',
-    description: '',
-    defaultStatus: 'Available',
-    floorplans: [buildEmptyFloorplanDraft(distributionMode)],
-  }
-}
-
-function buildPhaseDraft(name = 'Phase 1', order = 1) {
-  return {
-    id: createDraftId('phase'),
-    name,
-    order,
-    plannedUnits: '',
-    blocks: [],
-  }
-}
-
-function buildBlockDraft(name = 'Block A', order = 1) {
-  return {
-    id: createDraftId('block'),
-    name,
-    order,
   }
 }
 
@@ -403,144 +345,6 @@ function applyDeveloperPartnerDefaultsToLegal(previous = {}, defaults = []) {
   }
 }
 
-function normalizeCodeFragment(value, fallback) {
-  const cleaned = String(value || '')
-    .trim()
-    .replace(/[^a-zA-Z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .toUpperCase()
-
-  return cleaned || fallback
-}
-
-function buildStructureTargets(stockPlan) {
-  if (stockPlan.structureType === 'phases') {
-    return stockPlan.phases.map((phase) => ({
-      id: phase.id,
-      label: phase.name,
-      targetType: 'phase',
-      phaseName: phase.name,
-      blockName: '',
-    }))
-  }
-
-  if (stockPlan.structureType === 'blocks') {
-    return stockPlan.blocks.map((block) => ({
-      id: block.id,
-      label: block.name,
-      targetType: 'block',
-      phaseName: '',
-      blockName: block.name,
-    }))
-  }
-
-  if (stockPlan.structureType === 'phase_and_block') {
-    return stockPlan.phases.flatMap((phase) =>
-      (phase.blocks || []).map((block) => ({
-        id: `${phase.id}:${block.id}`,
-        label: `${phase.name} / ${block.name}`,
-        targetType: 'phase_block',
-        phaseId: phase.id,
-        phaseName: phase.name,
-        blockId: block.id,
-        blockName: block.name,
-      })),
-    )
-  }
-
-  return [
-    {
-      id: 'single-release',
-      label: 'Single Release',
-      targetType: 'release',
-      phaseName: '',
-      blockName: '',
-    },
-  ]
-}
-
-function resolveFloorplanDistribution(floorplan, targets) {
-  const quantity = Number(floorplan.quantity || 0)
-  if (quantity <= 0) return []
-
-  if (floorplan.distributionMode === 'custom') {
-    return (floorplan.customDistribution || [])
-      .map((entry) => {
-        const target = targets.find((item) => item.id === entry.targetId)
-        return target && Number(entry.quantity || 0) > 0 ? { target, quantity: Number(entry.quantity || 0) } : null
-      })
-      .filter(Boolean)
-  }
-
-  if (floorplan.distributionMode === 'selected') {
-    const selectedTargets = targets.filter((target) => (floorplan.selectedTargetIds || []).includes(target.id))
-    if (selectedTargets.length === 1) {
-      return [{ target: selectedTargets[0], quantity }]
-    }
-    return []
-  }
-
-  if (targets.length === 1) {
-    return [{ target: targets[0], quantity }]
-  }
-
-  return []
-}
-
-function formatUnitNumber(strategy, padding, sequence, target) {
-  const suffix = String(sequence).padStart(padding, '0')
-
-  if (strategy === 'phase' && target?.phaseName) {
-    return `${normalizeCodeFragment(target.phaseName, 'PH')}-${suffix}`
-  }
-
-  if (strategy === 'block' && target?.blockName) {
-    return `${normalizeCodeFragment(target.blockName, 'BL')}-${suffix}`
-  }
-
-  if (strategy === 'phase_block' && (target?.phaseName || target?.blockName)) {
-    const prefix = [target?.phaseName && normalizeCodeFragment(target.phaseName, 'PH'), target?.blockName && normalizeCodeFragment(target.blockName, 'BL')]
-      .filter(Boolean)
-      .join('-')
-    return `${prefix}-${suffix}`
-  }
-
-  return suffix
-}
-
-function generateUnitsFromStockPlan(stockPlan) {
-  const targets = buildStructureTargets(stockPlan)
-  const perTargetCounters = new Map()
-  let globalCounter = 1
-
-  return stockPlan.unitTypes.flatMap((unitType) =>
-    unitType.floorplans.flatMap((floorplan) => {
-      const allocations = resolveFloorplanDistribution(floorplan, targets)
-
-      return allocations.flatMap(({ target, quantity }) =>
-        Array.from({ length: quantity }, () => {
-          const currentCounter = (perTargetCounters.get(target.id) || 0) + 1
-          perTargetCounters.set(target.id, currentCounter)
-          const sequence = stockPlan.numberingStrategy === 'sequential' ? globalCounter++ : currentCounter
-
-          return {
-            ...buildEmptyUnit(),
-            unitNumber: formatUnitNumber(stockPlan.numberingStrategy, stockPlan.numberingPadding || 3, sequence, target),
-            unitLabel: `${unitType.name || 'Unit'}${floorplan.name ? ` • ${floorplan.name}` : ''}`,
-            unitType: unitType.name,
-            phase: target.phaseName || '',
-            block: target.blockName || '',
-            sizeSqm: floorplan.sizeSqm,
-            listPrice: floorplan.listPrice,
-            status: unitType.defaultStatus || 'Available',
-            floorplanId: '',
-          }
-        }),
-      )
-    }),
-  )
-}
-
 function buildFloorplanDocumentsFromUnitTypes(unitTypes) {
   const seen = new Set()
 
@@ -574,144 +378,6 @@ function buildFloorplanDocumentsFromUnitTypes(unitTypes) {
   )
 }
 
-function buildStockSummary(stockPlan) {
-  const generatedUnits = generateUnitsFromStockPlan(stockPlan)
-  const typeCounts = {}
-  const floorplanCounts = {}
-  const structureCounts = {}
-  const plannedPhaseCounts = {}
-
-  generatedUnits.forEach((unit) => {
-    typeCounts[unit.unitType] = (typeCounts[unit.unitType] || 0) + 1
-    floorplanCounts[unit.floorplanId] = (floorplanCounts[unit.floorplanId] || 0) + 1
-
-    const structureKey = [unit.phase, unit.block].filter(Boolean).join(' / ') || 'Single Release'
-    structureCounts[structureKey] = (structureCounts[structureKey] || 0) + 1
-  })
-
-  stockPlan.phases.forEach((phase) => {
-    if (Number(phase.plannedUnits || 0) > 0) {
-      plannedPhaseCounts[phase.name || `Phase ${phase.order}`] = Number(phase.plannedUnits || 0)
-    }
-  })
-
-  const warnings = []
-  stockPlan.unitTypes.forEach((unitType) => {
-    if (!String(unitType.name || '').trim()) warnings.push('A unit type is missing its name.')
-    if (!(unitType.floorplans || []).length) warnings.push(`${unitType.name || 'A unit type'} has no floorplans.`)
-
-    unitType.floorplans.forEach((floorplan) => {
-      if (!String(floorplan.name || '').trim()) warnings.push(`${unitType.name || 'A unit type'} has a floorplan without a name.`)
-      if (!Number(floorplan.quantity || 0)) warnings.push(`${floorplan.name || 'A floorplan'} has no quantity.`)
-      if (!Number(floorplan.sizeSqm || 0)) warnings.push(`${floorplan.name || 'A floorplan'} is missing its size.`)
-      if (!Number(floorplan.listPrice || 0)) warnings.push(`${floorplan.name || 'A floorplan'} is missing its price.`)
-      if (buildStructureTargets(stockPlan).length > 1 && floorplan.distributionMode !== 'custom') {
-        warnings.push(`${floorplan.name || 'A floorplan'} still needs explicit phase or block allocation.`)
-      }
-    })
-  })
-
-  Object.entries(plannedPhaseCounts).forEach(([phaseName, plannedCount]) => {
-    const generatedCount = structureCounts[phaseName] || 0
-    if (generatedCount !== plannedCount) {
-      warnings.push(`${phaseName} is planned for ${plannedCount} units but the current stock setup generates ${generatedCount}.`)
-    }
-  })
-
-  return {
-    totalUnits: generatedUnits.length,
-    generatedUnits,
-    typeCounts,
-    floorplanCounts,
-    structureCounts,
-    plannedPhaseCounts,
-    warnings: Array.from(new Set(warnings)),
-  }
-}
-
-function getStructureTypeLabel(structureType) {
-  if (structureType === 'phases') return 'By phase'
-  if (structureType === 'blocks') return 'By block'
-  if (structureType === 'phase_and_block') return 'By phase and block'
-  return 'Single release'
-}
-
-function validateStockStep(stockPlan, stockStepIndex) {
-  if (stockStepIndex === 0) {
-    if (stockPlan.structureType === 'phases' && !stockPlan.phases.length) {
-      throw new Error('Add at least one phase.')
-    }
-    if (stockPlan.structureType === 'phases' && stockPlan.phases.some((phase) => !Number(phase.plannedUnits || 0))) {
-      throw new Error('Enter the planned unit count for each phase.')
-    }
-    if (stockPlan.structureType === 'blocks' && !stockPlan.blocks.length) {
-      throw new Error('Add at least one block.')
-    }
-    if (stockPlan.structureType === 'phase_and_block') {
-      if (!stockPlan.phases.length) {
-        throw new Error('Add at least one phase.')
-      }
-      if (stockPlan.phases.some((phase) => !Number(phase.plannedUnits || 0))) {
-        throw new Error('Enter the planned unit count for each phase.')
-      }
-      if (stockPlan.phases.some((phase) => !(phase.blocks || []).length)) {
-        throw new Error('Each phase needs at least one block.')
-      }
-    }
-  }
-
-  if (stockStepIndex === 1) {
-    const availableTargets = buildStructureTargets(stockPlan)
-
-    if (!stockPlan.unitTypes.length) {
-      throw new Error('Add at least one unit type.')
-    }
-
-    stockPlan.unitTypes.forEach((unitType) => {
-      if (!String(unitType.name || '').trim()) {
-        throw new Error('Each unit type needs a name.')
-      }
-      if (!(unitType.floorplans || []).length) {
-        throw new Error(`${unitType.name} needs at least one floorplan.`)
-      }
-
-      unitType.floorplans.forEach((floorplan) => {
-        if (!String(floorplan.name || '').trim()) {
-          throw new Error(`A floorplan in ${unitType.name} is missing a name.`)
-        }
-        if (!Number(floorplan.quantity || 0)) {
-          throw new Error(`${floorplan.name} needs a quantity greater than zero.`)
-        }
-        if (!Number(floorplan.sizeSqm || 0)) {
-          throw new Error(`${floorplan.name} needs a size in sqm.`)
-        }
-        if (!Number(floorplan.listPrice || 0)) {
-          throw new Error(`${floorplan.name} needs a list price.`)
-        }
-        if (availableTargets.length > 1 && floorplan.distributionMode !== 'custom') {
-          throw new Error(`${floorplan.name} needs custom phase or block allocation. Arch9 will not auto-split grouped stock.`)
-        }
-        if (floorplan.distributionMode === 'selected' && availableTargets.length > 1 && !(floorplan.selectedTargetIds || []).length) {
-          throw new Error(`${floorplan.name} needs at least one selected target.`)
-        }
-        if (floorplan.distributionMode === 'custom') {
-          const totalCustom = (floorplan.customDistribution || []).reduce((sum, entry) => sum + Number(entry.quantity || 0), 0)
-          if (totalCustom !== Number(floorplan.quantity || 0)) {
-            throw new Error(`${floorplan.name} custom distribution must equal the floorplan quantity.`)
-          }
-        }
-      })
-    })
-  }
-
-  if (stockStepIndex === 2) {
-    const summary = buildStockSummary(stockPlan)
-    if (!summary.totalUnits) {
-      throw new Error('The stock plan must generate at least one unit.')
-    }
-  }
-}
-
 function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'developer' }) {
   const isAgentContext = String(contextRole || '').trim().toLowerCase() === 'agent'
   const { profile, workspace } = useWorkspace()
@@ -732,20 +398,19 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
   const [documents, setDocuments] = useState([buildEmptyDocument()])
   const [developmentType, setDevelopmentType] = useState('residential')
   const [unitConfigurationMethod, setUnitConfigurationMethod] = useState('import_later')
-  const [summaryOpen, setSummaryOpen] = useState(false)
-  const [stockPlan, setStockPlan] = useState({
-    structureType: 'none',
-    phases: [],
-    blocks: [],
-    unitTypes: [buildEmptyUnitTypeDraft()],
-    numberingStrategy: 'sequential',
-    numberingPadding: 3,
-  })
+  const [savedDevelopment, setSavedDevelopment] = useState(null)
+  const [saveWarnings, setSaveWarnings] = useState([])
+  const [stockPlan, setStockPlan] = useState(createStockPlan)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const formRef = useRef(null)
   const activeSteps = useMemo(() => getStepsForContext(), [])
   const currentStepId = activeSteps[stepIndex]?.id || activeSteps[0]?.id || 'basic'
   const maxStepIndex = Math.max(activeSteps.length - 1, 0)
+
+  useEffect(() => {
+    formRef.current?.closest('.ui-modal-body')?.scrollTo?.({ top: 0 })
+  }, [stepIndex, stockStepIndex, error, savedDevelopment])
 
   useEffect(() => {
     if (!open) return
@@ -767,15 +432,9 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
     setDocuments([buildEmptyDocument()])
     setDevelopmentType('residential')
     setUnitConfigurationMethod('import_later')
-    setSummaryOpen(false)
-    setStockPlan({
-      structureType: 'none',
-      phases: [],
-      blocks: [],
-      unitTypes: [buildEmptyUnitTypeDraft()],
-      numberingStrategy: 'sequential',
-      numberingPadding: 3,
-    })
+    setSavedDevelopment(null)
+    setSaveWarnings([])
+    setStockPlan(createStockPlan())
     setSaving(false)
     setError('')
   }, [open, profile, workspace])
@@ -849,7 +508,6 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
   }, [isAgentContext, open])
 
   const stockSummary = useMemo(() => buildStockSummary(stockPlan), [stockPlan])
-  const stockTargets = useMemo(() => buildStructureTargets(stockPlan), [stockPlan])
 
   const derivedTotals = useMemo(() => {
     const totalProjectedCost = ['landCost', 'buildCost', 'professionalFees', 'marketingCost', 'infrastructureCost', 'otherCosts'].reduce(
@@ -872,175 +530,6 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
     setDocuments((previous) => previous.map((item, itemIndex) => (itemIndex === index ? { ...item, [key]: value } : item)))
   }
 
-  function updatePhase(index, value) {
-    updatePhaseField(index, 'name', value)
-  }
-
-  function updatePhaseField(index, key, value) {
-    setStockPlan((previous) => ({
-      ...previous,
-      phases: previous.phases.map((phase, phaseIndex) => (phaseIndex === index ? { ...phase, [key]: value } : phase)),
-    }))
-  }
-
-  function updateBlock(index, value) {
-    setStockPlan((previous) => ({
-      ...previous,
-      blocks: previous.blocks.map((block, blockIndex) => (blockIndex === index ? { ...block, name: value } : block)),
-    }))
-  }
-
-  function updatePhaseBlock(phaseIndex, blockIndex, value) {
-    setStockPlan((previous) => ({
-      ...previous,
-      phases: previous.phases.map((phase, currentPhaseIndex) =>
-        currentPhaseIndex === phaseIndex
-          ? {
-              ...phase,
-              blocks: (phase.blocks || []).map((block, currentBlockIndex) =>
-                currentBlockIndex === blockIndex ? { ...block, name: value } : block,
-              ),
-            }
-          : phase,
-      ),
-    }))
-  }
-
-  function updateUnitType(index, key, value) {
-    setStockPlan((previous) => ({
-      ...previous,
-      unitTypes: previous.unitTypes.map((unitType, unitTypeIndex) => (unitTypeIndex === index ? { ...unitType, [key]: value } : unitType)),
-    }))
-  }
-
-  function updateFloorplan(unitTypeIndex, floorplanIndex, key, value) {
-    setStockPlan((previous) => ({
-      ...previous,
-      unitTypes: previous.unitTypes.map((unitType, currentUnitTypeIndex) =>
-        currentUnitTypeIndex === unitTypeIndex
-          ? {
-              ...unitType,
-              floorplans: unitType.floorplans.map((floorplan, currentFloorplanIndex) =>
-                currentFloorplanIndex === floorplanIndex ? { ...floorplan, [key]: value } : floorplan,
-              ),
-            }
-          : unitType,
-      ),
-    }))
-  }
-
-  function setStructureType(value) {
-    setStockPlan((previous) => ({
-      ...previous,
-      structureType: value,
-      phases: value === 'phases' || value === 'phase_and_block' ? previous.phases : [],
-      blocks: value === 'blocks' ? previous.blocks : [],
-      unitTypes: previous.unitTypes.map((unitType) => ({
-        ...unitType,
-        floorplans: unitType.floorplans.map((floorplan) => ({
-          ...floorplan,
-          distributionMode: value === 'none' ? 'all' : 'custom',
-          selectedTargetIds: [],
-          customDistribution: value === 'none' ? [] : floorplan.customDistribution,
-        })),
-      })),
-    }))
-  }
-
-  function setPhaseCount(value) {
-    const count = Math.max(Number(value || 0), 0)
-    setStockPlan((previous) => ({
-      ...previous,
-      phases: Array.from({ length: count }, (_, index) => {
-        const existing = previous.phases[index]
-        return existing || buildPhaseDraft(`Phase ${index + 1}`, index + 1)
-      }),
-    }))
-  }
-
-  function setBlockCount(value) {
-    const count = Math.max(Number(value || 0), 0)
-    setStockPlan((previous) => ({
-      ...previous,
-      blocks: Array.from({ length: count }, (_, index) => {
-        const existing = previous.blocks[index]
-        return existing || buildBlockDraft(`Block ${String.fromCharCode(65 + index)}`, index + 1)
-      }),
-    }))
-  }
-
-  function setPhaseAndBlockCounts(phaseCountValue, blockCountValue) {
-    const phaseCount = Math.max(Number(phaseCountValue || 0), 0)
-    const blockCount = Math.max(Number(blockCountValue || 0), 0)
-    setStockPlan((previous) => ({
-      ...previous,
-      phases: Array.from({ length: phaseCount }, (_, phaseIndex) => {
-        const existingPhase = previous.phases[phaseIndex] || buildPhaseDraft(`Phase ${phaseIndex + 1}`, phaseIndex + 1)
-        return {
-          ...existingPhase,
-          blocks: Array.from({ length: blockCount }, (_, blockIndex) => {
-            const existingBlock = (existingPhase.blocks || [])[blockIndex]
-            return existingBlock || buildBlockDraft(`Block ${String.fromCharCode(65 + blockIndex)}`, blockIndex + 1)
-          }),
-        }
-      }),
-    }))
-  }
-
-  function addUnitType() {
-    setStockPlan((previous) => ({
-      ...previous,
-      unitTypes: [...previous.unitTypes, buildEmptyUnitTypeDraft(previous.structureType === 'none' ? 'all' : 'custom')],
-    }))
-  }
-
-  function addFloorplan(unitTypeIndex) {
-    setStockPlan((previous) => ({
-      ...previous,
-      unitTypes: previous.unitTypes.map((unitType, index) =>
-        index === unitTypeIndex
-          ? {
-              ...unitType,
-              floorplans: [...unitType.floorplans, buildEmptyFloorplanDraft(previous.structureType === 'none' ? 'all' : 'custom')],
-            }
-          : unitType,
-      ),
-    }))
-  }
-
-  function removeUnitType(unitTypeIndex) {
-    setStockPlan((previous) => ({
-      ...previous,
-      unitTypes: previous.unitTypes.filter((_, index) => index !== unitTypeIndex),
-    }))
-  }
-
-  function removeFloorplan(unitTypeIndex, floorplanIndex) {
-    setStockPlan((previous) => ({
-      ...previous,
-      unitTypes: previous.unitTypes.map((unitType, index) =>
-        index === unitTypeIndex
-          ? { ...unitType, floorplans: unitType.floorplans.filter((_, currentFloorplanIndex) => currentFloorplanIndex !== floorplanIndex) }
-          : unitType,
-      ),
-    }))
-  }
-
-  function setCustomDistributionValue(unitTypeIndex, floorplanIndex, target, quantityValue) {
-    const currentFloorplan = stockPlan.unitTypes[unitTypeIndex]?.floorplans?.[floorplanIndex]
-    const nextDistribution = [...(currentFloorplan?.customDistribution || [])]
-    const existingIndex = nextDistribution.findIndex((entry) => entry.targetId === target.id)
-    const normalizedQuantity = Number(quantityValue || 0)
-
-    if (existingIndex >= 0) {
-      nextDistribution[existingIndex] = { ...nextDistribution[existingIndex], quantity: normalizedQuantity, targetType: target.targetType }
-    } else {
-      nextDistribution.push({ targetId: target.id, targetType: target.targetType, quantity: normalizedQuantity })
-    }
-
-    updateFloorplan(unitTypeIndex, floorplanIndex, 'customDistribution', nextDistribution)
-  }
-
   function updateLegalList(key, index, field, value) {
     setLegal((previous) => ({
       ...previous,
@@ -1054,6 +543,7 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
 
   function hasDeveloperAccessDraft() {
     if (!isAgentContext) return false
+    if (developerAccess.mode === 'later') return false
     if (developerAccess.mode === 'invite') {
       return [
         developerAccess.inviteCompanyName,
@@ -1118,6 +608,7 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
     recipientPhone = '',
     onboardingLink = '',
   } = {}) {
+    const warnings = []
     const normalizedEmail = String(recipientEmail || '').trim().toLowerCase()
     const normalizedPhone = formatSouthAfricanWhatsAppNumber(recipientPhone)
     const safeContactName = String(contactName || '').trim() || 'Developer'
@@ -1141,6 +632,7 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
         })
       } catch (emailError) {
         console.error('[Development Invite] developer email notification failed', emailError)
+        warnings.push({ message: 'The development was saved, but the developer email invitation could not be confirmed.' })
       }
     }
 
@@ -1153,30 +645,54 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
         })
       } catch (whatsappError) {
         console.error('[Development Invite] developer WhatsApp notification failed', whatsappError)
+        warnings.push({ message: 'The development was saved, but the developer WhatsApp invitation could not be confirmed.' })
+      }
+    }
+    return warnings
+  }
+
+  function validateDevelopmentDetails() {
+    if (!details.name.trim()) {
+      throw new Error('Development name is required.')
+    }
+    if (!details.address.trim() && !details.suburb.trim() && !details.city.trim()) {
+      throw new Error('Add at least a street address, suburb, or city for the development.')
+    }
+    const plannedUnits = Number(details.totalUnitsExpected || 0)
+    if (unitConfigurationMethod !== 'generate_range' && (!Number.isInteger(plannedUnits) || plannedUnits < 0)) {
+      throw new Error('Planned units must be a whole number of 0 or greater.')
+    }
+    if (details.launchDate && details.expectedCompletionDate && details.expectedCompletionDate < details.launchDate) {
+      throw new Error('Expected completion must be on or after the launch date.')
+    }
+  }
+
+  function validateSalesSetup() {
+    if (isAgentContext && hasDeveloperAccessDraft()) {
+      if (developerAccess.mode === 'invite') {
+        if (
+          !String(developerAccess.inviteCompanyName || '').trim() ||
+          !String(developerAccess.inviteContactName || '').trim() ||
+          !String(developerAccess.inviteEmail || '').trim()
+        ) {
+          throw new Error('Developer company name, contact name, and email are required for new developer invites.')
+        }
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(developerAccess.inviteEmail.trim())) {
+          throw new Error('Enter a valid developer email address.')
+        }
+      }
+    }
+    if (transactionDefaults.reservationDepositEnabled) {
+      const amount = Number(transactionDefaults.reservationDepositAmount)
+      if (!String(transactionDefaults.reservationDepositAmount).trim() || !Number.isFinite(amount) || amount <= 0 || (transactionDefaults.reservationDepositAmountType === 'percentage' && amount > 100)) {
+        throw new Error('Enter a positive reservation deposit amount. A percentage must be 100 or less.')
       }
     }
   }
 
   function validateCurrentStep() {
-    if (currentStepId === 'basic') {
-      if (!details.name.trim()) {
-        throw new Error('Development name is required.')
-      }
-      if (!details.address.trim() && !details.suburb.trim() && !details.city.trim()) {
-        throw new Error('Add at least a street address, suburb, or city for the development.')
-      }
-      if (isAgentContext && hasDeveloperAccessDraft()) {
-        if (developerAccess.mode === 'invite') {
-          if (
-            !String(developerAccess.inviteCompanyName || '').trim() ||
-            !String(developerAccess.inviteContactName || '').trim() ||
-            !String(developerAccess.inviteEmail || '').trim()
-          ) {
-            throw new Error('Developer company name, contact name, and email are required for new developer invites.')
-          }
-        }
-      }
-    }
+    if (currentStepId === 'basic' || currentStepId === 'units') validateDevelopmentDetails()
+    if (currentStepId === 'financials') validateSalesSetup()
   }
 
   function handleNext() {
@@ -1187,6 +703,22 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
     } catch (stepError) {
       setError(stepError.message)
     }
+  }
+
+  function updateStockPlan(updater) {
+    setStockPlan((previous) => {
+      const next = updater(previous)
+      const targetIds = new Set(buildStockTargets(next).map((target) => target.id))
+      return {
+        ...next,
+        unitTypes: next.unitTypes.map((type) => ({
+          ...type,
+          floorplans: type.floorplans.map((layout) => ({
+            ...layout, allocations: layout.allocations.filter((entry) => targetIds.has(entry.targetId)),
+          })),
+        })),
+      }
+    })
   }
 
   function handleStockStepNext() {
@@ -1209,37 +741,59 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
       setError('')
       validateStockStep(stockPlan, 2)
       const generatedUnits = stockSummary.generatedUnits
-      const generatedFloorplans = buildFloorplanDocumentsFromUnitTypes(stockPlan.unitTypes)
 
       setUnits(generatedUnits)
       setDetails((previous) => ({
         ...previous,
         totalUnitsExpected: String(generatedUnits.length),
       }))
-      setDocuments((previous) => {
-        const existingKeys = new Set(previous.map((item) => `${item.documentType}::${item.title}::${item.linkedUnitType}`))
-        const merged = [...previous.filter((item) => item.title || item.fileUrl || item.description)]
-        generatedFloorplans.forEach((item) => {
-          const key = `${item.documentType}::${item.title}::${item.linkedUnitType}`
-          if (!existingKeys.has(key)) {
-            merged.push(item)
-          }
-        })
-        return merged.length ? merged : [buildEmptyDocument()]
-      })
       setStepIndex((previous) => Math.min(previous + 1, maxStepIndex))
     } catch (stockError) {
       setError(stockError.message)
     }
   }
 
+  function handleContinue(event) {
+    // The final step replaces this button with a submit button during the click.
+    // Cancel the original click's default action before React updates its type.
+    event?.preventDefault()
+    if (currentStepId === 'units' && unitConfigurationMethod === 'generate_range') {
+      if (stockStepIndex === 2) handleFinalizeStock()
+      else handleStockStepNext()
+    } else {
+      handleNext()
+    }
+  }
+
   async function submitDevelopment(statusOverride = '') {
+    if (saving || savedDevelopment) return
     try {
       setError('')
-      validateCurrentStep()
+      try {
+        validateDevelopmentDetails()
+      } catch (validationError) {
+        setStepIndex(0)
+        throw validationError
+      }
+      try {
+        validateSalesSetup()
+      } catch (validationError) {
+        setStepIndex(2)
+        throw validationError
+      }
+      if (unitConfigurationMethod === 'generate_range') {
+        try {
+          validateStockStep(stockPlan, 2)
+        } catch (stockError) {
+          setStepIndex(1)
+          try { validateStockStep(stockPlan, 0); setStockStepIndex(1) }
+          catch { setStockStepIndex(0) }
+          throw stockError
+        }
+      }
       setSaving(true)
 
-      const effectiveDetails = statusOverride ? { ...details, status: statusOverride } : details
+      const effectiveDetails = { ...details, status: statusOverride || 'active' }
       const primaryConveyancer = legal.conveyancers.find((item) => String(item.firmName || item.contactName || item.email || '').trim())
       const primaryBondOriginator = legal.bondOriginators.find((item) => String(item.name || item.contactName || item.email || '').trim())
       const commissionType = primaryBondOriginator?.commission_type || legal.commission_type || 'purchase_price'
@@ -1276,8 +830,9 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
           ...effectiveDetails,
           organisationId: workspace?.id || workspace?.organisation_id || workspace?.organisationId || null,
           developerCompany: resolvedDeveloperCompany,
+          marketingContent: { listingOverview: { developmentType } },
           location: getResolvedDevelopmentLocation(effectiveDetails),
-          totalUnitsExpected: normalizeOptionalNumber(effectiveDetails.totalUnitsExpected) ?? derivedTotals.unitCount,
+          totalUnitsExpected: unitConfigurationMethod === 'generate_range' ? stockSummary.totalUnits : normalizeOptionalNumber(effectiveDetails.totalUnitsExpected) ?? derivedTotals.unitCount,
         },
         financials: {
           ...financials,
@@ -1326,14 +881,15 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
             rolePlayerDefaults,
           },
         },
-        units: units
+        structureNodes: unitConfigurationMethod === 'generate_range' ? stockSummary.structureNodes : [],
+        units: (unitConfigurationMethod === 'generate_range' ? stockSummary.generatedUnits : [])
           .filter((unit) => String(unit.unitNumber || '').trim())
           .map((unit) => ({
             ...unit,
             sizeSqm: normalizeOptionalNumber(unit.sizeSqm),
             listPrice: normalizeOptionalNumber(unit.listPrice) ?? 0,
           })),
-        documents: documents
+        documents: (unitConfigurationMethod === 'generate_range' ? buildFloorplanDocumentsFromUnitTypes(stockPlan.unitTypes) : documents)
           .filter((document) => String(document.title || '').trim())
           .map((document) => ({
             ...document,
@@ -1341,25 +897,40 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
           })),
       })
 
-      await upsertAreaFromAddress(buildDevelopmentAddressValue(effectiveDetails), { incrementListingCount: false })
+      setSavedDevelopment(created)
+      const warnings = [...(created.warnings || [])]
+      try {
+        await upsertAreaFromAddress(buildDevelopmentAddressValue(effectiveDetails), { incrementListingCount: false })
+      } catch {
+        warnings.push({ message: 'The development was saved, but its area directory entry could not be updated.' })
+      }
 
       if (isAgentContext && developerAccess.mode === 'invite') {
         const inviteEntry = developerTeam[0] || null
         if (inviteEntry?.onboardingLink) {
-          await sendDeveloperInviteNotifications({
+          const inviteWarnings = await sendDeveloperInviteNotifications({
             companyName: inviteEntry.company,
             contactName: inviteEntry.contactName || inviteEntry.name,
             recipientEmail: inviteEntry.email,
             recipientPhone: inviteEntry.phone,
             onboardingLink: inviteEntry.onboardingLink,
           })
+          warnings.push(...inviteWarnings)
         }
       }
 
       onCreated?.(created)
-      onClose()
+      setSaveWarnings(warnings)
+      if (!warnings.length) onClose()
     } catch (submitError) {
-      setError(submitError.message)
+      if (submitError.developmentId) {
+        const existing = { id: submitError.developmentId, name: details.name }
+        setSavedDevelopment(existing)
+        setSaveWarnings([{ message: submitError.message }])
+        onCreated?.(existing)
+      } else {
+        setError(submitError.message)
+      }
     } finally {
       setSaving(false)
     }
@@ -1367,12 +938,15 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
 
   async function handleSubmit(event) {
     event.preventDefault()
+    if (currentStepId !== 'review') {
+      handleContinue()
+      return
+    }
     await submitDevelopment()
   }
 
   async function handleSaveDraft(event) {
     event.preventDefault()
-    setDetails((previous) => ({ ...previous, status: 'draft' }))
     await submitDevelopment('draft')
   }
 
@@ -1400,81 +974,23 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
     partnerDefaultName(defaultAgency) ||
     legal.agents.find((item) => String(item.company || item.name || item.email || '').trim())?.company ||
     ''
-  const summaryLocation = getResolvedDevelopmentLocation(details) || 'Not added'
-  const plannedUnits = details.totalUnitsExpected || derivedTotals.unitCount || stockSummary.totalUnits || 0
-  const basicsComplete = Boolean(details.name.trim() && (details.address.trim() || details.suburb.trim() || details.city.trim()))
-  const unitsComplete = Boolean(Number(plannedUnits) > 0 || unitConfigurationMethod === 'import_later')
-  const readyToCreate = basicsComplete && unitsComplete
-
-  const summaryPanel = (
-    <aside className="lg:sticky lg:top-4">
-      <button
-        type="button"
-        className="flex w-full items-center justify-between rounded-[18px] border border-[#dde6ef] bg-white px-4 py-3 text-left text-sm font-semibold text-[#142132] shadow-[0_12px_30px_rgba(15,23,42,0.05)] lg:hidden"
-        onClick={() => setSummaryOpen((previous) => !previous)}
-      >
-        Development Summary
-        <span className="text-[#1f7a5a]">{summaryOpen ? 'Hide' : 'Show'}</span>
-      </button>
-      <div className={`${summaryOpen ? 'mt-3 block' : 'hidden'} rounded-[22px] border border-[#dde6ef] bg-white p-5 shadow-[0_18px_48px_rgba(15,23,42,0.07)] lg:block`}>
-        <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">Development Summary</h4>
-        <div className="mt-5 space-y-4">
-          {[
-            ['Development', details.name || 'Not named yet'],
-            ['Developer', details.developerCompany || developerAccess.selectedDeveloperCompany || developerAccess.inviteCompanyName || 'Not selected'],
-            ['Location', summaryLocation],
-            ['Units', `${plannedUnits || 0} planned`],
-            ['Status', details.status || 'Draft'],
-          ].map(([label, value]) => (
-            <div key={label} className="border-b border-[#edf2f7] pb-3 last:border-b-0">
-              <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[#8ba0b8]">{label}</span>
-              <strong className="mt-1 block text-sm font-semibold text-[#142132]">{value}</strong>
-            </div>
-          ))}
-        </div>
-        <div className="mt-5 rounded-[18px] border border-[#edf2f7] bg-[#f8fbff] p-4">
-          <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[#8ba0b8]">Defaults</span>
-          <div className="mt-3 space-y-2 text-sm text-[#35546c]">
-            <p>Agency <strong className="float-right text-[#142132]">{agencyDefaultName || (transactionDefaults.defaultAgentSource === 'none' ? '-' : 'Preferred')}</strong></p>
-            <p>Transfer Attorney <strong className="float-right text-[#142132]">{transferAttorneyDefaultName || (transactionDefaults.defaultTransferAttorneySource === 'none' ? '-' : 'Preferred')}</strong></p>
-            <p>Bond Originator <strong className="float-right text-[#142132]">{bondOriginatorDefaultName || (transactionDefaults.defaultBondOriginatorSource === 'none' ? '-' : 'Preferred')}</strong></p>
-          </div>
-        </div>
-        <div className="mt-5 rounded-[18px] border border-[#d8e7dc] bg-[#f3fbf5] p-4">
-          <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[#1f7a5a]">Completion</span>
-          <div className="mt-3 space-y-2 text-sm font-medium">
-            {[
-              ['Basics', basicsComplete],
-              ['Units', unitsComplete],
-              ['Ready to create', readyToCreate],
-            ].map(([label, complete]) => (
-              <p key={label} className={complete ? 'text-[#1f7a5a]' : 'text-[#6b7d93]'}>
-                {complete ? '✓' : '○'} {label}
-              </p>
-            ))}
-          </div>
-        </div>
-      </div>
-    </aside>
-  )
-
   return (
     <Modal
       open={open}
       onClose={saving ? undefined : onClose}
       title="New Development"
-      subtitle="Create the development shell. Units, team members and transaction defaults can be refined after setup."
-      className="max-w-[1400px]"
+      className="development-create-dialog"
     >
       <div className="space-y-5">
         <div className="overflow-x-auto">
-          <ol className="flex min-w-max flex-nowrap items-center gap-3 px-1">
+          <ol className="development-create-progress" aria-label="Development setup progress">
           {activeSteps.map((step, index) => {
             const status = index === stepIndex ? 'active' : index < stepIndex ? 'complete' : ''
             return (
               <li
                 key={step.id}
-                className={`flex min-w-[160px] items-center gap-2 ${
+                aria-current={status === 'active' ? 'step' : undefined}
+                className={`flex items-center gap-2 ${
                   status === 'active'
                     ? 'text-[#142132]'
                     : status === 'complete'
@@ -1483,7 +999,7 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
                 }`}
               >
                 <span
-                  className={`flex h-8 w-8 items-center justify-center rounded-full border text-xs font-semibold ${
+                  className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-xs font-semibold ${
                     status === 'active'
                       ? 'border-[#102236] bg-[#102236] text-white'
                       : status === 'complete'
@@ -1494,9 +1010,9 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
                   {index + 1}
                 </span>
                 <div className="min-w-0">
-                  <strong className="block truncate text-sm font-semibold">{step.label}</strong>
+                  <strong className="block text-sm font-semibold">{step.label}</strong>
                 </div>
-                {index < activeSteps.length - 1 ? <span className="ml-2 hidden h-px w-12 bg-[#dce5ef] sm:block" /> : null}
+                {index < activeSteps.length - 1 ? <span className="ml-1 hidden h-px flex-1 bg-[#dce5ef] lg:block" /> : null}
               </li>
             )
           })}
@@ -1504,132 +1020,121 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
         </div>
 
         {error ? (
-          <p className="rounded-[18px] border border-[#f1c9c5] bg-[#fff5f4] px-4 py-3 text-sm font-medium text-[#b42318]">{error}</p>
+          <p role="alert" className="rounded-[18px] border border-[#f1c9c5] bg-[#fff5f4] px-4 py-3 text-sm font-medium text-[#b42318]">{error}</p>
+        ) : null}
+
+        {savedDevelopment ? (
+          <div className="development-create-receipt" role="status">
+            <strong>{details.name} has been created.</strong>
+            {saveWarnings.length ? <ul>{saveWarnings.map((warning, index) => <li key={index}>{warning.message}</li>)}</ul> : null}
+            <p>Continue in the saved development workspace to complete or check its setup.</p>
+            <div className="flex flex-wrap items-center gap-3">
+              <a className="font-semibold text-[#1f7a5a] underline" href={`/developments/${savedDevelopment.id}`}>Open development</a>
+              <Button type="button" variant="secondary" onClick={onClose}>Close</Button>
+            </div>
+          </div>
         ) : null}
 
         <form
+          ref={formRef}
           onSubmit={handleSubmit}
-          className="space-y-6 [&_.full-width]:md:col-span-2 [&_.full-width]:xl:col-span-3 [&_input:not([type='checkbox'])]:w-full [&_input:not([type='checkbox'])]:rounded-[14px] [&_input:not([type='checkbox'])]:border [&_input:not([type='checkbox'])]:border-[#dde4ee] [&_input:not([type='checkbox'])]:bg-white [&_input:not([type='checkbox'])]:px-4 [&_input:not([type='checkbox'])]:py-3 [&_input:not([type='checkbox'])]:text-sm [&_input:not([type='checkbox'])]:text-[#162334] [&_input:not([type='checkbox'])]:shadow-[0_10px_24px_rgba(15,23,42,0.06)] [&_input:not([type='checkbox'])]:outline-none [&_input:not([type='checkbox'])]:transition [&_input:not([type='checkbox'])]:duration-150 [&_input:not([type='checkbox'])]:ease-out [&_input:not([type='checkbox'])]:placeholder:text-slate-400 [&_input:not([type='checkbox'])]:focus:border-[rgba(29,78,216,0.35)] [&_input:not([type='checkbox'])]:focus:ring-4 [&_input:not([type='checkbox'])]:focus:ring-[rgba(29,78,216,0.1)] [&_input[type='checkbox']]:h-5 [&_input[type='checkbox']]:w-5 [&_input[type='checkbox']]:rounded-md [&_input[type='checkbox']]:border [&_input[type='checkbox']]:border-[#c9d5e3] [&_input[type='checkbox']]:text-[#35546c] [&_input[type='checkbox']]:shadow-none [&_input[type='checkbox']]:accent-[#35546c] [&_select]:w-full [&_select]:rounded-[14px] [&_select]:border [&_select]:border-[#dde4ee] [&_select]:bg-white [&_select]:px-4 [&_select]:py-3 [&_select]:text-sm [&_select]:text-[#162334] [&_select]:shadow-[0_10px_24px_rgba(15,23,42,0.06)] [&_select]:outline-none [&_select]:transition [&_select]:duration-150 [&_select]:ease-out [&_select]:focus:border-[rgba(29,78,216,0.35)] [&_select]:focus:ring-4 [&_select]:focus:ring-[rgba(29,78,216,0.1)] [&_textarea]:w-full [&_textarea]:rounded-[14px] [&_textarea]:border [&_textarea]:border-[#dde4ee] [&_textarea]:bg-white [&_textarea]:px-4 [&_textarea]:py-3 [&_textarea]:text-sm [&_textarea]:text-[#162334] [&_textarea]:shadow-[0_10px_24px_rgba(15,23,42,0.06)] [&_textarea]:outline-none [&_textarea]:transition [&_textarea]:duration-150 [&_textarea]:ease-out [&_textarea]:placeholder:text-slate-400 [&_textarea]:focus:border-[rgba(29,78,216,0.35)] [&_textarea]:focus:ring-4 [&_textarea]:focus:ring-[rgba(29,78,216,0.1)] [&_label]:flex [&_label]:min-w-0 [&_label]:flex-col [&_label]:gap-2 [&_label]:text-sm [&_label]:font-medium [&_label]:text-[#233247]"
+          className="development-create-form"
+          noValidate
         >
-          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_360px]">
+          <fieldset className="development-create-content" disabled={saving || Boolean(savedDevelopment)}>
             <div className="min-w-0 space-y-6">
           {currentStepId === 'basic' ? (
-            <section className="rounded-[24px] border border-[#dde4ee] bg-white p-6 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
-              <div className="mb-4 space-y-1.5">
-                <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">Development Basics</h4>
-              </div>
-              <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-              <label>
-                Development Name
-                <input value={details.name} onChange={(event) => setDetails((previous) => ({ ...previous, name: event.target.value }))} />
-              </label>
-              <label>
-                Developer / Organisation
-                <input value={details.developerCompany} onChange={(event) => setDetails((previous) => ({ ...previous, developerCompany: event.target.value }))} />
-              </label>
-              <label>
-                Development Type
-                <select value={developmentType} onChange={(event) => setDevelopmentType(event.target.value)}>
-                  <option value="residential">Residential</option>
-                  <option value="mixed_use">Mixed-use</option>
-                  <option value="estate">Estate</option>
-                  <option value="sectional_title">Sectional title</option>
-                </select>
-              </label>
-              <div className="full-width">
-	                <AddressAutocomplete
-	                  label="Location / Address"
-	                  value={buildDevelopmentAddressValue(details)}
-	                  onChange={(nextAddress) => setDetails((previous) => mergeDevelopmentAddress(previous, nextAddress))}
-	                  onInputValueChange={(nextValue) => setDetails((previous) => ({
-	                    ...previous,
-	                    address: nextValue,
-	                    formattedAddress: nextValue,
-	                    streetAddress: nextValue,
-	                    googlePlaceId: '',
-	                  }))}
-	                  placeholder="12 Main Road Bedfordview"
-	                />
-              </div>
-              <label>
-                Province
-                <input value={details.province} onChange={(event) => setDetails((previous) => ({ ...previous, province: event.target.value }))} />
-              </label>
-              <label>
-                Status
-                <select value={details.status} onChange={(event) => setDetails((previous) => ({ ...previous, status: event.target.value }))}>
-                  <option value="draft">Draft</option>
-                  <option value="active">Active</option>
-                  <option value="completed">Completed</option>
-                  <option value="archived">Archived</option>
-                </select>
-              </label>
-              </div>
+            <div className="development-create-sections">
+              <section className="development-create-section" aria-labelledby="development-details-heading">
+                <h4 id="development-details-heading">Development Details</h4>
+                <div className="development-create-fields">
+                  <label className="full-width">Development Name
+                    <input autoFocus value={details.name} onChange={(event) => setDetails((previous) => ({ ...previous, name: event.target.value }))} placeholder="e.g. Willow Park" />
+                  </label>
+                  <fieldset className="development-type-picker full-width">
+                    <legend>Development Type</legend>
+                    <div className="development-type-options">
+                      {DEVELOPMENT_TYPES.map((option) => (
+                        <label key={option.value} className={`development-type-option${developmentType === option.value ? ' is-selected' : ''}`}>
+                          <input
+                            type="radio"
+                            name="developmentType"
+                            value={option.value}
+                            checked={developmentType === option.value}
+                            onChange={() => setDevelopmentType(option.value)}
+                          />
+                          <span className="development-type-icon"><option.icon size={24} strokeWidth={1.7} aria-hidden="true" /></span>
+                          <span>{option.label}</span>
+                          {developmentType === option.value ? <Check className="development-type-check" size={16} aria-hidden="true" /> : null}
+                        </label>
+                      ))}
+                    </div>
+                  </fieldset>
+                  <div className="full-width">
+                    <AddressAutocomplete
+                      label="Location / Address"
+                      value={buildDevelopmentAddressValue(details)}
+                      onChange={(nextAddress) => setDetails((previous) => mergeDevelopmentAddress(previous, nextAddress))}
+                      onInputValueChange={(nextValue) => setDetails((previous) => ({
+                        ...previous, address: nextValue, formattedAddress: nextValue,
+                        streetAddress: nextValue, googlePlaceId: '', latitude: null, longitude: null,
+                      }))}
+                      hideUnavailableMessage
+                      description="Search for an address or enter it manually below."
+                      placeholder="Search or enter the street address"
+                    />
+                  </div>
+                </div>
+              </section>
+              <section className="development-create-section" aria-labelledby="development-address-heading">
+                <h4 id="development-address-heading">Address details</h4>
+                <div className="development-create-fields">
+                  <label>Suburb<input value={details.suburb} onChange={(event) => setDetails((previous) => ({ ...previous, suburb: event.target.value }))} /></label>
+                  <label>City<input value={details.city} onChange={(event) => setDetails((previous) => ({ ...previous, city: event.target.value }))} /></label>
+                  <label>Province<input value={details.province} onChange={(event) => setDetails((previous) => ({ ...previous, province: event.target.value }))} /></label>
+                  <label>Postal Code<input value={details.postalCode} onChange={(event) => setDetails((previous) => ({ ...previous, postalCode: event.target.value }))} /></label>
+                  <label>Country<input value={details.country} onChange={(event) => setDetails((previous) => ({ ...previous, country: event.target.value }))} /></label>
+                </div>
+              </section>
+              <section className="development-create-section" aria-labelledby="development-project-heading">
+                <h4 id="development-project-heading">Project information</h4>
+                <div className="development-create-fields">
+                  <label className="full-width">Development Code <span className="development-create-hint">Optional</span><input value={details.code} onChange={(event) => setDetails((previous) => ({ ...previous, code: event.target.value }))} /></label>
+                  <label>Launch Date <span className="development-create-hint">Optional</span><input type="date" value={details.launchDate} onChange={(event) => setDetails((previous) => ({ ...previous, launchDate: event.target.value }))} /></label>
+                  <label>Expected Completion <span className="development-create-hint">Optional</span><input type="date" value={details.expectedCompletionDate} onChange={(event) => setDetails((previous) => ({ ...previous, expectedCompletionDate: event.target.value }))} /></label>
+                </div>
+              </section>
+            </div>
+          ) : null}
 
-              <details className="mt-5 rounded-[18px] border border-[#edf2f7] bg-[#fbfdff] p-4">
-                <summary className="cursor-pointer text-sm font-semibold text-[#142132]">Advanced Settings</summary>
-                <div className="mt-4 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-                  <label>
-                    Development Code
-                    <input value={details.code} onChange={(event) => setDetails((previous) => ({ ...previous, code: event.target.value }))} />
-                  </label>
-                  <label>
-                    Suburb
-                    <input value={details.suburb} onChange={(event) => setDetails((previous) => ({ ...previous, suburb: event.target.value }))} />
-                  </label>
-                  <label>
-                    City
-                    <input value={details.city} onChange={(event) => setDetails((previous) => ({ ...previous, city: event.target.value }))} />
-                  </label>
-                  <label>
-                    Postal Code
-                    <input value={details.postalCode} onChange={(event) => setDetails((previous) => ({ ...previous, postalCode: event.target.value }))} />
-                  </label>
-                  <label>
-                    Launch Date
-                    <input type="date" value={details.launchDate} onChange={(event) => setDetails((previous) => ({ ...previous, launchDate: event.target.value }))} />
-                  </label>
-                  <label>
-                    Expected Completion
-                    <input type="date" value={details.expectedCompletionDate} onChange={(event) => setDetails((previous) => ({ ...previous, expectedCompletionDate: event.target.value }))} />
-                  </label>
-                  <label>
-                    Country
-                    <input value={details.country} onChange={(event) => setDetails((previous) => ({ ...previous, country: event.target.value }))} />
+          {currentStepId === 'financials' ? (
+            <>
+              <section className="development-create-section" aria-labelledby="development-sales-heading">
+                <h4 id="development-sales-heading">Developer &amp; access</h4>
+                <div className="development-create-fields mb-5">
+                  <label className="full-width">Developer / Organisation
+                    <input value={details.developerCompany} onChange={(event) => setDetails((previous) => ({ ...previous, developerCompany: event.target.value }))} placeholder="Developer company name" />
                   </label>
                 </div>
-              </details>
-
               {isAgentContext ? (
-                <div className="mt-5 space-y-4 rounded-[20px] border border-[#dbe6f2] bg-[#f8fbff] p-4">
+                <div className="space-y-4">
                   <div>
                     <h5 className="text-sm font-semibold text-[#142132]">Developer Access</h5>
                     <p className="mt-1 text-sm text-[#6b7d93]">Optionally link an existing developer profile or invite a new developer when they are ready to access this development workspace.</p>
                   </div>
 
-                  <div className="grid gap-3 md:grid-cols-2">
-                    <button
+                  <div className="grid gap-3 md:grid-cols-3">
+                    {[
+                      { value: 'later', label: 'Add access later' },
+                      { value: 'existing', label: 'Select Existing Developer' },
+                      { value: 'invite', label: 'Invite New Developer' },
+                    ].map((option) => <button
+                      key={option.value}
                       type="button"
-                      onClick={() => updateDeveloperAccess('mode', 'existing')}
-                      className={`rounded-[14px] border px-4 py-3 text-left text-sm transition ${
-                        developerAccess.mode === 'existing'
-                          ? 'border-[#1f4f78] bg-[#1f4f78] text-white'
-                          : 'border-[#d8e3ef] bg-white text-[#35546c] hover:border-[#b7c8db]'
-                      }`}
-                    >
-                      Select Existing Developer
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => updateDeveloperAccess('mode', 'invite')}
-                      className={`rounded-[14px] border px-4 py-3 text-left text-sm transition ${
-                        developerAccess.mode === 'invite'
-                          ? 'border-[#1f4f78] bg-[#1f4f78] text-white'
-                          : 'border-[#d8e3ef] bg-white text-[#35546c] hover:border-[#b7c8db]'
-                      }`}
-                    >
-                      Invite New Developer
-                    </button>
+                      aria-pressed={developerAccess.mode === option.value}
+                      onClick={() => updateDeveloperAccess('mode', option.value)}
+                      className={`rounded-[10px] border px-4 py-3 text-left text-sm transition ${developerAccess.mode === option.value ? 'border-[#1f7a5a] bg-[#f3fbf5] text-[#1f6d3c]' : 'border-[#d8e3ef] bg-white text-[#35546c] hover:border-[#b7c8db]'}`}
+                    >{option.label}</button>)}
                   </div>
 
                   {developerAccess.mode === 'existing' ? (
@@ -1647,20 +1152,9 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
                           ))}
                         </select>
                       </label>
-                      <label>
-                        Developer contact
-                        <input value={developerAccess.selectedDeveloperName} readOnly />
-                      </label>
-                      <label>
-                        Developer email
-                        <input value={developerAccess.selectedDeveloperEmail} readOnly />
-                      </label>
-                      <label>
-                        Developer company
-                        <input value={developerAccess.selectedDeveloperCompany} readOnly />
-                      </label>
+                      {developerAccess.selectedDeveloperId ? <p className="development-create-hint full-width">{[developerAccess.selectedDeveloperName, developerAccess.selectedDeveloperEmail, developerAccess.selectedDeveloperCompany].filter(Boolean).join(' · ')}</p> : null}
                     </div>
-                  ) : (
+                  ) : developerAccess.mode === 'invite' ? (
                     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                       <label>
                         Developer company name
@@ -1696,18 +1190,14 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
                         />
                       </label>
                     </div>
-                  )}
+                  ) : null}
 
-                  {developerOptionsLoading ? <p className="text-sm text-[#6b7d93]">Loading developer profiles…</p> : null}
-                  {developerOptionsError ? <p className="text-sm text-[#b42318]">{developerOptionsError}</p> : null}
+                  {developerAccess.mode === 'existing' && developerOptionsLoading ? <p className="text-sm text-[#6b7d93]">Loading developer profiles…</p> : null}
+                  {developerAccess.mode === 'existing' && developerOptionsError ? <p className="text-sm text-[#b42318]">{developerOptionsError}</p> : null}
                 </div>
               ) : null}
-            </section>
-          ) : null}
-
-          {currentStepId === 'financials' ? (
-            <>
-              <section className="rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
+              </section>
+              <section className="development-create-section">
                 <div className="mb-4 space-y-1.5">
                   <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">Transaction Defaults</h4>
                   {partnerDefaultsLoading ? (
@@ -1721,78 +1211,55 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
                     </p>
                   )}
                 </div>
-                <div className="grid gap-4 lg:grid-cols-2">
+                <div className="development-create-fields">
                   {[
                     {
-                      title: 'Transfer Attorney',
-                      value: transactionDefaults.defaultTransferAttorneySource,
-                      preferredValue: defaultTransferAttorney ? 'developer_partner_default' : 'first_conveyancer',
-                      emptyValue: 'none',
-                      partnerName: transferAttorneyDefaultName || 'Preferred conveyancer',
-                      defaultRecord: defaultTransferAttorney,
+                      title: 'Default Agent', value: transactionDefaults.defaultAgentSource,
+                      preferredValue: defaultAgency ? 'developer_partner_default' : 'first_agent',
+                      partnerName: agencyDefaultName, defaultRecord: defaultAgency,
+                      disabled: transactionDefaults.developerSellingDirectly,
                       onChange: (value) => setTransactionDefaults((previous) => ({
-                        ...previous,
-                        defaultTransferAttorneySource: value,
-                        ...(defaultTransferAttorney && value === 'developer_partner_default'
-                          ? {
-                              defaultTransferAttorneyRelationshipId: defaultTransferAttorney.relationshipId || '',
-                              defaultTransferAttorneyPreferredPartnerId: defaultTransferAttorney.id || '',
-                              defaultTransferAttorneyName: partnerDefaultName(defaultTransferAttorney),
-                            }
-                          : {}),
+                        ...previous, defaultAgentSource: value,
+                        defaultAgentRelationshipId: value === 'developer_partner_default' ? defaultAgency?.relationshipId || '' : '',
+                        defaultAgentPreferredPartnerId: value === 'developer_partner_default' ? defaultAgency?.id || '' : '',
+                        defaultAgentName: value === 'none' ? '' : agencyDefaultName,
                       })),
                     },
                     {
-                      title: 'Bond Originator',
-                      value: transactionDefaults.defaultBondOriginatorSource,
-                      preferredValue: defaultBondOriginator ? 'developer_partner_default' : 'first_bond_originator',
-                      emptyValue: 'none',
-                      partnerName: bondOriginatorDefaultName || 'Preferred originator',
-                      defaultRecord: defaultBondOriginator,
+                      title: 'Transfer Attorney', value: transactionDefaults.defaultTransferAttorneySource,
+                      preferredValue: defaultTransferAttorney ? 'developer_partner_default' : 'first_conveyancer',
+                      partnerName: transferAttorneyDefaultName, defaultRecord: defaultTransferAttorney,
                       onChange: (value) => setTransactionDefaults((previous) => ({
-                        ...previous,
-                        defaultBondOriginatorSource: value,
-                        ...(defaultBondOriginator && value === 'developer_partner_default'
-                          ? {
-                              defaultBondOriginatorRelationshipId: defaultBondOriginator.relationshipId || '',
-                              defaultBondOriginatorPreferredPartnerId: defaultBondOriginator.id || '',
-                              defaultBondOriginatorName: partnerDefaultName(defaultBondOriginator),
-                            }
-                          : {}),
+                        ...previous, defaultTransferAttorneySource: value,
+                        defaultTransferAttorneyRelationshipId: value === 'developer_partner_default' ? defaultTransferAttorney?.relationshipId || '' : '',
+                        defaultTransferAttorneyPreferredPartnerId: value === 'developer_partner_default' ? defaultTransferAttorney?.id || '' : '',
+                        defaultTransferAttorneyName: value === 'none' ? '' : transferAttorneyDefaultName,
+                      })),
+                    },
+                    {
+                      title: 'Bond Originator', value: transactionDefaults.defaultBondOriginatorSource,
+                      preferredValue: defaultBondOriginator ? 'developer_partner_default' : 'first_bond_originator',
+                      partnerName: bondOriginatorDefaultName, defaultRecord: defaultBondOriginator,
+                      onChange: (value) => setTransactionDefaults((previous) => ({
+                        ...previous, defaultBondOriginatorSource: value,
+                        defaultBondOriginatorRelationshipId: value === 'developer_partner_default' ? defaultBondOriginator?.relationshipId || '' : '',
+                        defaultBondOriginatorPreferredPartnerId: value === 'developer_partner_default' ? defaultBondOriginator?.id || '' : '',
+                        defaultBondOriginatorName: value === 'none' ? '' : bondOriginatorDefaultName,
                       })),
                     },
                   ].map((card) => (
-                    <article key={card.title} className="rounded-[18px] border border-[#dce5ef] bg-[#fbfdff] p-4">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <h5 className="text-sm font-semibold text-[#142132]">{card.title}</h5>
-                          <p className="mt-1 text-sm text-[#6b7d93]">{card.value === card.emptyValue ? 'Not assigned' : card.partnerName}</p>
-                          {card.defaultRecord ? (
-                            <p className="mt-1 text-xs font-semibold text-[#1f7a5a]">Developer Partner default</p>
-                          ) : null}
-                        </div>
-                        <span className={`rounded-full px-2.5 py-1 text-[0.68rem] font-semibold ${card.value === card.emptyValue ? 'bg-[#f1f5f9] text-[#64748b]' : 'bg-[#e8f6ef] text-[#1f7a5a]'}`}>
-                          {card.value === card.emptyValue ? 'Optional' : 'Preferred'}
-                        </span>
-                      </div>
-                      <div className="mt-4 grid gap-2">
-                        <button type="button" className={`rounded-[12px] border px-3 py-2 text-left text-sm font-semibold ${card.value !== card.emptyValue ? 'border-[#102236] bg-[#102236] text-white' : 'border-[#dce5ef] bg-white text-[#35546c]'}`} onClick={() => card.onChange(card.preferredValue)}>
-                          Use preferred
-                        </button>
-                        <button type="button" className="rounded-[12px] border border-[#dce5ef] bg-white px-3 py-2 text-left text-sm font-semibold text-[#35546c]" onClick={() => card.onChange(card.preferredValue)}>
-                          Choose another
-                        </button>
-                        <button type="button" className="rounded-[12px] border border-[#d8e7dc] bg-white px-3 py-2 text-left text-sm font-semibold text-[#1f7a5a]" onClick={() => card.onChange(card.preferredValue)}>
-                          Invite new
-                        </button>
-                      </div>
-                    </article>
+                    <label key={card.title}>
+                      {card.title}
+                      <select value={card.value} disabled={card.disabled} onChange={(event) => card.onChange(event.target.value)}>
+                        <option value="none">Choose per transaction</option>
+                        {card.partnerName ? <option value={card.preferredValue}>{card.partnerName}{card.defaultRecord ? ' (preferred partner)' : ''}</option> : null}
+                      </select>
+                    </label>
                   ))}
                 </div>
 
-                <details className="mt-5 rounded-[18px] border border-[#edf2f7] bg-[#fbfdff] p-4">
-                  <summary className="cursor-pointer text-sm font-semibold text-[#142132]">Advanced Settings</summary>
-                  <div className="mt-4">
+                <div className="mt-6">
+                  <div>
                 <div className="grid gap-5 lg:grid-cols-2">
                   <div className="space-y-4 rounded-[20px] border border-[#dce6f1] bg-[#f8fbff] p-5">
                     <div>
@@ -1972,7 +1439,7 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
                   </div>
                 </div>
                   </div>
-                </details>
+                </div>
               </section>
 
             </>
@@ -1980,7 +1447,7 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
 
           {currentStepId === 'legal' ? (
             <>
-              <section className="space-y-5 rounded-[24px] border border-[#dde4ee] bg-white p-6 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
+              <section className="development-create-section">
                 <div className="space-y-1.5">
                   <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">Modules & Delivery Partners</h4>
                   <p className="text-sm leading-6 text-[#6b7d93]">Select which modules apply to this development and add the teams that can later be allocated per transaction.</p>
@@ -2045,7 +1512,7 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
                     <p className="text-sm leading-6 text-[#6b7d93]">Current user is pre-assigned. Add co-agents or invite additional agents by entering their email details.</p>
                   </div>
                   {legal.agents.map((agent, index) => (
-                    <div key={`agent-${index}`} className="rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
+                    <div key={`agent-${index}`} className="rounded-[22px] border border-[#dde4ee] bg-white p-5">
                       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                         <label>
                           Agent Name
@@ -2082,7 +1549,7 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
                     <p className="text-sm leading-6 text-[#6b7d93]">The first conveyancer entered here becomes the default mandated firm for this development, with automatic access to all development transactions.</p>
                   </div>
                   {legal.conveyancers.map((conveyancer, index) => (
-                    <div key={`conveyancer-${index}`} className="rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
+                    <div key={`conveyancer-${index}`} className="rounded-[22px] border border-[#dde4ee] bg-white p-5">
                       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                         <label>
                           Firm Name
@@ -2127,7 +1594,7 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
                     <p className="text-sm leading-6 text-[#6b7d93]">The first originator entered here becomes the default commercial setup for this development.</p>
                   </div>
                   {legal.bondOriginators.map((originator, index) => (
-                    <div key={`bond-originator-${index}`} className="rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
+                    <div key={`bond-originator-${index}`} className="rounded-[22px] border border-[#dde4ee] bg-white p-5">
                       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                         <label>
                           Originator Name
@@ -2206,7 +1673,7 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
                 </label>
               </div>
 
-              <div className="space-y-4 rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
+              <div className="space-y-4 rounded-[24px] border border-[#dde4ee] bg-white p-5">
                 <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">Required Close-Out Documents</h4>
                 <div className="grid gap-4 md:grid-cols-3">
                   {legal.requiredDocuments.map((item) => (
@@ -2236,7 +1703,8 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
 
           {currentStepId === 'units' ? (
             <div className="space-y-5">
-              <section className="rounded-[24px] border border-[#dde4ee] bg-white p-6 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
+              {unitConfigurationMethod !== 'generate_range' ? (
+              <section className="development-create-section">
                 <div className="mb-4 space-y-1.5">
                   <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">Units</h4>
                 </div>
@@ -2249,17 +1717,17 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
                     <span className="block text-sm font-medium text-[#233247]">Unit Configuration Method</span>
                     <div className="mt-2 grid gap-3 md:grid-cols-3">
                       {[
-                        { value: 'manual', label: 'Create units manually' },
-                        { value: 'import_later', label: 'Upload/import later' },
-                        { value: 'generate_range', label: 'Generate from range' },
+                        { value: 'manual', label: 'Add individual units later' },
+                        { value: 'import_later', label: 'Set up units later' },
+                        { value: 'generate_range', label: 'Generate stock' },
                       ].map((option) => (
                         <button
                           key={option.value}
                           type="button"
-                          onClick={() => setUnitConfigurationMethod(option.value)}
+                          onClick={() => { setUnitConfigurationMethod(option.value); setUnits([]) }}
                           className={`rounded-[16px] border px-4 py-3 text-left text-sm font-semibold transition ${
                             unitConfigurationMethod === option.value
-                              ? 'border-[#102236] bg-[#102236] text-white shadow-[0_12px_28px_rgba(16,34,54,0.18)]'
+                              ? 'border-[#102236] bg-[#102236] text-white'
                               : 'border-[#dce5ef] bg-white text-[#35546c] hover:border-[#b7c8db]'
                           }`}
                         >
@@ -2270,497 +1738,14 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
                   </div>
                 </div>
               </section>
+              ) : null}
+
+              {unitConfigurationMethod !== 'generate_range' ? (
+                <p className="development-create-hint">You can {unitConfigurationMethod === 'manual' ? 'add individual units' : 'import or add units'} in the development workspace after creation.</p>
+              ) : null}
 
               {unitConfigurationMethod === 'generate_range' ? (
-                <>
-              <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
-                <div className="space-y-2">
-                  <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">Stock Master</h4>
-                  <p className="text-sm leading-6 text-[#6b7d93]">
-                    Tell Arch9 how the development is structured, define your stock templates once, and generate the full unit inventory only
-                    when you are ready.
-                  </p>
-                </div>
-                <ol className="mt-5 grid gap-3 md:grid-cols-3">
-                  {STOCK_STEPS.map((step, index) => {
-                    const isActive = stockStepIndex === index
-                    const isComplete = stockStepIndex > index
-                    return (
-                      <li
-                        key={step.id}
-                        className={`rounded-[20px] border px-4 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)] ${
-                          isActive
-                            ? 'border-[#b9cee6] bg-[#35546c] text-white'
-                            : isComplete
-                              ? 'border-[#d8e7dc] bg-[#f3fbf5] text-[#1f6d3c]'
-                              : 'border-[#dde4ee] bg-[#f8fbff] text-[#35546c]'
-                        }`}
-                      >
-                        <div className="flex items-center gap-3">
-                          <span
-                            className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold ${
-                              isActive
-                                ? 'bg-white/20 text-white'
-                                : isComplete
-                                  ? 'bg-[#d8e7dc] text-[#1f6d3c]'
-                                  : 'bg-white text-[#35546c]'
-                            }`}
-                          >
-                            {index + 1}
-                          </span>
-                          <div className="space-y-1">
-                            <strong className="block text-sm font-semibold">{step.label}</strong>
-                            <p className={`text-xs leading-5 ${isActive ? 'text-white/75' : isComplete ? 'text-[#4b8a60]' : 'text-[#6b7d93]'}`}>
-                              {step.description}
-                            </p>
-                          </div>
-                        </div>
-                      </li>
-                    )
-                  })}
-                </ol>
-              </section>
-
-              {stockStepIndex === 0 ? (
-                <section className="space-y-5 rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
-                  <div className="space-y-2">
-                    <h5 className="text-base font-semibold tracking-[-0.02em] text-[#142132]">Set up your development structure</h5>
-                    <p className="text-sm leading-6 text-[#6b7d93]">
-                      Start at the portfolio level. Decide whether stock should stay as a single release or be organised by phase, block, or
-                      both.
-                    </p>
-                  </div>
-
-                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                    {[
-                      { value: 'none', label: 'Single release', detail: 'Keep stock in one release without sub-groups.' },
-                      { value: 'phases', label: 'By phase', detail: 'Use phases for launch batches and delivery timing.' },
-                      { value: 'blocks', label: 'By block', detail: 'Organise units by building block or cluster.' },
-                      { value: 'phase_and_block', label: 'By phase and block', detail: 'Use both phases and blocks for precise distribution.' },
-                    ].map((option) => (
-                      <button
-                        key={option.value}
-                        type="button"
-                        onClick={() => setStructureType(option.value)}
-                        className={`rounded-[20px] border px-4 py-4 text-left transition ${
-                          stockPlan.structureType === option.value
-                            ? 'border-[#b9cee6] bg-[#f8fbff] shadow-[0_10px_24px_rgba(53,84,108,0.08)]'
-                            : 'border-[#dde4ee] bg-white hover:border-[#c9d6e3]'
-                        }`}
-                      >
-                        <strong className="block text-sm font-semibold text-[#142132]">{option.label}</strong>
-                        <span className="mt-2 block text-sm leading-6 text-[#6b7d93]">{option.detail}</span>
-                      </button>
-                    ))}
-                  </div>
-
-                  {stockPlan.structureType === 'phases' ? (
-                    <div className="space-y-4 rounded-[22px] border border-[#e3ebf5] bg-[#f8fbff] p-5">
-                      <div className="grid gap-4 md:grid-cols-[220px_minmax(0,1fr)]">
-                        <label>
-                          Number of phases
-                          <input type="number" min="1" value={stockPlan.phases.length || ''} onChange={(event) => setPhaseCount(event.target.value)} />
-                        </label>
-                        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                          {stockPlan.phases.map((phase, index) => (
-                            <article key={phase.id} className="rounded-[18px] border border-[#dde4ee] bg-white p-4">
-                              <div className="grid gap-4">
-                                <label>
-                                  Phase {index + 1} Name
-                                  <input value={phase.name} onChange={(event) => updatePhase(index, event.target.value)} />
-                                </label>
-                                <label>
-                                  Units in {phase.name || `Phase ${index + 1}`}
-                                  <input type="number" min="1" value={phase.plannedUnits || ''} onChange={(event) => updatePhaseField(index, 'plannedUnits', event.target.value)} />
-                                </label>
-                              </div>
-                            </article>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  ) : null}
-
-                  {stockPlan.structureType === 'blocks' ? (
-                    <div className="space-y-4 rounded-[22px] border border-[#e3ebf5] bg-[#f8fbff] p-5">
-                      <div className="grid gap-4 md:grid-cols-[220px_minmax(0,1fr)]">
-                        <label>
-                          Number of blocks
-                          <input type="number" min="1" value={stockPlan.blocks.length || ''} onChange={(event) => setBlockCount(event.target.value)} />
-                        </label>
-                        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                          {stockPlan.blocks.map((block, index) => (
-                            <label key={block.id}>
-                              Block {index + 1} Name
-                              <input value={block.name} onChange={(event) => updateBlock(index, event.target.value)} />
-                            </label>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  ) : null}
-
-                  {stockPlan.structureType === 'phase_and_block' ? (
-                    <div className="space-y-4 rounded-[22px] border border-[#e3ebf5] bg-[#f8fbff] p-5">
-                      <div className="grid gap-4 md:grid-cols-2">
-                        <label>
-                          Number of phases
-                          <input
-                            type="number"
-                            min="1"
-                            value={stockPlan.phases.length || ''}
-                            onChange={(event) => setPhaseAndBlockCounts(event.target.value, stockPlan.phases[0]?.blocks?.length || 0)}
-                          />
-                        </label>
-                        <label>
-                          Blocks per phase
-                          <input
-                            type="number"
-                            min="1"
-                            value={stockPlan.phases[0]?.blocks?.length || ''}
-                            onChange={(event) => setPhaseAndBlockCounts(stockPlan.phases.length || 0, event.target.value)}
-                          />
-                        </label>
-                      </div>
-
-                      <div className="grid gap-4 xl:grid-cols-2">
-                        {stockPlan.phases.map((phase, phaseIndex) => (
-                          <article key={phase.id} className="rounded-[20px] border border-[#dde4ee] bg-white p-4">
-                            <div className="grid gap-4">
-                              <label>
-                                Phase Name
-                                <input value={phase.name} onChange={(event) => updatePhase(phaseIndex, event.target.value)} />
-                              </label>
-                              <label>
-                                Units in {phase.name || `Phase ${phaseIndex + 1}`}
-                                <input type="number" min="1" value={phase.plannedUnits || ''} onChange={(event) => updatePhaseField(phaseIndex, 'plannedUnits', event.target.value)} />
-                              </label>
-                            </div>
-                            <div className="mt-4 grid gap-3 md:grid-cols-2">
-                              {(phase.blocks || []).map((block, blockIndex) => (
-                                <label key={block.id}>
-                                  Block {blockIndex + 1}
-                                  <input value={block.name} onChange={(event) => updatePhaseBlock(phaseIndex, blockIndex, event.target.value)} />
-                                </label>
-                              ))}
-                            </div>
-                          </article>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
-
-                  <div className="grid gap-4 md:grid-cols-3">
-                    <article className="rounded-[20px] border border-[#dde4ee] bg-[#f8fbff] p-4">
-                      <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Structure type</span>
-                      <strong className="mt-3 block text-base font-semibold text-[#142132]">{getStructureTypeLabel(stockPlan.structureType)}</strong>
-                    </article>
-                    <article className="rounded-[20px] border border-[#dde4ee] bg-[#f8fbff] p-4">
-                      <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Phases</span>
-                      <strong className="mt-3 block text-base font-semibold text-[#142132]">{stockPlan.phases.length || 0}</strong>
-                      {stockPlan.phases.length ? (
-                        <span className="mt-2 block text-sm text-[#6b7d93]">
-                          {stockPlan.phases.reduce((sum, phase) => sum + Number(phase.plannedUnits || 0), 0)} units planned
-                        </span>
-                      ) : null}
-                    </article>
-                    <article className="rounded-[20px] border border-[#dde4ee] bg-[#f8fbff] p-4">
-                      <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Blocks</span>
-                      <strong className="mt-3 block text-base font-semibold text-[#142132]">
-                        {stockPlan.structureType === 'phase_and_block'
-                          ? stockPlan.phases.reduce((sum, phase) => sum + (phase.blocks?.length || 0), 0)
-                          : stockPlan.blocks.length || 0}
-                      </strong>
-                    </article>
-                  </div>
-                </section>
-              ) : null}
-
-              {stockStepIndex === 1 ? (
-                <section className="space-y-5 rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
-                  <div className="space-y-2">
-                    <h5 className="text-base font-semibold tracking-[-0.02em] text-[#142132]">Define unit types and floorplans</h5>
-                    <p className="text-sm leading-6 text-[#6b7d93]">
-                      Create stock templates instead of units. Add each unit type once, then define floorplans, pricing, quantities, and how
-                      they should be distributed.
-                    </p>
-                  </div>
-
-                  <div className="space-y-4">
-                    {stockPlan.unitTypes.map((unitType, unitTypeIndex) => (
-                      <article key={unitType.id} className="rounded-[22px] border border-[#dde4ee] bg-[#f8fbff] p-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
-                        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                          <div className="grid flex-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-                            <label>
-                              Unit Type Name
-                              <input value={unitType.name} onChange={(event) => updateUnitType(unitTypeIndex, 'name', event.target.value)} placeholder="2 Bed Apartment" />
-                            </label>
-                            <label>
-                              Default Status
-                              <select value={unitType.defaultStatus} onChange={(event) => updateUnitType(unitTypeIndex, 'defaultStatus', event.target.value)}>
-                                <option value="Available">Available</option>
-                                <option value="Reserved">Reserved</option>
-                                <option value="Sold">Sold</option>
-                                <option value="Pending">Pending</option>
-                              </select>
-                            </label>
-                            <label className="md:col-span-2 xl:col-span-3">
-                              Description
-                              <textarea rows={3} value={unitType.description} onChange={(event) => updateUnitType(unitTypeIndex, 'description', event.target.value)} />
-                            </label>
-                          </div>
-                          {stockPlan.unitTypes.length > 1 ? (
-                            <Button type="button" variant="ghost" className="text-[#b42318] hover:bg-[#fff5f4]" onClick={() => removeUnitType(unitTypeIndex)}>
-                              <Trash2 size={14} />
-                              Remove Unit Type
-                            </Button>
-                          ) : null}
-                        </div>
-
-                        <div className="mt-5 space-y-4">
-                          {unitType.floorplans.map((floorplan, floorplanIndex) => {
-                            const customTotal = (floorplan.customDistribution || []).reduce((sum, entry) => sum + Number(entry.quantity || 0), 0)
-                            return (
-                              <div key={floorplan.id} className="rounded-[20px] border border-[#dde4ee] bg-white p-4">
-                                <div className="flex items-start justify-between gap-4">
-                                  <div>
-                                    <strong className="block text-sm font-semibold text-[#142132]">Floorplan {floorplanIndex + 1}</strong>
-                                    <span className="mt-1 block text-sm leading-6 text-[#6b7d93]">
-                                      Define the commercial template once, then let Arch9 generate the actual units later.
-                                    </span>
-                                  </div>
-                                  {unitType.floorplans.length > 1 ? (
-                                    <Button
-                                      type="button"
-                                      variant="ghost"
-                                      className="text-[#b42318] hover:bg-[#fff5f4]"
-                                      onClick={() => removeFloorplan(unitTypeIndex, floorplanIndex)}
-                                    >
-                                      <Trash2 size={14} />
-                                      Remove
-                                    </Button>
-                                  ) : null}
-                                </div>
-
-                                <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                                  <label>
-                                    Floorplan Name
-                                    <input value={floorplan.name} onChange={(event) => updateFloorplan(unitTypeIndex, floorplanIndex, 'name', event.target.value)} placeholder="A1" />
-                                  </label>
-                                  <label>
-                                    Size (sqm)
-                                    <input type="number" min="0" value={floorplan.sizeSqm} onChange={(event) => updateFloorplan(unitTypeIndex, floorplanIndex, 'sizeSqm', event.target.value)} />
-                                  </label>
-                                  <label>
-                                    List Price
-                                    <span className="relative block">
-                                      <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-[#6b7d93]">R</span>
-                                      <input
-                                        className="!pl-9"
-                                        type="number"
-                                        min="0"
-                                        value={floorplan.listPrice}
-                                        onChange={(event) => updateFloorplan(unitTypeIndex, floorplanIndex, 'listPrice', event.target.value)}
-                                      />
-                                    </span>
-                                  </label>
-                                  <label>
-                                    Quantity
-                                    <input type="number" min="1" value={floorplan.quantity} onChange={(event) => updateFloorplan(unitTypeIndex, floorplanIndex, 'quantity', event.target.value)} />
-                                  </label>
-                                  <label>
-                                    Distribution Mode
-                                    <select value={floorplan.distributionMode} onChange={(event) => updateFloorplan(unitTypeIndex, floorplanIndex, 'distributionMode', event.target.value)}>
-                                      {stockTargets.length <= 1 ? <option value="all">Apply across full development</option> : null}
-                                      {stockTargets.length > 1 ? <option value="custom">Assign quantities by phase / block</option> : null}
-                                    </select>
-                                  </label>
-                                </div>
-
-                                {floorplan.distributionMode === 'custom' && stockTargets.length > 0 ? (
-                                  <div className="mt-4 space-y-3 rounded-[18px] border border-[#e3ebf5] bg-[#f8fbff] p-4">
-                                    <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                                      <div>
-                                        <strong className="block text-sm font-semibold text-[#142132]">Custom distribution</strong>
-                                        <p className="text-sm leading-6 text-[#6b7d93]">Set the exact quantity for each phase or block. Arch9 will not auto-split grouped stock for you.</p>
-                                      </div>
-                                      <span className={`text-sm font-medium ${customTotal === Number(floorplan.quantity || 0) ? 'text-[#1f6d3c]' : 'text-[#b42318]'}`}>
-                                        {customTotal} / {Number(floorplan.quantity || 0) || 0} assigned
-                                      </span>
-                                    </div>
-                                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                                      {stockTargets.map((target) => (
-                                        <label key={target.id}>
-                                          {target.label}
-                                          <input
-                                            type="number"
-                                            min="0"
-                                            value={(floorplan.customDistribution || []).find((entry) => entry.targetId === target.id)?.quantity ?? ''}
-                                            onChange={(event) => setCustomDistributionValue(unitTypeIndex, floorplanIndex, target, event.target.value)}
-                                          />
-                                        </label>
-                                      ))}
-                                    </div>
-                                  </div>
-                                ) : null}
-                              </div>
-                            )
-                          })}
-                        </div>
-
-                        <div className="mt-4 flex flex-wrap gap-3">
-                          <Button type="button" variant="secondary" onClick={() => addFloorplan(unitTypeIndex)}>
-                            <Plus size={14} />
-                            Add Floorplan
-                          </Button>
-                          <div className="rounded-full border border-[#d8e3ef] bg-white px-4 py-2 text-sm text-[#35546c]">
-                            {(unitType.floorplans || []).reduce((sum, floorplan) => sum + Number(floorplan.quantity || 0), 0)} units planned in this type
-                          </div>
-                        </div>
-                      </article>
-                    ))}
-                  </div>
-
-                  <Button type="button" variant="secondary" onClick={addUnitType}>
-                    <Plus size={14} />
-                    Add Another Unit Type
-                  </Button>
-                </section>
-              ) : null}
-
-              {stockStepIndex === 2 ? (
-                <section className="space-y-5 rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
-                  <div className="space-y-2">
-                    <h5 className="text-base font-semibold tracking-[-0.02em] text-[#142132]">Review and generate your unit stock</h5>
-                    <p className="text-sm leading-6 text-[#6b7d93]">
-                      Check the totals, confirm the numbering strategy, and let Arch9 generate the full unit inventory for this development.
-                    </p>
-                  </div>
-
-                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                    <article className="rounded-[20px] border border-[#dde4ee] bg-[#f8fbff] p-4">
-                      <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Structure</span>
-                      <strong className="mt-3 block text-base font-semibold text-[#142132]">{getStructureTypeLabel(stockPlan.structureType)}</strong>
-                    </article>
-                    <article className="rounded-[20px] border border-[#dde4ee] bg-[#f8fbff] p-4">
-                      <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Unit types</span>
-                      <strong className="mt-3 block text-base font-semibold text-[#142132]">{stockPlan.unitTypes.length}</strong>
-                    </article>
-                    <article className="rounded-[20px] border border-[#dde4ee] bg-[#f8fbff] p-4">
-                      <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Floorplans</span>
-                      <strong className="mt-3 block text-base font-semibold text-[#142132]">
-                        {stockPlan.unitTypes.reduce((sum, unitType) => sum + (unitType.floorplans?.length || 0), 0)}
-                      </strong>
-                    </article>
-                    <article className="rounded-[20px] border border-[#dde4ee] bg-[#f8fbff] p-4">
-                      <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Total units</span>
-                      <strong className="mt-3 block text-base font-semibold text-[#142132]">{stockSummary.totalUnits}</strong>
-                    </article>
-                  </div>
-
-                  <div className="grid gap-4 xl:grid-cols-3">
-                    <article className="rounded-[20px] border border-[#dde4ee] bg-white p-4">
-                      <strong className="block text-sm font-semibold text-[#142132]">By unit type</strong>
-                      <div className="mt-3 space-y-2">
-                        {Object.entries(stockSummary.typeCounts).length ? (
-                          Object.entries(stockSummary.typeCounts).map(([label, count]) => (
-                            <div key={label} className="flex items-center justify-between rounded-[14px] border border-[#edf2f7] bg-[#f8fbff] px-3 py-2 text-sm">
-                              <span className="text-[#35546c]">{label}</span>
-                              <strong className="text-[#142132]">{count}</strong>
-                            </div>
-                          ))
-                        ) : (
-                          <p className="text-sm text-[#6b7d93]">No unit types defined yet.</p>
-                        )}
-                      </div>
-                    </article>
-                    <article className="rounded-[20px] border border-[#dde4ee] bg-white p-4">
-                      <strong className="block text-sm font-semibold text-[#142132]">By floorplan</strong>
-                      <div className="mt-3 space-y-2">
-                        {Object.entries(stockSummary.floorplanCounts).length ? (
-                          Object.entries(stockSummary.floorplanCounts).map(([label, count]) => (
-                            <div key={label} className="flex items-center justify-between rounded-[14px] border border-[#edf2f7] bg-[#f8fbff] px-3 py-2 text-sm">
-                              <span className="text-[#35546c]">{label}</span>
-                              <strong className="text-[#142132]">{count}</strong>
-                            </div>
-                          ))
-                        ) : (
-                          <p className="text-sm text-[#6b7d93]">No floorplans defined yet.</p>
-                        )}
-                      </div>
-                    </article>
-                    <article className="rounded-[20px] border border-[#dde4ee] bg-white p-4">
-                      <strong className="block text-sm font-semibold text-[#142132]">By release target</strong>
-                      <div className="mt-3 space-y-2">
-                        {Object.entries(stockSummary.structureCounts).length ? (
-                          Object.entries(stockSummary.structureCounts).map(([label, count]) => (
-                            <div key={label} className="flex items-center justify-between rounded-[14px] border border-[#edf2f7] bg-[#f8fbff] px-3 py-2 text-sm">
-                              <span className="text-[#35546c]">{label}</span>
-                              <strong className="text-[#142132]">{count}</strong>
-                            </div>
-                          ))
-                        ) : (
-                          <p className="text-sm text-[#6b7d93]">No structured distribution captured yet.</p>
-                        )}
-                      </div>
-                    </article>
-                  </div>
-
-                  {Object.keys(stockSummary.plannedPhaseCounts || {}).length ? (
-                    <article className="rounded-[20px] border border-[#dde4ee] bg-white p-4">
-                      <strong className="block text-sm font-semibold text-[#142132]">Phase plan vs generated units</strong>
-                      <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                        {Object.entries(stockSummary.plannedPhaseCounts).map(([label, plannedCount]) => (
-                          <div key={label} className="rounded-[14px] border border-[#edf2f7] bg-[#f8fbff] px-3 py-3 text-sm">
-                            <span className="block text-[#35546c]">{label}</span>
-                            <strong className="mt-1 block text-[#142132]">
-                              {stockSummary.structureCounts[label] || 0} generated / {plannedCount} planned
-                            </strong>
-                          </div>
-                        ))}
-                      </div>
-                    </article>
-                  ) : null}
-
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <label>
-                      Unit numbering strategy
-                      <select value={stockPlan.numberingStrategy} onChange={(event) => setStockPlan((previous) => ({ ...previous, numberingStrategy: event.target.value }))}>
-                        <option value="sequential">Sequential numeric (001, 002)</option>
-                        <option value="phase">Phase-based (PHASE-001)</option>
-                        <option value="block">Block-based (BLOCK-001)</option>
-                        <option value="phase_block">Phase + block based (PHASE-BLOCK-001)</option>
-                      </select>
-                    </label>
-                    <label>
-                      Number padding
-                      <input
-                        type="number"
-                        min="2"
-                        max="5"
-                        value={stockPlan.numberingPadding}
-                        onChange={(event) => setStockPlan((previous) => ({ ...previous, numberingPadding: Number(event.target.value || 3) }))}
-                      />
-                    </label>
-                  </div>
-
-                  {stockSummary.warnings.length ? (
-                    <div className="space-y-3 rounded-[20px] border border-[#f8d8cc] bg-[#fff7f4] p-4">
-                      <strong className="block text-sm font-semibold text-[#b42318]">Warnings to resolve before generation</strong>
-                      <ul className="space-y-2 text-sm leading-6 text-[#7a271a]">
-                        {stockSummary.warnings.map((warning) => (
-                          <li key={warning}>• {warning}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : (
-                    <div className="rounded-[20px] border border-[#d8e7dc] bg-[#f3fbf5] p-4 text-sm leading-6 text-[#1f6d3c]">
-                      Stock plan looks good. Arch9 will create the generated units and keep floorplan references ready for post-creation assets.
-                    </div>
-                  )}
-                </section>
-              ) : null}
-                </>
+                <StockMasterSetup plan={stockPlan} onChange={updateStockPlan} step={stockStepIndex} onDefer={() => { setUnitConfigurationMethod('import_later'); setUnits([]) }} />
               ) : null}
             </div>
           ) : null}
@@ -2772,7 +1757,7 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
                 <p className="text-sm leading-6 text-[#6b7d93]">Add floorplans, pricing sheets, brochures, site plans, and shared specification material.</p>
               </div>
               {documents.map((document, index) => (
-                <div key={`document-${index}`} className="rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
+                <div key={`document-${index}`} className="rounded-[22px] border border-[#dde4ee] bg-white p-5">
                   <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                     <label>
                       Document Type
@@ -2819,119 +1804,67 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
           ) : null}
 
           {currentStepId === 'review' ? (
-            <div className="space-y-4">
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                <article className="rounded-[20px] border border-[#dde4ee] bg-white p-5 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
-                  <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Development Summary</span>
-                  <strong className="mt-3 block text-lg font-semibold tracking-[-0.02em] text-[#142132]">{details.name || 'Not set'}</strong>
-                  <em className="mt-2 block text-sm not-italic text-[#6b7d93]">{getResolvedDevelopmentLocation(details) || 'Location pending'}</em>
-                </article>
-                <article className="rounded-[20px] border border-[#dde4ee] bg-white p-5 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
-                  <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Deal Setup Summary</span>
-                  <strong className="mt-3 block text-lg font-semibold tracking-[-0.02em] text-[#142132]">
-                    {transactionDefaults.reservationDepositEnabled
-                      ? `${transactionDefaults.reservationDepositAmountType === 'fixed' ? 'R' : ''}${transactionDefaults.reservationDepositAmount || '0'} ${
-                          transactionDefaults.reservationDepositAmountType === 'percentage' ? '%' : ''
-                        } deposit`
-                      : 'No reservation deposit'}
-                  </strong>
-                  <em className="mt-2 block text-sm not-italic text-[#6b7d93]">
-                    {transactionDefaults.developerSellingDirectly ? 'Developer selling directly' : 'Agent-assisted sales'}
-                  </em>
-                </article>
-                <article className="rounded-[20px] border border-[#dde4ee] bg-white p-5 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
-                  <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Expected Units</span>
-                  <strong className="mt-3 block text-lg font-semibold tracking-[-0.02em] text-[#142132]">{details.totalUnitsExpected || derivedTotals.unitCount || stockSummary.totalUnits}</strong>
-                  <em className="mt-2 block text-sm not-italic text-[#6b7d93]">{derivedTotals.unitCount || stockSummary.totalUnits} generated from stock templates</em>
-                </article>
-                <article className="rounded-[20px] border border-[#dde4ee] bg-white p-5 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
-                  <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Price Range</span>
-                  <strong className="mt-3 block text-lg font-semibold tracking-[-0.02em] text-[#142132]">{buildUnitPriceRange(stockPlan.unitTypes)}</strong>
-                  <em className="mt-2 block text-sm not-italic text-[#6b7d93]">Based on list prices entered for floorplans</em>
-                </article>
-              </div>
-
-              <article className="rounded-[20px] border border-[#dde4ee] bg-white p-5 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
-                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                  <div>
-                    <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Unit Types</span>
-                    <strong className="mt-3 block text-lg font-semibold tracking-[-0.02em] text-[#142132]">{stockPlan.unitTypes.length} configured</strong>
-                  </div>
-                  <p className="max-w-xl text-sm leading-6 text-[#6b7d93]">
-                    You can upload floorplans, brochures, pricing sheets and development documents after creating the development.
-                  </p>
-                </div>
-                <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                  {stockPlan.unitTypes.map((unitType) => (
-                    <div key={unitType.id} className="rounded-[16px] border border-[#edf2f7] bg-[#f8fbff] px-4 py-3">
-                      <strong className="block text-sm font-semibold text-[#142132]">{unitType.name || 'Unnamed unit type'}</strong>
-                      <span className="mt-1 block text-sm text-[#6b7d93]">
-                        {(unitType.floorplans || []).length} floorplans •{' '}
-                        {(unitType.floorplans || []).reduce((sum, floorplan) => sum + Number(floorplan.quantity || 0), 0)} units
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </article>
-            </div>
+            <section className="development-create-section" aria-labelledby="development-review-heading">
+              <h4 id="development-review-heading">Review development</h4>
+              <dl className="development-create-review">
+                {[
+                  ['Development', details.name],
+                  ['Type', { residential: 'Residential', mixed_use: 'Mixed-use', estate: 'Estate', sectional_title: 'Sectional title' }[developmentType]],
+                  ['Address', getResolvedDevelopmentLocation(details)],
+                  ['Planned units', details.totalUnitsExpected || units.length || 'Set up later'],
+                  ['Units to create now', units.length],
+                  ['Developer', details.developerCompany || developerAccess.selectedDeveloperCompany || developerAccess.inviteCompanyName || 'Add later'],
+                  ['Developer access', hasDeveloperAccessDraft() ? developerAccess.mode === 'invite' ? `Invite ${developerAccess.inviteEmail}` : developerAccess.selectedDeveloperName : 'Add later'],
+                  ['Selling agent', transactionDefaults.developerSellingDirectly ? 'Developer selling directly' : transactionDefaults.defaultAgentSource === 'none' ? 'Choose per transaction' : agencyDefaultName],
+                  ['Transfer attorney', transactionDefaults.defaultTransferAttorneySource === 'none' ? 'Choose per transaction' : transferAttorneyDefaultName],
+                  ['Bond originator', transactionDefaults.defaultBondOriginatorSource === 'none' ? 'Choose per transaction' : bondOriginatorDefaultName],
+                  ['Reservation deposit', transactionDefaults.reservationDepositEnabled ? `${transactionDefaults.reservationDepositAmountType === 'fixed' ? 'R ' : ''}${transactionDefaults.reservationDepositAmount}${transactionDefaults.reservationDepositAmountType === 'percentage' ? '%' : ''}` : 'No default deposit'],
+                ].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
+              </dl>
+              {units.length > 0 ? <p className="development-create-hint mt-4">Unit price range: {buildUnitPriceRange(stockPlan.unitTypes)}</p> : null}
+              <p className="development-create-hint mt-4">This creates an internal development workspace. Public visibility is managed separately in Marketing.</p>
+            </section>
           ) : null}
             </div>
 
-            {summaryPanel}
-          </div>
+          </fieldset>
 
-          <footer className="sticky bottom-0 z-10 -mx-6 -mb-6 flex flex-col gap-3 border-t border-[#edf2f7] bg-white/95 px-6 py-4 shadow-[0_-18px_40px_rgba(15,23,42,0.08)] backdrop-blur sm:flex-row sm:items-center sm:justify-between">
+          <footer className="development-create-footer">
             <Button
               type="button"
               variant="ghost"
               onClick={
                 stepIndex === 0
                   ? onClose
-                  : currentStepId === 'units'
+                  : currentStepId === 'units' && unitConfigurationMethod === 'generate_range'
                     ? stockStepIndex === 0
                       ? () => setStepIndex((previous) => Math.max(previous - 1, 0))
                       : handleStockStepBack
                     : () => setStepIndex((previous) => Math.max(previous - 1, 0))
               }
-              disabled={saving}
+              disabled={saving || Boolean(savedDevelopment)}
             >
               {stepIndex === 0 ? 'Cancel' : 'Back'}
             </Button>
+            <div className="development-create-actions">
             <Button
               type="button"
               variant="secondary"
-              disabled={saving}
+              disabled={saving || Boolean(savedDevelopment)}
               onClick={handleSaveDraft}
             >
               Save Draft
             </Button>
             {stepIndex < maxStepIndex ? (
-              <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center">
-                {currentStepId === 'units' ? (
-                  <Button
-                    type="button"
-                    onClick={
-                      unitConfigurationMethod === 'generate_range'
-                        ? stockStepIndex === 2
-                          ? handleFinalizeStock
-                          : handleStockStepNext
-                        : handleNext
-                    }
-                    disabled={saving}
-                  >
-                    {unitConfigurationMethod === 'generate_range' && stockStepIndex === 2 ? 'Generate Units' : 'Next'}
-                  </Button>
-                ) : (
-                  <Button type="button" onClick={handleNext} disabled={saving}>
-                    Next
-                  </Button>
-                )}
-              </div>
+              <Button type="button" onClick={handleContinue} disabled={saving || Boolean(savedDevelopment)}>
+                {currentStepId === 'units' && unitConfigurationMethod === 'generate_range' && stockStepIndex === 2 ? 'Generate Units' : 'Continue'}
+              </Button>
             ) : (
-              <Button type="submit" disabled={saving}>
+              <Button type="submit" disabled={saving || Boolean(savedDevelopment)}>
                 {saving ? 'Creating…' : 'Create Development →'}
               </Button>
             )}
+            </div>
           </footer>
         </form>
       </div>

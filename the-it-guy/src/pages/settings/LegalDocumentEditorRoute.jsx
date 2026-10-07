@@ -24,7 +24,7 @@ export default function LegalDocumentEditorRoute() {
     ? 'Edit the wording included in every version of this document.'
     : normalizedScope === 'situations'
       ? selectedSituation
-        ? `Edit only the wording Bridge includes for ${selectedSituation.label.toLowerCase()} situations.`
+        ? `Edit only the wording Arch9 includes for ${selectedSituation.label.toLowerCase()} situations.`
         : 'Choose a person, property or finance situation before editing conditional wording.'
       : normalizedScope === 'signing'
         ? 'Set up who signs and where signatures, initials and dates are placed.'

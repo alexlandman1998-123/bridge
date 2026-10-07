@@ -1,3 +1,5 @@
+import { refreshDevelopmentMedia } from '../lib/developmentMediaStorage.js'
+
 const text = (value = '') => String(value || '').trim()
 const hasCapturedAmount = (value) => Number(value || 0) > 0
 
@@ -112,7 +114,8 @@ export async function hydrateMatterPropertyContext(client, transactions = []) {
     ),
   ])
   const developmentsById = new Map(developments.map((development) => [text(development.id), development]))
-  const profilesByDevelopmentId = new Map(profiles.map((profile) => [text(profile.development_id), profileWithAliases(profile)]))
+  const viewingProfiles = await refreshDevelopmentMedia(client, profiles, { strict: false })
+  const profilesByDevelopmentId = new Map(viewingProfiles.map((profile) => [text(profile.development_id), profileWithAliases(profile)]))
 
   return rows.map((transaction) => {
     const unit = unitsById.get(text(transaction.unit_id || transaction.unitId)) || transaction.property_unit || transaction.propertyUnit || null

@@ -11,6 +11,7 @@ async function readBody(request) {
 
 export default async function handler(request, response) {
   const ignore = () => writeNodeJsonResponse(response, { status: 204, headers: { 'Cache-Control': 'no-store' }, body: null })
+  if (process.env.VERCEL_ENV === 'preview') return ignore()
   if (request.method !== 'POST') return ignore()
   if (Number(request.headers['content-length'] || 0) > 1024) return ignore()
   const host = String(request.headers.host || '').toLowerCase().replace(/:\d+$/, '')

@@ -2,6 +2,63 @@
 
 High-end React + Vite + Supabase transaction workspace for Samlin Construction.
 
+## Development creation
+
+Add Development uses Details → Units → Sales setup → Review. Details are grouped
+into visible project and address sections. The actions follow the form content,
+and desktop and mobile use the same flow. Developer access and transaction
+defaults remain optional; invitations are only attempted when the agent selects
+Invite New Developer and completes its required fields. The selected development
+type is retained in the existing development profile's marketing overview.
+
+Draft and final saves validate the details and any selected sales defaults.
+Completing setup creates an active development automatically; Save Draft keeps
+the development as a draft. Status is not a choice in the creation form.
+Stock Master uses Structure → Unit templates → Review & generate. Physical
+structure is optional: units can sit directly under the development, a building
+or block, or a floor within a building. Templates allocate whole-number quantities
+explicitly to these locations. Release phases are left blank during creation.
+Building/floor records are saved before linked units using the existing structure
+model. A failed structure save stops unit creation and opens the saved development
+for recovery. Generating stock derives the planned total from the templates;
+unfinished stock must be completed or deferred before a draft save.
+Known failures after creation retain the saved development ID and show a link to
+its workspace instead of allowing another create. Profile, settings, directory
+and invitation warnings remain visible in that receipt. Creation still uses
+sequential writes and does not provide a database transaction across setup.
+
+Address suggestions require `VITE_GOOGLE_MAPS_API_KEY` in the running app.
+Manual address entry remains available when the key is absent.
+
+Focused local checks: `npx vitest run src/components/__tests__/AddDevelopmentModal.test.jsx`
+and `node --test src/lib/__tests__/developmentCreation.test.js`, plus the existing
+`scripts/developer-access-optional.test.mjs`,
+`scripts/development-transaction-defaults-optional.test.mjs` and
+`scripts/development-create-schema-cache-fallback.test.mjs` checks.
+These use local fixtures and send no invitations or hosted database writes.
+Stock allocation checks: `node --test src/core/developments/__tests__/developmentStockPlan.test.js`
+and `npm run test:development-structure-model`.
+
+## Development image access
+
+Development covers, galleries, floorplans and visual-map backgrounds renew private
+storage access when loaded. Existing signed URLs are recovered using their original
+bucket and development path, including legacy uploads without separate storage
+metadata. Saves retain token-free object references; external and public image URLs
+are preserved. Signing uses the current user's storage permissions, batches up to
+100 paths, and shares a bounded cache that clears when the account changes.
+Optional card images may fall back when storage is unavailable; editable development
+profiles stop loading on signing failure so a save cannot discard media references.
+No database migration or re-upload is needed.
+
+Focused checks from this package:
+`node --test src/lib/__tests__/developmentMediaStorage.test.js`,
+`node src/lib/__tests__/transactionsListApi.test.js`,
+`node src/lib/api/__tests__/dashboardCoreSummary.test.js`, and
+`node scripts/development-marketing-simplified.test.mjs`.
+These use local fixtures and make no live writes. Production requires an app release
+and an authorised Samlin user's check of Junoah's images after that release.
+
 ## Transaction buyer and seller capture
 
 The agent's Create Transaction → Buyer & Seller step captures each legal entity
@@ -1291,6 +1348,14 @@ src/components/marketing/__tests__/ShowDayCreate.test.jsx`.
 
 ## Rental tenancy register
 
+The dashboard's Active Mandates total counts one per current rental listing,
+including saved drafts, within its organisation, branch and agent filters. Previous
+listings are excluded. Selecting the card opens Listings. This count updates on
+dashboard load and does not require a separate management-mandate record. The
+append-only migration `20261007154210_rental_dashboard_listing_mandate_count.sql`
+must be applied before releasing the matching dashboard copy. Focused local check:
+`npx vitest run server/tests/rentalDashboardMandates.test.js --maxWorkers=1`.
+
 Tenancies is the main long-term rental navigation item, alongside Leads and
 Listings. Applications remain accessible from Leads and the tenancy register.
 The register loads persisted tenancy, property and unit records in batches,
@@ -1363,6 +1428,32 @@ and its project link is fixed to Home Seekers. It does not alter the main app's
 Vercel link, deploy anything, copy environment files, include other CRM APIs or
 include scheduled jobs. Generate this artifact from the approved release source;
 do not copy a previous `dist` directory into a static-only deployment.
+
+The frontend now has a dedicated public entry (`home-seekers.html` and
+`src/homeSeekersMain.jsx`), containing only Home Seekers routes. It preserves the
+existing page links and aliases without importing the private app, CRM pages or
+staff authentication. The builder disables dotenv loading for this public entry
+and the functions; any approved optional campaign settings must be provided
+explicitly as build environment variables. No database credentials are required
+for the frontend build.
+
+Hosted Vercel **Preview** deployments (`VERCEL_ENV=preview`) expose the labelled
+signup walkthrough and block signup, verification, applicant sessions, draft
+saves, submissions, enquiries, legacy applications and analytics writes before
+database or Auth access. This safeguard also applies if credentials were
+accidentally configured for Preview. Production still requires the setup below;
+preview completion is not evidence of CRM capture or email delivery.
+
+The 7 October recruitment signup release evidence is in
+[`docs/recruitment-signup-release-2026-10-07.json`](../docs/recruitment-signup-release-2026-10-07.json).
+It records the exact four pending signup migrations and their hashes, the
+production project and previous website deployment, the reviewed artifact
+inventory, local checks and hosted preview. Its status remains **production
+pending**: no database migration, production promotion, intake link creation or
+email delivery has occurred. The matching CRM display changes must be released
+from approved source, after the migrations; do not upload this entire active
+checkout. Before production approval, review that packet's remaining intake,
+email and CRM requirements. Recheck live configuration immediately before release.
 
 The Home Seekers Vercel **Production** environment needs server-only
 `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` and
@@ -2116,7 +2207,48 @@ unit preservation and compatibility with the audited snapshot save.
 
 ### Portal lead delivery
 
+Tenant acknowledgement emails now create an expiring tenant qualification link.
+The rental email and public form have their own rental design and tenant questions,
+including monthly rent, areas, move date, employment, deposit, screening consent,
+household, property needs and pets. Tenants can provide one to three preferred viewing
+times in South African time, including enquiries without a linked local listing.
+The saved lead decides the form; public callers cannot switch a rental into the buyer
+write path. Answers populate Tenant qualification on the rental overview, while times
+populate Viewing request. Submissions preserve the current stage and do not book an
+appointment. Screening consent remains the tenant's explicit Yes/No answer.
+The service-only `rental_submit_tenant_qualification` transaction saves the lead and
+closes its link together, rejecting expired links, closed leads and stale reads.
+
+Focused checks: `npx vitest run server/tests/rentalTenantIntake.test.js
+src/pages/rentals/__tests__/TenantQualificationPage.test.jsx
+src/pages/rentals/__tests__/RentalTenantLeadWorkspace.test.jsx`, and Deno tests
+`supabase/functions/buyer-viewing-preferences/tenantIntake.test.ts`,
+`supabase/functions/send-email/services/tenantQualificationLink.test.ts` and
+`supabase/functions/send-email/content/leadAcknowledgement.test.ts` using each
+function's `deno.json` and `--allow-env`. These use fixtures and send no live email.
+Production needs the new submission migration, `send-email`,
+`buyer-viewing-preferences` and the primary app released together with explicit
+approval. This change does not resend historic tenant emails.
+
 Property24 also verifies unmatched historical adverts against per-agency Sale and Rental statistics. Only an explicit matching agency can admit an unlinked enquiry; foreign, conflicting, or unavailable ownership records remain pending, preserving the recovery checkpoint. The CRM enquiry payload retains the advert number, listing type and verification source for follow-up.
+
+Unlinked Property24 enquiries explicitly identified as Rental now receive tenant
+rental metadata during import. The database classifier supplies the same fallback
+for unlinked Property24 inserts, while linked listings retain their existing
+classification rules. Rentals includes classified leads and Sales excludes them.
+
+The append-only migration
+`20261007155955_property24_unlinked_rental_lead_classification.sql` also corrects
+the reviewed 45 Lost enquiries from the 5 October import batch. Their existing
+identity, enquiry, assignment and CRM status are retained, and a lost rental
+outcome places them in Closed Leads. The repair preserves consent and outcome
+details, refuses a changed candidate count or classifier baseline, and permits
+a repeat after all 45 have been corrected. It requires an approved production
+release; preparing this change has not modified hosted records.
+
+Focused local checks: `node scripts/property24-phase7-lead-import.test.mjs`,
+`npx vitest run server/tests/property24RentalLeadClassification.test.js --maxWorkers=1`,
+and `node scripts/rental-leads-phase11.test.mjs`. These use fixtures and send no emails.
 
 The scheduled Property24 import discovers all enabled accounts in its own
 environment, reads each account’s encrypted credentials and keeps an independent
@@ -2188,7 +2320,214 @@ The Overview shows the agreed eight-stage journey. The stage is read-only in
 this phase, and database guards reject advancement to later stages. Historical
 joined records are retained separately without implying that an agent account
 was activated. The onboarding readiness indicator does not advance the journey.
-Public links, website intake and automated invitations remain subsequent work.
+Public links, website intake and automated invitations are covered by the later
+workspace phases below.
+
+### Shared Join Us contact capture foundation
+
+The shared signup journey has an initial contact-capture action on
+`POST /api/public/recruitment-intake`. Send `action: "capture_contact"`, the public
+intake `token`, a stable UUID `submissionKey`, and `contact` containing
+`firstName`, `lastName`, `email`, `phone`, and `privacyAccepted: true`. The client
+helper `captureRecruitmentContact` validates and normalises these fields. It
+whitelists contact data; passwords and applicant account claims never enter the
+CRM request. The agency comes from the server-resolved intake link, not a client
+organisation ID. Only current, unrevoked website or public links can start a new
+contact enquiry; private invitations keep their existing application workflow.
+
+Apply `20261007082653_recruitment_contact_capture.sql` after the existing
+recruitment workspace migrations and before releasing the updated CRM queries.
+Contact capture atomically creates a **Lead Received** record and a private retry
+receipt with consent version and receipt time. An identical retry with the same
+agency, link and key returns success without creating another lead or overwriting
+staff edits. A changed payload or link with that key returns a conflict. Unverified
+email addresses are not used to merge leads, and agencies remain isolated. Sender
+rate limits apply across intake links. Receipt data and capture/verification
+evidence cannot be edited from the CRM.
+
+Captured leads show **Email verification pending** separately from **Application
+not yet submitted** in the CRM. Existing leads default to `not_requested`; no
+historical email is marked verified. This foundation creates no account, agent
+membership or email. The Home Seekers popup/signup, authenticated applicant-to-lead
+binding, verification/resume and submission onto the same captured lead belong
+to the subsequent signup journey phases. The existing full application form is
+unchanged. Vite previews block contact writes as well as final submissions.
+
+The focused recruitment suite above covers the public handler through the real
+database function in isolated PostgreSQL, retry/conflict handling, tenant and
+role isolation, metadata protection, rate limits and rollback without orphan leads.
+
+### Shared signup popup (signup journey phase 2)
+
+The Home Seekers Join page replaces its embedded legacy application form with a
+**Join Home Seekers** invitation. The header, hero, FAQ, bottom invitation and
+sticky Join buttons open the shared `RecruitmentSignupModal`. It collects first
+name, surname, email, mobile, password and recruitment contact consent. The
+application progress shows account creation, email verification, application and
+review; this phase stops at the verification boundary. The popup can also use the
+shared intake endpoint and another agency's token/branding.
+
+`signup` on `/api/public/recruitment-intake` first invokes the Phase 1 contact
+capture function, then creates a Supabase Auth account through the server-only
+Admin API with `email_confirm: false`. The password is sent only to Auth; it is
+never written into CRM contact data, retry receipts or account metadata. No session
+is returned to the browser and no agent or staff membership is created. A stable
+provider account ID derived from the private CRM lead UUID allows recovery of
+uncertain or simultaneous account creation responses without changing a saved
+password. Server-authored account metadata records the pending lead association;
+it grants no applicant read access and must be checked against verified ownership
+before any access is enabled in Phase 3.
+
+If Auth fails, the contact stays in Recruitment at Lead Received and the response
+acknowledges contact capture separately. The popup retains the same key and contact
+snapshot for retries. It clears passwords when closed or completed, stores no
+signup data in browser storage and blocks overlapping submits. An email belonging
+to another account is never adopted or reset through anonymous signup; sign-in
+and verified existing-account binding belong to Phase 3. This phase sends no
+verification email and makes no delivery claim.
+
+The standalone website includes `/api/home-seekers/recruitment`. Configure the
+server-only `HOME_SEEKERS_RECRUITMENT_INTAKE_TOKEN` using a current website/public
+link created by a Home Seekers manager. The server validates that it belongs to
+Home Seekers and ignores client token/organisation overrides. Use the same
+Supabase and fingerprint settings as the shared intake endpoint; keep the token
+out of frontend configuration. Apply the contact-capture migration before release.
+Missing configuration fails explicitly. Local Vite previews provide a labelled
+walkthrough of the signup and next-step screen without saving CRM data, creating
+accounts or sending passwords to an API.
+
+Focused checks: `npx vitest run src/pages/recruitment/__tests__
+src/pages/__tests__/HomeSeekersLeadForms.test.jsx` and `node --test
+server/tests/homeSeekersWebsiteDeployment.test.js server/tests/homeSeekersRecruitment.test.js`.
+The packaging test calls the bundled signup handler against synthetic database
+and Auth servers, checks retry recovery and verifies credentials stay out of the
+artifact. No test creates a remote account or sends email.
+
+### Verified applicant access (signup journey phase 3)
+
+The shared popup now requests an email verification code after account creation.
+Applicants can resend the code, verify it, sign in with an existing account, or
+use another email code to return on a different device. Signup still captures
+contact before Auth; an existing-account creation failure retains that enquiry
+and offers sign-in. Email failures retain the enquiry and allow a retry.
+
+The provider is called through an isolated server-side Auth client. After OTP or
+password authentication, `auth.getUser(accessToken)` checks canonical identity;
+the database independently checks `auth.users.email_confirmed_at`, the unchanged
+capture email, account deletion/ban and the receiving organisation. Browser user
+IDs, verification flags and editable user metadata never author ownership.
+Verification stamps the **same** Lead Received record. No application submission,
+organisation membership or staff access is created. One verified account can own
+separate enquiries at multiple agencies without exposing either agency's CRM.
+
+Applicant ownership and sessions live in private RLS-enabled tables. The browser
+receives an opaque random cookie scoped per organisation: HttpOnly, SameSite=Lax,
+Secure on public hosts, `/api/` path, seven-day expiry. Only its SHA-256 hash is
+stored in the database. No Supabase access/refresh token or password is returned
+to browser JavaScript or stored in browser storage. Reopening the popup restores
+only that applicant's captured contact and submission state. Expired, signed-out,
+banned, deleted, email-changed or closed enquiries cannot resume. Sign-out deletes
+that applicant session without affecting any staff session. Persistent HMAC-based
+attempt budgets limit email requests to one per minute/five per hour per email,
+authentication to ten per hour per email, and all requests to thirty per hour per
+sender. Failed requests consume the budget. Provider rate limits also apply.
+
+Apply `20261007085627_recruitment_applicant_resume.sql` after the contact-capture
+migration. Before release, configure Supabase's **Magic Link** and **Confirm
+signup** email templates to display `{{ .Token }}` as a six-digit verification
+code; `signInWithOtp` sends a link by default unless the template includes the
+code. Retain existing confirmation links alongside the code for other Auth
+flows. Keep working SMTP/email delivery configured and confirm an actual new and
+existing account journey after an approved release. The provider request uses
+`shouldCreateUser: false`; it cannot create or reset accounts through a resend.
+The acknowledgement asks users to check their inbox without disclosing whether
+an account exists. This local implementation has not changed Auth configuration,
+applied remote migrations, sent live email or deployed anything.
+
+Local preview offers a labelled simulation of code entry and the verified enquiry
+screen. All authentication, email and CRM writes remain blocked. Phase 4 supplies
+the full personal/professional questionnaire; Phase 3 stops at verified access to
+the saved enquiry, and Phase 5 handles final submission on that record. Existing
+private invitations and their application workflow remain in place.
+
+Use the recruitment Vitest directory and standalone website packaging tests above.
+The database journey covers actual migrated SQL, server verification, cookie
+resume, sign-out, canonical ownership, agency isolation and session expiry using
+synthetic Auth responses. No check sends email or changes a remote account.
+
+### Applicant questionnaire (signup journey phase 4)
+
+Verified applicants now complete Personal Information and Professional Details
+in the shared popup. Four shorter screens cover names/date of birth, contact,
+experience/licence/FFC/activity/legal status, then employer/referral/address/start
+date. Verified email stays fixed. Phone and optional WhatsApp support country
+codes; the questionnaire is the South African module shared across organisations.
+A valid licence asks for the FFC number and candidate/non-principal/principal
+practitioner type. Answers are self-declared, not a PPRA compliance determination.
+
+Save & continue persists each step. Save & close accepts incomplete valid answers;
+closing changed answers also saves them, and a failed save keeps the popup open
+with retry or an explicit discard option. Signing back in restores answers and the
+saved step. Conflicting device edits require reloading the newer saved draft;
+identical retries do not add another revision. Completed questionnaires remain
+**Lead Received**, with no submitted application or staff membership. Final review,
+declaration and submission belong to phase 5.
+
+Apply `20261007091149_recruitment_applicant_questionnaire.sql` after the phase 3
+resume migration before releasing the new CRM query. It adds draft JSON, revision
+and saved time to the same recruitment lead. Service-only functions recheck the
+organisation-bound opaque session and canonical Auth identity on every save.
+Database validation fixes verified email, whitelists fields, checks dates, phone
+numbers, counts, lengths and conditional FFC requirements. A guard blocks staff
+updates to applicant draft fields and leaves the immutable contact receipt and
+submission stage intact. CRM managers can read the labelled draft separately from
+the original enquiry and submitted application.
+
+Use the recruitment Vitest directory and standalone packaging tests above.
+The isolated database test exercises the API against migrated SQL, draft saves,
+resume, retry/conflict handling, validation and agency/role/session isolation. The
+packaging test checks the bundled website handler against synthetic Auth/database
+servers. The local popup offers an in-memory questionnaire preview; it sends no
+answers and does not persist across a page reload. No remote migration, account,
+email or deployment has been performed for this phase.
+
+### Review and submit (signup journey phase 5)
+
+Save & review now opens a complete summary with edit buttons for each questionnaire
+section. Applicants explicitly confirm processing consent and an accuracy
+declaration before submitting. Both remain unchecked on entry and after loading
+newer answers from another device. Submission uses the saved draft revision;
+answers, agency IDs, verification flags and timestamps sent by the browser cannot
+replace the reviewed questionnaire. Uncertain responses keep the same retry key
+and declarations. A conflict requires reloading and reviewing the latest draft.
+
+`20261007092532_recruitment_verified_application_submission.sql` follows the phase
+4 migration. Its service-only RPC rechecks the organisation-bound opaque session,
+canonical confirmed Auth identity, expiry, account status, complete saved answers
+and current revision under a lead row lock. Submission atomically updates the
+**same lead** to **Application Submitted**, stamps the immutable application,
+consent wording/version/acceptance time and applicant identity, and adds one
+activity entry. Original contact capture, source and received time remain intact.
+Retries and another device's submission return the existing confirmation without
+another lead, application or activity entry. No staff membership, approval,
+contract, notification email or invitation is created by submission.
+
+The retained application uses `recruitment-application-v1` with
+`questionnaireVersion: recruitment-profile-v1`, preserving the existing staff
+review/approval workflow. CRM summaries show the exact personal/professional
+answers and recorded declarations. Qualification, training, CPD, mandate and
+operating-area answers are not inferred from this questionnaire; reviewers can
+request missing evidence. Submitted applicants return to a confirmation screen
+and cannot change the retained application. Existing private/legacy application
+invitations continue to work.
+
+Use the recruitment Vitest directory and standalone packaging checks above.
+Tests exercise migrated SQL and API submission, immutable consent/snapshot,
+invalid/stale/unverified/foreign/expired sessions, duplicate recovery, staff review
+and confirmation resume. Browser preview simulates review and confirmation only;
+no application is sent. Remote migration application and deployment require a
+separately approved release. No remote migration, email or deployment was
+performed while implementing this phase.
 
 Phase 2 adds the **Application Submitted** workflow. Organisation managers create
 public and website links from Recruitment, or a private invitation from a saved

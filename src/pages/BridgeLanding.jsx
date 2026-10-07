@@ -332,7 +332,7 @@ const Header = () => {
   return (
     <header className="sticky top-0 z-50 border-b border-white/60 bg-white/90 backdrop-blur-md">
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-6 px-6 py-4 sm:px-8 lg:px-0">
-        <div className="text-xl font-semibold tracking-[0.2em] text-bridge-text">Bridge</div>
+        <div className="text-xl font-semibold tracking-[0.2em] text-bridge-text">Arch9</div>
 
         <nav className="hidden items-center gap-6 text-sm font-semibold tracking-[0.25em] text-bridge-subtle lg:flex">
           {navLinks.map((link) => (
@@ -401,7 +401,7 @@ const Hero = () => (
           From offer to handover — all in one place.
         </h1>
         <p className="text-lg text-bridge-subtle">
-          Bridge gives developers, conveyancers, agents, and buyers a shared workspace to manage every step of the
+          Arch9 gives developers, conveyancers, agents, and buyers a shared workspace to manage every step of the
           property transaction process with more clarity, structure, and control.
         </p>
         <div className="flex flex-wrap gap-3">
@@ -488,7 +488,7 @@ const SolutionSection = () => (
   <Section id="solutions" className="bg-bridge-bg py-16">
     <SectionHeading
       title="One shared platform for the people moving the deal forward."
-      description="Bridge brings the key stakeholders in a property transaction into one structured system, so progress is visible, responsibilities are clear, and the process moves with less friction."
+      description="Arch9 brings the key stakeholders in a property transaction into one structured system, so progress is visible, responsibilities are clear, and the process moves with less friction."
     />
     <div className="mt-10 grid gap-6 md:grid-cols-2">
       {solutionPillars.map((pillar) => (
@@ -596,7 +596,7 @@ const WorkflowStackSection = () => (
       <div className="grid gap-10 lg:min-h-[340vh] lg:grid-cols-[0.9fr,1.1fr] lg:gap-12">
         <div className="self-start lg:sticky lg:top-[110px] lg:h-fit">
           <div className="inline-flex rounded-full border border-white/10 bg-white/[0.045] px-4 py-2 text-[11px] uppercase tracking-[0.32em] text-white/70">
-            Bridge signature
+            Arch9 signature
           </div>
 
           <h2 className="mt-6 max-w-[520px] text-4xl font-semibold leading-[0.95] tracking-tight text-white sm:text-5xl lg:text-[5rem]">
@@ -604,7 +604,7 @@ const WorkflowStackSection = () => (
           </h2>
 
           <p className="mt-6 max-w-[520px] text-base leading-8 text-white/60">
-            This is where Bridge differentiates itself. Every stage is connected, status is legible, and the active
+            This is where Arch9 differentiates itself. Every stage is connected, status is legible, and the active
             moment in the deal becomes obvious instead of buried in messages and spreadsheets.
           </p>
 
@@ -662,7 +662,7 @@ const RoleRoutingSection = () => (
 const OutcomesSection = () => (
   <Section id="outcomes" className="bg-bridge-bg py-16">
     <SectionHeading
-      title="Why teams use Bridge"
+      title="Why teams use Arch9"
       description="Commercial teams, conveyancers, agents, and buyers all share the same source of truth."
     />
     <div className="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
@@ -683,7 +683,7 @@ const TrustSection = () => (
   <Section id="trust" className="border-b border-bridge-border bg-white py-16">
     <SectionHeading
       title="Built for high-trust property workflows"
-      description="Bridge limits friction by matching real conveyancing stages with role-specific responsibilities."
+      description="Arch9 limits friction by matching real conveyancing stages with role-specific responsibilities."
     />
     <div className="mt-8 space-y-4">
       {trustStatements.map((statement) => (
@@ -701,7 +701,7 @@ const FinalCTASection = () => (
       <div className="space-y-6 text-white">
         <h2 className="text-3xl font-semibold">Bring more structure to every property transaction.</h2>
         <p className="text-base text-white/80">
-          See how Bridge helps your team manage the full journey from offer to handover with more clarity, control, and
+          See how Arch9 helps your team manage the full journey from offer to handover with more clarity, control, and
           confidence.
         </p>
         <div className="flex flex-wrap gap-3">
@@ -721,7 +721,7 @@ const Footer = () => (
   <footer className="bg-white/90 px-6 py-10 shadow-inner shadow-slate-900/5">
     <div className="mx-auto flex max-w-6xl flex-col gap-6 border-t border-bridge-border pt-6 text-sm text-bridge-subtle sm:flex-row sm:items-center sm:justify-between">
       <div>
-        <p className="font-semibold tracking-[0.4em] text-bridge-text">Bridge</p>
+        <p className="font-semibold tracking-[0.4em] text-bridge-text">Arch9</p>
         <p>One shared platform for property transactions.</p>
       </div>
 
@@ -737,7 +737,7 @@ const Footer = () => (
         </a>
       </div>
 
-      <p className="text-xs text-bridge-subtle">© {new Date().getFullYear()} Bridge</p>
+      <p className="text-xs text-bridge-subtle">© {new Date().getFullYear()} Arch9</p>
     </div>
   </footer>
 )

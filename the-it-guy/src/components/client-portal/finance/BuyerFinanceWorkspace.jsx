@@ -51,7 +51,7 @@ function FinanceJourney({ stages = [], theme }) {
   </section>
 }
 
-function LenderCards({ model, onOpenQuote, resolveQuote }) {
+function LenderCards({ model, onOpenQuote, resolveQuote, columns }) {
   const [selected, setSelected] = useState(null)
   const [downloadError, setDownloadError] = useState('')
   const [downloading, setDownloading] = useState('')
@@ -94,7 +94,7 @@ function LenderCards({ model, onOpenQuote, resolveQuote }) {
   const quotes = currentBank ? offers.filter(offer => buyerFinanceBankKey(offer.bankName) === buyerFinanceBankKey(currentBank.bankName)) : []
   return <section className={surface}>
     <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-base font-semibold text-[#142132]">Bank applications</h2><span className="text-xs text-[#667085]">{banks.length} lender{banks.length === 1 ? '' : 's'}</span></div>
-    {banks.length ? <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+    {banks.length ? <div className={`mt-5 grid gap-3 ${columns === 2 ? 'sm:grid-cols-2' : 'sm:grid-cols-2 xl:grid-cols-3'}`}>
       {banks.map(bank => {
         const available = offers.filter(offer => buyerFinanceBankKey(offer.bankName) === buyerFinanceBankKey(bank.bankName))
         return <button type="button" key={bank.id} data-finance-bank={bank.id} onClick={() => { setDownloadError(''); setSelected(bank) }} className="min-w-0 rounded-2xl border border-[#dbe5ef] bg-[#fbfdff] p-4 text-left transition hover:border-[#a9bbcb] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2" aria-label={`View ${bank.bankName} application`}>
@@ -137,7 +137,7 @@ function CashFundsCard({ model, cashProofAction }) {
   </section>
 }
 
-export default function BuyerFinanceWorkspace({ model, theme: themeInput, primaryAction = null, secondaryAction = null, cashProofAction = null, onOpenQuote = null, resolveQuote = null, refreshAction = null, showLenders = true }) {
+export default function BuyerFinanceWorkspace({ model, theme: themeInput, primaryAction = null, secondaryAction = null, cashProofAction = null, onOpenQuote = null, resolveQuote = null, refreshAction = null, showLenders = true, lenderColumns = 3, afterLenders = null }) {
   const theme = themeInput?.primary ? themeInput : createBuyerPortalTheme(themeInput)
   if (!model) return null
   return <section data-buyer-finance="workspace" data-finance-source={model.source} data-finance-mode={model.mode} className="space-y-5">
@@ -154,7 +154,8 @@ export default function BuyerFinanceWorkspace({ model, theme: themeInput, primar
         <div className="mt-5 flex flex-wrap items-center justify-between gap-4 border-t border-[#e3ebf4] pt-4"><div><p className="text-sm font-semibold text-[#142132]">{model.status}</p><p className="mt-1 text-xs leading-5 text-[#667085]">{model.firstAction?.description || model.statusHelper}</p></div><div className="flex flex-wrap gap-2">{refreshAction}{primaryAction}{secondaryAction}</div></div>
       </section>
       <FinanceJourney stages={model.stages} theme={theme} />
-      {showLenders ? <LenderCards model={model} onOpenQuote={onOpenQuote} resolveQuote={resolveQuote} /> : null}
+      {showLenders ? <LenderCards model={model} onOpenQuote={onOpenQuote} resolveQuote={resolveQuote} columns={lenderColumns} /> : null}
+      {afterLenders}
     </> : null}
   </section>
 }

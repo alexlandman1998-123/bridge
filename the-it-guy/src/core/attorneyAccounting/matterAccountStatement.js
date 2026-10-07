@@ -39,7 +39,7 @@ export function buildMatterFinancialStatementFileName(account = {}, { scope = 'm
   const party = safeFilePart(account.partyLabel || account.partyRole || 'account')
   const role = safeFilePart(account.partyRole || 'client')
   const date = new Date().toISOString().slice(0, 10)
-  return `bridge-${safeFilePart(scope)}-${role}-${party}-statement-${date}.csv`
+  return `arch9-${safeFilePart(scope)}-${role}-${party}-statement-${date}.csv`
 }
 
 export function buildMatterFinancialStatementCsv(account = {}, { includeInternal = false, generatedFor = 'client' } = {}) {
@@ -53,7 +53,7 @@ export function buildMatterFinancialStatementCsv(account = {}, { includeInternal
   const generatedAt = new Date().toISOString()
 
   const rows = [
-    ['Bridge matter account statement'],
+    ['Arch9 matter account statement'],
     ['Generated at', generatedAt],
     ['Generated for', generatedFor],
     ['Account', account.partyLabel || title(account.partyRole) || 'Matter account'],

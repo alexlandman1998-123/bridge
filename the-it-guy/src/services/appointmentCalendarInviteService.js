@@ -160,8 +160,8 @@ export function getAppointmentCalendarTitle(appointment = {}) {
     appointment?.appointment_type,
     'Appointment',
   )
-  return appointmentTypeLabel.toLowerCase().startsWith('bridge:')
-    ? appointmentTypeLabel
+  return /^(?:arch9|bridge):/i.test(appointmentTypeLabel)
+    ? appointmentTypeLabel.replace(/^bridge:/i, 'Arch9:')
     : `Arch9: ${appointmentTypeLabel}`
 }
 

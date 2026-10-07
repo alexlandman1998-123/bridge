@@ -74,20 +74,22 @@ function buildRentalLeadPayload(form = {}, role, context = {}, stage = 'new') {
 
 export function buildRentalLeadView(lead = {}, contact = {}) {
   const metadata = getRentalLeadMetadata(lead)
+  const qualification = metadata.qualification || {}
   const role = resolveRentalLeadRole(metadata.role || lead.rentalLeadRole)
   const stage = normaliseRentalLeadStage(metadata.stage || lead.rentalStage || lead.stage, role)
   const isLandlord = role === 'landlord'
   const propertyAddress = text(metadata.propertyAddress || lead.sellerPropertyAddress || lead.formattedAddress)
-  const desiredArea = text(metadata.desiredArea || lead.areaInterest)
+  const desiredArea = text(qualification.desiredArea ?? metadata.desiredArea ?? lead.areaInterest)
   return {
     id: text(lead.leadId || lead.lead_id), raw: lead, role, stage, leadType: metadata.leadType,
     stageLabel: getRentalLeadStageLabel(stage, role), nextAction: getRentalLeadNextAction(stage, role),
     name: contactName(contact), email: text(contact.email || lead.sellerEmail), phone: text(contact.phone || lead.sellerPhone),
     source: text(lead.leadSource) || 'Manual', assignedAgentId: text(lead.assignedAgentId || lead.assignedUserId), assignedAgentName: text(lead.assignedAgentName || lead.assignedAgentEmail) || 'Unassigned',
     propertyAddress, propertyType: text(metadata.propertyType), expectedMonthlyRent: numberOrNull(metadata.expectedMonthlyRent),
-    qualification: metadata.qualification || {},
-    desiredArea, monthlyBudget: numberOrNull(metadata.monthlyBudget ?? lead.budget), bedrooms: numberOrNull(metadata.bedrooms),
-    occupationDate: text(metadata.occupationDate), pets: text(metadata.pets),
+    qualification,
+    viewingRequest: metadata.viewingRequest || {},
+    desiredArea, monthlyBudget: numberOrNull(qualification.monthlyBudget ?? metadata.monthlyBudget ?? lead.budget), bedrooms: numberOrNull(qualification.bedrooms ?? metadata.bedrooms),
+    occupationDate: text(qualification.occupationDate ?? metadata.occupationDate), pets: text(qualification.pets ?? metadata.pets),
     campaign: text(metadata.campaign), relationships: metadata.relationships, consents: metadata.consents, ingestion: metadata.ingestion || {}, workflow: metadata.workflow || {}, outcome: getRentalLeadOutcome(lead),
     focus: isLandlord ? propertyAddress || 'Property details pending' : desiredArea || 'Rental requirement pending',
     createdAt: lead.createdAt, updatedAt: lead.updatedAt,

@@ -1,6 +1,7 @@
 export function BuyerPortalOverviewShell({
   hero,
   progress,
+  afterProgress = null,
   updates,
   documents,
   insights,
@@ -10,6 +11,7 @@ export function BuyerPortalOverviewShell({
     <section className="space-y-6" data-buyer-portal-overview="shared">
       <div data-buyer-overview-region="hero">{hero}</div>
       {progress ? <div data-buyer-overview-region="progress">{progress}</div> : null}
+      {afterProgress ? <div data-buyer-overview-region="after-progress">{afterProgress}</div> : null}
       {updates || documents ? (
         <section className="grid gap-5 xl:grid-cols-2 xl:items-stretch" data-buyer-overview-region="activity-documents">
           {updates ? <div className="min-w-0">{updates}</div> : null}

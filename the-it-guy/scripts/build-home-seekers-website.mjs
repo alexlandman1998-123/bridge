@@ -1,7 +1,8 @@
-import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { cp, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { build } from 'vite'
+import react from '@vitejs/plugin-react'
 
 const packageRoot = fileURLToPath(new URL('..', import.meta.url))
 export const HOME_SEEKERS_DEPLOYMENT_ROOT = join(packageRoot, '.vercel/home-seekers-website')
@@ -10,7 +11,25 @@ export const HOME_SEEKERS_VERCEL_PROJECT = {
   orgId: 'team_ezJ5RCE7qwTf14fw215IhPs5',
   projectName: 'home-seekers-website',
 }
-export const HOME_SEEKERS_FUNCTIONS = ['site', 'leads', 'analytics', 'applications']
+export const HOME_SEEKERS_FUNCTIONS = ['site', 'leads', 'analytics', 'applications', 'recruitment']
+
+export async function buildHomeSeekersFrontend(frontendDirectory) {
+  // Use the public route entry rather than building the frequently active CRM
+  // checkout. Server credentials are only read by the packaged functions.
+  const result = await build({
+    root: packageRoot,
+    configFile: false,
+    envFile: false,
+    plugins: [react()],
+    build: {
+      outDir: frontendDirectory,
+      emptyOutDir: true,
+      rollupOptions: { input: join(packageRoot, 'home-seekers.html') },
+    },
+  })
+  await rename(join(frontendDirectory, 'home-seekers.html'), join(frontendDirectory, 'index.html'))
+  return result
+}
 
 // Resolve real files and functions before the SPA fallback. Unknown API paths
 // must return an error rather than a successful response containing index.html.
@@ -77,8 +96,8 @@ export async function packageHomeSeekersWebsite({ frontendDirectory, deploymentR
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   const frontendDirectory = join(HOME_SEEKERS_DEPLOYMENT_ROOT, 'frontend')
-  await build({ root: packageRoot, build: { outDir: frontendDirectory, emptyOutDir: true } })
+  await buildHomeSeekersFrontend(frontendDirectory)
   const outputRoot = await packageHomeSeekersWebsite({ frontendDirectory })
   console.log(`Home Seekers website prepared at ${outputRoot}`)
-  console.log('Includes site, leads, analytics and applications APIs. No deployment was performed.')
+  console.log('Includes site, leads, analytics, applications and recruitment signup APIs. No deployment was performed.')
 }

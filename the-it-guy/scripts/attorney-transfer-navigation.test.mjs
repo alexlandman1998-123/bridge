@@ -54,6 +54,19 @@ for (const [laneKey, stepKey, expectedCount] of [
   assert.equal(model.phases.length, expectedCount, `${laneKey} displays every defined phase`)
   assert.equal(model.phases[1].status, 'not_applicable', `${laneKey} labels empty phases not applicable`)
   assert.equal(resolveTransferWorkspaceNavigation(parsedLane, model.phases).view, 'workspace', `${laneKey} opens its task workspace`)
+  const stageModel = buildTransferWorkspaceViewModel({ workflowKey: laneKey,
+    sharedJourneyTasks: getAttorneyStageDefinitionsForLane(laneKey).map(task => ({ key: task.key, status: 'not_started' })),
+    stageNavigation: { view: 'overview', stageKey: getLegalWorkspacePhases(laneKey)[1].key },
+    selectedTaskKey: stepKey,
+  })
+  const stageTask = getTransferStageEntryTask(stageModel.phases[1])
+  assert.equal(stageModel.selectedTask.key, stageTask.key, 'stage entry overrides a cached task from another stage')
+  assert.equal(stageModel.currentPhase.key, stageModel.phases[1].key, 'task content follows the selected stage')
+  const completedEntry = buildTransferWorkspaceViewModel({ workflowKey: laneKey,
+    sharedJourneyTasks: stageModel.tasks.map(task => ({ key: task.key, phaseKey: task.phaseKey, status: task.key === stageTask.key ? 'completed' : 'not_started' })),
+    stageNavigation: { view: 'workspace', stageKey: stageModel.phases[1].key, taskKey: stageTask.key },
+  })
+  assert.equal(completedEntry.selectedTask.key, stageTask.key, 'completion keeps the open task selected for review')
 }
 // A saved task update must move Work and the top journey together, even when
 // the lane's older current-stage pointer has not refreshed yet.
@@ -117,8 +130,15 @@ assert.equal(newerPlanTask.tasks[0].label, 'Authority review')
 assert.equal(newerPlanTask.tasks[0].phaseKey, 'fica_authority')
 assert.equal(newerPlanTask.phases.find(phase => phase.key === 'fica_authority').completed, 1)
 
-assert.equal(resolveTransferWorkspaceNavigation(readTransferWorkspaceNavigation('?transferView=workspace&transferStage=missing&transferTask=missing'), phases).view, 'overview')
-assert.equal(resolveTransferWorkspaceNavigation(readTransferWorkspaceNavigation('?transferView=workspace&transferStage=instruction&transferTask=lodgement_ready'), phases).view, 'overview')
+for (const search of ['', '?transferView=overview', '?transferView=overview&transferStage=instruction', '?transferView=workspace&transferStage=missing&transferTask=missing', '?transferView=workspace&transferStage=instruction&transferTask=lodgement_ready']) {
+  const resolved = resolveTransferWorkspaceNavigation(readTransferWorkspaceNavigation(search), phases)
+  assert.equal(resolved.view, 'workspace', 'default, old overview and invalid links open useful task work')
+  assert.equal(resolved.task.key, 'instruction_received')
+}
+assert.equal(resolveTransferWorkspaceNavigation({ view: 'overview', stageKey: 'closure' }, phases).task.key, 'closure_review', 'a completed stage opens for review')
+assert.equal(resolveTransferWorkspaceNavigation({ view: 'overview' }, []).view, 'overview', 'a missing workflow has no phantom task')
+assert.equal(resolveTransferWorkspaceNavigation({ stageKey: 'empty' }, [{ key: 'empty', tasks: [] }]).task, null, 'an empty stage remains reviewable without a task')
+assert.equal(resolveTransferWorkspaceNavigation({ view: 'workspace', stageKey: 'instruction', taskKey: 'matter_opened' }, phases).task.key, 'matter_opened', 'explicit completed task links retain their selection')
 assert.equal(getTransferStageEntryTask(phases[0]).key, 'instruction_received')
 assert.equal(getTransferStageEntryTask(phases[2]).key, 'closure_review', 'completed stages still open for review')
 for (const phase of phases) {
@@ -161,7 +181,7 @@ try {
       assert.equal(document.querySelectorAll('.legal-workflow-stage-grid > li').length, laneKey === 'transfer' ? 6 : 4)
       assert.equal(document.querySelector('[aria-label="Task workspace"] h2').textContent, definition.label)
       assert.equal(document.querySelectorAll('.legal-stage-task-row[aria-current="step"]').length, 1)
-      assert.doesNotMatch(document.querySelector('[aria-label="Task workspace"]').textContent, /Transfer Coverage|Lane Command Queue|Outcome Checkpoint|Choose a task in/)
+      assert.doesNotMatch(document.querySelector('[aria-label="Task workspace"]').textContent, /Transfer Coverage|Lane Command Queue|Outcome Checkpoint/)
       coveredTasks++
     }
     for (const definition of definitions) for (const alias of definition.aliases || []) {
@@ -283,48 +303,42 @@ try {
           setNavigation(readTransferWorkspaceNavigation(writeTransferWorkspaceNavigation('', { ...next, laneKey })))
           return true
         }
-        return resolved.view === 'overview'
-          ? createElement(TransferStageOverview, { phases: lanePhases, workflowKey: laneKey, selectedPhase: resolved.phase,
-            onSelectStage: stageKey => navigate({ view: 'overview', stageKey }),
-            onOpenStage: (stageKey, taskKey) => navigate({ view: 'workspace', stageKey, taskKey }) })
-          : createElement(LegalTaskWorkbench, {
+        return createElement(TransferStageOverview, {
+          phases: lanePhases, workflowKey: laneKey, selectedPhase: resolved.phase,
+          selectedTaskKey: resolved.task.key,
+          onSelectStage: stageKey => navigate({ view: 'overview', stageKey }),
+          onOpenStage: (stageKey, taskKey) => navigate({ view: 'workspace', stageKey, taskKey }),
+          taskPanel: createElement(LegalTaskWorkbench, {
             model: { taskKey: resolved.task.key, taskLabel: resolved.task.label, workflowLabel: laneKey,
               phaseLabel: resolved.phase.label, status: 'not_started', readOnly: false, documents: [], notes: [], activity: [],
               confirmationRows: [{ id: 'reviewed', label: 'Evidence reviewed' }], confirmationRequirements: [],
               outstandingRequirements: [], requirementActions: {}, contextualActions: [], outcomeActions: [], followUpActions: [] },
-            phases: lanePhases, selectedPhaseKey: resolved.phase.key, selectedTaskKey: resolved.task.key, focusedStage: true,
-            onBackToStages: () => navigate({ view: 'overview', stageKey: resolved.phase.key }),
-            onSelectTask: taskKey => navigate({ view: 'workspace', stageKey: resolved.phase.key, taskKey }),
+            phases: lanePhases, selectedPhaseKey: resolved.phase.key, selectedTaskKey: resolved.task.key, focusedStage: true, embedded: true,
             onConfirmationDirtyChange: (_taskKey, isDirty) => setDirty(isDirty),
             onSaveConfirmations: async answers => { saved.push(answers); return true },
-          })
+          }),
+        })
       }
       const hierarchy = render(createElement(WorkflowNavigationHarness))
-      fireEvent.click(hierarchy.getByRole('button', { name: `Open task: ${openedPhase.tasks[0].label}` }))
-      const back = hierarchy.getByRole('button', { name: `Back to ${openedPhase.label}` })
-      const returnNavigation = hierarchy.getByRole('navigation', { name: 'Workflow return navigation' })
-      const taskNavigation = hierarchy.getByRole('navigation', { name: `${openedPhase.label} tasks` })
-      assert.ok(returnNavigation.compareDocumentPosition(taskNavigation) & 4, 'return control precedes the task picker')
+      assert.ok(hierarchy.getByRole('region', { name: 'Task workspace' }), 'opening a stage opens its first task immediately')
+      assert.ok(hierarchy.getByRole('heading', { name: openedPhase.tasks[0].label }))
+      assert.equal(hierarchy.queryByRole('button', { name: /Back to/ }), null, 'the permanent workspace has no redundant return button')
+      const previousPhase = lanePhases[lanePhases.indexOf(openedPhase) - 1]
+      const previousStageButton = () => within(hierarchy.getByRole('navigation', { name: /stages$/ })).getByRole('button', { name: new RegExp(previousPhase.label.replace(/[&]/g, '.')) })
       fireEvent.click(hierarchy.getByRole('button', { name: 'Yes' }))
-      assert.equal(back.disabled, false, 'unsaved answers must offer a guarded return rather than trapping the attorney')
-      fireEvent.click(back)
+      fireEvent.click(previousStageButton())
       assert.equal(prompts.length, 1)
       assert.equal(hierarchy.getByRole('button', { name: 'Yes' }).getAttribute('aria-pressed'), 'true', 'cancel preserves the draft and task')
       fireEvent.click(hierarchy.getByRole('button', { name: 'Save answers' }))
       await waitFor(() => assert.ok(hierarchy.getByText('Answers saved')))
       assert.equal(saved[0].reviewed.answer, 'yes')
-      fireEvent.click(back)
-      assert.ok(hierarchy.getByRole('heading', { name: openedPhase.label }), 'return restores the originating stage item list')
-      assert.equal(prompts.length, 1, 'saved answers return without another warning')
-      fireEvent.click(hierarchy.getByRole('button', { name: `Open task: ${openedPhase.tasks[0].label}` }))
+      fireEvent.click(previousStageButton())
+      assert.ok(hierarchy.getByRole('heading', { name: previousPhase.tasks[0].label }), 'switching stages opens task details directly')
+      assert.equal(prompts.length, 1, 'saved answers switch stages without another warning')
       fireEvent.click(hierarchy.getByRole('button', { name: 'No' }))
       allowDiscard = true
-      fireEvent.click(hierarchy.getByRole('button', { name: `Back to ${openedPhase.label}` }))
-      assert.ok(hierarchy.getByRole('heading', { name: openedPhase.label }), 'confirmed discard returns to the stage')
-      const previousPhase = lanePhases[lanePhases.indexOf(openedPhase) - 1]
-      fireEvent.click(within(hierarchy.getByRole('navigation', { name: /stages$/ })).getByRole('button', { name: new RegExp(previousPhase.label.replace(/[&]/g, '.')) }))
-      assert.ok(hierarchy.getByRole('heading', { name: previousPhase.label }), 'the previous stage remains accessible as an item list')
-      assert.equal(hierarchy.queryByRole('navigation', { name: 'Task sections' }), null, 'stage navigation does not skip into a task')
+      fireEvent.click(within(hierarchy.getByRole('navigation', { name: /stages$/ })).getByRole('button', { name: new RegExp(openedPhase.label.replace(/[&]/g, '.')) }))
+      assert.ok(hierarchy.getByRole('heading', { name: openedPhase.tasks[0].label }), 'confirmed discard opens the chosen stage task')
       cleanup()
     }
     const selections = []
@@ -391,7 +405,7 @@ try {
         const sharedTasks = definitions.map(task => ({ key: task.key, status: 'not_started',
           phaseKey: getLegalWorkspacePhases(laneKey).find(phase => phase.stageKeys.includes(task.key)).key }))
         const vm = buildTransferWorkspaceViewModel({ workflowKey: laneKey, sharedJourneyTasks: sharedTasks,
-          selectedTaskKey: navigation.taskKey, workflow: { lane: { laneKey, permissions: { canUpdateStage: true },
+          stageNavigation: navigation, selectedTaskKey: navigation.taskKey, workflow: { lane: { laneKey, permissions: { canUpdateStage: true },
             steps: sharedTasks.map(task => ({ stepKey: task.key, status: task.status, taskConfirmations: answers[task.key] })) } } })
         const resolved = resolveTransferWorkspaceNavigation(navigation, vm.phases)
         function navigate(next) {
@@ -416,36 +430,36 @@ try {
           selectedPhase: resolved.phase, selectedTaskKey: resolved.task?.key, taskPanel: panel,
           canUpdate: !dirty, onOpenStage: (stageKey, taskKey) => navigate({ view: 'workspace', stageKey, taskKey }),
           onSelectStage: stageKey => navigate({ view: 'overview', stageKey }),
-          onCloseTask: () => navigate({ view: 'overview', stageKey: resolved.phase.key }) })
+          })
       }
       const shared = render(createElement(SharedPanelHarness))
       const first = getAttorneyStageDefinitionsForLane(laneKey)[0]
-      fireEvent.click(shared.getByRole('button', { name: `Open task: ${first.label}` }))
       const panel = shared.getByRole('region', { name: 'Task workspace' })
       assert.ok(document.activeElement === panel, 'opening a task places keyboard focus in its panel')
       assert.ok(shared.getByRole('navigation', { name: /stages$/ }), 'stages stay in the shared shell')
       assert.ok(shared.getByRole('button', { name: `Open task: ${first.label}` }), 'task list stays mounted beside the panel')
       assert.ok(!shared.queryByRole('navigation', { name: /tasks$/ }), 'embedded work does not repeat the task navigator')
+      assert.equal(shared.queryByRole('button', { name: 'Close task panel' }), null)
       fireEvent.click(within(panel).getByRole('button', { name: 'Task options' }))
       fireEvent.keyDown(within(panel).getByRole('button', { name: 'Task options' }), { key: 'Escape' })
-      assert.equal(within(panel).getByRole('button', { name: 'Task options' }).getAttribute('aria-expanded'), 'false', 'Escape dismisses options before returning to the stage')
+      assert.equal(within(panel).getByRole('button', { name: 'Task options' }).getAttribute('aria-expanded'), 'false', 'Escape dismisses task options')
       assert.ok(document.activeElement === within(panel).getByRole('button', { name: 'Task options' }))
+      const second = shared.getByRole('combobox').options[1].value
       fireEvent.click(within(panel).getAllByRole('button', { name: 'Yes' })[0])
-      fireEvent.keyDown(panel, { key: 'Escape' })
+      fireEvent.change(shared.getByRole('combobox'), { target: { value: second } })
       assert.equal(prompts.length, 1)
-      assert.equal(within(shared.getByRole('region', { name: 'Task workspace' })).getAllByRole('button', { name: 'Yes' })[0].getAttribute('aria-pressed'), 'true', 'cancelled close preserves the answer')
+      assert.equal(within(shared.getByRole('region', { name: 'Task workspace' })).getAllByRole('button', { name: 'Yes' })[0].getAttribute('aria-pressed'), 'true', 'cancelled task switch preserves the answer')
+      assert.equal(shared.getByRole('combobox').value, first.key, 'cancelled mobile selection returns to the current task')
       await act(async () => fireEvent.click(within(panel).getByRole('button', { name: 'Save answers' })))
       await waitFor(() => assert.equal(saves.length, 1))
       await waitFor(() => assert.ok(shared.getByText('Answers saved')))
-      fireEvent.keyDown(panel, { key: 'Escape' })
-      await waitFor(() => assert.ok(!shared.queryByRole('region', { name: 'Task workspace' })))
-      assert.ok(document.activeElement === shared.getByRole('button', { name: `Open task: ${first.label}` }), 'close restores focus to the originating task row')
-      assert.equal(scrollReturns.at(-1).top, 84, 'close restores the list viewport position')
+      fireEvent.change(shared.getByRole('combobox'), { target: { value: second } })
+      assert.equal(shared.getByRole('combobox').value, second, 'mobile switches tasks directly after saving')
+      assert.ok(shared.getByRole('region', { name: 'Task workspace' }), 'switching tasks keeps the workspace open')
       assert.equal(prompts.length, 1, 'saved answers do not prompt again')
       if (laneKey === 'transfer') {
-        fireEvent.click(shared.getByRole('button', { name: 'Open task: File Opened and Matter Number Assigned' }))
         fireEvent.change(shared.getByPlaceholderText('Enter the firm matter number'), { target: { value: 'MAT-DRAFT' } })
-        fireEvent.click(shared.getByRole('button', { name: 'Close task panel' }))
+        fireEvent.click(shared.getByRole('button', { name: `Open task: ${first.label}` }))
         assert.equal(shared.getByPlaceholderText('Enter the firm matter number').value, 'MAT-DRAFT', 'cancelled navigation preserves an inline field')
         fireEvent.click(shared.getByRole('button', { name: 'Save matter number' }))
         await waitFor(() => assert.ok(shared.getByRole('alert').textContent.includes('Number save failed')))
@@ -455,8 +469,8 @@ try {
         failNumberSave = false
         await act(async () => fireEvent.click(shared.getByRole('button', { name: 'Save matter number' })))
         await waitFor(() => assert.ok(!shared.getByRole('button', { name: 'Save matter number' }).disabled))
-        fireEvent.click(shared.getByRole('button', { name: 'Close task panel' }))
-        await waitFor(() => assert.ok(!shared.queryByRole('region', { name: 'Task workspace' })))
+        fireEvent.click(shared.getByRole('button', { name: `Open task: ${first.label}` }))
+        assert.equal(shared.getByRole('combobox').value, first.key)
       }
       cleanup()
     }
@@ -481,10 +495,16 @@ try {
     const bulkUpdates = []
     const bulk = render(createElement(TransferStageOverview, {
       phases: [bulkPhase], selectedPhase: bulkPhase, canUpdate: true,
+      selectedTaskKey: bulkPhase.tasks[0].key, taskPanel: createElement('div', null, 'Focused task'),
       onUpdateTask: async (...args) => { bulkUpdates.push(args); return true },
     }))
-    fireEvent.click(bulk.getByLabelText('Select tasks'))
-    fireEvent.click(bulk.getByRole('button', { name: /Mark selected complete/ }))
+    assert.ok(bulk.getByRole('button', { name: 'Mark stage complete' }), 'stage actions stay available alongside the open task')
+    fireEvent.click(bulk.getByRole('button', { name: 'Stage options' }))
+    fireEvent.click(bulk.getByRole('button', { name: 'Complete selected tasks' }))
+    assert.ok(bulk.getByRole('button', { name: 'Review completion' }).disabled, 'bulk completion requires an explicit selection')
+    fireEvent.click(bulk.getByLabelText('Select all available tasks'))
+    fireEvent.click(bulk.getByRole('button', { name: 'Review completion' }))
+    assert.equal(bulkUpdates.length, 0, 'selecting tasks does not save before the completion confirmation')
     fireEvent.click(bulk.getByRole('button', { name: 'Save & complete' }))
     await waitFor(() => assert.equal(bulkUpdates.length, 2))
     assert.equal(bulkUpdates[0][3].overrideScope, 'bulk')
@@ -493,6 +513,7 @@ try {
     const stageUpdates = []
     const stage = render(createElement(TransferStageOverview, {
       phases: [bulkPhase], selectedPhase: bulkPhase, canUpdate: true,
+      selectedTaskKey: bulkPhase.tasks[0].key, taskPanel: createElement('div', null, 'Focused task'),
       onUpdateTask: async (...args) => { stageUpdates.push(args); return true },
     }))
     fireEvent.click(stage.getByRole('button', { name: 'Mark stage complete' }))

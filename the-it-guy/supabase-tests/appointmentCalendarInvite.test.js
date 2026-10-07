@@ -1,6 +1,6 @@
 import { Buffer } from 'node:buffer'
 import { describe, expect, it } from 'vitest'
-import { buildAppointmentICSPayload, getGoogleCalendarLink, getOutlookCalendarLink } from '../src/services/appointmentCalendarInviteService'
+import { buildAppointmentICSPayload, getAppointmentCalendarTitle, getGoogleCalendarLink, getOutlookCalendarLink } from '../src/services/appointmentCalendarInviteService'
 import { buildIcsAttachment } from '../../supabase/functions/send-email/handlers/appointment.ts'
 
 function decodeAttachment(attachment) {
@@ -34,6 +34,16 @@ function payload(overrides = {}) {
 }
 
 describe('appointment calendar attachment', () => {
+  it('updates legacy calendar titles without duplicating the Arch9 prefix', () => {
+    expect(getAppointmentCalendarTitle({ title: 'Bridge: Viewing' })).toBe('Arch9: Viewing')
+    expect(getAppointmentCalendarTitle({ title: 'Arch9: Viewing' })).toBe('Arch9: Viewing')
+    expect(getAppointmentCalendarTitle({ title: 'Viewing' })).toBe('Arch9: Viewing')
+    const appointment = { title: 'Bridge: Viewing', appointment_id: 'stable', appointment_date: '2099-07-20', start_time: '10:00' }
+    expect(new URL(getGoogleCalendarLink(appointment)).searchParams.get('text')).toBe('Arch9: Viewing')
+    expect(new URL(getOutlookCalendarLink(appointment)).searchParams.get('subject')).toBe('Arch9: Viewing')
+    expect(buildAppointmentICSPayload(appointment).uid).toBe('bridge-stable@bridge.app')
+  })
+
   it('emits stable Johannesburg-to-UTC event data and organizer fields', () => {
     const attachment = buildIcsAttachment(payload())
     const content = decodeAttachment(attachment)

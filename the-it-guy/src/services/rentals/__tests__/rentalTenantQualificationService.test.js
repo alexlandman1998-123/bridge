@@ -23,6 +23,13 @@ const context = {
   scope: { assignedAgentId: 'agent', scopeLevel: 'agent' },
 }
 let raw
+it('uses saved tenant qualification for matching even when legacy budget fields are missing or stale', () => {
+  const view = buildRentalLeadView({ leadId: 'tenant', budget: 0, rawEnquiryPayload: createRentalCrmLeadMetadata({
+    organisationId: 'org', role: 'tenant', qualification: { monthlyBudget: 15000, desiredArea: 'Newlands', bedrooms: 2 },
+    legacy: { monthlyBudget: 8000, desiredArea: 'Old area' },
+  }) })
+  expect(view).toMatchObject({ monthlyBudget: 15000, desiredArea: 'Newlands', bedrooms: 2 })
+})
 beforeEach(() => {
   vi.clearAllMocks()
   raw = {

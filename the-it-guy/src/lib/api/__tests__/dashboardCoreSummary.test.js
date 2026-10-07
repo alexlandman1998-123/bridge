@@ -167,6 +167,20 @@ try {
     assert.equal(queriedTables.has(secondaryTable), false, `${secondaryTable} must not block the core Dashboard summary`)
   }
 
+  const signedPaths = []
+  client.supabaseUrl = 'https://project.supabase.co'
+  client.storage = { from(bucket) { return { async createSignedUrls(paths) {
+    signedPaths.push(...paths)
+    return { data: paths.map((path) => ({ path, signedUrl: `${client.supabaseUrl}/storage/v1/object/sign/${bucket}/${path}?token=fresh` })) }
+  } } } }
+  const expiredHero = `${client.supabaseUrl}/storage/v1/object/sign/documents/developments/dev-1/marketing/hero.png?token=expired`
+  datasets.development_profiles[0].marketing_content.mediaLibrary.heroImageUrl = expiredHero
+  const renewed = await fetchDashboardOverview({ client, organisationId: 'org-1', includeSecondaryData: false })
+  assert.match(renewed.developmentSummaries[0].coverImageUrl, /token=fresh$/)
+  assert.match(renewed.rows[0].development.cover_image_url, /token=fresh$/)
+  assert.deepEqual(signedPaths, ['developments/dev-1/marketing/hero.png'], 'portfolio and transaction cards share a single signing request')
+  assert.equal(datasets.development_profiles[0].marketing_content.mediaLibrary.heroImageUrl, expiredHero)
+
   console.log('Dashboard core summary tests passed')
 } finally {
   await server.close()
