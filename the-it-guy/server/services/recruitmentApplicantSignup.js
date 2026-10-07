@@ -29,6 +29,10 @@ export async function createRecruitmentApplicant(db, link, submissionKey, contac
     // organisation membership, staff role or applicant CRM access.
     app_metadata: { recruitment_contact_lead_id: receipt.lead_id, recruitment_organisation_id: link.organisation_id },
   })
+  // An existing Arch9 account continues through the same email ownership proof.
+  // Do not replace its password, metadata, roles or membership, and do not bind
+  // it to this enquiry until recruitment_open_applicant_session verifies Auth.
+  if (created.error?.code === 'email_exists') return { duplicate: false }
   if (!created.error && matches(created.data?.user) && !created.data.user.email_confirmed_at) return { duplicate: false }
   // Another identical request may have won, or the provider response was lost.
   const recovered = await read()

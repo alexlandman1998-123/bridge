@@ -11,7 +11,7 @@ beforeEach(() => {
   requests = []
   vi.stubGlobal('fetch', vi.fn(async (_url, options) => {
     const body = JSON.parse(options.body); requests.push(body)
-    return response(body.action === 'context' ? context : { accepted: true, contactAccepted: true, accountCreated: true })
+    return response(body.action === 'context' ? context : { accepted: true, contactAccepted: true, verificationRequired: true })
   }))
 })
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
@@ -106,11 +106,11 @@ it('shows an unavailable link instead of allowing an account request', async () 
 })
 
 const verifiedApplicant = {emailVerification:'verified',stage:'lead_received',applicationSubmitted:false,contact:{firstName:'Fixture',lastName:'Applicant',email:'applicant@example.test',phone:'+27821234567'}}
-it('sends a verification request after capture and opens the original enquiry only after a successful code', async () => {
+it.each(['123456','12345678'])('sends a verification request after capture and opens the original enquiry only after successful code %s', async (code) => {
   fetch.mockImplementation(async(_url,options)=>{
     const body=JSON.parse(options.body);requests.push(body)
     if(body.action==='context')return response(context)
-    if(body.action==='signup')return response({accepted:true,contactAccepted:true,accountCreated:true})
+    if(body.action==='signup')return response({accepted:true,contactAccepted:true,verificationRequired:true})
     if(body.action==='send_verification')return response({verificationRequested:true})
     return response({applicant:verifiedApplicant})
   })
@@ -120,7 +120,7 @@ it('sends a verification request after capture and opens the original enquiry on
   await waitFor(()=>expect(screen.getByRole('button',{name:'Verify & continue'}).disabled).toBe(false))
   expect(requests.map(r=>r.action)).toEqual(['context','signup','send_verification'])
   expect(screen.queryByText('Email verified')).toBeNull()
-  fireEvent.change(screen.getByLabelText('Verification code'),{target:{value:'123456'}})
+  fireEvent.change(screen.getByLabelText('Verification code'),{target:{value:code}})
   fireEvent.click(screen.getByRole('button',{name:'Verify & continue'}))
   await screen.findByRole('form',{name:'Applicant questionnaire form'})
   expect(screen.getByLabelText(/First name/).value).toBe('Fixture')
@@ -167,7 +167,7 @@ it('keeps the saved enquiry usable after email delivery failure or an expired co
   fetch.mockImplementation(async(_url,options)=>{
     const body=JSON.parse(options.body);requests.push(body)
     if(body.action==='context')return response(context)
-    if(body.action==='signup')return response({accepted:true,contactAccepted:true,accountCreated:true})
+    if(body.action==='signup')return response({accepted:true,contactAccepted:true,verificationRequired:true})
     if(body.action==='send_verification'){if(!delivered){delivered=true;return response({error:'Fixture email unavailable'},503)}return response({verificationRequested:true})}
     return response({error:'Fixture expired code'},401)
   })

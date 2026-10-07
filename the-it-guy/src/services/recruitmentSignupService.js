@@ -15,7 +15,8 @@ export async function recruitmentSignupRequest(action, details = {}, { endpoint 
   try {
     const response = await fetcher(endpoint, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, signal: controller.signal, body: JSON.stringify(body) })
     const result = await response.json().catch(() => ({}))
-    if (!response.ok || (action === 'submit_profile' && (result.accepted !== true || result.applicant?.applicationSubmitted !== true || result.applicant.emailVerification !== 'verified')) || (action === 'signup' && (result.accepted !== true || result.accountCreated !== true)) || (action === 'save_profile' && (result.saved !== true || result.applicant?.emailVerification !== 'verified'))) {
+    const signupReady = result.accepted === true && (result.accountCreated === true || (result.contactAccepted === true && result.verificationRequired === true))
+    if (!response.ok || (action === 'submit_profile' && (result.accepted !== true || result.applicant?.applicationSubmitted !== true || result.applicant.emailVerification !== 'verified')) || (action === 'signup' && !signupReady) || (action === 'save_profile' && (result.saved !== true || result.applicant?.emailVerification !== 'verified'))) {
       const error = new Error(result.error || (action === 'submit_profile' ? 'Your application could not be submitted. Please retry.' : action === 'save_profile' ? 'Your questionnaire could not be saved. Please retry.' : 'Your account could not be created. Please retry.'))
       error.contactAccepted = result.contactAccepted === true
       error.status = response.status

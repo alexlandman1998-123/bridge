@@ -30,7 +30,7 @@ const request = (db, extra = {}) => createRecruitmentIntakeResponse({ client: db
 it('captures contacts before creating an unconfirmed account and never passes passwords into CRM', async () => {
   const db = client()
   const result = await request(db, { body: { ...body, accountId: 'forged', app_metadata: { role: 'admin' } } })
-  expect(result.body).toMatchObject({ accountCreated: true, contactAccepted: true, emailVerification: 'pending', stage: 'lead_received' })
+  expect(result.body).toMatchObject({ verificationRequired: true, contactAccepted: true, emailVerification: 'pending', stage: 'lead_received' })
   expect(db.rpc.mock.invocationCallOrder[0]).toBeLessThan(db.auth.admin.createUser.mock.invocationCallOrder[0])
   expect(JSON.stringify(db.rpc.mock.calls)).not.toContain(password)
   expect(db.auth.admin.createUser).toHaveBeenCalledWith({ id: expect.stringMatching(/^[a-f0-9]{8}-[a-f0-9]{4}-8[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/), email: contact.email, password, email_confirm: false, user_metadata: { full_name: 'Fixture Applicant' }, app_metadata: { recruitment_contact_lead_id: lead, recruitment_organisation_id: org } })
@@ -39,13 +39,27 @@ it('captures contacts before creating an unconfirmed account and never passes pa
 })
 it('recovers retries and lost provider responses without changing the existing password', async () => {
   const db = client({ lostResponse: true })
-  expect((await request(db)).body.accountCreated).toBe(true)
+  expect((await request(db)).body.verificationRequired).toBe(true)
   expect((await request(db, { body: { ...body, password: 'ChangedFixture123' } })).body.duplicate).toBe(true)
   expect(db.auth.admin.createUser).toHaveBeenCalledTimes(1)
   expect(db.auth.admin.createUser.mock.calls[0][0].password).toBe(password)
 })
-it('keeps captured contact after Auth failure and returns a generic error for an existing email', async () => {
+it('continues existing Arch9 emails through verification without changing or exposing the existing account', async () => {
   const db = client({ accountError: { code: 'email_exists', message: 'Private provider detail' } })
+  const result = await request(db)
+  const fresh = await request(client())
+  expect(result).toEqual(fresh)
+  expect(result.body).toMatchObject({ accepted: true, contactAccepted: true, verificationRequired: true, emailVerification: 'pending' })
+  expect(result.headers).not.toHaveProperty('Set-Cookie')
+  expect(result.body).not.toHaveProperty('applicant')
+  expect(result.body).not.toHaveProperty('accountCreated')
+  expect(db.rpc).toHaveBeenCalledTimes(1)
+  expect(db.rpc.mock.calls[0][0]).toBe('recruitment_capture_contact')
+  expect(db.users.size).toBe(0)
+  expect(JSON.stringify(result.body)).not.toContain('Private provider detail')
+})
+it('keeps captured contact after other Auth failures and returns a generic error', async () => {
+  const db = client({ accountError: { status: 500, code: 'unexpected_failure', message: 'Private provider detail' } })
   const result = await request(db)
   expect(result).toMatchObject({ status: 503, body: { contactAccepted: true } })
   expect(result.body).not.toHaveProperty('accepted')
@@ -76,7 +90,7 @@ it('binds the Home Seekers wrapper to its configured agency and keeps preview wr
 })
 it('uses the same signup process for another receiving agency on the shared endpoint', async () => {
   const db = client({ organisationId: 'another-agency' })
-  expect((await request(db)).body.accountCreated).toBe(true)
+  expect((await request(db)).body.verificationRequired).toBe(true)
   expect(db.auth.admin.createUser.mock.calls[0][0].app_metadata.recruitment_organisation_id).toBe('another-agency')
 })
 it('uses the server deployment environment for preview and rejects every write even with production credentials', async () => {
@@ -96,4 +110,6 @@ it('client whitelists signup fields, propagates saved-contact errors, and never 
   expect(JSON.parse(fetcher.mock.calls[0][1].body)).toEqual({ action: 'signup', contact: { ...contact, consentVersion: 'recruitment-contact-v1' }, password, submissionKey, companyWebsite: '' })
   await expect(recruitmentSignupRequest('signup', body, { fetcher: async () => ({ ok: false, status: 503, json: async () => ({ contactAccepted: true, error: 'Fixture signup unavailable' }) }) })).rejects.toMatchObject({ contactAccepted: true, status: 503 })
   await expect(recruitmentSignupRequest('signup', body, { fetcher: async () => ({ ok: true, status: 201, json: async () => ({ accepted: true }) }) })).rejects.toThrow('could not be created')
+  await expect(recruitmentSignupRequest('signup', body, { fetcher: async () => ({ ok: true, status: 201, json: async () => ({ accepted: true, contactAccepted: true, verificationRequired: true }) }) })).resolves.toMatchObject({ verificationRequired: true })
+  await expect(recruitmentSignupRequest('signup', body, { fetcher: async () => ({ ok: true, status: 201, json: async () => ({ accepted: true, verificationRequired: true }) }) })).rejects.toThrow('could not be created')
 })

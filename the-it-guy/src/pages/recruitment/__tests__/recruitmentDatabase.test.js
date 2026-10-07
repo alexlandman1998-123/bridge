@@ -756,7 +756,7 @@ it('saves the enquiry before account creation and recovers a failed Auth attempt
   expect((await createRecruitmentIntakeResponse(request))).toMatchObject({status:503,body:{contactAccepted:true}})
   expect((await db.query('select count(*) from recruitment_leads where intake_key=$1',[key])).rows[0].count).toBe(1)
   fail = false
-  expect((await createRecruitmentIntakeResponse(request))).toMatchObject({status:201,body:{accountCreated:true,emailVerification:'pending'}})
+  expect((await createRecruitmentIntakeResponse(request))).toMatchObject({status:201,body:{verificationRequired:true,emailVerification:'pending'}})
   expect((await createRecruitmentIntakeResponse(request))).toMatchObject({status:202,body:{duplicate:true}})
   expect(creations).toHaveLength(1)
   expect((await db.query('select count(*) from recruitment_leads where intake_key=$1',[key])).rows[0].count).toBe(1)
