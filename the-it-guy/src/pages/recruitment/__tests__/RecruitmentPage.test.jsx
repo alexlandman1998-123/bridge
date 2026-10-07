@@ -16,13 +16,30 @@ vi.mock('../../../services/recruitmentService', () => ({ activateRecruitmentAgen
 afterEach(() => { cleanup(); vi.clearAllMocks() })
 const lead = { ...emptyRecruitmentLead(), id: 'agent-1', name: 'Sam Agent', email: 'sam@example.test', phone: '0821234567', area: 'Pretoria', version: 1 }
 const wrap = (element) => render(<MemoryRouter>{element}</MemoryRouter>)
-it('shows early contact capture and pending email separately from application progress', () => {
+it('opens the workspace without the contact receipt or invitation containers', () => {
   wrap(<RecruitmentWorkspace lead={{ ...lead, source: 'Website', intake_channel: 'website', email_verification_status: 'pending', contact_capture_json: { version: 'recruitment-contact-v1', firstName: 'Sam', lastName: 'Agent', privacyAccepted: true } }} />)
-  expect(screen.getByRole('region', { name: 'Website recruitment contact' })).toBeTruthy()
-  expect(screen.getByText('Email verification pending')).toBeTruthy()
-  expect(screen.getByText('Application not yet submitted')).toBeTruthy()
+  expect(screen.queryByRole('region', { name: 'Website recruitment contact' })).toBeNull()
+  expect(screen.queryByText('Recruitment contact received')).toBeNull()
+  expect(screen.queryByText('Join Us invitation')).toBeNull()
   expect(document.querySelector('[aria-current="step"]').textContent).toBe('1Lead Received')
-  expect(screen.queryByText('Email verified')).toBeNull()
+  expect(within(screen.getByRole('region', { name: 'Agent journey stages' })).getAllByRole('listitem')).toHaveLength(8)
+})
+it('shows completed, current and upcoming recruitment stages from the saved lead', () => {
+  wrap(<RecruitmentWorkspace lead={{ ...lead, status: 'under_review', application_submitted_at: '2026-10-05', review_started_at: '2026-10-05' }} />)
+  const stages = within(screen.getByRole('region', { name: 'Agent journey stages' })).getAllByRole('listitem')
+  expect(within(stages[0]).getByText('Complete')).toBeTruthy()
+  expect(within(stages[1]).getByText('Complete')).toBeTruthy()
+  expect(document.querySelector('[aria-current="step"]').textContent).toBe('3Under Review')
+  expect(within(stages[2]).getByText('Current Stage')).toBeTruthy()
+  expect(within(stages[3]).getByText('Upcoming')).toBeTruthy()
+})
+it('shows where a closed lead stopped without marking a future stage as current', () => {
+  wrap(<RecruitmentWorkspace lead={{ ...lead, status: 'closed_lost', application_submitted_at: '2026-10-05', review_started_at: '2026-10-05' }} />)
+  const stages = within(screen.getByRole('region', { name: 'Agent journey stages' })).getAllByRole('listitem')
+  expect(document.querySelector('[aria-current="step"]')).toBeNull()
+  expect(within(stages[1]).getByText('Complete')).toBeTruthy()
+  expect(within(stages[2]).getByText('Stopped here')).toBeTruthy()
+  expect(within(stages[3]).getByText('Not reached')).toBeTruthy()
 })
 it('keeps active and closed leads separate and filters contact details', () => {
   wrap(<RecruitmentList leads={[lead, { ...lead, id: 'closed', name: 'Joined Agent', status: 'legacy_joined' }]} onRefresh={vi.fn()} />)
