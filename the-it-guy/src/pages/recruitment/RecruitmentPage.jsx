@@ -7,6 +7,7 @@ import { activityLabel, intakeChannelLabel, recruitmentSources, recruitmentOutco
 
 import Modal from '../../components/ui/Modal'
 import CopyRecruitmentIntakeLink from './CopyRecruitmentIntakeLink'
+import RecruitmentContactReceipt from './RecruitmentContactReceipt'
 import RecruitmentIntakeLinks from './RecruitmentIntakeLinks'
 import { applicationRequirements, applicationSummary } from './recruitmentApplicationModel'
 
@@ -134,6 +135,7 @@ export function RecruitmentWorkspace({ lead, onSave, onUpload, onDownload, busy,
       </div>
       <nav className="mt-6 grid grid-cols-3 gap-2 rounded-[20px] border border-[#dbe7f2] bg-[#fbfdff] p-2" role="tablist" aria-label="Agent lead sections">{[['overview','Overview'],['details','Agent Details'],['documents','Documents']].map(([key, label]) => <button key={key} role="tab" aria-selected={tab === key} onClick={() => setTab(key)} className={`min-h-12 rounded-[16px] px-2 text-sm font-semibold ${tab === key ? 'bg-white text-[#142132] shadow ring-1 ring-[#d9e6f2]' : 'text-[#607891]'}`}>{label}</button>)}</nav>
     </section>
+    {!isNew && <RecruitmentContactReceipt lead={lead} />}
     {!isNew && <RecruitmentIntakeLinks key={`${organisationId}/${lead.id}`} organisationId={organisationId} leadId={lead.id} eligible={lead.status === 'lead_received' && !dirty} />}
     {dirty && <p role="status" className="text-sm text-[#60758b]">{detailsDirty ? 'You have unsaved agent details. Save them in Agent Details.' : approvalDirty ? 'You have an unsaved approval decision. Complete or clear it in Overview.' : activationDirty ? 'You have unsaved activation findings. Complete or clear them in Overview.' : onboardingDirty ? 'You have unsaved onboarding findings. Save them in Overview.' : signingDirty ? 'You have unsaved contract findings. Complete or clear them in Overview.' : 'You have unsaved review findings. Save them in Overview.'} Uploading documents and changing the lead stage are disabled until changes are saved.</p>}
     <section className={card} role="tabpanel" aria-label={tab === 'details' ? 'Agent Details' : tab === 'documents' ? 'Documents' : 'Overview'}>

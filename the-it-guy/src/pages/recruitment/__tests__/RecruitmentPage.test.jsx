@@ -16,6 +16,14 @@ vi.mock('../../../services/recruitmentService', () => ({ activateRecruitmentAgen
 afterEach(() => { cleanup(); vi.clearAllMocks() })
 const lead = { ...emptyRecruitmentLead(), id: 'agent-1', name: 'Sam Agent', email: 'sam@example.test', phone: '0821234567', area: 'Pretoria', version: 1 }
 const wrap = (element) => render(<MemoryRouter>{element}</MemoryRouter>)
+it('shows early contact capture and pending email separately from application progress', () => {
+  wrap(<RecruitmentWorkspace lead={{ ...lead, source: 'Website', intake_channel: 'website', email_verification_status: 'pending', contact_capture_json: { version: 'recruitment-contact-v1', firstName: 'Sam', lastName: 'Agent', privacyAccepted: true } }} />)
+  expect(screen.getByRole('region', { name: 'Website recruitment contact' })).toBeTruthy()
+  expect(screen.getByText('Email verification pending')).toBeTruthy()
+  expect(screen.getByText('Application not yet submitted')).toBeTruthy()
+  expect(document.querySelector('[aria-current="step"]').textContent).toBe('1Lead Received')
+  expect(screen.queryByText('Email verified')).toBeNull()
+})
 it('keeps active and closed leads separate and filters contact details', () => {
   wrap(<RecruitmentList leads={[lead, { ...lead, id: 'closed', name: 'Joined Agent', status: 'legacy_joined' }]} onRefresh={vi.fn()} />)
   expect(screen.getByText('Sam Agent')).toBeTruthy()

@@ -24,7 +24,7 @@ export const emptyRecruitmentLead = () => ({
 export const isClosedRecruitmentLead = (lead) => ['agent_activated', 'legacy_joined', 'closed_lost'].includes(lead.status)
 export const stageLabel = (status) => [...recruitmentStages, ...recruitmentOutcomes].find(([key]) => key === status)?.[1] || 'Lead Received'
 export const intakeChannelLabel = (channel) => ({ manual: 'Staff capture', public_link: 'Public application link', website: 'Website', private_link: 'Private onboarding link' })[channel] || 'Staff capture'
-export const activityLabel = (type) => ({ lead_received: 'Lead received', application_submitted: 'Application submitted', review_started: 'Application review started', review_updated: 'Review findings updated', application_approved: 'Application approved', contract_prepared: 'Contract version prepared', contract_delivery_recorded: 'Prior contract delivery recorded', contract_signed: 'Signed contract verified', onboarding_updated: 'Onboarding findings updated', onboarding_document_uploaded: 'Onboarding document uploaded', onboarding_completed: 'Onboarding completed', agent_access_prepared: 'Agent access prepared', agent_activated: 'Agent activated', lead_updated: 'Lead details updated', lead_closed: 'Lead closed', lead_reopened: 'Lead reopened', existing_record_imported: 'Existing recruitment record retained' })[type] || 'Recruitment activity'
+export const activityLabel = (type) => ({ lead_received: 'Lead received', application_draft_saved: 'Applicant questionnaire saved', application_submitted: 'Application submitted', review_started: 'Application review started', review_updated: 'Review findings updated', application_approved: 'Application approved', contract_prepared: 'Contract version prepared', contract_delivery_recorded: 'Prior contract delivery recorded', contract_signed: 'Signed contract verified', onboarding_updated: 'Onboarding findings updated', onboarding_document_uploaded: 'Onboarding document uploaded', onboarding_completed: 'Onboarding completed', agent_access_prepared: 'Agent access prepared', agent_activated: 'Agent activated', lead_updated: 'Lead details updated', lead_closed: 'Lead closed', lead_reopened: 'Lead reopened', existing_record_imported: 'Existing recruitment record retained' })[type] || 'Recruitment activity'
 export function recruitmentReadiness(lead = {}) {
   const details = lead.details_json || {}
   const application = lead.application_json?.answers
@@ -32,7 +32,7 @@ export function recruitmentReadiness(lead = {}) {
   const items = [
     { key: 'onboarding', label: 'Agent onboarding captured', complete: Boolean(lead.application_submitted_at) || details.onboardingCaptured === true, tab: 'details' },
     { key: 'experience', label: 'Experience & track record', complete: Boolean(application || details.experience?.trim()), tab: 'details' },
-    { key: 'qualifications', label: 'Qualifications & registration', complete: Boolean((qualification && !['none','unsure'].includes(application?.qualificationRoute)) || details.qualifications?.trim()), tab: 'details' },
+    { key: 'qualifications', label: 'Qualifications & registration', complete: Boolean((qualification && application?.qualificationRoute && !['none','unsure'].includes(application.qualificationRoute)) || details.qualifications?.trim()), tab: 'details' },
     { key: 'area', label: 'Preferred area', complete: Boolean(lead.area?.trim()), tab: 'details' },
     { key: 'documents', label: 'Supporting documents', complete: (lead.documents_json || []).some((doc) => doc.path), tab: 'documents' },
   ]

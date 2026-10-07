@@ -1,11 +1,17 @@
 import { supabase } from '../lib/supabaseClient'
+import { normalizeRecruitmentContact, recruitmentContactErrors } from '../pages/recruitment/recruitmentContactModel'
+export async function captureRecruitmentContact(token, contact, submissionKey, options) {
+  if (Object.keys(recruitmentContactErrors(contact)).length) throw new Error('Please check your contact details and recruitment consent.')
+  if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(submissionKey || '')) throw new Error('Start a new recruitment enquiry before continuing.')
+  return recruitmentIntakeRequest(token, { action: 'capture_contact', contact: normalizeRecruitmentContact(contact), submissionKey }, options)
+}
 export async function recruitmentIntakeRequest(token, details, { fetcher = fetch, timeoutMs = 20000 } = {}) {
   const controller = new AbortController(), timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
     const response = await fetcher('/api/public/recruitment-intake', { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal, body: JSON.stringify({ ...details, token }) })
     const result = await response.json().catch(() => ({}))
     if (!response.ok) throw new Error(result.error || 'Your application could not be recorded. Please try again.')
-    if (details.action === 'submit' && result.accepted !== true) throw new Error('Your application could not be recorded. Please try again.')
+    if (['submit', 'capture_contact', 'signup'].includes(details.action) && result.accepted !== true) throw new Error('Your application could not be recorded. Please try again.')
     return result
   } catch (error) {
     if (controller.signal.aborted) throw new Error('The connection took too long. Your answers are still here; please try again.')

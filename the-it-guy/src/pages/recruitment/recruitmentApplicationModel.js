@@ -1,3 +1,5 @@
+import { profileVersion, recruitmentProfileSummary } from './recruitmentProfileModel'
+
 export const applicationVersion = 'recruitment-application-v1'
 export const practitionerStatuses = [['new_entrant', 'New to real estate'], ['candidate', 'Candidate practitioner'], ['non_principal', 'Non-principal practitioner'], ['principal', 'Principal practitioner']]
 export const ffcStatuses = [['current', 'I hold an FFC'], ['pending', 'Application / renewal pending'], ['expired', 'Expired FFC'], ['not_held', 'No FFC held']]
@@ -55,6 +57,12 @@ export function applicationErrors(raw, section) {
 export function applicationRequirements(application, today = new Date().toISOString().slice(0, 10)) {
   if (!application?.version) return []
   const a = application.answers
+  if (application.questionnaireVersion === profileVersion) return [
+    {label:'PPRA / FFC evidence',note:'Verify the declared licence and FFC details with supporting evidence. Follow up on citizenship and sequestration / administration declarations.'},
+    {label:'Qualifications & PDE',note:'This questionnaire does not capture qualifications or PDE. Obtain the applicable qualification, results and exemption evidence.'},
+    {label:'Practical training & CPD',note:'This questionnaire does not capture training or CPD. Confirm the appropriate requirements and supporting evidence.'},
+    {label:'Mandates & agency handover',note:'Confirm the declared employer and start date, then ask about any active mandates, notice or handover obligations.'},
+  ]
   return [
     { label: 'PPRA / FFC evidence', note: a.practitionerStatus === 'new_entrant' ? 'Confirm the registration and training route for a new entrant.' : a.ffcStatus === 'current' && a.ffcExpiry >= today ? 'Verify the declared FFC with PPRA and obtain a copy.' : 'Clarify the declared FFC status and any renewal / registration action.' },
     { label: 'Qualifications & PDE', note: 'Obtain qualification, results and any exemption evidence; confirm the appropriate education route.' },
@@ -65,6 +73,7 @@ export function applicationRequirements(application, today = new Date().toISOStr
 export function applicationSummary(application, includeContact = false) {
   if (!application?.version) return []
   const a = application.answers
+  if (application.questionnaireVersion === profileVersion) return recruitmentProfileSummary(a)
   const label = (options, value) => options.find(([key]) => key === value)?.[1] || 'Not supplied'
   return [ ...(includeContact ? [['Full name',a.name],['Email',a.email],['Mobile',a.phone],['Areas',a.area]] : []), ['Experience', `${a.yearsExperience} years`], ['Average deals / month', a.dealsPerMonth], ['Current agency', a.currentAgency || 'Not supplied'], ['Current commission kept', a.currentSplit ? `${a.currentSplit}%` : 'Not supplied'], ['Active mandates', a.activeMandates === 'yes' ? `${a.mandateCount} active` : 'None declared'], ['Mandate handover', a.handoverNotes || 'Not supplied'], ['Preferred start date', a.preferredStartDate || 'Not supplied'], ['Practitioner status', label(practitionerStatuses, a.practitionerStatus)], ['PPRA reference', a.ppraNumber || 'Not supplied'], ['FFC status', label(ffcStatuses, a.ffcStatus)], ['FFC number / expiry', [a.ffcNumber, a.ffcExpiry].filter(Boolean).join(' · ') || 'Not supplied'], ['Qualification route', label(qualificationRoutes, a.qualificationRoute)], ['Qualification status', label(learningStatuses, a.qualificationStatus)], ['PDE', label(learningStatuses, a.pdeStatus)], ['Practical training', label(learningStatuses, a.practicalStatus)], ['CPD', label(cpdStatuses, a.cpdStatus)], ['Education notes', a.qualificationNotes || 'Not supplied'], ['Why join us', a.motivation] ]
 }

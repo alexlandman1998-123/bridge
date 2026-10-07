@@ -1,6 +1,8 @@
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { PGlite } from '@electric-sql/pglite'
 import { readFileSync } from 'node:fs'
+import { createRecruitmentIntakeResponse } from '../../../../server/services/recruitmentIntakeApi'
+import { createHash } from 'node:crypto'
 const org = '11111111-1111-4111-8111-111111111111', other = '22222222-2222-4222-8222-222222222222'
 const manager = '33333333-3333-4333-8333-333333333333', agent = '44444444-4444-4444-8444-444444444444'
 const lead = '55555555-5555-4555-8555-555555555555', otherLead = '66666666-6666-4666-8666-666666666666'
@@ -606,4 +608,464 @@ it('rejects adoption of a pending privileged invitation and rolls back the recru
   expect(retained.activation_json).toEqual({})
   expect(retained.status).toBe('onboarding_complete')
   expect((await db.query('select target_workspace_role from invites where email=$1',[ready.email])).rows[0].target_workspace_role).toBe('admin')
+})
+
+const contactToken = '1'.repeat(64), otherContactToken = '2'.repeat(64)
+const contactKey = '12345678-1234-4234-8234-123456789abc'
+const contactManager = '99999999-9999-4999-8999-999999999999'
+const contact = { firstName: 'Website', lastName: 'Applicant', email: 'WEBSITE@EXAMPLE.TEST', phone: '+27821234567', privacyAccepted: true, consentVersion: 'recruitment-contact-v1' }
+let contactLink, secondContactLink, capturedContact
+async function contactServer() { await db.exec("reset role; select set_config('test.actor','',false); set role service_role;") }
+function contactClient() {
+  return {
+    from(table) {
+      if (table === 'recruitment_contact_receipts') {
+        const filters = {}
+        const query = { select: () => query, eq: (key, value) => { filters[key] = value; return query }, maybeSingle: async () => ({ data: (await db.query('select lead_id from recruitment_contact_receipts where organisation_id=$1 and link_id=$2 and submission_key=$3', [filters.organisation_id,filters.link_id,filters.submission_key])).rows[0], error: null }) }
+        return query
+      }
+      if (table !== 'recruitment_intake_links') throw new Error('Unexpected intake lookup')
+      let hash
+      const query = { select: () => query, eq: (_key, value) => { hash = value; return query }, maybeSingle: async () => ({ data: (await db.query('select * from recruitment_intake_links where token_hash=$1', [hash])).rows[0], error: null }) }
+      return query
+    },
+    async rpc(name, args) {
+      if (name !== 'recruitment_capture_contact') throw new Error('Unexpected capture call')
+      const result = await db.query('select recruitment_capture_contact($1,$2,$3::jsonb,$4) as result', [args.p_link_id,args.p_submission_key,JSON.stringify(args.p_contact),args.p_fingerprint])
+      return { data: result.rows[0].result, error: null }
+    },
+  }
+}
+async function captureContact(link = contactLink, key = contactKey, values = contact, fingerprint = 'a'.repeat(64)) {
+  return (await db.query('select recruitment_capture_contact($1,$2,$3::jsonb,$4) as result', [link,key,JSON.stringify(values),fingerprint])).rows[0].result
+}
+it('extends the latest eight-stage schema and captures contact through the actual public API into the receiving CRM', async () => {
+  await db.exec('reset role;')
+  await db.exec(readFileSync(new URL('../../../../../supabase/migrations/20261007082653_recruitment_contact_capture.sql',import.meta.url),'utf8'))
+  await db.query("insert into organisation_users(organisation_id,user_id,status,role) values($1,$2,'active','principal')",[org,contactManager])
+  await asUser(manager)
+  contactLink = (await db.query("insert into recruitment_intake_links(organisation_id,channel,token_hash,expires_at) values($1,'website',$2,now()+interval '1 year') returning id", [org,createHash('sha256').update(contactToken).digest('hex')])).rows[0].id
+  await db.exec('reset role;')
+  secondContactLink = (await db.query("insert into recruitment_intake_links(organisation_id,channel,created_by,token_hash,expires_at) values($1,'website',$2,$3,now()+interval '1 year') returning id", [other,manager,createHash('sha256').update(otherContactToken).digest('hex')])).rows[0].id
+  await contactServer()
+  const request = { client: contactClient(), headers: { host: 'agency.test', origin: 'https://agency.test' }, env: { RECRUITMENT_INTAKE_FINGERPRINT_SECRET: 'x'.repeat(32) }, body: { action: 'capture_contact', token: contactToken, submissionKey: contactKey, organisationId: other, emailVerified: true, contact: { ...contact, password: 'must-not-be-stored' } } }
+  expect((await createRecruitmentIntakeResponse(request)).body).toEqual({ accepted: true, duplicate: false, stage: 'lead_received', emailVerification: 'pending' })
+  expect((await createRecruitmentIntakeResponse(request)).body.duplicate).toBe(true)
+  capturedContact = (await db.query('select * from recruitment_leads where organisation_id=$1 and intake_key=$2',[org,contactKey])).rows[0]
+  expect(capturedContact).toMatchObject({ name: 'Website Applicant', email: 'website@example.test', phone: '+27821234567', organisation_id: org, status: 'lead_received', source: 'Website', intake_channel: 'website', captured_by: null, version: 1, email_verification_status: 'pending', email_verified_at: null, application_json: {}, application_submitted_at: null, activation_json: {} })
+  expect(capturedContact.contact_capture_json).toMatchObject({ firstName: 'Website', lastName: 'Applicant', privacyAccepted: true, consentVersion: 'recruitment-contact-v1', version: 'recruitment-contact-v1', capturedAt: expect.any(String) })
+  expect(capturedContact.activity_json.map(event => event.type)).toEqual(['lead_received'])
+  expect(capturedContact.details_json.onboardingCaptured).toBe(false)
+  expect(JSON.stringify(capturedContact)).not.toContain('must-not-be-stored')
+  expect((await db.query('select count(*) from recruitment_contact_receipts where organisation_id=$1 and submission_key=$2',[org,contactKey])).rows[0].count).toBe(1)
+  const activated = (await db.query('select status,email_verification_status from recruitment_leads where id=$1',[activationLead.id])).rows[0]
+  expect(activated).toEqual({status:'agent_activated',email_verification_status:'not_requested'})
+})
+it('keeps agencies separate and never merges contact-only applicants by email', async () => {
+  await contactServer()
+  expect(await captureContact(secondContactLink)).toEqual({ accepted: true, duplicate: false })
+  expect((await db.query('select count(*) from recruitment_leads where intake_key=$1',[contactKey])).rows[0].count).toBe(2)
+  expect(await captureContact(contactLink,contactKey,{...contact,lastName:'Changed'})).toEqual({conflict:true})
+  expect(await captureContact(contactLink,crypto.randomUUID())).toEqual({accepted:true,duplicate:false})
+  await asUser(contactManager)
+  const visible = (await db.query("select * from recruitment_leads where contact_capture_json <> '{}'::jsonb")).rows
+  expect(visible).toHaveLength(2)
+  expect(visible.every(row => row.organisation_id === org)).toBe(true)
+  await db.exec('reset role;')
+  await db.query("update organisation_users set status='suspended' where user_id=$1",[contactManager])
+  await asUser(contactManager)
+  expect((await db.query("select * from recruitment_leads where contact_capture_json <> '{}'::jsonb")).rows).toHaveLength(0)
+  await db.exec('reset role;')
+  await db.query("update organisation_users set status='active' where user_id=$1",[contactManager])
+})
+it('preserves authoritative consent and pending verification while allowing normal staff follow-up', async () => {
+  await asUser(manager)
+  await expect(db.query("update recruitment_leads set email_verification_status='verified',email_verified_at=now() where id=$1",[capturedContact.id])).rejects.toThrow('evidence cannot be changed')
+  await expect(db.query("update recruitment_leads set contact_capture_json='{}' where id=$1",[capturedContact.id])).rejects.toThrow('evidence cannot be changed')
+  await expect(db.query("update recruitment_leads set status='application_submitted' where id=$1",[capturedContact.id])).rejects.toThrow('Later recruitment phases')
+  const edited = (await db.query("update recruitment_leads set details_json=details_json || '{\"notes\":\"Follow up next week\"}'::jsonb where id=$1 returning *",[capturedContact.id])).rows[0]
+  expect(edited.email_verification_status).toBe('pending')
+  expect(edited.contact_capture_json).toEqual(capturedContact.contact_capture_json)
+  expect(edited.version).toBe(2)
+  const manual = (await db.query("insert into recruitment_leads(organisation_id,name,email) values($1,'Manual Enquiry','manual@example.test') returning *",[org])).rows[0]
+  expect(manual.email_verification_status).toBe('not_requested')
+  await expect(db.query("insert into recruitment_leads(organisation_id,name,email,email_verification_status) values($1,'Forged Pending','forged@example.test','pending')",[org])).rejects.toThrow('trusted applicant evidence')
+  await contactServer()
+  expect(await captureContact(contactLink,contactKey)).toEqual({accepted:true,duplicate:true})
+  expect((await db.query('select version,details_json from recruitment_leads where id=$1',[capturedContact.id])).rows[0]).toMatchObject({version:2,details_json:{notes:'Follow up next week'}})
+})
+it('locks down capture functions and receipts against anonymous users, applicants and managers', async () => {
+  for (const role of ['anon','authenticated']) {
+    await db.exec(`reset role; set role ${role};`)
+    await expect(captureContact()).rejects.toThrow('permission denied')
+    await expect(db.query('select * from recruitment_contact_receipts')).rejects.toThrow('permission denied')
+  }
+  await asUser(agent)
+  expect((await db.query('select * from recruitment_leads where id=$1',[capturedContact.id])).rows).toHaveLength(0)
+  await contactServer()
+  await expect(db.exec("update recruitment_contact_receipts set payload_json='{}'")).rejects.toThrow('permission denied')
+  await expect(db.exec('delete from recruitment_contact_receipts')).rejects.toThrow('permission denied')
+  expect((await db.query("select relrowsecurity from pg_class where relname='recruitment_contact_receipts'")).rows[0].relrowsecurity).toBe(true)
+  expect((await db.query("select prosecdef from pg_proc where proname in ('recruitment_capture_contact','recruitment_contact_guard','recruitment_lead_stamp')")).rows.every(row => !row.prosecdef)).toBe(true)
+})
+it('validates direct server capture and atomically rate-limits across public links without counting retries', async () => {
+  await contactServer()
+  for (const invalid of [{...contact,privacyAccepted:false},{...contact,consentVersion:'forged'},{...contact,firstName:''},{...contact,lastName:'a'.repeat(61)},{...contact,email:'invalid'},{...contact,phone:'1'.repeat(16)}]) {
+    await expect(captureContact(contactLink,crypto.randomUUID(),invalid)).rejects.toThrow('Invalid recruitment contact')
+  }
+  const fingerprint = 'b'.repeat(64), keys = Array.from({length:5},()=>crypto.randomUUID())
+  for (const [index,key] of keys.entries()) expect(await captureContact(index % 2 ? secondContactLink : contactLink,key,contact,fingerprint)).toEqual({accepted:true,duplicate:false})
+  expect(await captureContact(contactLink,keys[0],contact,fingerprint)).toEqual({accepted:true,duplicate:true})
+  expect(await captureContact(secondContactLink,crypto.randomUUID(),contact,fingerprint)).toEqual({rateLimited:true})
+  expect((await db.query('select count(*) from recruitment_contact_receipts where fingerprint=$1',[fingerprint])).rows[0].count).toBe(5)
+})
+it('rejects expired, revoked and private entry points, and rolls back the lead if its receipt cannot be recorded', async () => {
+  await db.exec('reset role;')
+  const expired = (await db.query("insert into recruitment_intake_links(organisation_id,created_by,channel,token_hash,created_at,expires_at) values($1,$2,'public_link',$3,now()-interval '2 days',now()-interval '1 day') returning id",[org,manager,'3'.repeat(64)])).rows[0].id
+  const revoked = (await db.query("insert into recruitment_intake_links(organisation_id,created_by,channel,token_hash,expires_at,revoked_at) values($1,$2,'website',$3,now()+interval '1 year',now()) returning id",[org,manager,'4'.repeat(64)])).rows[0].id
+  const privateLink = (await db.query("insert into recruitment_intake_links(organisation_id,created_by,lead_id,channel,token_hash,expires_at) values($1,$2,$3,'private_link',$4,now()+interval '14 days') returning id",[org,manager,capturedContact.id,'5'.repeat(64)])).rows[0].id
+  await contactServer()
+  for (const id of [expired,revoked,privateLink]) expect(await captureContact(id,crypto.randomUUID())).toEqual({unavailable:true})
+  await db.exec('reset role;')
+  await db.exec("create function test_contact_receipt_failure() returns trigger language plpgsql as $$ begin raise exception 'Fixture receipt failure'; end $$; create trigger test_contact_receipt_failure before insert on recruitment_contact_receipts for each row execute function test_contact_receipt_failure();")
+  const key = crypto.randomUUID()
+  await contactServer()
+  await expect(captureContact(contactLink,key)).rejects.toThrow('Fixture receipt failure')
+  expect((await db.query('select id from recruitment_leads where intake_key=$1',[key])).rows).toHaveLength(0)
+  await db.exec('reset role; drop trigger test_contact_receipt_failure on recruitment_contact_receipts; drop function test_contact_receipt_failure();')
+})
+
+it('saves the enquiry before account creation and recovers a failed Auth attempt against the same CRM lead', async () => {
+  await contactServer()
+  const client = contactClient(), users = new Map(), creations = []
+  let fail = true
+  client.auth = { admin: {
+    getUserById: async id => ({ data: { user: users.get(id) }, error: users.has(id) ? null : { status: 404 } }),
+    createUser: async values => {
+      const row = (await db.query('select * from recruitment_leads where id=$1',[values.app_metadata.recruitment_contact_lead_id])).rows[0]
+      expect(row.status).toBe('lead_received')
+      expect(row.email_verification_status).toBe('pending')
+      expect(JSON.stringify(row)).not.toContain('SignupFixture123')
+      if (fail) return { error: { code: 'fixture_auth_unavailable' } }
+      creations.push(values); users.set(values.id, values)
+      return { data: { user: values }, error: null }
+    },
+  } }
+  const key = crypto.randomUUID()
+  const request = { client, env: { RECRUITMENT_INTAKE_FINGERPRINT_SECRET: 'x'.repeat(32) }, headers: { 'x-forwarded-for': '192.0.2.24' }, body: { action: 'signup', token: contactToken, submissionKey: key, contact: {...contact,email:'signup@example.test'}, password: 'SignupFixture123' } }
+  expect((await createRecruitmentIntakeResponse(request))).toMatchObject({status:503,body:{contactAccepted:true}})
+  expect((await db.query('select count(*) from recruitment_leads where intake_key=$1',[key])).rows[0].count).toBe(1)
+  fail = false
+  expect((await createRecruitmentIntakeResponse(request))).toMatchObject({status:201,body:{accountCreated:true,emailVerification:'pending'}})
+  expect((await createRecruitmentIntakeResponse(request))).toMatchObject({status:202,body:{duplicate:true}})
+  expect(creations).toHaveLength(1)
+  expect((await db.query('select count(*) from recruitment_leads where intake_key=$1',[key])).rows[0].count).toBe(1)
+  const row = (await db.query('select * from recruitment_leads where intake_key=$1',[key])).rows[0]
+  expect(row.application_json).toEqual({})
+  expect(row.application_submitted_at).toBeNull()
+  expect(row.email_verified_at).toBeNull()
+  await db.exec('reset role;')
+  expect((await db.query('select * from organisation_users where user_id=$1',[creations[0].id])).rows).toHaveLength(0)
+})
+
+const applicantUser = 'abcdefab-cdef-4abc-8def-abcdefabcdef'
+const otherApplicant = 'abcdefab-cdef-4abc-8def-abcdefabcdea'
+const resumeHash = 'e'.repeat(64)
+it('binds verified ownership to the original enquiry without submitting an application or adding membership', async () => {
+  await db.exec(`reset role; create table auth.users(id uuid primary key,email text,email_confirmed_at timestamptz,banned_until timestamptz,deleted_at timestamptz);
+    insert into auth.users(id,email) values('${applicantUser}','website@example.test'),('${otherApplicant}','foreign@example.test');`)
+  await db.exec(readFileSync(new URL('../../../../../supabase/migrations/20261007085627_recruitment_applicant_resume.sql',import.meta.url),'utf8'))
+  await contactServer()
+  const open = () => db.query('select recruitment_open_applicant_session($1,$2,$3,$4) as result',[org,applicantUser,resumeHash,contactKey])
+  expect((await open()).rows[0].result).toBe(false)
+  await db.exec(`reset role; update auth.users set email_confirmed_at=now() where id='${applicantUser}';`)
+  await contactServer()
+  expect((await open()).rows[0].result).toBe(true)
+  const saved = (await db.query('select * from recruitment_leads where id=$1',[capturedContact.id])).rows[0]
+  expect(saved.email_verification_status).toBe('verified')
+  expect(saved.email_verified_at).toBeTruthy()
+  expect(saved.status).toBe('lead_received')
+  expect(saved.contact_capture_json).toEqual(capturedContact.contact_capture_json)
+  expect(saved.application_json).toEqual({})
+  expect(saved.application_submitted_at).toBeNull()
+  const resumed = (await db.query('select recruitment_resume_applicant($1,$2) as result',[org,resumeHash])).rows[0].result
+  expect(resumed).toEqual({emailVerification:'verified',stage:'lead_received',applicationSubmitted:false,contact:{firstName:'Website',lastName:'Applicant',email:'website@example.test',phone:'+27821234567'}})
+  expect(JSON.stringify(resumed)).not.toContain(capturedContact.id)
+  expect(resumed).not.toHaveProperty('details_json')
+  await db.exec('reset role;')
+  expect((await db.query('select * from organisation_users where user_id=$1',[applicantUser])).rows).toHaveLength(0)
+})
+it('rejects another agency, identity, receipt, expired session, changed email and banned or deleted accounts', async () => {
+  await contactServer()
+  expect((await db.query('select recruitment_open_applicant_session($1,$2,$3,$4) as result',[other,applicantUser,'f'.repeat(64),crypto.randomUUID()])).rows[0].result).toBe(false)
+  expect((await db.query('select recruitment_open_applicant_session($1,$2,$3,$4) as result',[org,otherApplicant,'f'.repeat(64),contactKey])).rows[0].result).toBe(false)
+  expect((await db.query('select recruitment_open_applicant_session($1,$2,$3,$4) as result',[org,applicantUser,'f'.repeat(64),crypto.randomUUID()])).rows[0].result).toBe(false)
+  expect((await db.query('select recruitment_resume_applicant($1,$2) as result',[other,resumeHash])).rows[0].result).toBeNull()
+  const resume = async () => (await db.query('select recruitment_resume_applicant($1,$2) as result',[org,resumeHash])).rows[0].result
+  for (const update of ["banned_until=now()+interval '1 day'",'deleted_at=now()',"email='changed@example.test'"]) {
+    await db.exec(`reset role; update auth.users set ${update} where id='${applicantUser}';`)
+    await contactServer(); expect(await resume()).toBeNull()
+    await db.exec(`reset role; update auth.users set banned_until=null,deleted_at=null,email='website@example.test' where id='${applicantUser}';`)
+  }
+  await db.exec(`reset role; update recruitment_applicant_sessions set expires_at=now()-interval '1 second' where token_hash='${resumeHash}';`)
+  await contactServer(); expect(await resume()).toBeNull()
+  // The same verified account may own a separately captured enquiry at another agency.
+  expect((await db.query('select recruitment_open_applicant_session($1,$2,$3,$4) as result',[other,applicantUser,'6'.repeat(64),contactKey])).rows[0].result).toBe(true)
+  const foreign = (await db.query('select recruitment_resume_applicant($1,$2) as result',[other,'6'.repeat(64)])).rows[0].result
+  expect(foreign.contact.email).toBe('website@example.test')
+  expect((await db.query('select recruitment_resume_applicant($1,$2) as result',[org,'6'.repeat(64)])).rows[0].result).toBeNull()
+  const fresh = '7'.repeat(64)
+  expect((await db.query('select recruitment_open_applicant_session($1,$2,$3,null) as result',[org,applicantUser,fresh])).rows[0].result).toBe(true)
+  expect((await db.query('select lead_id from recruitment_applicant_sessions where token_hash=$1',[fresh])).rows[0].lead_id).toBe(capturedContact.id)
+  await db.query('select recruitment_end_applicant_session($1,$2)',[org,fresh])
+  expect((await db.query('select recruitment_resume_applicant($1,$2) as result',[org,fresh])).rows[0].result).toBeNull()
+})
+it('keeps applicant session tables and canonical verification evidence private from anonymous users and staff', async () => {
+  for (const role of ['anon','authenticated']) {
+    await db.exec(`reset role; set role ${role};`)
+    for (const table of ['recruitment_applicant_links','recruitment_applicant_sessions','recruitment_auth_attempts']) await expect(db.query(`select * from ${table}`)).rejects.toThrow('permission denied')
+    await expect(db.query('select recruitment_open_applicant_session($1,$2,$3,null)',[org,applicantUser,'f'.repeat(64)])).rejects.toThrow('permission denied')
+    await expect(db.query('select recruitment_resume_applicant($1,$2)',[org,resumeHash])).rejects.toThrow('permission denied')
+    await expect(db.query('select recruitment_auth_budget($1,$2,$3)',['send','a'.repeat(64),'b'.repeat(64)])).rejects.toThrow('permission denied')
+  }
+  await asUser(contactManager)
+  await expect(db.query("update recruitment_leads set email_verification_status='pending',email_verified_at=null where id=$1",[capturedContact.id])).rejects.toThrow('trusted applicant evidence')
+  await contactServer()
+  await expect(db.query("update recruitment_leads set email_verification_status='verified',email_verified_at=now() where contact_capture_json->>'email'='signup@example.test'")).rejects.toThrow('trusted applicant evidence')
+  expect((await db.query("select relrowsecurity from pg_class where relname in ('recruitment_applicant_links','recruitment_applicant_sessions','recruitment_auth_attempts')")).rows.every(row=>row.relrowsecurity)).toBe(true)
+})
+it('reserves persistent email and authentication budgets, counts failures and rejects rapid resend across senders', async () => {
+  await contactServer()
+  const budget = async (kind,fp,email) => (await db.query('select recruitment_auth_budget($1,$2,$3) as result',[kind,fp.repeat(64),email.repeat(64)])).rows[0].result
+  expect(await budget('send','a','b')).toBe(true)
+  expect(await budget('send','c','b')).toBe(false)
+  for (let index=0;index<10;index++) expect(await budget('authenticate','a','d')).toBe(true)
+  expect(await budget('authenticate','c','d')).toBe(false)
+  await expect(db.query('select recruitment_auth_budget(null,$1,$2)',['a'.repeat(64),'b'.repeat(64)])).rejects.toThrow('Invalid request')
+})
+
+it('runs verification, cookie resume and sign-out through the shared API against the migrated database', async () => {
+  const id='abcdefab-cdef-4abc-8def-abcdefabcde9', key=crypto.randomUUID(), values={...contact,email:'flow@example.test'}
+  await db.exec(`reset role; insert into auth.users(id,email) values('${id}','flow@example.test');`)
+  await contactServer(); expect(await captureContact(contactLink,key,values,'8'.repeat(64))).toEqual({accepted:true,duplicate:false})
+  const client=contactClient()
+  const calls={
+    recruitment_auth_budget: ['select recruitment_auth_budget($1,$2,$3) as result',a=>[a.p_kind,a.p_fingerprint,a.p_email_hash]],
+    recruitment_open_applicant_session: ['select recruitment_open_applicant_session($1,$2,$3,$4) as result',a=>[a.p_organisation_id,a.p_user_id,a.p_token_hash,a.p_submission_key]],
+    recruitment_resume_applicant: ['select recruitment_resume_applicant($1,$2) as result',a=>[a.p_organisation_id,a.p_token_hash]],
+    recruitment_end_applicant_session: ['select recruitment_end_applicant_session($1,$2) as result',a=>[a.p_organisation_id,a.p_token_hash]],
+  }
+  client.rpc=async(name,args)=>({data:(await db.query(calls[name][0],calls[name][1](args))).rows[0].result})
+  const authClient={verifyOtp:async()=>({data:{session:{access_token:'fixture-only'}}}),getUser:async()=>({data:{user:{id,email:'flow@example.test',email_confirmed_at:'2026-10-07'}}})}
+  const options={client,authClient,env:{RECRUITMENT_INTAKE_FINGERPRINT_SECRET:'x'.repeat(32)},headers:{host:'agency.test',origin:'https://agency.test','x-forwarded-for':'192.0.2.90'},body:{action:'verify_email',token:contactToken,email:'flow@example.test',code:'123456',submissionKey:key,emailVerified:true,userId:otherApplicant}}
+  // Even a claimed verified provider result cannot bypass canonical Auth evidence.
+  expect((await createRecruitmentIntakeResponse(options)).status).toBe(409)
+  await db.exec(`reset role; update auth.users set email_confirmed_at=now() where id='${id}';`)
+  await contactServer()
+  const verified=await createRecruitmentIntakeResponse(options)
+  expect(verified.status).toBe(200)
+  expect(verified.body.applicant.contact.email).toBe('flow@example.test')
+  const cookie=verified.headers['Set-Cookie'].split(';')[0]
+  const resume={...options,headers:{...options.headers,cookie},body:{action:'resume',token:contactToken}}
+  expect((await createRecruitmentIntakeResponse(resume)).body).toEqual(verified.body)
+  expect((await createRecruitmentIntakeResponse({...resume,body:{action:'sign_out',token:contactToken}})).body.signedOut).toBe(true)
+  expect((await createRecruitmentIntakeResponse(resume)).body.applicant).toBeNull()
+  const row=(await db.query('select * from recruitment_leads where intake_key=$1',[key])).rows[0]
+  expect(row.status).toBe('lead_received'); expect(row.email_verification_status).toBe('verified')
+  expect(row.application_submitted_at).toBeNull()
+  expect((await db.query('select count(*) from recruitment_contact_receipts where organisation_id=$1 and submission_key=$2',[org,key])).rows[0].count).toBe(1)
+})
+
+const profileOpaque = 'c'.repeat(64), profileHash=createHash('sha256').update(profileOpaque).digest('hex')
+let profileAnswers
+function profileDbClient() {
+  const client=contactClient()
+  const calls={
+    recruitment_submit_verified_profile:['select recruitment_submit_verified_profile($1,$2,$3,$4,$5,$6) as result',a=>[a.p_organisation_id,a.p_token_hash,a.p_revision,a.p_submission_key,a.p_privacy_accepted,a.p_declaration_accepted]],
+    recruitment_save_profile:['select recruitment_save_profile($1,$2,$3::jsonb,$4,$5,$6) as result',a=>[a.p_organisation_id,a.p_token_hash,JSON.stringify(a.p_answers),a.p_revision,a.p_page,a.p_intent]],
+    recruitment_resume_applicant:['select recruitment_resume_applicant($1,$2) as result',a=>[a.p_organisation_id,a.p_token_hash]],
+  }
+  client.rpc=async(name,args)=>({data:(await db.query(calls[name][0],calls[name][1](args))).rows[0].result})
+  return client
+}
+function profileApi(body, headers = {}) {
+  return createRecruitmentIntakeResponse({client:profileDbClient(),env:{RECRUITMENT_INTAKE_FINGERPRINT_SECRET:'x'.repeat(32)},headers:{host:'agency.test',origin:'https://agency.test',cookie:`a9_recruitment_${org.replaceAll('-','')}=${profileOpaque}`,...headers},body:{token:contactToken,...body}})
+}
+it('installs the questionnaire after verified access and saves incomplete answers against the same lead through the API',async()=>{
+  await db.exec('reset role;')
+  await db.exec(readFileSync(new URL('../../../../../supabase/migrations/20261007091149_recruitment_applicant_questionnaire.sql',import.meta.url),'utf8'))
+  profileAnswers=(await import('./helpers/recruitmentProfileFixture')).validProfile()
+  await contactServer()
+  expect((await db.query('select recruitment_open_applicant_session($1,$2,$3,$4) as result',[org,applicantUser,profileHash,contactKey])).rows[0].result).toBe(true)
+  const response=await profileApi({action:'save_profile',answers:{email:'website@example.test',firstName:'Website',lastName:'Applicant',password:'must-never-be-stored'},page:0,revision:0,intent:'save',leadId:otherLead,organisationId:other})
+  expect(response.status).toBe(200)
+  expect(response.body.applicant.profile).toMatchObject({version:'recruitment-profile-v1',country:'ZA',complete:false,page:0,answers:{firstName:'Website',dateOfBirth:''}})
+  expect(response.body.applicant.profileRevision).toBe(1)
+  const row=(await db.query('select * from recruitment_leads where id=$1',[capturedContact.id])).rows[0]
+  expect(row.status).toBe('lead_received');expect(row.application_json).toEqual({});expect(row.application_submitted_at).toBeNull()
+  expect(row.contact_capture_json).toEqual(capturedContact.contact_capture_json)
+  expect(JSON.stringify(row)).not.toContain('must-never-be-stored')
+  expect(row.activity_json.at(-1).type).toBe('application_draft_saved')
+  expect((await profileApi({action:'resume'})).body).toEqual({applicant:response.body.applicant})
+})
+it('recovers duplicate saves, rejects stale writes and saves a complete questionnaire without submission',async()=>{
+  await contactServer()
+  const request={action:'save_profile',answers:profileAnswers,page:0,revision:1,intent:'continue'}
+  const saved=await profileApi(request)
+  expect(saved.status).toBe(200);expect(saved.body.applicant.profileRevision).toBe(2);expect(saved.body.applicant.profile.page).toBe(1)
+  expect((await profileApi(request)).body).toMatchObject({saved:true,duplicate:true,applicant:{profileRevision:2}})
+  const stale=await profileApi({...request,answers:{...profileAnswers,preferredName:'Stale draft'}})
+  expect(stale.status).toBe(409);expect(stale.body.conflict).toBe(true)
+  const complete=await profileApi({...request,revision:2,page:3,intent:'complete'})
+  expect(complete.status).toBe(200);expect(complete.body.applicant.profile.complete).toBe(true)
+  expect(complete.body.applicant.stage).toBe('lead_received');expect(complete.body.applicant.applicationSubmitted).toBe(false)
+  const row=(await db.query('select * from recruitment_leads where id=$1',[capturedContact.id])).rows[0]
+  expect(row.application_json).toEqual({});expect(row.applicant_draft_revision).toBe(3)
+  expect(row.applicant_draft_json.answers.propertiesListed).toBe('0')
+  expect(row.applicant_draft_json.answers.propertiesSold).toBe('999')
+})
+it('validates supplied answers in SQL and prevents changing verified email or authoring draft evidence through staff access',async()=>{
+  await contactServer()
+  const save=answers=>db.query('select recruitment_save_profile($1,$2,$3::jsonb,3,3,$4) as result',[org,profileHash,JSON.stringify(answers),'complete'])
+  for (const [key,value] of [['dateOfBirth','2099-01-01'],['dateOfBirth','2026-02-30'],['propertiesListed','1000'],['propertiesSold','1.5'],['postalCode','123'],['expectedStartDate','2000-01-01'],['ffcNumber',''],['ffcType','forged'],['currentEmployer','a'.repeat(101)],['southAfricanCitizen','maybe'],['email','foreign@example.test'],['whatsappNumber','123']]) {
+    const result=(await save({...profileAnswers,[key]:value})).rows[0].result
+    expect(result.invalid).toBe(true);expect(result.errors).toHaveProperty(key==='whatsappNumber'?'whatsappNumber':key)
+  }
+  expect((await save({...profileAnswers,licenseStatus:'pending'})).rows[0].result.saved).toBe(true)
+  const row=(await db.query('select applicant_draft_json from recruitment_leads where id=$1',[capturedContact.id])).rows[0]
+  expect(row.applicant_draft_json.answers.ffcNumber).toBe('');expect(row.applicant_draft_json.answers.ffcType).toBe('')
+  await asUser(contactManager)
+  // Managers can read self-declared drafts, but cannot fabricate or edit applicant answers.
+  expect((await db.query('select applicant_draft_json from recruitment_leads where id=$1',[capturedContact.id])).rows).toHaveLength(1)
+  await expect(db.query("update recruitment_leads set applicant_draft_json='{}' where id=$1",[capturedContact.id])).rejects.toThrow('verified access')
+  await expect(db.query('update recruitment_leads set applicant_draft_revision=99 where id=$1',[capturedContact.id])).rejects.toThrow('Draft evidence')
+})
+it('denies anonymous, staff, other-agency, expired, revoked and banned sessions and locks submitted/closed drafts',async()=>{
+  for (const role of ['anon','authenticated']) {
+    await db.exec(`reset role; set role ${role};`)
+    await expect(db.query("select recruitment_save_profile($1,$2,'{}',0,0,'save')",[org,profileHash])).rejects.toThrow('permission denied')
+  }
+  await contactServer()
+  const request={action:'save_profile',answers:profileAnswers,page:3,revision:4,intent:'complete'}
+  expect((await profileApi(request,{cookie:''})).status).toBe(401)
+  expect((await profileApi(request,{origin:'https://foreign.test'})).status).toBe(403)
+  expect((await db.query("select recruitment_save_profile($1,$2,$3::jsonb,0,0,'save') as result",[other,profileHash,JSON.stringify(profileAnswers)])).rows[0].result.unavailable).toBe(true)
+  for (const update of ["banned_until=now()+interval '1 day'",'deleted_at=now()',"email='changed@example.test'"]) {
+    await db.exec(`reset role; update auth.users set ${update} where id='${applicantUser}';`)
+    await contactServer();expect((await profileApi(request)).status).toBe(401)
+    await db.exec(`reset role; update auth.users set banned_until=null,deleted_at=null,email='website@example.test' where id='${applicantUser}';`)
+  }
+  await db.exec(`reset role; update recruitment_applicant_sessions set expires_at=now()-interval '1 second' where token_hash='${profileHash}';`)
+  await contactServer();expect((await profileApi(request)).status).toBe(401)
+  // Re-authentication restores access to the same saved revision.
+  await db.query('select recruitment_open_applicant_session($1,$2,$3,$4)',[org,applicantUser,'d'.repeat(64),contactKey])
+  await db.exec(`reset role; update recruitment_applicant_sessions set expires_at=now()+interval '7 days' where token_hash='${profileHash}';`)
+  await asUser(contactManager)
+  await db.query("update recruitment_leads set status='closed_lost' where id=$1",[capturedContact.id])
+  await contactServer();expect((await profileApi(request)).status).toBe(401)
+  await asUser(contactManager);await db.query("update recruitment_leads set status='lead_received' where id=$1",[capturedContact.id])
+  await contactServer()
+  await db.query('select recruitment_end_applicant_session($1,$2)',[org,profileHash])
+  expect((await profileApi(request)).status).toBe(401)
+})
+
+it('preserves the saved draft through the existing submission workflow and prevents later applicant edits',async()=>{
+  await contactServer()
+  expect((await db.query('select recruitment_open_applicant_session($1,$2,$3,$4) as result',[org,applicantUser,profileHash,contactKey])).rows[0].result).toBe(true)
+  const before=(await db.query('select * from recruitment_leads where id=$1',[capturedContact.id])).rows[0]
+  await asUser(contactManager)
+  const link=(await db.query("insert into recruitment_intake_links(organisation_id,lead_id,token_hash,channel,expires_at) values($1,$2,$3,'private_link',now()+interval '14 days') returning id",[org,capturedContact.id,'1234'.repeat(16)])).rows[0].id
+  await contactServer()
+  const legacyAnswers={name:'Website Applicant',email:'website@example.test',phone:'0821234567',area:'Pretoria',privacyAccepted:true,declarationAccepted:true}
+  expect((await db.query('select recruitment_submit_application($1,$2,$3::jsonb,$4) as result',[link,crypto.randomUUID(),JSON.stringify(legacyAnswers),'4321'.repeat(16)])).rows[0].result.accepted).toBe(true)
+  const after=(await db.query('select * from recruitment_leads where id=$1',[capturedContact.id])).rows[0]
+  expect(after.status).toBe('application_submitted')
+  expect(after.applicant_draft_json).toEqual(before.applicant_draft_json)
+  expect(after.contact_capture_json).toEqual(before.contact_capture_json)
+  expect((await profileApi({action:'resume'})).body.applicant.applicationSubmitted).toBe(true)
+  expect((await profileApi({action:'save_profile',answers:profileAnswers,page:3,revision:after.applicant_draft_revision,intent:'complete'})).status).toBe(401)
+})
+
+let finalLead, finalKey, finalSubmissionKey
+const finalOpaque='b'.repeat(64), finalHash=createHash('sha256').update(finalOpaque).digest('hex')
+const finalApi=(body,headers={})=>profileApi(body,{cookie:`a9_recruitment_${org.replaceAll('-','')}=${finalOpaque}`,...headers})
+const finalRequest = (extra={}) => ({action:'submit_profile',revision:1,submissionKey:finalSubmissionKey,privacyAccepted:true,declarationAccepted:true,...extra})
+it('installs verified submission and requires a complete saved profile, current revision and both declarations',async()=>{
+  await db.exec('reset role;')
+  await db.exec(readFileSync(new URL('../../../../../supabase/migrations/20261007092532_recruitment_verified_application_submission.sql',import.meta.url),'utf8'))
+  await contactServer()
+  finalKey=crypto.randomUUID();finalSubmissionKey=crypto.randomUUID()
+  expect((await captureContact(contactLink,finalKey,contact,'7654'.repeat(16))).accepted).toBe(true)
+  finalLead=(await db.query('select * from recruitment_leads where intake_key=$1',[finalKey])).rows[0]
+  expect((await db.query('select recruitment_open_applicant_session($1,$2,$3,$4) as result',[org,applicantUser,finalHash,finalKey])).rows[0].result).toBe(true)
+  expect((await finalApi(finalRequest({revision:0}))).status).toBe(422)
+  expect((await finalApi(finalRequest({submissionKey:'forged'}))).status).toBe(400)
+  expect((await finalApi(finalRequest({privacyAccepted:false}))).status).toBe(422)
+  expect((await finalApi(finalRequest({declarationAccepted:'true'}))).status).toBe(422)
+  expect((await db.query('select recruitment_submit_verified_profile($1,$2,0,$3,false,true) as result',[org,finalHash,finalSubmissionKey])).rows[0].result.invalid).toBe(true)
+  const saved=await finalApi({action:'save_profile',answers:{...profileAnswers,firstName:'Corrected'},page:3,revision:0,intent:'complete'})
+  expect(saved.status).toBe(200)
+  expect((await finalApi(finalRequest({revision:0}))).status).toBe(409)
+  expect((await db.query('select status from recruitment_leads where id=$1',[finalLead.id])).rows[0].status).toBe('lead_received')
+  // The guard also rejects forged server snapshots without altering the saved enquiry.
+  const forged={version:'recruitment-application-v1',questionnaireVersion:'recruitment-profile-v1',country:'ZA',profileRevision:1,submissionKey:finalSubmissionKey,consentVersion:'recruitment-submission-v1',answers:{privacyAccepted:true,declarationAccepted:true,firstName:'Forged'}}
+  await expect(db.query("update recruitment_leads set status='application_submitted',application_json=$1::jsonb where id=$2",[JSON.stringify(forged),finalLead.id])).rejects.toThrow('saved questionnaire')
+
+})
+it('rejects submission through another agency, missing/expired sessions, unverified, banned, deleted or changed canonical accounts',async()=>{
+  await contactServer()
+  expect((await finalApi(finalRequest(),{cookie:''})).status).toBe(401)
+  expect((await finalApi(finalRequest(),{origin:'https://foreign.test'})).status).toBe(403)
+  expect((await db.query('select recruitment_submit_verified_profile($1,$2,1,$3,true,true) as result',[other,finalHash,finalSubmissionKey])).rows[0].result.unavailable).toBe(true)
+  for(const update of ['email_confirmed_at=null',"banned_until=now()+interval '1 day'",'deleted_at=now()',"email='changed@example.test'"]) {
+    await db.exec(`reset role; update auth.users set ${update} where id='${applicantUser}';`)
+    await contactServer();expect((await finalApi(finalRequest())).status).toBe(401)
+    await db.exec(`reset role; update auth.users set email_confirmed_at=now(),banned_until=null,deleted_at=null,email='website@example.test' where id='${applicantUser}';`)
+  }
+  await db.exec(`reset role; update recruitment_applicant_sessions set expires_at=now()-interval '1 second' where token_hash='${finalHash}';`)
+  await contactServer();expect((await finalApi(finalRequest())).status).toBe(401)
+  await db.exec(`reset role; update recruitment_applicant_sessions set expires_at=now()+interval '7 days' where token_hash='${finalHash}';`)
+  for(const role of ['anon','authenticated']) {
+    await db.exec(`reset role; set role ${role};`)
+    await expect(db.query('select recruitment_submit_verified_profile($1,$2,1,$3,true,true)',[org,finalHash,finalSubmissionKey])).rejects.toThrow('permission denied')
+  }
+})
+it('submits the exact reviewed snapshot on the same lead, stamps declarations and recovers retries without new leads or activity',async()=>{
+  await contactServer()
+  const count=(await db.query('select count(*) from recruitment_leads')).rows[0].count
+  const request=finalRequest({answers:{firstName:'Forged'},leadId:otherLead,organisationId:other,submittedAt:'2000-01-01',consentVersion:'forged'})
+  const response=await finalApi(request)
+  expect(response.status).toBe(200);expect(response.body).toMatchObject({accepted:true,duplicate:false,applicant:{stage:'application_submitted',applicationSubmitted:true}})
+  const row=(await db.query('select * from recruitment_leads where id=$1',[finalLead.id])).rows[0]
+  expect(row.name).toBe('Corrected Applicant');expect(row.phone).toBe('+27821234567')
+  expect(row.contact_capture_json).toEqual(finalLead.contact_capture_json)
+  expect(row.received_at).toEqual(finalLead.received_at);expect(row.source).toBe(finalLead.source)
+  expect(row.application_json).toMatchObject({version:'recruitment-application-v1',questionnaireVersion:'recruitment-profile-v1',country:'ZA',submissionKey:finalSubmissionKey,profileRevision:1,consentVersion:'recruitment-submission-v1',answers:{firstName:'Corrected',propertiesListed:'0',propertiesSold:'999',privacyAccepted:true,declarationAccepted:true},consent:{privacyAccepted:true,declarationAccepted:true,applicantUserId:applicantUser}})
+  expect(row.application_json.consent.acceptedAt).toBe(row.application_json.submittedAt)
+  expect(new Date(row.application_submitted_at).getTime()).toBe(new Date(row.application_json.submittedAt).getTime())
+  expect(row.activity_json.filter(item=>item.type==='application_submitted')).toHaveLength(1)
+  expect((await db.query('select count(*) from recruitment_leads')).rows[0].count).toBe(count)
+  expect((await finalApi(request)).body.duplicate).toBe(true)
+  expect((await finalApi(finalRequest({submissionKey:crypto.randomUUID()}))).body.duplicate).toBe(true)
+  const retained=(await db.query('select * from recruitment_leads where id=$1',[finalLead.id])).rows[0]
+  expect(retained.application_json).toEqual(row.application_json);expect(retained.version).toBe(row.version);expect(retained.activity_json).toEqual(row.activity_json)
+  const resumed=(await finalApi({action:'resume'})).body.applicant
+  expect(resumed.submittedApplication.answers.firstName).toBe('Corrected')
+  expect(JSON.stringify(resumed)).not.toContain(applicantUser)
+  expect(resumed).not.toHaveProperty('review_json');expect(resumed).not.toHaveProperty('leadId')
+  expect((await finalApi({action:'save_profile',answers:profileAnswers,page:3,revision:1,intent:'complete'})).status).toBe(401)
+  await db.exec('reset role;')
+  expect((await db.query('select * from organisation_users where user_id=$1',[applicantUser])).rows).toHaveLength(0)
+})
+it('preserves immutable submission while enabling the existing staff review and keeping applicant sessions private',async()=>{
+  await asUser(contactManager)
+  const before=(await db.query('select * from recruitment_leads where id=$1',[finalLead.id])).rows[0]
+  await expect(db.query("update recruitment_leads set application_json=jsonb_set(application_json,'{answers,firstName}','\"Forged\"') where id=$1",[finalLead.id])).rejects.toThrow()
+  const review=(await db.query("update recruitment_leads set status='under_review' where id=$1 returning *",[finalLead.id])).rows[0]
+  expect(review.application_json).toEqual(before.application_json)
+  expect(Object.keys(review.review_json.checks)).toHaveLength(4)
+  await contactServer()
+  expect((await finalApi(finalRequest())).body.duplicate).toBe(true)
+  await db.query('select recruitment_end_applicant_session($1,$2)',[org,finalHash])
+  expect((await finalApi(finalRequest())).status).toBe(401)
 })
