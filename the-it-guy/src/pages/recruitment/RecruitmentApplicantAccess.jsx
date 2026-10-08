@@ -30,7 +30,7 @@ export default function RecruitmentApplicantAccess({ mode, email: initialEmail, 
     working.current = true; setBusy(true); onBusy(true); setMessage(''); setNotice(''); setAttempted(true)
     try {
       if (preview) {
-        if (action === 'send_verification') setNotice('Preview — no email was sent. Enter a six- or eight-digit code to explore the next screen.')
+        if (action === 'send_verification') setNotice('Preview. No email was sent. Enter a six- or eight-digit code to explore the next screen.')
         else onVerified({ emailVerification: 'verified', applicationSubmitted: false, contact: { firstName: 'Preview', lastName: 'Applicant', phone: '', ...previewContact, email } })
         return
       }

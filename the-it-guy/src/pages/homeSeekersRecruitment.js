@@ -1,11 +1,20 @@
-export const recruitmentPricing = Object.freeze({ monthlyFee: 7500, transactionFee: 1000, averageSalePrice: 1350000, commissionRate: 0.06, traditionalSplit: 0.3, balloonMonthlyFee: 8500, balloonSplit: 0.1, referralMonthlyCredit: 500 })
-export function recruitmentExample(sales = 12) {
+// Agent overview supplied on 8 October 2026. All fees and examples exclude VAT.
+export const recruitmentPricing = Object.freeze({ monthlyFee: 9000, dealFundedMonthlyFee: 10000, upfrontAnnualFee: 100000, transactionFee: 1500, averageSalePrice: 1500000, commissionRate: 0.05, traditionalSplit: 0.3, balloonMonthlyFee: 8500, balloonSplit: 0.1, balloonCommissionRate: 0.06, capMonthlyFee: 950, capSplit: 0.29, annualCap: 150000, capRoyalty: 0.04, referralMonthlyCredit: 750, referralLimit: 12 })
+export const recruitmentPaymentOptions = Object.freeze([
+  Object.freeze({ id: 'deals', title: 'Paid from your deals', amount: recruitmentPricing.dealFundedMonthlyFee, period: '/ month', annualFee: 12 * recruitmentPricing.dealFundedMonthlyFee, copy: 'Your monthly fee builds up as a balance and is deducted when your deals register. A maximum of 50% of any one deal goes towards that balance, so you retain at least half of each cheque.', note: 'Solo agents only.' }),
+  Object.freeze({ id: 'monthly', title: 'Monthly debit order', amount: recruitmentPricing.monthlyFee, period: '/ month', annualFee: 12 * recruitmentPricing.monthlyFee, copy: 'Pay by debit order on the first of each month. Your subscription is settled separately from your deals, with no brokerage commission split.', note: 'The standard option. Available to solo agents and teams.' }),
+  Object.freeze({ id: 'upfront', title: 'Annual upfront payment', amount: recruitmentPricing.upfrontAnnualFee, period: '/ year', annualFee: recruitmentPricing.upfrontAnnualFee, copy: 'Pay once and your seat is settled until the same date next year. Save R8,000 compared with the monthly debit order subscription.', note: 'Available to solo agents and teams.' }),
+])
+export function recruitmentExample(sales = 10, optionId = 'monthly') {
   const p = recruitmentPricing
+  const option = recruitmentPaymentOptions.find((item) => item.id === optionId)
+  if (!option) throw new RangeError('Unknown recruitment payment option')
   const commission = sales * p.averageSalePrice * p.commissionRate
-  const cost = 12 * p.monthlyFee + sales * p.transactionFee
+  const cost = option.annualFee + sales * p.transactionFee
   const traditionalCost = commission * p.traditionalSplit
-  const balloonCost = p.balloonMonthlyFee * 12 + commission * p.balloonSplit
-  return { commission, cost, traditionalCost, balloonCost, youKeep: commission - cost, effectivePercent: commission ? cost / commission * 100 : null, breakEvenSales: 12 * p.monthlyFee / (p.averageSalePrice * p.commissionRate * p.traditionalSplit - p.transactionFee) }
+  const balloonCost = p.balloonMonthlyFee * 12 + sales * p.averageSalePrice * p.balloonCommissionRate * p.balloonSplit
+  const capCost = p.capMonthlyFee * 12 + Math.min(commission * p.capSplit, p.annualCap) + commission * p.capRoyalty
+  return { commission, cost, traditionalCost, balloonCost, capCost, youKeep: commission - cost, effectivePercent: commission ? cost / commission * 100 : null, breakEvenSales: option.annualFee / (p.averageSalePrice * p.commissionRate * p.traditionalSplit - p.transactionFee) }
 }
 
 export async function submitRecruitmentApplication(details, { fetcher = fetch, pageUrl = window.location.href, timeoutMs = 20000 } = {}) {

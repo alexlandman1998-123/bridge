@@ -65,7 +65,7 @@ it('valuation requests include the property address and preserve it after failur
   await screen.findByText('Fixture connection lost')
   expect(form.querySelector('[name="propertyAddress"]').value).toBe('12 Fixture Road, Pretoria')
   fireEvent.submit(form)
-  await screen.findByText('Thank you — a Home Seekers agent will be in touch shortly.')
+  await screen.findByText('Thank you. A Home Seekers agent will be in touch shortly.')
   expect(requests[0]).toMatchObject({ type: 'valuation_request', message: 'Property address: 12 Fixture Road, Pretoria', privacyAccepted: true })
 })
 

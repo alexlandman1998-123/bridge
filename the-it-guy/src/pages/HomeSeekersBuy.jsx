@@ -7,7 +7,7 @@ import './HomeSeekersBuyOverrides.css'
 const homes = [
   { status: 'For sale', price: 'R25,800,000', suburb: 'Waterkloof', beds: 5, baths: 7, cars: 5, type: 'Freehold', image: 'https://d21tw07c6rnmp0.cloudfront.net/media/uploads/869/residential/2026/2/869_42e792e711594d22ad9df15a573182f4_t_w_1540_h_635.avif' },
   { status: 'For sale', price: 'R12,995,000', suburb: 'Steyn City', beds: 3, baths: 3, cars: 2, type: 'House', image: 'https://d21tw07c6rnmp0.cloudfront.net/media/uploads/869/residential/2025/8/869_97bcc14546414da09ea8ba586b858759_t_w_505_h_490.avif' },
-  { status: 'For sale', price: 'R3,490,000', suburb: 'Waterkloof', beds: '—', baths: '—', cars: '—', type: 'Vacant land', image: 'https://d21tw07c6rnmp0.cloudfront.net/media/uploads/869/residential/2025/8/869_f02bc109f42a499fb43e3e7b41af6c13_t_w_505_h_490.avif' },
+  { status: 'For sale', price: 'R3,490,000', suburb: 'Waterkloof', beds: '-', baths: '-', cars: '-', type: 'Vacant land', image: 'https://d21tw07c6rnmp0.cloudfront.net/media/uploads/869/residential/2025/8/869_f02bc109f42a499fb43e3e7b41af6c13_t_w_505_h_490.avif' },
 ]
 const nav = ['Buy', 'Sell', 'Rent', 'Developments', 'Our people', 'About', 'Contact']
 const localAreas = [

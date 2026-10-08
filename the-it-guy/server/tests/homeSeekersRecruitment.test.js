@@ -76,10 +76,28 @@ test('client requires acceptance and skips duplicate/unconsented conversions', a
   } finally { globalThis.window = previous }
 })
 test('maths includes fees in savings and break-even', () => {
-  const p = recruitmentExample(12)
-  assert.equal(p.commission, 972000); assert.equal(p.cost, 102000); assert.equal(p.youKeep, 870000)
-  assert.equal(p.traditionalCost-p.cost, 189600); assert.equal(p.balloonCost-p.cost, 97200); assert.equal(p.breakEvenSales.toFixed(1), '3.9')
-  assert.deepEqual([4,8,12,16,20].map(n=>Math.round(recruitmentExample(n).effectivePercent)), [29,15,10,8,7])
+  // Ten R1.5m sales at 5%: the published agent overview's annual example.
+  const p = recruitmentExample()
+  assert.equal(p.commission, 750000); assert.equal(p.cost, 123000); assert.equal(p.youKeep, 627000)
+  assert.equal(p.traditionalCost, 225000); assert.equal(p.balloonCost, 192000); assert.equal(p.capCost, 191400)
+  assert.equal(p.traditionalCost-p.cost, 102000); assert.equal((p.traditionalCost-p.cost)*5, 510000)
+  assert.equal(p.balloonCost-p.cost, 69000); assert.equal(p.breakEvenSales.toFixed(1), '5.1')
+  // The balloon is worked on 6%, and the royalty continues after the cap.
+  assert.equal(recruitmentExample(1).capCost, 36150)
+  assert.equal(recruitmentExample(20).capCost, 221400)
+  assert.equal(recruitmentExample(0).cost, 108000)
+  assert.equal(recruitmentExample(0).effectivePercent, null)
+  assert.deepEqual([5,8,10,15,20].map(n=>Math.round(recruitmentExample(n).effectivePercent)), [31,20,16,12,9])
+})
+
+test('all three options include the same registered-sale fee and upfront saves R8000', () => {
+  const deals = recruitmentExample(10, 'deals')
+  const monthly = recruitmentExample(10, 'monthly')
+  const upfront = recruitmentExample(10, 'upfront')
+  assert.equal(deals.cost, 135000); assert.equal(deals.youKeep, 615000)
+  assert.equal(monthly.cost, 123000); assert.equal(upfront.cost, 115000)
+  assert.equal(monthly.cost-upfront.cost, 8000)
+  assert.throws(() => recruitmentExample(10, 'unknown'), /Unknown recruitment payment option/)
 })
 
 test('a stalled connection times out and does not report acceptance', async () => {

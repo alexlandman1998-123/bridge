@@ -27,7 +27,7 @@ const process = [
   [
     "02",
     "Launch with a plan.",
-    "Photography, portal placement, targeted exposure and a contact plan—mapped before we begin.",
+    "Photography, portal placement, targeted exposure and a contact plan, mapped before we begin.",
   ],
   [
     "03",
@@ -37,7 +37,7 @@ const process = [
   [
     "04",
     "Hold us to day 45.",
-    "Sold—or our commission comes down. Either way, the decision to continue is yours.",
+    "Sold, or our commission comes down. Either way, the decision to continue is yours.",
   ],
 ];
 const salePreviews = [
@@ -114,7 +114,7 @@ export default function HomeSeekersSelling() {
           </p>
           <h1>A board outside is not a sales strategy.</h1>
           <p className="hs-selling__intro">
-            A great sale is made long before the listing goes live—with a price
+            A great sale is made long before the listing goes live, with a price
             grounded in evidence, presentation that earns attention and people
             who know how to convert interest into an offer.
           </p>
@@ -178,7 +178,7 @@ export default function HomeSeekersSelling() {
             <h3>Momentum you can see.</h3>
             <p>
               Weekly written feedback turns activity into a clear next
-              decision—not a guessing game.
+              decision, not a guessing game.
             </p>
           </article>
         </div>
@@ -195,7 +195,7 @@ export default function HomeSeekersSelling() {
           </span>
           <h2>Proof in motion.</h2>
           <p>
-            Every concluded sale becomes a documented record—not a line in a
+            Every concluded sale becomes a documented record, not a line in a
             claim.
           </p>
           <small>LIVE RESULTS FEED · AWAITING APPROVED SALE DATA</small>
@@ -225,13 +225,13 @@ export default function HomeSeekersSelling() {
             </p>
             <div className="hs-selling__sale-specs">
               <span>
-                <b>—</b> beds
+                <b>-</b> beds
               </span>
               <span>
-                <b>—</b> baths
+                <b>-</b> baths
               </span>
               <span>
-                <b>—</b> parking
+                <b>-</b> parking
               </span>
             </div>
             <div className="hs-selling__sale-progress">
@@ -269,7 +269,7 @@ export default function HomeSeekersSelling() {
           <h2>Get a clear view of what your home can sell for.</h2>
           <p>
             A no-pressure valuation gives you the evidence to make the right
-            next decision—whether you sell now or later.
+            next decision, whether you sell now or later.
           </p>
           <small>
             786 Witdoring Avenue, Moreleta Park, Pretoria

@@ -20,7 +20,7 @@ export default function HomeSeekersValuationModal({ onClose }) {
         email: form.get('email'), message: `Property address: ${form.get('propertyAddress')}`,
         privacyAccepted: form.get('privacy') === 'on', companyWebsite: form.get('website'),
       })
-      setStatus('Thank you — a Home Seekers agent will be in touch shortly.')
+      setStatus('Thank you. A Home Seekers agent will be in touch shortly.')
       formElement.reset()
     } catch (error) {
       setStatus(error.message || 'We could not send that just now. Your details are still here; please try again.')

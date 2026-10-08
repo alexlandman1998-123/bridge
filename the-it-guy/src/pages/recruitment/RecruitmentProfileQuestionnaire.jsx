@@ -15,7 +15,7 @@ function ProfileField({ name, value, onChange, error, validLicense }) {
     </div>
     <small id={`${id}-help`} className="recruitment-signup__error">{error || ''}</small>
   </fieldset>
-  const hint = name==='email' ? 'Verified email — your account and saved enquiry use this address.' : name==='dateOfBirth' ? 'You must be at least 18 years old to apply.' : name==='ffcNumber' ? 'Fidelity Fund Certificate issued by the PPRA.' : field.type==='code' ? 'Choose a country code or enter another international code.' : field.type==='phone' ? 'Enter the number without the country code.' : field.type==='count' ? 'Whole numbers from 0 to 999, including zero.' : field.type==='postal' ? '4 or 5 digits only.' : field.type==='future' ? 'Choose a future date.' : !required ? 'Optional' : ''
+  const hint = name==='email' ? 'Verified email. Your account and saved enquiry use this address.' : name==='dateOfBirth' ? 'You must be at least 18 years old to apply.' : name==='ffcNumber' ? 'Fidelity Fund Certificate issued by the PPRA.' : field.type==='code' ? 'Choose a country code or enter another international code.' : field.type==='phone' ? 'Enter the number without the country code.' : field.type==='count' ? 'Whole numbers from 0 to 999, including zero.' : field.type==='postal' ? '4 or 5 digits only.' : field.type==='future' ? 'Choose a future date.' : !required ? 'Optional' : ''
   return <div className={['streetAddress','currentEmployer','referralSource'].includes(name)?'recruitment-profile__wide':undefined}>
     <label htmlFor={id}>{field.label}{required && <span aria-hidden="true"> *</span>}</label>
     {field.options ? <select {...props}><option value="">Select an option</option>{field.options.map(([key,label])=><option key={key} value={key}>{label}</option>)}</select>
@@ -64,7 +64,7 @@ export default function RecruitmentProfileQuestionnaire({ applicant, endpoint, t
       setAnswers(updated); setRevision(result.applicant.profileRevision); setPage(result.applicant.profile.page);setCompleted(result.applicant.profile.complete);setReviewEdit(false)
       saved.current=JSON.stringify({answers:updated,page:result.applicant.profile.page})
       onSaved(result.applicant)
-      setNotice(preview?'Preview progress updated — nothing has been sent.':'Your progress is saved. You can return to this enquiry later.')
+      setNotice(preview?'Preview progress updated. Nothing has been sent.':'Your progress is saved. You can return to this enquiry later.')
       if (close) onClose()
     } catch (error) {
       if (error.errors) showErrors(error.errors)

@@ -44,7 +44,7 @@ function CampaignTrack() {
     <div className="hs-campaign-hero__track" aria-label="The 45-day sales process">
       <span><b>DAY 01</b> Price it right. Launch it hard.</span>
       <span><b>DAY 14</b> Viewings, feedback, momentum.</span>
-      <span><b>DAY 45</b> Sold — or the commission drops.</span>
+      <span><b>DAY 45</b> Sold, or the commission drops.</span>
     </div>
   );
 }
@@ -515,7 +515,7 @@ export default function HomeSeekersDemo({ guaranteePage = false }) {
           <p>
             786 Witdoring Avenue, Moreleta Park, Pretoria
             <br />
-            +27 12 880 3127 · info@homeseeker.co.za
+            +27 12 880 3127 · admin@homeseekers.co.za
           </p>
         </div>
         <form onSubmit={submitContact}>

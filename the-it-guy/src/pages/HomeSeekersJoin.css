@@ -83,6 +83,34 @@
 .hs-join__fees h3{font-size:clamp(30px,3vw,44px);color:var(--accent);line-height:1.1}
 .hs-join__fees h3 span{display:block;font:400 15px/1.6 Asap,Arial,sans-serif;letter-spacing:0;color:var(--heading);margin-top:8px}
 .hs-join__fees article>p{font-size:16px;color:var(--copy)}
+.hs-join__fees article.is-standard{border:2px solid var(--orange)}
+.hs-join__fees h4{font:700 20px/1.3 Montserrat,Arial,sans-serif;color:var(--heading);margin:0 0 14px}
+.hs-join__fees .hs-join__option-annual{font-weight:700}
+.hs-join__fees-section{padding-bottom:56px}
+.hs-join__fees-section + .hs-join__problem{padding-top:56px}
+.hs-join__fee-summary{border:1px solid var(--line);border-left:3px solid var(--orange);background:var(--card);padding:32px}
+.hs-join__fee-summary-main{display:grid;grid-template-columns:1.2fr 1fr;align-items:center;gap:48px}
+.hs-join .hs-join__fee-summary-label{margin:0 0 12px;color:var(--muted);font:600 11px/1.4 Montserrat,Arial,sans-serif;letter-spacing:.06em;text-transform:uppercase}
+.hs-join__fee-summary-price h3{font-size:40px;color:var(--accent);line-height:1.1;margin:0 0 18px}
+.hs-join__fee-summary-price h3 span{display:block;color:var(--heading);font:600 18px/1.4 Asap,Arial,sans-serif;letter-spacing:0;margin-top:6px}
+.hs-join__fee-summary-price>p:not(.hs-join__fee-summary-label){max-width:440px;font-size:16px;line-height:1.55;margin:0 0 8px}
+.hs-join .hs-join__fee-summary-price .hs-join__fee-summary-vat{color:var(--muted);font-size:13px;margin:0}
+.hs-join__fee-summary-included{list-style:none;padding:0;margin:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px 24px}
+.hs-join__fee-summary-included li{display:flex;align-items:center;gap:10px;font-size:15px;line-height:1.4;color:var(--copy)}
+.hs-join__fee-summary-included svg{flex-shrink:0;color:var(--accent)}
+.hs-join__fee-summary-footer{display:flex;align-items:center;justify-content:space-between;gap:24px;border-top:1px solid var(--line);margin-top:26px;padding-top:24px}
+.hs-join .hs-join__fee-summary-footer p{margin:0;color:var(--muted);font-size:14px;line-height:1.5}
+.hs-join__fee-summary-footer p strong{color:var(--heading);font-weight:600}
+.hs-join__fee-summary-footer .hs-join__button{flex-shrink:0}
+@media(max-width:900px){.hs-join__fee-summary-main{grid-template-columns:1fr;gap:26px}.hs-join__fee-summary-footer{align-items:flex-start}.hs-join__fee-summary-included{gap:14px 20px}}
+@media(max-width:600px){.hs-join__fees-section{padding-bottom:32px}.hs-join__fees-section + .hs-join__problem{padding-top:32px}.hs-join__fee-summary{padding:24px 20px}.hs-join .hs-join__fee-summary-price h3{font-size:36px}.hs-join__fee-summary-footer{flex-direction:column;gap:18px;margin-top:24px;padding-top:20px}.hs-join__fee-summary-footer .hs-join__button{width:100%}.hs-join__fee-summary-included{grid-template-columns:1fr;gap:12px}}
+.hs-join__pricing-table{width:100%;border-collapse:collapse;margin:32px 0;font-size:16px}
+.hs-join__pricing-table caption{text-align:left;color:var(--muted);font-size:14px;margin-bottom:16px}
+.hs-join__pricing-table th,.hs-join__pricing-table td{padding:18px 12px;text-align:left;border-bottom:1px solid var(--line)}
+.hs-join__pricing-table thead th{color:var(--muted);font-size:13px;font-weight:400}
+.hs-join__pricing-table tbody th{font-weight:500}
+.hs-join__pricing-table td{color:var(--accent);font-weight:700}
+@media(max-width:600px){.hs-join__pricing-table{font-size:14px}.hs-join__pricing-table th,.hs-join__pricing-table td{padding:16px 5px}.hs-join__pricing-table thead th{font-size:12px}}
 .hs-join__fees details p{font-size:14px;color:var(--muted)}
 .hs-join__fees summary{font-size:14px}
 .hs-join__referral-table{width:100%;border-collapse:collapse;font-size:16px;margin-bottom:32px}

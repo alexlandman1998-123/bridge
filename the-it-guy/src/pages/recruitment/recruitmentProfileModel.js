@@ -1,6 +1,6 @@
 export const profileVersion = 'recruitment-profile-v1'
 export const profileCountry = 'ZA'
-export const experienceOptions = [['0','New to real estate'],['1','1 year'],['2','2 years'],['3','3 years'],['4','4 years'],['5','5 years'],['6-10','6–10 years'],['11-20','11–20 years'],['21+','21+ years']]
+export const experienceOptions = [['0','New to real estate'],['1','1 year'],['2','2 years'],['3','3 years'],['4','4 years'],['5','5 years'],['6-10','6 to 10 years'],['11-20','11 to 20 years'],['21+','21+ years']]
 export const licenseOptions = [['valid','Valid'],['pending','Pending'],['expired','Expired']]
 export const ffcTypeOptions = [['candidate','Candidate property practitioner'],['non_principal','Non-principal property practitioner'],['principal','Principal property practitioner']]
 export const referralOptions = [['referral','Referral'],['social_media','Social media'],['website','Agency website'],['search','Search engine'],['event','Industry event'],['other','Other']]
@@ -71,7 +71,7 @@ export function recruitmentProfileErrors(raw, {page, required = false, now = new
       if (number && (!code || !/^\+[1-9]\d{0,2}$/.test(code))) errors[`${prefix}CountryCode`] = 'Select or enter a country code.'
       if (number && code) {
         const length = `${code}${number}`.replace(/\D/g,'').length
-        if (length<9 || length>15) errors[`${prefix}Number`] = 'Use 9–15 digits in total, including the country code.'
+        if (length<9 || length>15) errors[`${prefix}Number`] = 'Use 9 to 15 digits in total, including the country code.'
       }
     }
   }

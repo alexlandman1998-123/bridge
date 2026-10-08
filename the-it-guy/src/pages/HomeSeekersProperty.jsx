@@ -23,7 +23,7 @@ export default function HomeSeekersProperty() {
   const collectionUrl = `/demo/homeseekers/${rental ? 'renting' : 'buying'}`
   const listingLabel = rental ? 'TO LET' : 'FOR SALE'
   const price = formatHomeSeekersPrice(home.price, home.transactionType)
-  const facts = [[BedDouble, home.bedrooms || '—', 'Bedrooms'], [Bath, home.bathrooms || '—', 'Bathrooms'], [Car, home.parkingBays || '—', 'Parking']]
+  const facts = [[BedDouble, home.bedrooms || '-', 'Bedrooms'], [Bath, home.bathrooms || '-', 'Bathrooms'], [Car, home.parkingBays || '-', 'Parking']]
   async function submit(event) {
     event.preventDefault()
     const formElement = event.currentTarget
@@ -44,7 +44,7 @@ export default function HomeSeekersProperty() {
     <section className="hs-property__hero">
       {images.length ? <img src={images[activeImage]} alt={`${home.title} image ${activeImage + 1}`} /> : <div className="hs-property__image-placeholder" aria-hidden="true" />}
       <div className="hs-property__shade" />
-      <div className="hs-property__hero-dossier"><p>❯ {listingLabel} <strong>/ HOME SEEKERS</strong></p><span><MapPin size={14} /> {home.address || home.suburb}</span><h1>{home.title}</h1><strong className="hs-property__hero-price">{price}</strong><div className="hs-property__hero-facts"><span><BedDouble size={15} /> {home.bedrooms || '—'} Beds</span><span><Bath size={15} /> {home.bathrooms || '—'} Baths</span><span><Car size={15} /> {home.parkingBays || '—'} Parking</span></div><a href="#enquire">Arrange a private viewing <ArrowRight size={17} /></a></div>
+      <div className="hs-property__hero-dossier"><p>❯ {listingLabel} <strong>/ HOME SEEKERS</strong></p><span><MapPin size={14} /> {home.address || home.suburb}</span><h1>{home.title}</h1><strong className="hs-property__hero-price">{price}</strong><div className="hs-property__hero-facts"><span><BedDouble size={15} /> {home.bedrooms || '-'} Beds</span><span><Bath size={15} /> {home.bathrooms || '-'} Baths</span><span><Car size={15} /> {home.parkingBays || '-'} Parking</span></div><a href="#enquire">Arrange a private viewing <ArrowRight size={17} /></a></div>
       {images.length > 1 && <div className="hs-property__hero-gallery"><span className="hs-property__count">{String(activeImage + 1).padStart(2, '0')} <i>/ {String(images.length).padStart(2, '0')}</i></span><div className="hs-property__filmstrip" aria-label="Property image gallery">{images.map((image, index) => <button className={index === activeImage ? 'is-active' : ''} type="button" key={image} onClick={() => setActiveImage(index)} aria-label={`View image ${index + 1} of ${images.length}`}><img src={image} alt="" /></button>)}</div></div>}
     </section>
     <section className="hs-property__summary"><div><p>❯ {listingLabel} <strong>/ HOME SEEKERS</strong></p><h1>{home.title}</h1></div><aside><span>{rental ? 'Monthly rent' : 'Asking price'}</span><strong>{price}</strong><a className="hs-property__viewing-trigger" href="#enquire">Arrange a private viewing <ArrowRight size={18} /></a></aside></section>

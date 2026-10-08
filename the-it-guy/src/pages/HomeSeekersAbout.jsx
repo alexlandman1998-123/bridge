@@ -128,7 +128,7 @@ export default function HomeSeekersAbout() {
           </p>
           <p>
             We bring local experience, direct advice and a sharp eye for the
-            details that make a move feel clear—not complicated.
+            details that make a move feel clear, not complicated.
           </p>
           <a href="#story">
             The Home Seekers story <span aria-hidden="true">↓</span>
