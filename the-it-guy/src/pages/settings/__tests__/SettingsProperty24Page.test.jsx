@@ -35,6 +35,7 @@ beforeEach(() => {
     { id: 'membership-2', userId: 'user-2', fullName: 'Second Agent', email: 'second@example.com', phone: '0825551124', status: 'active' },
   ])
   mocks.save.mockResolvedValue({})
+  mocks.refresh.mockResolvedValue({})
   mocks.fetch.mockImplementation(async (url) => {
     if (String(url).includes('/connection?')) return new Response(JSON.stringify({
       connection: { enabled: true, agencyId: '31382', credentialsConfigured: true },
@@ -47,6 +48,50 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
 describe('Property24 agent phone preferences', () => {
+  it('ticks immediately during a slow save and unlocks before the workspace refresh finishes', async () => {
+    let finishSave
+    mocks.save.mockImplementation(() => new Promise((resolve) => { finishSave = resolve }))
+    mocks.refresh.mockImplementation(() => new Promise(() => {}))
+    render(<SettingsProperty24Page />)
+    const checkbox = await screen.findByRole('checkbox', { name: 'Hide phone number on Property24 for First Agent' })
+    fireEvent.click(checkbox)
+    expect(checkbox.checked).toBe(true)
+    expect(checkbox.disabled).toBe(true)
+    expect(screen.getByText('Saving phone preference…')).toBeTruthy()
+    finishSave({})
+    await waitFor(() => expect(checkbox.disabled).toBe(false))
+    expect(checkbox.checked).toBe(true)
+    expect(screen.queryByText('Saving phone preference…')).toBeNull()
+    expect(screen.getByText(/Phone preference saved for First Agent/)).toBeTruthy()
+    expect(mocks.refresh).toHaveBeenCalledOnce()
+  })
+
+  it('restores the last value if a delayed save fails', async () => {
+    let failSave
+    mocks.save.mockImplementation(() => new Promise((resolve, reject) => { failSave = reject }))
+    render(<SettingsProperty24Page />)
+    const checkbox = await screen.findByRole('checkbox', { name: 'Hide phone number on Property24 for Second Agent' })
+    fireEvent.click(checkbox)
+    expect(checkbox.checked).toBe(false)
+    expect(checkbox.disabled).toBe(true)
+    failSave(new Error('Phone preference could not be saved'))
+    expect(await screen.findByText('Phone preference could not be saved')).toBeTruthy()
+    expect(checkbox.checked).toBe(true)
+    expect(checkbox.disabled).toBe(false)
+    expect(mocks.refresh).not.toHaveBeenCalled()
+  })
+
+  it('retains a successful save when the workspace refresh fails', async () => {
+    mocks.refresh.mockRejectedValue(new Error('Refresh unavailable'))
+    render(<SettingsProperty24Page />)
+    const checkbox = await screen.findByRole('checkbox', { name: 'Hide phone number on Property24 for First Agent' })
+    fireEvent.click(checkbox)
+    expect(await screen.findByText('Property24 settings saved, but the workspace could not refresh. Reload the page to refresh it.')).toBeTruthy()
+    expect(checkbox.checked).toBe(true)
+    expect(checkbox.disabled).toBe(false)
+    expect(screen.getByText(/Phone preference saved for First Agent/)).toBeTruthy()
+  })
+
   it('saves per agent, preserves other preferences and waits for explicit sync', async () => {
     const view = render(<SettingsProperty24Page />)
     const first = await screen.findByRole('checkbox', { name: 'Hide phone number on Property24 for First Agent' })

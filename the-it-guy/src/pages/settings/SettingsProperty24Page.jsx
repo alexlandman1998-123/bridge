@@ -397,6 +397,7 @@ export default function SettingsProperty24Page() {
   const [liveCutoverLoading, setLiveCutoverLoading] = useState(false)
   const [liveCutoverAction, setLiveCutoverAction] = useState('')
   const [creatingAgentKey, setCreatingAgentKey] = useState('')
+  const [savingPhoneUserId, setSavingPhoneUserId] = useState('')
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [healthError, setHealthError] = useState('')
@@ -1064,10 +1065,16 @@ export default function SettingsProperty24Page() {
       setError('This agent needs an Arch9 user account before saving a Property24 phone preference.')
       return
     }
-    await persistProperty24Settings({
+    const previousSettings = settings
+    const nextSettings = normalizeProperty24Settings({
       ...settings,
       hiddenAgentPhoneNumbers: { ...settings.hiddenAgentPhoneNumbers, [userId]: hidden },
-    }, `Phone preference saved for ${agent.fullName || agent.email}. Choose Sync & match to ${hidden ? 'hide' : 'restore'} the number on Property24.`)
+    })
+    setSettings(nextSettings)
+    setSavingPhoneUserId(userId)
+    const persisted = await persistProperty24Settings(nextSettings, `Phone preference saved for ${agent.fullName || agent.email}. Choose Sync & match to ${hidden ? 'hide' : 'restore'} the number on Property24.`)
+    if (!persisted) setSettings(previousSettings)
+    setSavingPhoneUserId('')
   }
 
   async function persistProperty24Settings(nextSettings, successMessage = 'Property24 settings saved.') {
@@ -1092,7 +1099,11 @@ export default function SettingsProperty24Page() {
       setSettings(nextProperty24)
       setSavedSettings(nextProperty24)
       setSuccess(successMessage)
-      await refreshOrganisation?.({ forceRefresh: true })
+      // The saved local state is ready; a workspace refresh must not keep the
+      // controls disabled or turn a successful save into a failed preference.
+      Promise.resolve().then(() => refreshOrganisation?.({ forceRefresh: true })).catch(() => {
+        setError('Property24 settings saved, but the workspace could not refresh. Reload the page to refresh it.')
+      })
       void loadProperty24Health()
       return nextProperty24
     } catch (saveError) {
@@ -1362,6 +1373,12 @@ export default function SettingsProperty24Page() {
                         />
                         <span>Hide phone number on Property24</span>
                       </label>
+                      {savingPhoneUserId === (agent.userId || agent.user_id) ? (
+                        <p role="status" className="mt-1 text-xs text-[#6b7d93]">Saving phone preference…</p>
+                      ) : null}
+                      {!(agent.userId || agent.user_id) ? (
+                        <p className="mt-1 text-xs text-[#6b7d93]">Link this agent to an Arch9 user account to change their phone preference.</p>
+                      ) : null}
                       {!mapped && missingIdCandidate ? (
                         <p className="mt-2 text-xs leading-5 text-[#a16207]">
                           {missingIdCandidate.fullName || missingIdCandidate.email} came back without an ID.
