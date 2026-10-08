@@ -87,7 +87,7 @@ it('opens each current development from the home scroller, includes later cards,
   expect(lastCard.getAttribute('href')).toBe('/mobile/development/dev-5')
   fireEvent.click(lastCard)
   expect(onOpen).toHaveBeenCalledWith('/mobile/development/dev-5')
-  fireEvent.click(screen.getByRole('link', { name: 'View all' }))
+  fireEvent.click(within(screen.getByRole('region', { name: 'Current developments' })).getByRole('link', { name: 'View all' }))
   expect(onOpen).toHaveBeenLastCalledWith('/mobile/developments')
   rerender(<AgentDashboard snapshot={{ ...base, category: 'agent', developments }} onOpen={onOpen} />)
   expect(screen.queryByRole('region', { name: 'Swipe through current developments' })).toBeNull()
