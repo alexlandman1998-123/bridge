@@ -96,6 +96,11 @@ const payload = buildProperty24AgentLifecycleUpdatePayload(createProperty24().ag
 assert.equal(payload.status, 'Inactive')
 assert.equal(payload.mobileNumber, '0600001123')
 assert.equal(payload.emailAddress, 'jon@example.com')
+const hiddenPayload = buildProperty24AgentLifecycleUpdatePayload({
+  ...createProperty24().agents[0], mobileNumber: null,
+}, 'inactive')
+assert.equal(hiddenPayload.mobileNumber, '')
+assert.equal(hiddenPayload.status, 'Inactive')
 assert.throws(
   () => buildProperty24AgentLifecycleUpdatePayload({ id: 1 }, 'inactive'),
   /payload is missing/i,

@@ -1,4 +1,16 @@
 import { normalizeProperty24Text } from './client.js'
+import { normalizeHiddenProperty24AgentPhoneNumbers } from './agentPhoneVisibility.js'
+
+export async function fetchHiddenProperty24AgentPhoneNumbers({ supabase, organisationId } = {}) {
+  if (!supabase?.from) throw profileError('supabase_required', 'Supabase client is required.', 500)
+  const id = normalizeProperty24Text(organisationId)
+  if (!id) throw profileError('organisation_id_required', 'Organisation ID is required.')
+  const result = await supabase.from('organisation_settings')
+    .select('settings_json').eq('organisation_id', id).maybeSingle()
+  // A read failure must stop profile updates, rather than publish a hidden number.
+  if (result.error) throw result.error
+  return normalizeHiddenProperty24AgentPhoneNumbers(result.data?.settings_json?.property24?.hiddenAgentPhoneNumbers)
+}
 
 function normalizeEmail(value = '') {
   return normalizeProperty24Text(value).toLowerCase()

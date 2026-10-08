@@ -57,6 +57,15 @@ assert.equal(built.payload.lastname, 'Agent')
 assert.equal(built.payload.emailAddress, 'agent@example.com')
 assert.equal(built.payload.mobileNumber, '+27825551123')
 assert.equal(built.payload.agencyId, 31382)
+const hiddenBuilt = buildProperty24AgentPayloadFromCanonicalProfile({
+  profile: { ...profile, hidePhoneNumberOnProperty24: true },
+  body: { sourceReference: 'ARCH9-HIDDEN' }, connection: { agencyId: '31382' },
+})
+assert.deepEqual(hiddenBuilt.missing, [])
+assert.deepEqual(hiddenBuilt.invalid, [])
+assert.equal(hiddenBuilt.payload.mobileNumber, null)
+assert.equal(hiddenBuilt.payload.workNumber, null)
+assert.equal(profile.phone, '+27825551123')
 
 const connection = normalizeOrganisationProperty24Connection({
   property24: {

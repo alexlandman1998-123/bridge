@@ -9,6 +9,7 @@ Arch9 owns business data. Property24 integration records store external identifi
 | Agent name, email, telephone, job title and photo | Arch9 agent profile (`profiles`, resolved through the organisation membership) | Read when creating or updating the Property24 agent |
 | Property24 agent ID and source reference | `property24_agent_mappings` / identifier-only mapping settings during compatibility rollout | Resolve the Property24 contact agent for a listing |
 | Property24 agency ID, environment and enabled state | `property24_accounts` | Server-side organisation connection lookup |
+| Hide agent phone number preference | `organisation_settings.settings_json.property24.hiddenAgentPhoneNumbers`, keyed by Arch9 user ID | Read server-side for agent creation and profile sync |
 | Listing content, media and assigned agent | Arch9 listing and listing media records | Build the Property24 listing payload |
 | External status, timestamps and errors | Property24 sync/mapping records | Reconciliation, retry and audit evidence |
 | Original migration values | Read-only migration evidence | Traceability only; never an editable source |
@@ -23,7 +24,33 @@ Arch9 owns business data. Property24 integration records store external identifi
 - Agent profile sync updates name, email, telephone, job title and photo from Arch9, then re-fetches Property24 to verify the result.
 - Agent deactivation is an offboarding operation, not a profile edit: active listings must first be reassigned through the canonical listing assignment flow. A fresh server check blocks deactivation while any active listing still points at the agent.
 - Once ownership is clear, Arch9 synchronises the mapped Property24 agent to `Inactive`, verifies that contact fields and the profile photo were preserved, marks only the mapping lifecycle state inactive, and then deactivates the Arch9 organisation membership. If membership deactivation fails, the Property24 status is restored to `Active` when possible.
-- Settings may display Property24-returned profile values during a live sync, but persisted settings retain identifiers and sync metadata only.
+- Settings may display Property24-returned profile values during a live sync, but persisted settings retain identifiers, publication preferences and sync metadata only.
+
+## Agent phone visibility
+
+Settings → Property24 → Connect Agents offers **Hide phone number on Property24**
+for each agent. Changing the checkbox saves a preference; **Sync & match** applies
+it to mapped Property24 profiles. New agent creation also reads the saved preference.
+The Arch9 phone remains on the internal profile. The preference follows the Arch9
+user across mapping changes and is shared by their test and production connections.
+
+When enabled, profile writes explicitly send `null` for all four mobile numbers,
+all four work numbers and the fax number. The sync reads the agent back and reports
+a partial result if any number remains. Later syncs continue to honour the preference.
+Turning it off restores the primary mobile number from Arch9; it does not recover
+old additional numbers. Lifecycle updates accept an agent whose phone is cleared.
+The preference does not change the agent's email, publication status or internal
+phone, and applies to every listing linked to the Property24 agent.
+
+The current v53/v55 schema allows nullable phone fields but provides no dedicated
+visibility flag. Clearing and public-page behaviour still require an authorised
+test against Property24: verify the agent read-back, the listing contact panel,
+any agency-number fallback, and restoration. No public-page hiding has been verified.
+
+Focused local checks: `npm run test:property24-agent-profile-syndication`,
+`npm run test:property24-settings-ui`, `npm run test:property24-canonical-ownership`,
+`npm run test:property24-agent-lifecycle-offboarding`, and
+`npx vitest run src/pages/settings/__tests__/SettingsProperty24Page.test.jsx --maxWorkers=1`.
 
 ## Listing rules
 

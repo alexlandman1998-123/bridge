@@ -17,6 +17,7 @@ import {
 } from '../../../server/property24/synchronisationService.js'
 import { prepareProperty24AgentPhotoUrl } from '../../../server/property24/agentPhotoService.js'
 import { syndicateCanonicalProperty24AgentProfile } from '../../../server/property24/agentProfileSyndicationService.js'
+import { fetchHiddenProperty24AgentPhoneNumbers } from '../../../server/property24/agentProfileService.js'
 import {
   fetchCanonicalProperty24AgentMappings,
   persistCanonicalProperty24AgentMappings,
@@ -240,7 +241,7 @@ export default async function handler(request, response) {
       }))
       return
     }
-    const [agentSnapshot, arch9Agents, canonicalMappings] = await Promise.all([
+    const [agentSnapshot, arch9Agents, canonicalMappings, hiddenAgentPhoneNumbers] = await Promise.all([
       fetchProperty24AgencyAgentSnapshot({ property24, agencyId }),
       fetchArch9AgentCandidates({ supabase, organisationId }),
       fetchCanonicalProperty24AgentMappings({
@@ -249,6 +250,7 @@ export default async function handler(request, response) {
         environment: connection.environment,
         agencyId,
       }),
+      fetchHiddenProperty24AgentPhoneNumbers({ supabase, organisationId }),
     ])
 
     const agentPlan = createProperty24AgentMappingPlan({
@@ -296,6 +298,7 @@ export default async function handler(request, response) {
               fullName: agent.fullName,
               email: agent.email,
               phone: agent.mobile,
+              hidePhoneNumberOnProperty24: hiddenAgentPhoneNumbers[agent.userId] === true,
               avatarUrl: agent.avatarUrl,
               jobTitle: agent.jobTitle,
             },
@@ -311,6 +314,7 @@ export default async function handler(request, response) {
             status: result.status,
             action: result.action,
             photo: result.photo,
+            phoneVisibility: result.phoneVisibility,
             warnings: result.warnings,
           })
         } catch (profileError) {

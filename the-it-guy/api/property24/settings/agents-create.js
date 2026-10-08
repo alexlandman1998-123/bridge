@@ -10,7 +10,8 @@ import {
 } from '../../../server/property24/client.js'
 import { resolveProperty24EnvironmentCredentials } from '../../../server/property24/environmentService.js'
 import { normalizeProperty24Agent } from '../../../server/property24/synchronisationService.js'
-import { fetchCanonicalProperty24AgentProfile } from '../../../server/property24/agentProfileService.js'
+import { fetchCanonicalProperty24AgentProfile, fetchHiddenProperty24AgentPhoneNumbers } from '../../../server/property24/agentProfileService.js'
+import { buildProperty24AgentPhonePayload } from '../../../server/property24/agentPhoneVisibility.js'
 import {
   findMatchingProperty24Agent,
   prepareProperty24AgentPhotoUrl,
@@ -183,7 +184,7 @@ export function buildProperty24AgentPayloadFromCanonicalProfile({ profile = {}, 
     published: true,
     agencyId: Number(connection.agencyId),
     sourceReference: normalizeProperty24Text(body.sourceReference),
-    mobileNumber: normalizeAgentMobile(profile.phone),
+    ...buildProperty24AgentPhonePayload(profile),
     emailAddress: normalizeProperty24Text(profile.email),
     countryId: Number(body.countryId || env.PROPERTY24_DEFAULT_COUNTRY_ID || 1),
     status: 'Active',
@@ -194,7 +195,7 @@ export function buildProperty24AgentPayloadFromCanonicalProfile({ profile = {}, 
   if (!payload.firstname) missing.push('profile.firstName')
   if (!payload.lastname) missing.push('profile.lastName')
   if (!payload.emailAddress) missing.push('profile.email')
-  if (!payload.mobileNumber) missing.push('profile.phone')
+  if (!normalizeAgentMobile(profile.phone)) missing.push('profile.phone')
   if (!normalizeProperty24Text(profile.avatarUrl)) missing.push('profile.avatarUrl')
   if (!payload.sourceReference) missing.push('sourceReference')
   if (!Number.isInteger(payload.agencyId)) missing.push('agencyId')
@@ -202,7 +203,7 @@ export function buildProperty24AgentPayloadFromCanonicalProfile({ profile = {}, 
 
   const invalid = []
   if (payload.emailAddress && !isValidAgentEmail(payload.emailAddress)) invalid.push('profile.email')
-  if (payload.mobileNumber && !isValidAgentMobile(payload.mobileNumber)) invalid.push('profile.phone')
+  if (profile.phone && !isValidAgentMobile(normalizeAgentMobile(profile.phone))) invalid.push('profile.phone')
 
   return { payload, missing, invalid }
 }
@@ -262,6 +263,8 @@ export default async function handler(request, response) {
       arch9UserId: body.arch9UserId,
       arch9MembershipId: body.arch9MembershipId,
     })
+    const hiddenAgentPhoneNumbers = await fetchHiddenProperty24AgentPhoneNumbers({ supabase, organisationId })
+    canonicalProfile.hidePhoneNumberOnProperty24 = hiddenAgentPhoneNumbers[canonicalProfile.userId] === true
     const { payload, missing, invalid } = buildProperty24AgentPayloadFromCanonicalProfile({ profile: canonicalProfile, body, connection, env })
     if (missing.length) {
       writeNodeJsonResponse(response, buildResponse(400, {
@@ -351,6 +354,7 @@ export default async function handler(request, response) {
         profileUpdated: syndication.profileUpdated,
         photoUploaded: syndication.photoUploaded,
         photo: syndication.photo,
+        phoneVisibility: syndication.phoneVisibility,
       },
       response: summarizeProperty24Payload({ agentId: syndication.property24AgentId, status: syndication.status }),
       warnings,

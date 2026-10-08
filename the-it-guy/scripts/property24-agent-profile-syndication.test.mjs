@@ -11,6 +11,9 @@ import {
   validateCanonicalProperty24AgentProfile,
 } from '../server/property24/agentProfileSyndicationService.js'
 import { buildCanonicalProperty24AgentMappingRow } from '../server/property24/agentMappingService.js'
+import { PROPERTY24_AGENT_PHONE_FIELDS } from '../server/property24/agentPhoneVisibility.js'
+import { fetchHiddenProperty24AgentPhoneNumbers } from '../server/property24/agentProfileService.js'
+import { createClient } from '@supabase/supabase-js'
 
 const sourceBuffer = await sharp({
   create: { width: 900, height: 700, channels: 3, background: '#345678' },
@@ -136,6 +139,78 @@ assert.equal(updatePayload.id, 77969)
 assert.equal(updatePayload.firstname, 'Canonical')
 assert.equal(updatePayload.mobileNumber, '+27825551123')
 
+// Preferences come from the saved organisation record, never a sync request.
+const settingsQueries = []
+const settingsClient = createClient('https://supabase.example.com', 'local-test-key', {
+  global: { fetch: async (url) => {
+    settingsQueries.push(new URL(url))
+    return new Response(JSON.stringify({ settings_json: { property24: {
+      hiddenAgentPhoneNumbers: { [profile.userId]: true, 'other-user': false, 'string-value': 'true' },
+    } } }), { headers: { 'Content-Type': 'application/json' } })
+  } },
+})
+assert.deepEqual(await fetchHiddenProperty24AgentPhoneNumbers({
+  supabase: settingsClient, organisationId: 'organisation-1',
+}), { [profile.userId]: true })
+assert.equal(settingsQueries[0].searchParams.get('organisation_id'), 'eq.organisation-1')
+const failedSettingsClient = createClient('https://supabase.example.com', 'local-test-key', {
+  global: { fetch: async () => new Response(JSON.stringify({ message: 'Settings unavailable' }), {
+    status: 403, headers: { 'Content-Type': 'application/json' },
+  }) },
+})
+await assert.rejects(fetchHiddenProperty24AgentPhoneNumbers({
+  supabase: failedSettingsClient, organisationId: 'organisation-1',
+}), (error) => error.message === 'Settings unavailable')
+
+const hiddenProfile = { ...profile, hidePhoneNumberOnProperty24: true }
+const extraPhoneAgent = { ...existingAgent, ...updatePayload, mobileNumber1: '0825550001', workNumber3: '0115550001' }
+const hiddenProperty24 = createFakeProperty24([extraPhoneAgent])
+const hidden = await syndicateCanonicalProperty24AgentProfile({
+  property24: hiddenProperty24, profile: hiddenProfile, preparedPhoto,
+  agencyId: 31382, sourceReference: 'ARCH9-CANONICAL-AGENT', remoteAgent: extraPhoneAgent,
+})
+assert.equal(hidden.status, 'UPDATED')
+assert.deepEqual(hidden.phoneVisibility, { hidden: true, verified: true })
+assert.equal(profile.phone, '+27 82 555 1123', 'The internal phone must remain unchanged.')
+for (const field of PROPERTY24_AGENT_PHONE_FIELDS) assert.equal(hiddenProperty24.calls[0].payload[field], null)
+assert.equal(hiddenProperty24.calls[0].payload.emailAddress, profile.email)
+assert.equal(hiddenProperty24.calls[0].payload.published, true)
+const hiddenAgent = (await hiddenProperty24.fetchAgencyAgents(31382)).data[0]
+const writeCount = hiddenProperty24.calls.filter((call) => call.type === 'update_agent').length
+const hiddenAgain = await syndicateCanonicalProperty24AgentProfile({
+  property24: hiddenProperty24, profile: hiddenProfile, preparedPhoto,
+  agencyId: 31382, sourceReference: 'ARCH9-CANONICAL-AGENT', remoteAgent: hiddenAgent,
+})
+assert.equal(hiddenAgain.status, 'UNCHANGED')
+assert.equal(hiddenProperty24.calls.filter((call) => call.type === 'update_agent').length, writeCount)
+const restored = await syndicateCanonicalProperty24AgentProfile({
+  property24: hiddenProperty24, profile, preparedPhoto,
+  agencyId: 31382, sourceReference: 'ARCH9-CANONICAL-AGENT', remoteAgent: hiddenAgent,
+})
+assert.equal(restored.status, 'UPDATED')
+assert.equal(restored.agent.phone, '+27825551123')
+assert.deepEqual(restored.phoneVisibility, { hidden: false, verified: true })
+
+const hiddenCreateProperty24 = createFakeProperty24()
+const hiddenCreated = await syndicateCanonicalProperty24AgentProfile({
+  property24: hiddenCreateProperty24, profile: hiddenProfile, preparedPhoto,
+  agencyId: 31382, sourceReference: 'ARCH9-HIDDEN-CREATE',
+})
+assert.equal(hiddenCreated.status, 'CREATED')
+for (const field of PROPERTY24_AGENT_PHONE_FIELDS) assert.equal(hiddenCreateProperty24.calls[0].payload[field], null)
+
+// An additional number alone must trigger clearing, and a refused clear is partial.
+const retainedAgent = { ...hiddenAgent, WorkNumber2: '0115550002' }
+const retainedProperty24 = createFakeProperty24([retainedAgent])
+const retained = await syndicateCanonicalProperty24AgentProfile({
+  property24: retainedProperty24, profile: hiddenProfile, preparedPhoto,
+  agencyId: 31382, sourceReference: 'ARCH9-CANONICAL-AGENT', remoteAgent: retainedAgent,
+})
+assert.equal(retained.status, 'UPDATED_PARTIAL')
+assert.equal(retained.phoneVisibility.verified, false)
+assert.ok(retained.warnings.some((warning) => warning.fields?.includes('workNumber2')))
+assert.equal(retainedProperty24.calls[0].type, 'update_agent')
+
 const mappingRow = buildCanonicalProperty24AgentMappingRow({
   organisationId: '00000000-0000-4000-8000-000000000003',
   environment: 'production',
@@ -154,12 +229,14 @@ const createSource = fs.readFileSync(new URL('../api/property24/settings/agents-
 assert.match(createSource, /prepareProperty24AgentPhotoUrl\(canonicalProfile\.avatarUrl/)
 assert.match(createSource, /syndicateCanonicalProperty24AgentProfile/)
 assert.match(createSource, /persistCanonicalProperty24AgentMapping/)
+assert.match(createSource, /fetchHiddenProperty24AgentPhoneNumbers/)
 assert.doesNotMatch(createSource, /body\.agent/)
 
 const syncSource = fs.readFileSync(new URL('../api/property24/settings/agents-sync.js', import.meta.url), 'utf8')
 assert.match(syncSource, /applyProfileUpdates === true/)
 assert.match(syncSource, /persistCanonicalProperty24AgentMappings/)
 assert.match(syncSource, /profileSyncResults/)
+assert.match(syncSource, /hidePhoneNumberOnProperty24: hiddenAgentPhoneNumbers\[agent.userId\] === true/)
 assert.match(syncSource, /property24Agents: agentSnapshot\.agents\.map\(\(\{ raw, \.\.\.agent \}\) => agent\)/)
 
 const mappingApiSource = fs.readFileSync(new URL('../api/property24/settings/agent-mapping.js', import.meta.url), 'utf8')

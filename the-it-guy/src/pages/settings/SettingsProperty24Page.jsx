@@ -938,10 +938,13 @@ export default function SettingsProperty24Page() {
         lastAgentSyncAt: new Date().toISOString(),
       }
       const photoVerified = payload.profileSync?.photo?.verified === true
+      const profileVerified = photoVerified && payload.profileSync?.phoneVisibility?.verified === true && !payload.warnings?.length
       await persistProperty24Settings(
         nextSettings,
-        photoVerified
-          ? `Created and verified the Property24 profile, phone and photo for ${agent.fullName || agent.email}.`
+        profileVerified
+          ? payload.profileSync.phoneVisibility.hidden
+            ? `Created and verified the Property24 profile and photo for ${agent.fullName || agent.email}, with the phone number cleared.`
+            : `Created and verified the Property24 profile, phone and photo for ${agent.fullName || agent.email}.`
           : `Property24 agent ${payload.property24AgentId} was saved, but profile verification needs attention. Sync agent profiles to retry.`,
       )
       setLoadedProperty24Agents(null)
@@ -1053,6 +1056,18 @@ export default function SettingsProperty24Page() {
     } finally {
       setSyncing(false)
     }
+  }
+
+  async function saveAgentPhoneVisibility(agent, hidden) {
+    const userId = agent.userId || agent.user_id
+    if (!userId) {
+      setError('This agent needs an Arch9 user account before saving a Property24 phone preference.')
+      return
+    }
+    await persistProperty24Settings({
+      ...settings,
+      hiddenAgentPhoneNumbers: { ...settings.hiddenAgentPhoneNumbers, [userId]: hidden },
+    }, `Phone preference saved for ${agent.fullName || agent.email}. Choose Sync & match to ${hidden ? 'hide' : 'restore'} the number on Property24.`)
   }
 
   async function persistProperty24Settings(nextSettings, successMessage = 'Property24 settings saved.') {
@@ -1265,6 +1280,7 @@ export default function SettingsProperty24Page() {
           </div>
         </div>
         <p className="mt-2 text-sm leading-6 text-[#6b7d93]">Load profiles to view agents already on Property24. Sync & match also updates matched Property24 profiles using their Arch9 details.</p>
+        <p className="mt-2 text-sm leading-6 text-[#6b7d93]">Phone preferences keep the number in Arch9 and apply to all listings linked to that Property24 agent. Save a preference, then choose Sync & match to apply it. Property24 may still display the agency number.</p>
 
         {property24AgentsMissingIds.length ? (
           <div className="mt-4">
@@ -1335,6 +1351,17 @@ export default function SettingsProperty24Page() {
                           <option value="" disabled>No Property24 profiles with IDs synced</option>
                         )}
                       </select>
+                      <label className="mt-3 flex items-start gap-2 text-sm text-[#40546b]">
+                        <input
+                          type="checkbox"
+                          className="mt-1 h-4 w-4 shrink-0 accent-[#0f7f4f]"
+                          checked={settings.hiddenAgentPhoneNumbers[agent.userId || agent.user_id] === true}
+                          onChange={(event) => saveAgentPhoneVisibility(agent, event.target.checked)}
+                          disabled={saving || syncing || Boolean(creatingAgentKey) || !(agent.userId || agent.user_id)}
+                          aria-label={`Hide phone number on Property24 for ${agent.fullName || agent.email}`}
+                        />
+                        <span>Hide phone number on Property24</span>
+                      </label>
                       {!mapped && missingIdCandidate ? (
                         <p className="mt-2 text-xs leading-5 text-[#a16207]">
                           {missingIdCandidate.fullName || missingIdCandidate.email} came back without an ID.

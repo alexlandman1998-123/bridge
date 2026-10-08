@@ -90,7 +90,7 @@ export function buildProperty24AgentLifecycleUpdatePayload(agent = {}, targetSta
     about: normalizeProperty24Text(readAgentValue(agent, 'about', 'About')),
     isBroker: Boolean(readAgentValue(agent, 'isBroker', 'IsBroker')),
   }
-  const missing = ['id', 'firstname', 'lastname', 'agencyId', 'sourceReference', 'mobileNumber', 'emailAddress', 'countryId']
+  const missing = ['id', 'firstname', 'lastname', 'agencyId', 'sourceReference', 'emailAddress', 'countryId']
     .filter((key) => payload[key] === null || payload[key] === undefined || payload[key] === '')
   if (missing.length) {
     throw lifecycleError(

@@ -20,6 +20,7 @@ export const PROPERTY24_SETTINGS_DEFAULTS = {
   lastAgentSyncAt: '',
   property24Agents: [],
   agentMappings: [],
+  hiddenAgentPhoneNumbers: {},
 }
 
 export const PROPERTY24_LISTING_STATUS_OPTIONS = Object.freeze({
@@ -150,6 +151,9 @@ export function normalizeProperty24Settings(settings = {}) {
     lastAgentSyncAt: normalizeProperty24SettingsText(source.lastAgentSyncAt || source.last_agent_sync_at),
     property24Agents: toArray(source.property24Agents || source.property24_agents).map(normalizeProperty24AgentRow),
     agentMappings: toArray(source.agentMappings || source.agent_mappings).map(normalizeProperty24AgentMapping),
+    hiddenAgentPhoneNumbers: Object.fromEntries(Object.entries(
+      isObject(source.hiddenAgentPhoneNumbers) ? source.hiddenAgentPhoneNumbers : {},
+    ).filter(([userId, hidden]) => userId.trim() && hidden === true)),
   }
 }
 
@@ -189,6 +193,7 @@ export function serializeProperty24SettingsForPersistence(settings = {}) {
     defaultExpiryDays: normalized.defaultExpiryDays,
     property24Agents: normalized.property24Agents.map(serializeProperty24AgentReference),
     agentMappings: normalized.agentMappings.map(serializeProperty24AgentMapping),
+    hiddenAgentPhoneNumbers: normalized.hiddenAgentPhoneNumbers,
   }
 }
 

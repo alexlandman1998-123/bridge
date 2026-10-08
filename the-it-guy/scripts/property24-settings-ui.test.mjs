@@ -152,12 +152,26 @@ assert.equal('property24Email' in persistedSettings.agentMappings[0], false)
 assert.equal('arch9Name' in persistedSettings.agentMappings[0], false)
 assert.equal('property24Name' in persistedSettings.agentMappings[0], false)
 
+const hiddenPhoneSettings = serializeProperty24SettingsForPersistence({
+  ...readySettings,
+  hiddenAgentPhoneNumbers: { 'user-1': true, 'user-2': false, invalid: 'true' },
+})
+assert.deepEqual(hiddenPhoneSettings.hiddenAgentPhoneNumbers, { 'user-1': true })
+assert.deepEqual(normalizeProperty24Settings(hiddenPhoneSettings).hiddenAgentPhoneNumbers, { 'user-1': true })
+assert.deepEqual(normalizeProperty24Settings({ hiddenAgentPhoneNumbers: [] }).hiddenAgentPhoneNumbers, {})
+assert.deepEqual(normalizeProperty24Settings({}).hiddenAgentPhoneNumbers, {})
+assert.deepEqual(serializeProperty24SettingsForPersistence({
+  ...hiddenPhoneSettings, hiddenAgentPhoneNumbers: { 'user-1': false },
+}).hiddenAgentPhoneNumbers, {})
+
 const settingsPageSource = fs.readFileSync(new URL('../src/pages/settings/SettingsProperty24Page.jsx', import.meta.url), 'utf8')
 assert.match(settingsPageSource, /updateWorkflowSettings\(\{\s*property24:\s*persistedProperty24\s*\}\)/s)
 assert.doesNotMatch(settingsPageSource, /updateOrganisationSettings/)
 assert.match(settingsPageSource, /sample\.errorMessage/)
 assert.match(settingsPageSource, /invalidFields/)
 assert.match(settingsPageSource, /async function persistProperty24Settings/)
+assert.match(settingsPageSource, /Hide phone number on Property24/)
+assert.match(settingsPageSource, /saveAgentPhoneVisibility\(agent, event.target.checked\)/)
 assert.match(settingsPageSource, /Save connection/)
 assert.match(settingsPageSource, /Property24 is connected/)
 assert.match(settingsPageSource, /Agency connected/)

@@ -5,6 +5,7 @@ import {
   unwrapProperty24AgentCollection,
 } from './agentPhotoService.js'
 import { normalizeProperty24Text, summarizeProperty24Payload } from './client.js'
+import { buildProperty24AgentPhonePayload, PROPERTY24_AGENT_PHONE_FIELDS } from './agentPhoneVisibility.js'
 
 function normalizeEmail(value = '') {
   return normalizeProperty24Text(value).toLowerCase()
@@ -50,6 +51,9 @@ function hasCanonicalDifference(remoteAgent = {}, payload = {}) {
     current.lastName !== payload.lastname ||
     current.email !== normalizeEmail(payload.emailAddress) ||
     current.phone !== normalizePhone(payload.mobileNumber) ||
+    PROPERTY24_AGENT_PHONE_FIELDS.some((field) => payload[field] === null && normalizeProperty24Text(
+      readAgentValue(remoteAgent, field, field[0].toUpperCase() + field.slice(1)),
+    )) ||
     current.sourceReference !== payload.sourceReference
 }
 
@@ -87,7 +91,7 @@ export function buildCanonicalProperty24AgentUpdatePayload({
       : Boolean(readAgentValue(remoteAgent, 'published', 'Published')),
     agencyId: positiveInteger(agencyId || readAgentValue(remoteAgent, 'agencyId', 'AgencyId')),
     sourceReference: normalizeProperty24Text(sourceReference || readAgentValue(remoteAgent, 'sourceReference', 'SourceReference')),
-    mobileNumber: normalizePhone(profile.phone),
+    ...buildProperty24AgentPhonePayload(profile),
     emailAddress: normalizeEmail(profile.email),
     countryId: positiveInteger(readAgentValue(remoteAgent, 'countryId', 'CountryId')) || positiveInteger(countryId),
     status: normalizeProperty24Text(readAgentValue(remoteAgent, 'status', 'Status')) || 'Active',
@@ -95,7 +99,9 @@ export function buildCanonicalProperty24AgentUpdatePayload({
     about: normalizeProperty24Text(readAgentValue(remoteAgent, 'about', 'About')),
     isBroker: Boolean(readAgentValue(remoteAgent, 'isBroker', 'IsBroker')),
   }
-  const missing = ['id', 'firstname', 'lastname', 'agencyId', 'sourceReference', 'mobileNumber', 'emailAddress', 'countryId', 'status']
+  const requiredFields = ['id', 'firstname', 'lastname', 'agencyId', 'sourceReference', 'emailAddress', 'countryId', 'status']
+  if (profile.hidePhoneNumberOnProperty24 !== true) requiredFields.push('mobileNumber')
+  const missing = requiredFields
     .filter((key) => payload[key] === null || payload[key] === undefined || payload[key] === '')
   if (missing.length) {
     const error = new Error(`Property24 agent update payload is missing: ${missing.join(', ')}.`)
@@ -114,7 +120,7 @@ function buildCanonicalProperty24AgentCreatePayload({ profile = {}, agencyId, so
     published: true,
     agencyId: positiveInteger(agencyId),
     sourceReference: normalizeProperty24Text(sourceReference),
-    mobileNumber: normalizePhone(profile.phone),
+    ...buildProperty24AgentPhonePayload(profile),
     emailAddress: normalizeEmail(profile.email),
     countryId: positiveInteger(countryId),
     status: 'Active',
@@ -128,7 +134,11 @@ function verifyCanonicalProfile(agent, profile, preparedPhoto) {
   if (summary.firstName !== normalizeProperty24Text(profile.firstName)) mismatches.push('firstName')
   if (summary.lastName !== normalizeProperty24Text(profile.lastName)) mismatches.push('lastName')
   if (summary.email !== normalizeEmail(profile.email)) mismatches.push('email')
-  if (summary.phone !== normalizePhone(profile.phone)) mismatches.push('phone')
+  if (profile.hidePhoneNumberOnProperty24 === true) {
+    for (const field of PROPERTY24_AGENT_PHONE_FIELDS) {
+      if (normalizeProperty24Text(readAgentValue(agent, field, field[0].toUpperCase() + field.slice(1)))) mismatches.push(field)
+    }
+  } else if (summary.phone !== normalizePhone(profile.phone)) mismatches.push('phone')
   if (!summary.photoSha256) mismatches.push('photo')
   else if (preparedPhoto?.summary?.sha256 && summary.photoSha256 !== preparedPhoto.summary.sha256) mismatches.push('photoHash')
   return { summary, mismatches, verified: mismatches.length === 0 }
@@ -235,6 +245,12 @@ export async function syndicateCanonicalProperty24AgentProfile({
     property24AgentId: agentId,
     action,
     profileUpdated,
+    phoneVisibility: {
+      hidden: profile.hidePhoneNumberOnProperty24 === true,
+      verified: Boolean(verification && !verification.mismatches.some((field) => (
+        field === 'phone' || PROPERTY24_AGENT_PHONE_FIELDS.includes(field)
+      ))),
+    },
     photoUploaded: Boolean(photoHttpStatus),
     profileHttpStatus,
     photoHttpStatus,
@@ -254,7 +270,7 @@ export async function syndicateCanonicalProperty24AgentProfile({
       lastName: normalizeProperty24Text(profile.lastName),
       fullName: normalizeProperty24Text(profile.fullName || `${profile.firstName} ${profile.lastName}`),
       email: normalizeEmail(profile.email),
-      phone: normalizePhone(profile.phone),
+      phone: profile.hidePhoneNumberOnProperty24 === true ? '' : normalizePhone(profile.phone),
       status: 'Active',
     },
     warnings,
