@@ -5,7 +5,7 @@ import { Readable } from 'node:stream'
 import { test } from 'node:test'
 import { PGlite } from '@electric-sql/pglite'
 import webPush from 'web-push'
-import { createMobileWebPushResponse, readMobileWebPushBody, validatePushSubscription } from './mobileWebPushApi.js'
+import { createMobileWebPushResponse, createMobileWebPushOperatorResponse, readMobileWebPushBody, validatePushSubscription } from './mobileWebPushApi.js'
 
 const userA = '11111111-1111-4111-8111-111111111111'
 const userB = '22222222-2222-4222-8222-222222222222'
@@ -34,6 +34,7 @@ async function fixture() {
       const filters = []; let remove = false
       const builder = {
         select() { return builder }, delete() { remove = true; return builder },
+        order() { return builder }, limit() { return builder },
         eq(key, value) { filters.push([key, value]); return builder },
         async maybeSingle() { const result = await builder; return { data: result.data[0] || null, error: result.error } },
         async then(resolve, reject) {
@@ -130,4 +131,60 @@ test('rejects arbitrary network targets and malformed/oversized requests', async
   await assert.rejects(readMobileWebPushBody({ body: 'x'.repeat(8193) }), (e) => e.status === 413)
   await assert.rejects(readMobileWebPushBody(Readable.from([Buffer.alloc(8193)])), (e) => e.status === 413)
   await assert.rejects(readMobileWebPushBody({ body: '{' }), (e) => e.status === 400)
+})
+
+test('custom operator sends the exact message only to its configured account and shares the cooldown', async () => {
+  const f = await fixture()
+  const operatorEnv = { ...env, WEB_PUSH_OPERATOR_TOKEN: 'a'.repeat(43), WEB_PUSH_OPERATOR_USER_ID: userA }
+  const body = { title: 'New Lead', message: 'You received a new enquiry' }
+  const sent = []
+  const call = (payload = body, token = operatorEnv.WEB_PUSH_OPERATOR_TOKEN, extras = {}) => createMobileWebPushOperatorResponse({
+    headers: { authorization: `Bearer ${token}` }, body: payload, env: operatorEnv, client: f.client,
+    sendNotification: async (sub, payload, options) => {
+      const details = webPush.generateRequestDetails(sub, payload, options)
+      assert.equal(details.headers['Content-Encoding'], 'aes128gcm')
+      sent.push({ sub, payload: JSON.parse(payload) }); return { statusCode: 201 }
+    }, ...extras,
+  })
+  try {
+    await f.call({ action: 'register', subscription: { ...subscription, endpoint: 'https://web.push.apple.com/other-user' } }, 'b')
+    assert.equal((await call(body, 'invalid')).status, 401)
+    assert.equal((await call({ ...body, userId: userB })).status, 400)
+    assert.equal((await call({ ...body, message: 'x'.repeat(241) })).status, 400)
+    assert.equal((await call({ ...body, title: 'a\nspoof' })).status, 400)
+    assert.equal((await call({ ...body, dryRun: 'yes' })).status, 400)
+    assert.equal((await call()).status, 404)
+    await f.call({ action: 'register', subscription })
+    assert.deepEqual((await call({ ...body, dryRun: true })).body, { ready: true })
+    assert.equal(sent.length, 0)
+    assert.equal((await f.db.query('select count(*)::int n from public.mobile_web_push_test_limits')).rows[0].n, 0)
+    assert.equal((await call()).body.accepted, true)
+    assert.equal(sent.length, 1)
+    assert.equal(sent[0].sub.endpoint, subscription.endpoint)
+    assert.deepEqual(sent[0].payload, { title: body.title, body: body.message, url: '/mobile/inbox' })
+    assert.equal((await call()).status, 429)
+    const registered = await f.call({ action: 'status', subscription })
+    assert.equal((await f.call({ action: 'test', subscriptionId: registered.body.subscriptionId })).status, 429)
+    assert.equal((await call(body, operatorEnv.WEB_PUSH_OPERATOR_TOKEN, { method: 'GET' })).status, 405)
+  } finally { await f.db.close() }
+})
+
+test('custom operator fails closed on missing setup, expired devices and rejected delivery', async () => {
+  const f = await fixture()
+  const operatorEnv = { ...env, WEB_PUSH_OPERATOR_TOKEN: 'a'.repeat(43), WEB_PUSH_OPERATOR_USER_ID: userA }
+  const call = (extras = {}) => createMobileWebPushOperatorResponse({ headers: { authorization: `Bearer ${operatorEnv.WEB_PUSH_OPERATOR_TOKEN}` },
+    body: { title: 'New Lead', message: 'You received a new enquiry' }, env: operatorEnv, client: f.client,
+    sendNotification: async () => { throw new Error('private details') }, ...extras })
+  try {
+    assert.equal((await call({ env: {} })).status, 503)
+    const registered = await f.call({ action: 'register', subscription })
+    const failure = await call()
+    assert.equal(failure.status, 502)
+    assert.ok(!JSON.stringify(failure).includes('private details'))
+    await f.db.exec('delete from public.mobile_web_push_test_limits')
+    assert.equal((await call({ sendNotification: async () => { throw Object.assign(new Error(), { statusCode: 410 }) } })).status, 410)
+    assert.equal((await f.call({ action: 'status', subscription })).body.subscriptionId, null)
+    assert.equal((await f.db.query('select count(*)::int n from public.mobile_web_push_test_limits')).rows[0].n, 1)
+    assert.equal((await f.call({ action: 'test', subscriptionId: registered.body.subscriptionId })).status, 404)
+  } finally { await f.db.close() }
 })

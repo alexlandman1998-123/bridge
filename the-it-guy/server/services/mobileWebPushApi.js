@@ -1,4 +1,4 @@
-import { createHash, createECDH } from 'node:crypto'
+import { createHash, createECDH, timingSafeEqual } from 'node:crypto'
 import { createClient } from '@supabase/supabase-js'
 import webPush from 'web-push'
 
@@ -122,4 +122,59 @@ export async function readMobileWebPushBody(request) {
   }
   try { return chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {} }
   catch { fail(400, 'Invalid notification request.') }
+}
+
+// The operator credential can send only to this explicitly configured account.
+// Keep it in server secret storage; browser sessions never receive this token.
+export async function createMobileWebPushOperatorResponse({ method = 'POST', headers = {}, body = {}, env = process.env,
+  client, sendNotification = webPush.sendNotification.bind(webPush) } = {}) {
+  if (method !== 'POST') return reply(405, { message: 'Use POST for notifications.' })
+  try {
+    const expected = env.WEB_PUSH_OPERATOR_TOKEN
+    const userId = env.WEB_PUSH_OPERATOR_USER_ID
+    if (!expected || expected.length < 32 || !uuid.test(userId || '')) fail(503, 'Custom notifications are not configured.')
+    const supplied = String(headers.authorization || headers.Authorization || '').match(/^Bearer (.+)$/i)?.[1] || ''
+    const digest = (value) => createHash('sha256').update(value).digest()
+    if (!timingSafeEqual(digest(supplied), digest(expected))) fail(401, 'Notification operator authentication required.')
+    if (!body || typeof body !== 'object' || Array.isArray(body) ||
+      Object.keys(body).some((key) => !['title', 'message', 'dryRun'].includes(key)) ||
+      (body.dryRun !== undefined && typeof body.dryRun !== 'boolean')) fail(400, 'Invalid notification request.')
+    for (const [key, maximum] of [['title', 80], ['message', 240]]) {
+      if (typeof body[key] !== 'string' || !body[key].trim() || body[key].length > maximum ||
+        [...body[key]].some((character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127)) fail(400, 'Provide a title up to 80 characters and a message up to 240 characters.')
+    }
+    const vapid = configuration(env)
+    if (!client) {
+      const url = env.SUPABASE_URL || env.VITE_SUPABASE_URL
+      if (!url || !env.SUPABASE_SERVICE_ROLE_KEY) fail(503, 'Notifications are temporarily unavailable.')
+      client = createClient(url, env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } })
+    }
+    const registered = await client.from(table).select('id').eq('user_id', userId)
+      .eq('vapid_public_key', vapid.publicKey).order('updated_at', { ascending: false }).limit(1).maybeSingle()
+    if (registered.error) fail(503, 'Notification registration could not be checked.')
+    if (!registered.data?.id) fail(404, 'Enable notifications on the receiving device first.')
+    if (body.dryRun === true) return reply(200, { ready: true })
+    const subscriptionId = registered.data.id
+    const { data, error } = await client.rpc('claim_mobile_web_push_test', {
+      p_user_id: userId, p_subscription_id: subscriptionId, p_vapid_public_key: vapid.publicKey,
+    })
+    if (error) fail(503, 'The notification could not be prepared.')
+    if (data?.status === 'rate_limited') return { ...reply(429, { message: 'Wait 30 seconds before sending another notification.' }), headers: { ...reply(429).headers, 'Retry-After': '30' } }
+    if (data?.status !== 'claimed') fail(404, 'Enable notifications on the receiving device first.')
+    const subscription = validatePushSubscription(data.subscription)
+    try {
+      const result = await sendNotification(subscription, JSON.stringify({ title: body.title, body: body.message, url: '/mobile/inbox' }),
+        { vapidDetails: vapid, TTL: 300, urgency: 'high', timeout: 10000 })
+      if (!result?.statusCode || result.statusCode < 200 || result.statusCode >= 300) throw new Error()
+    } catch (error) {
+      if ([404, 410].includes(error?.statusCode)) {
+        await client.from(table).delete().eq('id', subscriptionId).eq('user_id', userId)
+        fail(410, 'This device registration has expired. Enable notifications again.')
+      }
+      fail(502, 'The notification provider did not accept the notification. Delivery may be uncertain; do not automatically retry.')
+    }
+    return reply(200, { accepted: true, message: 'The notification provider accepted the message.' })
+  } catch (error) {
+    return reply(error.status || 500, { message: error.status ? error.message : 'Notifications are temporarily unavailable.' })
+  }
 }

@@ -40,6 +40,22 @@ After an approved deployment, confirm the worker is served as JavaScript rather
 than the SPA, then perform an opted-in iPhone lock-screen test and tap it to open
 the Inbox. Local tests do not establish iPhone delivery.
 
+Custom messages from an operator use the POST-only `/api/mobile/push-operator`.
+`WEB_PUSH_OPERATOR_TOKEN` is a dedicated server secret and
+`WEB_PUSH_OPERATOR_USER_ID` pins the receiving account. Requests can supply only
+a title (80 characters), message (240 characters), and optional `dryRun` boolean;
+they cannot choose another recipient or a link. Delivery goes to that account's
+most recently enabled device and shares the 30-second self-test cooldown.
+The endpoint never returns subscription endpoints, encryption keys or credentials.
+
+After explicit approval of the content, run `node scripts/send-mobile-push.mjs
+--title 'New Lead' --message 'You received a new enquiry'`. The command reads the
+dedicated operator token from `~/.config/arch9/mobile-push-operator-token`, stored
+with mode 0600 outside this repository. `--dry-run` checks setup without sending
+or reserving the cooldown. There is no automatic retry: an interrupted request
+has uncertain delivery and requires review before another attempt. Keep this
+credential server-side and rotate it in both protected stores if revoked.
+
 ## Development creation
 
 Add Development uses Details → Units → Sales setup → Review. Details are grouped
