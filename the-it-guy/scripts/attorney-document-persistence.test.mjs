@@ -1,3 +1,4 @@
+import { runRecoverableDocumentUpload, readSavedUploadByPath, isDefiniteUploadSaveRejection } from '../src/lib/documentUploadRecovery.js'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { test } from 'node:test'
@@ -392,6 +393,7 @@ await test('the actual upload API retains a committed file after a lost response
   let loseResponse = true, uploads = 0, deletes = 0
   const key = 'runtime-lost-response'
   const upload = vm.runInNewContext(`(${body})`, {
+    runRecoverableDocumentUpload, readSavedUploadByPath, isDefiniteUploadSaveRejection, DOCUMENTS_BUCKET_CANDIDATES: ['documents'],
     requireClient: () => client,
     assertActiveTransactionForDocumentUpload: async () => matter,
     resolveActiveProfileContext: async () => ({ userId: actor, role: 'attorney', email: 'attorney@example.test' }),

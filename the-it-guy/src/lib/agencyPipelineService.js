@@ -1,4 +1,12 @@
+import { appointmentMatchesAgent, appointmentReadState } from '../core/appointments/appointmentReadModel.js'
+import { sastDayStart, sastWeekStart, addCalendarDays } from '../core/appointments/attorneyCalendarModel.js'
+import { appointmentReservationState } from '../core/appointments/appointmentReservation.js'
 import { isSupabaseConfigured, supabase } from './supabaseClient'
+import {
+  appointmentLocalToIso,
+  mergeAppointmentSchedule,
+  resolveAppointmentSchedule,
+} from '../core/appointments/appointmentTime.js'
 import { createTransactionFromLeadOverride } from './transactionLifecycleService'
 import { MOCK_DATA_ENABLED } from './mockData'
 import { isUnsafeFallbackAllowed } from './envValidation'
@@ -22,9 +30,7 @@ import {
   getParticipantAvailability,
 } from './appointmentAvailabilityEngine'
 import {
-  cancelAppointmentReminders,
   notifyAppointmentParticipants,
-  scheduleAppointmentReminders,
 } from '../services/appointmentNotificationService'
 import {
   applyBuyerLifecycleEvent,
@@ -258,7 +264,7 @@ function normalizeLeadIdentityKey(value) {
 function normalizeTimeText(value) {
   const text = normalizeText(value)
   if (!text) return null
-  return text.slice(0, 5)
+  return text.slice(0, 8)
 }
 
 function isMissingColumnError(error, columnName = '') {
@@ -317,72 +323,15 @@ function createUuid() {
   return `${seed.slice(0, 8)}-${seed.slice(8, 12)}-4${seed.slice(13, 16)}-8${seed.slice(17, 20)}-${seed.slice(20, 32)}`
 }
 
-const APPOINTMENT_WORKFLOW_DB_FIELDS = [
-  'linked_workflow',
-  'linked_workflow_stage',
-  'linked_task_id',
-  'linked_transaction_stage',
-  'workflow_completion_effect',
-  'visibility_scope',
-  'completion_behavior',
-  'appointment_instructions',
-  'required_documents',
-  'calendar_event_uid',
-  'ics_generated_at',
-  'external_calendar_status',
-  'external_calendar_provider',
-  'external_calendar_event_id',
-  'resource_id',
-  'allow_outside_business_hours',
-  'scheduling_override_reason',
-  'custom_type_label',
-  'location_type',
-  'meeting_url',
-  'timezone',
-  'all_day',
-  'related_entity_type',
-  'related_entity_id',
-  'offer_invite_id',
-  'cancelled_at',
-  'cancelled_by',
-  'cancellation_reason',
-]
-
-const APPOINTMENT_PARTICIPANT_V1_DB_FIELDS = [
-  'user_id',
-  'contact_id',
-  'is_required',
-  'rsvp_comment',
-  'rsvp_token',
-  'invitation_sent_at',
-  'last_invitation_sent_at',
-]
-
 const DEFAULT_APPOINTMENT_BUSINESS_HOURS = {
   timezone: 'Africa/Johannesburg',
   days: [1, 2, 3, 4, 5],
   start: '08:00',
   end: '17:00',
 }
-const APPOINTMENT_CREATE_NOTIFICATION_SOFT_TIMEOUT_MS = 6000
 const APPOINTMENT_NOTIFICATION_TIMEOUT_RESULT = '__appointment_notification_still_running__'
 const APPOINTMENT_PARTICIPANT_FETCH_BATCH_SIZE = 100
 
-function stripAppointmentWorkflowDbFields(payload = {}) {
-  const clone = { ...payload }
-  for (const field of APPOINTMENT_WORKFLOW_DB_FIELDS) {
-    delete clone[field]
-  }
-  return clone
-}
-
-function stripAppointmentParticipantV1DbFields(payload = {}) {
-  const clone = { ...payload }
-  for (const field of APPOINTMENT_PARTICIPANT_V1_DB_FIELDS) {
-    delete clone[field]
-  }
-  return clone
-}
 
 function serializeAppointmentNotificationError(error = {}) {
   return {
@@ -1521,6 +1470,7 @@ function resolveTaskStatus(task) {
 function mapLegacyAppointmentStatus(value) {
   const normalized = normalizeLabel(value).toLowerCase()
   if (!normalized) return 'requested'
+  if (APPOINTMENT_STATUSES.includes(normalized)) return normalized
   if (normalized === 'draft') return 'draft'
   if (normalized === 'pending' || normalized === 'pending confirmation') return 'requested'
   if (normalized === 'requested') return 'requested'
@@ -1533,7 +1483,7 @@ function mapLegacyAppointmentStatus(value) {
   if (normalized === 'alternative requested') return 'alternative_requested'
   if (normalized === 'alternative proposed') return 'alternative_proposed'
   if (normalized === 'no show' || normalized === 'no-show') return 'no_show'
-  return 'requested'
+  return normalized
 }
 
 function mapLegacyRsvpStatus(value) {
@@ -1550,8 +1500,7 @@ function normalizeAppointmentType(value) {
 }
 
 function normalizeAppointmentStatus(value) {
-  const normalized = mapLegacyAppointmentStatus(value)
-  return APPOINTMENT_STATUSES.includes(normalized) ? normalized : 'requested'
+  return mapLegacyAppointmentStatus(value)
 }
 
 function normalizeExternalCalendarStatus(value) {
@@ -1574,12 +1523,10 @@ function normalizeAppointmentLocationType(value) {
   return 'to_be_confirmed'
 }
 
-function deriveDateTime({ date = '', startTime = '' } = {}) {
+function deriveDateTime({ date = '', startTime = '', timezone = DEFAULT_APPOINTMENT_BUSINESS_HOURS.timezone } = {}) {
   if (!normalizeText(date)) return null
-  const safeTime = normalizeText(startTime) || '00:00'
-  const dateTime = new Date(`${date}T${safeTime}`)
-  if (Number.isNaN(dateTime.getTime())) return null
-  return dateTime.toISOString()
+  try { return appointmentLocalToIso(date, normalizeText(startTime) || '00:00', timezone) }
+  catch { return null }
 }
 
 function getAppointmentStartMs(appointment = {}) {
@@ -1591,6 +1538,7 @@ function getAppointmentStartMs(appointment = {}) {
   const derived = deriveDateTime({
     date: appointment?.date || appointment?.appointmentDate || appointment?.appointment_date,
     startTime: appointment?.startTime || appointment?.start_time || appointment?.appointmentTime || appointment?.appointment_time,
+    timezone: appointment?.timezone,
   })
   if (!derived) return NaN
   const parsed = new Date(derived)
@@ -1619,27 +1567,25 @@ function normalizeParticipantRecord(participant = {}, { appointmentId = '', orga
     invitationSentAt: participant?.invitationSentAt || participant?.invitation_sent_at || null,
     lastInvitationSentAt: participant?.lastInvitationSentAt || participant?.last_invitation_sent_at || null,
     respondedAt: participant?.respondedAt || participant?.responded_at || null,
+    rsvpRevokedAt: participant.rsvpRevokedAt || participant.rsvp_revoked_at || null,
+    proposalId: participant.proposalId || participant.proposal_id || null,
+    proposalResponse: participant.proposalResponse || participant.proposal_response || null,
     createdAt: participant?.createdAt || participant?.created_at || new Date().toISOString(),
     updatedAt: participant?.updatedAt || participant?.updated_at || new Date().toISOString(),
   }
 }
 
-function normalizeAppointmentRecord(appointment = {}, { organisationId = '', fallbackLeadId = '' } = {}) {
-  const dateTime = appointment?.dateTime || appointment?.date_time || null
-  const parsedDateTime = dateTime ? new Date(dateTime) : null
-  const hasDateTime = parsedDateTime && !Number.isNaN(parsedDateTime.getTime())
-  const normalizedDate = normalizeText(appointment?.date) || (hasDateTime ? parsedDateTime.toISOString().slice(0, 10) : '')
-  const normalizedStart = normalizeText(appointment?.startTime || appointment?.start_time) || (hasDateTime ? parsedDateTime.toISOString().slice(11, 16) : '')
-  const normalizedEnd = normalizeText(appointment?.endTime || appointment?.end_time)
-  const derivedDateTime = hasDateTime ? parsedDateTime.toISOString() : deriveDateTime({ date: normalizedDate, startTime: normalizedStart })
+function normalizeAppointmentRecord(appointment = {}, { organisationId = '', fallbackLeadId = '', validateSchedule = false } = {}) {
   const appointmentType = normalizeAppointmentType(appointment?.appointmentType || appointment?.appointment_type)
   const appointmentTypeDefinition = getAppointmentTypeDefinition(appointmentType)
   const appointmentTypeTemplate = getAppointmentTypeTemplate(appointmentType)
+  const schedule = resolveAppointmentSchedule(appointment, {
+    defaultDurationMinutes: appointmentTypeTemplate.defaultDurationMinutes,
+    strict: validateSchedule,
+  })
   const templated = applyAppointmentTemplate(appointmentType, {
     ...appointment,
-    date: normalizedDate || null,
-    startTime: normalizedStart || null,
-    endTime: normalizedEnd || null,
+    ...schedule,
   })
   const linkedWorkflow = normalizeText(templated?.linkedWorkflow) || null
   const linkedWorkflowStage = normalizeText(templated?.linkedWorkflowStage) || null
@@ -1676,20 +1622,35 @@ function normalizeAppointmentRecord(appointment = {}, { organisationId = '', fal
     appointmentId: normalizeText(appointment?.appointmentId || appointment?.id) || createUuid(),
     organisationId: normalizeText(appointment?.organisationId || organisationId) || null,
     assignedAgentId: normalizeText(appointment?.assignedAgentId || appointment?.agentId),
+    schedulingOwnerUserId: normalizeText(appointment?.schedulingOwnerUserId || appointment?.scheduling_owner_user_id) || null,
     assignedAgentName: normalizeText(appointment?.assignedAgentName || appointment?.agentName),
     assignedAgentEmail: normalizeText(appointment?.assignedAgentEmail || appointment?.agentEmail).toLowerCase(),
     appointmentType,
     customTypeLabel: normalizeText(appointment?.customTypeLabel || appointment?.custom_type_label) || null,
     appointmentTypeLabel: getAppointmentTypeLabel(appointmentType),
     title: normalizeText(templated?.title) || appointmentTypeDefinition.title,
-    date: normalizedDate || null,
-    startTime: normalizedStart || null,
-    endTime: normalizedEnd || null,
-    dateTime: derivedDateTime,
+    date: schedule.date || null,
+    startTime: schedule.startTime || null,
+    endTime: schedule.endTime || null,
+    dateTime: schedule.dateTime,
+    endDateTime: schedule.endDateTime,
+    schedulingTimeIssue: schedule.schedulingTimeIssue,
+    archivedAt: appointment.archivedAt || appointment.archived_at || null,
+    archivedBy: appointment.archivedBy || appointment.archived_by || null,
+    archiveReason: normalizeText(appointment.archiveReason || appointment.archive_reason) || null,
+    calendarRevision: Number(appointment.calendarRevision ?? appointment.calendar_revision ?? 0),
+    attorneyDeliveryEnabled: appointment.attorneyDeliveryEnabled ?? appointment.attorney_delivery_enabled ?? null,
+    listingViewingRoundNumber: appointment.listingViewingRoundNumber ?? appointment.listing_viewing_round_number ?? null,
+    reservationManaged: appointment.reservationManaged === true || appointment.reservation_managed === true,
+    requestIssuedAt: appointment.requestIssuedAt || appointment.request_issued_at || null,
+    holdExpiresAt: appointment.holdExpiresAt || appointment.hold_expires_at || null,
+    hasConfirmedReservation: appointment.hasConfirmedReservation === true || appointment.has_confirmed_reservation === true,
+    reservationState: appointmentReservationState(appointment),
+    participants: Array.isArray(appointment.participants) ? appointment.participants : [],
     locationType: normalizeAppointmentLocationType(appointment?.locationType || appointment?.location_type),
     location: normalizeText(appointment?.location),
     meetingUrl: normalizeText(appointment?.meetingUrl || appointment?.meeting_url) || null,
-    timezone: normalizeText(appointment?.timezone || appointment?.appointment_timezone) || DEFAULT_APPOINTMENT_BUSINESS_HOURS.timezone,
+    timezone: schedule.timezone,
     allDay: appointment?.allDay === true || appointment?.all_day === true,
     leadId: normalizeText(appointment?.leadId || fallbackLeadId) || null,
     contactId: normalizeText(appointment?.contactId) || null,
@@ -1707,6 +1668,12 @@ function normalizeAppointmentRecord(appointment = {}, { organisationId = '', fal
     instructions,
     internalInstructions: normalizeText(templated?.internalInstructions) || normalizeText(appointmentTypeTemplate?.internalInstructions) || null,
     reminderRules: Array.isArray(templated?.reminderRules) ? templated.reminderRules : [],
+    sendInviteEmails: (appointment.sendInviteEmails ?? appointment.invitations_enabled) !== false,
+    remindersEnabled: (appointment.remindersEnabled ?? appointment.reminders_enabled) !== false,
+    attachCalendarInvite: (appointment.attachCalendarInvite ?? appointment.attach_calendar_invite) !== false,
+    emailTheme: normalizeText(appointment.emailTheme || appointment.email_theme) || null,
+    emailTemplateKey: normalizeText(appointment.emailTemplateKey || appointment.email_template_key) || null,
+    calendarDeliveryManaged: appointment.calendarDeliveryManaged === true || appointment.calendar_delivery_managed === true,
     requiredDocuments,
     calendarEventUid: normalizeText(appointment?.calendarEventUid || appointment?.calendar_event_uid) || null,
     icsGeneratedAt: appointment?.icsGeneratedAt || appointment?.ics_generated_at || null,
@@ -1725,7 +1692,7 @@ function normalizeAppointmentRecord(appointment = {}, { organisationId = '', fal
     followUpDate: normalizeText(appointment?.followUpDate) || null,
     offerInviteId: normalizeText(appointment?.offerInviteId || appointment?.offer_invite_id) || null,
     createdBy: normalizeText(appointment?.createdBy) || null,
-    createdAt: appointment?.createdAt || new Date().toISOString(),
+    createdAt: appointment?.createdAt || null,
     updatedAt: appointment?.updatedAt || new Date().toISOString(),
     completedAt: appointment?.completedAt || null,
     cancelledAt: appointment?.cancelledAt || appointment?.cancelled_at || null,
@@ -1733,6 +1700,48 @@ function normalizeAppointmentRecord(appointment = {}, { organisationId = '', fal
     cancellationReason: normalizeText(appointment?.cancellationReason || appointment?.cancellation_reason) || null,
     schedulingIntegrity: appointment?.schedulingIntegrity || null,
   }
+}
+
+const CLOSED_APPOINTMENT_STATUSES = new Set(['cancelled', 'declined', 'completed', 'no_show'])
+
+function assertAppointmentWrite(appointment = {}) {
+  if (!APPOINTMENT_STATUSES.includes(appointment.status)) {
+    const error = new Error('Choose a recognised appointment status. This record needs review.')
+    error.code = 'APPOINTMENT_INVALID_STATUS'
+    throw error
+  }
+  if (['completed', 'no_show'].includes(appointment.status)
+    && (!Number.isFinite(getAppointmentStartMs(appointment)) || getAppointmentStartMs(appointment) > Date.now())) {
+    const error = new Error('Record completion or a no-show after the appointment has started.')
+    error.code = 'APPOINTMENT_OUTCOME_IN_FUTURE'
+    throw error
+  }
+}
+
+function prepareAppointmentUpdate(current, updater, { organisationId, actor } = {}) {
+  const candidate = mergeAppointmentSchedule(current, updater)
+  const nextStatus = normalizeAppointmentStatus(candidate.status)
+  const timingChanged = ['date', 'startTime', 'endTime', 'dateTime', 'endDateTime', 'durationMinutes', 'timezone', 'allDay']
+    .some(key => Object.hasOwn(updater, key) && updater[key] !== current[key])
+  if (CLOSED_APPOINTMENT_STATUSES.has(current.status) && (nextStatus !== current.status || timingChanged)) {
+    const error = new Error('This appointment is closed. Create a new appointment instead of reopening or moving it.')
+    error.code = 'APPOINTMENT_CLOSED'
+    throw error
+  }
+  const closing = CLOSED_APPOINTMENT_STATUSES.has(nextStatus)
+  // A status-only closure must work even if old scheduling fields need review.
+  const merged = normalizeAppointmentRecord({
+    ...candidate,
+    appointmentId: current.appointmentId,
+    organisationId: current.organisationId,
+    updatedAt: new Date().toISOString(),
+  }, { organisationId, validateSchedule: timingChanged || !closing })
+  assertAppointmentWrite(merged)
+  if (merged.status === 'cancelled' && !merged.cancelledAt) {
+    merged.cancelledAt = new Date().toISOString()
+    merged.cancelledBy = normalizeText(actor?.id) || null
+  }
+  return merged
 }
 
 function upsertParticipants(store, appointmentId, participants = []) {
@@ -1770,6 +1779,7 @@ function mapDbAppointmentRow(row = {}, organisationId = '') {
       appointmentId: row?.appointment_id,
       organisationId: row?.organisation_id || organisationId,
       assignedAgentId: row?.agent_id,
+      schedulingOwnerUserId: row?.scheduling_owner_user_id,
       appointmentType: row?.appointment_type,
       customTypeLabel: row?.custom_type_label,
       title: row?.title,
@@ -1777,6 +1787,15 @@ function mapDbAppointmentRow(row = {}, organisationId = '') {
       startTime: normalizeTimeText(row?.start_time),
       endTime: normalizeTimeText(row?.end_time),
       dateTime: row?.date_time,
+      endDateTime: row?.end_date_time,
+      calendarRevision: row?.calendar_revision,
+      archivedAt: row?.archived_at, archivedBy: row?.archived_by, archiveReason: row?.archive_reason,
+      reservationManaged: row?.reservation_managed,
+      attorneyDeliveryEnabled: row?.attorney_delivery_enabled,
+      listingViewingRoundNumber: row?.listing_viewing_round_number,
+      requestIssuedAt: row?.request_issued_at,
+      holdExpiresAt: row?.hold_expires_at,
+      hasConfirmedReservation: row?.has_confirmed_reservation,
       locationType: normalizeAppointmentLocationType(row?.location_type),
       location: row?.location,
       meetingUrl: row?.meeting_url,
@@ -1797,6 +1816,13 @@ function mapDbAppointmentRow(row = {}, organisationId = '') {
       completionBehavior: row?.completion_behavior,
       instructions: row?.appointment_instructions,
       requiredDocuments: row?.required_documents,
+      reminderRules: row?.reminder_rules,
+      sendInviteEmails: row?.invitations_enabled,
+      remindersEnabled: row?.reminders_enabled,
+      attachCalendarInvite: row?.attach_calendar_invite,
+      calendarDeliveryManaged: row?.calendar_delivery_managed,
+      emailTheme: row?.email_theme,
+      emailTemplateKey: row?.email_template_key,
       calendarEventUid: row?.calendar_event_uid || null,
       icsGeneratedAt: row?.ics_generated_at || null,
       externalCalendarStatus: row?.external_calendar_status || 'not_synced',
@@ -1845,6 +1871,9 @@ function mapDbParticipantRow(row = {}) {
       invitationSentAt: row?.invitation_sent_at,
       lastInvitationSentAt: row?.last_invitation_sent_at,
       respondedAt: row?.responded_at,
+      rsvpRevokedAt: row?.rsvp_revoked_at,
+      proposalId: row?.proposal_id,
+      proposalResponse: row?.proposal_response,
       createdAt: row?.created_at,
       updatedAt: row?.updated_at,
     },
@@ -1867,7 +1896,8 @@ function mapAppointmentToDbInsert(appointment = {}, organisationId = '') {
     appointment_date: normalized.date || null,
     start_time: normalizeTimeText(normalized.startTime),
     end_time: normalizeTimeText(normalized.endTime),
-    date_time: normalized.dateTime || deriveDateTime({ date: normalized.date, startTime: normalized.startTime }) || new Date().toISOString(),
+    date_time: normalized.dateTime || deriveDateTime({ date: normalized.date, startTime: normalized.startTime, timezone: normalized.timezone }),
+    end_date_time: normalized.endDateTime || null,
     location_type: normalizeAppointmentLocationType(normalized.locationType),
     location: normalizeText(normalized.location) || null,
     meeting_url: normalizeText(normalized.meetingUrl) || null,
@@ -1890,6 +1920,12 @@ function mapAppointmentToDbInsert(appointment = {}, organisationId = '') {
     completion_behavior: normalizeText(normalized.completionBehavior) || getAppointmentCompletionBehavior(normalized.appointmentType),
     appointment_instructions: normalizeText(normalized.instructions) || null,
     required_documents: Array.isArray(normalized.requiredDocuments) ? normalized.requiredDocuments : [],
+    reminder_rules: normalized.reminderRules,
+    invitations_enabled: normalized.sendInviteEmails,
+    reminders_enabled: normalized.remindersEnabled,
+    attach_calendar_invite: normalized.attachCalendarInvite,
+    email_theme: normalized.emailTheme,
+    email_template_key: normalized.emailTemplateKey,
     calendar_event_uid: normalizeText(normalized.calendarEventUid) || null,
     ics_generated_at: normalized.icsGeneratedAt || null,
     external_calendar_status: normalizeExternalCalendarStatus(normalized.externalCalendarStatus || 'not_synced'),
@@ -1917,6 +1953,7 @@ function mapAppointmentToDbInsert(appointment = {}, organisationId = '') {
 function mapParticipantToDbInsert(participant = {}, { appointmentId = '', organisationId = '' } = {}) {
   const normalized = normalizeParticipantRecord(participant, { appointmentId, organisationId })
   return {
+    participant_id: toNullableUuid(normalized.participantId),
     appointment_id: normalizeText(normalized.appointmentId || appointmentId),
     organisation_id: normalizeText(normalized.organisationId || organisationId),
     user_id: toNullableUuid(normalized.userId),
@@ -1952,23 +1989,7 @@ function applyAppointmentScope(rows = [], { includeAll = false, agentId = '', ag
     }
 
     if (!includeAll && scopedAgentKeys.size) {
-      const rowKeys = [
-        row?.assignedAgentId,
-        row?.assignedAgentEmail,
-        row?.createdBy,
-        ...(Array.isArray(row?.participants)
-          ? row.participants.flatMap((participant) => [
-              participant?.userId,
-              participant?.email,
-            ])
-          : []),
-      ]
-        .map((value) => normalizeLowerText(value))
-        .filter(Boolean)
-
-      if (!rowKeys.some((key) => scopedAgentKeys.has(key))) {
-        return false
-      }
+      if (!appointmentMatchesAgent(row, { identityKeys: [...scopedAgentKeys] })) return false
     }
 
     if (fromMs || toMs) {
@@ -1985,7 +2006,7 @@ async function listAppointmentsFromSupabase(organisationId, { includeAll = false
   const scopedOrganisationId = normalizeText(organisationId)
   const scopedListingId = normalizeText(listingId)
   const selectModern =
-    'appointment_id, organisation_id, lead_id, agent_id, appointment_type, custom_type_label, title, appointment_date, start_time, end_time, date_time, timezone, all_day, location_type, location, meeting_url, contact_id, listing_id, transaction_id, related_entity_type, related_entity_id, linked_workflow, linked_workflow_stage, linked_task_id, linked_transaction_stage, workflow_completion_effect, visibility_scope, completion_behavior, appointment_instructions, required_documents, calendar_event_uid, ics_generated_at, external_calendar_status, external_calendar_provider, external_calendar_event_id, resource_id, allow_outside_business_hours, scheduling_override_reason, status, notes, outcome_summary, client_feedback, agent_notes, next_step, follow_up_date, offer_invite_id, created_by, created_at, updated_at, completed_at, cancelled_at, cancelled_by, cancellation_reason'
+    'appointment_id, organisation_id, lead_id, agent_id, archived_at, archived_by, archive_reason, calendar_delivery_managed, invitations_enabled, reminders_enabled, reminder_rules, attach_calendar_invite, email_theme, email_template_key, calendar_revision, request_issued_at, hold_expires_at, has_confirmed_reservation, scheduling_owner_user_id, appointment_type, custom_type_label, title, appointment_date, start_time, end_time, date_time, end_date_time, timezone, all_day, location_type, location, meeting_url, contact_id, listing_id, transaction_id, related_entity_type, related_entity_id, linked_workflow, linked_workflow_stage, linked_task_id, linked_transaction_stage, workflow_completion_effect, visibility_scope, completion_behavior, appointment_instructions, required_documents, calendar_event_uid, ics_generated_at, external_calendar_status, external_calendar_provider, external_calendar_event_id, resource_id, allow_outside_business_hours, scheduling_override_reason, status, notes, outcome_summary, client_feedback, agent_notes, next_step, follow_up_date, offer_invite_id, created_by, created_at, updated_at, completed_at, cancelled_at, cancelled_by, cancellation_reason'
   const selectLegacy =
     'appointment_id, organisation_id, lead_id, agent_id, appointment_type, title, appointment_date, start_time, end_time, date_time, location, contact_id, listing_id, transaction_id, status, notes, outcome_summary, client_feedback, agent_notes, next_step, follow_up_date, created_by, created_at, updated_at, completed_at'
   const selectMinimal =
@@ -2011,7 +2032,7 @@ async function listAppointmentsFromSupabase(organisationId, { includeAll = false
 
   let appointmentRows = []
   let appointmentError = null
-  const rpcResult = await supabase.rpc(leadId ? 'bridge_list_lead_appointments' : 'bridge_list_calendar_appointments', {
+  const rpcResult = await supabase.rpc(leadId ? 'bridge_list_lead_appointments' : 'bridge_list_calendar_appointments_with_times', {
     p_organisation_id: scopedOrganisationId,
     p_include_all: includeAll === true,
     ...(leadId ? { p_lead_id: normalizeText(leadId) } : {
@@ -2026,12 +2047,13 @@ async function listAppointmentsFromSupabase(organisationId, { includeAll = false
     appointmentRows = rpcResult.data
   } else {
     if (!['PGRST202', '42883'].includes(normalizeText(rpcResult.error?.code))) {
-      console.warn('[appointments] calendar RPC failed; falling back to direct appointment query.', rpcResult.error)
+      throw rpcResult.error
     }
     for (const select of [selectModern, selectLegacy, selectMinimal]) {
       const result = await buildQuery(select)
       if (!result.error) {
-        appointmentRows = Array.isArray(result.data) ? result.data : []
+        if (!Array.isArray(result.data)) throw new Error('Appointment data could not be verified. Please retry.')
+        appointmentRows = result.data
         appointmentError = null
         break
       }
@@ -2056,7 +2078,7 @@ async function listAppointmentsFromSupabase(organisationId, { includeAll = false
       let participantResult = await supabase
         .from('appointment_participants')
         .select(
-          'participant_id, appointment_id, organisation_id, user_id, contact_id, name, email, phone, participant_role, is_required, rsvp_status, proposed_new_time, rsvp_comment, rsvp_token, invitation_sent_at, last_invitation_sent_at, responded_at, created_at, updated_at',
+          'participant_id, appointment_id, organisation_id, user_id, contact_id, name, email, phone, participant_role, is_required, rsvp_status, proposed_new_time, rsvp_comment, rsvp_token, invitation_sent_at, last_invitation_sent_at, responded_at, rsvp_revoked_at, proposal_id, proposal_response, created_at, updated_at',
         )
         .eq('organisation_id', scopedOrganisationId)
         .in('appointment_id', appointmentIdBatch)
@@ -2073,11 +2095,12 @@ async function listAppointmentsFromSupabase(organisationId, { includeAll = false
         participantError = participantResult.error
         break
       }
-      participantRows.push(...(Array.isArray(participantResult.data) ? participantResult.data : []))
+      if (!Array.isArray(participantResult.data)) throw new Error('Appointment attendance could not be verified. Please retry.')
+      participantRows.push(...participantResult.data)
     }
 
     if (participantError) {
-      console.warn('[appointments] participant rows could not be loaded; showing appointments without participant detail.', participantError)
+      throw participantError
     }
     for (const row of participantRows) {
       const mapped = mapDbParticipantRow(row)
@@ -2093,7 +2116,7 @@ async function listAppointmentsFromSupabase(organisationId, { includeAll = false
     const mapped = mapDbAppointmentRow(row, scopedOrganisationId)
     return {
       ...mapped,
-      participants: participantMap.get(normalizeText(mapped?.appointmentId)) || [],
+      participants: (participantMap.get(normalizeText(mapped?.appointmentId)) || []).filter(person => !person.rsvpRevokedAt || CLOSED_APPOINTMENT_STATUSES.has(mapped.status)),
     }
   })
 
@@ -2102,41 +2125,36 @@ async function listAppointmentsFromSupabase(organisationId, { includeAll = false
   return applyAppointmentScope(rows, { includeAll: leadId ? true : includeAll, agentId, agentEmail, agentKeys, listingId: scopedListingId, from: leadId ? null : from, to: leadId ? null : to })
 }
 
-async function replaceAppointmentParticipantsInSupabase({
-  organisationId,
-  appointmentId,
-  participants = [],
-} = {}) {
-  const scopedOrganisationId = normalizeText(organisationId)
-  const scopedAppointmentId = normalizeText(appointmentId)
-  if (!scopedOrganisationId || !scopedAppointmentId) return
-
-  const { error: deleteError } = await supabase
-    .from('appointment_participants')
-    .delete()
-    .eq('organisation_id', scopedOrganisationId)
-    .eq('appointment_id', scopedAppointmentId)
-  if (deleteError) throw deleteError
-
-  const inserts = (Array.isArray(participants) ? participants : [])
-    .map((participant) =>
-      mapParticipantToDbInsert(participant, {
-        appointmentId: scopedAppointmentId,
-        organisationId: scopedOrganisationId,
-      }),
-    )
-    .filter((participant) => normalizeText(participant?.name))
-
-  if (!inserts.length) return
-
-  let insertResult = await supabase.from('appointment_participants').insert(inserts)
-  if (insertResult.error && isMissingColumnError(insertResult.error)) {
-    insertResult = await supabase
-      .from('appointment_participants')
-      .insert(inserts.map((participant) => stripAppointmentParticipantV1DbFields(participant)))
+async function saveAppointmentCommand({ organisationId, appointmentId, appointment, participants, creating = false, expectedRevision = null, commandId, action = 'save', viewingMode = null, confirmationNote = null }) {
+  const result = await supabase.rpc('save_calendar_appointment_with_delivery', {
+    p_organisation_id: organisationId, p_appointment_id: appointmentId,
+    p_payload: mapAppointmentToDbInsert(appointment, organisationId),
+    p_participants: participants === null ? null : participants.map(participant => {
+      const row = mapParticipantToDbInsert(participant, { appointmentId, organisationId })
+      // Creation includes temporary form IDs; only the server assigns attendance
+      // IDs. Null stays stable across a lost-response retry.
+      row.participant_id = creating ? null : toNullableUuid(participant?.participantId)
+      return Object.fromEntries(['participant_id', 'user_id', 'contact_id', 'name', 'email', 'phone', 'participant_role', 'is_required'].map(key => [key, row[key]]))
+    }),
+    p_expected_revision: expectedRevision, p_command_id: commandId || createUuid(), p_action: action,
+    p_viewing_mode: viewingMode, p_confirmation_note: confirmationNote,
+  })
+  if (result.error) throw result.error
+  const receipt = result.data
+  if (receipt?.verified !== true || !receipt.appointment || !Array.isArray(receipt.participants)
+    || receipt.appointment.appointment_id !== appointmentId || receipt.appointment.organisation_id !== organisationId
+    || !Number.isInteger(receipt.appointment.calendar_revision)
+    || receipt.participants.some(person => !isUuidLike(person?.participant_id) || person.appointment_id !== appointmentId || person.organisation_id !== organisationId)
+    || new Set(receipt.participants.map(person => person?.participant_id)).size !== receipt.participants.length
+    || (participants !== null && !CLOSED_APPOINTMENT_STATUSES.has(receipt.appointment.status) && receipt.participants.length !== participants.length)) {
+    throw new Error('The appointment save could not be verified. Refresh before retrying.')
   }
-  const { error: insertError } = insertResult
-  if (insertError) throw insertError
+  if (receipt.appointment.calendar_delivery_managed && (receipt.delivery?.verified !== true || receipt.delivery.revision !== receipt.appointment.calendar_revision
+    || !Array.isArray(receipt.delivery.jobs) || receipt.delivery.jobs.some(job => job.appointment_id !== appointmentId || job.revision !== receipt.appointment.calendar_revision))) {
+    throw new Error('The appointment delivery queue could not be verified. Refresh before retrying.')
+  }
+  return { ...mapDbAppointmentRow(receipt.appointment, organisationId), participants: receipt.participants.map(mapDbParticipantRow),
+    delivery: receipt.delivery || null, mutationReplayed: receipt.replayed === true }
 }
 
 function normalizeAppointmentResourceRow(row = {}) {
@@ -2207,6 +2225,7 @@ function getSchedulingRangeForAppointment(appointment = {}) {
   const startDate = appointment?.dateTime ? new Date(appointment.dateTime) : deriveDateTime({
     date: appointment?.date,
     startTime: appointment?.startTime,
+    timezone: appointment?.timezone,
   })
   const parsedStart = startDate instanceof Date ? startDate : (startDate ? new Date(startDate) : null)
   const safeStart = parsedStart && !Number.isNaN(parsedStart.getTime()) ? parsedStart : null
@@ -2256,6 +2275,13 @@ export async function checkAppointmentSchedulingIntegrityAsync(
     throw new Error('Appointment scheduling requires the database connection.')
   }
 
+  if (CLOSED_APPOINTMENT_STATUSES.has(normalizeAppointmentStatus(appointmentPayload.status))) {
+    return {
+      ...checkAppointmentConflicts(appointmentPayload, options),
+      availabilityByParticipant: [], resources: [], canProceed: true,
+      checkedAt: new Date().toISOString(),
+    }
+  }
   const normalized = normalizeAppointmentRecord(appointmentPayload, { organisationId: scopedOrganisationId })
   const { from, to } = getSchedulingRangeForAppointment(normalized)
   const [existingAppointments, resources] = await Promise.all([
@@ -2324,6 +2350,13 @@ async function addLeadActivityInSupabase(organisationId, leadId, payload = {}, a
 async function fetchAppointmentByIdFromSupabase(organisationId, appointmentId, options = {}) {
   const rows = await listAppointmentsFromSupabase(organisationId, { ...options, includeAll: true })
   return rows.find((row) => normalizeText(row?.appointmentId) === normalizeText(appointmentId)) || null
+}
+
+export async function getAppointmentAsync(organisationId, appointmentId) {
+  if (!isSupabaseConfigured || !supabase || !isUuidLike(organisationId) || !isUuidLike(appointmentId)) throw new Error('Select a valid appointment and workspace.')
+  const appointment = await fetchAppointmentByIdFromSupabase(organisationId, appointmentId)
+  if (!appointment) throw new Error('This appointment is unavailable or you no longer have access to it.')
+  return appointment
 }
 
 export function createLeadTask(organisationId, leadId, payload = {}, { actor = null } = {}) {
@@ -2431,73 +2464,6 @@ export function createLeadAppointment(organisationId, leadId, payload = {}, { ac
   )
 }
 
-async function runAppointmentCreateNotificationSideEffects(notificationSource = {}, payload = {}, actor = null) {
-  let inviteNotificationResults = []
-  let documentNotificationResults = []
-  let reminderResults = []
-  const normalizedStatus = normalizeLowerText(notificationSource.status)
-  const notificationEventType = normalizedStatus === 'confirmed'
-    ? 'appointment_confirmed'
-    : normalizedStatus === 'scheduled'
-      ? 'appointment_scheduled'
-      : 'appointment_confirmation_required'
-
-  try {
-    inviteNotificationResults = await notifyAppointmentParticipants(notificationSource.appointmentId, notificationEventType, {
-      visibility: notificationSource.visibility,
-      fallbackParticipants: Array.isArray(payload?.participants) ? payload.participants : notificationSource?.participants,
-      metadata: {
-        source: 'createAppointmentAsync',
-        attachCalendarInvite: payload?.attachCalendarInvite !== false,
-        notifyCreatorOnRsvp: payload?.notifyCreatorOnRsvp !== false,
-        organisationId: normalizeText(notificationSource?.organisationId || payload?.organisationId || ''),
-        organisationName: normalizeText(payload?.organisationName || ''),
-        organisationLogoUrl: normalizeText(payload?.organisationLogoUrl || payload?.logoUrl || ''),
-        organisationLogoLightUrl: normalizeText(payload?.organisationLogoLightUrl || payload?.logoLightUrl || ''),
-        organisationLogoDarkUrl: normalizeText(payload?.organisationLogoDarkUrl || payload?.logoDarkUrl || ''),
-        organisationLogoIconUrl: normalizeText(payload?.organisationLogoIconUrl || payload?.logoIconUrl || ''),
-        organisationBrandPrimaryColor: normalizeText(payload?.organisationBrandPrimaryColor || payload?.primaryColor || payload?.primaryColour || ''),
-        organisationBrandSecondaryColor: normalizeText(payload?.organisationBrandSecondaryColor || payload?.secondaryColor || payload?.secondaryColour || ''),
-        supportEmail: normalizeText(payload?.supportEmail || ''),
-        supportPhone: normalizeText(payload?.supportPhone || ''),
-        fromName: normalizeText(payload?.fromName || ''),
-        fromEmail: normalizeText(payload?.fromEmail || ''),
-        emailTheme: normalizeText(payload?.emailTheme || payload?.email_theme || ''),
-        emailTemplateKey: normalizeText(payload?.emailTemplateKey || payload?.email_template_key || payload?.templateKey || payload?.template_key || ''),
-        agentName: normalizeText(notificationSource?.assignedAgentName || payload?.assignedAgent?.name || payload?.agent?.name || actor?.name || ''),
-        agentEmail: normalizeText(notificationSource?.assignedAgentEmail || payload?.assignedAgent?.email || payload?.agent?.email || actor?.email || '').toLowerCase(),
-        agentRole: 'Agent',
-        replyTo: normalizeText(notificationSource?.assignedAgentEmail || payload?.assignedAgent?.email || payload?.agent?.email || actor?.email || '').toLowerCase(),
-        listingId: normalizeText(payload?.listingId || notificationSource?.listingId) || '',
-        listingLabel: normalizeText(payload?.listingLabel || payload?.listingReference || payload?.listingReferenceSnapshot) || '',
-      },
-    })
-  } catch (inviteError) {
-    console.warn(
-      `[appointments][notifications] appointment invite failed before delivery: ${summarizeAppointmentNotificationError(inviteError)}`,
-      serializeAppointmentNotificationError(inviteError),
-    )
-    throw inviteError
-  }
-
-  if (['requested', 'pending', 'scheduled', 'confirmed', 'accepted'].includes(normalizedStatus)) {
-    try {
-      reminderResults = await scheduleAppointmentReminders(notificationSource.appointmentId)
-    } catch (reminderError) {
-      console.warn(
-        `[appointments][notifications] reminder scheduling skipped after invite attempt: ${summarizeAppointmentNotificationError(reminderError)}`,
-        serializeAppointmentNotificationError(reminderError),
-      )
-      reminderResults = [{
-        status: 'failed',
-        reason: summarizeAppointmentNotificationError(reminderError),
-      }]
-    }
-  }
-
-  return { inviteNotificationResults, documentNotificationResults, reminderResults }
-}
-
 export async function createAppointmentAsync(organisationId, payload = {}, { actor = null } = {}) {
   const fallbackReason = resolveAppointmentsDemoFallbackReason(organisationId)
   if (fallbackReason) {
@@ -2519,7 +2485,7 @@ export async function createAppointmentAsync(organisationId, payload = {}, { act
   const resolvedCreatedBy = toNullableUuid(actor?.id)
     ? actor.id
     : (toNullableUuid(payload?.createdBy || payload?.created_by) ? (payload?.createdBy || payload?.created_by) : null)
-  const nextId = createUuid()
+  const nextId = toNullableUuid(payload.commandId) || createUuid()
   const nowIso = new Date().toISOString()
   const appointment = normalizeAppointmentRecord(
     {
@@ -2535,6 +2501,8 @@ export async function createAppointmentAsync(organisationId, payload = {}, { act
       startTime: payload?.startTime,
       endTime: payload?.endTime,
       dateTime: payload?.dateTime,
+      endDateTime: payload?.endDateTime,
+      durationMinutes: payload?.durationMinutes,
       locationType: payload?.locationType,
       location: payload?.location,
       meetingUrl: payload?.meetingUrl,
@@ -2555,6 +2523,12 @@ export async function createAppointmentAsync(organisationId, payload = {}, { act
       completionBehavior: payload?.completionBehavior,
       instructions: payload?.instructions,
       requiredDocuments: payload?.requiredDocuments,
+      reminderRules: payload?.reminderRules,
+      sendInviteEmails: payload?.sendInviteEmails,
+      remindersEnabled: payload?.remindersEnabled,
+      attachCalendarInvite: payload?.attachCalendarInvite,
+      emailTheme: payload?.emailTheme,
+      emailTemplateKey: payload?.emailTemplateKey,
       resourceId: payload?.resourceId,
       allowOutsideBusinessHours: payload?.allowOutsideBusinessHours === true,
       schedulingOverrideReason: payload?.schedulingOverrideReason,
@@ -2564,8 +2538,9 @@ export async function createAppointmentAsync(organisationId, payload = {}, { act
       createdAt: nowIso,
       updatedAt: nowIso,
     },
-    { organisationId: scopedOrganisationId },
+    { organisationId: scopedOrganisationId, validateSchedule: true },
   )
+  assertAppointmentWrite(appointment)
 
   const participants = (Array.isArray(payload?.participants) ? payload.participants : []).map((participant) =>
     normalizeParticipantRecord(participant, {
@@ -2610,47 +2585,13 @@ export async function createAppointmentAsync(organisationId, payload = {}, { act
     throw conflictError
   }
 
-  const dbInsert = {
-    appointment_id: appointment.appointmentId,
-    ...mapAppointmentToDbInsert(appointment, scopedOrganisationId),
-  }
-  let insertResult = await supabase.from('appointments').insert(dbInsert)
-  if (insertResult.error && isMissingColumnError(insertResult.error)) {
-    insertResult = await supabase.from('appointments').insert(stripAppointmentWorkflowDbFields(dbInsert))
-  }
-  if (insertResult.error) throw insertResult.error
+  const verifiedSaved = await saveAppointmentCommand({
+    organisationId: scopedOrganisationId, appointmentId: appointment.appointmentId, appointment,
+    participants: defaultParticipants, creating: true, commandId: payload.commandId,
+    viewingMode: payload.listingViewingMode || null, confirmationNote: normalizeText(payload.bookingConfirmationNote) || null,
+  })
 
-  try {
-    await replaceAppointmentParticipantsInSupabase({
-      organisationId: scopedOrganisationId,
-      appointmentId: appointment.appointmentId,
-      participants: defaultParticipants,
-    })
-
-    if (payload?.listingViewingMode === 'three_party_request' || payload?.listingViewingMode === 'three_party_book') {
-      const booked = payload.listingViewingMode === 'three_party_book'
-      const initialized = await supabase.rpc(
-        booked ? 'book_listing_viewing_by_agent' : 'initialize_listing_viewing_request',
-        {
-          p_organisation_id: scopedOrganisationId,
-          p_appointment_id: appointment.appointmentId,
-          ...(booked ? { p_confirmation_note: normalizeText(payload.bookingConfirmationNote) } : {}),
-        },
-      )
-      if (initialized.error) throw initialized.error
-    }
-  } catch (setupError) {
-    if (payload?.listingViewingMode === 'three_party_request' || payload?.listingViewingMode === 'three_party_book') {
-      // A partially created request must not fall back to a two-party booking.
-      const cleanup = await supabase.from('appointments').delete()
-        .eq('organisation_id', scopedOrganisationId)
-        .eq('appointment_id', appointment.appointmentId)
-      if (cleanup.error) console.warn('[appointments] incomplete listing viewing cleanup failed', cleanup.error)
-    }
-    throw setupError
-  }
-
-  if (normalizeText(appointment.leadId)) {
+  if (!verifiedSaved.mutationReplayed && normalizeText(appointment.leadId)) {
     try {
       await addLeadActivityInSupabase(
         scopedOrganisationId,
@@ -2677,7 +2618,7 @@ export async function createAppointmentAsync(organisationId, payload = {}, { act
     }
   }
 
-  if (normalizeText(appointment.transactionId)) {
+  if (!verifiedSaved.mutationReplayed && normalizeText(appointment.transactionId)) {
     try {
       await supabase.from('transaction_events').insert({
         transaction_id: appointment.transactionId,
@@ -2701,71 +2642,15 @@ export async function createAppointmentAsync(organisationId, payload = {}, { act
     }
   }
 
-  const saved = await fetchAppointmentByIdFromSupabase(scopedOrganisationId, appointment.appointmentId)
-  const notificationSource = saved || { ...appointment, participants: defaultParticipants }
-  let notificationResults = []
-  let notificationError = null
-  let documentNotificationResults = []
-  let reminderResults = []
-  let notificationsQueued = false
-  if (payload?.sendInviteEmails !== false) {
-    const runCreateNotificationSideEffects = () => runAppointmentCreateNotificationSideEffects(
-      notificationSource,
-      {
-        ...payload,
-        participants: defaultParticipants,
-      },
-      actor,
-    )
-
-    if (payload?.deferNotificationSideEffects === true) {
-      notificationsQueued = true
-      void runAppointmentNotificationTask(
-        'appointment_created_background',
-        runCreateNotificationSideEffects,
-      ).then((sideEffectResults) => {
-        if (sideEffectResults) {
-          console.info('[appointments][notifications] appointment_created_background completed', {
-            appointmentId: notificationSource.appointmentId,
-          })
-        }
-      })
-    } else {
-      const sideEffectResults = await runAppointmentNotificationTask(
-        'appointment_created',
-        runCreateNotificationSideEffects,
-        { softTimeoutMs: APPOINTMENT_CREATE_NOTIFICATION_SOFT_TIMEOUT_MS },
-      )
-      if (sideEffectResults?.timedOut) {
-        notificationsQueued = true
-      } else if (sideEffectResults) {
-        notificationResults = Array.isArray(sideEffectResults.inviteNotificationResults)
-          ? sideEffectResults.inviteNotificationResults
-          : []
-        documentNotificationResults = Array.isArray(sideEffectResults.documentNotificationResults)
-          ? sideEffectResults.documentNotificationResults
-          : []
-        reminderResults = Array.isArray(sideEffectResults.reminderResults)
-          ? sideEffectResults.reminderResults
-          : []
-      } else {
-        notificationError = 'appointment_notification_task_failed'
-      }
-    }
-  }
   emitAgencyCrmUpdated()
-  return {
-    ...notificationSource,
-    schedulingIntegrity,
-    notificationsQueued,
-    notificationResults,
-    notificationError,
-    documentNotificationResults,
-    reminderResults,
+  return { ...verifiedSaved, schedulingIntegrity,
+    notificationsQueued: verifiedSaved.delivery?.verified === true && verifiedSaved.delivery.jobs.some(job => job.status === 'queued'),
+    notificationResults: [], notificationError: null, documentNotificationResults: [],
+    reminderResults: (verifiedSaved.delivery?.jobs || []).filter(job => job.event_kind.startsWith('reminder:')),
   }
 }
 
-export async function updateAppointmentAsync(organisationId, appointmentId, updater = {}, { actor = null, suppressNotifications = false } = {}) {
+export async function updateAppointmentAsync(organisationId, appointmentId, updater = {}, { actor = null } = {}) {
   const fallbackReason = resolveAppointmentsDemoFallbackReason(organisationId)
   if (fallbackReason) {
     assertLocalFallbackAllowed('agencyPipelineService.updateAppointmentAsync', organisationId, fallbackReason)
@@ -2780,11 +2665,10 @@ export async function updateAppointmentAsync(organisationId, appointmentId, upda
   if (!isSupabaseConfigured || !supabase) {
     throw new Error('Appointment scheduling requires the database connection.')
   }
-  if (!scopedOrganisationId || !scopedAppointmentId) return null
+  if (!scopedOrganisationId || !scopedAppointmentId) throw new Error('Select an appointment before saving.')
 
   const current = await fetchAppointmentByIdFromSupabase(scopedOrganisationId, scopedAppointmentId)
-  if (!current) return null
-  const previousStatus = normalizeLowerText(current?.status)
+  if (!current) throw new Error('The appointment could not be loaded. Refresh before saving.')
   let managedListingViewing = false
   if (normalizeLowerText(current?.appointmentType).includes('view') && normalizeText(current?.listingId)) {
     const managedLookup = await supabase.from('appointments')
@@ -2801,16 +2685,7 @@ export async function updateAppointmentAsync(organisationId, appointmentId, upda
     throw new Error('Viewing participants must be changed through the three-party viewing workflow.')
   }
 
-  const merged = normalizeAppointmentRecord(
-    {
-      ...current,
-      ...updater,
-      appointmentId: scopedAppointmentId,
-      organisationId: scopedOrganisationId,
-      updatedAt: new Date().toISOString(),
-    },
-    { organisationId: scopedOrganisationId },
-  )
+  const merged = prepareAppointmentUpdate(current, updater, { organisationId: scopedOrganisationId, actor })
   const appointmentTimingChanged =
     normalizeText(current?.date) !== normalizeText(merged?.date) ||
     normalizeText(current?.startTime) !== normalizeText(merged?.startTime) ||
@@ -2860,30 +2735,18 @@ export async function updateAppointmentAsync(organisationId, appointmentId, upda
     merged.completedAt = new Date().toISOString()
   }
 
-  const dbUpdate = mapAppointmentToDbInsert(merged, scopedOrganisationId)
-  let updateResult = await supabase
-    .from('appointments')
-    .update(dbUpdate)
-    .eq('appointment_id', scopedAppointmentId)
-    .eq('organisation_id', scopedOrganisationId)
-  if (updateResult.error && isMissingColumnError(updateResult.error)) {
-    updateResult = await supabase
-      .from('appointments')
-      .update(stripAppointmentWorkflowDbFields(dbUpdate))
-      .eq('appointment_id', scopedAppointmentId)
-      .eq('organisation_id', scopedOrganisationId)
-  }
-  if (updateResult.error) throw updateResult.error
+  const verifiedSaved = await saveAppointmentCommand({
+    organisationId: scopedOrganisationId, appointmentId: scopedAppointmentId, appointment: merged,
+    participants: Array.isArray(updater.participants) ? nextParticipants.map(person => {
+      // Preserve saved IDs, but discard temporary IDs on newly added attendees.
+      const existing = current.participants?.some(saved => saved.participantId === person.participantId)
+      return existing ? person : { ...person, participantId: null }
+    }) : null,
+    expectedRevision: updater.expectedRevision ?? current.calendarRevision, commandId: updater.commandId,
+    action: updater.reissueRequest === true ? 'reissue' : 'save',
+  })
 
-  if (Array.isArray(updater?.participants)) {
-    await replaceAppointmentParticipantsInSupabase({
-      organisationId: scopedOrganisationId,
-      appointmentId: scopedAppointmentId,
-      participants: nextParticipants,
-    })
-  }
-
-  if (normalizeText(merged.leadId) && Object.prototype.hasOwnProperty.call(updater, 'status')) {
+  if (!verifiedSaved.mutationReplayed && normalizeText(merged.leadId) && Object.prototype.hasOwnProperty.call(updater, 'status')) {
     let statusActivityType = 'Appointment Booked'
     if (merged.status === 'confirmed') statusActivityType = 'Appointment Confirmed'
     if (merged.status === 'completed') statusActivityType = 'Appointment Completed'
@@ -2913,22 +2776,8 @@ export async function updateAppointmentAsync(organisationId, appointmentId, upda
     }
   }
 
-  const saved = await fetchAppointmentByIdFromSupabase(scopedOrganisationId, scopedAppointmentId)
-  const updatedRecord = saved || merged
-  if (normalizeText(updatedRecord?.status).toLowerCase() === 'completed' && normalizeText(updatedRecord?.linkedTaskId)) {
-    try {
-      await supabase
-        .from('transaction_checklist_items')
-        .update({
-          status: 'completed',
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', updatedRecord.linkedTaskId)
-    } catch {
-      // Linked task completion should not block appointment state updates.
-    }
-  }
-  if (normalizeText(updatedRecord?.transactionId)) {
+  const updatedRecord = verifiedSaved
+  if (!verifiedSaved.mutationReplayed && normalizeText(updatedRecord?.transactionId)) {
     try {
       await supabase.from('transaction_events').insert({
         transaction_id: updatedRecord.transactionId,
@@ -2959,109 +2808,10 @@ export async function updateAppointmentAsync(organisationId, appointmentId, upda
       // Non-blocking event log.
     }
   }
-  let notificationResults = []
-  let notificationError = null
-  if (managedListingViewing && ['cancelled', 'declined', 'completed'].includes(normalizeLowerText(updatedRecord?.status))) {
-    await runAppointmentNotificationTask('managed_viewing_cancel_reminders', () =>
-      cancelAppointmentReminders(updatedRecord.appointmentId))
-  }
-  if (!suppressNotifications && !managedListingViewing) {
-    const taskResults = await runAppointmentNotificationTask('appointment_updated', async () => {
-      const currentStatus = normalizeLowerText(updatedRecord?.status)
-      const shouldForceInviteResend =
-        updater?.forceResendInvite === true ||
-        updater?.resendInvite === true ||
-        updater?.sendInviteEmails === true
-      const notificationMetadata = {
-        source: 'updateAppointmentAsync',
-        attachCalendarInvite: updater?.attachCalendarInvite !== false,
-        forceResendInvite: shouldForceInviteResend,
-        reason: shouldForceInviteResend ? 'manual_resend' : normalizeText(updater?.notificationReason || updater?.reason),
-        listingId: normalizeText(updater?.listingId || updatedRecord?.listingId) || '',
-        listingLabel: normalizeText(updater?.listingLabel || updater?.listingReference || updater?.listingReferenceSnapshot) || '',
-        organisationName: normalizeText(updater?.organisationName || ''),
-        organisationLogoUrl: normalizeText(updater?.organisationLogoUrl || updater?.logoUrl || ''),
-        organisationLogoLightUrl: normalizeText(updater?.organisationLogoLightUrl || updater?.logoLightUrl || ''),
-        organisationLogoDarkUrl: normalizeText(updater?.organisationLogoDarkUrl || updater?.logoDarkUrl || ''),
-        organisationLogoIconUrl: normalizeText(updater?.organisationLogoIconUrl || updater?.logoIconUrl || ''),
-        organisationBrandPrimaryColor: normalizeText(updater?.organisationBrandPrimaryColor || updater?.primaryColor || updater?.primaryColour || ''),
-        organisationBrandSecondaryColor: normalizeText(updater?.organisationBrandSecondaryColor || updater?.secondaryColor || updater?.secondaryColour || ''),
-        supportEmail: normalizeText(updater?.supportEmail || ''),
-        supportPhone: normalizeText(updater?.supportPhone || ''),
-        fromName: normalizeText(updater?.fromName || ''),
-        fromEmail: normalizeText(updater?.fromEmail || ''),
-      }
-      if (shouldForceInviteResend) {
-        const resendEventType = currentStatus.includes('confirm')
-          ? 'appointment_confirmed'
-          : currentStatus.includes('cancel') || currentStatus.includes('declin')
-            ? 'appointment_cancelled'
-            : currentStatus.includes('schedule')
-              ? 'appointment_scheduled'
-              : 'appointment_confirmation_required'
-        const results = await notifyAppointmentParticipants(updatedRecord.appointmentId, resendEventType, {
-          visibility: updatedRecord.visibility,
-          forceDelivery: true,
-          metadata: notificationMetadata,
-        })
-        if (!currentStatus.includes('cancel') && !currentStatus.includes('declin') && !currentStatus.includes('complete')) {
-          await scheduleAppointmentReminders(updatedRecord.appointmentId)
-        }
-        return results
-      }
-      if (currentStatus.includes('cancel') || currentStatus.includes('declin')) {
-        await cancelAppointmentReminders(updatedRecord.appointmentId)
-        return notifyAppointmentParticipants(updatedRecord.appointmentId, 'appointment_cancelled', {
-          visibility: updatedRecord.visibility,
-          metadata: notificationMetadata,
-        })
-      }
-      if (currentStatus.includes('complete')) {
-        await cancelAppointmentReminders(updatedRecord.appointmentId)
-        return []
-      }
-      if (currentStatus.includes('confirm') && !previousStatus.includes('confirm')) {
-        return notifyAppointmentParticipants(updatedRecord.appointmentId, 'appointment_confirmed', {
-          visibility: updatedRecord.visibility,
-          metadata: notificationMetadata,
-        })
-      }
-      if (currentStatus.includes('request')) {
-        return notifyAppointmentParticipants(updatedRecord.appointmentId, 'appointment_confirmation_required', {
-          visibility: updatedRecord.visibility,
-          metadata: {
-            ...notificationMetadata,
-          },
-        })
-      }
-      if (currentStatus.includes('reschedule') || currentStatus.includes('proposed')) {
-        const results = await notifyAppointmentParticipants(updatedRecord.appointmentId, 'appointment_rescheduled', {
-          visibility: updatedRecord.visibility,
-          metadata: notificationMetadata,
-        })
-        await scheduleAppointmentReminders(updatedRecord.appointmentId)
-        return results
-      }
-      if (appointmentTimingChanged) {
-        const results = await notifyAppointmentParticipants(updatedRecord.appointmentId, 'appointment_updated', {
-          visibility: updatedRecord.visibility,
-          metadata: notificationMetadata,
-        })
-        await scheduleAppointmentReminders(updatedRecord.appointmentId)
-        return results
-      }
-      await scheduleAppointmentReminders(updatedRecord.appointmentId)
-      return []
-    })
-    notificationResults = Array.isArray(taskResults) ? taskResults : []
-    notificationError = taskResults === null ? 'appointment_notification_task_failed' : null
-  }
   emitAgencyCrmUpdated()
-  return {
-    ...updatedRecord,
-    schedulingIntegrity,
-    notificationResults,
-    notificationError,
+  return { ...updatedRecord, schedulingIntegrity,
+    notificationsQueued: updatedRecord.delivery?.verified === true && updatedRecord.delivery.jobs.some(job => job.status === 'queued'),
+    notificationResults: [], notificationError: null,
   }
 }
 
@@ -3090,7 +2840,7 @@ export async function updateAppointmentParticipantRsvpAsync(
   if (!scopedOrganisationId || !scopedAppointmentId || !scopedParticipantId) return null
 
   const managedViewing = await supabase.from('appointments')
-    .select('listing_viewing_round_number')
+    .select('listing_viewing_round_number, reservation_managed, calendar_revision')
     .eq('organisation_id', scopedOrganisationId)
     .eq('appointment_id', scopedAppointmentId)
     .maybeSingle()
@@ -3121,6 +2871,21 @@ export async function updateAppointmentParticipantRsvpAsync(
     if (!Array.isArray(response.data) || response.data.length === 0) {
       throw new Error('This viewing invitation has expired or is no longer active.')
     }
+    emitAgencyCrmUpdated()
+    return fetchAppointmentByIdFromSupabase(scopedOrganisationId, scopedAppointmentId)
+  }
+
+  if (managedViewing.data?.reservation_managed === true) {
+    const response = await supabase.rpc('respond_calendar_appointment', {
+      p_appointment_id: scopedAppointmentId, p_participant_id: scopedParticipantId,
+      p_expected_revision: payload.expectedRevision ?? managedViewing.data.calendar_revision,
+      p_command_id: payload.commandId || createUuid(), p_status: mapLegacyRsvpStatus(payload.rsvpStatus),
+      p_start: payload.proposedNewTime || null, p_end: payload.preferredEnd || null,
+      p_comment: normalizeText(payload.rsvpComment) || null,
+    })
+    if (response.error) throw response.error
+    if (response.data?.verified !== true || response.data.appointmentId !== scopedAppointmentId
+      || response.data.participantId !== scopedParticipantId) throw new Error('The response could not be verified. Refresh before trying again.')
     emitAgencyCrmUpdated()
     return fetchAppointmentByIdFromSupabase(scopedOrganisationId, scopedAppointmentId)
   }
@@ -3228,6 +2993,28 @@ export async function updateAppointmentParticipantRsvpAsync(
   )
 }
 
+export async function setAppointmentArchiveAsync(organisationId, appointmentId, { archive, reason, expectedRevision, expectedArchivedAt = null, commandId } = {}) {
+  if (!isSupabaseConfigured || !supabase) throw new Error('Archiving requires the database connection.')
+  if (!isUuidLike(organisationId) || !isUuidLike(appointmentId) || typeof archive !== 'boolean' || !Number.isInteger(expectedRevision)) {
+    throw new Error('Refresh this appointment before archiving or restoring.')
+  }
+  const result = await supabase.rpc('set_calendar_appointment_archive', {
+    p_organisation_id: organisationId, p_appointment_id: appointmentId, p_archive: archive,
+    p_reason: normalizeText(reason), p_expected_revision: expectedRevision,
+    p_expected_archived_at: expectedArchivedAt, p_command_id: commandId || createUuid(),
+  })
+  if (result.error) throw result.error
+  const receipt = result.data
+  if (receipt?.verified !== true || receipt.appointment?.appointment_id !== appointmentId
+    || receipt.appointment.organisation_id !== organisationId || !Number.isInteger(receipt.appointment.calendar_revision)
+    || !Array.isArray(receipt.participants) || receipt.participants.some(person => !isUuidLike(person?.participant_id) || person.appointment_id !== appointmentId || person.organisation_id !== organisationId) || (receipt.replayed !== true && Boolean(receipt.appointment.archived_at) !== archive)) {
+    throw new Error('The archive result could not be verified. Refresh before retrying.')
+  }
+  const saved = { ...mapDbAppointmentRow(receipt.appointment, organisationId), participants: receipt.participants.map(mapDbParticipantRow), delivery: receipt.delivery || null }
+  emitAgencyCrmUpdated()
+  return saved
+}
+
 export async function addAppointmentOutcomeAsync(organisationId, appointmentId, payload = {}, { actor = null } = {}) {
   const fallbackReason = resolveAppointmentsDemoFallbackReason(organisationId)
   if (fallbackReason) {
@@ -3240,6 +3027,7 @@ export async function addAppointmentOutcomeAsync(organisationId, appointmentId, 
     appointmentId,
     {
       status: payload?.status || 'completed',
+      expectedRevision: payload.expectedRevision, commandId: payload.commandId,
       outcomeSummary: payload?.outcomeSummary,
       clientFeedback: payload?.clientFeedback,
       agentNotes: payload?.agentNotes,
@@ -3249,7 +3037,7 @@ export async function addAppointmentOutcomeAsync(organisationId, appointmentId, 
     { actor },
   )
 
-  if (updated && normalizeText(updated.leadId)) {
+  if (updated && !updated.mutationReplayed && normalizeText(updated.leadId)) {
     try {
       await addLeadActivityInSupabase(
         organisationId,
@@ -3275,7 +3063,7 @@ export function createAppointment(organisationId, payload = {}, { actor = null }
   assertLocalFallbackAllowed('agencyPipelineService.createAppointment', organisationId)
   const store = safeReadStore(organisationId)
   const assigned = resolveAgentSnapshot(payload?.assignedAgent || payload?.agent || actor || {})
-  const nextId = createUuid()
+  const nextId = toNullableUuid(payload.commandId) || createUuid()
   const nowIso = new Date().toISOString()
   const appointment = normalizeAppointmentRecord(
     {
@@ -3291,6 +3079,8 @@ export function createAppointment(organisationId, payload = {}, { actor = null }
       startTime: payload?.startTime,
       endTime: payload?.endTime,
       dateTime: payload?.dateTime,
+      endDateTime: payload?.endDateTime,
+      durationMinutes: payload?.durationMinutes,
       locationType: payload?.locationType,
       location: payload?.location,
       meetingUrl: payload?.meetingUrl,
@@ -3320,8 +3110,9 @@ export function createAppointment(organisationId, payload = {}, { actor = null }
       createdAt: nowIso,
       updatedAt: nowIso,
     },
-    { organisationId },
+    { organisationId, validateSchedule: true },
   )
+  assertAppointmentWrite(appointment)
   const participants = (Array.isArray(payload?.participants) ? payload.participants : []).map((participant) =>
     normalizeParticipantRecord(participant, {
       appointmentId: appointment.appointmentId,
@@ -3401,16 +3192,7 @@ export function updateAppointment(organisationId, appointmentId, updater = {}, {
   const existingRows = store.appointments.map((row) => normalizeAppointmentRecord(row, { organisationId }))
   const draftRows = existingRows.map((row) => {
     if (normalizeText(row?.appointmentId) !== targetId) return row
-    const merged = normalizeAppointmentRecord(
-      {
-        ...row,
-        ...updater,
-        appointmentId: row.appointmentId,
-        organisationId: row.organisationId,
-        updatedAt: new Date().toISOString(),
-      },
-      { organisationId },
-    )
+    const merged = prepareAppointmentUpdate(row, updater, { organisationId, actor })
     if (merged.status === 'completed' && !merged.completedAt) {
       merged.completedAt = new Date().toISOString()
     }
@@ -3552,6 +3334,7 @@ export function addAppointmentOutcome(organisationId, appointmentId, payload = {
     appointmentId,
     {
       status: payload?.status || 'completed',
+      expectedRevision: payload.expectedRevision, commandId: payload.commandId,
       outcomeSummary: payload?.outcomeSummary,
       clientFeedback: payload?.clientFeedback,
       agentNotes: payload?.agentNotes,
@@ -3596,31 +3379,17 @@ export function buildAppointmentsDashboardSummary(rows = [], { now = new Date() 
     .sort((left, right) => new Date(right?.updatedAt || 0).getTime() - new Date(left?.updatedAt || 0).getTime())
 
   const nowDate = new Date(now)
-  const todayStart = new Date(nowDate.getFullYear(), nowDate.getMonth(), nowDate.getDate()).getTime()
-  const todayEnd = todayStart + 24 * 60 * 60 * 1000
-  const weekStartDate = new Date(nowDate)
-  weekStartDate.setDate(nowDate.getDate() - nowDate.getDay() + 1)
-  weekStartDate.setHours(0, 0, 0, 0)
-  const weekEndDate = new Date(weekStartDate)
-  weekEndDate.setDate(weekStartDate.getDate() + 7)
-  const weekStart = weekStartDate.getTime()
-  const weekEnd = weekEndDate.getTime()
-
-  const pending = sortedRows.filter((row) => ['requested', 'pending', 'alternative_proposed'].includes(row.status))
-  const reschedule = sortedRows.filter((row) => ['alternative_requested', 'needs_reschedule'].includes(row.status))
-  const upcoming = sortedRows.filter((row) => {
-    if (!['requested', 'pending', 'accepted', 'alternative_requested', 'needs_reschedule', 'alternative_proposed', 'confirmed'].includes(row?.status)) return false
-    const value = getAppointmentStartMs(row)
-    return Number.isFinite(value) && value >= nowDate.getTime()
-  })
-  const today = sortedRows.filter((row) => {
-    const value = getAppointmentStartMs(row)
-    return Number.isFinite(value) && value >= todayStart && value < todayEnd
-  })
-  const thisWeek = sortedRows.filter((row) => {
-    const value = getAppointmentStartMs(row)
-    return Number.isFinite(value) && value >= weekStart && value < weekEnd
-  })
+  const todayStart = sastDayStart(nowDate).getTime()
+  const todayEnd = addCalendarDays(sastDayStart(nowDate), 1).getTime()
+  const weekStart = sastWeekStart(nowDate).getTime()
+  const weekEnd = addCalendarDays(sastWeekStart(nowDate), 7).getTime()
+  const scheduled = sortedRows.filter((row) => appointmentReadState(row, nowDate).scheduled)
+  const pending = scheduled.filter((row) => appointmentReadState(row, nowDate).reservation === 'held')
+  const reschedule = sortedRows.filter((row) => ['alternative_requested', 'alternative_proposed'].includes(appointmentReadState(row, nowDate).status) && !['draft', 'history', 'archived'].includes(appointmentReadState(row, nowDate).category))
+  const upcoming = scheduled.filter((row) => appointmentReadState(row, nowDate).category === 'upcoming')
+  const followUp = sortedRows.filter((row) => appointmentReadState(row, nowDate).category === 'follow_up')
+  const today = scheduled.filter((row) => { const value = appointmentReadState(row, nowDate).start; return value >= todayStart && value < todayEnd })
+  const thisWeek = scheduled.filter((row) => { const value = appointmentReadState(row, nowDate).start; return value >= weekStart && value < weekEnd })
 
   const statusCounts = APPOINTMENT_STATUSES.map((status) => ({
     status,
@@ -3637,6 +3406,7 @@ export function buildAppointmentsDashboardSummary(rows = [], { now = new Date() 
 
   return {
     rows: sortedRows,
+    followUp,
     pending,
     reschedule,
     upcoming,
@@ -3676,14 +3446,7 @@ export async function listAppointmentsAsync(organisationId, { includeAll = false
   if (!isSupabaseConfigured || !supabase) {
     throw new Error('Appointment scheduling requires the database connection.')
   }
-  try {
-    return await listAppointmentsFromSupabase(organisationId, { includeAll, agentId, agentEmail, agentKeys, listingId, leadId, from, to })
-  } catch (error) {
-    if (isPermissionDeniedError(error) && isUnsafeFallbackAllowed()) {
-      return listAppointments(organisationId, { includeAll, agentId, agentEmail, agentKeys, listingId, from: leadId ? null : from, to: leadId ? null : to }).filter((row) => !leadId || row.leadId === leadId || (row.relatedEntityType === 'lead' && row.relatedEntityId === leadId))
-    }
-    throw error
-  }
+  return listAppointmentsFromSupabase(organisationId, { includeAll, agentId, agentEmail, agentKeys, listingId, leadId, from, to })
 }
 
 export async function getAppointmentsDashboardSummaryAsync(

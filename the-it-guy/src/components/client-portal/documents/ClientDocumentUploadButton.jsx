@@ -1,3 +1,4 @@
+import { DOCUMENT_UPLOAD_ACCEPT, DOCUMENT_UPLOAD_HELP_TEXT } from '../../../lib/documentUploadPolicy.js'
 import { CheckCircle2, FileSignature, LoaderCircle, TriangleAlert } from 'lucide-react'
 import { useState } from 'react'
 
@@ -59,12 +60,13 @@ function ClientDocumentUploadButton({
         {busy || submitting ? <LoaderCircle className="animate-spin" size={14} aria-hidden="true" /> : <FileSignature size={14} aria-hidden="true" />}
         {busy || submitting ? 'Uploading...' : feedback?.tone === 'error' ? 'Try again' : label}
         <input
-          type="file"
+          type="file" title={DOCUMENT_UPLOAD_HELP_TEXT} accept={DOCUMENT_UPLOAD_ACCEPT}
           className="hidden"
           disabled={unavailable}
           onChange={handleChange}
         />
       </label>
+      <span className="block text-xs font-normal text-slate-500">{DOCUMENT_UPLOAD_HELP_TEXT}</span>
       {selectedFile ? (
         <div className="mt-2 max-w-sm" role="status" aria-live="polite">
           <p className="truncate text-xs font-semibold text-[#41576e]">{selectedFile.name}{selectedFile.size ? ` · ${formatFileSize(selectedFile.size)}` : ''}</p>

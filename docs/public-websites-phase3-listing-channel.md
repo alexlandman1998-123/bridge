@@ -41,6 +41,8 @@ The database rejects publication unless the organisation website is published an
 
 Every image and floor plan must have an active `website_listing_media_assets` entry before the database accepts the public snapshot. Cross-project and arbitrary external image URLs are rejected instead of being fetched server-side. Public object paths include organisation, website, listing and source-media UUIDs plus a SHA-256 content fingerprint; uploads never overwrite an existing CDN object.
 
+Agency website updates reuse an active copy only when its tenant-scoped path and source identity match, and fresh Storage metadata confirms the same strong ETag, byte size and allowed content type on both source and copy. A changed source, missing copy or unavailable validator falls back to downloading, validating, hashing and copying the source. Media preparation runs at most four photos at a time and retains gallery order. On failure, all in-flight workers finish before new uploads are cleaned up; reused copies are never included in that cleanup. No schema change is required.
+
 The public snapshot excludes internal notes, seller/contact data, documents, workflow data and unsupported media types.
 
 ## Security
@@ -62,7 +64,8 @@ npm --prefix the-it-guy run build
 npm --prefix apps/websites run typecheck
 npm --prefix apps/websites run build
 supabase test db
-deno test supabase/functions/_shared/websiteListingMedia.test.ts
+deno test --no-lock --allow-env=WS_NO_BUFFER_UTIL,WS_NO_UTF_8_VALIDATE --config supabase/functions/website-listing-publication/deno.json supabase/functions/_shared/websiteListingMedia.test.ts supabase/functions/website-listing-publication/index.test.ts
+deno check --frozen --config supabase/functions/website-listing-publication/deno.json supabase/functions/website-listing-publication/index.ts
 ```
 
 The pgTAP tests are included at `supabase/tests/public_websites_phase3_listing_channel_rls_test.sql` and `supabase/tests/public_websites_durable_listing_media_test.sql`. They require a running local Supabase stack or controlled execution against non-production.
@@ -70,6 +73,16 @@ The pgTAP tests are included at `supabase/tests/public_websites_phase3_listing_c
 The staging smoke test passed publish, no-op republish, update, unpublish and republish with nine images. A reversible source-image replacement produced a new content-addressed path, removed the superseded object, and restored the original path with no cleanup backlog. A forced ninth-image failure removed the eight objects copied earlier in that attempt before the listing was restored. A cross-tenant authenticated user was denied before media access, and direct browser calls cannot reach either the removed legacy command or the service-only commit.
 
 ## Deployment gate
+
+The CRM listing cards read agency website publication through the existing
+membership-guarded `website_get_listing_publication_status` RPC after rendering
+stock. Reads run at most four at a time. The “Agency website” live badge requires
+a published website channel, published site, Published listing projection and
+active hostname; Arch9 catalogue publication is displayed separately. Failed
+reads hide the website badge, and listing update events refresh it. Focused checks:
+`node --test src/services/listings/__tests__/listingMarketingChannelPresentation.test.js`
+and `npx vitest run src/hooks/__tests__/useListingWebsitePublications.test.jsx`
+from `the-it-guy/`.
 
 Apply the Phase 1–3 migrations to non-production Supabase, then verify with two test organisations that:
 

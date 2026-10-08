@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "supabase";
 
-export type LeadEnquiryKind = "sale" | "rental" | "landlord" | "general";
+export type LeadEnquiryKind = "sale" | "seller" | "rental" | "landlord" | "general";
 
 function object(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -27,6 +27,7 @@ export function leadEnquiryKind(
   if (classifiedRental || intent === "rent" || key(listingType) === "rental") {
     return "rental";
   }
+  if (intent === "sell" || key(raw.leadCategory) === "seller") return "seller";
   if (intent === "buy" || key(listingType) === "sale") return "sale";
   return "general";
 }
@@ -41,12 +42,13 @@ export async function resolveLeadEnquiryKind(
   if (!client || !organisationId || !leadId) return "general";
   try {
     const lead = await client.from("leads")
-      .select("raw_enquiry_payload,listing_id,enquired_listing_id")
+      .select("raw_enquiry_payload,lead_category,listing_id,enquired_listing_id")
       .eq("organisation_id", organisationId).eq("lead_id", leadId)
       .maybeSingle();
     if (lead.error || !lead.data) return "general";
-    const kind = leadEnquiryKind(lead.data.raw_enquiry_payload);
-    if (kind === "rental" || kind === "landlord") return kind;
+    const metadata = { ...object(lead.data.raw_enquiry_payload), leadCategory: lead.data.lead_category };
+    const kind = leadEnquiryKind(metadata);
+    if (kind === "rental" || kind === "landlord" || kind === "seller") return kind;
     const listingId = lead.data.enquired_listing_id || lead.data.listing_id;
     if (!listingId) return kind;
     const listing = await client.from("private_listings").select(
@@ -61,7 +63,7 @@ export async function resolveLeadEnquiryKind(
       .eq("listing_id", listingId).maybeSingle();
     if (publication.error) return "general";
     return leadEnquiryKind(
-      lead.data.raw_enquiry_payload,
+      metadata,
       publication.data?.listing_type,
     );
   } catch {

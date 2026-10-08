@@ -1,3 +1,5 @@
+import { createFreshDocumentSignedUrl } from './documentAccess.js'
+import { runRecoverableDocumentUpload, readSavedUploadByPath, isDefiniteUploadSaveRejection } from './documentUploadRecovery.js'
 import { buildTransactionPartiesSnapshot, transactionPartiesOnboardingSeed } from '../core/transactions/transactionPartyProfile.js'
 import { validateDevelopmentStructureNodes } from '../core/developments/developmentStructureModel.js'
 import { fetchDashboardOverview as fetchScopedDashboardOverview } from '../domains/reporting/api.js'
@@ -9,7 +11,7 @@ import { isBondCorrectionResubmission } from '../modules/bond/application/submis
 import { DOCUMENTS_BUCKET_CANDIDATES, createScopedSupabaseClient, invokeEdgeFunction, supabase } from './supabaseClient'
 import { uploadToStorageCandidateBuckets } from './storageFallbacks'
 import { persistDevelopmentMedia, refreshDevelopmentMedia } from './developmentMediaStorage.js'
-import { validateDocumentUploadFile } from './documentUploadPolicy'
+import { withDocumentUploadMimeType, getDocumentUploadOptions, validateDocumentUploadFile } from './documentUploadPolicy'
 import { reportDocumentUploadTelemetry } from './documentUploadObservability'
 import { createDocumentUploadProgressReporter } from './documentUploadLifecycle'
 import { isAttorneyDocumentActor, persistAttorneyDocument, requestAttorneyDocuments, reviewAttorneyDocument, reviewAttorneyDocumentRequest, isDefiniteDocumentSaveFailure } from '../services/documents/attorneyDocumentPersistence.js'
@@ -6274,59 +6276,53 @@ export async function uploadTransactionAttorneyCloseoutDocument({
   }
 
   const safeName = file.name.replace(/[^a-zA-Z0-9.-]/g, '-')
-  const filePath = `transaction-${transactionId}/closeout-${targetCloseoutId}/${Date.now()}-${safeName}`
+  validateDocumentUploadFile(file, { surface: 'attorney_closeout' })
+  return runRecoverableDocumentUpload({ client: client, scope: ['attorney_closeout', transactionId, targetCloseoutId, documentTypeKey], file, storageBuckets: DOCUMENTS_BUCKET_CANDIDATES,
+    toSavedReceipt: result => ({ ...closeout, savedDocument: result.data, saved: true }),
+    run: async attempt => {
+      const filePath = attempt.path(`transaction-${transactionId}/closeout-${targetCloseoutId}/${Date.now()}-${safeName}`)
 
-  reportProgress('uploading')
-  const uploadedBucket = await uploadToDocumentsBucket(client, filePath, file)
+      reportProgress('uploading')
+      const uploadedBucket = await attempt.upload(() => uploadToDocumentsBucket(client, filePath, file))
 
-  const definition = ATTORNEY_CLOSEOUT_DOCUMENT_DEFINITIONS.find((item) => item.key === documentTypeKey) || null
+      const definition = ATTORNEY_CLOSEOUT_DOCUMENT_DEFINITIONS.find((item) => item.key === documentTypeKey) || null
 
-  const payload = {
-    transaction_attorney_closeout_id: targetCloseoutId,
-    document_type_key: documentTypeKey,
-    label: label || definition?.label || 'Close-Out Document',
-    file_path: filePath,
-    filename: file.name,
-    uploaded_by: actorProfile.userId || null,
-    uploaded_at: new Date().toISOString(),
-    is_required: definition?.requiredForCloseOut ?? true,
-    status: 'uploaded',
-  }
+      const payload = {
+        transaction_attorney_closeout_id: targetCloseoutId,
+        document_type_key: documentTypeKey,
+        label: label || definition?.label || 'Close-Out Document',
+        file_path: filePath,
+        filename: file.name,
+        uploaded_by: actorProfile.userId || null,
+        uploaded_at: new Date().toISOString(),
+        is_required: definition?.requiredForCloseOut ?? true,
+        status: 'uploaded',
+      }
 
-  reportProgress('saving')
-  const { error } = await client.from('transaction_attorney_closeout_documents').upsert(payload, {
-    onConflict: 'transaction_attorney_closeout_id,document_type_key',
-  })
+      reportProgress('saving')
+      await attempt.persist({
+        save: () => client.from('transaction_attorney_closeout_documents').upsert(payload, { onConflict: 'transaction_attorney_closeout_id,document_type_key' }).select('*').single(),
+        read: () => readSavedUploadByPath(client, { table: 'transaction_attorney_closeout_documents', column: 'file_path', path: filePath, filters: { transaction_attorney_closeout_id: targetCloseoutId, document_type_key: documentTypeKey } }),
+        cleanup: () => removeUploadedDocumentObject(client, uploadedBucket, filePath),
+      })
 
-  if (error) {
-    reportProgress('failed', error.message || 'The close-out document could not be saved.', { error })
-    await removeDocumentUploadObjectAfterFailedPersistence(client, {
-      bucket: uploadedBucket,
-      filePath,
-      error,
-    })
-    if (isMissingSchemaError(error)) {
-      throw new Error('Attorney close-out document tables are not set up yet. Run sql/schema.sql first.')
-    }
+      await logTransactionEventIfPossible(client, {
+        transactionId,
+        createdBy: actorProfile.userId || null,
+        createdByRole: actorProfile.role || 'developer',
+        eventType: 'DocumentUploaded',
+        eventData: {
+          source: 'attorney_closeout',
+          documentTypeKey,
+          documentName: file.name,
+        },
+      })
 
-    throw error
-  }
+      reportProgress('complete', 'Document saved successfully.')
 
-  await logTransactionEventIfPossible(client, {
-    transactionId,
-    createdBy: actorProfile.userId || null,
-    createdByRole: actorProfile.role || 'developer',
-    eventType: 'DocumentUploaded',
-    eventData: {
-      source: 'attorney_closeout',
-      documentTypeKey,
-      documentName: file.name,
+      return fetchTransactionAttorneyCloseout(transactionId)
     },
   })
-
-  reportProgress('complete', 'Document saved successfully.')
-
-  return fetchTransactionAttorneyCloseout(transactionId)
 }
 
 export async function fetchDevelopmentAttorneyReconciliationReport(developmentId) {
@@ -7417,52 +7413,52 @@ export async function uploadTransactionBondCloseoutDocument({
   }
 
   const safeName = file.name.replace(/[^a-zA-Z0-9.-]/g, '-')
-  const filePath = `transaction-${transactionId}/bond-closeout-${targetCloseoutId}/${Date.now()}-${safeName}`
+  validateDocumentUploadFile(file, { surface: 'bond_closeout' })
+  return runRecoverableDocumentUpload({ client: client, scope: ['bond_closeout', transactionId, targetCloseoutId, documentTypeKey], file, storageBuckets: DOCUMENTS_BUCKET_CANDIDATES,
+    toSavedReceipt: result => ({ ...closeout, savedDocument: result.data, saved: true }),
+    run: async attempt => {
+      const filePath = attempt.path(`transaction-${transactionId}/bond-closeout-${targetCloseoutId}/${Date.now()}-${safeName}`)
 
-  reportProgress('uploading')
-  await uploadToDocumentsBucket(client, filePath, file)
+      reportProgress('uploading')
+      const uploadedBucket = await attempt.upload(() => uploadToDocumentsBucket(client, filePath, file))
 
-  const definition = BOND_CLOSEOUT_DOCUMENT_DEFINITIONS.find((item) => item.key === documentTypeKey) || null
-  const payload = {
-    transaction_bond_closeout_id: targetCloseoutId,
-    document_type_key: documentTypeKey,
-    label: label || definition?.label || 'Bond Close-Out Document',
-    file_path: filePath,
-    filename: file.name,
-    uploaded_by: actorProfile.userId || null,
-    uploaded_at: new Date().toISOString(),
-    is_required: definition?.requiredForCloseOut ?? true,
-    status: 'uploaded',
-  }
+      const definition = BOND_CLOSEOUT_DOCUMENT_DEFINITIONS.find((item) => item.key === documentTypeKey) || null
+      const payload = {
+        transaction_bond_closeout_id: targetCloseoutId,
+        document_type_key: documentTypeKey,
+        label: label || definition?.label || 'Bond Close-Out Document',
+        file_path: filePath,
+        filename: file.name,
+        uploaded_by: actorProfile.userId || null,
+        uploaded_at: new Date().toISOString(),
+        is_required: definition?.requiredForCloseOut ?? true,
+        status: 'uploaded',
+      }
 
-  reportProgress('saving')
-  const { error } = await client.from('transaction_bond_closeout_documents').upsert(payload, {
-    onConflict: 'transaction_bond_closeout_id,document_type_key',
-  })
+      reportProgress('saving')
+      await attempt.persist({
+        save: () => client.from('transaction_bond_closeout_documents').upsert(payload, { onConflict: 'transaction_bond_closeout_id,document_type_key' }).select('*').single(),
+        read: () => readSavedUploadByPath(client, { table: 'transaction_bond_closeout_documents', column: 'file_path', path: filePath, filters: { transaction_bond_closeout_id: targetCloseoutId, document_type_key: documentTypeKey } }),
+        cleanup: () => removeUploadedDocumentObject(client, uploadedBucket, filePath),
+      })
 
-  if (error) {
-    reportProgress('failed', error.message || 'The bond close-out document could not be saved.', { error })
-    if (isMissingSchemaError(error)) {
-      throw new Error('Bond close-out document tables are not set up yet. Run sql/schema.sql first.')
-    }
-    throw error
-  }
+      await logTransactionEventIfPossible(client, {
+        transactionId,
+        createdBy: actorProfile.userId || null,
+        createdByRole: actorProfile.role || 'developer',
+        eventType: 'DocumentUploaded',
+        eventData: {
+          source: 'bond_closeout',
+          documentTypeKey,
+          documentName: file.name,
+        },
+      })
 
-  await logTransactionEventIfPossible(client, {
-    transactionId,
-    createdBy: actorProfile.userId || null,
-    createdByRole: actorProfile.role || 'developer',
-    eventType: 'DocumentUploaded',
-    eventData: {
-      source: 'bond_closeout',
-      documentTypeKey,
-      documentName: file.name,
+      reportProgress('complete', 'Document saved successfully.')
+
+      return fetchTransactionBondCloseout(transactionId)
     },
   })
-
-  reportProgress('complete', 'Document saved successfully.')
-
-  return fetchTransactionBondCloseout(transactionId)
 }
 
 const REFERRAL_INCENTIVE_SELECT =
@@ -18140,9 +18136,11 @@ function isStorageBucketNotFoundError(error) {
 }
 
 async function uploadToDocumentsBucket(client, filePath, file, options = undefined) {
+  const uploadOptions = getDocumentUploadOptions(file, { ...options, fileName: filePath.split('/').at(-1), surface: 'documents_storage' })
+  const uploadBody = withDocumentUploadMimeType(file, uploadOptions.contentType)
   const { bucket } = await uploadToStorageCandidateBuckets({
     bucketCandidates: DOCUMENTS_BUCKET_CANDIDATES,
-    upload: (bucketName) => client.storage.from(bucketName).upload(filePath, file, options),
+    upload: (bucketName) => client.storage.from(bucketName).upload(filePath, uploadBody, uploadOptions),
     missingBucketMessage: `Storage bucket not found for document upload. Checked: ${DOCUMENTS_BUCKET_CANDIDATES.join(
       ', ',
     )}. Configure VITE_SUPABASE_DOCUMENTS_BUCKET (or legacy VITE_SUPABASE_DOCUMENT_BUCKET) to the correct bucket name.`,
@@ -18154,9 +18152,11 @@ async function uploadToDocumentsBucket(client, filePath, file, options = undefin
 }
 
 async function uploadToBuyerPortalDocumentsBucket(client, filePath, file) {
+  const uploadOptions = getDocumentUploadOptions(file, { fileName: filePath.split('/').at(-1), surface: 'client_portal' })
+  const uploadBody = withDocumentUploadMimeType(file, uploadOptions.contentType)
   const { bucket } = await uploadToStorageCandidateBuckets({
     bucketCandidates: ['documents'],
-    upload: (bucketName) => client.storage.from(bucketName).upload(filePath, file),
+    upload: (bucketName) => client.storage.from(bucketName).upload(filePath, uploadBody, uploadOptions),
     missingBucketMessage: 'Buyer portal document storage is not configured for this environment.',
     accessDeniedMessage: 'Buyer portal document storage access is not ready yet. Please retry.',
     accessDeniedCode: 'buyer_portal_document_storage_access_not_ready',
@@ -18175,28 +18175,16 @@ async function removeUploadedDocumentObject(client, bucketName, filePath) {
 }
 
 async function getSignedUrl(filePath, { client: suppliedClient = null, fileBucket = '', expiresInSeconds = 60 * 60 } = {}) {
-  const client = suppliedClient || requireClient()
-  const candidateBuckets = Array.from(
-    new Set([String(fileBucket || '').trim(), ...DOCUMENTS_BUCKET_CANDIDATES].filter(Boolean)),
-  )
-
-  for (const bucketName of candidateBuckets) {
-    const bucket = client.storage.from(bucketName)
-
-    const { data, error } = await bucket.createSignedUrl(filePath, expiresInSeconds)
-    if (!error && data?.signedUrl) {
-      return data.signedUrl
-    }
-
-    if (error && isStorageBucketNotFoundError(error)) {
-      continue
-    }
-
-    // A public URL is only a constructed address, not proof that a private
-    // document exists or that this viewer can read it. Preserve unavailable.
+  try {
+    return await createFreshDocumentSignedUrl({
+      client: suppliedClient || requireClient(), filePath, fileBucket, expiresInSeconds,
+      candidateBuckets: DOCUMENTS_BUCKET_CANDIDATES,
+      isBucketMissing: isStorageBucketNotFoundError,
+    })
+  } catch {
+    // A failed private access check is unavailable, never a constructed public URL.
+    return null
   }
-
-  return null
 }
 
 export async function createTransactionDocumentSignedUrl({
@@ -18206,30 +18194,11 @@ export async function createTransactionDocumentSignedUrl({
   filename = 'document',
   expiresInSeconds = 60 * 30,
 } = {}) {
-  const normalizedPath = String(filePath || '').trim()
-  if (!normalizedPath) throw new Error('This document does not have a storage path.')
-
-  const client = requireClient()
-  const candidateBuckets = Array.from(
-    new Set([String(fileBucket || '').trim(), ...DOCUMENTS_BUCKET_CANDIDATES].filter(Boolean)),
-  )
-  let lastError = null
-  for (const bucketName of candidateBuckets) {
-    const { data, error } = await client.storage
-      .from(bucketName)
-      .createSignedUrl(
-        normalizedPath,
-        expiresInSeconds,
-        download ? { download: String(filename || 'document').trim() || 'document' } : undefined,
-      )
-    if (!error && data?.signedUrl) return data.signedUrl
-    lastError = error || lastError
-    if (error && isStorageBucketNotFoundError(error)) continue
-  }
-
-  const accessError = new Error(lastError?.message || 'Unable to open this document right now.')
-  accessError.code = lastError?.code || 'document_access_url_unavailable'
-  throw accessError
+  return createFreshDocumentSignedUrl({
+    client: requireClient(), filePath, fileBucket, download, filename, expiresInSeconds,
+    candidateBuckets: DOCUMENTS_BUCKET_CANDIDATES,
+    isBucketMissing: isStorageBucketNotFoundError,
+  })
 }
 
 function isCanonicalFinalSignedDocumentRow(document = {}) {
@@ -20737,8 +20706,10 @@ export async function saveDevelopmentDocument({
     throw error
   }
 
-  const [document] = await refreshDevelopmentMedia(client, [data])
-  return normalizeDevelopmentDocumentRow(document)
+  let mediaRefreshFailed = false
+  const [document] = await refreshDevelopmentMedia(client, [data]).catch(() => { mediaRefreshFailed = true; return [data] })
+  const saved = normalizeDevelopmentDocumentRow(document)
+  return mediaRefreshFailed ? { ...saved, saved: true, persistenceWarnings: ['Document saved, but its preview could not be refreshed. Reopen the record to view it.'] } : saved
 }
 
 export async function uploadDevelopmentDocumentAsset({
@@ -20761,6 +20732,7 @@ export async function uploadDevelopmentDocumentAsset({
     throw new Error('Select a valid file before uploading.')
   }
 
+  const filePolicy = validateDocumentUploadFile(selectedFile, { surface: 'development_asset' })
   const safeType = String(documentType || 'marketing')
     .trim()
     .toLowerCase()
@@ -20776,32 +20748,39 @@ export async function uploadDevelopmentDocumentAsset({
     typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
       ? crypto.randomUUID()
       : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
-  const filePath = `developments/${developmentId}/${safeType}/${objectId}-${safeName}`
-  const uploadedBucket = await uploadToDocumentsBucket(client, filePath, selectedFile, {
-    cacheControl: '3600',
-    contentType: selectedFile.type || 'application/octet-stream',
-  })
-  const signedUrl = await getSignedUrl(filePath, {
-    client,
-    fileBucket: uploadedBucket,
-    expiresInSeconds: 60 * 60 * 24 * 30,
-  })
-  const { data: publicUrlData } = client.storage.from(uploadedBucket).getPublicUrl(filePath)
-  const publicUrl = normalizeTextValue(publicUrlData?.publicUrl)
-  const fileUrl = signedUrl || publicUrl || ''
+  return runRecoverableDocumentUpload({ client: client, scope: ['development_asset', developmentId, safeType, title, description, linkedUnitId, linkedUnitType], file, storageBuckets: DOCUMENTS_BUCKET_CANDIDATES,
+    toSavedReceipt: result => normalizeDevelopmentDocumentRow(result.data),
+    run: async attempt => {
+      const filePath = attempt.path(`developments/${developmentId}/${safeType}/${objectId}-${safeName}`)
+      const uploadedBucket = await attempt.upload(() => uploadToDocumentsBucket(client, filePath, selectedFile, {
+        cacheControl: '3600',
+        contentType: filePolicy.mimeType,
+      }))
+      const { data: publicUrlData } = client.storage.from(uploadedBucket).getPublicUrl(filePath)
+      const publicUrl = normalizeTextValue(publicUrlData?.publicUrl)
+      const fileUrl = publicUrl || ''
 
-  return saveDevelopmentDocument({
-    developmentId,
-    documentType: safeType,
-    title: title || selectedFile.name || 'Development asset',
-    description,
-    fileUrl,
-    linkedUnitId,
-    linkedUnitType,
-    storageBucket: uploadedBucket,
-    storagePath: filePath,
-    mimeType: selectedFile.type || 'application/octet-stream',
-    fileSizeBytes: selectedFile.size,
+      const result = await attempt.persist({
+        save: async () => ({ data: await saveDevelopmentDocument({
+          developmentId,
+          documentType: safeType,
+          title: title || selectedFile.name || 'Development asset',
+          description,
+          fileUrl,
+          linkedUnitId,
+          linkedUnitType,
+          storageBucket: uploadedBucket,
+          storagePath: filePath,
+          mimeType: filePolicy.mimeType,
+          fileSizeBytes: selectedFile.size,
+        }) }),
+        read: () => readSavedUploadByPath(client, { table: 'development_documents', column: 'storage_path', path: filePath, filters: { development_id: developmentId } }),
+        cleanup: () => removeUploadedDocumentObject(client, uploadedBucket, filePath),
+      })
+      const signedUrl = await getSignedUrl(filePath, { client, fileBucket: uploadedBucket, expiresInSeconds: 60 * 60 * 24 * 30 })
+      return { ...result.data, fileUrl: signedUrl || result.data.fileUrl, file_url: signedUrl || result.data.file_url }
+
+    },
   })
 }
 
@@ -24275,42 +24254,54 @@ export async function uploadTransactionFinancialInvoice({ transactionId, file })
   const safeName = String(file.name || 'invoice')
     .trim()
     .replace(/[^a-zA-Z0-9._-]/g, '-')
-  const filePath = `transaction-financial-invoices/${transactionId}/${crypto.randomUUID()}-${safeName}`
+  validateDocumentUploadFile(file, { surface: 'transaction_invoice' })
+  return runRecoverableDocumentUpload({ client: client, scope: ['transaction_invoice', transactionId], file, storageBuckets: DOCUMENTS_BUCKET_CANDIDATES,
+    toSavedReceipt: result => ({ ...buildFinancialRecordViewModel(result.data), invoiceUrl: null }),
+    run: async attempt => {
+      const filePath = attempt.path(`transaction-financial-invoices/${transactionId}/${crypto.randomUUID()}-${safeName}`)
 
-  const uploadedBucket = await uploadToDocumentsBucket(client, filePath, file)
+      const uploadedBucket = await attempt.upload(() => uploadToDocumentsBucket(client, filePath, file))
 
-  const upsert = await client
-    .from('transaction_financial_records')
-    .upsert(
-      {
-        transaction_id: transactionId,
-        invoice_file_path: filePath,
-        invoice_filename: safeName,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'transaction_id' },
-    )
-    .select(
-      'id, transaction_id, expected_fee, invoiced_amount, payment_status, invoice_reference, invoice_date, invoice_file_path, invoice_filename, payment_date, notes, created_at, updated_at',
-    )
-    .single()
+      const upsert = await attempt.persist({
+        save: async () => {
+          const upsert = await client
+            .from('transaction_financial_records')
+            .upsert(
+              {
+                transaction_id: transactionId,
+                invoice_file_path: filePath,
+                invoice_filename: safeName,
+                updated_at: new Date().toISOString(),
+              },
+              { onConflict: 'transaction_id' },
+            )
+            .select(
+              'id, transaction_id, expected_fee, invoiced_amount, payment_status, invoice_reference, invoice_date, invoice_file_path, invoice_filename, payment_date, notes, created_at, updated_at',
+            )
+            .single()
 
-  if (upsert.error) {
-    await removeDocumentUploadObjectAfterFailedPersistence(client, {
-      bucket: uploadedBucket,
-      filePath,
-      error: upsert.error,
-    })
-    if (isMissingTableError(upsert.error, 'transaction_financial_records')) {
-      throw new Error('Transaction financial records are not set up yet. Run sql/schema.sql first.')
-    }
-    throw upsert.error
-  }
+          if (upsert.error) {
+            await removeDocumentUploadObjectAfterFailedPersistence(client, {
+              bucket: uploadedBucket,
+              filePath,
+              error: upsert.error,
+            })
+            if (isMissingTableError(upsert.error, 'transaction_financial_records')) {
+              throw new Error('Transaction financial records are not set up yet. Run sql/schema.sql first.')
+            }
+            throw upsert.error
+          }
+          return upsert
+        },
+        read: () => readSavedUploadByPath(client, { table: 'transaction_financial_records', column: 'invoice_file_path', path: filePath, filters: { transaction_id: transactionId } }),
+      })
 
-  return {
-    ...buildFinancialRecordViewModel(upsert.data),
-    invoiceUrl: upsert.data?.invoice_file_path ? await getSignedUrl(upsert.data.invoice_file_path) : null,
-  }
+      return {
+        ...buildFinancialRecordViewModel(upsert.data),
+        invoiceUrl: upsert.data?.invoice_file_path ? await getSignedUrl(upsert.data.invoice_file_path) : null,
+      }
+    },
+  })
 }
 
 const MATTER_FINANCIAL_DOCUMENT_TYPES = new Set([
@@ -24906,98 +24897,110 @@ export async function registerMatterFinancialDocument({
     throw new Error('Select an invoice, statement, or proof document to upload.')
   }
 
+  const filePolicy = validateDocumentUploadFile(file, { surface: 'matter_financial_document' })
   const account = await fetchMatterFinancialAccountForMutation(client, accountId, transactionId)
   const actorProfile = await resolveActiveProfileContext(client)
-  const safeName = String(file.name || 'financial-document')
-    .trim()
-    .replace(/[^a-zA-Z0-9._-]/g, '-')
-  const filePath = `matter-financial-documents/${account.transaction_id}/${account.id}/${crypto.randomUUID()}-${safeName}`
-  const storageBucket = await uploadToDocumentsBucket(client, filePath, file, {
-    upsert: false,
-    contentType: file.type || undefined,
-  })
+  const safeName = filePolicy.safeName
+  return runRecoverableDocumentUpload({ client, scope: ['matter_financial_document', account.id, account.transaction_id, documentType, audienceRole, title, externalReference, amountTotal, amountDue, issuedOn, dueOn, notes, publishNow, supersedesDocumentId], file, storageBuckets: DOCUMENTS_BUCKET_CANDIDATES,
+    toSavedReceipt: result => buildMatterFinancialDocumentViewModel(result.data, null),
+    run: async attempt => {
+      const filePath = attempt.path(`matter-financial-documents/${account.transaction_id}/${account.id}/${crypto.randomUUID()}-${safeName}`)
+      const storageBucket = await attempt.upload(() => uploadToDocumentsBucket(client, filePath, file, {
+        upsert: false,
+        contentType: filePolicy.mimeType,
+      }))
 
-  const normalizedDocumentType = normalizeMatterFinancialDocumentType(documentType)
-  const normalizedAudienceRole = normalizeMatterFinancialAudienceRole(audienceRole, account.party_role || 'internal')
-  const normalizedStatus = publishNow ? 'published' : 'draft'
-  const now = new Date().toISOString()
-  const payload = {
-    financial_account_id: account.id,
-    transaction_id: account.transaction_id,
-    attorney_firm_id: account.attorney_firm_id || null,
-    uploaded_by: actorProfile.userId || null,
-    published_by: publishNow ? actorProfile.userId || null : null,
-    supersedes_document_id: normalizeNullableText(supersedesDocumentId),
-    document_type: normalizedDocumentType,
-    document_status: normalizedStatus,
-    audience_role: normalizedAudienceRole,
-    external_reference: normalizeNullableText(externalReference),
-    title: normalizeNullableText(title) || safeName,
-    storage_bucket: storageBucket || null,
-    storage_path: filePath,
-    file_name: safeName,
-    mime_type: normalizeNullableText(file.type),
-    file_size_bytes: normalizeOptionalNumber(file.size),
-    currency_code: normalizeMatterFinancialCurrencyCode(account.currency_code),
-    amount_total: normalizeOptionalNumber(amountTotal),
-    amount_due: normalizeOptionalNumber(amountDue),
-    issued_on: normalizeOptionalDate(issuedOn),
-    due_on: normalizeOptionalDate(dueOn),
-    published_at: publishNow ? now : null,
-    notes: normalizeNullableText(notes),
-    metadata_json: {
-      source: 'attorney_matter_accounts_panel',
-      protocol: 'external_document_upload',
-    },
-  }
+      const normalizedDocumentType = normalizeMatterFinancialDocumentType(documentType)
+      const normalizedAudienceRole = normalizeMatterFinancialAudienceRole(audienceRole, account.party_role || 'internal')
+      const normalizedStatus = publishNow ? 'published' : 'draft'
+      const now = new Date().toISOString()
+      const payload = {
+        financial_account_id: account.id,
+        transaction_id: account.transaction_id,
+        attorney_firm_id: account.attorney_firm_id || null,
+        uploaded_by: actorProfile.userId || null,
+        published_by: publishNow ? actorProfile.userId || null : null,
+        supersedes_document_id: normalizeNullableText(supersedesDocumentId),
+        document_type: normalizedDocumentType,
+        document_status: normalizedStatus,
+        audience_role: normalizedAudienceRole,
+        external_reference: normalizeNullableText(externalReference),
+        title: normalizeNullableText(title) || safeName,
+        storage_bucket: storageBucket || null,
+        storage_path: filePath,
+        file_name: safeName,
+        mime_type: filePolicy.mimeType,
+        file_size_bytes: normalizeOptionalNumber(file.size),
+        currency_code: normalizeMatterFinancialCurrencyCode(account.currency_code),
+        amount_total: normalizeOptionalNumber(amountTotal),
+        amount_due: normalizeOptionalNumber(amountDue),
+        issued_on: normalizeOptionalDate(issuedOn),
+        due_on: normalizeOptionalDate(dueOn),
+        published_at: publishNow ? now : null,
+        notes: normalizeNullableText(notes),
+        metadata_json: {
+          source: 'attorney_matter_accounts_panel',
+          protocol: 'external_document_upload',
+        },
+      }
 
-  const { data, error } = await client
-    .from('matter_financial_documents')
-    .insert(payload)
-    .select(
-      'id, financial_account_id, transaction_id, attorney_firm_id, source_document_id, uploaded_by, published_by, supersedes_document_id, document_type, document_status, audience_role, external_reference, title, storage_bucket, storage_path, file_name, mime_type, file_size_bytes, currency_code, amount_total, amount_due, issued_on, due_on, uploaded_at, published_at, voided_at, notes, metadata_json, created_at, updated_at',
-    )
-    .single()
+      const { data } = await attempt.persist({
+        save: async () => {
+          const { data, error } = await client
+            .from('matter_financial_documents')
+            .insert(payload)
+            .select(
+              'id, financial_account_id, transaction_id, attorney_firm_id, source_document_id, uploaded_by, published_by, supersedes_document_id, document_type, document_status, audience_role, external_reference, title, storage_bucket, storage_path, file_name, mime_type, file_size_bytes, currency_code, amount_total, amount_due, issued_on, due_on, uploaded_at, published_at, voided_at, notes, metadata_json, created_at, updated_at',
+            )
+            .single()
 
-  if (error) {
-    if (isMissingTableError(error, 'matter_financial_documents')) {
-      throw new Error(
-        'Matter financial documents are not set up yet. Apply the attorney accounting Phase 1 migrations first.',
-      )
-    }
-    throw error
-  }
+          if (error) {
+            if (isMissingTableError(error, 'matter_financial_documents')) {
+              throw new Error(
+                'Matter financial documents are not set up yet. Apply the attorney accounting Phase 1 migrations first.',
+              )
+            }
+            throw error
+          }
 
-  if (payload.supersedes_document_id) {
-    const supersedeResult = await client
-      .from('matter_financial_documents')
-      .update({
-        document_status: 'superseded',
-        updated_at: now,
+          return { data }
+        },
+        read: () => readSavedUploadByPath(client, { table: 'matter_financial_documents', column: 'storage_path', path: filePath, filters: { financial_account_id: account.id, transaction_id: account.transaction_id } }),
+        cleanup: () => removeUploadedDocumentObject(client, storageBucket, filePath),
       })
-      .eq('id', payload.supersedes_document_id)
-      .eq('financial_account_id', account.id)
-    if (supersedeResult.error && !isMissingTableError(supersedeResult.error, 'matter_financial_documents')) {
-      throw supersedeResult.error
-    }
-  }
 
-  await insertMatterFinancialAccountEventIfPossible(client, {
-    financialAccountId: account.id,
-    transactionId: account.transaction_id,
-    eventType: publishNow ? 'financial_document_uploaded_and_published' : 'financial_document_uploaded_as_draft',
-    actorProfile,
-    payload: {
-      documentId: data.id,
-      documentType: normalizedDocumentType,
-      audienceRole: normalizedAudienceRole,
-      title: payload.title,
-      amountTotal: payload.amount_total,
-      amountDue: payload.amount_due,
+      if (payload.supersedes_document_id) {
+        const supersedeResult = await client
+          .from('matter_financial_documents')
+          .update({
+            document_status: 'superseded',
+            updated_at: now,
+          })
+          .eq('id', payload.supersedes_document_id)
+          .eq('financial_account_id', account.id)
+        if (supersedeResult.error && !isMissingTableError(supersedeResult.error, 'matter_financial_documents')) {
+          throw supersedeResult.error
+        }
+      }
+
+      await insertMatterFinancialAccountEventIfPossible(client, {
+        financialAccountId: account.id,
+        transactionId: account.transaction_id,
+        eventType: publishNow ? 'financial_document_uploaded_and_published' : 'financial_document_uploaded_as_draft',
+        actorProfile,
+        payload: {
+          documentId: data.id,
+          documentType: normalizedDocumentType,
+          audienceRole: normalizedAudienceRole,
+          title: payload.title,
+          amountTotal: payload.amount_total,
+          amountDue: payload.amount_due,
+        },
+      })
+
+      return buildMatterFinancialDocumentViewModel(data, data.storage_path ? await getSignedUrl(data.storage_path) : null)
     },
   })
-
-  return buildMatterFinancialDocumentViewModel(data, data.storage_path ? await getSignedUrl(data.storage_path) : null)
 }
 
 export async function createMatterFinancialDocumentRequest({
@@ -25964,60 +25967,78 @@ export async function uploadClientPortalMatterFinancialProof({
     throw new Error('Select a proof of payment file to upload.')
   }
 
+  const filePolicy = validateDocumentUploadFile(file, { surface: 'client_financial_proof' })
   const client = requireClientPortalTokenClient(normalizedToken)
-  const safeName = String(file.name || 'proof-of-payment')
-    .trim()
-    .replace(/[^a-zA-Z0-9._-]/g, '-')
-  const filePath = `matter-financial-proof/${String(workspace || 'buyer')
-    .trim()
-    .toLowerCase()}/${normalizedAccountId}/${crypto.randomUUID()}-${safeName}`
-  const storageBucket = await uploadToDocumentsBucket(client, filePath, file, {
-    upsert: false,
-    contentType: file.type || undefined,
+  const safeName = filePolicy.safeName
+  return runRecoverableDocumentUpload({ client, scope: ['uploadClientPortalMatterFinancialProof', normalizedToken, workspace, normalizedAccountId, requestId, amount, paidOn, reference, notes], file, storageBuckets: DOCUMENTS_BUCKET_CANDIDATES,
+    toSavedReceipt: result => ({ document: buildClientPortalMatterFinancialDocumentViewModel(result.data.document), request: result.data.request || null, message: 'Document saved for attorney review.' }),
+    run: async attempt => {
+      const filePath = attempt.path(`matter-financial-proof/${String(workspace || 'buyer')
+        .trim()
+        .toLowerCase()}/${normalizedAccountId}/${crypto.randomUUID()}-${safeName}`)
+      const storageBucket = await attempt.upload(() => uploadToDocumentsBucket(client, filePath, file, {
+        upsert: false,
+        contentType: filePolicy.mimeType,
+      }))
+
+      const rpc = await attempt.persist({
+        save: async () => {
+          const rpc = await client.rpc('bridge_client_portal_upload_matter_financial_proof', {
+            p_workspace: String(workspace || 'buyer')
+              .trim()
+              .toLowerCase(),
+            p_financial_account_id: normalizedAccountId,
+            p_storage_bucket: storageBucket || null,
+            p_storage_path: filePath,
+            p_file_name: safeName,
+            p_mime_type: filePolicy.mimeType,
+            p_file_size_bytes: normalizeOptionalNumber(file.size),
+            p_amount: normalizeOptionalNumber(amount),
+            p_paid_on: normalizeOptionalDate(paidOn),
+            p_reference: normalizeNullableText(reference),
+            p_notes: normalizeNullableText(notes),
+            p_request_id: normalizeNullableText(requestId),
+          })
+
+          if (rpc.error) {
+            if (isMissingRpcFunctionError(rpc.error, 'bridge_client_portal_upload_matter_financial_proof')) {
+              throw new Error(
+                'Payment proof upload is not available yet. Please ask your legal team to enable matter account uploads.',
+              )
+            }
+            throw rpc.error
+          }
+
+          return rpc
+        },
+        read: async () => {
+          const reopened = await client.rpc('bridge_client_portal_matter_financial_accounts', { p_workspace: String(workspace || 'buyer').trim().toLowerCase() })
+          if (reopened.error) throw reopened.error
+          const account = reopened.data?.accounts?.find(row => row.id === normalizedAccountId)
+          const document = account?.documents?.find(row => (row.storagePath || row.storage_path) === filePath)
+          return document ? { data: { document, request: account.requests?.find(row => row.id === requestId) || null } } : null
+        },
+        cleanup: () => removeUploadedDocumentObject(client, storageBucket, filePath),
+      })
+
+      const payload = rpc.data && typeof rpc.data === 'object' ? rpc.data : {}
+      const document = payload.document ? buildClientPortalMatterFinancialDocumentViewModel(payload.document) : null
+      return {
+        document: document
+          ? {
+              ...document,
+              url: document.storagePath
+                ? await getSignedUrl(document.storagePath, {
+                    client,
+                    fileBucket: document.storageBucket || document.fileBucket || storageBucket || '',
+                  })
+                : null,
+            }
+          : null,
+        message: payload.message || 'Proof of payment uploaded for attorney review.',
+      }
+    },
   })
-
-  const rpc = await client.rpc('bridge_client_portal_upload_matter_financial_proof', {
-    p_workspace: String(workspace || 'buyer')
-      .trim()
-      .toLowerCase(),
-    p_financial_account_id: normalizedAccountId,
-    p_storage_bucket: storageBucket || null,
-    p_storage_path: filePath,
-    p_file_name: safeName,
-    p_mime_type: normalizeNullableText(file.type),
-    p_file_size_bytes: normalizeOptionalNumber(file.size),
-    p_amount: normalizeOptionalNumber(amount),
-    p_paid_on: normalizeOptionalDate(paidOn),
-    p_reference: normalizeNullableText(reference),
-    p_notes: normalizeNullableText(notes),
-    p_request_id: normalizeNullableText(requestId),
-  })
-
-  if (rpc.error) {
-    if (isMissingRpcFunctionError(rpc.error, 'bridge_client_portal_upload_matter_financial_proof')) {
-      throw new Error(
-        'Payment proof upload is not available yet. Please ask your legal team to enable matter account uploads.',
-      )
-    }
-    throw rpc.error
-  }
-
-  const payload = rpc.data && typeof rpc.data === 'object' ? rpc.data : {}
-  const document = payload.document ? buildClientPortalMatterFinancialDocumentViewModel(payload.document) : null
-  return {
-    document: document
-      ? {
-          ...document,
-          url: document.storagePath
-            ? await getSignedUrl(document.storagePath, {
-                client,
-                fileBucket: document.storageBucket || document.fileBucket || storageBucket || '',
-              })
-            : null,
-        }
-      : null,
-    message: payload.message || 'Proof of payment uploaded for attorney review.',
-  }
 }
 
 export async function uploadClientPortalMatterFinancialRequestDocument({
@@ -26047,61 +26068,79 @@ export async function uploadClientPortalMatterFinancialRequestDocument({
     throw new Error('Select the requested finance document to upload.')
   }
 
+  const filePolicy = validateDocumentUploadFile(file, { surface: 'client_financial_request' })
   const client = requireClientPortalTokenClient(normalizedToken)
-  const safeName = String(file.name || 'finance-document')
-    .trim()
-    .replace(/[^a-zA-Z0-9._-]/g, '-')
-  const filePath = `matter-financial-request-documents/${String(workspace || 'buyer')
-    .trim()
-    .toLowerCase()}/${normalizedAccountId}/${normalizedRequestId}/${crypto.randomUUID()}-${safeName}`
-  const storageBucket = await uploadToDocumentsBucket(client, filePath, file, {
-    upsert: false,
-    contentType: file.type || undefined,
+  const safeName = filePolicy.safeName
+  return runRecoverableDocumentUpload({ client, scope: ['uploadClientPortalMatterFinancialRequestDocument', normalizedToken, workspace, normalizedAccountId, normalizedRequestId, amount, documentDate, reference, notes], file, storageBuckets: DOCUMENTS_BUCKET_CANDIDATES,
+    toSavedReceipt: result => ({ document: buildClientPortalMatterFinancialDocumentViewModel(result.data.document), request: result.data.request || null, message: 'Document saved for attorney review.' }),
+    run: async attempt => {
+      const filePath = attempt.path(`matter-financial-request-documents/${String(workspace || 'buyer')
+        .trim()
+        .toLowerCase()}/${normalizedAccountId}/${normalizedRequestId}/${crypto.randomUUID()}-${safeName}`)
+      const storageBucket = await attempt.upload(() => uploadToDocumentsBucket(client, filePath, file, {
+        upsert: false,
+        contentType: filePolicy.mimeType,
+      }))
+
+      const rpc = await attempt.persist({
+        save: async () => {
+          const rpc = await client.rpc('bridge_client_portal_submit_matter_financial_request_document', {
+            p_workspace: String(workspace || 'buyer')
+              .trim()
+              .toLowerCase(),
+            p_financial_account_id: normalizedAccountId,
+            p_request_id: normalizedRequestId,
+            p_storage_bucket: storageBucket || null,
+            p_storage_path: filePath,
+            p_file_name: safeName,
+            p_mime_type: filePolicy.mimeType,
+            p_file_size_bytes: normalizeOptionalNumber(file.size),
+            p_amount: normalizeOptionalNumber(amount),
+            p_document_date: normalizeOptionalDate(documentDate),
+            p_reference: normalizeNullableText(reference),
+            p_notes: normalizeNullableText(notes),
+          })
+
+          if (rpc.error) {
+            if (isMissingRpcFunctionError(rpc.error, 'bridge_client_portal_submit_matter_financial_request_document')) {
+              throw new Error(
+                'Finance request uploads are not available yet. Please ask your legal team to enable the submission checklist.',
+              )
+            }
+            throw rpc.error
+          }
+
+          return rpc
+        },
+        read: async () => {
+          const reopened = await client.rpc('bridge_client_portal_matter_financial_accounts', { p_workspace: String(workspace || 'buyer').trim().toLowerCase() })
+          if (reopened.error) throw reopened.error
+          const account = reopened.data?.accounts?.find(row => row.id === normalizedAccountId)
+          const document = account?.documents?.find(row => (row.storagePath || row.storage_path) === filePath)
+          return document ? { data: { document, request: account.requests?.find(row => row.id === normalizedRequestId) || null } } : null
+        },
+        cleanup: () => removeUploadedDocumentObject(client, storageBucket, filePath),
+      })
+
+      const payload = rpc.data && typeof rpc.data === 'object' ? rpc.data : {}
+      const document = payload.document ? buildClientPortalMatterFinancialDocumentViewModel(payload.document) : null
+      return {
+        document: document
+          ? {
+              ...document,
+              url: document.storagePath
+                ? await getSignedUrl(document.storagePath, {
+                    client,
+                    fileBucket: document.storageBucket || document.fileBucket || storageBucket || '',
+                  })
+                : null,
+            }
+          : null,
+        request: payload.request || null,
+        message: payload.message || 'Document uploaded against the request for attorney review.',
+      }
+    },
   })
-
-  const rpc = await client.rpc('bridge_client_portal_submit_matter_financial_request_document', {
-    p_workspace: String(workspace || 'buyer')
-      .trim()
-      .toLowerCase(),
-    p_financial_account_id: normalizedAccountId,
-    p_request_id: normalizedRequestId,
-    p_storage_bucket: storageBucket || null,
-    p_storage_path: filePath,
-    p_file_name: safeName,
-    p_mime_type: normalizeNullableText(file.type),
-    p_file_size_bytes: normalizeOptionalNumber(file.size),
-    p_amount: normalizeOptionalNumber(amount),
-    p_document_date: normalizeOptionalDate(documentDate),
-    p_reference: normalizeNullableText(reference),
-    p_notes: normalizeNullableText(notes),
-  })
-
-  if (rpc.error) {
-    if (isMissingRpcFunctionError(rpc.error, 'bridge_client_portal_submit_matter_financial_request_document')) {
-      throw new Error(
-        'Finance request uploads are not available yet. Please ask your legal team to enable the submission checklist.',
-      )
-    }
-    throw rpc.error
-  }
-
-  const payload = rpc.data && typeof rpc.data === 'object' ? rpc.data : {}
-  const document = payload.document ? buildClientPortalMatterFinancialDocumentViewModel(payload.document) : null
-  return {
-    document: document
-      ? {
-          ...document,
-          url: document.storagePath
-            ? await getSignedUrl(document.storagePath, {
-                client,
-                fileBucket: document.storageBucket || document.fileBucket || storageBucket || '',
-              })
-            : null,
-        }
-      : null,
-    request: payload.request || null,
-    message: payload.message || 'Document uploaded against the request for attorney review.',
-  }
 }
 
 async function deactivateExistingUnitTransactions(client, unitId) {
@@ -45820,205 +45859,216 @@ export async function uploadOnboardingRequiredDocument({ token, documentKey, fil
   const previousReadiness = await computeTransactionReadinessSnapshot(client, transaction.id)
 
   const safeName = filePolicy.safeName
-  const filePath = `onboarding/${transaction.id}/${requiredDocument.key}/${Date.now()}-${safeName}`
-  const uploadedBucket = await uploadToDocumentsBucket(client, filePath, file)
+  return runRecoverableDocumentUpload({ client: client, scope: ['buyer_onboarding', token, transaction.id, requiredDocument.key], file, storageBuckets: DOCUMENTS_BUCKET_CANDIDATES,
+    toSavedReceipt: result => ({ documentId: result.data.id, documentKey: requiredDocument.key, filePath: result.data.file_path }),
+    run: async attempt => {
+      const filePath = attempt.path(`onboarding/${transaction.id}/${requiredDocument.key}/${Date.now()}-${safeName}`)
+      const uploadedBucket = await attempt.upload(() => uploadToDocumentsBucket(client, filePath, file))
 
-  const baseDocumentPayload = {
-    transaction_id: transaction.id,
-    name: `${requiredDocument.label} - ${safeName}`,
-    file_path: filePath,
-    category: requiredDocument.label,
-    document_type:
-      normalizePortalDocumentType(
-        requiredDocument.portalDocumentType || requiredDocument.key || requiredDocument.label,
-      ) || 'other',
-    visibility_scope: 'shared',
-    uploaded_by_user_id: null,
-    stage_key: null,
-    is_client_visible: true,
-    uploaded_by_role: 'client',
-    uploaded_by_email: buyer?.email || null,
-  }
-
-  let insertResult = await client
-    .from('documents')
-    .insert(baseDocumentPayload)
-    .select('id, transaction_id, name, file_path, category, is_client_visible, created_at')
-    .single()
-
-  if (
-    insertResult.error &&
-    (isMissingColumnError(insertResult.error, 'document_type') ||
-      isMissingColumnError(insertResult.error, 'visibility_scope') ||
-      isMissingColumnError(insertResult.error, 'uploaded_by_user_id') ||
-      isMissingColumnError(insertResult.error, 'stage_key') ||
-      isMissingColumnError(insertResult.error, 'uploaded_by_role') ||
-      isMissingColumnError(insertResult.error, 'uploaded_by_email'))
-  ) {
-    insertResult = await client
-      .from('documents')
-      .insert({
+      const baseDocumentPayload = {
         transaction_id: transaction.id,
         name: `${requiredDocument.label} - ${safeName}`,
         file_path: filePath,
         category: requiredDocument.label,
+        document_type:
+          normalizePortalDocumentType(
+            requiredDocument.portalDocumentType || requiredDocument.key || requiredDocument.label,
+          ) || 'other',
+        visibility_scope: 'shared',
+        uploaded_by_user_id: null,
+        stage_key: null,
         is_client_visible: true,
-      })
-      .select('id, transaction_id, name, file_path, category, is_client_visible, created_at')
-      .single()
-  }
+        uploaded_by_role: 'client',
+        uploaded_by_email: buyer?.email || null,
+      }
 
-  if (insertResult.error && isMissingColumnError(insertResult.error, 'is_client_visible')) {
-    insertResult = await client
-      .from('documents')
-      .insert({
-        transaction_id: transaction.id,
-        name: `${requiredDocument.label} - ${safeName}`,
-        file_path: filePath,
+      const insertResult = await attempt.persist({
+        save: async () => {
+          let insertResult = await client
+            .from('documents')
+            .insert(baseDocumentPayload)
+            .select('id, transaction_id, name, file_path, category, is_client_visible, created_at')
+            .single()
+
+          if (
+            insertResult.error &&
+            (isMissingColumnError(insertResult.error, 'document_type') ||
+              isMissingColumnError(insertResult.error, 'visibility_scope') ||
+              isMissingColumnError(insertResult.error, 'uploaded_by_user_id') ||
+              isMissingColumnError(insertResult.error, 'stage_key') ||
+              isMissingColumnError(insertResult.error, 'uploaded_by_role') ||
+              isMissingColumnError(insertResult.error, 'uploaded_by_email'))
+          ) {
+            insertResult = await client
+              .from('documents')
+              .insert({
+                transaction_id: transaction.id,
+                name: `${requiredDocument.label} - ${safeName}`,
+                file_path: filePath,
+                category: requiredDocument.label,
+                is_client_visible: true,
+              })
+              .select('id, transaction_id, name, file_path, category, is_client_visible, created_at')
+              .single()
+          }
+
+          if (insertResult.error && isMissingColumnError(insertResult.error, 'is_client_visible')) {
+            insertResult = await client
+              .from('documents')
+              .insert({
+                transaction_id: transaction.id,
+                name: `${requiredDocument.label} - ${safeName}`,
+                file_path: filePath,
+                category: requiredDocument.label,
+              })
+              .select('id, transaction_id, name, file_path, category, created_at')
+              .single()
+          }
+
+          if (insertResult.error) {
+            await removeDocumentUploadObjectAfterFailedPersistence(client, {
+              bucket: uploadedBucket,
+              filePath,
+              error: insertResult.error,
+            })
+            throw insertResult.error
+          }
+          return insertResult
+        },
+        read: () => readSavedUploadByPath(client, { table: 'documents', column: 'file_path', path: filePath, filters: { transaction_id: transaction.id } }),
+      })
+
+      const now = new Date().toISOString()
+      let { error: requirementUpdateError } = await client
+        .from('transaction_required_documents')
+        .update({
+          is_uploaded: true,
+          uploaded_document_id: insertResult.data.id,
+          status: 'uploaded',
+          uploaded_at: now,
+          updated_at: now,
+        })
+        .eq('transaction_id', transaction.id)
+        .eq('document_key', requiredDocument.key)
+
+      if (
+        requirementUpdateError &&
+        (isMissingColumnError(requirementUpdateError, 'status') ||
+          isMissingColumnError(requirementUpdateError, 'uploaded_at'))
+      ) {
+        const legacyRequirementUpdate = await client
+          .from('transaction_required_documents')
+          .update({
+            is_uploaded: true,
+            uploaded_document_id: insertResult.data.id,
+            updated_at: now,
+          })
+          .eq('transaction_id', transaction.id)
+          .eq('document_key', requiredDocument.key)
+        requirementUpdateError = legacyRequirementUpdate.error
+      }
+
+      if (requirementUpdateError && !isMissingTableError(requirementUpdateError, 'transaction_required_documents')) {
+        throw requirementUpdateError
+      }
+
+      await logTransactionEventIfPossible(client, {
+        transactionId: transaction.id,
+        eventType: 'DocumentUploaded',
+        createdByRole: 'client',
+        eventData: {
+          documentId: insertResult.data?.id || null,
+          documentName: insertResult.data?.name || `${requiredDocument.label} - ${safeName}`,
+          category: requiredDocument.label,
+          requiredDocumentKey: requiredDocument.key,
+          source: 'onboarding',
+          visibilityScope: 'shared',
+        },
+      })
+
+      const readiness = await runDocumentAutomationIfPossible(client, {
+        transactionId: transaction.id,
+        documentId: insertResult.data.id,
+        documentName: insertResult.data?.name || `${requiredDocument.label} - ${safeName}`,
+        documentType: requiredDocument.portalDocumentType || requiredDocument.key || requiredDocument.label,
         category: requiredDocument.label,
+        actorRole: 'client',
+        actorUserId: null,
+        source: 'onboarding_upload',
+        requiredDocumentKey: requiredDocument.key,
       })
-      .select('id, transaction_id, name, file_path, category, created_at')
-      .single()
-  }
 
-  if (insertResult.error) {
-    await removeDocumentUploadObjectAfterFailedPersistence(client, {
-      bucket: uploadedBucket,
-      filePath,
-      error: insertResult.error,
-    })
-    throw insertResult.error
-  }
+      if (isBondFinanceType(financeSnapshot.financeType) && financeManagedBy === 'bond_originator') {
+        try {
+          const bondDocumentsCompleteResult = await checkAndNotifyBondDocumentsComplete({
+            transaction: {
+              ...transaction,
+              finance_type: financeSnapshot.financeType || transaction.finance_type,
+              finance_managed_by: financeManagedBy,
+              buyer_name: buyer?.name || null,
+              buyer_email: buyer?.email || null,
+            },
+            previousMissingCount: previousReadiness?.missingRequiredDocs,
+            readiness,
+            actor: { roleType: 'client' },
+            metadata: {
+              source: 'onboarding_upload',
+              documentKey: requiredDocument.key,
+              documentId: insertResult.data.id,
+              financeManagedBy,
+            },
+            client,
+          })
+          const bondProgress = getBondApplicationProgress({
+            transaction,
+            onboardingFormData: formData,
+          })
+          await checkAndNotifyBondApplicationReadyForReview({
+            transaction: {
+              ...transaction,
+              finance_type: financeSnapshot.financeType || transaction.finance_type,
+              finance_managed_by: financeManagedBy,
+              buyer_name: buyer?.name || null,
+              buyer_email: buyer?.email || null,
+            },
+            previousReadyForReview: Boolean(
+              previousReadiness?.docsComplete && bondProgress.status === BOND_APPLICATION_PROGRESS_STATUSES.SUBMITTED,
+            ),
+            currentReadyForReview: Boolean(
+              readiness?.docsComplete && bondProgress.status === BOND_APPLICATION_PROGRESS_STATUSES.SUBMITTED,
+            ),
+            actor: { roleType: 'client' },
+            metadata: {
+              source: 'onboarding_upload',
+              documentKey: requiredDocument.key,
+              documentId: insertResult.data.id,
+              financeManagedBy,
+            },
+            client,
+          })
+          await notifyAttorneysForBondDocumentsComplete(client, {
+            transactionId: transaction.id,
+            result: bondDocumentsCompleteResult,
+            actor: { roleType: 'client' },
+            metadata: {
+              source: 'onboarding_upload',
+              documentKey: requiredDocument.key,
+              documentId: insertResult.data.id,
+              financeManagedBy,
+            },
+          })
+        } catch (bondNotificationError) {
+          console.warn('Bond document completion notification failed', bondNotificationError)
+        }
+      }
 
-  const now = new Date().toISOString()
-  let { error: requirementUpdateError } = await client
-    .from('transaction_required_documents')
-    .update({
-      is_uploaded: true,
-      uploaded_document_id: insertResult.data.id,
-      status: 'uploaded',
-      uploaded_at: now,
-      updated_at: now,
-    })
-    .eq('transaction_id', transaction.id)
-    .eq('document_key', requiredDocument.key)
-
-  if (
-    requirementUpdateError &&
-    (isMissingColumnError(requirementUpdateError, 'status') ||
-      isMissingColumnError(requirementUpdateError, 'uploaded_at'))
-  ) {
-    const legacyRequirementUpdate = await client
-      .from('transaction_required_documents')
-      .update({
-        is_uploaded: true,
-        uploaded_document_id: insertResult.data.id,
-        updated_at: now,
-      })
-      .eq('transaction_id', transaction.id)
-      .eq('document_key', requiredDocument.key)
-    requirementUpdateError = legacyRequirementUpdate.error
-  }
-
-  if (requirementUpdateError && !isMissingTableError(requirementUpdateError, 'transaction_required_documents')) {
-    throw requirementUpdateError
-  }
-
-  await logTransactionEventIfPossible(client, {
-    transactionId: transaction.id,
-    eventType: 'DocumentUploaded',
-    createdByRole: 'client',
-    eventData: {
-      documentId: insertResult.data?.id || null,
-      documentName: insertResult.data?.name || `${requiredDocument.label} - ${safeName}`,
-      category: requiredDocument.label,
-      requiredDocumentKey: requiredDocument.key,
-      source: 'onboarding',
-      visibilityScope: 'shared',
+      return {
+        documentId: insertResult.data.id,
+        documentKey: requiredDocument.key,
+        filePath,
+      }
     },
   })
-
-  const readiness = await runDocumentAutomationIfPossible(client, {
-    transactionId: transaction.id,
-    documentId: insertResult.data.id,
-    documentName: insertResult.data?.name || `${requiredDocument.label} - ${safeName}`,
-    documentType: requiredDocument.portalDocumentType || requiredDocument.key || requiredDocument.label,
-    category: requiredDocument.label,
-    actorRole: 'client',
-    actorUserId: null,
-    source: 'onboarding_upload',
-    requiredDocumentKey: requiredDocument.key,
-  })
-
-  if (isBondFinanceType(financeSnapshot.financeType) && financeManagedBy === 'bond_originator') {
-    try {
-      const bondDocumentsCompleteResult = await checkAndNotifyBondDocumentsComplete({
-        transaction: {
-          ...transaction,
-          finance_type: financeSnapshot.financeType || transaction.finance_type,
-          finance_managed_by: financeManagedBy,
-          buyer_name: buyer?.name || null,
-          buyer_email: buyer?.email || null,
-        },
-        previousMissingCount: previousReadiness?.missingRequiredDocs,
-        readiness,
-        actor: { roleType: 'client' },
-        metadata: {
-          source: 'onboarding_upload',
-          documentKey: requiredDocument.key,
-          documentId: insertResult.data.id,
-          financeManagedBy,
-        },
-        client,
-      })
-      const bondProgress = getBondApplicationProgress({
-        transaction,
-        onboardingFormData: formData,
-      })
-      await checkAndNotifyBondApplicationReadyForReview({
-        transaction: {
-          ...transaction,
-          finance_type: financeSnapshot.financeType || transaction.finance_type,
-          finance_managed_by: financeManagedBy,
-          buyer_name: buyer?.name || null,
-          buyer_email: buyer?.email || null,
-        },
-        previousReadyForReview: Boolean(
-          previousReadiness?.docsComplete && bondProgress.status === BOND_APPLICATION_PROGRESS_STATUSES.SUBMITTED,
-        ),
-        currentReadyForReview: Boolean(
-          readiness?.docsComplete && bondProgress.status === BOND_APPLICATION_PROGRESS_STATUSES.SUBMITTED,
-        ),
-        actor: { roleType: 'client' },
-        metadata: {
-          source: 'onboarding_upload',
-          documentKey: requiredDocument.key,
-          documentId: insertResult.data.id,
-          financeManagedBy,
-        },
-        client,
-      })
-      await notifyAttorneysForBondDocumentsComplete(client, {
-        transactionId: transaction.id,
-        result: bondDocumentsCompleteResult,
-        actor: { roleType: 'client' },
-        metadata: {
-          source: 'onboarding_upload',
-          documentKey: requiredDocument.key,
-          documentId: insertResult.data.id,
-          financeManagedBy,
-        },
-      })
-    } catch (bondNotificationError) {
-      console.warn('Bond document completion notification failed', bondNotificationError)
-    }
-  }
-
-  return {
-    documentId: insertResult.data.id,
-    documentKey: requiredDocument.key,
-    filePath,
-  }
 }
 
 export async function updateTransactionRequiredDocumentStatus({
@@ -49290,191 +49340,188 @@ export async function uploadClientPortalDocument({
     buyerEmail = normalizeNullableText(buyerQuery.data?.email)
   }
 
-  const timestamp = Date.now()
-  const generatedFileName = isReservationDepositProofUpload
-    ? buildReservationDepositProofFileName({
-        developmentName,
-        unitReference,
-        buyerName,
-        originalFileName: filePolicy.safeName,
-        timestamp,
+  return runRecoverableDocumentUpload({ client: client, scope: ['buyer_portal', token, link.transaction_id, category, requiredDocumentKey, canonicalRequirementInstanceId, documentRequestId, documentType, bucketKey, financeLane, relatedEntityType, relatedEntityId], file,
+    run: async attempt => {
+      const timestamp = Date.now()
+      const generatedFileName = isReservationDepositProofUpload
+        ? buildReservationDepositProofFileName({
+            developmentName,
+            unitReference,
+            buyerName,
+            originalFileName: filePolicy.safeName,
+            timestamp,
+          })
+        : `${timestamp}-${filePolicy.safeName}`
+      const filePath = attempt.path(`client-portal/${link.transaction_id}/${generatedFileName}`)
+      const persistedDocumentName = isReservationDepositProofUpload ? generatedFileName : filePolicy.safeName
+
+      const uploadedBucket = await attempt.upload(() => uploadToBuyerPortalDocumentsBucket(client, filePath, file))
+      const rpcResult = await attempt.persist({
+        save: async () => {
+          let rpcResult
+          const requestOnlyUpload = Boolean(
+            normalizeNullableUuid(documentRequestId) &&
+            !normalizeNullableUuid(canonicalRequirementInstanceId) &&
+            !normalizeNullableText(requiredDocumentKey),
+          )
+          rpcResult = requestOnlyUpload
+            ? await client.rpc('bridge_upload_buyer_portal_requested_document', {
+                p_transaction_id: link.transaction_id,
+                p_document_request_id: normalizeNullableUuid(documentRequestId),
+                p_file_path: filePath,
+                p_file_bucket: uploadedBucket || fileBucket || 'documents',
+                p_document_name: persistedDocumentName,
+                p_category: category || 'Additional Requests',
+                p_document_type: normalizedDocumentType,
+              })
+            : await client.rpc('bridge_upload_buyer_portal_document', {
+                p_transaction_id: link.transaction_id,
+                p_file_path: filePath,
+                p_file_bucket: uploadedBucket || fileBucket || 'documents',
+                p_document_name: persistedDocumentName,
+                p_category: category || 'Client Portal',
+                p_document_type: normalizedDocumentType,
+                p_required_document_key:
+                  requiredDocumentKey || (isReservationDepositProofUpload ? 'reservation_deposit_proof' : null),
+                p_requirement_instance_id: normalizeNullableUuid(canonicalRequirementInstanceId),
+                p_document_request_id: normalizeNullableUuid(documentRequestId),
+                p_bucket_key: normalizeNullableText(bucketKey),
+                p_finance_lane: normalizeNullableText(financeLane),
+                p_related_entity_type: normalizeNullableText(relatedEntityType),
+                p_related_entity_id: normalizeNullableUuid(relatedEntityId),
+              })
+
+          if (rpcResult.error) throw rpcResult.error
+          if (!rpcResult.data?.id) throw new Error('Buyer portal document upload did not return a document record.')
+          return rpcResult
+        },
+        cleanup: () => removeUploadedDocumentObject(client, uploadedBucket, filePath),
+        read: () => readSavedUploadByPath(client, { table: 'documents', column: 'file_path', path: filePath, filters: { transaction_id: link.transaction_id } }),
       })
-    : `${timestamp}-${filePolicy.safeName}`
-  const filePath = `client-portal/${link.transaction_id}/${generatedFileName}`
-  const persistedDocumentName = isReservationDepositProofUpload ? generatedFileName : filePolicy.safeName
 
-  const uploadedBucket = await uploadToBuyerPortalDocumentsBucket(client, filePath, file)
-  let rpcResult
-  try {
-    const requestOnlyUpload = Boolean(
-      normalizeNullableUuid(documentRequestId) &&
-      !normalizeNullableUuid(canonicalRequirementInstanceId) &&
-      !normalizeNullableText(requiredDocumentKey),
-    )
-    rpcResult = requestOnlyUpload
-      ? await client.rpc('bridge_upload_buyer_portal_requested_document', {
-          p_transaction_id: link.transaction_id,
-          p_document_request_id: normalizeNullableUuid(documentRequestId),
-          p_file_path: filePath,
-          p_file_bucket: uploadedBucket || fileBucket || 'documents',
-          p_document_name: persistedDocumentName,
-          p_category: category || 'Additional Requests',
-          p_document_type: normalizedDocumentType,
-        })
-      : await client.rpc('bridge_upload_buyer_portal_document', {
-          p_transaction_id: link.transaction_id,
-          p_file_path: filePath,
-          p_file_bucket: uploadedBucket || fileBucket || 'documents',
-          p_document_name: persistedDocumentName,
-          p_category: category || 'Client Portal',
-          p_document_type: normalizedDocumentType,
-          p_required_document_key:
-            requiredDocumentKey || (isReservationDepositProofUpload ? 'reservation_deposit_proof' : null),
-          p_requirement_instance_id: normalizeNullableUuid(canonicalRequirementInstanceId),
-          p_document_request_id: normalizeNullableUuid(documentRequestId),
-          p_bucket_key: normalizeNullableText(bucketKey),
-          p_finance_lane: normalizeNullableText(financeLane),
-          p_related_entity_type: normalizeNullableText(relatedEntityType),
-          p_related_entity_id: normalizeNullableUuid(relatedEntityId),
-        })
+      const result = { data: rpcResult.data, error: null }
 
-    if (rpcResult.error) throw rpcResult.error
-    if (!rpcResult.data?.id) throw new Error('Buyer portal document upload did not return a document record.')
-  } catch (databaseError) {
-    try {
-      await removeUploadedDocumentObject(client, uploadedBucket, filePath)
-    } catch (cleanupError) {
-      console.error('Buyer portal upload rollback could not remove its storage object', {
-        bucket: uploadedBucket,
-        filePath,
-        cleanupError,
-      })
-      databaseError.storageCleanupError = cleanupError
-    }
-    throw databaseError
-  }
+      // The document row and canonical requirement are already committed at this
+      // point. Projections, automation and notifications are follow-up work and
+      // must not keep the buyer staring at an Uploading state.
+      void (async () => {
+        const {
+          transactionForBondNotifications,
+          onboardingFormDataForBondNotifications,
+          previousReadiness,
+        } = await postUploadContextPromise
 
-  const result = { data: rpcResult.data, error: null }
-
-  // The document row and canonical requirement are already committed at this
-  // point. Projections, automation and notifications are follow-up work and
-  // must not keep the buyer staring at an Uploading state.
-  void (async () => {
-    const {
-      transactionForBondNotifications,
-      onboardingFormDataForBondNotifications,
-      previousReadiness,
-    } = await postUploadContextPromise
-
-    if (!documentRequestId) {
-      await updateDocumentRequestFromUploadIfPossible(client, {
-        transactionId: link.transaction_id,
-        documentId: result.data.id,
-        category: result.data.category || category || 'Client Portal',
-        documentName: result.data.name,
-        actorRole: 'client',
-        actorUserId: null,
-      }).catch((requestLinkError) => {
-        console.warn('Buyer portal upload request projection failed after the atomic upload completed', requestLinkError)
-      })
-    }
-
-    let readiness = null
-    try {
-      readiness = await runDocumentAutomationIfPossible(client, {
-        transactionId: link.transaction_id,
-        documentId: result.data.id,
-        documentName: result.data.name,
-        documentType: normalizedDocumentType,
-        category: result.data.category || category || 'Client Portal',
-        requiredDocumentKey: requiredDocumentKey || (isReservationDepositProofUpload ? 'reservation_deposit_proof' : null),
-        actorRole: 'client',
-        actorUserId: null,
-        source: normalizeNullableText(source) || 'client_portal_upload',
-      })
-    } catch (automationError) {
-      console.warn('Buyer portal post-upload automation failed after the atomic upload completed', automationError)
-      readiness = await computeTransactionReadinessSnapshot(client, link.transaction_id).catch(() => null)
-    }
-
-    const financeTypeForBondNotifications =
-      readiness?.financeType ||
-      transactionForBondNotifications?.finance_type ||
-      transactionForBondNotifications?.financeType
-    const financeManagedByForBondNotifications = deriveFinanceManagedBy({
-      financeType: financeTypeForBondNotifications,
-      financeManagedBy:
-        transactionForBondNotifications?.finance_managed_by ||
-        transactionForBondNotifications?.financeManagedBy,
-      formData: onboardingFormDataForBondNotifications,
-    })
-    if (
-      transactionForBondNotifications &&
-      isBondFinanceType(financeTypeForBondNotifications) &&
-      financeManagedByForBondNotifications === 'bond_originator'
-    ) {
-      try {
-        const notificationTransaction = {
-          ...transactionForBondNotifications,
-          finance_type: financeTypeForBondNotifications,
-          finance_managed_by: financeManagedByForBondNotifications,
-          buyer_name: buyerName || transactionForBondNotifications.buyer_name || null,
-          buyer_email: buyerEmail || transactionForBondNotifications.buyer_email || null,
+        if (!documentRequestId) {
+          await updateDocumentRequestFromUploadIfPossible(client, {
+            transactionId: link.transaction_id,
+            documentId: result.data.id,
+            category: result.data.category || category || 'Client Portal',
+            documentName: result.data.name,
+            actorRole: 'client',
+            actorUserId: null,
+          }).catch((requestLinkError) => {
+            console.warn('Buyer portal upload request projection failed after the atomic upload completed', requestLinkError)
+          })
         }
-        const notificationMetadata = {
-          source: normalizeNullableText(source) || 'client_portal_upload',
-          documentKey: normalizedRequiredDocumentKey || null,
-          documentType: normalizedDocumentType,
-          documentId: result.data.id,
-          financeManagedBy: financeManagedByForBondNotifications,
+
+        let readiness = null
+        try {
+          readiness = await runDocumentAutomationIfPossible(client, {
+            transactionId: link.transaction_id,
+            documentId: result.data.id,
+            documentName: result.data.name,
+            documentType: normalizedDocumentType,
+            category: result.data.category || category || 'Client Portal',
+            requiredDocumentKey: requiredDocumentKey || (isReservationDepositProofUpload ? 'reservation_deposit_proof' : null),
+            actorRole: 'client',
+            actorUserId: null,
+            source: normalizeNullableText(source) || 'client_portal_upload',
+          })
+        } catch (automationError) {
+          console.warn('Buyer portal post-upload automation failed after the atomic upload completed', automationError)
+          readiness = await computeTransactionReadinessSnapshot(client, link.transaction_id).catch(() => null)
         }
-        const bondDocumentsCompleteResult = await checkAndNotifyBondDocumentsComplete({
-          transaction: notificationTransaction,
-          previousMissingCount: previousReadiness?.missingRequiredDocs,
-          readiness,
-          actor: { roleType: 'client' },
-          metadata: notificationMetadata,
-          client,
+
+        const financeTypeForBondNotifications =
+          readiness?.financeType ||
+          transactionForBondNotifications?.finance_type ||
+          transactionForBondNotifications?.financeType
+        const financeManagedByForBondNotifications = deriveFinanceManagedBy({
+          financeType: financeTypeForBondNotifications,
+          financeManagedBy:
+            transactionForBondNotifications?.finance_managed_by ||
+            transactionForBondNotifications?.financeManagedBy,
+          formData: onboardingFormDataForBondNotifications,
         })
-        const bondProgress = getBondApplicationProgress({
-          transaction: notificationTransaction,
-          onboardingFormData: onboardingFormDataForBondNotifications,
-        })
-        await checkAndNotifyBondApplicationReadyForReview({
-          transaction: notificationTransaction,
-          previousReadyForReview: Boolean(
-            previousReadiness?.docsComplete && bondProgress.status === BOND_APPLICATION_PROGRESS_STATUSES.SUBMITTED,
-          ),
-          currentReadyForReview: Boolean(
-            readiness?.docsComplete && bondProgress.status === BOND_APPLICATION_PROGRESS_STATUSES.SUBMITTED,
-          ),
-          actor: { roleType: 'client' },
-          metadata: notificationMetadata,
-          client,
-        })
-        await notifyAttorneysForBondDocumentsComplete(client, {
-          transactionId: link.transaction_id,
-          result: bondDocumentsCompleteResult,
-          actor: { roleType: 'client' },
-          metadata: notificationMetadata,
-        })
-      } catch (bondNotificationError) {
-        console.warn('Client portal bond document completion notification failed', bondNotificationError)
+        if (
+          transactionForBondNotifications &&
+          isBondFinanceType(financeTypeForBondNotifications) &&
+          financeManagedByForBondNotifications === 'bond_originator'
+        ) {
+          try {
+            const notificationTransaction = {
+              ...transactionForBondNotifications,
+              finance_type: financeTypeForBondNotifications,
+              finance_managed_by: financeManagedByForBondNotifications,
+              buyer_name: buyerName || transactionForBondNotifications.buyer_name || null,
+              buyer_email: buyerEmail || transactionForBondNotifications.buyer_email || null,
+            }
+            const notificationMetadata = {
+              source: normalizeNullableText(source) || 'client_portal_upload',
+              documentKey: normalizedRequiredDocumentKey || null,
+              documentType: normalizedDocumentType,
+              documentId: result.data.id,
+              financeManagedBy: financeManagedByForBondNotifications,
+            }
+            const bondDocumentsCompleteResult = await checkAndNotifyBondDocumentsComplete({
+              transaction: notificationTransaction,
+              previousMissingCount: previousReadiness?.missingRequiredDocs,
+              readiness,
+              actor: { roleType: 'client' },
+              metadata: notificationMetadata,
+              client,
+            })
+            const bondProgress = getBondApplicationProgress({
+              transaction: notificationTransaction,
+              onboardingFormData: onboardingFormDataForBondNotifications,
+            })
+            await checkAndNotifyBondApplicationReadyForReview({
+              transaction: notificationTransaction,
+              previousReadyForReview: Boolean(
+                previousReadiness?.docsComplete && bondProgress.status === BOND_APPLICATION_PROGRESS_STATUSES.SUBMITTED,
+              ),
+              currentReadyForReview: Boolean(
+                readiness?.docsComplete && bondProgress.status === BOND_APPLICATION_PROGRESS_STATUSES.SUBMITTED,
+              ),
+              actor: { roleType: 'client' },
+              metadata: notificationMetadata,
+              client,
+            })
+            await notifyAttorneysForBondDocumentsComplete(client, {
+              transactionId: link.transaction_id,
+              result: bondDocumentsCompleteResult,
+              actor: { roleType: 'client' },
+              metadata: notificationMetadata,
+            })
+          } catch (bondNotificationError) {
+            console.warn('Client portal bond document completion notification failed', bondNotificationError)
+          }
+        }
+      })().catch((postUploadError) => {
+        console.warn('Buyer portal post-upload processing failed after the atomic upload completed', postUploadError)
+      })
+
+      return {
+        ...result.data,
+        url: await createClientPortalDocumentSignedUrl({
+          token,
+          filePath: result.data.file_path,
+          fileBucket: result.data.file_bucket || uploadedBucket,
+          expiresInSeconds: 60,
+        }),
       }
-    }
-  })().catch((postUploadError) => {
-    console.warn('Buyer portal post-upload processing failed after the atomic upload completed', postUploadError)
+    },
   })
-
-  return {
-    ...result.data,
-    url: await createClientPortalDocumentSignedUrl({
-      token,
-      filePath: result.data.file_path,
-      fileBucket: result.data.file_bucket || uploadedBucket,
-      expiresInSeconds: 60,
-    }),
-  }
 }
 
 export async function reconcileClientPortalBondDocumentRequirements({
@@ -51389,110 +51436,120 @@ export async function uploadExternalDocument({
   const filePolicy = validateDocumentUploadFile(file, { surface: 'external_workspace', transactionId: targetTransactionId })
 
   const safeName = filePolicy.safeName
-  const filePath = `external-${access.id}/transaction-${targetTransactionId}/${Date.now()}-${safeName}`
-  const normalizedDocumentType =
-    normalizePortalDocumentType(requiredDocumentKey || category || file.name) || 'external_shared_document'
+  return runRecoverableDocumentUpload({ client: client, scope: ['external_workspace', accessToken, targetTransactionId, category, requiredDocumentKey], file, storageBuckets: DOCUMENTS_BUCKET_CANDIDATES,
+    run: async attempt => {
+      const filePath = attempt.path(`external-${access.id}/transaction-${targetTransactionId}/${Date.now()}-${safeName}`)
+      const normalizedDocumentType =
+        normalizePortalDocumentType(requiredDocumentKey || category || file.name) || 'external_shared_document'
 
-  const uploadedBucket = await uploadToDocumentsBucket(client, filePath, file)
+      const uploadedBucket = await attempt.upload(() => uploadToDocumentsBucket(client, filePath, file))
 
-  let result = await client
-    .from('documents')
-    .insert({
-      transaction_id: targetTransactionId,
-      name: safeName,
-      file_path: filePath,
-      category: category || 'General',
-      document_type: normalizedDocumentType,
-      visibility_scope: 'shared',
-      uploaded_by_user_id: null,
-      stage_key: null,
-      is_client_visible: true,
-      uploaded_by_role: access.role,
-      uploaded_by_email: access.email,
-      external_access_id: access.id,
-    })
-    .select(
-      'id, transaction_id, name, file_path, category, document_type, visibility_scope, stage_key, uploaded_by_user_id, is_client_visible, uploaded_by_role, uploaded_by_email, external_access_id, created_at',
-    )
-    .single()
+      const result = await attempt.persist({
+        save: async () => {
+          let result = await client
+            .from('documents')
+            .insert({
+              transaction_id: targetTransactionId,
+              name: safeName,
+              file_path: filePath,
+              category: category || 'General',
+              document_type: normalizedDocumentType,
+              visibility_scope: 'shared',
+              uploaded_by_user_id: null,
+              stage_key: null,
+              is_client_visible: true,
+              uploaded_by_role: access.role,
+              uploaded_by_email: access.email,
+              external_access_id: access.id,
+            })
+            .select(
+              'id, transaction_id, name, file_path, category, document_type, visibility_scope, stage_key, uploaded_by_user_id, is_client_visible, uploaded_by_role, uploaded_by_email, external_access_id, created_at',
+            )
+            .single()
 
-  if (
-    result.error &&
-    (isMissingColumnError(result.error, 'document_type') ||
-      isMissingColumnError(result.error, 'visibility_scope') ||
-      isMissingColumnError(result.error, 'stage_key') ||
-      isMissingColumnError(result.error, 'uploaded_by_user_id') ||
-      isMissingColumnError(result.error, 'is_client_visible') ||
-      isMissingColumnError(result.error, 'uploaded_by_role') ||
-      isMissingColumnError(result.error, 'uploaded_by_email') ||
-      isMissingColumnError(result.error, 'external_access_id'))
-  ) {
-    result = await client
-      .from('documents')
-      .insert({
-        transaction_id: targetTransactionId,
-        name: safeName,
-        file_path: filePath,
-        category: category || 'General',
+          if (
+            result.error &&
+            (isMissingColumnError(result.error, 'document_type') ||
+              isMissingColumnError(result.error, 'visibility_scope') ||
+              isMissingColumnError(result.error, 'stage_key') ||
+              isMissingColumnError(result.error, 'uploaded_by_user_id') ||
+              isMissingColumnError(result.error, 'is_client_visible') ||
+              isMissingColumnError(result.error, 'uploaded_by_role') ||
+              isMissingColumnError(result.error, 'uploaded_by_email') ||
+              isMissingColumnError(result.error, 'external_access_id'))
+          ) {
+            result = await client
+              .from('documents')
+              .insert({
+                transaction_id: targetTransactionId,
+                name: safeName,
+                file_path: filePath,
+                category: category || 'General',
+              })
+              .select('id, transaction_id, name, file_path, category, created_at')
+              .single()
+          }
+
+          if (result.error) {
+            reportDocumentUploadTelemetry({
+              surface: 'external_workspace',
+              stage: 'persistence',
+              outcome: 'failed',
+              error: result.error,
+              transactionId: targetTransactionId,
+            })
+            await removeDocumentUploadObjectAfterFailedPersistence(client, {
+              bucket: uploadedBucket,
+              filePath,
+              error: result.error,
+            })
+            throw result.error
+          }
+          return result
+        },
+        read: () => readSavedUploadByPath(client, { table: 'documents', column: 'file_path', path: filePath, filters: { transaction_id: targetTransactionId } }),
       })
-      .select('id, transaction_id, name, file_path, category, created_at')
-      .single()
-  }
 
-  if (result.error) {
-    reportDocumentUploadTelemetry({
-      surface: 'external_workspace',
-      stage: 'persistence',
-      outcome: 'failed',
-      error: result.error,
-      transactionId: targetTransactionId,
-    })
-    await removeDocumentUploadObjectAfterFailedPersistence(client, {
-      bucket: uploadedBucket,
-      filePath,
-      error: result.error,
-    })
-    throw result.error
-  }
+      await logTransactionEventIfPossible(client, {
+        transactionId: targetTransactionId,
+        eventType: 'DocumentUploaded',
+        createdByRole: normalizeExternalAccessRoleToTransactionRole(access.role),
+        eventData: {
+          documentId: result.data.id,
+          documentName: result.data.name,
+          category: result.data.category || category || 'General',
+          visibilityScope: result.data.visibility_scope || 'shared',
+          source: 'external_workspace',
+        },
+      })
 
-  await logTransactionEventIfPossible(client, {
-    transactionId: targetTransactionId,
-    eventType: 'DocumentUploaded',
-    createdByRole: normalizeExternalAccessRoleToTransactionRole(access.role),
-    eventData: {
-      documentId: result.data.id,
-      documentName: result.data.name,
-      category: result.data.category || category || 'General',
-      visibilityScope: result.data.visibility_scope || 'shared',
-      source: 'external_workspace',
+      await updateDocumentRequestFromUploadIfPossible(client, {
+        transactionId: targetTransactionId,
+        documentId: result.data.id,
+        category: result.data.category || category || 'General',
+        documentName: result.data.name,
+        actorRole: normalizeExternalAccessRoleToTransactionRole(access.role),
+        actorUserId: null,
+      })
+
+      await runDocumentAutomationIfPossible(client, {
+        transactionId: targetTransactionId,
+        documentId: result.data.id,
+        documentName: result.data.name,
+        documentType: normalizedDocumentType,
+        category: result.data.category || category || 'General',
+        requiredDocumentKey,
+        actorRole: normalizeExternalAccessRoleToTransactionRole(access.role),
+        actorUserId: null,
+        source: 'external_upload',
+      })
+
+      return {
+        ...result.data,
+        url: await getSignedUrl(result.data.file_path, { client, fileBucket: result.data.file_bucket || '' }),
+      }
     },
   })
-
-  await updateDocumentRequestFromUploadIfPossible(client, {
-    transactionId: targetTransactionId,
-    documentId: result.data.id,
-    category: result.data.category || category || 'General',
-    documentName: result.data.name,
-    actorRole: normalizeExternalAccessRoleToTransactionRole(access.role),
-    actorUserId: null,
-  })
-
-  await runDocumentAutomationIfPossible(client, {
-    transactionId: targetTransactionId,
-    documentId: result.data.id,
-    documentName: result.data.name,
-    documentType: normalizedDocumentType,
-    category: result.data.category || category || 'General',
-    requiredDocumentKey,
-    actorRole: normalizeExternalAccessRoleToTransactionRole(access.role),
-    actorUserId: null,
-    source: 'external_upload',
-  })
-
-  return {
-    ...result.data,
-    url: await getSignedUrl(result.data.file_path, { client, fileBucket: result.data.file_bucket || '' }),
-  }
 }
 
 function isUuidLike(value) {
@@ -51742,8 +51799,10 @@ async function createDocumentUploadIdempotencyKey({
   category = null,
   relatedEntityId = null,
   attorneyScope = null,
+  fileFingerprint = null,
 } = {}) {
   const scope = JSON.stringify({
+    fileFingerprint,
     transactionId: String(transactionId || '').trim(),
     requiredDocumentKey: normalizeDocumentKeyCandidate(requiredDocumentKey),
     canonicalRequirementInstanceId: String(canonicalRequirementInstanceId || '').trim(),
@@ -51753,10 +51812,8 @@ async function createDocumentUploadIdempotencyKey({
     ...(relatedEntityId ? { relatedEntityId: String(relatedEntityId).trim() } : {}),
     ...(attorneyScope ? { attorneyScope } : {}),
   })
-  // Reading an entire PDF into memory just to create a retry key made larger
-  // uploads appear frozen before the Storage request even began. The file
-  // metadata is stable for a selected file and is sufficient to deduplicate a
-  // repeated browser submission within this transaction/document scope.
+  // Reuse the fingerprint computed by upload recovery. Equal file metadata
+  // alone must not collapse different document contents into the same receipt.
   const fileIdentity = [file?.name, file?.size, file?.type, file?.lastModified].join('|')
   const digest = globalThis.crypto?.subtle
     ? await globalThis.crypto.subtle.digest(
@@ -51813,6 +51870,7 @@ async function findDocumentByUploadIdempotencyKey(client, { transactionId, idemp
 }
 
 async function removeDocumentUploadObjectAfterFailedPersistence(client, { bucket, filePath, error } = {}) {
+  if (!isDefiniteUploadSaveRejection(error) || error?.code === '23505') return
   try {
     await removeUploadedDocumentObject(client, bucket, filePath)
   } catch (cleanupError) {
@@ -52052,277 +52110,281 @@ export async function uploadDocument({
   }) : []
 
   const safeName = filePolicy.safeName
-  const filePath = `transaction-${activeTransactionId}/${Date.now()}-${safeName}`
-  const normalizedDocumentType =
-    normalizePortalDocumentType(
-      documentType || canonicalTarget?.requiredDocumentKey || requiredDocumentKey || category || file.name,
-    ) || 'general'
-  const uploadIdempotencyKey = await createDocumentUploadIdempotencyKey({
-    transactionId: activeTransactionId,
-    file,
-    requiredDocumentKey,
-    canonicalRequirementInstanceId: canonicalTarget?.canonicalRequirementInstanceId || canonicalRequirementInstanceId,
-    documentRequestId,
-    documentType: normalizedDocumentType,
-    category,
-    relatedEntityId,
-    attorneyScope: attorneySave ? {
-      actor: activeProfile.userId, lane: attorneyLaneMetadata.laneKey,
-      visibility: visibilityScope || (isClientVisible ? 'shared' : 'internal'),
-      clientRecipientRole, isClientVisible, stageKey, uploadedByParty, bucketKey, source,
-      financeLane, relatedEntityType, notes,
-      versionKind, previousVersionId: attorneyPreviousVersionId,
-    } : null,
-  })
-  const existingDocument = await findDocumentByUploadIdempotencyKey(client, {
-    transactionId: activeTransactionId,
-    idempotencyKey: uploadIdempotencyKey,
-  })
-
-  if (existingDocument) {
-    if (attorneySave) {
-      const saved = await persistAttorneyDocument(client, {
-        document: { ...existingDocument, lane_key: attorneyLaneMetadata.laneKey, upload_idempotency_key: uploadIdempotencyKey,
-          canonical_requirement_instance_id: canonicalTarget?.canonicalRequirementInstanceId || canonicalRequirementInstanceId || null,
-          attorney_version_kind: versionKind, attorney_version_previous_id: attorneyPreviousVersionId,
-        },
+  return runRecoverableDocumentUpload({ client: client, monitorSurface: source === 'developer_buyer_document_upload' ? 'developerLead' : source === 'agent_buyer_document_upload' ? 'lead' : attorneyRole ? 'attorneyVersions' : 'transaction', scope: ['internal_transaction', activeTransactionId, category, isClientVisible, clientRecipientRole, documentType, visibilityScope, stageKey, requiredDocumentKey, documentRequestId, canonicalRequirementInstanceId, source, uploadedByParty, bucketKey, fileBucket, financeLane, relatedEntityType, relatedEntityId, notes, versionKind, attorneyPreviousVersionId], file, storageBuckets: DOCUMENTS_BUCKET_CANDIDATES,
+    run: async attempt => {
+      const filePath = attempt.path(`transaction-${activeTransactionId}/${Date.now()}-${safeName}`)
+      const normalizedDocumentType =
+        normalizePortalDocumentType(
+          documentType || canonicalTarget?.requiredDocumentKey || requiredDocumentKey || category || file.name,
+        ) || 'general'
+      const uploadIdempotencyKey = await createDocumentUploadIdempotencyKey({
+        transactionId: activeTransactionId,
+        file,
+        requiredDocumentKey,
+        canonicalRequirementInstanceId: canonicalTarget?.canonicalRequirementInstanceId || canonicalRequirementInstanceId,
         documentRequestId,
+        documentType: normalizedDocumentType,
+        category,
+        relatedEntityId,
+        fileFingerprint: attempt.fileFingerprint,
+        attorneyScope: {
+          actor: activeProfile.userId, lane: attorneyLaneMetadata.laneKey,
+          visibility: visibilityScope || (isClientVisible ? 'shared' : 'internal'),
+          clientRecipientRole, isClientVisible, stageKey, uploadedByParty, bucketKey, source,
+          financeLane, relatedEntityType, notes,
+          versionKind, previousVersionId: attorneyPreviousVersionId,
+        },
       })
-      reportProgress('complete', 'This document was already saved.', { documentId: saved.id, postUploadProcessing: 'complete' })
-      return saved
-    }
-    reportProgress('complete', 'This document was already saved. Reusing the existing upload…')
-    reportDocumentUploadTelemetry({
-      surface: 'internal_transaction',
-      stage: 'idempotency',
-      outcome: 'deduplicated',
-      transactionId: activeTransactionId,
-      documentId: existingDocument.id,
-    })
-    return {
-      ...existingDocument,
-      canonicalRequirementInstanceId:
-        existingDocument.canonical_requirement_instance_id || canonicalTarget?.canonicalRequirementInstanceId || null,
-      deduplicated: true,
-      postUploadProcessing: 'complete',
-      url: await getSignedUrl(existingDocument.file_path, {
-        client,
-        fileBucket: existingDocument.file_bucket || '',
-      }),
-    }
-  }
+      const existingDocument = await findDocumentByUploadIdempotencyKey(client, {
+        transactionId: activeTransactionId,
+        idempotencyKey: uploadIdempotencyKey,
+      })
 
-  let uploadedBucket
-  try {
-    reportProgress('uploading', `Uploading ${safeName} to secure storage…`)
-    uploadedBucket = await uploadToDocumentsBucket(client, filePath, file)
-  } catch (error) {
-    reportProgress('failed', error?.message || 'The file could not be uploaded to secure storage.', { error })
-    reportDocumentUploadTelemetry({
-      surface: 'internal_transaction',
-      stage: 'storage',
-      outcome: 'failed',
-      error,
-      transactionId: activeTransactionId,
-    })
-    throw error
-  }
-
-  const documentInsertPayload = {
-    transaction_id: activeTransactionId,
-    name: safeName,
-    file_path: filePath,
-    category: category || 'General',
-    document_type: normalizedDocumentType,
-    visibility_scope: visibilityScope || (isClientVisible ? 'shared' : 'internal'),
-    client_recipient_role: normalizeNullableText(clientRecipientRole),
-    uploaded_by_user_id: activeProfile.userId || null,
-    uploaded_by_role: activeProfile.role || null,
-    uploaded_by_email: activeProfile.email || null,
-    stage_key: stageKey || null,
-    is_client_visible: Boolean(isClientVisible),
-    uploaded_by_party: normalizeNullableText(uploadedByParty),
-    bucket_key: normalizeNullableText(bucketKey),
-    source: normalizeNullableText(source),
-    file_bucket: uploadedBucket || normalizeNullableText(fileBucket),
-    finance_lane: normalizeNullableText(financeLane),
-    related_entity_type: normalizeNullableText(relatedEntityType),
-    related_entity_id: normalizeNullableUuid(relatedEntityId),
-    ...(attorneyLaneMetadata
-      ? {
-          lane_key: attorneyLaneMetadata.laneKey,
-          attorney_role: attorneyLaneMetadata.attorneyRole,
+      if (existingDocument) {
+        attempt.saved({ data: existingDocument })
+        if (attorneySave) {
+          const saved = await persistAttorneyDocument(client, {
+            document: { ...existingDocument, lane_key: attorneyLaneMetadata.laneKey, upload_idempotency_key: uploadIdempotencyKey,
+              canonical_requirement_instance_id: canonicalTarget?.canonicalRequirementInstanceId || canonicalRequirementInstanceId || null,
+              attorney_version_kind: versionKind, attorney_version_previous_id: attorneyPreviousVersionId,
+            },
+            documentRequestId,
+          })
+          reportProgress('complete', 'This document was already saved.', { documentId: saved.id, postUploadProcessing: 'complete' })
+          return saved
         }
-      : {}),
-    ...(canonicalTarget?.canonicalRequirementInstanceId
-      ? {
-          canonical_requirement_instance_id: canonicalTarget.canonicalRequirementInstanceId,
+        reportProgress('complete', 'This document was already saved. Reusing the existing upload…')
+        reportDocumentUploadTelemetry({
+          surface: 'internal_transaction',
+          stage: 'idempotency',
+          outcome: 'deduplicated',
+          transactionId: activeTransactionId,
+          documentId: existingDocument.id,
+        })
+        return {
+          ...existingDocument,
+          canonicalRequirementInstanceId:
+            existingDocument.canonical_requirement_instance_id || canonicalTarget?.canonicalRequirementInstanceId || null,
+          deduplicated: true,
+          postUploadProcessing: 'complete',
+          url: await getSignedUrl(existingDocument.file_path, {
+            client,
+            fileBucket: existingDocument.file_bucket || '',
+          }),
         }
-      : {}),
-    upload_idempotency_key: uploadIdempotencyKey,
-    ...(attorneySave ? { notes: normalizeNullableText(notes), attorney_version_kind: versionKind,
-      attorney_version_previous_id: normalizeNullableUuid(attorneyPreviousVersionId) } : {}),
-  }
-
-  const documentSelectFields = [
-    'id',
-    'transaction_id',
-    'name',
-    'file_path',
-    'category',
-    'document_type',
-    'visibility_scope',
-    'stage_key',
-    'uploaded_by_user_id',
-    'uploaded_by_role',
-    'uploaded_by_email',
-    'is_client_visible',
-    'uploaded_by_party',
-    'bucket_key',
-    'source',
-    'file_bucket',
-    'finance_lane',
-    'related_entity_type',
-    'related_entity_id',
-    'canonical_requirement_instance_id',
-    ...(attorneyLaneMetadata ? ['lane_key', 'attorney_role'] : []),
-    'created_at',
-  ].join(', ')
-
-  // Storage has accepted the file; persist its transaction record before
-  // doing any downstream document automation.
-  reportProgress('saving', 'File uploaded. Saving it to the transaction document library…')
-  if (attorneySave) {
-    let saved
-    try {
-      saved = await persistAttorneyDocument(client, { document: documentInsertPayload, documentRequestId })
-    } catch (saveError) {
-      if (isDefiniteDocumentSaveFailure(saveError)) {
-        await removeDocumentUploadObjectAfterFailedPersistence(client, { bucket: uploadedBucket, filePath, error: saveError })
       }
-      reportProgress('failed', saveError?.message || 'The document save could not be confirmed.', { error: saveError })
-      throw saveError
-    }
-    if (saved.deduplicated && saved.file_path !== filePath) {
-      // The RPC proved which object is retained, making this cleanup safe even
-      // when two uploads raced or the previous response was lost.
-      void removeDocumentUploadObjectAfterFailedPersistence(client, { bucket: uploadedBucket, filePath, error: { code: '23505' } })
-    }
-    reportDocumentUploadTelemetry({ surface: 'internal_transaction', stage: 'persistence', outcome: 'durable_saved', transactionId: activeTransactionId, documentId: saved.id })
-    if (!saved.deduplicated && saved.canonicalRequirementInstanceId) {
-      void reconcileAttorneyDocumentEvidence(client, { document: saved, status: 'uploaded', requirementInstanceId: saved.canonicalRequirementInstanceId })
-        .catch(() => console.warn('[document-upload] Saved document reporting could not refresh'))
-    }
-    reportProgress('complete', 'Document saved successfully.', { documentId: saved.id, postUploadProcessing: 'complete' })
-    return saved
-  }
-  let result = await client
-    .from('documents')
-    .insert(documentInsertPayload)
-    .select(documentSelectFields)
-    .single()
 
-  // Only the optional deduplication column may be omitted. Never silently lose
-  // audience, actor, bucket or canonical-link data on an older schema.
-  if (result.error && isMissingColumnError(result.error, 'upload_idempotency_key')) {
-    const { upload_idempotency_key: omittedIdempotencyKey, ...compatiblePayload } = documentInsertPayload
-    result = await client
-      .from('documents')
-      .insert(compatiblePayload)
-      .select(documentSelectFields)
-      .single()
-  }
+      let uploadedBucket
+      try {
+        reportProgress('uploading', `Uploading ${safeName} to secure storage…`)
+        uploadedBucket = await attempt.upload(() => uploadToDocumentsBucket(client, filePath, file))
+      } catch (error) {
+        reportProgress('failed', error?.message || 'The file could not be uploaded to secure storage.', { error })
+        reportDocumentUploadTelemetry({
+          surface: 'internal_transaction',
+          stage: 'storage',
+          outcome: 'failed',
+          error,
+          transactionId: activeTransactionId,
+        })
+        throw error
+      }
 
-  if (result.error?.code === '23505') {
-    const duplicateDocument = await findDocumentByUploadIdempotencyKey(client, {
-      transactionId: activeTransactionId,
-      idempotencyKey: uploadIdempotencyKey,
-    })
-    if (duplicateDocument) {
-      await removeDocumentUploadObjectAfterFailedPersistence(client, {
-        bucket: uploadedBucket,
-        filePath,
-        error: result.error,
+      const documentInsertPayload = {
+        transaction_id: activeTransactionId,
+        name: safeName,
+        file_path: filePath,
+        category: category || 'General',
+        document_type: normalizedDocumentType,
+        visibility_scope: visibilityScope || (isClientVisible ? 'shared' : 'internal'),
+        client_recipient_role: normalizeNullableText(clientRecipientRole),
+        uploaded_by_user_id: activeProfile.userId || null,
+        uploaded_by_role: activeProfile.role || null,
+        uploaded_by_email: activeProfile.email || null,
+        stage_key: stageKey || null,
+        is_client_visible: Boolean(isClientVisible),
+        uploaded_by_party: normalizeNullableText(uploadedByParty),
+        bucket_key: normalizeNullableText(bucketKey),
+        source: normalizeNullableText(source),
+        file_bucket: uploadedBucket || normalizeNullableText(fileBucket),
+        finance_lane: normalizeNullableText(financeLane),
+        related_entity_type: normalizeNullableText(relatedEntityType),
+        related_entity_id: normalizeNullableUuid(relatedEntityId),
+        ...(attorneyLaneMetadata
+          ? {
+              lane_key: attorneyLaneMetadata.laneKey,
+              attorney_role: attorneyLaneMetadata.attorneyRole,
+            }
+          : {}),
+        ...(canonicalTarget?.canonicalRequirementInstanceId
+          ? {
+              canonical_requirement_instance_id: canonicalTarget.canonicalRequirementInstanceId,
+            }
+          : {}),
+        upload_idempotency_key: uploadIdempotencyKey,
+        ...(attorneySave ? { notes: normalizeNullableText(notes), attorney_version_kind: versionKind,
+          attorney_version_previous_id: normalizeNullableUuid(attorneyPreviousVersionId) } : {}),
+      }
+
+      const documentSelectFields = [
+        'id',
+        'transaction_id',
+        'name',
+        'file_path',
+        'category',
+        'document_type',
+        'visibility_scope',
+        'stage_key',
+        'uploaded_by_user_id',
+        'uploaded_by_role',
+        'uploaded_by_email',
+        'is_client_visible',
+        'uploaded_by_party',
+        'bucket_key',
+        'source',
+        'file_bucket',
+        'finance_lane',
+        'related_entity_type',
+        'related_entity_id',
+        'canonical_requirement_instance_id',
+        ...(attorneyLaneMetadata ? ['lane_key', 'attorney_role'] : []),
+        'created_at',
+      ].join(', ')
+
+      // Storage has accepted the file; persist its transaction record before
+      // doing any downstream document automation.
+      reportProgress('saving', 'File uploaded. Saving it to the transaction document library…')
+      if (attorneySave) {
+        let saved
+        try {
+          saved = await persistAttorneyDocument(client, { document: documentInsertPayload, documentRequestId })
+        } catch (saveError) {
+          if (isDefiniteDocumentSaveFailure(saveError)) {
+            await removeDocumentUploadObjectAfterFailedPersistence(client, { bucket: uploadedBucket, filePath, error: saveError })
+          }
+          reportProgress('failed', saveError?.message || 'The document save could not be confirmed.', { error: saveError })
+          throw saveError
+        }
+        if (saved.deduplicated && saved.file_path !== filePath) {
+          // The RPC proved which object is retained, making this cleanup safe even
+          // when two uploads raced or the previous response was lost.
+          void removeDocumentUploadObjectAfterFailedPersistence(client, { bucket: uploadedBucket, filePath, error: { code: '23505' } })
+        }
+        attempt.saved({ data: saved })
+        reportDocumentUploadTelemetry({ surface: 'internal_transaction', stage: 'persistence', outcome: 'durable_saved', transactionId: activeTransactionId, documentId: saved.id })
+        if (!saved.deduplicated && saved.canonicalRequirementInstanceId) {
+          void reconcileAttorneyDocumentEvidence(client, { document: saved, status: 'uploaded', requirementInstanceId: saved.canonicalRequirementInstanceId })
+            .catch(() => console.warn('[document-upload] Saved document reporting could not refresh'))
+        }
+        reportProgress('complete', 'Document saved successfully.', { documentId: saved.id, postUploadProcessing: 'complete' })
+        return saved
+      }
+      const result = await attempt.persist({
+        save: async () => {
+          let result = await client
+            .from('documents')
+            .insert(documentInsertPayload)
+            .select(documentSelectFields)
+            .single()
+
+          // Only the optional deduplication column may be omitted. Never silently lose
+          // audience, actor, bucket or canonical-link data on an older schema.
+          if (result.error && isMissingColumnError(result.error, 'upload_idempotency_key')) {
+            const { upload_idempotency_key: omittedIdempotencyKey, ...compatiblePayload } = documentInsertPayload
+            result = await client
+              .from('documents')
+              .insert(compatiblePayload)
+              .select(documentSelectFields)
+              .single()
+          }
+
+          if (result.error?.code === '23505') {
+            const duplicateDocument = await findDocumentByUploadIdempotencyKey(client, {
+              transactionId: activeTransactionId,
+              idempotencyKey: uploadIdempotencyKey,
+            })
+            if (duplicateDocument) {
+              if (duplicateDocument.file_path !== filePath) await removeDocumentUploadObjectAfterFailedPersistence(client, {
+                bucket: uploadedBucket,
+                filePath,
+                error: result.error,
+              })
+              reportDocumentUploadTelemetry({
+                surface: 'internal_transaction',
+                stage: 'idempotency',
+                outcome: 'deduplicated',
+                transactionId: activeTransactionId,
+                documentId: duplicateDocument.id,
+              })
+              return { data: duplicateDocument, error: null }
+            }
+          }
+
+          if (result.error) {
+            reportProgress('failed', result.error?.message || 'The document record could not be saved.', { error: result.error })
+            reportDocumentUploadTelemetry({
+              surface: 'internal_transaction',
+              stage: 'persistence',
+              outcome: 'failed',
+              error: result.error,
+              transactionId: activeTransactionId,
+            })
+            await removeDocumentUploadObjectAfterFailedPersistence(client, {
+              bucket: uploadedBucket,
+              filePath,
+              error: result.error,
+            })
+            throw result.error
+          }
+
+          return result
+        },
+        read: () => readSavedUploadByPath(client, { table: 'documents', column: 'file_path', path: filePath, filters: { transaction_id: activeTransactionId } }),
       })
+
       reportDocumentUploadTelemetry({
         surface: 'internal_transaction',
-        stage: 'idempotency',
-        outcome: 'deduplicated',
+        stage: 'persistence',
+        outcome: 'durable_saved',
         transactionId: activeTransactionId,
-        documentId: duplicateDocument.id,
+        documentId: result.data.id,
       })
+      // Storage and the document row are the durable upload boundary. Do not wait
+      // for projections after this point: a temporary automation/linking failure
+      // must not tell a user to re-upload a file that has already been saved.
+      void runInternalDocumentUploadFollowUps(client, {
+        transactionId: activeTransactionId,
+        document: result.data,
+        category,
+        isClientVisible,
+        documentType: normalizedDocumentType,
+        documentRequestId,
+        canonicalTarget,
+        canonicalKeyCandidates,
+        requiredDocumentKey,
+        attorneyLaneMetadata,
+        activeProfile,
+        source,
+        inferCanonicalRequirement,
+      })
+
+      reportProgress('complete', 'Document saved successfully.', {
+        documentId: result.data.id,
+        postUploadProcessing: 'queued',
+      })
+
       return {
-        ...duplicateDocument,
+        ...result.data,
         canonicalRequirementInstanceId:
-          duplicateDocument.canonical_requirement_instance_id || canonicalTarget?.canonicalRequirementInstanceId || null,
-        deduplicated: true,
-        postUploadProcessing: 'complete',
-        url: await getSignedUrl(duplicateDocument.file_path, {
+          canonicalTarget?.canonicalRequirementInstanceId || result.data.canonical_requirement_instance_id || null,
+        postUploadProcessing: 'queued',
+        url: await getSignedUrl(result.data.file_path, {
           client,
-          fileBucket: duplicateDocument.file_bucket || '',
+          fileBucket: result.data.file_bucket || uploadedBucket || '',
         }),
       }
-    }
-  }
-
-  if (result.error) {
-    reportProgress('failed', result.error?.message || 'The document record could not be saved.', { error: result.error })
-    reportDocumentUploadTelemetry({
-      surface: 'internal_transaction',
-      stage: 'persistence',
-      outcome: 'failed',
-      error: result.error,
-      transactionId: activeTransactionId,
-    })
-    await removeDocumentUploadObjectAfterFailedPersistence(client, {
-      bucket: uploadedBucket,
-      filePath,
-      error: result.error,
-    })
-    throw result.error
-  }
-
-  reportDocumentUploadTelemetry({
-    surface: 'internal_transaction',
-    stage: 'persistence',
-    outcome: 'durable_saved',
-    transactionId: activeTransactionId,
-    documentId: result.data.id,
+    },
   })
-  // Storage and the document row are the durable upload boundary. Do not wait
-  // for projections after this point: a temporary automation/linking failure
-  // must not tell a user to re-upload a file that has already been saved.
-  void runInternalDocumentUploadFollowUps(client, {
-    transactionId: activeTransactionId,
-    document: result.data,
-    category,
-    isClientVisible,
-    documentType: normalizedDocumentType,
-    documentRequestId,
-    canonicalTarget,
-    canonicalKeyCandidates,
-    requiredDocumentKey,
-    attorneyLaneMetadata,
-    activeProfile,
-    source,
-    inferCanonicalRequirement,
-  })
-
-  reportProgress('complete', 'Document saved successfully.', {
-    documentId: result.data.id,
-    postUploadProcessing: 'queued',
-  })
-
-  return {
-    ...result.data,
-    canonicalRequirementInstanceId:
-      canonicalTarget?.canonicalRequirementInstanceId || result.data.canonical_requirement_instance_id || null,
-    postUploadProcessing: 'queued',
-    url: await getSignedUrl(result.data.file_path, {
-      client,
-      fileBucket: result.data.file_bucket || uploadedBucket || '',
-    }),
-  }
 }
 
 export async function listOrphanedTransactionDocumentObjects(transactionId) {
@@ -53114,9 +53176,24 @@ export async function createDevelopmentWorkspace({
     }
 
     if (productCatalogue) {
+      const uploadedFloorplans = []
+      for (const floorplan of productCatalogue.floorplans || []) {
+        const { file, ...layout } = floorplan
+        if (file) {
+          const type = productCatalogue.unitTypes.find((item) => item.id === layout.unitTypeId)
+          const asset = await uploadDevelopmentDocumentAsset({
+            developmentId, file, documentType: 'floorplan', title: layout.name,
+            linkedUnitType: type?.name || '',
+          })
+          warnings.push(...(asset.persistenceWarnings || []).map((message) => ({ message })))
+          uploadedFloorplans.push({ ...layout, documentId: asset.id, fileUrl: asset.fileUrl, thumbnailUrl: file.type?.startsWith('image/') ? asset.fileUrl : '' })
+        } else {
+          uploadedFloorplans.push(layout)
+        }
+      }
       // Save layouts first so each generated unit retains its internal storeys
       // independently of the building/floor node that contains it.
-      await saveDevelopmentProductCatalogue({ ...productCatalogue, developmentId })
+      await saveDevelopmentProductCatalogue({ ...productCatalogue, floorplans: uploadedFloorplans, developmentId })
     }
 
     for (const unit of units) {

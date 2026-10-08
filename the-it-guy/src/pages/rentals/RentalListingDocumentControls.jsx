@@ -1,3 +1,4 @@
+import { getDocumentUploadPolicy } from '../../lib/documentUploadPolicy.js'
 import { useEffect, useState } from 'react'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { resolveRentalWorkspaceScope } from '../../services/rentals/rentalWorkspaceScope.js'
@@ -5,6 +6,8 @@ import { DOCUMENT_UPLOAD_ACCEPT } from '../../lib/documentUploadPolicy.js'
 import { rentalListingCanUpload, rentalListingCanReview } from '../../services/rentals/rentalListingDocumentActions.js'
 import { requestRentalLandlordOnboarding } from '../../services/rentals/rentalLandlordOnboardingService.js'
 import { createPersistedRentalApplicantAccess, listPersistedRentalApplicantAccess, revokePersistedRentalApplicantAccess } from '../../services/rentals/rentalApplicationRepository.js'
+const documentUploadPolicy = getDocumentUploadPolicy({ surface: 'rental_application' })
+
 
 const button = 'rounded-lg border border-[#dce7f2] bg-white px-3 py-2 text-xs font-semibold text-[#315b7a] disabled:opacity-50'
 const fileName = (document) => document.file_name || document.name || 'Uploaded file'
@@ -14,14 +17,16 @@ export function RentalListingRequirementControls({ kind, section, row, busy, blo
   const [signed, setSigned] = useState({})
   const editable = rentalListingCanUpload(kind, section, row)
   return <div className="mt-3 space-y-3">
-    {editable ? <label className={`${button} inline-block cursor-pointer`}>
+    {editable ? <><label className={`${button} inline-block cursor-pointer`}>
       {row.documents.length ? kind === 'tenant' ? 'Replace pack' : 'Replace file' : 'Upload'}
-      <input type="file" aria-label={`Upload ${row.title}`} className="sr-only" accept={DOCUMENT_UPLOAD_ACCEPT} multiple={kind === 'tenant'} disabled={busy || blocked} onChange={(event) => {
+      <input type="file" title={documentUploadPolicy.helpText} aria-label={`Upload ${row.title}`} className="sr-only" accept={documentUploadPolicy.accept} multiple={kind === 'tenant'} disabled={busy || blocked} onChange={(event) => {
         const files = Array.from(event.target.files || [])
         event.target.value = ''
         if (files.length) void onUpload(kind, section, row, files)
       }} />
-    </label> : null}
+    
+    </label>
+<span className="block text-xs font-normal text-slate-500">{documentUploadPolicy.helpText}</span></> : null}
     {kind === 'tenant' && !editable && ['submitted', 'under_review'].includes(section.application?.status) ? <p className="text-xs text-[#607387]">Accepted evidence is locked until rejected or expired.</p> : null}
     {row.documents.map((document) => <div key={document.id} className="space-y-2 rounded-lg border border-[#e1eaf3] p-3">
       <div className="flex flex-wrap gap-2">

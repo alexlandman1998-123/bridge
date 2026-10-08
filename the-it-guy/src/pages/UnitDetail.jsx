@@ -1,3 +1,4 @@
+import { DOCUMENT_UPLOAD_ACCEPT, DOCUMENT_UPLOAD_HELP_TEXT } from '../lib/documentUploadPolicy.js'
 import { Component, lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
@@ -11241,10 +11242,11 @@ function UnitDetail() {
 
         <Field
           label="File"
-          type="file"
+          type="file" aria-label="File" title={DOCUMENT_UPLOAD_HELP_TEXT} accept={DOCUMENT_UPLOAD_ACCEPT}
           onChange={handleDocumentUploadFileSelect}
           inputClassName="cursor-pointer"
         />
+        <span className="block text-xs font-normal text-slate-500">{DOCUMENT_UPLOAD_HELP_TEXT}</span>
         {documentUploadForm.fileName ? (
           <p className="text-xs text-[#6b7ca0]">Selected file: {documentUploadForm.fileName}</p>
         ) : null}

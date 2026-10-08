@@ -108,6 +108,6 @@ it('uses saved SAST civil times and revision in downloadable calendar links',()=
   expect(event.start.toISOString()).toBe('2099-07-20T08:00:00.000Z')
   expect(event.end.toISOString()).toBe('2099-07-20T09:30:00.000Z')
   expect(event).toMatchObject({sequence:2,status:'TENTATIVE',uid:'bridge-stable@bridge.app'})
-  expect(new URL(getGoogleCalendarLink(input)).searchParams.get('dates')).toBe('20990720T100000/20990720T113000')
+  expect(new URL(getGoogleCalendarLink(input)).searchParams.get('dates')).toBe('20990720T080000Z/20990720T093000Z')
   expect(new URL(getOutlookCalendarLink(input)).searchParams.get('startdt')).toBe('2099-07-20T08:00:00.000Z')
 })

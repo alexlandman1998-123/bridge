@@ -84,6 +84,17 @@ Deno.serve(async (req: Request) => {
   const eventType = text(payload.type).toLowerCase();
   const providerMessageId = text(payload.data?.email_id || payload.data?.id);
 
+  // Persist calendar confirmations before the shared audit dedupe. A retried
+  // webhook can repair a failed queue update; early provider events are retained.
+  if (providerMessageId && ["email.delivered","email.bounced","email.complained","email.suppressed"].includes(eventType)) {
+    const calendarReceipt = await supabase.rpc("record_calendar_provider_receipt", {
+      p_event_id: providerEventId, p_provider_id: providerMessageId, p_event_type: eventType,
+    });
+    if (calendarReceipt.error && !["PGRST202","42883"].includes(calendarReceipt.error.code)) {
+      return response(500, { error: "Calendar delivery receipt could not be recorded." });
+    }
+  }
+
   const audit = await supabase.from("notification_provider_webhook_events").insert({
     provider: "resend",
     provider_event_id: providerEventId,

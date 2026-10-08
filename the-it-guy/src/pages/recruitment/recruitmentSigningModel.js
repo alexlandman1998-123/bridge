@@ -1,3 +1,4 @@
+import { validateDocumentUploadFile } from '../../lib/documentUploadPolicy.js'
 export const signingChecks = [['sameVersion','The signed copy matches the delivered contract version'],['allPages','All contract pages and annexures are included'],['agentSignature','The agent’s signature is complete'],['organisationSignature','The organisation representative’s signature is complete']]
 export const deliveryChannels = [['email','Email'],['whatsapp','WhatsApp'],['in_person','In person'],['other','Other']]
 export const signingMethods = [['wet_ink','Signed on paper'],['external_electronic','Signed using an external electronic service']]
@@ -24,6 +25,9 @@ export function recruitmentSignatureErrors(lead,draft,today=recruitmentLocalDate
   if (!signingMethods.some(([key])=>key===draft.method) || typeof draft.reference!=='string' || draft.reference.length>254 || (draft.method==='external_electronic' && !length(draft.reference,3,254))) errors.push('Choose the signing method and include the external signing reference when applicable.')
   if (!length(draft.notes,5,3000)) errors.push('Record verification findings (5–3,000 characters).')
   if (signingChecks.some(([key])=>draft.checks?.[key]!==true)) errors.push('Verify the version, all pages and both signatures.')
-  if (!draft.file || draft.file.type!=='application/pdf' || draft.file.size<5 || draft.file.size>10485760 || !length(draft.file.name,1,254)) errors.push('Choose the complete signed contract PDF, up to 10 MB.')
+  try {
+    validateDocumentUploadFile(draft.file, { surface: 'recruitment_signed_contract' })
+    if (draft.file.size < 5 || !length(draft.file.name,1,254)) throw new Error('Invalid signed PDF.')
+  } catch { errors.push('Choose the complete signed contract PDF, up to 10 MB.') }
   return errors
 }

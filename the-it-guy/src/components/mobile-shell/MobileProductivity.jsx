@@ -1,3 +1,4 @@
+import { DOCUMENT_UPLOAD_ACCEPT } from '../../lib/documentUploadPolicy.js'
 import {
   Camera,
   Check,
@@ -143,7 +144,7 @@ export function MobileUploadSheet({
 
         <UploadInput inputRef={cameraRef} accept="image/*" capture="environment" onChange={(event) => handleChange('camera', event)} />
         <UploadInput inputRef={photoRef} accept="image/*" onChange={(event) => handleChange('photo', event)} />
-        <UploadInput inputRef={fileRef} accept="image/*,.pdf,.doc,.docx,.xls,.xlsx" onChange={(event) => handleChange('file', event)} />
+        <UploadInput inputRef={fileRef} accept={DOCUMENT_UPLOAD_ACCEPT} onChange={(event) => handleChange('file', event)} />
       </div>
     </div>
   )

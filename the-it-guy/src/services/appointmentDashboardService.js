@@ -1,4 +1,6 @@
-import { appointmentStartIso, calendarOperationalStatus, sameSastDay, sastDayStart, sastParts, addCalendarDays } from '../core/appointments/attorneyCalendarModel.js'
+import { resolveAppointmentSchedule } from '../core/appointments/appointmentTime.js'
+import { appointmentMatchesAgent, appointmentReadState } from '../core/appointments/appointmentReadModel.js'
+import { calendarOperationalStatus, sameSastDay, sastDayStart, sastParts, addCalendarDays } from '../core/appointments/attorneyCalendarModel.js'
 import { normalizeAppointmentTypeKey } from '../lib/appointmentTypeDefinitions.js'
 
 function normalizeText(value) {
@@ -104,19 +106,18 @@ function isClosedStatus(status = '') {
   return ['cancelled', 'declined', 'completed', 'no_show'].includes(status)
 }
 
-function isPendingConfirmationStatus(status = '') {
-  return ['draft', 'requested', 'accepted', 'awaiting_confirmation'].includes(status)
-}
-
 function isRescheduleStatus(status = '') {
   return ['alternative_requested', 'alternative_proposed', 'reschedule_requested'].includes(status)
 }
 
 export function getAppointmentStatusPresentation(status = '') {
-  const key = calendarOperationalStatus({ status })
+  const raw = normalizeKey(status)
+  const key = ['needs_follow_up', 'draft', 'awaiting_confirmation', 'requested', 'accepted', 'alternative_requested', 'alternative_proposed'].includes(raw) ? raw : calendarOperationalStatus({ status })
   if (isRescheduleStatus(key)) {
     return { key: 'reschedule_requested', label: 'Reschedule Requested', tone: 'red' }
   }
+  if (key === 'needs_follow_up') return { key, label: 'Needs follow-up', tone: 'amber' }
+  if (key === 'draft') return { key, label: 'Draft', tone: 'slate' }
   if (key === 'confirmed') {
     return { key: 'confirmed', label: 'Confirmed', tone: 'green' }
   }
@@ -245,19 +246,6 @@ function isOverdueAppointment(appointment = {}, now = new Date()) {
   return Boolean(date && date.getTime() < now.getTime())
 }
 
-function appointmentMatchesAgent(appointment = {}, { userId = '', userEmail = '' } = {}) {
-  const normalizedUserId = normalizeText(userId)
-  const normalizedUserEmail = normalizeText(userEmail).toLowerCase()
-  const userKeys = new Set([normalizedUserId, normalizedUserEmail].map((value) => value.toLowerCase()).filter(Boolean))
-  const appointmentKeys = [
-    appointment?.assignedAgentId || appointment?.agentId,
-    appointment?.assignedAgentEmail || appointment?.agentEmail,
-    appointment?.createdBy,
-    ...extractParticipants(appointment).flatMap((participant) => [participant?.userId, participant?.email]),
-  ].map((value) => normalizeText(value).toLowerCase()).filter(Boolean)
-  return appointmentKeys.some((key) => userKeys.has(key))
-}
-
 function appointmentMatchesLeadScope(appointment = {}, leadId = '') {
   const targetLeadId = normalizeText(leadId)
   if (!targetLeadId) return true
@@ -322,7 +310,7 @@ function scopeAppointmentRows(rows = [], params = {}) {
     if (!appointmentMatchesLeadScope(appointment, params.leadId)) return false
     if (!appointmentMatchesTransactionScope(appointment, params.transactionId, params.matterId)) return false
     if (!appointmentMatchesListingScope(appointment, params.listingId)) return false
-    if (module === 'agent' && !appointmentMatchesAgent(appointment, params)) return false
+    if (module === 'agent' && !appointmentMatchesAgent(appointment, { ...params, userId: params.userId || params.agentId, email: params.userEmail || params.agentEmail })) return false
     if (!appointmentMatchesModule(appointment, module)) return false
     return true
   })
@@ -395,11 +383,13 @@ function normalizeDashboardAppointment(appointment = {}, params = {}) {
     module,
     customTypeLabel: appointment?.customTypeLabel,
   })
-  const status = getAppointmentStatusPresentation(appointment?.status)
-  const dateTime = appointmentStartIso(appointment)
+  const readState = appointmentReadState(appointment, now)
+  const status = getAppointmentStatusPresentation(readState.category === 'follow_up' ? 'needs_follow_up' : appointment?.status)
+  const dateTime = resolveAppointmentSchedule(appointment, { strict: false }).dateTime
   return {
     ...appointment,
     dateTime,
+    readState,
     id: normalizeText(appointment?.appointmentId || appointment?.id),
     typeLabel,
     typeIconKey: getTypeIconKey(appointment?.appointmentType, module),
@@ -428,52 +418,51 @@ async function loadRows(params = {}) {
     agentId: normalizeText(params.userId || params.agentId),
     agentEmail: normalizeText(params.userEmail || params.agentEmail),
     agentKeys: Array.isArray(params.agentKeys) ? params.agentKeys : [],
+    leadId: normalizeText(params.leadId),
     listingId: normalizeText(params.listingId),
     from: params.dateRange?.from || null,
     to: params.dateRange?.to || null,
   })
 }
 
-export async function getAppointmentDashboardData(params = {}) {
+export function buildAppointmentDashboardData(params = {}) {
   const now = params.now instanceof Date ? params.now : new Date()
   const module = normalizeKey(params.module) || 'default'
-  const rows = await loadRows(params)
-  const datedRows = rows.map((appointment) => ({ ...appointment, dateTime: appointmentStartIso(appointment) }))
+  const rows = params.appointments || []
+  const datedRows = rows.map((appointment) => ({ ...appointment, dateTime: resolveAppointmentSchedule(appointment, { strict: false }).dateTime }))
   const scopedRows = sortAppointments(scopeAppointmentRows(datedRows, { ...params, module }))
   const normalizedAppointments = scopedRows.map((appointment) => normalizeDashboardAppointment(appointment, { ...params, module, now }))
-  const todayAppointments = normalizedAppointments.filter((appointment) => {
-    const date = toDate(appointment?.dateTime)
-    return Boolean(date && isSameDay(date, now))
-  })
-  const pendingConfirmation = normalizedAppointments.filter((appointment) => isPendingConfirmationStatus(getStatusValue(appointment))).length
-  const upcoming = normalizedAppointments.filter((appointment) => {
-    const status = getStatusValue(appointment)
-    const date = toDate(appointment?.dateTime)
-    return Boolean(date && date >= now && !isClosedStatus(status))
-  }).length
-  const needsReschedule = normalizedAppointments.filter((appointment) => isRescheduleStatus(getStatusValue(appointment))).length
-  const nextAppointment = normalizedAppointments.find((appointment) => !isClosedStatus(getStatusValue(appointment))) || null
-  const groups = groupAppointments(normalizedAppointments, now)
-    .map((group) => ({
-      ...group,
-      appointments: group.appointments.map((appointment) => normalizeDashboardAppointment(appointment, { ...params, module, now })),
-    }))
+  const scheduledAppointments = normalizedAppointments.filter((row) => row.readState.scheduled)
+  const followUpAppointments = normalizedAppointments.filter((row) => row.readState.category === 'follow_up')
+  const todayAppointments = scheduledAppointments.filter((row) => isSameDay(toDate(row.dateTime), now))
+  const pendingConfirmation = scheduledAppointments.filter((row) => row.readState.reservation === 'held').length
+  const upcoming = scheduledAppointments.filter((row) => row.readState.category === 'upcoming').length
+  const needsReschedule = normalizedAppointments.filter((row) => isRescheduleStatus(getStatusValue(row)) && !['history', 'draft', 'archived'].includes(row.readState.category)).length
+  const nextAppointment = scheduledAppointments.find((row) => row.readState.category === 'upcoming') || null
+  const groups = [...groupAppointments(scheduledAppointments, now), { label: 'Needs follow-up', appointments: followUpAppointments }]
 
   return {
     counts: {
       pendingConfirmation,
       upcoming,
       needsReschedule,
+      needsFollowUp: followUpAppointments.length,
     },
     calendarStrip: {
       selectedDate: startOfDay(now).toISOString(),
       currentMonthLabel: now.toLocaleDateString('en-ZA', { timeZone: 'Africa/Johannesburg', month: 'long', year: 'numeric' }),
-      weekDays: buildWeekDays(normalizedAppointments, now),
+      weekDays: buildWeekDays(scheduledAppointments, now),
       appointmentsToday: todayAppointments.length,
     },
     nextAppointment,
     groups,
     appointments: normalizedAppointments,
-    empty: normalizedAppointments.length === 0,
+    scheduledAppointments,
+    followUpAppointments,
+    empty: scheduledAppointments.length === 0 && followUpAppointments.length === 0,
   }
+}
+
+export async function getAppointmentDashboardData(params = {}) {
+  return buildAppointmentDashboardData({ ...params, appointments: await loadRows(params) })
 }

@@ -61,13 +61,23 @@ export async function runDocumentUploadWithLifecycle({ upload, onProgress = null
   const report = createDocumentUploadProgressReporter(onProgress)
   try {
     const result = await upload({ onProgress: report })
-    report(DOCUMENT_UPLOAD_STAGES.complete, 'Document saved successfully.', {
+    report(DOCUMENT_UPLOAD_STAGES.complete, result?.persistenceWarnings?.[0] || 'Document saved successfully.', {
       documentId: result?.id || null,
       postUploadProcessing: result?.postUploadProcessing || null,
+      warnings: result?.persistenceWarnings || result?.persistence?.warnings || [],
     })
     return result
   } catch (error) {
     report(DOCUMENT_UPLOAD_STAGES.failed, error?.message || '', { error })
     throw error
   }
+}
+
+export async function refreshAfterSavedDocumentUpload(result, refresh, onWarning = null) {
+  const warnings = [...(result?.persistenceWarnings || result?.persistence?.warnings || [])]
+  try { await refresh?.() } catch {
+    warnings.push('Document saved, but the list could not be refreshed. Reopen the record to see it; the file does not need to be uploaded again.')
+  }
+  if (warnings.length) onWarning?.(warnings.join(' '))
+  return result
 }

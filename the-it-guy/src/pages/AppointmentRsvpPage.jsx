@@ -38,7 +38,8 @@ export default function AppointmentRsvpPage() {
     preferredStartTime,
     preferredEndTime,
     message: rescheduleMessage,
-  }), [preferredDate, preferredEndTime, preferredStartTime, rescheduleMessage, selectedAction])
+    timezone: appointment?.timezone || APPOINTMENT_RSVP_TIMEZONE,
+  }), [appointment?.timezone, preferredDate, preferredEndTime, preferredStartTime, rescheduleMessage, selectedAction])
   const selectedStatus = rsvpContract.value.status
 
   useEffect(() => {
@@ -46,6 +47,9 @@ export default function AppointmentRsvpPage() {
     async function loadInvitation() {
       setLoading(true)
       setError('')
+      setResultStatus('')
+      setParticipant(null)
+      setAppointment(null)
       try {
         if (!isSupabaseConfigured || !supabase) {
           throw new Error('Appointment RSVP is not available in this environment.')
@@ -57,6 +61,11 @@ export default function AppointmentRsvpPage() {
         if (rsvpResult.error) throw rsvpResult.error
         const row = Array.isArray(rsvpResult.data) ? rsvpResult.data[0] : null
         if (!row) throw new Error('This appointment RSVP link is invalid or has expired.')
+        const context = await supabase.rpc('get_calendar_invitation_context', { p_token: token })
+        if (context.error) throw context.error
+        if (!context.data) throw new Error('This request or its temporary hold has expired. Ask the agent to issue a new request.')
+        const current = context.data.managed ? context.data : row
+
 
         if (!cancelled) {
           setParticipant({
@@ -65,21 +74,24 @@ export default function AppointmentRsvpPage() {
             name: row.participant_name,
             email: row.participant_email,
             participant_role: row.participant_role,
-            rsvp_status: row.rsvp_status,
+            rsvp_status: current.rsvp_status,
           })
           setAppointment({
             appointment_id: row.appointment_id,
             title: row.appointment_title,
             appointment_type: row.appointment_type,
-            appointment_date: row.appointment_date,
-            start_time: row.start_time,
-            end_time: row.end_time,
+            appointment_date: current.appointment_date,
+            start_time: current.start_time,
+            end_time: current.end_time,
+            timezone: current.timezone || APPOINTMENT_RSVP_TIMEZONE,
+            all_day: current.all_day === true,
+            proposal: current.proposal === true,
             location: row.location,
             meeting_url: row.meeting_url,
             status: row.status,
           })
-          if (isCompletedAppointmentRsvp(row.rsvp_status)) {
-            setResultStatus(row.rsvp_status)
+          if (isCompletedAppointmentRsvp(current.rsvp_status)) {
+            setResultStatus(current.rsvp_status)
           }
         }
       } catch (loadError) {
@@ -96,6 +108,7 @@ export default function AppointmentRsvpPage() {
 
   async function submitResponse(event) {
     event.preventDefault()
+    if (submitting) return
     if (!participant?.participant_id) return
     if (!rsvpContract.isValid) {
       setError(rsvpContract.errors[0]?.message || 'Choose a valid appointment response.')
@@ -150,7 +163,7 @@ export default function AppointmentRsvpPage() {
     <main className="min-h-screen bg-[#f3f7fb] px-4 py-8 text-[#17263a]">
       <section className="mx-auto max-w-2xl rounded-[24px] border border-[#dbe6f2] bg-white p-6 shadow-[0_18px_45px_rgba(15,35,55,0.08)]">
         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#6d829a]">Arch9 Appointment</p>
-        <h1 className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-[#142338]">Appointment Request</h1>
+        <h1 className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-[#142338]">{appointment?.proposal ? 'Replacement Time Request' : 'Appointment Request'}</h1>
         {loading ? (
           <div className="mt-6 rounded-[16px] border border-[#e0e8f2] bg-[#f8fbff] px-4 py-5 text-sm text-[#5d7289]">
             Loading appointment details...
@@ -165,12 +178,13 @@ export default function AppointmentRsvpPage() {
               <h2 className="text-lg font-semibold text-[#172d43]">{appointment?.title || 'Arch9 Appointment'}</h2>
               <div className="mt-3 grid gap-2 text-sm text-[#526b84] md:grid-cols-2">
                 <p><span className="font-semibold text-[#203a52]">Date:</span> {appointment?.appointment_date || 'To be confirmed'}</p>
-                <p><span className="font-semibold text-[#203a52]">Time:</span> {[appointment?.start_time, appointment?.end_time].filter(Boolean).join(' - ') || 'To be confirmed'}</p>
+                <p><span className="font-semibold text-[#203a52]">Time:</span> {appointment?.all_day ? 'All day' : ([appointment?.start_time, appointment?.end_time].filter(Boolean).join(' - ') || 'To be confirmed')}</p>
                 <p><span className="font-semibold text-[#203a52]">Location:</span> {appointment?.meeting_url || appointment?.location || 'To be confirmed'}</p>
                 <p><span className="font-semibold text-[#203a52]">Invited as:</span> {participant?.participant_role || 'Participant'}</p>
               </div>
             </div>
 
+            {appointment?.proposal && <p className="mt-4 text-sm text-[#526b84]">The original appointment stays reserved until every required attendee approves this replacement.</p>}
             {resultStatus ? (
               <div className="mt-5 rounded-[16px] border border-[#cfe6d7] bg-[#effaf2] px-4 py-4 text-sm font-semibold text-[#1f7a43]">
                 {getAppointmentRsvpStatusCopy(resultStatus)}
@@ -253,7 +267,7 @@ export default function AppointmentRsvpPage() {
                 </button>
               </form>
             )}
-            <p className="mt-4 text-xs text-[#6d829a]">Times are interpreted in {APPOINTMENT_RSVP_TIMEZONE}.</p>
+            <p className="mt-4 text-xs text-[#6d829a]">Times are interpreted in {appointment?.timezone || APPOINTMENT_RSVP_TIMEZONE}.</p>
           </>
         )}
         <Link to="/bridge" className="mt-6 inline-flex text-sm font-semibold text-[#214f75]">Back to Arch9</Link>

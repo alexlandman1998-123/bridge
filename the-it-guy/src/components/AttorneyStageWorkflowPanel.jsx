@@ -1,3 +1,4 @@
+import { DOCUMENT_UPLOAD_ACCEPT, DOCUMENT_UPLOAD_HELP_TEXT } from '../lib/documentUploadPolicy.js'
 import { useEffect, useMemo, useState } from 'react'
 import { CheckCircle2, ChevronRight, Circle, Clock3 } from 'lucide-react'
 import { getAttorneyWorkflowStageConfig } from '../core/transactions/attorneyWorkflowConfig'
@@ -951,7 +952,7 @@ function AttorneyStageWorkflowPanel({
                                                     <div className="grid gap-2 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center">
                                                       <input
                                                         id={uploadInputId}
-                                                        type="file"
+                                                        type="file" title={DOCUMENT_UPLOAD_HELP_TEXT} accept={DOCUMENT_UPLOAD_ACCEPT}
                                                         className="sr-only"
                                                         onChange={(event) => {
                                                           const [file] = Array.from(event.target.files || [])

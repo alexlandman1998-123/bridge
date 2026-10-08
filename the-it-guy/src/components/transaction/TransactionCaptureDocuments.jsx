@@ -1,3 +1,4 @@
+import { DOCUMENT_UPLOAD_HELP_TEXT } from '../../lib/documentUploadPolicy.js'
 import { useState } from 'react'
 import { DOCUMENT_UPLOAD_ACCEPT, validateDocumentUploadFile } from '../../lib/documentUploadPolicy.js'
 import { transactionCaptureDocumentOptions } from '../../core/transactions/transactionCaptureDocuments.js'
@@ -25,7 +26,9 @@ export default function TransactionCaptureDocuments({ parties, financeType, entr
     <p className="text-sm text-slate-600">Add the files you already have, or continue and upload them later. Files are saved after the transaction is created. Received documents still need review.</p>
     {!saved ? <div className="grid gap-3 sm:grid-cols-2">
       <label className="space-y-1 text-sm">Document for<select className="block w-full rounded-lg border p-2" value={selectedOption.value} onChange={(event) => setSelected(event.target.value)} disabled={busy}>{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
-      <label className="space-y-1 text-sm">Choose documents<input className="block w-full" type="file" multiple accept={DOCUMENT_UPLOAD_ACCEPT} onChange={addFiles} disabled={busy} /></label>
+      <label className="space-y-1 text-sm">Choose documents<input className="block w-full" type="file" title={DOCUMENT_UPLOAD_HELP_TEXT} multiple accept={DOCUMENT_UPLOAD_ACCEPT} onChange={addFiles} disabled={busy} /><span className="block text-xs font-normal text-slate-500">{DOCUMENT_UPLOAD_HELP_TEXT}</span>
+      </label>
+      
     </div> : null}
     {error ? <p role="alert" className="text-sm text-red-700">{error}</p> : null}
     <ul className="space-y-2">{entries.map((entry) => <li key={entry.id} className="rounded-lg border p-3 text-sm">

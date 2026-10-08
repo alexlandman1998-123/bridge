@@ -91,6 +91,7 @@ export async function sendHomeSeekersSellerEnquiryEmails({
   sellerTo,
   details,
   idempotencyKey,
+  sendSeller = true,
 }: {
   apiKey: string;
   configuredSender: string;
@@ -98,6 +99,7 @@ export async function sendHomeSeekersSellerEnquiryEmails({
   sellerTo: string;
   details: HomeSeekersSellerEnquiry;
   idempotencyKey: string;
+  sendSeller?: boolean;
 }) {
   const from = arch9ConciergeSender(configuredSender);
   const agency = buildHomeSeekersSellerAgencyEmail(details);
@@ -117,6 +119,7 @@ export async function sendHomeSeekersSellerEnquiryEmails({
   }
 
   const recipient = email(sellerTo);
+  if (!sendSeller) return { ok: true as const, agencyResponse: agencyResult.data, sellerSkipped: "durable_client_intro" };
   const controlledRecipient = assessControlledTestRecipient({
     email: recipient,
   });

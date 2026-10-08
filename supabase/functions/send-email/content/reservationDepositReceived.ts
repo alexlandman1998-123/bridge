@@ -13,7 +13,7 @@ function resolvePropertyLine(payload: ReservationDepositReceivedEmailPayload) {
 }
 
 export function buildReservationDepositReceivedSubject() {
-  return "Reservation deposit received – next steps";
+  return "Reservation deposit received: next steps";
 }
 
 export function buildReservationDepositReceivedPreview() {
@@ -80,7 +80,7 @@ export function buildReservationDepositReceivedEmailText(
     `Hi ${payload.buyerName || "there"},`,
     "",
     `We’ve received your reservation deposit${propertyLine ? ` for ${propertyLine}` : ""}.`,
-    "Thank you — this payment has been successfully received and recorded.",
+    "Thank you. This payment has been successfully received and recorded.",
     payload.transactionReference
       ? `Transaction Reference: ${payload.transactionReference}`
       : null,

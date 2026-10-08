@@ -1,3 +1,4 @@
+import { DOCUMENT_UPLOAD_ACCEPT, DOCUMENT_UPLOAD_HELP_TEXT } from '../lib/documentUploadPolicy.js'
 import { DollarSign, FileBadge2, Receipt, Wallet } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -261,7 +262,7 @@ function FinancialDetailDrawer({ row, record, loading, saving, error, onClose, o
             <label className="inline-flex cursor-pointer items-center justify-center rounded-[14px] border border-[#dbe5ef] bg-[#f8fbff] px-4 py-2.5 text-sm font-semibold text-[#35546c] transition hover:bg-[#eef4fb]">
               Upload Invoice
               <input
-                type="file"
+                type="file" title={DOCUMENT_UPLOAD_HELP_TEXT} accept={DOCUMENT_UPLOAD_ACCEPT}
                 hidden
                 onChange={(event) => {
                   const nextFile = event.target.files?.[0]
@@ -272,6 +273,7 @@ function FinancialDetailDrawer({ row, record, loading, saving, error, onClose, o
                 }}
               />
             </label>
+            <span className="block text-xs font-normal text-slate-500">{DOCUMENT_UPLOAD_HELP_TEXT}</span>
             {record?.invoiceUrl ? (
               <a
                 className="inline-flex items-center justify-center rounded-[14px] border border-[#dbe5ef] bg-white px-4 py-2.5 text-sm font-semibold text-[#35546c] transition hover:bg-[#f7f9fc]"

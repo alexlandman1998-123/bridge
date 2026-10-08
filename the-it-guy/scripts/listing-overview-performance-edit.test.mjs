@@ -29,7 +29,7 @@ assertNotContains(listingDetailSource, 'Edit Listing Performance', 'listing perf
 assertNotContains(listingDetailSource, 'Edit Stats', 'listing performance edit button')
 assertNotContains(listingDetailSource, 'Manual seller-facing stats are active.', 'manual performance override notice')
 assertNotContains(listingDetailSource, 'border-t-[4px]', 'performance card top accent rails')
-assertContains(listingDetailSource, 'bg-[#f7fbff] text-[#42617f]', 'neutral performance card icon treatment')
+assertContains(listingDetailSource, 'summaryCards={[', 'shared summary and channel performance layout')
 assertContains(listingDetailSource, "label: 'Days on market'", 'performance days-on-market card')
 assertNotContains(listingDetailSource, 'Buyer Interest Funnel', 'duplicate buyer interest funnel')
 assertNotContains(listingDetailSource, '<h2 className="text-base font-semibold text-[#142132]">Listing Follow-Ups</h2>', 'listing follow-ups overview block')

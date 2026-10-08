@@ -13,7 +13,7 @@ function resolvePropertyLine(payload: OnboardingSubmittedEmailPayload) {
 }
 
 export function buildOnboardingSubmittedSubject() {
-  return "Your onboarding is complete – next steps";
+  return "Your onboarding is complete: next steps";
 }
 
 export function buildOnboardingSubmittedPreview() {
@@ -74,7 +74,7 @@ export function buildOnboardingSubmittedEmailText(
   return [
     `Hi ${payload.buyerName || "there"},`,
     "",
-    "Thank you — we’ve successfully received your onboarding information.",
+    "Thank you. We’ve successfully received your onboarding information.",
     "Our team will review your details and contact you if anything else is needed.",
     propertyLine ? `Property: ${propertyLine}` : null,
     payload.transactionReference

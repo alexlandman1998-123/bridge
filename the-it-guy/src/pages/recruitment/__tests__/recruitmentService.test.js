@@ -30,7 +30,7 @@ it('validates name and contact details before database writes', async () => {
 })
 it('rejects unsupported files and unsaved leads before upload', async () => {
   await expect(uploadRecruitmentDocument('org', lead, { type: 'application/x-msdownload', size: 20 }, 'CV')).rejects.toThrow('PDF')
-  await expect(uploadRecruitmentDocument('org', lead, { type: 'application/pdf', size: 10485761 }, 'CV')).rejects.toThrow('10 MB')
+  await expect(uploadRecruitmentDocument('org', lead, { name: 'cv.pdf', type: 'application/pdf', size: 10485761 }, 'CV')).rejects.toThrow('10 MB')
   await expect(uploadRecruitmentDocument('org', emptyRecruitmentLead(), { type: 'application/pdf', size: 10 }, 'CV')).rejects.toThrow('Save')
   expect(mocks.storage).not.toHaveBeenCalled()
 })
@@ -41,6 +41,23 @@ it('cleans up an uploaded file when the lead save conflicts', async () => {
   await expect(uploadRecruitmentDocument('org', lead, { type: 'application/pdf', size: 10, name: 'cv.pdf' }, 'CV')).rejects.toThrow('changed')
   expect(storage.upload.mock.calls[0][0]).toMatch(/^org\/lead\//)
   expect(storage.remove).toHaveBeenCalledWith([storage.upload.mock.calls[0][0]])
+})
+it('uses inferred review and onboarding MIME types when the browser leaves File.type blank', async () => {
+  const storage = { upload: vi.fn().mockResolvedValue({ error: null }), remove: vi.fn() }
+  mocks.storage.mockReturnValue(storage)
+  query({ data: { ...lead, documents_json: [] }, error: null })
+  await uploadRecruitmentDocument('org', lead, { name: 'cv.pdf', type: '', size: 100 }, 'CV')
+  expect(storage.upload.mock.calls[0][2].contentType).toBe('application/pdf')
+
+  const signed = { ...lead, status: 'contract_signed', contract_signature_json: { recordedAt: '2026-10-05' } }
+  mocks.rpc.mockReturnValue({ maybeSingle: vi.fn().mockResolvedValue({ data: signed, error: null }) })
+  await uploadRecruitmentOnboardingDocument('org', signed, { name: 'identity.jpg', type: '', size: 100 }, 'Identity document')
+  expect(storage.upload.mock.calls[1][2].contentType).toBe('image/jpeg')
+  expect(mocks.rpc).toHaveBeenCalledWith('recruitment_add_onboarding_document', expect.objectContaining({
+    p_document: expect.objectContaining({ mimeType: 'image/jpeg' }),
+  }))
+  await expect(uploadRecruitmentOnboardingDocument('org', signed, { name: 'identity.jpg', type: 'image/png', size: 100 }, 'Identity document')).rejects.toThrow('does not match')
+  expect(storage.upload).toHaveBeenCalledTimes(2)
 })
 it('rejects foreign document paths before download', async () => {
   await expect(openRecruitmentDocument('org', 'lead', { path: 'other/lead/file' })).rejects.toThrow('does not belong')
@@ -100,7 +117,7 @@ it.each(['40001', 'PT409'])('prepares a genuine PDF for the approved application
   const storage={upload:vi.fn().mockResolvedValue({error:null}),remove:vi.fn().mockResolvedValue({error:null})}
   mocks.storage.mockReturnValue(storage)
   mocks.rpc.mockReturnValue({maybeSingle:vi.fn().mockResolvedValue({data:{...ready,contracts_json:[{version:1}]},error:null})})
-  const file={type:'application/pdf',size:512,name:'Agent agreement.pdf',slice:()=>({arrayBuffer:async()=>new TextEncoder().encode('%PDF-').buffer})}
+  const file={lastModified:code,type:'application/pdf',size:512,name:'Agent agreement.pdf',slice:()=>({arrayBuffer:async()=>new TextEncoder().encode('%PDF-').buffer})}
   expect((await prepareRecruitmentContract('org',ready,file)).contracts_json).toHaveLength(1)
   expect(mocks.storage).toHaveBeenCalledWith('recruitment-contracts')
   expect(storage.upload.mock.calls[0][2]).toEqual({contentType:'application/pdf',upsert:false})
@@ -108,7 +125,7 @@ it.each(['40001', 'PT409'])('prepares a genuine PDF for the approved application
   await expect(prepareRecruitmentContract('org',lead,file)).rejects.toThrow('Approve')
   await expect(prepareRecruitmentContract('org',ready,{...file,slice:()=>({arrayBuffer:async()=>new TextEncoder().encode('wrong').buffer})})).rejects.toThrow('not a PDF')
   mocks.rpc.mockReturnValue({maybeSingle:vi.fn().mockResolvedValue({data:null,error:{code}})})
-  await expect(prepareRecruitmentContract('org',ready,file)).rejects.toThrow('changed or access')
+  await expect(prepareRecruitmentContract('org',ready,{...file,lastModified:`rejected-${code}`})).rejects.toThrow('changed or access')
   expect(storage.remove).toHaveBeenCalled()
   await expect(downloadRecruitmentContract('org',ready,{path:'other/lead/private.pdf'})).rejects.toThrow('does not belong')
 })
@@ -132,7 +149,7 @@ it('records confirmed prior delivery with scope and current version; never repre
 })
 it.each(['40001', 'PT409'])('records only a complete signed PDF and verified findings; cleans up a conflicted upload (%s)', async (code) => {
   const sent={...lead,status:'contract_sent',contract_delivery_json:{contractVersion:2,recordedAt:'2026-10-05',sentOn:recruitmentLocalDate()}}
-  const file={type:'application/pdf',size:512,name:'signed.pdf',slice:()=>({arrayBuffer:async()=>new TextEncoder().encode('%PDF-').buffer})}
+  const file={lastModified:code,type:'application/pdf',size:512,name:'signed.pdf',slice:()=>({arrayBuffer:async()=>new TextEncoder().encode('%PDF-').buffer})}
   const draft={contractVersion:2,agentSigner:'Sam Agent',organisationSigner:'Agency Principal',signedOn:recruitmentLocalDate(),method:'wet_ink',reference:'',notes:'Compared all pages and both signatures',checks:{sameVersion:true,allPages:true,agentSignature:true,organisationSignature:true},file,recordedBy:'forged'}
   const storage={upload:vi.fn().mockResolvedValue({error:null}),remove:vi.fn().mockResolvedValue({error:null})}
   mocks.storage.mockReturnValue(storage)
@@ -146,7 +163,7 @@ it.each(['40001', 'PT409'])('records only a complete signed PDF and verified fin
   await expect(recordRecruitmentContractSignature('org',sent,{...draft,checks:{...draft.checks,allPages:false}})).rejects.toThrow('Verify')
   await expect(recordRecruitmentContractSignature('org',sent,{...draft,file:{...file,slice:()=>({arrayBuffer:async()=>new TextEncoder().encode('wrong').buffer})}})).rejects.toThrow('not a PDF')
   mocks.rpc.mockReturnValue({maybeSingle:vi.fn().mockResolvedValue({data:null,error:{code}})})
-  await expect(recordRecruitmentContractSignature('org',sent,draft)).rejects.toThrow('Signatures were not recorded')
+  await expect(recordRecruitmentContractSignature('org',sent,{...draft,file:{...file,lastModified:`rejected-${code}`}})).rejects.toThrow('Signatures were not recorded')
   expect(storage.remove).toHaveBeenCalled()
   await expect(downloadRecruitmentSignedContract('org',{...sent,contract_signature_json:{recordedAt:'2026-10-05',path:'other/lead/signed'}})).rejects.toThrow('No signed contract')
 })
@@ -166,7 +183,7 @@ it.each(['40001', 'PT409'])('saves partial onboarding with expected version and 
 it.each(['40001', 'PT409'])('uploads final documents into a separate immutable private pack and cleans up a conflicted upload (%s)',async(code)=>{
   const signed={...lead,status:'contract_signed',contract_signature_json:{recordedAt:'2026-10-05'}}
   const storage={upload:vi.fn().mockResolvedValue({error:null}),remove:vi.fn().mockResolvedValue({error:null})}
-  const file={type:'application/pdf',size:512,name:'Joining evidence.pdf'}
+  const file={lastModified:code,type:'application/pdf',size:512,name:'Joining evidence.pdf'}
   mocks.storage.mockReturnValue(storage)
   mocks.rpc.mockReturnValue({maybeSingle:vi.fn().mockResolvedValue({data:signed,error:null})})
   expect(await uploadRecruitmentOnboardingDocument('org',signed,file,'Identity document')).toBe(signed)
@@ -174,9 +191,9 @@ it.each(['40001', 'PT409'])('uploads final documents into a separate immutable p
   expect(storage.upload.mock.calls[0][2]).toEqual({contentType:'application/pdf',upsert:false})
   expect(mocks.rpc.mock.calls[0][1]).toMatchObject({p_organisation_id:'org',p_lead_id:'lead',p_version:3,p_document:{name:file.name,type:'Identity document',mimeType:'application/pdf',size:512}})
   await expect(uploadRecruitmentOnboardingDocument('org',{...signed,status:'onboarding_complete'},file,'Identity document')).rejects.toThrow('Verify the signed')
-  await expect(uploadRecruitmentOnboardingDocument('org',signed,{...file,size:10485761},'Identity document')).rejects.toThrow('up to 10 MB')
+  await expect(uploadRecruitmentOnboardingDocument('org',signed,{...file,size:10485761},'Identity document')).rejects.toThrow('10 MB')
   mocks.rpc.mockReturnValue({maybeSingle:vi.fn().mockResolvedValue({data:null,error:{code}})})
-  await expect(uploadRecruitmentOnboardingDocument('org',signed,file,'Identity document')).rejects.toThrow('changed or access')
+  await expect(uploadRecruitmentOnboardingDocument('org',signed,{...file,lastModified:`rejected-${code}`},'Identity document')).rejects.toThrow('changed or access')
   expect(storage.remove).toHaveBeenCalled()
   await expect(downloadRecruitmentOnboardingDocument('org',signed,{path:'other/lead/file'})).rejects.toThrow('does not belong')
 })

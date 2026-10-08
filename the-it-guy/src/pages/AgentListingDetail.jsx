@@ -1,3 +1,4 @@
+import { DOCUMENT_UPLOAD_ACCEPT, DOCUMENT_UPLOAD_HELP_TEXT } from '../lib/documentUploadPolicy.js'
 import { listingIssueEditorUrl, listingPublicationIssueTarget, publicationReadinessCodes } from '../services/listings/listingPublicationIssueTarget'
 import { focusListingField } from '../components/listings/useListingIssueNavigation'
 import { prepareSellerMandateReviewPreview } from '../lib/sellerMandateReviewPreview.js'
@@ -3140,17 +3141,19 @@ function FollowUpActionCard({ action, loading = false, onAction, onUpload }) {
         ) : null}
       </div>
       {action.upload ? (
-        <label className={`${buttonClass} mt-4 cursor-pointer ${loading ? 'pointer-events-none opacity-65' : ''}`}>
+        <><label className={`${buttonClass} mt-4 cursor-pointer ${loading ? 'pointer-events-none opacity-65' : ''}`}>
           <Upload size={15} />
           {loading ? 'Uploading...' : action.buttonLabel}
           <input
-            type="file"
+            type="file" title={DOCUMENT_UPLOAD_HELP_TEXT}
             className="sr-only"
-            accept=".pdf,.png,.jpg,.jpeg,.webp"
+            accept={DOCUMENT_UPLOAD_ACCEPT}
             disabled={loading}
             onChange={onUpload}
           />
+        
         </label>
+<span className="block text-xs font-normal text-slate-500">{DOCUMENT_UPLOAD_HELP_TEXT}</span></>
       ) : (
         <button
           type="button"
@@ -10693,7 +10696,7 @@ function AgentListingDetail() {
         ? 'Refreshing overview'
         : issues.length
           ? `${issues.length} data source${issues.length === 1 ? '' : 's'} unavailable`
-          : 'Overview up to date',
+          : '',
       status: refreshing ? 'pending' : issues.length ? 'attention' : 'complete',
     }
   }, [interestedLeadsError, interestedLeadsLoading, sentPropertiesError, sentPropertiesLoading, viewingsError, viewingsLoading])
@@ -10851,7 +10854,9 @@ function AgentListingDetail() {
   }
 
   function openSellerInformationEditor() {
-    setSellerProfileBuilderDraft(createListingSellerProfileBuilderDraft(listingRecord || {}))
+    const draft = createListingSellerProfileBuilderDraft(listingRecord || {})
+    setSellerProfileBuilderDraft(draft.branch === 'multiple_owners' ? selectListingSellerProfileBranch(draft, draft.branch) : draft)
+    setSellerProfileBuilderOpen(false)
     setSellerInformationEditorOpen(true)
     setSellerContactEditorOpen(false)
     setDetailError('')
@@ -10984,8 +10989,16 @@ function AgentListingDetail() {
         remote,
         requireIdentifiedSeller: true,
         syncRequirements: true,
+        forceRequirementSync: true,
+        includeRequirementsAndDocuments: false,
         requirementSyncReason: 'listing_seller_profile_capture',
       }))
+      const checklistWarning = result?.warnings?.find((warning) => ['SELLER_REQUIREMENT_SYNC_FAILED', 'SELLER_READBACK_FAILED'].includes(warning.code))
+      if (checklistWarning) {
+        patchListing(() => result.listing)
+        setDetailError('Your ownership details are saved, but the document requests could not be refreshed. Keep this form open and save again to retry. If it still fails, reload the listing before preparing or sending documents.')
+        return
+      }
       const remoteRequirements = normalizeDocumentRequirements(result?.syncedRequirements)
       const listingRequirements = normalizeDocumentRequirements(result?.listing?.documentRequirements)
       const documentRequirements = remoteRequirements.length
@@ -13539,8 +13552,9 @@ function AgentListingDetail() {
                   <label className={`inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#1f4f78] transition ${sellerDocumentUploadKey ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:border-[#b7c8db] hover:bg-[#f7fbff]'}`}>
                     {document.uploadStatus === 'uploading' ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
                     {document.uploadStatus === 'error' ? 'Try again' : 'Upload'}
-                    <input type="file" className="hidden" disabled={Boolean(sellerDocumentUploadKey)} onChange={(event) => void handleSellerDocumentUpload(document, event)} />
+                    <input type="file" title={DOCUMENT_UPLOAD_HELP_TEXT} accept={DOCUMENT_UPLOAD_ACCEPT} className="hidden" disabled={Boolean(sellerDocumentUploadKey)} onChange={(event) => void handleSellerDocumentUpload(document, event)} />
                   </label>
+                  <span className="block text-xs font-normal text-slate-500">{DOCUMENT_UPLOAD_HELP_TEXT}</span>
                 </div>
               ))}
             </div>
@@ -13758,23 +13772,26 @@ function AgentListingDetail() {
       <Modal
         open={sellerInformationEditorOpen}
         onClose={sellerProfileBuilderSaving ? undefined : () => setSellerInformationEditorOpen(false)}
-        title="Edit seller information"
-        subtitle="Update the saved seller, contact and ownership details directly. You do not need to repeat seller onboarding."
+        title="Change ownership details"
+        subtitle="Correct the legal owner, ownership structure or signing authority. Saving automatically updates the document requests."
         className="max-w-4xl"
         footer={(
-          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <div className="w-full space-y-2">
+            {detailError ? <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{detailError}</div> : null}
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <Button type="button" variant="secondary" onClick={() => setSellerInformationEditorOpen(false)} disabled={sellerProfileBuilderSaving}>Cancel</Button>
             <Button type="submit" form="listing-seller-information-editor-form" disabled={sellerProfileBuilderSaving}>
               {sellerProfileBuilderSaving ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
-              {sellerProfileBuilderSaving ? 'Saving...' : 'Save seller information'}
+              {sellerProfileBuilderSaving ? 'Saving...' : 'Save ownership and update requests'}
             </Button>
+            </div>
           </div>
         )}
       >
         <ListingSellerInformationEditor
           draft={sellerProfileBuilderDraft}
           saving={sellerProfileBuilderSaving}
-          onChange={updateSellerProfileBuilderDraft}
+          onChange={(key, value) => key === 'branch' ? handleSellerProfileBuilderBranchSelection(value) : updateSellerProfileBuilderDraft(key, value)}
           onAddPerson={addSellerProfileBuilderPerson}
           onUpdatePerson={updateSellerProfileBuilderPerson}
           onRemovePerson={removeSellerProfileBuilderPerson}
@@ -16107,13 +16124,14 @@ function AgentListingDetail() {
                           {buyerOtpUploadKey === buyerOtpUploadControlKey ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
                           {buyerOtpReady ? 'Replace OTP' : 'Upload OTP'}
                           <input
-                            type="file"
-                            accept=".pdf,image/*"
+                            type="file" title={DOCUMENT_UPLOAD_HELP_TEXT}
+                            accept={DOCUMENT_UPLOAD_ACCEPT}
                             className="hidden"
                             disabled={Boolean(buyerOtpUploadKey)}
                             onChange={(event) => void handleKingstonsBuyerOtpUpload(offer, event)}
                           />
                         </label>
+                        <span className="block text-xs font-normal text-slate-500">{DOCUMENT_UPLOAD_HELP_TEXT}</span>
                       </div>
                     ) : null}
                     {offer.sourceSystem === 'canonical_offer' && wetInkOfferId ? (
@@ -16125,17 +16143,19 @@ function AgentListingDetail() {
                             <p className="mt-1 text-xs leading-5 text-[#607387]">Use a counsel-approved printable pack. Buyer and seller sign physical copies; no online signature is collected.</p>
                           </div>
                           {wetInkUploadKind ? (
-                            <label className={`inline-flex min-h-9 shrink-0 items-center justify-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#1f4f78] transition ${wetInkOfferExecutionAction ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:border-[#b7c8db] hover:bg-[#f7fbff]'}`}>
+                            <><label className={`inline-flex min-h-9 shrink-0 items-center justify-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#1f4f78] transition ${wetInkOfferExecutionAction ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:border-[#b7c8db] hover:bg-[#f7fbff]'}`}>
                               {wetInkOfferExecutionAction === `${wetInkOfferId}:${wetInkUploadKind}` ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
                               {wetInkUploadLabel}
                               <input
-                                type="file"
-                                accept=".pdf,image/*"
+                                type="file" title={DOCUMENT_UPLOAD_HELP_TEXT}
+                                accept={DOCUMENT_UPLOAD_ACCEPT}
                                 className="hidden"
                                 disabled={Boolean(wetInkOfferExecutionAction) || (wetInkUploadKind === 'printable_pack' && !wetInkCommercialTermsReady)}
                                 onChange={(event) => void handleWetInkOfferExecutionUpload(offer, wetInkUploadKind, event)}
                               />
+                            
                             </label>
+<span className="block text-xs font-normal text-slate-500">{DOCUMENT_UPLOAD_HELP_TEXT}</span></>
                           ) : null}
                         </div>
                         {wetInkUploadKind === 'printable_pack' && !wetInkCommercialTermsReady ? (
@@ -16397,11 +16417,14 @@ function AgentListingDetail() {
 
           {sellerWorkspaceTab === 'overview' ? (
             <section className="space-y-6">
-              <article className="rounded-[16px] border border-[#dde4ee] bg-white p-5 shadow-[0_8px_20px_rgba(15,23,42,0.035)]">
-                <div className="grid items-start gap-4 sm:grid-cols-3">
-                  {[
+              <article className="rounded-[22px] border border-[#e1e7ec] bg-white p-4 shadow-[0_8px_28px_rgba(15,23,42,0.035)] sm:p-6">
+                <ListingChannelStatistics
+                  organisationId={listingOrganisationId}
+                  listingId={listingId}
+                  refreshKey={overviewLastRefreshedAt}
+                  summaryCards={[
                     {
-                      label: 'Leads', value: interestedLeadsLoading ? '…' : interestedLeadsError ? '—' : formatCompactNumber(listingPerformance.leadCount), meta: interestedLeadsError ? 'Lead sync unavailable' : `${formatCompactNumber(listingPerformance.newThisWeek)} new this week`, icon: Users,
+                      label: 'Total leads', value: interestedLeadsLoading ? '…' : interestedLeadsError ? '—' : formatCompactNumber(listingPerformance.leadCount), meta: interestedLeadsError ? 'Lead sync unavailable' : `${formatCompactNumber(listingPerformance.newThisWeek)} new this week`, icon: Users,
                     },
                     {
                       label: 'Viewings', value: viewingsLoading ? '…' : viewingsError ? '—' : formatCompactNumber(listingPerformance.scheduledViewings), meta: viewingsError ? 'Viewing data unavailable' : `${formatCompactNumber(listingPerformance.upcomingViewings)} upcoming`, icon: CalendarDays,
@@ -16416,22 +16439,8 @@ function AgentListingDetail() {
                         : `Listed ${formatDate(listingPerformance.marketStartDate)}`,
                       icon: BarChart3,
                     },
-                  ].map((card) => {
-                    const Icon = card.icon
-                    return (
-                      <div key={card.label} className="flex min-h-[138px] flex-col justify-between rounded-[14px] border border-[#e0e9f2] bg-white p-4">
-                        <div className="flex items-start justify-between gap-3">
-                          <p className="text-[0.82rem] font-semibold text-[#637996]">{card.label}</p>
-                          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[11px] border border-[#dce6f2] bg-[#f7fbff] text-[#42617f]">
-                            <Icon size={17} />
-                          </span>
-                        </div>
-                        <p className="mt-4 text-[2rem] font-semibold leading-none tracking-[-0.04em] text-[#10243a]">{card.value}</p>
-                        <p className="mt-4 text-xs font-medium leading-5 text-[#607387]">{card.meta}</p>
-                      </div>
-                    )
-                  })}
-                </div>
+                  ]}
+                />
 
                 <ListingChannelStatistics
                   organisationId={listingOrganisationId}
@@ -16441,17 +16450,12 @@ function AgentListingDetail() {
 
                 <div className="mt-4 flex flex-wrap items-center justify-between gap-3" aria-live="polite">
                   <div className="flex min-w-0 flex-wrap items-center gap-2">
-                    <StatusPill status={overviewReliability.status} label={overviewReliability.label} />
+                    {overviewReliability.status !== 'complete' ? <StatusPill status={overviewReliability.status} label={overviewReliability.label} /> : null}
                     {overviewReliability.issues.length ? (
                       <span className="text-xs font-medium text-[#8a5a16]">Check: {overviewReliability.issues.join(', ')}</span>
-                    ) : overviewLastRefreshedAt ? (
-                      <span className="text-xs font-medium text-[#607387]">Updated {formatOverviewTimestamp(overviewLastRefreshedAt)}</span>
                     ) : null}
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="inline-flex min-h-9 items-center rounded-lg border border-[#dbe6f2] bg-[#f7fbff] px-3 text-xs font-semibold text-[#35546c]">
-                      Listing snapshot
-                    </span>
                     <Button type="button" size="sm" variant="secondary" onClick={refreshListingOverview} disabled={overviewReliability.refreshing}>
                       <RefreshCw size={14} className={overviewReliability.refreshing ? 'animate-spin' : ''} />
                       {overviewReliability.refreshing ? 'Refreshing' : 'Refresh'}
@@ -17166,6 +17170,7 @@ function AgentListingDetail() {
                     <div className="mt-auto pt-5">
                       <ListingSellerHistoricalNormalizationBanner
                         listingId={listingRecord?.id || listingId}
+                        revision={listingRecord?.updatedAt || listingRecord?.updated_at || listingRecord?.sellerCanonicalFactsUpdatedAt || ''}
                         onReview={() => openSellerProfileBuilder('Review the historical seller record, resolve any conflicts, and confirm the legal owner before requirements change.')}
                       />
                     </div>
@@ -17177,6 +17182,7 @@ function AgentListingDetail() {
               <section className="space-y-5">
                 <ListingSellerHistoricalNormalizationBanner
                   listingId={listingRecord?.id || listingId}
+                  revision={listingRecord?.updatedAt || listingRecord?.updated_at || listingRecord?.sellerCanonicalFactsUpdatedAt || ''}
                   onReview={() => openSellerProfileBuilder('Review the historical seller record and confirm the legal owner before requirements change.')}
                 />
                 <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
@@ -17219,6 +17225,10 @@ function AgentListingDetail() {
                       </div>
                     </div>
                     <div className="flex flex-wrap gap-2 lg:justify-end">
+                      <Button type="button" size="sm" variant="secondary" onClick={openSellerInformationEditor}>
+                        <Pencil size={15} />
+                        Change ownership details
+                      </Button>
                       <Button size="sm" onClick={continueSellerOnboardingFromWorkspace}>
                         <UserRound size={15} />
                         Continue Seller Onboarding
@@ -17805,18 +17815,20 @@ function AgentListingDetail() {
                                 </Button>
                               ) : null}
                               {actions.canUpload ? (
-                                <label className={`inline-flex min-h-9 items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#1f4f78] transition ${sellerDocumentUploadKey ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:border-[#b7c8db] hover:bg-[#f7fbff]'}`}>
+                                <><label className={`inline-flex min-h-9 items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#1f4f78] transition ${sellerDocumentUploadKey ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:border-[#b7c8db] hover:bg-[#f7fbff]'}`}>
                                   {sellerDocumentUploadKey === (doc.key || doc.id || doc.label) ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
                                   {actions.uploadLabel}
                                   <input
-                                    type="file"
+                                    type="file" title={DOCUMENT_UPLOAD_HELP_TEXT}
                                     className="hidden"
                                     aria-label={`${actions.uploadLabel} ${doc.label}`}
-                                    accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png"
+                                    accept={DOCUMENT_UPLOAD_ACCEPT}
                                     disabled={Boolean(sellerDocumentUploadKey)}
                                     onChange={(event) => void handleSellerDocumentUpload(doc, event)}
                                   />
+                                
                                 </label>
+<span className="block text-xs font-normal text-slate-500">{DOCUMENT_UPLOAD_HELP_TEXT}</span></>
                               ) : null}
                               {(actions.canOpen || physicalCopy || (doc.status === 'approved' && (doc.generatedHtml || doc.generated_html))) ? (
                                 <button
@@ -18049,9 +18061,9 @@ function AgentListingDetail() {
                     {sellerDocumentRequirementModel.retired ? ` ${sellerDocumentRequirementModel.retired} retired requirement${sellerDocumentRequirementModel.retired === 1 ? '' : 's'} kept for history.` : ''}
                   </p>
                 </div>
-                <Button type="button" size="sm" onClick={() => openSellerProfileBuilder('Update the seller details here. Document requirements refresh after saving.')}>
+                <Button type="button" size="sm" onClick={openSellerInformationEditor}>
                   <UserRound size={15} />
-                  Update Seller Model
+                  Change ownership details
                 </Button>
               </div>
               <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">

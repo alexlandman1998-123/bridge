@@ -1,3 +1,4 @@
+import { resolveAppointmentSchedule } from './appointmentTime.js'
 export const APPOINTMENT_RSVP_TIMEZONE = 'Africa/Johannesburg'
 
 export const APPOINTMENT_RSVP_ACTIONS = Object.freeze({
@@ -75,8 +76,17 @@ export function buildAppointmentRsvpContract(input = {}, options = {}) {
   const dateParts = parseDate(preferredDate)
   const startParts = parseTime(preferredStartTime)
   const endParts = preferredEndTime ? parseTime(preferredEndTime) : null
-  const preferredStart = toIso(dateParts, startParts)
-  const preferredEnd = endParts ? toIso(dateParts, endParts) : null
+  const timezone = normalizeText(input.timezone) || APPOINTMENT_RSVP_TIMEZONE
+  let preferredStart = toIso(dateParts, startParts)
+  let preferredEnd = endParts ? toIso(dateParts, endParts) : null
+  if (status === APPOINTMENT_RSVP_STATUSES.reschedule && dateParts && startParts && timezone !== APPOINTMENT_RSVP_TIMEZONE) {
+    try {
+      const schedule = resolveAppointmentSchedule({ date: preferredDate, startTime: preferredStartTime,
+      ...(preferredEndTime ? { endTime: preferredEndTime } : { durationMinutes: 45 }), timezone })
+      preferredStart = schedule.dateTime
+      preferredEnd = preferredEndTime ? schedule.endDateTime : null
+    } catch (error) { errors.push({ field: 'preferredDate', code: error.code, message: error.message }); preferredStart = null; preferredEnd = null }
+  }
   const nowMs = options.now instanceof Date
     ? options.now.getTime()
     : Number.isFinite(Number(options.now)) ? Number(options.now) : Date.now()
@@ -109,7 +119,7 @@ export function buildAppointmentRsvpContract(input = {}, options = {}) {
       proposedNewTime: status === APPOINTMENT_RSVP_STATUSES.reschedule ? preferredStart : null,
       preferredEnd: status === APPOINTMENT_RSVP_STATUSES.reschedule ? preferredEnd : null,
       comment: status === APPOINTMENT_RSVP_STATUSES.reschedule ? message || null : null,
-      timezone: APPOINTMENT_RSVP_TIMEZONE,
+      timezone,
     },
   }
 }

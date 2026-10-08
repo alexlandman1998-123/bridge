@@ -114,7 +114,7 @@ test('Home Seekers enquiries create CRM leads atomically and queue scoped notifi
     await t.test('scheduled retries are Home Seekers only, include all enquiry types and reject orphaned/exhausted events', async () => {
       assert.equal((await db.query('select public.website_run_home_seekers_lead_dispatcher() as result')).rows[0].result.reason, 'vault_configuration_missing')
       await db.exec("insert into vault.decrypted_secrets values ('arch9_project_url','https://fixture.example.test'),('arch9_service_role_key','fixture-service-key');")
-      await db.exec("update notification_events set dispatch_attempt_count=5 where id=(select id from notification_events limit 1);")
+      await db.exec("update notification_events set dispatch_attempt_count=5 where id=(select id from notification_events where payload_json->>'enquiryType'='general enquiry' order by created_at,id limit 1);")
       await db.exec("insert into notification_events(organisation_id,source,automation_key,channel,status,recipient_email) values ('33333333-3333-4333-8333-333333333333','agency_website','website_lead_received','email','queued','other@example.test'),('2958d402-368e-43c9-b728-0098e10505f1','agency_website','website_lead_received','email','queued','orphan@example.test');")
       const stale = (await db.query("update notification_events set status='processing',last_dispatch_attempt_at=now()-interval '10 minutes' where id=(select id from notification_events where lead_id is not null and dispatch_attempt_count=0 limit 1) returning id")).rows[0].id
       const result = (await db.query('select public.website_run_home_seekers_lead_dispatcher() as result')).rows[0].result

@@ -62,3 +62,5 @@ test('seller workspace shows the remediation action in both seller states', asyn
   assert.equal(occurrences.length, 2)
   assert.match(page, /Review the historical seller record/)
 })
+
+await import('./listing-seller-history-flow.test.mjs')

@@ -6,6 +6,9 @@ const pdf = () => new File(['%PDF-1.7\noriginal bytes'], 'signed.pdf', { type: '
 it('rejects disguised and oversized files before upload', async () => {
   await expect(validateBondSignedPdf(new File(['not a PDF'], 'signed.pdf'))).rejects.toThrow('not a PDF')
   await expect(validateBondSignedPdf({ name: 'signed.pdf', size: 26214401 })).rejects.toThrow('25 MB')
+  await expect(validateBondSignedPdf(new File(['%PDF-1.7'], 'signed.pdf', { type: 'image/png' }))).rejects.toThrow('does not match')
+  const inferred = await validateBondSignedPdf(new File(['%PDF-1.7'], 'signed.PDF', { type: '' }))
+  expect(inferred.sha256).toMatch(/^[a-f0-9]{64}$/)
 })
 it('retries metadata without overwriting the original when recording fails', async () => {
   const upload = vi.fn().mockResolvedValue({ data: {} })

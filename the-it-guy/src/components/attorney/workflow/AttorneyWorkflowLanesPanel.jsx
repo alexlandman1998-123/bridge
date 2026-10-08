@@ -1,3 +1,4 @@
+import { DOCUMENT_UPLOAD_ACCEPT, DOCUMENT_UPLOAD_HELP_TEXT } from '../../../lib/documentUploadPolicy.js'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { workflowActionLabel } from '../../../lib/workflowActionLabel.js'
 import { Link } from 'react-router-dom'
@@ -1099,7 +1100,7 @@ function AttorneyWorkflowLanesPanel({ transactionId, onChanged }) {
             <label className="grid gap-1.5 text-sm font-medium text-textStrong">
               File
               <input
-                type="file"
+                type="file" aria-label="File" title={DOCUMENT_UPLOAD_HELP_TEXT} accept={DOCUMENT_UPLOAD_ACCEPT}
                 name="documentFile"
                 className="rounded-control border border-borderSoft bg-surface px-3 py-2 text-sm text-textStrong file:mr-3 file:rounded-full file:border-0 file:bg-surfaceAlt file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-textStrong"
                 onChange={(event) => {
@@ -1108,7 +1109,9 @@ function AttorneyWorkflowLanesPanel({ transactionId, onChanged }) {
                   setUploadDraft((previous) => previous && previous.title.trim() ? previous : { ...previous, title: fileName })
                 }}
               />
+            <span className="block text-xs font-normal text-slate-500">{DOCUMENT_UPLOAD_HELP_TEXT}</span>
             </label>
+            
             <label className="grid gap-1.5 text-sm font-medium text-textStrong">
               Document Title
               <Field

@@ -11,12 +11,16 @@ beforeAll(async () => {
   await db.exec(`
     create role authenticated; create role anon; create role service_role; create schema auth;
     create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
+    create function auth.jwt() returns jsonb language sql stable as $$select jsonb_build_object('sub',auth.uid(),'email','')$$;
+    create function bridge_is_active_member(uuid) returns boolean language sql as $$select false$$;
     create function auth.role() returns text language sql stable as $$select current_setting('role')$$;
     create table profiles(id uuid primary key, full_name text, first_name text, last_name text, email text);
     create table organisations(id uuid primary key);
     create table transactions(id uuid primary key, organisation_id uuid);
-    create table contacts(contact_id uuid primary key);
-    create table leads(lead_id uuid primary key);
+    create table contacts(contact_id uuid primary key,organisation_id uuid);
+    create table leads(lead_id uuid primary key,organisation_id uuid,assigned_agent_id uuid);
+    create table organisation_users(organisation_id uuid,user_id uuid,membership_status text,status text);
+    create table transaction_checklist_items(id uuid primary key,transaction_id uuid,status text,updated_at timestamptz);
     create table attorney_firm_members(firm_id uuid, user_id uuid, role text, status text);
     create table attorney_firms(id uuid primary key, organisation_id uuid);
     create table transaction_attorney_assignments(transaction_id uuid, attorney_firm_id uuid, firm_id uuid, assignment_status text, status text, can_manage_signing boolean);
@@ -33,16 +37,16 @@ beforeAll(async () => {
   const base = await readFile(new URL('../../supabase/migrations/202605130001_appointment_module_v1.sql', import.meta.url), 'utf8')
   await db.exec(base.slice(0, base.indexOf('alter table public.appointments enable row level security;')))
   await db.exec(`
-    alter table appointments add confirmed_at timestamptz;
+    alter table appointments add confirmed_at timestamptz, add listing_viewing_round_number integer;
     alter table appointment_participants add rsvp_expires_at timestamptz, add rsvp_revoked_at timestamptz;
     create table appointment_resources(id uuid primary key, organisation_id uuid, resource_name text, is_active boolean default true);
     alter table appointments add foreign key(resource_id) references appointment_resources(id) on delete set null;
     create table appointment_reschedule_requests(id uuid primary key default gen_random_uuid(), appointment_id uuid, requested_by uuid, requested_by_role text, reason text,
       status text, preferred_start timestamptz, preferred_end timestamptz, reviewed_by uuid, reviewed_at timestamptz,
       suggested_slots jsonb, created_at timestamptz default now(), updated_at timestamptz);
-    create table appointment_reminders(id uuid primary key default gen_random_uuid(), appointment_id uuid, status text, updated_at timestamptz);
-    create function bridge_can_access_appointment(p uuid) returns boolean language sql stable security definer as $$
-      select exists(select 1 from public.appointments where appointment_id=p and (created_by=auth.uid() or public.bridge_attorney_can_manage_transaction(transaction_id)))$$;
+    create table appointment_reminders(id uuid primary key default gen_random_uuid(), appointment_id uuid, status text, recipient_id uuid,recipient_email text,metadata jsonb,updated_at timestamptz);
+    create function bridge_can_access_appointment(p_appointment_id uuid) returns boolean language sql stable security definer as $$
+      select exists(select 1 from public.appointments where appointment_id=p_appointment_id and (created_by=auth.uid() or public.bridge_attorney_can_manage_transaction(transaction_id)))$$;
     grant usage on schema auth to authenticated, anon;
     grant select, insert, update, delete on all tables in schema public to authenticated;
     alter table appointments enable row level security;
@@ -64,11 +68,21 @@ beforeAll(async () => {
   await db.exec(await readFile(new URL('../../supabase/migrations/202607180032_attorney_calendar_phase5_reschedule_coordination.sql', import.meta.url), 'utf8'))
   await db.exec(await readFile(new URL('../../supabase/migrations/20261003201121_attorney_appointment_management.sql', import.meta.url), 'utf8'))
   await db.exec(await readFile(new URL('../../supabase/migrations/20261003204422_attorney_calendar_durable_delivery.sql', import.meta.url), 'utf8'))
+  // This fixture tests scheduling guards; the real calendar reader's access
+  // rules are exercised separately in leadAppointmentHistoryReader.test.js.
+  const calendarReader = await readFile(new URL('../../supabase/migrations/202605210001_agent_calendar_visibility_rpc.sql', import.meta.url), 'utf8')
+  await db.exec(calendarReader.slice(calendarReader.indexOf('create or replace function public.bridge_list_calendar_appointments')))
+  await db.exec(await readFile(new URL('../../supabase/migrations/20261008163445_appointment_end_instant.sql', import.meta.url), 'utf8'))
   const lifecycle = await readFile(new URL('../../supabase/migrations/202607180047_attorney_calendar_phase4_rsvp_lifecycle.sql', import.meta.url), 'utf8')
   await db.exec(lifecycle.slice(lifecycle.indexOf('drop function if exists public.get_appointment_rsvp_by_token'), lifecycle.indexOf('create function public.submit_appointment_rsvp')))
   const currentRsvp = await readFile(new URL('../../supabase/migrations/202608100003_viewing_seller_rsvp_buyer_handoff.sql', import.meta.url), 'utf8')
   await db.exec(currentRsvp.slice(currentRsvp.indexOf('create function public.submit_appointment_rsvp'), currentRsvp.indexOf('revoke all on function public.get_viewing_seller')))
   await db.exec("revoke all on function submit_appointment_rsvp(text,text,timestamptz,timestamptz,text) from public; grant execute on function submit_appointment_rsvp(text,text,timestamptz,timestamptz,text) to anon,authenticated; grant execute on function get_appointment_rsvp_by_token(text) to anon,authenticated;")
+  await db.exec(await readFile(new URL('../../supabase/migrations/20261008164958_calendar_atomic_reservations.sql', import.meta.url), 'utf8'))
+  await db.exec(await readFile(new URL('../../supabase/migrations/20261008184511_calendar_durable_notifications.sql', import.meta.url), 'utf8'))
+  await db.exec(await readFile(new URL('../../supabase/migrations/20261008193925_calendar_agent_archive_workflow.sql', import.meta.url), 'utf8'))
+  await db.exec(await readFile(new URL('../../supabase/migrations/20261008202747_calendar_historical_reconciliation.sql', import.meta.url), 'utf8'))
+  await db.exec(await readFile(new URL('../../supabase/migrations/20261008205719_calendar_connected_provider_sync.sql', import.meta.url), 'utf8'))
 }, 30000)
 afterAll(() => db.close())
 beforeEach(async () => {
@@ -103,6 +117,20 @@ async function seedBusy({ email = null, user = null, resource = null, start = '2
 }
 
 describe('Attorney appointment management SQL', () => {
+  it('checks a selected timezone and explicit end against shared room reservations', async () => {
+    await seedBusy({ resource: room })
+    await db.query(`update appointments set appointment_date='2099-07-20', start_time='11:30', end_time='12:30',
+      date_time='2099-07-20T15:30Z', end_date_time='2099-07-20T16:30Z', timezone='America/New_York', resource_id=$1
+      where appointment_id=$2`, [room, appointment])
+    expect(new Date((await db.query('select end_date_time from appointments where appointment_id=$1', [appointment])).rows[0].end_date_time).toISOString()).toBe('2099-07-20T16:30:00.000Z')
+    await expect(db.query(`update appointments set start_time='04:30', end_time='05:30',
+      date_time='2099-07-20T08:30Z', end_date_time='2099-07-20T09:30Z' where appointment_id=$1`, [appointment])).rejects.toThrow(/already (booked|reserved)/)
+  })
+  it('keeps a legacy reschedule usable after an explicit end was saved', async () => {
+    await db.query("update appointments set end_date_time='2099-07-20T09:00Z' where appointment_id=$1", [appointment])
+    const saved = await manage('edit', { start: '2099-07-21T08:00Z', end: '2099-07-21T09:00Z' })
+    expect(saved.appointment.end_date_time).toBeNull()
+  })
   it('persists staff identity/email and replaces only the scheduling owner', async () => {
     const saved = await manage('owner', { userId: staff })
     expect(saved.appointment.scheduling_owner_user_id).toBe(staff)
@@ -119,12 +147,12 @@ describe('Attorney appointment management SQL', () => {
   it.each(['user', 'email'])('checks hidden cross-organisation staff bookings by %s', async identity => {
     await seedBusy(identity === 'user' ? { user: staff } : { email: 'SECRETARY@example.test' })
     expect((await db.query('select * from appointments where appointment_id=$1', [busyAppointment])).rows).toHaveLength(0)
-    await expect(manage('owner', { userId: staff })).rejects.toThrow(/already booked/)
+    await expect(manage('owner', { userId: staff })).rejects.toThrow(/already (booked|reserved)/)
     expect((await db.query('select * from appointment_participants')).rows).toHaveLength(2)
   })
   it('rejects room overlap and an active room belonging to another organisation', async () => {
     await seedBusy({ resource: room })
-    await expect(manage('resource', { resourceId: room })).rejects.toThrow(/boardroom is already booked/)
+    await expect(manage('resource', { resourceId: room })).rejects.toThrow(/already (booked|reserved)/)
     await expect(manage('resource', { resourceId: otherRoom })).rejects.toThrow(/this appointment organisation/)
   })
   it('allows the assigned firm boardroom while retaining the matter organisation', async () => {
@@ -156,13 +184,13 @@ describe('Attorney appointment management SQL', () => {
   })
   it('checks real attendees when editing and leaves the original appointment on conflict', async () => {
     await seedBusy({ user: actor, start: '2099-07-20T10:00Z', end: '13:00' })
-    await expect(manage('edit', { start: '2099-07-20T10:00Z', end: '2099-07-20T11:00Z' })).rejects.toThrow(/already booked/)
+    await expect(manage('edit', { start: '2099-07-20T10:00Z', end: '2099-07-20T11:00Z' })).rejects.toThrow(/already (booked|reserved)/)
     expect((await db.query('select start_time from appointments where appointment_id=$1', [appointment])).rows[0].start_time).toBe('10:00:00')
   })
   it('guards the existing proposal and acceptance RPCs against staff conflicts', async () => {
     await seedBusy({ email: 'buyer@example.test', start: '2099-07-20T10:00Z', end: '13:00' })
-    await expect(db.query('select * from propose_attorney_appointment_reschedule($1,$2,$3)', [request, '2099-07-20T10:00Z', '2099-07-20T11:00Z'])).rejects.toThrow(/already booked/)
-    await expect(db.query("select * from resolve_attorney_appointment_reschedule($1,'accepted')", [request])).rejects.toThrow(/already booked/)
+    await expect(db.query('select * from propose_attorney_appointment_reschedule($1,$2,$3)', [request, '2099-07-20T10:00Z', '2099-07-20T11:00Z'])).rejects.toThrow(/already (booked|reserved)/)
+    await expect(db.query("select * from resolve_attorney_appointment_reschedule($1,'accepted')", [request])).rejects.toThrow(/already (booked|reserved)/)
   })
   it('retains cancellations and prevents stale RSVP/reschedule revival', async () => {
     const saved = await manage('cancel', { reason: 'Buyer unavailable' })

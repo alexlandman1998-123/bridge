@@ -1,5 +1,6 @@
 import { buildSellerProfileCanonicalPayload } from '../../lib/sellerProfileCaptureModel.js'
 import { resolveListingSellerAuthorityContract } from '../../lib/sellerPartyAuthorityContract.js'
+import { assertListingEditorSellerOwnership } from './listingSellerHistoricalNormalizationModel.js'
 
 export const LISTING_SELLER_CANONICAL_UPDATE_VERSION = 'listing_seller_canonical_update_v1'
 
@@ -122,7 +123,26 @@ export function buildListingSellerCanonicalUpdate({
       formData: nextFormData,
     },
   }
+  // A confirmed edit to the ownership model must resolve signing authority
+  // from the new form, not the canonical facts being replaced by this save.
+  const ownershipModelFields = [
+    'ownerStructureType', 'owner_structure_type', 'ownerEntityType', 'owner_entity_type',
+    'sellerLegalType', 'seller_legal_type', 'ownershipType', 'ownership_type', 'sellerType',
+  ]
+  const ownershipModelEdited = ownershipModelFields.some((key) => Object.hasOwn(normalizedPatch, key) &&
+    (mutationType === 'seller_profile_capture' || valuesDiffer(existingFormData[key], normalizedPatch[key])))
+  if (ownershipModelEdited) {
+    projectedListing.sellerCanonicalFacts = null
+    projectedListing.seller_canonical_facts_json = null
+    projectedListing.sellerType = null
+    projectedListing.seller_type = null
+    projectedListing.ownershipType = null
+    projectedListing.ownership_structure = null
+  }
   const authority = resolveListingSellerAuthorityContract(projectedListing, nextFormData)
+  if (!ownershipModelEdited && authority.identified) {
+    assertListingEditorSellerOwnership({ sellerType: authority.profileType }, listing)
+  }
   const changedFields = Object.keys(normalizedPatch).filter((key) => valuesDiffer(existingFormData[key], normalizedPatch[key])).sort()
   const requirementsAffected = changedFields.some((key) => REQUIREMENT_AFFECTING_FIELD.test(key))
   if (['individual', 'married', 'foreign_individual'].includes(authority.profileType) &&

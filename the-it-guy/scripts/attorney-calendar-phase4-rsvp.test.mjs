@@ -37,7 +37,7 @@ for (const token of [
 
 for (const token of [
   'buildAppointmentRsvpContract({',
-  'isCompletedAppointmentRsvp(row.rsvp_status)',
+  'isCompletedAppointmentRsvp(current.rsvp_status)',
   "if (!response?.participant_id)",
   'disabled={!rsvpContract.isValid || submitting}',
   'maxLength={1000}',

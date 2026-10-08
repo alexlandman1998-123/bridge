@@ -32,7 +32,8 @@ export async function sendPortalLeadNotifications(
       const response = await fetchImpl(endpoint, { method: 'POST', headers: { Authorization: `Bearer ${serviceRoleKey}`, apikey: serviceRoleKey, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
       const data = await response.json().catch(() => ({}))
       if (!response.ok || data?.ok === false || data?.error) return { sent: false, error: 'email_delivery_failed' }
-      return { sent: data.sent !== false, ...(data.suppressed ? { suppressed: true, reason: data.reason } : {}), providerMessageId: data.providerMessageId || data.emailId || data.providerResponse?.id || null }
+      const providerMessageId = data.providerMessageId || data.emailId || data.providerResponse?.id || null
+      return { sent: data.sent === true && Boolean(providerMessageId) && !data.queued && !data.suppressed, ...(data.queued ? { queued: true, deliveryStatus: data.deliveryStatus } : {}), ...(data.suppressed ? { suppressed: true, reason: data.reason } : {}), providerMessageId }
     } catch {
       return { sent: false, error: 'email_transport_failed' }
     }
@@ -525,6 +526,9 @@ export async function importProperty24PreparedLeads({
       }
 
       const rows = buildCrmRows(lead, listing)
+      // Commit the initial-recovery policy with the lead so the durable worker
+      // cannot send historical alerts even if this process stops after saving.
+      rows.leadRow.raw_enquiry_payload.arch9NotificationHistorical = !sendNotifications
       const persisted = await persistIngestionLog(
         supabase,
         await persistActivityAndTask(

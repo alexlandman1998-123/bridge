@@ -1,3 +1,4 @@
+import { appointmentMatchesAgent } from '../../../core/appointments/appointmentReadModel.js'
 export const AGENT_DATE_RANGE_OPTIONS = [
   { value: 'last_7_days', label: 'Last 7 days' },
   { value: 'last_30_days', label: 'Last 30 days' },
@@ -556,16 +557,16 @@ export function buildAgentPerformanceModel({
   }
 
   for (const appointment of appointments) {
-    const bucket = findBucket(appointment)
-    if (!bucket) continue
-    registerEvent(bucket, {
-      type: 'viewings',
-      title: normalizeKey(appointment.appointmentType || appointment.appointment_type || appointment.title).includes('viewing')
-        ? 'booked a viewing'
-        : 'booked a meeting',
-      timestamp: appointment.updatedAt || appointment.updated_at || appointment.dateTime || appointment.date_time || appointment.createdAt || appointment.created_at,
-      original: appointment,
-    })
+    for (const agent of agents) {
+      if (!appointmentMatchesAgent(appointment, agent)) continue
+      const bucket = rowsByAgent.get(getAgentKeys(agent)[0])
+      registerEvent(bucket, {
+        type: 'viewings',
+        title: normalizeKey(appointment.appointmentType || appointment.appointment_type || appointment.title).includes('viewing') ? 'booked a viewing' : 'booked a meeting',
+        timestamp: appointment.updatedAt || appointment.updated_at || appointment.dateTime || appointment.date_time || appointment.createdAt || appointment.created_at,
+        original: appointment,
+      })
+    }
   }
 
   for (const activity of activities) {

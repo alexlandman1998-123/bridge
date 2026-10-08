@@ -32,6 +32,12 @@ test('failed customer acknowledgement does not block the agent alert', async () 
   assert.equal(result.operations.sent, true)
   assert.equal(fixture.bodies.length, 2)
 })
+test('a durable queued agent email is not reported as delivered', async () => {
+  const fixture = deliveryFixture([{ ok: true, sent: false, queued: true, deliveryStatus: 'pending' }])
+  const result = await sendPortalLeadNotifications(input, fixture.options)
+  assert.equal(result.operations.sent, false)
+  assert.equal(result.operations.queued, true)
+})
 test('suppressed email is not reported as sent', async () => {
   const fixture = deliveryFixture([{ ok: true, sent: false, suppressed: true, reason: 'disabled' }])
   const result = await sendPortalLeadNotifications(input, fixture.options)

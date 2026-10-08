@@ -18,7 +18,7 @@ for (const expectedBlankDefault of [
 
 assert.match(
   source,
-  /Optional defaults can be left blank and refined after setup\./,
+  /id="development-team-heading">Sales team<\/h4><span>Optional<\/span>/,
   'Transaction Defaults copy should clearly mark the setup as optional.',
 )
 

@@ -1,3 +1,4 @@
+import { runRecoverableDocumentUpload, readSavedUploadByPath, isDefiniteUploadSaveRejection } from '../src/lib/documentUploadRecovery.js'
 import { createMandateTermsFixture } from './fixtures/seller-mandate-capture.mjs'
 import { collectSellerSigningBundle } from './seller-document-release-check.mjs'
 import { collectSellerReleaseSource } from './seller-document-release-candidate.mjs'
@@ -577,6 +578,13 @@ async function portalUploadService(fixture) {
   const start = source.indexOf('export async function uploadSellerClientPortalDocument(')
   const end = source.indexOf('export const __privateListingServiceTestUtils', start)
   assert.ok(start >= 0 && end > start)
+  const classifierStart = source.indexOf('export function isSellerPortalSessionExpiredError(')
+  const classifierEnd = source.indexOf('\nfunction normalizeKey(', classifierStart)
+  assert.ok(classifierStart >= 0 && classifierEnd > classifierStart)
+  const normalizeKey = value => String(value ?? '').trim().toLowerCase()
+  const isSellerPortalSessionExpiredError = Function('normalizeKey',
+    `${source.slice(classifierStart, classifierEnd).replace('export function', 'function')}\nreturn isSellerPortalSessionExpiredError`,
+  )(normalizeKey)
   const events = { uploads: 0, removals: 0, commands: [] }
   const client = { async rpc(name, params) {
     events.commands.push({ name, params })
@@ -587,6 +595,8 @@ async function portalUploadService(fixture) {
     catch (error) { return { error } }
   } }
   const scope = {
+    runRecoverableDocumentUpload, readSavedUploadByPath, isDefiniteUploadSaveRejection, DOCUMENTS_BUCKET_CANDIDATES: ['documents'],
+    normalizeKey, isSellerPortalSessionExpiredError,
     requireClient: () => client, normalizeText: value => String(value ?? '').trim(), normalizeUuid: value => value || '',
     getStoredSellerPortalAccessToken: () => '', getSellerPortalSignedUploadReference: fixture.api.getSellerPortalSignedUploadReference,
     getSellerOnboardingByToken: async () => { const opened = await workspace(fixture.listingId); return { listing: opened.listing, onboardingFormData: { formData: opened.listing.sellerOnboarding.formData } } },
@@ -630,7 +640,7 @@ async function completeConnectedPhysical(fixture, document) {
   await assert.rejects(service.action({ ...uploadValues, reviewedSigningVersionDigest: `sha256:${'0'.repeat(64)}` }), /Reopen the current signing copy/)
   assert.equal(service.events.uploads, 0, 'A copy changed since opening must be rejected before Storage')
   await sql("update private_listing_seller_onboarding set seller_portal_password_hash='synthetic-protected' where private_listing_id=$1", [fixture.listingId])
-  await assert.rejects(service.action(uploadValues), error => error.code === 'seller_document_canonical_link_failed')
+  await assert.rejects(service.action(uploadValues), error => error.code === 'seller_portal_session_expired')
   assert.equal(service.events.removals, 1, 'Failed SQL submission cleans up its synthetic Storage object')
   await sql('update private_listing_seller_onboarding set seller_portal_password_hash=null where private_listing_id=$1', [fixture.listingId])
   const uploaded = await service.action(uploadValues)

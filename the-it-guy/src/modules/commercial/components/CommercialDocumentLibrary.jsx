@@ -1,3 +1,4 @@
+import { refreshAfterSavedDocumentUpload } from '../../../lib/documentUploadLifecycle.js'
 import { AlertTriangle, CheckCircle2, Download, Eye, FilePlus2, FileText, Trash2, UploadCloud } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
@@ -39,7 +40,7 @@ function CommercialDocumentLibrary({ organisationId = '', entityType, entityId, 
 
   const canLoad = Boolean(entityType && entityId)
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async ({ afterUpload = false } = {}) => {
     if (!canLoad) return
     setLoading(true)
     setError('')
@@ -51,6 +52,7 @@ function CommercialDocumentLibrary({ organisationId = '', entityType, entityId, 
       setDocuments(nextDocuments || [])
       setRequests(nextRequests || [])
     } catch (loadError) {
+      if (afterUpload) throw loadError
       setError(loadError?.message || 'Commercial documents could not be loaded.')
       setDocuments([])
       setRequests([])
@@ -82,7 +84,7 @@ function CommercialDocumentLibrary({ organisationId = '', entityType, entityId, 
   )
 
   async function handleUpload(form) {
-    await uploadCommercialDocument({
+    const saved = await uploadCommercialDocument({
       organisationId,
       entityType,
       entityId,
@@ -94,8 +96,8 @@ function CommercialDocumentLibrary({ organisationId = '', entityType, entityId, 
       versionNumber: form.versionNumber,
       expiresAt: form.expiresAt,
     })
-    await loadData()
-    onActivityChange?.()
+    setDocuments(previous => [...previous.filter(row => row.id !== saved.id), saved])
+    await refreshAfterSavedDocumentUpload(saved, async () => { await loadData({ afterUpload: true }); await onActivityChange?.() }, setError)
   }
 
   async function handleRequest(form) {

@@ -1,3 +1,5 @@
+import { withDocumentUploadMimeType, DOCUMENT_UPLOAD_MAX_BYTES, validateDocumentUploadFile } from '../lib/documentUploadPolicy.js'
+import { runRecoverableDocumentUpload } from '../lib/documentUploadRecovery.js'
 import {
   DOCUMENTS_BUCKET,
   createScopedSupabaseClient,
@@ -6,7 +8,7 @@ import {
 } from '../lib/supabaseClient.js'
 
 export const DEVELOPER_DOCUMENT_PORTAL_PATH = '/developer/document-portal'
-export const DEVELOPER_DOCUMENT_PORTAL_MAX_FILE_BYTES = 20 * 1024 * 1024
+export const DEVELOPER_DOCUMENT_PORTAL_MAX_FILE_BYTES = DOCUMENT_UPLOAD_MAX_BYTES
 
 function requireAuthenticatedClient() {
   if (!isSupabaseConfigured || !supabase) {
@@ -110,30 +112,34 @@ export async function uploadDeveloperDocumentPortalFile({
 } = {}) {
   if (!portalId || !transactionId) throw new Error('Portal context is incomplete. Refresh the page and try again.')
   if (!file) throw new Error('Choose a document to upload.')
-  if (Number(file.size || 0) > DEVELOPER_DOCUMENT_PORTAL_MAX_FILE_BYTES) {
-    throw new Error('Files must be 20 MB or smaller.')
-  }
+  const filePolicy = validateDocumentUploadFile(file, { surface: 'developer_portal', transactionId })
 
   const client = requirePortalClient(token)
-  const filePath = `developer-document-portal/${portalId}/${transactionId}/${Date.now()}-${safeFileName(file.name)}`
-  const { error: uploadError } = await client.storage.from(DOCUMENTS_BUCKET).upload(filePath, file, {
-    cacheControl: '3600',
-    contentType: file.type || 'application/octet-stream',
-    upsert: false,
-  })
-  if (uploadError) throw uploadError
+  return runRecoverableDocumentUpload({ client: client, scope: ['developer_portal', token, portalId, transactionId, requirementId, category], file,
+    run: async attempt => {
+      const filePath = attempt.path(`developer-document-portal/${portalId}/${transactionId}/${Date.now()}-${filePolicy.safeName}`)
+      await attempt.upload(async () => {
+        const { error: uploadError } = await client.storage.from(DOCUMENTS_BUCKET).upload(filePath, withDocumentUploadMimeType(file, filePolicy.mimeType), {
+          cacheControl: '3600',
+          contentType: filePolicy.mimeType,
+          upsert: false,
+        })
+        if (uploadError) throw uploadError
 
-  const { data, error } = await client.rpc('bridge_submit_developer_document_portal_document', {
-    p_file_path: filePath,
-    p_file_name: file.name || 'Developer document',
-    p_category: category || 'Developer Documents',
-    p_requirement_id: requirementId || null,
+        return DOCUMENTS_BUCKET
+      })
+
+      const result = await attempt.persist({
+        save: () => client.rpc('bridge_submit_developer_document_portal_document', {
+          p_file_path: filePath, p_file_name: file.name || 'Developer document', p_category: category || 'Developer Documents', p_requirement_id: requirementId || null,
+        }),
+        read: async () => { const reopened = await fetchDeveloperDocumentPortal(token); const row = reopened.documents.find(item => (item.filePath || item.file_path) === filePath); return row ? { data: row, error: null } : null },
+        cleanup: () => client.storage.from(DOCUMENTS_BUCKET).remove([filePath]),
+      })
+      return result.data
+
+    },
   })
-  if (error) {
-    await client.storage.from(DOCUMENTS_BUCKET).remove([filePath]).catch(() => {})
-    throw error
-  }
-  return data
 }
 
 export async function createDeveloperPortalDocumentUrl({ token, filePath, expiresIn = 300 } = {}) {

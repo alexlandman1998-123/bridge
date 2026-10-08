@@ -1,6 +1,9 @@
+import { getDocumentUploadPolicy } from '../../../../lib/documentUploadPolicy.js'
 import { useState } from 'react'
 import { cancelBuyerBondWetInkSigning, uploadBuyerBondWetInkSignedCopy, renderBuyerBondWetInkSigningPdf, readBuyerBondWetInkOriginal } from '../../../../lib/clientPortalApi.js'
 import { downloadBondSigningBytes } from '../../../../services/bondWetInkSigningService.js'
+const documentUploadPolicy = getDocumentUploadPolicy({ surface: 'bond_signed_application' })
+
 
 const button = 'min-h-11 rounded-xl border border-[#dbe5ef] px-4 py-2 text-sm font-semibold disabled:opacity-50'
 export default function BondWetInkSigningPanel({ data, credentials, onRefresh, onCancelled }) {
@@ -31,7 +34,8 @@ export default function BondWetInkSigningPanel({ data, credentials, onRefresh, o
     {latest?.status === 'rejected' ? <div role="alert" className="rounded-xl bg-amber-50 p-4 text-sm"><p className="font-semibold">A replacement copy is needed</p><p className="mt-2">{latest.feedback}</p></div> : null}
     {!accepted && !awaiting ? <div className="space-y-3 rounded-xl border p-4">
       <label className="block text-sm font-semibold" htmlFor="bond-signed-copy">Upload the complete signed application</label>
-      <input id="bond-signed-copy" type="file" accept="application/pdf,.pdf" disabled={busy} onChange={(event) => { setFile(event.target.files?.[0] || null); setAttempt(null); setError('') }} className="block w-full text-sm" />
+      <input id="bond-signed-copy" type="file" title={documentUploadPolicy.helpText} accept={documentUploadPolicy.accept} disabled={busy} onChange={(event) => { setFile(event.target.files?.[0] || null); setAttempt(null); setError('') }} className="block w-full text-sm" />
+      <span className="block text-xs font-normal text-slate-500">{documentUploadPolicy.helpText}</span>
       <p className="text-xs leading-5 text-[#61748a]">PDF only, up to 25 MB. This signed application is stored privately for your assigned bond consultant to review. Each uploaded original is preserved unchanged.</p>
       <button type="button" disabled={busy || !file} className={`${button} bg-[#35546c] text-white`} onClick={() => void run(async () => { await uploadBuyerBondWetInkSignedCopy({ ...credentials, version, file, attempt }); setAttempt(null); setFile(null); await onRefresh() })}>{busy ? 'Working…' : 'Upload signed copy'}</button>
     </div> : null}

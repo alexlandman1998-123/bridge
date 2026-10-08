@@ -28,6 +28,20 @@ beforeEach(() => {
   reads.canvassing.mockResolvedValue({ prospects: [], activities: [] })
 })
 
+it('reports an unavailable appointment source without claiming a verified empty schedule', async () => {
+  reads.appointments.mockRejectedValueOnce(new Error('Attendance read failed'))
+  const result = await loadAgentPerformanceSources({ canManageDirectory: true })
+  expect(result.appointments).toBeNull()
+  expect(result.appointmentError).toBe('Attendance read failed')
+  expect(result.transactions).toEqual([])
+})
+
+it('does not gate independent appointment readers on expensive performance hydration', async () => {
+  const result = await loadAgentPerformanceSources({ includeAppointments: false })
+  expect(reads.appointments).not.toHaveBeenCalled()
+  expect(result.appointmentError).toBe('')
+})
+
 it('starts scoped reads as soon as settings resolve while transaction and member reads remain pending', async () => {
   const settings = deferred()
   const transactions = deferred()

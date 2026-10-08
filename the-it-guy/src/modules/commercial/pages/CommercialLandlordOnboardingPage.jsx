@@ -1,3 +1,5 @@
+import { DOCUMENT_UPLOAD_ACCEPT, DOCUMENT_UPLOAD_HELP_TEXT } from '../../../lib/documentUploadPolicy.js'
+import { refreshAfterSavedDocumentUpload } from '../../../lib/documentUploadLifecycle.js'
 import {
   Building2,
   CheckCircle2,
@@ -419,14 +421,15 @@ function CommercialLandlordOnboardingPage() {
     setUploading(true)
     setError('')
     try {
-      await uploadCommercialLandlordOnboardingDocument({
+      const saved = await uploadCommercialLandlordOnboardingDocument({
         token,
         file: uploadState.file,
         category: uploadState.category,
         documentRequestId: uploadState.documentRequestId,
       })
       setUploadState((previous) => ({ ...previous, file: null }))
-      await reloadWorkspace('Document uploaded.')
+      setWorkspace(previous => ({ ...previous, documents: [...(previous?.documents || []).filter(row => row.id !== saved.id), saved] }))
+      await refreshAfterSavedDocumentUpload(saved, () => reloadWorkspace('Document uploaded.'), setNotice)
     } catch (uploadError) {
       setError(uploadError?.message || 'Document upload failed.')
     } finally {
@@ -1178,8 +1181,10 @@ function CommercialLandlordOnboardingPage() {
                         </label>
                       </div>
                       <label className="grid gap-1 text-sm font-semibold text-[#1f2b24]">Document
-                        <input type="file" onChange={(event) => setUploadState((previous) => ({ ...previous, file: event.target.files?.[0] || null }))} className="rounded-xl border border-dashed border-slate-300 bg-white px-3 py-3 text-sm text-slate-600" />
+                        <input type="file" title={DOCUMENT_UPLOAD_HELP_TEXT} accept={DOCUMENT_UPLOAD_ACCEPT} onChange={(event) => setUploadState((previous) => ({ ...previous, file: event.target.files?.[0] || null }))} className="rounded-xl border border-dashed border-slate-300 bg-white px-3 py-3 text-sm text-slate-600" />
+                      <span className="block text-xs font-normal text-slate-500">{DOCUMENT_UPLOAD_HELP_TEXT}</span>
                       </label>
+                      
                       <button type="submit" disabled={uploading || !uploadState.file} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-[#2f6f4e] px-4 text-sm font-semibold text-white transition hover:bg-[#285f43] disabled:opacity-60">
                         {uploading ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
                         {uploading ? 'Uploading...' : 'Upload Document'}

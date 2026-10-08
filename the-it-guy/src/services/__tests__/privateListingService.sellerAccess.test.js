@@ -12,6 +12,7 @@ import { getSellerOnboardingByToken, submitSellerOnboarding, updateSellerOnboard
 import { repairSellerDocumentRequirementLinks, isUnlinkedSellerReviewDocument } from '../sellerDocumentReviewWorkflowService.js'
 import { buildListingSellerCanonicalUpdate } from '../listings/listingSellerCanonicalUpdateModel.js'
 import { syncSellerDocumentRequirements } from '../../lib/sellerDocumentRequirementEngine.js'
+import { buildListingSellerProfileFormPatch, createListingSellerProfileBuilderDraft, selectListingSellerProfileBranch } from '../../lib/listingSellerProfileBuilderModel.js'
 
 const listingId = '00000000-0000-4000-8000-000000000001'
 const onboardingId = '00000000-0000-4000-8000-000000000002'
@@ -123,6 +124,7 @@ describe('seller token mutation boundary', () => {
 describe('seller checklist persistence with PostgreSQL date fields', () => {
   let db
   let batches
+  let requestFailure
   const savedListing = {
     id: listingId, sellerType: 'individual', sellerOnboardingStatus: 'completed',
     sellerOnboarding: { status: 'completed', formData: {
@@ -143,6 +145,7 @@ describe('seller checklist persistence with PostgreSQL date fields', () => {
   beforeEach(async () => {
     db = new PGlite()
     batches = []
+    requestFailure = null
     await db.exec(`create table private_listing_document_requirements (
       id uuid primary key default gen_random_uuid(), private_listing_id uuid not null, requirement_key text not null,
       requirement_name text, requirement_description text, requirement_group text, document_visibility text, applies_to text, visibility text,
@@ -158,8 +161,13 @@ describe('seller checklist persistence with PostgreSQL date fields', () => {
     client.from.mockImplementation((table) => {
       let payload = null
       let single = false
+      let update = null
+      const filters = []
       const query = {
-        select: () => query, eq: () => query, order: () => query,
+        select: () => query, order: () => query,
+        eq: (key, value) => { filters.push(row => row[key] === value); return query },
+        in: (key, values) => { filters.push(row => values.includes(row[key])); return query },
+        update: (value) => { update = value; return query },
         maybeSingle: () => { single = true; return query },
         upsert: (rows) => { payload = rows; batches.push(rows); return query },
         then: (resolve, reject) => (async () => {
@@ -167,7 +175,12 @@ describe('seller checklist persistence with PostgreSQL date fields', () => {
             if (!['private_listing_documents', 'private_listing_seller_onboarding'].includes(table) || payload) throw new Error(`Unexpected table: ${table}`)
             return { data: single ? null : [], error: null }
           }
-          try { return { data: payload ? await writeRows(payload) : await readRows(), error: null } }
+          try {
+            if (update && requestFailure) return { data: null, error: requestFailure }
+            let rows = payload ? await writeRows(payload) : (await readRows()).filter(row => filters.every(filter => filter(row)))
+            if (update && rows.length) rows = await writeRows(rows.map(row => ({ ...row, ...update })))
+            return { data: single ? rows[0] || null : rows, error: null }
+          }
           catch (error) { return { data: null, error } }
         })().then(resolve, reject),
       }
@@ -175,6 +188,87 @@ describe('seller checklist persistence with PostgreSQL date fields', () => {
     })
   })
   afterEach(async () => { await db.close() })
+
+  function confirmSave(update) {
+    client.rpc.mockReturnValue(rpcResult({ mutationId: update.mutationId,
+      listing: { id: listingId, listing_status: 'listing_review', seller_type: update.sellerType, seller_onboarding_status: 'completed', seller_canonical_facts_json: update.canonicalFacts },
+      onboarding: { id: onboardingId, private_listing_id: listingId, status: 'completed', form_data: update.nextFormData, canonical_facts_json: update.canonicalFacts },
+    }))
+  }
+
+  it('saves ownership corrections, issues the new checklist and retires old requests without deleting documents', async () => {
+    let listing = { ...savedListing, listingStatus: 'listing_review' }
+    await syncPrivateListingRequirements(listing, { emitActivity: false })
+    const retainedId = (await readRows()).find(row => row.requirement_key === 'id_document').id
+    for (const branch of ['company', 'trust', 'multiple_owners', 'individual']) {
+      const draft = { ...selectListingSellerProfileBranch(createListingSellerProfileBuilderDraft(listing), branch),
+        companyName: branch === 'company' ? 'Corrected Company' : '',
+        trustName: branch === 'trust' ? 'Corrected Trust' : '',
+        multipleOwners: branch === 'multiple_owners' ? [
+          { name: 'Saved', surname: 'Owner', email: 'owner@example.test' },
+          { name: 'Second', surname: 'Owner', email: 'second@example.test' },
+        ] : [],
+      }
+      const update = buildListingSellerCanonicalUpdate({ listing, formPatch: buildListingSellerProfileFormPatch(draft),
+        mutationType: 'seller_profile_capture', mutationId: crypto.randomUUID() })
+      confirmSave(update)
+      const result = await savePrivateListingSellerCanonicalUpdate(update, {
+        includeRequirementsAndDocuments: false, forceRequirementSync: true,
+      })
+      listing = result.listing
+      expect(listing.sellerOnboarding.formData.ownerStructureType).toBe(branch)
+      const rows = await readRows()
+      const expectedKeys = new Set(syncSellerDocumentRequirements(listing, []).upsertRows.map(row => row.requirement_key))
+      expect(result.requirementSyncResult.requestIssuance.counts.failed).toBe(0)
+      for (const row of rows) {
+        if (expectedKeys.has(row.requirement_key)) {
+          if (row.status === 'required') expect(result.requirementSyncResult.requestIssuance.suppressed.some(item => item.key === row.requirement_key), row.requirement_key).toBe(true)
+          else expect(['requested', 'approved', 'uploaded', 'under_review']).toContain(row.status)
+        }
+        else expect(row).toMatchObject({ status: 'not_applicable', is_required: false })
+      }
+      if (branch === 'company') expect(rows.find(row => row.requirement_key === 'company_registration')).toMatchObject({ status: 'requested', is_required: true })
+      if (branch === 'trust') expect(rows.find(row => row.requirement_key === 'seller_trust_deed')).toMatchObject({ status: 'requested', is_required: true })
+      if (branch === 'multiple_owners') expect(rows.find(row => row.requirement_key === 'owner_2_id_document')).toMatchObject({ status: 'requested', is_required: true })
+    }
+    expect((await readRows()).find(row => row.requirement_key === 'id_document').id).toBe(retainedId)
+    expect(client.from.mock.calls.some(([table]) => table === 'private_listings')).toBe(false)
+  })
+
+  it('reports a committed correction when request issuance fails, then refreshes on a forced retry', async () => {
+    const update = { ...buildListingSellerCanonicalUpdate({ listing: savedListing, formPatch: { sellerSurname: 'Corrected' }, mutationId: crypto.randomUUID() }), requirementsAffected: false }
+    confirmSave(update)
+    requestFailure = { code: '42501', message: 'request update denied' }
+    await expect(savePrivateListingSellerCanonicalUpdate(update, { includeRequirementsAndDocuments: false, forceRequirementSync: true }))
+      .rejects.toMatchObject({ code: 'SELLER_REQUIREMENT_SYNC_FAILED', committed: true, cause: requestFailure,
+        listing: { sellerOnboarding: { formData: { sellerSurname: 'Corrected' } } } })
+    expect((await readRows()).some(row => row.status === 'required')).toBe(true)
+    requestFailure = null
+    const retry = await savePrivateListingSellerCanonicalUpdate(update, { includeRequirementsAndDocuments: false, forceRequirementSync: true })
+    expect(retry.requirementSyncResult.requestIssuance.counts.applied).toBeGreaterThan(0)
+    expect(retry.requirementSyncResult.requestIssuance.counts.failed).toBe(0)
+  })
+
+  it('does not report a successful checklist refresh when every supported schema rejects the save', async () => {
+    // Schema failures are cached for the lifetime of a browser module. Isolate
+    // this unavailable-environment fixture from the healthy-environment tests.
+    vi.resetModules()
+    const isolatedService = await import('../privateListingService')
+    const update = buildListingSellerCanonicalUpdate({ listing: savedListing, formPatch: { sellerSurname: 'Corrected' }, mutationId: crypto.randomUUID() })
+    confirmSave(update)
+    const createQuery = client.from.getMockImplementation()
+    client.from.mockImplementation(table => {
+      const query = createQuery(table)
+      if (table === 'private_listing_document_requirements') query.upsert = () => ({ select: () => rpcResult(null, { code: '42703', message: 'column requirement_key does not exist' }) })
+      return query
+    })
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      await expect(isolatedService.savePrivateListingSellerCanonicalUpdate(update, { includeRequirementsAndDocuments: false, forceRequirementSync: true }))
+        .rejects.toMatchObject({ code: 'SELLER_REQUIREMENT_SYNC_FAILED', committed: true,
+          cause: { message: 'The seller document checklist is unavailable in this environment.' } })
+    } finally { warn.mockRestore(); vi.resetModules() }
+  })
 
   it('refreshes the saved signing pack with unset dates and retains approved requirements and document links', async () => {
     const seed = syncSellerDocumentRequirements(savedListing, []).upsertRows.map(row => ({ ...row, id: crypto.randomUUID(),

@@ -1,3 +1,4 @@
+import { DOCUMENT_IMAGE_UPLOAD_ACCEPT, DOCUMENT_IMAGE_UPLOAD_HELP_TEXT, DOCUMENT_UPLOAD_HELP_TEXT, DOCUMENT_UPLOAD_ACCEPT } from '../lib/documentUploadPolicy.js'
 import { appointmentStartIso, calendarOperationalStatus, sastDateKey, sastParts } from '../core/appointments/attorneyCalendarModel.js'
 import ConnectedBuyerBondApplication from '../modules/bond/application/workspace/ConnectedBuyerBondApplication.jsx'
 import { fetchBuyerBondApplicationRuntime, saveBuyerBondApplicationRuntimeDraft } from '../lib/clientPortalApi.js'
@@ -4753,8 +4754,8 @@ function BuyerMobilePortal({
 
       <input
         ref={buyerPhotoInputRef}
-        type="file"
-        accept="image/*"
+        type="file" title={DOCUMENT_IMAGE_UPLOAD_HELP_TEXT}
+        accept={DOCUMENT_IMAGE_UPLOAD_ACCEPT}
         capture="environment"
         className="hidden"
         onChange={(event) => {
@@ -4765,8 +4766,8 @@ function BuyerMobilePortal({
       />
       <input
         ref={buyerFileInputRef}
-        type="file"
-        accept=".pdf,.doc,.docx,image/*"
+        type="file" title={DOCUMENT_UPLOAD_HELP_TEXT}
+        accept={DOCUMENT_UPLOAD_ACCEPT}
         className="hidden"
         onChange={(event) => {
           const file = event.currentTarget.files?.[0] || null
@@ -4776,8 +4777,8 @@ function BuyerMobilePortal({
       />
       <input
         ref={buyerFinancePhotoInputRef}
-        type="file"
-        accept="image/*"
+        type="file" title={DOCUMENT_IMAGE_UPLOAD_HELP_TEXT}
+        accept={DOCUMENT_IMAGE_UPLOAD_ACCEPT}
         capture="environment"
         className="hidden"
         onChange={(event) => {
@@ -4788,8 +4789,8 @@ function BuyerMobilePortal({
       />
       <input
         ref={buyerFinanceFileInputRef}
-        type="file"
-        accept=".pdf,.doc,.docx,image/*"
+        type="file" title={DOCUMENT_UPLOAD_HELP_TEXT}
+        accept={DOCUMENT_UPLOAD_ACCEPT}
         className="hidden"
         onChange={(event) => {
           const file = event.currentTarget.files?.[0] || null
@@ -6127,8 +6128,8 @@ function SellerMobilePortal({
 
       <input
         ref={photoInputRef}
-        type="file"
-        accept="image/*"
+        type="file" title={DOCUMENT_IMAGE_UPLOAD_HELP_TEXT}
+        accept={DOCUMENT_IMAGE_UPLOAD_ACCEPT}
         capture="environment"
         className="hidden"
         onChange={(event) => {
@@ -6139,8 +6140,8 @@ function SellerMobilePortal({
       />
       <input
         ref={fileInputRef}
-        type="file"
-        accept=".pdf,.doc,.docx,image/*"
+        type="file" title={DOCUMENT_UPLOAD_HELP_TEXT}
+        accept={DOCUMENT_UPLOAD_ACCEPT}
         className="hidden"
         onChange={(event) => {
           const file = event.currentTarget.files?.[0] || null
@@ -6479,11 +6480,11 @@ function SellerCompliancePackCard({
     if (action.key === 'upload_authority' && onUploadAuthority) {
       const uploadKey = action.uploadTarget?.key || action.key
       return (
-        <label key={action.key} className={`${className} cursor-pointer`}>
+        <><label key={action.key} className={`${className} cursor-pointer`}>
           <UploadCloud size={15} />
           {uploadingDocumentKey === uploadKey ? 'Uploading...' : action.label}
           <input
-            type="file"
+            type="file" title={DOCUMENT_UPLOAD_HELP_TEXT} accept={DOCUMENT_UPLOAD_ACCEPT}
             className="hidden"
             disabled={uploadingDocumentKey === uploadKey}
             onChange={(event) => {
@@ -6492,7 +6493,9 @@ function SellerCompliancePackCard({
               event.target.value = ''
             }}
           />
+        
         </label>
+<span className="block text-xs font-normal text-slate-500">{DOCUMENT_UPLOAD_HELP_TEXT}</span></>
       )
     }
     return (
@@ -6629,7 +6632,7 @@ function SellerCompliancePackCard({
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
             {mandateUploadKey && onUploadSignedMandate ? (
-              <label className="inline-flex min-h-[38px] cursor-pointer items-center gap-2 rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff]">
+              <><label className="inline-flex min-h-[38px] cursor-pointer items-center gap-2 rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff]">
                 <UploadCloud size={14} />
                 {uploadingDocumentKey === mandateUploadKey
                   ? 'Uploading...'
@@ -6637,7 +6640,7 @@ function SellerCompliancePackCard({
                     ? 'Replace signed mandate'
                     : 'Upload signed mandate'}
                 <input
-                  type="file"
+                  type="file" title={DOCUMENT_UPLOAD_HELP_TEXT} accept={DOCUMENT_UPLOAD_ACCEPT}
                   className="hidden"
                   disabled={uploadingDocumentKey === mandateUploadKey}
                   onChange={(event) => {
@@ -6646,7 +6649,9 @@ function SellerCompliancePackCard({
                     event.target.value = ''
                   }}
                 />
+              
               </label>
+<span className="block text-xs font-normal text-slate-500">{DOCUMENT_UPLOAD_HELP_TEXT}</span></>
             ) : null}
             {mandateUploaded && onOpenDocument ? (
               <button
@@ -14708,7 +14713,7 @@ function ClientPortal() {
                                         <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-3 py-1.5 text-xs font-semibold text-[#35546c] hover:border-[#c6d7e7]">
                                           {hasUploadedDocument ? 'Replace upload' : 'Upload'}
                                           <input
-                                            type="file"
+                                            type="file" title={DOCUMENT_UPLOAD_HELP_TEXT} accept={DOCUMENT_UPLOAD_ACCEPT}
                                             className="hidden"
                                             disabled={uploadingDocumentKey === document.key}
                                             onChange={(event) => {
@@ -14720,6 +14725,7 @@ function ClientPortal() {
                                             }}
                                           />
                                         </label>
+                                        <span className="block text-xs font-normal text-slate-500">{DOCUMENT_UPLOAD_HELP_TEXT}</span>
                                       </div>
                                       {hasUploadedDocument ? (
                                         <div className="mt-2 space-y-1 text-xs text-[#6b7d93]">
@@ -14907,7 +14913,7 @@ function ClientPortal() {
                         <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-3 py-1.5 text-xs font-semibold text-[#35546c] hover:border-[#c6d7e7]">
                           Upload signed offer
                           <input
-                            type="file"
+                            type="file" title={DOCUMENT_UPLOAD_HELP_TEXT} accept={DOCUMENT_UPLOAD_ACCEPT}
                             className="hidden"
                             disabled={!displayedAcceptedBondOffer || bondApplicationSaving}
                             onChange={(event) => {
@@ -14919,6 +14925,7 @@ function ClientPortal() {
                             }}
                           />
                         </label>
+                        <span className="block text-xs font-normal text-slate-500">{DOCUMENT_UPLOAD_HELP_TEXT}</span>
                         {hasSignedAcceptedOfferDocument ? (
                           <button
                             type="button"
@@ -15172,7 +15179,7 @@ function ClientPortal() {
                             ? 'Replace proof of payment'
                             : 'Upload proof of payment'}
                         <input
-                          type="file"
+                          type="file" title={DOCUMENT_UPLOAD_HELP_TEXT} accept={DOCUMENT_UPLOAD_ACCEPT}
                           className="hidden"
                           disabled={uploadingDocumentKey === reservationProofUploadStateKey}
                           onChange={(event) => {
@@ -15188,6 +15195,7 @@ function ClientPortal() {
                           }}
                         />
                       </label>
+                      <span className="block text-xs font-normal text-slate-500">{DOCUMENT_UPLOAD_HELP_TEXT}</span>
                       {reservationProofFallbackUploadedDocument?.file_path || reservationProofFallbackUploadedDocument?.url ? (
                         <button
                           type="button"
@@ -15427,11 +15435,11 @@ function ClientPortal() {
                       </div>
                       <div className="mt-4 flex flex-wrap gap-2">
                         {!isLinkedSignedMandate ? (
-                          <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-white">
+                          <><label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-white">
                             <FileSignature size={14} />
                             {hasUploadedDocument ? 'Replace upload' : 'Upload'}
                             <input
-                              type="file"
+                              type="file" title={DOCUMENT_UPLOAD_HELP_TEXT} accept={DOCUMENT_UPLOAD_ACCEPT}
                               className="hidden"
                               disabled={uploadingDocumentKey === document.key}
                               onChange={(event) => {
@@ -15442,7 +15450,9 @@ function ClientPortal() {
                                 event.target.value = ''
                               }}
                               />
+                          
                           </label>
+<span className="block text-xs font-normal text-slate-500">{DOCUMENT_UPLOAD_HELP_TEXT}</span></>
                         ) : null}
                         {hasUploadedDocument ? (
                           <button
@@ -15552,11 +15562,11 @@ function ClientPortal() {
                       </div>
                       <div className="mt-4 flex flex-wrap gap-2">
                         {uploadDocument?.key ? (
-                          <label className={`inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-4 py-2 text-sm font-semibold text-[#35546c] transition ${uploadingDocumentKey === uploadDocument.key ? 'cursor-wait opacity-60' : 'cursor-pointer hover:border-[#c6d7e7] hover:bg-white'}`}>
+                          <><label className={`inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-4 py-2 text-sm font-semibold text-[#35546c] transition ${uploadingDocumentKey === uploadDocument.key ? 'cursor-wait opacity-60' : 'cursor-pointer hover:border-[#c6d7e7] hover:bg-white'}`}>
                             {uploadingDocumentKey === uploadDocument.key ? <Loader2 size={14} className="animate-spin" /> : <FileSignature size={14} />}
                             {uploadingDocumentKey === uploadDocument.key ? 'Uploading…' : hasUploadedDocument ? 'Replace upload' : 'Upload'}
                             <input
-                              type="file"
+                              type="file" title={DOCUMENT_UPLOAD_HELP_TEXT} accept={DOCUMENT_UPLOAD_ACCEPT}
                               className="hidden"
                               disabled={uploadingDocumentKey === uploadDocument.key}
                               onChange={(event) => {
@@ -15567,7 +15577,9 @@ function ClientPortal() {
                                 event.target.value = ''
                               }}
                             />
+                          
                           </label>
+<span className="block text-xs font-normal text-slate-500">{DOCUMENT_UPLOAD_HELP_TEXT}</span></>
                         ) : (
                           <button
                             type="button"
@@ -15657,7 +15669,7 @@ function ClientPortal() {
                             {uploadingDocumentKey === document.key ? <Loader2 size={13} className="animate-spin" /> : <FileSignature size={13} />}
                             {uploadingDocumentKey === document.key ? 'Uploading…' : hasUploadedDocument ? 'Replace upload' : 'Upload'}
                             <input
-                              type="file"
+                              type="file" title={DOCUMENT_UPLOAD_HELP_TEXT} accept={DOCUMENT_UPLOAD_ACCEPT}
                               className="hidden"
                               disabled={uploadingDocumentKey === document.key}
                               onChange={(event) => {
@@ -15669,6 +15681,7 @@ function ClientPortal() {
                               }}
                               />
                           </label>
+                          <span className="block text-xs font-normal text-slate-500">{DOCUMENT_UPLOAD_HELP_TEXT}</span>
                           {hasUploadedDocument ? (
                             <button
                               type="button"
@@ -15834,7 +15847,7 @@ function ClientPortal() {
                       <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-[#dbe5ef] bg-white px-3 py-1.5 text-xs font-semibold text-[#35546c]">
                         Upload signed offer
                         <input
-                          type="file"
+                          type="file" title={DOCUMENT_UPLOAD_HELP_TEXT} accept={DOCUMENT_UPLOAD_ACCEPT}
                           className="hidden"
                           disabled={!displayedAcceptedBondOffer || bondApplicationSaving}
                           onChange={(event) => {
@@ -15846,6 +15859,7 @@ function ClientPortal() {
                           }}
                         />
                       </label>
+                      <span className="block text-xs font-normal text-slate-500">{DOCUMENT_UPLOAD_HELP_TEXT}</span>
                       {hasSignedAcceptedOfferDocument ? (
                         <button
                           type="button"
@@ -15976,7 +15990,7 @@ function ClientPortal() {
                             {uploadingDocumentKey === uploadStateKey ? <Loader2 size={14} className="animate-spin" /> : <FileSignature size={14} />}
                             {uploadingDocumentKey === uploadStateKey ? 'Uploading…' : hasUploadedDocument ? 'Replace upload' : 'Upload'}
                             <input
-                              type="file"
+                              type="file" title={DOCUMENT_UPLOAD_HELP_TEXT} accept={DOCUMENT_UPLOAD_ACCEPT}
                               className="hidden"
                               disabled={uploadingDocumentKey === uploadStateKey}
                               onChange={(event) => {
@@ -15997,6 +16011,7 @@ function ClientPortal() {
                               }}
                             />
                           </label>
+                          <span className="block text-xs font-normal text-slate-500">{DOCUMENT_UPLOAD_HELP_TEXT}</span>
                           {hasUploadedDocument ? (
                             <button
                               type="button"
@@ -16039,7 +16054,7 @@ function ClientPortal() {
                             {uploadingDocumentKey === document.key ? <Loader2 size={14} className="animate-spin" /> : <FileSignature size={14} />}
                             {uploadingDocumentKey === document.key ? 'Uploading…' : hasUploadedDocument ? 'Replace upload' : 'Upload'}
                             <input
-                              type="file"
+                              type="file" title={DOCUMENT_UPLOAD_HELP_TEXT} accept={DOCUMENT_UPLOAD_ACCEPT}
                               className="hidden"
                               disabled={uploadingDocumentKey === document.key}
                               onChange={(event) => {
@@ -16051,6 +16066,7 @@ function ClientPortal() {
                               }}
                               />
                           </label>
+                          <span className="block text-xs font-normal text-slate-500">{DOCUMENT_UPLOAD_HELP_TEXT}</span>
                           {hasUploadedDocument ? (
                             <button
                               type="button"

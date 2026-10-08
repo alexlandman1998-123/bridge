@@ -4,11 +4,11 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import DeveloperLeadDocuments from '../DeveloperLeadDocuments.jsx'
 
-const mocks = vi.hoisted(() => ({ read: vi.fn(), save: vi.fn(), live: vi.fn() }))
-vi.mock('../../../services/documents/developerLeadDocumentsService.js', () => ({ fetchDeveloperLeadDocuments: mocks.read, uploadDeveloperLeadDocument: mocks.save }))
+const mocks = vi.hoisted(() => ({ read: vi.fn(), save: vi.fn(), sign: vi.fn(), live: vi.fn() }))
+vi.mock('../../../services/documents/developerLeadDocumentsService.js', () => ({ fetchDeveloperLeadDocuments: mocks.read, uploadDeveloperLeadDocument: mocks.save, createDeveloperLeadDocumentSignedUrl: mocks.sign }))
 vi.mock('../../../hooks/useTransactionLiveRefresh.js', () => ({ default: mocks.live }))
 const ready = (documents = []) => ({ state: 'ready', transactionId: 'tx-one', requirements: [{ id: 'req-one', title: 'Buyer ID', status: 'pending', canUpload: true }], documents })
-const savedFile = { id: 'file-one', name: 'Buyer ID.pdf', url: 'https://storage.example.test/id.pdf', canonical_requirement_instance_id: 'req-one', status: 'uploaded' }
+const savedFile = { id: 'file-one', name: 'Buyer ID.pdf', url: 'https://storage.example.test/id.pdf', canonical_requirement_instance_id: 'req-one', status: 'uploaded', file_path: 'tx-one/proof.pdf', file_bucket: 'documents' }
 const setup = (id = 'lead-one') => render(<DeveloperLeadDocuments key={id} developerOrgId="org-one" developerLeadId={id} />)
 beforeEach(() => { vi.resetAllMocks(); mocks.read.mockResolvedValue(ready()); mocks.save.mockResolvedValue(savedFile); mocks.live.mockReturnValue({ lastErrorMessage: '' }) })
 afterEach(cleanup)
@@ -32,11 +32,11 @@ it('uploads to the linked transaction and reads the same file after reopening th
   await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Upload document' })))
   expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({ developerOrgId: 'org-one', developerLeadId: 'lead-one', transactionId: 'tx-one', requirementId: 'req-one', file: expect.any(File) }))
   expect(screen.getByText('Document saved to the linked transaction. Awaiting review.')).toBeTruthy()
-  expect(screen.getByRole('link', { name: 'Open Buyer ID.pdf' }).getAttribute('href')).toBe(savedFile.url)
+  expect(screen.getByRole('button', { name: 'Open Buyer ID.pdf' })).toBeTruthy()
   expect(screen.queryByText('Approved')).toBeNull()
   expect(screen.getByRole('button', { name: 'Upload document' }).disabled).toBe(true)
   view.unmount(); setup(); await act(async () => {})
-  expect(screen.getByRole('link', { name: 'Open Buyer ID.pdf' })).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Open Buyer ID.pdf' })).toBeTruthy()
 })
 
 it('prevents concurrent uploads and leaves the selected file available after a failed save', async () => {
@@ -58,7 +58,7 @@ it('retains a confirmed saved file if checklist refresh fails and retries only t
   mocks.read.mockRejectedValueOnce(new Error('Network unavailable'))
   await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Upload document' })))
   expect(screen.getByRole('alert').textContent).toContain('Your document was saved')
-  expect(screen.getByRole('link', { name: 'Open Buyer ID.pdf' })).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Open Buyer ID.pdf' })).toBeTruthy()
   mocks.read.mockResolvedValue(ready([savedFile]))
   await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Retry refresh' })))
   expect(screen.queryByRole('alert')).toBeNull()
@@ -69,10 +69,10 @@ it('refreshes external changes and removes old documents when access is revoked'
   setup(); await act(async () => {})
   mocks.read.mockResolvedValueOnce(ready([savedFile]))
   await act(async () => { expect(await mocks.live.mock.calls.at(-1)[0].onRefresh()).toBe(true) })
-  expect(screen.getByRole('link', { name: 'Open Buyer ID.pdf' })).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Open Buyer ID.pdf' })).toBeTruthy()
   mocks.read.mockRejectedValueOnce(Object.assign(new Error('This lead is no longer available'), { code: 'lead_documents_access_denied' }))
   await act(async () => { expect(await mocks.live.mock.calls.at(-1)[0].onRefresh()).toBe(false) })
-  expect(screen.queryByRole('link', { name: 'Open Buyer ID.pdf' })).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Open Buyer ID.pdf' })).toBeNull()
   expect(screen.queryByRole('form')).toBeNull()
 })
 
@@ -85,18 +85,36 @@ it('ignores a late upload response after switching to a different lead', async (
   view.rerender(<DeveloperLeadDocuments key="lead-two" developerOrgId="org-two" developerLeadId="lead-two" />)
   await act(async () => resolve(savedFile))
   expect(screen.getByRole('heading', { name: 'Awaiting onboarding' })).toBeTruthy()
-  expect(screen.queryByRole('link', { name: 'Open Buyer ID.pdf' })).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Open Buyer ID.pdf' })).toBeNull()
   expect(screen.queryByText('Document saved to the linked transaction. Awaiting review.')).toBeNull()
 })
 
 it('never opens an unsafe document URL and keeps protected leads out of upload controls', async () => {
-  mocks.read.mockResolvedValueOnce(ready([{ ...savedFile, url: 'javascript:alert(1)' }]))
+  mocks.read.mockResolvedValueOnce(ready([{ ...savedFile, file_path: '', url: 'javascript:alert(1)' }]))
   const view = setup(); await act(async () => {})
   expect(screen.queryByRole('link')).toBeNull()
-  expect(screen.getByText('Preview unavailable')).toBeTruthy()
+  expect(screen.getByText('Document access unavailable')).toBeTruthy()
   view.unmount()
   mocks.read.mockResolvedValue({ state: 'protected', transactionId: '', documents: [], requirements: [] })
   setup(); await act(async () => {})
   expect(screen.getByRole('heading', { name: 'Awaiting agency handover' })).toBeTruthy()
   expect(screen.queryByRole('form')).toBeNull()
+})
+
+
+it('refreshes and authorizes a developer document at click time', async () => {
+  mocks.read.mockResolvedValue(ready([savedFile]))
+  mocks.sign.mockResolvedValue('https://storage.example.test/fresh')
+  const tab = { opener: null, location: { replace: vi.fn() }, close: vi.fn() }
+  const open = vi.spyOn(window, 'open').mockReturnValue(tab)
+  try {
+    setup(); await act(async () => {})
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Open Buyer ID.pdf' })))
+    expect(mocks.sign).toHaveBeenCalledWith({ developerOrgId: 'org-one', developerLeadId: 'lead-one', transactionId: 'tx-one', documentId: 'file-one' })
+    expect(tab.location.replace).toHaveBeenCalledWith('https://storage.example.test/fresh')
+    mocks.sign.mockRejectedValue(new Error('Agency handover was revoked'))
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Open Buyer ID.pdf' })))
+    expect(screen.getByRole('alert').textContent).toContain('revoked')
+    expect(tab.close).toHaveBeenCalledOnce()
+  } finally { open.mockRestore() }
 })

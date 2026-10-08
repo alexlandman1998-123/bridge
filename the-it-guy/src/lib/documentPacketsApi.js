@@ -1,3 +1,4 @@
+import { withDocumentUploadMimeType, validateDocumentUploadFile } from './documentUploadPolicy.js'
 import { assertDocumentGeneratorAvailable } from '../core/documents/documentGeneratorRetirement'
 import { isOrganisationAdminMembershipRole, normalizeOrganisationMembershipRole } from './organisationAccess'
 import {
@@ -1390,6 +1391,7 @@ export async function uploadDocumentPacketTemplateAsset({
     throw new Error('Select a valid DOCX file before uploading.')
   }
 
+  const filePolicy = validateDocumentUploadFile(selectedFile, { surface: 'legal_template' })
   const extension = normalizeFileExtension(selectedFile.name, 'docx')
   if (extension !== 'docx') {
     throw new Error('Only DOCX templates are supported right now.')
@@ -1410,10 +1412,10 @@ export async function uploadDocumentPacketTemplateAsset({
   const { bucket: uploadedBucket } = await uploadToStorageCandidateBuckets({
     bucketCandidates: LEGAL_TEMPLATES_BUCKET_CANDIDATES,
     upload: (bucketName) =>
-      client.storage.from(bucketName).upload(objectPath, selectedFile, {
+      client.storage.from(bucketName).upload(objectPath, withDocumentUploadMimeType(selectedFile, filePolicy.mimeType), {
         upsert: true,
         cacheControl: '3600',
-        contentType: selectedFile.type || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        contentType: filePolicy.mimeType,
       }),
     missingBucketMessage: `Unable to upload legal template. Checked buckets: ${LEGAL_TEMPLATES_BUCKET_CANDIDATES.join(', ')}.`,
     accessDeniedMessage: 'Legal template storage is not ready yet. Please retry after storage access is refreshed.',
@@ -2921,7 +2923,8 @@ export async function uploadFinalSignedPacketArtifact({
   if (!packetId) throw new Error('packetId is required.')
   if (!file) throw new Error('Select a signed document to upload.')
 
-  const safeName = normalizeStorageSafeName(fileName || file.name || 'signed-mandate.pdf', 'signed-mandate.pdf')
+  const filePolicy = validateDocumentUploadFile({ name: file.name || fileName || 'signed-mandate.pdf', type: file.type, size: file.size }, { surface: 'signed_packet' })
+  const safeName = normalizeStorageSafeName(fileName || filePolicy.safeName, 'signed-mandate.pdf')
   const { data: packetRecord, error: packetError } = await client
     .from('document_packets')
     .select('id, organisation_id, lead_id, transaction_id')
@@ -2938,10 +2941,10 @@ export async function uploadFinalSignedPacketArtifact({
   const { bucket: uploadedBucket } = await uploadToStorageCandidateBuckets({
     bucketCandidates: FINAL_SIGNED_BUCKET_CANDIDATES,
     upload: (bucketName) =>
-      client.storage.from(bucketName).upload(objectPath, file, {
+      client.storage.from(bucketName).upload(objectPath, withDocumentUploadMimeType(file, filePolicy.mimeType), {
         cacheControl: '3600',
         upsert: false,
-        contentType: file.type || 'application/pdf',
+        contentType: filePolicy.mimeType,
       }),
     missingBucketMessage: `Unable to upload final signed document. Checked buckets: ${FINAL_SIGNED_BUCKET_CANDIDATES.join(', ')}.`,
     accessDeniedMessage: 'Final signed document storage is not ready yet. Please retry after storage access is refreshed.',

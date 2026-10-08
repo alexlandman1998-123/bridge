@@ -1,5 +1,6 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabaseClient'
 import { checkAppointmentSchedulingIntegrityAsync } from '../lib/agencyPipelineService'
+import { resolveAppointmentSchedule } from '../core/appointments/appointmentTime.js'
 import { getSuggestedRescheduleSlots } from '../lib/appointmentAvailabilityEngine'
 import {
   notifyAppointmentParticipants,
@@ -46,6 +47,10 @@ function normalizeRescheduleRequestRow(row = {}) {
     reason: normalizeText(row?.reason) || null,
     preferredStart: row?.preferred_start || null,
     preferredEnd: row?.preferred_end || null,
+    proposedTimezone: row?.proposed_timezone || null,
+    proposedAllDay: row?.proposed_all_day === true,
+    holdExpiresAt: row?.hold_expires_at || null,
+    reservationManaged: row?.reservation_managed === true,
     status: normalizeRequestStatus(row?.status),
     reviewedBy: normalizeText(row?.reviewed_by) || null,
     reviewedAt: row?.reviewed_at || null,
@@ -55,12 +60,12 @@ function normalizeRescheduleRequestRow(row = {}) {
   }
 }
 
-function deriveDateAndTimeParts(dateTimeValue) {
+function deriveDateAndTimeParts(dateTimeValue, timezone = 'Africa/Johannesburg') {
   if (!dateTimeValue) return { date: '', time: '' }
   const date = new Date(dateTimeValue)
   if (Number.isNaN(date.getTime())) return { date: '', time: '' }
   const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Africa/Johannesburg',
+    timeZone: timezone,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -93,23 +98,51 @@ function buildDateTimeFromAppointment(row = {}) {
 }
 
 function computeDurationMinutes(row = {}) {
-  const startDateTime = buildDateTimeFromAppointment(row)
-  const date = normalizeText(row?.appointment_date)
-  const endTime = normalizeText(row?.end_time).slice(0, 5)
-  if (!startDateTime || !date || !endTime) return 45
-  const endDate = new Date(`${date}T${endTime}+02:00`)
-  const startDate = new Date(startDateTime)
-  if (Number.isNaN(endDate.getTime()) || Number.isNaN(startDate.getTime())) return 45
-  const minutes = Math.round((endDate.getTime() - startDate.getTime()) / (1000 * 60))
-  if (!Number.isFinite(minutes) || minutes < 15) return 45
-  return minutes
+  const schedule = resolveAppointmentSchedule(row, { strict: false })
+  const minutes = (Date.parse(schedule.endDateTime) - Date.parse(schedule.dateTime)) / 60000
+  return Number.isFinite(minutes) && minutes > 0 ? minutes : 45
+}
+
+function isOrdinaryAppointment(row) {
+  return row.attorney_delivery_enabled == null && row.listing_viewing_round_number == null
+}
+
+async function mutateOrdinaryProposal(row, action, payload = {}) {
+  const mutation = await supabase.rpc('mutate_calendar_proposal', {
+    p_appointment_id: row.appointment_id, p_expected_revision: payload.expectedRevision ?? row.calendar_revision,
+    p_command_id: payload.commandId || crypto.randomUUID(), p_action: action, p_request_id: payload.requestId || null,
+    p_start: payload.preferredStart || null, p_end: payload.preferredEnd || null, p_reason: normalizeText(payload.reason) || null,
+    p_timezone: payload.timezone || null, p_all_day: typeof payload.allDay === 'boolean' ? payload.allDay : null,
+  })
+  if (mutation.error) throw mutation.error
+  const receipt = mutation.data
+  if (receipt?.verified !== true || receipt.appointment?.appointment_id !== row.appointment_id
+    || receipt.appointment?.organisation_id !== row.organisation_id || receipt.request?.appointment_id !== row.appointment_id
+    || !receipt.request.id || !Number.isInteger(receipt.appointment.calendar_revision) || !Array.isArray(receipt.participants)
+    || receipt.participants.some(p => !isUuidLike(p?.participant_id) || p.appointment_id !== row.appointment_id || p.organisation_id !== row.organisation_id)) throw new Error('The replacement request could not be verified. Refresh before trying again.')
+  if (!receipt.replayed && action === 'propose') {
+    await runRescheduleNotificationTask('replacement_proposed', () => notifyAppointmentParticipants(row.appointment_id, receipt.request.status === 'accepted' ? 'appointment_rescheduled' : 'appointment_reschedule_requested', {
+      visibility: row.visibility_scope, message: receipt.request.status === 'accepted' ? 'The approved appointment time has changed.' : 'A replacement time needs your approval. The original appointment remains reserved until required attendees approve.',
+      proposal: receipt.request,
+      metadata: { preferredStart: receipt.request.preferred_start, preferredEnd: receipt.request.preferred_end, attachCalendarInvite: receipt.request.status === 'accepted' },
+    }))
+  }
+  return receipt
+}
+
+export async function proposeCalendarAppointmentReplacement(appointmentId, payload = {}) {
+  ensureServiceReady()
+  const row = await fetchAppointmentById(appointmentId)
+  if (!row) throw new Error('Appointment not found.')
+  if (!isOrdinaryAppointment(row)) throw new Error('Use the existing viewing or attorney reschedule workflow.')
+  return mutateOrdinaryProposal(row, 'propose', payload)
 }
 
 async function fetchAppointmentById(appointmentId) {
   const scopedAppointmentId = normalizeText(appointmentId)
   const query = await supabase
     .from('appointments')
-    .select('appointment_id, organisation_id, transaction_id, appointment_type, title, appointment_date, start_time, end_time, date_time, status, resource_id, allow_outside_business_hours, linked_workflow_stage, linked_transaction_stage, visibility_scope, attorney_delivery_enabled, notes')
+    .select('appointment_id, organisation_id, agent_id, created_by, scheduling_owner_user_id, transaction_id, appointment_type, title, appointment_date, start_time, end_time, date_time, status, resource_id, allow_outside_business_hours, linked_workflow_stage, linked_transaction_stage, visibility_scope, attorney_delivery_enabled, listing_viewing_round_number, calendar_revision, reservation_managed, hold_expires_at, request_issued_at, has_confirmed_reservation, created_at, end_date_time, timezone, all_day, notes')
     .eq('appointment_id', scopedAppointmentId)
     .maybeSingle()
 
@@ -122,13 +155,14 @@ async function fetchParticipantsByAppointmentIds(appointmentIds = []) {
   if (!ids.length) return {}
   const query = await supabase
     .from('appointment_participants')
-    .select('appointment_id, participant_id, user_id, name, email, participant_role, rsvp_status')
+    .select('appointment_id, participant_id, user_id, name, email, participant_role, rsvp_status, is_required, rsvp_revoked_at')
     .in('appointment_id', ids)
 
   if (query.error) throw query.error
 
   return (query.data || []).reduce((accumulator, row) => {
     const appointmentId = normalizeText(row?.appointment_id)
+    if (row.rsvp_revoked_at) return accumulator
     if (!appointmentId) return accumulator
     if (!accumulator[appointmentId]) {
       accumulator[appointmentId] = []
@@ -140,6 +174,7 @@ async function fetchParticipantsByAppointmentIds(appointmentIds = []) {
       email: normalizeText(row?.email).toLowerCase(),
       participantRole: normalizeText(row?.participant_role),
       rsvpStatus: normalizeText(row?.rsvp_status) || 'Pending',
+      isRequired: row.is_required !== false,
     })
     return accumulator
   }, {})
@@ -150,7 +185,7 @@ async function fetchAppointmentsForTransaction(transactionId) {
   if (!scopedTransactionId) return []
   const query = await supabase
     .from('appointments')
-    .select('appointment_id, transaction_id, appointment_type, title, appointment_date, start_time, end_time, date_time, status, resource_id, allow_outside_business_hours, linked_workflow_stage, linked_transaction_stage, visibility_scope, attorney_delivery_enabled, notes')
+    .select('appointment_id, organisation_id, agent_id, created_by, scheduling_owner_user_id, transaction_id, appointment_type, title, appointment_date, start_time, end_time, date_time, status, resource_id, allow_outside_business_hours, linked_workflow_stage, linked_transaction_stage, visibility_scope, attorney_delivery_enabled, listing_viewing_round_number, calendar_revision, reservation_managed, hold_expires_at, request_issued_at, has_confirmed_reservation, created_at, end_date_time, timezone, all_day, notes')
     .eq('transaction_id', scopedTransactionId)
     .order('date_time', { ascending: true })
 
@@ -160,6 +195,7 @@ async function fetchAppointmentsForTransaction(transactionId) {
 
 function toConflictAppointments(appointments = [], participantsMap = {}) {
   return (appointments || []).map((row) => ({
+    ...row,
     appointmentId: normalizeText(row?.appointment_id),
     transactionId: normalizeText(row?.transaction_id),
     appointmentType: normalizeText(row?.appointment_type),
@@ -208,14 +244,14 @@ async function runRescheduleNotificationTask(taskName, callback) {
   }
 }
 
-export async function getAppointmentRescheduleRequests({ appointmentId = '', transactionId = '', statuses = [] } = {}) {
+export async function getAppointmentRescheduleRequests({ appointmentId = '', transactionId = '', statuses = [], requireVerified = false } = {}) {
   ensureServiceReady()
   const scopedAppointmentId = normalizeText(appointmentId)
   const scopedTransactionId = normalizeText(transactionId)
 
   let query = supabase
     .from('appointment_reschedule_requests')
-    .select('id, appointment_id, requested_by, requested_by_role, reason, preferred_start, preferred_end, status, reviewed_by, reviewed_at, suggested_slots, created_at, updated_at')
+    .select('id, appointment_id, requested_by, requested_by_role, reason, preferred_start, preferred_end, status, reviewed_by, reviewed_at, suggested_slots, created_at, updated_at, proposed_timezone, proposed_all_day, hold_expires_at, reservation_managed')
     .order('created_at', { ascending: false })
 
   if (scopedAppointmentId) {
@@ -236,12 +272,13 @@ export async function getAppointmentRescheduleRequests({ appointmentId = '', tra
 
   const result = await query
   if (result.error) {
-    if (String(result.error?.code || '') === '42P01') {
+    if (!requireVerified && String(result.error?.code || '') === '42P01') {
       return []
     }
     throw result.error
   }
 
+  if (requireVerified && (!Array.isArray(result.data) || result.data.some(row => row.appointment_id !== scopedAppointmentId))) throw new Error('The proposed time could not be verified.')
   return (Array.isArray(result.data) ? result.data : []).map((row) => normalizeRescheduleRequestRow(row))
 }
 
@@ -279,6 +316,11 @@ export async function createAppointmentRescheduleRequest(payload = {}) {
 
   const durationMinutes = computeDurationMinutes(appointmentRow)
   const preferredEnd = new Date(preferredStart.getTime() + (durationMinutes * 60 * 1000))
+  if (isOrdinaryAppointment(appointmentRow)) {
+    const saved = await mutateOrdinaryProposal(appointmentRow, 'request', { ...payload,
+      preferredStart: preferredStart.toISOString(), preferredEnd: preferredEnd.toISOString() })
+    return normalizeRescheduleRequestRow(saved.request)
+  }
   const suggestedSlots = await getSuggestedSlotsForRequest(appointmentRow, {
     maxSuggestions: Number(payload?.maxSuggestions || 6),
     searchDays: Number(payload?.searchDays || 14),
@@ -391,8 +433,12 @@ export async function proposeAppointmentReschedule(requestId, payload = {}) {
   if (!proposal.isValid) {
     throw new Error(proposal.errors[0]?.message || 'Please provide a valid proposed appointment time.')
   }
-  const proposalStartParts = deriveDateAndTimeParts(proposal.value.preferredStart)
-  const proposalEndParts = deriveDateAndTimeParts(proposal.value.preferredEnd)
+  if (isOrdinaryAppointment(appointmentRow)) {
+    const saved = await mutateOrdinaryProposal(appointmentRow, 'propose', { ...payload, ...proposal.value, requestId: scopedRequestId })
+    return normalizeRescheduleRequestRow(saved.request)
+  }
+  const proposalStartParts = deriveDateAndTimeParts(proposal.value.preferredStart, appointmentRow.timezone)
+  const proposalEndParts = deriveDateAndTimeParts(proposal.value.preferredEnd, appointmentRow.timezone)
 
   const integrity = await checkAppointmentSchedulingIntegrityAsync(
     appointmentRow.organisation_id,
@@ -468,6 +514,11 @@ export async function resolveAppointmentRescheduleRequest(requestId, payload = {
 
   const appointmentRow = await fetchAppointmentById(requestQuery.data?.appointment_id)
   if (!appointmentRow) throw new Error('Linked appointment could not be loaded.')
+
+  if (isOrdinaryAppointment(appointmentRow)) {
+    const saved = await mutateOrdinaryProposal(appointmentRow, decision === 'accepted' ? 'approve' : 'reject', { ...payload, requestId: scopedRequestId })
+    return normalizeRescheduleRequestRow(saved.request)
+  }
 
   let confirmedStart = resolution.value.confirmedStart
   let confirmedEnd = resolution.value.confirmedEnd

@@ -664,7 +664,7 @@ export function buildListingSellerProfileFormPatch(draft = {}) {
       else if (!Object.hasOwn(base, field)) base[field] = draft[field] ?? (collectionFields.has(field) ? [] : '')
     }
   }
-  if (branch !== 'multiple_owners') base.owners = []
+  if (branch !== 'multiple_owners') Object.assign(base, { owners: [], coOwners: '' })
   if (branch !== 'deceased_estate') Object.assign(base, { executors: [], deceased_estate: {}, estateReference: '' })
   if (branch !== 'power_of_attorney') Object.assign(base, { powerOfAttorneyRepresentatives: [], power_of_attorney: {}, power_of_attorney_name: '', power_of_attorney_email: '', power_of_attorney_principal_name: '', power_of_attorney_principal_id_number: '' })
   if (branch !== 'other') base.other_entity = {}
@@ -672,6 +672,14 @@ export function buildListingSellerProfileFormPatch(draft = {}) {
   const patch = { ...compactObject(base), ...aliases, ...capturedMandateTerms }
   for (const fields of Object.values(BRANCH_DETAIL_FIELDS)) {
     for (const field of fields) patch[field] = base[field]
+  }
+  // These legacy/nested aliases must carry explicit empty values through the
+  // database's form-data merge when their ownership branch is no longer active.
+  for (const key of ['owners', 'coOwners', 'executors', 'deceased_estate', 'estateReference',
+    'powerOfAttorneyRepresentatives', 'power_of_attorney', 'power_of_attorney_name',
+    'power_of_attorney_email', 'power_of_attorney_principal_name',
+    'power_of_attorney_principal_id_number', 'other_entity']) {
+    if (Object.hasOwn(base, key)) patch[key] = base[key]
   }
   for (const key of ['sellerName', 'fullName', 'sellerFirstName', 'sellerSurname', 'firstName', 'lastName', 'primaryContactName', 'contactName', 'idNumber', 'residentialAddress']) patch[key] = base[key] ?? ''
   // Optional contacts and dual-agency details can be deliberately cleared.

@@ -131,7 +131,7 @@ it('never links failed storage uploads or signs an incomplete application',async
  const rpc=vi.fn().mockResolvedValue({data:{application:{id:app,transactionId:tx,revision:1},draft:{},requiredDocuments:[],documents:[]}})
  const upload=vi.fn().mockResolvedValue({error:new Error('Storage unavailable')})
  const service=createBuyerBondApplicationRuntimeService({client:{rpc,storage:{from:()=>({upload})}},validateFile:()=>({safeName:'proof.pdf'}),randomUUID:()=> 'unique'})
- await expect(service.upload({requirementKey:'proof',file:{type:'application/pdf'}})).rejects.toThrow('Storage unavailable');expect(rpc).toHaveBeenCalledTimes(1)
+ await expect(service.upload({requirementKey:'proof',file:{type:'application/pdf'}})).rejects.toMatchObject({code:'document_save_unconfirmed'});expect(rpc).toHaveBeenCalledTimes(1)
  rpc.mockClear();await expect(service.submit({expectedRevision:1})).rejects.toThrow('Complete the required details');expect(rpc).toHaveBeenCalledTimes(1)
 })
 

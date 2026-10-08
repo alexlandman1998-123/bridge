@@ -153,3 +153,33 @@ Deno.test("seller enquiry dispatch sends separate branded messages with separate
     globalThis.fetch = originalFetch;
   }
 });
+
+Deno.test("managed seller intros leave website principal delivery independent", async () => {
+  const originalFetch = globalThis.fetch;
+  const recipients: unknown[] = [];
+  globalThis.fetch = async (_url, options) => {
+    recipients.push(JSON.parse(String(options?.body)).to);
+    return Response.json({ id: "principal-receipt" });
+  };
+  try {
+    const result = await sendHomeSeekersSellerEnquiryEmails({
+      apiKey: "fixture",
+      configuredSender: "Arch9 <no-reply@arch9.co.za>",
+      agencyTo: "principal@agency.co.za",
+      sellerTo: "seller@agency.co.za",
+      details: { sellerName: "Taylor Seller" },
+      idempotencyKey: "website-intro-fixture",
+      sendSeller: false,
+    });
+    assert(result.ok);
+    assert(
+      recipients.length === 1 && recipients[0] === "principal@agency.co.za",
+    );
+    assert(
+      "sellerSkipped" in result &&
+        result.sellerSkipped === "durable_client_intro",
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

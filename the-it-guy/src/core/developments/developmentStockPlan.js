@@ -1,6 +1,6 @@
 import { validateDevelopmentStructureNodes } from './developmentStructureModel.js'
 
-export const STOCK_STEPS = ['Structure', 'Unit templates', 'Review units']
+export const STOCK_STEPS = ['Structure', 'Unit layouts', 'Check units']
 const MAX_UNITS = 10000
 const text = (value) => String(value || '').trim()
 const key = (value) => text(value).toLowerCase()
@@ -8,7 +8,7 @@ const whole = (value) => Number.isInteger(Number(value)) && Number(value) >= 0
 const positive = (value) => Number.isFinite(Number(value)) && Number(value) > 0
 
 export function createStockFloorplan() {
-  return { id: crypto.randomUUID(), name: '', sizeSqm: '', storeys: '1', listPrice: '', quantity: '', allocations: [] }
+  return { id: crypto.randomUUID(), name: '', propertyType: 'Apartment', sizeSqm: '', storeys: '1', listPrice: '', quantity: '', allocations: [], file: null }
 }
 
 export function createStockUnitType() {
@@ -20,7 +20,7 @@ export function createStockGroup(name = 'Building A') {
 }
 
 export function createStockPlan() {
-  return { structureType: 'none', groups: [], unitTypes: [createStockUnitType()], numberingStrategy: 'sequential', numberingPadding: 3 }
+  return { structureType: 'none', groups: [], unitTypes: [], numberingStrategy: 'sequential', numberingPadding: 3 }
 }
 
 export function buildStockStructureNodes(plan) {
@@ -68,13 +68,15 @@ export function stockPlanErrors(plan, step = 2) {
   if (step === 0) return [...new Set(errors)]
   const targets = buildStockTargets(plan)
   const targetIds = new Set(targets.map((target) => target.id))
-  if (!plan.unitTypes.length) errors.push('Add at least one unit type.')
+  if (!plan.unitTypes.length) errors.push('Add at least one unit layout.')
   let total = 0
   const typeNames = new Set()
   plan.unitTypes.forEach((type) => {
     if (!text(type.name)) errors.push('Each unit type needs a name.')
     if (typeNames.has(key(type.name))) errors.push('Unit type names must be unique.')
     typeNames.add(key(type.name))
+    if (type.bedrooms !== undefined && type.bedrooms !== '' && !whole(type.bedrooms)) errors.push('Bedrooms must be a whole number of zero or more.')
+    if (type.bathrooms !== undefined && type.bathrooms !== '' && (!Number.isFinite(Number(type.bathrooms)) || Number(type.bathrooms) < 0 || Number(type.bathrooms) * 2 % 1 !== 0)) errors.push('Bathrooms must be zero or more, in steps of 0.5.')
     if (!type.floorplans.length) errors.push(`${type.name || 'Each unit type'} needs at least one layout.`)
     const layoutNames = new Set()
     type.floorplans.forEach((layout) => {
@@ -138,10 +140,12 @@ export function buildStockSummary(plan) {
     numbers.add(key(unit.unitNumber))
   })
   const productCatalogue = {
-    unitTypes: plan.unitTypes.map((type) => ({ id: type.id, name: text(type.name) })),
+    unitTypes: plan.unitTypes.map((type) => ({ id: type.id, name: text(type.name), bedrooms: type.bedrooms === '' || type.bedrooms === undefined ? null : Number(type.bedrooms), bathrooms: type.bathrooms === '' || type.bathrooms === undefined ? null : Number(type.bathrooms) })),
     floorplans: plan.unitTypes.flatMap((type) => type.floorplans.map((layout) => ({
       id: layout.id, unitTypeId: type.id, name: text(layout.name),
       internalSizeSqm: Number(layout.sizeSqm), storeys: Number(layout.storeys ?? 1),
+      file: layout.file || null, fileUrl: layout.fileUrl || '',
+      metadata: { propertyType: layout.propertyType || type.name },
     }))),
     prices: plan.unitTypes.flatMap((type) => type.floorplans.map((layout) => ({
       unitTypeId: type.id, floorplanId: layout.id, listPrice: Number(layout.listPrice),

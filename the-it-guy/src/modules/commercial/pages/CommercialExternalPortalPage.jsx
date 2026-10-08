@@ -1,3 +1,5 @@
+import { DOCUMENT_UPLOAD_ACCEPT, DOCUMENT_UPLOAD_HELP_TEXT } from '../../../lib/documentUploadPolicy.js'
+import { refreshAfterSavedDocumentUpload } from '../../../lib/documentUploadLifecycle.js'
 import {
   AlertTriangle,
   Bell,
@@ -110,11 +112,11 @@ function DocumentUploadForm({ requests = [], token, onUploaded }) {
     setSaving(true)
     setError('')
     try {
-      await uploadCommercialPortalDocument({ token, file, category, documentRequestId, notes })
+      const saved = await uploadCommercialPortalDocument({ token, file, category, documentRequestId, notes })
       setFile(null)
       setNotes('')
       setDocumentRequestId('')
-      onUploaded?.()
+      await refreshAfterSavedDocumentUpload(saved, () => onUploaded?.(saved), setError)
     } catch (uploadError) {
       setError(uploadError?.message || 'Document upload failed.')
     } finally {
@@ -141,8 +143,10 @@ function DocumentUploadForm({ requests = [], token, onUploaded }) {
       </div>
       <label className="grid gap-1 text-sm font-semibold text-[#102236]">
         Document
-        <input type="file" onChange={(event) => setFile(event.target.files?.[0] || null)} className="rounded-xl border border-dashed border-slate-300 bg-white px-3 py-3 text-sm text-slate-600" />
+        <input type="file" title={DOCUMENT_UPLOAD_HELP_TEXT} accept={DOCUMENT_UPLOAD_ACCEPT} onChange={(event) => setFile(event.target.files?.[0] || null)} className="rounded-xl border border-dashed border-slate-300 bg-white px-3 py-3 text-sm text-slate-600" />
+      <span className="block text-xs font-normal text-slate-500">{DOCUMENT_UPLOAD_HELP_TEXT}</span>
       </label>
+      
       <label className="grid gap-1 text-sm font-semibold text-[#102236]">
         Notes
         <textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={3} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 outline-none" />
@@ -299,16 +303,18 @@ function CommercialExternalPortalPage() {
     return true
   }), [workspace])
 
-  async function refresh() {
-    setLoading(true)
+  async function refresh({ afterUpload = false, saved = null } = {}) {
+    if (saved) setWorkspace(previous => ({ ...previous, documents: [...(previous?.documents || []).filter(row => row.id !== saved.id), saved] }))
+    if (!afterUpload) setLoading(true)
     setError('')
     try {
       const data = await getCommercialPortalWorkspaceData(token)
       setWorkspace(data)
     } catch (loadError) {
+      if (afterUpload) throw loadError
       setError(loadError?.message || 'Commercial portal could not be loaded.')
     } finally {
-      setLoading(false)
+      if (!afterUpload) setLoading(false)
     }
   }
 
@@ -515,7 +521,7 @@ function CommercialExternalPortalPage() {
               <h2 className="text-lg font-semibold tracking-[-0.035em]">Upload Document</h2>
               <p className="mt-1 text-sm text-slate-500">Upload requested commercial documents directly to your broker.</p>
               <div className="mt-4">
-                <DocumentUploadForm requests={workspace.documentRequests} token={token} onUploaded={refresh} />
+                <DocumentUploadForm requests={workspace.documentRequests} token={token} onUploaded={saved => refresh({ afterUpload: true, saved })} />
               </div>
             </section>
           </section>

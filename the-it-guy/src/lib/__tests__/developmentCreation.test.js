@@ -28,6 +28,7 @@ function setup(overrides = {}) {
     saveDevelopmentBondConfig: async () => {},
     saveDevelopmentUnit: async (payload) => { calls.push(['unit', payload]) },
     saveDevelopmentDocument: async () => {},
+    uploadDevelopmentDocumentAsset: async (payload) => { calls.push(['upload', payload]); return { id: 'saved-asset', fileUrl: 'https://example.test/plan.png' } },
     ...overrides,
   }
   const create = new Function(...Object.keys(deps), `${source}; return createDevelopmentWorkspace`)(...Object.values(deps))
@@ -65,6 +66,32 @@ test('a layout persistence failure retains the saved development and stops unit 
     return true
   })
   assert.equal(calls.filter(([name]) => name === 'unit').length, 0)
+})
+
+test('uploads a selected floor plan once and links its receipt before saving the catalogue and units', async () => {
+  const { create, calls } = setup()
+  const file = { name: 'A2.png', type: 'image/png' }
+  await create({ productCatalogue: { unitTypes: [{ id: 'type', name: 'Apartment A2', bedrooms: 2, bathrooms: 2 }], floorplans: [{ id: 'layout', name: 'A2', unitTypeId: 'type', file }] }, units: [{ unitNumber: '001' }] })
+  assert.equal(calls.filter(([name]) => name === 'upload').length, 1)
+  const upload = calls.find(([name]) => name === 'upload')[1]
+  assert.equal(upload.file, file)
+  assert.equal(upload.developmentId, 'saved-development')
+  assert.equal(upload.linkedUnitType, 'Apartment A2')
+  const saved = calls.find(([name]) => name === 'catalogue')[1].floorplans[0]
+  assert.equal(saved.documentId, 'saved-asset')
+  assert.equal(saved.thumbnailUrl, 'https://example.test/plan.png')
+  assert.equal(saved.file, undefined)
+  assert.ok(calls.findIndex(([name]) => name === 'upload') < calls.findIndex(([name]) => name === 'catalogue'))
+})
+
+test('an attachment failure retains the created development and stops catalogue and unit saves', async () => {
+  const { create, calls } = setup({ uploadDevelopmentDocumentAsset: async () => { throw new Error('Upload unavailable') } })
+  await assert.rejects(create({ productCatalogue: { unitTypes: [], floorplans: [{ name: 'A2', file: { name: 'plan.pdf' } }] }, units: [{ unitNumber: '001' }] }), (error) => {
+    assert.equal(error.developmentId, 'saved-development')
+    assert.match(error.message, /Upload unavailable/)
+    return true
+  })
+  assert.equal(calls.filter(([name]) => ['catalogue', 'unit'].includes(name)).length, 0)
 })
 
 test('a later unit failure identifies the saved development and stops further stock creation', async () => {

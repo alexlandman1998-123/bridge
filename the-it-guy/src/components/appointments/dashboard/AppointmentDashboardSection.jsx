@@ -1,3 +1,5 @@
+import usePipelineAppointments from '../../../hooks/usePipelineAppointments'
+import useAppointmentReconciliation from '../../../hooks/useAppointmentReconciliation'
 import { CALENDAR_TIMEZONE, sastDayStart, addCalendarDays, sameSastDay, sastMonthStart, sastWeekStart, shiftCalendarMonth, sastDateKey, sastParts } from '../../../core/appointments/attorneyCalendarModel.js'
 import {
   AlertTriangle,
@@ -16,9 +18,9 @@ import {
   Scale,
   UserRound,
 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import {
-  getAppointmentDashboardData,
+  buildAppointmentDashboardData,
   getAppointmentStatusPresentation,
 } from '../../../services/appointmentDashboardService'
 
@@ -140,6 +142,7 @@ function AppointmentSummaryCounters({ counts = {} }) {
   const items = [
     { key: 'pendingConfirmation', label: 'Pending Confirmation', icon: Clock3, tone: 'amber', value: counts.pendingConfirmation || 0 },
     { key: 'upcoming', label: 'Upcoming Appointments', icon: CalendarDays, tone: 'blue', value: counts.upcoming || 0 },
+    { key: 'needsFollowUp', label: 'Needs follow-up', icon: Clock3, tone: 'amber', value: counts.needsFollowUp || 0 },
     { key: 'needsReschedule', label: 'Needs Reschedule', icon: RefreshCw, tone: 'red', value: counts.needsReschedule || 0 },
   ]
   return (
@@ -665,7 +668,7 @@ function AppointmentsOverviewCard({
   onManageAppointment,
   onOpenAppointment,
 }) {
-  const appointments = Array.isArray(data?.appointments) ? data.appointments : []
+  const appointments = data?.scheduledAppointments || []
   const counts = data?.counts || {}
   const nextAppointment = data?.nextAppointment || null
   const selectedDate = nextAppointment?.dateTime || data?.calendarStrip?.selectedDate || null
@@ -698,12 +701,14 @@ function AppointmentsOverviewCard({
         </button>
       </div>
 
-      <div className="mt-4 grid gap-2 sm:grid-cols-3">
+      <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
         <AppointmentMetric label="Upcoming" value={counts.upcoming || 0} tone="blue" />
         <AppointmentMetric label="Pending Confirmation" value={counts.pendingConfirmation || 0} tone="amber" />
         <AppointmentMetric label="Needs Reschedule" value={counts.needsReschedule || 0} tone="rose" />
+        <AppointmentMetric label="Needs follow-up" value={counts.needsFollowUp || 0} tone="amber" />
       </div>
 
+      {data?.followUpAppointments?.length ? <AppointmentTimelineGroup group={{ label: 'Needs follow-up', appointments: data.followUpAppointments }} maxRows={4} onOpenAppointment={manageHandler} onViewAll={viewCalendarHandler} /> : null}
       <div className="mt-4 grid gap-4 md:grid-cols-2">
         <CompactNextAppointmentCard
           appointment={nextAppointment}
@@ -774,6 +779,7 @@ export default function AppointmentDashboardSection({
   module = 'default',
   organisationId = '',
   appointmentRows = null,
+  appointmentLoad = null,
   users = [],
   userId = '',
   userEmail = '',
@@ -795,64 +801,44 @@ export default function AppointmentDashboardSection({
   subheading = 'Manage upcoming appointments and requests across your pipeline.',
   variant = 'legacy',
 }) {
-  const [state, setState] = useState({ loading: true, error: '', data: null })
+  const controlled = Array.isArray(appointmentRows)
+  const source = usePipelineAppointments({ organisationId, leadId, listingId, includeAll, agentId: userId, agentEmail: userEmail, revision: refreshKey, enabled: !controlled })
+  const scopeKey = JSON.stringify([organisationId, module, userId, userEmail, leadId, transactionId, matterId, listingId, includeAll])
+  useAppointmentReconciliation({ enabled: controlled, scopeKey })
+  const load = controlled ? appointmentLoad : source
+  const verified = controlled ? (appointmentLoad?.hasSnapshot ?? true) : source.hasSnapshot
+  const rows = controlled ? appointmentRows : source.rows
+  const data = verified ? buildAppointmentDashboardData({
+    module, organisationId, appointments: rows, userId, userEmail, leadId, transactionId, matterId, listingId, includeAll,
+  }) : null
+  const state = { data, loading: load?.status === 'loading', error: load?.error || '' }
+  const retry = () => load?.reload?.()
+  const notice = state.error ? <div role="alert" className="mb-3 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">{state.error} {verified ? 'Showing the last verified schedule.' : 'Appointment counts are unavailable.'} <button type="button" onClick={retry} className="ml-2 font-semibold underline">Retry</button></div> : state.loading && verified ? <p role="status" className="mb-2 text-sm text-slate-500">Refreshing appointments…</p> : null
   const isAgentOverview = variant === 'agent-overview'
   const isCompact = variant === 'compact' || isAgentOverview
 
-  useEffect(() => {
-    let active = true
-    async function load() {
-      setState((previous) => ({ ...previous, loading: true, error: '' }))
-      try {
-        const data = await getAppointmentDashboardData({
-          module,
-          organisationId,
-          appointments: Array.isArray(appointmentRows) ? appointmentRows : undefined,
-          userId,
-          userEmail,
-          leadId,
-          transactionId,
-          matterId,
-          listingId,
-          includeAll,
-        })
-        if (!active) return
-        setState({ loading: false, error: '', data })
-      } catch (error) {
-        if (!active) return
-        setState({
-          loading: false,
-          error: error?.message || 'Unable to load appointments right now.',
-          data: null,
-        })
-      }
-    }
-    void load()
-    return () => {
-      active = false
-    }
-  }, [appointmentRows, includeAll, leadId, listingId, matterId, module, organisationId, refreshKey, transactionId, userEmail, userId])
-
   const directoryIndex = useMemo(() => buildUserDirectoryIndex(users), [users])
 
-  const data = state.data
   const nextAppointmentUser = data?.nextAppointment
     ? resolveUserMatch(data.nextAppointment, directoryIndex)
     : null
 
-  if (state.loading) return isCompact ? <CompactLoadingCard /> : <LoadingCard />
+  if (state.loading && !verified) return isCompact ? <CompactLoadingCard /> : <LoadingCard />
 
-  if (isAgentOverview && (state.error || !data || data.empty)) {
+  if (!verified) return <section aria-label={heading}>{notice || <p role="status">Loading appointments…</p>}</section>
+
+  if (isAgentOverview && (!data || data.empty)) {
     return (
       <section className="rounded-2xl border border-[#dde6f1] bg-white p-4 shadow-sm sm:p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="flex items-center gap-2 text-lg font-semibold text-[#10243a]"><CalendarDays size={20} />{heading}</h2>
           {onViewCalendar ? <button type="button" onClick={onViewCalendar} className="text-sm font-semibold text-[#1769d1] hover:underline">View calendar</button> : null}
         </div>
-        {state.error ? <p role="alert" className="mt-4 rounded-xl bg-rose-50 p-4 text-sm text-rose-700">{state.error}</p> : <div className="mt-4 flex flex-col gap-4 rounded-xl border border-[#e5edf6] bg-[#f8fafc] p-4 sm:flex-row sm:items-center sm:justify-between">
+        {notice}
+        <div className="mt-4 flex flex-col gap-4 rounded-xl border border-[#e5edf6] bg-[#f8fafc] p-4 sm:flex-row sm:items-center sm:justify-between">
           <div><p className="text-sm font-semibold text-[#10243a]">No appointments scheduled</p><p className="mt-1 text-sm text-[#647a92]">This agent’s appointments and client meetings will appear here.</p></div>
           {onScheduleAppointment && canManage ? <button type="button" onClick={onScheduleAppointment} className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-xl bg-[#147a55] px-4 text-sm font-semibold text-white hover:bg-[#0f6847]"><CalendarDays size={16} />Schedule appointment</button> : null}
-        </div>}
+        </div>
       </section>
     )
   }
@@ -860,11 +846,7 @@ export default function AppointmentDashboardSection({
   if (isCompact) {
     return (
       <div className="space-y-3">
-        {state.error ? (
-          <div className="rounded-3xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700 shadow-sm">
-            {state.error}
-          </div>
-        ) : null}
+        {notice}
         <AppointmentsOverviewCard
           data={data}
           canManage={canManage}
@@ -900,11 +882,7 @@ export default function AppointmentDashboardSection({
         </button>
       </div>
 
-      {state.error ? (
-        <div className="mt-5 rounded-[18px] border border-[#f3c9c9] bg-[#fff5f5] px-4 py-3 text-sm font-medium text-[#b42318]">
-          {state.error}
-        </div>
-      ) : null}
+      {notice}
 
       {!data || data.empty ? (
         <div className="mt-6 rounded-[20px] border border-dashed border-[#dbe5ef] bg-[#fbfdff] px-6 py-12 text-center">

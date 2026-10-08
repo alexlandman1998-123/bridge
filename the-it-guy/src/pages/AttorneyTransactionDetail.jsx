@@ -1,3 +1,4 @@
+import { DOCUMENT_UPLOAD_ACCEPT, DOCUMENT_UPLOAD_HELP_TEXT } from '../lib/documentUploadPolicy.js'
 import { workflowActionLabel, workflowTaskButtonLabel } from '../lib/workflowActionLabel.js'
 import { resolveLegalTaskUploadRequirement } from '../core/transactions/legalTaskDocumentTarget.js'
 import MatterScenarioProfileEditor from '../components/transactions/MatterScenarioProfileEditor.jsx'
@@ -24186,11 +24187,13 @@ function AttorneyTransactionDetail() {
                 <label className="flex flex-col gap-1.5">
                   <span className="text-label font-semibold uppercase text-textMuted">File</span>
                   {uploadDraft.fileName ? <span className="text-xs font-medium text-emerald-800">Selected: {uploadDraft.fileName}</span> : null}
-                  <Field key={`archline-upload-input-${uploadInputVersion}`} type="file" onChange={(event) => {
+                  <Field key={`archline-upload-input-${uploadInputVersion}`} type="file" title={DOCUMENT_UPLOAD_HELP_TEXT} accept={DOCUMENT_UPLOAD_ACCEPT} onChange={(event) => {
                     const file = event.target.files?.[0] || null
                     setUploadDraft((previous) => ({ ...previous, file, fileName: file?.name || '' }))
                   }} />
+                <span className="block text-xs font-normal text-slate-500">{DOCUMENT_UPLOAD_HELP_TEXT}</span>
                 </label>
+                
                 <div className="grid gap-3 md:grid-cols-2">
                   <label className="flex flex-col gap-1.5">
                     <span className="text-label font-semibold uppercase text-textMuted">Document type</span>
@@ -25348,13 +25351,15 @@ function AttorneyTransactionDetail() {
                   <span className="text-label font-semibold uppercase text-textMuted">File</span>
                   <Field
                     key={`upload-input-${uploadInputVersion}`}
-                    type="file"
+                    type="file" title={DOCUMENT_UPLOAD_HELP_TEXT} accept={DOCUMENT_UPLOAD_ACCEPT}
                     onChange={(event) => {
                       const file = event.target.files?.[0] || null
                       setUploadDraft((previous) => ({ ...previous, file, fileName: file?.name || '' }))
                     }}
                   />
+                <span className="block text-xs font-normal text-slate-500">{DOCUMENT_UPLOAD_HELP_TEXT}</span>
                 </label>
+                
                 <div className="grid gap-3 md:grid-cols-2">
                   <label className="flex flex-col gap-1.5">
                     <span className="text-label font-semibold uppercase text-textMuted">Document type</span>

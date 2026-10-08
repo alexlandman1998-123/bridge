@@ -1,10 +1,13 @@
-import { createClient } from "supabase";
-import { resolveLeadEnquiryKind } from "../services/leadAcknowledgementContext.ts";
+import { createClient, type SupabaseClient } from "supabase";
+import {
+  type LeadEnquiryKind,
+  resolveLeadEnquiryKind,
+} from "../services/leadAcknowledgementContext.ts";
 import { createTenantQualificationLink } from "../services/tenantQualificationLink.ts";
 import type { SendLeadAcknowledgementPayload } from "../types.ts";
 import {
-  buildLeadAcknowledgementEmailText,
   buildLeadAcknowledgementEmailHtml,
+  buildLeadAcknowledgementEmailText,
   buildLeadAcknowledgementSubject,
 } from "../content/leadAcknowledgement.ts";
 import {
@@ -17,21 +20,17 @@ import { normalizeText } from "../utils/text.ts";
 
 function normalizeEmail(value: unknown) {
   const text = normalizeText(value).toLowerCase();
-  const match = text.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i);
-  return match?.[0] || "";
+  return /^[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+$/i.test(text) ? text : "";
 }
 
-export async function handleLeadAcknowledgementEmail(
+export async function renderLeadAcknowledgementEnvelope(
   payload: SendLeadAcknowledgementPayload,
+  supabase: SupabaseClient | undefined,
+  savedKind?: LeadEnquiryKind,
 ) {
-  const resendApiKey = normalizeText(Deno.env.get("RESEND_API_KEY"));
-  if (!resendApiKey) {
-    return jsonResponse(500, { error: "Missing RESEND_API_KEY secret." });
-  }
-
   const to = normalizeEmail(payload.to);
   if (!to) {
-    return jsonResponse(400, { error: "Missing required field: to" });
+    throw new Error("A valid intro recipient is required.");
   }
 
   const centralSender =
@@ -40,7 +39,7 @@ export async function handleLeadAcknowledgementEmail(
     "Arch9 <onboarding@resend.dev>";
   const replyTo = normalizeEmail(payload.replyTo || payload.reply_to);
   const subject = normalizeText(payload.subject) ||
-    buildLeadAcknowledgementSubject();
+    buildLeadAcknowledgementSubject(savedKind);
 
   const content = {
     recipientName: normalizeText(
@@ -84,7 +83,7 @@ export async function handleLeadAcknowledgementEmail(
     agentFirstName: normalizeText(
       payload.agentFirstName || payload.agent_first_name,
     ),
-    agentEmail: normalizeText(payload.agentEmail || payload.agent_email),
+    agentEmail: normalizeEmail(payload.agentEmail || payload.agent_email),
     agentPhone: normalizeText(payload.agentPhone || payload.agent_phone),
     agentJobTitle: normalizeText(
       payload.agentJobTitle || payload.agent_job_title,
@@ -103,13 +102,6 @@ export async function handleLeadAcknowledgementEmail(
       payload.customResponseText || payload.custom_response_text,
     ),
   };
-  const supabaseUrl = normalizeText(Deno.env.get("SUPABASE_URL"));
-  const serviceKey = normalizeText(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
-  const supabase = supabaseUrl && serviceKey
-    ? createClient(supabaseUrl, serviceKey, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    })
-    : undefined;
   const branding = await resolveEmailBranding({
     supabase,
     payload: payload as Record<string, unknown>,
@@ -136,28 +128,37 @@ export async function handleLeadAcknowledgementEmail(
   const responseExpectation = content.customResponseText ||
     content.responseExpectation ||
     `${agentFirstName} will review your enquiry and contact you shortly.`;
-  const enquiryKind = await resolveLeadEnquiryKind(
+  const enquiryKind = savedKind || await resolveLeadEnquiryKind(
     supabase,
     normalizeText(payload.organisationId || payload.organisation_id),
     normalizeText(payload.leadId || payload.lead_id),
   );
   if (enquiryKind === "rental") {
     try {
-      content.viewingAvailabilityUrl = await createTenantQualificationLink(supabase, {
-        organisationId: normalizeText(payload.organisationId || payload.organisation_id),
-        leadId: normalizeText(payload.leadId || payload.lead_id),
-        to, recipientName: content.recipientName, organisationName: branding.organisationName,
-        agentName: content.agentName, agentEmail: content.agentEmail,
-      });
+      content.viewingAvailabilityUrl = await createTenantQualificationLink(
+        supabase,
+        {
+          organisationId: normalizeText(
+            payload.organisationId || payload.organisation_id,
+          ),
+          leadId: normalizeText(payload.leadId || payload.lead_id),
+          to,
+          recipientName: content.recipientName,
+          organisationName: branding.organisationName,
+          agentName: content.agentName,
+          agentEmail: content.agentEmail,
+        },
+      );
     } catch {
-      return jsonResponse(500, { error: "Unable to create the tenant qualification link. Please retry." });
+      throw new Error("Unable to create the tenant qualification link.");
     }
   }
   const html = buildLeadAcknowledgementEmailHtml({
     enquiryKind,
     ...content,
     organisationName: branding.organisationName,
-    organisationLogoUrl: branding.logoDarkUrl || branding.logoLightUrl || branding.logoUrl || branding.logoIconUrl,
+    organisationLogoUrl: branding.logoDarkUrl || branding.logoLightUrl ||
+      branding.logoUrl || branding.logoIconUrl,
     organisationTagline: branding.tagline,
     organisationPhone: branding.supportPhone,
     organisationEmail: branding.supportEmail,
@@ -173,32 +174,69 @@ export async function handleLeadAcknowledgementEmail(
     supabase,
   });
 
-  const emailResult = await sendViaResendApi({
-    apiKey: resendApiKey,
+  return {
     from: sender,
     to,
-    bcc: content.agentEmail,
+    bcc: content.agentEmail || undefined,
     subject,
     html,
-    text: buildLeadAcknowledgementEmailText({ ...content, enquiryKind }),
-    replyTo: replyTo || undefined,
+    text: buildLeadAcknowledgementEmailText({
+      ...content,
+      enquiryKind,
+      organisationName: branding.organisationName,
+      organisationPhone: branding.supportPhone,
+      organisationEmail: branding.supportEmail,
+      organisationWebsite: branding.website,
+    }),
+    replyTo: replyTo || content.agentEmail || branding.replyTo ||
+      branding.supportEmail || undefined,
+  };
+}
+
+export async function handleLeadAcknowledgementEmail(
+  payload: SendLeadAcknowledgementPayload,
+) {
+  const apiKey = normalizeText(Deno.env.get("RESEND_API_KEY"));
+  if (!apiKey) {
+    return jsonResponse(500, { error: "Missing RESEND_API_KEY secret." });
+  }
+  if (!normalizeEmail(payload.to)) {
+    return jsonResponse(400, { error: "Missing required field: to" });
+  }
+  const url = normalizeText(Deno.env.get("SUPABASE_URL"));
+  const key = normalizeText(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
+  const client = url && key
+    ? createClient(url, key, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    })
+    : undefined;
+  let envelope: Awaited<ReturnType<typeof renderLeadAcknowledgementEnvelope>>;
+  try {
+    envelope = await renderLeadAcknowledgementEnvelope(payload, client);
+  } catch {
+    return jsonResponse(503, {
+      error: "Unable to prepare the lead intro email. Please retry.",
+    });
+  }
+  const result = await sendViaResendApi({
+    apiKey,
+    ...envelope,
     idempotencyKey:
       normalizeText(payload.idempotencyKey || payload.idempotency_key) ||
       undefined,
   });
-
-  if (!emailResult.ok) {
-    return jsonResponse(500, {
-      error: emailResult.error?.message ||
-        "Failed to send lead acknowledgement email.",
-      details: emailResult.error,
+  if (
+    !result.ok || typeof result.data?.id !== "string" || !result.data.id.trim()
+  ) {
+    return jsonResponse(502, {
+      error: "The email provider has not confirmed acceptance.",
     });
   }
-
   return jsonResponse(200, {
     ok: true,
+    sent: true,
     type: "lead_acknowledgement",
-    emailId: emailResult.data?.id || null,
-    providerMessageId: emailResult.data?.id || null,
+    emailId: result.data.id,
+    providerMessageId: result.data.id,
   });
 }

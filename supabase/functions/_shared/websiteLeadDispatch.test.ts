@@ -64,11 +64,11 @@ Deno.test("website lead dispatcher builds a tenant-bound provider payload", () =
 
 Deno.test("website lead dispatcher distinguishes provider outcomes", () => {
   expect(
-    websiteLeadDeliveryStatus({ sent: true }) === "sent",
+    websiteLeadDeliveryStatus({ sent: true, providerMessageId: "receipt-1" }) === "sent",
     "sent should be terminal",
   );
   expect(
-    websiteLeadDeliveryStatus({ sent: false, suppressed: true }) === "skipped",
+    websiteLeadDeliveryStatus({ sent: false, suppressed: true, reason: "controlled_test_recipient" }) === "skipped",
     "controlled suppression should be auditable",
   );
   expect(
@@ -76,6 +76,14 @@ Deno.test("website lead dispatcher distinguishes provider outcomes", () => {
       "resend-1",
     "provider receipt should be captured",
   );
+  for (const payload of [{}, { sent: true }, { ok: false, sent: true, emailId: "bad" }, { queued: true }, { suppressed: true, reason: "lead_operations_emails_disabled" }]) {
+    expect(websiteLeadDeliveryStatus(payload) === "failed", "unconfirmed or disabled delivery must retry");
+  }
+});
+
+Deno.test("website rental enquiries open the rental lead workspace", () => {
+  const payload = buildWebsiteLeadEmailPayload({ ...primary, payload_json: { ...primary.payload_json, enquiryIntent: "rent", leadCategory: "buyer" } });
+  expect(Boolean(payload.actionLink?.includes("/agent/rentals/pipeline/leads/")), "rental enquiry should retain its workspace");
 });
 
 Deno.test("website lead dispatcher only escalates a terminal assigned-agent failure", () => {

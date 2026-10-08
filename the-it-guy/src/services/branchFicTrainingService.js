@@ -1,3 +1,5 @@
+import { withDocumentUploadMimeType, validateDocumentUploadFile } from '../lib/documentUploadPolicy.js'
+import { runRecoverableDocumentUpload, readSavedUploadByPath } from '../lib/documentUploadRecovery.js'
 import { supabase } from '../lib/supabaseClient'
 export const FIC_COURSE_VERSION = '2026.10'
 export const FIC_LESSONS = [
@@ -161,21 +163,24 @@ export const acknowledgeFicPolicy = (org, branch, policy) =>
     p_policy: policy,
   })
 export async function publishFicPolicy(org, { file, version, title, owner }) {
-  if (!file || file.type !== 'application/pdf' || file.size > 10 * 1024 * 1024)
-    throw new Error('Choose a PDF up to 10 MB.')
+  validateDocumentUploadFile(file, { surface: 'fic_policy' })
   if (![version, title, owner].every((value) => String(value || '').trim()))
     throw new Error('Enter a version, title and responsible person.')
-  const path = `organisations/${org}/${crypto.randomUUID()}.pdf`
-  const { error } = await client()
-    .storage.from('fic-compliance')
-    .upload(path, file, { upsert: false, contentType: 'application/pdf' })
-  if (error) throw error
-  return rpc('fic_publish_policy', {
-    p_org: org,
-    p_version: version,
-    p_title: title,
-    p_owner: owner,
-    p_path: path,
+  const currentClient = client()
+  return runRecoverableDocumentUpload({ client: currentClient, scope: ['fic_policy', org, version, title, owner], file, storageBuckets: ['fic-compliance'],
+    run: async attempt => {
+      const path = attempt.path(`organisations/${org}/${crypto.randomUUID()}.pdf`)
+      await attempt.upload(async () => {
+        const { error } = await currentClient.storage.from('fic-compliance').upload(path, withDocumentUploadMimeType(file, 'application/pdf'), { upsert: false, contentType: 'application/pdf' })
+        if (error) throw error
+        return 'fic-compliance'
+      })
+      const result = await attempt.persist({
+        save: async () => ({ data: { id: await rpc('fic_publish_policy', { p_org: org, p_version: version, p_title: title, p_owner: owner, p_path: path }) } }),
+        read: () => readSavedUploadByPath(currentClient, { table: 'organisation_fic_policies', column: 'storage_path', path, filters: { organisation_id: org } }),
+      })
+      return result.data.id
+    },
   })
 }
 export async function openFicPolicy(policy) {

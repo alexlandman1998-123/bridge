@@ -1,3 +1,4 @@
+import { DOCUMENT_UPLOAD_ACCEPT, DOCUMENT_UPLOAD_HELP_TEXT } from '../../lib/documentUploadPolicy.js'
 import { ArrowDownCircle, ArrowUpCircle, ClipboardList, Download, FileText, ShieldCheck } from 'lucide-react'
 import { useState } from 'react'
 import { downloadMatterFinancialStatement } from '../../core/attorneyAccounting/matterAccountStatement'
@@ -390,11 +391,13 @@ export default function ClientPortalMatterAccountsPanel({
                             <label className="text-[0.66rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">
                               File
                               <input
-                                type="file"
+                                type="file" aria-label="File" title={DOCUMENT_UPLOAD_HELP_TEXT} accept={DOCUMENT_UPLOAD_ACCEPT}
                                 onChange={(event) => setRequestFiles((previous) => ({ ...previous, [request.id]: event.target.files?.[0] || null }))}
                                 className="mt-1.5 w-full rounded-[10px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm normal-case tracking-normal text-[#162334] outline-none file:mr-3 file:rounded-md file:border-0 file:bg-[#eef5fb] file:px-2 file:py-1 file:text-xs file:font-semibold file:text-[#35546c]"
                               />
+                            <span className="block text-xs font-normal text-slate-500">{DOCUMENT_UPLOAD_HELP_TEXT}</span>
                             </label>
+                            
                             <label className="md:col-span-2 text-[0.66rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">
                               Note
                               <textarea
@@ -493,11 +496,13 @@ export default function ClientPortalMatterAccountsPanel({
                 <label className="text-xs font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">
                   File
                   <input
-                    type="file"
+                    type="file" aria-label="File" title={DOCUMENT_UPLOAD_HELP_TEXT} accept={DOCUMENT_UPLOAD_ACCEPT}
                     onChange={(event) => setProofFiles((previous) => ({ ...previous, [account.id]: event.target.files?.[0] || null }))}
                     className="mt-1.5 w-full rounded-[10px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm normal-case tracking-normal text-[#162334] outline-none file:mr-3 file:rounded-md file:border-0 file:bg-[#eef5fb] file:px-2 file:py-1 file:text-xs file:font-semibold file:text-[#35546c]"
                   />
+                <span className="block text-xs font-normal text-slate-500">{DOCUMENT_UPLOAD_HELP_TEXT}</span>
                 </label>
+                
                 <div className="flex items-end">
                   <button
                     type="submit"

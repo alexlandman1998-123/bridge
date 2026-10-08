@@ -1,3 +1,5 @@
+import { DOCUMENT_UPLOAD_ACCEPT, DOCUMENT_UPLOAD_HELP_TEXT } from '../lib/documentUploadPolicy.js'
+import { refreshAfterSavedDocumentUpload } from '../lib/documentUploadLifecycle.js'
 import {
   AlertCircle,
   Building2,
@@ -103,7 +105,7 @@ export default function DeveloperDocumentPortalPage() {
       setUploadingKey(key)
       setError('')
       setMessage('')
-      await uploadDeveloperDocumentPortalFile({
+      const saved = await uploadDeveloperDocumentPortalFile({
         token,
         portalId: workspace.portal.id,
         transactionId: workspace.transaction.id,
@@ -112,7 +114,11 @@ export default function DeveloperDocumentPortalPage() {
         file,
       })
       setMessage(`${file.name} was uploaded successfully.`)
-      await loadPortal({ quiet: true })
+      setWorkspace(previous => ({ ...previous, documents: [...(previous?.documents || []).filter(row => row.id !== saved.id), saved] }))
+      await refreshAfterSavedDocumentUpload(saved, async () => {
+        const payload = await fetchDeveloperDocumentPortal(token)
+        setWorkspace(payload)
+      }, warning => setMessage(warning))
     } catch (uploadError) {
       setError(uploadError?.message || 'The document could not be uploaded.')
     } finally {
@@ -199,6 +205,7 @@ export default function DeveloperDocumentPortalPage() {
           <div>
             <h2 className="text-xl font-semibold tracking-[-0.03em]">Documents requested from the developer</h2>
             <p className="mt-1 text-sm text-[#66758b]">Upload the sale-pack, authority, property and transfer documents requested for this developer sale. Buyer documents are not shown here.</p>
+            <p className="mt-1 text-xs text-[#66758b]">{DOCUMENT_UPLOAD_HELP_TEXT}</p>
           </div>
 
           <div className="flex flex-col gap-4 rounded-3xl border border-[#bfd8cf] bg-[#f1f8f5] p-5 sm:flex-row sm:items-center sm:justify-between">
@@ -207,7 +214,7 @@ export default function DeveloperDocumentPortalPage() {
               <p className="mt-1 text-sm text-[#527568]">Use this for development plans, sale-pack annexures, authority records, property schedules or any additional file requested by the transaction team.</p>
             </div>
             <div className="shrink-0">
-              <input ref={(node) => { if (node) inputRefs.current.set('general', node) }} type="file" className="hidden" accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png" onChange={(event) => void handleFileSelected(null, event.target.files?.[0])} />
+              <input ref={(node) => { if (node) inputRefs.current.set('general', node) }} type="file" title={DOCUMENT_UPLOAD_HELP_TEXT} className="hidden" accept={DOCUMENT_UPLOAD_ACCEPT} onChange={(event) => void handleFileSelected(null, event.target.files?.[0])} />
               <button type="button" disabled={uploadingKey === 'general'} onClick={() => inputRefs.current.get('general')?.click()} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#137a5c] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#0e684d] disabled:opacity-60 sm:w-auto">
                 {uploadingKey === 'general' ? <Loader2 className="animate-spin" size={16} /> : <UploadCloud size={16} />}
                 {uploadingKey === 'general' ? 'Uploading…' : 'Upload document'}
@@ -234,7 +241,7 @@ export default function DeveloperDocumentPortalPage() {
                         </div>
                       </div>
                       <div className="shrink-0">
-                        <input ref={(node) => { if (node) inputRefs.current.set(requirement.id, node) }} type="file" className="hidden" accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png" onChange={(event) => void handleFileSelected(requirement, event.target.files?.[0])} />
+                        <input ref={(node) => { if (node) inputRefs.current.set(requirement.id, node) }} type="file" title={DOCUMENT_UPLOAD_HELP_TEXT} className="hidden" accept={DOCUMENT_UPLOAD_ACCEPT} onChange={(event) => void handleFileSelected(requirement, event.target.files?.[0])} />
                         <button type="button" disabled={busy} onClick={() => inputRefs.current.get(requirement.id)?.click()} className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-[#cfdcd7] bg-white px-4 py-2.5 text-sm font-semibold text-[#215a49] transition hover:border-[#91b9aa] hover:bg-[#f5faf8] disabled:opacity-60 sm:w-auto">
                           {busy ? <Loader2 className="animate-spin" size={16} /> : complete ? <RefreshCw size={15} /> : <UploadCloud size={16} />}
                           {busy ? 'Uploading…' : complete ? 'Replace' : 'Upload'}

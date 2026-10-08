@@ -86,7 +86,7 @@ function responseText(expectation: unknown, customText: unknown, agentName: stri
   if (cleanText(expectation) === "within_two_hours") {
     return `${agentName || "The agent"} will review your enquiry and get in touch with you as soon as possible.`;
   }
-  return "The agent will review your enquiry and contact you as soon as possible.";
+  return `${agentName || "Our team"} will review your enquiry and contact you as soon as possible.`;
 }
 
 export type LeadAcknowledgementContentInput = {
@@ -117,6 +117,11 @@ export type LeadAcknowledgementContentInput = {
 };
 
 function enquiryCopy(kind: LeadEnquiryKind = "general") {
+  if (kind === "seller") return {
+    heading: "Let's talk about selling your property",
+    details: "Tell us about your property and when you would like to discuss a valuation. We will help you plan your next steps.",
+    introduction: "Selling your property is an important decision. We are here to help with a valuation, marketing advice and the selling process.",
+  };
   if (kind === "rental") return {
     heading: "Your next rental home starts here",
     details: "Complete your tenant qualification: monthly rental budget, preferred area, move-in date, employment, deposit, screening consent, household and pets. Share your preferred viewing times in the same short form.",
@@ -139,8 +144,15 @@ function enquiryCopy(kind: LeadEnquiryKind = "general") {
   };
 }
 
-export function buildLeadAcknowledgementSubject() {
+export function buildLeadAcknowledgementSubject(kind?: LeadEnquiryKind) {
+  if (kind === "seller") return "Thanks for getting in touch about selling your property";
   return "Thanks for your property enquiry";
+}
+
+function receiptIntroduction(kind?: LeadEnquiryKind) {
+  return kind === "seller" ? "Thank you for getting in touch about selling your property. We have received your enquiry and our team will be in touch with you shortly."
+    : kind === "landlord" ? "Thank you for getting in touch about letting your property. We have received your enquiry and our team will be in touch with you shortly."
+    : "Thank you for your property enquiry. We have received it and our team will be in touch with you shortly.";
 }
 
 export function buildLeadAcknowledgementEmailHtml(input: LeadAcknowledgementContentInput) {
@@ -150,12 +162,12 @@ export function buildLeadAcknowledgementEmailHtml(input: LeadAcknowledgementCont
   const accent = normalizeColor(input.organisationBrandSecondaryColor, "#b48a42");
   const organisationName = cleanText(input.organisationName) || "Arch9";
   const recipientFirstName = cleanText(input.recipientName).split(/\s+/)[0] || "there";
-  const agentName = cleanText(input.agentName) || "Your agent";
+  const agentName = cleanText(input.agentName) || `${organisationName} team`;
   const agentFirstName = cleanText(input.agentFirstName) || agentName.split(/\s+/)[0] || "the agent";
   const agentJobTitle = cleanText(input.agentJobTitle) || "Property Practitioner";
   const agentBio = limitText(
     input.agentBio ||
-      `${agentName} is a property practitioner at ${organisationName} and will assist you with your enquiry.`,
+      (input.agentName ? `${agentName} is a property practitioner at ${organisationName} and will assist you with your enquiry.` : `Our team will help with your enquiry and connect you with the right property practitioner.`),
     250,
   );
   const message = limitText(input.originalMessage, 500);
@@ -177,7 +189,7 @@ export function buildLeadAcknowledgementEmailHtml(input: LeadAcknowledgementCont
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>${escapeHtml(buildLeadAcknowledgementSubject())}</title>
+    <title>${escapeHtml(buildLeadAcknowledgementSubject(input.enquiryKind))}</title>
   </head>
   <body style="margin:0;padding:0;background:#ffffff;color:#111827;">
     <div style="display:none;max-height:0;overflow:hidden;opacity:0;">We have received your property enquiry.</div>
@@ -203,7 +215,7 @@ export function buildLeadAcknowledgementEmailHtml(input: LeadAcknowledgementCont
                   ${isTenant ? `<p style="margin:0 0 12px;font-size:12px;letter-spacing:2px;font-weight:800;color:${primary};">RENTAL ENQUIRY · TENANT QUALIFICATION</p><p style="margin:0 0 12px;color:${primary};font-size:13px;">01 Rental requirements &nbsp; 02 Household &nbsp; 03 Viewing times</p>` : ''}
                   <h2 style="margin:0 0 10px;font-size:20px;line-height:1.3;color:${primary};">${escapeHtml(copy.heading)}</h2>
                   <p style="margin:0 0 14px;font-size:15px;line-height:1.65;color:#111827;">${escapeHtml(copy.details)}</p>
-                  ${viewingHref ? `<a href="${escapeHtml(viewingHref)}" style="display:inline-block;background:${primary};color:#ffffff;text-decoration:none;border-radius:7px;padding:12px 18px;font-size:14px;font-weight:700;">${isTenant && input.viewingAvailabilityUrl ? "Complete tenant qualification" : input.enquiryKind === "landlord" || !input.enquiryKind || input.enquiryKind === "general" || isTenant ? "Contact your agent" : "Arrange a viewing"}</a>` : ""}
+                  ${viewingHref ? `<a href="${escapeHtml(viewingHref)}" style="display:inline-block;background:${primary};color:#ffffff;text-decoration:none;border-radius:7px;padding:12px 18px;font-size:14px;font-weight:700;">${isTenant && input.viewingAvailabilityUrl ? "Complete tenant qualification" : input.enquiryKind === "seller" ? "Discuss your property" : input.enquiryKind === "landlord" || !input.enquiryKind || input.enquiryKind === "general" || isTenant ? "Contact your agent" : "Arrange a viewing"}</a>` : ""}
                 </div>
               </td>
             </tr>
@@ -211,9 +223,9 @@ export function buildLeadAcknowledgementEmailHtml(input: LeadAcknowledgementCont
               <td style="padding:30px 4px 10px;">
                 <h1 style="margin:0 0 14px;font-size:30px;line-height:1.15;color:${primary};font-weight:800;">Thanks for your enquiry!</h1>
                 <p style="margin:0 0 18px;font-size:16px;line-height:1.65;color:#111827;">Hi ${escapeHtml(recipientFirstName)},</p>
-                <p style="margin:0 0 16px;font-size:16px;line-height:1.65;color:#111827;">Thank you for your interest in one of our properties. We have received your enquiry and our team will be in touch with you shortly.</p>
+                <p style="margin:0 0 16px;font-size:16px;line-height:1.65;color:#111827;">${escapeHtml(receiptIntroduction(input.enquiryKind))}</p>
                 <p style="margin:0 0 16px;font-size:16px;line-height:1.65;color:#111827;">${escapeHtml(copy.introduction)}</p>
-                <p style="margin:0;font-size:16px;line-height:1.65;color:#111827;">Your enquiry has been sent to the property practitioner best placed to assist you.</p>
+                <p style="margin:0;font-size:16px;line-height:1.65;color:#111827;">${input.agentName ? "Your enquiry has been sent to the property practitioner best placed to assist you." : "Our team will connect you with the property practitioner best placed to assist you."}</p>
               </td>
             </tr>
             <tr>
@@ -232,7 +244,7 @@ export function buildLeadAcknowledgementEmailHtml(input: LeadAcknowledgementCont
             </tr>
             <tr>
               <td style="padding:8px 4px 18px;">
-                <h2 style="margin:0 0 16px;font-size:20px;line-height:1.3;color:${primary};">Your agent</h2>
+                <h2 style="margin:0 0 16px;font-size:20px;line-height:1.3;color:${primary};">${input.agentName ? "Your agent" : "Your enquiry team"}</h2>
                 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
                   <tr>
                     <td width="124" style="vertical-align:top;padding:0 20px 12px 0;">${agentAvatar}</td>
@@ -276,11 +288,11 @@ export function buildLeadAcknowledgementEmailText(input: LeadAcknowledgementCont
   const copy = enquiryCopy(input.enquiryKind);
   const organisationName = cleanText(input.organisationName) || "Arch9";
   const recipientFirstName = cleanText(input.recipientName).split(/\s+/)[0] || "there";
-  const agentName = cleanText(input.agentName) || "Your agent";
+  const agentName = cleanText(input.agentName) || `${organisationName} team`;
   const agentFirstName = cleanText(input.agentFirstName) || agentName.split(/\s+/)[0] || "the agent";
   const agentBio = limitText(
     input.agentBio ||
-      `${agentName} is a property practitioner at ${organisationName} and will assist you with your enquiry.`,
+      (input.agentName ? `${agentName} is a property practitioner at ${organisationName} and will assist you with your enquiry.` : `Our team will help with your enquiry and connect you with the right property practitioner.`),
     250,
   );
   const message = limitText(input.originalMessage, 500);
@@ -291,20 +303,20 @@ export function buildLeadAcknowledgementEmailText(input: LeadAcknowledgementCont
     "",
     `Hi ${recipientFirstName},`,
     "",
-    "Thank you for your interest in one of our properties. We have received your enquiry and our team will be in touch with you shortly.",
+    receiptIntroduction(input.enquiryKind),
     "",
     copy.introduction,
     "",
     copy.heading,
     copy.details,
-    input.viewingAvailabilityUrl ? `${input.enquiryKind === 'rental' ? 'Complete tenant qualification' : 'Arrange a viewing'}: ${input.viewingAvailabilityUrl}` : null,
+    input.viewingAvailabilityUrl ? `${input.enquiryKind === 'rental' ? 'Complete tenant qualification' : input.enquiryKind === 'seller' ? 'Discuss your property' : input.enquiryKind === 'sale' ? 'Arrange a viewing' : 'Contact your agent'}: ${input.viewingAvailabilityUrl}` : null,
     "",
     "Your enquiry details",
     input.enquiryReceivedAt ? `Date of enquiry: ${formatDateTime(input.enquiryReceivedAt, input.timezone)}` : null,
     `Source: ${sourceLabel(input.source)}`,
     message ? `Your message: "${message}"` : null,
     "",
-    "Your agent",
+    input.agentName ? "Your agent" : "Your enquiry team",
     agentName,
     cleanText(input.agentJobTitle) || "Property Practitioner",
     agentBio,

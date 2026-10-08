@@ -106,8 +106,10 @@ async function sendEmail(
         `Notification service returned ${response.status}.`,
     );
   }
+  const status = websiteLeadDeliveryStatus(payload);
+  if (status === "failed") throw new Error("The email provider has not confirmed acceptance.");
   return {
-    status: websiteLeadDeliveryStatus(payload) as "sent" | "skipped",
+    status,
     providerMessageId: websiteLeadProviderMessageId(payload),
   };
 }

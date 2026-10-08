@@ -10,13 +10,13 @@ const input = {
 }
 it('emails the saved assignee with contact details and a working sales link, without needing an enquirer email', () => {
   const payload = buildNewLeadAgentNotification(input)
-  expect(payload).toMatchObject({ to: 'agent@example.com', recipientName: 'Casey Agent', leadName: 'Taylor Buyer', leadPhone: '0820000000', leadEmail: '', leadSource: 'Property24', propertyLabel: 'Unit 12', enquiryMessage: 'Please call me.', title: 'New lead assigned to you', actionLink: 'https://app.arch9.co.za/pipeline/leads/lead-one' })
+  expect(payload).toMatchObject({ to: 'agent@example.com', recipientName: 'Casey Agent', leadName: 'Taylor Buyer', leadPhone: '0820000000', leadEmail: '', leadSource: 'Property24', propertyLabel: 'Unit 12', enquiryMessage: 'Please call me.', title: 'A new lead just landed', actionLink: 'https://app.arch9.co.za/pipeline/leads/lead-one' })
   expect(payload.message).not.toMatch(/copied|introduction email/)
 })
 it('opens rental leads in the rental workspace and gives a meaningful subject', () => {
   const payload = buildNewLeadAgentNotification({ ...input, lead: { ...input.lead, rawEnquiryPayload: createRentalCrmLeadMetadata({ organisationId: input.organisationId }) } })
   expect(payload.actionLink).toContain('/agent/rentals/pipeline/leads/lead-one')
-  expect(payload.subject).toBe('New rental lead — Property24')
+  expect(payload.subject).toBe('New rental lead: Property24')
 })
 it('uses the same delivery key for retries of the same saved lead', () => {
   expect(buildNewLeadAgentNotification(input).idempotencyKey).toBe(buildNewLeadAgentNotification(input).idempotencyKey)

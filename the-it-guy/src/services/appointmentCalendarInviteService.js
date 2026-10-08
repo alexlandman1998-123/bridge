@@ -1,8 +1,9 @@
+import { actOnCalendarProviderEvent } from './calendarProviderService'
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { getAppointmentTemplateInstructions, getAppointmentTypeTemplate } from './appointmentTemplateService'
+import { appointmentLocalParts, resolveAppointmentSchedule } from '../core/appointments/appointmentTime.js'
 
 const DEFAULT_TIMEZONE = 'Africa/Johannesburg'
-const DEFAULT_DURATION_MINUTES = 45
 
 function toText(value, fallback = '') {
   const normalized = String(value || '').trim()
@@ -11,10 +12,6 @@ function toText(value, fallback = '') {
 
 function toLower(value = '') {
   return toText(value).toLowerCase()
-}
-
-function isUuidLike(value = '') {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(toText(value))
 }
 
 function isMissingTableError(error, tableName = '') {
@@ -29,68 +26,6 @@ function isMissingColumnError(error, columnName = '') {
 
 function getEffectiveTimezone(appointment = {}) {
   return toText(appointment?.timezone || appointment?.appointment_timezone || appointment?.timeZone, DEFAULT_TIMEZONE)
-}
-
-function resolveStartDate(appointment = {}) {
-  const explicit = toText(appointment?.dateTime || appointment?.date_time || appointment?.startDateTime || appointment?.start_date_time)
-  if (explicit) {
-    const parsed = new Date(explicit)
-    if (!Number.isNaN(parsed.getTime())) return parsed
-  }
-
-  const date = toText(appointment?.date || appointment?.appointment_date)
-  const start = toText(appointment?.startTime || appointment?.start_time).slice(0, 5)
-  if (date && start) {
-    const parsed = new Date(`${date}T${start}+02:00`)
-    if (!Number.isNaN(parsed.getTime())) return parsed
-  }
-
-  return null
-}
-
-function resolveEndDate(appointment = {}, startDate = null) {
-  const explicit = toText(appointment?.endDateTime || appointment?.end_date_time)
-  if (explicit) {
-    const parsed = new Date(explicit)
-    if (!Number.isNaN(parsed.getTime())) return parsed
-  }
-
-  const date = toText(appointment?.date || appointment?.appointment_date)
-  const end = toText(appointment?.endTime || appointment?.end_time).slice(0, 5)
-  if (date && end) {
-    const parsed = new Date(`${date}T${end}+02:00`)
-    if (!Number.isNaN(parsed.getTime())) return parsed
-  }
-
-  const start = startDate instanceof Date ? startDate : resolveStartDate(appointment)
-  if (!start || Number.isNaN(start.getTime())) return null
-  return new Date(start.getTime() + DEFAULT_DURATION_MINUTES * 60 * 1000)
-}
-
-function formatIcsDateTimeInTimezone(date, timeZone = DEFAULT_TIMEZONE) {
-  const formatter = new Intl.DateTimeFormat('en-CA', {
-    timeZone,
-    hourCycle: 'h23',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  })
-
-  const parts = formatter.formatToParts(date).reduce((accumulator, part) => {
-    accumulator[part.type] = part.value
-    return accumulator
-  }, {})
-
-  const year = parts.year || '1970'
-  const month = parts.month || '01'
-  const day = parts.day || '01'
-  const hour = parts.hour || '00'
-  const minute = parts.minute || '00'
-  const second = parts.second || '00'
-  return `${year}${month}${day}T${hour}${minute}${second}`
 }
 
 function formatIcsUtc(date) {
@@ -213,14 +148,13 @@ export function getAppointmentCalendarDescription(appointment = {}) {
 }
 
 export function buildAppointmentICSPayload(appointment = {}, options = {}) {
-  const start = resolveStartDate(appointment)
-  const end = resolveEndDate(appointment, start)
+  const schedule = resolveAppointmentSchedule(appointment, {
+    defaultDurationMinutes: getAppointmentTypeTemplate(appointment.appointmentType || appointment.appointment_type)?.defaultDurationMinutes,
+  })
+  const start = new Date(schedule.dateTime)
+  const end = new Date(schedule.endDateTime)
 
-  if (!start || Number.isNaN(start.getTime()) || !end || Number.isNaN(end.getTime())) {
-    throw new Error('Calendar invite could not be generated because the appointment date/time is invalid.')
-  }
-
-  const timeZone = toText(options?.timeZone || options?.timezone || getEffectiveTimezone(appointment), DEFAULT_TIMEZONE)
+  const timeZone = schedule.allDay ? schedule.timezone : toText(options?.timeZone || options?.timezone || getEffectiveTimezone(appointment), DEFAULT_TIMEZONE)
   const participants = getParticipants(appointment)
   const organizerName = toText(appointment?.organizerName || appointment?.assignedAgentName || appointment?.agentName || 'Arch9')
   const organizerEmail = toText(appointment?.organizerEmail || appointment?.assignedAgentEmail || appointment?.agentEmail)
@@ -242,6 +176,7 @@ export function buildAppointmentICSPayload(appointment = {}, options = {}) {
     start,
     end,
     timeZone,
+    allDay: schedule.allDay,
     attendees: participants
       .map((participant) => ({
         name: toText(participant?.name || participant?.participant_name),
@@ -266,8 +201,12 @@ function renderIcsContent(payload = {}) {
     'BEGIN:VEVENT',
     `UID:${escapeIcsText(payload.uid || `bridge-${Date.now()}@bridge.app`)}`,
     `DTSTAMP:${formatIcsUtc(new Date())}`,
-    `DTSTART;TZID=${escapeIcsText(payload.timeZone || DEFAULT_TIMEZONE)}:${formatIcsDateTimeInTimezone(payload.start, payload.timeZone || DEFAULT_TIMEZONE)}`,
-    `DTEND;TZID=${escapeIcsText(payload.timeZone || DEFAULT_TIMEZONE)}:${formatIcsDateTimeInTimezone(payload.end, payload.timeZone || DEFAULT_TIMEZONE)}`,
+    payload.allDay
+      ? `DTSTART;VALUE=DATE:${appointmentLocalParts(payload.start, payload.timeZone).date.replace(/-/g, '')}`
+      : `DTSTART:${formatIcsUtc(payload.start)}`,
+    payload.allDay
+      ? `DTEND;VALUE=DATE:${appointmentLocalParts(payload.end, payload.timeZone).date.replace(/-/g, '')}`
+      : `DTEND:${formatIcsUtc(payload.end)}`,
     `SUMMARY:${escapeIcsText(payload.title || 'Arch9 Appointment')}`,
     `DESCRIPTION:${escapeIcsText(payload.description || '')}`,
     `LOCATION:${escapeIcsText(payload.location || '')}`,
@@ -305,19 +244,20 @@ async function fetchAppointmentById(appointmentId) {
 
   let appointmentQuery = await supabase
     .from('appointments')
-    .select('appointment_id, organisation_id, transaction_id, appointment_type, title, appointment_date, start_time, end_time, date_time, location, status, notes, visibility_scope, appointment_instructions, required_documents, calendar_event_uid, ics_generated_at, external_calendar_status, external_calendar_provider, external_calendar_event_id')
+    .select('appointment_id, organisation_id, transaction_id, appointment_type, title, appointment_date, start_time, end_time, date_time, end_date_time, timezone, all_day, location, status, notes, visibility_scope, appointment_instructions, required_documents, calendar_event_uid, ics_generated_at, external_calendar_status, external_calendar_provider, external_calendar_event_id')
     .eq('appointment_id', scopedAppointmentId)
     .maybeSingle()
 
   if (
     appointmentQuery.error &&
-    (isMissingColumnError(appointmentQuery.error, 'calendar_event_uid') ||
+    (isMissingColumnError(appointmentQuery.error, 'end_date_time') ||
+      isMissingColumnError(appointmentQuery.error, 'calendar_event_uid') ||
       isMissingColumnError(appointmentQuery.error, 'external_calendar_status') ||
       isMissingColumnError(appointmentQuery.error, 'required_documents'))
   ) {
     appointmentQuery = await supabase
       .from('appointments')
-      .select('appointment_id, organisation_id, transaction_id, appointment_type, title, appointment_date, start_time, end_time, date_time, location, status, notes, visibility_scope, appointment_instructions')
+      .select('appointment_id, organisation_id, transaction_id, appointment_type, title, appointment_date, start_time, end_time, date_time, timezone, all_day, location, status, notes, visibility_scope, appointment_instructions')
       .eq('appointment_id', scopedAppointmentId)
       .maybeSingle()
   }
@@ -402,8 +342,8 @@ export async function generateAppointmentICS(appointmentId, options = {}) {
 export function getGoogleCalendarLink(appointment = {}, options = {}) {
   const payload = buildAppointmentICSPayload(appointment, options)
   const timeZone = payload.timeZone || DEFAULT_TIMEZONE
-  const startLocal = formatIcsDateTimeInTimezone(payload.start, timeZone)
-  const endLocal = formatIcsDateTimeInTimezone(payload.end, timeZone)
+  const startLocal = payload.allDay ? appointmentLocalParts(payload.start, timeZone).date.replace(/-/g, '') : formatIcsUtc(payload.start)
+  const endLocal = payload.allDay ? appointmentLocalParts(payload.end, timeZone).date.replace(/-/g, '') : formatIcsUtc(payload.end)
 
   const params = new URLSearchParams({
     action: 'TEMPLATE',
@@ -429,6 +369,7 @@ export function getOutlookCalendarLink(appointment = {}, options = {}) {
     body: payload.description,
     location: payload.location,
   })
+  if (payload.allDay) params.set('allday', 'true')
 
   return `https://outlook.office.com/calendar/0/deeplink/compose?${params.toString()}`
 }
@@ -474,18 +415,24 @@ export async function downloadAppointmentICS(appointmentId, options = {}) {
   return generated
 }
 
-export async function syncAppointmentToGoogleCalendar() {
-  throw new Error('Google Calendar sync is not implemented yet.')
+function connectedAction(appointment = {}, options = {}, provider, action) {
+  return actOnCalendarProviderEvent({
+    organisationId: options.organisationId || appointment.organisationId || appointment.organisation_id,
+    appointmentId: appointment.appointmentId || appointment.appointment_id || appointment.id,
+    provider: provider || options.provider,
+    action,
+    reviewToken: options.reviewToken || null,
+  })
 }
-
-export async function syncAppointmentToOutlookCalendar() {
-  throw new Error('Outlook Calendar sync is not implemented yet.')
+export async function syncAppointmentToGoogleCalendar(appointment, options = {}) {
+  return connectedAction(appointment, options, 'google', 'sync')
 }
-
-export async function deleteExternalCalendarEvent() {
-  throw new Error('External calendar event deletion is not implemented yet.')
+export async function syncAppointmentToOutlookCalendar(appointment, options = {}) {
+  return connectedAction(appointment, options, 'outlook', 'sync')
 }
-
-export async function updateExternalCalendarEvent() {
-  throw new Error('External calendar event update is not implemented yet.')
+export async function deleteExternalCalendarEvent(appointment, options = {}) {
+  return connectedAction(appointment, options, options.provider, 'remove')
+}
+export async function updateExternalCalendarEvent(appointment, options = {}) {
+  return connectedAction(appointment, options, options.provider, 'sync')
 }

@@ -1,3 +1,6 @@
+import { resolveAppointmentSchedule } from '../../../core/appointments/appointmentTime.js'
+import { appointmentMatchesAgent, appointmentReadState } from '../../../core/appointments/appointmentReadModel.js'
+import { sastDayStart, addCalendarDays, sameSastDay } from '../../../core/appointments/attorneyCalendarModel.js'
 import { AGENT_DATE_RANGE_OPTIONS, buildAgentPerformanceModel, resolveAgentDateRange } from './agentPerformanceUtils.js'
 
 const ACTIVE_STATUS_VALUES = new Set(['active', 'accepted', 'onboarding_started'])
@@ -498,12 +501,6 @@ function endOfDay(value = new Date()) {
   return new Date(value.getFullYear(), value.getMonth(), value.getDate(), 23, 59, 59, 999)
 }
 
-function addDays(value = new Date(), days = 0) {
-  const next = new Date(value)
-  next.setDate(next.getDate() + days)
-  return next
-}
-
 function isWithinWindow(value, start, end) {
   const date = parseDate(value)
   if (!date || !start || !end) return false
@@ -533,7 +530,7 @@ function getTaskTimestamp(row = {}) {
 }
 
 function getAppointmentDateTime(row = {}) {
-  return row.dateTime || row.date_time || row.appointmentDate || row.appointment_date || row.updatedAt || row.updated_at || row.createdAt || row.created_at
+  return resolveAppointmentSchedule(row, { strict: false }).dateTime
 }
 
 function getAppointmentTypeText(row = {}) {
@@ -766,15 +763,13 @@ export function getPrincipalAgentDetailCommandCentre({
     end: endOfDay(new Date(now.getFullYear(), now.getMonth() + 1, 0)),
   }
   const todayStart = startOfDay(now)
-  const todayEnd = endOfDay(now)
-  const nextWeekEnd = endOfDay(addDays(now, 6))
   const joinedAt = agent.activatedAt || agent.acceptedAt || agent.invitedAt || agent.createdAt || agent.created_at || null
   const branchName = getBranchName(branches, agent.branchId, agent.office || agent.branchName || agent.organisationName)
 
   const agentProspects = canvassingProspects.filter((row) => rowBelongsToAgent(agent, row))
   const agentCanvassingActivities = canvassingActivities.filter((row) => rowBelongsToAgent(agent, row))
   const agentAppointments = appointments
-    .filter((row) => rowBelongsToAgent(agent, row))
+    .filter((row) => appointmentMatchesAgent(row, agent))
     .sort((left, right) => (parseDate(getAppointmentDateTime(left))?.getTime() || 0) - (parseDate(getAppointmentDateTime(right))?.getTime() || 0))
   const agentTasks = tasks.filter((row) => rowBelongsToAgent(agent, row))
   const agentLeads = leads.filter((row) => rowBelongsToAgent(agent, row))
@@ -824,18 +819,14 @@ export function getPrincipalAgentDetailCommandCentre({
     return ((now.getTime() - updatedAt.getTime()) / 86400000) > 14
   }).length
 
-  const todaySchedule = agentAppointments
-    .filter((row) => !isAppointmentCancelled(row) && isWithinWindow(getAppointmentDateTime(row), todayStart, todayEnd))
-    .map(summarizeAppointment)
-  const upcomingWindow = agentAppointments
-    .filter((row) => !isAppointmentCancelled(row) && isWithinWindow(getAppointmentDateTime(row), todayStart, nextWeekEnd))
-    .map(summarizeAppointment)
-  const upcomingAppointments = agentAppointments
-    .filter((row) => !isAppointmentCancelled(row) && parseDate(getAppointmentDateTime(row)) && parseDate(getAppointmentDateTime(row)) >= todayStart)
-    .map(summarizeAppointment)
-  const pastAppointments = agentAppointments
-    .filter((row) => parseDate(getAppointmentDateTime(row)) && parseDate(getAppointmentDateTime(row)) < todayStart)
-    .map(summarizeAppointment)
+  const scheduledAppointments = agentAppointments.filter((row) => appointmentReadState(row, now).scheduled)
+  const todaySchedule = scheduledAppointments.filter((row) => sameSastDay(getAppointmentDateTime(row), now)).map(summarizeAppointment)
+  const appointmentWeekEnd = addCalendarDays(sastDayStart(now), 7)
+  const upcomingWindow = scheduledAppointments.filter((row) => appointmentReadState(row, now).start < appointmentWeekEnd.getTime()).map(summarizeAppointment)
+  const upcomingAppointments = scheduledAppointments.filter((row) => appointmentReadState(row, now).category === 'upcoming').map(summarizeAppointment)
+  const inProgressAppointments = scheduledAppointments.filter((row) => appointmentReadState(row, now).category === 'in_progress').map(summarizeAppointment)
+  const followUpAppointments = agentAppointments.filter((row) => appointmentReadState(row, now).category === 'follow_up').map((row) => ({ ...summarizeAppointment(row), statusLabel: 'Needs follow-up' }))
+  const pastAppointments = agentAppointments.filter((row) => appointmentReadState(row, now).category === 'history').map(summarizeAppointment)
     .sort((left, right) => (parseDate(right.dateTime)?.getTime() || 0) - (parseDate(left.dateTime)?.getTime() || 0))
 
   const nextSevenDayCounts = ['viewings', 'valuations', 'listingPresentations', 'followUpCalls'].map((key) => ({
@@ -906,8 +897,10 @@ export function getPrincipalAgentDetailCommandCentre({
       nextSevenDaysItems: upcomingWindow,
       upcomingItems: upcomingAppointments,
       pastItems: pastAppointments,
+      followUpItems: followUpAppointments,
+      inProgressItems: inProgressAppointments,
       nextSevenDayCounts,
-      hasAppointments: upcomingAppointments.length > 0 || pastAppointments.length > 0,
+      hasAppointments: agentAppointments.length > 0,
     },
     followUpCompliance: {
       tasksCompletedPercent,

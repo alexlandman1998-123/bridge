@@ -1,3 +1,4 @@
+import { runRecoverableDocumentUpload } from '../../../../lib/documentUploadRecovery.js'
 import { buildBondApplicationState, toLegacyBondApplication } from '../legacy/bondApplicationLegacyAdapter.js'
 import { buildNormalizedBondApplicationFromState, mergeParticipantSectionsToParticipant } from '../participants/bondApplicationParticipantDomain.js'
 import { buildBondApplicationDocumentChecklist, resolveBondApplicationDocumentRequirements } from '../documents/index.js'
@@ -54,18 +55,23 @@ export function createBuyerBondApplicationRuntimeService({ client, validateFile,
       if (!file) throw new Error('Choose a file to upload.')
       const policy = validateFile(file)
       const context = await load()
-      const path = `client-portal/${context.application.transactionId}/${context.application.id}/${randomUUID()}-${policy.safeName}`
-      const uploaded = await client.storage.from('documents').upload(path, file, { upsert: false, contentType: policy.mimeType || file.type })
-      if (uploaded.error) throw uploaded.error
-      // A metadata failure never reports success. The unique object can be
-      // retried through a fresh upload without overwriting another submission.
-      try {
-        const document = await rpc(client, 'bridge_upload_buyer_bond_application_document', { p_requirement_key: requirementKey, p_path: path, p_name: policy.safeName })
-        return { ok: true, document }
-      } catch (error) {
-        try { await client.storage.from('documents').remove?.([path]) } catch { /* Preserve the original metadata error. */ }
-        throw error
-      }
+      return runRecoverableDocumentUpload({ client, scope: ['buyer_bond_runtime', context.application.id, context.application.transactionId, requirementKey], file,
+        toSavedReceipt: result => ({ ok: true, document: result.data }),
+        run: async attempt => {
+          const path = attempt.path(`client-portal/${context.application.transactionId}/${context.application.id}/${randomUUID()}-${policy.safeName}`)
+          await attempt.upload(async () => {
+            const uploaded = await client.storage.from('documents').upload(path, file, { upsert: false, contentType: policy.mimeType || file.type })
+            if (uploaded.error) throw uploaded.error
+            return 'documents'
+          })
+          const result = await attempt.persist({
+            save: () => client.rpc('bridge_upload_buyer_bond_application_document', { p_requirement_key: requirementKey, p_path: path, p_name: policy.safeName }),
+            read: async () => { const reopened = await load(); const row = reopened.documents?.find(item => (item.file_path || item.filePath) === path); return row ? { data: row } : null },
+            cleanup: () => client.storage.from('documents').remove?.([path]),
+          })
+          return { ok: true, document: result.data }
+        },
+      })
     },
     async submit({ declarationValues = {}, signatureEvidence = {}, expectedRevision }) {
       const context = await load()

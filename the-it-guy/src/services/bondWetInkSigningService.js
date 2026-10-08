@@ -1,8 +1,9 @@
+import { getDocumentUploadPolicy, validateDocumentUploadFile } from '../lib/documentUploadPolicy.js'
 import { assertBondReviewedVersionIntegrity } from '../modules/bond/application/submission/bondApplicationReviewedVersion.js'
 import { readBoundedDownload } from './bondApplicationDownloadService.js'
 
 export const BOND_WET_INK_BUCKET = 'bond-signed-applications'
-const maximumBytes = 25 * 1024 * 1024
+const maximumBytes = getDocumentUploadPolicy({ surface: 'bond_signed_application' }).maxBytes
 const digest = async (bytes) => [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map((value) => value.toString(16).padStart(2, '0')).join('')
 const rpc = async (client, name, args) => {
   const result = await client.rpc(name, args)
@@ -11,7 +12,8 @@ const rpc = async (client, name, args) => {
 }
 
 export async function validateBondSignedPdf(file) {
-  if (!file || !/\.pdf$/i.test(file.name || '') || file.size < 5 || file.size > maximumBytes) throw new Error('Choose a PDF of the complete signed application, up to 25 MB.')
+  validateDocumentUploadFile(file, { surface: 'bond_signed_application' })
+  if (file.size < 5) throw new Error('Choose a PDF of the complete signed application, up to 25 MB.')
   const bytes = new Uint8Array(await file.arrayBuffer())
   if (new TextDecoder().decode(bytes.slice(0, 5)) !== '%PDF-') throw new Error('The selected file is not a PDF. Scan all signed pages into one PDF.')
   return { bytes, sha256: await digest(bytes) }

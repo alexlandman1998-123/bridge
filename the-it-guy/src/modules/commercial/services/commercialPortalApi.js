@@ -1,3 +1,5 @@
+import { withDocumentUploadMimeType, validateDocumentUploadFile } from '../../../lib/documentUploadPolicy.js'
+import { runRecoverableDocumentUpload, readSavedUploadByPath } from '../../../lib/documentUploadRecovery.js'
 import { createScopedSupabaseClient, invokeEdgeFunction, isSupabaseConfigured, supabase } from '../../../lib/supabaseClient'
 import { uploadToStorageCandidateBuckets } from '../../../lib/storageFallbacks'
 import { formatCurrency, formatDate, formatNumber, titleize } from '../commercialFormatters'
@@ -1101,15 +1103,17 @@ function chooseUploadTarget(workspace = {}, { category = '', documentRequestId =
   return { entityType: 'commercial_deal', entityId: access.deal_id }
 }
 
-async function uploadPortalFile(client, { accessId, file }) {
+async function uploadPortalFile(client, { accessId, file, attempt = null }) {
   if (!file) return { bucket: '', path: '' }
-  const objectPath = ['commercial-portal', safeFileName(accessId), `${Date.now()}-${safeFileName(file.name || 'document')}`].join('/')
+  const filePolicy = validateDocumentUploadFile(file, { surface: 'commercial_document' })
+  const candidatePath = ['commercial-portal', safeFileName(accessId), `${Date.now()}-${filePolicy.safeName}`].join('/')
+  const objectPath = attempt ? attempt.path(candidatePath) : candidatePath
   const { bucket } = await uploadToStorageCandidateBuckets({
     bucketCandidates: COMMERCIAL_DOCUMENT_BUCKET_CANDIDATES,
     upload: (bucketName) =>
-      client.storage.from(bucketName).upload(objectPath, file, {
+      client.storage.from(bucketName).upload(objectPath, withDocumentUploadMimeType(file, filePolicy.mimeType), {
         cacheControl: '3600',
-        contentType: file.type || undefined,
+        contentType: filePolicy.mimeType,
         upsert: false,
       }),
     missingBucketMessage: `Commercial portal document storage is not configured. Checked: ${COMMERCIAL_DOCUMENT_BUCKET_CANDIDATES.join(', ')}.`,
@@ -1123,59 +1127,68 @@ async function uploadPortalFile(client, { accessId, file }) {
 export async function uploadCommercialPortalDocument({ token = '', file = null, category = 'Supporting Documentation', documentRequestId = '', notes = '' } = {}) {
   const client = getPortalClient(token)
   const workspace = await getCommercialPortalWorkspaceData(token)
-  const uploaded = await uploadPortalFile(client, { accessId: workspace.access.id, file })
   const target = chooseUploadTarget(workspace, { category, documentRequestId })
   if (!target.entityType || !target.entityId) throw new Error('This portal link cannot upload to the selected record.')
-  const payload = {
-    organisation_id: workspace.access.organisationId || null,
-    entity_type: target.entityType,
-    entity_id: target.entityId,
-    document_name: normalizeText(file?.name) || normalizeText(category) || 'Portal upload',
-    category: normalizeText(category) || 'Supporting Documentation',
-    status: 'under_review',
-    notes: normalizeText(notes) || null,
-    file_name: normalizeText(file?.name) || null,
-    file_path: uploaded.path || null,
-    file_bucket: uploaded.bucket || 'documents',
-    file_size: Number.isFinite(Number(file?.size)) ? Number(file.size) : null,
-    mime_type: normalizeText(file?.type) || null,
-    uploaded_at: new Date().toISOString(),
-    version_number: 1,
-  }
-  payload.organisation_id = payload.organisation_id || (await fetchPortalAccess(client, token)).organisation_id
-  const { data, error } = await client.from(COMMERCIAL_DOCUMENTS_TABLE).insert(payload).select('*').single()
-  if (error) throw error
-  if (documentRequestId) {
-    await client
-      .from(COMMERCIAL_DOCUMENT_REQUESTS_TABLE)
-      .update({ status: 'uploaded', completed_document_id: data.id, updated_at: new Date().toISOString() })
-      .eq('id', documentRequestId)
-      .throwOnError()
-  }
-  await client.from(PORTAL_NOTIFICATIONS_TABLE).insert({
-    organisation_id: payload.organisation_id,
-    access_id: workspace.access.id,
-    commercial_transaction_id: workspace.access.commercialTransactionId || '',
-    portal_role: workspace.access.role,
-    notification_type: 'document_uploaded',
-    title: 'Document uploaded',
-    description: `${payload.document_name} was uploaded for broker review.`,
-    priority: 'normal',
-    status: 'unread',
-    action_route: 'documents',
-    related_entity_type: target.entityType,
-    related_entity_id: target.entityId,
-  }).throwOnError()
-  await recordPortalAuditEvent(client, {
-    access: { ...workspace.access, organisation_id: payload.organisation_id, portal_role: workspace.access.role },
-    eventType: 'document_upload',
-    eventTitle: 'Portal document uploaded',
-    relatedEntityType: target.entityType,
-    relatedEntityId: target.entityId,
-    metadata: { documentId: data.id, documentRequestId, category: payload.category, fileName: payload.file_name },
-  }).catch(() => null)
-  await updatePortalAccessActivity(client, workspace.access.id).catch(() => null)
-  return data || null
+  if (file) validateDocumentUploadFile(file, { surface: 'commercial_portal' })
+  return runRecoverableDocumentUpload({ client: client, scope: ['commercial_portal', token, target.entityType, target.entityId, category, documentRequestId, notes], file,
+    storageBuckets: COMMERCIAL_DOCUMENT_BUCKET_CANDIDATES, storageResult: (bucket, path) => ({ bucket, path }),
+    run: async attempt => {
+      const uploaded = await attempt.upload(() => uploadPortalFile(client, { accessId: workspace.access.id, file, attempt }))
+      const payload = {
+        organisation_id: workspace.access.organisationId || null,
+        entity_type: target.entityType,
+        entity_id: target.entityId,
+        document_name: normalizeText(file?.name) || normalizeText(category) || 'Portal upload',
+        category: normalizeText(category) || 'Supporting Documentation',
+        status: 'under_review',
+        notes: normalizeText(notes) || null,
+        file_name: normalizeText(file?.name) || null,
+        file_path: uploaded.path || null,
+        file_bucket: uploaded.bucket || 'documents',
+        file_size: Number.isFinite(Number(file?.size)) ? Number(file.size) : null,
+        mime_type: file ? validateDocumentUploadFile(file, { surface: 'commercial_document' }).mimeType : null,
+        uploaded_at: new Date().toISOString(),
+        version_number: 1,
+      }
+      payload.organisation_id = payload.organisation_id || (await fetchPortalAccess(client, token)).organisation_id
+      const { data } = await attempt.persist({
+        save: () => client.from(COMMERCIAL_DOCUMENTS_TABLE).insert(payload).select('*').single(),
+        read: () => readSavedUploadByPath(client, { table: COMMERCIAL_DOCUMENTS_TABLE, path: uploaded.path, filters: { entity_type: target.entityType, entity_id: target.entityId } }),
+        cleanup: () => client.storage.from(uploaded.bucket).remove([uploaded.path]),
+      })
+      if (documentRequestId) {
+        await client
+          .from(COMMERCIAL_DOCUMENT_REQUESTS_TABLE)
+          .update({ status: 'uploaded', completed_document_id: data.id, updated_at: new Date().toISOString() })
+          .eq('id', documentRequestId)
+          .throwOnError()
+      }
+      await client.from(PORTAL_NOTIFICATIONS_TABLE).insert({
+        organisation_id: payload.organisation_id,
+        access_id: workspace.access.id,
+        commercial_transaction_id: workspace.access.commercialTransactionId || '',
+        portal_role: workspace.access.role,
+        notification_type: 'document_uploaded',
+        title: 'Document uploaded',
+        description: `${payload.document_name} was uploaded for broker review.`,
+        priority: 'normal',
+        status: 'unread',
+        action_route: 'documents',
+        related_entity_type: target.entityType,
+        related_entity_id: target.entityId,
+      }).throwOnError()
+      await recordPortalAuditEvent(client, {
+        access: { ...workspace.access, organisation_id: payload.organisation_id, portal_role: workspace.access.role },
+        eventType: 'document_upload',
+        eventTitle: 'Portal document uploaded',
+        relatedEntityType: target.entityType,
+        relatedEntityId: target.entityId,
+        metadata: { documentId: data.id, documentRequestId, category: payload.category, fileName: payload.file_name },
+      }).catch(() => null)
+      await updatePortalAccessActivity(client, workspace.access.id).catch(() => null)
+      return data || null
+    },
+  })
 }
 
 export async function getCommercialPortalDocumentDownloadUrl({ token = '', document = null } = {}) {

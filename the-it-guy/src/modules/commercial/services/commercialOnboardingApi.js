@@ -1,3 +1,5 @@
+import { withDocumentUploadMimeType, validateDocumentUploadFile } from '../../../lib/documentUploadPolicy.js'
+import { runRecoverableDocumentUpload, readSavedUploadByPath } from '../../../lib/documentUploadRecovery.js'
 import { createScopedSupabaseClient, invokeEdgeFunction, isSupabaseConfigured, supabase } from '../../../lib/supabaseClient'
 import { uploadToStorageCandidateBuckets } from '../../../lib/storageFallbacks'
 import { titleize } from '../commercialFormatters'
@@ -1046,15 +1048,17 @@ export async function fetchCommercialOnboardingAccessRows(organisationId) {
   return listCommercialOnboardingAccessForOrganisation(organisationId)
 }
 
-async function uploadCommercialOnboardingPortalFile(client, { accessId, file }) {
+async function uploadCommercialOnboardingPortalFile(client, { accessId, file, attempt = null }) {
   if (!file) return { bucket: '', path: '' }
-  const objectPath = ['commercial-onboarding', safeFileName(accessId), `${Date.now()}-${safeFileName(file.name || 'document')}`].join('/')
+  const filePolicy = validateDocumentUploadFile(file, { surface: 'commercial_document' })
+  const candidatePath = ['commercial-onboarding', safeFileName(accessId), `${Date.now()}-${filePolicy.safeName}`].join('/')
+  const objectPath = attempt ? attempt.path(candidatePath) : candidatePath
   const { bucket } = await uploadToStorageCandidateBuckets({
     bucketCandidates: COMMERCIAL_DOCUMENT_BUCKET_CANDIDATES,
     upload: (bucketName) =>
-      client.storage.from(bucketName).upload(objectPath, file, {
+      client.storage.from(bucketName).upload(objectPath, withDocumentUploadMimeType(file, filePolicy.mimeType), {
         cacheControl: '3600',
-        contentType: file.type || undefined,
+        contentType: filePolicy.mimeType,
         upsert: false,
       }),
     missingBucketMessage: `Commercial onboarding document storage is not configured. Checked: ${COMMERCIAL_DOCUMENT_BUCKET_CANDIDATES.join(', ')}.`,
@@ -1068,57 +1072,66 @@ async function uploadCommercialOnboardingPortalFile(client, { accessId, file }) 
 export async function uploadCommercialOnboardingDocument({ token = '', file = null, category = 'Supporting Documentation', documentRequestId = '', notes = '' } = {}) {
   const client = getPortalClient(token)
   const workspace = await getCommercialOnboardingWorkspaceData(token)
-  const uploaded = await uploadCommercialOnboardingPortalFile(client, { accessId: workspace.access.id, file })
-  const payload = {
-    organisation_id: workspace.access.organisationId || workspace.access.organisation_id || null,
-    entity_type: ONBOARDING_ENTITY_TYPE,
-    entity_id: workspace.access.id,
-    document_name: normalizeText(file?.name) || normalizeText(category) || 'Portal upload',
-    category: normalizeText(category) || 'Supporting Documentation',
-    status: 'under_review',
-    notes: normalizeText(notes) || null,
-    file_name: normalizeText(file?.name) || null,
-    file_path: uploaded.path || null,
-    file_bucket: uploaded.bucket || 'documents',
-    file_size: Number.isFinite(Number(file?.size)) ? Number(file.size) : null,
-    mime_type: normalizeText(file?.type) || null,
-    uploaded_at: new Date().toISOString(),
-    version_number: 1,
-  }
-  const { data, error } = await client.from(COMMERCIAL_DOCUMENTS_TABLE).insert(payload).select('*').single()
-  if (error) throw error
-  if (documentRequestId) {
-    await client
-      .from(COMMERCIAL_DOCUMENT_REQUESTS_TABLE)
-      .update({ status: 'uploaded', completed_document_id: data.id, updated_at: new Date().toISOString() })
-      .eq('id', documentRequestId)
-      .throwOnError()
-      .catch(() => null)
-  }
-  await client.from(PORTAL_NOTIFICATIONS_TABLE).insert({
-    organisation_id: payload.organisation_id,
-    access_id: workspace.access.id,
-    portal_role: workspace.access.role,
-    notification_type: 'document_uploaded',
-    title: 'Document uploaded',
-    description: `${payload.document_name} was uploaded for broker review.`,
-    priority: 'normal',
-    status: 'unread',
-    action_route: 'documents',
-    related_entity_type: ONBOARDING_ENTITY_TYPE,
-    related_entity_id: workspace.access.id,
-  }).throwOnError().catch(() => null)
-  await recordAuditEvent(client, {
-    access: workspace.access,
-    contact: workspace.contact,
-    eventType: 'document_upload',
-    eventTitle: 'Onboarding document uploaded',
-    relatedEntityType: ONBOARDING_ENTITY_TYPE,
-    relatedEntityId: workspace.access.id,
-    metadata: { documentId: data.id, documentRequestId, category: payload.category, fileName: payload.file_name },
-  }).catch(() => null)
-  await updatePortalAccessActivity(client, workspace.access.id).catch(() => null)
-  return data || null
+  if (file) validateDocumentUploadFile(file, { surface: 'commercial_onboarding' })
+  return runRecoverableDocumentUpload({ client: client, scope: ['commercial_onboarding', token, workspace.access.id, category, documentRequestId, notes], file,
+    storageBuckets: COMMERCIAL_DOCUMENT_BUCKET_CANDIDATES, storageResult: (bucket, path) => ({ bucket, path }),
+    run: async attempt => {
+      const uploaded = await attempt.upload(() => uploadCommercialOnboardingPortalFile(client, { accessId: workspace.access.id, file, attempt }))
+      const payload = {
+        organisation_id: workspace.access.organisationId || workspace.access.organisation_id || null,
+        entity_type: ONBOARDING_ENTITY_TYPE,
+        entity_id: workspace.access.id,
+        document_name: normalizeText(file?.name) || normalizeText(category) || 'Portal upload',
+        category: normalizeText(category) || 'Supporting Documentation',
+        status: 'under_review',
+        notes: normalizeText(notes) || null,
+        file_name: normalizeText(file?.name) || null,
+        file_path: uploaded.path || null,
+        file_bucket: uploaded.bucket || 'documents',
+        file_size: Number.isFinite(Number(file?.size)) ? Number(file.size) : null,
+        mime_type: file ? validateDocumentUploadFile(file, { surface: 'commercial_document' }).mimeType : null,
+        uploaded_at: new Date().toISOString(),
+        version_number: 1,
+      }
+      const { data } = await attempt.persist({
+        save: () => client.from(COMMERCIAL_DOCUMENTS_TABLE).insert(payload).select('*').single(),
+        read: () => readSavedUploadByPath(client, { table: COMMERCIAL_DOCUMENTS_TABLE, path: uploaded.path, filters: { entity_type: ONBOARDING_ENTITY_TYPE, entity_id: workspace.access.id } }),
+        cleanup: () => client.storage.from(uploaded.bucket).remove([uploaded.path]),
+      })
+      if (documentRequestId) {
+        await client
+          .from(COMMERCIAL_DOCUMENT_REQUESTS_TABLE)
+          .update({ status: 'uploaded', completed_document_id: data.id, updated_at: new Date().toISOString() })
+          .eq('id', documentRequestId)
+          .throwOnError()
+          .catch(() => null)
+      }
+      await client.from(PORTAL_NOTIFICATIONS_TABLE).insert({
+        organisation_id: payload.organisation_id,
+        access_id: workspace.access.id,
+        portal_role: workspace.access.role,
+        notification_type: 'document_uploaded',
+        title: 'Document uploaded',
+        description: `${payload.document_name} was uploaded for broker review.`,
+        priority: 'normal',
+        status: 'unread',
+        action_route: 'documents',
+        related_entity_type: ONBOARDING_ENTITY_TYPE,
+        related_entity_id: workspace.access.id,
+      }).throwOnError().catch(() => null)
+      await recordAuditEvent(client, {
+        access: workspace.access,
+        contact: workspace.contact,
+        eventType: 'document_upload',
+        eventTitle: 'Onboarding document uploaded',
+        relatedEntityType: ONBOARDING_ENTITY_TYPE,
+        relatedEntityId: workspace.access.id,
+        metadata: { documentId: data.id, documentRequestId, category: payload.category, fileName: payload.file_name },
+      }).catch(() => null)
+      await updatePortalAccessActivity(client, workspace.access.id).catch(() => null)
+      return data || null
+    },
+  })
 }
 
 export async function getCommercialOnboardingDocumentDownloadUrl({ token = '', document = null } = {}) {

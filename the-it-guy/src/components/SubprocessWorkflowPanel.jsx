@@ -1,3 +1,4 @@
+import { DOCUMENT_UPLOAD_ACCEPT, DOCUMENT_UPLOAD_HELP_TEXT } from '../lib/documentUploadPolicy.js'
 import { useEffect, useMemo, useState } from 'react'
 import { CheckCircle2, Circle, Clock3, Download, FileUp, X } from 'lucide-react'
 import { buildWorkflowStepComment, parseWorkflowStepComment, SUBPROCESS_STEP_STATUSES, uploadDocument } from '../lib/api'
@@ -730,7 +731,7 @@ function SubprocessWorkflowPanel({
                                 <FileUp size={14} />
                                 {pendingUploadFile ? pendingUploadFile.name : 'Choose signed OTP'}
                                 <input
-                                  type="file"
+                                  type="file" title={DOCUMENT_UPLOAD_HELP_TEXT} accept={DOCUMENT_UPLOAD_ACCEPT}
                                   className="hidden"
                                   onChange={(event) => {
                                     const [file] = Array.from(event.target.files || [])
@@ -739,6 +740,7 @@ function SubprocessWorkflowPanel({
                                   disabled={disabled || !step.id || !canEditProcess}
                                 />
                               </label>
+                              <span className="block text-xs font-normal text-slate-500">{DOCUMENT_UPLOAD_HELP_TEXT}</span>
                               <button
                                 type="button"
                                 className="inline-flex min-h-[40px] items-center justify-center gap-2 rounded-[12px] border border-transparent bg-[#35546c] px-4 py-2 text-sm font-semibold text-white transition duration-150 ease-out hover:bg-[#2e475c] disabled:cursor-not-allowed disabled:opacity-60"

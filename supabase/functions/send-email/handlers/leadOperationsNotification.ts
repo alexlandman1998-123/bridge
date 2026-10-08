@@ -18,6 +18,7 @@ import {
 import type { SendLeadOperationsNotificationPayload } from "../types.ts";
 import { jsonResponse } from "../utils/http.ts";
 import { normalizeText } from "../utils/text.ts";
+import { createClient } from "supabase";
 
 const EVENT_LABELS: Record<string, { title: string; subject: string }> = {
   tenant_qualification_submitted: {
@@ -25,8 +26,8 @@ const EVENT_LABELS: Record<string, { title: string; subject: string }> = {
     subject: "Tenant qualification and viewing request received",
   },
   new_enquiry_assigned_agent: {
-    title: "New Enquiry Assigned",
-    subject: "New enquiry assigned to you",
+    title: "A new lead just landed",
+    subject: "A new lead just landed",
   },
   new_enquiry_unassigned_manager: {
     title: "New Unassigned Enquiry",
@@ -112,9 +113,7 @@ function defaultMessage({
   reason: string;
 }) {
   if (eventKind === "new_enquiry_assigned_agent") {
-    return `${
-      leadName || "A new lead"
-    } has been assigned to you. Please review the enquiry and make first contact.`;
+    return `${leadName ? `${leadName} is your new lead.` : "You have a new lead."} Their details are ready below. Take a look and say hello.`;
   }
   if (eventKind === "new_enquiry_unassigned_manager") {
     return `${
@@ -209,6 +208,10 @@ export function buildLeadOperationsNotificationEmail({
   reason?: string;
   branding: EmailBranding;
 }) {
+  const isNewAssignedLead = eventKind === "new_enquiry_assigned_agent";
+  const greetingName = isNewAssignedLead
+    ? (recipientName.includes("@") ? "there" : normalizeText(recipientName).split(/\s+/)[0] || "there")
+    : recipientName || "there";
   const fields = [
     { label: "Lead", value: leadName || "" },
     { label: "Email", value: leadEmail || "" },
@@ -238,10 +241,10 @@ export function buildLeadOperationsNotificationEmail({
   const html = renderBridgeEmailLayout({
     preheader: message,
     title,
-    greeting: `Hi ${recipientName || "there"},`,
+    greeting: `Hi ${greetingName},`,
     contentHtml: [
       renderBridgeIntroParagraphs([message]),
-      renderBridgeSummaryCard(fields, "Lead Summary"),
+      renderBridgeSummaryCard(fields, isNewAssignedLead ? "Your new lead" : "Lead Summary"),
       renderBridgeCta("Open Lead", actionLink || "", {
         primaryColor: branding.primaryColor,
       }),
@@ -251,6 +254,8 @@ export function buildLeadOperationsNotificationEmail({
     helpBody: eventKind === "new_enquiry_unassigned_manager" ||
         eventKind === "lead_unassigned"
       ? "Assign the lead to an owner so follow-up can start."
+      : isNewAssignedLead
+      ? "A quick hello is a good place to start. Open the lead, make contact and record your next step."
       : "Open the lead to review the enquiry and continue the next action.",
     organisationName: branding.organisationName,
     supportEmail: branding.supportEmail,
@@ -259,7 +264,7 @@ export function buildLeadOperationsNotificationEmail({
   });
 
   const text = [
-    `Hi ${recipientName || "there"},`,
+    `Hi ${greetingName},`,
     "",
     message,
     leadName ? `Lead: ${leadName}` : "",
@@ -282,6 +287,7 @@ export function buildLeadOperationsNotificationEmail({
       : "",
     reason ? `Reason: ${reason}` : "",
     actionLink ? `Open lead: ${actionLink}` : "",
+    isNewAssignedLead ? "A quick hello is a good place to start. Make contact and record your next step." : "",
   ].filter(Boolean).join("\n");
 
   return { html, text };
@@ -396,6 +402,15 @@ export async function handleLeadOperationsNotificationEmail(
       metadata.leadEmail,
     );
     const leadId = firstText(payload.leadId, payload.lead_id);
+    const url = normalizeText(Deno.env.get("SUPABASE_URL"));
+    const key = normalizeText(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
+    let clientIntroManaged = false;
+    if (url && key && leadId) {
+      const client = createClient(url,key,{auth:{persistSession:false,autoRefreshToken:false}});
+      const status = await client.rpc("lead_client_intro_status",{p_organisation_id:organisationId,p_lead_id:leadId});
+      if (status.error) return jsonResponse(503,{error:"The client intro queue could not be verified. Please retry."});
+      clientIntroManaged = Boolean(status.data);
+    }
     const result = await sendHomeSeekersSellerEnquiryEmails({
       apiKey: resendApiKey,
       configuredSender:
@@ -403,6 +418,7 @@ export async function handleLeadOperationsNotificationEmail(
         normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) || from,
       agencyTo: recipientEmail,
       sellerTo: sellerEmail,
+      sendSeller: !clientIntroManaged,
       details: homeSeekersSellerDetails({
         sellerName: leadName,
         sellerEmail,

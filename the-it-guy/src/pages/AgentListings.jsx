@@ -1,3 +1,4 @@
+import { getDocumentUploadPolicy } from '../lib/documentUploadPolicy.js'
 import { getListingCardAddressLabel, getListingPropertyFacts } from '../services/listings/listingIndexCardPresentation'
 import { useListingIssueNavigation } from '../components/listings/useListingIssueNavigation'
 import { salesListingCaptureIssues, salesPortalCaptureIssues, issuesBeforeListingStep } from '../services/listings/listingCaptureValidation'
@@ -853,7 +854,7 @@ function FileUpload({ label, fileName = '', accept = '', onFileSelect, onClear }
             <span className="block text-sm font-bold text-[#142132]">
               {fileName || 'Drag and drop your file here'}
             </span>
-            <span className="mt-1 block text-xs text-[#607387]">PDF up to 10MB</span>
+            <span className="mt-1 block text-xs text-[#607387]">{getDocumentUploadPolicy({ surface: 'signed_pdf' }).helpText}</span>
           </span>
         </span>
         <span className="flex shrink-0 items-center gap-2">
@@ -873,7 +874,7 @@ function FileUpload({ label, fileName = '', accept = '', onFileSelect, onClear }
             Choose file ↑
           </span>
         </span>
-        <input key={fileName || 'empty'} type="file" accept={accept} className="sr-only" onChange={(event) => handleFileList(event.target.files)} />
+        <input key={fileName || 'empty'} type="file" title={getDocumentUploadPolicy({ surface: 'signed_pdf' }).helpText} accept={accept} className="sr-only" onChange={(event) => handleFileList(event.target.files)} />
       </label>
     </div>
   )

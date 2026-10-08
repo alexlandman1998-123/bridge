@@ -1,3 +1,4 @@
+import { getDocumentUploadPolicy } from '../../lib/documentUploadPolicy.js'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   ArrowRight,
@@ -27,6 +28,8 @@ import {
   saveFicLesson,
   submitFicAssessment,
 } from '../../services/branchFicTrainingService'
+const documentUploadPolicy = getDocumentUploadPolicy({ surface: 'fic_policy' })
+
 
 function Button({ variant = 'primary', className = '', ...props }) {
   return (
@@ -782,9 +785,9 @@ export default function BranchFicTraining({
                   <label className="grid gap-2 text-sm text-[#60758b]">
                     Approved RMCP document
                     <input
-                      type="file"
+                      type="file" title={documentUploadPolicy.helpText}
                       ref={policyFileInput}
-                      accept="application/pdf"
+                      accept={documentUploadPolicy.accept}
                       onChange={(event) =>
                         setFile(event.target.files?.[0] || null)
                       }
@@ -795,7 +798,9 @@ export default function BranchFicTraining({
                       PDF up to 10 MB. Access is restricted to your
                       organisation.
                     </span>
+                  <span className="block text-xs font-normal text-slate-500">{documentUploadPolicy.helpText}</span>
                   </label>
+                  
                   <label className="flex items-start gap-3 text-sm leading-6 text-[#60758b]">
                     <input
                       type="checkbox"

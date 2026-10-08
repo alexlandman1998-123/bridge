@@ -1,15 +1,13 @@
+import { DOCUMENT_UPLOAD_HELP_TEXT } from '../../lib/documentUploadPolicy.js'
 import { FileText, FolderClock, LockKeyhole, RefreshCw, Upload, ArrowUpRight } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { fetchDeveloperLeadDocuments, uploadDeveloperLeadDocument } from '../../services/documents/developerLeadDocumentsService.js'
+import { fetchDeveloperLeadDocuments, uploadDeveloperLeadDocument, createDeveloperLeadDocumentSignedUrl } from '../../services/documents/developerLeadDocumentsService.js'
+import DocumentAccessButton from './DocumentAccessButton.jsx'
 import useTransactionLiveRefresh from '../../hooks/useTransactionLiveRefresh.js'
 import { DOCUMENT_UPLOAD_ACCEPT } from '../../lib/documentUploadPolicy.js'
 import './developer-lead-documents.css'
 
 const labels = { pending: 'Required', requested: 'Required', uploaded: 'Awaiting review', under_review: 'Awaiting review', approved: 'Approved', completed: 'Complete', waived: 'Waived', not_applicable: 'Not applicable', rejected: 'Needs replacement' }
-function fileUrl(value) {
-  try { const url = new URL(value); return ['https:', 'http:'].includes(url.protocol) ? url.href : '' } catch { return '' }
-}
-
 export default function DeveloperLeadDocuments({ developerOrgId, developerLeadId }) {
   const [result, setResult] = useState(null)
   const [error, setError] = useState('')
@@ -95,7 +93,9 @@ export default function DeveloperLeadDocuments({ developerOrgId, developerLeadId
       {result.requirements.length > 0 && <ul className="developer-lead-document-requirements">{result.requirements.map((row) => <li key={row.id}><span><strong>{row.title}</strong>{row.rejectionReason && <small>{row.rejectionReason}</small>}</span><span className={`developer-lead-document-status is-${row.status}`}>{labels[row.status] || 'Status not recorded'}</span></li>)}</ul>}
       <form onSubmit={submit} aria-label="Upload buyer document">
         <label>Document type<select value={target} onChange={(event) => setTarget(event.target.value)} disabled={busy} required><option value="">Choose document type</option>{result.requirements.filter((row) => row.canUpload).map((row) => <option key={row.id} value={row.id}>{row.title}</option>)}<option value="other">Other buyer document</option></select></label>
-        <label className="developer-lead-document-picker"><Upload size={17} aria-hidden="true" /><span>{file?.name || 'Choose a file'}</span><input ref={fileInput} aria-label="Choose buyer document file" type="file" accept={DOCUMENT_UPLOAD_ACCEPT} disabled={busy} onChange={(event) => setFile(event.target.files?.[0] || null)} /></label>
+        <label className="developer-lead-document-picker"><Upload size={17} aria-hidden="true" /><span>{file?.name || 'Choose a file'}</span><input ref={fileInput} aria-label="Choose buyer document file" type="file" title={DOCUMENT_UPLOAD_HELP_TEXT} accept={DOCUMENT_UPLOAD_ACCEPT} disabled={busy} onChange={(event) => setFile(event.target.files?.[0] || null)} /><span className="block text-xs font-normal text-slate-500">{DOCUMENT_UPLOAD_HELP_TEXT}</span>
+        </label>
+        
         <small>PDF, Word, JPG or PNG · up to 35 MB</small>
         <button className="developer-lead-document-submit" type="submit" disabled={!file || !target || busy}>{busy ? 'Uploading…' : 'Upload document'}</button>
         {busy && <p role="status">{progress} Keep this page open.</p>}
@@ -103,9 +103,8 @@ export default function DeveloperLeadDocuments({ developerOrgId, developerLeadId
       {receipt && <p className="developer-lead-document-receipt" role="status">{receipt}</p>}
       <h3>Saved files</h3>
       {result.documents.length ? <ul className="developer-lead-document-files">{result.documents.map((document) => {
-        const url = fileUrl(document.url)
         const name = document.name || document.file_name || 'Buyer document'
-        return <li key={document.id}><FileText size={17} aria-hidden="true" /><span><strong>{name}</strong><small>{labels[document.review_status || document.status] || 'Received · awaiting review'}</small></span>{url ? <a href={url} target="_blank" rel="noopener noreferrer" aria-label={`Open ${name}`}><ArrowUpRight size={18} aria-hidden="true" /></a> : <small>Preview unavailable</small>}</li>
+        return <li key={`${developerOrgId}/${developerLeadId}/${result.transactionId}/${document.id}`}><FileText size={17} aria-hidden="true" /><span><strong>{name}</strong><small>{labels[document.review_status || document.status] || 'Received · awaiting review'}</small></span><DocumentAccessButton document={document} aria-label={`Open ${name}`} resolveUrl={() => createDeveloperLeadDocumentSignedUrl({ developerOrgId, developerLeadId, transactionId: result.transactionId, documentId: document.id })}><ArrowUpRight size={18} aria-hidden="true" /></DocumentAccessButton></li>
       })}</ul> : <p>No documents uploaded yet.</p>}
     </>}
   </section>

@@ -9,9 +9,53 @@ import {
   issueSelectedSellerDocumentRequests,
   issueSellerDocumentRequests,
 } from '../../sellerDocumentRequestOrchestrationService.js'
+import { buildSellerDocumentSourceOfTruth } from '../../sellerDocumentRequirementsService.js'
 
 const listingId = '11111111-1111-4111-8111-111111111111'
 const persistedRequirementId = '22222222-2222-4222-8222-222222222222'
+
+test('FICA requests from the document centre preserve participant routing, metadata and revisions', async () => {
+  const sourceRequirement = {
+    id: persistedRequirementId, requirement_key: 'proof_of_address', requirement_name: 'Proof of address',
+    requirement_group: 'fica', is_required: true, document_visibility: 'seller_visible', status: 'rejected',
+    request_revision: 4, last_request_reason: 'rejected_document_reupload_required',
+    request_metadata: { retained_review_reference: 'review-4', portalRequest: {
+      recipientEmail: 'coowner@example.com', recipientName: 'Co-owner', participantId: 'co-owner', requestedFromRole: 'seller',
+    } },
+  }
+  const source = buildSellerDocumentSourceOfTruth({ listing: {
+    id: listingId, sellerContactEmail: 'primary@example.com', documentRequirements: [sourceRequirement],
+  } })
+  const displayRow = source.rows.find(row => row.requirementId === persistedRequirementId)
+  assert.ok(displayRow, 'Use the actual projected document-centre row')
+  let updatePayload
+  const query = {
+    update(value) { updatePayload = value; return this }, eq() { return this }, in() { return this }, select() { return this },
+    async maybeSingle() { return { data: { id: persistedRequirementId, status: 'rejected' } } },
+  }
+  const result = await issueSelectedSellerDocumentRequests({
+    client: { from: () => query }, listing: { id: listingId, sellerContactEmail: 'primary@example.com' }, requirements: [displayRow],
+  })
+  assert.equal(result.applied.length, 1)
+  assert.equal(updatePayload.request_revision, 4, 'Reissuing from a display row must not reset the persisted revision')
+  assert.equal(updatePayload.request_metadata.seller_email, 'coowner@example.com')
+  assert.equal(updatePayload.request_metadata.participant_id, 'co-owner')
+  assert.equal(updatePayload.request_metadata.retained_review_reference, 'review-4')
+})
+
+test('requested FICA rows retain their dedupe identity when reopened in the document centre', () => {
+  const requirement = {
+    id: persistedRequirementId, requirement_key: 'proof_of_address', requirement_name: 'Proof of address',
+    requirement_group: 'fica', is_required: true, document_visibility: 'seller_visible', status: 'requested',
+    request_revision: 3, request_dedupe_key: `seller-document-request:${listingId}:proof_of_address:v3`,
+  }
+  const source = buildSellerDocumentSourceOfTruth({ listing: { id: listingId, documentRequirements: [requirement] } })
+  const displayRow = source.rows.find(row => row.requirementId === persistedRequirementId)
+  const plan = buildSellerDocumentRequestPlan({ listing: { id: listingId }, requirements: [displayRow] })
+  assert.equal(plan.issued.length, 0)
+  assert.equal(plan.existing.length, 1)
+  assert.equal(plan.existing[0].requestRevision, 3)
+})
 
 test('normalizes seller document delivery failures with retry evidence', () => {
   const delivery = normalizeListingSellerDocumentDelivery({

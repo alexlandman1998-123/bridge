@@ -1,61 +1,78 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
-import { createServer } from 'vite'
+import {
+  DOCUMENT_UPLOAD_RELEASE_MATRIX as surfaces,
+  DOCUMENT_UPLOAD_RELEASE_SCENARIOS as scenarios,
+  DOCUMENT_UPLOAD_REQUIRED_MIGRATIONS,
+  buildDocumentUploadReleaseReadiness,
+} from '../src/services/documents/documentUploadReleaseReadinessService.js'
 
-const server = await createServer({ root: process.cwd(), logLevel: 'silent', server: { middlewareMode: true } })
-
-try {
-  const {
-    DOCUMENT_UPLOAD_RELEASE_MATRIX,
-    DOCUMENT_UPLOAD_RELEASE_SCENARIOS,
-    DOCUMENT_UPLOAD_REQUIRED_MIGRATIONS,
-    buildDocumentUploadReleaseReadiness,
-  } = await server.ssrLoadModule('/src/services/documents/documentUploadReleaseReadinessService.js')
-
-  assert.equal(DOCUMENT_UPLOAD_RELEASE_MATRIX.length, 11)
-  assert.deepEqual(DOCUMENT_UPLOAD_RELEASE_SCENARIOS, ['upload', 'persistence', 'visibility', 'download', 'retry', 'failedNetwork'])
-  const passingEvidence = Object.fromEntries(DOCUMENT_UPLOAD_RELEASE_MATRIX.map(({ id }) => [
-    id,
-    Object.fromEntries(DOCUMENT_UPLOAD_RELEASE_SCENARIOS.map((scenario) => [scenario, true])),
-  ]))
-  const ready = buildDocumentUploadReleaseReadiness({
-    evidenceBySurface: passingEvidence,
-    appliedMigrationVersions: DOCUMENT_UPLOAD_REQUIRED_MIGRATIONS,
-    malwareScan: { scanned: true },
-  })
-  assert.equal(ready.ready, true)
-  assert.equal(ready.summary.readySurfaces, 11)
-
-  const blocked = buildDocumentUploadReleaseReadiness({ evidenceBySurface: passingEvidence })
-  assert.equal(blocked.ready, false)
-  assert.equal(blocked.missingMigrations.length, 2)
-  assert.equal(blocked.scannerConfigured, false)
-
-  const [api, privateListings, developer, commercial, rental, panel, attorney, bond, clientButton] = await Promise.all([
-    readFile(new URL('../src/lib/api.js', import.meta.url), 'utf8'),
-    readFile(new URL('../src/services/privateListingService.js', import.meta.url), 'utf8'),
-    readFile(new URL('../src/services/developerDocumentPortalService.js', import.meta.url), 'utf8'),
-    readFile(new URL('../src/modules/commercial/services/commercialPortalApi.js', import.meta.url), 'utf8'),
-    readFile(new URL('../server/services/publicRentalApplicationApi.js', import.meta.url), 'utf8'),
-    readFile(new URL('../src/components/DocumentsPanel.jsx', import.meta.url), 'utf8'),
-    readFile(new URL('../src/components/AttorneyCloseoutPanel.jsx', import.meta.url), 'utf8'),
-    readFile(new URL('../src/components/BondCommissionPanel.jsx', import.meta.url), 'utf8'),
-    readFile(new URL('../src/components/client-portal/documents/ClientDocumentUploadButton.jsx', import.meta.url), 'utf8'),
-  ])
-  assert.match(api, /export async function uploadClientPortalDocument/)
-  assert.match(api, /export async function uploadExternalDocument/)
-  assert.match(api, /export async function uploadDocument/)
-  assert.match(api, /export async function uploadTransactionAttorneyCloseoutDocument/)
-  assert.match(api, /export async function uploadTransactionBondCloseoutDocument/)
-  assert.match(privateListings, /export async function uploadPrivateListingDocument/)
-  assert.match(developer, /export async function uploadDeveloperDocumentPortalFile/)
-  assert.match(commercial, /export async function uploadCommercialPortalDocument/)
-  assert.match(rental, /validateRentalDocumentUpload/)
-  assert.match(panel, /DocumentUploadStatus/)
-  assert.match(attorney, /DocumentUploadStatus/)
-  assert.match(bond, /DocumentUploadStatus/)
-  assert.match(clientButton, /Uploading/)
-  console.log('document upload release-readiness tests passed')
-} finally {
-  await server.close()
+const now = Date.parse('2026-10-08T10:00:00Z')
+const target = { environment: 'preview', projectId: 'test-project', buildId: 'test-build', runId: 'test-run' }
+const digest = 'a'.repeat(64)
+const context = { tenantId: 'tenant-one', ownerType: 'transaction', ownerId: 'tx-one', slotKey: 'proof', partyId: 'buyer-one' }
+const observations = {
+  upload: { metadataSaved: true, objectExists: true, sourceSha256: digest, sourceBytes: 42, intendedContext: { ...context } },
+  persistence: { freshRead: true, objectExists: true },
+  visibility: { visible: true, reviewStatusPreserved: true },
+  download: { expectedSha256: digest, actualSha256: digest, expectedBytes: 42, actualBytes: 42 },
+  retry: { metadataRows: 1, storageObjects: 1, recovered: true, faultInjected: true },
+  failedNetwork: { metadataRows: 1, storageObjects: 1, recovered: true, faultInjected: true },
+  reopen: { freshRead: true, objectExists: true },
+  replacement: { documentId: 'new', path: 'tenant/new.pdf', previousDocumentId: 'one', previousPath: 'tenant/one.pdf', latestOnFreshRead: true, previousVersionRetained: true, actualSha256: digest, expectedSha256: digest },
+  expiredUrl: { expectedSha256: digest, actualSha256: digest, expectedBytes: 42, actualBytes: 42, expiredLinkRejected: true, freshLinkRequested: true },
+  roleAccess: { allowedActor: 'buyer', deniedActor: 'unassigned', allowedDownload: true, deniedMetadata: true, deniedStorage: true },
+  tenantIsolation: { ownerTenant: 'one', otherTenant: 'two', deniedMetadata: true, deniedStorage: true, deniedWrite: true },
 }
+assert.equal(surfaces.length, 27)
+assert.equal(new Set(surfaces.map((surface) => surface.id)).size, 27)
+assert.equal(scenarios.length, 11)
+for (const surface of surfaces) await readFile(new URL(`../${surface.source}`, import.meta.url))
+const evidenceBySurface = Object.fromEntries(surfaces.map(({ id, variants }) => [id, Object.fromEntries(variants.map((variant) => [variant, Object.fromEntries(scenarios.map((scenario) => [scenario, {
+  ...target, surfaceId: id, variant, scenario, mode: 'hosted', status: 'passed', checkedAt: new Date(now).toISOString(), artifact: 'fixture-observation.json', artifactSha256: digest,
+  observation: { documentId: 'one', bucket: 'documents', path: 'tenant/one.pdf', recordContext: { ...context }, ...observations[scenario] },
+}]))]))]))
+const options = { evidenceBySurface, target, now, appliedMigrationVersions: DOCUMENT_UPLOAD_REQUIRED_MIGRATIONS, malwareScan: { scanned: true } }
+assert.equal(buildDocumentUploadReleaseReadiness(options).ready, true)
+const first = surfaces[0]
+const variant = first.variants[0]
+let checks = 5
+function rejected(mutator, label) {
+  const input = structuredClone(options)
+  mutator(input)
+  assert.equal(buildDocumentUploadReleaseReadiness(input).ready, false, label)
+  checks++
+}
+for (const surface of surfaces) for (const name of surface.variants) for (const scenario of scenarios) {
+  rejected((input) => { delete input.evidenceBySurface[surface.id][name][scenario] }, `${surface.id}/${name}/${scenario} cannot be omitted`)
+}
+for (const key of Object.keys(target)) rejected((input) => { input.target[key] = 'wrong-target' }, `wrong ${key}`)
+for (const mutate of [
+  (r) => { r.mode = 'local' },
+  (r) => { r.checkedAt = 'not-a-date' },
+  (r) => { r.checkedAt = new Date(now + 1).toISOString() },
+  (r) => { r.checkedAt = new Date(now - 86400001).toISOString() },
+  (r) => { r.artifact = '' },
+  (r) => { r.artifactSha256 = 'invalid' },
+  (r) => { r.status = 'failed' },
+  (r) => { r.observation.actualSha256 = 'b'.repeat(64) },
+  (r) => { r.observation.documentId = 'different-matter' },
+  (r) => { r.observation.bucket = 'different-bucket' },
+  (r) => { r.observation.expectedBytes = 99 },
+]) rejected((input) => mutate(input.evidenceBySurface[first.id][variant].download), 'reject invalid download evidence')
+rejected((input) => { input.evidenceBySurface[first.id][variant].expiredUrl.observation.expiredLinkRejected = false }, 'expired link must actually be tested')
+rejected((input) => { input.evidenceBySurface[first.id][variant].replacement.observation.path = 'tenant/one.pdf' }, 'replacement must have its own identity')
+rejected((input) => { input.evidenceBySurface[first.id][variant].retry.observation.metadataRows = 2 }, 'retry cannot create duplicate metadata')
+rejected((input) => { input.evidenceBySurface[first.id][variant].failedNetwork.observation.storageObjects = 2 }, 'lost replies cannot duplicate storage')
+rejected((input) => { input.evidenceBySurface[first.id][variant].roleAccess.observation.deniedStorage = false }, 'wrong-role storage must be denied')
+rejected((input) => { input.evidenceBySurface[first.id][variant].tenantIsolation.observation.deniedWrite = false }, 'cross-tenant writes must be denied')
+rejected((input) => { input.evidenceBySurface[first.id][variant].upload = true }, 'booleans are not acceptance receipts')
+rejected((input) => { input.appliedMigrationVersions = [] }, 'required migrations')
+rejected((input) => { input.malwareScan.scanned = false }, 'existing scanner gate remains intact')
+rejected((input) => { input.evidenceBySurface[first.id][variant].download.observation = null }, 'malformed observation is not evidence')
+rejected((input) => { input.now = NaN }, 'invalid comparison clock cannot accept stale evidence')
+rejected((input) => { input.maxEvidenceAgeMs = NaN }, 'invalid evidence lifetime fails closed')
+for (const key of Object.keys(context)) rejected((input) => { input.evidenceBySurface[first.id][variant].download.observation.recordContext[key] = 'wrong-context' }, `wrong ${key} cannot pass even when the bytes match`)
+for (const key of ['surfaceId', 'variant', 'scenario']) rejected((input) => { input.evidenceBySurface[first.id][variant].download[key] = 'borrowed-journey' }, `evidence from another ${key} cannot certify this journey`)
+assert.equal(buildDocumentUploadReleaseReadiness().ready, false)
+console.log(`Document acceptance gate: ${checks} assertions passed; 27 areas, ${buildDocumentUploadReleaseReadiness(options).summary.variants} variants, 11 scenarios. Synthetic receipts test the gate only; no hosted journey is certified.`)

@@ -59,7 +59,7 @@ it.each(['individual', 'joint_individuals', 'company', 'close_corporation', 'tru
   })
   expect((await item.request('GET')).body.application.requirements.find((r) => r.id === requirement.id).state).toBe('received')
 })
-it('supports signed uploads after submission, rejects stale receipts and protects accepted evidence', async () => {
+it('recovers repeated signed completions after submission and protects accepted evidence', async () => {
   const item = await application()
   const requirement = item.submitted.requirements.find((r) => r.subjectId === 'primary' && r.purpose === 'identity')
   const prepared = await item.request('POST', { ...bodyFor(item.submitted, requirement), action: 'prepare_upload', fileSize: 20 })
@@ -67,7 +67,14 @@ it('supports signed uploads after submission, rejects stale receipts and protect
   files.set(new URL(prepared.body.uploadUrl).pathname.slice(1), { size: 20, contentType: 'application/pdf' })
   const uploaded = await item.request('POST', { action: 'complete_upload', version: 3, ticket: prepared.body.ticket })
   expect(uploaded.status, JSON.stringify(uploaded.body)).toBe(201)
-  expect((await item.request('POST', { action: 'complete_upload', version: 3, ticket: prepared.body.ticket })).status).toBe(409)
+  const filesBeforeRetry = files.size
+  const repeated = await item.request('POST', { action: 'complete_upload', version: 3, ticket: prepared.body.ticket })
+  expect(repeated.status).toBe(201)
+  expect(repeated.body.document.id).toBe(uploaded.body.document.id)
+  expect(repeated.body.application.version).toBe(4)
+  expect(files.size).toBe(filesBeforeRetry)
+  const persisted = await db.query('select id from rental_application_documents where application_id=$1', [item.id])
+  expect(persisted.rows.map((row) => row.id)).toEqual([uploaded.body.document.id])
   await db.transaction(async (tx) => {
     await tx.exec(`select set_config('test.actor','${actor}',true)`)
     await tx.query("select rental_record_application_review($1,4,'review_document',$2::jsonb)", [item.id, JSON.stringify({ documentId: uploaded.body.document.id, status: 'accepted', note: 'Identity checked' })])

@@ -1,0 +1,324 @@
+{
+  "version": 1,
+  "capturedAt": "2026-10-08T13:56:52.980895+00:00",
+  "status": "production_released",
+  "owningProduct": "the-it-guy Home Seekers public website",
+  "changes": [
+    "Three payment options and all comparison, referral, team and rental fees aligned to the supplied overview",
+    "Public email updated to admin@homeseekers.co.za",
+    "LOOM or CMA Info inclusion replaces Lightstone",
+    "Long dash copy cleanup",
+    "Compact desktop and mobile registered-sale fee summary"
+  ],
+  "databaseChanges": false,
+  "emailsSentByAgent": false,
+  "scopedFiles": [
+    "the-it-guy/src/pages/HomeSeekersAbout.jsx",
+    "the-it-guy/src/pages/HomeSeekersBuy.jsx",
+    "the-it-guy/src/pages/HomeSeekersContact.jsx",
+    "the-it-guy/src/pages/HomeSeekersDemo.jsx",
+    "the-it-guy/src/pages/HomeSeekersFooter.jsx",
+    "the-it-guy/src/pages/HomeSeekersJoin.jsx",
+    "the-it-guy/src/pages/HomeSeekersJoin.css",
+    "the-it-guy/src/pages/HomeSeekersPeople.jsx",
+    "the-it-guy/src/pages/HomeSeekersProperty.jsx",
+    "the-it-guy/src/pages/HomeSeekersRent.jsx",
+    "the-it-guy/src/pages/HomeSeekersRenting.jsx",
+    "the-it-guy/src/pages/HomeSeekersSelling.jsx",
+    "the-it-guy/src/pages/HomeSeekersValuationModal.jsx",
+    "the-it-guy/src/pages/homeSeekersRecruitment.js",
+    "the-it-guy/src/pages/recruitment/RecruitmentSignupModal.jsx",
+    "the-it-guy/src/pages/recruitment/RecruitmentApplicantAccess.jsx",
+    "the-it-guy/src/pages/recruitment/RecruitmentProfileQuestionnaire.jsx",
+    "the-it-guy/src/pages/recruitment/recruitmentProfileModel.js",
+    "the-it-guy/src/pages/__tests__/HomeSeekersLeadForms.test.jsx",
+    "the-it-guy/server/tests/homeSeekersRecruitment.test.js"
+  ],
+  "checks": {
+    "recruitmentBridgeAndDeployment": {
+      "passed": 26,
+      "failed": 0
+    },
+    "leadSignupQuestionnaire": {
+      "passed": 37,
+      "failed": 0
+    },
+    "standalonePackagedHandlers": {
+      "passed": 15,
+      "failed": 0
+    },
+    "lint": {
+      "errors": 0,
+      "existingWarnings": 2
+    },
+    "primaryCloudBuild": "passed including bundle budget, operational script audit and schema compatibility",
+    "standaloneBuild": "passed",
+    "runtimeErrors": "No error log entries returned for either deployment in the observed release window",
+    "publicRoutes": [
+      {
+        "origin": "https://app.arch9.co.za",
+        "route": "",
+        "status": 200,
+        "title": "Arch9 | Platform",
+        "heading": "Find a home\nthat moves you.",
+        "longDashes": 0,
+        "email": [
+          "mailto:admin@homeseekers.co.za"
+        ]
+      },
+      {
+        "origin": "https://app.arch9.co.za",
+        "route": "/about",
+        "status": 200,
+        "title": "Arch9 | Platform",
+        "heading": "Property is\npersonal.\nSo are we.",
+        "longDashes": 0,
+        "email": [
+          "mailto:admin@homeseekers.co.za"
+        ]
+      },
+      {
+        "origin": "https://app.arch9.co.za",
+        "route": "/contact",
+        "status": 200,
+        "title": "Arch9 | Platform",
+        "heading": "LET\u2019S TALK\nPROPERTY.",
+        "longDashes": 0,
+        "email": [
+          "mailto:admin@homeseekers.co.za"
+        ]
+      },
+      {
+        "origin": "https://app.arch9.co.za",
+        "route": "/selling",
+        "status": 200,
+        "title": "Arch9 | Platform",
+        "heading": "A board outside is not a sales strategy.",
+        "longDashes": 0,
+        "email": [
+          "mailto:admin@homeseekers.co.za"
+        ]
+      },
+      {
+        "origin": "https://app.arch9.co.za",
+        "route": "/buying",
+        "status": 200,
+        "title": "Arch9 | Platform",
+        "heading": "Find the one worth\ncancelling plans for.",
+        "longDashes": 0,
+        "email": [
+          "mailto:admin@homeseekers.co.za"
+        ]
+      },
+      {
+        "origin": "https://app.arch9.co.za",
+        "route": "/renting",
+        "status": 200,
+        "title": "Arch9 | Platform",
+        "heading": "More than\na short stay.",
+        "longDashes": 0,
+        "email": [
+          "mailto:admin@homeseekers.co.za"
+        ]
+      },
+      {
+        "origin": "https://app.arch9.co.za",
+        "route": "/guarantee",
+        "status": 200,
+        "title": "Arch9 | Platform",
+        "heading": "Sold faster than\nyour hubby can fix the porch light.",
+        "longDashes": 0,
+        "email": [
+          "mailto:admin@homeseekers.co.za"
+        ]
+      },
+      {
+        "origin": "https://home-seekers-website-alpha.vercel.app",
+        "route": "",
+        "status": 200,
+        "title": "Home Seekers",
+        "heading": "Find a home\nthat moves you.",
+        "longDashes": 0,
+        "email": [
+          "mailto:admin@homeseekers.co.za"
+        ]
+      },
+      {
+        "origin": "https://home-seekers-website-alpha.vercel.app",
+        "route": "/about",
+        "status": 200,
+        "title": "Home Seekers",
+        "heading": "Property is\npersonal.\nSo are we.",
+        "longDashes": 0,
+        "email": [
+          "mailto:admin@homeseekers.co.za"
+        ]
+      },
+      {
+        "origin": "https://home-seekers-website-alpha.vercel.app",
+        "route": "/contact",
+        "status": 200,
+        "title": "Home Seekers",
+        "heading": "LET\u2019S TALK\nPROPERTY.",
+        "longDashes": 0,
+        "email": [
+          "mailto:admin@homeseekers.co.za"
+        ]
+      },
+      {
+        "origin": "https://home-seekers-website-alpha.vercel.app",
+        "route": "/selling",
+        "status": 200,
+        "title": "Home Seekers",
+        "heading": "A board outside is not a sales strategy.",
+        "longDashes": 0,
+        "email": [
+          "mailto:admin@homeseekers.co.za"
+        ]
+      },
+      {
+        "origin": "https://home-seekers-website-alpha.vercel.app",
+        "route": "/buying",
+        "status": 200,
+        "title": "Home Seekers",
+        "heading": "Find the one worth\ncancelling plans for.",
+        "longDashes": 0,
+        "email": [
+          "mailto:admin@homeseekers.co.za"
+        ]
+      },
+      {
+        "origin": "https://home-seekers-website-alpha.vercel.app",
+        "route": "/renting",
+        "status": 200,
+        "title": "Home Seekers",
+        "heading": "More than\na short stay.",
+        "longDashes": 0,
+        "email": [
+          "mailto:admin@homeseekers.co.za"
+        ]
+      },
+      {
+        "origin": "https://home-seekers-website-alpha.vercel.app",
+        "route": "/guarantee",
+        "status": 200,
+        "title": "Home Seekers",
+        "heading": "Sold faster than\nyour hubby can fix the porch light.",
+        "longDashes": 0,
+        "email": [
+          "mailto:admin@homeseekers.co.za"
+        ]
+      }
+    ],
+    "manualVerification": "No real applicant signup or verification email was sent. Live checks opened the form and confirmed the read-only context response."
+  },
+  "releases": {
+    "primary": {
+      "projectId": "prj_rbfXykMU6mU1eECbc0lJS9sPspmp",
+      "deploymentId": "dpl_EGXGLggC5oEcyLNxXmXra9gfwSev",
+      "sourceCommit": "80d1180f840863e66930a9051b0c41494bf47cc9",
+      "state": "READY",
+      "substate": "PROMOTED",
+      "liveUrl": "https://app.arch9.co.za/demo/homeseekers/join",
+      "rollback": {
+        "id": "dpl_CTf93nMtSdvLXh9hmwfJvFvXi5MT",
+        "url": "bridge-jjf89ujus-alexs-projects-f5496a21.vercel.app",
+        "readyState": "READY",
+        "readySubstate": "PROMOTED",
+        "commit": "d7c59329d93696dbc598a93e7b30edbd596358fe",
+        "alias": [
+          "bridge-alexs-projects-f5496a21.vercel.app"
+        ]
+      },
+      "browser": {
+        "origin": "https://app.arch9.co.za",
+        "offer": {
+          "options": [
+            "R10\u00a0000\n/ month \u00b7 excluding VAT",
+            "R9\u00a0000\n/ month \u00b7 excluding VAT",
+            "R100\u00a0000\n/ year \u00b7 excluding VAT"
+          ],
+          "checks": 5,
+          "loom": true,
+          "lightstone": false,
+          "longDashes": 0,
+          "email": [
+            "mailto:admin@homeseekers.co.za"
+          ]
+        },
+        "layouts": [
+          {
+            "width": 1440,
+            "overflow": false
+          },
+          {
+            "width": 390,
+            "overflow": false
+          }
+        ],
+        "signup": true,
+        "contexts": [
+          200
+        ],
+        "errors": [],
+        "failed": []
+      }
+    },
+    "website": {
+      "projectId": "prj_uxIQ3zvHt7AM0iKSBXLa9ezBh5MA",
+      "deploymentId": "dpl_A6xEcBbfRsanh6XzTNDSvtQBQoun",
+      "sourceCommit": "5520f35529973fa1b2c393bc143e5fccb056c5f7",
+      "state": "READY",
+      "substate": "PROMOTED",
+      "liveUrl": "https://home-seekers-website-alpha.vercel.app/demo/homeseekers/join",
+      "rollback": {
+        "id": "dpl_3oqTFLHHJeRWSGewsEZ4mVLPFSvv",
+        "url": "home-seekers-website-7vv0ukvf1-alexs-projects-f5496a21.vercel.app",
+        "readyState": "READY",
+        "readySubstate": "PROMOTED",
+        "commit": null,
+        "alias": [
+          "home-seekers-website-alexs-projects-f5496a21.vercel.app"
+        ]
+      },
+      "browser": {
+        "origin": "https://home-seekers-website-alpha.vercel.app",
+        "offer": {
+          "options": [
+            "R10\u00a0000\n/ month \u00b7 excluding VAT",
+            "R9\u00a0000\n/ month \u00b7 excluding VAT",
+            "R100\u00a0000\n/ year \u00b7 excluding VAT"
+          ],
+          "checks": 5,
+          "loom": true,
+          "lightstone": false,
+          "longDashes": 0,
+          "email": [
+            "mailto:admin@homeseekers.co.za"
+          ]
+        },
+        "layouts": [
+          {
+            "width": 1440,
+            "overflow": false
+          },
+          {
+            "width": 390,
+            "overflow": false
+          }
+        ],
+        "signup": true,
+        "contexts": [
+          200
+        ],
+        "errors": [],
+        "failed": []
+      }
+    }
+  },
+  "standaloneArtifact": {
+    "inventorySha256": "2c053c046aa4f7e4918b6ff24141ca59d23b1d525588fa5cd34c84f3751719a0",
+    "files": 97,
+    "runtimeParity": "Four existing API bundles match prior published artifacts byte-for-byte. Signup bundle differs only in requested range-label and validation-message text."
+  }
+}

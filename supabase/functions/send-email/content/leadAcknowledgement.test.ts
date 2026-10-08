@@ -22,6 +22,19 @@ Deno.test("tenant acknowledgement has a rental design and a qualification CTA in
   assert(!buildLeadAcknowledgementEmailHtml({ enquiryKind: "sale" }).includes("TENANT QUALIFICATION"));
 });
 
+Deno.test("seller intros discuss selling and valuations in HTML and text", () => {
+  for (const render of [buildLeadAcknowledgementEmailHtml,buildLeadAcknowledgementEmailText]) {
+    const email=render({enquiryKind:"seller",recipientName:"Taylor Seller",agentName:"Jamie Agent",agentEmail:"jamie@agency.co.za"});
+    assert(/selling your property/i.test(email));
+    assert(/valuation/i.test(email));
+    assert(!/Arrange a viewing|Buying a home|interest in one of our properties/i.test(email));
+    assert(!/[\u2013\u2014]/u.test(email));
+  }
+  assert(leadEnquiryKind({leadIntent:"sell"})==="seller");
+  assert(leadEnquiryKind({leadCategory:"seller"})==="seller");
+  assert(leadEnquiryKind({leadCategory:"seller",arch9RentalLead:true,role:"landlord"})==="landlord");
+});
+
 Deno.test("rental and landlord acknowledgement replaces all sales wording in HTML and text", () => {
   for (const enquiryKind of ["rental", "landlord", "general"] as const) {
     for (

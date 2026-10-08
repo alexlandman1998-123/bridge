@@ -151,3 +151,4 @@ export default function RentalListingIndexCard({ row, liveChannels, onOpen, menu
     </article>
   )
 }
+

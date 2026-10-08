@@ -62,20 +62,65 @@ Add Development uses Details → Units → Sales setup → Review. Details are g
 into visible project and address sections. The actions follow the form content,
 and desktop and mobile use the same flow. Developer access and transaction
 defaults remain optional; invitations are only attempted when the agent selects
-Invite New Developer and completes its required fields. The selected development
+Invite developer and completes its required fields. The selected development
 type is retained in the existing development profile's marketing overview.
+Units shows the planned total above two choices: Set up units now or Set up units
+later. Later allows adding or importing units from the saved workspace. Choosing
+Set up units now stays inside Units, with a compact progress bar for Structure →
+Unit layouts → Check units. Layout cards open a focused editor for room counts,
+size, price, quantity, storeys and an optional floor plan or image. Building/floor
+allocation appears only for grouped units. Cancel discards local editor changes;
+Save layout returns to the cards. Draft and navigation actions wait until the
+editor is saved or cancelled. Back preserves saved layouts. Review uses a simple
+unit summary with automatic numbers; custom numbering is collapsed by default.
+Sales setup has three optional cards: Developer, Sales team, and Reservation
+deposit. Deposit fields appear only when enabled; extra partner and workflow
+settings sit under More settings. Final Review shows project details, layout
+previews, unit totals, and sales choices. Each section has a direct Edit action
+that returns to Review after validation. Invitation recipients are shown before
+saving; editing or returning to Review never sends invitations.
+
+Duplicate opens a new layout with copied specifications and attachment, a unique
+name, and empty quantity/allocation fields. Nothing is added until Save layout.
+Undo restores the latest removed layout, building or floor, or structure change,
+including its attachments and allocations. Undo is available in the current
+session until another stock change; unfinished editor changes must be saved or
+cancelled first. Ctrl/Command + Enter continues or saves a layout, Escape cancels
+the layout editor, and Ctrl/Command + S saves a layout or workspace draft.
+Ctrl/Command + Z undoes stock removal outside editable fields. Review always
+requires clicking Create Development. Shortcut hints live in button tooltips.
+Completed saves show a compact confirmation with Done and Open development;
+partial-save warnings stay visible and cannot trigger another creation. These
+actions remain unavailable while the final setup work is running.
+
+Creation autosaves one recovery draft per account, workspace and role on this
+browser; recovery expires after seven days. Resume draft restores the screen, sales settings and
+unfinished layout editor. Start fresh discards only that local draft. Text saves
+synchronously in versioned local storage; attachments stay in IndexedDB until a
+server save. Saved on this device is separate from Save Draft, which still saves
+to the workspace. Missing attachments must be reattached or explicitly removed.
+If recovery fails, closing asks whether to leave; a refresh warns while recovery
+is incomplete. A returned development ID replaces the recovery draft with an
+Open development link, including partial saves, to prevent duplicate creation.
+Successful server saves clear recovery. No invitations are sent during recovery.
 
 Draft and final saves validate the details and any selected sales defaults.
 Completing setup creates an active development automatically; Save Draft keeps
 the development as a draft. Status is not a choice in the creation form.
-Stock Master uses Structure → Unit templates → Review & generate. Physical
-structure is optional: units can sit directly under the development, a building
-or block, or a floor within a building. Templates allocate whole-number quantities
+Physical structure has two choices: Units for houses, townhouses and duplexes, or
+Buildings + Units for one or multiple buildings with optional floors. A layout's
+Number of storeys describes levels inside one unit; building floors describe
+where units are located. Storeys are retained in the existing floorplan catalogue
+metadata, with each generated unit linked to its layout. Layouts allocate whole-number quantities
 explicitly to these locations. Release phases are left blank during creation.
 Building/floor records are saved before linked units using the existing structure
 model. A failed structure save stops unit creation and opens the saved development
-for recovery. Generating stock derives the planned total from the templates;
-unfinished stock must be completed or deferred before a draft save.
+for recovery. Generating stock derives the planned total from the layouts;
+unfinished stock must be completed or deferred before a draft save. Optional
+attachments use the existing development asset uploader after the development
+is created, before the catalogue and units are saved. Upload receipts link the
+file to its catalogue layout. Room counts use existing catalogue fields. No
+database migration is required.
 Known failures after creation retain the saved development ID and show a link to
 its workspace instead of allowing another create. Profile, settings, directory
 and invitation warnings remain visible in that receipt. Creation still uses
@@ -84,7 +129,7 @@ sequential writes and does not provide a database transaction across setup.
 Address suggestions require `VITE_GOOGLE_MAPS_API_KEY` in the running app.
 Manual address entry remains available when the key is absent.
 
-Focused local checks: `npx vitest run src/components/__tests__/AddDevelopmentModal.test.jsx`
+Focused local checks: `npx vitest run src/components/__tests__/AddDevelopmentModal.test.jsx src/core/developments/__tests__/developmentCreateDraft.test.js`
 and `node --test src/lib/__tests__/developmentCreation.test.js`, plus the existing
 `scripts/developer-access-optional.test.mjs`,
 `scripts/development-transaction-defaults-optional.test.mjs` and
@@ -112,6 +157,89 @@ Focused checks from this package:
 `node scripts/development-marketing-simplified.test.mjs`.
 These use local fixtures and make no live writes. Production requires an app release
 and an authorised Samlin user's check of Junoah's images after that release.
+
+## Lead capture from Kanban and listings
+
+Sales Kanban includes a Create Lead control on the board for the current buyer
+or seller category, using the same capture dialog as the table. New sales listing
+capture and saved drafts now create a CRM seller lead once seller details are
+present, then verify both listing links and the CRM lead's listing link. Retries
+reuse the same lead and contact; existing seller stages are retained. Rentals,
+developer stock and empty drafts do not create sales seller leads.
+Focused checks: `npx vitest run src/pages/agency/__tests__/LeadListPage.kanban.test.jsx
+src/services/listings/__tests__/listingSellerLeadService.test.js`,
+`node scripts/agency-lead-create-dialog-controls.test.mjs` and
+`node scripts/direct-listing-persistence-phase3.test.mjs`.
+These use fixtures without live CRM writes. No new migration is required.
+
+## Agent workspace listings
+
+Organisation → Agents → Agent workspace → Listings uses the same sales, rental
+and development cards as the main listing pages. Sales, Rentals and Developments
+switches show the selected agent's stock; listing photos use the existing cover
+image service. Developments include direct agent assignments before a sale exists.
+The unavailable Assign Listing control has been removed.
+Focused checks: `npx vitest run src/components/agents/__tests__/AgentWorkspaceListings.test.jsx
+src/components/agents/__tests__/AgentWorkspaceOverview.test.jsx`,
+`node scripts/agent-listings-delete-ui.test.mjs` and
+`node scripts/agent-workspace-inline-management.test.mjs`.
+These use local fixtures. No migration is required.
+
+## Agent workspace leads
+
+Organisation → Agents → Agent workspace → Leads embeds the normal Leads screen,
+including buyer/seller/archive categories, search, filters, pagination, Table and
+Kanban views, capture and lead actions. Assignment is locked to the selected agent;
+queries, cached pages and summary counts use that agent's user/membership IDs or
+saved assignment email within the current organisation. New leads go to that agent
+while the signed-in manager remains the recorded creator. No migration is required.
+Focused checks: `npx vitest run src/pages/agency/__tests__/AgencyLeadListRoutePage.agentScope.test.jsx
+src/pages/agency/__tests__/agencyLeadListReadRepository.agentScope.test.js
+src/pages/agency/__tests__/LeadListPage.kanban.test.jsx` and
+`node scripts/seller-leads-read-boundary-phase9.test.mjs`.
+These use local fixtures without live CRM changes.
+
+## Agent overview next actions
+
+Organisation → Agents → Agent workspace → Overview replaces Tasks & reminders
+with Needs attention. The card shows up to five urgent new leads awaiting contact
+and dated follow-ups due today or overdue. It reads persisted, organisation-scoped
+CRM records with complete pagination; unassigned tasks inherit the linked lead's
+assignee, while explicit task assignments take precedence. Completed tasks and
+closed leads are excluded. Dates use Africa/Johannesburg; only expired deadlines
+are red, and leads without an SLA deadline show No due date. Each action opens
+the relevant lead workspace, including its follow-up section. Failed reads show
+Retry, rather than an empty queue. The card refreshes on CRM changes, window focus,
+and its Refresh action. Seller onboarding and draft listing readiness are outside
+this first version. No migration, live write or email is required.
+Focused checks: `npx vitest run src/components/agents/__tests__/agentNeedsAttentionModel.test.js
+src/components/agents/__tests__/AgentNeedsAttention.test.jsx
+src/components/agents/__tests__/AgentWorkspaceOverview.test.jsx
+src/services/__tests__/agentNeedsAttentionService.test.js` and the primary app build.
+
+## Agent card rental enquiries
+
+Agents can enable Rental enquiries and edit the Rental button label in Dashboard
+→ My digital business card → Edit card, or in the Lead Capture card editor.
+Existing cards retain their buy/sell actions. Rental-only cards are supported.
+The public card captures monthly rent, area and preferences using the same privacy
+consent and retry protection as existing enquiries. The server uses the card's
+organisation, branch and agent assignment and the shared rental CRM metadata, so
+these contacts appear as tenant leads. Rental submissions do not create sales
+matching requirements; card statistics count them separately.
+
+Apply `20261008140000_agent_card_rental_enquiries.sql` before deploying the app/API.
+It expands the existing intake and event constraints; rental actions require an
+agent card. It changes no permissions or existing card settings. The custom label
+uses existing card metadata. This local change has not been deployed or applied
+to a remote database.
+
+Focused checks: `npx vitest run
+src/components/dashboard/__tests__/AgentDigitalCardPanel.test.jsx
+src/pages/__tests__/PublicAgentDigitalCardPage.rental.test.jsx
+server/tests/agentCardRentalMigration.test.js`,
+`node src/services/__tests__/agencyPublicIntakeLinkService.test.js` and
+`node server/tests/publicAgencyIntakeApi.test.js`.
 
 ## Transaction buyer and seller capture
 
@@ -449,6 +577,127 @@ schedules through the existing canonical SQL before checking the existing FICA,
 disclosure and mandate journeys. This capture change requires no schema migration
 or remote write. The three proposed contracts and remaining work are recorded in
 [the mandate decision record](docs/mandate-wording-review/decision-record.md).
+
+## Appointment behaviour and failure baseline
+
+[Appointment behaviour and acceptance rules](docs/appointment-behaviour-contract.md)
+defines the calendar repair contract: lifecycle, ownership, access, timezones,
+notifications, archive and consistency across agent screens. Unconfirmed bookings
+hold a slot for 24 hours, ending earlier at the appointment start; expiry releases
+the hold and leaves follow-up work. Phase 3 enforces this rule in the prepared local source and migration;
+it has not been released to production. The contract maps all 42 audit scenarios to subsequent repairs.
+
+The complaint-focused baseline exercises public application functions with local
+storage and database fixtures, without live writes or email. From this package run:
+
+```sh
+TZ=UTC npx vitest run src/core/appointments/__tests__/appointmentBehaviorBaseline.test.js --maxWorkers=1
+TZ=Africa/Johannesburg npx vitest run src/core/appointments/__tests__/appointmentBehaviorBaseline.test.js --maxWorkers=1
+```
+
+Phases 2–4 implement consistent times/statuses, atomic saves and reservations,
+stable attendees and replacement approvals, and reconciled calendar/profile/dashboard
+readers. Phase 5 saves invitation and reminder choices independently and commits
+revision-bound jobs with each ordinary appointment. Browser closure no longer
+interrupts delivery. The appointment editor supports type defaults or a
+30-minute-only reminder and displays persisted queued/processing/provider accepted/
+delivered/failed/superseded receipts. Viewing reminders use the new worker while
+their dedicated invitations retain the viewing workflow.
+
+Phase 6 adds explicit type/owner/link selection, safe drafts, shared agent actions,
+reversible archive with history, and mobile creation, editing and own response.
+Archived history cannot revive holds, RSVP tokens or delivery. Stale edits and
+failed saves remain visible, with command identities retained for safe retries.
+The calendar suite passes 274 checks in both UTC and SAST, alongside 121 attorney
+checks and 11 independent local PostgreSQL concurrency checks.
+
+Phase 7 adds a record-by-record historical report, fresh scoped snapshots,
+opt-in reviewed repair plans, transaction previews, private before-state audit,
+idempotent batches and guarded rollback. Corrections retire historical messages
+without sending replacements, preserve original hold limits and reject changed
+records. Past outcomes, ambiguous times and future conflicts need an agent's
+explicit decision. The original 56-row inventory remains dated evidence and
+cannot authorise writes. See the [operator workflow](docs/appointment-behaviour-contract.md#phase-7-reviewed-historical-reconciliation).
+Verification passed 304 calendar checks in both UTC and SAST, 121 attorney
+checks, 15 independent local PostgreSQL checks and six operator-tool checks.
+Focused lint passed without errors or warnings. From this package, run the
+offline report and focused checks with:
+
+```sh
+node scripts/reconcile-calendar-appointments.mjs report --input ../tmp/calendar-audit-20261008/appointment-inventory.json --as-of 2026-10-08T15:44:00Z --output ../tmp/calendar-review.md
+node --test scripts/reconcile-calendar-appointments.test.mjs
+TZ=UTC npx vitest run src/core/appointments/__tests__/appointmentReconciliation.test.js supabase-tests/calendarReconciliation.test.js --maxWorkers=1 --testTimeout=30000
+```
+
+Phase 8 adds personal Google/Outlook account connections, automatic managed
+appointment copies, durable retries, per-agent sync receipts and outside-change
+review on desktop and mobile. Arch9 edits and cancellations update the connected
+copy. Outside edits/deletions require an agent decision: restore the Arch9 copy
+or stop syncing it, then use normal appointment actions to change the booking.
+Copies exclude attendees, client identities, private notes and provider reminders,
+so Arch9's existing messages and booking approvals remain authoritative.
+Phase 8 verification passed 386 calendar checks in both UTC and SAST, 121 attorney
+checks, 21 independent PostgreSQL concurrency checks, both Edge authorization
+checks, primary-app verification and the final production build.
+Manual links are explicitly labelled as copies. Reconnecting uses the same provider
+account; disconnecting leaves existing copies in the provider as manual copies.
+External busy-time import, unrelated personal events, shared calendar selection,
+provider webhooks and automatic acceptance of outside booking changes are outside
+this phase. See [setup, local proof and live acceptance](docs/appointment-behaviour-contract.md#phase-8-connected-google-and-outlook-copies).
+
+Phase 9 adds one repeatable acceptance runner for all 42 original scenarios,
+UTC/SAST regressions, attorney compatibility, independent PostgreSQL concurrency,
+Edge authorization and primary-app verification. Joined mobile → service → SQL →
+worker journeys also repaired temporary attendee IDs being treated as existing
+records when creating or editing appointments. Run from this package:
+
+```sh
+CALENDAR_LOCAL_PG_SOCKET=/absolute/path/to/calendar-phase3-local/socket node scripts/check-calendar-acceptance.mjs --output ../tmp/calendar-acceptance-<unique-run>
+```
+
+Use the isolated local PostgreSQL fixture and `deno` on PATH. The runner writes
+fresh logs and scenario evidence, rejects skipped/missing tests and changed source,
+and leaves all hosted delivery/provider/browser/agent-pilot gates pending.
+See the [controlled release and recovery steps](docs/appointment-behaviour-contract.md#phase-9--joined-acceptance-and-controlled-release).
+No live deployment, email or provider acceptance is implied by local passes.
+
+Phase 10 adds scoped calendar health on desktop and mobile, a five-minute
+read-only database monitor and appointment support details. Permitted agents and
+managers can inspect saved revisions, responses, change history and delivery
+receipts, record a reason for an eligible retry, or reconcile missing future
+reminder work. Recovery preserves the original hold and delivery identity and
+cannot recreate old invitations or resend accepted messages. Provider account
+recovery continues through the existing connected-calendar controls. The same
+acceptance runner now includes monitoring, permissions, support UI, joined worker
+recovery and independent support/cancellation races. See the
+[monitoring and support rules](docs/appointment-behaviour-contract.md#phase-10--operational-monitoring-and-support).
+Prepared migrations and the scheduled monitor still require an approved release.
+
+All 21 complaint baseline cases are now ordinary regressions; no expected failures
+remain. The existing attorney suite is
+`npx vitest run --config vitest.attorney-calendar.config.js --maxWorkers=1`.
+The [behaviour contract](docs/appointment-behaviour-contract.md) records the SQL,
+worker, component, timezone and independent local PostgreSQL concurrency checks,
+including controlled provider and signature-verified webhook fixtures.
+
+Release requires the prepared migrations in order:
+`20261008163445_appointment_end_instant.sql`,
+`20261008164958_calendar_atomic_reservations.sql`,
+`20261008184511_calendar_durable_notifications.sql`,
+`20261008184859_calendar_delivery_worker_schedule.sql`,
+`20261008193925_calendar_agent_archive_workflow.sql`, then
+`20261008202747_calendar_historical_reconciliation.sql`,
+`20261008205719_calendar_connected_provider_sync.sql`, then
+`20261008210940_calendar_provider_worker_schedule.sql`.
+Deploy the new calendar delivery worker, updated Resend webhook and send-email function, verify Vault
+and `ARCH9_APP_URL`, and complete the controlled live appointment/reminder journey.
+The attorney and viewing workers also need verified deployment. No migrations,
+deployment, live records or real email delivery were changed by these local phases.
+Applying the Phase 7 migration repairs no data. Reviewed historical writes still require
+explicit approval. Phase 8 additionally requires OAuth app registration, server-only
+provider/encryption secrets, deployment of both provider functions, and controlled
+Google/Outlook acceptance. No real provider accounts have been connected or changed
+by the local implementation.
 
 ## Attorney calendar saving
 
@@ -1269,6 +1518,63 @@ The identifier-only list is in [seller-mvp-review-candidates.json](docs/seller-m
 Its repeatable read-only query is [seller-mvp-acceptance-audit.sql](scripts/sql/seller-mvp-acceptance-audit.sql).
 Do not bulk-rewrite these records or regenerate approved/signed copies.
 
+Seller conflict corrections (8 October 2026): an explicit owner-type edit now
+resolves signing authority from the edited form and saves matching listing and
+onboarding facts. Cleared owner lists, co-owner notes and nested estate,
+representative and other-entity details are included in the database merge.
+The history warning reloads after a saved listing revision and ignores older
+responses that arrive after that revision. Actual source disagreements continue
+to require owner review; contact-only edits retain the existing ownership model.
+
+Apply `20261008154845_seller_history_compatible_entity_shapes.sql` during an
+approved release to correct false audit conflicts for CC/foreign company/trust
+profiles and the coarse legacy individual type used for married and represented
+sellers. It changes comparisons only, preserves permissions and rewrites no
+seller history or signed documents. The app and database corrections have been
+checked locally; existing live disagreements are not automatically repaired.
+Focused checks: `node --test scripts/listing-seller-historical-normalization-phase9.test.mjs`
+(includes capture → canonical save → SQL audit across all twelve owner routes),
+the canonical-save/profile-capture/onboarding-facts checks, and
+`npx vitest run src/components/listings/__tests__/ListingSellerHistoricalNormalizationBanner.test.jsx`.
+
+Seller upload and FICA request corrections (8 October 2026): internal
+`manual_mandate_evidence` selected during listing intake now saves as a private
+attachment without requiring or borrowing the signed-mandate checklist item.
+It retains its original document type and does not complete a mandate request.
+Explicit seller requirement uploads still require an exact checklist match.
+Document-centre FICA requests retain the persisted requirement key, participant,
+request revision, dedupe identity and existing review metadata when using a
+projected display row. This prevents display aliases from changing request
+identity or routing a co-owner's request to the primary seller.
+
+Run `node --test scripts/document-generator-retirement.test.mjs
+src/services/listings/__tests__/listingSellerDocumentCollaborationService.test.js`
+and `npm run test:document-trust-phase1` for the focused regressions. These use
+local service boundaries and isolated PostgreSQL; hosted Storage, permission
+and email-delivery acceptance remain unverified. The permanent-link upload
+correction requires the approved release of
+`20261008154013_seller_portal_upload_token_resolution.sql`; the intake and FICA
+request changes require an app release. No remote writes or client messages
+are performed by these checks.
+
+Ownership corrections (8 October 2026): Seller and Documents now expose
+**Change ownership details**. The editor can correct the legal owner, entity
+type, co-owners and signing authority. Switching owner types clears the previous
+type's fields after confirmation and seeds two owner cards for multiple owners.
+Saving uses the canonical seller update and always refreshes the checklist,
+including when retrying an unchanged saved correction. New applicable requests
+are issued and obsolete requests are retired; existing uploads and signed
+documents remain in the file. Controls stay disabled while saving.
+
+If the ownership save commits but the checklist schema or request issuance
+fails, the editor stays open with a visible error and retry instructions. It
+does not show projected requests as successfully saved. Focused regressions:
+`node scripts/listing-seller-profile-capture-phase2.test.mjs` and
+`npx vitest run src/components/listings/__tests__/ListingSellerInformationEditor.test.jsx
+src/services/__tests__/privateListingService.sellerAccess.test.js`. These exercise
+the actual editor handlers and local PostgreSQL checklist persistence; this UI
+change still requires an approved app release and hosted acceptance.
+
 Verification commands from this package:
 
 ```bash
@@ -1648,10 +1954,17 @@ requests cannot manufacture that event. Guarantee clicks have a separate event.
 The PPRA event is reserved; no letter link or section appears until an approved
 PDF is supplied.
 
-Pricing assumptions live in `src/pages/homeSeekersRecruitment.js`. Competitor
-terms, VAT treatment, the R10 million threshold, the brand font, the PPRA letter,
-and the itemised transaction-fee breakdown remain unverified launch inputs.
-The fee card lists supplied services, not an invented cost allocation.
+Pricing assumptions live in `src/pages/homeSeekersRecruitment.js`. The agent
+overview supplied on 8 October 2026 replaces the September offer: R10,000/month
+paid from registered deals (solo only, up to 50% of each deal towards the accrued
+balance), R9,000/month by debit order, or R100,000/year upfront. All exclude VAT
+and add R1,500 per registered sale, with no commission-sharing threshold. The
+Join Us page also reflects the overview's team rates, R750 referral payments
+capped at twelve, rental charges and five-sales-or-R6-million production guidance.
+The comparison uses ten R1.5m sales at 5% commission and option 2; competitor
+figures are illustrations from the supplied overview, not verified quotations.
+This updates public offering information, not billing or applicant eligibility
+enforcement. The brand font and PPRA letter remain unverified launch inputs.
 
 Focused verification (from this package):
 `node --test server/tests/homeSeekersRecruitment.test.js server/tests/homeSeekersWebsiteBridge.test.js`.
@@ -2008,6 +2321,11 @@ rental persistence SQL check, and `rentalListingSave.test.js`.
 ### Rental listing save integrity
 
 Rental listing cards have a three-dot menu for withdrawal and permanent deletion.
+Rental and sales cards share the same “Live on” row with portal logos and checked
+website publication status. Rental cards show availability as a compact date badge
+and prices per month. Website status loads after the cards render. The focused
+`RentalListingsPage.agentContact` and `RentalListingsPage.actions` tests cover the
+card details, current/previous collections and existing actions.
 Withdraw listing opens Marketing, where agents use the existing portal and website
 withdrawal controls. Delete checks current channel status and stays blocked while
 an advert is live, pending or unconfirmed. Withdrawn cards remain visible so agents
@@ -2780,6 +3098,184 @@ and canonical-invitation fixtures; live invite acceptance/delivery and productio
 integration still need verification after an explicitly approved release. No real
 account, access grant, email, deployment or remote database write is performed here.
 
+### Recruitment joining record
+
+The joining consolidation's Phase 2 adds a planned setup under **Agent Details**:
+intended branch, agent role, business areas, commission structure and joining date.
+The record retains its original entry point and source. These are planned choices;
+saving them does not grant access or apply branch, role or commission changes.
+Application invitations and workspace access invitations remain distinct, with
+existing submission and invitation history visible on the record.
+
+Creating a staff enquiry checks the email within the current organisation. An
+active agency member opens their existing profile. Matching enquiries and pending
+invitations require explicit review before a separate enquiry can be created;
+records are never automatically merged. Staff can explicitly link an eligible
+existing invitation while preserving its token, expiry and metadata. One invitation
+cannot belong to two recruitment records. Retrying a creation uses the same receipt
+key. Joining choices are locked once access is prepared, and unsaved choices block
+other recruitment writes.
+
+The append-only `20261008114647_recruitment_joining_record.sql` migration follows
+the existing contact, questionnaire and verified application submission migrations.
+It grants management only the receipt's lead/link relationship; sender fingerprints,
+consent payloads and applicant sessions remain private. Old records are preserved,
+with their joining origin marked as an existing record on their first plan edit.
+Phase 3 connects **Invite new agent** on Agents and Branch staff to the same
+Recruitment capture form. Branch staff preselects its branch, and the record keeps
+the entry point. After saving, staff can prepare and copy an application link or
+open the saved record. Link preparation can be retried without creating another
+record. Recruitment can still capture an enquiry without preparing an invitation.
+Existing staff access invitations remain a separate action.
+
+Agents and Branch staff show a separate **Joining** list with the saved stage,
+next action and a link to continue the record. These applicants do not enter the
+staff directory or its active-agent totals. Progress is scoped to the current
+organisation and, on Branch staff, the intended joining branch. Only existing
+recruitment managers can see this progress; branch-manager recruitment initiation
+and privacy policy belong to a later phase.
+
+Phase 3 requires no additional migration. Apply the Phase 2 migration before
+releasing the updated app through an explicitly approved database release.
+Preparing an application link does not send email or grant workspace access.
+
+Phase 4 adds a final joining review before workspace access is prepared. Save an
+active branch, supported business areas and joining date in Agent Details first;
+review the agent/senior-agent role and commission structure (or explicitly review
+no assigned commission). The reviewed plan is preserved with the access receipt.
+Ready for access, Awaiting acceptance and Active remain separate states.
+
+The append-only `20261008125501_recruitment_activation_handover.sql` migration
+uses the canonical invitation create/accept workflow. A compatible live invitation,
+including an explicitly linked branch invitation, is reused unchanged. Expired
+access gets a new receipt while retaining its history. Invitation preparation
+creates no membership, commission profile or email. On acceptance, the existing
+account receives the reviewed business access, commission and joining date in the
+same transaction as membership creation. Conflicting existing access or commission
+rolls back acceptance rather than silently replacing staff setup.
+
+Final activation verifies the account, agency, branch, role, business access,
+joining date and commission before closing recruitment, and links to both the
+agent profile and branch staff. Retries retain the existing membership and audit
+record. Already prepared legacy invitations retain their original access contract;
+existing activated records are not rewritten. Phase 4 initially restricts handover
+to agent and senior-agent roles; Phase 5 below adds Commercial brokers and routes
+transfer requests to the existing staff workflow.
+Apply the Phase 4 migration after Phase 2 during an explicitly approved release.
+The app uses a dedicated handover endpoint, so a missing Phase 4 migration blocks
+preparation instead of falling back to the earlier standard-agent invitation.
+
+Focused verification: `npx vitest run src/pages/recruitment/__tests__`. Database
+tests exercise the migration in isolated Postgres, including permissions, existing
+website intake, retries, duplicate review, invitation preservation and activation
+rollback. No remote database change, invitation delivery or deployment is performed
+by these checks.
+
+Phase 5 connects the remaining agent entry points and exceptions in the primary
+workspace. **Settings → Team & access** defaults agent invitations to Recruitment,
+carrying the contact and planned business/commission choices. **Commercial → Brokers**
+defaults new brokers to the same form with Commercial role and business access.
+Its setup wizard also captures recruitment without discarding the enablement draft.
+New broker team/specialisation choices follow activation; existing broker access
+retains the existing Commercial invitation form and metadata.
+
+| Entry avenue | Destination and authority |
+| --- | --- |
+| Agents, toolbar/mobile Add Agent | Shared Recruitment capture; same organisation and selected branch |
+| Branch staff: new agent | Principal/admin/owner uses full capture; branch manager submits basic contact for their own active branch |
+| Settings: new agent | Shared Recruitment capture, preserving contact and planned setup |
+| Agency setup: new agent | Stable joining receipt with agency setup origin; no access invitation or invite email |
+| Commercial Brokers and Commercial setup: new broker | Shared Recruitment capture; broker role and Commercial business access |
+| Commercial Brokers: branch manager | Basic contact capture for their own branch; planned broker destination; principal reviews and approves joining setup |
+| Website / Join Us | Existing verified contact/application journey, stored in Recruitment with website origin |
+| Public campaign/application link | Existing public intake; campaign source retained, no staff membership grant |
+| Private application invitation | Continue the existing enquiry and evidence journey; preserve its original joining source |
+| Existing or returning staff access | Explicit separate access purpose, canonical invitation/acceptance and existing identity/history |
+| Support staff or principal access | Existing staff invitation or principal claim/approval process |
+| Agent transfer | Existing staff profile and transfer wizard; Recruitment does not rewrite memberships, operational ownership or commission |
+
+Branch progress uses bounded RPCs returning only same-branch name, stage and access
+state. Branch managers cannot open recruitment records, view documents, applicant
+answers, review findings, commission choices or approval controls. Duplicate contact
+matches require principal review without exposing matching private records. They
+cannot choose privileged joining roles, prepare access or approve an application.
+Captured enquiries are normal joining records visible to agency management, with
+stable retry receipts and database-authored origin. Owners receive the same
+organisation-scoped recruitment permissions as principals; support staff do not.
+
+The append-only `20261008131645_recruitment_entry_avenues.sql` migration follows
+Phases 2 and 4. Commercial activation requires the agency's active Commercial module
+and a consistent broker role/business plan. Canonical acceptance applies the module
+marker alongside the previously reviewed branch, business access, commission and
+date. Verification checks the broker marker before closing Recruitment. The final
+receipt opens the broker profile and Commercial branches. The app uses a distinct
+activation endpoint so missing migration support blocks preparation.
+
+Agency creation remains its existing atomic operation. New-agent enquiries are
+confirmed afterwards with stable setup receipts; an uncertain handover keeps the
+local draft and reports retry instructions. Matching enquiries or memberships are
+preserved for explicit management review. Staff/support invitations retain their
+existing delivery workflow. Deploying the app or applying the migration still
+requires an explicitly approved release; local checks do not deliver real email or
+write remote data.
+
+The joining consolidation's **Phase 6** adds explicit application and workspace
+email delivery in Recruitment. A private application email requests an application
+and grants no staff access. Workspace access emails use the canonical invitation
+already prepared from the reviewed joining plan. Creating either link sends no
+email. Staff choose **Send invitation email**, refresh its status or explicitly
+send another email. The application URL is shown only at creation; paste the
+original private link to send it again. If unavailable, revoke that link and create
+a new one for the same enquiry. Public/website campaign links are not bulk emailed.
+
+Delivery receipts distinguish link preparation, email-provider acceptance, failed
+sends and uncertain results. Invitation expiry, revocation, application submission
+and workspace acceptance are read from their canonical records. Provider acceptance
+is not inbox delivery; no delivery or bounce webhook is claimed. Historic sends
+without the new receipt remain unconfirmed. Agents, Branch staff and Commercial
+Joining lists show the same safe progress summary, with appropriate next actions.
+Branch-manager summaries retain branch scope and contain no contact, application,
+review, commission or private email content. Newly prepared Recruitment workspace
+resends from branch/directory tools use this delivery process; existing staff and
+legacy invitation tools retain their previous workflow.
+
+The server verifies the signed-in manager and rechecks agency, lead stage, live
+invitation, recipient, role, branch and Commercial module before acquiring an
+attempt. It derives email content and the URL host from saved records and configured
+application settings. Browser clients cannot write provider receipts or read the
+private request body. Server-only frozen email snapshots and provider idempotency
+keys recover uncertain attempts without changing the email or adding another lead,
+invite or membership. A 60-second lease prevents concurrent sending. Retries stop
+at 23 hours, within [Resend's 24-hour idempotency window](https://resend.com/changelog/idempotency-keys).
+An uncertain result beyond that window requires staff review and explicit
+acknowledgement before another email. A new acknowledged send preserves the old
+receipt. Sending failure leaves the joining record, evidence and planned access intact.
+
+Release requirements for this consolidation:
+
+- Apply the reviewed joining-record, activation-handover and entry-avenues
+  migrations in dependency order, followed by
+  `20261008135223_recruitment_invitation_delivery.sql`. Use the existing database
+  release runbook and guard; include only the approved migration scope.
+- Release the `send-email` function with its new `recruitment_invitation` handler
+  and the primary application together. Required server settings are working
+  `RESEND_API_KEY`, Supabase service/anon keys and an HTTPS `CLIENT_APP_URL`
+  (or the existing supported application URL setting), plus a verified email sender.
+- Capture target identity, pre-change definitions and recovery evidence under
+  `docs/database-release-runbook.md`. Keep the previous app/function release available
+  for rollback; preserve delivery receipts and joining evidence.
+- After explicit release approval, verify hosted RPC permissions and private-body
+  restrictions, then use approved controlled recipients for actual delivery and
+  acceptance with both new and existing accounts. Check expiry/recovery, branch
+  restrictions, Commercial access and a preserved legacy invitation. Confirm inbox
+  receipt separately from provider acceptance and final membership verification.
+
+Local verification uses the actual Recruitment/canonical-invitation SQL in an
+isolated PostgreSQL fixture, component/service tests and injected email-provider
+responses. `npm run check:app` is the build-ready gate. Public website source is
+unchanged. This implementation does not apply remote migrations, send real email,
+deploy, or establish that a real agent has completed the live journey.
+
 ### Mobile sales listings
 
 Agents and developers can open **Menu → Listings**, browse their accessible active
@@ -2801,6 +3297,141 @@ Focused checks:
 `npm run test:direct-listing-persistence-phase3`, and
 `npm run test:mobile-shell-routing`.
 
+### New lead emails to allocated agents
+
+Each new agency CRM lead commits an email job in the same database transaction.
+This covers Property24, Private Property, Meta Lead Ads, manual capture, show days,
+digital business cards and QR forms, including intake that bypasses the browser.
+The worker resolves the saved lead's active allocated agent inside its organisation.
+Its branded email includes the contact, source, property and an **Open lead** link
+to the sales or rental workspace, with a friendly first-name greeting. Stock
+communication wording uses no long dashes. Email delivery does not block capture.
+
+Enquiry ingestion defers the alert until automatic assignment finishes and
+suppresses the preliminary assignment email for new leads. Existing lead
+reassignment alerts remain active. Both Property24 import paths queue the agent alert
+for phone-only enquiries and attempt the agent alert even if a customer
+acknowledgement fails. Completed duplicate imports and persistence repairs do
+not create another new-lead job. Historical Property24 recovery and historical
+Meta imports are suppressed at insertion; this release does not backfill old leads.
+
+`lead_agent_email_jobs` is service-only. Every provider attempt uses the same
+frozen email and job key, with leased claims, interrupted-claim recovery, backoff
+and at most eight attempts within 23 hours of the first attempt. An acceptance
+ID is required before recording `sent`; `queued` never means delivered. Provider
+acceptance does not prove inbox delivery. Missing or invalid agent details keep
+the agent job waiting and queue a manager alert. Later assignment wakes the agent
+job. Fallback recipients are active members of the same organisation; branch
+managers must match the lead's branch. Exhausted retries or an unavailable manager
+create a high-priority **Review lead email delivery** task. Jobs overdue by
+15 minutes also get a task while remaining retryable, including missing worker
+credentials or configuration. Frozen recipients who
+lose access are stopped for review, rather than changing the provider request.
+
+Website principal alerts and their configured inboxes retain their receipt/outbox
+flow. The shared queue supplies the allocated agent email where the website only
+notifies its principal, and delegates where the website already owns that agent
+alert. Website jobs require explicit provider acceptance and route rental links
+to rentals. Terminal interrupted website attempts for newly captured leads are
+reconciled once into management follow-up and tasks; old receipt backlogs are
+excluded. General website enquiries without an allocated agent first reach
+management, then the agent when assigned.
+
+Release together, after approval for the named target: migration
+`20261008173528_durable_lead_agent_email_outbox.sql`, Edge Functions `send-email`,
+`lead-agent-email-dispatcher`, and `website-lead-dispatcher`, plus the primary app
+changes for Property24's historical-import marker and queue reporting. Follow
+`docs/database-release-runbook.md` and run the database guard and exact dry run.
+Verify `RESEND_API_KEY`, a verified internal sender, `LEAD_OPERATIONS_EMAILS_ENABLED`,
+`ARCH9_APP_URL`, and matching Vault `arch9_project_url` / `arch9_service_role_key`.
+The new cron job is `arch9-lead-agent-email-dispatcher-1m`; retain and verify the
+existing website dispatcher schedules. Check job progress and authorised test
+emails from each enabled source after release. Portal credentials, Meta form
+mapping, website publication and active agent email addresses must be configured
+for their intake paths. Resolving a terminal task requires checking provider
+receipts before manually replaying a job outside its deduplication window.
+
+Focused verification: `npx vitest run src/services/leads/__tests__/newLeadAgentNotificationService.test.js src/lib/__tests__/agencyCrmNewLeadNotification.test.js src/services/__tests__/leadIngestionAgentNotification.test.js src/services/__tests__/leadAssignmentNotificationControl.test.js`,
+`node --test server/tests/leadAgentEmailOutbox.test.js server/tests/property24LeadNotifications.test.js server/tests/homeSeekersLeads.test.js`,
+`npm run test:lead-ingestion`, `node scripts/lead-assignment.test.mjs`, and
+`node scripts/property24-phase7-lead-import.test.mjs`. These tests use mock email
+delivery; no real agent email is sent. The outbox suite executes the new migration
+and the real Private Property, Meta and website capture functions in isolated
+PGlite databases. Also run the Deno tests in `_shared/leadAgentEmailDispatch.test.ts`,
+`send-email/services/leadAgentEmailQueue.test.ts`, `_shared/websiteLeadDispatch.test.ts`
+and `website-lead-dispatcher/index.test.ts` with local fixtures only.
+
+### Buyer and seller lead intro emails
+
+Migration `20261008180125_durable_buyer_seller_lead_introductions.sql` extends the
+same service-only queue with a separate `client_intro` job for each new agency
+buyer or seller lead. Source does not gate delivery: Property24, Private Property,
+Meta, websites, digital cards, QR forms, show days and manual capture use the
+same database trigger. Tenant and landlord classifications keep rental wording;
+tenant intros retain the expiring qualification link. Seller intros discuss
+selling and valuations, rather than buying or arranging a property viewing.
+
+Client delivery is independent of agent assignment and of the agent alert's
+delivery state. The recipient comes from the saved contact in the same
+organisation. Missing or invalid email addresses create a follow-up task and
+wait; adding an address or linking the contact wakes the job. A recipient change
+after an attempted send stops automatic retries for review. Each client job uses
+the existing frozen-envelope, lease, eight-attempt/23-hour retry and acceptance
+receipt controls. Existing intake requests now inspect this queue instead of
+sending an additional intro. Historical imports and old leads are not backfilled.
+Provider acceptance is recorded separately from inbox delivery.
+
+Home Seekers' enabled custom seller design is retained. Its website principal
+alert stops sending a second client email when a durable client job exists.
+Event RSVP confirmations without a lead keep their existing communication flow.
+The client worker uses `LEAD_INTRO_EMAILS_ENABLED` (default true), independently
+of `LEAD_OPERATIONS_EMAILS_ENABLED`; it still requires configured provider and
+sender credentials. Release the new migration with the updated `send-email`
+and `lead-agent-email-dispatcher` functions, alongside the preceding agent queue
+release. Production application and authorised live email tests remain separate.
+
+Focused checks: `node --test server/tests/leadAgentEmailOutbox.test.js
+server/tests/property24LeadNotifications.test.js server/tests/homeSeekersLeads.test.js`
+and the Deno queue/dispatch, lead acknowledgement, qualification-link and branded
+template tests. All use isolated databases or mocked email providers.
+
+## Company performance totals
+
+Organisation → Branches shows current sales pipeline value, active transactions,
+current sale/rental listings and the active team (including leadership and staff).
+The period controls change the activity beneath these totals, not the current stock.
+Rental monthly prices are excluded from the sales pipeline value. Company users
+include stock awaiting branch allocation; restricted users retain their branch scope.
+
+Company reads filter by the resolved organisation and page in stable order. Missing
+optional columns use compatible selects; failed reads show an error rather than
+valid-looking zero totals. The queries no longer request the obsolete transaction
+`status` and listing `mandate_expiry_date` columns. Refresh failures keep the last
+successful figures labelled with their loaded period. Workspace changes discard
+late responses and hide the previous company's data.
+
+Focused checks: `npx vitest run src/services/__tests__/agencyCompanyOverview.test.js
+src/pages/agency/__tests__/AgencyBranchesCompanyPerformance.test.jsx` and
+`node src/services/__tests__/agencyBranchMetrics.test.js`. All use local fixtures
+and send no email or database writes.
+
+## Branch staff allocations
+
+Branch → Staff calculates each member's current listings and open transactions
+directly from branch records, including owners, principals and support roles.
+Current listings include sale/rental working stock and drafts; sold, withdrawn,
+archived and cancelled stock is excluded. Workload counts are independent of
+the reporting period. The labelled commission amount uses actual agent splits
+for registrations in the selected period. Missing reads or missing splits stay
+unavailable rather than becoming zero. Pending invitations have no performance
+figures. The sales-agent leaderboard retains its own role eligibility.
+
+Staff ownership prefers an explicit assignee ID, then a legacy assignee email.
+Creating a record for someone else does not count as owning their allocation.
+Both branch and organisation boundaries are retained. Focused checks:
+`node src/services/__tests__/branchStaffMetrics.test.js` and
+`npx vitest run src/pages/agency/__tests__/BranchStaffAllocations.test.jsx`.
+These checks use local fixtures and make no remote writes or send invitations.
 
 ### Listing capture validation (8 October 2026)
 

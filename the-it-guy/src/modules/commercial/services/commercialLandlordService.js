@@ -1,3 +1,5 @@
+import { withDocumentUploadMimeType, validateDocumentUploadFile } from '../../../lib/documentUploadPolicy.js'
+import { runRecoverableDocumentUpload, readSavedUploadByPath } from '../../../lib/documentUploadRecovery.js'
 import { createScopedSupabaseClient, invokeEdgeFunction, isSupabaseConfigured, supabase } from '../../../lib/supabaseClient'
 import { uploadToStorageCandidateBuckets } from '../../../lib/storageFallbacks'
 import {
@@ -1238,15 +1240,17 @@ export async function submitCommercialLandlordOnboarding(token, formInput = {}) 
   }
 }
 
-async function uploadPortalFile(client, { accessId, file }) {
+async function uploadPortalFile(client, { accessId, file, attempt = null }) {
   if (!file) throw new Error('Choose a document to upload.')
-  const objectPath = ['commercial-landlord-onboarding', safeFileName(accessId), `${Date.now()}-${safeFileName(file.name || 'document')}`].join('/')
+  const filePolicy = validateDocumentUploadFile(file, { surface: 'commercial_document' })
+  const candidatePath = ['commercial-landlord-onboarding', safeFileName(accessId), `${Date.now()}-${filePolicy.safeName}`].join('/')
+  const objectPath = attempt ? attempt.path(candidatePath) : candidatePath
   const { bucket } = await uploadToStorageCandidateBuckets({
     bucketCandidates: COMMERCIAL_DOCUMENT_BUCKET_CANDIDATES,
     upload: (bucketName) =>
-      client.storage.from(bucketName).upload(objectPath, file, {
+      client.storage.from(bucketName).upload(objectPath, withDocumentUploadMimeType(file, filePolicy.mimeType), {
         cacheControl: '3600',
-        contentType: file.type || undefined,
+        contentType: filePolicy.mimeType,
         upsert: false,
       }),
     missingBucketMessage: `Commercial document storage is not configured. Checked: ${COMMERCIAL_DOCUMENT_BUCKET_CANDIDATES.join(', ')}.`,
@@ -1266,42 +1270,51 @@ export async function uploadCommercialLandlordOnboardingDocument({
 } = {}) {
   const workspace = await fetchOnboardingByToken(token)
   const request = (workspace.documentRequests || []).find((row) => row.id === documentRequestId)
-  const upload = await uploadPortalFile(workspace.client, { accessId: workspace.access.id, file })
-  const documentPayload = {
-    organisation_id: workspace.landlord.organisation_id,
-    branch_id: workspace.landlord.branch_id || null,
-    team_id: workspace.landlord.team_id || null,
-    broker_id: workspace.landlord.broker_id || null,
-    entity_type: 'commercial_landlord',
-    entity_id: workspace.landlord.id,
-    document_name: request?.document_name || file?.name || 'Landlord onboarding document',
-    category: normalizeText(category || request?.category || 'supporting_documents'),
-    status: 'uploaded',
-    notes: normalizeText(notes) || null,
-    file_name: file?.name || 'document',
-    file_path: upload.path,
-    file_bucket: upload.bucket,
-    file_size: file?.size || null,
-    mime_type: file?.type || null,
-    uploaded_at: new Date().toISOString(),
-    metadata_json: {
-      documentKey: normalizeText(request?.document_name || request?.category || category),
-      source: 'commercial_landlord_onboarding',
+  if (file) validateDocumentUploadFile(file, { surface: 'commercial_landlord' })
+  return runRecoverableDocumentUpload({ client: workspace.client, scope: ['commercial_landlord', token, workspace.landlord.id, category, documentRequestId, notes], file,
+    storageBuckets: COMMERCIAL_DOCUMENT_BUCKET_CANDIDATES, storageResult: (bucket, path) => ({ bucket, path }),
+    run: async attempt => {
+      const upload = await attempt.upload(() => uploadPortalFile(workspace.client, { accessId: workspace.access.id, file, attempt }))
+      const documentPayload = {
+        organisation_id: workspace.landlord.organisation_id,
+        branch_id: workspace.landlord.branch_id || null,
+        team_id: workspace.landlord.team_id || null,
+        broker_id: workspace.landlord.broker_id || null,
+        entity_type: 'commercial_landlord',
+        entity_id: workspace.landlord.id,
+        document_name: request?.document_name || file?.name || 'Landlord onboarding document',
+        category: normalizeText(category || request?.category || 'supporting_documents'),
+        status: 'uploaded',
+        notes: normalizeText(notes) || null,
+        file_name: file?.name || 'document',
+        file_path: upload.path,
+        file_bucket: upload.bucket,
+        file_size: file?.size || null,
+        mime_type: file ? validateDocumentUploadFile(file, { surface: 'commercial_document' }).mimeType : null,
+        uploaded_at: new Date().toISOString(),
+        metadata_json: {
+          documentKey: normalizeText(request?.document_name || request?.category || category),
+          source: 'commercial_landlord_onboarding',
+        },
+      }
+      const insert = await attempt.persist({
+        save: () => workspace.client.from(COMMERCIAL_DOCUMENTS_TABLE).insert(documentPayload).select('*').single(),
+        read: () => readSavedUploadByPath(workspace.client, { table: COMMERCIAL_DOCUMENTS_TABLE, path: upload.path, filters: { entity_type: 'commercial_landlord', entity_id: workspace.landlord.id } }),
+        cleanup: () => workspace.client.storage.from(upload.bucket).remove([upload.path]),
+      })
+      if (request?.id) {
+        await workspace.client
+          .from(COMMERCIAL_DOCUMENT_REQUESTS_TABLE)
+          .update({ status: 'uploaded', completed_document_id: insert.data.id })
+          .eq('id', request.id)
+          .catch(() => null)
+      }
+      await workspace.client
+        .from(LANDLORD_ONBOARDING_TABLE)
+        .update({ updated_at: new Date().toISOString() })
+        .eq('id', workspace.onboarding.id)
+        .catch(() => null)
+      return insert.data
     },
-  }
-  const insert = await workspace.client.from(COMMERCIAL_DOCUMENTS_TABLE).insert(documentPayload).select('*').single()
-  if (insert.error) throw insert.error
-  if (request?.id) {
-    await workspace.client
-      .from(COMMERCIAL_DOCUMENT_REQUESTS_TABLE)
-      .update({ status: 'uploaded', completed_document_id: insert.data.id })
-      .eq('id', request.id)
-      .catch(() => null)
-  }
-  await workspace.client
-    .from(LANDLORD_ONBOARDING_TABLE)
-    .update({ updated_at: new Date().toISOString() })
-    .eq('id', workspace.onboarding.id)
-    .catch(() => null)
-  return insert.data
+  })
 }

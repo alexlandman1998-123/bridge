@@ -355,3 +355,19 @@ entrypoint = "./functions/attorney-appointment-delivery-worker/index.ts"
 enabled = true
 verify_jwt = false
 entrypoint = "./functions/transaction-handoff-dispatch-worker/index.ts"
+[functions.lead-agent-email-dispatcher]
+enabled = true
+verify_jwt = true
+import_map = "./functions/lead-agent-email-dispatcher/deno.json"
+entrypoint = "./functions/lead-agent-email-dispatcher/index.ts"
+
+[functions.calendar-appointment-delivery-worker]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/calendar-appointment-delivery-worker/index.ts"
+
+[functions.calendar-provider-connection]
+verify_jwt = false
+
+[functions.calendar-provider-sync-worker]
+verify_jwt = false

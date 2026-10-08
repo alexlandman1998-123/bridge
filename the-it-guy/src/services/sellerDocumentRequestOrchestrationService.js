@@ -191,7 +191,16 @@ export function buildSellerDocumentRequestPlan({
   const existing = []
   const suppressed = []
 
-  for (const requirement of toArray(requirements)) {
+  for (const selectedRequirement of toArray(requirements)) {
+    // The document centre projects display rows. Delivery identity, participant
+    // routing and request revisions stay on their persisted source requirement.
+    const sourceRequirement = toRecord(selectedRequirement.original?.requirement)
+    const requirement = {
+      ...sourceRequirement,
+      ...selectedRequirement,
+      ...(sourceRequirement.requirement_key ? { requirement_key: sourceRequirement.requirement_key } : {}),
+      ...(sourceRequirement.id ? { requirementId: sourceRequirement.id } : {}),
+    }
     const key = requirementKey(requirement)
     const status = requirementStatus(requirement)
     const visibility = normalizeKey(
@@ -307,6 +316,7 @@ function requestUpdatePayload(item = {}) {
     request_revision: item.requestRevision,
     last_request_reason: item.reason,
     request_metadata: {
+      ...toRecord(item.requirement?.request_metadata),
       seller_email: item.sellerEmail,
       recipient_name: item.recipientName,
       participant_id: item.participantId,

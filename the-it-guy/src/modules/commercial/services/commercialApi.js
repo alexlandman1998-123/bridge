@@ -1,3 +1,5 @@
+import { withDocumentUploadMimeType, validateDocumentUploadFile } from '../../../lib/documentUploadPolicy.js'
+import { runRecoverableDocumentUpload, readSavedUploadByPath } from '../../../lib/documentUploadRecovery.js'
 import { fetchOrganisationSettings, listOrganisationUsers, updateWorkflowSettings } from '../../../lib/settingsApi'
 import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../../../lib/supabaseClient'
 import { uploadToStorageCandidateBuckets } from '../../../lib/storageFallbacks'
@@ -2916,22 +2918,24 @@ function createObjectPath({ organisationId, entityType, entityId, fileName }) {
   ].join('/')
 }
 
-async function uploadCommercialFile({ file, organisationId, entityType, entityId } = {}) {
+async function uploadCommercialFile({ file, organisationId, entityType, entityId, attempt = null } = {}) {
   if (!file) return { bucket: '', path: '' }
+  const filePolicy = validateDocumentUploadFile(file, { surface: 'commercial_document' })
   if (!isSupabaseConfigured || !supabase?.storage) throw new Error('Supabase is not configured.')
 
-  const objectPath = createObjectPath({
+  const candidatePath = createObjectPath({
     organisationId,
     entityType,
     entityId,
-    fileName: file.name || 'commercial-document',
+    fileName: filePolicy.safeName,
   })
+  const objectPath = attempt ? attempt.path(candidatePath) : candidatePath
   const { bucket } = await uploadToStorageCandidateBuckets({
     bucketCandidates: COMMERCIAL_DOCUMENT_BUCKET_CANDIDATES,
     upload: (bucketName) =>
-      supabase.storage.from(bucketName).upload(objectPath, file, {
+      supabase.storage.from(bucketName).upload(objectPath, withDocumentUploadMimeType(file, filePolicy.mimeType), {
         cacheControl: '3600',
-        contentType: file.type || undefined,
+        contentType: filePolicy.mimeType,
         upsert: false,
       }),
     missingBucketMessage: `Commercial document storage is not configured. Checked: ${COMMERCIAL_DOCUMENT_BUCKET_CANDIDATES.join(', ')}.`,
@@ -3510,50 +3514,63 @@ export async function uploadCommercialDocument(payload = {}) {
   const userId = await getCurrentUserId()
   const scope = await resolveCommercialAccessContext()
   if (!scope.hasCommercialAccess) throw new Error('Commercial workspace access is required.')
-  const uploaded = await uploadCommercialFile({ file, organisationId, entityType, entityId })
-  const documentPayload = applyDefaultCommercialHierarchy({
-    organisation_id: organisationId,
-    entity_type: entityType,
-    entity_id: entityId,
-    document_name: normalizeText(payload.documentName || payload.document_name || file?.name || 'Commercial document'),
-    category: normalizeText(payload.category) || null,
-    status: normalizeText(payload.status || 'uploaded'),
-    notes: normalizeText(payload.notes) || null,
-    file_name: normalizeText(file?.name || payload.fileName || payload.file_name) || null,
-    file_path: uploaded.path || normalizeText(payload.filePath || payload.file_path) || null,
-    file_bucket: uploaded.bucket || normalizeText(payload.fileBucket || payload.file_bucket || 'documents'),
-    file_size: Number.isFinite(Number(file?.size)) ? Number(file.size) : null,
-    mime_type: normalizeText(file?.type || payload.mimeType || payload.mime_type) || null,
-    version_number: Number.isFinite(Number(payload.versionNumber || payload.version_number)) ? Math.max(1, Number(payload.versionNumber || payload.version_number)) : 1,
-    supersedes_document_id: normalizeText(payload.supersedesDocumentId || payload.supersedes_document_id) || null,
-    expires_at: normalizeText(payload.expiresAt || payload.expires_at) || null,
-    uploaded_by: userId,
-    uploaded_at: new Date().toISOString(),
-    created_by: userId,
-    updated_by: userId,
-  }, scope)
+  if (file) validateDocumentUploadFile(file, { surface: 'commercial_workspace' })
+  return runRecoverableDocumentUpload({ client: supabase, scope: ['commercial_workspace', organisationId, entityType, entityId, payload.category, payload.status, payload.versionNumber, payload.supersedesDocumentId, payload.notes], file,
+    storageBuckets: COMMERCIAL_DOCUMENT_BUCKET_CANDIDATES, storageResult: (bucket, path) => ({ bucket, path }),
+    run: async attempt => {
+      const uploaded = await attempt.upload(() => uploadCommercialFile({ file, organisationId, entityType, entityId, attempt }))
+      const documentPayload = applyDefaultCommercialHierarchy({
+        organisation_id: organisationId,
+        entity_type: entityType,
+        entity_id: entityId,
+        document_name: normalizeText(payload.documentName || payload.document_name || file?.name || 'Commercial document'),
+        category: normalizeText(payload.category) || null,
+        status: normalizeText(payload.status || 'uploaded'),
+        notes: normalizeText(payload.notes) || null,
+        file_name: normalizeText(file?.name || payload.fileName || payload.file_name) || null,
+        file_path: uploaded.path || normalizeText(payload.filePath || payload.file_path) || null,
+        file_bucket: uploaded.bucket || normalizeText(payload.fileBucket || payload.file_bucket || 'documents'),
+        file_size: Number.isFinite(Number(file?.size)) ? Number(file.size) : null,
+        mime_type: file ? validateDocumentUploadFile(file, { surface: 'commercial_document' }).mimeType : normalizeText(payload.mimeType || payload.mime_type) || null,
+        version_number: Number.isFinite(Number(payload.versionNumber || payload.version_number)) ? Math.max(1, Number(payload.versionNumber || payload.version_number)) : 1,
+        supersedes_document_id: normalizeText(payload.supersedesDocumentId || payload.supersedes_document_id) || null,
+        expires_at: normalizeText(payload.expiresAt || payload.expires_at) || null,
+        uploaded_by: userId,
+        uploaded_at: new Date().toISOString(),
+        created_by: userId,
+        updated_by: userId,
+      }, scope)
 
-  let query = await supabase.from(TABLES.documents).insert(documentPayload).select(SELECTS.documents).single()
-  if (query.error && isCommercialSchemaMismatchError(query.error)) {
-    query = await supabase
-      .from(TABLES.documents)
-      .insert(removeOptionalCommercialPayload(documentPayload))
-      .select(withoutSelectColumns(SELECTS.documents, [...COMMERCIAL_HIERARCHY_COLUMNS, ...COMMERCIAL_DOCUMENT_WORKFLOW_COLUMNS]))
-      .single()
-  }
-  if (query.error) throw query.error
+      const query = await attempt.persist({
+        save: async () => {
+          let query = await supabase.from(TABLES.documents).insert(documentPayload).select(SELECTS.documents).single()
+          if (query.error && isCommercialSchemaMismatchError(query.error)) {
+            query = await supabase
+              .from(TABLES.documents)
+              .insert(removeOptionalCommercialPayload(documentPayload))
+              .select(withoutSelectColumns(SELECTS.documents, [...COMMERCIAL_HIERARCHY_COLUMNS, ...COMMERCIAL_DOCUMENT_WORKFLOW_COLUMNS]))
+              .single()
+          }
+          if (query.error) throw query.error
 
-  await logCommercialActivity({
-    organisationId,
-    entityType,
-    entityId,
-    activityType: 'document_uploaded',
-    title: 'Document uploaded',
-    body: `${documentPayload.document_name} was uploaded.`,
-    metadata: { documentId: query.data?.id, category: documentPayload.category, versionNumber: documentPayload.version_number },
+          return query
+        },
+        read: () => readSavedUploadByPath(supabase, { table: TABLES.documents, path: uploaded.path, filters: { organisation_id: organisationId, entity_type: entityType, entity_id: entityId } }),
+        cleanup: () => supabase.storage.from(uploaded.bucket).remove([uploaded.path]),
+      })
+      await logCommercialActivity({
+        organisationId,
+        entityType,
+        entityId,
+        activityType: 'document_uploaded',
+        title: 'Document uploaded',
+        body: `${documentPayload.document_name} was uploaded.`,
+        metadata: { documentId: query.data?.id, category: documentPayload.category, versionNumber: documentPayload.version_number },
+      })
+
+      return query.data || null
+    },
   })
-
-  return query.data || null
 }
 
 export async function registerCommercialGeneratedDocument(payload = {}) {

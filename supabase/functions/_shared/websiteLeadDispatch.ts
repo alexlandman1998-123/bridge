@@ -37,9 +37,10 @@ export function websiteLeadProviderMessageId(payload: unknown) {
     websiteLeadText(body.providerMessageId || body.emailId, 500) || null;
 }
 
-export function websiteLeadDeliveryStatus(payload: unknown) {
+export function websiteLeadDeliveryStatus(payload: unknown): "sent" | "skipped" | "failed" {
   const body = websiteLeadRecord(payload);
-  return body.sent === false || body.suppressed === true ? "skipped" : "sent";
+  if (body.suppressed === true && websiteLeadText(body.reason, 100).startsWith("controlled_test")) return "skipped";
+  return body.sent === true && body.ok !== false && websiteLeadProviderMessageId(body) ? "sent" : "failed";
 }
 
 export function websiteLeadReceiptId(event: WebsiteLeadNotificationEvent) {
@@ -79,6 +80,8 @@ export function buildWebsiteLeadEmailPayload(
     80,
   );
   const leadId = websiteLeadText(event.lead_id, 64);
+  const rental = ["rent", "let", "rental"].includes(websiteLeadText(payload.enquiryIntent, 80).toLowerCase()) ||
+    ["tenant", "landlord", "rental"].includes(websiteLeadText(payload.leadCategory, 80).toLowerCase());
   return {
     type: eventKind,
     eventKind,
@@ -100,7 +103,7 @@ export function buildWebsiteLeadEmailPayload(
     enquiryIntent: websiteLeadText(payload.enquiryIntent, 80) || undefined,
     enquiryMessage: websiteLeadText(payload.enquiryMessage, 4000) || undefined,
     actionLink: leadId
-      ? `${appUrl.replace(/\/$/, "")}/pipeline/leads/${leadId}`
+      ? `${appUrl.replace(/\/$/, "")}${rental ? "/agent/rentals/pipeline/leads" : "/pipeline/leads"}/${leadId}`
       : undefined,
     idempotencyKey: websiteLeadText(
       event.idempotency_key || event.dedupe_key ||

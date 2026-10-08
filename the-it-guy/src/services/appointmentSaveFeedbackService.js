@@ -78,6 +78,18 @@ function shouldShowExternalCalendarNotSynced(result = {}, explicitStatus = '') {
 }
 
 export function buildAppointmentSaveFeedback(result = {}, options = {}) {
+  if (result.delivery?.verified === true && Array.isArray(result.delivery.jobs)) {
+    const emailJobs = result.delivery.jobs.filter(job => job.channel === 'email' && !job.event_kind.startsWith('reminder:'))
+    const counts = Object.fromEntries(['queued','processing','provider_accepted','delivered','failed','superseded'].map(status => [status, emailJobs.filter(job => job.status === status).length]))
+    const labels = ['queued','processing','provider_accepted','delivered','failed','superseded'].filter(status => counts[status]).map(status => `${counts[status]} ${status.replaceAll('_',' ')}`)
+    const invitations = result.listingViewingRoundNumber ? 'Viewing invitations are tracked in the viewing workflow.' : result.sendInviteEmails === false ? 'Invitations off.' : emailJobs.length ? `Email: ${labels.join(', ')}.` : 'No email jobs queued.'
+    const reminders = result.delivery.jobs.filter(job => job.event_kind.startsWith('reminder:') && ['queued','processing'].includes(job.status))
+    const parts = [options.includeAction !== false ? `${normalizeText(options.actionLabel) || 'Appointment saved'}.` : '', invitations,
+      result.remindersEnabled === false ? 'Reminders off.' : `${reminders.length} reminder jobs scheduled.`,
+      emailJobs.length && result.attachCalendarInvite !== false ? 'Calendar attachment prepared for email delivery.' : '',
+      shouldShowExternalCalendarNotSynced(result, options.externalCalendarStatus) ? 'External calendar not synced.' : '']
+    return parts.filter(Boolean).join(' ')
+  }
   const participants = Array.isArray(options?.participants) ? options.participants : []
   const requestedInvite = options?.requestedInvite !== false
   const recipientEmails = resolveAppointmentRecipientEmails(result, participants, options?.recipientEmail)

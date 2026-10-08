@@ -23,6 +23,7 @@ const appointments = [
     appointmentId: 'apt-2',
     appointmentType: 'viewing',
     status: 'requested',
+    requestIssuedAt: now.toISOString(),
     dateTime: '2026-06-13T10:00:00Z',
     assignedAgentId: 'agent-1',
     assignedAgentName: 'Alex Agent',
@@ -33,6 +34,7 @@ const appointments = [
     appointmentType: 'other',
     customTypeLabel: '',
     status: 'alternative_requested',
+    requestIssuedAt: now.toISOString(),
     dateTime: '2026-06-14T10:00:00Z',
     assignedAgentId: 'agent-1',
     assignedAgentName: 'Alex Agent',
@@ -62,14 +64,14 @@ assert.equal(getAppointmentStatusPresentation('alternative_requested').label, 'R
     includeAll: false,
   })
 
-  assert.equal(data.counts.pendingConfirmation, 1)
+  assert.equal(data.counts.pendingConfirmation, 2)
   assert.equal(data.counts.upcoming, 3)
   assert.equal(data.counts.needsReschedule, 1)
-  assert.equal(data.calendarStrip.appointmentsToday, 2)
-  assert.equal(data.nextAppointment.id, 'apt-4')
-  assert.equal(data.nextAppointment.isOverdue, true)
-  assert.equal(data.nextAppointment.typeLabel, 'Finance Consultation')
-  assert.equal(data.groups.find((group) => group.label === 'Today').appointments.length, 2)
+  assert.equal(data.calendarStrip.appointmentsToday, 1)
+  assert.equal(data.nextAppointment.id, 'apt-1')
+  assert.equal(data.nextAppointment.isOverdue, false)
+  assert.equal(data.nextAppointment.typeLabel, 'Seller Valuation Appointment')
+  assert.equal(data.groups.find((group) => group.label === 'Today').appointments.length, 1)
   assert.equal(data.groups.find((group) => group.label === 'Tomorrow').appointments.length, 1)
 }
 
@@ -101,7 +103,7 @@ assert.equal(getAppointmentStatusPresentation('alternative_requested').label, 'R
 
 assert.equal(getAppointmentStatusPresentation('Pending Confirmation').key, 'awaiting_confirmation')
 assert.equal(getAppointmentStatusPresentation('Declined').key, 'declined')
-const boundary = await getAppointmentDashboardData({ appointments: [{ appointmentId:'midnight', status:'Pending Confirmation', dateTime:'2026-06-11T22:30Z' }], now:new Date('2026-06-11T22:00Z') })
+const boundary = await getAppointmentDashboardData({ appointments: [{ appointmentId:'midnight', status:'Pending Confirmation', requestIssuedAt:'2026-06-11T22:00Z', dateTime:'2026-06-11T22:30Z' }], now:new Date('2026-06-11T22:00Z') })
 assert.equal(boundary.calendarStrip.appointmentsToday, 1)
 assert.equal(boundary.calendarStrip.weekDays.find(day=>day.isToday).dayNumber, 12)
 // A lead/listing booking must remain visible when the agent created it or is

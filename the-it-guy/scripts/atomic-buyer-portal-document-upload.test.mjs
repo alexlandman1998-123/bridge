@@ -45,7 +45,9 @@ assert.match(migration, /create policy documents_buyer_portal_orphan_delete/)
 assert.match(uploadFunction, /client\.rpc\('bridge_upload_buyer_portal_document'/)
 assert.match(uploadFunction, /uploadToBuyerPortalDocumentsBucket\(client, filePath, file\)/)
 assert.match(uploadFunction, /p_requirement_instance_id: normalizeNullableUuid\(canonicalRequirementInstanceId\)/)
-assert.match(uploadFunction, /await removeUploadedDocumentObject\(client, uploadedBucket, filePath\)/)
+assert.match(uploadFunction, /attempt\.persist\(/)
+assert.match(uploadFunction, /cleanup: \(\) => removeUploadedDocumentObject\(client, uploadedBucket, filePath\)/)
+assert.match(uploadFunction, /readSavedUploadByPath\(client/)
 assert.doesNotMatch(uploadFunction, /\.from\('documents'\)\s*\n\s*\.insert/)
 assert.doesNotMatch(uploadFunction, /eventType: 'DocumentUploaded'/)
 assert.match(uploadFunction, /post-upload automation failed after the atomic upload completed/)
@@ -53,7 +55,7 @@ assert.match(uploadFunction, /request projection failed after the atomic upload 
 assert.match(uploadFunction, /const postUploadContextPromise = \(async \(\) =>/)
 assert.match(uploadFunction, /void \(async \(\) =>/)
 assert.ok(
-  uploadFunction.indexOf('void (async () =>') < uploadFunction.indexOf('return {\n    ...result.data'),
+  uploadFunction.indexOf('void (async () =>') < uploadFunction.search(/return \{\s*\.\.\.result\.data/),
   'post-upload projections, automation and notifications must run outside the buyer-facing response path',
 )
 

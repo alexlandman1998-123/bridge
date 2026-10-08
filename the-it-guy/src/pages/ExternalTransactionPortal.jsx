@@ -1,3 +1,4 @@
+import { DOCUMENT_UPLOAD_ACCEPT, DOCUMENT_UPLOAD_HELP_TEXT } from '../lib/documentUploadPolicy.js'
 import {
   ChevronDown,
   CheckCircle2,
@@ -1775,13 +1776,14 @@ function ExternalTransactionPortal() {
                           {uploadingChecklistKey === item.key ? 'Uploading…' : item.status === 'missing' ? 'Upload' : 'Replace'}
                         </button>
                         <input
-                          type="file"
+                          type="file" title={DOCUMENT_UPLOAD_HELP_TEXT} accept={DOCUMENT_UPLOAD_ACCEPT}
                           className="checklist-upload-input"
                           ref={(node) => {
                             checklistUploadInputs.current[item.key] = node
                           }}
                           onChange={(event) => void handleChecklistUpload(item, event)}
                         />
+                        <span className="block text-xs font-normal text-slate-500">{DOCUMENT_UPLOAD_HELP_TEXT}</span>
                       </div>
                     </li>
                   )
@@ -1806,8 +1808,10 @@ function ExternalTransactionPortal() {
                     <Upload size={14} />
                     Choose file
                   </span>
-                  <input type="file" name="file" />
+                  <input type="file" title={DOCUMENT_UPLOAD_HELP_TEXT} accept={DOCUMENT_UPLOAD_ACCEPT} name="file" />
+                <span className="block text-xs font-normal text-slate-500">{DOCUMENT_UPLOAD_HELP_TEXT}</span>
                 </label>
+                
 
                 <label className="upload-category-field">
                   Document Category

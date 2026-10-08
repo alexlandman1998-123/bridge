@@ -1,3 +1,5 @@
+import { DOCUMENT_UPLOAD_ACCEPT, DOCUMENT_UPLOAD_HELP_TEXT } from '../../../lib/documentUploadPolicy.js'
+import { refreshAfterSavedDocumentUpload } from '../../../lib/documentUploadLifecycle.js'
 import {
   AlertTriangle,
   CheckCircle2,
@@ -411,7 +413,7 @@ function UploadPanel({ workspace, requiredDocuments = [], onUploaded, setError }
     setSaving(true)
     setError('')
     try {
-      await uploadCommercialOnboardingDocument({
+      const saved = await uploadCommercialOnboardingDocument({
         token: workspace.access.token,
         file,
         category,
@@ -421,7 +423,7 @@ function UploadPanel({ workspace, requiredDocuments = [], onUploaded, setError }
       setFile(null)
       setNotes('')
       setDocumentRequestId('')
-      await onUploaded?.()
+      await refreshAfterSavedDocumentUpload(saved, () => onUploaded?.(saved), setError)
     } catch (uploadError) {
       setError(uploadError?.message || 'Document upload failed.')
     } finally {
@@ -453,8 +455,10 @@ function UploadPanel({ workspace, requiredDocuments = [], onUploaded, setError }
       </div>
       <label className="mt-3 grid gap-1 text-sm font-semibold text-[#1f2b24]">
         Document
-        <input type="file" onChange={(event) => setFile(event.target.files?.[0] || null)} className="rounded-2xl border border-dashed border-[#cfc5b5] bg-white px-3 py-3 text-sm text-[#6f6659]" />
+        <input type="file" title={DOCUMENT_UPLOAD_HELP_TEXT} accept={DOCUMENT_UPLOAD_ACCEPT} onChange={(event) => setFile(event.target.files?.[0] || null)} className="rounded-2xl border border-dashed border-[#cfc5b5] bg-white px-3 py-3 text-sm text-[#6f6659]" />
+      <span className="block text-xs font-normal text-slate-500">{DOCUMENT_UPLOAD_HELP_TEXT}</span>
       </label>
+      
       <label className="mt-3 grid gap-1 text-sm font-semibold text-[#1f2b24]">
         Notes
         <textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={3} className={TEXTAREA_CLASS} />
@@ -481,7 +485,8 @@ function CommercialOnboardingPortalPage() {
   const lastSavedSnapshot = useRef('')
   const readyForAutosave = useRef(false)
 
-  async function refresh({ silent = false } = {}) {
+  async function refresh({ silent = false, afterUpload = false, saved = null } = {}) {
+    if (saved) setWorkspace(previous => ({ ...previous, documents: [...(previous?.documents || []).filter(row => row.id !== saved.id), saved] }))
     if (!silent) setLoading(true)
     setError('')
     try {
@@ -492,6 +497,7 @@ function CommercialOnboardingPortalPage() {
       setResponses(nextResponses)
       lastSavedSnapshot.current = JSON.stringify(nextResponses)
     } catch (loadError) {
+      if (afterUpload) throw loadError
       setError(loadError?.message || 'Commercial onboarding could not be loaded.')
     } finally {
       if (!silent) setLoading(false)
@@ -811,7 +817,7 @@ function CommercialOnboardingPortalPage() {
                     <DocumentChecklist workspace={workspace} documents={visibleDocuments} />
                   </div>
                 </section>
-                <UploadPanel workspace={workspace} requiredDocuments={visibleDocuments} onUploaded={() => refresh({ silent: true })} setError={setError} />
+                <UploadPanel workspace={workspace} requiredDocuments={visibleDocuments} onUploaded={saved => refresh({ silent: true, afterUpload: true, saved })} setError={setError} />
                 <section className={PANEL_CLASS}>
                   <h3 className="text-sm font-semibold text-[#1f2b24]">Uploaded Documents</h3>
                   <div className="mt-3 grid gap-3">

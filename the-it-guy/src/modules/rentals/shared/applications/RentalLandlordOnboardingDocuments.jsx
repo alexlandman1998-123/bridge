@@ -1,6 +1,9 @@
+import { getDocumentUploadPolicy } from '../../../../lib/documentUploadPolicy.js'
 import { useState } from 'react'
 import { DOCUMENT_UPLOAD_ACCEPT } from '../../../../lib/documentUploadPolicy.js'
 import { rentalLandlordRequirementTitle, rentalLandlordRequirementReason } from '../../../../services/rentals/rentalLandlordOnboardingModel.js'
+const documentUploadPolicy = getDocumentUploadPolicy({ surface: 'rental_landlord' })
+
 export default function RentalLandlordOnboardingDocuments({
   onboarding,
   disabled = false,
@@ -60,12 +63,12 @@ export default function RentalLandlordOnboardingDocuments({
                   </button>
                 ) : null}
                 {onUpload ? (
-                  <label className="cursor-pointer rounded border px-3 py-2 text-sm">
+                  <><label className="cursor-pointer rounded border px-3 py-2 text-sm">
                     {doc ? 'Replace file' : 'Upload file'}
                     <input
                       aria-label={`Upload ${title}`}
-                      type="file"
-                      accept={DOCUMENT_UPLOAD_ACCEPT}
+                      type="file" title={documentUploadPolicy.helpText}
+                      accept={documentUploadPolicy.accept}
                       disabled={
                         disabled || preview || onboarding.status !== 'draft'
                       }
@@ -76,7 +79,9 @@ export default function RentalLandlordOnboardingDocuments({
                         if (file) void onUpload(file, row)
                       }}
                     />
+                  
                   </label>
+<span className="block text-xs font-normal text-slate-500">{documentUploadPolicy.helpText}</span></>
                 ) : null}
               </div>
               {doc && onReview ? (

@@ -30,7 +30,7 @@ describe('lead appointment service', () => {
   it('keeps navigated calendar ranges in the calendar RPC', async () => {
     rpc.mockResolvedValue({ data: [], error: null })
     await listAppointmentsAsync(org, { from: '2027-09-24T00:00:00Z', to: '2027-10-09T00:00:00Z' })
-    expect(rpc).toHaveBeenCalledWith('bridge_list_calendar_appointments', expect.objectContaining({ p_from: '2027-09-24T00:00:00Z', p_to: '2027-10-09T00:00:00Z' }))
+    expect(rpc).toHaveBeenCalledWith('bridge_list_calendar_appointments_with_times', expect.objectContaining({ p_from: '2027-09-24T00:00:00Z', p_to: '2027-10-09T00:00:00Z' }))
   })
   it('reports malformed successful responses', async () => {
     rpc.mockResolvedValue({ data: null, error: null })

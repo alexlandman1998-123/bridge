@@ -1,3 +1,4 @@
+import { runRecoverableDocumentUpload, readSavedUploadByPath, isDefiniteUploadSaveRejection } from '../lib/documentUploadRecovery.js'
 import { readSellerMandateTerms } from '../lib/sellerMandateCapture.js'
 import { normalizeListingExternalLinkStatus } from '../lib/listingExternalLinkStatus.js'
 import { normalizePortalStatus } from '../lib/listingDataMapper.js'
@@ -51,7 +52,7 @@ import { fetchOrganisationSettings } from '../lib/settingsApi'
 import { uploadToStorageCandidateBuckets } from '../lib/storageFallbacks'
 import { refreshListingPhotoUrls } from './listings/listingPhotoStorage.js'
 import { queueListingMediaUpload, retryStorageOperation } from '../lib/listingMediaUploads.js'
-import { sanitizeDocumentFileName, validateDocumentUploadFile } from '../lib/documentUploadPolicy'
+import { withDocumentUploadMimeType, getDocumentUploadOptions, sanitizeDocumentFileName, validateDocumentUploadFile } from '../lib/documentUploadPolicy'
 import {
   normalizeListingSource,
   normalizePropertyCategory,
@@ -1493,11 +1494,13 @@ function isStorageBucketNotFoundError(error) {
 }
 
 async function uploadToPrivateListingDocumentsBucket(client, filePath, file, options = undefined, retryTemporaryErrors = false) {
+  const uploadOptions = getDocumentUploadOptions(file, { ...options, fileName: filePath.split('/').at(-1), surface: 'listing' })
+  const uploadBody = withDocumentUploadMimeType(file, uploadOptions.contentType)
   const { bucket } = await uploadToStorageCandidateBuckets({
     bucketCandidates: DOCUMENTS_BUCKET_CANDIDATES,
     upload: (bucketName) => retryTemporaryErrors
-      ? retryStorageOperation(() => client.storage.from(bucketName).upload(filePath, file, options))
-      : client.storage.from(bucketName).upload(filePath, file, options),
+      ? retryStorageOperation(() => client.storage.from(bucketName).upload(filePath, uploadBody, uploadOptions))
+      : client.storage.from(bucketName).upload(filePath, uploadBody, uploadOptions),
     missingBucketMessage: `Storage bucket not found for seller document upload. Checked: ${DOCUMENTS_BUCKET_CANDIDATES.join(', ')}.`,
     accessDeniedMessage: 'Seller document storage is not ready yet. Please retry after storage access is refreshed.',
     accessDeniedCode: 'seller_document_storage_access_not_ready',
@@ -6120,6 +6123,12 @@ export async function savePrivateListingSellerCanonicalUpdate(update = {}, optio
         emitActivity: false,
         reason: options.requirementSyncReason || `seller_canonical_update:${normalizeKey(update.mutationType || 'seller_edit')}`,
       })
+      if (requirementSyncResult?.schemaIncompatible || requirementSyncResult?.missingTable) {
+        throw new Error('The seller document checklist is unavailable in this environment.')
+      }
+      if (requirementSyncResult?.requestIssuance?.failed?.length) {
+        throw requirementSyncResult.requestIssuance.failed[0].error || new Error('The updated seller document requests could not be issued.')
+      }
     } catch (error) {
       const syncError = new Error('Seller details were saved, but the document checklist could not be refreshed. Reload the listing before preparing or sending documents again.')
       syncError.code = 'SELLER_REQUIREMENT_SYNC_FAILED'
@@ -7697,10 +7706,12 @@ export async function syncPrivateListingRequirements(listingOrId, { emitActivity
   }))
 
   const payload = [...upsertRows, ...markNotApplicableRows]
+  let schemaIncompatible = false
   if (payload.length) {
     const runUpsert = await upsertPrivateListingRequirementRows(client, payload)
     if (runUpsert.missingTable) {
       return {
+        missingTable: true,
         listing: hydrateListingWithRequirementData(listing, [], []),
         requirementProfile: null,
         requirements: [],
@@ -7712,6 +7723,7 @@ export async function syncPrivateListingRequirements(listingOrId, { emitActivity
       }
     }
     if (runUpsert.schemaIncompatible) {
+      schemaIncompatible = true
       console.warn('[Private Listings] seller requirement sync skipped because requirement schema is incompatible', runUpsert.error)
     }
     if (runUpsert.error && !isMissingColumnError(runUpsert.error) && !isMissingTableError(runUpsert.error, 'private_listing_document_requirements')) {
@@ -7831,6 +7843,7 @@ export async function syncPrivateListingRequirements(listingOrId, { emitActivity
     listing: hydrated,
     requirementProfile: profile,
     requirements: refreshedRequirements,
+    schemaIncompatible,
     readinessSummary: hydrated.readinessSummary,
     requestIssuance,
   }
@@ -8790,148 +8803,152 @@ export async function uploadSellerClientPortalDocument({
 
   const safeOriginalName = sanitizeDocumentFileName(filePolicy.safeName, 'seller-document')
   const timestamp = Date.now()
-  const filePath = `seller-portal/${listing.id}/${timestamp}-${safeOriginalName}`
+  return runRecoverableDocumentUpload({ client: storageClient, scope: ['seller_portal', normalizedToken, listing.id, normalizedRequirementKey, canonicalRequirementInstanceId, documentRequestId, documentType, category, reviewedSigningVersionId, reviewedSigningVersionDigest], file, storageBuckets: DOCUMENTS_BUCKET_CANDIDATES,
+    toSavedReceipt: result => { const row = normalizeDocumentRows([result.data.document])[0]; return { ...row, id: row.id, name: row.document_name, privateListingId: listing.id, sharedDocument: result.data.shared_document, pendingTransactionPromotion: result.data.pending_transaction_promotion, persistence: buildPrivateListingDocumentPersistenceReceipt({ documentRow: row, storagePath: row.storage_path }) } },
+    run: async attempt => {
+      const filePath = attempt.path(`seller-portal/${listing.id}/${timestamp}-${safeOriginalName}`)
 
-  const uploadedBucket = await uploadToPrivateListingDocumentsBucket(storageClient, filePath, file, {
-    upsert: false,
-    contentType: file.type || undefined,
-  })
+      const uploadedBucket = await attempt.upload(() => uploadToPrivateListingDocumentsBucket(storageClient, filePath, file, {
+        upsert: false,
+        contentType: filePolicy.mimeType,
+      }))
 
-  let rpc
-  try {
-    rpc = await client.rpc(reviewedSigningVersionId ? 'bridge_upload_private_listing_seller_signed_copy' : 'bridge_upload_private_listing_seller_document', {
-      p_token: normalizedToken,
-      p_requirement_key: normalizedRequirementKey || null,
-      p_document_name: safeOriginalName,
-      p_storage_path: filePath,
-      p_file_url: null,
-      p_document_type: normalizedDocumentType,
-      p_canonical_requirement_instance_id: canonicalRequirementInstanceId || null,
-      p_category: category || 'Seller Document',
-      p_access_token: resolvedAccessToken || null,
-      ...(reviewedSigningVersionId ? {
-        p_reviewed_signing_version_id: reviewedSigningVersionId,
-        p_reviewed_signing_version_digest: reviewedSigningVersionDigest,
-      } : {}),
-    })
-    if (rpc.error) throw rpc.error
-    if (!rpc.data?.document?.id) {
-      throw new Error('Seller upload did not return a linked document record.')
-    }
-    if (!['canonically_linked', 'pending_transaction_link'].includes(normalizeText(rpc.data?.document_trust_state))) {
-      throw new Error('Seller upload did not return a Document Trust linking result.')
-    }
-  } catch (databaseError) {
-    try {
-      await removePrivateListingDocumentObject(storageClient, filePath, uploadedBucket)
-    } catch (cleanupError) {
-      console.error('Seller portal upload rollback could not remove its storage object', {
-        bucket: uploadedBucket,
-        filePath,
-        cleanupError,
+      const rpc = await attempt.persist({
+        save: async () => {
+          let rpc
+          rpc = await client.rpc(reviewedSigningVersionId ? 'bridge_upload_private_listing_seller_signed_copy' : 'bridge_upload_private_listing_seller_document', {
+            p_token: normalizedToken,
+            p_requirement_key: normalizedRequirementKey || null,
+            p_document_name: safeOriginalName,
+            p_storage_path: filePath,
+            p_file_url: null,
+            p_document_type: normalizedDocumentType,
+            p_canonical_requirement_instance_id: canonicalRequirementInstanceId || null,
+            p_category: category || 'Seller Document',
+            p_access_token: resolvedAccessToken || null,
+            ...(reviewedSigningVersionId ? {
+              p_reviewed_signing_version_id: reviewedSigningVersionId,
+              p_reviewed_signing_version_digest: reviewedSigningVersionDigest,
+            } : {}),
+          })
+          if (rpc.error) throw rpc.error
+          if (!rpc.data?.document?.id) {
+            throw new Error('Seller upload did not return a linked document record.')
+          }
+          if (!['canonically_linked', 'pending_transaction_link'].includes(normalizeText(rpc.data?.document_trust_state))) {
+            throw new Error('Seller upload did not return a Document Trust linking result.')
+          }
+
+          return rpc
+        },
+        read: async () => { const reopened = await getSellerOnboardingByToken(normalizedToken, { includeRequirementsAndDocuments: true, requirePortalAccess: true, sellerPortalAccessToken: resolvedAccessToken }); const row = reopened?.listing?.documents?.find(item => (item.storage_path || item.file_path) === filePath); if (!row) return null; return { data: { document: row, pending_transaction_promotion: !row.promoted_document_id, transaction_id: row.promoted_transaction_id || null }, error: null } },
+        cleanup: () => removePrivateListingDocumentObject(storageClient, filePath, uploadedBucket),
+      }).catch(databaseError => {
+        if (!isDefiniteUploadSaveRejection(databaseError)) throw databaseError
+        const sessionExpired = isSellerPortalSessionExpiredError(databaseError)
+        const linkRejected = normalizeKey(databaseError?.message) === 'seller portal link is invalid or inactive.'
+        const error = new Error(sessionExpired ? 'Seller portal session has expired. Please sign in again.' : linkRejected ? 'The server could not verify your seller portal link for this upload. Nothing was submitted. Please contact your agent or support to check the link.' : 'Your document was not linked to the transaction file. Nothing was submitted; please retry or contact support.')
+        error.code = sessionExpired ? 'seller_portal_session_expired' : linkRejected ? 'seller_portal_link_rejected' : 'seller_document_canonical_link_failed'
+        error.cause = databaseError
+        throw error
       })
-      databaseError.storageCleanupError = cleanupError
-    }
-    const uploadError = new Error('Your document was not linked to the transaction file. Nothing was submitted; please retry or contact support.')
-    uploadError.code = 'seller_document_canonical_link_failed'
-    uploadError.cause = databaseError
-    throw uploadError
-  }
 
-  const documentRow = rpc.data.document && typeof rpc.data.document === 'object'
-    ? normalizeDocumentRows([rpc.data.document])[0] || null
-    : null
-  const promotedSharedDocument = rpc.data?.shared_document && typeof rpc.data.shared_document === 'object'
-    ? rpc.data.shared_document
-    : null
-  const pendingTransactionPromotion = Boolean(rpc.data?.pending_transaction_promotion)
-  const promotedTransactionId = normalizeText(rpc.data?.transaction_id || '')
+      const documentRow = rpc.data.document && typeof rpc.data.document === 'object'
+        ? normalizeDocumentRows([rpc.data.document])[0] || null
+        : null
+      const promotedSharedDocument = rpc.data?.shared_document && typeof rpc.data.shared_document === 'object'
+        ? rpc.data.shared_document
+        : null
+      const pendingTransactionPromotion = Boolean(rpc.data?.pending_transaction_promotion)
+      const promotedTransactionId = normalizeText(rpc.data?.transaction_id || '')
 
-  if (canonicalRequirementInstanceId) {
-    await linkUploadedDocumentToRequirement({
-      requirementInstanceId: canonicalRequirementInstanceId,
-      documentId: documentRow?.id || null,
-      documentTable: 'private_listing_documents',
-      contextType: 'private_listing',
-      contextId: listing.id,
-      actorRole: 'seller',
-      metadata: {
-        private_listing_document_id: documentRow?.id || null,
-        requirement_key: normalizedRequirementKey || matchedRequirement?.requirement_key || null,
+      if (canonicalRequirementInstanceId) {
+        await linkUploadedDocumentToRequirement({
+          requirementInstanceId: canonicalRequirementInstanceId,
+          documentId: documentRow?.id || null,
+          documentTable: 'private_listing_documents',
+          contextType: 'private_listing',
+          contextId: listing.id,
+          actorRole: 'seller',
+          metadata: {
+            private_listing_document_id: documentRow?.id || null,
+            requirement_key: normalizedRequirementKey || matchedRequirement?.requirement_key || null,
+            storage_path: documentRow?.storage_path || filePath,
+            uploaded_at: documentRow?.uploaded_at || new Date().toISOString(),
+            source_system: 'seller_client_portal_upload',
+          },
+          client,
+          force: true,
+        })
+      }
+
+      await syncSellerJourneyLeadStageForListingId(client, {
+        listingId: listing.id,
+        organisationId: normalizeText(listing?.organisationId),
+        onboardingToken: normalizedToken,
+      }).catch((error) => {
+        console.warn('[Private Listings] non-blocking seller journey lead sync skipped after seller portal upload', error)
+        return false
+      })
+
+      const documentRequestUpdate = await linkSellerPortalDocumentRequestUpload(storageClient, {
+        transactionId: promotedTransactionId || listing?.transactionId || listing?.transaction_id || '',
+        documentRequestId,
+        documentId: promotedSharedDocument?.id || documentRow?.promoted_document_id || documentRow?.id || '',
+        privateListingDocumentId: documentRow?.id || null,
+      }).catch((error) => {
+        console.warn('[Private Listings] seller document request upload link skipped after seller portal upload', error)
+        return null
+      })
+
+      const portalPersistenceWarnings = []
+      if (normalizeText(documentRequestId) && !documentRequestUpdate) {
+        portalPersistenceWarnings.push('Document saved, but the originating request needs to be refreshed.')
+      }
+      const persistence = buildPrivateListingDocumentPersistenceReceipt({
+        documentRow,
+        storagePath: filePath,
+        requirementStatusUpdated: Boolean(matchedRequirement),
+        requirementStatusApplicable: Boolean(matchedRequirement),
+        promotion: {
+          pending_transaction_promotion: pendingTransactionPromotion,
+          promotion_status: documentRow?.promotion_status || (pendingTransactionPromotion ? 'pending_transaction' : 'linked'),
+          promotion_error: documentRow?.promotion_error || '',
+        },
+        promotionAttempted: true,
+        warnings: portalPersistenceWarnings,
+      })
+
+      return {
+        id: documentRow?.id || filePath,
+        name: documentRow?.document_name || safeOriginalName,
+        document_name: documentRow?.document_name || safeOriginalName,
+        document_type: documentRow?.document_type || normalizedDocumentType,
+        category: category || 'Seller Document',
+        status: documentRow?.status || 'uploaded',
+        file_path: documentRow?.storage_path || filePath,
         storage_path: documentRow?.storage_path || filePath,
+        visibility: documentRow?.visibility || 'seller_visible',
+        created_at: documentRow?.created_at || documentRow?.uploaded_at || new Date().toISOString(),
         uploaded_at: documentRow?.uploaded_at || new Date().toISOString(),
-        source_system: 'seller_client_portal_upload',
-      },
-      client,
-      force: true,
-    })
-  }
-
-  await syncSellerJourneyLeadStageForListingId(client, {
-    listingId: listing.id,
-    organisationId: normalizeText(listing?.organisationId),
-    onboardingToken: normalizedToken,
-  }).catch((error) => {
-    console.warn('[Private Listings] non-blocking seller journey lead sync skipped after seller portal upload', error)
-    return false
-  })
-
-  const documentRequestUpdate = await linkSellerPortalDocumentRequestUpload(storageClient, {
-    transactionId: promotedTransactionId || listing?.transactionId || listing?.transaction_id || '',
-    documentRequestId,
-    documentId: promotedSharedDocument?.id || documentRow?.promoted_document_id || documentRow?.id || '',
-    privateListingDocumentId: documentRow?.id || null,
-  }).catch((error) => {
-    console.warn('[Private Listings] seller document request upload link skipped after seller portal upload', error)
-    return null
-  })
-
-  const portalPersistenceWarnings = []
-  if (normalizeText(documentRequestId) && !documentRequestUpdate) {
-    portalPersistenceWarnings.push('Document saved, but the originating request needs to be refreshed.')
-  }
-  const persistence = buildPrivateListingDocumentPersistenceReceipt({
-    documentRow,
-    storagePath: filePath,
-    requirementStatusUpdated: Boolean(matchedRequirement),
-    requirementStatusApplicable: Boolean(matchedRequirement),
-    promotion: {
-      pending_transaction_promotion: pendingTransactionPromotion,
-      promotion_status: documentRow?.promotion_status || (pendingTransactionPromotion ? 'pending_transaction' : 'linked'),
-      promotion_error: documentRow?.promotion_error || '',
+        url: await createPrivateListingDocumentSignedUrl(storageClient, documentRow?.storage_path || filePath),
+        privateListingId: listing.id,
+        requirementId: documentRow?.requirement_id || matchedRequirement?.id || null,
+        requirementKey: normalizedRequirementKey || matchedRequirement?.requirement_key || null,
+        canonicalRequirementInstanceId: canonicalRequirementInstanceId || null,
+        pendingTransactionPromotion,
+        transactionId: promotedTransactionId || null,
+        sharedDocumentId: promotedSharedDocument?.id || documentRow?.promoted_document_id || null,
+        promotedDocumentId: promotedSharedDocument?.id || documentRow?.promoted_document_id || null,
+        promotionStatus: documentRow?.promotion_status || (pendingTransactionPromotion ? 'pending_transaction' : ''),
+        promotionError: documentRow?.promotion_error || null,
+        promotionRevision: documentRow?.promotion_revision || 0,
+        sharedDocument: promotedSharedDocument,
+        documentRequestUpdate,
+        persistence,
+      }
     },
-    promotionAttempted: true,
-    warnings: portalPersistenceWarnings,
   })
-
-  return {
-    id: documentRow?.id || filePath,
-    name: documentRow?.document_name || safeOriginalName,
-    document_name: documentRow?.document_name || safeOriginalName,
-    document_type: documentRow?.document_type || normalizedDocumentType,
-    category: category || 'Seller Document',
-    status: documentRow?.status || 'uploaded',
-    file_path: documentRow?.storage_path || filePath,
-    storage_path: documentRow?.storage_path || filePath,
-    visibility: documentRow?.visibility || 'seller_visible',
-    created_at: documentRow?.created_at || documentRow?.uploaded_at || new Date().toISOString(),
-    uploaded_at: documentRow?.uploaded_at || new Date().toISOString(),
-    url: await createPrivateListingDocumentSignedUrl(storageClient, documentRow?.storage_path || filePath),
-    privateListingId: listing.id,
-    requirementId: documentRow?.requirement_id || matchedRequirement?.id || null,
-    requirementKey: normalizedRequirementKey || matchedRequirement?.requirement_key || null,
-    canonicalRequirementInstanceId: canonicalRequirementInstanceId || null,
-    pendingTransactionPromotion,
-    transactionId: promotedTransactionId || null,
-    sharedDocumentId: promotedSharedDocument?.id || documentRow?.promoted_document_id || null,
-    promotedDocumentId: promotedSharedDocument?.id || documentRow?.promoted_document_id || null,
-    promotionStatus: documentRow?.promotion_status || (pendingTransactionPromotion ? 'pending_transaction' : ''),
-    promotionError: documentRow?.promotion_error || null,
-    promotionRevision: documentRow?.promotion_revision || 0,
-    sharedDocument: promotedSharedDocument,
-    documentRequestUpdate,
-    persistence,
-  }
 }
 
 export const __privateListingServiceTestUtils = Object.freeze({
@@ -8983,207 +9000,199 @@ export async function uploadPrivateListingDocument(listingId, file, {
   // Internal buyer-offer evidence uses offer-specific references rather than
   // seller checklist requirements (for example a wet-ink OTP pack).
   const isInternalOfferEvidence = normalizeCompatibilityKey(documentCategory) === 'buyer_offer' && visibility === 'internal' && !requirementId && !reviewedSigningVersionId
-  const matchedRequirement = resolvePrivateListingDocumentRequirement(requirements, {
+  // Intake mandate evidence is an internal attachment, not the reviewed
+  // signed-mandate request. Keep it separate even when that request exists.
+  const isInternalMandateEvidence = normalizeCompatibilityKey(documentType) === 'manual_mandate_evidence' &&
+    visibility === 'internal' && !requirementId && !requirementKey && !reviewedSigningVersionId
+  const matchedRequirement = isInternalMandateEvidence ? null : resolvePrivateListingDocumentRequirement(requirements, {
     requirementId, requirementKey, documentType: documentType || documentCategory,
     required: !isInternalOfferEvidence && (Boolean(requirementId || requirementKey || reviewedSigningVersionId) || documentType !== 'listing_document' || ['seller_visible', 'client_visible'].includes(visibility)),
   })
 
   const safeOriginalName = sanitizeDocumentFileName(documentName || filePolicy.safeName, 'listing-document')
-  const filePath = `private-listings/${normalizedListingId}/documents/${Date.now()}-${safeOriginalName}`
+  return runRecoverableDocumentUpload({ client: client, scope: ['agent_listing', normalizedListingId, requirementId, requirementKey, documentType, documentCategory, documentName, visibility, status, reviewedSigningVersionId, reviewedSigningVersionDigest], file, storageBuckets: DOCUMENTS_BUCKET_CANDIDATES,
+    toSavedReceipt: result => ({ ...normalizeDocumentRows([result.data])[0], privateListingId: normalizedListingId, requirementId: result.data.requirement_id, requirementKey, persistence: buildPrivateListingDocumentPersistenceReceipt({ documentRow: result.data, storagePath: result.data.storage_path }) }),
+    run: async attempt => {
+      const filePath = attempt.path(`private-listings/${normalizedListingId}/documents/${Date.now()}-${safeOriginalName}`)
 
-  const uploadedBucket = await uploadToPrivateListingDocumentsBucket(client, filePath, file, {
-    upsert: false,
-    contentType: file.type || undefined,
-  })
+      const uploadedBucket = await attempt.upload(() => uploadToPrivateListingDocumentsBucket(client, filePath, file, {
+        upsert: false,
+        contentType: filePolicy.mimeType,
+      }))
 
-  const uploadedStatus = normalizeText(status) || 'uploaded'
-  const mandateUpload = isMandateDocumentRow({
-    document_type: documentType || matchedRequirement?.requirement_key,
-    category: documentCategory || matchedRequirement?.requirement_group,
-    document_name: documentName || file.name || matchedRequirement?.requirement_name,
-  })
-
-  const insertPayload = {
-    private_listing_id: normalizedListingId,
-    requirement_id: matchedRequirement?.id || normalizedRequirementId || null,
-    document_type: matchedRequirement?.requirement_key || normalizeText(documentType) || 'listing_document',
-    category: normalizeText(documentCategory || documentType) || 'Other',
-    document_name: safeOriginalName,
-    storage_path: filePath,
-    file_url: null,
-    uploaded_by: user?.id || null,
-    status: uploadedStatus,
-    visibility: normalizeText(visibility) || 'internal',
-    canonical_requirement_instance_id: matchedRequirement?.canonical_requirement_instance_id || null,
-    uploaded_at: new Date().toISOString(),
-    ...(reviewedSigningVersionId && reviewedSigningVersionDigest ? {
-      reviewed_signing_version_id: reviewedSigningVersionId,
-      reviewed_signing_version_digest: reviewedSigningVersionDigest,
-    } : {}),
-  }
-
-  const inserted = await insertPrivateListingDocumentRow(client, insertPayload, {
-    requiredColumns: [
-      ...(matchedRequirement ? ['requirement_id', 'canonical_requirement_instance_id'] : []),
-      ...(reviewedSigningVersionId ? ['reviewed_signing_version_id', 'reviewed_signing_version_digest'] : []),
-    ],
-  })
-  if (inserted.error) {
-    try {
-      await removePrivateListingDocumentObject(client, filePath, uploadedBucket)
-    } catch (cleanupError) {
-      console.warn('[Private Listings] Failed to remove a storage object after document persistence failed.', {
-        listingId: normalizedListingId,
-        filePath,
-        persistenceError: inserted.error,
-        cleanupError,
+      const uploadedStatus = normalizeText(status) || 'uploaded'
+      const mandateUpload = isMandateDocumentRow({
+        document_type: documentType || matchedRequirement?.requirement_key,
+        category: documentCategory || matchedRequirement?.requirement_group,
+        document_name: documentName || file.name || matchedRequirement?.requirement_name,
       })
-    }
-    throw inserted.error
-  }
-  const documentRow = normalizeDocumentRows(inserted.data ? [{ ...insertPayload, ...inserted.data }] : [insertPayload])[0] || null
-  if (!documentRow?.id || !normalizeText(documentRow?.storage_path || filePath)) {
-    try {
-      await removePrivateListingDocumentObject(client, filePath, uploadedBucket)
-    } catch (cleanupError) {
-      console.warn('[Private Listings] Failed to remove an unverified storage object.', {
-        listingId: normalizedListingId,
-        filePath,
-        cleanupError,
-      })
-    }
-    throw new Error('The document upload could not be verified after saving. Please retry.')
-  }
-  // A listing document is only useful across the transaction workspaces when
-  // it is also projected into the shared `documents` record.  Seller-portal
-  // uploads already use this promoter; agent uploads must use the same path.
-  // The promoter records a pending state when the listing does not have a
-  // transaction yet and the transaction trigger promotes it once one exists.
-  let promotion = null
-  const persistenceWarnings = []
-  if (documentRow?.id) {
-    const promotionResult = await client.rpc('bridge_promote_private_listing_document_row', {
-      p_private_listing_document_id: documentRow.id,
-    })
-    if (promotionResult.error) {
-      persistenceWarnings.push('Document saved, but transaction handoff needs attention.')
-      promotion = {
-        error: promotionResult.error?.message || 'Transaction handoff failed.',
-        promotion_status: 'attention',
+
+      const insertPayload = {
+        private_listing_id: normalizedListingId,
+        requirement_id: matchedRequirement?.id || normalizedRequirementId || null,
+        document_type: matchedRequirement?.requirement_key || normalizeText(documentType) || 'listing_document',
+        category: normalizeText(documentCategory || documentType) || 'Other',
+        document_name: safeOriginalName,
+        storage_path: filePath,
+        file_url: null,
+        uploaded_by: user?.id || null,
+        status: uploadedStatus,
+        visibility: normalizeText(visibility) || 'internal',
+        canonical_requirement_instance_id: matchedRequirement?.canonical_requirement_instance_id || null,
+        uploaded_at: new Date().toISOString(),
+        ...(reviewedSigningVersionId && reviewedSigningVersionDigest ? {
+          reviewed_signing_version_id: reviewedSigningVersionId,
+          reviewed_signing_version_digest: reviewedSigningVersionDigest,
+        } : {}),
       }
-      await markPrivateListingDocumentsPendingTransactionPromotion(normalizedListingId, {
-        documentIds: [documentRow.id],
-        requirementKeys: [matchedRequirement?.requirement_key || normalizedRequirementKey].filter(Boolean),
-        source: 'agent_listing_upload_promotion_retry',
-      }).catch((error) => {
-        console.warn('[Private Listings] Failed to queue a persisted document for later transaction promotion.', error)
-        return null
+
+      const inserted = await attempt.persist({
+        save: async () => {
+          const inserted = await insertPrivateListingDocumentRow(client, insertPayload, {
+            requiredColumns: [
+              ...(matchedRequirement ? ['requirement_id', 'canonical_requirement_instance_id'] : []),
+              ...(reviewedSigningVersionId ? ['reviewed_signing_version_id', 'reviewed_signing_version_digest'] : []),
+            ],
+          })
+          return inserted
+        },
+        read: () => readSavedUploadByPath(client, { table: 'private_listing_documents', column: 'storage_path', path: filePath, filters: { private_listing_id: normalizedListingId } }),
+        cleanup: () => removePrivateListingDocumentObject(client, filePath, uploadedBucket),
       })
-    } else {
-      promotion = promotionResult.data && typeof promotionResult.data === 'object'
-        ? promotionResult.data
-        : null
-    }
-  }
-  const linkedRequirementId = documentRow?.requirement_id || matchedRequirement?.id || normalizedRequirementId || null
+      const documentRow = normalizeDocumentRows(inserted.data ? [{ ...insertPayload, ...inserted.data }] : [insertPayload])[0] || null
+      if (!documentRow?.id) throw Object.assign(new Error('Document save could not be confirmed.'), { code: 'document_save_unconfirmed' })
+      // A listing document is only useful across the transaction workspaces when
+      // it is also projected into the shared `documents` record.  Seller-portal
+      // uploads already use this promoter; agent uploads must use the same path.
+      // The promoter records a pending state when the listing does not have a
+      // transaction yet and the transaction trigger promotes it once one exists.
+      let promotion = null
+      const persistenceWarnings = []
+      if (documentRow?.id) {
+        const promotionResult = await client.rpc('bridge_promote_private_listing_document_row', {
+          p_private_listing_document_id: documentRow.id,
+        })
+        if (promotionResult.error) {
+          persistenceWarnings.push('Document saved, but transaction handoff needs attention.')
+          promotion = {
+            error: promotionResult.error?.message || 'Transaction handoff failed.',
+            promotion_status: 'attention',
+          }
+          await markPrivateListingDocumentsPendingTransactionPromotion(normalizedListingId, {
+            documentIds: [documentRow.id],
+            requirementKeys: [matchedRequirement?.requirement_key || normalizedRequirementKey].filter(Boolean),
+            source: 'agent_listing_upload_promotion_retry',
+          }).catch((error) => {
+            console.warn('[Private Listings] Failed to queue a persisted document for later transaction promotion.', error)
+            return null
+          })
+        } else {
+          promotion = promotionResult.data && typeof promotionResult.data === 'object'
+            ? promotionResult.data
+            : null
+        }
+      }
+      const linkedRequirementId = documentRow?.requirement_id || matchedRequirement?.id || normalizedRequirementId || null
 
-  let requirementStatusUpdated = false
-  if (linkedRequirementId) {
-    requirementStatusUpdated = Boolean(await updatePrivateListingRequirementStatus(
-      linkedRequirementId,
-      uploadedStatus === 'completed' ? 'completed' : 'uploaded',
-    ).catch((error) => {
-      console.warn('[Private Listings] requirement status update skipped after listing document upload', error)
-      persistenceWarnings.push('Document saved, but its checklist status needs to be refreshed.')
-      return false
-    }))
-    if (!requirementStatusUpdated && !persistenceWarnings.some((warning) => warning.includes('checklist status'))) {
-      persistenceWarnings.push('Document saved, but its checklist status needs to be refreshed.')
-    }
-  }
+      let requirementStatusUpdated = false
+      if (linkedRequirementId) {
+        requirementStatusUpdated = Boolean(await updatePrivateListingRequirementStatus(
+          linkedRequirementId,
+          uploadedStatus === 'completed' ? 'completed' : 'uploaded',
+        ).catch((error) => {
+          console.warn('[Private Listings] requirement status update skipped after listing document upload', error)
+          persistenceWarnings.push('Document saved, but its checklist status needs to be refreshed.')
+          return false
+        }))
+        if (!requirementStatusUpdated && !persistenceWarnings.some((warning) => warning.includes('checklist status'))) {
+          persistenceWarnings.push('Document saved, but its checklist status needs to be refreshed.')
+        }
+      }
 
-  if (mandateUpload && !shouldDeferMandateSigning) {
-    await updatePrivateListing(normalizedListingId, {
-      listingStatus: 'mandate_signed',
-      listingVisibility: 'internal',
-      isActive: false,
-      mandateStatus: 'signed_uploaded',
-    }, { includeRequirementsAndDocuments: false }).catch((error) => {
-      console.warn('[Private Listings] mandate status update skipped after signed mandate upload', error)
-      return null
-    })
-    await recordSellerMandateSignedWorkflowStage(client, normalizedListingId, {
-      performedBy: user?.id || '',
-      signedAt: insertPayload.uploaded_at,
-    }).catch((error) => {
-      console.warn('[Private Listings] seller mandate workflow stage sync skipped after signed mandate upload', error)
-      return null
-    })
-  }
+      if (mandateUpload && !shouldDeferMandateSigning) {
+        await updatePrivateListing(normalizedListingId, {
+          listingStatus: 'mandate_signed',
+          listingVisibility: 'internal',
+          isActive: false,
+          mandateStatus: 'signed_uploaded',
+        }, { includeRequirementsAndDocuments: false }).catch((error) => {
+          console.warn('[Private Listings] mandate status update skipped after signed mandate upload', error)
+          return null
+        })
+        await recordSellerMandateSignedWorkflowStage(client, normalizedListingId, {
+          performedBy: user?.id || '',
+          signedAt: insertPayload.uploaded_at,
+        }).catch((error) => {
+          console.warn('[Private Listings] seller mandate workflow stage sync skipped after signed mandate upload', error)
+          return null
+        })
+      }
 
-  await createPrivateListingActivity({
-    privateListingId: normalizedListingId,
-    activityType: 'listing_document_uploaded',
-    activityTitle: mandateUpload ? 'Signed mandate uploaded' : 'Listing document uploaded',
-    activityDescription: mandateUpload
-      ? `${insertPayload.document_name} uploaded. Mandate signed and listing created for the next internal steps.`
-      : `${insertPayload.document_name} uploaded.`,
-    performedBy: user?.id || null,
-    visibility: 'internal',
-    metadata: {
-      documentType: insertPayload.document_type,
-      documentCategory: insertPayload.category,
-      documentName: insertPayload.document_name,
-      requirementId: linkedRequirementId,
-      requirementKey: matchedRequirement?.requirement_key || normalizedRequirementKey || null,
-      storagePath: filePath,
-      source: mandateUpload ? 'physical_signed_mandate_upload' : 'quick_add',
-      mandateStatus: mandateUpload ? 'signed_uploaded' : null,
+      await createPrivateListingActivity({
+        privateListingId: normalizedListingId,
+        activityType: 'listing_document_uploaded',
+        activityTitle: mandateUpload ? 'Signed mandate uploaded' : 'Listing document uploaded',
+        activityDescription: mandateUpload
+          ? `${insertPayload.document_name} uploaded. Mandate signed and listing created for the next internal steps.`
+          : `${insertPayload.document_name} uploaded.`,
+        performedBy: user?.id || null,
+        visibility: 'internal',
+        metadata: {
+          documentType: insertPayload.document_type,
+          documentCategory: insertPayload.category,
+          documentName: insertPayload.document_name,
+          requirementId: linkedRequirementId,
+          requirementKey: matchedRequirement?.requirement_key || normalizedRequirementKey || null,
+          storagePath: filePath,
+          source: mandateUpload ? 'physical_signed_mandate_upload' : 'quick_add',
+          mandateStatus: mandateUpload ? 'signed_uploaded' : null,
+        },
+      }).catch(() => null)
+
+      await syncSellerJourneyLeadStageForListingId(client, {
+        listingId: normalizedListingId,
+      }).catch((error) => {
+        console.warn('[Private Listings] non-blocking seller journey lead sync skipped after listing document upload', error)
+        return false
+      })
+
+      const persistence = buildPrivateListingDocumentPersistenceReceipt({
+        documentRow,
+        storagePath: filePath,
+        requirementStatusUpdated,
+        requirementStatusApplicable: Boolean(linkedRequirementId),
+        promotion,
+        promotionAttempted: Boolean(documentRow?.id),
+        warnings: persistenceWarnings,
+      })
+
+      return {
+        id: documentRow?.id || filePath,
+        document_name: documentRow?.document_name || insertPayload.document_name,
+        document_type: documentRow?.document_type || insertPayload.document_type,
+        requirement_id: linkedRequirementId,
+        requirementId: linkedRequirementId,
+        requirementKey: matchedRequirement?.requirement_key || normalizedRequirementKey || '',
+        category: documentRow?.category || insertPayload.category,
+        status: documentRow?.status || insertPayload.status,
+        storage_path: documentRow?.storage_path || filePath,
+        uploaded_at: documentRow?.uploaded_at || insertPayload.uploaded_at,
+        url: await createPrivateListingDocumentSignedUrl(
+          client,
+          documentRow?.storage_path || filePath,
+          120,
+          uploadedBucket,
+        ),
+        privateListingId: normalizedListingId,
+        sharedDocumentId: normalizeText(promotion?.shared_document?.id || promotion?.shared_document_id || promotion?.document_id || ''),
+        promotedDocumentId: normalizeText(promotion?.shared_document?.id || promotion?.shared_document_id || promotion?.document_id || ''),
+        pendingTransactionPromotion: Boolean(promotion?.pending_transaction_promotion),
+        promotionStatus: normalizeText(promotion?.promotion_status || promotion?.reason || ''),
+        promotionError: normalizeText(promotion?.error || ''),
+        persistence,
+      }
     },
-  }).catch(() => null)
-
-  await syncSellerJourneyLeadStageForListingId(client, {
-    listingId: normalizedListingId,
-  }).catch((error) => {
-    console.warn('[Private Listings] non-blocking seller journey lead sync skipped after listing document upload', error)
-    return false
   })
-
-  const persistence = buildPrivateListingDocumentPersistenceReceipt({
-    documentRow,
-    storagePath: filePath,
-    requirementStatusUpdated,
-    requirementStatusApplicable: Boolean(linkedRequirementId),
-    promotion,
-    promotionAttempted: Boolean(documentRow?.id),
-    warnings: persistenceWarnings,
-  })
-
-  return {
-    id: documentRow?.id || filePath,
-    document_name: documentRow?.document_name || insertPayload.document_name,
-    document_type: documentRow?.document_type || insertPayload.document_type,
-    requirement_id: linkedRequirementId,
-    requirementId: linkedRequirementId,
-    requirementKey: matchedRequirement?.requirement_key || normalizedRequirementKey || '',
-    category: documentRow?.category || insertPayload.category,
-    status: documentRow?.status || insertPayload.status,
-    storage_path: documentRow?.storage_path || filePath,
-    uploaded_at: documentRow?.uploaded_at || insertPayload.uploaded_at,
-    url: await createPrivateListingDocumentSignedUrl(
-      client,
-      documentRow?.storage_path || filePath,
-      120,
-      uploadedBucket,
-    ),
-    privateListingId: normalizedListingId,
-    sharedDocumentId: normalizeText(promotion?.shared_document?.id || promotion?.shared_document_id || promotion?.document_id || ''),
-    promotedDocumentId: normalizeText(promotion?.shared_document?.id || promotion?.shared_document_id || promotion?.document_id || ''),
-    pendingTransactionPromotion: Boolean(promotion?.pending_transaction_promotion),
-    promotionStatus: normalizeText(promotion?.promotion_status || promotion?.reason || ''),
-    promotionError: normalizeText(promotion?.error || ''),
-    persistence,
-  }
 }
 
 /**

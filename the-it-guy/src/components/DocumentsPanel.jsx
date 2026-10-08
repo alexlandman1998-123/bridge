@@ -1,3 +1,6 @@
+import DocumentAccessButton from './documents/DocumentAccessButton.jsx'
+import { documentStorageReference } from '../lib/documentAccess.js'
+import { DOCUMENT_UPLOAD_ACCEPT, DOCUMENT_UPLOAD_HELP_TEXT } from '../lib/documentUploadPolicy.js'
 import { CheckCircle2, Circle, Download, FileUp } from 'lucide-react'
 import { useState } from 'react'
 import Button from './ui/Button'
@@ -212,31 +215,23 @@ function DocumentsPanel({
                       </span>
                     </div>
 
-                    {(latestSigned?.url || template?.url) ? (
+                    {(documentStorageReference(latestSigned).filePath || documentStorageReference(template).filePath) ? (
                       <div className="mt-3 flex flex-wrap gap-2">
-                        {latestSigned?.url ? (
-                          <a
-                            href={latestSigned.url}
-                            target="_blank"
-                            rel="noreferrer"
+                        {documentStorageReference(latestSigned).filePath ? (
+                          <DocumentAccessButton document={latestSigned} download
                             className="inline-flex min-h-[38px] items-center justify-center gap-2 rounded-[12px] border border-[#dde4ee] bg-white px-3 py-2 text-sm font-semibold text-[#35546c] transition duration-150 ease-out hover:border-[#ccd6e3] hover:bg-[#f8fafc]"
-                            download={latestSigned.name || `${item.label}.pdf`}
                           >
                             <Download size={13} />
                             Download Latest Signed
-                          </a>
+                          </DocumentAccessButton>
                         ) : null}
-                        {template?.url ? (
-                          <a
-                            href={template.url}
-                            target="_blank"
-                            rel="noreferrer"
+                        {documentStorageReference(template).filePath ? (
+                          <DocumentAccessButton document={template} download
                             className="inline-flex min-h-[38px] items-center justify-center gap-2 rounded-[12px] border border-[#dde4ee] bg-white px-3 py-2 text-sm font-semibold text-[#35546c] transition duration-150 ease-out hover:border-[#ccd6e3] hover:bg-[#f8fafc]"
-                            download={template.name || `${item.label}-template.pdf`}
                           >
                             <Download size={13} />
                             Download Template
-                          </a>
+                          </DocumentAccessButton>
                         ) : null}
                       </div>
                     ) : null}
@@ -335,16 +330,13 @@ function DocumentsPanel({
                           {document.is_client_visible ? 'Client Visible' : 'Internal Only'}
                         </button>
                       ) : null}
-                      {document.url ? (
-                        <a
-                          href={document.url}
-                          target="_blank"
-                          rel="noreferrer"
+                      {documentStorageReference(document).filePath ? (
+                        <DocumentAccessButton document={document} download
                           className="inline-flex h-9 w-9 items-center justify-center rounded-[12px] border border-[#dde4ee] bg-white text-[#35546c] transition duration-150 ease-out hover:border-[#ccd6e3] hover:bg-[#f8fafc]"
                           aria-label="Download"
                         >
                           <Download size={15} />
-                        </a>
+                        </DocumentAccessButton>
                       ) : null}
                     </div>
                   </article>
@@ -371,7 +363,7 @@ function DocumentsPanel({
           <span className="inline-flex min-h-[48px] cursor-pointer items-center justify-center gap-2 rounded-[14px] border border-dashed border-[#cfd9e5] bg-white px-4 py-3 text-sm font-semibold text-[#35546c] transition duration-150 ease-out hover:border-[#bfd3ea] hover:bg-[#f8fafc]">
             <FileUp size={14} />
             {selectedUploadFile ? 'Choose another file' : 'Choose file'}
-            <input type="file" name="file" className="hidden" disabled={saving} onChange={(event) => setSelectedUploadFile(event.target.files?.[0] || null)} />
+            <input type="file" title={DOCUMENT_UPLOAD_HELP_TEXT} accept={DOCUMENT_UPLOAD_ACCEPT} name="file" className="hidden" disabled={saving} onChange={(event) => setSelectedUploadFile(event.target.files?.[0] || null)} />
           </span>
         </label>
 

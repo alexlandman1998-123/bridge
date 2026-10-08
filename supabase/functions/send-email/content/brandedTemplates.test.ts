@@ -854,8 +854,8 @@ Deno.test("lead operations template uses branded shell", () => {
   const { html, text } = buildLeadOperationsNotificationEmail({
     eventKind: "new_enquiry_assigned_agent",
     recipientName: "Agent One",
-    title: "New Enquiry Assigned",
-    message: "A new buyer enquiry has been assigned to you.",
+    title: "A new lead just landed",
+    message: "Buyer One is your new lead. Their details are ready below. Take a look and say hello.",
     actionLink: "https://app.example.test/leads/lead-1",
     leadName: "Buyer One",
     leadEmail: "buyer@example.test",
@@ -869,8 +869,9 @@ Deno.test("lead operations template uses branded shell", () => {
   });
 
   assertIncludes(html, "Kingstons Property");
-  assertIncludes(html, "New Enquiry Assigned");
-  assertIncludes(html, "Lead Summary");
+  assertIncludes(html, "A new lead just landed");
+  assertIncludes(html, "Hi Agent,");
+  assertIncludes(html, "Your new lead");
   assertIncludes(html, "background: #123abc");
   assertIncludes(text, "Lead: Buyer One");
 });

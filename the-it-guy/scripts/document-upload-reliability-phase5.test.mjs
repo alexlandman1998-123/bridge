@@ -25,10 +25,13 @@ try {
     documentId: 'document-1',
   })
 
-  assert.equal(success.event, 'document_upload')
-  assert.equal(success.outcome, 'durable_saved')
-  assert.equal(failure.errorCode, 'automation_unavailable')
-  assert.equal(failure.errorMessage, 'Automation unavailable')
+  assert.equal(success.surface, 'transaction')
+  assert.equal(success.outcome, 'succeeded')
+  assert.equal(failure.errorCategory, 'unknown')
+  assert.equal(failure.errorMessage, undefined)
+  assert.equal(success.transactionId, undefined)
+  assert.equal(success.documentId, undefined)
+  assert.ok(success.attemptId)
   assert.equal(emitted.length, 2, 'telemetry should be emitted for successful and failed lifecycle events')
 } finally {
   console.info = originalInfo
@@ -50,7 +53,7 @@ assert.match(uploadDocumentSource, /findDocumentByUploadIdempotencyKey/, 'retrie
 assert.match(uploadDocumentSource, /removeDocumentUploadObjectAfterFailedPersistence/, 'persistence failures should trigger storage cleanup')
 assert.match(uploadDocumentSource, /void runInternalDocumentUploadFollowUps\(/, 'durable upload success should not wait for follow-up work')
 assert.match(apiSource, /Promise\.allSettled\(enabledFollowUps\.map\(\(\{ run \}\) => run\(\)\)\)/, 'one failed enabled follow-up must not block others')
-assert.match(apiSource, /followUps\.filter\(\(\{ step \}\) => inferCanonicalRequirement/, 'general uploads must not invoke implicit requirement automation')
+assert.match(apiSource, /followUps\.filter\(\(\{ step \}\) => source === 'transaction_capture'\s*\? step === 'activity_log'\s*: inferCanonicalRequirement/, 'general uploads must not invoke implicit requirement automation')
 assert.match(uploadDocumentSource, /\.insert\(compatiblePayload\)/, 'optional-column retry must preserve document audience and links')
 assert.match(apiSource, /reportDocumentUploadTelemetry\(/, 'the transaction upload lifecycle should emit structured telemetry')
 

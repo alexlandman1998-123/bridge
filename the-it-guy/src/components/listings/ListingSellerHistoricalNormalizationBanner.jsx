@@ -1,5 +1,5 @@
 import { CircleAlert, Loader2, RefreshCw, ShieldCheck } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { getListingSellerHistoricalNormalization } from '../../services/listings/listingSellerHistoricalNormalizationService'
 import Button from '../ui/Button'
 
@@ -9,25 +9,34 @@ const TONES = Object.freeze({
   danger: 'border-[#efcaca] bg-[#fff6f6] text-[#9f2d2d]',
 })
 
-export default function ListingSellerHistoricalNormalizationBanner({ listingId, onReview }) {
+export default function ListingSellerHistoricalNormalizationBanner({ listingId, revision = '', onReview }) {
   const [audit, setAudit] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [refreshCount, setRefreshCount] = useState(0)
 
-  const load = useCallback(async () => {
-    if (!listingId) return
-    setLoading(true)
+  useEffect(() => {
+    let active = true
+    setAudit(null)
     setError('')
-    try {
-      setAudit(await getListingSellerHistoricalNormalization(listingId))
-    } catch (loadError) {
-      setError(loadError?.message || 'Historical seller audit could not be loaded.')
-    } finally {
+    if (!listingId) {
       setLoading(false)
+      return
     }
-  }, [listingId])
-
-  useEffect(() => { void load() }, [load])
+    setLoading(true)
+    async function load() {
+      try {
+        const nextAudit = await getListingSellerHistoricalNormalization(listingId)
+        if (active) setAudit(nextAudit)
+      } catch (loadError) {
+        if (active) setError(loadError?.message || 'Historical seller audit could not be loaded.')
+      } finally {
+        if (active) setLoading(false)
+      }
+    }
+    void load()
+    return () => { active = false }
+  }, [listingId, revision, refreshCount])
 
   if (!loading && !audit && !error) return null
   if (loading && !audit) {
@@ -36,7 +45,7 @@ export default function ListingSellerHistoricalNormalizationBanner({ listingId, 
   if (error) {
     return (
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-[16px] border border-[#efcaca] bg-[#fff6f6] px-4 py-3 text-sm text-[#8b3232]" data-testid="seller-history-audit-error">
-        <span>{error}</span><Button type="button" size="sm" variant="secondary" onClick={() => void load()}><RefreshCw size={13} />Retry</Button>
+        <span>{error}</span><Button type="button" size="sm" variant="secondary" onClick={() => setRefreshCount((count) => count + 1)}><RefreshCw size={13} />Retry</Button>
       </div>
     )
   }
@@ -56,4 +65,3 @@ export default function ListingSellerHistoricalNormalizationBanner({ listingId, 
     </article>
   )
 }
-

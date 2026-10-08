@@ -1,3 +1,5 @@
+import { withDocumentUploadMimeType, validateDocumentUploadFile } from '../lib/documentUploadPolicy.js'
+import { runRecoverableDocumentUpload } from '../lib/documentUploadRecovery.js'
 import { recruitmentActivationErrors } from '../pages/recruitment/recruitmentActivationModel'
 import { buildAgentInviteLink } from '../lib/agentInviteService'
 import { onboardingChecks, onboardingDocumentTypes, recruitmentOnboardingErrors } from '../pages/recruitment/recruitmentOnboardingModel'
@@ -13,6 +15,7 @@ function clientFor(organisationId) {
   return supabase
 }
 function fail(error) {
+  try {
   if (['42P01','42703','PGRST204','PGRST205','PGRST202'].includes(error?.code)) throw new Error('Recruitment setup is pending. The recruitment database migration must be applied before records can be saved.')
   if (error?.code === '22007' || error?.code === '22008') throw new Error('Choose a valid date for this recruitment action.')
   if (error?.code === '23505') throw new Error('Agent access is already linked to another recruitment record. Reload and check the agent directory before trying again.')
@@ -25,6 +28,7 @@ function fail(error) {
   if (error?.code === 'P0001' && /review|evidence|finding/i.test(error.message || '')) throw new Error('Review could not be saved. Check the lead stage, findings and supporting documents, then reload if the record changed.')
   if (error?.code === 'P0001') throw new Error('Recruitment could not be saved. Check the required journey step and reload the record.')
   throw new Error(error?.code === '42501' ? 'Only organisation principals and administrators can manage recruitment.' : 'Recruitment could not be loaded or saved. Please try again.')
+  } catch (failure) { failure.cause = error; throw failure }
 }
 export async function listRecruitmentLeads(organisationId) {
   const { data, error } = await clientFor(organisationId).from('recruitment_leads').select(fields).eq('organisation_id', organisationId).order('created_at', { ascending: false })
@@ -65,7 +69,7 @@ export async function saveRecruitmentLead(organisationId, lead) {
   const query = client.from('recruitment_leads').update(payload).eq('organisation_id', organisationId).eq('id', lead.id).eq('version', lead.version)
   const { data, error } = await query.select(fields).maybeSingle()
   if (error) fail(error)
-  if (!data) throw new Error('This lead changed or access was removed. Reload it before saving again.')
+  if (!data) throw Object.assign(new Error('This lead changed or access was removed. Reload it before saving again.'), { code: '40001' })
   return data
 }
 
@@ -92,17 +96,27 @@ export async function getRecruitmentJoiningConnections(organisationId, leadId) {
 export async function uploadRecruitmentDocument(organisationId, lead, file, type) {
   if (!lead.id) throw new Error('Save the agent lead before uploading documents.')
   if (lead.approved_at) throw new Error('Approved review documents are locked. Contract and onboarding documents belong to the next phases.')
-  if (!['application/pdf','image/jpeg','image/png'].includes(file.type) || file.size > 10485760 || !file.size) throw new Error('Choose a PDF, JPG or PNG file up to 10 MB.')
-  const storage = clientFor(organisationId).storage.from('recruitment-documents')
-  const path = `${organisationId}/${lead.id}/${crypto.randomUUID()}`
-  const { error } = await storage.upload(path, file, { contentType: file.type, upsert: false })
-  if (error) throw new Error('Document upload failed. Please try again.')
-  try {
-    return await saveRecruitmentLead(organisationId, { ...lead, documents_json: [...lead.documents_json, { path, name: file.name, type, uploadedAt: new Date().toISOString() }] })
-  } catch (error) {
-    await storage.remove([path]).catch(() => {})
-    throw error
-  }
+  const filePolicy = validateDocumentUploadFile(file, { surface: 'recruitment_document' })
+  const client = clientFor(organisationId)
+  return runRecoverableDocumentUpload({ client, scope: ['recruitment_review', organisationId, lead.id, type], file, storageBuckets: ['recruitment-documents'],
+    run: async attempt => {
+      const storage = clientFor(organisationId).storage.from('recruitment-documents')
+      const path = attempt.path(`${organisationId}/${lead.id}/${crypto.randomUUID()}`)
+      await attempt.upload(async () => {
+        const { error } = await storage.upload(path, withDocumentUploadMimeType(file, filePolicy.mimeType), { contentType: filePolicy.mimeType, upsert: false })
+        if (error) throw Object.assign(new Error('Document upload failed. Please try again.'), { cause: error })
+        return 'recruitment-documents'
+      })
+      const result = await attempt.persist({
+        save: async () => {
+          return { data: await saveRecruitmentLead(organisationId, { ...lead, documents_json: [...lead.documents_json, { path, name: file.name, type, uploadedAt: new Date().toISOString() }] }) }
+        },
+        read: async () => { const reopened = await getRecruitmentLead(organisationId, lead.id); return reopened.documents_json?.some(item => item.path === path) ? { data: reopened } : null },
+        cleanup: () => storage.remove([path]),
+      })
+      return result.data
+    },
+  })
 }
 export async function openRecruitmentDocument(organisationId, leadId, document) {
   if (!document.path?.startsWith(`${organisationId}/${leadId}/`)) throw new Error('Document does not belong to this agent lead.')
@@ -141,23 +155,33 @@ export async function approveRecruitmentApplication(organisationId, lead, draft)
 
 export async function prepareRecruitmentContract(organisationId, lead, file) {
   if (!lead.id || lead.status !== 'application_approved' || !lead.approved_at) throw new Error('Approve the application before preparing a contract.')
-  if (file?.type !== 'application/pdf' || !file.size || file.size > 10485760 || !file.name?.trim() || file.name.length > 254) throw new Error('Choose a contract PDF up to 10 MB with a file name up to 254 characters.')
+  validateDocumentUploadFile(file, { surface: 'recruitment_contract' })
+  if (!file.name?.trim() || file.name.length > 254) throw new Error('Choose a contract PDF up to 10 MB with a file name up to 254 characters.')
   const header = new TextDecoder().decode(await file.slice(0,5).arrayBuffer())
   if (header !== '%PDF-') throw new Error('The selected file is not a PDF. Export the contract as a PDF before uploading.')
-  const storage = clientFor(organisationId).storage.from('recruitment-contracts')
-  const path = `${organisationId}/${lead.id}/${crypto.randomUUID()}`
-  const uploaded = await storage.upload(path, file, {contentType:'application/pdf',upsert:false})
-  if (uploaded.error) throw new Error('Contract upload failed. Please try again.')
-  try {
-    const {data,error} = await clientFor(organisationId).rpc('recruitment_prepare_contract',{p_organisation_id:organisationId,p_lead_id:lead.id,p_version:lead.version,p_document:{path,name:file.name,size:file.size}}).maybeSingle()
-    if (['40001', 'PT409'].includes(error?.code) || (!error && !data)) throw new Error('This application changed or access was removed. Reload before preparing the contract again.')
-    if (error) fail(error)
-    return data
-  } catch(error) {
-    // Retention policies keep files registered by a successful but uncertain response.
-    await storage.remove([path]).catch(()=>{})
-    throw error
-  }
+  const client = clientFor(organisationId)
+  return runRecoverableDocumentUpload({ client, scope: ['recruitment_contract', organisationId, lead.id], file, storageBuckets: ['recruitment-contracts'],
+    run: async attempt => {
+      const storage = clientFor(organisationId).storage.from('recruitment-contracts')
+      const path = attempt.path(`${organisationId}/${lead.id}/${crypto.randomUUID()}`)
+      await attempt.upload(async () => {
+        const uploaded = await storage.upload(path, withDocumentUploadMimeType(file, 'application/pdf'), {contentType:'application/pdf',upsert:false})
+        if (uploaded.error) throw Object.assign(new Error('Contract upload failed. Please try again.'), { cause: uploaded.error })
+        return 'recruitment-contracts'
+      })
+      const result = await attempt.persist({
+        save: async () => {
+          const {data,error} = await clientFor(organisationId).rpc('recruitment_prepare_contract',{p_organisation_id:organisationId,p_lead_id:lead.id,p_version:lead.version,p_document:{path,name:file.name,size:file.size}}).maybeSingle()
+          if (['40001', 'PT409'].includes(error?.code) || (!error && !data)) throw Object.assign(new Error('This application changed or access was removed. Reload before preparing the contract again.'), { cause: error })
+          if (error) fail(error)
+          return { data }
+        },
+        read: async () => { const reopened = await getRecruitmentLead(organisationId, lead.id); return reopened.contracts_json?.some(item => item.path === path) ? { data: reopened } : null },
+        cleanup: () => storage.remove([path]),
+      })
+      return result.data
+    },
+  })
 }
 export async function downloadRecruitmentContract(organisationId, lead, contract) {
   if (!contract?.path?.startsWith(`${organisationId}/${lead.id}/`) || !lead.contracts_json?.some(item=>item.path===contract.path)) throw new Error('Contract does not belong to this agent lead.')
@@ -183,22 +207,32 @@ export async function recordRecruitmentContractSignature(organisationId, lead, d
   const file=draft.file
   const header=new TextDecoder().decode(await file.slice(0,5).arrayBuffer())
   if(header!=='%PDF-') throw new Error('The selected signed copy is not a PDF. Scan or export all signed pages into one PDF.')
-  const storage=clientFor(organisationId).storage.from('recruitment-signed-contracts')
-  const path=`${organisationId}/${lead.id}/${crypto.randomUUID()}`
-  const uploaded=await storage.upload(path,file,{contentType:'application/pdf',upsert:false})
-  if(uploaded.error) throw new Error('Signed contract upload failed. Your findings have been kept; please try again.')
-  try {
-    const payload=Object.fromEntries(['contractVersion','agentSigner','organisationSigner','signedOn','method','reference','notes'].map(key=>[key,typeof draft[key]==='string' ? draft[key].trim() : draft[key]]))
-    payload.checks=Object.fromEntries(['sameVersion','allPages','agentSignature','organisationSignature'].map(key=>[key,draft.checks[key]===true]))
-    Object.assign(payload,{path,name:file.name,size:file.size})
-    const {data,error}=await clientFor(organisationId).rpc('recruitment_record_contract_signature',{p_organisation_id:organisationId,p_lead_id:lead.id,p_version:lead.version,p_signature:payload}).maybeSingle()
-    if(['40001', 'PT409'].includes(error?.code) || (!error && !data)) throw new Error('This contract changed or access was removed. Signatures were not recorded. Reload before trying again.')
-    if(error) fail(error)
-    return data
-  } catch(error) {
-    await storage.remove([path]).catch(()=>{})
-    throw error
-  }
+  const client = clientFor(organisationId)
+  return runRecoverableDocumentUpload({ client, scope: ['recruitment_signed_contract', organisationId, lead.id, draft.contractVersion], file, storageBuckets: ['recruitment-signed-contracts'],
+    run: async attempt => {
+      const storage=clientFor(organisationId).storage.from('recruitment-signed-contracts')
+      const path=attempt.path(`${organisationId}/${lead.id}/${crypto.randomUUID()}`)
+      await attempt.upload(async () => {
+        const uploaded=await storage.upload(path,withDocumentUploadMimeType(file,'application/pdf'),{contentType:'application/pdf',upsert:false})
+        if(uploaded.error) throw Object.assign(new Error('Signed contract upload failed. Your findings have been kept; please try again.'), { cause: uploaded.error })
+        return 'recruitment-signed-contracts'
+      })
+      const result = await attempt.persist({
+        save: async () => {
+          const payload=Object.fromEntries(['contractVersion','agentSigner','organisationSigner','signedOn','method','reference','notes'].map(key=>[key,typeof draft[key]==='string' ? draft[key].trim() : draft[key]]))
+          payload.checks=Object.fromEntries(['sameVersion','allPages','agentSignature','organisationSignature'].map(key=>[key,draft.checks[key]===true]))
+          Object.assign(payload,{path,name:file.name,size:file.size})
+          const {data,error}=await clientFor(organisationId).rpc('recruitment_record_contract_signature',{p_organisation_id:organisationId,p_lead_id:lead.id,p_version:lead.version,p_signature:payload}).maybeSingle()
+          if(['40001', 'PT409'].includes(error?.code) || (!error && !data)) throw Object.assign(new Error('This contract changed or access was removed. Signatures were not recorded. Reload before trying again.'), { cause: error })
+          if(error) fail(error)
+          return { data }
+        },
+        read: async () => { const reopened = await getRecruitmentLead(organisationId, lead.id); return reopened.contract_signature_json?.path === path ? { data: reopened } : null },
+        cleanup: () => storage.remove([path]),
+      })
+      return result.data
+    },
+  })
 }
 export async function downloadRecruitmentSignedContract(organisationId,lead) {
   const signature=lead.contract_signature_json
@@ -221,19 +255,31 @@ export async function saveRecruitmentOnboarding(organisationId,lead,draft,comple
 }
 export async function uploadRecruitmentOnboardingDocument(organisationId,lead,file,type) {
   if(!lead.id || lead.status!=='contract_signed' || !lead.contract_signature_json?.recordedAt || lead.onboarding_completed_at) throw new Error('Verify the signed contract before uploading onboarding documents.')
-  if(!file || !['application/pdf','image/jpeg','image/png'].includes(file.type) || !file.size || file.size>10485760 || !file.name?.trim() || file.name.length>254 || !onboardingDocumentTypes.includes(type)) throw new Error('Choose an onboarding PDF, JPG or PNG up to 10 MB and a valid document type.')
-  const storage=clientFor(organisationId).storage.from('recruitment-onboarding-documents'),path=`${organisationId}/${lead.id}/${crypto.randomUUID()}`
-  const uploaded=await storage.upload(path,file,{contentType:file.type,upsert:false})
-  if(uploaded.error) throw new Error('Onboarding document upload failed. Please try again.')
-  try {
-    const {data,error}=await clientFor(organisationId).rpc('recruitment_add_onboarding_document',{p_organisation_id:organisationId,p_lead_id:lead.id,p_version:lead.version,p_document:{path,name:file.name,type,mimeType:file.type,size:file.size}}).maybeSingle()
-    if(['40001', 'PT409'].includes(error?.code) || (!error && !data)) throw new Error('This onboarding record changed or access was removed. Reload before uploading again.')
-    if(error) fail(error)
-    return data
-  } catch(error) {
-    await storage.remove([path]).catch(()=>{})
-    throw error
-  }
+  const filePolicy = validateDocumentUploadFile(file, { surface: 'recruitment_onboarding' })
+  if(!file.name?.trim() || file.name.length>254 || !onboardingDocumentTypes.includes(type)) throw new Error('Choose an onboarding PDF, JPG or PNG up to 10 MB and a valid document type.')
+  const client = clientFor(organisationId)
+  return runRecoverableDocumentUpload({ client, scope: ['recruitment_onboarding', organisationId, lead.id, type], file, storageBuckets: ['recruitment-onboarding-documents'],
+    run: async attempt => {
+      const storage=clientFor(organisationId).storage.from('recruitment-onboarding-documents')
+      const path=attempt.path(`${organisationId}/${lead.id}/${crypto.randomUUID()}`)
+      await attempt.upload(async () => {
+        const uploaded=await storage.upload(path,withDocumentUploadMimeType(file,filePolicy.mimeType),{contentType:filePolicy.mimeType,upsert:false})
+        if(uploaded.error) throw Object.assign(new Error('Onboarding document upload failed. Please try again.'), { cause: uploaded.error })
+        return 'recruitment-onboarding-documents'
+      })
+      const result = await attempt.persist({
+        save: async () => {
+          const {data,error}=await clientFor(organisationId).rpc('recruitment_add_onboarding_document',{p_organisation_id:organisationId,p_lead_id:lead.id,p_version:lead.version,p_document:{path,name:file.name,type,mimeType:filePolicy.mimeType,size:file.size}}).maybeSingle()
+          if(['40001', 'PT409'].includes(error?.code) || (!error && !data)) throw Object.assign(new Error('This onboarding record changed or access was removed. Reload before uploading again.'), { cause: error })
+          if(error) fail(error)
+          return { data }
+        },
+        read: async () => { const reopened = await getRecruitmentLead(organisationId, lead.id); return reopened.onboarding_documents_json?.some(item => item.path === path) ? { data: reopened } : null },
+        cleanup: () => storage.remove([path]),
+      })
+      return result.data
+    },
+  })
 }
 export async function downloadRecruitmentOnboardingDocument(organisationId,lead,document) {
   if(!document.path?.startsWith(`${organisationId}/${lead.id}/`) || !lead.onboarding_documents_json?.some(doc=>doc.path===document.path)) throw new Error('Onboarding document does not belong to this lead.')

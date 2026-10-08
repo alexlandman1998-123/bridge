@@ -1,3 +1,4 @@
+import { DOCUMENT_UPLOAD_HELP_TEXT, validateDocumentUploadFile } from '../lib/documentUploadPolicy.js'
 import { AlertTriangle, Building2, Download, FileSignature, FileUp, FolderKanban, RotateCcw, UserCircle2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import LoadingSkeleton from '../components/LoadingSkeleton'
@@ -489,6 +490,7 @@ function Documents() {
   async function handleCompanyFileUpload(file) {
     if (!file) return
     try {
+      validateDocumentUploadFile(file, { surface: 'company_document' })
       const dataUrl = await readFileAsDataUrl(file)
       setCompanyDocumentForm((previous) => ({
         ...previous,
@@ -856,7 +858,7 @@ function Documents() {
                                   <FileUp size={13} />
                                   {uploadingKey === item.key ? 'Uploading...' : item.complete ? 'Replace' : 'Upload'}
                                   <input
-                                    type="file"
+                                    type="file" title={DOCUMENT_UPLOAD_HELP_TEXT}
                                     accept={DOCUMENT_UPLOAD_ACCEPT}
                                     className="hidden"
                                     disabled={uploadingKey === item.key || !selectedClientWorkspace?.transaction?.id}
@@ -867,6 +869,7 @@ function Documents() {
                                     }}
                                   />
                                 </label>
+                                <span className="block text-xs font-normal text-slate-500">{DOCUMENT_UPLOAD_HELP_TEXT}</span>
                                 {uploadFailures[item.key]?.file ? (
                                   <button
                                     type="button"
@@ -1135,7 +1138,7 @@ function Documents() {
                       <FileUp size={14} />
                       {companyDocumentForm.fileName ? `Selected: ${companyDocumentForm.fileName}` : 'Choose file'}
                       <input
-                        type="file"
+                        type="file" title={DOCUMENT_UPLOAD_HELP_TEXT} accept={DOCUMENT_UPLOAD_ACCEPT}
                         className="hidden"
                         onChange={(event) => {
                           const file = event.target.files?.[0]
@@ -1144,6 +1147,7 @@ function Documents() {
                         }}
                       />
                     </label>
+                    <span className="block text-xs font-normal text-slate-500">{DOCUMENT_UPLOAD_HELP_TEXT}</span>
                   </label>
 
                   <div className="flex flex-wrap items-center gap-2">

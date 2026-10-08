@@ -1,0 +1,117 @@
+{
+  "productionProject": "isdowlnollckzvltkasn",
+  "previousDeployment": "dpl_Hv4cg6KbaQzgDvXnmu8EEy6vELwu",
+  "baselineCommit": "7955d81a4b2ff0046a766ad360df6b01afd29253",
+  "approval": "User requested all updates and migrations from today to production",
+  "recovery": "RECOVERY_LOCKED",
+  "method": "Scoped SQL fallback: CLI direct database login failed; catalog-backed exact pending list and full batch rollback smoke passed",
+  "migrations": [
+    {
+      "file": "20261007152647_client_facing_arch9_branding.sql",
+      "sha256": "a0ab66912568a035171fdbdeba11949a2ae09225ddc74463b109e7283d08e11f"
+    },
+    {
+      "file": "20261007154210_rental_dashboard_listing_mandate_count.sql",
+      "sha256": "4cb14243a73a060475c676a61f4878b1ce696a9bf097094299fc5b77c66bad2d"
+    },
+    {
+      "file": "20261007155955_property24_unlinked_rental_lead_classification.sql",
+      "sha256": "9e7b342354d716bf9028098275ff57b6e871ddeb704b65c6b71b515557b928df"
+    },
+    {
+      "file": "20261007160802_rental_tenant_qualification_submission.sql",
+      "sha256": "4e251ee2da58ff322a4b0fb06cf0ef68acf6dbed8e567a1073ac429e25999b2f"
+    },
+    {
+      "file": "20261007213448_rental_fee_backfill_version_compatibility.sql",
+      "sha256": "75a400a4deebd3bae523b8454e94b342832af1d9bc242184d6f85e7f1ffed0a7"
+    },
+    {
+      "file": "20261007194611_rental_application_cost_confirmation.sql",
+      "sha256": "85e1ec4cd0b29fe890927ed3b812e8a724e482121dd640b52fd3107fcc8e2c90"
+    },
+    {
+      "file": "20261007202606_rental_application_deferred_documents.sql",
+      "sha256": "7bb23e1506ecfdab058f5f5bdce9ebde724e6d02edb7c72c3238425da2dd1c87"
+    },
+    {
+      "file": "20261007204950_rental_application_document_packs.sql",
+      "sha256": "76112c402895c4c0163add037b7609708fdfdd3e9098a5ef6fd9e53d7d86759a"
+    },
+    {
+      "file": "20261007211002_rental_application_lease_handoff.sql",
+      "sha256": "f65ace66872e32817d3f48108d7114caf8dc0941465730784b47ab4027c01021"
+    },
+    {
+      "file": "20261007212433_rental_empty_document_pack_readiness.sql",
+      "sha256": "49c706b43f42df177b8dd8be5257b5c512b8a997c0d2073cff80f22900722d20"
+    }
+  ],
+  "status": "RELEASED_AND_VERIFIED",
+  "verifiedAt": "2026-10-07T21:52:16.864263+00:00",
+  "products": [
+    "Primary Arch9 app",
+    "Shared Supabase database and email/tenant automation"
+  ],
+  "sourceCommit": "61aab112086e20f0c719e71f68d4ceffa54d6253",
+  "sourceBranch": "codex/production-updates-20261007",
+  "sourcePushed": true,
+  "productionUrl": "https://app.arch9.co.za",
+  "deploymentId": "dpl_4UVhqt6oSAYXpMyX4s5YRVgGCtMm",
+  "deploymentUrl": "https://bridge-dkxwot2u3-alexs-projects-f5496a21.vercel.app",
+  "productionState": "READY/PROMOTED",
+  "migrationCount": 1417,
+  "todayMigrationCount": 14,
+  "newlyAppliedMigrationCount": 10,
+  "exactRecordedSqlMatches": true,
+  "remainingTodayMigrations": 0,
+  "automationVersions": {
+    "send-email": 163,
+    "buyer-viewing-preferences": 32
+  },
+  "feeBackfill": {
+    "legacyCandidatesBefore": 16,
+    "remainingEmptyEligibleSnapshots": 0,
+    "compatibilityMigration": "20261007213448",
+    "configuredFeeOrganisations": 0,
+    "existingApplicationQuote": "ZAR 0 preserved"
+  },
+  "checks": {
+    "focusedAppTests": 371,
+    "calendarTests": 7,
+    "buyerDependencyTests": 38,
+    "automationTests": 46,
+    "operationalChecks": 16,
+    "appLintAndBaseline": "passed",
+    "correctedProductionBuild": "passed",
+    "productionBundleBudget": "passed",
+    "deploymentScriptAudit": "passed",
+    "agentSchemaContract": "passed",
+    "rollbackOnlyProductionMigrationSmoke": "passed; original pending scope and 16 candidates unchanged afterward",
+    "securityAdvisorErrors": 0,
+    "securityAdvisorNewWarnings": [
+      "Authenticated execute on rental_attach_submitted_document and rental_get_lease_application_projection; explicit branch access checks and local cross-organisation denial verified"
+    ],
+    "newTableRls": "enabled; authenticated policies only",
+    "requirementView": "security_invoker=true",
+    "publicRpcAccess": "reviewed; anon execution denied for all 17 migrated public functions",
+    "liveReleaseMarker": "matches source commit",
+    "liveAuthRoute": "loaded; no JavaScript exceptions",
+    "liveRentalApplicationApi": "invalid token returns expected 401",
+    "liveRentalApplicationPage": "expired-link message renders",
+    "liveTenantQualificationFunction": "invalid link returns expected link_unavailable",
+    "deployedAutomationSource": "matches release files",
+    "liveMobileAuth": "390px viewport and content width; no horizontal overflow"
+  },
+  "verificationLimitations": [
+    "A real signed-in tenant submission and inbox delivery were not performed during release verification.",
+    "Agents must configure any nonzero application fee in Rentals settings."
+  ],
+  "recoveryArtifacts": {
+    "functionDefinitions": "/tmp/arch9-oct7-catalog-before.json",
+    "functionRestoreSql": "/tmp/arch9-oct7-restore-functions.sql",
+    "emailFunctionSource": "/tmp/arch9-oct7-send-email-recovery.json",
+    "tenantFunctionSource": "/tmp/arch9-oct7-tenant-function-recovery.json"
+  },
+  "verificationMessagesSent": false
+}

@@ -21,6 +21,7 @@ import { handleArch9IntakeAcknowledgementEmail } from "./handlers/arch9IntakeAck
 import { handleLeadAcknowledgementEmail } from "./handlers/leadAcknowledgement.ts";
 import { handleKingstonsValuationDownloadEmail } from "./handlers/kingstonsValuationDownload.ts";
 import { handleLeadOperationsNotificationEmail } from "./handlers/leadOperationsNotification.ts";
+import { leadAgentEmailQueueResponse } from "./services/leadAgentEmailQueue.ts";
 import { handleHomeSeekersSellerEmailPreview } from "./handlers/homeSeekersSellerEnquiry.ts";
 import { handleTemplatePreviewEmail } from "./handlers/templatePreview.ts";
 import { handleAdditionalDocumentRequestEmail } from "./handlers/additionalDocumentRequest.ts";
@@ -160,6 +161,13 @@ Deno.serve(async (req: Request) => {
     const normalizedType = normalizeText(payload.type).toLowerCase();
     const type = normalizedType.replaceAll("-", "_");
     if (type === "recruitment_invitation") return await handleRecruitmentInvitationEmail(req, payload);
+    // Durable calendar payloads are prepared and frozen only by the server worker.
+    if (normalizeText(payload.idempotencyKey).startsWith('calendar-appointment:')) {
+      const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+      if (!serviceKey || req.headers.get('authorization') !== `Bearer ${serviceKey}`) {
+        return jsonResponse(403, { error: 'Calendar worker authorization required.' });
+      }
+    }
     const transactionId = resolveTransactionId(payload);
     const recipient = normalizeText(payload.to).toLowerCase();
     const payloadKeys = Object.keys(payload || {});
@@ -468,6 +476,8 @@ Deno.serve(async (req: Request) => {
         route: "lead_acknowledgement",
         recipient: recipient || null,
       });
+      const queuedIntroResponse = await leadAgentEmailQueueResponse(req, payload as Record<string, unknown>);
+      if (queuedIntroResponse) return queuedIntroResponse;
       return await handleLeadAcknowledgementEmail(
         payload as SendLeadAcknowledgementPayload,
       );
@@ -493,6 +503,8 @@ Deno.serve(async (req: Request) => {
         recipient: recipient || null,
         leadId: normalizeText(payload.leadId ?? payload.lead_id) || null,
       });
+      const queuedLeadResponse = await leadAgentEmailQueueResponse(req, payload as Record<string, unknown>);
+      if (queuedLeadResponse) return queuedLeadResponse;
       return await handleLeadOperationsNotificationEmail({
         ...(payload as SendLeadOperationsNotificationPayload),
         type: type as SendLeadOperationsNotificationPayload["type"],

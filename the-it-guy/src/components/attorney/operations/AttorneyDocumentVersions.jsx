@@ -1,3 +1,4 @@
+import { DOCUMENT_UPLOAD_HELP_TEXT } from '../../../lib/documentUploadPolicy.js'
 import { useMemo, useState } from 'react'
 import Button from '../../ui/Button'
 import Field from '../../ui/Field'
@@ -72,7 +73,9 @@ export default function AttorneyDocumentVersions({ documents = [], requirements 
     <Modal open={Boolean(form)} onClose={busy ? undefined : () => setForm(null)} title={form?.attorneyPreviousVersionId ? 'Upload next document version' : 'Upload drafting document'} className="max-w-2xl">
       {form ? <form onSubmit={save} className="grid gap-4">
         <fieldset disabled={busy} className="grid min-w-0 gap-4">
-          <label className="grid gap-1 text-sm font-medium">File<Field type="file" accept={DOCUMENT_UPLOAD_ACCEPT} required onChange={event => setForm(previous => ({ ...previous, file: event.target.files?.[0] || null }))} /></label>
+          <label className="grid gap-1 text-sm font-medium">File<Field type="file" aria-label="File" title={DOCUMENT_UPLOAD_HELP_TEXT} accept={DOCUMENT_UPLOAD_ACCEPT} required onChange={event => setForm(previous => ({ ...previous, file: event.target.files?.[0] || null }))} /><span className="block text-xs font-normal text-slate-500">{DOCUMENT_UPLOAD_HELP_TEXT}</span>
+          </label>
+          
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="grid gap-1 text-sm font-medium">Version type<Field as="select" value={form.attorneyVersionKind} onChange={event => setForm(previous => ({ ...previous, attorneyVersionKind: event.target.value }))}>{ATTORNEY_DOCUMENT_VERSION_KINDS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</Field></label>
             <label className="grid gap-1 text-sm font-medium">Attorney workflow<Field as="select" disabled={Boolean(form.attorneyPreviousVersionId)} value={form.attorneyLaneKey} onChange={event => setForm(previous => ({ ...previous, attorneyLaneKey: event.target.value }))}>{editableLanes.map(lane => <option key={lane.laneKey} value={lane.laneKey}>{lane.label || lane.laneKey}</option>)}</Field></label>

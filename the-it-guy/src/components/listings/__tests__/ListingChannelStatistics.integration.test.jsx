@@ -28,7 +28,7 @@ it('renders retrieved, persisted and authenticated SQL totals for all three peri
     expect(card('Private Property').getByText(`${days} of ${days} days covered`)).toBeTruthy()
     expect(card('Website').getByText('9')).toBeTruthy()
     expect(card('Website').getByText('Website enquiries').nextElementSibling.textContent).toBe('1')
-    expect(card('Private Property').getByText('Phone contacts').nextElementSibling.textContent).toBe('Unavailable')
+    expect(card('Private Property').getByLabelText('Phone contacts unavailable').textContent).toBe('—')
     expect(card('Property24').getByText('SMS contacts').nextElementSibling.textContent).toBe('0')
   }
 },15_000)

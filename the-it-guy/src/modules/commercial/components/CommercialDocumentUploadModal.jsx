@@ -1,3 +1,4 @@
+import { DOCUMENT_UPLOAD_ACCEPT, DOCUMENT_UPLOAD_HELP_TEXT } from '../../../lib/documentUploadPolicy.js'
 import { X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { COMMERCIAL_DOCUMENT_STATUSES, getCommercialDocumentCategories } from '../commercialDocumentConstants'
@@ -52,11 +53,13 @@ function CommercialDocumentUploadModal({ open, entityType, onClose, onSubmit }) 
           <label className="grid gap-1.5 sm:col-span-2">
             <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">File</span>
             <input
-              type="file"
+              type="file" title={DOCUMENT_UPLOAD_HELP_TEXT} accept={DOCUMENT_UPLOAD_ACCEPT}
               onChange={(event) => setForm((previous) => ({ ...previous, file: event.target.files?.[0] || null }))}
               className="min-h-11 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-[#102236]"
             />
+          <span className="block text-xs font-normal text-slate-500">{DOCUMENT_UPLOAD_HELP_TEXT}</span>
           </label>
+          
           <label className="grid gap-1.5">
             <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Document name</span>
             <input

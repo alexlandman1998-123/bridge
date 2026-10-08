@@ -8,6 +8,7 @@ import { retiredDocumentGenerator } from '../../supabase/functions/_shared/retir
 import { assertDocumentGeneratorAvailable, RETIRED_DOCUMENT_FUNCTIONS } from '../src/core/documents/documentGeneratorRetirement.js'
 import { buildKingstonsDigitalSigningDecision } from '../src/core/kingstons/digitalSigningDecision.js'
 import { buildKingstonsBuyerOtpDigitalDecision } from '../src/core/transactions/kingstonsBuyerOtpReadiness.js'
+import { runRecoverableDocumentUpload } from '../src/lib/documentUploadRecovery.js'
 import { buildPrivateListingDocumentPersistenceReceipt } from '../src/services/listings/listingSellerDocumentPersistenceModel.js'
 
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8')
@@ -87,6 +88,7 @@ test('signed mandate and OTP uploads persist files and requirement links with no
     let promotedDocumentId
     const requirement = { id: 'requirement-1', requirement_key: documentType }
     const upload = vm.runInNewContext(`(${functionSource('../src/services/privateListingService.js', 'uploadPrivateListingDocument')})`, {
+      runRecoverableDocumentUpload, DOCUMENTS_BUCKET_CANDIDATES: ['documents'],
       requireClient: () => ({ rpc: async (name, parameters) => {
         assert.equal(name, 'bridge_promote_private_listing_document_row')
         promotedDocumentId = parameters.p_private_listing_document_id
@@ -147,6 +149,7 @@ test('seller upload preflight refuses unreadable or missing requirements before 
   for (const unreadable of [false, true]) {
     let storageCalls = 0
     const upload = vm.runInNewContext(`(${functionSource('../src/services/privateListingService.js', 'uploadPrivateListingDocument')})`, {
+      runRecoverableDocumentUpload, DOCUMENTS_BUCKET_CANDIDATES: ['documents'],
       requireClient: () => ({}), getCurrentUser: async () => ({ id: 'agent' }),
       normalizeUuid: value => String(value || ''), normalizeCompatibilityKey: value => String(value || ''),
       validateDocumentUploadFile: file => ({ safeName: file.name }), getPrivateListingById: async () => ({ id: 'listing' }),
@@ -158,7 +161,7 @@ test('seller upload preflight refuses unreadable or missing requirements before 
     await assert.rejects(upload('listing', { name:'company.pdf' }, { requirementKey:'cipc_documents', documentType:'cipc_documents' }), unreadable ? /Checklist unavailable/ : /No active seller requirement/)
     assert.equal(storageCalls, 0)
     if (!unreadable) {
-      await assert.rejects(upload('listing', { name:'offer.pdf' }, { requirementKey:'wet_ink_otp_buyer_offer',documentType:'wet_ink_otp_buyer',documentCategory:'buyer_offer',visibility:'internal' }), /Storage touched/)
+      await assert.rejects(upload('listing', { name:'offer.pdf' }, { requirementKey:'wet_ink_otp_buyer_offer',documentType:'wet_ink_otp_buyer',documentCategory:'buyer_offer',visibility:'internal' }), error => error.code === 'document_save_unconfirmed' && error.cause?.message === 'Storage touched')
       assert.equal(storageCalls, 1)
     }
   }
@@ -176,5 +179,45 @@ test('schema fallback cannot discard persisted requirement identity', async () =
     assert.equal(result.error, error)
     assert.equal(attempts.length, 1)
     assert.equal(attempts[0][column], column === 'requirement_id' ? 'requirement' : 'canonical')
+  }
+})
+
+test('listing intake mandate evidence persists without a checklist and never completes the signed mandate', async () => {
+  for (const requirements of [[], [{ id: 'signed-request', requirement_key: 'signed_mandate', status: 'required' }]]) {
+    const persisted = []
+    let checklistWrites = 0
+    let mandateWrites = 0
+    const upload = vm.runInNewContext(`(${functionSource('../src/services/privateListingService.js', 'uploadPrivateListingDocument')})`, {
+      runRecoverableDocumentUpload, DOCUMENTS_BUCKET_CANDIDATES: ['documents'],
+      requireClient: () => ({ rpc: async () => ({ data: { promotion_status: 'no_transaction', pending_transaction_promotion: true } }) }),
+      getCurrentUser: async () => ({ id: 'agent' }), normalizeUuid: value => String(value || ''),
+      normalizeText: value => String(value || ''), normalizeCompatibilityKey: value => String(value || ''),
+      validateDocumentUploadFile: file => ({ safeName: file.name }), getPrivateListingById: async () => ({ id: 'listing' }),
+      getPrivateListingDocumentRequirements: async () => requirements,
+      resolvePrivateListingDocumentRequirement: () => { throw Error('Intake evidence must not borrow a signed-mandate request') },
+      sanitizeDocumentFileName: value => value, uploadToPrivateListingDocumentsBucket: async () => 'documents',
+      isMandateDocumentRow: row => row.document_type !== 'manual_mandate_evidence' && row.document_type.includes('mandate'),
+      insertPrivateListingDocumentRow: async (_, row) => { persisted.push({ ...row, id: 'evidence' }); return { data: persisted[0] } },
+      normalizeDocumentRows: rows => rows, buildPrivateListingDocumentPersistenceReceipt,
+      updatePrivateListingRequirementStatus: async () => { checklistWrites++; return true },
+      updatePrivateListing: async () => { mandateWrites++ }, recordSellerMandateSignedWorkflowStage: async () => { mandateWrites++ },
+      createPrivateListingActivity: async () => null, syncSellerJourneyLeadStageForListingId: async () => true,
+      createPrivateListingDocumentSignedUrl: async () => 'https://example.test/internal-mandate',
+    })
+    const result = await upload('listing', { name: 'mandate.pdf', type: 'application/pdf', lastModified: requirements.length }, {
+      documentType: 'manual_mandate_evidence', documentCategory: 'Mandate evidence', visibility: 'internal',
+    })
+    assert.equal(result.id, 'evidence')
+    assert.equal(result.persistence.recordVerified, true)
+    assert.equal(result.persistence.requirementStatus, 'not_applicable')
+    assert.equal(result.url, 'https://example.test/internal-mandate')
+    assert.equal(persisted[0].document_type, 'manual_mandate_evidence')
+    assert.equal(persisted[0].visibility, 'internal')
+    assert.equal(persisted[0].requirement_id, null)
+    assert.equal(checklistWrites, 0)
+    assert.equal(mandateWrites, 0)
+    // A reloaded document query reads the durable row, including its private
+    // file location, rather than relying on a selected filename in form state.
+    assert.ok(persisted[0].storage_path.includes('/listing/documents/'))
   }
 })

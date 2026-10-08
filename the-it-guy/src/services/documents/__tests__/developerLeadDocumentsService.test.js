@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 import { beforeEach, expect, it, vi } from 'vitest'
-import { fetchDeveloperLeadDocuments, uploadDeveloperLeadDocument } from '../developerLeadDocumentsService.js'
+import { fetchDeveloperLeadDocuments, uploadDeveloperLeadDocument, createDeveloperLeadDocumentSignedUrl } from '../developerLeadDocumentsService.js'
 
-const mocks = vi.hoisted(() => ({ from: vi.fn(), workspace: vi.fn(), upload: vi.fn(), invalidate: vi.fn(), lead: null, onboarding: null, detail: null }))
+const mocks = vi.hoisted(() => ({ from: vi.fn(), workspace: vi.fn(), upload: vi.fn(), invalidate: vi.fn(), sign: vi.fn(), lead: null, onboarding: null, detail: null }))
 vi.mock('../../../lib/supabaseClient.js', () => ({ isSupabaseConfigured: true, supabase: { from: mocks.from } }))
-vi.mock('../../../lib/transactionWorkspaceApi.js', () => ({ fetchTransactionDocumentsWorkspace: mocks.workspace, uploadDocument: mocks.upload, invalidateTransactionWorkspaceCoreCache: mocks.invalidate }))
+vi.mock('../../../lib/transactionWorkspaceApi.js', () => ({ fetchTransactionDocumentsWorkspace: mocks.workspace, uploadDocument: mocks.upload, invalidateTransactionWorkspaceCoreCache: mocks.invalidate, createTransactionDocumentSignedUrl: mocks.sign }))
 const context = { developerOrgId: 'org-one', developerLeadId: 'lead-one' }
 const file = () => new File(['persisted buyer evidence'], 'Buyer ID.pdf', { type: 'application/pdf' })
 const requirement = (id = 'req-one', status = 'pending') => ({ id, status, document_definition_key: 'buyer_id_document', pack_key: 'buyer_identity_fica', requested_from_role: 'buyer', visible_to_roles: ['developer', 'buyer'], uploadable_by_roles: ['developer', 'buyer'], document_definitions: { key: 'buyer_id_document', display_label: 'Buyer ID' } })
@@ -118,4 +118,26 @@ it('reports unavailable document projections instead of an empty successful chec
 it('keeps the durable upload successful when cache invalidation fails', async () => {
   mocks.invalidate.mockRejectedValueOnce(new Error('Cache unavailable'))
   expect((await uploadDeveloperLeadDocument({ ...context, transactionId: 'tx-one', file: file() })).id).toBe('saved-one')
+})
+
+
+it('signs a newly read visible document and ignores cached or caller-supplied locations', async () => {
+  const saved = await uploadDeveloperLeadDocument({ ...context, transactionId: 'tx-one', requirementId: 'req-one', file: file() })
+  mocks.sign.mockResolvedValue('https://storage.example.test/fresh')
+  expect(await createDeveloperLeadDocumentSignedUrl({ ...context, transactionId: 'tx-one', documentId: saved.id, filePath: 'another-tenant/wrong.pdf' })).toBe('https://storage.example.test/fresh')
+  expect(mocks.sign).toHaveBeenCalledWith({ filePath: saved.file_path, fileBucket: 'documents', filename: saved.name })
+})
+
+it('denies stale transaction, hidden document and revoked handover access before signing', async () => {
+  const saved = await uploadDeveloperLeadDocument({ ...context, transactionId: 'tx-one', requirementId: 'req-one', file: file() })
+  await expect(createDeveloperLeadDocumentSignedUrl({ ...context, transactionId: 'old-transaction', documentId: saved.id })).rejects.toMatchObject({ code: 'lead_documents_access_denied' })
+  await expect(createDeveloperLeadDocumentSignedUrl({ ...context, transactionId: 'tx-one', documentId: 'other-tenant-document' })).rejects.toMatchObject({ code: 'lead_documents_access_denied' })
+  mocks.detail.documents[0].transaction_id = 'another-transaction'
+  await expect(createDeveloperLeadDocumentSignedUrl({ ...context, transactionId: 'tx-one', documentId: saved.id })).rejects.toMatchObject({ code: 'lead_documents_access_denied' })
+  mocks.detail.documents[0].transaction_id = 'tx-one'
+  mocks.lead.lead_owner = 'agency'
+  mocks.lead.ownership_model = 'agency_owned'
+  mocks.lead.visibility_state = 'protected'
+  await expect(createDeveloperLeadDocumentSignedUrl({ ...context, transactionId: 'tx-one', documentId: saved.id })).rejects.toMatchObject({ code: 'lead_documents_access_denied' })
+  expect(mocks.sign).not.toHaveBeenCalled()
 })

@@ -1,3 +1,4 @@
+import { getDocumentUploadPolicy } from '../../../../lib/documentUploadPolicy.js'
 import BondOnlineSigningPanel from './BondOnlineSigningPanel.jsx'
 import { MARITAL_STATUS_OPTIONS, MARITAL_REGIME_OPTIONS } from '../../../../lib/buyerOnboardingFlowContract.js'
 import BondApplicationStageProgress from '../workspace/BondApplicationStageProgress.jsx'
@@ -32,6 +33,8 @@ import {
   calculateAdditionalIncomeTotal,
   calculateMonthlyCommitmentTotal,
 } from '../flow/bondApplicationDerivedValues.js'
+const documentUploadPolicy = getDocumentUploadPolicy({ surface: 'bank_statement' })
+
 
 const ZAR = new Intl.NumberFormat('en-ZA', {
   style: 'currency',
@@ -1014,9 +1017,9 @@ export function IncomeBankScreen({ state, updateRepeatableGroup, issues = [] }) 
         <label htmlFor="guided-bank-statement-files" className="block text-sm font-semibold text-[#21384d]">Choose bank statements</label>
         <input
           id="guided-bank-statement-files"
-          type="file"
+          type="file" title={documentUploadPolicy.helpText}
           multiple
-          accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
+          accept={documentUploadPolicy.accept}
           aria-describedby="guided-bank-statement-selection-note"
           className="block min-h-11 w-full text-sm text-[#61748a] file:mr-3 file:min-h-11 file:rounded-xl file:border-0 file:bg-[#35546c] file:px-4 file:text-sm file:font-semibold file:text-white"
           onChange={(event) => {
@@ -1025,6 +1028,7 @@ export function IncomeBankScreen({ state, updateRepeatableGroup, issues = [] }) 
             event.target.value = ''
           }}
         />
+        <span className="block text-xs font-normal text-slate-500">{documentUploadPolicy.helpText}</span>
         <p id="guided-bank-statement-selection-note" className="text-xs leading-5 text-[#61748a]">PDF, JPG or PNG. Selected files stay in this browser session on this screen; they have not been sent or saved to your application.</p>
         {statementFiles.length ? <ul className="space-y-2" aria-label="Selected bank statements">
           {statementFiles.map((file, index) => <li key={`${file.name}-${file.size}-${file.lastModified}`} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[#dbe5ef] bg-white p-3">

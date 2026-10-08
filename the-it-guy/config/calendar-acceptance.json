@@ -1,0 +1,646 @@
+{
+  "version": 1,
+  "product": "primary transaction workspace",
+  "calendarTests": [
+    "src/core/appointments/__tests__/appointmentBehaviorBaseline.test.js",
+    "src/core/appointments/__tests__/appointmentTime.test.js",
+    "src/core/appointments/__tests__/appointmentReservation.test.js",
+    "src/core/appointments/__tests__/appointmentReadModel.test.js",
+    "src/lib/__tests__/appointmentSchedulingService.test.js",
+    "src/lib/__tests__/leadAppointmentHistory.test.js",
+    "src/hooks/__tests__/leadAppointmentHistoryReader.test.js",
+    "src/hooks/__tests__/usePipelineAppointments.test.jsx",
+    "src/components/appointments/dashboard/__tests__/AppointmentDashboardSection.test.jsx",
+    "src/modules/agency/agents/__tests__/agentPerformanceDataService.test.js",
+    "src/pages/mobile/__tests__/MobileCalendarPage.test.jsx",
+    "supabase-tests/calendarReservations.test.js",
+    "src/pages/__tests__/AppointmentRsvpPage.test.jsx",
+    "src/services/__tests__/calendarProposalService.test.js",
+    "supabase-tests/calendarDelivery.test.js",
+    "supabase-tests/calendarDeliveryWorker.test.js",
+    "src/components/appointments/__tests__/AppointmentDeliveryStatus.test.jsx",
+    "src/services/__tests__/appointmentDeliveryFeedback.test.js",
+    "src/services/__tests__/appointmentNotificationPersistence.test.js",
+    "src/core/appointments/__tests__/appointmentWorkflow.test.js",
+    "src/components/appointments/__tests__/AppointmentWorkActions.test.jsx",
+    "src/components/appointments/__tests__/MobileAppointmentWorkspace.test.jsx",
+    "src/pages/mobile/__tests__/MobileCalendarActions.test.jsx",
+    "supabase-tests/calendarArchive.test.js",
+    "supabase-tests/calendarReconciliation.test.js",
+    "src/core/appointments/__tests__/appointmentReconciliation.test.js",
+    "supabase-tests/calendarProviderSync.test.js",
+    "supabase-tests/calendarProviderTransport.test.js",
+    "supabase-tests/calendarProviderWorker.test.js",
+    "src/components/appointments/__tests__/ConnectedCalendarPanel.test.jsx",
+    "src/services/__tests__/calendarProviderService.test.js",
+    "supabase-tests/calendarJourney.test.jsx",
+    "supabase-tests/calendarHealth.test.js",
+    "src/services/__tests__/calendarSupportService.test.js",
+    "src/components/appointments/__tests__/AppointmentSupportPanel.test.jsx",
+    "src/components/appointments/__tests__/CalendarHealthPanel.test.jsx"
+  ],
+  "nativeTests": [
+    "supabase-tests/calendarReservationsConcurrent.test.js",
+    "supabase-tests/calendarProviderConcurrent.test.js"
+  ],
+  "attorneyConfig": "vitest.attorney-calendar.config.js",
+  "operatorTests": [
+    "scripts/reconcile-calendar-appointments.test.mjs"
+  ],
+  "edgeTests": [
+    "calendar-appointment-delivery-worker/index.test.ts",
+    "resend-webhook/index.test.ts",
+    "send-email/index.calendar.test.ts",
+    "calendar-provider-connection/index.test.ts",
+    "calendar-provider-sync-worker/index.test.ts"
+  ],
+  "scenarios": [
+    {
+      "id": "A01",
+      "requirement": "Standalone booking lets the agent choose type, owner and optional linkage",
+      "evidence": [
+        {
+          "file": "src/components/appointments/__tests__/MobileAppointmentWorkspace.test.jsx",
+          "titleContains": "creates with explicit owner"
+        }
+      ]
+    },
+    {
+      "id": "A02",
+      "requirement": "Buyer-lead booking retains the correct client and property links",
+      "evidence": [
+        {
+          "file": "src/lib/__tests__/leadAppointmentHistory.test.js",
+          "titleContains": "uses the scoped history reader"
+        }
+      ]
+    },
+    {
+      "id": "A03",
+      "requirement": "Seller valuation or presentation has the correct type and completion effect",
+      "evidence": [
+        {
+          "file": "src/components/appointments/__tests__/MobileAppointmentWorkspace.test.jsx",
+          "titleContains": "creates with explicit owner"
+        }
+      ]
+    },
+    {
+      "id": "A04",
+      "requirement": "A principal's chosen agent remains responsible",
+      "evidence": [
+        {
+          "file": "src/components/appointments/__tests__/MobileAppointmentWorkspace.test.jsx",
+          "titleContains": "creates with explicit owner"
+        }
+      ]
+    },
+    {
+      "id": "A05",
+      "requirement": "Co-agent attendance appears in calendar, profile and dashboard",
+      "evidence": [
+        {
+          "file": "supabase-tests/calendarJourney.test.jsx",
+          "titleContains": "saves a mobile shared request"
+        }
+      ]
+    },
+    {
+      "id": "A06",
+      "requirement": "Linked lead owner sees the permitted appointment assigned elsewhere",
+      "evidence": [
+        {
+          "file": "src/lib/__tests__/leadAppointmentHistory.test.js",
+          "titleContains": "keeps a far-future booking"
+        }
+      ]
+    },
+    {
+      "id": "A07",
+      "requirement": "Far-future navigation loads the visible range",
+      "evidence": [
+        {
+          "file": "src/lib/__tests__/leadAppointmentHistory.test.js",
+          "titleContains": "keeps navigated calendar ranges"
+        }
+      ]
+    },
+    {
+      "id": "A08",
+      "requirement": "Dates near SAST midnight group on the correct day",
+      "evidence": [
+        {
+          "file": "src/core/appointments/__tests__/appointmentReadModel.test.js",
+          "titleContains": "groups SAST midnight"
+        }
+      ]
+    },
+    {
+      "id": "A09",
+      "requirement": "UTC computer saves the same intended SAST time and duration",
+      "evidence": [
+        {
+          "file": "src/core/appointments/__tests__/appointmentBehaviorBaseline.test.js",
+          "titleContains": "F02: creating a SAST"
+        }
+      ]
+    },
+    {
+      "id": "A10",
+      "requirement": "Rescheduling moves every derived time and downstream effect",
+      "evidence": [
+        {
+          "file": "supabase-tests/calendarJourney.test.jsx",
+          "titleContains": "reschedules then cancels"
+        }
+      ]
+    },
+    {
+      "id": "A11",
+      "requirement": "Editing duration changes availability and exports consistently",
+      "evidence": [
+        {
+          "file": "src/core/appointments/__tests__/appointmentTime.test.js",
+          "titleContains": "updates duration and timestamp-only edits"
+        }
+      ]
+    },
+    {
+      "id": "A12",
+      "requirement": "Simultaneous conflicting bookings produce one winner",
+      "evidence": [
+        {
+          "file": "supabase-tests/calendarReservationsConcurrent.test.js",
+          "titleContains": "gives conflicting simultaneous bookings one winner"
+        }
+      ]
+    },
+    {
+      "id": "A13",
+      "requirement": "Pending requests hold the slot for 24 hours and then release it",
+      "evidence": [
+        {
+          "file": "supabase-tests/calendarReservations.test.js",
+          "titleContains": "waits for every required attendee"
+        }
+      ]
+    },
+    {
+      "id": "A14",
+      "requirement": "Required client or second-agent conflicts block a duplicate",
+      "evidence": [
+        {
+          "file": "supabase-tests/calendarReservations.test.js",
+          "titleContains": "protects shared required clients"
+        }
+      ]
+    },
+    {
+      "id": "A15",
+      "requirement": "Back-to-back bookings show a travel warning without an arbitrary rejection",
+      "evidence": [
+        {
+          "file": "supabase-tests/calendarReservations.test.js",
+          "titleContains": "allows back-to-back bookings"
+        }
+      ]
+    },
+    {
+      "id": "A16",
+      "requirement": "Evening and weekend property appointments remain available",
+      "evidence": [
+        {
+          "file": "src/components/appointments/__tests__/MobileAppointmentWorkspace.test.jsx",
+          "titleContains": "preserving evening/weekend time"
+        }
+      ]
+    },
+    {
+      "id": "A17",
+      "requirement": "Room clashes respect resource organisation and atomic protection",
+      "evidence": [
+        {
+          "file": "supabase-tests/calendarReservations.test.js",
+          "titleContains": "protects a room even for different agents"
+        }
+      ]
+    },
+    {
+      "id": "A18",
+      "requirement": "Cancellation succeeds despite an existing overlap",
+      "evidence": [
+        {
+          "file": "supabase-tests/calendarReservations.test.js",
+          "titleContains": "keeps cancellation available after historical overlap"
+        }
+      ]
+    },
+    {
+      "id": "A19",
+      "requirement": "Cancellation suppresses reminders and obsolete invitations",
+      "evidence": [
+        {
+          "file": "supabase-tests/calendarJourney.test.jsx",
+          "titleContains": "reschedules then cancels"
+        }
+      ]
+    },
+    {
+      "id": "A20",
+      "requirement": "Accidental or cancelled duplicates can be archived and restored safely",
+      "evidence": [
+        {
+          "file": "supabase-tests/calendarArchive.test.js",
+          "titleContains": "keeps cancelled history"
+        }
+      ]
+    },
+    {
+      "id": "A21",
+      "requirement": "Completion and its required linked task succeed together",
+      "evidence": [
+        {
+          "file": "supabase-tests/calendarReservations.test.js",
+          "titleContains": "rolls completion back"
+        }
+      ]
+    },
+    {
+      "id": "A22",
+      "requirement": "No-show survives save and is absent from upcoming work",
+      "evidence": [
+        {
+          "file": "src/core/appointments/__tests__/appointmentBehaviorBaseline.test.js",
+          "titleContains": "F06:"
+        }
+      ]
+    },
+    {
+      "id": "A23",
+      "requirement": "Client acceptance and decline validate identity and current revision",
+      "evidence": [
+        {
+          "file": "supabase-tests/calendarReservations.test.js",
+          "titleContains": "does not turn an individual decline"
+        }
+      ]
+    },
+    {
+      "id": "A24",
+      "requirement": "A proposed replacement preserves the original reservation until approval",
+      "evidence": [
+        {
+          "file": "supabase-tests/calendarReservations.test.js",
+          "titleContains": "holds both times"
+        }
+      ]
+    },
+    {
+      "id": "A25",
+      "requirement": "Repeated, expired and revoked responses are idempotent or rejected clearly",
+      "evidence": [
+        {
+          "file": "supabase-tests/calendarReservations.test.js",
+          "titleContains": "expires or rejects only the replacement"
+        }
+      ]
+    },
+    {
+      "id": "A26",
+      "requirement": "Attendee edits preserve identity and response history",
+      "evidence": [
+        {
+          "file": "supabase-tests/calendarReservations.test.js",
+          "titleContains": "revokes removed attendees"
+        }
+      ]
+    },
+    {
+      "id": "A27",
+      "requirement": "Removing a participant revokes access and stops delivery",
+      "evidence": [
+        {
+          "file": "supabase-tests/calendarDelivery.test.js",
+          "titleContains": "stops delivery to removed"
+        }
+      ]
+    },
+    {
+      "id": "A28",
+      "requirement": "Closing the browser immediately after save cannot stop queued delivery",
+      "evidence": [
+        {
+          "file": "supabase-tests/calendarJourney.test.jsx",
+          "titleContains": "closes the screen"
+        }
+      ]
+    },
+    {
+      "id": "A29",
+      "requirement": "Automatic reminders have valid recipients, claims, retries and receipts",
+      "evidence": [
+        {
+          "file": "supabase-tests/calendarDelivery.test.js",
+          "titleContains": "runs a committed save through the real SQL"
+        }
+      ]
+    },
+    {
+      "id": "A30",
+      "requirement": "Custom 30 minute preference replaces default reminders",
+      "evidence": [
+        {
+          "file": "supabase-tests/calendarDelivery.test.js",
+          "titleContains": "commits independently persisted choices"
+        }
+      ]
+    },
+    {
+      "id": "A31",
+      "requirement": "Short-notice bookings do not replay expired reminder offsets",
+      "evidence": [
+        {
+          "file": "supabase-tests/calendarDelivery.test.js",
+          "titleContains": "schedules only future offsets"
+        }
+      ]
+    },
+    {
+      "id": "A32",
+      "requirement": "Invitations off and reminders on remain independent after reload",
+      "evidence": [
+        {
+          "file": "src/lib/__tests__/appointmentSchedulingService.test.js",
+          "titleContains": "saves invitations off"
+        }
+      ]
+    },
+    {
+      "id": "A33",
+      "requirement": "Client without login receives their permitted email",
+      "evidence": [
+        {
+          "file": "supabase-tests/calendarJourney.test.jsx",
+          "titleContains": "saves a mobile shared request"
+        }
+      ]
+    },
+    {
+      "id": "A34",
+      "requirement": "Provider outage retries without false sent status or duplicates",
+      "evidence": [
+        {
+          "file": "supabase-tests/calendarDelivery.test.js",
+          "titleContains": "bounds transient retries"
+        }
+      ]
+    },
+    {
+      "id": "A35",
+      "requirement": "Other-device changes refresh open profile and dashboard views",
+      "evidence": [
+        {
+          "file": "src/hooks/__tests__/usePipelineAppointments.test.jsx",
+          "titleContains": "reconciles another device"
+        }
+      ]
+    },
+    {
+      "id": "A36",
+      "requirement": "Loading failure shows Retry and retains verified data",
+      "evidence": [
+        {
+          "file": "src/hooks/__tests__/usePipelineAppointments.test.jsx",
+          "titleContains": "preserves rows after failed refresh"
+        }
+      ]
+    },
+    {
+      "id": "A37",
+      "requirement": "Old unanswered request appears in follow-up, not next appointment",
+      "evidence": [
+        {
+          "file": "src/core/appointments/__tests__/appointmentBehaviorBaseline.test.js",
+          "titleContains": "old unresolved request"
+        }
+      ]
+    },
+    {
+      "id": "A38",
+      "requirement": "Completed future record is absent from upcoming counts",
+      "evidence": [
+        {
+          "file": "src/core/appointments/__tests__/appointmentBehaviorBaseline.test.js",
+          "titleContains": "completed future-dated booking"
+        }
+      ]
+    },
+    {
+      "id": "A39",
+      "requirement": "Manual calendar export has correct timezone, duration and revision",
+      "evidence": [
+        {
+          "file": "src/core/appointments/__tests__/appointmentTime.test.js",
+          "titleContains": "exports the actual timezone"
+        }
+      ]
+    },
+    {
+      "id": "A40",
+      "requirement": "Connected Google or Outlook changes propagate without duplicates",
+      "evidence": [
+        {
+          "file": "supabase-tests/calendarProviderWorker.test.js",
+          "titleContains": "through real SQL, encrypted credentials"
+        }
+      ]
+    },
+    {
+      "id": "A41",
+      "requirement": "Mobile supports details, creation, editing, cancellation and response",
+      "evidence": [
+        {
+          "file": "supabase-tests/calendarJourney.test.jsx",
+          "titleContains": "saves a mobile shared request"
+        }
+      ]
+    },
+    {
+      "id": "A42",
+      "requirement": "Wrong user, attendee or organisation cannot read or change private bookings",
+      "evidence": [
+        {
+          "file": "supabase-tests/calendarJourney.test.jsx",
+          "titleContains": "denies another organisation"
+        }
+      ]
+    }
+  ],
+  "liveGates": [
+    {
+      "id": "hosted-access",
+      "cases": [
+        "A02",
+        "A04",
+        "A06",
+        "A17",
+        "A23",
+        "A25",
+        "A26",
+        "A27",
+        "A42"
+      ],
+      "requiredEvidence": "Approved target identity, hosted owner/co-agent/principal/attorney/anonymous/removed-member/cross-organisation allow and deny receipts. Full migration replay/catalog and advisors; fixture policies are deliberately minimal."
+    },
+    {
+      "id": "notification-delivery",
+      "cases": [
+        "A10",
+        "A19",
+        "A28",
+        "A29",
+        "A30",
+        "A31",
+        "A32",
+        "A33",
+        "A34"
+      ],
+      "requiredEvidence": "Approved controlled recipient addresses; saved revision/job IDs, closed browser, actual scheduled reminders, provider message IDs and signature-verified delivered/bounced webhook receipts. No customer recipients."
+    },
+    {
+      "id": "google-outlook",
+      "cases": [
+        "A40"
+      ],
+      "requiredEvidence": "Approved test accounts on both providers; consent/reconnect/one-copy create/edit/cancel, lost response and external change review. Verify Outlook conditional update handling and calendar export clients."
+    },
+    {
+      "id": "browser-mobile",
+      "cases": [
+        "A01",
+        "A03",
+        "A04",
+        "A05",
+        "A07",
+        "A08",
+        "A09",
+        "A11",
+        "A15",
+        "A16",
+        "A20",
+        "A21",
+        "A22",
+        "A35",
+        "A36",
+        "A37",
+        "A38",
+        "A39",
+        "A41"
+      ],
+      "requiredEvidence": "Real desktop and narrow mobile browser, UTC and SAST device settings, save/reload/reconnect/stale edits, agent profile and dashboard agreement, travel-warning presentation, seller completion side effects and dedicated attorney workflow."
+    },
+    {
+      "id": "agent-pilot",
+      "cases": [
+        "A01",
+        "A02",
+        "A03",
+        "A04",
+        "A05",
+        "A06",
+        "A07",
+        "A08",
+        "A09",
+        "A10",
+        "A11",
+        "A12",
+        "A13",
+        "A14",
+        "A15",
+        "A16",
+        "A17",
+        "A18",
+        "A19",
+        "A20",
+        "A21",
+        "A22",
+        "A23",
+        "A24",
+        "A25",
+        "A26",
+        "A27",
+        "A28",
+        "A29",
+        "A30",
+        "A31",
+        "A32",
+        "A33",
+        "A34",
+        "A35",
+        "A36",
+        "A37",
+        "A38",
+        "A39",
+        "A40",
+        "A41",
+        "A42"
+      ],
+      "requiredEvidence": "Named initial agents complete the agreed real workflows; record appointment/revision IDs, outcomes, pilot feedback, support owner and approval to widen rollout."
+    }
+  ],
+  "release": {
+    "migrations": [
+      {
+        "path": "supabase/migrations/20261008163445_appointment_end_instant.sql",
+        "sha256": "4847d73403fd334a13976e46376451329dd59b7fb8c2484b1f017bb0ff26cea4"
+      },
+      {
+        "path": "supabase/migrations/20261008164958_calendar_atomic_reservations.sql",
+        "sha256": "8725c484b05cc533467875231e8641afce282e4b249469dfd34ff697afd9f8f1"
+      },
+      {
+        "path": "supabase/migrations/20261008184511_calendar_durable_notifications.sql",
+        "sha256": "6cbf529a692accb1c1198c1dbf3be0610407be118ebf3cdfca33ce3d37f8492a"
+      },
+      {
+        "path": "supabase/migrations/20261008184859_calendar_delivery_worker_schedule.sql",
+        "sha256": "2af2dd12d5f6d66afde0747e12f804df96e440337c5f51c988aa4e9e6657cc42"
+      },
+      {
+        "path": "supabase/migrations/20261008193925_calendar_agent_archive_workflow.sql",
+        "sha256": "9a973a6058730a56294f4c8167cab6db62fc77ef287cea55a997cf2e04aeacdf"
+      },
+      {
+        "path": "supabase/migrations/20261008202747_calendar_historical_reconciliation.sql",
+        "sha256": "03578c79262ae3442d78c928bed42906a1119c9b23ba8deee1ace5c57c574e84"
+      },
+      {
+        "path": "supabase/migrations/20261008205719_calendar_connected_provider_sync.sql",
+        "sha256": "c29a8d34b80dee3b1761bf602c7d92130fb225e817dab83d4fd20230bc703ab1"
+      },
+      {
+        "path": "supabase/migrations/20261008210940_calendar_provider_worker_schedule.sql",
+        "sha256": "c809f3440571e3d56a319c531bcba605ccc207580304e69847755bcbdcc61c66"
+      },
+      {
+        "path": "supabase/migrations/20261008220735_calendar_operational_health_support.sql",
+        "sha256": "c929b1b4417e271ab0495f36348a94c81f7c5c96f5c36d196ec950be76b6c48e"
+      },
+      {
+        "path": "supabase/migrations/20261008221320_calendar_health_monitor_schedule.sql",
+        "sha256": "72bf1332cf540978e720ec24ac3d4854d1f59c76c4bcdd6f65483239f3834133"
+      }
+    ],
+    "functions": [
+      "calendar-appointment-delivery-worker",
+      "send-email",
+      "resend-webhook",
+      "attorney-appointment-delivery-worker",
+      "listing-viewing-notification-worker",
+      "calendar-provider-connection",
+      "calendar-provider-sync-worker"
+    ],
+    "migrationReplay": "Partial isolated fixture, not a full clean hosted-schema replay",
+    "remoteChangesAuthorized": false
+  }
+}

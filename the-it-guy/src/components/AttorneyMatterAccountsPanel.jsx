@@ -1,3 +1,4 @@
+import { DOCUMENT_UPLOAD_ACCEPT, DOCUMENT_UPLOAD_HELP_TEXT } from '../lib/documentUploadPolicy.js'
 import {
   ArrowDownCircle,
   ArrowUpCircle,
@@ -1133,8 +1134,10 @@ export default function AttorneyMatterAccountsPanel({ transactionId, buyerName =
             </label>
             <label className="text-sm font-semibold text-textStrong">
               File
-              <Field key={fileInputKey} className="mt-1" type="file" onChange={(event) => setDocumentFile(event.target.files?.[0] || null)} />
+              <Field key={fileInputKey} className="mt-1" type="file" aria-label="File" title={DOCUMENT_UPLOAD_HELP_TEXT} accept={DOCUMENT_UPLOAD_ACCEPT} onChange={(event) => setDocumentFile(event.target.files?.[0] || null)} />
+            <span className="block text-xs font-normal text-slate-500">{DOCUMENT_UPLOAD_HELP_TEXT}</span>
             </label>
+            
           </div>
 
           <label className="mt-3 block text-sm font-semibold text-textStrong">

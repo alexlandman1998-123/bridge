@@ -1,3 +1,5 @@
+import { appointmentStartIso, sastDateKey, sastDayStart, sastWeekStart, sastMonthStart, addCalendarDays as addSastDays } from '../src/core/appointments/attorneyCalendarModel.js'
+import { resolveAppointmentSchedule } from '../src/core/appointments/appointmentTime.js'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -104,12 +106,12 @@ assert.match(
 console.log('appointment query range phase 2 checks passed')
 
 // Exercise the actual calendar helpers for the reported far-future date.
-const context = vm.createContext({ Date, normalizeText: value => String(value || '').trim() })
+const context = vm.createContext({ Date, resolveAppointmentSchedule, appointmentStartIso, sastDateKey, sastDayStart, sastWeekStart, sastMonthStart, addSastDays, normalizeText: value => String(value || '').trim() })
 vm.runInContext(`
 const PIPELINE_APPOINTMENT_ROLLING_PAST_DAYS = 45;
 const PIPELINE_APPOINTMENT_ROLLING_FUTURE_DAYS = 180;
 const PIPELINE_CALENDAR_RANGE_PADDING_DAYS = 7;
-${['toDateOnlyIso', 'addCalendarDays', 'getStartOfLocalDay', 'getEndExclusiveOfLocalDay', 'getStartOfWeek', 'getMonthGridDays', 'getWeekDays', 'getCalendarRangeDays', 'getVisibleCalendarDateRange', 'buildAppointmentReloadRange', 'parseAppointmentDate', 'isAppointmentWithinReloadRange', 'mergeAppointmentRowsForReload'].map(name => extractFunctionBlock(pageSource, name)).join('\n')}
+${['toDateOnlyIso', 'addCalendarDays', 'getStartOfLocalDay', 'getEndExclusiveOfLocalDay', 'getStartOfWeek', 'getMonthGridDays', 'getWeekDays', 'getCalendarRangeDays', 'getVisibleCalendarDateRange', 'buildAppointmentReloadRange', 'parseAppointmentDate', 'isAppointmentWithinReloadRange', 'mergeAppointmentRowsForReload', 'formatCalendarPeriodLabel', 'formatAppointmentTimeRange'].map(name => extractFunctionBlock(pageSource, name)).join('\n')}
 `, context)
 const range = vm.runInContext("buildAppointmentReloadRange({ isCalendarMode: true, calendarView: 'month', calendarCursorDate: new Date(2027, 9, 1) })", context)
 for (const view of ['day', 'week', 'three_day', 'month']) {
@@ -125,3 +127,17 @@ const retained = context.mergeAppointmentRowsForReload([
 ], [], { range, organisationId: 'agency' })
 assert.deepEqual(Array.from(retained, row => row.appointmentId), ['past'], 'a verified empty range removes deleted rows but retains history only in this organisation')
 console.log('future date navigation and scoped merge checks passed')
+
+// The actual calendar grid follows SAST midnight in either process timezone.
+assert.equal(context.toDateOnlyIso(context.parseAppointmentDate({ dateTime: '2027-09-30T22:30Z' })), '2027-10-01')
+const sastDay = context.getVisibleCalendarDateRange('day', new Date('2027-09-30T22:30Z'))
+assert.equal(sastDay.from.toISOString(), '2027-09-30T22:00:00.000Z')
+assert.equal(sastDay.to.toISOString(), '2027-10-01T22:00:00.000Z')
+assert.equal(context.toDateOnlyIso(context.getMonthGridDays(new Date('2027-10-01T10:00Z'))[0]), '2027-09-27')
+console.log('SAST calendar grid and exclusive day bounds passed')
+
+assert.match(context.formatCalendarPeriodLabel('day', new Date('2027-09-30T22:30Z')), /01.*Oct.*2027/)
+const overseas = { date: '2027-10-01', startTime: '23:30', endTime: '23:50', timezone: 'America/New_York' }
+assert.equal(context.toDateOnlyIso(context.parseAppointmentDate(overseas)), '2027-10-02')
+assert.equal(context.formatAppointmentTimeRange(overseas), '05:30 - 05:50')
+console.log('calendar labels and overseas appointments remain in the workspace timezone')

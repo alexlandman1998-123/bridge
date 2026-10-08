@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { buildStockSummary, buildStockTargets, createStockGroup, createStockPlan, validateStockStep } from '../developmentStockPlan.js'
+import { buildStockSummary, buildStockTargets, createStockGroup, createStockPlan, createStockUnitType, validateStockStep } from '../developmentStockPlan.js'
 
 function plan() {
   const result = createStockPlan()
+  result.unitTypes.push(createStockUnitType())
   result.unitTypes[0].name = 'Apartment'
   Object.assign(result.unitTypes[0].floorplans[0], { name: 'A1', sizeSqm: '80', listPrice: '1500000', quantity: '4' })
   return result

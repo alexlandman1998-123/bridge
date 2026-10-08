@@ -59,6 +59,8 @@ export default function ListingSellerInformationEditor({
 
   return (
     <form id="listing-seller-information-editor-form" className="space-y-4" onSubmit={onSubmit}>
+      <p className="text-sm text-[#607387]">Saving recalculates the document requests for the selected owner. Existing uploads and signed documents stay in the transaction file.</p>
+      <fieldset disabled={saving} className="min-w-0 space-y-4">
       <section className="grid gap-4 rounded-[18px] border border-[#dce6f2] bg-white p-4 sm:grid-cols-2">
         <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e] sm:col-span-2">
           Legal owner type
@@ -147,7 +149,8 @@ export default function ListingSellerInformationEditor({
         const fields = { startDate: 'mandateStartDate', endDate: 'expiryDate', specialConditions: 'mandateTerms' }
         for (const [key, value] of Object.entries(next)) onChange(fields[key] || key, value)
       }} />
-      <button type="submit" className="sr-only" disabled={saving}>Save seller information</button>
+      <button type="submit" className="sr-only" disabled={saving}>Save ownership and update requests</button>
+      </fieldset>
     </form>
   )
 }

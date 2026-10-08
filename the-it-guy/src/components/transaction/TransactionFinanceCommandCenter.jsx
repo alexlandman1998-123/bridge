@@ -1,3 +1,4 @@
+import { DOCUMENT_UPLOAD_ACCEPT, DOCUMENT_UPLOAD_HELP_TEXT } from '../../lib/documentUploadPolicy.js'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   BadgeCheck,
@@ -318,7 +319,7 @@ function UploadAction({
   onSelect,
 }) {
   return (
-    <label className={`inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+    <><label className={`inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
       disabled
         ? 'cursor-not-allowed border-[#e1e8f0] bg-[#f5f7fa] text-[#99a8b8]'
         : 'border-[#dbe5ef] bg-white text-[#35546c] hover:bg-[#f7fbff]'
@@ -326,7 +327,7 @@ function UploadAction({
       <UploadCloud size={13} />
       {label}
       <input
-        type="file"
+        type="file" title={DOCUMENT_UPLOAD_HELP_TEXT} accept={DOCUMENT_UPLOAD_ACCEPT}
         className="hidden"
         disabled={disabled}
         onChange={(event) => {
@@ -335,7 +336,9 @@ function UploadAction({
           event.target.value = ''
         }}
       />
+    
     </label>
+<span className="block text-xs font-normal text-slate-500">{DOCUMENT_UPLOAD_HELP_TEXT}</span></>
   )
 }
 

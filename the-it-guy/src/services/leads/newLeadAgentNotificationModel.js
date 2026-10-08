@@ -29,9 +29,9 @@ export function buildNewLeadAgentNotification({ organisationId, lead = {}, conta
     leadSource: source, leadCategory: category, leadStatus: text(lead.status || lead.stage) || 'New Lead',
     propertyLabel: property, enquiryMessage: text(lead.notes),
     actionLink: `${baseUrl}${route}/${encodeURIComponent(leadId)}`,
-    subject: `New ${subjectCategory}lead — ${source}`,
-    title: 'New lead assigned to you',
-    message: `A new ${source} lead has been assigned to you. Please review the details and make first contact.`,
+    subject: `New ${subjectCategory}lead: ${source}`,
+    title: 'A new lead just landed',
+    message: `${name === 'New lead' ? `You have a new ${subjectCategory}lead` : `${name} is your new ${subjectCategory}lead`}${source === 'Manual Entry' ? '' : ` from ${source}`}. Their details are ready below. Take a look and say hello.`,
     source: 'agency_crm_new_lead',
     idempotencyKey: externalReference ? `portal-lead-agent-notification:${externalReference}:${recipient}` : `new-lead-agent:${organisationId}:${leadId}:${ownerId || recipient}`,
   }

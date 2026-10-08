@@ -1,3 +1,4 @@
+import { getDocumentUploadPolicy } from '../../lib/documentUploadPolicy.js'
 import {
   AlertTriangle,
   Bold,
@@ -133,6 +134,8 @@ import { buildLegalDocumentTemplateCoverageAudit } from '../../core/documents/le
 import { normalizeLegalDocumentEditorScope } from '../../core/documents/legalDocumentCatalog'
 import { listScopedLegalDocumentSectionEntries } from '../../core/documents/legalDocumentEditorScope'
 import { getLegalDocumentEditorSituation } from '../../core/documents/legalDocumentEditorSituations'
+const documentUploadPolicy = getDocumentUploadPolicy({ surface: 'legal_template' })
+
 
 const SUPPORTED_PACKET_TYPES = [
   {
@@ -11783,17 +11786,19 @@ export default function SettingsSigningTemplatesPage({
                     </div>
 
                     {form.renderMode === TEMPLATE_RENDER_MODES.LEGACY_DOCX && canEdit && selectedIsOrgOwned ? (
-                      <label className={`${studioSecondaryButtonClass} cursor-pointer`}>
+                      <><label className={`${studioSecondaryButtonClass} cursor-pointer`}>
                         <Upload size={14} />
                         <span>{uploadingTemplate ? 'Uploading…' : 'Upload DOCX'}</span>
                         <input
-                          type="file"
-                          accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                          type="file" title={documentUploadPolicy.helpText}
+                          accept={documentUploadPolicy.accept}
                           className="hidden"
                           onChange={(event) => void handleUploadTemplateFile(event)}
                           disabled={uploadingTemplate}
                         />
+                      
                       </label>
+<span className="block text-xs font-normal text-slate-500">{documentUploadPolicy.helpText}</span></>
                     ) : null}
                   </div>
 

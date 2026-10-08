@@ -1,14 +1,13 @@
+import { validateDocumentUploadFile } from '../../src/lib/documentUploadPolicy.js'
+import { isDefiniteUploadSaveRejection } from '../../src/lib/documentUploadRecovery.js'
 import { readRentalSavedChecklist } from './rentalSavedChecklist.js'
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto'
 import { rentalApplicationSavedDocumentSlots } from '../../src/services/rentals/rentalApplicationWizardModel.js'
 const bucket = 'rental-application-documents'
 export function validateRentalDocumentUpload({ fileName = '', mimeType = '', binary = Buffer.alloc(0) } = {}) {
-  const safeFileName = String(fileName).trim().split(/[\\/]/).pop().replace(/[^a-zA-Z0-9._-]/g, '_').replace(/^[_.]+|[_.]+$/g, '').slice(0, 140)
-  const extension = safeFileName.split('.').pop().toLowerCase()
-  const mimeTypes = { pdf: ['application/pdf'], doc: ['application/msword'], docx: ['application/vnd.openxmlformats-officedocument.wordprocessingml.document'], jpg: ['image/jpeg'], jpeg: ['image/jpeg'], png: ['image/png'] }
-  if (!mimeTypes[extension]?.includes(String(mimeType).toLowerCase())) throw new Error('Unsupported file type or mismatched extension. Upload a PDF, Word document, JPG or PNG.')
-  if (!Number.isInteger(binary.length) || binary.length <= 0 || binary.length > 8 * 1024 * 1024) throw new Error('Documents must be 8 MB or smaller.')
-  return { safeFileName, mimeType: String(mimeType).toLowerCase() }
+  const policy = validateDocumentUploadFile({ name: fileName, type: mimeType, size: binary.length }, { surface: 'rental_application' })
+  return { safeFileName: policy.safeName, mimeType: policy.mimeType }
+
 }
 const signature = (payload, secret) => createHmac('sha256', secret).update(payload).digest('base64url')
 function readTicket(ticket, secret, application, source) {
@@ -21,6 +20,19 @@ function readTicket(ticket, secret, application, source) {
 }
 export async function uploadRentalApplicationDocument(db, application, body, { source = 'applicant', applicationClient = db, signingSecret = '' } = {}) {
   if (!['draft', 'submitted', 'under_review'].includes(application.status)) throw new Error('This application can no longer be edited.')
+  let existingDocument = null
+  let completionTicket = null
+  if (body.action === 'complete_upload') {
+    if (!signingSecret) throw new Error('Document upload is not configured.')
+    completionTicket = readTicket(body.ticket, signingSecret, application, source)
+    const found = await applicationClient.from('rental_application_documents').select('id, document_type, status, file_name, uploaded_at, created_at, intake_bundle_id, storage_path, intake_requirement_id, intake_generation').eq('application_id', application.id).eq('storage_path', completionTicket.path).maybeSingle()
+    if (found.error) throw found.error
+    existingDocument = found.data
+    if (existingDocument && existingDocument.storage_path !== completionTicket.path) throw new Error('Upload recovery did not match the exact file.')
+    if (existingDocument && application.application_data?.documentLinks?.some(link => link.documentId === existingDocument.id && link.requirementId === completionTicket.requirementId && Number(link.generation) === completionTicket.generation)) {
+      return { document: existingDocument, application }
+    }
+  }
   if (Number(body.version) !== Number(application.version)) throw new Error('This application changed. Refresh and try again.')
   const requirements = await readRentalSavedChecklist(applicationClient, application)
   if (!requirements.length) throw new Error('Save the draft to prepare its document checklist before uploading.')
@@ -35,7 +47,7 @@ export async function uploadRentalApplicationDocument(db, application, body, { s
   let slot, requirement, policy, path, fileSize, bundleId = randomUUID()
   if (body.action === 'complete_upload') {
     if (!signingSecret) throw new Error('Document upload is not configured.')
-    const ticket = readTicket(body.ticket, signingSecret, application, source)
+    const ticket = completionTicket
     if (ticket.version !== Number(application.version)) throw new Error('This application changed. Refresh and try again.')
     slot = rentalApplicationSavedDocumentSlots(application.application_data, requirements).find((item) => item.subjectId === ticket.subjectId && item.purpose === ticket.purpose)
     if (!slot) throw new Error('The person or evidence requirement changed. Please upload again.')
@@ -47,6 +59,7 @@ export async function uploadRentalApplicationDocument(db, application, body, { s
     if (info.error || !info.data) throw new Error('The file upload is incomplete. Retry the upload.')
     fileSize = Number(info.data.size)
     try {
+      if (!info.data.contentType) throw new Error('The uploaded file has no verified content type.')
       policy = validateRentalDocumentUpload({ fileName: ticket.fileName, mimeType: info.data.contentType, binary: { length: fileSize } })
       if (fileSize !== ticket.fileSize || policy.mimeType !== ticket.mimeType) throw new Error('The uploaded file differs from the selected document.')
     } catch (cause) { await storage.remove([path]).catch(() => null); throw cause }
@@ -78,22 +91,32 @@ export async function uploadRentalApplicationDocument(db, application, body, { s
     const uploaded = await storage.upload(path, binary, { contentType: policy.mimeType, upsert: false })
     if (uploaded.error) throw uploaded.error
   }
-  let document
+  let document = existingDocument
   try {
-    const inserted = await applicationClient.from('rental_application_documents').insert({ application_id: application.id, organisation_id: application.organisation_id, document_type: slot.type, intake_requirement_id: requirement.id, intake_generation: requirement.generation, intake_bundle_id: bundleId, storage_path: path, file_name: policy.safeFileName, mime_type: policy.mimeType, file_size_bytes: fileSize, uploaded_at: new Date().toISOString() }).select('id, document_type, status, file_name, uploaded_at, created_at, intake_bundle_id').single()
+    const objectId = path.split('/').at(-1)?.slice(0, 36)
+    const documentId = /^[a-f0-9-]{36}$/i.test(objectId || '') ? objectId : randomUUID()
+    const inserted = document ? { data: document } : await applicationClient.from('rental_application_documents').insert({ id: documentId, application_id: application.id, organisation_id: application.organisation_id, document_type: slot.type, intake_requirement_id: requirement.id, intake_generation: requirement.generation, intake_bundle_id: bundleId, storage_path: path, file_name: policy.safeFileName, mime_type: policy.mimeType, file_size_bytes: fileSize, uploaded_at: new Date().toISOString() }).select('id, document_type, status, file_name, uploaded_at, created_at, intake_bundle_id').single()
     if (inserted.error) throw inserted.error
     document = inserted.data
     const links = [...(application.application_data?.documentLinks || []), { documentId: document.id, subjectId: slot.subjectId, purpose: slot.purpose, source, requirementId: requirement.id, generation: requirement.generation }]
     const saved = application.status !== 'draft' ? await applicationClient.rpc('rental_attach_submitted_document', { p_application_id: application.id, p_expected_version: Number(application.version), p_document_id: document.id, p_requirement_id: requirement.id, p_generation: requirement.generation }) : await applicationClient.from('rental_applications').update({ application_data: { ...application.application_data, documentLinks: links }, version: Number(application.version) + 1 }).eq('id', application.id).eq('version', application.version).eq('status', 'draft').select('id, status, version, application_data, organisation_id, updated_at, cost_snapshot_json, confirmation_json, application_fee_due_at').maybeSingle()
-    if (saved.error || !saved.data) throw saved.error || new Error('This application changed. Refresh and try again.')
+    if (saved.error || !saved.data) throw saved.error || Object.assign(new Error('This application changed. Refresh and try again.'), { code: '40001' })
     return { document, application: saved.data }
   } catch (cause) {
-    // A save may have committed even if its response failed. The requirement
-    // ledger protects referenced document rows; retain their bytes when deletion
-    // fails or is uncertain rather than breaking a committed assignment.
+    // Never delete an insert/update whose response was lost. Recover only an
+    // exact document assignment through the current authorised application.
+    try {
+      const found = await applicationClient.from('rental_application_documents').select('id, storage_path, intake_requirement_id, intake_generation, document_type, status, file_name, intake_bundle_id').eq('application_id', application.id).eq('storage_path', path).maybeSingle()
+      const current = await applicationClient.from('rental_applications').select('*').eq('id', application.id).maybeSingle()
+      if (!found.error && !current.error && found.data?.storage_path === path && current.data?.application_data?.documentLinks?.some(link => link.documentId === found.data.id && link.requirementId === requirement.id && Number(link.generation) === requirement.generation)) return { document: found.data, application: current.data }
+    } catch { /* Missing recovery evidence is not proof of rollback. */ }
+    if (!isDefiniteUploadSaveRejection(cause) || cause?.code === '23505') throw cause
     let removable = !document
     if (document) {
-      try { const removed = await db.from('rental_application_documents').delete().eq('id', document.id); removable = Boolean(removed && !removed.error) } catch { removable = false }
+      try {
+        const removed = await db.from('rental_application_documents').delete().eq('id', document.id).select('id').maybeSingle()
+        removable = Boolean(!removed.error && removed.data?.id === document.id)
+      } catch { removable = false }
     }
     if (removable) await storage.remove([path]).catch(() => null)
     throw cause

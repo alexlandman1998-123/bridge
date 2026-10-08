@@ -1,3 +1,4 @@
+import { appointmentLocalParts } from '../core/appointments/appointmentTime.js'
 import { getEdgeFunctionInvokeError, invokeEdgeFunction, supabase, isSupabaseConfigured } from '../lib/supabaseClient'
 import { getAppointmentTypeTemplate } from './appointmentTemplateService'
 import { prepareNotificationOutbox } from './notificationOutboxService'
@@ -63,7 +64,7 @@ function isUuidLike(value = '') {
 
 function isMissingTableError(error, table = '') {
   const message = String(error?.message || error?.details || '').toLowerCase()
-  return error?.code === '42P01' || (table ? message.includes(table.toLowerCase()) : false)
+  return error?.code === '42P01' || (error?.code === 'PGRST205' && (!table || message.includes(table.toLowerCase())))
 }
 
 function isMissingColumnError(error, column = '') {
@@ -233,6 +234,7 @@ function filterParticipantsForDelivery(participants = [], options = {}) {
 function normalizeParticipantForDelivery(participant = {}) {
   return {
     participantId: normalizeText(participant?.participantId || participant?.participant_id || participant?.id) || null,
+    userId: normalizeText(participant?.userId || participant?.user_id) || null,
     name: normalizeText(participant?.name || participant?.displayName || participant?.full_name) || 'Participant',
     email: normalizeLower(participant?.email),
     phone: normalizeText(participant?.phone || participant?.mobile || participant?.phone_number),
@@ -300,15 +302,15 @@ function resolveEventMessage(eventType = '', appointment = {}) {
   return `${title}${date ? ` on ${date}` : ''}${time ? ` at ${time}` : ''}${place ? ` (${place})` : ''}.`
 }
 
-async function loadAppointmentContext(appointmentId) {
+async function loadAppointmentContext(appointmentId, { includeClosedParticipants = false } = {}) {
   const scopedAppointmentId = normalizeText(appointmentId)
   if (!scopedAppointmentId) {
     throw new Error('Appointment is required.')
   }
 
   const appointmentSelects = [
-    'appointment_id, organisation_id, transaction_id, appointment_type, title, appointment_date, start_time, end_time, date_time, timezone, location, meeting_url, status, notes, visibility_scope, required_documents, linked_workflow_stage, linked_transaction_stage, assigned_agent_id, assigned_agent_name, assigned_agent_email',
-    'appointment_id, organisation_id, transaction_id, appointment_type, title, appointment_date, start_time, end_time, date_time, timezone, location, meeting_url, status, notes, visibility_scope, required_documents, linked_workflow_stage, linked_transaction_stage',
+    '*, appointment_id, organisation_id, transaction_id, appointment_type, title, appointment_date, start_time, end_time, date_time, timezone, location, meeting_url, status, cancelled_at, updated_at, notes, visibility_scope, required_documents, linked_workflow_stage, linked_transaction_stage, assigned_agent_id, assigned_agent_name, assigned_agent_email',
+    'appointment_id, organisation_id, transaction_id, appointment_type, title, appointment_date, start_time, end_time, date_time, timezone, location, meeting_url, status, cancelled_at, updated_at, notes, visibility_scope, required_documents, linked_workflow_stage, linked_transaction_stage',
     'appointment_id, organisation_id, transaction_id, appointment_type, title, appointment_date, start_time, end_time, date_time, location, status, notes, visibility_scope',
     'appointment_id, organisation_id, transaction_id, appointment_type, title, appointment_date, start_time, end_time, date_time, location, status, notes',
   ]
@@ -343,7 +345,7 @@ async function loadAppointmentContext(appointmentId) {
 
   let participantsQuery = await supabase
     .from('appointment_participants')
-    .select('participant_id, appointment_id, name, email, phone, participant_role, rsvp_status, rsvp_token')
+    .select('user_id, participant_id, appointment_id, name, email, phone, participant_role, rsvp_status, rsvp_token, rsvp_revoked_at')
     .eq('appointment_id', scopedAppointmentId)
 
   if (participantsQuery.error && isMissingColumnError(participantsQuery.error, 'rsvp_token')) {
@@ -353,13 +355,16 @@ async function loadAppointmentContext(appointmentId) {
       .eq('appointment_id', scopedAppointmentId)
   }
 
-  if (participantsQuery.error && !isMissingTableError(participantsQuery.error, 'appointment_participants')) {
+  if (participantsQuery.error) {
     throw participantsQuery.error
   }
 
   const participants = Array.isArray(participantsQuery.data)
-    ? participantsQuery.data.map((row) => ({
+    ? participantsQuery.data.filter(row => !row.rsvp_revoked_at || (includeClosedParticipants
+      && ['cancelled', 'declined'].includes(normalizeLower(appointment.status))
+      && Date.parse(row.rsvp_revoked_at) === Date.parse(appointment.cancelled_at || appointment.updated_at))).map((row) => ({
       participantId: normalizeText(row?.participant_id) || null,
+      userId: normalizeText(row?.user_id) || null,
       name: normalizeText(row?.name) || 'Participant',
       email: normalizeLower(row?.email),
       phone: normalizeText(row?.phone),
@@ -579,7 +584,8 @@ function buildReminderEntries({ appointment = {}, participants = [], includeDocs
   if (!appointmentStart) return []
 
   const template = getAppointmentTypeTemplate(appointment?.appointment_type || appointment?.appointmentType)
-  const base = (Array.isArray(template?.reminderRules) && template.reminderRules.length
+  const savedRules = appointment.reminder_rules ?? appointment.reminderRules
+  const base = (Array.isArray(savedRules) ? savedRules : Array.isArray(template?.reminderRules) && template.reminderRules.length
     ? template.reminderRules
     : [
         { reminderType: 'appointment_reminder_24h', offsetMinutes: 24 * 60 },
@@ -599,6 +605,7 @@ function buildReminderEntries({ appointment = {}, participants = [], includeDocs
   const entries = []
 
   for (const participant of participants) {
+    if (normalizeLower(participant.rsvpStatus) === 'declined') continue
     const role = normalizeParticipantRole(participant?.participantRole)
     for (const template of base) {
       const scheduledFor = new Date(appointmentStart.getTime() - template.offsetMs)
@@ -607,7 +614,7 @@ function buildReminderEntries({ appointment = {}, participants = [], includeDocs
 
       entries.push({
         appointmentId: normalizeText(appointment?.appointment_id || appointment?.appointmentId),
-        recipientId: isUuidLike(participant?.participantId) ? participant.participantId : null,
+        recipientId: isUuidLike(participant?.userId) ? participant.userId : null,
         recipientRole: role,
         recipientEmail: normalizeLower(participant?.email),
         recipientPhone: normalizeText(participant?.phone) || null,
@@ -668,12 +675,7 @@ export async function createAppointmentNotificationEvent(payload = {}) {
     .limit(1)
     .maybeSingle()
 
-  if (existing.error) {
-    if (!isMissingTableError(existing.error, 'appointment_notification_events')) {
-      throw existing.error
-    }
-    return null
-  }
+  if (existing.error) throw existing.error
 
   if (existing.data) {
     return existing.data
@@ -702,9 +704,6 @@ export async function createAppointmentNotificationEvent(payload = {}) {
     .maybeSingle()
 
   if (insert.error) {
-    if (isMissingTableError(insert.error, 'appointment_notification_events')) {
-      return null
-    }
     if (insert.error?.code === '23505') {
       const raced = await supabase
         .from('appointment_notification_events')
@@ -717,7 +716,8 @@ export async function createAppointmentNotificationEvent(payload = {}) {
     throw insert.error
   }
 
-  return insert.data || null
+  if (!insert.data) throw new Error('Appointment notification persistence could not be verified.')
+  return insert.data
 }
 
 export async function getAppointmentNotificationsForUser(userId) {
@@ -743,8 +743,17 @@ export async function notifyAppointmentParticipants(appointmentId, eventType, op
   ensureReady()
 
   const normalizedEventType = normalizeEventType(eventType)
-  const context = await loadAppointmentContext(appointmentId)
-  const appointment = context.appointment
+  const context = await loadAppointmentContext(appointmentId, { includeClosedParticipants: normalizedEventType === 'appointment_cancelled' })
+  let appointment = context.appointment
+  if (appointment.calendar_delivery_managed) return readCalendarDeliveryJobs(appointmentId)
+  if (options.proposal?.status === 'proposed' && options.proposal.appointment_id === appointment.appointment_id) {
+    appointment.timezone = options.proposal.proposed_timezone || appointment.timezone
+    appointment.all_day = options.proposal.proposed_all_day ?? appointment.all_day
+    const start = appointmentLocalParts(new Date(options.proposal.preferred_start), appointment.timezone)
+    const end = appointmentLocalParts(new Date(options.proposal.preferred_end), appointment.timezone)
+    appointment = { ...appointment, appointment_date: start.date, start_time: start.time, end_time: end.time,
+      date_time: options.proposal.preferred_start, end_date_time: options.proposal.preferred_end }
+  }
   const visibility = normalizeVisibility(options?.visibility || appointment?.visibility_scope)
   const message = normalizeText(options?.message) || resolveEventMessage(normalizedEventType, appointment)
   const title = normalizeText(options?.title) || resolveEventTitle(normalizedEventType)
@@ -796,7 +805,7 @@ export async function notifyAppointmentParticipants(appointmentId, eventType, op
       appointmentId,
       eventType: normalizedEventType,
       recipientRole: role,
-      recipientId: participant?.participantId,
+      recipientId: participant?.userId,
       recipientEmail,
       scheduledFor: dedupeFingerprint,
     })
@@ -809,7 +818,7 @@ export async function notifyAppointmentParticipants(appointmentId, eventType, op
         transactionId: appointment?.transaction_id,
         eventType: normalizedEventType,
         visibility,
-        recipientId: participant?.participantId,
+        recipientId: participant?.userId,
         recipientRole: role,
         recipientEmail,
         title,
@@ -826,12 +835,13 @@ export async function notifyAppointmentParticipants(appointmentId, eventType, op
       })
     } catch (notificationEventError) {
       eventError = serializeNotificationError(notificationEventError)
-      console.warn('[appointment-notifications] event logging skipped; continuing with email delivery', {
+      console.warn('[appointment-notifications] event persistence failed; delivery stopped', {
         appointmentId,
         eventType: normalizedEventType,
         recipientEmailPresent: Boolean(recipientEmail),
         reason: eventError,
       })
+      throw notificationEventError
     }
 
     let emailResult = { sent: false, status: 'skipped', reason: 'not_attempted' }
@@ -954,10 +964,11 @@ export async function notifyAppointmentParticipants(appointmentId, eventType, op
         in_app_status: normalizeReminderStatus(inAppStatus),
         updated_at: new Date().toISOString(),
       }
-      await supabase
+      const deliveryReceipt = await supabase
         .from('appointment_notification_events')
         .update(updatePayload)
         .eq('id', eventRow.id)
+      if (deliveryReceipt.error) throw deliveryReceipt.error
     }
 
     results.push({
@@ -978,6 +989,8 @@ export async function scheduleAppointmentReminders(appointmentId, options = {}) 
 
   const context = await loadAppointmentContext(appointmentId)
   const appointment = context.appointment
+  if (appointment.calendar_delivery_managed) return readCalendarDeliveryJobs(appointmentId, { remindersOnly: true })
+  if (appointment.reminders_enabled === false || ['draft','cancelled','canceled','declined','completed','no_show'].includes(normalizeLower(appointment.status))) return []
   const visibility = normalizeVisibility(appointment?.visibility_scope)
   const participants = filterParticipantsForDelivery(
     (context.participants || []).filter((participant) =>
@@ -1013,7 +1026,7 @@ export async function scheduleAppointmentReminders(appointmentId, options = {}) 
 
     if (existing.error) {
       if (isMissingTableError(existing.error, 'appointment_reminders')) {
-        return []
+        throw new Error('Reminder storage is unavailable. Apply the calendar delivery migration before scheduling.')
       }
       if (!isMissingColumnError(existing.error, 'recipient_email')) {
         throw existing.error
@@ -1058,11 +1071,12 @@ export async function scheduleAppointmentReminders(appointmentId, options = {}) 
 
     if (create.error) {
       if (isMissingTableError(create.error, 'appointment_reminders')) {
-        return inserted
+        throw new Error('Reminder storage is unavailable. Apply the calendar delivery migration before scheduling.')
       }
       throw create.error
     }
 
+    if (!create.data) throw new Error('Reminder scheduling could not be confirmed.')
     inserted.push(create.data)
   }
 
@@ -1143,4 +1157,15 @@ export async function markAppointmentReminderFailed(reminderId, error) {
   }
 
   return update.data || null
+}
+
+// Persisted, scoped delivery receipts; this reader never dispatches mail.
+export async function readCalendarDeliveryJobs(appointmentId, { remindersOnly = false } = {}) {
+  ensureReady()
+  const result = await supabase.from('calendar_delivery_jobs')
+    .select('id,appointment_id,participant_id,revision,event_kind,channel,status,recipient_id,recipient_email,scheduled_for,next_attempt_at,attempt_count,last_error,provider_message_id,accepted_at,delivered_at')
+    .eq('appointment_id', appointmentId).order('created_at', { ascending: false })
+  if (result.error) throw result.error
+  if (!Array.isArray(result.data)) throw new Error('Appointment delivery could not be verified.')
+  return result.data.filter(job => !remindersOnly || job.event_kind.startsWith('reminder:'))
 }

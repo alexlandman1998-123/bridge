@@ -45,10 +45,10 @@ export function buildIcsAttachment(payload: SendAppointmentEmailPayload) {
   const time = normalizeText(payload.appointmentTime).slice(0, 5);
   if (!date || !time) return null;
 
-  const start = new Date(`${date}T${time}:00+02:00`);
+  const start = payload.dateTime ? new Date(payload.dateTime) : new Date(`${date}T${time}:00+02:00`);
   if (Number.isNaN(start.getTime())) return null;
   const endTime = normalizeText(payload.appointmentEndTime).slice(0, 5);
-  const explicitEnd = endTime ? new Date(`${date}T${endTime}:00+02:00`) : null;
+  const explicitEnd = payload.endDateTime ? new Date(payload.endDateTime) : endTime ? new Date(`${date}T${endTime}:00+02:00`) : null;
   const end = explicitEnd && !Number.isNaN(explicitEnd.getTime()) &&
       explicitEnd.getTime() > start.getTime()
     ? explicitEnd
@@ -107,6 +107,10 @@ export function buildIcsAttachment(payload: SendAppointmentEmailPayload) {
     ? "TENTATIVE"
     : "CONFIRMED";
 
+  const endDateParts = new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year:'numeric',month:'2-digit',day:'2-digit' })
+    .formatToParts(end).reduce<Record<string,string>>((parts, part) => ({ ...parts, [part.type]:part.value }), {});
+  const calendarStart = payload.allDay ? `DTSTART;VALUE=DATE:${date.replaceAll('-', '')}` : `DTSTART:${formatUtcIcsDate(start.toISOString())}`;
+  const calendarEnd = payload.allDay ? `DTEND;VALUE=DATE:${endDateParts.year}${endDateParts.month}${endDateParts.day}` : `DTEND:${formatUtcIcsDate(end.toISOString())}`;
   const content = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
@@ -117,8 +121,8 @@ export function buildIcsAttachment(payload: SendAppointmentEmailPayload) {
     "BEGIN:VEVENT",
     `UID:${escapeIcsText(uid)}`,
     `DTSTAMP:${formatUtcIcsDate(payload.calendarTimestamp || new Date().toISOString())}`,
-    `DTSTART:${formatUtcIcsDate(start.toISOString())}`,
-    `DTEND:${formatUtcIcsDate(end.toISOString())}`,
+    calendarStart,
+    calendarEnd,
     `SUMMARY:${escapeIcsText(title)}`,
     `DESCRIPTION:${escapeIcsText(description)}`,
     `LOCATION:${escapeIcsText(location)}`,
@@ -156,6 +160,17 @@ export function buildIcsAttachment(payload: SendAppointmentEmailPayload) {
     content: encodeBase64Utf8(folded),
     content_type: `text/calendar; method=${method}; charset=UTF-8`,
   };
+}
+
+type ProviderMessage = Omit<Parameters<typeof sendViaResendApi>[0], 'apiKey'>;
+export async function freezeCalendarProviderMessage(client: { rpc: Function } | undefined, message: ProviderMessage): Promise<ProviderMessage | null> {
+  const key = normalizeText(message.idempotencyKey);
+  if (!key.startsWith('calendar-appointment:')) return message;
+  const jobId = key.slice('calendar-appointment:'.length);
+  if (!client || !/^[0-9a-f-]{36}$/i.test(jobId)) throw new Error('Calendar delivery configuration is unavailable.');
+  const frozen = await client.rpc('freeze_calendar_provider_payload', { p_id:jobId, p_payload:message });
+  if (frozen.error) throw new Error('Calendar provider content could not be persisted.');
+  return frozen.data;
 }
 
 export async function handleAppointmentEmail(
@@ -303,8 +318,7 @@ export async function handleAppointmentEmail(
     organizerName: payload.organizerName || payload.agentName || branding.organisationName,
   });
 
-  const emailResult = await sendViaResendApi({
-    apiKey: resendApiKey,
+  const providerMessage = await freezeCalendarProviderMessage(supabase, {
     from: sender,
     to,
     bcc: payload.bccAgent === false ? undefined : normalizeText(payload.agentEmail || payload.organizerEmail),
@@ -318,6 +332,8 @@ export async function handleAppointmentEmail(
     ) || undefined,
     idempotencyKey: normalizeText(payload.idempotencyKey) || undefined,
   });
+  if (!providerMessage) return jsonResponse(409, { error: 'This calendar delivery was superseded.' });
+  const emailResult = await sendViaResendApi({ ...providerMessage, apiKey: resendApiKey });
 
   if (!emailResult.ok) {
     return jsonResponse(500, {

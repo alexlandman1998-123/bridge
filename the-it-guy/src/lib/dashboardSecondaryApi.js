@@ -1,3 +1,5 @@
+export { buildAppointmentsDashboardSummary } from './agencyPipelineService'
+
 let agencyPipelinePromise = null
 let settingsPromise = null
 let commissionPromise = null

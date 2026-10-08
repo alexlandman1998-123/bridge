@@ -1,3 +1,5 @@
+import usePipelineAppointments from '../hooks/usePipelineAppointments'
+import { appointmentMatchesAgent, appointmentReadState } from '../core/appointments/appointmentReadModel.js'
 import AgentWorkspaceListings from '../components/agents/AgentWorkspaceListings'
 import AgentNeedsAttention from '../components/agents/AgentNeedsAttention'
 import LeadsRouteShell from '../components/leads/LeadsRouteShell'
@@ -215,6 +217,7 @@ function formatTime(value) {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return '—'
   return date.toLocaleTimeString('en-ZA', {
+    timeZone: 'Africa/Johannesburg',
     hour: '2-digit',
     minute: '2-digit',
   })
@@ -864,6 +867,11 @@ function formatDate(value) {
   return date.toLocaleDateString('en-ZA')
 }
 
+function formatAppointmentDate(value) {
+  const date = new Date(value)
+  return value && Number.isFinite(date.getTime()) ? date.toLocaleDateString('en-ZA', { timeZone: 'Africa/Johannesburg' }) : '—'
+}
+
 function normalizeIdentityEmail(value) {
   return String(value || '').trim().toLowerCase()
 }
@@ -1499,25 +1507,10 @@ function computeAgentWorkspaceData({ transactions, transactionRolePlayers = [], 
     return accumulator
   }, new Map())
 
-  const appointmentsByAgent = new Map()
-  for (const appointment of appointments) {
-    const resolvedAgentId = resolveAgentAssignmentId({
-      id: appointment?.assignedAgentId || appointment?.assigned_agent_id || appointment?.assignedUserId || appointment?.assigned_user_id,
-      email: appointment?.assignedAgentEmail || appointment?.assigned_agent_email,
-      name: appointment?.assignedAgentName || appointment?.assigned_agent_name || appointment?.assignedAgent || appointment?.assigned_agent,
-    }, groupedByAgent, agentIdByEmail, agentIdByName, agentIdByAssignmentId)
-
-    if (!resolvedAgentId) continue
-    if (!appointmentsByAgent.has(resolvedAgentId)) {
-      appointmentsByAgent.set(resolvedAgentId, [])
-    }
-    appointmentsByAgent.get(resolvedAgentId).push(appointment)
-  }
-
   const agents = [...groupedByAgent.values()].map((agent) => {
     const agentPrivateListings = listingsByAgent.get(agent.id) || []
     const agentPipelineRows = pipelineByAgent.get(agent.id) || []
-    const agentAppointments = appointmentsByAgent.get(agent.id) || []
+    const agentAppointments = appointments.filter((row) => appointmentMatchesAgent(row, agent))
 
     const activeDeals = agent.deals.filter((row) => normalizeDealStatus(row) === 'active')
     const completedDeals = agent.deals.filter((row) => normalizeDealStatus(row) === 'completed')
@@ -1540,13 +1533,7 @@ function computeAgentWorkspaceData({ transactions, transactionRolePlayers = [], 
 
     const estimatedCommission = totalSalesValue * 0.03
     const avgDealTime = completedDeals.length ? 42 : 0
-    const nowTime = Date.now()
-    const upcomingAppointments = agentAppointments.filter((appointment) => {
-      const status = String(appointment?.status || '').trim().toLowerCase()
-      if (!['pending confirmation', 'confirmed', 'needs reschedule'].includes(status)) return false
-      const value = new Date(appointment?.dateTime || 0).getTime()
-      return Number.isFinite(value) && value >= nowTime
-    })
+    const upcomingAppointments = agentAppointments.filter((row) => appointmentReadState(row).category === 'upcoming')
     const completedAppointments = agentAppointments.filter((appointment) => String(appointment?.status || '').trim().toLowerCase() === 'completed')
 
     const recentDeals = [...agent.deals]
@@ -4118,7 +4105,7 @@ function getLeadType(row = {}) {
   return 'Buyer'
 }
 
-export function AgentWorkspace({ agent, canManageSettings = false, commissionStructures = [], workspaceSnapshot = {}, branchOptions = [], onRefresh }) {
+export function AgentWorkspace({ agent, canManageSettings = false, commissionStructures = [], workspaceSnapshot = {}, appointmentLoad = null, branchOptions = [], onRefresh }) {
   const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState('overview')
   const [editMenuOpen, setEditMenuOpen] = useState(false)
@@ -4309,6 +4296,7 @@ export function AgentWorkspace({ agent, canManageSettings = false, commissionStr
     canvassingActivities = [],
   } = workspaceSnapshot
 
+  const appointmentVerified = appointmentLoad?.hasSnapshot ?? true
   const developmentListings = agent.developmentListings || []
   const privateListings = agent.privateListings || []
   const allListings = [...developmentListings, ...privateListings.map((listing) => ({
@@ -4343,7 +4331,7 @@ export function AgentWorkspace({ agent, canManageSettings = false, commissionStr
         canvassingProspects,
         canvassingActivities,
       }),
-    [agent, appointments, branches, canvassingActivities, canvassingProspects, leadActivities, leads, listings, tasks, transactions],
+    [agent, appointments, appointmentLoad?.reconciliationRevision, branches, canvassingActivities, canvassingProspects, leadActivities, leads, listings, tasks, transactions],
   )
   const partnerBusinessDistribution = useMemo(
     () =>
@@ -4602,10 +4590,10 @@ export function AgentWorkspace({ agent, canManageSettings = false, commissionStr
   const prospectingMetricMap = new Map((commandCentre?.prospectingActivity?.metrics || []).map((metric) => [metric.key, metric]))
   const prospectingMetrics = [
     { label: 'Calls Logged', value: prospectingMetricMap.get('callsLogged')?.value || 0, icon: Phone, helper: 'This month' },
-    { label: 'Valuations Booked', value: prospectingMetricMap.get('valuationsBooked')?.value || 0, icon: Building2, helper: 'This month' },
+    { label: 'Valuations Booked', value: appointmentVerified ? prospectingMetricMap.get('valuationsBooked')?.value || 0 : '—', icon: Building2, helper: 'This month' },
     { label: 'Mandates Won', value: prospectingMetricMap.get('mandatesWon')?.value || 0, icon: CheckCircle2, helper: 'This month' },
     { label: 'Follow Ups Due', value: prospectingMetricMap.get('followUpsDue')?.value || getNumericMetric(agent, 'followUpsDue'), icon: Clock3, helper: 'Open tasks' },
-    { label: 'Appointments', value: commandCentre?.calendarSummary?.upcomingItems?.length || 0, icon: CalendarDays, helper: 'Upcoming' },
+    { label: 'Appointments', value: appointmentVerified ? commandCentre?.calendarSummary?.upcomingItems?.length || 0 : '—', icon: CalendarDays, helper: 'Upcoming' },
     { label: 'Compliance %', value: compliancePercent === null || compliancePercent === undefined ? '—' : `${compliancePercent}%`, icon: ShieldCheck, helper: 'Task completion' },
   ]
   const kpiCards = [
@@ -4863,6 +4851,7 @@ export function AgentWorkspace({ agent, canManageSettings = false, commissionStr
             module="agent"
             organisationId={String(agent?.organisationId || '').trim()}
             appointmentRows={workspaceSnapshot?.appointments || []}
+            appointmentLoad={appointmentLoad}
             users={[agent].filter(Boolean)}
             userId={agent?.userId || agent?.id || ''}
             userEmail={agent?.email || ''}
@@ -4948,6 +4937,7 @@ export function AgentWorkspace({ agent, canManageSettings = false, commissionStr
                 module="agent"
                 organisationId={String(agent?.organisationId || '').trim()}
                 appointmentRows={workspaceSnapshot?.appointments || []}
+            appointmentLoad={appointmentLoad}
                 users={[agent].filter(Boolean)}
                 userId={agent?.userId || agent?.id || ''}
                 userEmail={agent?.email || ''}
@@ -5018,6 +5008,9 @@ export function AgentWorkspace({ agent, canManageSettings = false, commissionStr
 
       {effectiveActiveTab === 'calendar' ? (
         <PrincipalAgentTabShell title="Calendar" description="Upcoming and historical appointments scoped to this agent.">
+          {appointmentLoad?.error ? <div role="alert" className="mb-3 rounded-xl bg-rose-50 p-4 text-sm text-rose-700">{appointmentLoad.error} {appointmentVerified ? 'Showing the last verified schedule.' : 'Appointment counts are unavailable.'} <button type="button" className="ml-2 font-semibold underline" onClick={appointmentLoad.reload}>Retry</button></div> : null}
+          {!appointmentVerified ? <p role="status">{appointmentLoad?.status === 'error' ? 'Appointments unavailable. Retry to verify counts.' : 'Loading appointments…'}</p> : <>
+          <div className="my-3 space-y-2">{[...(commandCentre?.calendarSummary?.inProgressItems || []), ...(commandCentre?.calendarSummary?.followUpItems || [])].map((item) => <button type="button" key={item.id} onClick={() => navigate(agentCalendarUrl)} className="block w-full rounded-xl border border-amber-200 bg-amber-50 p-3 text-left text-sm">{item.title} · {commandCentre.calendarSummary.inProgressItems.includes(item) ? 'In progress' : 'Needs follow-up'} · {formatAppointmentDate(item.dateTime)}</button>)}</div>
           <div className="grid min-w-0 gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <AgentMetricCard label="Upcoming Appointments" value={commandCentre?.calendarSummary?.upcomingItems?.length || 0} helper="Scheduled ahead" />
             <AgentMetricCard label="Past Appointments" value={commandCentre?.calendarSummary?.pastItems?.length || 0} helper="History" />
@@ -5035,7 +5028,7 @@ export function AgentWorkspace({ agent, canManageSettings = false, commissionStr
                         <p className="text-sm font-semibold text-[#10243a]">{item.title}</p>
                         <span className={`rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${getAppointmentStatusClass(item.status)}`}>{item.statusLabel}</span>
                       </div>
-                      <p className="mt-1 text-sm text-[#60758d]">{formatDate(item.dateTime)} at {formatTime(item.dateTime)}</p>
+                      <p className="mt-1 text-sm text-[#60758d]">{formatAppointmentDate(item.dateTime)} at {formatTime(item.dateTime)}</p>
                       <p className="mt-1 text-xs text-[#6f839a]">
                         {[item.type, item.relatedLabel, item.location || item.meetingUrl].filter(Boolean).join(' • ') || 'Details pending'}
                       </p>
@@ -5058,7 +5051,7 @@ export function AgentWorkspace({ agent, canManageSettings = false, commissionStr
                         <p className="text-sm font-semibold text-[#10243a]">{item.title}</p>
                         <span className={`rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${getAppointmentStatusClass(item.status)}`}>{item.statusLabel}</span>
                       </div>
-                      <p className="mt-1 text-sm text-[#60758d]">{formatDate(item.dateTime)} at {formatTime(item.dateTime)}</p>
+                      <p className="mt-1 text-sm text-[#60758d]">{formatAppointmentDate(item.dateTime)} at {formatTime(item.dateTime)}</p>
                       <p className="mt-1 text-xs text-[#6f839a]">
                         {[item.type, item.relatedLabel, item.location || item.meetingUrl].filter(Boolean).join(' • ') || 'Details pending'}
                       </p>
@@ -5072,6 +5065,7 @@ export function AgentWorkspace({ agent, canManageSettings = false, commissionStr
               )}
             </WorkspaceCard>
           </div>
+          </>}
         </PrincipalAgentTabShell>
       ) : null}
 
@@ -5839,7 +5833,6 @@ export function AgentsPage() {
   const [leadActivities, setLeadActivities] = useState([])
   const [canvassingActivities, setCanvassingActivities] = useState([])
   const [taskRows, setTaskRows] = useState([])
-  const [appointmentRows, setAppointmentRows] = useState([])
   const [listingRows, setListingRows] = useState([])
   const [commissionStructures, setCommissionStructures] = useState([])
   const [branchFilter, setBranchFilter] = useState('all')
@@ -5850,10 +5843,22 @@ export function AgentsPage() {
   const [statusFilter, setStatusFilter] = useState('all')
   const [sortBy, setSortBy] = useState('pipeline')
   const [searchTerm, setSearchTerm] = useState('')
-  const [agents, setAgents] = useState([])
+  const [agentRecords, setAgents] = useState([])
   const [agentDirectory, setAgentDirectory] = useState(() => readAgentDirectory())
   const [agentInvites, setAgentInvites] = useState(() => readAgentInvites())
   const [workspaceOrganisation, setWorkspaceOrganisation] = useState(null)
+  const appointmentLoad = usePipelineAppointments({
+    organisationId: currentMembership?.organisationId || currentMembership?.organisation_id || workspaceOrganisation?.id || profile?.organisationId || profile?.agencyId || '',
+    viewerId: profile?.id || '', includeAll: true, enabled: workspaceReady && !profileLoading,
+  })
+  const appointmentRows = appointmentLoad.rows
+  const agents = useMemo(() => agentRecords.map((agent) => {
+    const appointments = appointmentRows.filter((row) => appointmentMatchesAgent(row, agent))
+    return { ...agent, appointments, metrics: { ...agent.metrics,
+      upcomingAppointments: appointmentLoad.hasSnapshot ? appointments.filter((row) => appointmentReadState(row).category === 'upcoming').length : null,
+      completedAppointments: appointmentLoad.hasSnapshot ? appointments.filter((row) => appointmentReadState(row).status === 'completed').length : null,
+    } }
+  }), [agentRecords, appointmentRows, appointmentLoad.hasSnapshot, appointmentLoad.reconciliationRevision])
   const [inviteModalOpen, setInviteModalOpen] = useState(false)
   const [inviteSubmitting, setInviteSubmitting] = useState(false)
   const [inviteError, setInviteError] = useState('')
@@ -5925,7 +5930,6 @@ export function AgentsPage() {
       setLeadActivities([])
       setCanvassingActivities([])
       setTaskRows([])
-      setAppointmentRows([])
       setListingRows([])
       setCommissionStructures([])
       setWorkspaceOrganisation(null)
@@ -5945,6 +5949,7 @@ export function AgentsPage() {
         loadAgentPerformanceSources({
           canManageDirectory,
           directorySummary: true,
+          includeAppointments: false,
           profile,
           role,
           directory,
@@ -6082,7 +6087,6 @@ export function AgentsPage() {
       setLeadActivities(performanceSources.leadActivities)
       setCanvassingActivities(performanceSources.canvassingActivities)
       setTaskRows(performanceSources.tasks)
-      setAppointmentRows(performanceSources.appointments)
       setListingRows(privateListings)
       setCommissionStructures(Array.isArray(commissionStructureRows) ? commissionStructureRows : [])
       setAgentDirectory(directory)
@@ -6097,7 +6101,6 @@ export function AgentsPage() {
       setLeadActivities([])
       setCanvassingActivities([])
       setTaskRows([])
-      setAppointmentRows([])
       setListingRows([])
       setCommissionStructures([])
       setWorkspaceOrganisation(null)
@@ -6940,6 +6943,7 @@ export function AgentsPage() {
 
   return (
     <section className="space-y-5">
+      {appointmentLoad.error ? <div role="alert" className="rounded-xl bg-rose-50 p-4 text-sm text-rose-700">{appointmentLoad.error} {appointmentLoad.hasSnapshot ? 'Showing the last verified appointment data.' : 'Appointment counts are unavailable.'} <button type="button" className="ml-2 font-semibold underline" onClick={appointmentLoad.reload}>Retry</button></div> : !appointmentLoad.hasSnapshot ? <p role="status" className="text-sm text-slate-500">Loading appointment data…</p> : null}
       {canManageDirectory ? (
         <>
           <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
@@ -7266,6 +7270,11 @@ export function AgentWorkspacePage() {
   const [branches, setBranches] = useState([])
   const [commissionStructures, setCommissionStructures] = useState([])
   const [workspaceSnapshot, setWorkspaceSnapshot] = useState(() => createEmptyAgentWorkspaceSnapshot())
+  const [appointmentOrganisationId, setAppointmentOrganisationId] = useState('')
+  const appointmentLoad = usePipelineAppointments({
+    organisationId: currentMembership?.organisationId || currentMembership?.organisation_id || appointmentOrganisationId || profile?.organisationId || profile?.agencyId || '',
+    agentId, viewerId: profile?.id || '', includeAll: true, enabled: workspaceReady && !profileLoading,
+  })
   const routeSeed = location.state && typeof location.state === 'object' ? location.state.agentWorkspaceSeed : null
 
   const canAccess = canAccessAgentsModule({ role, baseRole, profile, membershipRole })
@@ -7338,6 +7347,7 @@ export function AgentWorkspacePage() {
           profile,
           role,
           directory: readAgentDirectory(),
+          includeAppointments: false,
           localPrivateListings: readLocalRows(PRIVATE_LISTINGS_STORAGE_KEY),
           localPipelineRows: readLocalRows(PIPELINE_STORAGE_KEY),
         }),
@@ -7349,6 +7359,7 @@ export function AgentWorkspacePage() {
       setCommissionStructures(nextCommissionStructures)
       setBranches(Array.isArray(performanceSources.branches) ? performanceSources.branches : [])
 
+      setAppointmentOrganisationId(performanceSources.organisationId)
       const agentDirectory = readAgentDirectory()
       const mappedAgents = computeAgentWorkspaceData({
         transactions: Array.isArray(performanceSources.transactions) ? performanceSources.transactions : [],
@@ -7540,7 +7551,8 @@ export function AgentWorkspacePage() {
         agent={agent}
         canManageSettings={canManageSettings}
         commissionStructures={commissionStructures}
-        workspaceSnapshot={workspaceSnapshot}
+        workspaceSnapshot={{ ...workspaceSnapshot, appointments: appointmentLoad.rows }}
+        appointmentLoad={appointmentLoad}
         branchOptions={detailBranchOptions}
         onRefresh={loadWorkspace}
       />

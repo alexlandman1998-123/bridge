@@ -57,3 +57,14 @@
   .mobile-calendar-timeline > li:not(:last-child)::before { left: 19px; }
   .mobile-calendar-appointment { padding: 14px; }
 }
+
+.mobile-calendar-records { display: flex; align-items: center; gap: 10px; margin: 12px 0; font-size: 14px; }
+.mobile-calendar-records select { border: 1px solid #d5e0d9; border-radius: 10px; background: white; padding: 10px; }
+.mobile-calendar-open { margin-top: 14px; border: 1px solid #c7dbd1; border-radius: 10px; padding: 9px 12px; color: #166b50; background: #f2f8f5; font-size: 13px; }
+.mobile-appointment-workspace label { display: grid; gap: 6px; font-size: 14px; }
+.mobile-appointment-workspace input:not([type=checkbox]), .mobile-appointment-workspace select, .mobile-appointment-workspace textarea { width: 100%; min-width: 0; padding: 10px; border: 1px solid #c9d8d0; border-radius: 10px; background: white; }
+.mobile-appointment-workspace input[type=checkbox] { width: 18px; height: 18px; }
+.mobile-appointment-workspace button:not(.ui-icon-button) { border: 1px solid #c7dbd1; border-radius: 10px; padding: 10px 12px; background: #f2f8f5; color: #166b50; }
+.mobile-appointment-workspace button:disabled, .mobile-appointment-workspace fieldset:disabled { opacity: .65; }
+.mobile-appointment-workspace [role=alert] { padding: 10px; border-radius: 10px; background: #fff2ee; color: #9c3021; }
+.mobile-appointment-workspace { overflow-wrap: anywhere; }

@@ -611,6 +611,8 @@ export function ResidentialAppointments({
   includeAll,
   canManage,
   refreshKey,
+  appointmentRows = null,
+  appointmentLoad = null,
   scope = 'principal',
   onViewCalendar = null,
   onOpenCalendar = null,
@@ -621,6 +623,8 @@ export function ResidentialAppointments({
   return (
     <AppointmentDashboardSection
       module={module}
+      appointmentRows={appointmentRows}
+      appointmentLoad={appointmentLoad}
       organisationId={organisationId}
       userId={userId}
       userEmail={userEmail}
@@ -650,6 +654,8 @@ export function ResidentialCommandCenterGrid({
   includeAllAppointments = false,
   canManageAppointments = false,
   appointmentRefreshKey = '',
+  appointmentRows = null,
+  appointmentLoad = null,
   commissionTracker = null,
   trainingPanel = null,
   afterActiveTransactions = null,
@@ -733,6 +739,8 @@ export function ResidentialCommandCenterGrid({
           userEmail={userEmail}
           includeAll={includeAllAppointments}
           canManage={canManageAppointments}
+          appointmentRows={appointmentRows}
+          appointmentLoad={appointmentLoad}
           refreshKey={appointmentRefreshKey}
           scope={scope}
           onViewCalendar={onViewCalendar}

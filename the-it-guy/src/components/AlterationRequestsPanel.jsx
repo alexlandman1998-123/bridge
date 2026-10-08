@@ -1,3 +1,4 @@
+import { getDocumentUploadPolicy } from '../lib/documentUploadPolicy.js'
 import { useState } from 'react'
 import { ALTERATION_REQUEST_STATUSES, updateAlterationRequestStatus } from '../lib/api'
 
@@ -227,7 +228,7 @@ function AlterationRequestsPanel({
                 <span>Invoice</span>
                 <input
                   type="file"
-                  accept=".pdf,image/*"
+                  accept={getDocumentUploadPolicy({ surface: 'bank_statement' }).accept} title={getDocumentUploadPolicy({ surface: 'bank_statement' }).helpText}
                   onChange={(event) =>
                     setFormState((previous) => ({ ...previous, invoiceFile: event.target.files?.[0] || null }))
                   }
@@ -239,7 +240,7 @@ function AlterationRequestsPanel({
                 <span>Proof of payment</span>
                 <input
                   type="file"
-                  accept=".pdf,image/*"
+                  accept={getDocumentUploadPolicy({ surface: 'bank_statement' }).accept} title={getDocumentUploadPolicy({ surface: 'bank_statement' }).helpText}
                   onChange={(event) =>
                     setFormState((previous) => ({ ...previous, proofFile: event.target.files?.[0] || null }))
                   }

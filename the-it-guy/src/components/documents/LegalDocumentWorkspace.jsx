@@ -1,3 +1,4 @@
+import { getDocumentUploadPolicy } from '../../lib/documentUploadPolicy.js'
 import { AlertCircle, ArrowLeft, Check, CheckCircle2, ChevronDown, ChevronRight, Circle, Download, Eye, FileCheck2, FileText, Link2, MoreHorizontal, Pencil, Plus, Printer, Save, ShieldCheck, UsersRound, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as pdfjsLib from 'pdfjs-dist'
@@ -111,6 +112,8 @@ import {
   buildOtpAgentReviewUiState,
 } from '../../core/documents/otpAgentReviewUiPhase31'
 import { normalizeOtpDocumentVariant } from '../../core/documents/otpRouteUniverse'
+const documentUploadPolicy = getDocumentUploadPolicy({ surface: 'signed_pdf' })
+
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -2706,14 +2709,16 @@ function PhysicalSignedUploadPanel({
           <label className="block rounded-[12px] border border-[#dce6f2] bg-[#fbfdff] px-3 py-3">
             <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#6f839b]">Signed PDF</span>
             <input
-              type="file"
-              accept="application/pdf,.pdf"
+              type="file" title={documentUploadPolicy.helpText}
+              accept={documentUploadPolicy.accept}
               disabled={busy}
               onChange={(event) => onFileChange?.(event.target.files?.[0] || null)}
               className="mt-2 block w-full text-xs font-semibold text-[#1a2f45] file:mr-3 file:rounded-lg file:border-0 file:bg-[#eef5ff] file:px-3 file:py-2 file:text-xs file:font-semibold file:text-[#0a66ff]"
             />
             {file?.name ? <span className="mt-2 block truncate text-xs font-semibold text-[#526b84]">{file.name}</span> : null}
+          <span className="block text-xs font-normal text-slate-500">{documentUploadPolicy.helpText}</span>
           </label>
+          
           <label className="block rounded-[12px] border border-[#dce6f2] bg-[#fbfdff] px-3 py-3">
             <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#6f839b]">Date signed</span>
             <input
@@ -2791,14 +2796,16 @@ function SignedCopyReplacementPanel({
           <label className="block rounded-[12px] border border-[#ead8b5] bg-white px-3 py-3">
             <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8a651d]">Replacement PDF</span>
             <input
-              type="file"
-              accept="application/pdf,.pdf"
+              type="file" title={documentUploadPolicy.helpText}
+              accept={documentUploadPolicy.accept}
               disabled={busy}
               onChange={(event) => onFileChange?.(event.target.files?.[0] || null)}
               className="mt-2 block w-full text-xs font-semibold text-[#1a2f45] file:mr-3 file:rounded-lg file:border-0 file:bg-[#fff3d8] file:px-3 file:py-2 file:text-xs file:font-semibold file:text-[#8a651d]"
             />
             {file?.name ? <span className="mt-2 block truncate text-xs font-semibold text-[#526b84]">{file.name}</span> : null}
+          <span className="block text-xs font-normal text-slate-500">{documentUploadPolicy.helpText}</span>
           </label>
+          
           <label className="block rounded-[12px] border border-[#ead8b5] bg-white px-3 py-3">
             <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8a651d]">Replacement reason</span>
             <input

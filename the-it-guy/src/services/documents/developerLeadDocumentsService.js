@@ -1,5 +1,6 @@
 import { isSupabaseConfigured, supabase } from '../../lib/supabaseClient.js'
-import { fetchTransactionDocumentsWorkspace, uploadDocument, invalidateTransactionWorkspaceCoreCache } from '../../lib/transactionWorkspaceApi.js'
+import { fetchTransactionDocumentsWorkspace, uploadDocument, invalidateTransactionWorkspaceCoreCache, createTransactionDocumentSignedUrl } from '../../lib/transactionWorkspaceApi.js'
+import { documentStorageReference } from '../../lib/documentAccess.js'
 import { buildDeveloperLeadAccessProfile } from '../../core/developerLeads/developerLeadContract.js'
 import { normalizeCanonicalRequirement } from './canonicalDocumentWorkspaceService.js'
 import { mergeProjectedDocuments } from './transactionDocumentProjection.js'
@@ -68,6 +69,16 @@ export async function fetchDeveloperLeadDocuments({ developerOrgId, developerLea
     document.is_client_visible === true && document.visibility_scope === 'shared'
   ))
   return { state: 'ready', transactionId, requirements, documents }
+}
+
+export async function createDeveloperLeadDocumentSignedUrl({ developerOrgId, developerLeadId, transactionId, documentId } = {}) {
+  const current = await fetchDeveloperLeadDocuments({ developerOrgId, developerLeadId })
+  const document = current.documents.find((row) => row.id === documentId)
+  const storedTransactionId = text(document?.transaction_id || document?.transactionId)
+  if (current.state !== 'ready' || current.transactionId !== transactionId || !document || (storedTransactionId && storedTransactionId !== transactionId)) {
+    throw accessError('This document is no longer available for this lead. Refresh documents.')
+  }
+  return createTransactionDocumentSignedUrl(documentStorageReference(document))
 }
 
 export async function uploadDeveloperLeadDocument({ developerOrgId, developerLeadId, transactionId, requirementId = '', file, onProgress } = {}) {

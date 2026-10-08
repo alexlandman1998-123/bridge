@@ -7,6 +7,7 @@ import {
   addListingSellerProfileDraftPerson,
   buildListingSellerProfileCapturePayload,
   buildListingSellerProfileFormPatch,
+  buildListingSellerProfileRequirementProjection,
   createListingSellerProfileBuilderDraft,
   hasListingSellerProfileBranchDetailsToDiscard,
   isListingSellerOwnershipUnidentified,
@@ -21,6 +22,7 @@ import {
   getRequiredSellerDocuments,
 } from '../src/lib/sellerDocumentRequirementEngine.js'
 import { buildListingSellerCanonicalUpdate } from '../src/services/listings/listingSellerCanonicalUpdateModel.js'
+import { saveListingSellerCanonicalUpdate } from '../src/services/listings/listingSellerCanonicalUpdateService.js'
 import { buildSellerSigningPlan } from '../src/lib/sellerSigningPlanModel.js'
 import { getPropertyStructureTypesByCategory, getPropertyStructureTypesForListing, getPropertyTypeOptionsByCategory, getPropertyTypeOptionsForListing } from '../src/lib/propertyTaxonomy.js'
 
@@ -33,6 +35,87 @@ async function test(name, fn) {
     throw error
   }
 }
+
+const detailSource = await readFile(new URL('../src/pages/AgentListingDetail.jsx', import.meta.url), 'utf8')
+function loadDetailHandler(name, nextName, dependencies) {
+  const start = detailSource.indexOf(`  ${name.startsWith('handleSave') ? 'async ' : ''}function ${name}(`)
+  const end = detailSource.indexOf(`\n  function ${nextName}(`, start)
+  assert.ok(start >= 0 && end > start, `The actual ${name} handler must be found.`)
+  return new Function(...Object.keys(dependencies), `${detailSource.slice(start, end)}\nreturn ${name}`)(...Object.values(dependencies))
+}
+
+await test('ownership editor switches structures using the branch reset and co-owner seeding handler', async () => {
+  assert.ok(detailSource.includes("key === 'branch' ? handleSellerProfileBuilderBranchSelection(value)"))
+  let draft = { branch: 'company', companyName: 'Previous Company', companyDirectors: [{ fullName: 'Previous Director' }], sellerFirstName: 'Contact', sellerSurname: 'Person' }
+  let confirm = false
+  const calls = []
+  const change = () => loadDetailHandler('handleSellerProfileBuilderBranchSelection', 'addSellerProfileBuilderPerson', {
+    sellerProfileBuilderDraft: draft,
+    hasListingSellerProfileBranchDetailsToDiscard,
+    selectListingSellerProfileBranch,
+    window: { confirm: message => { calls.push(message); return confirm } },
+    setSellerProfileBuilderDraft: update => { draft = update(draft) },
+    setDetailError: () => {},
+  })
+  change()('trust')
+  assert.equal(draft.branch, 'company', 'Cancelling preserves the entered company details.')
+  confirm = true
+  change()('trust')
+  assert.equal(draft.branch, 'trust')
+  assert.equal(draft.companyName, '')
+  assert.deepEqual(draft.companyDirectors, [])
+  change()('multiple_owners')
+  assert.equal(draft.multipleOwners.length, 2)
+  assert.equal(draft.multipleOwners[0].name, 'Contact')
+  assert.equal(calls.length, 2)
+})
+
+await test('actual ownership save retains the editor on refresh failure and retries even with unchanged ownership', async () => {
+  let listing = { id: '00000000-0000-4000-8000-000000000001', sellerType: 'individual', addressLine1: '10 Example Road', sellerOnboarding: { formData: { ownerStructureType: 'individual', sellerFirstName: 'Owner', sellerSurname: 'Person' } } }
+  const draft = { ...selectListingSellerProfileBranch(createListingSellerProfileBuilderDraft(listing), 'trust'), trustName: 'Corrected Trust' }
+  const state = { open: true }
+  let refreshFailed = true
+  const saveCalls = []
+  const run = () => loadDetailHandler('handleSaveSellerProfileBuilder', 'handleSellerProfileBuilderSubmit', {
+    listingRecord: listing, sellerProfileBuilderDraft: draft, listingOrganisationId: '',
+    sellerProfileBuilderReturnToDocuments: false, isSupabaseConfigured: true, isUuidLike: () => true,
+    validateListingSellerProfileBuilderDraft, buildListingSellerProfileRequirementProjection,
+    limitSellerCanonicalSaveWait: promise => promise,
+    saveListingSellerCanonicalUpdate: async input => {
+      saveCalls.push(input)
+      return saveListingSellerCanonicalUpdate(input, { savePrivateListingSellerCanonicalUpdate: async update => {
+        if (refreshFailed) throw Object.assign(new Error('Checklist refresh failed'), { committed: true, code: 'SELLER_REQUIREMENT_SYNC_FAILED' })
+        return { listing: { ...listing, documentRequirements: [{ id: 'saved-trust-request', requirement_key: 'trust_deed', status: 'requested' }] }, syncedRequirements: [{ id: 'saved-trust-request', requirement_key: 'trust_deed', status: 'requested' }] }
+      } })
+    },
+    patchListing: update => { listing = update(listing) },
+    setSellerProfileBuilderSaving: value => { state.saving = value },
+    setDetailError: value => { state.error = value },
+    setDetailMessage: value => { state.message = value },
+    setSellerProfileBuilderOpen: value => { state.builderOpen = value },
+    setSellerInformationEditorOpen: value => { state.open = value },
+    setSellerProfileBuilderReturnToDocuments: () => {}, resetSellerDocumentMandateTerms: () => {}, setSellerDocumentSendOpen: () => {},
+  })
+  await run()({ preventDefault() {} }, { informationEditor: true })
+  assert.ok(!state.error || state.error.includes('ownership details are saved'), state.error)
+  assert.equal(listing.sellerOnboarding.formData.ownerStructureType, 'trust')
+  assert.equal(state.open, true)
+  assert.equal(state.saving, false)
+  assert.match(state.error, /ownership details are saved.*save again/)
+  assert.equal(state.message, '')
+  assert.equal(listing.documentRequirements, undefined, 'A failed refresh must not show unpersisted projected document requests as saved.')
+  refreshFailed = false
+  await run()({ preventDefault() {} }, { informationEditor: true })
+  assert.equal(state.open, false)
+  assert.equal(state.error, '')
+  assert.equal(listing.documentRequirements[0].id, 'saved-trust-request')
+  assert.equal(saveCalls.length, 2)
+  for (const call of saveCalls) {
+    assert.equal(call.forceRequirementSync, true)
+    assert.equal(call.syncRequirements, true)
+    assert.equal(call.includeRequirementsAndDocuments, false)
+  }
+})
 
 await test('AgentListingDetail exposes the listing seller profile builder workflow', async () => {
   const source = await readFile(new URL('../src/pages/AgentListingDetail.jsx', import.meta.url), 'utf8')

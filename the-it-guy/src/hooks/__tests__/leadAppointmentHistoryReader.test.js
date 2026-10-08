@@ -9,6 +9,7 @@ const otherAgent = '30000000-0000-4000-8000-000000000002'
 let db
 const migration = readFileSync(new URL('../../../../supabase/migrations/20261006072627_lead_appointment_history_reader.sql', import.meta.url), 'utf8')
 const calendarMigration = readFileSync(new URL('../../../../supabase/migrations/202605210001_agent_calendar_visibility_rpc.sql', import.meta.url), 'utf8')
+const timeMigration = readFileSync(new URL('../../../../supabase/migrations/20261008163445_appointment_end_instant.sql', import.meta.url), 'utf8')
 async function read(user = agent, active = true, organisation = org) {
   await db.query("select set_config('request.jwt.claims', $1, false)", [JSON.stringify({ sub: user, org: organisation, active })])
   return (await db.query('select public.bridge_list_lead_appointments($1,$2,false) as rows', [organisation, lead])).rows[0].rows
@@ -17,7 +18,7 @@ beforeAll(async () => {
   db = new PGlite()
   const columns = calendarMigration.match(/returns table \(([\s\S]*?)\)\nlanguage sql/)[1]
   await db.exec(`
-    create role anon; create role authenticated; create schema auth;
+    create role anon; create role authenticated; create schema auth; create schema private;
     create function auth.jwt() returns jsonb language sql stable as $$ select current_setting('request.jwt.claims', true)::jsonb $$;
     create function auth.uid() returns uuid language sql stable as $$ select (auth.jwt()->>'sub')::uuid $$;
     create function public.bridge_is_active_member(target uuid) returns boolean language sql stable as $$ select (auth.jwt()->>'active')::boolean and (auth.jwt()->>'org')::uuid = target $$;
@@ -29,6 +30,7 @@ beforeAll(async () => {
   `)
   await db.exec(calendarMigration)
   await db.exec(migration)
+  await db.exec(timeMigration)
   await db.query('insert into leads values ($1,$2,$3)', [lead, org, agent])
   const fixtures = [
     [1, org, lead, otherAgent, null, null, '2027-10-01T09:40:00Z'],
@@ -61,5 +63,36 @@ describe('lead history through the actual calendar permission reader', () => {
   it('denies anonymous execution', async () => {
     const result = await db.query("select has_function_privilege('anon', 'public.bridge_list_lead_appointments(uuid,uuid,boolean)', 'EXECUTE') as allowed")
     expect(result.rows[0].allowed).toBe(false)
+  })
+  it('returns explicit end instants while leaving historical rows unchanged', async () => {
+    await db.exec('reset role')
+    await db.exec("update public.appointments set end_date_time = '2027-10-01T10:40:00Z' where appointment_id = '40000000-0000-4000-8000-000000000001'")
+    await db.exec('set role authenticated')
+    const rows = await read()
+    expect(rows.find(row => row.appointment_id.endsWith('000001')).end_date_time).toBe('2027-10-01T10:40:00+00:00')
+    expect(rows.find(row => row.appointment_id.endsWith('000002')).end_date_time).toBeNull()
+  })
+  it('retains calendar access and range boundaries in the end-instant reader', async () => {
+    await read(agent)
+    expect((await db.query('select public.bridge_list_calendar_appointments_with_times($1,true) as rows', [otherOrg])).rows[0].rows).toEqual([])
+    const result = await db.query('select public.bridge_list_calendar_appointments_with_times($1,true,null,$2,$3) as rows', [org, '2027-10-01T09:39:30Z', '2027-10-01T09:40:30Z'])
+    expect(result.rows[0].rows).toHaveLength(1)
+    await read('30000000-0000-4000-8000-000000000003')
+    expect((await db.query('select public.bridge_list_calendar_appointments_with_times($1,true) as rows', [org])).rows[0].rows).toEqual([])
+    await read(agent, false)
+    expect((await db.query('select public.bridge_list_calendar_appointments_with_times($1,true) as rows', [org])).rows[0].rows).toEqual([])
+    expect((await db.query("select has_function_privilege('anon', 'public.bridge_list_calendar_appointments_with_times(uuid,boolean,text,timestamptz,timestamptz)', 'EXECUTE') as allowed")).rows[0].allowed).toBe(false)
+  })
+  it('rejects a persisted end before its start', async () => {
+    await db.exec('reset role')
+    await expect(db.exec("update public.appointments set end_date_time = '2027-10-01T08:40:00Z' where appointment_id = '40000000-0000-4000-8000-000000000001'")).rejects.toThrow(/appointments_end_after_start/)
+    await db.exec('set role authenticated')
+  })
+  it('invalidates an inherited end only when an older writer moves its local schedule', async () => {
+    await db.exec('reset role')
+    await db.exec("update public.appointments set appointment_date = '2027-10-01', start_time = '11:40', end_time = '12:40', timezone = 'Africa/Johannesburg' where appointment_id = '40000000-0000-4000-8000-000000000001'")
+    await db.exec("update public.appointments set appointment_date = '2027-10-02', date_time = '2027-10-02T09:40:00Z' where appointment_id = '40000000-0000-4000-8000-000000000001'")
+    expect((await db.query("select end_date_time from public.appointments where appointment_id = '40000000-0000-4000-8000-000000000001'")).rows[0].end_date_time).toBeNull()
+    await db.exec('set role authenticated')
   })
 })

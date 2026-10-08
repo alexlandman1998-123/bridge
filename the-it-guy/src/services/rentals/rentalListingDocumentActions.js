@@ -28,7 +28,7 @@ export async function uploadRentalListingRequirement(kind, section, row, files, 
   let savedCount = 0
   try {
     if (kind === 'landlord') {
-      const result = await api.uploadRentalApplicationFile(files[0], slot, section.onboarding.version, (body) => api.requestRentalLandlordOnboarding(section.id, 'POST', body))
+      const result = await api.uploadRentalApplicationFile(files[0], slot, section.onboarding.version, (body) => api.requestRentalLandlordOnboarding(section.id, 'POST', body), { monitorSurface: 'rentalLandlord' })
       savedCount = 1
       if (!result.onboarding?.requirements) throw new Error('The file was saved, but the checklist could not refresh.')
     } else {

@@ -8,7 +8,8 @@ function fake({ insertError = null, conflict = false, deleteError = null, genera
   const writes = []; const deleted = []; const filters = []
   const db = { storage: { from: () => storage }, from(table) {
     let patch
-    const query = { insert(value) { writes.push(value); return query }, update(value) { patch = value; writes.push(value); return query }, delete() { deleted.push(table); return query }, select: () => query, eq(key, value) { filters.push([key, value]); return query }, single: async () => ({ error: insertError, data: insertError ? null : { id: 'document', document_type: 'identity', status: 'uploaded' } }), maybeSingle: async () => ({ data: conflict ? null : { id: 'app', status: 'draft', version: 5, application_data: patch.application_data } }), then: (resolve) => Promise.resolve(table === 'rental_onboarding_requirement_summaries' ? { data: missingChecklist ? [] : rentalApplicationDocumentSlots(application.application_data).map((slot) => ({ id: `${slot.subjectId}-${slot.purpose}`, subject_id: slot.subjectId, scope_key: 'application', purpose: slot.purpose, active: true, mode: 'active', generation })), error: null } : { error: deleteError }).then(resolve) }
+    let deleting = false
+    const query = { insert(value) { writes.push(value); return query }, update(value) { patch = value; writes.push(value); return query }, delete() { deleting = true; deleted.push(table); return query }, select: () => query, eq(key, value) { filters.push([key, value]); return query }, single: async () => ({ error: insertError, data: insertError ? null : { id: 'document', document_type: 'identity', status: 'uploaded' } }), maybeSingle: async () => deleting ? { data: deleteError ? null : { id: 'document' }, error: deleteError } : table === 'rental_application_documents' ? { data: null } : ({ data: conflict ? null : { id: 'app', status: 'draft', version: 5, application_data: patch?.application_data || application.application_data } }), then: (resolve) => Promise.resolve(table === 'rental_onboarding_requirement_summaries' ? { data: missingChecklist ? [] : rentalApplicationDocumentSlots(application.application_data).map((slot) => ({ id: `${slot.subjectId}-${slot.purpose}`, subject_id: slot.subjectId, scope_key: 'application', purpose: slot.purpose, active: true, mode: 'active', generation })), error: null } : { error: deleteError }).then(resolve) }
     return query
   } }
   return { db, writes, deleted, filters, storage }
@@ -26,10 +27,26 @@ it('rejects forged subjects, stale versions and mismatched file types before upl
   }
   expect(() => validateRentalDocumentUpload({ fileName: 'x.pdf', mimeType: 'application/pdf', binary: Buffer.alloc(8 * 1024 * 1024 + 1) })).toThrow('8 MB')
 })
+it('infers a missing browser type while preserving exact server size enforcement', () => {
+  expect(validateRentalDocumentUpload({ fileName: 'identity.PDF', mimeType: '', binary: { length: 8 * 1024 * 1024 } })).toEqual({ safeFileName: 'identity.PDF', mimeType: 'application/pdf' })
+  expect(() => validateRentalDocumentUpload({ fileName: 'identity.pdf', mimeType: 'image/png', binary: { length: 100 } })).toThrow('does not match')
+  expect(() => validateRentalDocumentUpload({ fileName: 'identity.pdf', mimeType: '', binary: { length: 0 } })).toThrow('empty')
+  expect(() => validateRentalDocumentUpload({ fileName: 'identity.pdf', mimeType: '', binary: { length: 100.5 } })).toThrow('empty')
+})
+it('refuses absent stored MIME evidence when completing a signed receipt', async () => {
+  const fixture = fake()
+  fixture.storage.createSignedUploadUrl = vi.fn().mockResolvedValue({ data: { signedUrl: 'https://storage.example.test/signed' } })
+  fixture.storage.info = vi.fn().mockResolvedValue({ data: { size: 1000, contentType: '' } })
+  const options = { signingSecret: 'fake-test-secret' }
+  const prepared = await uploadRentalApplicationDocument(fixture.db, application, { ...body, action: 'prepare_upload', fileSize: 1000, mimeType: '' }, options)
+  await expect(uploadRentalApplicationDocument(fixture.db, application, { version: 4, action: 'complete_upload', ticket: prepared.ticket }, options)).rejects.toThrow('no verified content type')
+  expect(fixture.storage.remove).toHaveBeenCalledOnce()
+  expect(fixture.writes).toEqual([])
+})
 it('cleans up storage and inserted document rows if the application changes during upload', async () => {
   const fixture = fake({ conflict: true }); await expect(uploadRentalApplicationDocument(fixture.db, application, body)).rejects.toThrow('changed')
   expect(fixture.deleted).toEqual(['rental_application_documents']); expect(fixture.storage.remove).toHaveBeenCalledOnce()
-  const insertFailure = fake({ insertError: new Error('Insert failed') }); await expect(uploadRentalApplicationDocument(insertFailure.db, application, body)).rejects.toThrow('Insert failed'); expect(insertFailure.storage.remove).toHaveBeenCalledOnce()
+  const insertFailure = fake({ insertError: Object.assign(new Error('Insert failed'), {code:'23514'}) }); await expect(uploadRentalApplicationDocument(insertFailure.db, application, body)).rejects.toThrow('Insert failed'); expect(insertFailure.storage.remove).toHaveBeenCalledOnce()
 })
 it('uses a signed upload receipt, verifies actual stored metadata, and refuses tampering or another application', async () => {
   const fixture = fake()
@@ -78,4 +95,74 @@ it('blocks uploads until a durable checklist exists and never treats missing row
   const fixture = fake({ missingChecklist: true })
   await expect(uploadRentalApplicationDocument(fixture.db, application, body)).rejects.toThrow('Save the draft')
   expect(fixture.storage.upload).not.toHaveBeenCalled(); expect(fixture.writes).toEqual([])
+})
+
+function uncertainRentalSave({ loseInsert = false, loseAssignment = false } = {}) {
+  let storedDocument = null
+  let current = structuredClone(application)
+  let inserts = 0
+  let assignments = 0
+  const storage = {
+    createSignedUploadUrl: vi.fn().mockResolvedValue({ data: { signedUrl: 'https://storage.example.test/recovery' } }),
+    info: vi.fn().mockResolvedValue({ data: { size: 1000, contentType: 'application/pdf' } }),
+    remove: vi.fn().mockResolvedValue({ error: null }),
+  }
+  const db = { storage: { from: () => storage }, from(table) {
+    let inserted = null
+    let update = null
+    const query = {
+      select: () => query, eq: () => query,
+      insert(value) { inserted = value; return query },
+      update(value) { update = value; return query },
+      delete() { throw new Error('An uncertain save must never delete the row') },
+      async single() {
+        if (!inserted) throw new Error('Unexpected insert')
+        inserts++
+        storedDocument = { ...inserted, status: 'uploaded' }
+        if (loseInsert && inserts === 1) return { error: new TypeError('Insert response lost') }
+        return { data: storedDocument }
+      },
+      async maybeSingle() {
+        if (table === 'rental_application_documents') return { data: storedDocument }
+        if (update) {
+          assignments++
+          current = { ...current, ...update }
+          if (loseAssignment && assignments === 1) return { error: new TypeError('Assignment response lost') }
+        }
+        return { data: current }
+      },
+      then(resolve) {
+        return Promise.resolve({ data: rentalApplicationDocumentSlots(application.application_data).map(slot => ({ id: `${slot.subjectId}-${slot.purpose}`, subject_id: slot.subjectId, scope_key: 'application', purpose: slot.purpose, active: true, mode: 'active', generation: 1 })) }).then(resolve)
+      },
+    }
+    return query
+  } }
+  return { db, storage, get current() { return current }, get inserts() { return inserts }, get assignments() { return assignments } }
+}
+
+it('recovers a committed assignment after a lost response and returns the same receipt on a stale-version retry', async () => {
+  const fixture = uncertainRentalSave({ loseAssignment: true })
+  const options = { signingSecret: 'test-recovery-secret' }
+  const prepared = await uploadRentalApplicationDocument(fixture.db, application, { ...body, action: 'prepare_upload', fileSize: 1000 }, options)
+  const complete = { action: 'complete_upload', version: 4, ticket: prepared.ticket }
+  const saved = await uploadRentalApplicationDocument(fixture.db, application, complete, options)
+  expect(saved.application.version).toBe(5)
+  const retried = await uploadRentalApplicationDocument(fixture.db, fixture.current, complete, options)
+  expect(retried.document.id).toBe(saved.document.id)
+  expect(fixture.inserts).toBe(1)
+  expect(fixture.assignments).toBe(1)
+  expect(fixture.storage.remove).not.toHaveBeenCalled()
+})
+
+it('retains a document whose insert response was lost, then completes its original ticket without inserting twice', async () => {
+  const fixture = uncertainRentalSave({ loseInsert: true })
+  const options = { signingSecret: 'test-recovery-secret' }
+  const prepared = await uploadRentalApplicationDocument(fixture.db, application, { ...body, action: 'prepare_upload', fileSize: 1000 }, options)
+  const complete = { action: 'complete_upload', version: 4, ticket: prepared.ticket }
+  await expect(uploadRentalApplicationDocument(fixture.db, application, complete, options)).rejects.toThrow('Insert response lost')
+  expect(fixture.storage.remove).not.toHaveBeenCalled()
+  const saved = await uploadRentalApplicationDocument(fixture.db, application, complete, options)
+  expect(saved.application.application_data.documentLinks[0].documentId).toBe(saved.document.id)
+  expect(fixture.inserts).toBe(1)
+  expect(fixture.assignments).toBe(1)
 })

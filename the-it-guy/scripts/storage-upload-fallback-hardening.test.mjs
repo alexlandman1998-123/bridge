@@ -10,9 +10,9 @@ import {
 const root = process.cwd()
 const packageJson = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))
 
-assert.equal(
+assert.match(
   packageJson.scripts['test:storage-upload-fallback-hardening'],
-  'node scripts/storage-upload-fallback-hardening.test.mjs',
+  /^node scripts\/storage-upload-fallback-hardening\.test\.mjs(?: && |$)/,
   'package script should expose storage upload fallback hardening checks',
 )
 

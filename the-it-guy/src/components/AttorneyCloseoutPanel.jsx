@@ -1,3 +1,5 @@
+import DocumentAccessButton from './documents/DocumentAccessButton.jsx'
+import { DOCUMENT_UPLOAD_ACCEPT, DOCUMENT_UPLOAD_HELP_TEXT } from '../lib/documentUploadPolicy.js'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   fetchTransactionAttorneyCloseout,
@@ -444,7 +446,7 @@ function AttorneyCloseoutPanel({ transaction, unit, buyer, visible = true }) {
                       <label className={`ghost-button${saving ? ' pointer-events-none opacity-60' : ''}`}>
                         {uploadProgress[item.key]?.busy ? 'Uploading…' : uploadProgress[item.key]?.stage === 'failed' ? 'Try again' : 'Upload'}
                         <input
-                          type="file"
+                          type="file" title={DOCUMENT_UPLOAD_HELP_TEXT} accept={DOCUMENT_UPLOAD_ACCEPT}
                           hidden
                           disabled={saving}
                           onChange={(event) => {
@@ -455,11 +457,11 @@ function AttorneyCloseoutPanel({ transaction, unit, buyer, visible = true }) {
                             event.target.value = ''
                           }}
                         />
+                      <span className="block text-xs font-normal text-slate-500">{DOCUMENT_UPLOAD_HELP_TEXT}</span>
                       </label>
-                      {item.url ? (
-                        <a className="ghost-button" href={item.url} target="_blank" rel="noreferrer">
-                          View
-                        </a>
+
+                      {item.filePath ? (
+                        <DocumentAccessButton document={item} aria-label={`View ${item.label}`} />
                       ) : (
                         <span className="inline-flex items-center rounded-full border border-[#e3e9f3] bg-white px-3 py-1 text-xs text-[#7a8da7]">
                           No document uploaded

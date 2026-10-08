@@ -1,15 +1,11 @@
+import { appointmentReservesTime } from '../core/appointments/appointmentReservation.js'
 import { getAppointmentTypeDefinition, normalizeAppointmentTypeKey } from './appointmentTypeDefinitions'
-
-const ACTIVE_APPOINTMENT_STATUSES = new Set([
-  'draft',
-  'pending confirmation',
-  'pending',
-  'proposed',
-  'confirmed',
-  'needs reschedule',
-  'reschedule requested',
-  'reschedule_requested',
-])
+import {
+  addAppointmentDateDays,
+  appointmentLocalParts,
+  appointmentLocalToIso,
+  resolveAppointmentSchedule,
+} from '../core/appointments/appointmentTime.js'
 
 const DEFAULT_BUSINESS_HOURS = {
   timezone: 'Africa/Johannesburg',
@@ -59,41 +55,6 @@ function parseTimeToMinutes(value = '') {
   return (hours * 60) + minutes
 }
 
-function buildDateFromParts(dateValue = '', timeValue = '') {
-  const dateText = normalizeText(dateValue)
-  if (!dateText) return null
-  const timeText = normalizeText(timeValue) || '00:00'
-  const date = new Date(`${dateText}T${timeText}`)
-  if (Number.isNaN(date.getTime())) return null
-  return date
-}
-
-function resolveStartDate(payload = {}) {
-  if (payload?.dateTime) {
-    const date = new Date(payload.dateTime)
-    if (!Number.isNaN(date.getTime())) return date
-  }
-  return buildDateFromParts(payload?.date, payload?.startTime)
-}
-
-function resolveEndDate(payload = {}) {
-  if (payload?.endDateTime) {
-    const date = new Date(payload.endDateTime)
-    if (!Number.isNaN(date.getTime())) return date
-  }
-  const startDate = resolveStartDate(payload)
-  if (!startDate) return null
-  if (payload?.endTime && payload?.date) {
-    const explicitEnd = buildDateFromParts(payload.date, payload.endTime)
-    if (explicitEnd && explicitEnd.getTime() > startDate.getTime()) {
-      return explicitEnd
-    }
-  }
-  const definition = getAppointmentTypeDefinition(payload?.appointmentType)
-  const defaultDuration = Number(payload?.durationMinutes || definition?.defaultDuration || 45)
-  return new Date(startDate.getTime() + (Math.max(defaultDuration, 15) * 60 * 1000))
-}
-
 function resolveBufferMinutes(payload = {}) {
   const definition = getAppointmentTypeDefinition(payload?.appointmentType)
   const fromPayload = Number(payload?.bufferMinutes)
@@ -103,60 +64,45 @@ function resolveBufferMinutes(payload = {}) {
   return 15
 }
 
-function normalizeIdentity(value = '') {
-  return normalizeLowerText(value).replace(/\s+/g, ' ')
-}
-
 function normalizeParticipantRole(value = '') {
   return normalizeLowerText(value).replace(/_/g, ' ')
 }
 
 function participantIdentityKey(participant = {}) {
-  const email = normalizeLowerText(participant?.email)
+  const userId = normalizeText(participant.userId || participant.user_id)
+  if (userId) return `user_id:${userId}`
+  const email = normalizeLowerText(participant.email)
   if (email) return `email:${email}`
-  const role = normalizeParticipantRole(participant?.participantRole || participant?.participant_role || '')
-  const name = normalizeIdentity(participant?.name || '')
-  if (name) return `name:${name}`
-  if (role) return `role:${role}`
-  return ''
-}
-
-function isActiveAppointmentStatus(status = '') {
-  const normalized = normalizeLowerText(status)
-  if (!normalized) return true
-  if (normalized.includes('cancel') || normalized.includes('declin')) return false
-  if (normalized.includes('complete')) return false
-  return ACTIVE_APPOINTMENT_STATUSES.has(normalized) || normalized.includes('pending') || normalized.includes('confirm')
+  const contactId = normalizeText(participant.contactId || participant.contact_id)
+  return contactId ? `contact_id:${contactId}` : ''
 }
 
 function normalizeAppointmentForConflict(row = {}) {
-  const startDate = resolveStartDate({
-    dateTime: row?.dateTime || row?.date_time,
-    date: row?.date || row?.appointment_date,
-    startTime: row?.startTime || row?.start_time,
+  const schedule = resolveAppointmentSchedule(row, {
+    defaultDurationMinutes: getAppointmentTypeDefinition(row.appointmentType || row.appointment_type)?.defaultDuration || 45,
+    strict: false,
   })
-  const endDate = resolveEndDate({
-    endDateTime: row?.endDateTime || row?.end_date_time,
-    date: row?.date || row?.appointment_date,
-    startTime: row?.startTime || row?.start_time,
-    endTime: row?.endTime || row?.end_time,
-    appointmentType: row?.appointmentType || row?.appointment_type,
-  })
-  if (!startDate || !endDate) return null
+  if (!schedule.dateTime || !schedule.endDateTime || schedule.schedulingTimeIssue) return null
+  const startDate = new Date(schedule.dateTime)
+  const endDate = new Date(schedule.endDateTime)
   return {
+    ...row,
     appointmentId: normalizeText(row?.appointmentId || row?.appointment_id || row?.id),
     appointmentType: normalizeAppointmentTypeKey(row?.appointmentType || row?.appointment_type),
     title: normalizeText(row?.title),
     status: normalizeText(row?.status),
     startDate,
     endDate,
+    timezone: schedule.timezone,
+    allDay: schedule.allDay,
     bufferMinutes: resolveBufferMinutes({
       appointmentType: row?.appointmentType || row?.appointment_type,
       bufferMinutes: row?.bufferMinutes,
     }),
     assignedAgentId: normalizeText(row?.assignedAgentId || row?.agent_id),
     assignedAgentEmail: normalizeLowerText(row?.assignedAgentEmail || row?.agent_email),
-    participants: toArray(row?.participants).map((participant) => ({
+    participants: toArray(row?.participants).filter(participant => !participant.rsvpRevokedAt && !participant.rsvp_revoked_at
+      && normalizeLowerText(participant.rsvpStatus || participant.rsvp_status) !== 'declined').map((participant) => ({
       ...participant,
       identityKey: participantIdentityKey(participant),
       normalizedRole: normalizeParticipantRole(participant?.participantRole || participant?.participant_role),
@@ -186,15 +132,23 @@ function resolveBusinessHours(options = {}) {
   }
 }
 
-function collectIdentities(appointment = {}) {
+function collectIdentities(appointment = {}, requiredOnly = false) {
   const identities = new Set()
-  const agentId = normalizeText(appointment?.assignedAgentId)
-  const agentEmail = normalizeLowerText(appointment?.assignedAgentEmail)
-  if (agentId) identities.add(`agent_id:${agentId}`)
+  const agentId = normalizeText(appointment?.assignedAgentId || appointment?.agent_id)
+  const agentEmail = normalizeLowerText(appointment?.assignedAgentEmail || appointment?.agent_email)
+  if (agentId) identities.add(`user_id:${agentId}`)
   if (agentEmail) identities.add(`email:${agentEmail}`)
+  const ownerId = normalizeText(appointment.schedulingOwnerUserId || appointment.scheduling_owner_user_id)
+  if (ownerId) identities.add(`user_id:${ownerId}`)
   for (const participant of toArray(appointment?.participants)) {
+    if (participant.rsvpRevokedAt || participant.rsvp_revoked_at || normalizeLowerText(participant.rsvpStatus || participant.rsvp_status) === 'declined') continue
+    if (requiredOnly && (participant.isRequired === false || participant.is_required === false)) continue
     const key = participantIdentityKey(participant)
     if (key) identities.add(key)
+    const email = normalizeLowerText(participant.email)
+    if (email) identities.add(`email:${email}`)
+    const contactId = normalizeText(participant.contactId || participant.contact_id)
+    if (contactId) identities.add(`contact_id:${contactId}`)
   }
   return identities
 }
@@ -245,7 +199,7 @@ function evaluateWorkflowOrderConflict(candidate = {}, appointments = []) {
   if (!candidateOrder) return conflicts
 
   for (const existing of appointments) {
-    if (!isActiveAppointmentStatus(existing?.status)) continue
+    if (!appointmentReservesTime(existing)) continue
     const stage = normalizeLowerText(existing?.linkedWorkflowStage || existing?.linkedTransactionStage)
     if (!stage || !WORKFLOW_STAGE_ORDER[stage]) continue
     const order = Number(WORKFLOW_STAGE_ORDER[stage] || 0)
@@ -307,10 +261,10 @@ export function checkUserConflict(userId, start, end, options = {}) {
   const hardConflicts = []
   const softConflicts = []
   for (const appointment of appointments) {
-    if (!isActiveAppointmentStatus(appointment.status)) continue
+    if (!appointmentReservesTime(appointment)) continue
     if (normalizeText(appointment.appointmentId) === normalizeText(options?.excludeAppointmentId)) continue
     const identities = collectIdentities(appointment)
-    if (!identities.has(`agent_id:${normalizedUserId}`)) continue
+    if (!identities.has(`user_id:${normalizedUserId}`)) continue
     const existingWindow = appointmentWindow(appointment)
     if (overlaps(candidateWindow.startMs, candidateWindow.endMs, existingWindow.startMs, existingWindow.endMs)) {
       hardConflicts.push(
@@ -362,7 +316,7 @@ export function checkRoomConflict(roomId, start, end, options = {}) {
   const softConflicts = []
 
   for (const appointment of appointments) {
-    if (!isActiveAppointmentStatus(appointment.status)) continue
+    if (!appointmentReservesTime(appointment)) continue
     if (normalizeText(appointment.appointmentId) === normalizeText(options?.excludeAppointmentId)) continue
     if (normalizeText(appointment.resourceId) !== normalizedRoomId) continue
     const existingWindow = appointmentWindow(appointment)
@@ -406,10 +360,10 @@ export async function getUserAvailability(userId, range = {}, options = {}) {
   const normalized = toArray(appointments)
     .map((row) => normalizeAppointmentForConflict(row))
     .filter(Boolean)
-    .filter((row) => isActiveAppointmentStatus(row.status))
+    .filter((row) => appointmentReservesTime(row))
     .filter((row) => {
       const identities = collectIdentities(row)
-      return identities.has(`agent_id:${normalizeText(userId)}`) || identities.has(`email:${normalizeLowerText(userId)}`)
+      return identities.has(`user_id:${normalizeText(userId)}`) || identities.has(`email:${normalizeLowerText(userId)}`)
     })
   return {
     userId: normalizeText(userId),
@@ -435,7 +389,7 @@ export async function getParticipantAvailability(participants = [], range = {}, 
   const normalizedAppointments = toArray(appointments)
     .map((row) => normalizeAppointmentForConflict(row))
     .filter(Boolean)
-    .filter((row) => isActiveAppointmentStatus(row.status))
+    .filter((row) => appointmentReservesTime(row))
 
   const participantRows = toArray(participants).map((participant) => ({
     ...participant,
@@ -472,6 +426,13 @@ export async function getParticipantAvailability(participants = [], range = {}, 
 }
 
 export function checkAppointmentConflicts(payload = {}, options = {}) {
+  const status = normalizeLowerText(payload.status).replace(/[\s-]+/g, '_')
+  if (['draft', 'cancelled', 'canceled', 'declined', 'completed', 'no_show'].includes(status)) {
+    return {
+      hardConflicts: [], softConflicts: [], hasHardConflicts: false, hasSoftConflicts: false,
+      participantAvailability: [], suggestedSlots: [], businessHours: resolveBusinessHours(options),
+    }
+  }
   const candidate = normalizeAppointmentForConflict(payload)
   if (!candidate) {
     return {
@@ -500,10 +461,29 @@ export function checkAppointmentConflicts(payload = {}, options = {}) {
   const hardConflicts = []
   const softConflicts = []
   const candidateWindow = appointmentWindow(candidate)
-  const candidateIdentities = collectIdentities(candidate)
+  const candidateIdentities = collectIdentities(candidate, true)
+
+  // Contradictory historical times need review; do not silently discard a
+  // related booking and advertise its time as free for that same local day.
+  const candidateDay = appointmentLocalParts(candidate.startDate, candidate.timezone).date
+  for (const row of toArray(options.appointments)) {
+    const id = normalizeText(row.appointmentId || row.appointment_id || row.id)
+    if (id === normalizeText(options.excludeAppointmentId) || !appointmentReservesTime(row)
+      || normalizeAppointmentForConflict(row)) continue
+    const day = normalizeText(row.date || row.appointment_date)
+    const identities = collectIdentities(row)
+    const sharesPerson = [...candidateIdentities].some(identity => identities.has(identity))
+    const sharesRoom = candidate.resourceId && candidate.resourceId === normalizeText(row.resourceId || row.resource_id)
+    if ((!day || day === candidateDay) && (sharesPerson || sharesRoom)) {
+      hardConflicts.push(buildConflictEntry({
+        level: 'hard_conflict', type: 'unverified_existing_datetime',
+        message: 'A related appointment has inconsistent scheduling times. Review it before booking this slot.',
+      }))
+    }
+  }
 
   for (const existing of existingAppointments) {
-    if (!isActiveAppointmentStatus(existing.status)) continue
+    if (!appointmentReservesTime(existing)) continue
     const existingWindow = appointmentWindow(existing)
     const directOverlap = overlaps(candidateWindow.startMs, candidateWindow.endMs, existingWindow.startMs, existingWindow.endMs)
     const bufferedOverlap = overlaps(
@@ -513,12 +493,12 @@ export function checkAppointmentConflicts(payload = {}, options = {}) {
       existingWindow.bufferedEndMs,
     )
 
-    const existingIdentities = collectIdentities(existing)
+    const existingIdentities = collectIdentities(existing, true)
     const participantOverlap = [...candidateIdentities].some((identity) => existingIdentities.has(identity))
     const roleOverlap = candidate.participants.some((participant) => {
-      if (!participant?.normalizedRole || !CRITICAL_PARTICIPANT_ROLES.has(participant.normalizedRole)) return false
+      if (participant.isRequired === false || participant.is_required === false || !participant?.normalizedRole || !CRITICAL_PARTICIPANT_ROLES.has(participant.normalizedRole)) return false
       return existing.participants.some((existingParticipant) => {
-        if (!existingParticipant?.normalizedRole) return false
+        if (existingParticipant.isRequired === false || existingParticipant.is_required === false || !existingParticipant?.normalizedRole) return false
         if (existingParticipant.normalizedRole !== participant.normalizedRole) return false
         if (participant.identityKey && existingParticipant.identityKey) {
           return participant.identityKey === existingParticipant.identityKey
@@ -539,6 +519,11 @@ export function checkAppointmentConflicts(payload = {}, options = {}) {
         }),
       )
       continue
+    }
+
+    if (directOverlap && [...collectIdentities(candidate)].some(identity => collectIdentities(existing).has(identity))) {
+      softConflicts.push(buildConflictEntry({ level: 'soft_conflict', type: 'optional_participant_overlap',
+        message: 'An optional attendee is already booked at this time.', appointment: existing }))
     }
 
     if ((participantOverlap || roleOverlap) && bufferedOverlap) {
@@ -625,20 +610,20 @@ export function getSuggestedAvailabilitySlots(payload = {}, options = {}) {
   const searchDays = Math.max(1, Number(options?.searchDays || 10))
   const businessHours = resolveBusinessHours(options)
   const existingAppointments = toArray(options?.appointments)
-    .map((row) => normalizeAppointmentForConflict(row))
-    .filter(Boolean)
 
   const suggestions = []
-  const startCursor = new Date(candidate.startDate.getTime())
+  const timezone = candidate.timezone
+  const startDateKey = appointmentLocalParts(candidate.startDate, timezone).date
 
   for (let dayOffset = 0; dayOffset < searchDays && suggestions.length < maxSuggestions; dayOffset += 1) {
-    const dayDate = new Date(startCursor.getTime())
-    dayDate.setDate(startCursor.getDate() + dayOffset)
-    if (!businessHours.days.includes(dayDate.getDay())) continue
+    const dayKey = addAppointmentDateDays(startDateKey, dayOffset)
+    if (!businessHours.days.includes(new Date(`${dayKey}T12:00:00Z`).getUTCDay())) continue
 
     for (let minute = businessHours.start; minute + slotMinutes <= businessHours.end && suggestions.length < maxSuggestions; minute += 15) {
-      const slotStart = new Date(dayDate.getTime())
-      slotStart.setHours(Math.floor(minute / 60), minute % 60, 0, 0)
+      const clock = `${String(Math.floor(minute / 60)).padStart(2, '0')}:${String(minute % 60).padStart(2, '0')}`
+      let slotStart
+      try { slotStart = new Date(appointmentLocalToIso(dayKey, clock, timezone)) }
+      catch { continue } // Skip missing or ambiguous civil times during clock changes.
       if (slotStart.getTime() <= Date.now() + (5 * 60 * 1000)) continue
       const slotEnd = new Date(slotStart.getTime() + (slotMinutes * 60 * 1000))
 
@@ -646,9 +631,10 @@ export function getSuggestedAvailabilitySlots(payload = {}, options = {}) {
         {
           ...payload,
           dateTime: slotStart.toISOString(),
-          date: slotStart.toISOString().slice(0, 10),
-          startTime: `${String(slotStart.getHours()).padStart(2, '0')}:${String(slotStart.getMinutes()).padStart(2, '0')}`,
-          endTime: `${String(slotEnd.getHours()).padStart(2, '0')}:${String(slotEnd.getMinutes()).padStart(2, '0')}`,
+          endDateTime: slotEnd.toISOString(),
+          date: dayKey,
+          startTime: appointmentLocalParts(slotStart, timezone).time,
+          endTime: appointmentLocalParts(slotEnd, timezone).time,
         },
         {
           ...options,
@@ -670,6 +656,7 @@ export function getSuggestedAvailabilitySlots(payload = {}, options = {}) {
             month: 'short',
             hour: '2-digit',
             minute: '2-digit',
+            timeZone: timezone,
           }),
         })
       }
@@ -696,9 +683,11 @@ export function getSuggestedRescheduleSlots(appointmentId, constraints = {}) {
     appointmentId: currentCandidate.appointmentId,
     appointmentType: constraints?.appointmentType || currentCandidate.appointmentType,
     dateTime: currentCandidate.startDate.toISOString(),
-    date: currentCandidate.startDate.toISOString().slice(0, 10),
-    startTime: `${String(currentCandidate.startDate.getHours()).padStart(2, '0')}:${String(currentCandidate.startDate.getMinutes()).padStart(2, '0')}`,
-    endTime: `${String(currentCandidate.endDate.getHours()).padStart(2, '0')}:${String(currentCandidate.endDate.getMinutes()).padStart(2, '0')}`,
+    endDateTime: currentCandidate.endDate.toISOString(),
+    timezone: currentCandidate.timezone,
+    date: appointmentLocalParts(currentCandidate.startDate, currentCandidate.timezone).date,
+    startTime: appointmentLocalParts(currentCandidate.startDate, currentCandidate.timezone).time,
+    endTime: appointmentLocalParts(currentCandidate.endDate, currentCandidate.timezone).time,
     participants: Array.isArray(constraints?.participants)
       ? constraints.participants
       : currentCandidate.participants,
@@ -708,8 +697,8 @@ export function getSuggestedRescheduleSlots(appointmentId, constraints = {}) {
     allowOutsideBusinessHours: constraints?.allowOutsideBusinessHours === true,
   }
 
-  const candidateAppointments = normalizedAppointments.filter(
-    (row) => normalizeText(row?.appointmentId) !== normalizeText(currentCandidate.appointmentId),
+  const candidateAppointments = appointments.filter(
+    (row) => normalizeText(row?.appointmentId || row?.appointment_id || row?.id) !== normalizeText(currentCandidate.appointmentId),
   )
 
   return getSuggestedAvailabilitySlots(payload, {

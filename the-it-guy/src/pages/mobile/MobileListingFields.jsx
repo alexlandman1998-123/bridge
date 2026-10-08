@@ -1,3 +1,4 @@
+import { DOCUMENT_UPLOAD_ACCEPT, DOCUMENT_UPLOAD_HELP_TEXT } from '../../lib/documentUploadPolicy.js'
 import { getPrivateListingStatusLabel } from '../../lib/privateListingLifecycle.js'
 function TextField({ form, update, name, label, type = 'text', multiline = false }) {
   const Component = multiline ? 'textarea' : 'input'
@@ -36,7 +37,9 @@ export function MobileListingSellerFields({ form, update, documentCategories, ma
       <TextField form={form} update={update} name="complianceCaptureNotes" label="Capture note" multiline />
     </div></details>
     <details className="mobile-listing-more-fields"><summary>Seller access & source</summary><div><SelectField form={form} update={(name, value) => { update(name, value); update('sellerPortalInviteRequested', value === 'send_now') }} name="sellerPortalAccessIntent" label="Seller portal access" options={[[ 'later', 'Decide later' ], [ 'agent_managed', 'Agent-managed' ], [ 'send_now', 'Send invite after saving' ]]} />{form.sellerPortalAccessIntent === 'agent_managed' && <TextField form={form} update={update} name="sellerPortalOptOutReason" label="Offline-management note" multiline />}<SelectField form={form} update={update} name="leadSource" label="Lead source" options={['Referral', 'Website', 'Property24', 'Private Property', 'Walk-In', 'Canvassing'].map((value) => [value, value])} /></div></details>
-    <details className="mobile-listing-more-fields"><summary>Supporting documents</summary><div><SelectField form={form} update={update} name="supportingDocumentCategory" label="Document category" options={documentCategories.map((category) => [category, category])} /><label className="grid gap-2 text-xs text-[#627068]">Add documents<input type="file" multiple onChange={(event) => { const files = Array.from(event.target.files || []); update('supportingDocumentFiles', files); update('supportingDocumentNames', files.map((file) => file.name)) }} /></label><p className="text-xs text-[#627068]">{form.supportingDocumentNames?.length ? form.supportingDocumentNames.join(', ') : 'Files upload when you save the listing.'}</p></div></details>
+    <details className="mobile-listing-more-fields"><summary>Supporting documents</summary><div><SelectField form={form} update={update} name="supportingDocumentCategory" label="Document category" options={documentCategories.map((category) => [category, category])} /><label className="grid gap-2 text-xs text-[#627068]">Add documents<input type="file" title={DOCUMENT_UPLOAD_HELP_TEXT} accept={DOCUMENT_UPLOAD_ACCEPT} multiple onChange={(event) => { const files = Array.from(event.target.files || []); update('supportingDocumentFiles', files); update('supportingDocumentNames', files.map((file) => file.name)) }} /><span className="block text-xs font-normal text-slate-500">{DOCUMENT_UPLOAD_HELP_TEXT}</span>
+    </label>
+    <p className="text-xs text-[#627068]">{form.supportingDocumentNames?.length ? form.supportingDocumentNames.join(', ') : 'Files upload when you save the listing.'}</p></div></details>
   </>
 }
 export function MobileListingReviewFields({ form, update, onStatusChange }) {

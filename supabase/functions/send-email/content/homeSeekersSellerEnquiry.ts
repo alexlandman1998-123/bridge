@@ -148,7 +148,7 @@ ${safeHref(leadUrl, ["https:"]) ? button("Open seller lead", leadUrl) : ""}
     preview: input.preview,
   });
   const text = [
-    `New seller enquiry — Home Seekers`,
+    `New seller enquiry: Home Seekers`,
     "",
     `${sellerName} has enquired about selling.`,
     address ? `Property: ${address}` : "",

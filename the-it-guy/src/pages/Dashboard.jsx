@@ -1,3 +1,4 @@
+import usePipelineAppointments from '../hooks/usePipelineAppointments'
 import {
   AlertTriangle,
   ArrowRight,
@@ -74,7 +75,6 @@ import { markRouteMilestone, startRouteTransitionTrace } from '../lib/performanc
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 import {
   getAgencyPipelineSnapshot,
-  getAppointmentsDashboardSummaryAsync,
   getAgentCommissionTracker,
   getAgentPrivateListingSummaries,
   listOrganisationUserAssignmentAliases,
@@ -1851,14 +1851,6 @@ function Dashboard() {
   const [propertyTypeView, setPropertyTypeView] = useState('volume')
   const [funnelAudience, setFunnelAudience] = useState('buyer')
   const [propertyMixScope, setPropertyMixScope] = useState('deals')
-  const [appointmentSummary, setAppointmentSummary] = useState({
-    rows: [],
-    pending: [],
-    reschedule: [],
-    upcoming: [],
-    today: [],
-    thisWeek: [],
-  })
   const [organisationMembershipRole, setOrganisationMembershipRole] = useState('viewer')
   const [organisationIdForAppointments, setOrganisationIdForAppointments] = useState('')
   const [principalTimeFilter, setPrincipalTimeFilter] = useState('this_week')
@@ -2339,39 +2331,12 @@ function Dashboard() {
     }
   }, [isPrincipalAgentView, loadDashboard])
 
-  useEffect(() => {
-    if (role !== 'agent' || isPrincipalAgentView || !organisationIdForAppointments) return undefined
-
-    const resolvedAgentIdentity = String(profile?.id || profile?.email || '').trim()
-    const refreshAppointments = async () => {
-      try {
-        const summary = await getAppointmentsDashboardSummaryAsync(organisationIdForAppointments, {
-          includeAll: isPrincipalAgentView,
-          agentId: isPrincipalAgentView ? '' : resolvedAgentIdentity,
-          agentEmail: isPrincipalAgentView ? '' : String(profile?.email || '').trim(),
-        })
-        setAppointmentSummary(summary)
-      } catch {
-        setAppointmentSummary({
-          rows: [],
-          pending: [],
-          reschedule: [],
-          upcoming: [],
-          today: [],
-          thisWeek: [],
-          statusCounts: [],
-          typeCounts: [],
-        })
-      }
-    }
-
-    void refreshAppointments()
-    const handleRefreshAppointments = () => {
-      void refreshAppointments()
-    }
-    window.addEventListener('itg:agency-crm-updated', handleRefreshAppointments)
-    return () => window.removeEventListener('itg:agency-crm-updated', handleRefreshAppointments)
-  }, [isPrincipalAgentView, organisationIdForAppointments, profile?.email, profile?.id, role])
+  const dashboardAppointmentLoad = usePipelineAppointments({
+    organisationId: currentOrganisationId, includeAll: isPrincipalAgentView,
+    agentId: isPrincipalAgentView ? '' : profile?.id || '', agentEmail: isPrincipalAgentView ? '' : profile?.email || '',
+    viewerId: profile?.id || '', enabled: role === 'agent' && !organisationLoading && Boolean(currentOrganisationId),
+  })
+  const appointmentSummary = useMemo(() => ({ rows: dashboardAppointmentLoad.rows }), [dashboardAppointmentLoad.rows])
 
   useEffect(() => {
     if (role !== 'agent' || isPrincipalAgentView || !organisationIdForAppointments) {
@@ -5270,6 +5235,8 @@ function renderActiveTransactionsBlock({
                         userEmail={String(profile?.email || '').trim()}
                         includeAllAppointments={false}
                         canManageAppointments={false}
+                        appointmentRows={dashboardAppointmentLoad.rows}
+                        appointmentLoad={dashboardAppointmentLoad}
                         appointmentRefreshKey={`${organisationIdForAppointments}:${String(profile?.id || profile?.email || '').trim()}:${agentAppointmentSummary.rows.length}:${residentialMode}:${residentialDateRange}`}
                         commissionTracker={agentCommissionTracker}
                         trainingPanel={(

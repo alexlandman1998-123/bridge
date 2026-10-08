@@ -82,7 +82,7 @@ function AppointmentCalendarActions({
           rel="noreferrer"
           className={buttonClass}
         >
-          Google Calendar
+          Copy to Google
         </a>
       ) : null}
 
@@ -93,9 +93,11 @@ function AppointmentCalendarActions({
           rel="noreferrer"
           className={buttonClass}
         >
-          Outlook
+          Copy to Outlook
         </a>
       ) : null}
+
+      <span className="w-full text-xs text-slate-500">Manual copies do not update automatically.</span>
 
       {!hasAppointmentIdentity(appointment) && !googleLink && !outlookLink ? (
         <span className="text-[0.75rem] text-[#7b8ca2]">Calendar invite unavailable</span>

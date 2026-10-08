@@ -1,3 +1,4 @@
+import { getDocumentUploadPolicy } from '../lib/documentUploadPolicy.js'
 import { AlertTriangle, ArrowLeft, ArrowUpRight, Building2, CalendarDays, ChevronDown, ChevronUp, CheckCircle2, CircleDollarSign, Copy, Download, EyeOff, FileText, FolderKanban, HandCoins, Home, ImagePlus, Mail, LandPlot, MapPin, MoreVertical, PencilLine, PieChart, Plus, Receipt, Search, ShieldCheck, Trash2, TrendingUp, Upload, UserPlus, Users, WalletCards, Workflow, XCircle } from 'lucide-react'
 import { lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
@@ -6493,7 +6494,7 @@ function DevelopmentDetail() {
             <label onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); void handleMarketingAssetFileUpload({ target: { files: event.dataTransfer.files, value: '' } }, documentType, { uploadKey: documentType, successMessage: `${title} uploaded to the marketing library.` }) }} className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl bg-[#167a4b] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#12683f]">
               <Upload size={16} /> {marketingAssetUploading === documentType ? 'Uploading…' : 'Upload'}
               <input
-                type="file"
+                type="file" title={getDocumentUploadPolicy({ surface: 'development_asset' }).helpText} accept={getDocumentUploadPolicy({ surface: 'development_asset' }).accept}
                 multiple
                 className="hidden"
                 disabled={Boolean(marketingAssetUploading)}
@@ -6504,7 +6505,7 @@ function DevelopmentDetail() {
                   })
                 }
               />
-            </label>
+            <span className="block text-xs font-normal text-slate-500">{getDocumentUploadPolicy({ surface: 'development_asset' }).helpText}</span></label>
           ) : null}
         </section>
         {items.length ? (
@@ -6935,7 +6936,7 @@ function DevelopmentDetail() {
                     <span className="block text-sm font-semibold text-[#20364c]"><ImagePlus size={15} className="mr-2 inline" />{marketingAssetUploading === uploadKey ? 'Uploading…' : `Upload ${label}`}</span>
                     <span className="mt-1 block text-xs text-[#6b7d93]">{hint}</span>
                   </div>
-                  <input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" className="hidden" disabled={Boolean(marketingAssetUploading)} onChange={event => void handleMarketingAssetFileUpload(event, documentType, { uploadKey, successMessage: `${label} uploaded.` })} />
+                  <input type="file" title={getDocumentUploadPolicy({ surface: 'development_image' }).helpText} accept={getDocumentUploadPolicy({ surface: 'development_image' }).accept} className="hidden" disabled={Boolean(marketingAssetUploading)} onChange={event => void handleMarketingAssetFileUpload(event, documentType, { uploadKey, successMessage: `${label} uploaded.` })} />
                 </label>
               ))}
             </div>
@@ -6945,7 +6946,7 @@ function DevelopmentDetail() {
             <p className="mt-1 text-sm text-[#60758c]">This appears behind the headline on the public development page.</p>
             <label onDragOver={event => event.preventDefault()} onDrop={event => handleDrop(event, 'cover', { uploadKey: 'cover-photo', setAsHero: true, successMessage: 'Cover photo uploaded.' })} className="mt-4 flex min-h-[190px] cursor-pointer items-center justify-center overflow-hidden rounded-xl border border-dashed border-[#aebfd2] bg-white">
               {coverImage ? <img src={coverImage} alt="Cover photo preview" className="h-full w-full object-cover" /> : <span className="text-sm font-semibold text-[#526a82]"><ImagePlus size={16} className="mr-2 inline" />Drop a cover photo here or browse</span>}
-              <input type="file" accept="image/*" className="hidden" disabled={Boolean(marketingAssetUploading)} onChange={event => void handleMarketingAssetFileUpload(event, 'cover', { uploadKey: 'cover-photo', setAsHero: true, successMessage: 'Cover photo uploaded.' })} />
+              <input type="file" title={getDocumentUploadPolicy({ surface: 'development_image' }).helpText} accept={getDocumentUploadPolicy({ surface: 'development_image' }).accept} className="hidden" disabled={Boolean(marketingAssetUploading)} onChange={event => void handleMarketingAssetFileUpload(event, 'cover', { uploadKey: 'cover-photo', setAsHero: true, successMessage: 'Cover photo uploaded.' })} />
             </label>
           </section>
         </div>
@@ -7299,8 +7300,8 @@ function DevelopmentDetail() {
                           <ImagePlus size={13} />
                           {marketingAssetUploading === `unit-images-${selectedMarketingFloorplan.id}` ? 'Uploading...' : 'Upload Images'}
                           <input
-                            type="file"
-                            accept="image/*"
+                            type="file" title={getDocumentUploadPolicy({ surface: 'development_image' }).helpText}
+                            accept={getDocumentUploadPolicy({ surface: 'development_image' }).accept}
                             multiple
                             className="hidden"
                             disabled={Boolean(marketingAssetUploading)}
@@ -7407,8 +7408,8 @@ function DevelopmentDetail() {
                           <Upload size={13} />
                           Upload
                           <input
-                            type="file"
-                            accept=".pdf,image/*"
+                            type="file" title={getDocumentUploadPolicy({ surface: 'development_plan' }).helpText}
+                            accept={getDocumentUploadPolicy({ surface: 'development_plan' }).accept}
                             multiple
                             className="hidden"
                             disabled={Boolean(marketingAssetUploading)}
@@ -7420,7 +7421,7 @@ function DevelopmentDetail() {
                               })
                             }
                           />
-                        </label>
+                        <span className="block text-xs font-normal text-slate-500">{getDocumentUploadPolicy({ surface: 'development_plan' }).helpText}</span></label>
                       </div>
                       <div className="grid gap-2">
                         {selectedUnitFloorplans.map(url => (
@@ -7450,7 +7451,7 @@ function DevelopmentDetail() {
                           <Upload size={13} />
                           Upload
                           <input
-                            type="file"
+                            type="file" title={getDocumentUploadPolicy({ surface: 'development_asset' }).helpText} accept={getDocumentUploadPolicy({ surface: 'development_asset' }).accept}
                             multiple
                             className="hidden"
                             disabled={Boolean(marketingAssetUploading)}
@@ -7462,7 +7463,7 @@ function DevelopmentDetail() {
                               })
                             }
                           />
-                        </label>
+                        <span className="block text-xs font-normal text-slate-500">{getDocumentUploadPolicy({ surface: 'development_asset' }).helpText}</span></label>
                       </div>
                       <div className="grid gap-2">
                         {selectedUnitDocuments.map(url => (
@@ -10092,8 +10093,8 @@ function DevelopmentDetail() {
                             <Upload size={15} />
                             Upload Images
                             <input
-                              type="file"
-                              accept="image/*"
+                              type="file" title={getDocumentUploadPolicy({ surface: 'development_image' }).helpText}
+                              accept={getDocumentUploadPolicy({ surface: 'development_image' }).accept}
                               multiple
                               className="hidden"
                               disabled={Boolean(marketingAssetUploading)}
@@ -10199,8 +10200,8 @@ function DevelopmentDetail() {
                                 <ImagePlus size={14} />
                                 Upload Images
                                 <input
-                                  type="file"
-                                  accept="image/*"
+                                  type="file" title={getDocumentUploadPolicy({ surface: 'development_image' }).helpText}
+                                  accept={getDocumentUploadPolicy({ surface: 'development_image' }).accept}
                                   multiple
                                   className="hidden"
                                   disabled={Boolean(marketingAssetUploading)}
@@ -10216,8 +10217,8 @@ function DevelopmentDetail() {
                                 <FileText size={14} />
                                 Upload Floorplans
                                 <input
-                                  type="file"
-                                  accept=".pdf,image/*"
+                                  type="file" title={getDocumentUploadPolicy({ surface: 'development_plan' }).helpText}
+                                  accept={getDocumentUploadPolicy({ surface: 'development_plan' }).accept}
                                   multiple
                                   className="hidden"
                                   disabled={Boolean(marketingAssetUploading)}
@@ -10228,13 +10229,13 @@ function DevelopmentDetail() {
                                     })
                                   }
                                 />
-                              </label>
+                              <span className="block text-xs font-normal text-slate-500">{getDocumentUploadPolicy({ surface: 'development_plan' }).helpText}</span></label>
                               <label className={`inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-[10px] border px-3 text-xs font-semibold transition ${marketingAssetUploading ? 'border-[#dbe6f2] bg-[#f5f8fb] text-[#9aa9ba]' : 'border-[#dbe6f2] bg-white text-[#20364c] hover:border-[#b9cadb] hover:bg-[#f8fbff]'}`}>
                                 <Upload size={14} />
                                 Upload Logo
                                 <input
-                                  type="file"
-                                  accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                                  type="file" title={getDocumentUploadPolicy({ surface: 'development_image' }).helpText}
+                                  accept={getDocumentUploadPolicy({ surface: 'development_image' }).accept}
                                   className="hidden"
                                   disabled={Boolean(marketingAssetUploading)}
                                   onChange={event =>
@@ -10267,8 +10268,8 @@ function DevelopmentDetail() {
                                     <ImagePlus size={24} className="mb-2" />
                                     Add cover image
                                     <input
-                                      type="file"
-                                      accept="image/*"
+                                      type="file" title={getDocumentUploadPolicy({ surface: 'development_image' }).helpText}
+                                      accept={getDocumentUploadPolicy({ surface: 'development_image' }).accept}
                                       className="hidden"
                                       disabled={Boolean(marketingAssetUploading)}
                                       onChange={event =>
@@ -10295,8 +10296,8 @@ function DevelopmentDetail() {
                                       <Upload size={13} />
                                       {marketingLogoUrl ? 'Replace Logo' : 'Upload Logo'}
                                       <input
-                                        type="file"
-                                        accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                                        type="file" title={getDocumentUploadPolicy({ surface: 'development_image' }).helpText}
+                                        accept={getDocumentUploadPolicy({ surface: 'development_image' }).accept}
                                         className="hidden"
                                         disabled={Boolean(marketingAssetUploading)}
                                         onChange={event =>
@@ -10321,8 +10322,8 @@ function DevelopmentDetail() {
                                     <ImagePlus size={13} />
                                     Add More
                                     <input
-                                      type="file"
-                                      accept="image/*"
+                                      type="file" title={getDocumentUploadPolicy({ surface: 'development_image' }).helpText}
+                                      accept={getDocumentUploadPolicy({ surface: 'development_image' }).accept}
                                       multiple
                                       className="hidden"
                                       disabled={Boolean(marketingAssetUploading)}
@@ -10357,8 +10358,8 @@ function DevelopmentDetail() {
                                     <ImagePlus size={24} className="mb-2" />
                                     Add gallery images
                                     <input
-                                      type="file"
-                                      accept="image/*"
+                                      type="file" title={getDocumentUploadPolicy({ surface: 'development_image' }).helpText}
+                                      accept={getDocumentUploadPolicy({ surface: 'development_image' }).accept}
                                       multiple
                                       className="hidden"
                                       disabled={Boolean(marketingAssetUploading)}
@@ -10380,8 +10381,8 @@ function DevelopmentDetail() {
                                     <FileText size={13} />
                                     Upload Floorplan
                                     <input
-                                      type="file"
-                                      accept=".pdf,image/*"
+                                      type="file" title={getDocumentUploadPolicy({ surface: 'development_plan' }).helpText}
+                                      accept={getDocumentUploadPolicy({ surface: 'development_plan' }).accept}
                                       multiple
                                       className="hidden"
                                       disabled={Boolean(marketingAssetUploading)}
@@ -10392,7 +10393,7 @@ function DevelopmentDetail() {
                                         })
                                       }
                                     />
-                                  </label>
+                                  <span className="block text-xs font-normal text-slate-500">{getDocumentUploadPolicy({ surface: 'development_plan' }).helpText}</span></label>
                                 </div>
                                 {floorplanDocumentOptions.length ? (
                                   <div className="grid gap-2">
@@ -10529,8 +10530,8 @@ function DevelopmentDetail() {
                                   <Upload size={13} />
                                   {marketingAssetUploading === `unit-images-${selectedMarketingFloorplan.id}` ? 'Uploading...' : 'Upload Images'}
                                   <input
-                                    type="file"
-                                    accept="image/*"
+                                    type="file" title={getDocumentUploadPolicy({ surface: 'development_image' }).helpText}
+                                    accept={getDocumentUploadPolicy({ surface: 'development_image' }).accept}
                                     multiple
                                     className="hidden"
                                     disabled={Boolean(marketingAssetUploading)}
@@ -10557,8 +10558,8 @@ function DevelopmentDetail() {
                                   <Upload size={13} />
                                   {marketingAssetUploading === `unit-floorplans-${selectedMarketingFloorplan.id}` ? 'Uploading...' : 'Upload Floorplans'}
                                   <input
-                                    type="file"
-                                    accept=".pdf,image/*"
+                                    type="file" title={getDocumentUploadPolicy({ surface: 'development_plan' }).helpText}
+                                    accept={getDocumentUploadPolicy({ surface: 'development_plan' }).accept}
                                     multiple
                                     className="hidden"
                                     disabled={Boolean(marketingAssetUploading)}
@@ -10570,7 +10571,7 @@ function DevelopmentDetail() {
                                       })
                                     }
                                   />
-                                </label>
+                                <span className="block text-xs font-normal text-slate-500">{getDocumentUploadPolicy({ surface: 'development_plan' }).helpText}</span></label>
                               </section>
                             </div>
                           </section>

@@ -92,3 +92,35 @@ it('jumps across months and returns to today with the correct selected week', as
   expect(screen.getByRole('button', { name: 'Tuesday, 06 October' }).getAttribute('aria-pressed')).toBe('true')
   expect(screen.getByRole('button', { name: 'Tuesday, 06 October' }).getAttribute('aria-current')).toBe('date')
 })
+
+
+it('retains the last verified week after a failed background refresh and retries independently', async () => {
+  render(<MobileCalendarPage />)
+  await act(async () => {})
+  expect(screen.getByText('Saved client')).toBeTruthy()
+  mocks.read.mockRejectedValueOnce(new Error('Disconnected'))
+  fireEvent(window, new Event('itg:agency-crm-updated'))
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 120)) })
+  expect(screen.getByText('Disconnected')).toBeTruthy()
+  expect(screen.getByText('Saved client')).toBeTruthy()
+  mocks.read.mockResolvedValueOnce({ appointments: [] })
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+  await act(async () => {})
+  expect(screen.queryByText('Saved client')).toBeNull()
+  expect(screen.getByText('No appointments for this day.')).toBeTruthy()
+})
+
+it('clears a previous organisation snapshot when the workspace uses an organisation ID alias', async () => {
+  mocks.organisation = { organisation: null, loading: false }
+  mocks.workspace = { ...mocks.workspace, currentWorkspace: { organisationId: 'first-org' } }
+  const { rerender } = render(<MobileCalendarPage />)
+  await act(async () => {})
+  expect(screen.getByText('Saved client')).toBeTruthy()
+  mocks.workspace = { ...mocks.workspace, currentWorkspace: { organisationId: 'second-org' } }
+  mocks.read.mockRejectedValueOnce(new Error('No access in new organisation'))
+  rerender(<MobileCalendarPage />)
+  expect(screen.queryByText('Saved client')).toBeNull()
+  await act(async () => {})
+  expect(screen.getByText('No access in new organisation')).toBeTruthy()
+  expect(screen.queryByText('Saved client')).toBeNull()
+})

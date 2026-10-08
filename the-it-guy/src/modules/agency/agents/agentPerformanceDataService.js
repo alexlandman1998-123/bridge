@@ -83,6 +83,7 @@ export async function loadAgentPerformanceSources({
   localPrivateListings = [],
   localPipelineRows = [],
   directorySummary = false,
+  includeAppointments = true,
 } = {}) {
   // Organisation-scoped reads only depend on settings, not on completion of
   // transaction hydration or the member directory.
@@ -98,7 +99,10 @@ export async function loadAgentPerformanceSources({
           includeRelatedData: !directorySummary,
         }).catch(() => localPrivateListings)
         : Promise.resolve(localPrivateListings),
-      organisationId ? listAppointmentsAsync(organisationId, { includeAll: true }).catch(() => []) : Promise.resolve([]),
+      includeAppointments && organisationId ? listAppointmentsAsync(organisationId, { includeAll: true }).then((rows) => {
+        if (!Array.isArray(rows)) throw new Error('Appointment data could not be verified. Please retry.')
+        return { rows, error: '' }
+      }).catch((error) => ({ rows: null, error: error?.message || 'Appointments could not be loaded.' })) : Promise.resolve({ rows: [], error: '' }),
       organisationId ? listCanvassingWorkspace(organisationId).catch(() => ({ prospects: [], activities: [] })) : Promise.resolve({ prospects: [], activities: [] }),
     ])
     return { organisationSettings, organisationId, branches, crmRows, remotePrivateListings, appointments, canvassingRows }
@@ -127,7 +131,8 @@ export async function loadAgentPerformanceSources({
     leads: pipelineRows,
     leadActivities: Array.isArray(crmRows?.leadActivities) ? crmRows.leadActivities : [],
     tasks: Array.isArray(crmRows?.tasks) ? crmRows.tasks : [],
-    appointments: Array.isArray(appointments) ? appointments : [],
+    appointments: appointments.rows,
+    appointmentError: appointments.error,
     canvassingProspects: Array.isArray(canvassingRows?.prospects) ? canvassingRows.prospects : [],
     canvassingActivities: Array.isArray(canvassingRows?.activities) ? canvassingRows.activities : [],
     listings: privateListings,

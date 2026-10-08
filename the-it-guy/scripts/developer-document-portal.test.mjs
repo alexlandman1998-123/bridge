@@ -10,7 +10,7 @@ import {
 } from '../src/services/developerDocumentPortalService.js'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const migration = readFileSync(resolve(root, '../supabase/migrations/20260831113000_developer_document_portal.sql'), 'utf8')
+const migration = readFileSync(resolve(root, '../supabase/migrations/20260831074557_developer_document_portal.sql'), 'utf8')
 const appSource = readFileSync(resolve(root, 'src/App.jsx'), 'utf8')
 const pageSource = readFileSync(resolve(root, 'src/pages/DeveloperDocumentPortalPage.jsx'), 'utf8')
 const transactionSource = readFileSync(resolve(root, 'src/pages/AttorneyTransactionDetail.jsx'), 'utf8')

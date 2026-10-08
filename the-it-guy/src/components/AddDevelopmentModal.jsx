@@ -1,4 +1,4 @@
-import { Building2, Check, House, Layers3, Plus, Trash2, Trees } from 'lucide-react'
+import { Building2, Check, House, Plus, Trash2, Trees, Users, Wallet } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { createDevelopmentWorkspace, fetchDeveloperAccessOptions, fetchDeveloperPartnersWorkspace } from '../lib/api'
@@ -8,12 +8,13 @@ import { formatSouthAfricanWhatsAppNumber, sendWhatsAppNotification } from '../l
 import AddressAutocomplete from './location/AddressAutocomplete'
 import Button from './ui/Button'
 import Modal from './ui/Modal'
-import StockMasterSetup from './developments/StockMasterSetup'
+import StockMasterSetup, { LayoutPreview } from './developments/StockMasterSetup'
 import { buildStockSummary, buildStockTargets, createStockPlan, validateStockStep } from '../core/developments/developmentStockPlan.js'
+import { clearDevelopmentDraft, developmentDraftScope, markDevelopmentDraftCreated, readDevelopmentDraft, restoreDevelopmentDraft, writeDevelopmentDraft } from '../core/developments/developmentCreateDraft.js'
 import './developments/development-create.css'
 
 const STEPS = [
-  { id: 'basic', label: 'Development Details', description: 'Step 1' },
+  { id: 'basic', label: 'Details', description: 'Step 1' },
   { id: 'units', label: 'Units', description: 'Step 2' },
   { id: 'financials', label: 'Sales setup', description: 'Step 3' },
   { id: 'review', label: 'Review', description: 'Step 4' },
@@ -23,7 +24,6 @@ const DEVELOPMENT_TYPES = [
   { value: 'residential', label: 'Residential', icon: House },
   { value: 'mixed_use', label: 'Mixed-use', icon: Building2 },
   { value: 'estate', label: 'Estate', icon: Trees },
-  { value: 'sectional_title', label: 'Sectional title', icon: Layers3 },
 ]
 
 function getStepsForContext(unitConfigurationMethod) {
@@ -353,7 +353,7 @@ function buildFloorplanDocumentsFromUnitTypes(unitTypes) {
   return unitTypes.flatMap((unitType) =>
     unitType.floorplans.flatMap((floorplan) => {
       const floorplanName = String(floorplan.name || '').trim()
-      if (!floorplanName) return []
+      if (!floorplanName || floorplan.file || !floorplan.fileUrl) return []
 
       const dedupeKey = `${floorplanName}::${unitType.name || ''}`
       if (seen.has(dedupeKey)) return []
@@ -385,6 +385,9 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
   const { profile, workspace } = useWorkspace()
   const [stepIndex, setStepIndex] = useState(0)
   const [stockStepIndex, setStockStepIndex] = useState(0)
+  const [stockEditor, setStockEditor] = useState(null)
+  const stockEditing = Boolean(stockEditor)
+  const [reviewEditing, setReviewEditing] = useState(false)
   const [details, setDetails] = useState(DEFAULT_DETAILS)
   const [financials, setFinancials] = useState(DEFAULT_FINANCIALS)
   const [transactionDefaults, setTransactionDefaults] = useState(DEFAULT_TRANSACTION_DEFAULTS)
@@ -399,26 +402,69 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
   const [units, setUnits] = useState([])
   const [documents, setDocuments] = useState([buildEmptyDocument()])
   const [developmentType, setDevelopmentType] = useState('residential')
-  const [unitConfigurationMethod, setUnitConfigurationMethod] = useState('import_later')
+  const [unitConfigurationMethod, setUnitConfigurationMethod] = useState('later')
   const [savedDevelopment, setSavedDevelopment] = useState(null)
   const [saveWarnings, setSaveWarnings] = useState([])
   const [stockPlan, setStockPlan] = useState(createStockPlan)
+  const [stockUndo, setStockUndo] = useState(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const formRef = useRef(null)
+  const receiptRef = useRef(null)
+  const undoRef = useRef(null)
+  const [recovery, setRecovery] = useState(null)
+  const [recovering, setRecovering] = useState(false)
+  const [closeRequested, setCloseRequested] = useState(false)
+  const [closing, setClosing] = useState(false)
+  const [draftStatus, setDraftStatus] = useState('')
+  const sessionRef = useRef({ open: false, scope: '' })
+  const skipAutoSave = useRef(false)
+  const restoredDraft = useRef(false)
+  const draftScope = developmentDraftScope(profile, workspace, isAgentContext ? 'agent' : 'developer')
   const activeSteps = useMemo(() => getStepsForContext(unitConfigurationMethod), [unitConfigurationMethod])
   const currentStepId = activeSteps[stepIndex]?.id || activeSteps[0]?.id || 'basic'
   const maxStepIndex = Math.max(activeSteps.length - 1, 0)
+  const progressSteps = activeSteps.filter((step) => step.id !== 'unit_setup')
+  const progressStepIndex = progressSteps.findIndex((step) => step.id === (currentStepId === 'unit_setup' ? 'units' : currentStepId))
+
+  const draftData = useMemo(() => ({ details, financials, transactionDefaults, legal, developerAccess, documents,
+    developmentType, unitConfigurationMethod, stockPlan, stockEditor, stepId: currentStepId, stockStepIndex, reviewEditing,
+  }), [details, financials, transactionDefaults, legal, developerAccess, documents, developmentType, unitConfigurationMethod, stockPlan, stockEditor, currentStepId, stockStepIndex, reviewEditing])
+  const hasDraftChanges = Boolean(stepIndex || stockEditor || developmentType !== 'residential' || unitConfigurationMethod !== 'later' || Object.entries(DEFAULT_DETAILS).some(([key, value]) => details[key] !== value))
+
+  useEffect(() => () => { sessionRef.current.open = false }, [])
+
+  useEffect(() => {
+    if (stockUndo && document.activeElement === document.body) undoRef.current?.focus()
+  }, [stockUndo])
 
   useEffect(() => {
     formRef.current?.closest('.ui-modal-body')?.scrollTo?.({ top: 0 })
+    const heading = savedDevelopment ? receiptRef.current?.querySelector('h4') : formRef.current?.querySelector('h4, h5, legend')
+    if (heading) {
+      heading.tabIndex = -1
+      heading.focus({ preventScroll: true })
+    }
   }, [stepIndex, stockStepIndex, error, savedDevelopment])
 
   useEffect(() => {
-    if (!open) return
+    if (!open) { sessionRef.current.open = false; return }
+    if (sessionRef.current.open && sessionRef.current.scope === draftScope) return
+    sessionRef.current = { open: true, scope: draftScope }
+    skipAutoSave.current = true
+    restoredDraft.current = false
+    setRecovery(null)
+    setRecovering(false)
+    setClosing(false)
+    setCloseRequested(false)
+    setDraftStatus('')
+    try { setRecovery(readDevelopmentDraft(draftScope)) }
+    catch { setDraftStatus('Recovery unavailable') }
 
     setStepIndex(0)
     setStockStepIndex(0)
+    setStockEditor(null)
+    setReviewEditing(false)
     setDetails(DEFAULT_DETAILS)
     setFinancials(DEFAULT_FINANCIALS)
     setTransactionDefaults(DEFAULT_TRANSACTION_DEFAULTS)
@@ -433,13 +479,39 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
     setUnits([])
     setDocuments([buildEmptyDocument()])
     setDevelopmentType('residential')
-    setUnitConfigurationMethod('import_later')
+    setUnitConfigurationMethod('later')
     setSavedDevelopment(null)
     setSaveWarnings([])
     setStockPlan(createStockPlan())
+    setStockUndo(null)
     setSaving(false)
     setError('')
-  }, [open, profile, workspace])
+  }, [open, profile, workspace, draftScope])
+
+  useEffect(() => {
+    if (skipAutoSave.current) { skipAutoSave.current = false; return }
+    if (!open || recovery || recovering || savedDevelopment || saving || sessionRef.current.scope !== draftScope) return
+    if (!hasDraftChanges) {
+      try { clearDevelopmentDraft(draftScope); setDraftStatus('') }
+      catch { setDraftStatus('Recovery unavailable') }
+      return
+    }
+    let cancelled = false
+    setDraftStatus('Saving on this device…')
+    try {
+      const written = writeDevelopmentDraft(draftScope, draftData)
+      written.then(() => { if (!cancelled) setDraftStatus('Saved on this device') })
+        .catch(() => { if (!cancelled) setDraftStatus('Files not saved on this device') })
+    } catch { setDraftStatus('Recovery unavailable') }
+    return () => { cancelled = true }
+  }, [draftData, draftScope, hasDraftChanges, open, recovery, recovering, savedDevelopment, saving])
+
+  useEffect(() => {
+    if (!open || recovery || savedDevelopment || !hasDraftChanges || draftStatus === 'Saved on this device') return
+    const warnBeforeUnload = (event) => { event.preventDefault(); event.returnValue = '' }
+    window.addEventListener('beforeunload', warnBeforeUnload)
+    return () => window.removeEventListener('beforeunload', warnBeforeUnload)
+  }, [open, recovery, savedDevelopment, hasDraftChanges, draftStatus])
 
   useEffect(() => {
     if (!open || !isSupabaseConfigured) return
@@ -456,7 +528,7 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
         if (cancelled) return
         const defaults = (snapshot.defaults || []).filter((item) => item?.isActive && item?.isPreferredDefault)
         setPartnerDefaults(defaults)
-        if (defaults.length) {
+        if (defaults.length && !restoredDraft.current) {
           setLegal((previous) => applyDeveloperPartnerDefaultsToLegal(previous, defaults))
         }
       } catch (loadError) {
@@ -527,6 +599,51 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
       documentCount: documents.filter((document) => String(document.title || '').trim()).length,
     }
   }, [documents, financials, units])
+
+  async function resumeDraft() {
+    setRecovering(true)
+    const session = sessionRef.current
+    try {
+      const data = await restoreDevelopmentDraft(recovery)
+      if (sessionRef.current !== session || !session.open) return
+      restoredDraft.current = true
+      setDetails({ ...DEFAULT_DETAILS, ...data.details })
+      setFinancials({ ...DEFAULT_FINANCIALS, ...data.financials })
+      setTransactionDefaults({ ...DEFAULT_TRANSACTION_DEFAULTS, ...data.transactionDefaults })
+      setLegal(data.legal)
+      setDeveloperAccess({ ...DEFAULT_DEVELOPER_ACCESS, ...data.developerAccess })
+      setDocuments(data.documents)
+      setDevelopmentType(data.developmentType)
+      setUnitConfigurationMethod(data.unitConfigurationMethod)
+      setStockPlan(data.stockPlan)
+      setStockUndo(null)
+      setStockEditor(data.stockEditor)
+      setStockStepIndex(data.stockEditor ? 1 : data.stockStepIndex)
+      setReviewEditing(Boolean(data.reviewEditing))
+      const steps = getStepsForContext(data.unitConfigurationMethod)
+      setStepIndex(Math.max(0, steps.findIndex((step) => step.id === (data.stockEditor ? 'unit_setup' : data.stepId))))
+      setUnits(data.unitConfigurationMethod === 'generate_range' ? buildStockSummary(data.stockPlan).generatedUnits : [])
+      setRecovery(null)
+    } catch { if (sessionRef.current === session && session.open) setError('Could not restore this draft. Start fresh or try again.') }
+    finally { if (sessionRef.current === session && session.open) setRecovering(false) }
+  }
+
+  function startFresh() {
+    try { clearDevelopmentDraft(draftScope); setRecovery(null); setError('') }
+    catch { setError('Could not clear this draft. Try again.') }
+  }
+
+  async function requestClose() {
+    if (saving || closing || recovering || closeRequested) return
+    if (recovery || savedDevelopment || !hasDraftChanges) { onClose(); return }
+    const session = sessionRef.current
+    setClosing(true)
+    try {
+      await writeDevelopmentDraft(draftScope, draftData)
+      if (sessionRef.current === session && session.open) onClose()
+    } catch { if (sessionRef.current === session && session.open) setCloseRequested(true) }
+    finally { if (sessionRef.current === session && session.open) setClosing(false) }
+  }
 
   function updateDocument(index, key, value) {
     setDocuments((previous) => previous.map((item, itemIndex) => (itemIndex === index ? { ...item, [key]: value } : item)))
@@ -697,18 +814,28 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
     if (currentStepId === 'financials') validateSalesSetup()
   }
 
+  function editReviewSection(id) {
+    setError('')
+    setReviewEditing(true)
+    setStockStepIndex(0)
+    setStepIndex(activeSteps.findIndex((step) => step.id === id))
+  }
 
   function handleNext() {
     try {
       setError('')
       validateCurrentStep()
-      setStepIndex((previous) => Math.min(previous + 1, maxStepIndex))
+      setStepIndex(reviewEditing && (currentStepId !== 'units' || unitConfigurationMethod === 'later')
+        ? activeSteps.findIndex((step) => step.id === 'review')
+        : Math.min(stepIndex + 1, maxStepIndex))
+      if (reviewEditing && (currentStepId !== 'units' || unitConfigurationMethod === 'later')) setReviewEditing(false)
     } catch (stepError) {
       setError(stepError.message)
     }
   }
 
-  function updateStockPlan(updater) {
+  function updateStockPlan(updater, undoLabel = '') {
+    setStockUndo(undoLabel ? { plan: stockPlan, label: undoLabel } : null)
     setStockPlan((previous) => {
       const next = updater(previous)
       const targetIds = new Set(buildStockTargets(next).map((target) => target.id))
@@ -722,6 +849,13 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
         })),
       }
     })
+  }
+
+  function undoStockChange() {
+    if (!stockUndo || saving || closing || stockEditing || savedDevelopment) return
+    setStockPlan(stockUndo.plan)
+    setStockUndo(null)
+    setError('')
   }
 
   function handleStockStepNext() {
@@ -740,6 +874,7 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
   }
 
   function handleBack() {
+    if (currentStepId === 'review') setReviewEditing(false)
     setError('')
     if (currentStepId === 'unit_setup' && stockStepIndex > 0) {
       handleStockStepBack()
@@ -750,7 +885,7 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
 
   function deferUnitSetup() {
     setError('')
-    setUnitConfigurationMethod('import_later')
+    setUnitConfigurationMethod('later')
     setUnits([])
     setStockStepIndex(0)
     setStepIndex(activeSteps.findIndex((step) => step.id === 'units'))
@@ -767,7 +902,8 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
         ...previous,
         totalUnitsExpected: String(generatedUnits.length),
       }))
-      setStepIndex((previous) => Math.min(previous + 1, maxStepIndex))
+      setStepIndex(reviewEditing ? activeSteps.findIndex((step) => step.id === 'review') : Math.min(stepIndex + 1, maxStepIndex))
+      setReviewEditing(false)
     } catch (stockError) {
       setError(stockError.message)
     }
@@ -777,6 +913,7 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
     // The final step replaces this button with a submit button during the click.
     // Cancel the original click's default action before React updates its type.
     event?.preventDefault()
+    if (stockEditing || saving || closing) return
     if (currentStepId === 'unit_setup') {
       if (stockStepIndex === 2) handleFinalizeStock()
       else handleStockStepNext()
@@ -786,7 +923,8 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
   }
 
   async function submitDevelopment(statusOverride = '') {
-    if (saving || savedDevelopment) return
+    if (saving || closing || savedDevelopment || stockEditing) return
+    const submissionSession = sessionRef.current
     try {
       setError('')
       try {
@@ -803,6 +941,8 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
       }
       if (unitConfigurationMethod === 'generate_range') {
         try {
+          const missing = stockPlan.unitTypes.flatMap((type) => type.floorplans).find((layout) => layout.recoveryFileName)
+          if (missing) throw new Error(`Reattach or remove the missing floor plan for ${missing.name}.`)
           validateStockStep(stockPlan, 2)
         } catch (stockError) {
           setStepIndex(activeSteps.findIndex((step) => step.id === 'unit_setup'))
@@ -918,14 +1058,19 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
           })),
       })
 
-      setSavedDevelopment(created)
       const warnings = [...(created.warnings || [])]
+      try { markDevelopmentDraftCreated(draftScope, { ...created, name: details.name }) }
+      catch { warnings.push({ message: 'Saved. Local draft cleanup failed; open this development before starting another.' }) }
+      if (sessionRef.current !== submissionSession || !submissionSession.open) return
+      setSavedDevelopment({ ...created, creationStatus: statusOverride || 'active' })
+      setStockUndo(null)
       try {
         await upsertAreaFromAddress(buildDevelopmentAddressValue(effectiveDetails), { incrementListingCount: false })
       } catch {
         warnings.push({ message: 'The development was saved, but its area directory entry could not be updated.' })
       }
 
+      if (sessionRef.current !== submissionSession || !submissionSession.open) return
       if (isAgentContext && developerAccess.mode === 'invite') {
         const inviteEntry = developerTeam[0] || null
         if (inviteEntry?.onboardingLink) {
@@ -940,20 +1085,26 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
         }
       }
 
+      if (sessionRef.current !== submissionSession || !submissionSession.open) return
       onCreated?.(created)
       setSaveWarnings(warnings)
-      if (!warnings.length) onClose()
+      if (!warnings.length) clearDevelopmentDraft(draftScope)
     } catch (submitError) {
       if (submitError.developmentId) {
         const existing = { id: submitError.developmentId, name: details.name }
-        setSavedDevelopment(existing)
-        setSaveWarnings([{ message: submitError.message }])
+        const warnings = [{ message: submitError.message }]
+        try { markDevelopmentDraftCreated(draftScope, existing) }
+        catch { warnings.push({ message: 'Saved. Local draft cleanup failed; open this development before starting another.' }) }
+        if (sessionRef.current !== submissionSession || !submissionSession.open) return
+        setSavedDevelopment({ ...existing, creationStatus: statusOverride || 'active', setupIncomplete: true })
+        setStockUndo(null)
+        setSaveWarnings(warnings)
         onCreated?.(existing)
-      } else {
+      } else if (sessionRef.current === submissionSession && submissionSession.open) {
         setError(submitError.message)
       }
     } finally {
-      setSaving(false)
+      if (sessionRef.current === submissionSession && submissionSession.open) setSaving(false)
     }
   }
 
@@ -969,6 +1120,16 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
   async function handleSaveDraft(event) {
     event.preventDefault()
     await submitDevelopment('draft')
+  }
+
+  function handleWizardKeyDown(event) {
+    if (event.defaultPrevented || event.nativeEvent.isComposing || event.altKey || !(event.ctrlKey || event.metaKey)) return
+    const key = event.key.toLowerCase()
+    if (key === 's' || key === 'enter') event.preventDefault()
+    if (event.repeat || recovery || recovering || closeRequested || savedDevelopment || saving || closing || stockEditing) return
+    if (key === 's') void handleSaveDraft(event)
+    else if (key === 'enter' && currentStepId !== 'review') handleContinue(event)
+    else if (key === 'z' && !event.shiftKey && currentStepId === 'unit_setup' && stockUndo && !event.target.closest('input, textarea, select, [contenteditable="true"]')) { event.preventDefault(); undoStockChange() }
   }
 
   if (!open) {
@@ -995,18 +1156,31 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
     partnerDefaultName(defaultAgency) ||
     legal.agents.find((item) => String(item.company || item.name || item.email || '').trim())?.company ||
     ''
+  const reviewLayouts = unitConfigurationMethod === 'generate_range'
+    ? stockPlan.unitTypes.flatMap((type) => type.floorplans.map((layout) => ({ type, layout })))
+    : []
+  const developerName = isAgentContext && hasDeveloperAccessDraft()
+    ? (developerAccess.mode === 'invite' ? developerAccess.inviteCompanyName : developerAccess.selectedDeveloperCompany) || details.developerCompany || 'Add later'
+    : details.developerCompany || 'Add later'
+  const developerInvited = isAgentContext && developerAccess.mode === 'invite' && hasDeveloperAccessDraft()
+  const depositSummary = transactionDefaults.reservationDepositEnabled
+    ? transactionDefaults.reservationDepositAmountType === 'percentage'
+      ? `${transactionDefaults.reservationDepositAmount}%`
+      : formatCurrency(transactionDefaults.reservationDepositAmount)
+    : 'No default deposit'
+  const returningToReview = reviewEditing && (currentStepId === 'basic' || currentStepId === 'financials' || (currentStepId === 'units' && unitConfigurationMethod === 'later') || (currentStepId === 'unit_setup' && stockStepIndex === 2))
   return (
     <Modal
       open={open}
-      onClose={saving ? undefined : onClose}
+      onClose={saving || closing || recovering ? undefined : requestClose}
       title="New Development"
-      className="development-create-dialog"
+      className={`development-create-dialog${recovery || closeRequested || savedDevelopment ? ' development-create-dialog--recovery' : ''}`}
     >
-      <div className="space-y-5">
-        <div className="overflow-x-auto">
-          <ol className="development-create-progress" style={{ '--development-step-count': activeSteps.length }} aria-label="Development setup progress">
-          {activeSteps.map((step, index) => {
-            const status = index === stepIndex ? 'active' : index < stepIndex ? 'complete' : ''
+      <div className="space-y-5" onKeyDown={handleWizardKeyDown}>
+        {!recovery && !closeRequested && !savedDevelopment ? <div className="overflow-x-auto">
+          <ol className="development-create-progress" style={{ '--development-step-count': progressSteps.length }} aria-label="Development setup progress">
+          {progressSteps.map((step, index) => {
+            const status = index === progressStepIndex ? 'active' : index < progressStepIndex ? 'complete' : ''
             return (
               <li
                 key={step.id}
@@ -1031,44 +1205,59 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
                   {index + 1}
                 </span>
                 <div className="min-w-0">
-                  {index < stepIndex ? <button
+                  {index < progressStepIndex ? <button
                     type="button"
                     className="development-create-step-back"
                     aria-label={`Back to ${step.label}`}
-                    disabled={saving || Boolean(savedDevelopment)}
-                    onClick={() => { setError(''); setStepIndex(index) }}
+                    disabled={saving || closing || Boolean(savedDevelopment) || stockEditing}
+                    onClick={() => { setError(''); setReviewEditing(false); setStepIndex(activeSteps.findIndex((entry) => entry.id === step.id)) }}
                   >{step.label}</button> : <strong className="block text-sm font-semibold">{step.label}</strong>}
                 </div>
-                {index < activeSteps.length - 1 ? <span className="ml-1 hidden h-px flex-1 bg-[#dce5ef] lg:block" /> : null}
+                {index < progressSteps.length - 1 ? <span className="ml-1 hidden h-px flex-1 bg-[#dce5ef] lg:block" /> : null}
               </li>
             )
           })}
           </ol>
-        </div>
+        </div> : null}
 
         {error ? (
           <p role="alert" className="rounded-[18px] border border-[#f1c9c5] bg-[#fff5f4] px-4 py-3 text-sm font-medium text-[#b42318]">{error}</p>
         ) : null}
 
         {savedDevelopment ? (
-          <div className="development-create-receipt" role="status">
-            <strong>{details.name} has been created.</strong>
+          <section className={`development-create-receipt${saveWarnings.length ? ' is-warning' : ''}`} role="status" ref={receiptRef} aria-label="Development saved">
+            <span className="development-complete-icon"><Check size={24} aria-hidden="true" /></span>
+            <span className="development-complete-label">{saving ? 'Finishing setup…' : saveWarnings.length ? 'Saved · needs attention' : savedDevelopment.creationStatus === 'draft' ? 'Draft saved' : 'Ready to go'}</span>
+            <h4>{details.name}{savedDevelopment.creationStatus === 'draft' ? ' saved as a draft.' : ' has been created.'}</h4>
+            {!savedDevelopment.setupIncomplete ? <p className="development-complete-summary">{unitConfigurationMethod === 'generate_range' ? `${units.length} ${units.length === 1 ? 'unit' : 'units'} added` : 'Units can be added later'}</p> : null}
             {saveWarnings.length ? <ul>{saveWarnings.map((warning, index) => <li key={index}>{warning.message}</li>)}</ul> : null}
-            <p>Continue in the saved development workspace to complete or check its setup.</p>
-            <div className="flex flex-wrap items-center gap-3">
-              <a className="font-semibold text-[#1f7a5a] underline" href={`/developments/${savedDevelopment.id}`}>Open development</a>
-              <Button type="button" variant="secondary" onClick={onClose}>Close</Button>
+            <div className="development-draft-actions">
+              <Button type="button" variant="secondary" disabled={saving || closing} onClick={onClose}>Done</Button>
+              <Button asChild><a href={saving ? undefined : `/developments/${encodeURIComponent(savedDevelopment.id)}`} aria-disabled={saving || undefined} onClick={(event) => { if (saving) event.preventDefault() }}>Open development</a></Button>
             </div>
-          </div>
+          </section>
         ) : null}
 
+        {recovery ? <section className="development-draft-recovery" aria-label="Draft recovery">
+          <strong>{recovery.savedDevelopment ? 'Development already saved' : 'Continue your draft?'}</strong>
+          <span>{recovery.savedDevelopment?.name || recovery.data?.details?.name || 'New development'}</span>
+          <div className="development-draft-actions">
+            <Button type="button" variant="secondary" disabled={recovering} onClick={startFresh}>Start fresh</Button>
+            {recovery.savedDevelopment ? <a className="development-review-edit" href={`/developments/${encodeURIComponent(recovery.savedDevelopment.id)}`}>Open development</a> : <Button type="button" disabled={recovering} onClick={resumeDraft}>{recovering ? 'Restoring…' : 'Resume draft'}</Button>}
+          </div>
+        </section> : closeRequested ? <section className="development-draft-recovery" aria-label="Recovery unavailable">
+          <strong>Leave without recovery?</strong>
+          <div className="development-draft-actions"><Button type="button" variant="secondary" onClick={() => setCloseRequested(false)}>Keep editing</Button><Button type="button" onClick={onClose}>Leave</Button></div>
+        </section> : savedDevelopment ? null : <>
+          {!savedDevelopment && hasDraftChanges ? <p className="development-draft-status" role="status">{closing ? 'Saving on this device…' : draftStatus}</p> : null}
+          {currentStepId === 'unit_setup' && stockUndo ? <div className="development-stock-undo" role="status"><span>{stockUndo.label}</span><Button ref={undoRef} type="button" variant="ghost" size="sm" disabled={saving || closing || stockEditing} aria-keyshortcuts="Control+z Meta+z" title="Undo (Ctrl/⌘ + Z outside text fields)" onClick={undoStockChange}>Undo</Button></div> : null}
         <form
           ref={formRef}
           onSubmit={handleSubmit}
           className="development-create-form"
           noValidate
         >
-          <fieldset className="development-create-content" disabled={saving || Boolean(savedDevelopment)}>
+          <fieldset className="development-create-content" disabled={saving || closing || Boolean(savedDevelopment)}>
             <div className="min-w-0 space-y-6">
           {currentStepId === 'basic' ? (
             <div className="development-create-sections">
@@ -1135,10 +1324,10 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
           ) : null}
 
           {currentStepId === 'financials' ? (
-            <>
-              <section className="development-create-section" aria-labelledby="development-sales-heading">
-                <h4 id="development-sales-heading">Developer &amp; access</h4>
-                <div className="development-create-fields mb-5">
+            <div className="development-sales-sections">
+              <section className="development-sales-card" aria-labelledby="development-sales-heading">
+                <div className="development-sales-heading"><Building2 size={20} aria-hidden="true" /><h4 id="development-sales-heading">Developer</h4><span>Optional</span></div>
+                <div className="development-create-fields">
                   <label className="full-width">Developer / Organisation
                     <input value={details.developerCompany} onChange={(event) => setDetails((previous) => ({ ...previous, developerCompany: event.target.value }))} placeholder="Developer company name" />
                   </label>
@@ -1146,15 +1335,15 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
               {isAgentContext ? (
                 <div className="space-y-4">
                   <div>
-                    <h5 className="text-sm font-semibold text-[#142132]">Developer Access</h5>
-                    <p className="mt-1 text-sm text-[#6b7d93]">Optionally link an existing developer profile or invite a new developer when they are ready to access this development workspace.</p>
+                    <h5 className="development-sales-label">Developer access <span>Optional</span></h5>
+
                   </div>
 
                   <div className="grid gap-3 md:grid-cols-3">
                     {[
                       { value: 'later', label: 'Add access later' },
-                      { value: 'existing', label: 'Select Existing Developer' },
-                      { value: 'invite', label: 'Invite New Developer' },
+                      { value: 'existing', label: 'Link developer' },
+                      { value: 'invite', label: 'Invite developer' },
                     ].map((option) => <button
                       key={option.value}
                       type="button"
@@ -1165,7 +1354,7 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
                   </div>
 
                   {developerAccess.mode === 'existing' ? (
-                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                    <div className="development-create-fields">
                       <label className="full-width">
                         Developer profile
                         <select value={developerAccess.selectedDeveloperId} onChange={(event) => handleSelectDeveloper(event.target.value)}>
@@ -1182,7 +1371,7 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
                       {developerAccess.selectedDeveloperId ? <p className="development-create-hint full-width">{[developerAccess.selectedDeveloperName, developerAccess.selectedDeveloperEmail, developerAccess.selectedDeveloperCompany].filter(Boolean).join(' · ')}</p> : null}
                     </div>
                   ) : developerAccess.mode === 'invite' ? (
-                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                    <div className="development-create-fields">
                       <label>
                         Developer company name
                         <input
@@ -1223,80 +1412,50 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
                   {developerAccess.mode === 'existing' && developerOptionsError ? <p className="text-sm text-[#b42318]">{developerOptionsError}</p> : null}
                 </div>
               ) : null}
+
               </section>
-              <section className="development-create-section">
-                <div className="mb-4 space-y-1.5">
-                  <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">Transaction Defaults</h4>
-                  {partnerDefaultsLoading ? (
-                    <p className="text-sm text-[#6b7d93]">Loading Developer Partner defaults...</p>
-                  ) : partnerDefaultsError ? (
-                    <p className="text-sm text-[#b42318]">{partnerDefaultsError}</p>
-                  ) : (
-                    <p className="text-sm text-[#6b7d93]">
-                      Optional defaults can be left blank and refined after setup.
-                      {partnerDefaults.length ? ' Developer Partner defaults are available when needed.' : ''}
-                    </p>
-                  )}
-                </div>
+              <section className="development-sales-card" aria-labelledby="development-team-heading">
+                <div className="development-sales-heading"><Users size={20} aria-hidden="true" /><h4 id="development-team-heading">Sales team</h4><span>Optional</span></div>
+                    <label className="development-sales-toggle">
+                      <span>
+                        <strong className="block text-sm font-semibold text-[#142132]">Developer selling directly</strong>
+                      </span>
+                      <input
+                        type="checkbox"
+                        checked={transactionDefaults.developerSellingDirectly}
+                        onChange={(event) =>
+                          setTransactionDefaults((previous) => ({
+                            ...previous,
+                            developerSellingDirectly: event.target.checked,
+                            defaultAgentSource: event.target.checked ? 'none' : previous.defaultAgentSource,
+                          }))
+                        }
+                      />
+                    </label>
                 <div className="development-create-fields">
-                  {[
-                    {
-                      title: 'Default Agent', value: transactionDefaults.defaultAgentSource,
-                      preferredValue: defaultAgency ? 'developer_partner_default' : 'first_agent',
-                      partnerName: agencyDefaultName, defaultRecord: defaultAgency,
-                      disabled: transactionDefaults.developerSellingDirectly,
-                      onChange: (value) => setTransactionDefaults((previous) => ({
+                  <label className="full-width">Selling agent
+                    <select value={transactionDefaults.defaultAgentSource} disabled={transactionDefaults.developerSellingDirectly} onChange={(event) => {
+                      const value = event.target.value
+                      setTransactionDefaults((previous) => ({
                         ...previous, defaultAgentSource: value,
                         defaultAgentRelationshipId: value === 'developer_partner_default' ? defaultAgency?.relationshipId || '' : '',
                         defaultAgentPreferredPartnerId: value === 'developer_partner_default' ? defaultAgency?.id || '' : '',
                         defaultAgentName: value === 'none' ? '' : agencyDefaultName,
-                      })),
-                    },
-                    {
-                      title: 'Transfer Attorney', value: transactionDefaults.defaultTransferAttorneySource,
-                      preferredValue: defaultTransferAttorney ? 'developer_partner_default' : 'first_conveyancer',
-                      partnerName: transferAttorneyDefaultName, defaultRecord: defaultTransferAttorney,
-                      onChange: (value) => setTransactionDefaults((previous) => ({
-                        ...previous, defaultTransferAttorneySource: value,
-                        defaultTransferAttorneyRelationshipId: value === 'developer_partner_default' ? defaultTransferAttorney?.relationshipId || '' : '',
-                        defaultTransferAttorneyPreferredPartnerId: value === 'developer_partner_default' ? defaultTransferAttorney?.id || '' : '',
-                        defaultTransferAttorneyName: value === 'none' ? '' : transferAttorneyDefaultName,
-                      })),
-                    },
-                    {
-                      title: 'Bond Originator', value: transactionDefaults.defaultBondOriginatorSource,
-                      preferredValue: defaultBondOriginator ? 'developer_partner_default' : 'first_bond_originator',
-                      partnerName: bondOriginatorDefaultName, defaultRecord: defaultBondOriginator,
-                      onChange: (value) => setTransactionDefaults((previous) => ({
-                        ...previous, defaultBondOriginatorSource: value,
-                        defaultBondOriginatorRelationshipId: value === 'developer_partner_default' ? defaultBondOriginator?.relationshipId || '' : '',
-                        defaultBondOriginatorPreferredPartnerId: value === 'developer_partner_default' ? defaultBondOriginator?.id || '' : '',
-                        defaultBondOriginatorName: value === 'none' ? '' : bondOriginatorDefaultName,
-                      })),
-                    },
-                  ].map((card) => (
-                    <label key={card.title}>
-                      {card.title}
-                      <select value={card.value} disabled={card.disabled} onChange={(event) => card.onChange(event.target.value)}>
-                        <option value="none">Choose per transaction</option>
-                        {card.partnerName ? <option value={card.preferredValue}>{card.partnerName}{card.defaultRecord ? ' (preferred partner)' : ''}</option> : null}
-                      </select>
-                    </label>
-                  ))}
+                      }))
+                    }}>
+                      <option value="none">Choose per transaction</option>
+                      {agencyDefaultName ? <option value={defaultAgency ? 'developer_partner_default' : 'first_agent'}>{agencyDefaultName}{defaultAgency ? ' (preferred partner)' : ''}</option> : null}
+                    </select>
+                  </label>
                 </div>
-
-                <div className="mt-6">
-                  <div>
-                <div className="grid gap-5 lg:grid-cols-2">
-                  <div className="space-y-4 rounded-[20px] border border-[#dce6f1] bg-[#f8fbff] p-5">
-                    <div>
-                      <h5 className="text-base font-semibold tracking-[-0.02em] text-[#142132]">Reservation Settings</h5>
-                      <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Capture the standard reservation deposit prompt for new transactions.</p>
-                    </div>
-                    <label className="!flex-row !items-start !justify-between !gap-4 rounded-[16px] border border-[#dde4ee] bg-white p-4">
+                {partnerDefaultsLoading ? <p className="development-create-hint">Loading partners…</p> : null}
+                {partnerDefaultsError ? <p className="text-sm text-[#b42318]">{partnerDefaultsError}</p> : null}
+              </section>
+              <section className="development-sales-card" aria-labelledby="development-deposit-heading">
+                <div className="development-sales-heading"><Wallet size={20} aria-hidden="true" /><h4 id="development-deposit-heading">Reservation deposit</h4><span>Optional</span></div>
+                    <label className="development-sales-toggle">
                       <span>
                         <strong className="block text-sm font-semibold text-[#142132]">Reservation deposit applies</strong>
-                        <span className="mt-2 block text-sm leading-6 text-[#6b7d93]">New transactions should ask whether a reservation deposit is payable.</span>
                       </span>
                       <input
                         type="checkbox"
@@ -1309,7 +1468,8 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
                         }
                       />
                     </label>
-                    <div className="grid gap-4 md:grid-cols-2">
+                {transactionDefaults.reservationDepositEnabled ? (
+                    <div className="development-create-fields">
                       <label>
                         Reservation Deposit Amount
                         <span className="relative block">
@@ -1366,38 +1526,50 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
                         </select>
                       </label>
                     </div>
-                    <p className="rounded-[16px] border border-[#dfe8f2] bg-white px-4 py-3 text-xs leading-5 text-[#6b7d93]">
-                      Deposit treatment and alteration cost treatment are set on each transaction because they depend on the signed deal terms.
-                    </p>
-                  </div>
 
-                  <div className="space-y-4 rounded-[20px] border border-[#dce6f1] bg-[#f8fbff] p-5">
-                    <div>
-                      <h5 className="text-base font-semibold tracking-[-0.02em] text-[#142132]">Transaction Behaviour</h5>
-                      <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Decide how buyer, agent, and bond workflows should behave by default.</p>
-                    </div>
-                    <div className="grid gap-4 md:grid-cols-2">
-                    <label className="!flex-row !items-start !justify-between !gap-4 rounded-[16px] border border-[#dde4ee] bg-white p-4">
-                      <span>
-                        <strong className="block text-sm font-semibold text-[#142132]">Developer selling directly</strong>
-                        <span className="mt-2 block text-sm leading-6 text-[#6b7d93]">Do not auto-assign an agent to new development transactions.</span>
-                      </span>
-                      <input
-                        type="checkbox"
-                        checked={transactionDefaults.developerSellingDirectly}
-                        onChange={(event) =>
-                          setTransactionDefaults((previous) => ({
-                            ...previous,
-                            developerSellingDirectly: event.target.checked,
-                            defaultAgentSource: event.target.checked ? 'none' : previous.defaultAgentSource,
-                          }))
-                        }
-                      />
+                ) : null}
+              </section>
+              <details className="development-sales-more">
+                <summary>More settings</summary>
+                <div className="development-sales-extras">
+                  <div className="development-create-fields">
+                  {[
+                    {
+                      title: 'Transfer Attorney', value: transactionDefaults.defaultTransferAttorneySource,
+                      preferredValue: defaultTransferAttorney ? 'developer_partner_default' : 'first_conveyancer',
+                      partnerName: transferAttorneyDefaultName, defaultRecord: defaultTransferAttorney,
+                      onChange: (value) => setTransactionDefaults((previous) => ({
+                        ...previous, defaultTransferAttorneySource: value,
+                        defaultTransferAttorneyRelationshipId: value === 'developer_partner_default' ? defaultTransferAttorney?.relationshipId || '' : '',
+                        defaultTransferAttorneyPreferredPartnerId: value === 'developer_partner_default' ? defaultTransferAttorney?.id || '' : '',
+                        defaultTransferAttorneyName: value === 'none' ? '' : transferAttorneyDefaultName,
+                      })),
+                    },
+                    {
+                      title: 'Bond Originator', value: transactionDefaults.defaultBondOriginatorSource,
+                      preferredValue: defaultBondOriginator ? 'developer_partner_default' : 'first_bond_originator',
+                      partnerName: bondOriginatorDefaultName, defaultRecord: defaultBondOriginator,
+                      onChange: (value) => setTransactionDefaults((previous) => ({
+                        ...previous, defaultBondOriginatorSource: value,
+                        defaultBondOriginatorRelationshipId: value === 'developer_partner_default' ? defaultBondOriginator?.relationshipId || '' : '',
+                        defaultBondOriginatorPreferredPartnerId: value === 'developer_partner_default' ? defaultBondOriginator?.id || '' : '',
+                        defaultBondOriginatorName: value === 'none' ? '' : bondOriginatorDefaultName,
+                      })),
+                    },
+                  ].map((card) => (
+                    <label key={card.title}>
+                      {card.title}
+                      <select value={card.value} disabled={card.disabled} onChange={(event) => card.onChange(event.target.value)}>
+                        <option value="none">Choose per transaction</option>
+                        {card.partnerName ? <option value={card.preferredValue}>{card.partnerName}{card.defaultRecord ? ' (preferred partner)' : ''}</option> : null}
+                      </select>
                     </label>
-                    <label className="!flex-row !items-start !justify-between !gap-4 rounded-[16px] border border-[#dde4ee] bg-white p-4">
+                  ))}
+
+                  </div>
+                    <label className="development-sales-toggle">
                       <span>
                         <strong className="block text-sm font-semibold text-[#142132]">Multiple agents allowed</strong>
-                        <span className="mt-2 block text-sm leading-6 text-[#6b7d93]">Allow transactions to include co-agents from the agent team.</span>
                       </span>
                       <input
                         type="checkbox"
@@ -1411,10 +1583,9 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
                         }
                       />
                     </label>
-                    <label className="!flex-row !items-start !justify-between !gap-4 rounded-[16px] border border-[#dde4ee] bg-white p-4">
+                    <label className="development-sales-toggle">
                       <span>
                         <strong className="block text-sm font-semibold text-[#142132]">Buyer may use own bond originator</strong>
-                        <span className="mt-2 block text-sm leading-6 text-[#6b7d93]">Allow buyers to nominate their own originator during onboarding.</span>
                       </span>
                       <input
                         type="checkbox"
@@ -1429,10 +1600,9 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
                         }
                       />
                     </label>
-                    <label className="!flex-row !items-start !justify-between !gap-4 rounded-[16px] border border-[#dde4ee] bg-white p-4">
+                    <label className="development-sales-toggle">
                       <span>
                         <strong className="block text-sm font-semibold text-[#142132]">Approve buyer-appointed originators</strong>
-                        <span className="mt-2 block text-sm leading-6 text-[#6b7d93]">Keep buyer nominations pending until the agent or developer approves them.</span>
                       </span>
                       <input
                         type="checkbox"
@@ -1446,10 +1616,9 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
                         }
                       />
                     </label>
-                    <label className="!flex-row !items-start !justify-between !gap-4 rounded-[16px] border border-[#dde4ee] bg-white p-4 md:col-span-2">
+                    <label className="development-sales-toggle">
                     <span>
                       <strong className="block text-sm font-semibold text-[#142132]">Auto-invite selected bond originator</strong>
-                      <span className="mt-2 block text-sm leading-6 text-[#6b7d93]">Automatically send an invite once a transaction has a selected originator.</span>
                     </span>
                     <input
                       type="checkbox"
@@ -1462,14 +1631,10 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
                       }
                     />
                     </label>
-                    </div>
-                  </div>
+                  <p className="development-create-hint">Originator invites are sent when assigned to a transaction.</p>
                 </div>
-                  </div>
-                </div>
-              </section>
-
-            </>
+              </details>
+            </div>
           ) : null}
 
           {currentStepId === 'legal' ? (
@@ -1739,9 +1904,8 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
                     <legend>Unit Configuration Method</legend>
                     <div className="development-unit-method-options">
                       {[
-                        { value: 'manual', label: 'Add individual units later', description: 'Add units one at a time after creating the development.' },
-                        { value: 'import_later', label: 'Import units later', description: 'Upload your unit list from the development workspace.' },
-                        { value: 'generate_range', label: 'Set up units now', description: 'Define unit types, quantities and prices in the next step.' },
+                        { value: 'generate_range', label: 'Set up units now', description: 'Add unit layouts, quantities and prices in the next step.' },
+                        { value: 'later', label: 'Set up units later', description: 'Add or import units from the development workspace after creation.' },
                       ].map((option) => (
                         <button
                           key={option.value}
@@ -1760,13 +1924,13 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
                     </div>
                   </fieldset>
                 <p className="development-create-hint mt-4">{unitConfigurationMethod === 'generate_range'
-                  ? 'Next, set up your units. The final unit total will be calculated from your unit types.'
-                  : `You can ${unitConfigurationMethod === 'manual' ? 'add individual units' : 'import or add units'} in the development workspace after creation.`}</p>
+                  ? 'Next, set up your units. The final unit total will be calculated from your layouts.'
+                  : 'You can add or import units in the development workspace after creation.'}</p>
               </section>
           ) : null}
 
           {currentStepId === 'unit_setup' ? (
-            <StockMasterSetup plan={stockPlan} onChange={updateStockPlan} step={stockStepIndex} onDefer={deferUnitSetup} />
+            <StockMasterSetup plan={stockPlan} onChange={updateStockPlan} step={stockStepIndex} onDefer={deferUnitSetup} plannedUnits={details.totalUnitsExpected} editor={stockEditor} onEditorChange={setStockEditor} />
           ) : null}
 
           {currentStepId === 'documents' ? (
@@ -1823,26 +1987,60 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
           ) : null}
 
           {currentStepId === 'review' ? (
-            <section className="development-create-section" aria-labelledby="development-review-heading">
-              <h4 id="development-review-heading">Review development</h4>
-              <dl className="development-create-review">
-                {[
-                  ['Development', details.name],
-                  ['Type', { residential: 'Residential', mixed_use: 'Mixed-use', estate: 'Estate', sectional_title: 'Sectional title' }[developmentType]],
-                  ['Address', getResolvedDevelopmentLocation(details)],
-                  ['Planned units', details.totalUnitsExpected || units.length || 'Set up later'],
-                  ['Units to create now', units.length],
-                  ['Developer', details.developerCompany || developerAccess.selectedDeveloperCompany || developerAccess.inviteCompanyName || 'Add later'],
-                  ['Developer access', hasDeveloperAccessDraft() ? developerAccess.mode === 'invite' ? `Invite ${developerAccess.inviteEmail}` : developerAccess.selectedDeveloperName : 'Add later'],
-                  ['Selling agent', transactionDefaults.developerSellingDirectly ? 'Developer selling directly' : transactionDefaults.defaultAgentSource === 'none' ? 'Choose per transaction' : agencyDefaultName],
-                  ['Transfer attorney', transactionDefaults.defaultTransferAttorneySource === 'none' ? 'Choose per transaction' : transferAttorneyDefaultName],
-                  ['Bond originator', transactionDefaults.defaultBondOriginatorSource === 'none' ? 'Choose per transaction' : bondOriginatorDefaultName],
-                  ['Reservation deposit', transactionDefaults.reservationDepositEnabled ? `${transactionDefaults.reservationDepositAmountType === 'fixed' ? 'R ' : ''}${transactionDefaults.reservationDepositAmount}${transactionDefaults.reservationDepositAmountType === 'percentage' ? '%' : ''}` : 'No default deposit'],
-                ].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
-              </dl>
-              {units.length > 0 ? <p className="development-create-hint mt-4">Unit price range: {buildUnitPriceRange(stockPlan.unitTypes)}</p> : null}
-              <p className="development-create-hint mt-4">This creates an internal development workspace. Public visibility is managed separately in Marketing.</p>
-            </section>
+            <div className="development-review" role="region" aria-label="Review development">
+              <section className="development-review-hero" aria-labelledby="development-review-heading">
+                <div className="development-review-heading">
+                  <span className="development-review-badge">{DEVELOPMENT_TYPES.find((option) => option.value === developmentType)?.label}</span>
+                  <button type="button" className="development-review-edit" aria-label="Edit development details" onClick={() => editReviewSection('basic')}>Edit</button>
+                </div>
+                <h4 id="development-review-heading">{details.name}</h4>
+                <p>{getResolvedDevelopmentLocation(details)}</p>
+                {details.code || details.launchDate || details.expectedCompletionDate ? <dl className="development-review-facts">
+                  {[
+                    ['Code', details.code], ['Launch', details.launchDate], ['Completion', details.expectedCompletionDate],
+                  ].filter(([, value]) => value).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
+                </dl> : null}
+              </section>
+              <section className="development-review-card" aria-labelledby="development-review-units">
+                <div className="development-review-heading"><h4 id="development-review-units">Units</h4><button type="button" className="development-review-edit" aria-label="Edit units" onClick={() => editReviewSection('units')}>Edit</button></div>
+                <div className="development-review-metrics">
+                  <div><strong>{unitConfigurationMethod === 'generate_range' ? stockSummary.totalUnits : details.totalUnitsExpected || '—'}</strong><span>{unitConfigurationMethod === 'generate_range' ? 'Units to create now' : 'Planned units'}</span></div>
+                  {reviewLayouts.length ? <div><strong>{reviewLayouts.length}</strong><span>{reviewLayouts.length === 1 ? 'Layout' : 'Layouts'}</span></div> : null}
+                  {reviewLayouts.length ? <div><strong>{buildUnitPriceRange(stockPlan.unitTypes)}</strong><span>Price range</span></div> : null}
+                </div>
+                {reviewLayouts.length ? <ul className="development-review-layouts" aria-label="Unit layouts">{reviewLayouts.map(({ type, layout }) => <li key={layout.id}>
+                  <LayoutPreview file={layout.file} fileUrl={layout.fileUrl} name={layout.name} emptyLabel="" />
+                  <div><strong>{layout.name}</strong><span>{type.bedrooms} bed · {type.bathrooms} bath{layout.sizeSqm ? ` · ${layout.sizeSqm} m²` : ''}</span><span>{layout.propertyType || type.name} · {layout.quantity} units</span></div>
+                </li>)}</ul> : <p className="development-create-hint">Set up units later</p>}
+              </section>
+              <section className="development-review-card" aria-labelledby="development-review-sales">
+                <div className="development-review-heading"><h4 id="development-review-sales">Sales setup</h4><button type="button" className="development-review-edit" aria-label="Edit sales setup" onClick={() => editReviewSection('financials')}>Edit</button></div>
+                <dl className="development-review-facts">
+                  {[
+                    ['Developer', developerName],
+                    ...(isAgentContext ? [['Developer access', developerInvited ? developerAccess.inviteContactName : hasDeveloperAccessDraft() ? developerAccess.selectedDeveloperName : 'Add later']] : []),
+                    ['Selling agent', transactionDefaults.developerSellingDirectly ? 'Developer selling directly' : transactionDefaults.defaultAgentSource === 'none' ? 'Choose per transaction' : agencyDefaultName],
+                    ['Reservation deposit', depositSummary],
+                    ...(transactionDefaults.reservationDepositEnabled ? [['Payable to', { developer: 'Developer', agency_trust: 'Agency trust account', attorney_trust: 'Attorney trust account' }[transactionDefaults.reservationDepositPayableTo]]] : []),
+                    ['Transfer attorney', transactionDefaults.defaultTransferAttorneySource === 'none' ? 'Choose per transaction' : transferAttorneyDefaultName],
+                    ['Bond originator', transactionDefaults.defaultBondOriginatorSource === 'none' ? 'Choose per transaction' : bondOriginatorDefaultName],
+                  ].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
+                </dl>
+                <details className="development-review-settings">
+                  <summary>More settings</summary>
+                  <dl className="development-review-facts">
+                    {[
+                      ['Multiple agents', transactionDefaults.multipleAgentsAllowed && !transactionDefaults.developerSellingDirectly ? 'Allowed' : 'Off'],
+                      ['Buyer’s own originator', transactionDefaults.buyerAppointedBondOriginatorAllowed ? transactionDefaults.buyerAppointedBondOriginatorRequiresApproval ? 'Approval required' : 'Allowed' : 'Off'],
+                      ['Originator invites', transactionDefaults.autoInviteSelectedBondOriginator ? 'When assigned' : 'Off'],
+                    ].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
+                  </dl>
+                </details>
+                {developerInvited ? <p className="development-review-invite">On save: email invitation to {developerAccess.inviteEmail}{formatSouthAfricanWhatsAppNumber(developerAccess.invitePhone) ? ` + WhatsApp to ${developerAccess.invitePhone}` : ''}.</p> : null}
+                {transactionDefaults.autoInviteSelectedBondOriginator ? <p className="development-create-hint">Originator invites are sent when assigned to a transaction.</p> : null}
+              </section>
+              <p className="development-review-private"><Check size={15} aria-hidden="true" />Internal workspace · Publish later in Marketing</p>
+            </div>
           ) : null}
             </div>
 
@@ -1852,8 +2050,8 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
             <Button
               type="button"
               variant="ghost"
-              onClick={stepIndex === 0 ? onClose : handleBack}
-              disabled={saving || Boolean(savedDevelopment)}
+              onClick={stepIndex === 0 ? requestClose : handleBack}
+              disabled={saving || closing || Boolean(savedDevelopment) || stockEditing}
             >
               {stepIndex === 0 ? 'Cancel' : 'Back'}
             </Button>
@@ -1861,23 +2059,26 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
             <Button
               type="button"
               variant="secondary"
-              disabled={saving || Boolean(savedDevelopment)}
+              aria-keyshortcuts="Control+s Meta+s"
+              title="Save draft (Ctrl/⌘ + S)"
+              disabled={saving || closing || Boolean(savedDevelopment) || stockEditing}
               onClick={handleSaveDraft}
             >
-              Save Draft
+              {saving ? 'Saving…' : 'Save Draft'}
             </Button>
             {stepIndex < maxStepIndex ? (
-              <Button type="button" onClick={handleContinue} disabled={saving || Boolean(savedDevelopment)}>
-                {currentStepId === 'unit_setup' && stockStepIndex === 2 ? 'Use these units' : 'Next'}
+              <Button type="button" aria-keyshortcuts="Control+Enter Meta+Enter" title="Continue (Ctrl/⌘ + Enter)" onClick={handleContinue} disabled={saving || closing || Boolean(savedDevelopment) || stockEditing}>
+                {returningToReview ? 'Back to review' : currentStepId === 'unit_setup' && stockStepIndex === 2 ? 'Use these units' : 'Next'}
               </Button>
             ) : (
-              <Button type="submit" disabled={saving || Boolean(savedDevelopment)}>
-                {saving ? 'Creating…' : 'Create Development →'}
+              <Button type="submit" disabled={saving || closing || Boolean(savedDevelopment)}>
+                {saving ? 'Saving…' : 'Create Development →'}
               </Button>
             )}
             </div>
           </footer>
         </form>
+        </>}
       </div>
     </Modal>
   )

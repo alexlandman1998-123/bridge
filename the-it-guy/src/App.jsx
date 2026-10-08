@@ -3556,7 +3556,7 @@ function AppRoutes() {
                 element={
                   <SalesWorkspaceGuard>
                     <RoleRoute allowedRoles={['agent']}>
-                      <Navigate to="/pipeline/calendar" replace />
+                      <Navigate to={`/pipeline/calendar${location.search || ''}`} replace />
                     </RoleRoute>
                   </SalesWorkspaceGuard>
                 }
