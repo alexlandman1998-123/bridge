@@ -295,3 +295,285 @@ For the authorised release:
 5. If catalog or acceptance fails, stop the rollout. Keep committed documents, declarations, assignments and history. Restrict the affected onboarding/handoff entry points while preparing an append-only repair; do not drop evidence tables or delete bucket objects. Restore captured compatible definitions only through a separately reviewed recovery migration, and restore the matching application version only if it is compatible with the released schema. Partial release state must be reported explicitly.
 
 Local continuity implementation and release preparation are complete; deployment and hosted acceptance remain pending approval. Policy sign-off and ongoing rental portals remain outside this release scope.
+
+## Listing document matrix connection — 8 October 2026
+
+Phase 1 of the listing matrix work connects the primary rental listing's Documents
+tab to saved onboarding requirements. Landlord identity evidence is reusable;
+property rows are selected by the portfolio property's listing link or a unique
+unlisted portfolio entry's canonical property link. Explicit listing links take
+precedence; ambiguous canonical property matches need a portfolio link. Requirements for another linked listing
+and superseded requirements are excluded. Each linked tenant application has its
+own section with named-person/entity requirements and the files in its current
+pack. Missing files remain visible as saved requirements.
+
+The application read uses the existing security-invoker review summary with explicit
+organisation and listing filters and pagination. Landlord reads use the existing
+authenticated, scoped onboarding snapshot endpoint. These are read-only operations;
+opening the tab does not generate a checklist, assign evidence or activate policy.
+Empty checklists explain the required discovery/link setup; failed reads report
+unavailable requirements. Generic listing attachments remain in a separate Listing
+files group and do not fulfil the saved matrix. Landlord preview rules are labelled
+as pending policy confirmation, while tenant rows retain saved required/optional
+status. Upload, download, review, replacement and collection-link controls in this
+listing panel remain Phase 2 work.
+
+Focused checks: 49 tests passed across six files, including the actual listing
+Documents route, separate tenant packs, property scope, missing/superseded evidence,
+partial read failures and a real isolated PostgreSQL view read with the existing
+application RLS policy. Denied actors and other organisation/listing reads are
+excluded, and reads preserve evidence assignment counts. The existing
+`test:rental-listing-workspace-phase4` check passed. Focused lint has no errors;
+the existing listing detail component retains six unused-variable warnings.
+Two nearby checks outside this change fail in an overview fixture missing
+`mediaProgress` and a landlord-lead action selector. No migration, hosted data write
+or deployment is part of this implementation.
+
+The new panel's browser bundle check passed. The normal full app build was stopped
+while another app build was running; an isolated-output retry was also stopped
+after prolonged concurrent build contention. Full production build verification
+remains outstanding. No other build process was stopped or changed.
+
+## Listing document matrix workflow — 8 October 2026
+
+Phase 2 of the listing matrix work adds actions to the saved requirement rows in
+the primary rental workspace. Agents can upload or replace landlord files and
+tenant packs, open and download private evidence, record acceptance or rejection
+with a note, and create, copy or revoke secure collection links. Tenant links can
+target the primary applicant or a named additional person. Link creation does not
+send email. Submitted landlord details have a versioned correction request that
+reopens uploads after the refreshed snapshot confirms draft status.
+
+The controls reuse existing authenticated APIs, signed storage uploads and saved
+requirement commands. Files bind to the exact requirement, generation, person and
+parent version. Multi-file packs upload sequentially using each acknowledged
+version; a failed or uncertain save stops the sequence and requires a matrix
+refresh before further changes. Partial success reports how many files were
+acknowledged. Successful reads cannot clear this recovery lock. A committed save
+with failed readback is reported as saved with completion counts unavailable,
+rather than silently retried. Listing/workspace changes discard stale snapshots.
+
+Each current file has its own review. Every file must be accepted before a tenant
+pack is accepted, and replacing a pack preserves its earlier evidence as history.
+Accepted submitted tenant evidence remains locked until rejection or expiry;
+final applications retain private viewing and downloading but no intake, review
+or collection-link controls. Landlord disclosure acceptance requires an explicit
+confirmation that the prescribed disclosure is completed and signed. These
+controls do not activate proposed landlord policy or change conditional rules.
+
+Completion now counts accepted, active required rows, excludes optional rows and
+landlord policy previews, and treats expired evidence as outstanding. The listing
+overview uses the same saved matrix counts. Failed matrix reads make progress
+unavailable; failed generic listing-file reads do not hide a working matrix.
+
+Focused verification: 85 tests passed across 14 suites, including a real isolated
+PostgreSQL workflow through signed upload preparation/completion, scoped review,
+pack acceptance/replacement, stale-version rejection and denied actor access.
+Component checks cover duplicate submission prevention, recovery after failed
+readback, landlord corrections, signed disclosure confirmation, private previews,
+downloads and collection-link creation/copy/revocation. The existing
+`test:rental-listing-workspace-phase4` check passed. Focused lint has no errors and
+only the six pre-existing unused-variable warnings in the listing detail page.
+
+One existing upload-transport assertion still expects the old request shape and
+fails on the already-present `appendToPack: false` field; that implementation and
+test were not changed by the listing matrix work. The final listing-page browser
+bundle and full app production build passed. The final build used an isolated
+output directory in `/tmp` and completed in 1 minute 51 seconds; its listing chunk
+was checked for the final private-preview changes. No migration, remote data
+write, email delivery or deployment is part of this implementation.
+
+## Listing document matrix conditional rules — 8 October 2026
+
+Phase 3 of the listing matrix work adds explicit landlord discovery choices for
+letting versus management, scheme membership and the rental proceeds beneficiary.
+Agent portfolio capture and landlord onboarding preserve the same saved answers.
+Management-only account and billing questions appear when management is selected;
+switching branches keeps those answers without applying their document rows to a
+letting-only arrangement. Unknown answers do not silently select management.
+
+The additive saved preview matrix now includes:
+
+- `payout_account` and `management_information` for managed rentals.
+- `third_party_payee_authority` when managed-rental proceeds go to a third party.
+- `existing_tenancy_pack` when management takes over a tenanted property.
+- `scheme_rules` for sectional-title properties, body corporates and HOAs.
+
+The prepared migration is
+`supabase/migrations/20261008120849_rental_landlord_conditional_document_requirements.sql`.
+It adds private rule helpers and records the conditional rule revision on the next
+explicit discovery save. It performs no backfill, does not activate landlord
+policy, and preserves the base rule fingerprints and current evidence. Account
+changes supersede only account-related generations; a changed current tenancy
+supersedes its takeover pack. Inapplicable branches become superseded rows with
+their earlier evidence retained. Repeating a save does not duplicate rows or
+revisions. Existing scoped parent commands, version guards and review authority
+remain responsible for writes; private helpers have no anonymous/authenticated
+execution access.
+
+Tenant document previews now include the current version 4 address, entity-control,
+trust-authority and named-signatory/trustee rules. The saved checklist remains
+authoritative after saving, including older policy snapshots: a browser preview
+cannot invent an active requirement or change required/optional status. The
+existing optional address and ownership/control policy is retained. No new fixed
+income period, age threshold, affordability multiple or RMCP approval is implied.
+
+The listing matrix explains why each saved requirement applies. Exceptional
+landlord types and non-residential properties carry a manual review notice rather
+than appearing resolved through an Individual or residential fallback. All new
+landlord policy rows stay labelled as preview and excluded from completion counts.
+Property rows remain scoped to their own linked listing; general files still do
+not satisfy requirements by filename.
+
+Focused local verification: 128 checks passed across 18 Vitest suites, including
+isolated PostgreSQL parity for landlord/legal-party and tenant version 4 scenarios,
+generation changes, preserved accepted evidence, save/repeat-save revisions,
+retired branches, denied helper access and listing scope. Component checks cover
+conditional discovery visibility, public projection, agent/public answer parity,
+tenant preview versus saved rows and manual review explanations. The existing
+listing workspace and migration-reference checks passed. The additional landlord
+workspace suite passed seven checks, bringing the total to 135 checks across 19
+Vitest suites. A strengthened final SQL rerun also passed, including preservation
+of accepted disclosure/identity evidence and retention of a superseded payout
+file. Focused ESLint passed with no warnings or errors. Browser bundles for the
+listing detail, landlord workspace and tenant wizard all passed. The full app
+build was stopped after more than ten minutes in transformation while two other
+builds were active; full production build verification remains outstanding. Only
+this task’s verified isolated-output build process was stopped.
+
+One nearby older wizard assertion still expects missing evidence to block details
+submission. The current deferred-document submission helper intentionally checks
+details and consent, allowing later evidence collection; neither that helper nor
+the assertion was changed in this phase. Its one failure is not counted as a
+passing check. No hosted migration, data write, email or deployment was performed.
+The new saved landlord rows require the prepared migration and compatible app
+release before hosted use; agency policy activation remains a separate decision.
+
+## Listing document matrix acceptance and scoped release — 8 October 2026
+
+Phase 4 verifies the primary transaction workspace's listing matrix. It updates
+four stale regression fixtures to match the current upload-pack contract,
+deferred details submission, media overview data and initial tenant-leads tab.
+The person-assignment regression still proves that another person's evidence
+does not fulfil a named person's checklist, even when details may be submitted.
+
+The existing loopback onboarding fixture now serves the real listing document
+panel at `/__fixture/agent/matrix`. It uses the real document APIs, isolated
+PostgreSQL, the production application/access-link scope policies, and ephemeral
+private bytes. Repository review and access-link calls use a restricted local
+transport. The conditional migration runs in this fixture only. File watching
+is disabled during acceptance so other work in this shared checkout cannot
+restart or replace the fixture's loaded modules. Start it from the primary app
+with `node scripts/rental-onboarding-browser-fixture.mjs`; the default origin is
+`http://127.0.0.1:4186`. Save landlord discovery explicitly to add the conditional
+preview rows, matching the migration's no-backfill behavior.
+
+Fresh focused verification passed 101 tests across 19 Vitest suites, plus the
+existing rental listing workspace and migration-reference checks. The fast app
+baseline also passed all nine established service checks. Focused lint
+passed without warnings or errors. A full Vite production build passed in 1m17s
+with an isolated output directory; its listing-detail chunk includes the matrix
+and action controls. The build login diagnostic remained off, as configured.
+Earlier build attempts encountered an unrelated file mid-edit and severe memory
+contention on the shared host; only this task's own builds were stopped.
+The initial aggregate `check:app` stopped on a recruitment test mid-edit. That
+file subsequently passed its own lint check, and the final global lint rerun
+passed with zero errors and 563 existing warnings. The normal lint, fast-test
+and production-build handoff stages therefore passed separately; the first
+aggregate command itself is not recorded as a pass.
+
+Browser acceptance exercised signed landlord disclosure upload and the explicit
+completed/signed review guard; tenant two-file upload, per-file acceptance,
+accepted-pack locking, rejection and replacement; and immediate matrix refresh.
+The replacement shows only its new file while the earlier private files remain
+in history. Downloaded bytes matched the uploaded file. A newly created tenant
+collection link opened its application, was revoked through the panel and then
+returned 401. Desktop (1440px) and mobile (390px) screenshots were inspected;
+the mobile document width equals its viewport, with the table scrolling inside
+its panel. These are local acceptance results, not hosted Storage acceptance.
+
+Read-only production preparation confirmed the linked target is Arch9 SaaS
+(`isdowlnollckzvltkasn`), the recovery gate is `RECOVERY_LOCKED`, prerequisite
+cost/deferred-document/pack/readiness migrations are present, and the application
+review view uses `security_invoker=true`. The existing private helpers deny
+anonymous and authenticated execution. The new conditional migration remains
+unapplied. Its SHA-256 is
+`9aa24c749ca7e175a5bd83098865990e248445b6bbea4433cbdcc182376ef6c1`.
+
+The linked dry run also listed three unrelated pending migrations: listing
+channel statistics, recruitment joining records and agent-card rental enquiries.
+This task's proposed database release includes only
+`20261008120849_rental_landlord_conditional_document_requirements.sql`, followed
+by the compatible primary app/API changes. Do not use the broad dry-run list as
+approval to apply those other files. Capture the final app source from a clean
+release checkout containing the matrix changes and required rental-pack code;
+exclude unrelated shared-tree work and rerun checks if that source differs.
+
+Pre-change production definitions and permissions were captured read-only. The
+prepared scoped rollback restores the original private entry points by removing
+only the new wrappers and renaming their preserved originals back. A local
+PostgreSQL rehearsal restored both exact definitions and ACLs. It deletes no
+saved requirement, assignment, file or review history. After an approved release,
+verify the exact migration ledger entry, four private functions, denied helper
+access, live matrix route and a permitted hosted upload/review/readback.
+
+The local review packet is `/tmp/arch9-rental-matrix-phase4-release/manifest.json`.
+It binds 25 matrix/runtime dependency snapshots and includes the dry run,
+production pre-change definitions, prerequisites, scoped rollback and browser
+evidence. The snapshots matched the working tree after verification. Recheck
+target identity, recovery and source binding immediately before an approved
+release; these captures are evidence from this acceptance run, not permanent
+permission to release later changes.
+
+No production SQL, backfill, policy activation, email or deployment occurred in
+phase 4. Applying the migration and deploying the matching app require explicit
+release approval under the repository's production rule. Landlord agency-policy
+activation remains a separate decision; preview rows stay outside completion.
+
+## Approved production release — 8 October 2026
+
+The user approved the scoped production release in this task. Only migration
+`20261008120849_rental_landlord_conditional_document_requirements.sql` was applied
+to Arch9 SaaS (`isdowlnollckzvltkasn`), then recorded with its exact version and
+name. The release-time dry run also contained two new recruitment migrations;
+all five unrelated pending migrations were excluded from this release. No
+backfill, policy activation, evidence writes or email send was performed.
+
+The primary app was isolated on the then-current production commit
+`95f0d6ca0dba6522faec6ce64accd225f842dcc3`, preserving its Property24 phone fix.
+The seven rental dependency snapshots already matched that production base.
+The approved runtime snapshots remained SHA-bound in release commit
+`d7c59329d93696dbc598a93e7b30edbd596358fe`; 101 focused tests in 19 suites passed
+on the isolated source. Focused lint passed with six inherited listing-page
+warnings and no errors. The production build, bundle budget, operational-script
+deployment audit and schema compatibility contract passed.
+
+Deployment `dpl_CTf93nMtSdvLXh9hmwfJvFvXi5MT` was promoted to
+<https://app.arch9.co.za>. Its temporary URL is
+<https://bridge-jjf89ujus-alexs-projects-f5496a21.vercel.app>. The first staged
+build lacked an explicit source marker and was left unpromoted; the rebuilt
+HTML and release manifest match the approved commit and production Supabase
+origin. All 828 critical live assets passed the established deployed-asset
+check. Earlier concurrent fetch attempts timed out; the final run used four
+connections, passed without retries, and found no missing assets. The live
+rental route and matrix bundle returned 200; both document APIs correctly
+returned 401 without application authentication.
+
+Production database readback confirmed the five additive conditional purposes,
+the exact preserved base function definitions, four private helpers with
+postgres-only execution, and the security-invoker review view. The security
+advisor ran successfully and reported no findings on the changed helpers;
+unrelated existing findings remain outside this release. Target guard and
+recovery lock passed immediately before applying the single SQL file; the
+prepared rollback remains in the release packet.
+
+A signed-in production readback under the available Home Seekers session
+verified the matrix renders, landlord/tenant empty states explain missing saved
+links, and Refresh matrix completes without an alert. No live evidence was
+uploaded or reviewed. Hosted upload/review acceptance with permitted evidence
+and the original Kingdom listing remain manual checks. Landlord policy stays
+in preview, excluded from completion totals; existing discoveries receive the
+conditional rows on their next explicit save.
+
+The completed evidence packet is
+`/tmp/arch9-rental-matrix-phase4-release/manifest.json`.
