@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
-const api = vi.hoisted(() => ({ overview: vi.fn(), agentRows: vi.fn(), allRows: vi.fn(), crm: vi.fn(), appointments: vi.fn(), listings: vi.fn(), leads: vi.fn(), from: vi.fn(), rollup: vi.fn(), documents: vi.fn() }))
+const api = vi.hoisted(() => ({ overview: vi.fn(), agentRows: vi.fn(), allRows: vi.fn(), crm: vi.fn(), appointments: vi.fn(), listings: vi.fn(), leads: vi.fn(), from: vi.fn(), rollup: vi.fn(), documents: vi.fn(), journey: vi.fn(), developmentIds: vi.fn() }))
+vi.mock('../sharedMatterJourneyReader.js', () => ({ fetchSharedMatterJourney: api.journey }))
+vi.mock('../../lib/api/dashboardOverviewApi.js', () => ({ fetchDevelopmentIdsForOrganisation: api.developmentIds }))
 vi.mock('../../lib/transactionWorkspaceApi.js', () => ({ getTransactionRollup: api.rollup, fetchTransactionDocumentsWorkspace: api.documents }))
 vi.mock('../../lib/supabaseClient', () => ({ isSupabaseConfigured: true, supabase: { from: api.from } }))
 vi.mock('../../domains/reporting/api.js', () => ({ fetchDashboardOverview: api.overview, fetchTransactionsByParticipantSummary: api.agentRows, fetchTransactionsListSummary: api.allRows }))
@@ -10,7 +12,7 @@ vi.mock('../appointmentDashboardService.js', () => ({ getAppointmentDashboardDat
 vi.mock('../privateListingService.js', () => ({ getAgentPrivateListings: api.listings }))
 vi.mock('../developerLeadService.js', () => ({ listDeveloperLeadIntake: api.leads }))
 vi.mock('../../lib/agentDemoTransactionStorage.js', () => ({ getAgentDemoTransactionRowsFromStorage: () => [] }))
-import { buildResidentialActiveWork, clearMobileDashboardCache, getCachedMobileDashboardSnapshot, getMobileCalendarSnapshotAsync, getMobileDashboardSnapshot, getMobileDashboardSnapshotAsync, getMobileDeveloperTransactionSnapshotAsync } from '../mobileDashboardService.js'
+import { buildResidentialActiveWork, clearMobileDashboardCache, getCachedMobileDashboardSnapshot, getMobileCalendarSnapshotAsync, getMobileDashboardSnapshot, getMobileDashboardSnapshotAsync, getMobileDeveloperTransactionSnapshotAsync, getMobileDeveloperTransactionJourneyAsync, getMobileDeveloperTransactionDocumentsAsync } from '../mobileDashboardService.js'
 
 const workspace = { role: 'agent', profile: { id: 'me', email: 'me@example.test' } }
 const organisation = { id: 'org-one' }
@@ -368,4 +370,73 @@ it('retries failed reads rather than caching a failure', async () => {
   expect(getCachedMobileDashboardSnapshot(options)).toBeNull()
   await getMobileDashboardSnapshotAsync(options)
   expect(api.agentRows).toHaveBeenCalledTimes(2)
+})
+
+function selectedDealQueries(records) {
+  api.from.mockImplementation(table => ({ select: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(),
+    maybeSingle: vi.fn().mockResolvedValue({ data: records[table] || null, error: null }) }))
+}
+const developerDetailOptions = { workspace: { ...workspace, role: 'developer' }, organisation, transactionId: 'selected' }
+
+it('reads only the selected deal and canonical journey without the full portfolio, workflow engine or documents', async () => {
+  selectedDealQueries({ transactions: { id: 'selected', unit_id: 'unit-one', development_id: 'dev-one', buyer_id: 'buyer-one', finance_type: 'bond' },
+    units: { id: 'unit-one', development_id: 'dev-one', unit_number: '002' }, developments: { id: 'dev-one', name: 'Junoah' }, buyers: { id: 'buyer-one', name: 'Buyer' } })
+  api.developmentIds.mockResolvedValue(['dev-one'])
+  api.journey.mockResolvedValue({ status: 'ready', snapshot: { transactionId: 'selected', revision: 3, planRevision: 3, requiredLaneKeys: null, lanes: [],
+    commercialFacts: { version: 1, revision: 3, financeType: 'bond', steps: [
+      { workflowKey: 'finance_bond', key: 'quote_approved', status: 'completed' },
+      { workflowKey: 'finance_bond', key: 'instruction_sent', status: 'completed' },
+    ] } } })
+  const detail = await getMobileDeveloperTransactionJourneyAsync(developerDetailOptions)
+  expect(detail.item).toMatchObject({ id: 'selected', propertyTitle: 'Junoah', unitLabel: 'Unit 002', eyebrow: 'Buyer' })
+  expect(detail.journey.highLevelJourney.milestones.find(row => row.id === 'finance').status).toBe('complete')
+  expect(api.journey).toHaveBeenCalledWith(expect.anything(), 'selected', { audience: 'developer' })
+  expect(api.overview).not.toHaveBeenCalled()
+  expect(api.rollup).not.toHaveBeenCalled()
+  expect(api.documents).not.toHaveBeenCalled()
+})
+
+it('rejects a deal outside the selected developer portfolio before reading progress or files', async () => {
+  selectedDealQueries({ transactions: { id: 'selected', development_id: 'other-dev' } })
+  api.developmentIds.mockResolvedValue(['dev-one'])
+  expect(await getMobileDeveloperTransactionJourneyAsync(developerDetailOptions)).toBeNull()
+  expect(await getMobileDeveloperTransactionDocumentsAsync(developerDetailOptions)).toBeNull()
+  expect(api.journey).not.toHaveBeenCalled()
+  expect(api.documents).not.toHaveBeenCalled()
+})
+
+it('rejects documents belonging to a different transaction and keeps journey reads independent', async () => {
+  selectedDealQueries({ transactions: { id: 'selected', development_id: 'dev-one' }, developments: { id: 'dev-one', name: 'Junoah' } })
+  api.developmentIds.mockResolvedValue(['dev-one'])
+  api.documents.mockResolvedValue({ transaction: { id: 'other' } })
+  await expect(getMobileDeveloperTransactionDocumentsAsync(developerDetailOptions)).rejects.toThrow('Documents could not be loaded')
+  expect(api.journey).not.toHaveBeenCalled()
+})
+
+it('reuses scoped display data after a list click but reads fresh deal facts and only one journey snapshot', async () => {
+  const transaction = { id: 'selected', unit_id: 'unit-one', development_id: 'dev-one', finance_type: 'cash', lifecycle_state: 'active' }
+  api.overview.mockResolvedValue({ rows: [{ transaction, unit: { id: 'unit-one', unit_number: '002', development_id: 'dev-one' }, development: { id: 'dev-one', name: 'Junoah' } }], developmentSummaries: [] })
+  await getMobileDashboardSnapshotAsync(developerDetailOptions)
+  vi.clearAllMocks()
+  selectedDealQueries({ transactions: { ...transaction, finance_type: 'bond', updated_at: '2026-10-08' } })
+  api.journey.mockResolvedValue({ status: 'unavailable', snapshot: null })
+  const detail = await getMobileDeveloperTransactionJourneyAsync(developerDetailOptions)
+  expect(detail).toMatchObject({ financeType: 'bond', updatedAt: '2026-10-08', journeyAvailable: false })
+  expect(detail.item.unitLabel).toBe('Unit 002')
+  expect(api.from.mock.calls).toEqual([['transactions']])
+  expect(api.journey).toHaveBeenCalledTimes(1)
+  expect(api.developmentIds).not.toHaveBeenCalled()
+  expect(api.overview).not.toHaveBeenCalled()
+})
+
+it('rechecks portfolio membership when a cached deal is reassigned to another development', async () => {
+  const transaction = { id: 'selected', unit_id: 'unit-one', development_id: 'dev-one', lifecycle_state: 'active' }
+  api.overview.mockResolvedValue({ rows: [{ transaction, unit: { id: 'unit-one', development_id: 'dev-one' } }], developmentSummaries: [] })
+  await getMobileDashboardSnapshotAsync(developerDetailOptions)
+  vi.clearAllMocks()
+  selectedDealQueries({ transactions: { ...transaction, unit_id: 'other-unit', development_id: 'other-dev' }, units: { id: 'other-unit', development_id: 'other-dev' } })
+  api.developmentIds.mockResolvedValue(['dev-one'])
+  expect(await getMobileDeveloperTransactionJourneyAsync(developerDetailOptions)).toBeNull()
+  expect(api.developmentIds).toHaveBeenCalled()
+  expect(api.journey).not.toHaveBeenCalled()
 })

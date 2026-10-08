@@ -1,3 +1,4 @@
+import { agencyLeadAgentFilter, agencyLeadAgentScope } from './agencyLeadAgentScope'
 import { inferLeadCategoryFromRecord } from '../../lib/leadCategory'
 import { isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
 import {
@@ -53,7 +54,7 @@ function isUnavailable(error) {
   return status === 403 || code === '42501' || code === '42P01' || code === 'PGRST205' || message.includes('permission denied') || message.includes('row-level security') || message.includes('does not exist')
 }
 
-async function selectCompatibleLeads(workspaceId, leadId = '', { page = 0, pageSize = 0 } = {}) {
+async function selectCompatibleLeads(workspaceId, leadId = '', { page = 0, pageSize = 0, agentScope = null } = {}) {
   const fieldSets = [
     LEAD_FIELDS_ASSIGNMENT,
     LEAD_FIELDS_LOCATION,
@@ -69,6 +70,7 @@ async function selectCompatibleLeads(workspaceId, leadId = '', { page = 0, pageS
   let result = { data: [], error: null }
   for (const fields of candidates) {
     let query = supabase.from('leads').select(fields, { count: leadId ? undefined : 'exact' }).eq('organisation_id', workspaceId)
+    if (!leadId && agentScope) query = query.or(agencyLeadAgentFilter(agentScope, fields))
     query = leadId
       ? query.eq('lead_id', leadId).limit(1).maybeSingle()
       : query.order('updated_at', { ascending: false })
@@ -206,17 +208,17 @@ function readFreshCache(cache, key) {
   return entry
 }
 
-async function fetchPrimaryRecords(workspaceId, { forceRefresh = false, page = 0, pageSize = 0 } = {}) {
+async function fetchPrimaryRecords(workspaceId, { forceRefresh = false, page = 0, pageSize = 0, agentScope = null } = {}) {
   const normalizedPageSize = Math.max(0, Math.round(Number(pageSize) || 0))
   const normalizedPage = Math.max(0, Math.round(Number(page) || 0))
-  const cacheKey = normalizedPageSize ? `${workspaceId}:${normalizedPage}:${normalizedPageSize}` : workspaceId
+  const cacheKey = (normalizedPageSize ? `${workspaceId}:${normalizedPage}:${normalizedPageSize}` : workspaceId) + (agentScope ? `:agent:${JSON.stringify(agentScope)}` : '')
   if (!forceRefresh) {
     const cached = readFreshCache(primaryRecordsCache, cacheKey)
     if (cached?.data) return cached.data
     if (cached?.promise) return cached.promise
   }
 
-  const promise = selectCompatibleLeads(workspaceId, '', { page: normalizedPage, pageSize: normalizedPageSize })
+  const promise = selectCompatibleLeads(workspaceId, '', { page: normalizedPage, pageSize: normalizedPageSize, agentScope })
     .then(async (leads) => {
       if (leads.error && !isUnavailable(leads.error)) throw leads.error
       const leadRows = Array.isArray(leads.data) ? leads.data : []
@@ -249,9 +251,10 @@ async function fetchPrimaryRecords(workspaceId, { forceRefresh = false, page = 0
   return promise
 }
 
-async function fetchLandingMetricLeads(workspaceId, { forceRefresh = false } = {}) {
+async function fetchLandingMetricLeads(workspaceId, { forceRefresh = false, agentScope = null } = {}) {
+  const cacheKey = agentScope ? `${workspaceId}:agent:${JSON.stringify(agentScope)}` : workspaceId
   if (!forceRefresh) {
-    const cached = readFreshCache(landingMetricsCache, workspaceId)
+    const cached = readFreshCache(landingMetricsCache, cacheKey)
     if (cached?.data) return cached.data
     if (cached?.promise) return cached.promise
   }
@@ -263,7 +266,7 @@ async function fetchLandingMetricLeads(workspaceId, { forceRefresh = false } = {
     let totalCount = 0
     let hasMore = true
     while (hasMore) {
-      const result = await selectCompatibleLeads(workspaceId, '', { page, pageSize })
+      const result = await selectCompatibleLeads(workspaceId, '', { page, pageSize, agentScope })
       if (result.error && !isUnavailable(result.error)) throw result.error
       const rows = Array.isArray(result.data) ? result.data : []
       totalCount = Number(result.count || totalCount || rows.length)
@@ -272,14 +275,14 @@ async function fetchLandingMetricLeads(workspaceId, { forceRefresh = false } = {
       hasMore = Boolean(rows.length && rows.length === pageSize && leads.length < totalCount)
     }
     const data = { leads, totalCount: Number(totalCount || leads.length), source: 'remote' }
-    landingMetricsCache.set(workspaceId, { data, expiresAt: Date.now() + PRIMARY_RECORDS_CACHE_TTL_MS })
+    landingMetricsCache.set(cacheKey, { data, expiresAt: Date.now() + PRIMARY_RECORDS_CACHE_TTL_MS })
     return data
   })().catch((error) => {
-    landingMetricsCache.delete(workspaceId)
+    landingMetricsCache.delete(cacheKey)
     throw error
   })
 
-  landingMetricsCache.set(workspaceId, { promise, expiresAt: Date.now() + PRIMARY_RECORDS_CACHE_TTL_MS })
+  landingMetricsCache.set(cacheKey, { promise, expiresAt: Date.now() + PRIMARY_RECORDS_CACHE_TTL_MS })
   return promise
 }
 
@@ -360,7 +363,9 @@ export function invalidateAgencyLeadListCache(organisationId, leadId = '') {
   for (const key of primaryRecordsCache.keys()) {
     if (key === workspaceId || key.startsWith(`${workspaceId}:`)) primaryRecordsCache.delete(key)
   }
-  landingMetricsCache.delete(workspaceId)
+  for (const key of landingMetricsCache.keys()) {
+    if (key === workspaceId || key.startsWith(`${workspaceId}:`)) landingMetricsCache.delete(key)
+  }
   const resolvedLeadId = normalizeText(leadId)
   if (resolvedLeadId) {
     deleteAgencyLeadCoreCache(workspaceId, resolvedLeadId)
@@ -388,6 +393,7 @@ export async function listAgencyLeadListRecords(organisationId, options = {}) {
           forceRefresh: options.forceRefresh === true,
           page: options.page,
           pageSize: options.pageSize,
+          agentScope: agencyLeadAgentScope(options.scopedAgent),
         })
       : Promise.resolve({ leads: [], contacts: [], totalCount: 0, page: 0, pageSize: 0 }),
     includeRelatedRecords
@@ -415,8 +421,8 @@ export async function listAgencyLeadListRecords(organisationId, options = {}) {
   }
 }
 
-export async function listAgencyLeadLandingMetrics(organisationId, { forceRefresh = false } = {}) {
+export async function listAgencyLeadLandingMetrics(organisationId, { forceRefresh = false, scopedAgent = null } = {}) {
   const workspaceId = requireWorkspaceId(organisationId)
   if (!isSupabaseConfigured || !supabase) throw new Error('Supabase is required before loading agency CRM data.')
-  return fetchLandingMetricLeads(workspaceId, { forceRefresh })
+  return fetchLandingMetricLeads(workspaceId, { forceRefresh, agentScope: agencyLeadAgentScope(scopedAgent) })
 }

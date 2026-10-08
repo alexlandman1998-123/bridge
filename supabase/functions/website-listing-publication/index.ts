@@ -7,11 +7,13 @@ import {
   normalizedWebsiteMediaContentType,
   normalizeWebsiteListingAction,
   parseProjectStorageUrl,
+  prepareWebsiteMediaAssets,
   sha256Hex,
   WEBSITE_LISTING_MEDIA_BUCKET,
   WEBSITE_LISTING_MEDIA_MAX_BYTES,
   WEBSITE_LISTING_MEDIA_MAX_ITEMS,
   websiteListingMediaStoragePath,
+  websiteMediaCopyIsUnchanged,
   type WebsiteMediaType,
 } from "../_shared/websiteListingMedia.ts";
 
@@ -91,13 +93,14 @@ function isExistingObjectError(error: unknown) {
     message.includes("duplicate");
 }
 
-async function copyMediaAsset(input: {
+export async function copyMediaAsset(input: {
   admin: ServiceClient;
   supabaseUrl: string;
   organisationId: string;
   websiteSiteId: string;
   listingId: string;
   media: JsonRecord;
+  existingAsset?: JsonRecord;
 }) {
   const sourceMediaId = text(input.media.id);
   const mediaType = text(input.media.media_type);
@@ -119,6 +122,55 @@ async function copyMediaAsset(input: {
       "unsupported_listing_media_source",
       "Website images must be stored in an approved bucket owned by this Supabase project.",
     );
+  }
+
+  const existing = input.existingAsset;
+  if (
+    existing?.status === "active" &&
+    existing.source_media_id === sourceMediaId &&
+    existing.source_bucket === source.bucket &&
+    existing.source_path === source.path &&
+    /^[a-f0-9]{64}$/i.test(text(existing.source_fingerprint))
+  ) {
+    const contentType = normalizedWebsiteMediaContentType(
+      existing.content_type,
+    );
+    const storagePath = websiteListingMediaStoragePath({
+      organisationId: input.organisationId,
+      websiteSiteId: input.websiteSiteId,
+      listingId: input.listingId,
+      sourceMediaId,
+      fingerprint: text(existing.source_fingerprint),
+      extension: extensionForWebsiteMedia(contentType),
+    });
+    if (existing.storage_path === storagePath) {
+      const [sourceInfo, copyInfo] = await Promise.all([
+        input.admin.storage.from(source.bucket).info(source.path),
+        input.admin.storage.from(WEBSITE_LISTING_MEDIA_BUCKET).info(
+          storagePath,
+        ),
+      ]);
+      if (
+        !sourceInfo.error && !copyInfo.error && websiteMediaCopyIsUnchanged(
+          sourceInfo.data,
+          copyInfo.data,
+          { byteSize: Number(existing.byte_size), contentType, mediaType },
+        )
+      ) {
+        return {
+          source_media_id: sourceMediaId,
+          source_bucket: source.bucket,
+          source_path: source.path,
+          source_fingerprint: text(existing.source_fingerprint),
+          storage_path: storagePath,
+          public_url: input.admin.storage.from(WEBSITE_LISTING_MEDIA_BUCKET)
+            .getPublicUrl(storagePath).data.publicUrl,
+          content_type: contentType,
+          byte_size: Number(existing.byte_size),
+          created: false,
+        };
+      }
+    }
   }
 
   const download = await input.admin.storage.from(source.bucket).download(
@@ -375,7 +427,9 @@ Deno.serve(async (req) => {
 
     const existing = await admin
       .from("website_listing_media_assets")
-      .select("source_media_id, storage_path, status")
+      .select(
+        "source_media_id, source_bucket, source_path, source_fingerprint, storage_path, status, content_type, byte_size",
+      )
       .eq("website_site_id", websiteSiteId)
       .eq("listing_id", listingId);
     if (existing.error) throw existing.error;
@@ -407,19 +461,23 @@ Deno.serve(async (req) => {
     }
 
     const assets: Array<JsonRecord> = [];
+    const existingByMediaId = new Map(((existing.data || []) as JsonRecord[])
+      .map((asset) => [text(asset.source_media_id), asset]));
     try {
-      for (const media of (sourceMedia.data || []) as JsonRecord[]) {
-        assets.push(
-          await copyMediaAsset({
+      await prepareWebsiteMediaAssets(
+        (sourceMedia.data || []) as JsonRecord[],
+        (media) =>
+          copyMediaAsset({
             admin,
             supabaseUrl,
             organisationId,
             websiteSiteId,
             listingId,
             media,
+            existingAsset: existingByMediaId.get(text(media.id)),
           }),
-        );
-      }
+        assets,
+      );
     } catch (error) {
       await removeNewUploads(admin, assets);
       throw error;

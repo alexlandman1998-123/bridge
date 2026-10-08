@@ -1,6 +1,69 @@
 export const WEBSITE_LISTING_MEDIA_BUCKET = "listing-media";
 export const WEBSITE_LISTING_MEDIA_MAX_BYTES = 15 * 1024 * 1024;
 export const WEBSITE_LISTING_MEDIA_MAX_ITEMS = 100;
+export const WEBSITE_LISTING_MEDIA_CONCURRENCY = 4;
+
+/** Keep successful uploads available for cleanup, and drain workers before rejecting. */
+export async function prepareWebsiteMediaAssets<TMedia, TAsset>(
+  media: TMedia[],
+  copy: (item: TMedia) => Promise<TAsset>,
+  assets: TAsset[],
+): Promise<void> {
+  let next = 0;
+  let failed = false;
+  let firstError: unknown;
+  await Promise.all(Array.from(
+    { length: Math.min(media.length, WEBSITE_LISTING_MEDIA_CONCURRENCY) },
+    async () => {
+      while (!failed && next < media.length) {
+        const index = next++;
+        try {
+          assets[index] = await copy(media[index]);
+        } catch (error) {
+          if (!failed) firstError = error;
+          failed = true;
+        }
+      }
+    },
+  ));
+  if (failed) throw firstError;
+}
+
+type StorageInfo = {
+  size?: number;
+  contentType?: string;
+  etag?: string;
+  metadata?: Record<string, unknown>;
+};
+
+/** Missing or changed metadata falls back to the normal validated copy path. */
+export function websiteMediaCopyIsUnchanged(
+  source: StorageInfo | null,
+  copy: StorageInfo | null,
+  expected: {
+    byteSize: number;
+    contentType: string;
+    mediaType: WebsiteMediaType;
+  },
+): boolean {
+  if (!source || !copy) return false;
+  const etag = (info: StorageInfo) =>
+    String(info.etag ?? info.metadata?.eTag ?? info.metadata?.etag ?? "")
+      .replace(/^"|"$/g, "").toLowerCase();
+  const size = (info: StorageInfo) => Number(info.size ?? info.metadata?.size);
+  const contentType = (info: StorageInfo) =>
+    normalizedWebsiteMediaContentType(
+      info.contentType ?? info.metadata?.mimetype,
+    );
+  const sourceTag = etag(source);
+  return /^[a-f0-9]{32}$/.test(sourceTag) && sourceTag === etag(copy) &&
+    expected.byteSize > 0 &&
+    expected.byteSize <= WEBSITE_LISTING_MEDIA_MAX_BYTES &&
+    size(source) === expected.byteSize && size(copy) === expected.byteSize &&
+    contentType(source) === expected.contentType &&
+    contentType(copy) === expected.contentType &&
+    isAllowedWebsiteMediaContentType(expected.mediaType, expected.contentType);
+}
 
 export type WebsiteListingAction = "publish" | "update" | "unpublish";
 export type WebsiteMediaType = "image" | "floor_plan";

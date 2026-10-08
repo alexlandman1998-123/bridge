@@ -4,8 +4,10 @@ import {
   isAllowedWebsiteMediaContentType,
   normalizeWebsiteListingAction,
   parseProjectStorageUrl,
+  prepareWebsiteMediaAssets,
   sha256Hex,
   websiteListingMediaStoragePath,
+  websiteMediaCopyIsUnchanged,
 } from "./websiteListingMedia.ts";
 
 const projectUrl = "https://abcdefghijklmnopqrst.supabase.co";
@@ -102,4 +104,89 @@ Deno.test("rejects unsafe path identifiers", async () => {
     Error,
     "canonical UUID",
   );
+});
+
+Deno.test("reuses only matching strong storage validators, sizes and content types", () => {
+  const info = {
+    etag: '"' + "a".repeat(32) + '"',
+    size: 10,
+    contentType: "image/png",
+  };
+  const expected = {
+    byteSize: 10,
+    contentType: "image/png",
+    mediaType: "image" as const,
+  };
+  assertEquals(websiteMediaCopyIsUnchanged(info, info, expected), true);
+  assertEquals(
+    websiteMediaCopyIsUnchanged(
+      { metadata: { eTag: info.etag, size: 10, mimetype: "image/png" } },
+      info,
+      expected,
+    ),
+    true,
+  );
+  for (
+    const changed of [
+      null,
+      { ...info, etag: "b".repeat(32) },
+      { ...info, etag: "" },
+      { ...info, etag: `W/${info.etag}` },
+      { ...info, size: 11 },
+      { ...info, contentType: "image/jpeg" },
+    ]
+  ) {
+    assertEquals(websiteMediaCopyIsUnchanged(changed, info, expected), false);
+    assertEquals(websiteMediaCopyIsUnchanged(info, changed, expected), false);
+  }
+  assertEquals(
+    websiteMediaCopyIsUnchanged(info, info, { ...expected, byteSize: 11 }),
+    false,
+  );
+});
+
+Deno.test("prepares 98 photos in bounded batches and retains their display order", async () => {
+  const media = Array.from({ length: 98 }, (_, index) => index);
+  const assets: number[] = [];
+  let running = 0;
+  let peak = 0;
+  await prepareWebsiteMediaAssets(media, async (index) => {
+    peak = Math.max(peak, ++running);
+    await new Promise((resolve) =>
+      setTimeout(resolve, index % 4 === 0 ? 3 : 1)
+    );
+    running--;
+    return index;
+  }, assets);
+  assertEquals(peak, 4);
+  assertEquals(running, 0);
+  assertEquals(assets, media);
+});
+
+Deno.test("drains in-flight copies before rejecting so cleanup sees every new upload", async () => {
+  const assets: number[] = [];
+  const started: number[] = [];
+  let finishSlowCopy!: () => void;
+  const slowCopy = new Promise<void>((resolve) => {
+    finishSlowCopy = resolve;
+  });
+  let finished = false;
+  const preparation = prepareWebsiteMediaAssets(
+    [0, 1, 2, 3, 4, 5],
+    async (index) => {
+      started.push(index);
+      if (index === 0) throw new Error("copy failed");
+      await slowCopy;
+      return index;
+    },
+    assets,
+  ).finally(() => {
+    finished = true;
+  });
+  await Promise.resolve();
+  assertEquals(finished, false);
+  finishSlowCopy();
+  await assertRejects(() => preparation, Error, "copy failed");
+  assertEquals(started, [0, 1, 2, 3]);
+  assertEquals(assets.filter(() => true), [1, 2, 3]);
 });

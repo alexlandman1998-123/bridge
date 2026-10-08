@@ -5,7 +5,9 @@ import {
   getDashboardPipelineValue,
   getScopedDashboardTransactions,
 } from '../lib/dashboardTransactionIntegrity'
-import { isSupabaseConfigured } from '../lib/supabaseClient'
+import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
+import { fetchDevelopmentIdsForOrganisation } from '../lib/api/dashboardOverviewApi.js'
+import { fetchSharedMatterJourney } from './sharedMatterJourneyReader.js'
 import { deriveResidentialDashboardMetrics } from './residentialDashboardService'
 import { getAgentPrivateListings } from './privateListingService'
 import { buildMobileToday } from './mobileTodayModel.js'
@@ -381,6 +383,62 @@ async function getResidentialListings({ category, workspace = {}, organisationId
     console.warn('[mobile-dashboard] Unable to load private listings.', error)
     return []
   }
+}
+
+async function readMobileDeveloperTransaction({ workspace = {}, organisation = null, transactionId = '' } = {}) {
+  if (resolveMobileRoleCategory(workspace) !== 'developer' || !getOrganisationId(workspace, organisation)) throw new Error('Select a developer workspace to load this transaction.')
+  if (!isSupabaseConfigured) throw new Error('Transaction data is unavailable while offline.')
+  if (!transactionId) return null
+  // Read just this deal through RLS. The portfolio cache supplies display data,
+  // never fresh finance/plan facts or membership for a reassigned property.
+  const readOne = async (table, id, columns = '*') => {
+    const { data, error } = await supabase.from(table).select(columns).eq('id', id).maybeSingle()
+    if (error) throw error
+    return data
+  }
+  const transaction = await readOne('transactions', transactionId)
+  if (!transaction) return null
+  const cachedRow = readDashboardCache({ workspace, organisation })?.overview?.rows?.find(row => row.transaction?.id === transactionId)
+  if (cachedRow && cachedRow.transaction.unit_id === transaction.unit_id && cachedRow.transaction.development_id === transaction.development_id && cachedRow.transaction.buyer_id === transaction.buyer_id) {
+    return { ...cachedRow, transaction }
+  }
+  const [unit, developmentIds] = await Promise.all([
+    transaction.unit_id ? readOne('units', transaction.unit_id) : null,
+    fetchDevelopmentIdsForOrganisation(supabase, getOrganisationId(workspace, organisation)),
+  ])
+  const developmentId = unit?.development_id || transaction.development_id
+  if (!developmentId || !developmentIds.includes(developmentId) || (transaction.development_id && transaction.development_id !== developmentId)) return null
+  const [development, buyer] = await Promise.all([
+    readOne('developments', developmentId, 'id, name'),
+    transaction.buyer_id ? readOne('buyers', transaction.buyer_id, 'id, name') : null,
+  ])
+  return { transaction, unit, development, buyer }
+}
+
+export async function getMobileDeveloperTransactionJourneyAsync(options = {}) {
+  const row = await readMobileDeveloperTransaction(options)
+  if (!row) return null
+  const transaction = row.transaction
+  const legalJourney = await fetchSharedMatterJourney(supabase, transaction.id, { audience: 'developer' })
+  const [item] = buildResidentialActiveWork([row], { includeUnitIdentity: true })
+  return {
+    item, financeType: normalizeText(transaction.finance_type, 'Not recorded'), updatedAt: transaction.updated_at || null,
+    journeyAvailable: legalJourney.status === 'ready',
+    journey: buildDeveloperJourneySnapshot({ transaction,
+      rollup: { transactionId: transaction.id, transactionJourneySnapshot: { legalJourney } },
+      plan: transaction.routing_profile_json?.workflowPlan,
+      financeType: normalizeFinanceType(transaction.finance_type, { allowUnknown: true }),
+    }),
+  }
+}
+
+export async function getMobileDeveloperTransactionDocumentsAsync(options = {}) {
+  const row = await readMobileDeveloperTransaction(options)
+  if (!row) return null
+  const documents = await fetchTransactionDocumentsWorkspace(row.transaction.id)
+  if (documents?.transaction?.id !== row.transaction.id) throw new Error('Documents could not be loaded.')
+  return { documentsAvailable: true, documents: documents.documents || [],
+    requiredDocuments: documents.requiredDocumentChecklist || [], documentSummary: documents.documentSummary || null }
 }
 
 export async function getMobileDeveloperTransactionSnapshotAsync({ workspace = {}, organisation = null, transactionId = '' } = {}) {

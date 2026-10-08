@@ -2,8 +2,10 @@ import Link from 'next/link'
 import { ContentBlocks } from '@/components/content-blocks'
 import { LeadForm } from '@/components/lead-form'
 import type { PublicPage, ResolvedSite } from '@/lib/types'
+import { whatsappHref } from '@/lib/whatsapp-links'
 
 export function ContactPageContent({ page, site }: { page: PublicPage; site: ResolvedSite }) {
+  const whatsappUrl = whatsappHref(site.whatsappNumber)
   const blocks = page.blocks.filter(block => !block.hidden)
   const hero = blocks.find(block => block.type === 'hero')
   const form = blocks.find(block => block.type === 'lead_form')
@@ -21,7 +23,7 @@ export function ContactPageContent({ page, site }: { page: PublicPage; site: Res
         <div className="contact-channels">
           {site.phone && <a href={`tel:${site.phone.replace(/[^+\d]/g, '')}`}><span>Call us</span><strong>{site.phone}</strong><b aria-hidden="true">↗</b></a>}
           {site.email && <a href={`mailto:${site.email}`}><span>Email us</span><strong>{site.email}</strong><b aria-hidden="true">↗</b></a>}
-          {site.whatsappNumber && <a href={`https://wa.me/${site.whatsappNumber.replace(/\D/g, '')}`} target="_blank" rel="noreferrer"><span>Start a conversation</span><strong>Chat on WhatsApp</strong><b aria-hidden="true">↗</b></a>}
+          {whatsappUrl && <a href={whatsappUrl} target="_blank" rel="noreferrer"><span>Start a conversation</span><strong>Chat on WhatsApp</strong><b aria-hidden="true">↗</b></a>}
         </div>
         <div className="contact-selling"><p>Thinking of selling?</p><Link href="/valuation">Start with a property valuation <span aria-hidden="true">↗</span></Link></div>
       </div>

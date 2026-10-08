@@ -351,6 +351,8 @@ function AgentCardEditorDialog({ editor, listingOptions = [], listingLoading = f
 
             <div className="grid gap-3 sm:grid-cols-2">
               <CardEditorToggle label="Buyer enquiries" description="Show the buyer enquiry action." checked={draft.buyEnabled} onChange={(value) => update('buyEnabled', value)} />
+              <CardEditorField label="Rental button" value={draft.rentalCtaLabel} onChange={(value) => update('rentalCtaLabel', value)} />
+              <CardEditorToggle label="Rental enquiries" description="Show the tenant rental enquiry action." checked={draft.rentEnabled} onChange={(value) => update('rentEnabled', value)} />
               <CardEditorToggle label="Seller enquiries" description="Show the valuation and seller action." checked={draft.sellEnabled} onChange={(value) => update('sellEnabled', value)} />
               <CardEditorToggle label="Show listings" description="Show this agent’s public listings on the card." checked={draft.listingsEnabled} onChange={(value) => update('listingsEnabled', value)} />
               <CardEditorToggle label="Save contact" description="Allow visitors to download the contact card." checked={draft.vcfEnabled} onChange={(value) => update('vcfEnabled', value)} />
@@ -381,6 +383,7 @@ function AgentCardEditorDialog({ editor, listingOptions = [], listingLoading = f
               {draft.introduction ? <p className="mt-1 text-sm leading-5 text-[#60758d]">{draft.introduction}</p> : null}
               <div className="mt-4 grid grid-cols-3 gap-2 text-center text-xs font-semibold text-[#35546c]"><span>Call</span><span>WhatsApp</span><span>Email</span></div>
               {draft.buyEnabled ? <div className="mt-4 rounded-[12px] bg-[#18354f] px-3 py-3 text-sm font-semibold text-white">{draft.buyerCtaLabel || 'I am looking to buy'}</div> : null}
+              {draft.rentEnabled ? <div className="mt-2 rounded-[12px] bg-[#21445f] px-3 py-3 text-sm font-semibold text-white">{draft.rentalCtaLabel || 'I am looking to rent'}</div> : null}
               {draft.sellEnabled ? <div className="mt-2 rounded-[12px] bg-[#d8a83b] px-3 py-3 text-sm font-semibold text-[#162334]">{draft.sellerCtaLabel || 'I am looking to sell'}</div> : null}
             </div>
           </div>
@@ -672,6 +675,8 @@ export default function SettingsLeadCapturePage({ section = 'meta' }) {
       introduction: normalizeText(card?.introduction),
       buyerCtaLabel: normalizeText(card?.buyerCtaLabel) || 'I am looking to buy',
       sellerCtaLabel: normalizeText(card?.sellerCtaLabel) || 'I am looking to sell',
+      rentalCtaLabel: normalizeText(card?.rentalCtaLabel) || 'I am looking to rent',
+      rentEnabled: enabledIntents.includes('rent'),
       buyEnabled: enabledIntents.includes('buy'),
       sellEnabled: enabledIntents.includes('sell'),
       listingsEnabled: features.listings !== false,
@@ -719,6 +724,7 @@ export default function SettingsLeadCapturePage({ section = 'meta' }) {
         introduction: overrides.introduction ?? card?.introduction ?? '',
         buyerCtaLabel: overrides.buyerCtaLabel ?? card?.buyerCtaLabel ?? 'I am looking to buy',
         sellerCtaLabel: overrides.sellerCtaLabel ?? card?.sellerCtaLabel ?? 'I am looking to sell',
+        rentalCtaLabel: overrides.rentalCtaLabel ?? card?.rentalCtaLabel ?? 'I am looking to rent',
         enabledIntents: overrides.enabledIntents ?? card?.enabledIntents ?? ['buy', 'sell'],
         defaultBranchId: card?.defaultBranchId || user.branchId || user.branch_id,
         agentUserId: userId,
@@ -763,7 +769,7 @@ export default function SettingsLeadCapturePage({ section = 'meta' }) {
   async function saveAgentCardEditor(status = agentCardEditor?.card?.status || 'draft') {
     if (!agentCardEditor) return
     const { user, card, draft } = agentCardEditor
-    const enabledIntents = [draft.buyEnabled ? 'buy' : '', draft.sellEnabled ? 'sell' : ''].filter(Boolean)
+    const enabledIntents = [draft.buyEnabled ? 'buy' : '', draft.sellEnabled ? 'sell' : '', draft.rentEnabled ? 'rent' : ''].filter(Boolean)
     if (!enabledIntents.length) {
       setError('Enable at least one enquiry action before saving this digital card.')
       return
@@ -779,6 +785,7 @@ export default function SettingsLeadCapturePage({ section = 'meta' }) {
       introduction: draft.introduction,
       buyerCtaLabel: draft.buyerCtaLabel,
       sellerCtaLabel: draft.sellerCtaLabel,
+      rentalCtaLabel: draft.rentalCtaLabel,
       enabledIntents,
       vcfEnabled: draft.vcfEnabled,
       qrEnabled: draft.qrEnabled,

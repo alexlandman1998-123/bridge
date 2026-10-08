@@ -237,6 +237,12 @@ const INTAKE_STEPS = {
     { id: 'readiness', label: 'Readiness', description: 'A few details help us tailor the right options.' },
     { id: 'notes', label: 'Send enquiry', description: 'Add anything else that would be helpful.' },
   ],
+  rent: [
+    { id: 'details', label: 'Your details', description: 'So your agent can get in touch.' },
+    { id: 'preferences', label: 'Rental preferences', description: 'Tell us what rental home you are looking for.' },
+    { id: 'readiness', label: 'Monthly budget', description: 'Tell us your monthly rental budget and when you would like to move.' },
+    { id: 'notes', label: 'Send enquiry', description: 'Add anything else that would be helpful.' },
+  ],
   sell: [
     { id: 'details', label: 'Your details', description: 'So your agent can get in touch.' },
     { id: 'address', label: 'Property address', description: 'Where is the property you would like to sell?' },
@@ -361,7 +367,7 @@ function AgentProfileIntakeModal({ open, intent, intake, cardSlug, attribution, 
           surface: 'agent_profile',
         },
       }
-      if (intent === 'buy') {
+      if (intent === 'buy' || intent === 'rent') {
         payload.requirement = {
           areas: normalizeText(form.areas), propertyType: normalizeText(form.propertyType), bedroomsMin: toNumberOrNull(form.bedrooms),
           bathroomsMin: toNumberOrNull(form.bathrooms), budgetMin: toNumberOrNull(form.budgetMin), budgetMax: toNumberOrNull(form.budgetMax),
@@ -395,7 +401,7 @@ function AgentProfileIntakeModal({ open, intent, intake, cardSlug, attribution, 
     '--card-accent': modalTheme.accent,
   }
 
-  return <Modal open={open} onClose={closeWithConfirm} title={submitted ? 'Enquiry received' : intent === 'sell' ? 'Request a market assessment' : 'Find your next home'} subtitle={submitted ? '' : `${stepIndex + 1} of ${steps.length} · ${step.label}`} className="h-[calc(100dvh-24px)] max-h-[calc(100dvh-24px)] max-w-xl rounded-[22px] border-0 [&_.ui-icon-button]:h-12 [&_.ui-icon-button]:w-12 [&_.ui-icon-button]:rounded-xl [&_.ui-icon-button]:border-2 [&_.ui-modal-body]:px-5 [&_.ui-modal-body]:py-6 [&_.ui-modal-head]:px-5 [&_.ui-modal-head]:py-5 sm:h-auto sm:max-h-[min(820px,calc(100dvh-32px))] sm:[&_.ui-modal-body]:px-7 sm:[&_.ui-modal-head]:px-7">
+  return <Modal open={open} onClose={closeWithConfirm} title={submitted ? 'Enquiry received' : intent === 'rent' ? 'Find a rental home' : intent === 'sell' ? 'Request a market assessment' : 'Find your next home'} subtitle={submitted ? '' : `${stepIndex + 1} of ${steps.length} · ${step.label}`} className="h-[calc(100dvh-24px)] max-h-[calc(100dvh-24px)] max-w-xl rounded-[22px] border-0 [&_.ui-icon-button]:h-12 [&_.ui-icon-button]:w-12 [&_.ui-icon-button]:rounded-xl [&_.ui-icon-button]:border-2 [&_.ui-modal-body]:px-5 [&_.ui-modal-body]:py-6 [&_.ui-modal-head]:px-5 [&_.ui-modal-head]:py-5 sm:h-auto sm:max-h-[min(820px,calc(100dvh-32px))] sm:[&_.ui-modal-body]:px-7 sm:[&_.ui-modal-head]:px-7">
     {submitted ? <div className="py-10 text-center" style={modalStyle}>
       <CheckCircle2 className="mx-auto text-emerald-600" size={48} />
       <h4 className="mt-4 text-xl font-semibold text-slate-950">Thank you — {normalizeText(intake?.card?.agent?.name) || 'your agent'} has your enquiry.</h4>
@@ -418,14 +424,14 @@ function AgentProfileIntakeModal({ open, intent, intake, cardSlug, attribution, 
         <Field label="Bathrooms">{select('bathrooms', [['1', '1+'], ['2', '2+'], ['3', '3+'], ['4', '4+']])}</Field>
       </div> : null}
       {step.id === 'readiness' ? <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Minimum budget" hint="Optional"><input autoFocus inputMode="numeric" value={form.budgetMin} onChange={(event) => update('budgetMin', event.target.value)} placeholder="R" className={inputClassName()} /></Field>
-        <Field label="Maximum budget" hint="Optional"><input inputMode="numeric" value={form.budgetMax} onChange={(event) => update('budgetMax', event.target.value)} placeholder="R" className={inputClassName()} /></Field>
-        <Field label="Finance readiness">{select('financeStatus', [['cash', 'Cash buyer'], ['pre_approved', 'Pre-approved'], ['bond_needed', 'Bond needed'], ['not_ready', 'Still exploring']])}</Field>
+        <Field label={intent === 'rent' ? 'Minimum monthly rent' : 'Minimum budget'} hint="Optional"><input autoFocus inputMode="numeric" value={form.budgetMin} onChange={(event) => update('budgetMin', event.target.value)} placeholder="R" className={inputClassName()} /></Field>
+        <Field label={intent === 'rent' ? 'Maximum monthly rent' : 'Maximum budget'} hint="Optional"><input inputMode="numeric" value={form.budgetMax} onChange={(event) => update('budgetMax', event.target.value)} placeholder="R" className={inputClassName()} /></Field>
+        {intent === 'buy' ? <Field label="Finance readiness">{select('financeStatus', [['cash', 'Cash buyer'], ['pre_approved', 'Pre-approved'], ['bond_needed', 'Bond needed'], ['not_ready', 'Still exploring']])}</Field> : null}
         <Field label="When would you like to move?">{select('buyerTimeline', [['now', 'Immediately'], ['1_3_months', '1–3 months'], ['3_6_months', '3–6 months'], ['6_plus_months', '6+ months']])}</Field>
       </div> : null}
       {step.id === 'address' ? <div className="grid gap-4"><Field label="Property address"><input autoFocus required value={form.propertyAddress} onChange={(event) => update('propertyAddress', event.target.value)} className={inputClassName()} autoComplete="street-address" /></Field><Field label="Suburb or area"><input value={form.suburb} onChange={(event) => update('suburb', event.target.value)} className={inputClassName()} autoComplete="address-level2" /></Field></div> : null}
       {step.id === 'property' ? <div className="grid gap-4 sm:grid-cols-2"><Field label="Property type">{select('sellerPropertyType', [['House', 'House'], ['Apartment', 'Apartment'], ['Townhouse', 'Townhouse'], ['Vacant Land', 'Vacant land']])}</Field><Field label="Estimated value" hint="Optional"><input autoFocus inputMode="numeric" value={form.estimatedValue} onChange={(event) => update('estimatedValue', event.target.value)} placeholder="R" className={inputClassName()} /></Field></div> : null}
-      {step.id === 'notes' ? <div className="grid gap-4"><Field label="Preferred timeline">{select(intent === 'buy' ? 'buyerTimeline' : 'sellerTimeline', [['now', 'Immediately'], ['1_3_months', '1–3 months'], ['3_6_months', '3–6 months'], ['6_plus_months', '6+ months']])}</Field><Field label="Anything else we should know?" hint="Optional"><textarea autoFocus value={form.message} onChange={(event) => update('message', event.target.value)} rows={4} className={`${inputClassName()} py-3`} /></Field><label className="flex gap-3 rounded-lg bg-slate-50 p-3 text-sm leading-5 text-slate-600"><input required type="checkbox" checked={form.privacyConsent} onChange={(event) => update('privacyConsent', event.target.checked)} className="mt-1 h-4 w-4 accent-[var(--card-primary)]" /><span>I agree that {normalizeText(intake?.agency?.name) || 'this agency'} may contact me about this enquiry and handle my details according to its privacy policy.</span></label></div> : null}
+      {step.id === 'notes' ? <div className="grid gap-4"><Field label="Preferred timeline">{select(intent !== 'sell' ? 'buyerTimeline' : 'sellerTimeline', [['now', 'Immediately'], ['1_3_months', '1–3 months'], ['3_6_months', '3–6 months'], ['6_plus_months', '6+ months']])}</Field><Field label="Anything else we should know?" hint="Optional"><textarea autoFocus value={form.message} onChange={(event) => update('message', event.target.value)} rows={4} className={`${inputClassName()} py-3`} /></Field><label className="flex gap-3 rounded-lg bg-slate-50 p-3 text-sm leading-5 text-slate-600"><input required type="checkbox" checked={form.privacyConsent} onChange={(event) => update('privacyConsent', event.target.checked)} className="mt-1 h-4 w-4 accent-[var(--card-primary)]" /><span>I agree that {normalizeText(intake?.agency?.name) || 'this agency'} may contact me about this enquiry and handle my details according to its privacy policy.</span></label></div> : null}
       {error ? <p role="alert" className="mt-5 rounded-xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">{error}</p> : null}
       <div className="sticky bottom-0 mt-auto flex items-center justify-between gap-3 border-t border-slate-100 bg-white pb-1 pt-5"><button type="button" onClick={() => { setError(''); setStepIndex((current) => Math.max(0, current - 1)) }} disabled={!stepIndex || submitting} className="min-h-12 rounded-xl px-4 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-35">Back</button>{stepIndex === steps.length - 1 ? <button type="submit" disabled={submitting} className="min-h-12 min-w-[148px] rounded-xl bg-[var(--card-primary)] px-6 text-sm font-semibold text-white shadow-[0_12px_28px_rgba(6,23,53,0.2)] disabled:opacity-60">{submitting ? 'Sending…' : 'Send enquiry'}</button> : <button type="button" onClick={continueStep} className="min-h-12 min-w-[132px] rounded-xl bg-[var(--card-primary)] px-6 text-sm font-semibold text-white shadow-[0_12px_28px_rgba(6,23,53,0.2)]">Continue</button>}</div>
     </form>}
@@ -454,7 +460,11 @@ export default function PublicAgentDigitalCardPage() {
         return resolveAgencyPublicAgentCard(cardSlug)
       })
       .then((resolved) => {
-        if (!cancelled && resolved) setIntake(resolved)
+        if (!cancelled && resolved) {
+          setIntake(resolved)
+          const requested = new URLSearchParams(window.location.search).get('intent')
+          if (requested === 'rent' && resolved.card?.enabled && resolved.card.features?.leadCapture !== false && resolved.intake?.enabledIntents?.includes('rent')) setActiveIntent('rent')
+        }
       })
       .catch((loadError) => {
         if (!cancelled) setError(loadError?.message || 'This digital card is not available.')
@@ -539,6 +549,7 @@ export default function PublicAgentDigitalCardPage() {
   const enabledIntents = intake?.intake?.enabledIntents || ['buy', 'sell']
   const showLeadCapture = isFeatureEnabled('leadCapture')
   const showBuyerCta = showLeadCapture && enabledIntents.includes('buy')
+  const showRentalCta = showLeadCapture && enabledIntents.includes('rent')
   const showSellerCta = showLeadCapture && enabledIntents.includes('sell')
   const showListings = isFeatureEnabled('listings')
   const shareText = buildAgentDigitalCardShareText({
@@ -680,10 +691,11 @@ export default function PublicAgentDigitalCardPage() {
             </div>)}
           </section> : null}
 
-          {showBuyerCta || showSellerCta ? <section className="mt-5">
+          {showBuyerCta || showSellerCta || showRentalCta ? <section className="mt-5">
             <h2 className="text-xl font-bold tracking-[-0.03em] text-[#071633]">How can I help you?</h2>
             <div className="mt-3 grid gap-3">
               {showBuyerCta ? <IntentCta icon={Home} title="I want to buy" subtitle="Find the right home faster" onClick={() => { trackCardEvent('buyer_cta_click'); setActiveIntent('buy') }} /> : null}
+              {showRentalCta ? <IntentCta icon={Home} title={intake.intake.rentalCtaLabel || 'I am looking to rent'} subtitle="Find your next rental home" onClick={() => { trackCardEvent('rental_cta_click'); setActiveIntent('rent') }} /> : null}
               {showSellerCta ? <IntentCta icon={Tag} title="I want to sell" subtitle="Get a free market assessment" onClick={() => { trackCardEvent('seller_cta_click'); setActiveIntent('sell') }} tone="accent" /> : null}
             </div>
           </section> : null}

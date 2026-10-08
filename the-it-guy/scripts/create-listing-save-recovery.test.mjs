@@ -231,6 +231,7 @@ function saveContext() {
     verifyListingPropertyPersistenceCopies: () => {
       calls.push(['verify']); return { ready: context.failure !== 'verification', mismatches: [{ label: 'Bedrooms' }] }
     },
+    persistCapturedListingSellerLead: async () => null,
     shouldAutoPublishToAgencyWebsite: () => false,
     deliverQuickAddSellerPortalInvite: async () => { calls.push(['invite']); return { requested: false } },
     buildQuickAddHandoffPlan: () => ({}), mergeQuickListingMetadataInNotes: () => '',

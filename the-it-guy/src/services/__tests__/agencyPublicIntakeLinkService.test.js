@@ -88,6 +88,7 @@ assert.deepEqual(normalizeLinkRow({
   introduction: '',
   buyerCtaLabel: '',
   sellerCtaLabel: '',
+  rentalCtaLabel: 'I am looking to rent',
   enabledIntents: ['buy', 'sell'],
   leadSourceLabel: 'Public Intake',
   sourceChannel: 'website',
@@ -392,6 +393,7 @@ assert.deepEqual(createPerformanceSummary([
   spam: 0,
   buyer: 1,
   seller: 1,
+  rental: 0,
   linkedLeads: 1,
   bySource: {
     instagram: 1,
@@ -560,4 +562,12 @@ assert.deepEqual(
   ['eq', 'intake_link_id', 'link-1'],
 )
 
+
+const rentalCardPayload = buildAgentCardPayload({ organisationId: 'org-1', agentUserId: 'agent-1', enabledIntents: ['rent'], rentalCtaLabel: 'Find my rental' })
+assert.deepEqual(rentalCardPayload.enabled_intents, ['rent'])
+assert.equal(normalizeLinkRow({ ...rentalCardPayload, id: 'rental-card' }).rentalCtaLabel, 'Find my rental')
+assert.deepEqual(normalizeEnabledIntents(['buy', 'sell', 'rent', 'let']), ['buy', 'sell', 'rent'])
+assert.equal(createAgentCardInsightsSummary([], [normalizeSubmissionRow({ intent: 'rent', status: 'accepted' })]).rentalLeads, 1)
+assert.equal(createPerformanceSummary([normalizeSubmissionRow({ intent: 'rent' })]).buyer, 0)
+assert.equal(buildAgencyAgentCardUrls({ slug: 'alex' }).rentalUrl, 'https://app.arch9.co.za/card/alex?intent=rent&source=card')
 console.log('agencyPublicIntakeLinkService tests passed')

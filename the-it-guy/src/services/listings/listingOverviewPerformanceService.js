@@ -56,13 +56,27 @@ function count(value) {
 
 function channel(value = {}, fallbackReason = '') {
   const source = value && typeof value === 'object' ? value : {}
+  const metrics = Object.fromEntries(Object.entries(source.metrics || {}).map(([key, metric]) => [key, {
+    value: count(metric?.value), available: metric?.available === true, complete: metric?.complete === true,
+    coveredDays: count(metric?.coveredDays), expectedDays: count(metric?.expectedDays), kind: text(metric?.kind),
+  }]))
   return {
     connected: source.connected === true,
     available: source.available === true,
+    complete: source.complete === true,
+    published: source.published === true,
+    state: text(source.state),
     views: count(source.views),
     previousViews: count(source.previousViews),
     portalContacts: count(source.portalContacts),
-    lastSyncedAt: text(source.lastSyncedAt || source.lastTrackedAt),
+    lastSyncedAt: text(source.lastSyncedAt),
+    lastTrackedAt: text(source.lastTrackedAt),
+    dataThrough: text(source.dataThrough),
+    requestedStartDate: text(source.requestedStartDate), requestedEndDate: text(source.requestedEndDate),
+    metrics,
+    coverage: { coveredDays: count(source.coverage?.coveredDays), expectedDays: count(source.coverage?.expectedDays), kind: text(source.coverage?.kind) },
+    sourceTimeZone: text(source.sourceTimeZone), timezoneAligned: source.timezoneAligned === true,
+    lastAttempt: source.lastAttempt ? { status: text(source.lastAttempt.status), at: text(source.lastAttempt.at), failed: source.lastAttempt.failed === true, pendingCount: count(source.lastAttempt.pendingCount), deferredCount: count(source.lastAttempt.deferredCount) } : null,
     reason: text(source.reason || fallbackReason),
   }
 }
@@ -73,8 +87,9 @@ export function createEmptyListingOverviewAnalytics() {
     error: '',
     windowDays: 30,
     generatedAt: '',
+    period: null,
     property24: channel({}, 'Property24 statistics are awaiting a successful sync.'),
-    privateProperty: channel({}, 'Private Property view statistics are not available in the current Arch9 feed.'),
+    privateProperty: channel({}, 'Private Property statistics are awaiting a successful sync.'),
     website: channel({}, 'This listing is not published on a connected Arch9 website.'),
   }
 }
@@ -85,8 +100,9 @@ export function normalizeListingOverviewAnalytics(value = {}) {
     ...createEmptyListingOverviewAnalytics(),
     windowDays: Math.max(1, Math.min(90, count(source.windowDays) || 30)),
     generatedAt: text(source.generatedAt),
+    period: source.period ? { startDate: text(source.period.startDate), endDate: text(source.period.endDate), days: count(source.period.days), timeZone: text(source.period.timeZone), completedDaysOnly: source.period.completedDaysOnly === true } : null,
     property24: channel(source.property24, 'Property24 statistics are awaiting a successful sync.'),
-    privateProperty: channel(source.privateProperty, 'Private Property view statistics are not available in the current Arch9 feed.'),
+    privateProperty: channel(source.privateProperty, 'Private Property statistics are awaiting a successful sync.'),
     website: channel(source.website, 'This listing is not published on a connected Arch9 website.'),
   }
 }
@@ -147,13 +163,14 @@ export function buildListingOverviewPerformance({
   now = new Date(),
 } = {}) {
   const normalizedAnalytics = normalizeListingOverviewAnalytics(analytics)
-  const availableViewChannels = [normalizedAnalytics.property24, normalizedAnalytics.website]
+  const allViewChannels = [normalizedAnalytics.property24, normalizedAnalytics.privateProperty, normalizedAnalytics.website]
+  const availableViewChannels = allViewChannels
     .filter((item) => item.available && item.views !== null)
   const totalViews = availableViewChannels.length
     ? availableViewChannels.reduce((sum, item) => sum + item.views, 0)
     : null
   const comparableChannels = availableViewChannels.filter((item) => item.previousViews !== null)
-  const priorViews = comparableChannels.length === availableViewChannels.length && comparableChannels.length
+  const priorViews = availableViewChannels.every((item) => item.complete) && comparableChannels.length === availableViewChannels.length && comparableChannels.length
     ? comparableChannels.reduce((sum, item) => sum + item.previousViews, 0)
     : null
   const viewChangePercent = priorViews && totalViews !== null
@@ -176,9 +193,9 @@ export function buildListingOverviewPerformance({
   return {
     totalViews,
     viewsAvailable: totalViews !== null,
-    partialViews: normalizedAnalytics.privateProperty.connected && !normalizedAnalytics.privateProperty.available,
-    portalViews: normalizedAnalytics.property24.views,
-    bridgeViews: normalizedAnalytics.website.views,
+    partialViews: allViewChannels.some((item) => (item.connected && !item.available) || (item.available && !item.complete)),
+    property24Views: normalizedAnalytics.property24.views,
+    websiteViews: normalizedAnalytics.website.views,
     privatePropertyViews: normalizedAnalytics.privateProperty.views,
     priorViews,
     viewChangePercent,

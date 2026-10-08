@@ -1,16 +1,16 @@
 // @vitest-environment jsdom
 import React from 'react'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { getOrganisationMemberJobTitleLabel } from '../../../lib/organisationJobTitles'
-const api = vi.hoisted(() => ({ listOrganisationUsers: vi.fn(), updateOrganisationUserJobTitle: vi.fn(), updateOrganisationUserBusinessWorkspaces: vi.fn() }))
+const api = vi.hoisted(() => ({ listOrganisationUsers: vi.fn(), updateOrganisationUserJobTitle: vi.fn(), updateOrganisationUserBusinessWorkspaces: vi.fn(), createWorkspaceUserInvite:vi.fn(async()=>({})), createPrincipalClaimInvite:vi.fn(async()=>({})) }))
 vi.mock('../../../context/WorkspaceContext', () => ({ useWorkspace: () => ({ can: () => true, role: 'agent', currentWorkspace: {id: 'agency', type: 'agency', settingsJson: { businessLines: ['sales', 'rentals', 'short_term_rentals'] }}, workspaceType: 'agency', isOrganisationOwner: true, organisationMembership: {status: 'active', role: 'owner'}, profile: {id: 'owner'}, organisationMembershipRole: 'owner' }) }))
 vi.mock('../../../lib/settingsApi', async (original) => ({ ...(await original()), ...api,
   fetchOrganisationSettings: vi.fn(async () => ({membershipRole: 'owner', organisation: {id: 'agency', type: 'agency', settingsJson: { businessLines: ['sales', 'rentals', 'short_term_rentals'] }}})),
   listOrganisationCommissionStructures: vi.fn(async () => []), listOrganisationUserCommissionProfiles: vi.fn(async () => []), getOrganisationOwnershipHealthReport: vi.fn(async () => null),
 }))
-vi.mock('../../../services/workspaceUserInviteService', async (original) => ({ ...(await original()), listWorkspaceUserInvites: vi.fn(async () => []) }))
+vi.mock('../../../services/workspaceUserInviteService', async (original) => ({ ...(await original()), listWorkspaceUserInvites: vi.fn(async () => []),createWorkspaceUserInvite:api.createWorkspaceUserInvite,createPrincipalClaimInvite:api.createPrincipalClaimInvite }))
 import SettingsUsersPage from '../SettingsUsersPage'
 const member = {id:'member', userId:'agent', role:'agent', fullName:'Test Agent', email:'agent@example.test', status:'active', jobTitle:''}
 beforeEach(() => { api.listOrganisationUsers.mockResolvedValue([member]); api.updateOrganisationUserJobTitle.mockResolvedValue({...member, jobTitle:'senior_agent'}) })
@@ -57,4 +57,34 @@ it('offers all enabled combinations and reloads saved member access', async () =
   fireEvent.change(control, {target: {value: 'rentals+short_term_rentals'}})
   await waitFor(() => expect(api.updateOrganisationUserBusinessWorkspaces).toHaveBeenCalledWith('member', ['rentals', 'short_term_rentals']))
   await waitFor(() => expect(screen.getByRole('combobox', {name: 'Business lines for Test Agent'}).value).toBe('rentals+short_term_rentals'))
+})
+
+function RecruitmentDestination(){const location=useLocation();return <output aria-label="Recruitment destination">{JSON.stringify(location.state)}</output>}
+async function fillInvite(){
+ fireEvent.click(await screen.findByRole('button',{name:'Invite user'}))
+ const drawer=within(screen.getByRole('dialog',{name:'Invite user'}))
+ fireEvent.change(drawer.getByLabelText('First name'),{target:{value:'New'}})
+ fireEvent.change(drawer.getByLabelText('Last name'),{target:{value:'Agent'}})
+ fireEvent.change(drawer.getByLabelText('Email'),{target:{value:'new-agent@example.test'}})
+ return drawer
+}
+it('starts a new Settings agent in Recruitment with captured contact and planned business choices',async()=>{
+ render(<MemoryRouter initialEntries={['/settings/users']}><Routes><Route path="/settings/users" element={<SettingsUsersPage/>}/><Route path="/agency/recruitment/new" element={<RecruitmentDestination/>}/></Routes></MemoryRouter>)
+ const drawer=await fillInvite()
+ fireEvent.click(drawer.getByRole('button',{name:'Continue in Recruitment'}))
+ const state=JSON.parse((await screen.findByLabelText('Recruitment destination')).textContent)
+ expect(state.recruitmentEntry).toMatchObject({entryPoint:'settings_users',organisationId:'agency',returnTo:'/settings/users',joiningRole:'agent',contact:{name:'New Agent',email:'new-agent@example.test'}})
+ expect(api.createWorkspaceUserInvite).not.toHaveBeenCalled()
+})
+it('keeps explicit returning-staff access and principal claims in their existing paths',async()=>{
+ render(<MemoryRouter><SettingsUsersPage/></MemoryRouter>)
+ let drawer=await fillInvite()
+ fireEvent.change(drawer.getByRole('combobox',{name:/Invitation purpose/}),{target:{value:'existing_staff'}})
+ fireEvent.click(drawer.getByRole('button',{name:'Invite User'}))
+ await waitFor(()=>expect(api.createWorkspaceUserInvite).toHaveBeenCalledWith(expect.objectContaining({role:'agent',metadata:{access_purpose:'existing_staff'}})))
+ fireEvent.change(drawer.getByRole('combobox',{name:'Role'}),{target:{value:'principal'}})
+ fireEvent.change(drawer.getByLabelText('Email'),{target:{value:'principal@example.test'}})
+ fireEvent.click(drawer.getByRole('button',{name:'Send Principal Claim'}))
+ await waitFor(()=>expect(api.createPrincipalClaimInvite).toHaveBeenCalledWith(expect.objectContaining({email:'principal@example.test'})))
+ expect(api.createWorkspaceUserInvite).toHaveBeenCalledTimes(1)
 })

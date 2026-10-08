@@ -20,11 +20,11 @@ function MetricCard({ label, value, detail, compare, icon, tone }) {
     <article className="group min-w-0 rounded-[14px] border border-[#e4ebf2] bg-white/90 px-3 py-2.5 shadow-[0_10px_24px_rgba(24,45,68,0.045)] backdrop-blur transition duration-200 hover:border-[#cddbe9]">
       <div className="flex items-center justify-between gap-2">
         <span className="min-w-0 text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">{label}</span>
-        <span className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-[10px] ${tone}`}>{createElement(icon, { size: 14 })}</span>
+        <span className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-[10px] ${tone}`}>{createElement(icon, { size: 14 })}</span>
       </div>
-      <div className="mt-2 flex min-w-0 items-end justify-between gap-3">
-        <strong className="block text-[1.55rem] font-semibold leading-none tracking-[-0.04em] text-[#102236] tabular-nums">{value}</strong>
-        <span className="truncate text-[0.68rem] font-semibold text-[#6f8398]">{compare}</span>
+      <div className="mt-1 flex min-w-0 items-end justify-between gap-3">
+        <strong title={String(value)} className="block min-w-0 truncate text-[1.35rem] font-semibold leading-none sm:text-[1.55rem] tracking-[-0.04em] text-[#102236] tabular-nums">{value}</strong>
+        <span className="hidden truncate text-[0.68rem] font-semibold text-[#6f8398] sm:block">{compare}</span>
       </div>
       <p className="mt-1 truncate text-[0.74rem] font-medium text-[#667b92]">{detail}</p>
     </article>
@@ -152,6 +152,9 @@ export default function LeadListPage({
 }) {
   const [openMenuId, setOpenMenuId] = useState('')
   const [draggingId, setDraggingId] = useState('')
+  const [filtersOpen, setFiltersOpen] = useState(false)
+  const activeFilterCount = ['source', 'stage', ...(isPrincipal ? ['agent'] : [])]
+    .filter((key) => filters[key] && filters[key] !== 'all').length
   const metricCards = [
     { label: 'New Leads', value: metrics.newLeads || 0, detail: `${metrics.totalActive || 0} active leads`, compare: 'Awaiting progress', icon: UserRound, tone: 'text-[#315f8f] bg-[#edf5ff]' },
     { label: 'Converted MTD', value: metrics.convertedMtd || 0, detail: `${metrics.buyerConvertedMtd || 0} transactions · ${metrics.sellerMandatesMtd || 0} mandates`, compare: 'Month to date', icon: TrendingUp, tone: 'text-[#26724c] bg-[#effaf3]' },
@@ -160,65 +163,77 @@ export default function LeadListPage({
   ]
 
   return (
-    <div className="flex flex-col gap-5" data-testid="agency-lead-list-page">
-      <section className="order-1 grid min-w-0 gap-2 sm:grid-cols-2 xl:grid-cols-4">
+    <div className="flex flex-col gap-3" data-testid="agency-lead-list-page">
+      <section className="grid min-w-0 grid-cols-2 gap-2 lg:grid-cols-4" aria-label="Lead summary">
         {metricCards.map((card) => <MetricCard key={card.label} {...card} />)}
       </section>
 
-      <section id="agency-lead-filters" className="order-2 min-w-0 rounded-[16px] border border-[#e4ebf2] bg-white/90 p-2.5 shadow-[0_10px_26px_rgba(24,45,68,0.045)] backdrop-blur">
-        <div className="flex min-w-0 flex-col gap-2 xl:flex-row xl:items-center">
-          <div className="grid min-w-0 gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:ml-auto xl:flex xl:shrink-0">
-            <select className="min-h-[38px] rounded-[12px] border border-[#dbe6f1] bg-white px-3 text-[0.82rem] font-semibold text-[#2b4056]" value={filters.source || 'all'} onChange={(event) => onFiltersChange({ source: event.target.value })}>
-              <option value="all">All Sources</option>{sources.map((source) => <option key={source} value={source}>{source}</option>)}
-            </select>
-            <select className="min-h-[38px] rounded-[12px] border border-[#dbe6f1] bg-white px-3 text-[0.82rem] font-semibold text-[#2b4056]" value={filters.stage || 'all'} onChange={(event) => onFiltersChange({ stage: event.target.value })}>
-              <option value="all">All Stages</option>{stages.map((stage) => <option key={stage.value} value={stage.value}>{stage.label}</option>)}
-            </select>
-            {isPrincipal ? (
-              <select className="min-h-[38px] rounded-[12px] border border-[#dbe6f1] bg-white px-3 text-[0.82rem] font-semibold text-[#2b4056]" value={filters.agent || 'all'} onChange={(event) => onFiltersChange({ agent: event.target.value })}>
-                <option value="all">All Agents</option>{agents.map((agent) => <option key={agent.id || agent.email} value={agent.id || agent.email}>{agent.name}</option>)}
-              </select>
-            ) : null}
-            <select className="min-h-[38px] rounded-[12px] border border-[#dbe6f1] bg-white px-3 text-[0.82rem] font-semibold text-[#2b4056]" value={filters.sort || 'newest'} onChange={(event) => onFiltersChange({ sort: event.target.value })}>
-              <option value="newest">Sort: Newest</option><option value="next_follow_up">Sort: Next Follow-up</option><option value="stage">Sort: Stage</option>
-            </select>
-            <button type="button" className="inline-flex min-h-[38px] items-center justify-center gap-2 rounded-[12px] border border-[#dbe6f1] bg-white px-3 text-[0.82rem] font-semibold text-[#405b75]" onClick={onResetFilters}><Filter size={15} /> Reset</button>
-          </div>
-        </div>
-      </section>
-
-      <article className="order-3 flex min-h-[680px] min-w-0 flex-col overflow-visible rounded-[18px] border border-[rgba(15,23,42,0.06)] bg-white shadow-[0_16px_42px_rgba(15,23,42,0.045)]">
-        <header className="border-b border-[rgba(15,23,42,0.06)] bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)] px-4 py-4 sm:px-5 sm:py-5">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+      <article className="flex min-w-0 flex-col overflow-visible rounded-[18px] border border-[rgba(15,23,42,0.06)] bg-white shadow-[0_16px_42px_rgba(15,23,42,0.045)]">
+        <header className="border-b border-[rgba(15,23,42,0.06)] bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)] px-4 py-3 sm:px-5 sm:py-4">
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
             <div><div className="flex items-center gap-2"><h3 className="text-[1.45rem] font-semibold tracking-[-0.04em] text-[#142132]">{categoryTitle}</h3><span className="rounded-full border border-[#dce7f2] bg-[#f8fbff] px-3 py-1 text-sm font-semibold text-[#35546c]">{summary.filtered || 0}</span></div><p className="mt-1.5 text-sm font-medium text-[#60758b]">Track and manage your buyer and seller leads.</p></div>
             <div className="flex flex-wrap items-center gap-2">
               <div className="inline-flex rounded-[14px] border border-[#dbe4ee] bg-[#f6f9fc] p-0.5" role="group" aria-label="Preferred lead view">
                 <button type="button" aria-pressed={viewMode === 'table'} className={`inline-flex min-h-[34px] items-center gap-1.5 rounded-[12px] px-3 text-xs font-semibold ${viewMode === 'table' ? 'bg-white text-[#163247] shadow' : 'text-[#51667f]'}`} onClick={() => onViewModeChange('table')}><Table2 size={13} /> Table</button>
                 <button type="button" aria-pressed={viewMode === 'kanban'} className={`inline-flex min-h-[34px] items-center gap-1.5 rounded-[12px] px-3 text-xs font-semibold ${viewMode === 'kanban' ? 'bg-white text-[#163247] shadow' : 'text-[#51667f]'}`} onClick={() => onViewModeChange('kanban')}><Columns3 size={13} /> Kanban</button>
               </div>
-              {onRefresh ? <button type="button" disabled={refreshing} className="inline-flex min-h-[42px] items-center gap-2 rounded-[14px] border border-[#dbe4ee] bg-white px-4 text-sm font-semibold text-[#405b75] disabled:opacity-60" onClick={onRefresh}><RefreshCw size={16} className={refreshing ? 'animate-spin' : ''} /> Refresh</button> : null}
-              {category !== 'archived' ? <button type="button" className="inline-flex min-h-[42px] items-center gap-2 rounded-[14px] bg-[#0f2743] px-4 text-sm font-semibold text-white" onClick={() => onAddLead(category)}><Plus size={16} /> Add {categoryLabel} Lead</button> : null}
+              {onRefresh ? <button type="button" aria-label="Refresh" disabled={refreshing} className="inline-flex min-h-[42px] items-center gap-2 rounded-[14px] border border-[#dbe4ee] bg-white px-4 text-sm font-semibold text-[#405b75] disabled:opacity-60" onClick={onRefresh}><RefreshCw size={16} className={refreshing ? 'animate-spin' : ''} /><span className="hidden sm:inline">Refresh</span></button> : null}
+              {category !== 'archived' ? <button type="button" aria-label={`Add ${categoryLabel} Lead`} className="inline-flex min-h-[42px] items-center gap-2 rounded-[14px] bg-[#0f2743] px-4 text-sm font-semibold text-white" onClick={() => onAddLead(category)}><Plus size={16} /><span className="sm:hidden">Add Lead</span><span className="hidden sm:inline">Add {categoryLabel} Lead</span></button> : null}
             </div>
           </div>
-          <div className="mt-4 grid min-h-[58px] gap-2 rounded-xl border border-[#dbe4ee] bg-[#f8fbff] p-1 sm:grid-cols-3" role="tablist" aria-label="Lead categories">
+          <div className="mt-3 grid grid-cols-3 gap-1 rounded-xl border border-[#dbe4ee] bg-[#f8fbff] p-1" role="tablist" aria-label="Lead categories">
             {categoryTabs.map((tab) => {
               const active = category === tab.key
               const Icon = tab.key === 'seller' ? Home : tab.key === 'archived' ? X : UserRound
-              return <button key={tab.key} type="button" role="tab" aria-selected={active} className={`flex min-h-[48px] items-center justify-between rounded-[12px] px-3 ${active ? 'bg-white text-[#102236] shadow' : 'text-[#51667f]'}`} onClick={() => onCategoryChange(tab.key)}><span className="inline-flex items-center gap-2"><Icon size={15} /> <span className="text-sm font-semibold">{tab.label}</span></span><span className="rounded-full bg-[#edf5ff] px-2.5 py-1 text-xs font-semibold">{categoryCounts[tab.key] || 0}</span></button>
+              return <button key={tab.key} type="button" role="tab" aria-label={`${tab.label} ${categoryCounts[tab.key] || 0}`} aria-selected={active} className={`flex min-h-[42px] min-w-0 items-center justify-between gap-1 rounded-[12px] px-2 sm:px-3 ${active ? 'bg-white text-[#102236] shadow' : 'text-[#51667f]'}`} onClick={() => onCategoryChange(tab.key)}><span className="inline-flex min-w-0 items-center gap-1.5"><Icon size={15} className="hidden shrink-0 sm:block" /> <span className="truncate text-xs font-semibold sm:text-sm"><span className="sm:hidden">{tab.label.replace(/\s+Leads$/, '')}</span><span className="hidden sm:inline">{tab.label}</span></span></span><span className="shrink-0 rounded-full bg-[#edf5ff] px-2 py-1 text-xs font-semibold">{categoryCounts[tab.key] || 0}</span></button>
             })}
           </div>
         </header>
 
         <div className="flex shrink-0 flex-col gap-3 border-b border-[rgba(15,23,42,0.06)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-[0.78rem] text-[#73879c]">{category === 'seller' ? `${sellerJourneyMetrics.sellerLeads || 0} seller leads · ${sellerJourneyMetrics.mandatesSigned || 0} mandates signed · ${sellerJourneyMetrics.listingsLive || 0} listings live` : `${operationalSummary.total || 0} leads · ${operationalSummary.needAttention || 0} need attention · ${operationalSummary.overdue || 0} overdue`}</p>
-          <label className="flex h-10 w-full items-center gap-2 rounded-xl border border-[#dbe6f1] bg-white px-3 focus-within:border-[#9db7cf] sm:w-[300px]">
-            <Search size={16} className="shrink-0 text-[#7f92a6]" />
-            <input className="min-w-0 flex-1 border-0 bg-transparent p-0 text-sm font-medium text-[#162334] outline-none placeholder:text-[#97a7b8]" type="search" placeholder="Search leads, addresses or names..." value={filters.search || ''} onChange={(event) => onFiltersChange({ search: event.target.value })} />
-          </label>
+          <div className="flex w-full items-center gap-2 sm:w-auto">
+            <label className="flex h-10 w-full items-center gap-2 rounded-xl border border-[#dbe6f1] bg-white px-3 focus-within:border-[#9db7cf] sm:w-[300px]">
+              <Search size={16} className="shrink-0 text-[#7f92a6]" />
+              <input className="min-w-0 flex-1 border-0 bg-transparent p-0 text-sm font-medium text-[#162334] outline-none placeholder:text-[#97a7b8]" type="search" placeholder="Search leads, addresses or names..." value={filters.search || ''} onChange={(event) => onFiltersChange({ search: event.target.value })} />
+            </label>
+            <button type="button" aria-expanded={filtersOpen} aria-controls="agency-lead-filters" className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-xl border border-[#dbe6f1] bg-white px-3 text-xs font-semibold text-[#405b75]" onClick={() => setFiltersOpen((open) => !open)}><Filter size={15} /> Filters{activeFilterCount ? ` (${activeFilterCount})` : ''}</button>
+          </div>
         </div>
+
+        {filtersOpen ? (
+          <section id="agency-lead-filters" className="min-w-0 border-b border-[#e4ebf2] bg-[#fbfdff] p-3">
+            <div className="flex min-w-0 flex-col gap-2 xl:flex-row xl:items-center">
+              <div className="grid min-w-0 gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:ml-auto xl:flex xl:shrink-0">
+                <select className="min-h-[38px] rounded-[12px] border border-[#dbe6f1] bg-white px-3 text-[0.82rem] font-semibold text-[#2b4056]" aria-label="Filter by source" value={filters.source || 'all'} onChange={(event) => onFiltersChange({ source: event.target.value })}>
+                  <option value="all">All Sources</option>{sources.map((source) => <option key={source} value={source}>{source}</option>)}
+                </select>
+                <select className="min-h-[38px] rounded-[12px] border border-[#dbe6f1] bg-white px-3 text-[0.82rem] font-semibold text-[#2b4056]" aria-label="Filter by stage" value={filters.stage || 'all'} onChange={(event) => onFiltersChange({ stage: event.target.value })}>
+                  <option value="all">All Stages</option>{stages.map((stage) => <option key={stage.value} value={stage.value}>{stage.label}</option>)}
+                </select>
+                {isPrincipal ? (
+                  <select className="min-h-[38px] rounded-[12px] border border-[#dbe6f1] bg-white px-3 text-[0.82rem] font-semibold text-[#2b4056]" aria-label="Filter by agent" value={filters.agent || 'all'} onChange={(event) => onFiltersChange({ agent: event.target.value })}>
+                    <option value="all">All Agents</option>{agents.map((agent) => <option key={agent.id || agent.email} value={agent.id || agent.email}>{agent.name}</option>)}
+                  </select>
+                ) : null}
+                <select className="min-h-[38px] rounded-[12px] border border-[#dbe6f1] bg-white px-3 text-[0.82rem] font-semibold text-[#2b4056]" aria-label="Sort leads" value={filters.sort || 'newest'} onChange={(event) => onFiltersChange({ sort: event.target.value })}>
+                  <option value="newest">Sort: Newest</option><option value="next_follow_up">Sort: Next Follow-up</option><option value="stage">Sort: Stage</option>
+                </select>
+                <button type="button" className="inline-flex min-h-[38px] items-center justify-center gap-2 rounded-[12px] border border-[#dbe6f1] bg-white px-3 text-[0.82rem] font-semibold text-[#405b75]" onClick={onResetFilters}><Filter size={15} /> Reset</button>
+              </div>
+            </div>
+          </section>
+        ) : null}
 
         {viewMode === 'kanban' ? (
           <div className="min-h-0 max-w-full flex-1 overflow-x-auto p-3">
+            {category !== 'archived' ? (
+              <div className="sticky left-0 mb-3 flex w-fit items-center">
+                <button type="button" className="inline-flex min-h-[38px] items-center gap-2 rounded-[12px] border border-[#c6d8ea] bg-white px-3 text-sm font-semibold text-[#1f4f78] hover:bg-[#f5f9fd]" onClick={() => onAddLead(category)}>
+                  <Plus size={15} /> Create {categoryLabel} Lead
+                </button>
+              </div>
+            ) : null}
             <div className="flex min-h-[560px] gap-3">
               {kanbanColumns.map((column) => (
                 <section key={column.id} className="flex w-[278px] shrink-0 flex-col rounded-[16px] border border-[#dfe8f3] bg-[#f7faff]" onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); const id = event.dataTransfer.getData('text/plain') || draggingId; if (id) onMoveLead(id, column.id) }}>

@@ -14,7 +14,7 @@
 .mobile-workspace-next-action { margin-bottom: 20px; padding: 16px 18px; border: 1px solid #d8e7dd; border-radius: 18px; background: linear-gradient(115deg, #eaf4ee, #f6faf7); }
 .mobile-workspace-eyebrow { color: var(--workspace-green); font-size: 10px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
 .mobile-workspace-next-action p { margin: 6px 0 0; font-size: 15px; font-weight: 500; line-height: 1.5; overflow-wrap: anywhere; }
-.mobile-workspace-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; margin-bottom: 18px; padding: 5px; border: 1px solid var(--workspace-border); border-radius: 15px; background: #eaf0ec; }
+.mobile-workspace-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; margin-bottom: 18px; padding: 5px; border: 1px solid var(--workspace-border); border-radius: 15px; background: #eaf0ec; }
 .mobile-workspace-tabs button { min-width: 0; min-height: 44px; padding: 8px 4px; border: 0; border-radius: 11px; background: transparent; color: var(--workspace-muted); font-size: 12px; font-weight: 600; }
 .mobile-workspace-tabs button[aria-selected="true"] { background: #fff; color: var(--workspace-green); box-shadow: 0 3px 10px #15262108; }
 .mobile-developer-workspace button:focus-visible, .mobile-developer-workspace a:focus-visible, .mobile-developer-workspace summary:focus-visible, .mobile-developer-workspace [role="tabpanel"]:focus-visible { outline: 2px solid var(--workspace-green); outline-offset: 3px; }

@@ -1,6 +1,11 @@
 import { createElement, useEffect, useMemo, useState } from 'react'
 import { ArrowLeft, BriefcaseBusiness, Building2, CheckCircle2, Clock, ExternalLink, Mail, MoreVertical, Plus, Search, ShieldCheck, Trash2, UserRoundCheck, Users } from 'lucide-react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams, useNavigate } from 'react-router-dom'
+import { useWorkspace } from '../../../context/WorkspaceContext'
+import { navigateToRecruitment } from '../../../pages/recruitment/recruitmentEntryModel'
+import RecruitmentJoiningDialog from '../../../pages/recruitment/RecruitmentJoiningDialog'
+import { captureBranchRecruitmentLead } from '../../../services/recruitmentService'
+import RecruitmentJoiningList from '../../../pages/recruitment/RecruitmentJoiningList'
 import Button from '../../../components/ui/Button'
 import Field from '../../../components/ui/Field'
 import Modal from '../../../components/ui/Modal'
@@ -326,6 +331,15 @@ function BrokerProfile({ data, brokerId }) {
 }
 
 function CommercialBrokersPage() {
+  const navigate = useNavigate()
+  const workspace = useWorkspace()
+  const membershipRole = String(workspace.organisationMembershipRole || workspace.currentMembership?.role || '').toLowerCase()
+  const branchManager = membershipRole==='branch_manager'
+  const managerBranchId = String(workspace.currentMembership?.primaryBranchId || workspace.currentMembership?.primary_branch_id || workspace.currentMembership?.branchId || workspace.currentMembership?.branch_id || workspace.currentMembership?.raw?.primary_branch_id || workspace.currentMembership?.raw?.branch_id || '')
+  const [branchJoining, setBranchJoining] = useState(null)
+  const currentOrganisationId = workspace.currentWorkspace?.organisationId || workspace.currentWorkspace?.organisation_id || workspace.currentWorkspace?.id || ''
+  const canRecruit = ['owner','principal','admin','super_admin'].includes(membershipRole)
+  const [invitePurpose, setInvitePurpose] = useState('new_recruit')
   const { brokerId } = useParams()
   const [refreshKey, setRefreshKey] = useState(0)
   const [modalOpen, setModalOpen] = useState(false)
@@ -338,11 +352,13 @@ function CommercialBrokersPage() {
   const [pendingInvites, setPendingInvites] = useState([])
   const [deletingInviteId, setDeletingInviteId] = useState('')
   const [form, setForm] = useState(EMPTY_INVITE_FORM)
-  const { data, loading, error, organisationId } = useCommercialData(getCommercialBrokerageData, [refreshKey])
+  const { data, loading, error, organisationId } = useCommercialData(getCommercialBrokerageData, [refreshKey,currentOrganisationId])
   const brokers = useMemo(() => data?.brokers || [], [data?.brokers])
   const branches = useMemo(() => data?.branchRows || [], [data?.branchRows])
   const teams = useMemo(() => data?.teams || [], [data?.teams])
   const summary = data?.summary || {}
+
+  useEffect(() => { setModalOpen(false); setBranchJoining(null); setForm(EMPTY_INVITE_FORM); setFormError('') },[currentOrganisationId])
 
   useEffect(() => {
     let active = true
@@ -415,6 +431,7 @@ function CommercialBrokersPage() {
 
   function handleInviteBroker(event) {
     event.preventDefault()
+    if(loading || (currentOrganisationId && currentOrganisationId!==organisationId)) { setFormError('Reload the selected agency before starting this invitation.'); return }
     if (!form.firstName.trim() || !form.lastName.trim() || !form.email.trim() || !form.branchId || !form.role) {
       setFormError('First name, last name, email, branch and role are required.')
       return
@@ -431,6 +448,14 @@ function CommercialBrokersPage() {
       role: form.role,
       department: form.department,
       assetClasses: form.assetClasses || [],
+    }
+    if (inviteDraft.role === 'commercial_broker' && invitePurpose === 'new_recruit') {
+      if (!canRecruit) {
+        if(branchManager && managerBranchId===inviteDraft.branchId) { setModalOpen(false); setBranchJoining({branchId:inviteDraft.branchId,contact:{name:fullName,email:inviteDraft.email,phone:inviteDraft.mobile}}); return }
+        setFormError('Ask your principal or the manager of this branch to start broker recruitment.'); return
+      }
+      navigateToRecruitment(navigate,{entryPoint:'commercial_brokers',organisationId,branchId:inviteDraft.branchId,returnTo:'/commercial/brokers',joiningRole:'commercial_broker',businessWorkspaces:['commercial'],contact:{name:fullName,email:inviteDraft.email,phone:inviteDraft.mobile}})
+      return
     }
     const branch = branches.find((row) => String(row.id) === String(inviteDraft.branchId))
     const team = teams.find((row) => String(row.id) === String(inviteDraft.teamId))
@@ -477,6 +502,7 @@ function CommercialBrokersPage() {
           teamId: inviteDraft.teamId || '',
           source: 'commercial_agency_broker_invite',
           metadata: {
+            access_purpose: 'existing_staff',
             module: 'commercial',
             module_context: 'commercial',
             platform_role: 'commercial',
@@ -698,19 +724,22 @@ function CommercialBrokersPage() {
 
       {!loading && !filteredRows.length ? <CommercialEmptyState title="No commercial brokers found" description="Invite brokers by email, then assign them to commercial branches, requirements, deals, vacancies, and listings." primaryActionLabel="Add Broker" onPrimaryAction={() => { setFormError(''); setModalOpen(true) }} /> : null}
 
+      {branchJoining && <RecruitmentJoiningDialog key={`${organisationId}/${branchJoining.branchId}`} organisationId={organisationId} limitedBranch receipt context={{entryPoint:'commercial_brokers',...branchJoining}} onClose={() => setBranchJoining(null)} onCreate={async (draft) => { const result=await captureBranchRecruitmentLead(organisationId,branchJoining.branchId,draft); setRefreshKey((key) => key+1); return result }} />}
+      {(canRecruit || (branchManager && managerBranchId)) && <RecruitmentJoiningList limitedBranch={branchManager && !canRecruit} organisationId={organisationId} commercialOnly branchId={canRecruit ? branchFilter === 'all' ? '' : branchFilter : managerBranchId} search={searchTerm} returnTo="/commercial/brokers" />}
       <Modal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
-        title="Add Broker"
+        title="Add Broker or staff access"
         subtitle="Invite a broker to join your commercial workspace."
         className="max-w-5xl"
         footer={(
           <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
             <Button type="button" variant="secondary" onClick={() => setModalOpen(false)} disabled={saving}>Cancel</Button>
-            <Button type="submit" form="commercial-broker-invite-form" disabled={saving}>{saving ? 'Sending...' : 'Send Invite'}</Button>
+            <Button type="submit" form="commercial-broker-invite-form" disabled={saving}>{saving ? 'Sending...' : form.role==='commercial_broker' && invitePurpose==='new_recruit' ? 'Continue in Recruitment' : 'Send Invite'}</Button>
           </div>
         )}
       >
+        {form.role === 'commercial_broker' && <label className="mb-4 block text-sm font-semibold">Invitation purpose<select className="mt-2 block min-h-11 w-full rounded-xl border border-slate-200 px-3" value={invitePurpose} onChange={(event) => setInvitePurpose(event.target.value)}><option value="new_recruit">New broker · Recruitment</option><option value="existing_staff">Existing or returning broker access</option></select><p className="mt-2 text-sm font-normal text-slate-500">New brokers complete Recruitment before workspace access. Assign team and specialisation after activation. Transfer an existing member from their staff profile.</p></label>}
         <form id="commercial-broker-invite-form" className="grid gap-4" onSubmit={handleInviteBroker}>
           {formError ? <p className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{formError}</p> : null}
           <section className="rounded-2xl border border-slate-200 bg-[#fbfcfe] p-4">
@@ -748,7 +777,7 @@ function CommercialBrokersPage() {
                   {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
                 </Field>
               </label>
-              <label className="grid gap-2 text-sm font-semibold text-slate-700">
+              {!(form.role==='commercial_broker' && invitePurpose==='new_recruit') && <label className="grid gap-2 text-sm font-semibold text-slate-700">
                 Team
                 <Field as="select" value={form.teamId} onChange={(event) => updateField('teamId', event.target.value)}>
                   <option value="">No team</option>
@@ -756,7 +785,7 @@ function CommercialBrokersPage() {
                     .filter((team) => !form.branchId || String(team.branchId || team.branch_id || '') === String(form.branchId))
                     .map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}
                 </Field>
-              </label>
+              </label>}
               <label className="grid gap-2 text-sm font-semibold text-slate-700">
                 Role *
                 <Field as="select" value={form.role} onChange={(event) => updateField('role', event.target.value)} required>
@@ -766,7 +795,7 @@ function CommercialBrokersPage() {
             </div>
           </section>
 
-          <section className="rounded-2xl border border-slate-200 bg-[#fbfcfe] p-4">
+          {!(form.role==='commercial_broker' && invitePurpose==='new_recruit') && <section className="rounded-2xl border border-slate-200 bg-[#fbfcfe] p-4">
             <h3 className="text-sm font-semibold text-[#102236]">3. Commercial Specialisation</h3>
             <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,240px)_minmax(0,1fr)]">
               <label className="grid gap-2 text-sm font-semibold text-slate-700">
@@ -794,7 +823,7 @@ function CommercialBrokersPage() {
                 </div>
               </div>
             </div>
-          </section>
+          </section>}
 
           <section className="rounded-2xl border border-slate-200 bg-[#fbfcfe] p-4">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">

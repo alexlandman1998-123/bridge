@@ -2543,8 +2543,8 @@ function Dashboard() {
       agentEmail: draft.email, agentPhone: draft.phone,
       agentWhatsApp: draft.whatsapp, agentAvatarUrl: draft.avatarUrl,
       heading: draft.heading, introduction: draft.introduction,
-      buyerCtaLabel: draft.buyerCtaLabel, sellerCtaLabel: draft.sellerCtaLabel,
-      enabledIntents: [draft.buyEnabled ? 'buy' : '', draft.sellEnabled ? 'sell' : ''].filter(Boolean),
+      buyerCtaLabel: draft.buyerCtaLabel, sellerCtaLabel: draft.sellerCtaLabel, rentalCtaLabel: draft.rentalCtaLabel,
+      enabledIntents: [draft.buyEnabled ? 'buy' : '', draft.sellEnabled ? 'sell' : '', draft.rentEnabled ? 'rent' : ''].filter(Boolean),
     }, { organisationName: agentDigitalCardOrganisationName })
     if (!result?.link || result.missingSchema) throw new Error('Your card could not be saved. Please try again.')
     if (digitalCardScopeRef.current !== savedScope) return

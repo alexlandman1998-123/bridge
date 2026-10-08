@@ -22,7 +22,7 @@ function assertNotContains(source, needle, label) {
 }
 
 assertContains(listingDetailSource, 'buildListingOverviewPerformance({', 'canonical overview performance builder')
-assertNotContains(listingDetailSource, 'getListingOverviewAnalytics({', 'unsupported Overview view analytics load')
+assertContains(listingDetailSource, '<ListingChannelStatistics', 'channel statistics below canonical overview counts')
 assertNotContains(listingDetailSource, "label: 'Views'", 'unsupported Overview view metric')
 assertNotContains(listingDetailSource, 'function openListingPerformanceEditor', 'listing performance editor opener')
 assertNotContains(listingDetailSource, 'Edit Listing Performance', 'listing performance edit modal')
@@ -39,10 +39,18 @@ assertContains(workspaceServiceSource, 'function buildSellerPortalListingPerform
 assertContains(workspaceServiceSource, 'listingPerformance,', 'seller portal listing performance payload')
 assertContains(workspaceServiceSource, 'leadRows = []', 'seller portal performance should accept agent listing lead rows')
 assertContains(workspaceServiceSource, 'const sellerLeadRows = collectSellerPortalLeadRows(context, listing, listing?.marketing)', 'seller portal should collect synced lead rows from the token payload')
+for (const field of ['estimatedViews', 'rawPortalViews', 'totalViews,', 'portalViews,', 'bridgeViews,', "'totalViews',", "'portalViews',", "'bridgeViews',"]) {
+  assertNotContains(workspaceServiceSource, field, 'removed seller portal view estimates and overrides')
+}
+assertNotContains(portalSource, 'normalizeSellerListingPerformancePayload', 'unused legacy seller performance normalizer')
 
 assertContains(performanceServiceSource, "supabase.rpc('listing_overview_performance'", 'scoped listing analytics RPC')
 assertContains(performanceServiceSource, 'const totalViews = availableViewChannels.length', 'verified view aggregation')
 assertContains(performanceServiceSource, ': null\n  const comparableChannels', 'unavailable analytics must not become a fabricated zero')
+assertContains(performanceServiceSource, 'property24Views: normalizedAnalytics.property24.views', 'Property24 views map to their own channel')
+assertContains(performanceServiceSource, 'websiteViews: normalizedAnalytics.website.views', 'website views map to their own channel')
+assertNotContains(performanceServiceSource, 'portalViews:', 'ambiguous Property24 portal views alias')
+assertNotContains(performanceServiceSource, 'bridgeViews:', 'legacy website views alias')
 
 assertContains(portalSource, 'function SellerListingPerformance', 'seller portal listing performance component')
 assertContains(portalSource, '<SellerListingPerformance performance={sellerListingPerformance} />', 'seller portal overview performance render')

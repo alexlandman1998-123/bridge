@@ -2,6 +2,8 @@ import { ArrowLeft, Bell, Building2, Check, CheckCircle2, ChevronRight, Home, Lo
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { fetchOrganisationSettings, listOrganisationUsers } from '../../../lib/settingsApi'
+import RecruitmentJoiningDialog from '../../../pages/recruitment/RecruitmentJoiningDialog'
+import { saveRecruitmentLead } from '../../../services/recruitmentService'
 import { createWorkspaceUserInvite } from '../../../services/workspaceUserInviteService'
 import { getBranches } from '../../../services/agencyBranchService'
 import {
@@ -215,6 +217,8 @@ function CommercialEnablementExperience({ accessState, onAccessGranted }) {
     reviewerCount: 0,
     emailCount: 0,
   })
+  const [joiningContact, setJoiningContact] = useState(null)
+  const [invitePurpose, setInvitePurpose] = useState('new_recruit')
   const [inviteFormOpen, setInviteFormOpen] = useState(false)
   const [inviteState, setInviteState] = useState({ saving: false, error: '', message: '' })
   const [inviteForm, setInviteForm] = useState({ firstName: '', lastName: '', email: '', role: 'agent' })
@@ -512,6 +516,12 @@ function CommercialEnablementExperience({ accessState, onAccessGranted }) {
       return
     }
 
+    if (['agent','senior_agent','commercial_broker'].includes(inviteForm.role) && invitePurpose==='new_recruit') {
+      if(!setupState.context?.organisation?.id) { setInviteState({saving:false,error:'Choose an agency before starting recruitment.',message:''}); return }
+      setJoiningContact({name:[inviteForm.firstName,inviteForm.lastName].filter(Boolean).join(' '),email})
+      return
+    }
+
     try {
       setInviteState({ saving: true, error: '', message: '' })
       const inviteResult = await createWorkspaceUserInvite({
@@ -520,6 +530,7 @@ function CommercialEnablementExperience({ accessState, onAccessGranted }) {
         email,
         role: inviteForm.role,
         source: 'commercial_workspace_enablement',
+        metadata: {access_purpose:'existing_staff'},
       })
 
       setDraft((previous) => {
@@ -1041,8 +1052,9 @@ function CommercialEnablementExperience({ accessState, onAccessGranted }) {
                               </button>
                             </div>
 
+                            {joiningContact && <RecruitmentJoiningDialog organisationId={setupState.context?.organisation?.id} receipt context={{entryPoint:'agency_setup',returnTo:'/commercial',contact:joiningContact,joiningRole:'commercial_broker',businessWorkspaces:['commercial']}} onClose={() => setJoiningContact(null)} onCreate={async (draft) => { const result=await saveRecruitmentLead(setupState.context.organisation.id,draft); setInviteState({saving:false,error:'',message:'Broker joining record saved in Recruitment.'}); return result }} />}
                             {inviteFormOpen ? (
-                              <form className="mt-5 grid gap-3" onSubmit={handleInviteCommercialUser}>
+                              <form className="mt-5 grid gap-3" onSubmit={handleInviteCommercialUser}>{['agent','senior_agent','commercial_broker'].includes(inviteForm.role) && <label className="grid gap-2 text-sm text-slate-500">Invitation purpose<select className="min-h-11 rounded-2xl border border-slate-200 px-4" value={invitePurpose} onChange={(event) => setInvitePurpose(event.target.value)}><option value="new_recruit">New broker · Recruitment</option><option value="existing_staff">Existing or returning staff access</option></select></label>}
                               <label className="grid gap-2 text-sm text-slate-500">
                                 First name
                                 <input
@@ -1087,7 +1099,7 @@ function CommercialEnablementExperience({ accessState, onAccessGranted }) {
                                 className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-[#102b46] px-4 text-sm font-semibold text-white transition hover:bg-[#163a5b] disabled:cursor-not-allowed disabled:opacity-60"
                               >
                                 {inviteState.saving ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
-                                Send invite
+                                {invitePurpose==='new_recruit' && ['agent','senior_agent','commercial_broker'].includes(inviteForm.role) ? 'Continue in Recruitment' : 'Send invite'}
                               </button>
                               </form>
                             ) : null}

@@ -1069,3 +1069,653 @@ it('preserves immutable submission while enabling the existing staff review and 
   await db.query('select recruitment_end_applicant_session($1,$2)',[org,finalHash])
   expect((await finalApi(finalRequest())).status).toBe(401)
 })
+
+// Shared joining record foundation, applied after the existing journeys.
+const joiningBranch='a1111111-1111-4111-8111-111111111111', joiningCommission='a2222222-2222-4222-8222-222222222222'
+const joiningPlan=()=>({version:'recruitment-joining-v1',origin:{entryPoint:'branch'},branchId:joiningBranch,role:'agent',businessWorkspaces:['sales','rentals'],commissionStructureId:joiningCommission,startDate:'2026-10-15'})
+const joiningDraft=(email='joining@example.test')=>({name:'Joining Candidate',email,phone:'0821234567',source:'Referral',details_json:{notes:'Retain staff notes'},intake_key:crypto.randomUUID(),joining_json:joiningPlan()})
+async function createJoining(draft, organisationId=org) { return (await db.query('select recruitment_create_joining_lead($1,$2::jsonb) result',[organisationId,JSON.stringify(draft)])).rows[0].result }
+let joiningLead, joiningLegacyInvite, linkedJoiningLead
+
+it('installs joining without changing existing records and keeps its functions invoker-scoped',async()=>{
+  await db.exec('reset role;')
+  const before=(await db.query('select id,version,activity_json,activation_json from recruitment_leads order by id')).rows
+  await db.exec(`alter table invites add column target_branch_id uuid,add column created_at timestamptz default now();
+    create table organisation_branches(id uuid primary key,organisation_id uuid,name text,is_active boolean);
+    create table organisation_commission_structures(id uuid primary key,organisation_id uuid,name text,is_active boolean);
+    grant select on organisation_branches,organisation_commission_structures to authenticated;
+    insert into organisation_branches values('${joiningBranch}','${org}','Head Office',true),('a3333333-3333-4333-8333-333333333333','${other}','Other Office',true);
+    insert into organisation_commission_structures values('${joiningCommission}','${org}','Standard',true),('a4444444-4444-4444-8444-444444444444','${other}','Other Split',true);`)
+  await db.exec(readFileSync(new URL('../../../../../supabase/migrations/20261008114647_recruitment_joining_record.sql',import.meta.url),'utf8'))
+  expect((await db.query('select id,version,activity_json,activation_json from recruitment_leads order by id')).rows).toEqual(before)
+  const functions=(await db.query("select proname,prosecdef,proconfig,has_function_privilege('anon',oid,'execute') as anonymous from pg_proc where proname in ('recruitment_create_joining_lead','recruitment_joining_options','recruitment_joining_connections','recruitment_find_joining_matches')")).rows
+  expect(functions).toHaveLength(4)
+  expect(functions.every(fn=>!fn.prosecdef && !fn.anonymous && fn.proconfig.includes('search_path=""'))).toBe(true)
+  await asUser(manager)
+  expect((await db.query('select recruitment_joining_options($1) result',[org])).rows[0].result).toEqual({branches:[{id:joiningBranch,name:'Head Office'}],commissionStructures:[{id:joiningCommission,name:'Standard'}]})
+})
+
+it('retains tentative joining choices and immutable origin while rejecting foreign choices and stale saves',async()=>{
+  await asUser(manager)
+  const result=await createJoining(joiningDraft())
+  expect(result.outcome).toBe('created');joiningLead=result.lead
+  expect(joiningLead.joining_json).toMatchObject({...joiningPlan(),origin:{entryPoint:'branch',source:'Referral',recordedBy:manager}})
+  expect(joiningLead.status).toBe('lead_received');expect(joiningLead.activation_json).toEqual({})
+  const changed=(await db.query("update recruitment_leads set joining_json=jsonb_set(joining_json,'{startDate}','\"2026-10-18\"'),source='Manual' where id=$1 and version=$2 returning *",[joiningLead.id,joiningLead.version])).rows[0]
+  expect(changed.joining_json.origin).toEqual(joiningLead.joining_json.origin)
+  expect(new Date(changed.received_at).toISOString()).toBe(new Date(joiningLead.received_at).toISOString())
+  expect(changed.activity_json.at(-1)).toMatchObject({type:'joining_choices_saved',actorId:manager})
+  expect((await db.query("update recruitment_leads set name='Stale' where id=$1 and version=$2 returning id",[joiningLead.id,joiningLead.version])).rows).toEqual([])
+  await expect(db.query("update recruitment_leads set joining_json=jsonb_set(joining_json,'{origin,entryPoint}','\"agents\"') where id=$1",[joiningLead.id])).rejects.toThrow('origin cannot be changed')
+  for(const patch of [{branchId:'a3333333-3333-4333-8333-333333333333'},{commissionStructureId:'a4444444-4444-4444-8444-444444444444'},{role:'principal'},{startDate:'2026-02-31'},{businessWorkspaces:['sales','sales']}]) {
+    await expect(createJoining({...joiningDraft(crypto.randomUUID()+'@example.test'),joining_json:{...joiningPlan(),...patch}})).rejects.toThrow()
+  }
+  await db.query("update recruitment_leads set status='closed_lost' where id=$1",[joiningLead.id])
+  expect((await db.query("update recruitment_leads set status='lead_received' where id=$1 returning *",[joiningLead.id])).rows[0].joining_json).toEqual(changed.joining_json)
+})
+
+it('reviews possible matches without merging and recovers creates with the same receipt key',async()=>{
+  const count=(await db.query('select count(*) from recruitment_leads')).rows[0].count
+  const draft=joiningDraft(' JOINING@EXAMPLE.TEST ')
+  const review=await createJoining(draft)
+  expect(review.outcome).toBe('review_required');expect(review.matches.leads.some(match=>match.id===joiningLead.id)).toBe(true)
+  expect((await db.query('select count(*) from recruitment_leads')).rows[0].count).toBe(count)
+  draft.joining_json.reviewedMatches=true
+  const created=await createJoining(draft)
+  expect(created.outcome).toBe('created');expect(created.lead.id).not.toBe(joiningLead.id)
+  expect(created.lead.joining_json.matchReview.by).toBe(manager)
+  expect((await createJoining(draft))).toEqual({outcome:'reused',lead:created.lead})
+  expect((await db.query('select count(*) from recruitment_leads')).rows[0].count).toBe(count+1)
+  const email=(await db.query('select email from organisation_users where user_id=$1',[recruitedUser])).rows[0].email
+  expect((await createJoining({...joiningDraft(email),joining_json:{...joiningPlan(),reviewedMatches:true}})).outcome).toBe('existing_member')
+  await expect(db.query('insert into recruitment_leads(organisation_id,name,email) values($1,$2,$3)',[org,'Existing Agent',email])).rejects.toThrow('already an active agency member')
+})
+
+it('links a legacy invitation explicitly without altering its token, expiry, metadata or membership',async()=>{
+  joiningLegacyInvite=(await db.query("insert into invites(target_workspace_id,target_branch_id,invite_type,target_workspace_role,email,expires_at,metadata) values($1,$2,'branch_invite','agent','legacy-invite@example.test',now()+interval '14 days','{\"source\":\"original_branch_invite\"}') returning *",[org,joiningBranch])).rows[0]
+  const members=(await db.query('select count(*) from organisation_users')).rows[0].count
+  const draft=joiningDraft('legacy-invite@example.test')
+  expect((await createJoining(draft)).outcome).toBe('review_required')
+  draft.joining_json.reviewedMatches=true;draft.joining_invite_id=joiningLegacyInvite.id
+  linkedJoiningLead=(await createJoining(draft)).lead
+  expect(linkedJoiningLead.joining_invite_id).toBe(joiningLegacyInvite.id)
+  expect(linkedJoiningLead.joining_json.inviteLinkedBy).toBe(manager)
+  expect((await db.query('select * from invites where id=$1',[joiningLegacyInvite.id])).rows[0]).toEqual(joiningLegacyInvite)
+  expect((await db.query('select count(*) from organisation_users')).rows[0].count).toBe(members)
+  await expect(db.query("update recruitment_leads set email='changed@example.test' where id=$1",[linkedJoiningLead.id])).rejects.toThrow('email linked to an existing invitation')
+  await expect(createJoining({...draft,intake_key:crypto.randomUUID()})).rejects.toThrow('already linked')
+  await expect(createJoining({...joiningDraft('wrong@example.test'),joining_invite_id:joiningLegacyInvite.id})).rejects.toThrow('must match')
+  const privileged=(await db.query("insert into invites(target_workspace_id,invite_type,target_workspace_role,email,expires_at) values($1,'workspace_invite','principal','privileged@example.test',now()+interval '14 days') returning id",[org])).rows[0].id
+  await expect(createJoining({...joiningDraft('privileged@example.test'),joining_json:{...joiningPlan(),reviewedMatches:true},joining_invite_id:privileged})).rejects.toThrow('must match')
+})
+
+it('reads retained invitation history without exposing tokens, fingerprints or consent payloads and locks prepared joining choices',async()=>{
+  const legacy=(await db.query('select recruitment_joining_connections($1,$2) result',[org,linkedJoiningLead.id])).rows[0].result
+  expect(legacy.workspace[0]).toMatchObject({id:joiningLegacyInvite.id,type:'branch_invite',status:'pending'})
+  const activated=(await db.query('select recruitment_joining_connections($1,$2) result',[org,activationLead.id])).rows[0].result
+  expect(activated.workspace.length).toBeGreaterThanOrEqual(2)
+  const application=(await db.query('select recruitment_joining_connections($1,$2) result',[org,finalLead.id])).rows[0].result
+  expect(application.applications.length).toBeGreaterThan(0)
+  expect(JSON.stringify({legacy,activated,application})).not.toMatch(/token|fingerprint|submission_key|payload_json/)
+  await expect(db.query('select fingerprint from recruitment_application_receipts')).rejects.toThrow('permission denied')
+  await expect(db.query('select payload_json from recruitment_contact_receipts')).rejects.toThrow('permission denied')
+  await expect(db.query('update recruitment_leads set joining_json=$1::jsonb where id=$2',[JSON.stringify(joiningPlan()),activationLead.id])).rejects.toThrow('locked')
+})
+
+it('restricts joining records and matching to authorised agency management',async()=>{
+  await asUser(agent)
+  await expect(db.query('select recruitment_find_joining_matches($1,$2)',[org,'joining@example.test'])).rejects.toThrow('management access')
+  expect((await db.query('select link_id,lead_id from recruitment_contact_receipts')).rows).toEqual([])
+  await asUser(manager)
+  await expect(db.query('select recruitment_joining_connections($1,$2)',[other,linkedJoiningLead.id])).rejects.toThrow('not found')
+  await db.exec('reset role; set role anon;')
+  await expect(db.query('select recruitment_joining_options($1)',[org])).rejects.toThrow('permission denied')
+  await contactServer()
+  await expect(db.query('select recruitment_create_joining_lead($1,$2::jsonb)',[org,JSON.stringify(joiningDraft())])).rejects.toThrow('permission denied')
+})
+
+it('preserves website signup after joining is installed and keeps staff choices out of server intake',async()=>{
+  await contactServer()
+  const key=crypto.randomUUID(),values={...contact,email:'phase2.website@example.test'},fingerprint=createHash('sha256').update(key).digest('hex')
+  expect(await captureContact(contactLink,key,values,fingerprint)).toMatchObject({accepted:true,duplicate:false})
+  const saved=(await db.query('select * from recruitment_leads where intake_key=$1',[key])).rows[0]
+  expect(saved.joining_json).toMatchObject({origin:{entryPoint:'website',source:'Website',recordedBy:null},role:'agent',branchId:'',businessWorkspaces:[]})
+  expect(saved.joining_invite_id).toBeNull();expect(saved.status).toBe('lead_received')
+  expect(await captureContact(contactLink,key,values,fingerprint)).toMatchObject({accepted:true,duplicate:true})
+  expect((await db.query('select version,joining_json from recruitment_leads where id=$1',[saved.id])).rows[0]).toEqual({version:saved.version,joining_json:saved.joining_json})
+  await expect(db.query('update recruitment_leads set joining_json=$1::jsonb where id=$2',[JSON.stringify({...saved.joining_json,role:'senior_agent'}),saved.id])).rejects.toThrow('Joining choices require')
+})
+
+it('rolls back activation when another recruitment record already owns the invitation',async()=>{
+  const email='already-linked-access@example.test'
+  await db.exec('reset role;')
+  activationLead=(await db.query('select * from recruitment_leads where id=$1',[activationLead.id])).rows[0]
+  const ready=await activationFixture(email)
+  const invite=(await db.query("insert into invites(target_workspace_id,invite_type,target_workspace_role,email,expires_at) values($1,'workspace_invite','agent',$2,now()+interval '7 days') returning *",[org,email])).rows[0]
+  const linked=(await createJoining({...joiningDraft(email),joining_invite_id:invite.id,joining_json:{...joiningPlan(),reviewedMatches:true}})).lead
+  const count=(await db.query('select count(*) from invites')).rows[0].count
+  await expect(activate(ready)).rejects.toThrow('already linked to another recruitment record')
+  expect((await db.query('select version,activation_json from recruitment_leads where id=$1',[ready.id])).rows[0]).toEqual({version:ready.version,activation_json:{}})
+  expect((await db.query('select count(*) from invites')).rows[0].count).toBe(count)
+  expect((await db.query('select * from invites where id=$1',[invite.id])).rows[0]).toEqual(invite)
+  expect((await db.query('select joining_invite_id from recruitment_leads where id=$1',[linked.id])).rows[0].joining_invite_id).toBe(invite.id)
+})
+
+it('preserves a linked live branch invitation when the existing activation flow cannot reuse it',async()=>{
+  const ready=await activationFixture('linked-branch-access@example.test')
+  const invite=(await db.query("insert into invites(target_workspace_id,target_branch_id,invite_type,target_workspace_role,email,expires_at) values($1,$2,'branch_invite','agent',$3,now()+interval '7 days') returning *",[org,joiningBranch,ready.email])).rows[0]
+  const linked=(await db.query('update recruitment_leads set joining_json=$1::jsonb,joining_invite_id=$2 where id=$3 returning *',[JSON.stringify(joiningPlan()),invite.id,ready.id])).rows[0]
+  const count=(await db.query('select count(*) from invites')).rows[0].count
+  await expect(activate(linked)).rejects.toThrow('Prepare a pending agent invitation')
+  expect((await db.query('select joining_invite_id,activation_json,version from recruitment_leads where id=$1',[ready.id])).rows[0]).toEqual({joining_invite_id:invite.id,activation_json:{},version:linked.version})
+  expect((await db.query('select count(*) from invites')).rows[0].count).toBe(count)
+  expect((await db.query('select * from invites where id=$1',[invite.id])).rows[0]).toEqual(invite)
+  const second=(await db.query("insert into invites(target_workspace_id,invite_type,target_workspace_role,email,expires_at) values($1,'workspace_invite','agent',$2,now()+interval '7 days') returning id",[org,ready.email])).rows[0]
+  await expect(db.query('update recruitment_leads set activation_json=$1::jsonb where id=$2',[JSON.stringify({state:'awaiting_acceptance',inviteId:second.id,notes:'Confirmed onboarding and intended agent access',confirmed:true}),ready.id])).rejects.toThrow('Resolve the linked existing invitation')
+  expect((await db.query('select activation_json,version from recruitment_leads where id=$1',[ready.id])).rows[0]).toEqual({activation_json:{},version:linked.version})
+})
+
+// Phase 4 runs the actual canonical invitation create/accept functions locally.
+const activateJoining=(row,confirmed=true)=>db.query('select * from recruitment_activate_joining_agent($1,$2,$3,$4,$5)',[org,row.id,row.version,'Joining evidence confirmed and agent access authorised.',confirmed])
+let handoverLead, handoverInvite
+const handoverUser='b1111111-1111-4111-8111-111111111111'
+async function handoverFixture(email,patch={}) {
+  const ready=await activationFixture(email)
+  return (await db.query('update recruitment_leads set joining_json=$1::jsonb where id=$2 returning *',[JSON.stringify({...joiningPlan(),role:'senior_agent',...patch}),ready.id])).rows[0]
+}
+async function acceptHandover(row=handoverInvite,user=handoverUser,email=handoverLead.email) {
+  await db.exec(`reset role; select set_config('test.actor','${user}',false);`)
+  await db.query("select set_config('test.email',$1,false)",[email])
+  await db.exec('set role authenticated;')
+  return (await db.query('select bridge_accept_invite($1) result',[row.token])).rows[0].result
+}
+it('installs handover without rewriting legacy history and limits privileged acceptance code to its trigger',async()=>{
+  await db.exec(`reset role;
+    grant update on organisation_branches,organisation_commission_structures to authenticated;
+    alter table organisation_users add column branch_id uuid,add column primary_branch_id uuid,add column module_metadata jsonb default '{}',add column first_name text,add column last_name text,add column app_role text,add column workspace_type text,add column invited_by_user_id uuid,add column invited_at timestamptz,add column accepted_at timestamptz,add column joined_at timestamptz,add column created_by uuid,add column created_at timestamptz default now(),add column updated_at timestamptz default now();
+    alter table invites add column inviter_user_id uuid,add column target_transaction_id uuid,add column target_transaction_role text,add column target_team_id uuid,add column invitee_user_id uuid,add column accepted_at timestamptz,add column updated_at timestamptz default now();
+    create table profiles(id uuid primary key,email text,first_name text,last_name text,full_name text,phone_number text,onboarding_completed boolean,updated_at timestamptz);
+    create table user_workspace_preferences(user_id uuid primary key,active_workspace_id uuid,active_workspace_source text,updated_at timestamptz);
+    create table onboarding_events(user_id uuid,workspace_id uuid,onboarding_step text,event_type text,metadata jsonb);
+    create table test_invite_events(invite_id uuid,event_type text,actor_id uuid,metadata jsonb);
+    create function public.bridge_record_invite_event(uuid,text,uuid,jsonb default '{}') returns void language sql as $$ insert into test_invite_events values($1,$2,$3,$4) $$;
+    create function public.bridge_random_token(integer) returns text language sql as $$ select replace(gen_random_uuid()::text||gen_random_uuid()::text,'-','') $$;
+    create function auth.jwt() returns jsonb language sql as $$ select jsonb_build_object('email',current_setting('test.email',true)) $$;
+    create table organisation_user_commission_profiles(id uuid primary key default gen_random_uuid(),organisation_id uuid,organisation_user_id uuid,user_id uuid,email_address text,commission_structure_id uuid,override_agent_split_percentage numeric,effective_from date not null default current_date,is_active boolean default true,created_by uuid,created_at timestamptz default now(),updated_at timestamptz default now());
+    alter table organisation_users enable row level security;
+    create policy test_membership_read on organisation_users for select to authenticated using(true);
+    create policy test_membership_manage on organisation_users for update to authenticated using(organisation_id='${org}' and auth.uid()='${manager}') with check(organisation_id='${org}' and auth.uid()='${manager}');
+    alter table organisation_user_commission_profiles enable row level security;
+    create policy test_commission_manager on organisation_user_commission_profiles for all to authenticated using(organisation_id='${org}' and auth.uid()='${manager}') with check(organisation_id='${org}' and auth.uid()='${manager}');
+    grant select,insert,update on organisation_user_commission_profiles to authenticated;
+    insert into profiles(id,email) values('${handoverUser}','phase4@example.test');`)
+  for(const file of ['202606090011_harden_branch_invites.sql','202606090012_branch_invite_acceptance_metadata.sql','202606090013_invite_commission_profile_reconciliation.sql']) await db.exec(readFileSync(new URL('../../../../../supabase/migrations/'+file,import.meta.url),'utf8'))
+  const before=(await db.query('select id,version,activation_json,joining_json,activity_json from recruitment_leads order by id')).rows
+  await db.exec(readFileSync(new URL('../../../../../supabase/migrations/20261008125501_recruitment_activation_handover.sql',import.meta.url),'utf8'))
+  expect((await db.query('select id,version,activation_json,joining_json,activity_json from recruitment_leads order by id')).rows).toEqual(before)
+  const f=(await db.query("select prosecdef,proconfig,has_function_privilege('authenticated',oid,'execute') as staff,has_function_privilege('anon',oid,'execute') as anon from pg_proc where proname='recruitment_apply_accepted_joining'")).rows[0]
+  expect(f).toMatchObject({prosecdef:true,staff:false,anon:false});expect(f.proconfig).toContain('search_path=""')
+  await asUser(manager)
+})
+it('prepares the intended branch and senior-agent role, preserves the plan and creates no membership or commission before acceptance',async()=>{
+  handoverLead=await handoverFixture('phase4@example.test')
+  const before=(await db.query('select count(*) from organisation_users')).rows[0].count
+  handoverLead=(await activateJoining(handoverLead)).rows[0]
+  handoverInvite=(await db.query('select * from invites where id=$1',[handoverLead.activation_json.inviteId])).rows[0]
+  expect(handoverInvite).toMatchObject({target_workspace_id:org,target_branch_id:joiningBranch,target_workspace_role:'senior_agent',invite_type:'workspace_invite',status:'pending'})
+  expect(handoverInvite.metadata).toMatchObject({branch_id:joiningBranch,branch_name:'Head Office',commission_structure_id:joiningCommission,commission_structure_name:'Standard'})
+  expect(handoverLead.status).toBe('onboarding_complete');expect(handoverLead.activated_at).toBeNull()
+  expect(handoverLead.activation_json.joiningPlan).toMatchObject({...handoverLead.joining_json,role:'senior_agent',branchName:'Head Office',commissionName:'Standard'})
+  expect((await db.query('select count(*) from organisation_users')).rows[0].count).toBe(before)
+  expect((await db.query('select * from organisation_user_commission_profiles where email_address=$1',[handoverLead.email])).rows).toHaveLength(0)
+  expect((await activateJoining(handoverLead)).rows[0]).toEqual(handoverLead)
+  await expect(db.query("update recruitment_leads set joining_json=jsonb_set(joining_json,'{role}','\"agent\"') where id=$1",[handoverLead.id])).rejects.toThrow('locked')
+})
+it('requires the invited identity and atomically applies business access, commission and joining date to an existing account',async()=>{
+  expect((await acceptHandover(handoverInvite,agent,'wrong@example.test')).code).toBe('invite_email_mismatch')
+  expect((await db.query('select * from recruitment_leads where id=$1',[handoverLead.id])).rows).toHaveLength(0)
+  expect((await acceptHandover()).success).toBe(true)
+  await asUser(manager)
+  const member=(await db.query('select * from organisation_users where user_id=$1',[handoverUser])).rows[0]
+  expect(member).toMatchObject({organisation_id:org,branch_id:joiningBranch,primary_branch_id:joiningBranch,workspace_role:'senior_agent',status:'active',module_metadata:{businessWorkspaces:['sales','rentals'],business_workspaces:['sales','rentals'],joiningStartDate:'2026-10-15'}})
+  const cp=(await db.query('select * from organisation_user_commission_profiles where user_id=$1',[handoverUser])).rows[0]
+  expect(cp).toMatchObject({organisation_user_id:member.id,organisation_id:org,commission_structure_id:joiningCommission,effective_from:new Date('2026-10-15'),is_active:true,created_by:manager})
+  await db.exec('reset role;')
+  expect((await db.query('select count(*) from profiles where id=$1',[handoverUser])).rows[0].count).toBe(1)
+  await asUser(manager)
+  expect((await db.query('select status from recruitment_leads where id=$1',[handoverLead.id])).rows[0].status).toBe('onboarding_complete')
+})
+it('verifies resulting membership before completion and recovers an uncertain successful activation without duplication',async()=>{
+  await db.exec('reset role;')
+  await db.query("update organisation_users set module_metadata=jsonb_set(module_metadata,'{businessWorkspaces}','[\"sales\"]') where user_id=$1",[handoverUser])
+  await asUser(manager)
+  await expect(activateJoining(handoverLead)).rejects.toThrow('business access')
+  await db.exec('reset role;')
+  await db.query("update organisation_users set module_metadata=jsonb_set(module_metadata,'{businessWorkspaces}','[\"sales\",\"rentals\"]') where user_id=$1",[handoverUser])
+  await asUser(manager)
+  const completed=(await activateJoining(handoverLead)).rows[0]
+  expect(completed).toMatchObject({status:'agent_activated',activated_by:manager,activation_json:{state:'active',role:'senior_agent',userId:handoverUser,joiningPlan:{branchId:joiningBranch},commissionProfileId:expect.any(String)}})
+  expect(completed.onboarding_snapshot).toEqual(handoverLead.onboarding_snapshot)
+  expect(completed.activity_json.at(-1).type).toBe('agent_activated')
+  expect((await activateJoining({...completed,version:1})).rows[0]).toEqual(completed)
+  expect((await db.query('select count(*) from organisation_users where user_id=$1',[handoverUser])).rows[0].count).toBe(1)
+  expect((await db.query('select count(*) from organisation_user_commission_profiles where user_id=$1',[handoverUser])).rows[0].count).toBe(1)
+})
+it('reuses a linked live branch invitation unchanged rather than creating a second invitation',async()=>{
+  const ready=await handoverFixture('phase4-linked@example.test',{role:'agent'})
+  const invitation=(await db.query("select bridge_create_invite($1::jsonb) result",[JSON.stringify({target_workspace_id:org,target_branch_id:joiningBranch,target_workspace_role:'agent',invite_type:'branch_invite',email:ready.email,expires_at:'2026-12-31',metadata:{source:'existing_staff'}})])).rows[0].result
+  const original=(await db.query('select * from invites where id=$1',[invitation.invite_id])).rows[0]
+  const linked=(await db.query('update recruitment_leads set joining_invite_id=$1 where id=$2 returning *',[original.id,ready.id])).rows[0]
+  const count=(await db.query('select count(*) from invites')).rows[0].count
+  const prepared=(await activateJoining(linked)).rows[0]
+  expect(prepared.activation_json.inviteId).toBe(original.id)
+  expect((await db.query('select count(*) from invites')).rows[0].count).toBe(count)
+  expect((await db.query('select * from invites where id=$1',[original.id])).rows[0]).toEqual(original)
+})
+it('rejects incomplete, commercial and unavailable choices before preparing any access',async()=>{
+  for(const patch of [{branchId:''},{businessWorkspaces:[]},{startDate:''},{role:'commercial_broker'},{businessWorkspaces:['commercial']}]) {
+    const ready=await handoverFixture(crypto.randomUUID()+'@example.test',patch)
+    const before=(await db.query('select count(*) from invites')).rows[0].count
+    await expect(activateJoining(ready)).rejects.toThrow()
+    expect((await db.query('select count(*) from invites')).rows[0].count).toBe(before)
+  }
+  const ready=await handoverFixture('unavailable-branch@example.test')
+  await db.exec(`reset role; update organisation_branches set is_active=false where id='${joiningBranch}';`)
+  await asUser(manager)
+  await expect(activateJoining(ready)).rejects.toThrow('active joining branch')
+  await db.exec(`reset role; update organisation_branches set is_active=true where id='${joiningBranch}';`)
+  await asUser(manager)
+})
+it('preserves mismatched existing invitations, roles and branches without making access changes',async()=>{
+  const ready=await handoverFixture('phase4-wrong-invite@example.test')
+  const bad=(await db.query("insert into invites(target_workspace_id,target_branch_id,invite_type,target_workspace_role,email,expires_at) values($1,$2,'branch_invite','admin',$3,now()+interval '7 days') returning *",[org,joiningBranch,ready.email])).rows[0]
+  const before=(await db.query('select count(*) from invites')).rows[0].count
+  await expect(activateJoining(ready)).rejects.toThrow('pending agent invitation matching')
+  expect((await db.query('select * from invites where id=$1',[bad.id])).rows[0]).toEqual(bad)
+  expect((await db.query('select count(*) from invites')).rows[0].count).toBe(before)
+})
+it('rolls back canonical acceptance when an existing commission conflicts, preserving the pending invite and membership state',async()=>{
+  const ready=await handoverFixture('phase4-conflict@example.test')
+  const prepared=(await activateJoining(ready)).rows[0]
+  const invite=(await db.query('select * from invites where id=$1',[prepared.activation_json.inviteId])).rows[0]
+  await db.query("insert into organisation_user_commission_profiles(organisation_id,email_address,commission_structure_id,effective_from) values($1,$2,$3,'2026-11-01')",[org,ready.email,joiningCommission])
+  const user=crypto.randomUUID()
+  await expect(acceptHandover(invite,user,ready.email)).rejects.toThrow('commission differs')
+  await asUser(manager)
+  expect((await db.query('select status from invites where id=$1',[invite.id])).rows[0].status).toBe('pending')
+  expect((await db.query('select * from organisation_users where user_id=$1',[user])).rows).toHaveLength(0)
+  expect((await db.query('select organisation_user_id,effective_from::text from organisation_user_commission_profiles where email_address=$1',[ready.email])).rows[0]).toEqual({organisation_user_id:null,effective_from:'2026-11-01'})
+})
+it('retains legacy prepared access and restricts activation to current management and organisation',async()=>{
+  const ready=await activationFixture('phase4-legacy@example.test')
+  // An invitation already prepared before this migration keeps its original contract.
+  await db.exec('reset role; alter table recruitment_leads disable trigger user;')
+  const invite=(await db.query("insert into invites(target_workspace_id,invite_type,target_workspace_role,email,expires_at) values($1,'workspace_invite','agent',$2,now()+interval '7 days') returning *",[org,ready.email])).rows[0]
+  await db.query("update recruitment_leads set activation_json=$1::jsonb where id=$2",[JSON.stringify({state:'awaiting_acceptance',inviteId:invite.id,email:ready.email,role:'agent',preparedAt:'2026-10-05'}),ready.id])
+  await db.exec('alter table recruitment_leads enable trigger user;')
+  await asUser(manager)
+  const retained=(await db.query('select * from recruitment_leads where id=$1',[ready.id])).rows[0]
+  expect((await activateJoining(retained)).rows[0]).toEqual(retained)
+  await asUser(agent);await expect(activateJoining(retained)).rejects.toThrow('management access')
+  await db.exec('reset role; set role anon;');await expect(activateJoining(retained)).rejects.toThrow('permission denied')
+  await asUser(manager)
+})
+it('prepares fresh expired access with the same reviewed plan and retains the old receipt in history',async()=>{
+  const ready=await handoverFixture('phase4-expired@example.test')
+  const prepared=(await activateJoining(ready)).rows[0]
+  await db.exec('reset role;')
+  await db.query("update invites set expires_at=now()-interval '1 day' where id=$1",[prepared.activation_json.inviteId])
+  await asUser(manager)
+  const renewed=(await activateJoining(prepared)).rows[0]
+  expect(renewed.activation_json.inviteId).not.toBe(prepared.activation_json.inviteId)
+  expect(renewed.activation_json.joiningPlan).toEqual(prepared.activation_json.joiningPlan)
+  const {history:_history,...priorReceipt}=prepared.activation_json
+  expect(renewed.activation_json.history.at(-1)).toEqual(priorReceipt)
+})
+it('accepts an explicitly reviewed no-commission setup without creating a commission profile',async()=>{
+  const ready=await handoverFixture('phase4-no-commission@example.test',{commissionStructureId:'',businessWorkspaces:['short_term_rentals']})
+  const prepared=(await activateJoining(ready)).rows[0]
+  const invite=(await db.query('select * from invites where id=$1',[prepared.activation_json.inviteId])).rows[0]
+  const user=crypto.randomUUID()
+  expect((await acceptHandover(invite,user,ready.email)).success).toBe(true)
+  await asUser(manager)
+  const complete=(await activateJoining(prepared)).rows[0]
+  expect(complete.status).toBe('agent_activated')
+  expect(complete.activation_json.commissionProfileId).toBeNull()
+  expect((await db.query('select * from organisation_user_commission_profiles where user_id=$1',[user])).rows).toHaveLength(0)
+})
+it('refuses to transfer or change the role of an existing active member as a side effect of activation',async()=>{
+  const ready=await handoverFixture('phase4-existing-staff@example.test')
+  await db.exec('reset role;')
+  const member=(await db.query("insert into organisation_users(organisation_id,user_id,email,status,role,workspace_role,branch_id,primary_branch_id,module_metadata) values($1,$2,$3,'active','agent','agent',$4,$4,'{\"retain\":true}') returning *",[org,crypto.randomUUID(),ready.email,joiningBranch])).rows[0]
+  await asUser(manager)
+  const count=(await db.query('select count(*) from invites')).rows[0].count
+  await expect(activateJoining(ready)).rejects.toThrow('branch or role differs')
+  expect((await db.query('select * from organisation_users where id=$1',[member.id])).rows[0]).toEqual(member)
+  expect((await db.query('select count(*) from invites')).rows[0].count).toBe(count)
+})
+
+// Phase 5 replays the new append-only migration over all prior recruitment phases.
+const branchManager='c1111111-1111-4111-8111-111111111111', owner='c2222222-2222-4222-8222-222222222222', brokerUser='c3333333-3333-4333-8333-333333333333'
+let branchReceipt, commercialLead, commercialInvite
+const captureBranch=(contact,branch=joiningBranch,organisation=org)=>db.query('select recruitment_capture_branch_joining($1,$2,$3::jsonb) result',[organisation,branch,JSON.stringify(contact)])
+it('installs Phase 5 without rewriting recruitment and keeps privileged helpers private',async()=>{
+ await db.exec(`reset role; alter table organisation_users add column module_context text;
+ create table organisation_modules(organisation_id uuid,module_key text,status text);
+ grant select on organisation_modules to authenticated;
+ insert into organisation_modules values('${org}','commercial','active');
+ insert into organisation_users(id,organisation_id,user_id,status,role,workspace_role,branch_id,primary_branch_id,email) values(gen_random_uuid(),'${org}','${branchManager}','active','branch_manager','branch_manager','${joiningBranch}','${joiningBranch}','branchmanager@example.test'),(gen_random_uuid(),'${org}','${owner}','active','owner','owner',null,null,'owner@example.test');`)
+ const before=(await db.query('select id,version,joining_json,activation_json from recruitment_leads order by id')).rows
+ await db.exec(readFileSync(new URL('../../../../../supabase/migrations/20261008131645_recruitment_entry_avenues.sql',import.meta.url),'utf8'))
+ expect((await db.query('select id,version,joining_json,activation_json from recruitment_leads order by id')).rows).toEqual(before)
+ const helpers=(await db.query("select p.proname,p.prosecdef,p.proconfig,has_function_privilege('anon',p.oid,'execute') anon from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='recruitment_private'")).rows
+ expect(helpers).toHaveLength(3); expect(helpers.every((f)=>!f.anon && f.proconfig.includes('search_path=""'))).toBe(true)
+ expect(helpers.filter((f)=>f.prosecdef).map((f)=>f.proname).sort()).toEqual(['branch_progress','capture_branch'])
+ await asUser(branchManager)
+})
+it('captures a branch enquiry idempotently with no private fields, approval or access grants',async()=>{
+ const contact={name:'Branch Applicant',email:'branch-phase5@example.test',phone:'',intake_key:crypto.randomUUID(),joining_json:{role:'principal'},status:'agent_activated',details_json:{notes:'forged'}}
+ branchReceipt=(await captureBranch(contact)).rows[0].result
+ expect(Object.keys(branchReceipt).sort()).toEqual(['id','name','status']);expect(branchReceipt.status).toBe('lead_received')
+ expect((await captureBranch(contact)).rows[0].result).toEqual(branchReceipt)
+ expect((await db.query('select * from recruitment_leads')).rows).toHaveLength(0)
+ expect((await db.query("select * from storage.objects where bucket_id like 'recruitment-%'")).rows).toHaveLength(0)
+ await expect(db.query("insert into recruitment_leads(organisation_id,name,email) values($1,'Forbidden','forged@example.test')",[org])).rejects.toThrow()
+ await expect(db.query("select recruitment_activate_joining_agent_v2($1,$2,1,'Forged approval',true)",[org,branchReceipt.id])).rejects.toThrow('management')
+ await asUser(manager)
+ const saved=(await db.query('select * from recruitment_leads where id=$1',[branchReceipt.id])).rows[0]
+ expect(saved).toMatchObject({captured_by:branchManager,status:'lead_received',details_json:{},joining_json:{origin:{entryPoint:'branch',recordedBy:branchManager},branchId:joiningBranch,role:'agent',businessWorkspaces:[],commissionStructureId:'',startDate:''}})
+ expect((await db.query('select * from invites where email=$1',[contact.email])).rows).toHaveLength(0)
+ await asUser(branchManager)
+})
+it('exposes only same-branch name/stage summaries and blocks foreign, inactive and non-manager calls',async()=>{
+ const progress=(await db.query('select recruitment_branch_joining_progress($1,$2) result',[org,joiningBranch])).rows[0].result
+ expect(progress.find((r)=>r.id===branchReceipt.id)).toMatchObject({name:'Branch Applicant',status:'lead_received',joining_branch_id:joiningBranch})
+ expect(progress.every((r)=>Object.keys(r).sort().join(',')==='activation_state,id,joining_branch_id,name,status')).toBe(true)
+ await expect(captureBranch({name:'Foreign',email:'foreign@example.test',intake_key:crypto.randomUUID()},'d1111111-1111-4111-8111-111111111111')).rejects.toThrow('management')
+ await expect(db.query('select recruitment_branch_joining_progress($1,$2)',[other,joiningBranch])).rejects.toThrow('management')
+ await expect(captureBranch({name:'Duplicate',email:'branch-phase5@example.test',intake_key:crypto.randomUUID()})).rejects.toThrow('principal review')
+ await expect(captureBranch({name:'Existing',email:'sam@example.test',intake_key:crypto.randomUUID()})).rejects.toThrow('principal review')
+ await asUser(agent)
+ await expect(db.query('select recruitment_branch_joining_progress($1,$2)',[org,joiningBranch])).rejects.toThrow('management')
+ await expect(captureBranch({name:'Forbidden',phone:'0821234567',intake_key:crypto.randomUUID()})).rejects.toThrow('management')
+ await db.exec(`reset role; update organisation_users set status='inactive' where user_id='${branchManager}';`)
+ await asUser(branchManager)
+ await expect(db.query('select recruitment_branch_joining_progress($1,$2)',[org,joiningBranch])).rejects.toThrow('management')
+ await db.exec(`reset role; update organisation_users set status='active' where user_id='${branchManager}';`)
+ await asUser(manager)
+})
+it('captures agency setup recruits with stable receipts and preserves duplicate and existing-staff routes',async()=>{
+ const capture=(contact)=>db.query('select recruitment_capture_setup_joining($1,$2::jsonb) result',[org,JSON.stringify(contact)])
+ const contact={name:'Setup Agent',email:'setup-phase5@example.test',receipt:'setup-draft-1',branchName:'Head Office'}
+ const created=(await capture(contact)).rows[0].result
+ expect(created.outcome).toBe('created');expect((await capture(contact)).rows[0].result).toEqual({...created,outcome:'reused'})
+ const saved=(await db.query('select * from recruitment_leads where id=$1',[created.id])).rows[0]
+ expect(saved.joining_json).toMatchObject({origin:{entryPoint:'agency_setup'},branchId:joiningBranch,role:'agent',businessWorkspaces:[]})
+ expect((await db.query('select * from invites where email=$1',[contact.email])).rows).toHaveLength(0)
+ expect((await capture({...contact,receipt:'another-draft'})).rows[0].result.outcome).toBe('review_required')
+ await expect(capture({...contact,receipt:'foreign-branch',branchName:'Missing'})).rejects.toThrow('unique active')
+ await asUser(branchManager)
+ await expect(capture({...contact,receipt:'forbidden'})).rejects.toThrow('management')
+ await asUser(manager)
+})
+it('prepares and accepts a Commercial broker through the canonical invitation without early membership',async()=>{
+ commercialLead=await handoverFixture('broker-phase5@example.test',{role:'commercial_broker',businessWorkspaces:['commercial']})
+ commercialLead=(await db.query('select * from recruitment_activate_joining_agent_v2($1,$2,$3,$4,true)',[org,commercialLead.id,commercialLead.version,'Commercial joining plan reviewed and authorised.'])).rows[0]
+ commercialInvite=(await db.query('select * from invites where id=$1',[commercialLead.activation_json.inviteId])).rows[0]
+ expect(commercialInvite.target_workspace_role).toBe('commercial_broker');expect(commercialLead.activation_json.joiningPlan.businessWorkspaces).toEqual(['commercial'])
+ expect((await db.query('select * from organisation_users where email=$1',[commercialLead.email])).rows).toHaveLength(0)
+ expect((await acceptHandover(commercialInvite,brokerUser,commercialLead.email)).success).toBe(true)
+ await asUser(manager)
+ const membership=(await db.query('select * from organisation_users where user_id=$1',[brokerUser])).rows[0]
+ expect(membership).toMatchObject({workspace_role:'commercial_broker',module_context:'commercial',branch_id:joiningBranch,module_metadata:{module:'commercial',commercial_role:'commercial_broker',businessWorkspaces:['commercial']}})
+ commercialLead=(await db.query('select * from recruitment_activate_joining_agent_v2($1,$2,$3,$4,true)',[org,commercialLead.id,commercialLead.version,'Commercial acceptance and membership verified.'])).rows[0]
+ expect(commercialLead.status).toBe('agent_activated')
+})
+it('fails Commercial preparation for disabled modules or inconsistent role/business choices',async()=>{
+ const ready=await handoverFixture('broker-disabled@example.test',{role:'commercial_broker',businessWorkspaces:['commercial']})
+ await db.exec("reset role; update organisation_modules set status='inactive';")
+ await asUser(manager)
+ await expect(activateJoining(ready)).rejects.toThrow('Enable the Commercial module')
+ await db.exec("reset role; update organisation_modules set status='active';")
+ await asUser(manager)
+ const inconsistent=await handoverFixture('broker-wrong-role@example.test',{role:'agent',businessWorkspaces:['commercial']})
+ await expect(activateJoining(inconsistent)).rejects.toThrow('broker role')
+})
+it('gives agency owners principal-level recruitment access without admitting support staff',async()=>{
+ await asUser(owner)
+ expect((await db.query('select * from recruitment_leads where id=$1',[branchReceipt.id])).rows).toHaveLength(1)
+ const options=(await db.query('select recruitment_joining_options($1) result',[org])).rows[0].result
+ expect(options.branches.some((b)=>b.id===joiningBranch)).toBe(true)
+ await asUser(agent)
+ expect((await db.query('select * from recruitment_leads where id=$1',[branchReceipt.id])).rows).toHaveLength(0)
+ await expect(db.query('select recruitment_joining_options($1)',[org])).rejects.toThrow('management')
+})
+it('preserves website and campaign entry origins after Phase 5 without inviting or granting staff access',async()=>{
+ await db.exec('reset role;')
+ const beforeMembers=(await db.query('select count(*) from organisation_users')).rows[0].count
+ const beforeInvites=(await db.query('select count(*) from invites')).rows[0].count
+ for(const channel of ['website','public_link']) {
+  await asUser(manager)
+  const hash=createHash('sha256').update(crypto.randomUUID()).digest('hex')
+  const entry=(await db.query("insert into recruitment_intake_links(organisation_id,created_by,channel,token_hash,expires_at) values($1,$2,$3,$4,now()+interval '14 days') returning id",[org,manager,channel,hash])).rows[0]
+  const key=crypto.randomUUID(), values={...contact,email:`phase5-${channel}@example.test`}
+  await contactServer()
+  expect(await captureContact(entry.id,key,values,hash)).toMatchObject({accepted:true,duplicate:false})
+  const saved=(await db.query('select * from recruitment_leads where intake_key=$1',[key])).rows[0]
+  expect(saved.joining_json.origin.entryPoint).toBe(channel)
+  expect(saved).toMatchObject({status:'lead_received',joining_invite_id:null,activation_json:{}})
+ }
+ await db.exec('reset role;')
+ expect((await db.query('select count(*) from organisation_users')).rows[0].count).toBe(beforeMembers)
+ expect((await db.query('select count(*) from invites')).rows[0].count).toBe(beforeInvites)
+})
+it('reactivates returning staff without creating a recruitment record or replacing their role, branch and commission',async()=>{
+ const user=crypto.randomUUID(), email='returning-phase5@example.test'
+ await db.exec('reset role;')
+ const member=(await db.query("insert into organisation_users(organisation_id,user_id,email,status,role,workspace_role,organisation_role,branch_id,primary_branch_id,module_metadata,accepted_at,joined_at) values($1,$2,$3,'inactive','senior_agent','senior_agent','senior_agent',$4,$4,'{\"retained\":true}','2025-01-01','2025-01-01') returning *",[org,user,email,joiningBranch])).rows[0]
+ const cp=(await db.query("insert into organisation_user_commission_profiles(organisation_id,organisation_user_id,user_id,email_address,commission_structure_id,effective_from) values($1,$2,$3,$4,$5,'2025-01-01') returning *",[org,member.id,user,email,joiningCommission])).rows[0]
+ await asUser(manager)
+ const made=(await db.query("select bridge_create_invite(jsonb_build_object('invite_type','workspace_invite','target_workspace_id',$1::uuid,'target_branch_id',$2::uuid,'target_workspace_role','agent','email',$3::text,'metadata',jsonb_build_object('access_purpose','existing_staff'))) result",[org,joiningBranch,email])).rows[0].result
+ expect(made.success).toBe(true)
+ const invite=(await db.query('select * from invites where id=$1',[made.invite_id])).rows[0]
+ expect((await acceptHandover(invite,user,email)).success).toBe(true)
+ await asUser(manager)
+ const after=(await db.query('select * from organisation_users where id=$1',[member.id])).rows[0]
+ expect(after).toMatchObject({user_id:user,status:'active',workspace_role:'senior_agent',role:'senior_agent',branch_id:joiningBranch,primary_branch_id:joiningBranch,module_metadata:{retained:true},joined_at:new Date('2025-01-01')})
+ const retained=(await db.query('select * from organisation_user_commission_profiles where id=$1',[cp.id])).rows[0]
+ expect({...retained,updated_at:cp.updated_at}).toEqual(cp)
+ expect(retained.updated_at.getTime()).toBeGreaterThanOrEqual(cp.updated_at.getTime())
+ expect((await db.query('select * from recruitment_leads where email=$1',[email])).rows).toHaveLength(0)
+})
+it('keeps transfers in the staff workflow by refusing invitation acceptance into a different branch',async()=>{
+ const user=crypto.randomUUID(),email='transfer-phase5@example.test', branch='d1111111-1111-4111-8111-111111111111'
+ await db.exec('reset role;')
+ await db.query("insert into organisation_branches(id,organisation_id,name,is_active) values($1,$2,'Transfer Office',true)",[branch,org])
+ const member=(await db.query("insert into organisation_users(organisation_id,user_id,email,status,role,workspace_role,branch_id,primary_branch_id,module_metadata) values($1,$2,$3,'active','agent','agent',$4,$4,'{\"retain\":true}') returning *",[org,user,email,joiningBranch])).rows[0]
+ await asUser(manager)
+ const made=(await db.query("select bridge_create_invite(jsonb_build_object('invite_type','workspace_invite','target_workspace_id',$1::uuid,'target_branch_id',$2::uuid,'target_workspace_role','agent','email',$3::text,'metadata',jsonb_build_object('access_purpose','existing_staff'))) result",[org,branch,email])).rows[0].result
+ const invite=(await db.query('select * from invites where id=$1',[made.invite_id])).rows[0]
+ expect((await acceptHandover(invite,user,email)).code).toBe('existing_membership_branch_mismatch')
+ await asUser(manager)
+ expect((await db.query('select * from organisation_users where id=$1',[member.id])).rows[0]).toEqual(member)
+ expect((await db.query('select status from invites where id=$1',[invite.id])).rows[0].status).toBe('pending')
+})
+it('retains Commercial intent on a bounded branch enquiry without granting broker access',async()=>{
+ await asUser(branchManager)
+ const contact={name:'Branch Broker',email:'branch-broker-phase5@example.test',intake_key:crypto.randomUUID(),entryPoint:'commercial_brokers'}
+ const receipt=(await captureBranch(contact)).rows[0].result
+ const progress=(await db.query('select recruitment_branch_joining_progress($1,$2,0,true) result',[org,joiningBranch])).rows[0].result
+ expect(progress.some((r)=>r.id===receipt.id)).toBe(true)
+ expect(progress.some((r)=>r.id===branchReceipt.id)).toBe(false)
+ await asUser(manager)
+ const saved=(await db.query('select * from recruitment_leads where id=$1',[receipt.id])).rows[0]
+ expect(saved).toMatchObject({status:'lead_received',joining_json:{origin:{entryPoint:'commercial_brokers',recordedBy:branchManager},role:'commercial_broker',businessWorkspaces:['commercial'],branchId:joiningBranch,commissionStructureId:'',startDate:''},activation_json:{}})
+ expect((await db.query('select * from invites where email=$1',[contact.email])).rows).toHaveLength(0)
+ expect((await db.query('select * from organisation_users where email=$1',[contact.email])).rows).toHaveLength(0)
+})
+
+let emailLead,emailLink,emailAttempt,workspaceEmailLead,workspaceEmailInvite
+const mailHash=createHash('sha256').update('phase6-private-email-link').digest('hex')
+async function emailServer() {await db.exec("reset role; select set_config('test.actor','',false); set role service_role;")}
+async function beginEmail({actor=manager,candidate=emailLead,kind='application',reference=emailLink,id=crypto.randomUUID(),hash=mailHash,message={to:candidate.email,html:'private-link'},allow=false}={}) {
+ return (await db.query('select recruitment_begin_invitation_email($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9) result',[actor,org,candidate.id,kind,reference,id,hash,JSON.stringify(message),allow])).rows[0].result
+}
+async function finishEmail(attempt,status,provider=null) {return (await db.query('select recruitment_finish_invitation_email($1,$2,$3,$4,$5) result',[attempt.id,attempt.lease_id,status,provider,status==='unknown'?'provider_result_uncertain':null])).rows[0].result}
+it('installs private server-authored email receipts and distinguishes prepared application links',async()=>{
+ await db.exec('reset role;')
+ await db.exec(readFileSync(new URL('../../../../../supabase/migrations/20261008135223_recruitment_invitation_delivery.sql',import.meta.url),'utf8'))
+ await asUser(manager)
+ emailLead=(await createJoining({name:'Delivery Applicant',email:'phase6-delivery@example.test',intake_key:crypto.randomUUID()})).lead
+ emailLink=(await db.query("insert into recruitment_intake_links(organisation_id,lead_id,channel,token_hash,expires_at) values($1,$2,'private_link',$3,now()+interval '14 days') returning id",[org,emailLead.id,mailHash])).rows[0].id
+ const result=(await db.query('select recruitment_invitation_status($1,$2,$3,$4) result',[org,emailLead.id,'application',emailLink])).rows[0].result
+ expect(result).toMatchObject({referenceStatus:'prepared',attempt:null,recipient:emailLead.email})
+ await expect(beginEmail()).rejects.toThrow('permission denied')
+ await expect(db.query('select message_json from recruitment_invitation_deliveries')).rejects.toThrow('permission denied')
+ await emailServer()
+ emailAttempt=(await beginEmail()).attempt
+ expect(emailAttempt.status).toBe('sending')
+ await asUser(manager)
+ expect((await db.query('select recruitment_invitation_status($1,$2,$3,$4) result',[org,emailLead.id,'application',emailLink])).rows[0].result.attempt).not.toHaveProperty('message_json')
+ await asUser(branchManager)
+ expect((await db.query('select id,status from recruitment_invitation_deliveries')).rows).toHaveLength(0)
+ await expect(db.query('select recruitment_invitation_status($1,$2,$3,$4)',[org,emailLead.id,'application',emailLink])).rejects.toThrow('management')
+ await emailServer()
+ await expect(beginEmail({actor:branchManager})).rejects.toThrow('management')
+ await expect(beginEmail({hash:'wrong'})).rejects.toThrow('does not match')
+})
+it('reuses an uncertain provider request and prevents concurrent or duplicate retries',async()=>{
+ await emailServer()
+ const busy=await beginEmail()
+ expect(busy).toMatchObject({send:false,busy:true,attempt:{id:emailAttempt.id}})
+ expect(await finishEmail(emailAttempt,'unknown')).toBe(true)
+ const recovered=await beginEmail({message:{to:emailLead.email,html:'changed-but-not-sent'}})
+ expect(recovered.send).toBe(true)
+ expect(recovered.attempt.id).toBe(emailAttempt.id)
+ expect(recovered.attempt.message_json.html).toBe('private-link')
+ expect(await finishEmail(emailAttempt,'failed')).toBe(false) // stale worker cannot overwrite this lease
+ emailAttempt=recovered.attempt
+ expect(await finishEmail(emailAttempt,'provider_accepted','provider-message')).toBe(true)
+ expect((await beginEmail({id:emailAttempt.id})).send).toBe(false)
+ await asUser(manager)
+ expect((await db.query('select status from recruitment_leads where id=$1',[emailLead.id])).rows[0].status).toBe('lead_received')
+ expect((await db.query('select count(*) from invites where email=$1',[emailLead.email])).rows[0].count).toBe(0)
+ expect((await db.query('select count(*) from organisation_users where email=$1',[emailLead.email])).rows[0].count).toBe(0)
+})
+it('permits explicit resends after acceptance while preserving history and requiring review outside the retry window',async()=>{
+ await db.exec('reset role;')
+ await db.query("update recruitment_invitation_deliveries set created_at=now()-interval '2 minutes' where id=$1",[emailAttempt.id])
+ await emailServer()
+ const fresh=(await beginEmail()).attempt
+ expect(fresh.id).not.toBe(emailAttempt.id)
+ expect(await finishEmail(fresh,'unknown')).toBe(true)
+ await db.exec('reset role;')
+ await db.query("update recruitment_invitation_deliveries set created_at=now()-interval '24 hours' where id=$1",[fresh.id])
+ // Ensure this is the latest attempt even though the clock was moved for the fixture.
+ await db.query("update recruitment_invitation_deliveries set created_at=now()-interval '25 hours' where id=$1",[emailAttempt.id])
+ await emailServer()
+ await expect(beginEmail()).rejects.toThrow('uncertain')
+ await expect(beginEmail({id:fresh.id,allow:true})).rejects.toThrow('Retry window ended')
+ const reviewed=(await beginEmail({allow:true})).attempt
+ expect(reviewed.id).not.toBe(fresh.id)
+ await finishEmail(reviewed,'failed')
+ const retry=await beginEmail({id:reviewed.id})
+ expect(retry.attempt.id).toBe(reviewed.id)
+ await finishEmail(retry.attempt,'provider_accepted','reviewed-provider-id')
+})
+it('blocks expired/revoked/mismatched application sends and protects receipts from forged client writes',async()=>{
+ await asUser(manager)
+ await expect(db.query('insert into recruitment_invitation_deliveries(id,organisation_id,lead_id) values(gen_random_uuid(),$1,$2)',[org,emailLead.id])).rejects.toThrow('permission denied')
+ await expect(db.query("update recruitment_invitation_deliveries set status='provider_accepted' where lead_id=$1",[emailLead.id])).rejects.toThrow('permission denied')
+ await db.exec('reset role;')
+ await db.query("update recruitment_intake_links set created_at=now()-interval '1 day',expires_at=now()-interval '1 second' where id=$1",[emailLink])
+ await emailServer()
+ await expect(beginEmail()).rejects.toThrow('expired')
+ await asUser(manager)
+ expect((await db.query('select recruitment_invitation_status($1,$2,$3,$4) result',[org,emailLead.id,'application',emailLink])).rows[0].result.referenceStatus).toBe('expired')
+ await db.exec('reset role;')
+ await db.query("update recruitment_intake_links set expires_at=now()+interval '1 day',revoked_at=now() where id=$1",[emailLink])
+ await emailServer()
+ await expect(beginEmail()).rejects.toThrow('unavailable')
+})
+it('sends only the reviewed workspace invitation and verifies actual acceptance before recruitment completes',async()=>{
+ workspaceEmailLead=await handoverFixture('phase6-access@example.test')
+ workspaceEmailLead=(await activateJoining(workspaceEmailLead)).rows[0]
+ workspaceEmailInvite=(await db.query('select * from invites where id=$1',[workspaceEmailLead.activation_json.inviteId])).rows[0]
+ await emailServer()
+ const delivery=await beginEmail({candidate:workspaceEmailLead,kind:'workspace',reference:workspaceEmailInvite.id,hash:null})
+ expect(delivery.send).toBe(true)
+ await finishEmail(delivery.attempt,'provider_accepted','workspace-email-provider-id')
+ await asUser(manager)
+ expect((await db.query('select recruitment_invitation_status($1,$2,$3,$4) result',[org,workspaceEmailLead.id,'workspace',workspaceEmailInvite.id])).rows[0].result).toMatchObject({referenceStatus:'prepared',attempt:{status:'provider_accepted'}})
+ expect((await db.query('select count(*) from organisation_users where email=$1',[workspaceEmailLead.email])).rows[0].count).toBe(0)
+ const user=crypto.randomUUID()
+ expect((await acceptHandover(workspaceEmailInvite,user,workspaceEmailLead.email)).success).toBe(true)
+ await asUser(manager)
+ expect((await db.query('select recruitment_invitation_status($1,$2,$3,$4) result',[org,workspaceEmailLead.id,'workspace',workspaceEmailInvite.id])).rows[0].result.referenceStatus).toBe('accepted')
+ const completed=(await activateJoining(workspaceEmailLead)).rows[0]
+ expect(completed).toMatchObject({status:'agent_activated',activation_json:{userId:user,state:'active',joiningPlan:{branchId:joiningBranch}}})
+ await emailServer()
+ await expect(beginEmail({candidate:workspaceEmailLead,kind:'workspace',reference:workspaceEmailInvite.id})).rejects.toThrow('unavailable')
+})
+it('shows accurate directory progress while restricting branch managers to their branch and safe fields',async()=>{
+ await asUser(manager)
+ const rows=(await db.query('select recruitment_joining_progress($1) result',[org])).rows[0].result
+ expect(rows.find(row=>row.id===emailLead.id)).toMatchObject({invitation_state:'application_revoked',email:emailLead.email})
+ expect(rows.some(row=>row.id===workspaceEmailLead.id)).toBe(false) // now active, outside Joining totals
+ await asUser(branchManager)
+ await expect(db.query('select recruitment_joining_progress($1)',[org])).rejects.toThrow('management')
+ const limited=(await db.query('select recruitment_joining_progress($1,$2,0,false,true) result',[org,joiningBranch])).rows[0].result
+ expect(limited.length).toBeGreaterThan(0)
+ for(const row of limited){expect(row.joining_branch_id).toBe(joiningBranch);expect(Object.keys(row).sort()).toEqual(['activation_state','id','invitation_state','joining_branch_id','name','status'])}
+ await expect(db.query('select recruitment_joining_progress($1,$2,0,false,true)',[other,joiningBranch])).rejects.toThrow('joining branch')
+ await asUser(agent)
+ await expect(db.query('select recruitment_joining_progress($1)',[org])).rejects.toThrow('management')
+})
+it('blocks workspace sending after changed role, expiration or Commercial module suspension',async()=>{
+ const ready=await handoverFixture('phase6-expired-access@example.test',{role:'commercial_broker',businessWorkspaces:['commercial']})
+ const prepared=(await activateJoining(ready)).rows[0]
+ const reference=prepared.activation_json.inviteId
+ await db.exec('reset role;')
+ await db.query("update invites set target_workspace_role='admin' where id=$1",[reference])
+ await emailServer()
+ await expect(beginEmail({candidate:prepared,kind:'workspace',reference})).rejects.toThrow('reviewed access')
+ await db.exec('reset role;')
+ await db.query("update invites set target_workspace_role='commercial_broker',expires_at=now()-interval '1 second' where id=$1",[reference])
+ await emailServer()
+ await expect(beginEmail({candidate:prepared,kind:'workspace',reference})).rejects.toThrow('expired')
+ await db.exec('reset role;')
+ await db.query("update invites set expires_at=now()+interval '1 day' where id=$1",[reference])
+ await db.query("update organisation_modules set status='inactive' where organisation_id=$1 and module_key='commercial'",[org])
+ await emailServer()
+ await expect(beginEmail({candidate:prepared,kind:'workspace',reference})).rejects.toThrow('Commercial')
+ await db.exec('reset role;')
+ await db.query("update organisation_modules set status='active' where organisation_id=$1 and module_key='commercial'",[org])
+})
+it('keeps email mutation commands server-only and uses explicit definer search paths',async()=>{
+ await db.exec('reset role;')
+ const commands=(await db.query("select proname,prosecdef,proconfig,has_function_privilege('anon',p.oid,'EXECUTE') anon,has_function_privilege('authenticated',p.oid,'EXECUTE') client,has_function_privilege('service_role',p.oid,'EXECUTE') server from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and proname in ('recruitment_begin_invitation_email','recruitment_finish_invitation_email','recruitment_invitation_status','recruitment_joining_progress')")).rows
+ expect(commands).toHaveLength(4)
+ for(const command of commands){expect(command.prosecdef).toBe(true);expect(command.proconfig.join(',')).toContain('search_path=');expect(command.anon).toBe(false);const mutation=['recruitment_begin_invitation_email','recruitment_finish_invitation_email'].includes(command.proname);expect(command.server).toBe(mutation);expect(command.client).toBe(!mutation)}
+ await db.exec('set role anon;')
+ await expect(db.query('select id from recruitment_invitation_deliveries')).rejects.toThrow('permission denied')
+ await expect(db.query('select recruitment_invitation_status($1,$2,$3,$4)',[org,emailLead.id,'application',emailLink])).rejects.toThrow('permission denied')
+})
+it('redirects a stale failed-send retry to the latest uncertain attempt instead of sending a second request',async()=>{
+ await asUser(manager)
+ const candidate=(await createJoining({name:'Retry Recovery',email:'phase6-stale-retry@example.test',intake_key:crypto.randomUUID()})).lead
+ const hash=createHash('sha256').update(crypto.randomUUID()).digest('hex')
+ const reference=(await db.query("insert into recruitment_intake_links(organisation_id,lead_id,channel,token_hash,expires_at) values($1,$2,'private_link',$3,now()+interval '14 days') returning id",[org,candidate.id,hash])).rows[0].id
+ await emailServer()
+ const old=(await beginEmail({candidate,reference,hash})).attempt
+ await finishEmail(old,'failed')
+ await db.exec('reset role;')
+ await db.query("update recruitment_invitation_deliveries set created_at=now()-interval '24 hours' where id=$1",[old.id])
+ await emailServer()
+ const latest=(await beginEmail({candidate,reference,hash})).attempt
+ await finishEmail(latest,'unknown')
+ const recovered=await beginEmail({candidate,reference,hash,id:old.id})
+ expect(recovered.attempt.id).toBe(latest.id)
+ await asUser(manager)
+ expect((await db.query('select id from recruitment_invitation_deliveries where lead_id=$1',[candidate.id])).rows).toHaveLength(2)
+})

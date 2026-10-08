@@ -15,6 +15,7 @@ function setup(overrides = {}) {
   const deps = {
     validateDevelopmentStructureNodes,
     saveDevelopmentStructureNodes: async (payload) => { calls.push(['structure', payload]); return payload.nodes },
+    saveDevelopmentProductCatalogue: async (payload) => { calls.push(['catalogue', payload]); return payload },
     createDevelopment: async (payload) => { calls.push(['create', payload]); return { id: 'saved-development' } },
     saveDevelopmentDetails: async (...args) => { calls.push(['details', ...args]); return { saved: true, warnings: [] } },
     hasDevelopmentFinancialInputs: () => false,
@@ -41,6 +42,28 @@ test('retains development type and structured manual address through both creati
   assert.deepEqual(calls.find(([name]) => name === 'create')[1].profile.marketingContent, details.marketingContent)
   assert.deepEqual(calls.find(([name]) => name === 'details')[2], details)
   assert.equal(calls.find(([name]) => name === 'details')[3].reportWarnings, true)
+  assert.equal(calls.filter(([name]) => name === 'unit').length, 0)
+})
+
+test('saves the storey-bearing catalogue before units linked to those layouts', async () => {
+  const { create, calls } = setup()
+  const productCatalogue = { unitTypes: [{ id: 'type', name: 'Duplex' }], floorplans: [{ id: 'layout', unitTypeId: 'type', name: 'D1', storeys: 2 }] }
+  await create({ productCatalogue, units: [{ unitNumber: '001', unitTypeId: 'type', catalogueFloorplanId: 'layout' }] })
+  const catalogueIndex = calls.findIndex(([name]) => name === 'catalogue')
+  const unitIndex = calls.findIndex(([name]) => name === 'unit')
+  assert.ok(catalogueIndex >= 0 && catalogueIndex < unitIndex)
+  assert.equal(calls[catalogueIndex][1].floorplans[0].storeys, 2)
+  assert.equal(calls[unitIndex][1].catalogueFloorplanId, 'layout')
+  assert.equal(calls[catalogueIndex][1].developmentId, 'saved-development')
+})
+
+test('a layout persistence failure retains the saved development and stops unit creation', async () => {
+  const { create, calls } = setup({ saveDevelopmentProductCatalogue: async () => { throw new Error('Layout permission denied') } })
+  await assert.rejects(create({ productCatalogue: { floorplans: [{ name: 'D1', storeys: 2 }] }, units: [{ unitNumber: '001' }] }), (error) => {
+    assert.equal(error.developmentId, 'saved-development')
+    assert.match(error.message, /Layout permission denied/)
+    return true
+  })
   assert.equal(calls.filter(([name]) => name === 'unit').length, 0)
 })
 
@@ -114,7 +137,7 @@ function unitWriter() {
     requireClient: () => client,
     normalizeTextValue: (value) => String(value || '').trim(),
     normalizeNullableText: (value) => value || null,
-    normalizeDevelopmentUnitRow: (row) => ({ ...row, unitNumber: row.unit_number, structureNodeId: row.structure_node_id }),
+    normalizeDevelopmentUnitRow: (row) => ({ ...row, unitNumber: row.unit_number, structureNodeId: row.structure_node_id, catalogueFloorplanId: row.catalogue_floorplan_id }),
     isMissingColumnError: (error, column) => error?.column === column,
   }
   const save = new Function(...Object.keys(deps), `${unitSource}; return saveDevelopmentUnit`)(...Object.values(deps))
@@ -131,4 +154,11 @@ test('the existing legacy fallback remains available for ungrouped units', async
   const { save, calls } = unitWriter()
   await save({ developmentId: 'development', unitNumber: '001' })
   assert.equal(calls.length, 2)
+})
+
+
+test('a duplex cannot fall back to a unit record that discards its saved layout', async () => {
+  const { save, calls } = unitWriter()
+  await assert.rejects(save({ developmentId: 'development', unitNumber: '001', catalogueFloorplanId: 'layout' }), /unit layout links/)
+  assert.equal(calls.length, 1)
 })

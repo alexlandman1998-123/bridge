@@ -1,3 +1,6 @@
+import AgentWorkspaceListings from '../components/agents/AgentWorkspaceListings'
+import AgentNeedsAttention from '../components/agents/AgentNeedsAttention'
+import LeadsRouteShell from '../components/leads/LeadsRouteShell'
 import InlineCommissionStructure from '../components/commission/InlineCommissionStructure'
 import {
   AlertTriangle,
@@ -29,7 +32,7 @@ import {
   Users,
   XCircle,
 } from 'lucide-react'
-import { createElement, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, createElement, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import AppointmentDashboardSection from '../components/appointments/dashboard/AppointmentDashboardSection'
 import AgentTransactionsTable from '../components/AgentTransactionsTable'
@@ -100,6 +103,8 @@ import {
   recordAgentTransferMembershipTransition,
   validateTransferRetentionStrategy,
 } from '../services/agentTransferService'
+import RecruitmentJoiningList from './recruitment/RecruitmentJoiningList'
+import { navigateToRecruitment } from './recruitment/recruitmentEntryModel'
 import {
   createWorkspaceUserInvite,
   listWorkspaceUserInvites,
@@ -109,8 +114,9 @@ import {
 import {
   resolvePortalBuyerName,
   resolvePortalPropertyLabel,
-  resolvePortalSellerName,
 } from '../services/portalCanonicalFieldFallbacks'
+
+const AgentWorkspaceLeads = lazy(() => import('./agency/AgencyLeadListRoutePage'))
 
 const PRIVATE_LISTINGS_STORAGE_KEY = 'itg:agent-private-listings:v1'
 const PIPELINE_STORAGE_KEY = 'itg:pipeline-leads:v1'
@@ -349,8 +355,8 @@ function AgentInviteModal({
     <Modal
       open={open}
       onClose={submitting || commissionSaving ? undefined : onClose}
-      title="Add Agent"
-      subtitle="Invite an agent to your organisation. They will receive an onboarding link by email and WhatsApp."
+      title="Existing staff access"
+      subtitle="Invite an agent who already works for your agency. Use Invite new agent to start recruitment."
       className="max-w-4xl"
       footer={
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
@@ -1655,78 +1661,6 @@ function AgentDigitalCardOverview({ cardState, agentName = '', canActivate = fal
         </div> : null}
       </div>
     </section>
-  )
-}
-
-function resolveAgentListingCoverImage(listing = {}) {
-  const marketing = listing?.marketing && typeof listing.marketing === 'object' ? listing.marketing : {}
-  const propertyDetails = listing?.propertyDetails && typeof listing.propertyDetails === 'object' ? listing.propertyDetails : {}
-  const gallery = [
-    ...(Array.isArray(marketing.imageGallery) ? marketing.imageGallery : []),
-    ...(Array.isArray(propertyDetails.imageGallery) ? propertyDetails.imageGallery : []),
-    ...(Array.isArray(listing.imageGallery) ? listing.imageGallery : []),
-  ]
-  const firstGalleryImage = gallery.find((image) => image?.url || image?.signedUrl || image?.publicUrl)
-  return String(
-    listing.imageUrl || listing.image_url || listing.coverImageUrl || listing.cover_image_url || marketing.mediaUrl ||
-    firstGalleryImage?.url || firstGalleryImage?.signedUrl || firstGalleryImage?.publicUrl || '',
-  ).trim()
-}
-
-function getAgentListingStatusMeta(status = '') {
-  const key = String(status || 'active').trim().toLowerCase()
-  if (key.includes('sold') || key.includes('register')) return { label: 'Sold', className: 'bg-[#2f6fa6]' }
-  if (key.includes('offer')) return { label: 'Offer received', className: 'bg-[#2b83c5]' }
-  if (key.includes('reserve')) return { label: 'Reserved', className: 'bg-[#e99e2e]' }
-  if (key.includes('inactive') || key.includes('withdraw')) return { label: 'Inactive', className: 'bg-[#7b8797]' }
-  return { label: 'Active', className: 'bg-[#28a66a]' }
-}
-
-function getAgentListingFacts(listing = {}) {
-  return [
-    [listing.bedrooms ?? listing.beds, 'Beds'],
-    [listing.bathrooms ?? listing.baths, 'Baths'],
-    [listing.parking ?? listing.garages, 'Parking'],
-    [listing.size ?? listing.floorSize ?? listing.floor_size, 'm²'],
-  ]
-    .filter(([value]) => value !== null && value !== undefined && String(value).trim() !== '')
-    .slice(0, 4)
-    .map(([value, label]) => `${value} ${label}`)
-}
-
-function AgentListingCard({ listing, onOpen }) {
-  const title = listing.title || listing.listingTitle || listing.address || 'Listing'
-  const location = listing.developmentName || listing.suburb || listing.address || 'Location pending'
-  const price = listing.price ?? listing.askingPrice
-  const imageUrl = resolveAgentListingCoverImage(listing)
-  const status = getAgentListingStatusMeta(listing.status)
-  const facts = getAgentListingFacts(listing)
-
-  return (
-    <button
-      type="button"
-      onClick={() => onOpen(listing)}
-      className="group flex min-w-0 flex-col overflow-hidden rounded-[8px] border border-[#dce6f2] bg-white text-left shadow-[0_6px_16px_rgba(15,23,42,0.05)] transition hover:-translate-y-0.5 hover:border-[#bfd0e1] hover:shadow-[0_12px_26px_rgba(15,23,42,0.10)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1769d1] focus-visible:ring-offset-2"
-      aria-label={`Open listing ${title}`}
-    >
-      <div className="relative h-[168px] w-full overflow-hidden border-b border-[#e5edf6] bg-[#eef4fa]">
-        {imageUrl ? <img src={imageUrl} alt="" className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.025]" /> : (
-          <div className="h-full w-full bg-[linear-gradient(140deg,#1f4f78_0%,#4a7da8_55%,#a8c2dc_100%)]" />
-        )}
-        <span className="absolute left-3 top-3 inline-flex items-center gap-2 rounded-full border border-white/25 bg-[#091322]/60 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-white shadow-[0_8px_18px_rgba(9,19,34,0.18)] backdrop-blur">
-          <i className={`h-2 w-2 rounded-full ${status.className}`} /> {status.label}
-        </span>
-      </div>
-      <div className="flex min-w-0 flex-1 flex-col gap-3 p-4">
-        <div className="min-w-0">
-          <h3 className="line-clamp-2 text-[1.02rem] font-semibold leading-6 text-[#142132]">{title}</h3>
-          <p className="mt-1 truncate text-sm text-[#60758d]">{location}</p>
-          <p className="mt-2 text-[1.08rem] font-semibold text-[#1f4f78]">{formatCurrency(price)}</p>
-        </div>
-        {facts.length ? <div className="grid gap-2 rounded-[12px] border border-[#dbe6f2] bg-[#f9fbfe] px-3 py-2 text-center text-[0.76rem] font-semibold text-[#35546c]" style={{ gridTemplateColumns: `repeat(${facts.length}, minmax(0, 1fr))` }}>{facts.map((fact) => <span key={fact} className="truncate">{fact}</span>)}</div> : null}
-        <span className="mt-auto inline-flex items-center gap-1.5 border-t border-[#eef3f8] pt-3 text-[0.78rem] font-semibold text-[#1f4f78]">Open listing <ArrowRight size={14} /></span>
-      </div>
-    </button>
   )
 }
 
@@ -4150,58 +4084,6 @@ function FinancialPerformanceCard({ rows }) {
   )
 }
 
-function normalizeWorkspaceMatch(value) {
-  return String(value || '').trim().toLowerCase()
-}
-
-function rowMatchesAgentContext(agent = {}, row = {}) {
-  const keys = [
-    agent.id,
-    agent.userId,
-    agent.organisationUserId,
-    agent.email,
-    agent.name,
-    agent.fullName,
-    agent.displayName,
-  ].map(normalizeWorkspaceMatch).filter(Boolean)
-
-  if (!keys.length) return false
-
-  const candidates = [
-    row.id,
-    row.userId,
-    row.user_id,
-    row.agentId,
-    row.agent_id,
-    row.assignedAgentId,
-    row.assigned_agent_id,
-    row.assignedUserId,
-    row.assigned_user_id,
-    row.createdBy,
-    row.created_by,
-    row.email,
-    row.agentEmail,
-    row.agent_email,
-    row.assignedAgentEmail,
-    row.assigned_agent_email,
-    row.agentName,
-    row.agent_name,
-    row.assignedAgentName,
-    row.assigned_agent_name,
-    row.assignedAgent,
-    row.assigned_agent,
-    row.listingAgentId,
-    row.listing_agent_id,
-    row.ownerAgentId,
-    row.owner_agent_id,
-    row?.transaction?.assigned_agent_id,
-    row?.transaction?.assigned_agent_email,
-    row?.transaction?.assigned_agent,
-  ].map(normalizeWorkspaceMatch).filter(Boolean)
-
-  return candidates.some((candidate) => keys.includes(candidate))
-}
-
 function getTransactionAmount(row = {}) {
   return Number(
     row?.transaction?.purchase_price ||
@@ -4236,31 +4118,6 @@ function getLeadType(row = {}) {
   return 'Buyer'
 }
 
-function getLeadName(row = {}) {
-  const resolver = getLeadType(row) === 'Seller' ? resolvePortalSellerName : resolvePortalBuyerName
-  return resolver(row, {
-    fallback: row.name || row.fullName || row.full_name || row.clientName || row.client_name || row.email || 'Lead',
-  })
-}
-
-function getLeadId(row = {}) {
-  return row.leadId || row.lead_id || row.id || ''
-}
-
-function getLeadLinkedProperty(row = {}) {
-  return resolvePortalPropertyLabel(row, {
-    fallback: row.listingTitle || row.listing_title || row.propertyTitle || row.property_title || row.developmentName || row.development_name || 'No listing assigned',
-  })
-}
-
-function getTaskDueLabel(row = {}) {
-  return row.dueDate || row.due_date || row.followUpDate || row.follow_up_date || row.nextFollowUpDate || row.next_follow_up_date
-}
-
-function isTaskDone(row = {}) {
-  return String(row.status || '').toLowerCase().includes('complete')
-}
-
 export function AgentWorkspace({ agent, canManageSettings = false, commissionStructures = [], workspaceSnapshot = {}, branchOptions = [], onRefresh }) {
   const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState('overview')
@@ -4285,7 +4142,6 @@ export function AgentWorkspace({ agent, canManageSettings = false, commissionStr
   const [permissionsSaving, setPermissionsSaving] = useState(false)
   const [permissionsError, setPermissionsError] = useState('')
   const [cardRefreshKey, setCardRefreshKey] = useState(0)
-  const [showAllAgentTasks, setShowAllAgentTasks] = useState(false)
   const [agentDigitalCardState, setAgentDigitalCardState] = useState({
     loading: false,
     error: '',
@@ -4731,7 +4587,6 @@ export function AgentWorkspace({ agent, canManageSettings = false, commissionStr
     }
   }
 
-  const agentTasks = tasks.filter((row) => rowMatchesAgentContext(agent, row))
   const buyerLeadRows = (agent.pipelineRows || []).filter((row) => getLeadType(row) === 'Buyer')
   const sellerLeadRows = (agent.pipelineRows || []).filter((row) => getLeadType(row) === 'Seller')
   const activeTransactionRows = activeDeals.length ? activeDeals : agent.deals
@@ -4991,24 +4846,7 @@ export function AgentWorkspace({ agent, canManageSettings = false, commissionStr
               )}
             </WorkspaceCard>
 
-            <WorkspaceCard title="Tasks & reminders" actionLabel={agentTasks.length > 6 ? (showAllAgentTasks ? 'Show less' : 'View all') : ''} onAction={() => setShowAllAgentTasks((value) => !value)}>
-              {agentTasks.length ? (
-                <div className="space-y-3">
-                  {(showAllAgentTasks ? agentTasks : agentTasks.slice(0, 6)).map((task) => (
-                    <div key={task.id || task.taskId || task.title} className="flex min-w-0 items-start gap-3">
-                      <span className={`mt-0.5 h-5 w-5 shrink-0 rounded-full border ${isTaskDone(task) ? 'border-[#16894f] bg-[#16894f]' : 'border-[#c6d3e1] bg-white'}`} />
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-semibold text-[#10243a]">{task.title || task.name || task.subject || 'Follow up'}</p>
-                        <p className="truncate text-xs text-[#60758d]">{task.relatedLabel || task.entityLabel || task.leadName || 'Linked record'}</p>
-                      </div>
-                      <span className="shrink-0 text-xs font-semibold text-[#b42318]">{getTaskDueLabel(task) ? formatDate(getTaskDueLabel(task)) : 'No date'}</span>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <EmptyWorkspaceState>No tasks or reminders for this agent.</EmptyWorkspaceState>
-              )}
-            </WorkspaceCard>
+            <AgentNeedsAttention agent={agent} />
           </div>
 
           <AgentDigitalCardOverview
@@ -5081,63 +4919,18 @@ export function AgentWorkspace({ agent, canManageSettings = false, commissionStr
       ) : null}
 
       {effectiveActiveTab === 'listings' ? (
-        <section className="min-w-0 space-y-4">
-          <PrincipalAgentTabShell title="Listings" description="Listings assigned to this agent, with principal-level assignment context." actionLabel="Assign Listing" actionUnavailableReason="Listing assignment is not connected in this workspace yet">
-            {allListings.length ? (
-              <div className="grid min-w-0 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-                {allListings.map((listing) => (
-                  <AgentListingCard
-                    key={listing.id || listing.title || listing.listingTitle}
-                    listing={listing}
-                    onOpen={(selectedListing) => navigate(selectedListing.id ? `/agent/listings/${encodeURIComponent(selectedListing.id)}` : '/listings')}
-                  />
-                ))}
-              </div>
-            ) : (
-              <EmptyWorkspaceState>No listings assigned to this agent.</EmptyWorkspaceState>
-            )}
-          </PrincipalAgentTabShell>
-        </section>
+        <AgentWorkspaceListings key={`${agent.organisationId || agent.organisation_id}:${agent.userId || agent.user_id || agent.id}`} agent={agent} />
       ) : null}
 
       {effectiveActiveTab === 'leads' ? (
         <section className="min-w-0 space-y-4">
           <LockedAgentFilterChip label={agentDisplayName} />
-          <PrincipalAgentTabShell title="Leads" description="Buyer and seller leads assigned to this agent.">
-            <div className="grid min-w-0 gap-4 xl:grid-cols-2">
-              {[
-                ['Buyer Leads', buyerLeadRows],
-                ['Seller Leads', sellerLeadRows],
-              ].map(([title, rows]) => (
-                <WorkspaceCard key={title} title={title}>
-                  {rows.length ? (
-                    <div className="space-y-2">
-                      {rows.slice(0, 12).map((lead) => {
-                        const leadId = getLeadId(lead)
-                        return (
-                          <button
-                            key={leadId || getLeadName(lead)}
-                            type="button"
-                            className="grid w-full min-w-0 gap-2 rounded-xl border border-[#e4ebf5] bg-[#fbfcfe] px-4 py-3 text-left text-sm transition hover:bg-white sm:grid-cols-[minmax(0,1fr)_120px_120px] sm:items-center"
-                            onClick={() => navigate(leadId ? `/pipeline/leads/${leadId}` : '/pipeline/leads')}
-                          >
-                            <span className="min-w-0">
-                              <span className="block truncate font-semibold text-[#10243a]">{getLeadName(lead)}</span>
-                              <span className="block truncate text-xs text-[#60758d]">{getLeadLinkedProperty(lead)}</span>
-                            </span>
-                            <span className="truncate text-[#526981]">{lead.status || lead.stage || 'Open'}</span>
-                            <span className="truncate text-right text-[#526981]">{formatDate(lead.updatedAt || lead.updated_at || lead.createdAt || lead.created_at)}</span>
-                          </button>
-                        )
-                      })}
-                    </div>
-                  ) : (
-                    <EmptyWorkspaceState>No {title.toLowerCase()} assigned to this agent.</EmptyWorkspaceState>
-                  )}
-                </WorkspaceCard>
-              ))}
-            </div>
-          </PrincipalAgentTabShell>
+          <Suspense fallback={<LeadsRouteShell />}>
+            <AgentWorkspaceLeads
+              key={`${agent.organisationId || agent.organisation_id}:${agent.userId || agent.user_id || agent.id}`}
+              scopedAgent={agent}
+            />
+          </Suspense>
         </section>
       ) : null}
 
@@ -6089,6 +5882,8 @@ export function AgentsPage() {
 
   const canAccess = canAccessAgentsModule({ role, baseRole, profile, membershipRole })
   const canManageDirectory = canManageAgentOrganisations({ role, baseRole, profile, membershipRole })
+  const canManageRecruitment = canManageDirectory && ['owner','principal','admin','super_admin'].includes(membershipRole)
+  const recruitmentOrganisationId = workspaceOrganisation?.id || currentMembership?.organisationId || currentMembership?.organisation_id || ''
   const permissionCheckPending = profileLoading || !workspaceReady || (!canAccess && !membershipRoleLoaded)
 
   useEffect(() => {
@@ -6337,7 +6132,7 @@ export function AgentsPage() {
       setInviteSentContext({ email: '', link: '' })
       setInviteForm(buildAgentInviteForm({ profile, directory: readAgentDirectory() }))
       setInviteError('')
-      setInviteModalOpen(true)
+      if (canManageRecruitment && recruitmentOrganisationId) navigateToRecruitment(navigate, { entryPoint: 'agents', organisationId: recruitmentOrganisationId, returnTo: '/agency/agents' })
     }
 
     function handleAgentsSearch(event) {
@@ -6350,7 +6145,7 @@ export function AgentsPage() {
       window.removeEventListener('itg:open-add-agent', handleOpenAddAgent)
       window.removeEventListener('itg:agents-search', handleAgentsSearch)
     }
-  }, [profile])
+  }, [profile, canManageRecruitment, recruitmentOrganisationId, navigate])
 
   const organisationOptions = useMemo(
     () => resolveOrganisationOptions({ directory: agentDirectory, invites: agentInvites, profile, organisation: workspaceOrganisation }),
@@ -6433,7 +6228,7 @@ export function AgentsPage() {
     const routeState = location.state && typeof location.state === 'object' ? location.state : {}
     const shouldOpenInvite = Boolean(routeState.openInvite || routeState.openAgentInvite || routeState.branchId)
     const requestedBranchId = String(routeState.branchId || '').trim()
-    if (!shouldOpenInvite) return
+    if (!shouldOpenInvite || !canManageRecruitment || !recruitmentOrganisationId) return
     if (requestedBranchId && loading && !inviteBranchOptions.length) return
 
     const consumeKey = `${location.key || location.pathname}:${requestedBranchId || 'no-branch'}`
@@ -6451,9 +6246,8 @@ export function AgentsPage() {
       branchId: selectedBranch?.id || requestedBranchId,
       office: selectedBranch?.name || String(routeState.branchName || '').trim(),
     })
-    setInviteModalOpen(true)
-    navigate(location.pathname, { replace: true, state: null })
-  }, [inviteBranchOptions, loading, location.key, location.pathname, location.state, navigate, profile])
+    navigateToRecruitment(navigate, { entryPoint: 'agents', organisationId: recruitmentOrganisationId, branchId: selectedBranch?.id || requestedBranchId, returnTo: '/agency/agents' }, { replace: true })
+  }, [inviteBranchOptions, loading, location.key, location.pathname, location.state, navigate, profile, canManageRecruitment, recruitmentOrganisationId])
 
   useEffect(() => {
     setInviteForm((previous) => {
@@ -6737,6 +6531,7 @@ export function AgentsPage() {
         activeCommissionStructureOptions.find((structure) => structure.id === String(inviteForm.commissionStructureId || '').trim()) ||
         defaultCommissionStructure
       const created = await createWorkspaceUserInvite({
+            metadata: {access_purpose: 'existing_staff'},
         firstName: inviteForm.firstName,
         lastName: inviteForm.surname,
         email: inviteForm.email,
@@ -7133,14 +6928,13 @@ export function AgentsPage() {
     setActionMessage('')
     setActionError('')
     setInviteSentContext({ email: '', link: '' })
-    resetInviteForm()
-    setInviteModalOpen(true)
+    navigateToRecruitment(navigate, { entryPoint: 'agents', organisationId: recruitmentOrganisationId, branchId: branchFilter === 'all' ? '' : branchFilter, returnTo: '/agency/agents' })
   }
 
-  const inviteAgentAction = canManageDirectory ? (
-    <Button type="button" size="sm" onClick={openAgentInviteModal}>
+  const inviteAgentAction = canManageRecruitment ? (
+    <Button type="button" size="sm" disabled={loading || !recruitmentOrganisationId} onClick={openAgentInviteModal}>
       <Plus size={15} />
-      Add Agent
+      Invite new agent
     </Button>
   ) : null
 
@@ -7165,6 +6959,7 @@ export function AgentsPage() {
               options={commandCentreModel.filterOptions.branches.map((branch) => ({ value: branch.id, label: branch.name }))}
             />
             {inviteAgentAction}
+            <Button type="button" size="sm" variant="secondary" onClick={() => { resetInviteForm(); setInviteModalOpen(true) }}>Existing staff access</Button>
           </div>
 
           <PerformanceKpiStrip kpis={commandCentreModel.kpis} onAttentionClick={() => setStatusFilter('needs_attention')} />
@@ -7204,7 +6999,7 @@ export function AgentsPage() {
                 setInviteModalOpen(true)
               }}
             >
-              Add another agent
+              Invite another existing agent
             </Button>
             <Button type="button" variant="secondary" size="sm" onClick={() => navigate('/agency/agents')}>
               View agents
@@ -7252,12 +7047,10 @@ export function AgentsPage() {
                 type="button"
                 size="sm"
                 className="mt-4"
-                onClick={() => {
-                  resetInviteForm()
-                  setInviteModalOpen(true)
-                }}
+                onClick={openAgentInviteModal}
+                disabled={!canManageRecruitment || !recruitmentOrganisationId}
               >
-                + Add Agent
+                Invite new agent
               </Button>
             </section>
           )}
@@ -7297,6 +7090,8 @@ export function AgentsPage() {
           />
         </section>
       ) : null}
+
+      {!loading && canManageRecruitment && <RecruitmentJoiningList organisationId={recruitmentOrganisationId} branchId={branchFilter === 'all' ? '' : branchFilter} search={searchTerm} returnTo="/agency/agents" />}
 
       {!loading && !canManageDirectory ? (
         <AgentMemberWorkspace

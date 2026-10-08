@@ -132,6 +132,7 @@ export function createAgencyBranchDraft(overrides = {}) {
 export function createAgencyInviteDraft(overrides = {}) {
   return {
     id: overrides.id || generateDraftId('invite'),
+    purpose: overrides.purpose === 'existing_staff' ? 'existing_staff' : 'new_recruit',
     name: preserveDraftText(overrides.name),
     email: normalizeText(overrides.email).toLowerCase(),
     branchId: normalizeText(overrides.branchId),
@@ -285,4 +286,8 @@ export function normalizeBranchAgentCount(branch = {}) {
   const value = Number(branch.numberOfAgents)
   if (!Number.isFinite(value) || value < 0) return 0
   return Math.trunc(value)
+}
+
+export function isNewAgencyRecruit(invite) {
+  return ['agent','senior_agent','commercial_broker'].includes(invite.role || 'agent') && invite.purpose !== 'existing_staff'
 }

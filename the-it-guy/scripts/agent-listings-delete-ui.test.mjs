@@ -186,15 +186,17 @@ assert(
   'listing-detail deletion should use the same in-app confirmation dialog while leaving unrelated browser confirmations untouched.',
 )
 
+const cardSource = fs.readFileSync(path.join(root, 'src/components/listings/SalesListingIndexCard.jsx'), 'utf8')
+
 assert(
-  source.includes('className="group flex h-full cursor-pointer flex-col') &&
-    source.includes('h-[132px]') &&
-    source.includes('relative h-[132px] w-full overflow-visible') &&
-    source.includes('absolute inset-0 overflow-hidden') &&
+  source.includes('SalesListingIndexCard') && cardSource.includes('className="group flex h-full cursor-pointer flex-col') &&
+    cardSource.includes('h-[132px]') &&
+    cardSource.includes('relative h-[132px] w-full overflow-visible') &&
+    cardSource.includes('absolute inset-0 overflow-hidden') &&
     source.includes('absolute right-3 top-3 z-10') &&
     source.includes("window.addEventListener('click', closeListingMenu)") &&
     source.includes("window.removeEventListener('click', closeListingMenu)") &&
-    source.includes('ListingAgentAvatar') &&
+    cardSource.includes('ListingAgentAvatar') &&
     source.includes('propertyFacts'),
   'listing cards should retain their compact treatment while allowing the actions menu to extend below the image and dismiss on an outside click.',
 )

@@ -23,6 +23,7 @@ import Button from '../../components/ui/Button'
 import ConfirmDialog from '../../components/ui/ConfirmDialog'
 import Field from '../../components/ui/Field'
 import Modal from '../../components/ui/Modal'
+import { useWorkspace } from '../../context/WorkspaceContextBase'
 import { upsertAreaFromAddress } from '../../lib/location/upsertArea'
 import { createBranch, deleteBranch, getAgencyBranchOverview } from '../../services/agencyBranchService'
 import { createPrincipalClaimInvite } from '../../services/workspaceUserInviteService'
@@ -56,6 +57,8 @@ const EMPTY_OVERVIEW = {
     agents: 0,
     salesAgents: 0,
     operationalTeam: 0,
+    activeTeam: 0,
+    activeListings: 0,
     companyPipeline: 0,
     activeTransactions: 0,
     projectedCommission: 0,
@@ -68,6 +71,7 @@ const EMPTY_OVERVIEW = {
     transactions: { value: 0, previousValue: 0, changePercent: null, sparkline: [] },
     listings: { value: 0, previousValue: 0, changePercent: null, sparkline: [] },
     agents: { value: 0, previousValue: 0, changePercent: null, sparkline: [] },
+    team: { value: 0, previousValue: 0, changePercent: null, sparkline: [] },
   },
   branches: [],
 }
@@ -190,12 +194,15 @@ function MiniSparkline({ values = [], tone = 'blue', className = 'h-9 w-24' }) {
   )
 }
 
-function ChangeLabel({ value, suffix = '' }) {
+function ChangeLabel({ value, suffix = '', previousValue, currentValue }) {
   const numeric = toNumber(value)
   const Icon = numeric < 0 ? ArrowDownRight : ArrowUpRight
 
+  if (previousValue === 0) {
+    return <span className="text-[0.78rem] font-semibold text-[#64748b]">{currentValue > 0 ? 'New activity this period' : 'No activity in either period'}</span>
+  }
   if (value === null || value === undefined) {
-    return <span className="text-[0.78rem] font-semibold text-[#64748b]">No history yet</span>
+    return <span className="text-[0.78rem] font-semibold text-[#64748b]">No comparable activity</span>
   }
 
   return (
@@ -217,7 +224,7 @@ function StatusBadge({ children, tone = 'slate' }) {
   return <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[0.72rem] font-semibold ${toneClass}`}>{children}</span>
 }
 
-function PerformanceMetric({ label, value, changePercent, sparkline, tone = 'blue' }) {
+function PerformanceMetric({ label, value, activityLabel, currentActivity, previousActivity, changePercent, sparkline, showComparison = true, tone = 'blue' }) {
   return (
     <article className="min-w-0 rounded-lg border border-[#e2e8f0] bg-[#fbfdff] p-3 sm:p-4">
       <div className="flex items-start justify-between gap-3">
@@ -225,10 +232,11 @@ function PerformanceMetric({ label, value, changePercent, sparkline, tone = 'blu
           <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#64748b]">{label}</p>
           <strong className="mt-2 block truncate text-[1.35rem] font-semibold tracking-[-0.035em] text-[#0f172a] tabular-nums">{value}</strong>
         </div>
-        <MiniSparkline values={sparkline} tone={tone} className="hidden h-9 w-24 shrink-0 lg:block" />
+        {showComparison ? <MiniSparkline values={sparkline} tone={tone} className="hidden h-9 w-24 shrink-0 lg:block" /> : null}
       </div>
       <div className="mt-3">
-        <ChangeLabel value={changePercent} suffix="vs previous" />
+        <p className="mb-1 text-xs text-[#64748b]">{activityLabel}</p>
+        {showComparison ? <ChangeLabel value={changePercent} previousValue={previousActivity} currentValue={currentActivity} suffix="vs previous period" /> : null}
       </div>
     </article>
   )
@@ -668,7 +676,12 @@ export default function AgencyBranchesPage() {
   const navigate = useNavigate()
   const location = useLocation()
   const [searchParams] = useSearchParams()
-  const [overview, setOverview] = useState(EMPTY_OVERVIEW)
+  const { currentWorkspace, currentMembership, workspace } = useWorkspace()
+  const organisationId = normalizeText(currentWorkspace?.id || currentMembership?.workspaceId || workspace?.id)
+  const [loadedOverview, setOverview] = useState(null)
+  const overview = loadedOverview?.organisationId === organisationId ? loadedOverview : EMPTY_OVERVIEW
+  const hasOverview = overview !== EMPTY_OVERVIEW
+  const requestSequence = useRef(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [period, setPeriod] = useState(() => searchParams.get('period') || 'this_month')
@@ -682,23 +695,27 @@ export default function AgencyBranchesPage() {
   const [deletingBranchId, setDeletingBranchId] = useState('')
 
   const loadOverview = useCallback(async () => {
+    const sequence = ++requestSequence.current
     setLoading(true)
     setError('')
     try {
-      const nextOverview = await getAgencyBranchOverview('', period)
-      setOverview(nextOverview || EMPTY_OVERVIEW)
+      if (!organisationId) throw new Error('Select an organisation to load company performance.')
+      const nextOverview = await getAgencyBranchOverview(organisationId, period)
+      if (sequence !== requestSequence.current) return
+      if (nextOverview?.organisationId !== organisationId) throw new Error('Company figures do not match the selected organisation.')
+      setOverview(nextOverview)
     } catch (loadError) {
-      setError(loadError?.message || 'Unable to load branches right now.')
+      if (sequence === requestSequence.current) setError(loadError?.message || 'Unable to load company figures right now.')
     } finally {
-      setLoading(false)
+      if (sequence === requestSequence.current) setLoading(false)
     }
-  }, [period])
+  }, [organisationId, period])
 
   useEffect(() => {
     const timer = setTimeout(() => {
       void loadOverview()
     }, 0)
-    return () => clearTimeout(timer)
+    return () => { clearTimeout(timer); requestSequence.current += 1 }
   }, [loadOverview])
 
   useEffect(() => {
@@ -783,27 +800,32 @@ export default function AgencyBranchesPage() {
   }
 
   const periodMetrics = overview.periodMetrics || EMPTY_OVERVIEW.periodMetrics
+  const activityPeriod = { this_month: 'this month', last_month: 'last month', '90_days': 'in the last 90 days' }[overview.period || period] || 'this month'
 
   return (
     <section className="flex flex-col gap-5 pb-8">
 
-      {error ? <p className="rounded-lg border border-[#fecaca] bg-[#fef2f2] px-5 py-4 text-sm text-[#991b1b]">{error}</p> : null}
+      {error ? <div role="alert" className="rounded-lg border border-[#fecaca] bg-[#fef2f2] px-5 py-4 text-sm text-[#991b1b]">
+        <p>{error}{hasOverview ? ' Last successfully loaded figures are shown.' : ' Company figures have not been loaded.'}</p>
+        <Button variant="secondary" size="sm" className="mt-2" onClick={loadOverview} disabled={loading}>Retry</Button>
+      </div> : null}
       {loading ? <p className="rounded-lg border border-[#e2e8f0] bg-white px-5 py-4 text-sm text-[#64748b]">Loading company branch overview...</p> : null}
 
-      {!loading ? (
+      {!loading && hasOverview ? (
         <>
           <section className="rounded-lg border border-[#e2e8f0] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.04)]">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <div>
                 <h1 className="text-xl font-semibold tracking-[-0.03em] text-[#0f172a]">Company Performance</h1>
-                <p className="mt-1 text-sm text-[#64748b]">A view of performance across your organisation.</p>
+                <p className="mt-1 text-sm text-[#64748b]">Current totals across your organisation. Choose a period to compare new activity below.</p>
               </div>
-              <div className="grid grid-cols-3 overflow-hidden rounded-lg border border-[#dbe4ee] bg-[#f8fafc] p-1">
+              <div role="group" aria-label="Activity period" className="grid grid-cols-3 overflow-hidden rounded-lg border border-[#dbe4ee] bg-[#f8fafc] p-1">
                 {PERIOD_OPTIONS.map((option) => (
                   <button
                     type="button"
                     key={option.value}
                     onClick={() => setPeriod(option.value)}
+                    aria-pressed={period === option.value}
                     className={`min-h-[34px] rounded-md px-3 text-sm font-semibold transition ${period === option.value ? 'bg-white text-[#0f172a] shadow-[0_6px_16px_rgba(15,23,42,0.08)]' : 'text-[#64748b] hover:text-[#0f172a]'}`}
                   >
                     {option.label}
@@ -811,12 +833,13 @@ export default function AgencyBranchesPage() {
                 ))}
               </div>
             </div>
-            <div className="mt-5 grid grid-cols-2 gap-3 xl:grid-cols-4">
-              <PerformanceMetric label="Pipeline Value" value={formatCompactCurrency(periodMetrics.pipeline?.value)} changePercent={periodMetrics.pipeline?.changePercent} sparkline={periodMetrics.pipeline?.sparkline} tone="gold" />
-              <PerformanceMetric label="Transactions" value={formatNumber(periodMetrics.transactions?.value)} changePercent={periodMetrics.transactions?.changePercent} sparkline={periodMetrics.transactions?.sparkline} tone="green" />
-              <PerformanceMetric label="Listings" value={formatNumber(periodMetrics.listings?.value)} changePercent={periodMetrics.listings?.changePercent} sparkline={periodMetrics.listings?.sparkline} tone="blue" />
-              <PerformanceMetric label="Sales Agents" value={formatNumber(periodMetrics.agents?.value)} changePercent={periodMetrics.agents?.changePercent} sparkline={periodMetrics.agents?.sparkline} tone="slate" />
+            <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <PerformanceMetric label="Sales pipeline value" value={formatCurrency(overview.totals.companyPipeline)} activityLabel={`${formatCurrency(periodMetrics.pipeline?.value)} of current pipeline added ${activityPeriod}`} showComparison={false} tone="gold" />
+              <PerformanceMetric label="Active transactions" value={formatNumber(overview.totals.activeTransactions)} activityLabel={`${formatNumber(periodMetrics.transactions?.value)} added ${activityPeriod}`} currentActivity={periodMetrics.transactions?.value} previousActivity={periodMetrics.transactions?.previousValue} changePercent={periodMetrics.transactions?.changePercent} sparkline={periodMetrics.transactions?.sparkline} tone="green" />
+              <PerformanceMetric label="Current listings" value={formatNumber(overview.totals.activeListings)} activityLabel={`${formatNumber(periodMetrics.listings?.value)} added ${activityPeriod}`} currentActivity={periodMetrics.listings?.value} previousActivity={periodMetrics.listings?.previousValue} changePercent={periodMetrics.listings?.changePercent} sparkline={periodMetrics.listings?.sparkline} tone="blue" />
+              <PerformanceMetric label="Active team" value={formatNumber(overview.totals.activeTeam)} activityLabel={`${formatNumber(periodMetrics.team?.value)} joined ${activityPeriod} · Includes owners, principals and staff`} currentActivity={periodMetrics.team?.value} previousActivity={periodMetrics.team?.previousValue} changePercent={periodMetrics.team?.changePercent} sparkline={periodMetrics.team?.sparkline} tone="slate" />
             </div>
+            {overview.totals.unassignedListings > 0 ? <p className="mt-3 text-xs text-[#64748b]">{overview.totals.unassignedListings} current listing{overview.totals.unassignedListings === 1 ? '' : 's'} awaiting branch allocation included in these totals.</p> : null}
           </section>
 
           <section className="rounded-lg border border-[#e2e8f0] bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.04)]">

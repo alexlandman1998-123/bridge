@@ -1,3 +1,4 @@
+import { notifyNewLeadAssignedAgent } from './leads/newLeadAgentNotificationService'
 import {
   createAgencyCrmLeadActivity,
   createAgencyCrmLeadRecord,
@@ -753,6 +754,8 @@ function mapLeadRow(row = {}) {
     leadId: normalizeText(row.leadId || row.lead_id),
     contactId: normalizeText(row.contactId || row.contact_id),
     assignedAgentId: normalizeText(row.assignedAgentId || row.assigned_agent_id),
+    assignedUserId: normalizeText(row.assignedUserId || row.assigned_user_id),
+    rawEnquiryPayload: row.rawEnquiryPayload || row.raw_enquiry_payload || {},
     assignedAgentEmail: normalizeEmail(row.assignedAgentEmail || row.assigned_agent_email),
     organisationId: normalizeText(row.organisationId || row.organisation_id),
     leadSource: normalizeText(row.leadSource || row.lead_source),
@@ -811,7 +814,7 @@ async function createOrReuseLead({ enquiry, contact, listing, actor }) {
         notes: [enquiry.lead.notes, enquiry.message].filter(Boolean).join('\n'),
       },
     },
-    { actor },
+    { actor, notifyAgent: false },
   )
   return { lead: mapLeadRow(lead), reusedLead: false }
 }
@@ -931,7 +934,7 @@ export async function createOrUpdateLeadFromEnquiry(
 
     const assignment = await autoAssignLead(
       { organisationId: enquiry.organisationId, leadId: lead.leadId },
-      { actor },
+      { actor, notifyAgentEmail: reusedLead },
     ).catch((assignmentError) => {
       console.warn('[leadIngestionService] auto assignment skipped', assignmentError)
       warning = [warning, 'Lead assignment failed and needs review.'].filter(Boolean).join('\n')
@@ -987,7 +990,7 @@ export async function createOrUpdateLeadFromEnquiry(
     })
 
     let notifications = null
-    if (!reusedLead && ['Property24', 'Private Property'].includes(enquiry.source) && enquiry.contact?.email) {
+    if (!reusedLead) {
       const fallbackAgent = buildAssignedAgent(enquiry, listing)
       const fallbackEmail = normalizeText(fallbackAgent?.id) === taskAgentId ? fallbackAgent?.email : ''
       const agentEmail = taskAgentId ? normalizeEmail(
@@ -1000,21 +1003,24 @@ export async function createOrUpdateLeadFromEnquiry(
       ).trim()
       const propertyLabel = String(listing?.title || enquiry.lead?.enquiredPropertyTitle || enquiry.lead?.propertyInterest || 'the property you enquired about').trim()
       const reference = String(enquiry.externalReference || enquiry.lead?.sourceReferenceId || lead.leadId).trim()
-      const acknowledgement = await client.functions.invoke('send-email', { body: {
+      const acknowledgement = ['Property24', 'Private Property'].includes(enquiry.source) && enquiry.contact?.email ? await client.functions.invoke('send-email', { body: {
         type: 'property_enquiry_acknowledgement', to: enquiry.contact.email, agentEmail: agentEmail || undefined,
         recipientName: [enquiry.contact.firstName, enquiry.contact.lastName].filter(Boolean).join(' ') || 'there', organisationId: enquiry.organisationId,
         leadId: lead.leadId, source: enquiry.source, originalMessage: enquiry.message || `Enquiry about ${propertyLabel}.`,
         agentName, replyTo: agentEmail || undefined, subject: `Thanks for your enquiry about ${propertyLabel}`,
         idempotencyKey: `portal-lead-introduction:${reference}`,
-      } }).catch((error) => ({ error }))
-      const operations = agentEmail ? await client.functions.invoke('send-email', { body: {
-        type: 'lead_operations_notification', eventKind: 'new_enquiry_assigned_agent', to: agentEmail, recipientName: agentName,
-        organisationId: enquiry.organisationId, leadId: lead.leadId, leadName: [enquiry.contact.firstName, enquiry.contact.lastName].filter(Boolean).join(' ') || 'New lead',
-        leadEmail: enquiry.contact.email, leadPhone: enquiry.contact.phone, leadSource: enquiry.source, leadStatus: 'New Lead', propertyLabel,
-        enquiryMessage: enquiry.message, assignedAgentName: agentName, assignedAgentEmail: agentEmail,
-        message: `Hi, a new ${enquiry.source} lead has been received. Please make first contact promptly.`,
-        subject: `New ${enquiry.source} lead — ${propertyLabel}`, idempotencyKey: `portal-lead-agent-notification:${reference}:${agentEmail}`,
-      } }).catch((error) => ({ error })) : { data: { skipped: true, reason: 'missing_agent_email' } }
+      } }).catch((error) => ({ error })) : { data: { skipped: true, reason: 'acknowledgement_not_required' } }
+      const operations = await notifyNewLeadAssignedAgent({
+        organisationId: enquiry.organisationId,
+        lead: {
+          ...lead, assignedAgentId: taskAgentId, assignedUserId: taskAgentId,
+          assignedAgentName: agentName, assignedAgentEmail: agentEmail,
+          leadCategory: enquiry.lead.leadCategory, leadSource: enquiry.source,
+          propertyInterest: propertyLabel, notes: enquiry.message,
+        },
+        contact: enquiry.contact,
+        externalReference: ['Property24', 'Private Property'].includes(enquiry.source) ? reference : '',
+      }, { client })
       notifications = { acknowledgement, operations }
       const deliveryWarning = leadNotificationWarning(notifications, taskAgentId)
       if (deliveryWarning) {

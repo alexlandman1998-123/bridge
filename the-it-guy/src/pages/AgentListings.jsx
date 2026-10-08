@@ -1,3 +1,4 @@
+import { getListingCardAddressLabel, getListingPropertyFacts } from '../services/listings/listingIndexCardPresentation'
 import { useListingIssueNavigation } from '../components/listings/useListingIssueNavigation'
 import { salesListingCaptureIssues, salesPortalCaptureIssues, issuesBeforeListingStep } from '../services/listings/listingCaptureValidation'
 import { ListingValidationProvider, ListingValidationTarget, ListingValidationSummary } from '../components/listings/ListingValidation'
@@ -108,6 +109,11 @@ import { MobileDeveloperListingStock, MobileListingAssignment, MobileListingSell
 import MobileListingProgress from './mobile/MobileListingProgress.jsx'
 import './mobile/mobile-listing-editor.css'
 import { setWebsiteListingPublication } from '../services/websiteListingPublicationService'
+import useListingWebsitePublications from '../hooks/useListingWebsitePublications'
+import { getListingLiveChannels } from '../services/listings/listingMarketingChannelPresentation'
+import DevelopmentListingIndexCard from '../components/listings/DevelopmentListingIndexCard'
+import SalesListingIndexCard from '../components/listings/SalesListingIndexCard'
+import { ensureListingSellerLead } from '../services/listings/listingSellerLeadService'
 import { getSyndicationChannelAvailability, UNAVAILABLE_SYNDICATION_CHANNELS } from '../services/syndicationChannelAvailabilityService'
 
 const LISTINGS_VIEW_STORAGE_KEY = 'itg:agent-listings:view-mode:v1'
@@ -634,7 +640,7 @@ function getLiveListingChannels(listing = {}) {
   const channels = []
   if (isLive(source.property24Status || source.property24_status)) channels.push({ key: 'property24', label: 'Property24', logoSrc: '/lead-sources/property24.png', canExpire: Boolean(source.property24Reference || source.property24_reference) })
   if (isLive(source.privatePropertyStatus || source.private_property_status)) channels.push({ key: 'private_property', label: 'Private Property', logoSrc: '/lead-sources/private-property.jpeg', canExpire: true })
-  if (isLive(source.bridgeListingStatus || source.bridge_listing_status || source.publicationStatus)) channels.push({ key: 'arch9', label: 'Website', canExpire: true })
+  if (isLive(source.bridgeListingStatus || source.bridge_listing_status || source.publicationStatus)) channels.push({ key: 'arch9', label: 'Arch9 catalogue', canExpire: true })
   return channels
 }
 
@@ -2350,35 +2356,6 @@ function getListingAddress(listing = {}) {
   )
 }
 
-function getListingCardAddressLabel(listing = {}) {
-  const unitNumber = normalizeText(listing.unitNumber || listing.unit_number || listing.propertyDetails?.unitNumber)
-  const complexOrEstate = normalizeText(
-    listing.complexName ||
-      listing.complex_name ||
-      listing.estateName ||
-      listing.estate_name ||
-      listing.propertyDetails?.complexName ||
-      listing.propertyDetails?.estateName,
-  )
-  const streetAddress = normalizeText(
-    listing.streetAddress ||
-      listing.street_address ||
-      listing.addressLine1 ||
-      listing.address_line_1 ||
-      listing.propertyDetails?.addressLine1 ||
-      listing.propertyAddress,
-  )
-  const unitLabel = unitNumber
-    ? (/^unit\s/i.test(unitNumber) ? unitNumber : `Unit ${unitNumber}`)
-    : ''
-
-  if (unitLabel && complexOrEstate) return `${unitLabel}, ${complexOrEstate}`
-  if (unitLabel && streetAddress) return `${unitLabel}, ${streetAddress}`
-  if (streetAddress) return streetAddress
-  if (complexOrEstate) return complexOrEstate
-  return normalizeText(listing.listingTitle || listing.title) || 'Address pending'
-}
-
 function getListingDocuments(listing = {}) {
   return [
     ...(Array.isArray(listing.documents) ? listing.documents : []),
@@ -2932,23 +2909,6 @@ function resolveAgentAssignmentIds(profile = {}, organisationUsers = []) {
   return Array.from(ids)
 }
 
-function formatListingFactValue(value, label = '') {
-  const number = Number(value)
-  if (!Number.isFinite(number) || number <= 0) return ''
-  const formatted = Number.isInteger(number) ? String(number) : String(number).replace(/\.0+$/, '')
-  return `${formatted} ${label}`.trim()
-}
-
-function getListingPropertyFacts(listing = {}, quickMetadata = null) {
-  const metadataProperty = quickMetadata?.property && typeof quickMetadata.property === 'object' ? quickMetadata.property : {}
-  return [
-    formatListingFactValue(listing.bedrooms || listing.bedroomCount || listing.bedroom_count || metadataProperty.bedrooms, 'bed'),
-    formatListingFactValue(listing.bathrooms || listing.bathroomCount || listing.bathroom_count || metadataProperty.bathrooms, 'bath'),
-    formatListingFactValue(listing.garages || listing.garageCount || listing.garage_count || metadataProperty.garages, 'garage'),
-    formatListingFactValue(listing.parkingCount || listing.parking_count || metadataProperty.parkingCount, 'parking'),
-  ].filter(Boolean)
-}
-
 function getUserIdentityMatches(user = {}) {
   return [
     user?.id,
@@ -3012,35 +2972,6 @@ function resolveListingAssignedAgent(listing = {}, organisationUsers = []) {
   }
 }
 
-function getAgentInitials(agent = {}) {
-  const name = normalizeText(agent?.name)
-  if (!agent?.isAssigned) return ''
-  const source = name || normalizeText(agent?.email)
-  const words = source.split(/[\s.@_-]+/).filter(Boolean)
-  return words.slice(0, 2).map((word) => word[0]?.toUpperCase()).join('') || 'A'
-}
-
-function ListingAgentAvatar({ agent = {} }) {
-  const initials = getAgentInitials(agent)
-  const avatarUrl = normalizeText(agent?.avatarUrl)
-
-  return (
-    <span className="relative inline-flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full border border-[#d7e2ee] bg-[#eef4fa] text-[0.72rem] font-bold text-[#1f4f78]">
-      {initials ? <span>{initials}</span> : <UserRound size={16} className="text-[#6f8398]" />}
-      {avatarUrl ? (
-        <img
-          src={avatarUrl}
-          alt=""
-          className="absolute inset-0 h-full w-full object-cover"
-          onError={(event) => {
-            event.currentTarget.style.display = 'none'
-          }}
-        />
-      ) : null}
-    </span>
-  )
-}
-
 function ListingCardImage({ src = '', fallbackSrc = '', alt = '', priority = false }) {
   const [loaded, setLoaded] = useState(false)
   const [failed, setFailed] = useState(false)
@@ -3070,24 +3001,6 @@ function ListingCardImage({ src = '', fallbackSrc = '', alt = '', priority = fal
           className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-200 ${loaded ? 'opacity-100' : 'opacity-0'}`}
         />
       ) : null}
-    </div>
-  )
-}
-
-function ListingLiveChannels({ channels = [] }) {
-  if (!channels.length) return null
-  return (
-    <div className="rounded-[12px] border border-[#d7e7dc] bg-[#f6fbf7] px-3 py-2" aria-label={`Live on ${channels.map((channel) => channel.label).join(', ')}`}>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <span className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#537064]">Live on</span>
-        {channels.map((channel) => (
-          <span key={channel.key} className="inline-flex items-center gap-1.5 text-[0.75rem] font-semibold text-[#285f3d]">
-            {channel.logoSrc ? <img src={channel.logoSrc} alt="" className="h-4 w-4 rounded-sm object-contain" /> : <Globe2 size={15} aria-hidden="true" />}
-            <span>{channel.label}</span>
-            <CheckCircle2 size={15} className="text-[#23834a]" aria-label="Live" />
-          </span>
-        ))}
-      </div>
     </div>
   )
 }
@@ -3863,6 +3776,10 @@ function AgentListings({ initialTab = null, mobileEditor = false } = {}) {
     [currentMembership, workspace],
   )
   const createListingDraftScopeKey = `${listingEditorDraftStorageKey}:${selectedWorkspaceOrganisationId || organisationId || 'local'}`
+  const websitePublications = useListingWebsitePublications(
+    privateListings.filter((listing) => !rowMatchesDeletedListing(listing, deletedListingIds) && !shouldHideListingRecord(listing) && !isRentalListingRecord(listing)),
+    profile?.id ? `${profile.id}:${selectedWorkspaceOrganisationId || organisationId}` : '',
+  )
 
   useEffect(() => {
     const previewUrls = listingImagePreviewUrlsRef.current
@@ -4739,6 +4656,30 @@ function AgentListings({ initialTab = null, mobileEditor = false } = {}) {
     })
   }
 
+  async function persistCapturedListingSellerLead(listing) {
+    if (!isSupabaseConfigured || MOCK_DATA_ENABLED || isDeveloperWorkspace || form.listingType === 'rental') return null
+    if (listing?.sellerLeadId && listing?.originatingCrmLeadId) return null
+    return ensureListingSellerLead({
+      listing,
+      seller: {
+        firstName: normalizeText(form.sellerName) || getQuickAddSellerDisplayName(form),
+        lastName: normalizeText(form.sellerSurname),
+        email: normalizeText(form.sellerEmail),
+        phone: normalizeText(form.sellerPhone),
+      },
+      assignment: {
+        id: listing.assignedAgentId || form.assignedAgentId || profile?.id,
+        name: listing.assignedAgentName || form.assignedAgent || profile?.fullName || profile?.name,
+        email: listing.assignedAgentEmail || form.assignedAgentEmail || profile?.email,
+        branchId: listing.branchId || form.branchId || currentBranchId,
+        createdBy: profile?.id,
+      },
+      actor: profile,
+      source: normalizeText(form.leadSource) || 'Manual Entry',
+      notes: normalizeText(form.notes),
+    })
+  }
+
   async function saveCreateListingDraft() {
     if (listingSaveInFlightRef.current) return
     // Retain a browser copy while the request is in flight. This is a safety
@@ -4839,6 +4780,7 @@ function AgentListings({ initialTab = null, mobileEditor = false } = {}) {
       if (!listingId) throw new Error('Unable to save this listing draft.')
       pendingCreatedListingIdRef.current = listingId
       saveCurrentCreateListingDraft()
+      await persistCapturedListingSellerLead(created.listing)
 
       const savedOnboarding = await persistSellerProfileOnboardingFormData({
         listingId,
@@ -5168,6 +5110,11 @@ function AgentListings({ initialTab = null, mobileEditor = false } = {}) {
       })
       if (!propertySaveVerification.ready) {
         throw new Error(listingPropertySaveErrorMessage(propertySaveVerification))
+      }
+      const capturedSellerLead = await persistCapturedListingSellerLead(verifiedListing)
+      if (capturedSellerLead) {
+        verifiedListing.sellerLeadId = capturedSellerLead.leadId
+        verifiedListing.originatingCrmLeadId = capturedSellerLead.leadId
       }
       setPrivateListings((rows) => mergePrivateListingRows([verifiedListing || savedListing], rows, deletedListingIds))
       if (!mobileEditor && shouldAutoPublishToAgencyWebsite(listingPatch.listingStatus, form.selectedSyndicationChannels)) {
@@ -6435,6 +6382,7 @@ function AgentListings({ initialTab = null, mobileEditor = false } = {}) {
           if (!verification.ready) {
             throw new Error(`Some property fields did not match the saved listing: ${verification.mismatches.map((item) => item.label).join(', ')}.`)
           }
+          await persistCapturedListingSellerLead(verifiedListing)
         } catch (persistenceError) {
           propertySaveIssue = persistenceError?.message || 'Property details could not be verified.'
           console.warn('[Listings] quick listing property save needs attention', persistenceError)
@@ -7360,9 +7308,9 @@ function AgentListings({ initialTab = null, mobileEditor = false } = {}) {
             filterKey: complianceWarnings.length ? 'warnings' : inventoryStatus.filterKey,
           }
         : inventoryStatus
-      const liveChannels = getLiveListingChannels(listing)
+      const liveChannels = getListingLiveChannels(listing, websitePublications[listing.id])
       const cardInventoryStatus = liveChannels.length && !['sold', 'archived'].includes(resolvedInventoryStatus.key)
-        ? { key: 'live', filterKey: 'live', label: `Live on ${liveChannels.length} portal${liveChannels.length === 1 ? '' : 's'}` }
+        ? { key: 'live', filterKey: 'live', label: `Live on ${liveChannels.length} channel${liveChannels.length === 1 ? '' : 's'}` }
         : resolvedInventoryStatus
       const identityKeys = getListingIdentityKeys(listing)
       const quickAddHandoffPlan = getQuickAddHandoffPlanFromListing(listing, quickMetadata)
@@ -7441,7 +7389,7 @@ function AgentListings({ initialTab = null, mobileEditor = false } = {}) {
         quickAddPrimaryAction: enrichedCard.followUpQueue[0] || enrichedCard.quickAddPrimaryAction,
       }
     })
-  }, [deletedListingIds, organisationUsers, privateListings])
+  }, [deletedListingIds, organisationUsers, privateListings, websitePublications])
 
   const hasImportedReview = privateListingCards.some((card) => card.collectionView === 'review')
   const activeListingCollectionView = listingCollectionView === 'review' && !loading && !supportingDataLoading && !hasImportedReview
@@ -8845,26 +8793,14 @@ function AgentListings({ initialTab = null, mobileEditor = false } = {}) {
           propertyListingCards.length ? (
             <div className="grid items-stretch gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
               {propertyListingCards.map((card, index) => (
-                <article
+                <SalesListingIndexCard
                   key={card.id}
-                  style={{ contentVisibility: 'auto', containIntrinsicSize: '0 430px' }}
-                  onClick={() => navigate(`/agent/listings/${encodeURIComponent(card.id)}`)}
-                  className="group flex h-full cursor-pointer flex-col overflow-hidden rounded-[8px] border border-[#dce6f2] bg-white shadow-[0_6px_16px_rgba(15,23,42,0.05)] transition hover:-translate-y-0.5 hover:shadow-[0_10px_24px_rgba(15,23,42,0.09)]"
-                >
-                  <div className="relative h-[132px] w-full overflow-visible border-b border-[#e5edf6]">
-                    <div className="absolute inset-0 overflow-hidden">
-                      <ListingCardImage
-                        key={cardCoverImageUrls[getRemotePrivateListingId(card.listingRecord)] || card.imageUrl || 'placeholder'}
-                        {...getListingCardImageSource(cardCoverImageUrls[getRemotePrivateListingId(card.listingRecord)] || card.imageUrl)}
-                        alt={card.title}
-                        priority={index < 4}
-                      />
-                    </div>
-                    {card.inventoryStatusKey === 'draft' ? (
-                      <span className="absolute left-3 top-3 z-10 rounded-full border border-[#c6d8ea] bg-white/95 px-3 py-1 text-[0.72rem] font-semibold text-[#1f4f78] shadow-sm">
-                        {card.inventoryStatusLabel}
-                      </span>
-                    ) : null}
+                  card={card}
+                  imageSource={getListingCardImageSource(cardCoverImageUrls[getRemotePrivateListingId(card.listingRecord)] || card.imageUrl)}
+                  priority={index < 4}
+                  priceLabel={formatCurrency(card.price)}
+                  onOpen={() => navigate(`/agent/listings/${encodeURIComponent(card.id)}`)}
+                  actions={(
                     <div className="absolute right-3 top-3 z-10">
                       <button
                         type="button"
@@ -8925,47 +8861,8 @@ function AgentListings({ initialTab = null, mobileEditor = false } = {}) {
                         </div>
                       ) : null}
                     </div>
-                  </div>
-
-                  <div className="flex flex-1 flex-col gap-3 p-4">
-                    <div>
-                      <h3 className="truncate text-[1.02rem] font-semibold leading-6 text-[#142132]" title={card.addressLabel}>{card.addressLabel}</h3>
-                      <p className="mt-2 text-[1.05rem] font-semibold text-[#1f4f78]">{formatCurrency(card.price)}</p>
-                    </div>
-
-                    {card.propertyFacts?.length ? (
-                      <div className="grid gap-2 rounded-[12px] border border-[#dbe6f2] bg-[#f9fbfe] px-3 py-2 text-center text-[0.76rem] font-semibold text-[#35546c]" style={{ gridTemplateColumns: `repeat(${card.propertyFacts.length}, minmax(0, 1fr))` }}>
-                        {card.propertyFacts.map((fact) => (
-                          <span key={fact} className="truncate">{fact}</span>
-                        ))}
-                      </div>
-                    ) : null}
-
-                    <ListingLiveChannels channels={card.liveChannels} />
-
-                    <div className="mt-auto flex min-w-0 items-center gap-3 border-t border-[#eef3f8] pt-3">
-                      <ListingAgentAvatar agent={card.assignedAgent} />
-                      <div className="min-w-0">
-                        <p className="truncate text-[0.84rem] font-semibold text-[#20364d]">{card.assignedAgent?.name || 'Unassigned'}</p>
-                        {card.assignedAgent?.email ? (
-                          <p className="mt-0.5 truncate text-[0.72rem] text-[#6d8095]">{card.assignedAgent.email}</p>
-                        ) : null}
-                      </div>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        navigate(`/agent/listings/${encodeURIComponent(card.id)}`)
-                      }}
-                      className="inline-flex min-h-9 w-full min-w-0 items-center justify-center gap-1.5 rounded-full border border-[#c6d8ea] bg-white px-3 text-[0.76rem] font-semibold text-[#1f4f78] transition hover:border-[#9fb7d1] hover:bg-[#f6faff]"
-                    >
-                      <span className="truncate">Open</span>
-                      <ArrowRight size={14} className="shrink-0" />
-                    </button>
-                  </div>
-                </article>
+                  )}
+                />
               ))}
             </div>
           ) : (
@@ -8994,63 +8891,7 @@ function AgentListings({ initialTab = null, mobileEditor = false } = {}) {
             {filteredDevelopmentCards.length ? (
               <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
               {filteredDevelopmentCards.map((card) => (
-                <article
-                  key={card.id}
-                  style={{ contentVisibility: 'auto', containIntrinsicSize: '0 380px' }}
-                  onClick={() => handleOpenDevelopmentWorkspace(card)}
-                  className="group cursor-pointer overflow-hidden rounded-[20px] border border-[#dce6f2] bg-white shadow-[0_8px_24px_rgba(15,23,42,0.06)] transition hover:-translate-y-0.5 hover:shadow-[0_14px_30px_rgba(15,23,42,0.1)]"
-                >
-                  <div className="relative h-[170px] overflow-hidden border-b border-[#e5edf6] bg-white">
-                    <div className="absolute left-4 top-4 inline-flex items-center gap-2 rounded-full border border-[#dce6f2] bg-[#f8fbff] px-3 py-1 text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#35546c]">
-                      <FolderKanban size={14} />
-                      Development Workspace
-                    </div>
-                    <div className="absolute bottom-4 left-4 right-4">
-                      <p className="text-[1.08rem] font-semibold text-[#142132]">{card.name}</p>
-                      <p className="mt-1 text-sm text-[#60758c]">{card.location}</p>
-                    </div>
-                  </div>
-
-                  <div className="space-y-4 p-4">
-                    <div className="grid grid-cols-3 gap-3">
-                      <div className="rounded-[14px] border border-[#dce6f2] bg-[#fbfdff] p-3">
-                        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Units</p>
-                        <p className="mt-2 text-lg font-semibold text-[#142132]">{card.totalUnits}</p>
-                      </div>
-                      <div className="rounded-[14px] border border-[#dce6f2] bg-[#fbfdff] p-3">
-                        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Available</p>
-                        <p className="mt-2 text-lg font-semibold text-[#142132]">{card.unitsAvailable}</p>
-                      </div>
-                      <div className="rounded-[14px] border border-[#dce6f2] bg-[#fbfdff] p-3">
-                        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Sold / Reserved</p>
-                        <p className="mt-2 text-lg font-semibold text-[#142132]">{card.unitsSoldOrReserved}</p>
-                      </div>
-                    </div>
-
-                    <div className="space-y-2 rounded-[14px] border border-[#dce6f2] bg-[#fbfdff] p-3 text-[0.8rem] text-[#51657b]">
-                      <p>
-                        <span className="font-semibold text-[#35546c]">Developer:</span> {card.developer || 'Developer pending'}
-                      </p>
-                      <p>
-                        <span className="font-semibold text-[#35546c]">Assigned agent:</span> {card.assignedAgent || 'Assigned Agent'}
-                      </p>
-                      <p>
-                        <span className="font-semibold text-[#35546c]">Status:</span>{' '}
-                        {String(card.status || 'draft').replace(/_/g, ' ')}
-                      </p>
-                      <p>
-                        <span className="font-semibold text-[#35546c]">Next action:</span> {card.nextAction}
-                      </p>
-                    </div>
-
-                    <div className="flex items-center justify-end text-[0.8rem] text-[#6b7d93]">
-                      <span className="inline-flex items-center gap-1 font-semibold text-[#1f4f78]">
-                        Open workspace
-                        <ArrowRight size={14} />
-                      </span>
-                    </div>
-                  </div>
-                </article>
+                <DevelopmentListingIndexCard key={card.id} card={card} onOpen={() => handleOpenDevelopmentWorkspace(card)} />
               ))}
               </div>
             ) : (

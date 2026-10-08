@@ -1,6 +1,6 @@
 import { validateDevelopmentStructureNodes } from './developmentStructureModel.js'
 
-export const STOCK_STEPS = ['Structure', 'Unit templates', 'Review & generate']
+export const STOCK_STEPS = ['Structure', 'Unit templates', 'Review units']
 const MAX_UNITS = 10000
 const text = (value) => String(value || '').trim()
 const key = (value) => text(value).toLowerCase()
@@ -8,7 +8,7 @@ const whole = (value) => Number.isInteger(Number(value)) && Number(value) >= 0
 const positive = (value) => Number.isFinite(Number(value)) && Number(value) > 0
 
 export function createStockFloorplan() {
-  return { id: crypto.randomUUID(), name: '', sizeSqm: '', listPrice: '', quantity: '', allocations: [] }
+  return { id: crypto.randomUUID(), name: '', sizeSqm: '', storeys: '1', listPrice: '', quantity: '', allocations: [] }
 }
 
 export function createStockUnitType() {
@@ -84,6 +84,7 @@ export function stockPlanErrors(plan, step = 2) {
       layoutNames.add(key(layout.name))
       if (!whole(layout.quantity) || !positive(layout.quantity)) errors.push(`${name} needs a positive whole-number quantity.`)
       if (!positive(layout.sizeSqm)) errors.push(`${name} needs a size greater than zero.`)
+      if (!whole(layout.storeys ?? 1) || !positive(layout.storeys ?? 1)) errors.push(`${name} needs a positive whole number of storeys.`)
       if (!positive(layout.listPrice)) errors.push(`${name} needs a list price greater than zero.`)
       total += Number(layout.quantity) || 0
       if (targets.length > 1) {
@@ -126,9 +127,9 @@ export function buildStockSummary(plan) {
         const number = String(prefix ? local : sequence).padStart(Number(plan.numberingPadding), '0')
         const unitNumber = prefix ? `${prefix}-${number}` : number
         numbers.push(unitNumber)
-        units.push({ unitNumber, unitLabel: `${text(type.name)} • ${text(layout.name)}`, unitType: text(type.name), layoutName: text(layout.name), phase: '', block: target.groupName, sizeSqm: Number(layout.sizeSqm), listPrice: Number(layout.listPrice), status: 'Available', floorplanId: '', structureNodeId: target.structureNodeId })
+        units.push({ unitNumber, unitLabel: `${text(type.name)} • ${text(layout.name)}`, unitType: text(type.name), layoutName: text(layout.name), phase: '', block: target.groupName, sizeSqm: Number(layout.sizeSqm), listPrice: Number(layout.listPrice), status: 'Available', floorplanId: '', unitTypeId: type.id, catalogueFloorplanId: layout.id, storeys: Number(layout.storeys ?? 1), structureNodeId: target.structureNodeId })
       }
-      rows.push({ key: `${layout.id}:${target.id}`, location: target.label, type: text(type.name), layout: text(layout.name), quantity, firstNumber: numbers[0], lastNumber: numbers.at(-1) })
+      rows.push({ key: `${layout.id}:${target.id}`, location: target.label, type: text(type.name), layout: text(layout.name), storeys: Number(layout.storeys ?? 1), quantity, firstNumber: numbers[0], lastNumber: numbers.at(-1) })
     })
   }))
   const numbers = new Set()
@@ -136,7 +137,17 @@ export function buildStockSummary(plan) {
     if (numbers.has(key(unit.unitNumber))) errors.push('The numbering format creates duplicate unit numbers. Rename the buildings or floors, or use sequential numbers.')
     numbers.add(key(unit.unitNumber))
   })
-  return { totalUnits: units.length, generatedUnits: units, structureNodes: buildStockStructureNodes(plan), rows, warnings: [...new Set(errors)] }
+  const productCatalogue = {
+    unitTypes: plan.unitTypes.map((type) => ({ id: type.id, name: text(type.name) })),
+    floorplans: plan.unitTypes.flatMap((type) => type.floorplans.map((layout) => ({
+      id: layout.id, unitTypeId: type.id, name: text(layout.name),
+      internalSizeSqm: Number(layout.sizeSqm), storeys: Number(layout.storeys ?? 1),
+    }))),
+    prices: plan.unitTypes.flatMap((type) => type.floorplans.map((layout) => ({
+      unitTypeId: type.id, floorplanId: layout.id, listPrice: Number(layout.listPrice),
+    }))),
+  }
+  return { totalUnits: units.length, generatedUnits: units, structureNodes: buildStockStructureNodes(plan), productCatalogue, rows, warnings: [...new Set(errors)] }
 }
 
 export function validateStockStep(plan, step) {

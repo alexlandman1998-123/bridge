@@ -3,10 +3,11 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import RentalListingsPage from '../RentalListingsPage'
-const mocks = vi.hoisted(() => ({ listings: vi.fn(), workspace: {} }))
+const mocks = vi.hoisted(() => ({ listings: vi.fn(), websiteStatus: vi.fn(), workspace: {} }))
 vi.mock('../../../context/WorkspaceContext', () => ({ useWorkspace: () => mocks.workspace }))
 vi.mock('../../../services/rentals/rentalWorkspaceScope', () => ({ resolveRentalWorkspaceScope: () => ({ organisationId: 'org-1', assignedAgentId: 'agent-1' }), buildRentalListingQueryOptions: () => ({}) }))
 vi.mock('../../../services/rentals/rentalListingDraftService', () => ({ listRentalListingsForAgent: mocks.listings }))
+vi.mock('../../../services/websiteListingPublicationService', () => ({ getWebsiteListingPublicationStatus: mocks.websiteStatus }))
 vi.mock('../../../components/listings/FinalListingModuleOverview', () => ({ default: () => null }))
 vi.mock('../RentalStockReviewPanel', () => ({ default: () => null }))
 afterEach(() => { cleanup(); vi.clearAllMocks() })
@@ -60,4 +61,27 @@ it('explains an empty previous collection', async () => {
   await screen.findByText('No current rental listings')
   fireEvent.click(screen.getByRole('button', { name: /Previous Listings/ }))
   expect(screen.getByText('No previous rental listings')).toBeTruthy()
+})
+
+it('uses the sales live-channel row for rentals and keeps monthly rent and availability visible', async () => {
+  const id = '00000000-0000-4000-8000-000000000001'
+  mocks.listings.mockResolvedValue([{ id, listingTitle: 'Rental home', askingPrice: 29500, property24Status: 'on_portal', privatePropertyStatus: 'active', rentalInfo: { monthlyRent: 29500, availableFrom: '2026-11-01' } }])
+  mocks.websiteStatus.mockResolvedValue({ status: 'published', websiteStatus: 'published', projectionStatus: 'Published', hostname: 'kingdomrealestate.co.za' })
+  render(<MemoryRouter><RentalListingsPage /></MemoryRouter>)
+  await screen.findByLabelText('Live on Property24, Private Property, Agency website')
+  expect(screen.getByText('/ month')).toBeTruthy()
+  const available = screen.getByText('Available from')
+  expect(available.textContent).toMatch(/01 Nov 2026/)
+  expect(available.querySelector('time').getAttribute('datetime')).toBe('2026-11-01')
+  expect(screen.queryByText('P24')).toBeNull()
+  expect(mocks.websiteStatus).toHaveBeenCalledWith(id)
+})
+
+it('retains draft publishing guidance and never labels a draft website as live', async () => {
+  mocks.listings.mockResolvedValue([{ id: '00000000-0000-4000-8000-000000000002', listingTitle: 'Draft rental', property24Status: 'not_published' }])
+  mocks.websiteStatus.mockResolvedValue({ status: 'published', websiteStatus: 'published', projectionStatus: 'Draft', hostname: 'kingdomrealestate.co.za' })
+  render(<MemoryRouter><RentalListingsPage /></MemoryRouter>)
+  await screen.findByText('Availability not set')
+  expect(screen.getByText('Property24 · Not Published')).toBeTruthy()
+  expect(screen.queryByLabelText(/Live on/)).toBeNull()
 })

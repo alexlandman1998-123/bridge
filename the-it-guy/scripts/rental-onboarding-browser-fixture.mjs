@@ -24,7 +24,8 @@ const host = '127.0.0.1',
   port = Number(process.env.RENTAL_FIXTURE_PORT || 4186),
   origin = `http://${host}:${port}`
 const lead = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
-  second = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+  second = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+  listingId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 const db = await rentalOnboardingDatabase()
 const files = new Map(),
   links = new Map(),
@@ -32,11 +33,19 @@ const files = new Map(),
 await db.exec(`alter table rental_application_documents add column storage_bucket text default 'rental-application-documents',add column mime_type text,add column file_size_bytes integer;
  alter table organisations add column name text,add column display_name text,add column logo_url text;
  create table organisation_settings(organisation_id uuid primary key,settings_json jsonb);
- create table rental_application_access_tokens(id uuid default gen_random_uuid(),application_id uuid,token_hash text unique,expires_at timestamptz,revoked_at timestamptz,last_accessed_at timestamptz);
+ create table rental_application_access_tokens(id uuid default gen_random_uuid(),application_id uuid,token_hash text unique,expires_at timestamptz,revoked_at timestamptz,last_accessed_at timestamptz,created_at timestamptz default now(),created_by uuid,subject_id text);
+ grant select,insert,update on rental_application_access_tokens to authenticated;
  create unique index fixture_consent_retry on rental_application_consents(application_id,consent_type,wording_version);
  alter table leads enable row level security; create policy fixture_leads_read on leads for select to authenticated using(organisation_id='${org}' and auth.uid()='${actor}');
  grant select on rental_onboarding_requirement_summaries to authenticated;`)
 await db.exec(`create function bridge_current_workspace_role(workspace_id uuid) returns text language sql as $$ select 'owner'::text $$;`)
+// Install the real scope policies and grants that the lightweight SQL fixture
+// normally omits. Browser agent uploads must exercise authenticated writes.
+const applicationFoundation = readFileSync(new URL('../../supabase/migrations/20260905141014_rental_applications_and_applicant_access.sql', import.meta.url), 'utf8')
+await db.exec(applicationFoundation.slice(applicationFoundation.indexOf('create or replace function public.rental_application_validate_scope()'), applicationFoundation.indexOf('drop trigger if exists trg_rental_applications_updated_at')))
+await db.exec('grant select,insert,update on rental_applications to authenticated; alter table rental_applications enable row level security; alter table rental_application_access_tokens enable row level security;')
+await db.exec(applicationFoundation.match(/create policy rental_applications_scoped[\s\S]*?;/)[0])
+await db.exec(applicationFoundation.match(/create policy rental_application_access_tokens_scoped[\s\S]*?;/)[0])
 await db.exec(await readFile(new URL('../../supabase/migrations/20261007194611_rental_application_cost_confirmation.sql', import.meta.url), 'utf8'))
 await db.query('insert into rental_application_fee_settings(organisation_id,amount,payment_instructions) values($1,350,$2)', [org, 'Local preview only. Your rentals team would provide payment instructions here.'])
 await db.query('update organisations set name=$1 where id=$2', ['Arch9 Rentals', org])
@@ -58,6 +67,13 @@ const portfolio = [
     title: 'First home',
     address: 'One Road',
     canonicalPropertyId: property,
+    listingId,
+    category: 'residential',
+    ownershipType: 'sectional_title',
+    occupancyStatus: 'tenanted',
+    serviceType: 'managed_rental',
+    schemeType: 'body_corporate',
+    payoutBeneficiaryType: 'third_party',
   },
   {
     id: 'second',
@@ -81,6 +97,7 @@ await db.query(
 )
 await db.exec(readFileSync(new URL('../../supabase/migrations/20261007204950_rental_application_document_packs.sql', import.meta.url), 'utf8'))
 await db.exec(readFileSync(new URL('../../supabase/migrations/20261007212433_rental_empty_document_pack_readiness.sql', import.meta.url), 'utf8'))
+await db.exec(readFileSync(new URL('../../supabase/migrations/20261008120849_rental_landlord_conditional_document_requirements.sql', import.meta.url), 'utf8'))
 const data = {
   schemaVersion: 'arch9_rental_application_fields_v2',
   entity: { type: 'individual' },
@@ -98,7 +115,7 @@ const data = {
     intendedOccupationDate: '2026-11-01',
     leasePeriodMonths: 12,
   },
-  property: { title: 'First home', monthlyRent: 11000 },
+  property: { listingId, title: 'First home', monthlyRent: 11000 },
 }
 await db.query(
   'insert into rental_applications(id,organisation_id,vacancy_id,unit_id,application_data) values($1,$2,$3,$4,$5::jsonb)',
@@ -160,9 +177,13 @@ const { createServer: createViteServer } = await import('vite')
 const vite = await createViteServer({
   cacheDir: '/tmp/arch9-rental-onboarding-vite-cache',
   optimizeDeps: { entries: ['test-fixtures/rental-onboarding.html'] },
-  server: { middlewareMode: true },
+  // Other concurrent tasks edit this checkout; retain the fixture's loaded
+  // modules and database state for one acceptance run.
+  server: { middlewareMode: true, watch: null },
   appType: 'custom',
 })
+const { getRentalApplicationReview } = await vite.ssrLoadModule('/src/services/rentals/rentalApplicationRepository.js')
+const { buildRentalListingLandlordMatrix, buildRentalListingTenantMatrix } = await vite.ssrLoadModule('/src/services/rentals/rentalListingDocumentMatrixModel.js')
 const send = (res, status, body) => {
   res.writeHead(status, {
     'Content-Type': 'application/json',
@@ -233,7 +254,7 @@ const server = createServer(async (req, res) => {
       res.end(file.bytes)
       return
     }
-    if (path.startsWith('/api/') || path === '/__fixture/control') {
+    if (path.startsWith('/api/') || ['/__fixture/control', '/__fixture/matrix', '/__fixture/query'].includes(path)) {
       const chunks = []
       let size = 0
       for await (const chunk of req) {
@@ -251,6 +272,33 @@ const server = createServer(async (req, res) => {
         body,
         env,
         clientFactory,
+      }
+      if (path === '/__fixture/matrix' || path === '/__fixture/query') {
+        if (req.headers.authorization !== 'Bearer fixture-agent') return send(res, 401, { error: 'Fixture agent required' })
+        const client = clientFactory('', 'fixture-public')
+        if (path === '/__fixture/matrix') {
+          const loaded = await handleRentalLandlordOnboarding({ ...input, method: 'GET', body: { leadId: lead } })
+          if (loaded.status !== 200) return send(res, loaded.status, loaded.body)
+          const application = await getRentalApplicationReview(app, { client })
+          return send(res, 200, { documents: [], issues: [], documentMatrix: {
+            landlords: [buildRentalListingLandlordMatrix({ id: listingId }, { id: lead }, loaded.body.onboarding)],
+            tenants: [buildRentalListingTenantMatrix(application)], issues: [],
+          } })
+        }
+        // Local-only transport for the actual repository commands. Restrict it
+        // to the matrix's operations; never forward arbitrary SQL or identifiers.
+        let result
+        if (body.rpc === 'rental_record_application_review') result = await client.rpc(body.rpc, body.args)
+        else if (body.table === 'rental_application_access_tokens') {
+          let query = client.from(body.table)
+          const allowed = new Set(['select', 'eq', 'order', 'insert', 'update', 'single'])
+          for (const [method, ...args] of body.operations || []) {
+            if (!allowed.has(method)) return send(res, 400, { error: 'Unsupported fixture operation' })
+            query = query[method](...args)
+          }
+          result = await query
+        } else return send(res, 400, { error: 'Unsupported fixture query' })
+        return send(res, 200, { data: result.data, error: result.error ? { message: result.error.message } : null })
       }
       const handler = {
         '/api/public/rental-landlord-onboarding':

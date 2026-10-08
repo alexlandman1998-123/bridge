@@ -7,6 +7,7 @@ import SellerPortalAccessControls from '../components/client-portal/SellerPortal
 import '../components/listings/property24-manage.css'
 import ListingChannelManageMenu from '../components/listings/ListingChannelManageMenu'
 import ListingChannelTableHeader from '../components/listings/ListingChannelTableHeader'
+import ListingChannelStatistics from '../components/listings/ListingChannelStatistics'
 import {
   ArrowLeft,
   BarChart3,
@@ -3829,6 +3830,7 @@ function AgentListingDetail() {
   const [property24ManageOpen, setProperty24ManageOpen] = useState(false)
   const [propertyDetailsReturnTarget, setPropertyDetailsReturnTarget] = useState('')
   const [sellerWorkspaceTab, setSellerWorkspaceTab] = useState(() => getSellerWorkspaceTabFromSearch(typeof window !== 'undefined' ? window.location.search : '') || 'overview')
+  const compactSellerLeadsHeader = sellerWorkspaceTab === 'leads'
   const salesWorkspaceTabs = useMemo(() => buildListingWorkspaceTabs('sales'), [])
   const activeSalesWorkspaceTab = useMemo(
     () => resolveSalesListingWorkspaceTabFromLegacyState({ activeTab, sellerWorkspaceTab }),
@@ -16348,16 +16350,16 @@ function AgentListingDetail() {
 
       {activeTab === 'seller' ? (
         <section className="mx-auto w-full max-w-[1600px] space-y-5 px-0">
-          <section className="relative min-h-[240px] overflow-hidden rounded-[24px] border border-[#dde4ee] bg-[#123955] shadow-[0_14px_34px_rgba(15,23,42,0.08)] sm:min-h-[300px]">
+          <section className={`relative overflow-hidden rounded-[24px] border border-[#dde4ee] bg-[#123955] shadow-[0_14px_34px_rgba(15,23,42,0.08)] ${compactSellerLeadsHeader ? 'min-h-[112px]' : 'min-h-[240px] sm:min-h-[300px]'}`}>
             <div className="absolute inset-0">
               {getImageBlock(coverImage?.url || '', listingIdentity.title)}
             </div>
             <div className="absolute inset-0 bg-gradient-to-r from-[#081e32]/85 via-[#0d304b]/48 to-[#0d304b]/10" />
-            <div className="relative flex min-h-[240px] items-end p-6 sm:min-h-[300px] sm:p-8">
+            <div className={`relative flex items-end ${compactSellerLeadsHeader ? 'min-h-[112px] p-4 sm:p-5' : 'min-h-[240px] p-6 sm:min-h-[300px] sm:p-8'}`}>
               <div className="max-w-4xl">
-                <h1 className="text-3xl font-semibold tracking-[-0.04em] text-white sm:text-4xl">{listingIdentity.title}</h1>
-                <p className="mt-2 text-lg font-semibold text-white/90">{listingIdentity.location}</p>
-                <div className="mt-4 flex flex-wrap gap-x-3 gap-y-2 text-sm font-semibold text-white/90">
+                <h1 className={`font-semibold tracking-[-0.04em] text-white ${compactSellerLeadsHeader ? 'text-lg sm:text-xl' : 'text-3xl sm:text-4xl'}`}>{listingIdentity.title}</h1>
+                <p className={`font-semibold text-white/90 ${compactSellerLeadsHeader ? 'mt-1 text-sm' : 'mt-2 text-lg'}`}>{listingIdentity.location}</p>
+                <div className={`flex flex-wrap gap-x-3 gap-y-2 font-semibold text-white/90 ${compactSellerLeadsHeader ? 'mt-2 text-xs' : 'mt-4 text-sm'}`}>
                   {listingIdentity.facts.map((fact, index) => (
                     <span key={`${fact}-${index}`} className="inline-flex items-center gap-3">
                       {index > 0 ? <span className="h-1 w-1 rounded-full bg-white/65" /> : null}
@@ -16430,6 +16432,12 @@ function AgentListingDetail() {
                     )
                   })}
                 </div>
+
+                <ListingChannelStatistics
+                  organisationId={listingOrganisationId}
+                  listingId={listingId}
+                  refreshKey={overviewLastRefreshedAt}
+                />
 
                 <div className="mt-4 flex flex-wrap items-center justify-between gap-3" aria-live="polite">
                   <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -16714,8 +16722,8 @@ function AgentListingDetail() {
           ) : null}
 
           {sellerWorkspaceTab === 'leads' ? (
-            <section className="space-y-5">
-              <article className="rounded-[20px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
+            <section className="space-y-3">
+              <article className="rounded-[20px] border border-[#dde4ee] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.045)] sm:p-5">
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                   <div>
                     <h2 className="text-xl font-semibold text-[#142132]">Leads for this listing</h2>
@@ -16726,6 +16734,7 @@ function AgentListingDetail() {
                       type="button"
                       size="sm"
                       variant="secondary"
+                      className="px-3 sm:px-4"
                       aria-expanded={listingLeadFiltersOpen}
                       aria-controls="listing-lead-filters"
                       onClick={() => setListingLeadFiltersOpen((current) => !current)}
@@ -16733,13 +16742,13 @@ function AgentListingDetail() {
                       <SlidersHorizontal size={14} />
                       Filters{activeListingLeadFilterCount ? ` (${activeListingLeadFilterCount})` : ''}
                     </Button>
-                    <Button type="button" size="sm" variant="secondary" onClick={handleExportListingLeads} disabled={!filteredListingLeadRows.length}>
+                    <Button type="button" size="sm" variant="secondary" className="px-3 sm:px-4" onClick={handleExportListingLeads} disabled={!filteredListingLeadRows.length}>
                       <Download size={14} />
                       Export
                     </Button>
-                    <Button type="button" size="sm" onClick={openBuyerLeadModal}>
+                    <Button type="button" size="sm" className="px-3 sm:px-4" aria-label="Add Buyer Lead" onClick={openBuyerLeadModal}>
                       <Plus size={14} />
-                      Add Buyer Lead
+                      <span className="sm:hidden">Add Lead</span><span className="hidden sm:inline">Add Buyer Lead</span>
                     </Button>
                   </div>
                 </div>
@@ -16755,7 +16764,7 @@ function AgentListingDetail() {
                   </div>
                 ) : null}
 
-                <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Listing lead metrics">
+                <div className="mt-3 grid grid-cols-2 gap-2 lg:grid-cols-4" aria-label="Listing lead metrics">
                   {[
                     { label: 'Total leads', value: listingLeadSummary.total, meta: 'All time', icon: Users },
                     { label: 'New this week', value: listingLeadSummary.newThisWeek, meta: 'Last 7 days', icon: UserRound },
@@ -16764,21 +16773,21 @@ function AgentListingDetail() {
                   ].map((card) => {
                     const Icon = card.icon
                     return (
-                      <article key={card.label} className="flex min-h-[116px] flex-col justify-between rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4">
-                        <div className="flex items-start gap-3">
-                          <span aria-hidden="true" className="grid h-9 w-9 shrink-0 place-items-center rounded-[12px] bg-[#eef5fb] text-[#1f4f78]">
+                      <article key={card.label} className="flex min-h-[92px] flex-col justify-between rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-3">
+                        <div className="flex items-start gap-2">
+                          <span aria-hidden="true" className="hidden h-7 w-7 shrink-0 sm:grid place-items-center rounded-[12px] bg-[#eef5fb] text-[#1f4f78]">
                             <Icon size={16} />
                           </span>
-                          <p className="pt-1 text-sm font-semibold text-[#607387]">{card.label}</p>
+                          <p className="pt-1 text-xs font-semibold text-[#607387]">{card.label}</p>
                         </div>
-                        <p className="mt-4 text-2xl font-semibold text-[#10243a]">{formatCompactNumber(card.value)}</p>
-                        <p className="mt-1 text-sm font-medium text-[#607387]">{card.meta}</p>
+                        <p className="mt-2 text-xl font-semibold text-[#10243a]">{formatCompactNumber(card.value)}</p>
+                        <p className="mt-1 text-xs font-medium text-[#607387]">{card.meta}</p>
                       </article>
                     )
                   })}
                 </div>
 
-                <div className="mt-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div className="mt-3 flex items-center gap-3">
                   <label className="relative block min-w-0 flex-1">
                     <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#7b8ca2]" />
                     <Field
@@ -16789,7 +16798,7 @@ function AgentListingDetail() {
                       placeholder="Search lead, phone, or email"
                     />
                   </label>
-                  <span aria-live="polite" className="text-sm font-semibold text-[#607387]">{filteredListingLeadRows.length} shown</span>
+                  <span aria-live="polite" className="shrink-0 text-xs font-semibold text-[#607387] sm:text-sm">{filteredListingLeadRows.length} shown</span>
                 </div>
 
                 {listingLeadFiltersOpen ? (

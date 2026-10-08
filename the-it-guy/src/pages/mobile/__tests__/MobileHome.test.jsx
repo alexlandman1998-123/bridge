@@ -15,7 +15,7 @@ vi.mock('../../../services/mobileDashboardService', () => ({
   MOBILE_DASHBOARD_UPDATED_EVENTS: ['itg:agency-crm-updated', 'itg:transaction-updated', 'itg:transaction-created'],
 }))
 vi.mock('../../../services/observability/monitoring', () => ({ trackMobileMetric: vi.fn() }))
-vi.mock('../../../components/mobile-shell/AgentDashboard', () => ({ default: ({ snapshot }) => <h1>Today for {snapshot.displayName}</h1> }))
+vi.mock('../../../components/mobile-shell/AgentDashboard', () => ({ default: ({ snapshot, brandStyle }) => <h1 style={brandStyle}>Today for {snapshot.displayName}</h1> }))
 
 const saved = { category: 'developer', displayName: 'Alexander' }
 beforeEach(() => {
@@ -59,4 +59,23 @@ it('fetches fresh records after a transaction update rather than continuing to u
   await act(async () => window.dispatchEvent(new Event('itg:transaction-updated')))
   expect(mocks.read).toHaveBeenLastCalledWith({ workspace: mocks.workspace, organisation: mocks.organisation.organisation, force: true })
   expect(screen.getByRole('heading', { name: 'Today for Updated dashboard' })).toBeTruthy()
+})
+
+it('uses the current organisation primary colour and keeps text readable when its branding changes', async () => {
+  mocks.organisation.onboarding = { branding: { primaryColour: '#F7CF22' } }
+  const { rerender } = render(<MemoryRouter><MobileHome /></MemoryRouter>)
+  const card = () => screen.getByRole('heading', { name: 'Today for Alexander' })
+  expect(card().style.getPropertyValue('--mobile-home-card-primary')).toBe('#F7CF22')
+  expect(card().style.getPropertyValue('--mobile-home-card-ink')).toBe('#000000')
+  await act(async () => {})
+
+  mocks.organisation = { ...mocks.organisation, onboarding: { branding: { primaryColour: '#38165e' } } }
+  rerender(<MemoryRouter><MobileHome /></MemoryRouter>)
+  expect(card().style.getPropertyValue('--mobile-home-card-primary')).toBe('#38165e')
+  expect(card().style.getPropertyValue('--mobile-home-card-ink')).toBe('#ffffff')
+
+  mocks.organisation = { ...mocks.organisation, onboarding: { branding: { primaryColour: 'url(https://example.test/unsafe)' } } }
+  rerender(<MemoryRouter><MobileHome /></MemoryRouter>)
+  expect(card().style.getPropertyValue('--mobile-home-card-primary')).toBe('#0b2c23')
+  expect(card().style.getPropertyValue('--mobile-home-card-ink')).toBe('#ffffff')
 })

@@ -1,24 +1,13 @@
 import assert from 'node:assert/strict'
+import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
-
-const [migration, service, component] = await Promise.all([
-  readFile(new URL('../../supabase/migrations/20260913165354_property24_listing_performance_drilldown.sql', import.meta.url), 'utf8'),
+const [service, marketing, listing] = await Promise.all([
   readFile(new URL('../src/services/marketingOverviewService.js', import.meta.url), 'utf8'),
-  readFile(new URL('../src/components/marketing/Property24ListingPerformance.jsx', import.meta.url), 'utf8'),
+  readFile(new URL('../src/components/marketing/MarketingDashboard.jsx', import.meta.url), 'utf8'),
+  readFile(new URL('../src/pages/AgentListingDetail.jsx', import.meta.url), 'utf8'),
 ])
-
-assert.match(migration, /create or replace function public\.property24_listing_performance/)
-assert.match(migration, /security definer/)
-assert.match(migration, /bridge_is_active_member/)
-assert.match(migration, /statistics\.environment = 'production'/)
-assert.match(migration, /statistics\.listing_contact_form_leads/)
-assert.match(migration, /statistics\.whatsapp_contact_form_leads/)
-assert.match(migration, /statistics\.tel_leads/)
-assert.match(migration, /grant execute on function public\.property24_listing_performance\(uuid, date, date, integer\) to authenticated/)
-assert.match(service, /export function normalizeProperty24ListingPerformance/)
-assert.match(service, /supabase\.rpc\('property24_listing_performance'/)
-assert.match(component, /Listing performance/)
-assert.match(component, /WhatsApp form/)
-assert.match(component, /Open/)
-
-console.log('Property24 listing performance drill-down contract passed.')
+assert.doesNotMatch(service, /getProperty24ListingPerformance|normalizeProperty24ListingPerformance|property24_listing_performance/)
+assert.doesNotMatch(marketing, /Property24ListingPerformance/)
+assert.equal(existsSync(new URL('../src/components/marketing/Property24ListingPerformance.jsx', import.meta.url)), false)
+assert.match(listing, /<ListingChannelStatistics\s+organisationId=\{listingOrganisationId\}\s+listingId=\{listingId\}/)
+console.log('Legacy Property24 listing rankings are retired; listing cards use the scoped channel reader.')

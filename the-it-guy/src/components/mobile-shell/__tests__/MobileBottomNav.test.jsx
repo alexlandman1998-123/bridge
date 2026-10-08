@@ -23,16 +23,21 @@ function setup(path = '/mobile/home') {
   return render(<MemoryRouter initialEntries={[path]}><MobileBottomNav /><RouteState /></MemoryRouter>)
 }
 
-it('opens the arrow menu with developer Leads, Listings and Calendar and closes after navigation', () => {
-  setup()
+it('puts developer Leads in the bottom navigation and Developments in the arrow menu', () => {
+  setup('/mobile/developer/leads/lead-1')
+  const navigation = within(screen.getByRole('navigation', { name: 'Mobile navigation' }))
+  const leads = navigation.getByRole('link', { name: 'Leads', exact: true })
+  expect(leads.getAttribute('href')).toBe('/mobile/developer/leads')
+  expect(leads.getAttribute('aria-current')).toBe('page')
+  expect(navigation.queryByRole('link', { name: 'Developments', exact: true })).toBeNull()
   expect(screen.queryByRole('link', { name: 'More', exact: true })).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: 'Open page menu' }))
   const menu = within(screen.getByRole('dialog', { name: 'Pages' }))
   expect(menu.getAllByRole('link').map((link) => [link.textContent, link.getAttribute('href')])).toEqual([
-    ['Leads', '/mobile/developer/leads'], ['Listings', '/mobile/listings'], ['Calendar', '/mobile/calendar'],
+    ['Developments', '/mobile/developments'], ['Listings', '/mobile/listings'], ['Calendar', '/mobile/calendar'],
   ])
-  fireEvent.click(menu.getByRole('link', { name: 'Calendar' }))
-  expect(screen.getByLabelText('Current page').textContent).toBe('/mobile/calendar')
+  fireEvent.click(menu.getByRole('link', { name: 'Developments' }))
+  expect(screen.getByLabelText('Current page').textContent).toBe('/mobile/developments')
   expect(screen.queryByRole('dialog')).toBeNull()
   expect(screen.getByRole('button', { name: 'Open page menu' }).getAttribute('aria-expanded')).toBe('false')
 })

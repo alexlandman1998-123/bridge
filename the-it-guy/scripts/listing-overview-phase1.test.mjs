@@ -33,8 +33,8 @@ const performance = buildListingOverviewPerformance({
 })
 
 assert.equal(performance.totalViews, 150)
-assert.equal(performance.priorViews, 120)
-assert.equal(performance.viewChangePercent, 25)
+assert.equal(performance.priorViews, null, 'incomplete channel coverage must suppress prior-period totals')
+assert.equal(performance.viewChangePercent, null, 'incomplete channel coverage must suppress trends')
 assert.equal(performance.partialViews, true)
 assert.equal(performance.leadCount, 2, 'duplicate representations of one canonical lead must count once')
 assert.equal(performance.newThisWeek, 1)

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
+import { navigateToRecruitment } from '../recruitment/recruitmentEntryModel'
 import { ChevronRight, Search, ShieldCheck, UserPlus, Users, X } from 'lucide-react'
 import { hasOpenAgencyOperations } from '../../lib/agencyOperationsAccess'
 import Button from '../../components/ui/Button'
@@ -343,6 +344,8 @@ function getPrincipalClaimStatusClasses(status = '') {
 
 export default function SettingsUsersPage() {
   const location = useLocation()
+  const navigate = useNavigate()
+  const [invitePurpose, setInvitePurpose] = useState('new_recruit')
   const {
     can,
     role,
@@ -597,6 +600,10 @@ export default function SettingsUsersPage() {
   async function handleInvite(event) {
     event.preventDefault()
     if (!canEdit || commissionSaving) return
+    if (usesAgencyGovernance && !principalInviteSelected && ['agent','senior_agent','sales_agent','commercial_broker'].includes(inviteForm.role) && invitePurpose === 'new_recruit') {
+      navigateToRecruitment(navigate, {entryPoint:'settings_users',organisationId:currentWorkspace?.organisationId || currentWorkspace?.organisation_id || currentWorkspace?.id,commissionStructureId:inviteForm.commissionStructureId==='__unassigned__' ? '' : inviteForm.commissionStructureId || defaultCommissionStructure?.id || '',branchId:inviteNavigationState.branchId || '',returnTo:'/settings/users',joiningRole:inviteForm.role==='senior_agent' ? 'senior_agent' : inviteForm.role==='commercial_broker' ? 'commercial_broker' : 'agent',businessWorkspaces:inviteForm.role==='commercial_broker' ? ['commercial'] : inviteForm.businessWorkspaces,contact:{name:[inviteForm.firstName,inviteForm.lastName].filter(Boolean).join(' '),email:inviteForm.email}})
+      return
+    }
     try {
       setSaving(true)
       setError('')
@@ -618,6 +625,7 @@ export default function SettingsUsersPage() {
             source: inviteNavigationState.inviteSource || (isPrincipalClaimInviteMode ? 'settings_principal_claim_invite' : 'settings_users_principal_role_invite'),
           })
         : await createWorkspaceUserInvite({
+            metadata: {access_purpose: 'existing_staff'},
             firstName: inviteForm.firstName,
             lastName: inviteForm.lastName,
             email: inviteForm.email,
@@ -875,6 +883,7 @@ export default function SettingsUsersPage() {
             Principal selected. Arch9 will send a principal invitation link instead of granting principal access immediately.
           </SettingsBanner>
         ) : null}
+        {usesAgencyGovernance && !principalInviteSelected && ['agent','senior_agent','sales_agent','commercial_broker'].includes(inviteForm.role) && <label className={settingsFieldClass}><span>Invitation purpose</span><select className="min-h-11 rounded-xl border border-[#dbe4ee] px-3" value={invitePurpose} onChange={(event) => setInvitePurpose(event.target.value)}><option value="new_recruit">New agent · Recruitment</option><option value="existing_staff">Existing or returning staff access</option></select><p className="text-sm text-[#718198]">New agents complete Recruitment before access. Branch transfers use the existing staff profile.</p></label>}
         <form className={settingsGridClass} onSubmit={handleInvite}>
           <label className={settingsFieldClass}>
             <span className="text-sm font-medium text-[#51657b]">First name</span>
@@ -989,7 +998,7 @@ export default function SettingsUsersPage() {
           {canEdit ? (
             <div className={`${settingsActionRowClass} md:col-span-2`}>
               <Button type="submit" disabled={saving || commissionSaving}>
-                {saving ? 'Inviting…' : principalInviteSelected ? 'Send Principal Claim' : 'Invite User'}
+                {saving ? 'Inviting…' : principalInviteSelected ? 'Send Principal Claim' : usesAgencyGovernance && ['agent','senior_agent','sales_agent','commercial_broker'].includes(inviteForm.role) && invitePurpose==='new_recruit' ? 'Continue in Recruitment' : 'Invite User'}
               </Button>
             </div>
           ) : null}

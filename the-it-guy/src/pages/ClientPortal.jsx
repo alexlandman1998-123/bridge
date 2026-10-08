@@ -412,29 +412,6 @@ function formatSellerPerformanceNumber(value) {
   return new Intl.NumberFormat('en-ZA', { maximumFractionDigits: 0 }).format(number)
 }
 
-function normalizeSellerListingPerformancePayload(...sources) {
-  const source = sources.find((item) => item && typeof item === 'object') || {}
-  const numberFor = (key) => {
-    const number = Number(source[key] || 0)
-    return Number.isFinite(number) ? Math.max(0, Math.round(number)) : 0
-  }
-  return {
-    totalViews: numberFor('totalViews'),
-    portalViews: numberFor('portalViews'),
-    bridgeViews: numberFor('bridgeViews'),
-    leadCount: numberFor('leadCount'),
-    newThisWeek: numberFor('newThisWeek'),
-    scheduledViewings: numberFor('scheduledViewings'),
-    completedViewings: numberFor('completedViewings'),
-    offerCount: numberFor('offerCount'),
-    pendingOffers: numberFor('pendingOffers'),
-    daysOnMarket: numberFor('daysOnMarket'),
-    areaAverageDays: numberFor('areaAverageDays'),
-    hasOverrides: Boolean(source.hasOverrides),
-    updatedAt: source.updatedAt || source.updated_at || '',
-  }
-}
-
 function resolveBuyerBondOriginatorRequest(portal = {}) {
   const formData = portal?.onboardingFormData?.formData || {}
   return (

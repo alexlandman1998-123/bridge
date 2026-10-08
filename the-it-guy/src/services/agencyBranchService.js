@@ -1,7 +1,7 @@
 import { calculateBranchLeadConversion, resolveBranchReportingRange } from './branchDashboardModel'
 import { fetchOrganisationSettings } from '../lib/settingsApi'
 import { hasOpenAgencyOperations } from '../lib/agencyOperationsAccess'
-import { buildRoleHeadcount } from '../lib/reportingRoleLogic'
+import { buildRoleHeadcount, isActiveReportingUser } from '../lib/reportingRoleLogic'
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { assertPermission } from '../auth/permissions/permissionResolver'
 import { PERMISSIONS } from '../auth/permissions/permissionRegistry'
@@ -63,6 +63,7 @@ function isActiveListing(row = {}) {
 }
 
 function getListingValue(row = {}) {
+  if (normalizeLower(row?.listing_category || row?.listingCategory) === 'rental') return 0
   return toNumber(row?.estimated_value || row?.estimatedValue || row?.asking_price || row?.askingPrice || row?.price)
 }
 
@@ -111,7 +112,7 @@ function getProjectedCommission(row = {}, value = 0) {
 function isSchemaMismatchError(error) {
   const code = normalizeText(error?.code).toUpperCase()
   const message = normalizeLower(error?.message)
-  return code === 'PGRST204' || message.includes('schema cache') || message.includes('column')
+  return code === '42703' || code === 'PGRST204' || message.includes('column')
 }
 
 function isMissingTableError(error) {
@@ -120,8 +121,7 @@ function isMissingTableError(error) {
   return (
     code === '42P01' ||
     code === 'PGRST205' ||
-    message.includes('does not exist') ||
-    (message.includes('schema cache') && message.includes('organisation_branches'))
+    (!message.includes('column') && /(?:relation|table).*(?:does not exist|schema cache)/.test(message))
   )
 }
 
@@ -228,6 +228,21 @@ function filterBranchesForContext(branches = [], context = {}) {
   return branches.filter((branch) => normalizeText(branch?.id) === assignedBranchId)
 }
 
+// Read every page with an organisation filter and stable ordering. A failed
+// read stays an error; it must never become a successful empty company total.
+async function readOrganisationRows(client, table, organisationId, columns, identity = 'id') {
+  const rows = []
+  for (let page = 0; page < 100; page += 1) {
+    const result = await client.from(table).select(columns).eq('organisation_id', organisationId)
+      .order(identity, { ascending: true }).range(page * 500, page * 500 + 499)
+    if (result.error) return { data: null, error: result.error }
+    const batch = Array.isArray(result.data) ? result.data : []
+    rows.push(...batch.filter((row) => !row.organisation_id || row.organisation_id === organisationId))
+    if (batch.length < 500) return { data: rows, error: null }
+  }
+  throw new Error('Company overview is too large to load completely. No partial totals were shown.')
+}
+
 async function listOrganisationBranches(client, organisationId) {
   const fullSelect = [
     'id',
@@ -259,32 +274,19 @@ async function listOrganisationBranches(client, organisationId) {
     'updated_at',
   ].join(',')
 
-  const fullQuery = await client
-    .from('organisation_branches')
-    .select(fullSelect)
-    .eq('organisation_id', organisationId)
-    .order('name', { ascending: true })
+  const fullQuery = await readOrganisationRows(client, 'organisation_branches', organisationId, fullSelect)
 
   if (!fullQuery.error) {
     return fullQuery.data || []
-  }
-
-  if (isMissingTableError(fullQuery.error)) {
-    return []
   }
 
   if (!isSchemaMismatchError(fullQuery.error)) {
     throw fullQuery.error
   }
 
-  const fallbackQuery = await client
-    .from('organisation_branches')
-    .select('id, organisation_id, name, location, manager_name, is_head_office, is_active, agent_count, metadata_json, created_at, updated_at')
-    .eq('organisation_id', organisationId)
-    .order('name', { ascending: true })
+  const fallbackQuery = await readOrganisationRows(client, 'organisation_branches', organisationId, 'id, organisation_id, name, location, manager_name, is_head_office, is_active, agent_count, metadata_json, created_at, updated_at')
 
   if (fallbackQuery.error) {
-    if (isMissingTableError(fallbackQuery.error)) return []
     throw fallbackQuery.error
   }
 
@@ -292,20 +294,12 @@ async function listOrganisationBranches(client, organisationId) {
 }
 
 async function listOrganisationUsers(client, organisationId) {
-  const query = await client
-    .from('organisation_users')
-    .select('id, organisation_id, user_id, branch_id, primary_branch_id, branch_scope, first_name, last_name, email, role, workspace_role, organisation_role, status, last_active_at, updated_at, accepted_at, created_at')
-    .eq('organisation_id', organisationId)
+  const query = await readOrganisationRows(client, 'organisation_users', organisationId, 'id, organisation_id, user_id, branch_id, primary_branch_id, branch_scope, first_name, last_name, email, role, workspace_role, organisation_role, status, last_active_at, updated_at, accepted_at, created_at')
 
   if (query.error) {
-    if (isMissingTableError(query.error)) return []
     if (isSchemaMismatchError(query.error)) {
-      const fallbackQuery = await client
-        .from('organisation_users')
-        .select('id, organisation_id, user_id, first_name, last_name, email, role, status, last_active_at, updated_at, accepted_at, created_at')
-        .eq('organisation_id', organisationId)
+      const fallbackQuery = await readOrganisationRows(client, 'organisation_users', organisationId, 'id, organisation_id, user_id, first_name, last_name, email, role, status, last_active_at, updated_at, accepted_at, created_at')
       if (fallbackQuery.error) {
-        if (isMissingTableError(fallbackQuery.error)) return []
         throw fallbackQuery.error
       }
       return (fallbackQuery.data || []).map((row) => ({ ...row, branch_id: null }))
@@ -318,18 +312,15 @@ async function listOrganisationUsers(client, organisationId) {
 
 async function listOrganisationTransactions(client, organisationId) {
   const selectAttempts = [
-    'id, organisation_id, assigned_branch_id, assigned_user_id, assigned_agent, assigned_agent_email, stage, status, lifecycle_state, sales_price, purchase_price, gross_commission_percentage, gross_commission_amount, agent_commission_amount, agency_commission_amount, registered_at, compliance_status, compliance_review_required, documents_complete, documents_missing, required_documents_missing, missing_documents_count, created_at, updated_at',
-    'id, organisation_id, assigned_branch_id, assigned_user_id, assigned_agent, assigned_agent_email, stage, status, lifecycle_state, sales_price, purchase_price, gross_commission_percentage, gross_commission_amount, agent_commission_amount, agency_commission_amount, registered_at, created_at, updated_at',
-    'id, organisation_id, assigned_branch_id, assigned_user_id, assigned_agent, assigned_agent_email, stage, status, lifecycle_state, sales_price, purchase_price, registered_at, created_at, updated_at',
+    'id, organisation_id, assigned_branch_id, assigned_user_id, assigned_agent, assigned_agent_email, stage, lifecycle_state, sales_price, purchase_price, gross_commission_percentage, gross_commission_amount, agent_commission_amount, agency_commission_amount, registered_at, compliance_status, compliance_review_required, documents_complete, documents_missing, required_documents_missing, missing_documents_count, created_at, updated_at',
+    'id, organisation_id, assigned_branch_id, assigned_user_id, assigned_agent, assigned_agent_email, stage, lifecycle_state, sales_price, purchase_price, gross_commission_percentage, gross_commission_amount, agent_commission_amount, agency_commission_amount, registered_at, created_at, updated_at',
     'id, organisation_id, assigned_branch_id, assigned_user_id, assigned_agent, assigned_agent_email, stage, lifecycle_state, sales_price, purchase_price, registered_at, created_at, updated_at',
     'id, organisation_id, assigned_user_id, assigned_agent, assigned_agent_email, stage, lifecycle_state, sales_price, purchase_price, registered_at, created_at, updated_at',
   ]
 
+  let lastError
   for (const selectColumns of selectAttempts) {
-    const query = await client
-      .from('transactions')
-      .select(selectColumns)
-      .eq('organisation_id', organisationId)
+    const query = await readOrganisationRows(client, 'transactions', organisationId, selectColumns)
 
     if (!query.error) {
       return (query.data || []).map((row) => ({
@@ -338,48 +329,34 @@ async function listOrganisationTransactions(client, organisationId) {
       }))
     }
 
-    if (isMissingTableError(query.error)) return []
     if (!isSchemaMismatchError(query.error)) throw query.error
+    lastError = query.error
   }
 
-  return []
+  throw lastError
 }
 
 async function listOrganisationPrivateListings(client, organisationId) {
-  const query = await client
-    .from('private_listings')
-    .select('id, organisation_id, branch_id, assigned_agent_id, title, asking_price, estimated_value, listing_status, mandate_status, mandate_expiry_date, created_at, updated_at')
-    .eq('organisation_id', organisationId)
-    .neq('listing_status', 'withdrawn')
+  const query = await readOrganisationRows(client, 'private_listings', organisationId, 'id, organisation_id, branch_id, assigned_agent_id, title, listing_category, asking_price, estimated_value, listing_status, mandate_status, created_at, updated_at')
 
   if (query.error) {
-    if (isMissingTableError(query.error)) return []
     if (isSchemaMismatchError(query.error)) {
-      const fallbackQuery = await client
-        .from('private_listings')
-        .select('id, organisation_id, branch_id, assigned_agent_id, title, asking_price, listing_status, created_at, updated_at')
-        .eq('organisation_id', organisationId)
-        .neq('listing_status', 'withdrawn')
+      const fallbackQuery = await readOrganisationRows(client, 'private_listings', organisationId, 'id, organisation_id, branch_id, assigned_agent_id, title, listing_category, asking_price, listing_status, created_at, updated_at')
       if (fallbackQuery.error) {
-        if (isMissingTableError(fallbackQuery.error) || isSchemaMismatchError(fallbackQuery.error)) return []
         throw fallbackQuery.error
       }
-      return (fallbackQuery.data || []).filter((row) => normalizeLower(row?.listing_status || row?.stage) !== 'withdrawn')
+      return fallbackQuery.data || []
     }
     throw query.error
   }
 
-  return (query.data || []).filter((row) => normalizeLower(row?.listing_status || row?.stage) !== 'withdrawn')
+  return query.data || []
 }
 
 async function listOrganisationLeads(client, organisationId) {
-  const query = await client
-    .from('leads')
-    .select('lead_id, organisation_id, branch_id, assigned_agent_id, status, stage, lead_category, budget, estimated_value, created_at, updated_at')
-    .eq('organisation_id', organisationId)
+  const query = await readOrganisationRows(client, 'leads', organisationId, 'lead_id, organisation_id, branch_id, assigned_agent_id, status, stage, lead_category, budget, estimated_value, created_at, updated_at', 'lead_id')
 
   if (query.error) {
-    if (isMissingTableError(query.error) || isSchemaMismatchError(query.error)) return []
     throw query.error
   }
 
@@ -398,7 +375,7 @@ function buildBranchViewModel(branch = {}, related = {}) {
   const activeSalesAgents = headcount.activeAgents
   const activeOperationalTeam = headcount.activeAgents + headcount.activePrincipals + headcount.activeManagers
   const branchTransactions = transactions.filter((row) => getTransactionBranchId(row) === normalizeText(branch?.id))
-  const branchListings = listings.filter((row) => normalizeText(row?.branch_id) === normalizeText(branch?.id))
+  const branchListings = listings.filter((row) => normalizeText(row?.branch_id) === normalizeText(branch?.id) && normalizeLower(row?.listing_status) !== 'withdrawn')
   const branchLeads = leads.filter((row) => normalizeText(row?.branch_id) === normalizeText(branch?.id))
 
   const activeTransactions = branchTransactions.filter(isActiveTransaction)
@@ -492,14 +469,12 @@ function buildBranchViewModel(branch = {}, related = {}) {
   }
 }
 
-export async function getBranches() {
-  if (!isSupabaseConfigured || !supabase) {
-    return []
-  }
-
+async function loadAgencyBranchSource(expectedOrganisationId = '') {
+  if (!isSupabaseConfigured || !supabase) throw new Error('Supabase is required to load company performance.')
   const context = await resolveOrganisationContext()
   assertBranchOperationalAccess(context, 'view branch operations')
   const { organisationId } = context
+  if (expectedOrganisationId && expectedOrganisationId !== organisationId) throw new Error('Company overview does not match the selected organisation.')
   const [branches, members, transactions, listings, leads] = await Promise.all([
     listOrganisationBranches(supabase, organisationId),
     listOrganisationUsers(supabase, organisationId),
@@ -518,7 +493,7 @@ export async function getBranches() {
     membersByBranchId.get(branchId).push(member)
   }
 
-  return filterBranchesForContext(branches, context).map((branch) =>
+  const branchRows = filterBranchesForContext(branches, context).map((branch) =>
     buildBranchViewModel(branch, {
       members: membersByBranchId.get(normalizeText(branch?.id)) || [],
       transactions,
@@ -526,6 +501,12 @@ export async function getBranches() {
       leads,
     }),
   )
+  return { context, branches: branchRows, records: { members, transactions, listings } }
+}
+
+export async function getBranches() {
+  if (!isSupabaseConfigured || !supabase) return []
+  return (await loadAgencyBranchSource()).branches
 }
 
 export async function getBranchOptions() {
@@ -533,7 +514,7 @@ export async function getBranchOptions() {
   const context = await resolveOrganisationContext()
   assertBranchOperationalAccess(context, 'view branch operations')
   const rows = await listOrganisationBranches(supabase, context.organisationId)
-  return filterBranchesForContext(rows, context).map((row) => ({ id: row.id, name: row.name, isActive: row.is_active !== false }))
+  return filterBranchesForContext(rows, context).map((row) => ({ id: row.id, name: row.name, isActive: row.is_active !== false })).sort((left, right) => normalizeText(left.name).localeCompare(normalizeText(right.name)))
 }
 
 // Page through scoped records: Supabase's default result cap must not silently
@@ -1018,20 +999,28 @@ function buildOverviewBranchRows(branches = [], window = {}) {
     .map((branch, index) => ({ ...branch, rank: index + 1 }))
 }
 
-export function buildAgencyBranchOverview(branches = [], { period = 'this_month' } = {}) {
-  const window = resolveOverviewPeriod(period)
+export function buildAgencyBranchOverview(branches = [], { period = 'this_month', now = new Date(), records = null } = {}) {
+  const window = resolveOverviewPeriod(period, now)
   const branchRows = buildOverviewBranchRows(branches, window)
   const activeBranchRows = branchRows.filter((branch) => branch?.isActive !== false)
-  const listings = branchRows.flatMap((branch) => (branch.listings || []).filter(isActiveListing).map((row) => ({ ...row, overviewValue: getListingValue(row) })))
-  const transactions = branchRows.flatMap((branch) => (branch.transactions || []).filter(isActiveTransaction).map((row) => ({ ...row, overviewValue: getTransactionValue(row) })))
+  const uniqueRows = (rows, identity) => [...new Map(rows.map((row, index) => [normalizeText(identity(row)) || `row:${index}`, row])).values()]
+  const allListings = uniqueRows(records?.listings || branchRows.flatMap((branch) => branch.listings || []), (row) => row.id)
+  const allTransactions = uniqueRows(records?.transactions || branchRows.flatMap((branch) => branch.transactions || []), (row) => row.id)
+  const members = uniqueRows(records?.members || branchRows.flatMap((branch) => branch.members || []), (row) => row.user_id || row.id || row.email)
+  const listings = allListings.filter(isActiveListing).map((row) => ({ ...row, overviewValue: getListingValue(row) }))
+  const transactions = allTransactions.filter(isActiveTransaction).map((row) => ({ ...row, overviewValue: getTransactionValue(row) }))
   const pipelineRecords = [...listings, ...transactions]
-  const members = branchRows.flatMap((branch) => branch.members || [])
-  const companyPipeline = branchRows.reduce((sum, branch) => sum + toNumber(branch.pipelineValue), 0)
-  const projectedCommission = branchRows.reduce((sum, branch) => sum + toNumber(branch.projectedCommission), 0)
-  const activeSalesAgents = branchRows.reduce((sum, branch) => sum + toNumber(branch.activeSalesAgents), 0)
-  const activeOperationalTeam = branchRows.reduce((sum, branch) => sum + toNumber(branch.activeOperationalTeam), 0)
-  const activeTransactions = branchRows.reduce((sum, branch) => sum + toNumber(branch.activeTransactions), 0)
-  const hasProjectedCommissionData = branchRows.some((branch) => branch.hasProjectedCommissionData)
+  const companyPipeline = pipelineRecords.reduce((sum, row) => sum + row.overviewValue, 0)
+  const commission = pipelineRecords.reduce((result, row) => {
+    const value = getProjectedCommission(row, row.overviewValue)
+    return { value: result.value + value.value, hasData: result.hasData || value.hasData }
+  }, { value: 0, hasData: false })
+  const headcount = buildRoleHeadcount(members)
+  const activeSalesAgents = headcount.activeAgents
+  const activeOperationalTeam = headcount.activeAgents + headcount.activePrincipals + headcount.activeManagers
+  const activeTransactions = transactions.length
+  const projectedCommission = commission.value
+  const hasProjectedCommissionData = commission.hasData
 
   return {
     totals: {
@@ -1039,6 +1028,9 @@ export function buildAgencyBranchOverview(branches = [], { period = 'this_month'
       agents: activeSalesAgents,
       salesAgents: activeSalesAgents,
       operationalTeam: activeOperationalTeam,
+      activeTeam: headcount.activeOperationalUsers,
+      activeListings: listings.length,
+      unassignedListings: listings.filter((row) => !normalizeText(row.branch_id)).length,
       companyPipeline,
       activeTransactions,
       projectedCommission,
@@ -1048,8 +1040,9 @@ export function buildAgencyBranchOverview(branches = [], { period = 'this_month'
     },
     periodMetrics: {
       pipeline: buildPeriodMetric(pipelineRecords, window, (row) => row.overviewValue),
-      transactions: buildPeriodMetric(transactions, window, () => 1),
-      listings: buildPeriodMetric(listings, window, () => 1),
+      transactions: buildPeriodMetric(allTransactions, window, () => 1),
+      listings: buildPeriodMetric(allListings, window, () => 1),
+      team: buildPeriodMetric(members.filter(isActiveReportingUser), window, () => 1),
       agents: {
         value: activeSalesAgents,
         previousValue: activeSalesAgents,
@@ -1063,13 +1056,11 @@ export function buildAgencyBranchOverview(branches = [], { period = 'this_month'
 }
 
 export async function getAgencyBranchOverview(agencyId = '', period = 'this_month') {
-  const branches = await getBranches()
-  const normalizedAgencyId = normalizeText(agencyId)
-  const scopedBranches = normalizedAgencyId
-    ? branches.filter((branch) => normalizeText(branch?.organisationId) === normalizedAgencyId)
-    : branches
-
-  return buildAgencyBranchOverview(scopedBranches, { period })
+  const source = await loadAgencyBranchSource(normalizeText(agencyId))
+  // Keep restricted branch users inside their authorised branch. Company-wide
+  // users also see records not yet allocated to a branch, without reassigning them.
+  const records = hasAllBranchAccess(source.context) ? source.records : null
+  return { ...buildAgencyBranchOverview(source.branches, { period, records }), organisationId: source.context.organisationId }
 }
 
 export async function getBranchTransactions(branchId) {
@@ -1085,6 +1076,9 @@ export async function getBranchListings(branchId) {
 export const __agencyBranchServiceTestUtils = {
   buildAgencyBranchOverview,
   buildBranchViewModel,
+  readOrganisationRows,
+  listOrganisationPrivateListings,
+  listOrganisationTransactions,
 }
 
 export async function inviteBranchMember(payload = {}) {

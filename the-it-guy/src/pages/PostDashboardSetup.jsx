@@ -1134,14 +1134,14 @@ export default function PostDashboardSetup() {
       const organisationName = result.organisation?.displayName || result.organisation?.name || agencyDraft.agencyInformation.agencyName
       const resumedCopy = result.completion?.resumed_duplicate_workspace ? ' Existing setup resumed and repaired.' : ''
       const completedAgencyType = normalizeAgencyType(result.onboarding?.agencyInformation?.agencyType || agencyDraft.agencyInformation?.agencyType)
-      const targetPath = completedAgencyType === 'commercial' ? '/commercial' : '/dashboard'
+      const targetPath = result.recruitmentJoining?.length ? '/agency/recruitment' : completedAgencyType === 'commercial' ? '/commercial' : '/dashboard'
       const inviteWarnings = result.inviteEmailDelivery?.warnings || []
       const inviteCopy = inviteWarnings.length
         ? ` ${inviteWarnings[0]}`
         : result.inviteEmailDelivery?.sent?.length
           ? ` ${result.inviteEmailDelivery.sent.length} invite email${result.inviteEmailDelivery.sent.length === 1 ? '' : 's'} sent.`
           : ''
-      setMessage(`${organisationName} is ready.${resumedCopy}${inviteCopy} Opening your ${completedAgencyType === 'commercial' ? 'Commercial workspace' : 'dashboard'}...`)
+      setMessage(`${organisationName} is ready.${resumedCopy}${inviteCopy}${result.recruitmentJoining?.length ? ' Joining enquiries saved. Existing matches need principal review. Opening Recruitment...' : ` Opening your ${completedAgencyType === 'commercial' ? 'Commercial workspace' : 'dashboard'}...`}`)
       window.setTimeout(() => {
         navigate(targetPath, { replace: true })
       }, 500)
@@ -1807,8 +1807,8 @@ export default function PostDashboardSetup() {
         <div className="agency-setup-card">
           <SetupSectionHeader
             eyebrow="Team access"
-            title="Invite agents"
-            copy="Add the agents and branch operators who should receive access after setup."
+            title="Add your first team"
+            copy="New agents start in Recruitment. Existing staff and support roles use access invitations."
             icon={Users}
           />
           <div className="agency-setup-list">
@@ -1835,6 +1835,7 @@ export default function PostDashboardSetup() {
                       ))}
                     </select>
                   </SetupField>
+                  {['agent','senior_agent','commercial_broker'].includes(invite.role || 'agent') && <SetupField label="Invitation purpose"><select className="setup-input" value={invite.purpose || 'new_recruit'} onChange={(event) => updateInvite(invite.id,{purpose:event.target.value})}><option value="new_recruit">New agent · Recruitment</option><option value="existing_staff">Existing or returning staff access</option></select></SetupField>}
                   <SetupField label="Role">
                     <select className="setup-input" value={invite.role || 'agent'} onChange={(event) => updateInvite(invite.id, { role: event.target.value })}>
                       {AGENCY_INVITE_ROLE_OPTIONS.map((option) => (
@@ -1848,7 +1849,7 @@ export default function PostDashboardSetup() {
           </div>
           <button type="button" className="setup-secondary-button" onClick={addInvite}>
             <Plus size={16} />
-            Add agent invite
+            Add team member
           </button>
         </div>
       )
@@ -2081,7 +2082,7 @@ export default function PostDashboardSetup() {
                 {saving
                   ? 'Creating agency...'
                   : agencyStepIndex === AGENCY_SETUP_STEPS.length - 1
-                    ? 'Create agency and send invites'
+                    ? 'Create agency and save team'
                     : (
                         <>
                           Continue

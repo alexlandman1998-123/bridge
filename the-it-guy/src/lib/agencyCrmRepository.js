@@ -1,3 +1,4 @@
+import { notifyNewLeadAssignedAgent } from '../services/leads/newLeadAgentNotificationService'
 import {
   deleteLeadActivity,
   deleteAgencyLead,
@@ -614,7 +615,7 @@ async function resolveLeadScopeContext(workspaceId = '', payload = {}, actor = n
     assignedAgentInput?.email ||
     payload?.assignedAgentEmail ||
     leadPayload?.assignedAgentEmail ||
-    actor?.email,
+    (!assignedUserId || assignedUserId === normalizeNullableUuid(actor?.id) ? actor?.email : ''),
   ).toLowerCase()
   const createdBy = normalizeNullableUuid(
     payload?.createdBy ||
@@ -653,8 +654,8 @@ async function resolveLeadScopeContext(workspaceId = '', payload = {}, actor = n
       userId: normalizeText(assignedAgentInput?.userId || assignedUserId || assignedAgentId || actor?.id),
       email: assignedAgentEmail,
       branchId: normalizeText(assignedAgentInput?.branchId || branchId),
-      name: normalizeText(assignedAgentInput?.name || assignedAgentInput?.fullName || actor?.name || actor?.fullName),
-      fullName: normalizeText(assignedAgentInput?.fullName || assignedAgentInput?.name || actor?.fullName || actor?.name),
+      name: normalizeText(assignedAgentInput?.name || assignedAgentInput?.fullName || ((!assignedUserId || assignedUserId === normalizeNullableUuid(actor?.id)) ? actor?.name || actor?.fullName : '')),
+      fullName: normalizeText(assignedAgentInput?.fullName || assignedAgentInput?.name || ((!assignedUserId || assignedUserId === normalizeNullableUuid(actor?.id)) ? actor?.fullName || actor?.name : '')),
     },
   }
 }
@@ -1298,7 +1299,7 @@ export async function listSellerViewingCoordinationLinks(organisationId, leadId,
   return (Array.isArray(query.data) ? query.data : []).map(mapSellerViewingCoordinationLink)
 }
 
-export async function createAgencyCrmLeadRecord(organisationId, payload = {}, { actor = null } = {}) {
+export async function createAgencyCrmLeadRecord(organisationId, payload = {}, { actor = null, notifyAgent = true } = {}) {
   const workspaceId = requireAgencyWorkspaceId(organisationId, 'agencyCrmRepository.createAgencyCrmLeadRecord')
   if (!isSupabaseConfigured || !supabase) {
     throw new Error('Supabase is required before creating agency CRM data.')
@@ -1406,6 +1407,16 @@ export async function createAgencyCrmLeadRecord(organisationId, payload = {}, { 
     })
     const createdLead = (Array.isArray(reconciled.leads) ? reconciled.leads : []).find((row) => normalizeText(row?.leadId) === normalizeText(lead.leadId)) || lead
     emitAgencyCrmUpdated({ organisationId: workspaceId, leadId: createdLead.leadId, mutation: 'created' })
+    if (notifyAgent) {
+      // Persistence has been verified. Email delivery must not slow capture or
+      // turn a saved lead into a failed create if the provider is unavailable.
+      void notifyNewLeadAssignedAgent({
+        organisationId: workspaceId, lead: createdLead, contact,
+        appUrl: getAppBaseUrl(),
+      }).then((result) => {
+        if (result.error) console.warn('[agencyCrmRepository] saved lead agent notification needs review')
+      }).catch(() => console.warn('[agencyCrmRepository] saved lead agent notification needs review'))
+    }
     return createdLead
   } catch (error) {
     console.error('[agencyCrmRepository] create lead failed without local fallback', error)
@@ -1531,7 +1542,7 @@ export async function ensureAgencyCrmLeadRecordPersisted(organisationId, lead = 
         createdBy: normalizeText(lead?.createdBy || lead?.created_by || actor?.id),
       },
     },
-    { actor },
+    { actor, notifyAgent: false },
   )
 
   return {

@@ -14,6 +14,8 @@ function buildDashboardCardDraft(agent = {}, link = null) {
     heading: text(link?.heading), introduction: text(link?.introduction),
     buyerCtaLabel: text(link?.buyerCtaLabel) || 'I am looking to buy',
     sellerCtaLabel: text(link?.sellerCtaLabel) || 'I am looking to sell',
+    rentalCtaLabel: text(link?.rentalCtaLabel) || 'I am looking to rent',
+    rentEnabled: (link?.enabledIntents || []).includes('rent'),
     buyEnabled: (link?.enabledIntents || ['buy', 'sell']).includes('buy'),
     sellEnabled: (link?.enabledIntents || ['buy', 'sell']).includes('sell'),
   }
@@ -35,13 +37,13 @@ export default function AgentDigitalCardPanel({
   const avatarUrl = /^https?:\/\//i.test(display.avatarUrl || '') ? display.avatarUrl : ''
   const initials = (display.name || 'Agent').split(/\s+/).filter(Boolean).slice(0, 2).map((word) => word[0]).join('').toUpperCase()
   const disabled = loading || saving || Boolean(busyAction)
-  const stats = [ ['Card views', 'views'], ['Contact clicks', 'contactClicks'], ['WhatsApp clicks', 'whatsappClicks'], ['Buyer enquiries', 'buyerLeads'], ['Seller enquiries', 'sellerLeads'], ['Listing clicks', 'listingClicks'] ]
+  const stats = [ ['Card views', 'views'], ['Contact clicks', 'contactClicks'], ['WhatsApp clicks', 'whatsappClicks'], ['Buyer enquiries', 'buyerLeads'], ['Seller enquiries', 'sellerLeads'], ['Rental enquiries', 'rentalLeads'], ['Listing clicks', 'listingClicks'] ]
   const update = (key, value) => setDraft((current) => ({ ...current, [key]: value }))
   async function save(status) {
     if (!draft || saving) return
     if (formRef.current && !formRef.current.reportValidity()) return
     if (!draft.name.trim()) { setSaveError('Add a display name for your card.'); return }
-    if (!draft.buyEnabled && !draft.sellEnabled) { setSaveError('Enable at least one enquiry action.'); return }
+    if (!draft.buyEnabled && !draft.sellEnabled && !draft.rentEnabled) { setSaveError('Enable at least one enquiry action.'); return }
     if (draft.avatarUrl && !/^https?:\/\//i.test(draft.avatarUrl)) { setSaveError('Use an http or https URL for your photo.'); return }
     setSaving(true)
     setSaveError('')
@@ -92,11 +94,11 @@ export default function AgentDigitalCardPanel({
             <form ref={formRef} onSubmit={(event) => { event.preventDefault(); void save('active') }} aria-label="Digital card setup">
               <div className="mb-4 flex items-center justify-between"><h3 className="font-medium text-[#162334]">{link ? 'Edit your card' : 'Set up your card'}</h3><button type="button" aria-label="Close card setup" disabled={saving} onClick={() => setDraft(null)} className="rounded-lg p-2 text-slate-500"><X size={18} /></button></div>
               <fieldset disabled={saving} className="grid gap-3 sm:grid-cols-2">
-                {[[ 'name', 'Display name', 'text' ], [ 'jobTitle', 'Job title', 'text' ], [ 'email', 'Email', 'email' ], [ 'phone', 'Phone', 'tel' ], [ 'whatsapp', 'WhatsApp', 'tel' ], [ 'avatarUrl', 'Profile photo URL', 'url' ], [ 'heading', 'Card heading', 'text' ], [ 'buyerCtaLabel', 'Buyer button label', 'text' ], [ 'sellerCtaLabel', 'Seller button label', 'text' ]].map(([key, label, type]) => (
+                {[[ 'name', 'Display name', 'text' ], [ 'jobTitle', 'Job title', 'text' ], [ 'email', 'Email', 'email' ], [ 'phone', 'Phone', 'tel' ], [ 'whatsapp', 'WhatsApp', 'tel' ], [ 'avatarUrl', 'Profile photo URL', 'url' ], [ 'heading', 'Card heading', 'text' ], [ 'buyerCtaLabel', 'Buyer button label', 'text' ], [ 'sellerCtaLabel', 'Seller button label', 'text' ], [ 'rentalCtaLabel', 'Rental button label', 'text' ]].map(([key, label, type]) => (
                   <label key={key} className="grid gap-1.5 text-sm text-[#53677e]">{label}<input type={type} required={key === 'name'} value={draft[key]} onChange={(event) => update(key, event.target.value)} className="min-h-11 w-full rounded-xl border border-[#dde4ee] bg-white px-3 text-[#162334] outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100" /></label>
                 ))}
                 <label className="grid gap-1.5 text-sm text-[#53677e] sm:col-span-2">Personal introduction<textarea rows={3} value={draft.introduction} onChange={(event) => update('introduction', event.target.value)} className="w-full rounded-xl border border-[#dde4ee] p-3 text-[#162334] outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100" /></label>
-                {[[ 'buyEnabled', 'Buyer enquiries' ], [ 'sellEnabled', 'Seller enquiries' ]].map(([key, label]) => <label key={key} className="flex items-center gap-2 text-sm text-[#53677e]"><input type="checkbox" checked={draft[key]} onChange={(event) => update(key, event.target.checked)} className="accent-emerald-700" />{label}</label>)}
+                {[[ 'buyEnabled', 'Buyer enquiries' ], [ 'sellEnabled', 'Seller enquiries' ], [ 'rentEnabled', 'Rental enquiries' ]].map(([key, label]) => <label key={key} className="flex items-center gap-2 text-sm text-[#53677e]"><input type="checkbox" checked={draft[key]} onChange={(event) => update(key, event.target.checked)} className="accent-emerald-700" />{label}</label>)}
               </fieldset>
               {saveError ? <p role="alert" className="mt-3 text-sm text-red-700">{saveError}</p> : null}
               <div className="mt-5 flex flex-wrap justify-end gap-2"><button type="button" disabled={saving} className={buttonClass} onClick={() => setDraft(null)}>Cancel</button><button type="button" disabled={saving} className={buttonClass} onClick={() => void save('draft')}>Save draft</button><button disabled={saving} className={primaryClass} type="submit">{saving ? 'Saving…' : active ? 'Save changes' : 'Activate card'}</button></div>
@@ -119,6 +121,7 @@ export default function AgentDigitalCardPanel({
                 </div>
                 <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-sm text-emerald-700">
                   {link.enabledIntents?.includes('buy') && urls.buyerUrl ? <a href={urls.buyerUrl} target="_blank" rel="noreferrer">Buyer enquiry ↗</a> : null}
+                  {link.enabledIntents?.includes('rent') && urls.rentalUrl ? <a href={urls.rentalUrl} target="_blank" rel="noreferrer">Rental enquiry ↗</a> : null}
                   {link.enabledIntents?.includes('sell') && urls.sellerUrl ? <a href={urls.sellerUrl} target="_blank" rel="noreferrer">Seller enquiry ↗</a> : null}
                 </div>
               </> : null}

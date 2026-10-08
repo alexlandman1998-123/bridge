@@ -16,6 +16,7 @@ import {
 } from './supabaseClient'
 import {
   createAgencyInviteDraft,
+  isNewAgencyRecruit,
   isCommercialAgencyType,
   mergeAgencyOnboardingDraft,
   normalizeAgencyType,
@@ -1963,6 +1964,7 @@ function buildAtomicAgencyOnboardingPayload({ mergedDraft = {}, context = {}, us
     .filter((branch) => branch.name)
 
   const invites = (mergedDraft.invitations || [])
+    .filter((invite) => !isNewAgencyRecruit(invite))
     .map((invite) => ({
       email: normalizeEmail(invite.email),
       workspace_role: mapAgencyInviteRoleToOrganisationRole(invite.role),
@@ -2224,6 +2226,7 @@ async function dispatchAgencyInviteEmails({ client, workspaceId, mergedDraft, or
   const organisationLogoIconUrl = normalizeText(branding.logoIcon || branding.logoIconUrl || branding.logo_icon_url)
   const brandPrimaryColor = normalizeText(branding.primaryColor || branding.primaryColour || branding.brandPrimaryColor)
   const inviteDrafts = (mergedDraft?.invitations || [])
+    .filter((invite) => !isNewAgencyRecruit(invite))
     .map((invite) => ({
       email: normalizeEmail(invite.email),
       name: normalizeText(invite.name),
@@ -3504,6 +3507,17 @@ export async function completeAgencyOnboarding(input = {}) {
     mergedDraft,
   })
 
+  // Receipts are stable across uncertain setup responses. Existing staff matches
+  // stay in their own workflow and are never overwritten or automatically merged.
+  const recruitmentJoining = []
+  for (const invite of (mergedDraft.invitations || []).filter(isNewAgencyRecruit)) {
+    const branchName = normalizeText((mergedDraft.branchStructure?.branches || []).find((branch) => branch.id === invite.branchId)?.branchName) || normalizeText(mergedDraft.branchStructure?.branches?.[0]?.branchName) || 'Head Office'
+    const {data,error} = await client.rpc('recruitment_capture_setup_joining',{p_organisation_id:workspaceId,p_contact:{receipt:invite.id,name:invite.name,email:invite.email,branchName,commercial:agencyType==='commercial' || invite.role==='commercial_broker'}})
+    if(error) throw new Error(`Agency setup completed. The joining enquiry for ${invite.name || invite.email} could not be confirmed. Retry setup with this saved team draft: ${error.code==='PGRST202' ? 'Recruitment setup migration is pending.' : 'Check the joining branch and try again.'}`)
+    if(!['created','reused','review_required','existing_member'].includes(data?.outcome)) throw new Error('Agency setup completed. Retry this saved team draft to confirm the recruitment joining receipts.')
+    recruitmentJoining.push({...data,name:invite.name})
+  }
+
   const inviteEmailDelivery = await dispatchAgencyInviteEmails({
     client,
     workspaceId,
@@ -3532,6 +3546,7 @@ export async function completeAgencyOnboarding(input = {}) {
     commercialModuleActivation,
     commercialActivation,
     inviteEmailDelivery,
+    recruitmentJoining,
     persisted: true,
   }
 }

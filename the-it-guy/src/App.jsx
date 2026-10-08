@@ -3399,8 +3399,8 @@ function AppRoutes() {
                   </RoleRoute>
                 }
               />
-              <Route path="/agency/recruitment" element={<SalesWorkspaceGuard><RoleRoute allowedRoles={['agent']} requiredPermission="manage_users"><RecruitmentPage /></RoleRoute></SalesWorkspaceGuard>} />
-              <Route path="/agency/recruitment/:leadId" element={<SalesWorkspaceGuard><RoleRoute allowedRoles={['agent']} requiredPermission="manage_users"><RecruitmentPage /></RoleRoute></SalesWorkspaceGuard>} />
+              <Route path="/agency/recruitment" element={<RoleRoute allowedRoles={['agent']} requiredPermission="manage_users" requiredWorkspaceType="agency"><RecruitmentPage /></RoleRoute>} />
+              <Route path="/agency/recruitment/:leadId" element={<RoleRoute allowedRoles={['agent']} requiredPermission="manage_users" requiredWorkspaceType="agency"><RecruitmentPage /></RoleRoute>} />
               <Route
                 path="/pipeline/leads"
                 element={

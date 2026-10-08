@@ -14,6 +14,13 @@ export default function DeveloperOverviewJourney({ model, loading = false, onOpe
   const legalCurrent = completed('registered') ? 'registration'
     : completed('lodged_at_deeds_office') ? 'lodgement'
       : transferTasks.some(task => ['completed', 'complete', 'completed_externally', 'in_progress', 'waiting', 'blocked'].includes(task.status)) ? 'transfer' : null
+  const finance = steps.find(step => step.id === 'finance')
+  const financeOutstanding = !finance?.isComplete && ['pending', 'in_progress', 'waiting', 'blocked'].includes(finance?.status)
+  // Legal preparation can run alongside funding. It must not move the current
+  // milestone past an explicitly unfinished finance route. Recorded lodgement
+  // and registration remain visible as actual legal outcomes.
+  const currentMilestone = ['lodgement', 'registration'].includes(legalCurrent) ? legalCurrent
+    : financeOutstanding ? 'finance' : legalCurrent
   return (
     <section data-developer-overview-journey data-orientation={vertical ? 'vertical' : 'horizontal'} aria-label="Transaction journey" aria-busy={loading} className="min-w-0 rounded-[20px] border border-borderDefault bg-white p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -28,11 +35,10 @@ export default function DeveloperOverviewJourney({ model, loading = false, onOpe
             const Item = onOpenWorkspace ? 'button' : 'div'
             const step = steps.find(item => (item.id || item.key) === milestone.id || (milestone.alternate && (item.id || item.key) === milestone.alternate))
             const complete = !loading && Boolean(step?.isComplete) && !(legalCurrent === 'transfer' && milestone.id === 'transfer')
-            const isLegal = ['transfer', 'lodgement', 'registration'].includes(milestone.id)
-            const current = !loading && !complete && (legalCurrent && isLegal
-              ? milestone.id === legalCurrent
+            const current = !loading && !complete && (currentMilestone
+              ? milestone.id === currentMilestone
               : ['in_progress', 'waiting', 'blocked'].includes(step?.status) || milestone.id === model?.currentStepId)
-            const status = loading ? 'Loading…' : legalCurrent === 'transfer' && ['lodgement', 'registration'].includes(milestone.id) ? 'Pending' : current && !['in_progress', 'waiting', 'blocked'].includes(step?.status)
+            const status = loading ? 'Loading…' : !complete && ((currentMilestone === 'finance' && ['transfer', 'lodgement', 'registration'].includes(milestone.id)) || (legalCurrent === 'transfer' && ['lodgement', 'registration'].includes(milestone.id))) ? 'Pending' : current && !['in_progress', 'waiting', 'blocked'].includes(step?.status)
               ? 'In progress'
               : ({ complete: 'Completed', blocked: 'Needs attention', waiting: 'Waiting', in_progress: 'In progress', pending: 'Pending' }[step?.status] || 'Not available')
             return <li key={milestone.id} className="relative" data-complete={complete ? 'true' : undefined}>

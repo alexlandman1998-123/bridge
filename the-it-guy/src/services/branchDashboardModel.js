@@ -64,6 +64,26 @@ function owned(row, member) {
   const keys = new Set([member.user_id, member.id, member.email].map(key).filter(Boolean))
   return getOperationalOwnerKeys(row).map(key).some((value) => keys.has(value))
 }
+// A roster reports allocations for every role. Prefer an assigned ID to a
+// legacy email, and never attribute another person's work to its creator.
+function staffOwned(row, member) {
+  const memberKeys = new Set([member.user_id, member.id, member.email].map(key).filter(Boolean))
+  const assignedId = text(row.assigned_user_id || row.assignedUserId || row.assigned_agent_id || row.assignedAgentId || row.agent_id || row.agentId)
+  if (assignedId) return memberKeys.has(key(assignedId))
+  const assignedEmail = text(row.assigned_agent_email || row.assignedAgentEmail || row.agent_email || row.agentEmail)
+  if (assignedEmail) return memberKeys.has(key(assignedEmail))
+  const ownerId = text(row.owner_user_id || row.ownerUserId || row.user_id || row.userId)
+  return Boolean(ownerId && memberKeys.has(key(ownerId)))
+}
+
+function isCurrentStaffListing(row) {
+  const status = key(row.listing_status || row.listingStatus || row.status || row.stage)
+  const visibility = key(row.listing_visibility || row.listingVisibility)
+  return visibility !== 'archived'
+    && !['sold', 'withdrawn'].includes(getPrivateListingLifecycleState(row))
+    && !['sold', 'withdrawn', 'archived', 'cancelled', 'canceled', 'completed', 'inactive', 'deleted', 'expired', 'let', 'rented', 'leased'].includes(status)
+}
+
 function qualifiedDate(lead, activities) {
   const explicit = date(lead.qualified_at || lead.qualification_completed_at)
   if (explicit) return explicit
@@ -104,7 +124,12 @@ function buildBuckets(range) {
 
 export function buildBranchDashboard(branch = {}, { period = '30_days', now = new Date(), financialMonths = 12 } = {}) {
   const range = resolveBranchReportingRange(period, now)
-  const scoped = (rows, branchField) => (rows || []).filter((row) => !branch.id || !row[branchField] || text(row[branchField]) === text(branch.id))
+  const scoped = (rows, branchField) => (rows || []).filter((row) => {
+    const rowBranch = branchField === 'assigned_branch_id' ? row.assigned_branch_id || row.branch_id : row[branchField]
+    const organisationId = branch.organisationId || branch.organisation_id
+    return (!organisationId || !row.organisation_id || text(row.organisation_id) === text(organisationId))
+      && (!branch.id || !rowBranch || text(rowBranch) === text(branch.id))
+  })
   const listings = scoped(branch.listings, 'branch_id'), leads = scoped(branch.leads, 'branch_id'), transactions = scoped(branch.transactions, 'assigned_branch_id')
   const members = branch.members || [], activities = branch.leadActivities || []
   const available = (source) => branch.dataAvailability?.[source] ?? Array.isArray(branch[source])
@@ -197,6 +222,17 @@ export function buildBranchDashboard(branch = {}, { period = '30_days', now = ne
     const registered = registeredRows.filter((row) => owned(row, member) && inside(branchRegistrationDate(row, now), range))
     return { id: member.user_id || member.id, name: [member.first_name, member.last_name].filter(Boolean).join(' ') || member.name || member.email || 'Agent', email: member.email, avatarUrl: member.avatar_url || member.profile_photo_url || '', listings: available('listings') ? activeListings.filter((row) => owned(row, member)).length : null, leads: available('leads') ? leads.filter((row) => owned(row, member) && inside(row.created_at, range)).length : null, deals: available('transactions') ? registered.length : null, salesValue: available('transactions') ? completeSum(registered, branchTransactionValue) : null, grossCommission: available('transactions') ? completeSum(registered, (row) => amounts(row).gross) : null, commission: available('transactions') ? completeSum(registered, (row) => amounts(row).agent) : null }
   }).sort((a, b) => (b.salesValue ?? -1) - (a.salesValue ?? -1) || (b.deals ?? -1) - (a.deals ?? -1) || (b.grossCommission ?? -1) - (a.grossCommission ?? -1))
-  const staff = agents.map((agent) => { const member = members.find((row) => text(row.user_id || row.id) === text(agent.id)); const rows = transactions.filter((row) => owned(row, member) && inside(row.created_at, range)); return { ...agent, transactions: rows.length, commission: completeSum(rows, (row) => amounts(row).gross) } })
+  const currentStaffListings = listings.filter(isCurrentStaffListing)
+  const staff = members.map((member) => {
+    const earned = registeredRows.filter((row) => staffOwned(row, member) && inside(branchRegistrationDate(row, now), range))
+    return {
+      id: member.user_id || member.id,
+      membershipId: member.id,
+      email: member.email,
+      listings: available('listings') ? currentStaffListings.filter((row) => staffOwned(row, member)).length : null,
+      transactions: available('transactions') ? open.filter((row) => staffOwned(row, member)).length : null,
+      commission: available('transactions') ? completeSum(earned, (row) => amounts(row).agent) : null,
+    }
+  })
   return { range, kpis, periodFinancials, movement, buckets, granularity, stages, financials: { ...financials, buckets: financeBuckets, months: financialMonths }, portfolio: { active: available('listings') ? activeListings.length : null, total: available('listings') ? listings.length : null, averageAge: available('listings') && ages.length && ages.every((age) => age !== null) ? Math.round(sum(ages, (age) => age) / ages.length) : null, newListings: available('listings') ? listings.filter((row) => inside(listingDate(row), range)).length : null, olderThan90: available('listings') && ages.every((age) => age !== null) ? ages.filter((age) => age > 90).length : null, statuses: portfolioStatuses }, agents, staff, series: { listings: buckets.map((bucket) => listings.filter((row) => inside(row.created_at, bucket)).length), transactions: movement.find((item) => item.key === 'transactions').values, registrations: movement.find((item) => item.key === 'registrations').values }, period, activeAgents: members.filter((member) => shouldIncludeInAgentLeaderboard(member)).length }
 }

@@ -1,5 +1,5 @@
 import { ArrowLeft, ArrowUpRight, ChevronDown, Mail, MessageCircle, Phone } from 'lucide-react'
-import { useId, useState } from 'react'
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { maskDeveloperLeadForDeveloper } from '../../core/developerLeads/developerLeadContract.js'
 import { buildDeveloperLeadJourneyStages, getDeveloperLeadNextAction, getDeveloperLeadPrimaryAction } from '../../core/developerLeads/developerLeadWorkspaceModel.js'
@@ -8,7 +8,6 @@ import MobileLeadJourney from './MobileLeadJourney.jsx'
 import MobileLeadUnitPicker from './MobileLeadUnitPicker.jsx'
 import LeadSourceLogo from './LeadSourceLogo.jsx'
 import { getMobileBrandStyle } from './mobileBrandStyle.js'
-import DeveloperLeadDocuments from '../documents/DeveloperLeadDocuments.jsx'
 import './mobile-lead-workspace.css'
 
 const text = (value) => String(value ?? '').trim()
@@ -38,8 +37,6 @@ function budgetLabel(lead) {
 
 export default function MobileDeveloperLeadWorkspace({ lead: input, brandStyle = getMobileBrandStyle(), journeyOverrides = [], journeyLoading = false, journeyError = '', onRetryJourney, development = null, actionState = {}, onAction }) {
   const [unitPickerOpen, setUnitPickerOpen] = useState(false)
-  const [detailTab, setDetailTab] = useState('interest')
-  const tabId = useId()
   const lead = maskDeveloperLeadForDeveloper(input)
   const protectedContact = lead.accessProfile.requiresHandoverBeforePrivateDetails
   const reference = text(lead.publicReference)
@@ -122,19 +119,7 @@ export default function MobileDeveloperLeadWorkspace({ lead: input, brandStyle =
       {actionState.onboardingUrl && <a className="mobile-lead-section-link" href={actionState.onboardingUrl} target="_blank" rel="noopener noreferrer">Open Buyer Onboarding<ArrowUpRight size={17} aria-hidden="true" /></a>}
     </section>
 
-    <div className="mobile-lead-detail-tabs" role="tablist" aria-label="Lead information">
-      {[['interest', 'Buyer interest'], ['documents', 'Documents']].map(([key, title]) => <button key={key} type="button" role="tab" id={`${tabId}-${key}-tab`} aria-selected={detailTab === key} aria-controls={`${tabId}-${key}-panel`} tabIndex={detailTab === key ? 0 : -1} onClick={() => setDetailTab(key)} onKeyDown={(event) => {
-        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
-        event.preventDefault()
-        const next = event.key === 'Home' ? 'interest' : event.key === 'End' ? 'documents' : key === 'interest' ? 'documents' : 'interest'
-        setDetailTab(next)
-        event.currentTarget.parentElement.querySelectorAll('[role="tab"]')[next === 'interest' ? 0 : 1].focus()
-      }}>{title}</button>)}
-    </div>
-    {detailTab === 'interest' ? <section className="mobile-lead-section" role="tabpanel" id={`${tabId}-interest-panel`} aria-labelledby={`${tabId}-interest-tab`} tabIndex={0}><h2 id="mobile-lead-interest-title">Buyer interest</h2><p>{interest || 'Property interest not recorded.'}</p>{budget && <dl className="mobile-lead-budget"><dt>Budget</dt><dd>{budget}</dd></dl>}{lead.reservationState && lead.reservationState !== 'none' && <dl className="mobile-lead-facts"><div><dt>Reservation</dt><dd>{label(lead.reservationState)}</dd></div>{dateLabel(lead.reservationExpiresAt) && <div><dt>Expires</dt><dd>{dateLabel(lead.reservationExpiresAt)}</dd></div>}</dl>}</section>
-      : <section className="mobile-lead-section" role="tabpanel" id={`${tabId}-documents-panel`} aria-labelledby={`${tabId}-documents-tab`} tabIndex={0}>
-        {protectedContact ? <><h2>Documents</h2><p>Awaiting agency handover. Buyer documents become available when the agency releases this lead.</p></> : <DeveloperLeadDocuments key={`${lead.developerOrgId}:${lead.developerLeadId}:${lead.convertedTransactionId || ''}`} developerOrgId={lead.developerOrgId} developerLeadId={lead.developerLeadId} />}
-      </section>}
+    <section className="mobile-lead-section" aria-labelledby="mobile-lead-interest-title"><h2 id="mobile-lead-interest-title">Buyer interest</h2><p>{interest || 'Property interest not recorded.'}</p>{budget && <dl className="mobile-lead-budget"><dt>Budget</dt><dd>{budget}</dd></dl>}{lead.reservationState && lead.reservationState !== 'none' && <dl className="mobile-lead-facts"><div><dt>Reservation</dt><dd>{label(lead.reservationState)}</dd></div>{dateLabel(lead.reservationExpiresAt) && <div><dt>Expires</dt><dd>{dateLabel(lead.reservationExpiresAt)}</dd></div>}</dl>}</section>
 
     {(text(lead.qualificationNote) || text(lead.privateNotes)) && <details className="mobile-lead-section mobile-lead-extra-details"><summary>Notes<ChevronDown size={18} aria-hidden="true" /></summary><div className="mobile-lead-notes-body">{text(lead.qualificationNote) && <div className="mobile-lead-note"><h3>Qualification</h3><p>{lead.qualificationNote}</p></div>}{text(lead.privateNotes) && <div className="mobile-lead-note"><h3>Private notes</h3><p>{lead.privateNotes}</p></div>}</div></details>}
 

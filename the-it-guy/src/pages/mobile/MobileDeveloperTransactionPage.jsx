@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowUpRight, Building2, CheckCircle2, ChevronRight, FileText, MapPin, RefreshCw } from 'lucide-react'
+import { ArrowLeft, Building2, ChevronRight, MapPin, RefreshCw } from 'lucide-react'
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { Navigate, useNavigate, useParams } from 'react-router-dom'
 import { useWorkspace } from '../../context/WorkspaceContext'
@@ -7,59 +7,15 @@ import { resolveMobileRoleCategory } from '../../config/mobileShell.js'
 import DeveloperOverviewJourney from '../../components/transaction/DeveloperOverviewJourney.jsx'
 import SharedLegalJourney from '../../components/transaction/SharedLegalJourney.jsx'
 import { MobileEmptyState, MobileErrorState, MobileLoadingState } from '../../components/mobile-shell/MobileShellStates.jsx'
-import { getMobileDeveloperTransactionSnapshotAsync } from '../../services/mobileDashboardService.js'
+import { getMobileDeveloperTransactionJourneyAsync } from '../../services/mobileDashboardService.js'
 import useTransactionLiveRefresh from '../../hooks/useTransactionLiveRefresh.js'
 import '../../components/mobile-shell/mobile-transactions.css'
 import './mobile-developer-workspace.css'
 
-const TABS = [{ id: 'journey', label: 'Journey' }, { id: 'details', label: 'Deal details' }, { id: 'documents', label: 'Documents' }]
-const documentStatuses = {
-  missing: 'Required', required: 'Required', pending: 'Pending', uploaded: 'Received', received: 'Received',
-  under_review: 'Under review', accepted: 'Accepted', approved: 'Approved', completed: 'Completed',
-  rejected: 'Rejected', waived: 'Waived', not_applicable: 'Not applicable',
-}
-const receivedStatuses = new Set(['uploaded', 'received', 'under_review', 'accepted', 'approved', 'completed'])
+const TABS = [{ id: 'journey', label: 'Journey' }, { id: 'details', label: 'Deal details' }]
 
 function WorkspaceNotice({ children, onRetry }) {
   return <div className="mobile-workspace-notice"><p>{children}</p><button type="button" onClick={onRetry}><RefreshCw size={15} aria-hidden="true" />Retry</button></div>
-}
-
-function documentUrl(value) {
-  try {
-    const url = new URL(value)
-    return ['https:', 'http:'].includes(url.protocol) ? url.href : null
-  } catch { return null }
-}
-
-function DocumentsPanel({ detail, onRetry }) {
-  const summary = detail.documentSummary
-  const required = (detail.requiredDocuments || []).filter((row) => row.isEnabled !== false && row.isRequired !== false)
-  const files = detail.documents || []
-  const total = summary?.totalRequired
-  const uploaded = summary?.uploadedCount
-  const missing = summary?.missingCount ?? (Number.isFinite(total) && Number.isFinite(uploaded) ? Math.max(0, total - uploaded) : null)
-  return <section className="mobile-workspace-card" aria-label="Transaction documents">
-    <div className="mobile-workspace-panel-heading"><span className="mobile-workspace-icon"><FileText size={21} aria-hidden="true" /></span><div><h2>Documents</h2><p>Requirements and shared files</p></div></div>
-    {Number.isFinite(total) && Number.isFinite(uploaded) && <dl className="mobile-workspace-document-counts">
-      <div><dt>Received</dt><dd>{uploaded}<span> of {total} required</span></dd></div>
-      <div><dt>Outstanding</dt><dd>{Number.isFinite(missing) ? missing : '—'}</dd></div>
-    </dl>}
-    {!detail.documentsAvailable ? <WorkspaceNotice onRetry={onRetry}>Documents could not be loaded. Retry to see the current requirements and files.</WorkspaceNotice> : <>
-      <h3 className="mobile-workspace-subheading">Required documents</h3>
-      {required.length ? <ul className="mobile-workspace-document-list">{required.map((row, index) => {
-        const status = String(row.status || '').toLowerCase()
-        const received = receivedStatuses.has(status)
-        const Icon = received ? CheckCircle2 : FileText
-        return <li key={row.canonicalRequirementInstanceId || row.id || row.key || index}><Icon size={18} aria-hidden="true" className={received ? 'is-received' : ''} /><div><strong>{row.label || row.name || 'Document requirement'}</strong>{row.groupLabel && <p>{row.groupLabel}</p>}{row.rejectionReason && <p>{row.rejectionReason}</p>}</div><span className={`mobile-workspace-document-status ${received ? 'is-received' : ''}`}>{documentStatuses[status] || 'Status not recorded'}</span></li>
-      })}</ul> : <p className="mobile-workspace-empty">No required documents recorded.</p>}
-      <h3 className="mobile-workspace-subheading">Files</h3>
-      {files.length ? <ul className="mobile-workspace-file-list">{files.map((file, index) => {
-        const name = file.name || file.file_name || file.label || 'Shared document'
-        const url = documentUrl(file.url)
-        return <li key={file.id || index}><span className="mobile-workspace-file-icon"><FileText size={18} aria-hidden="true" /></span><div><strong>{name}</strong><p>{url ? 'Shared document' : 'File preview unavailable'}</p></div>{url && <a href={url} target="_blank" rel="noopener noreferrer" aria-label={`Open ${name}`}><ArrowUpRight size={18} aria-hidden="true" /></a>}</li>
-      })}</ul> : <p className="mobile-workspace-empty">No files have been shared for this transaction.</p>}
-    </>}
-  </section>
 }
 
 export default function MobileDeveloperTransactionPage() {
@@ -73,6 +29,7 @@ export default function MobileDeveloperTransactionPage() {
   const [result, setResult] = useState(null)
   const [retry, setRetry] = useState(0)
   const [view, setView] = useState(null)
+  const activeTab = view?.id === workspaceId ? view.tab : 'journey'
   const tabPrefix = useId()
   const scopeRef = useRef(null)
   const requestRef = useRef(0)
@@ -85,7 +42,7 @@ export default function MobileDeveloperTransactionPage() {
     const scope = scopeRef.current
     const request = ++requestRef.current
     try {
-      const detail = await getMobileDeveloperTransactionSnapshotAsync({ workspace, organisation, transactionId: workspaceId })
+      const detail = await getMobileDeveloperTransactionJourneyAsync({ workspace, organisation, transactionId: workspaceId })
       if (scopeRef.current !== scope || requestRef.current !== request) return false
       // A failed background journey read must not replace known completion with
       // unavailable milestones. The live queue will retry this read.
@@ -120,7 +77,6 @@ export default function MobileDeveloperTransactionPage() {
   const detail = result.detail
   if (!detail?.item?.id) return <MobileEmptyState title="Transaction not found." body="This transaction is not available in your current workspace." actionLabel="All transactions" onAction={() => navigate('/mobile/transactions')} />
   const { item } = detail
-  const activeTab = view?.id === workspaceId ? view.tab : 'journey'
   const refresh = () => { setResult(null); setRetry((value) => value + 1) }
   const selectTab = (tab) => setView({ id: workspaceId, tab })
   const updated = detail.updatedAt ? new Date(detail.updatedAt) : null
@@ -160,7 +116,6 @@ export default function MobileDeveloperTransactionPage() {
           <dl className="mobile-workspace-facts"><div className="mobile-workspace-price"><dt>Deal value</dt><dd>{price}</dd></div><div><dt>Buyer</dt><dd>{item.eyebrow || 'Not recorded'}</dd></div><div><dt>Finance</dt><dd>{detail.financeType || 'Not recorded'}</dd></div><div><dt>Last updated</dt><dd>{updatedLabel}</dd></div></dl>
           {item.developmentId && <button className="mobile-workspace-development" type="button" onClick={() => navigate(`/mobile/development/${encodeURIComponent(item.developmentId)}`)}><Building2 size={18} aria-hidden="true" /><span>Open development</span><ChevronRight size={18} aria-hidden="true" /></button>}
         </section>}
-        {tab.id === 'documents' && <DocumentsPanel detail={detail} onRetry={refresh} />}
       </div>)}
     </div>
   )

@@ -48,6 +48,10 @@ import {
 } from '../../lib/settingsApi'
 import { upsertAreaFromAddress } from '../../lib/location/upsertArea'
 import { isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
+import RecruitmentJoiningDialog from '../recruitment/RecruitmentJoiningDialog'
+import { captureBranchRecruitmentLead } from '../../services/recruitmentService'
+import RecruitmentJoiningList from '../recruitment/RecruitmentJoiningList'
+import { navigateToRecruitment } from '../recruitment/recruitmentEntryModel'
 import { createWorkspaceUserInvite, resendWorkspaceUserInvite } from '../../services/workspaceUserInviteService'
 import { updateBranch } from '../../services/agencyBranchService'
 import { getBranchDashboardData } from '../../services/branchDashboardDataService'
@@ -350,10 +354,11 @@ function StaffRosterCard({ agent, onOpen, canViewFinancials = false }) {
       </div>
       <p className="mt-4 truncate text-sm text-[#60758b]">{agent.email || 'No email address recorded'}</p>
       <div className="mt-4 grid grid-cols-2 gap-2 border-t border-[#edf2f7] pt-4">
-        <div className="rounded-[12px] bg-[#f8fbff] px-3 py-2.5"><p className="text-[0.65rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Active listings</p><p className="mt-1 text-xl font-semibold tracking-[-0.04em] text-[#142132]">{agent.listings || 0}</p></div>
-        <div className="rounded-[12px] bg-[#f8fbff] px-3 py-2.5"><p className="text-[0.65rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">In progress</p><p className="mt-1 text-xl font-semibold tracking-[-0.04em] text-[#142132]">{agent.transactions || 0}</p></div>
+        <div className="rounded-[12px] bg-[#f8fbff] px-3 py-2.5"><p className="text-[0.65rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Current listings</p><p className="mt-1 text-xl font-semibold tracking-[-0.04em] text-[#142132]">{agent.listings ?? '—'}</p></div>
+        <div className="rounded-[12px] bg-[#f8fbff] px-3 py-2.5"><p className="text-[0.65rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">In progress</p><p className="mt-1 text-xl font-semibold tracking-[-0.04em] text-[#142132]">{agent.transactions ?? '—'}</p></div>
       </div>
-      <div className="mt-4 flex items-center justify-between gap-3 text-xs text-[#71849a]"><span>{agent.isPendingInvite ? 'Waiting for acceptance' : `Updated ${formatDateShort(agent.lastActive)}`}</span>{canViewFinancials ? <span className="font-semibold text-[#26724c]">{formatCurrency(agent.revenue || 0)}</span> : null}</div>
+      {!agent.isPendingInvite && (agent.listings == null || agent.transactions == null) ? <p className="mt-3 text-xs text-[#71849a]">Some figures could not be loaded.</p> : null}
+      <div className="mt-4 flex items-center justify-between gap-3 text-xs text-[#71849a]"><span>{agent.isPendingInvite ? 'Waiting for acceptance' : `Updated ${formatDateShort(agent.lastActive)}`}</span>{canViewFinancials && !agent.isPendingInvite ? <span className="text-right"><span className="block">{agent.revenueLabel}</span><span className="font-semibold text-[#26724c]">{agent.revenue == null ? '—' : formatCurrency(agent.revenue)}</span></span> : null}</div>
     </button>
   )
 }
@@ -672,6 +677,7 @@ export function BranchAgentInviteModal({
         invitedByName: profile?.fullName || profile?.name || profile?.email || '',
         source: 'branch_workspace_agent_invite',
         metadata: {
+          access_purpose: 'existing_staff',
           branch_id: branch?.id || '',
         },
       })
@@ -689,8 +695,8 @@ export function BranchAgentInviteModal({
     <Modal
       open={open}
       onClose={submitting ? undefined : onClose}
-      title="Add Agent"
-      subtitle={`Invite an agent directly to ${branch?.name || 'this branch'}.`}
+      title="Existing staff access"
+      subtitle={`Invite an agent already working for ${branch?.name || 'this branch'}. New agents start in Recruitment.`}
       className="max-w-4xl"
       footer={(
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
@@ -785,7 +791,7 @@ async function listPendingBranchInvites(branchId) {
 
   const query = await supabase
     .from('invites')
-    .select('id, token, status, email, phone, target_workspace_role, metadata, created_at, expires_at')
+    .select('id, token, invite_type, status, email, phone, target_workspace_id, target_branch_id, target_workspace_role, metadata, created_at, expires_at')
     .eq('target_branch_id', safeBranchId)
     .in('invite_type', ['branch_invite', 'workspace_invite'])
     .eq('status', 'pending')
@@ -806,6 +812,7 @@ async function listPendingBranchInvites(branchId) {
     return {
       id: invite.id,
       token: invite.token,
+      raw: invite,
       name: displayName,
       role: formatRoleLabel(metadata.role || invite.target_workspace_role || 'agent'),
       listings: 0,
@@ -839,6 +846,7 @@ function BranchInviteDetailModal({
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const inviteLink = buildAgentInviteLink(invite?.token)
+  const canResend = Boolean(invite?.isPendingInvite && invite?.email && inviteLink)
 
   useEffect(() => {
     if (!open) return
@@ -859,7 +867,7 @@ function BranchInviteDetailModal({
   }
 
   async function handleResend() {
-    if (!invite?.isPendingInvite) return
+    if (saving || !canResend) return
     try {
       setSaving(true)
       setError('')
@@ -888,7 +896,7 @@ function BranchInviteDetailModal({
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
           <Button type="button" variant="secondary" onClick={onClose} disabled={saving}>Close</Button>
           {invite?.isPendingInvite ? (
-            <Button type="button" onClick={handleResend} disabled={saving || !invite?.email}>
+            <Button type="button" onClick={handleResend} disabled={saving || !canResend}>
               {saving ? 'Resending...' : 'Resend Invite'}
             </Button>
           ) : null}
@@ -911,7 +919,7 @@ function BranchInviteDetailModal({
               <p className="mt-1 break-all font-medium text-[#223449]">{invite?.email || 'Not captured'}</p>
             </div>
             <div>
-              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Sent</p>
+              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Created</p>
               <p className="mt-1 font-medium text-[#223449]">{formatDateShort(invite?.createdAt || invite?.lastActive)}</p>
             </div>
             <div>
@@ -932,16 +940,17 @@ function BranchInviteDetailModal({
               {inviteLink || 'Invite link unavailable'}
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
-              <ActionButton icon={Copy} onClick={handleCopyLink}>Copy Link</ActionButton>
-              <ActionButton icon={Mail} onClick={handleResend} disabled={saving || !invite?.email}>
+              <ActionButton icon={Copy} onClick={handleCopyLink} disabled={saving || !inviteLink}>Copy Link</ActionButton>
+              <ActionButton icon={Mail} onClick={handleResend} disabled={saving || !canResend}>
                 {saving ? 'Resending...' : 'Resend Email'}
               </ActionButton>
             </div>
           </section>
         ) : null}
 
-        {message ? <p className="rounded-[12px] border border-[#cfe8d7] bg-[#f3fbf5] px-3 py-2 text-sm text-[#1d7d45]">{message}</p> : null}
-        {error ? <p className="rounded-[12px] border border-[#f2d7d7] bg-[#fff6f6] px-3 py-2 text-sm text-[#b42318]">{error}</p> : null}
+        {invite?.isPendingInvite && !inviteLink ? <p role="alert" className="rounded-[12px] border border-[#f2d7d7] bg-[#fff6f6] px-3 py-2 text-sm text-[#b42318]">The invitation link is unavailable. Reload the branch before trying to copy or resend it.</p> : null}
+        {message ? <p role="status" className="rounded-[12px] border border-[#cfe8d7] bg-[#f3fbf5] px-3 py-2 text-sm text-[#1d7d45]">{message}</p> : null}
+        {error ? <p role="alert" className="rounded-[12px] border border-[#f2d7d7] bg-[#fff6f6] px-3 py-2 text-sm text-[#b42318]">{error}</p> : null}
       </div>
     </Modal>
   )
@@ -963,6 +972,8 @@ export default function AgencyBranchWorkspacePage() {
   const [archiveOpen, setArchiveOpen] = useState(false)
   const [archiveSaving, setArchiveSaving] = useState(false)
   const [actionError, setActionError] = useState('')
+  const [branchJoiningOpen, setBranchJoiningOpen] = useState(false)
+  const [joiningRefresh, setJoiningRefresh] = useState(0)
   const [agentInviteOpen, setAgentInviteOpen] = useState(false)
   const [selectedAgentRow, setSelectedAgentRow] = useState(null)
   const [organisationContext, setOrganisationContext] = useState({ organisation: null, profile: null })
@@ -1005,9 +1016,9 @@ export default function AgencyBranchWorkspacePage() {
     setSearchParams(nextSearch)
   }
 
-  const loadWorkspace = useCallback(async () => {
+  const loadWorkspace = useCallback(async ({ background = false } = {}) => {
     const request = ++loadRequestRef.current
-    setLoading(true)
+    if (!background) setLoading(true)
     setError('')
     try {
       const branchRow = await getBranchDashboardData(branchId)
@@ -1057,6 +1068,10 @@ export default function AgencyBranchWorkspacePage() {
   const canViewFinancials = ['owner', 'principal'].includes(membershipRole)
   const canViewCompliance = ['owner', 'principal', 'branch_manager', 'compliance'].includes(membershipRole)
   const canManageBranch = ['owner', 'principal', 'branch_manager'].includes(membershipRole)
+  const limitedJoining = membershipRole === 'branch_manager'
+  const canManageRecruitment = ['owner','principal','admin','super_admin'].includes(membershipRole)
+  const recruitmentOrganisationId = organisationContext.organisation?.id || branch?.organisationId || ''
+  const startRecruitment = () => limitedJoining ? setBranchJoiningOpen(true) : navigateToRecruitment(navigate, { entryPoint: 'branch', organisationId: recruitmentOrganisationId, branchId, returnTo: `/agency/branches/${branchId}/staff` })
   const openBranchAgentInvite = useCallback(() => { setAgentInviteOpen(true) }, [])
 
   const handleBranchSaved = useCallback((updatedBranch) => {
@@ -1067,8 +1082,8 @@ export default function AgencyBranchWorkspacePage() {
 
   const branchStaffRows = useMemo(() => {
     const performanceByKey = new Map()
-    leaderboard.forEach((agent) => {
-      ;[agent.id, agent.email].map(normalizeLower).filter(Boolean).forEach((key) => performanceByKey.set(key, agent))
+    workspaceOverview.staff.forEach((agent) => {
+      ;[agent.id, agent.membershipId, agent.email].map(normalizeLower).filter(Boolean).forEach((key) => performanceByKey.set(key, agent))
     })
     const members = Array.isArray(branch?.members) ? branch.members : []
     const memberRows = members.map((member) => {
@@ -1079,9 +1094,10 @@ export default function AgencyBranchWorkspacePage() {
         routeId: member.user_id || member.id || member.email,
         name,
         role: formatRoleLabel(member.role || member.workspace_role || 'staff'),
-        listings: performance.listings || 0,
-        transactions: performance.transactions || 0,
-        revenue: performance.revenue || 0,
+        listings: performance.listings ?? null,
+        transactions: performance.transactions ?? null,
+        revenue: performance.commission ?? null,
+        revenueLabel: `Commission · ${workspaceOverview.range.label}`,
         status: member.status || 'Active',
         statusTone: normalizeLower(member.status) === 'invited' ? 'invited' : normalizeLower(member.status) === 'active' ? 'active' : 'slate',
         lastActive: member.last_active_at || member.updated_at || member.created_at,
@@ -1092,21 +1108,22 @@ export default function AgencyBranchWorkspacePage() {
     })
     const memberEmails = new Set(memberRows.map((member) => normalizeLower(member.email)).filter(Boolean))
     const invites = pendingInvites.filter((invite) => !memberEmails.has(normalizeLower(invite.email))).map((invite) => ({
+      ...invite,
       id: invite.id || invite.email,
       name: invite.name || invite.email || 'Pending invitation',
       role: formatRoleLabel(invite.role || 'agent'),
-      listings: 0,
-      transactions: 0,
-      revenue: 0,
+      listings: null,
+      transactions: null,
+      revenue: null,
       status: 'Invited',
       statusTone: 'invited',
-      lastActive: invite.created_at,
+      lastActive: invite.createdAt || invite.lastActive,
       email: invite.email || '',
       avatarUrl: '',
       isPendingInvite: true,
     }))
     return [...invites, ...memberRows]
-  }, [branch?.members, leaderboard, pendingInvites])
+  }, [branch?.members, workspaceOverview, pendingInvites])
 
   const branchLeads = useMemo(() => Array.isArray(branch?.leads) ? branch.leads : [], [branch?.leads])
   const staffSearch = normalizeLower(searchParams.get('staffSearch'))
@@ -1216,7 +1233,7 @@ export default function AgencyBranchWorkspacePage() {
         <div className="relative flex min-h-[240px] sm:min-h-[260px] flex-col justify-between gap-5 p-5 sm:p-6">
           <div className="flex flex-wrap items-start justify-between gap-3">
 
-            {canManageBranch ? <div className="ml-auto flex flex-wrap gap-2"><button type="button" onClick={openBranchAgentInvite} className="inline-flex items-center gap-2 rounded-lg border border-white/50 bg-white/95 px-3.5 py-2.5 text-sm font-semibold text-[#163247]"><UserPlus size={16} />Add Staff</button><button type="button" onClick={() => navigateToTab('settings')} className="inline-flex items-center gap-2 rounded-lg border border-white/20 bg-[#087b55] px-3.5 py-2.5 text-sm font-semibold text-white"><Settings size={16} />Edit Branch</button></div> : null}
+            {(canManageBranch || canManageRecruitment) ? <div className="ml-auto flex flex-wrap gap-2">{(canManageRecruitment || limitedJoining) && <button type="button" disabled={!recruitmentOrganisationId} onClick={startRecruitment} className="rounded-lg border border-white/50 bg-white/95 px-3.5 py-2.5 text-sm font-semibold text-[#163247]">Invite new agent</button>}{canManageBranch && <button type="button" onClick={openBranchAgentInvite} className="inline-flex items-center gap-2 rounded-lg border border-white/50 bg-white/95 px-3.5 py-2.5 text-sm font-semibold text-[#163247]"><UserPlus size={16} />Existing staff access</button>}{canManageBranch && <button type="button" onClick={() => navigateToTab('settings')} className="inline-flex items-center gap-2 rounded-lg border border-white/20 bg-[#087b55] px-3.5 py-2.5 text-sm font-semibold text-white"><Settings size={16} />Edit Branch</button>}</div> : null}
           </div>
           <div className="min-w-0 text-white">
             <h1 className="text-3xl font-medium leading-tight tracking-[-0.025em] text-white sm:text-[2.25rem]">{branchName}{branch?.city && !branchName.toLowerCase().includes(branch.city.toLowerCase()) ? ` — ${branch.city}` : ''}</h1>
@@ -1254,6 +1271,7 @@ export default function AgencyBranchWorkspacePage() {
 
         {activeTab === 'staff' ? (
           <section className="space-y-4">
+            <p className="text-sm text-[#60758b]">Current listings include sales, rentals and drafts. In progress shows open transactions. Commission follows the selected reporting period.</p>
             <div className="rounded-[16px] border border-[#e4ebf2] bg-white/90 p-2.5 shadow-[0_10px_26px_rgba(24,45,68,0.045)] backdrop-blur">
               <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
                 <label className="flex min-h-[38px] min-w-0 flex-1 items-center gap-2.5 rounded-[12px] border border-[#dbe6f1] bg-[#f8fbfe] px-3 focus-within:border-[#9db7cf] focus-within:bg-white"><Search size={16} className="shrink-0 text-[#7f92a6]" /><input value={searchParams.get('staffSearch') || ''} onChange={(event) => updateTabFilters({ staffSearch: event.target.value })} placeholder="Search staff" className="min-w-0 flex-1 border-0 bg-transparent p-0 text-sm font-medium text-[#162334] outline-none placeholder:text-[#97a7b8]" /></label>
@@ -1261,9 +1279,11 @@ export default function AgencyBranchWorkspacePage() {
                 <select value={searchParams.get('staffStatus') || ''} onChange={(event) => updateTabFilters({ staffStatus: event.target.value })} className="min-h-[38px] rounded-[12px] border border-[#dbe6f1] bg-white px-3 text-[0.82rem] font-semibold text-[#2b4056]"><option value="">All statuses</option><option value="active">Active</option><option value="invited">Invited</option><option value="inactive">Inactive</option></select>
               </div>
             </div>
+            {branchJoiningOpen && limitedJoining && <RecruitmentJoiningDialog key={`${recruitmentOrganisationId}/${branchId}`} limitedBranch receipt organisationId={recruitmentOrganisationId} context={{entryPoint:'branch',branchId}} onClose={() => setBranchJoiningOpen(false)} onCreate={async (draft) => { const result=await captureBranchRecruitmentLead(recruitmentOrganisationId,branchId,draft); setJoiningRefresh((value) => value+1); return result }} />}
+            {(canManageRecruitment || limitedJoining) && <RecruitmentJoiningList limitedBranch={limitedJoining} refresh={joiningRefresh} organisationId={recruitmentOrganisationId} branchId={branchId} search={searchParams.get('staffSearch') || ''} returnTo={`/agency/branches/${branchId}/staff`} />}
             {filteredStaffRows.length ? (
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{filteredStaffRows.map((agent) => <StaffRosterCard key={agent.isPendingInvite ? `invite-${agent.id}` : `agent-${agent.id}`} agent={agent} canViewFinancials={canViewFinancials} onOpen={() => handleAgentRowClick(agent)} />)}</div>
-            ) : <EmptyState title="No staff match these filters" copy="Try clearing a filter or invite a member to this branch." icon={Users} action={<ActionButton icon={UserPlus} onClick={openBranchAgentInvite}>Invite staff</ActionButton>} />}
+            ) : <EmptyState title="No staff match these filters" copy="Try clearing a filter or invite a member to this branch." icon={Users} action={canManageBranch ? <ActionButton icon={UserPlus} onClick={openBranchAgentInvite}>Existing staff access</ActionButton> : null} />}
           </section>
         ) : null}
 
@@ -1372,7 +1392,7 @@ export default function AgencyBranchWorkspacePage() {
         branch={branch}
         organisation={organisationContext.organisation}
         onClose={() => setSelectedAgentRow(null)}
-        onResent={() => void loadWorkspace()}
+        onResent={() => void loadWorkspace({ background: true })}
       />
       <BranchAgentInviteModal
         open={agentInviteOpen}

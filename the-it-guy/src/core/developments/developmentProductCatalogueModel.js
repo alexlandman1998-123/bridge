@@ -18,6 +18,7 @@ export function validateDevelopmentProductCatalogue({ unitTypes = [], floorplans
   floorplans.forEach((floorplan, index) => {
     if (!String(floorplan?.name || '').trim()) errors.push(`Floorplan ${index + 1} needs a name.`)
     if (floorplan?.unitTypeId && !typeIds.has(floorplan.unitTypeId)) errors.push(`Floorplan ${floorplan.name || index + 1} references an unknown unit type.`)
+    if (floorplan.storeys !== undefined && floorplan.storeys !== null && floorplan.storeys !== '' && (!Number.isInteger(Number(floorplan.storeys)) || Number(floorplan.storeys) < 1)) errors.push(`Floorplan ${floorplan.name || index + 1} needs a positive whole number of storeys.`)
   })
   prices.forEach((price, index) => {
     const values = [price?.listPrice, price?.priceFrom, price?.priceTo].filter((value) => value !== '' && value !== null && value !== undefined)

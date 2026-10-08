@@ -257,7 +257,7 @@ class AppErrorBoundary extends Component {
       metadata: { componentStack: info?.componentStack || '' },
     })
 
-    if (this.props.autoRecoverStaleChunks !== false && isStaleChunkLoadError(error)) {
+    if (!import.meta.env.DEV && this.props.autoRecoverStaleChunks !== false && isStaleChunkLoadError(error)) {
       this.recoverFromStaleChunk()
     }
   }
@@ -363,7 +363,9 @@ class AppErrorBoundary extends Component {
       return this.props.children
     }
 
-    const staleChunkError = isStaleChunkLoadError(this.state.error)
+    const moduleLoadError = isStaleChunkLoadError(this.state.error)
+    const localModuleLoadError = import.meta.env.DEV && moduleLoadError
+    const staleChunkError = !import.meta.env.DEV && moduleLoadError
     const staleChunkExhausted = staleChunkError && this.state.staleChunkRecoveryExhausted
     const browserStorageQuotaError = isBrowserStorageQuotaError(this.state.error)
 
@@ -371,14 +373,18 @@ class AppErrorBoundary extends Component {
       <section className="auth-loading-screen">
         <div className="auth-loading-card">
           <h2>
-            {staleChunkExhausted
+            {localModuleLoadError
+              ? 'This page couldn’t load locally'
+              : staleChunkExhausted
               ? 'App update is still reaching this browser'
               : staleChunkError
                 ? 'Loading the latest app version'
                 : browserStorageQuotaError ? 'Local listing draft is too large' : this.props.title || 'We hit an unexpected error'}
           </h2>
           <p>
-            {this.state.recoveringFromStaleChunk
+            {localModuleLoadError
+              ? 'The development server could not load this page or one of its dependencies. Check the server output, then refresh the page.'
+              : this.state.recoveringFromStaleChunk
               ? `A newer version of Arch9 is available. Checking app files before refreshing${this.state.staleChunkRecoveryAttempt > 1 ? `, attempt ${this.state.staleChunkRecoveryAttempt}` : ''}.`
               : staleChunkExhausted
                 ? 'One of the app files is still unavailable at this location. Refresh again in a moment, or open the dashboard while the app file catches up.'
@@ -399,6 +405,10 @@ class AppErrorBoundary extends Component {
               type="button"
               className="auth-primary-cta"
               onClick={() => {
+                if (localModuleLoadError) {
+                  window.location.reload()
+                  return
+                }
                 if (staleChunkError) {
                   void this.refreshStaleChunkApp()
                   return
@@ -410,7 +420,7 @@ class AppErrorBoundary extends Component {
                 this.setState({ hasError: false, error: null, recoveringFromStaleChunk: false, staleChunkRecoveryExhausted: false })
               }}
             >
-              {staleChunkError ? 'Refresh App' : browserStorageQuotaError ? 'Clear Local Draft' : 'Retry'}
+              {localModuleLoadError ? 'Refresh Page' : staleChunkError ? 'Refresh App' : browserStorageQuotaError ? 'Clear Local Draft' : 'Retry'}
             </button>
             <Link to={this.props.fallbackPath || '/dashboard'} className="auth-secondary-cta">
               {this.props.fallbackLabel || 'Go to Dashboard'}

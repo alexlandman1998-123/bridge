@@ -12,6 +12,7 @@ const ALLOWED_EVENT_TYPES = new Set([
   'email_click',
   'buyer_cta_click',
   'seller_cta_click',
+  'rental_cta_click',
   'listing_click',
   'vcf_download',
   'share_click',

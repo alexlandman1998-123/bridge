@@ -26,6 +26,38 @@ test('direct units have no physical nodes or release assignment', () => {
   assert.ok(result.generatedUnits.every((unit) => unit.phase === '' && unit.structureNodeId === null))
 })
 
+test('a duplex retains its two internal storeys without creating building floor nodes', () => {
+  const draft = plan()
+  draft.unitTypes[0].name = 'Duplex'
+  draft.unitTypes[0].floorplans[0].storeys = '2'
+  const result = buildStockSummary(draft)
+  assert.equal(result.totalUnits, 4)
+  assert.deepEqual(result.structureNodes, [])
+  assert.equal(result.rows[0].storeys, 2)
+  assert.ok(result.generatedUnits.every((unit) => unit.storeys === 2 && unit.structureNodeId === null && unit.catalogueFloorplanId === draft.unitTypes[0].floorplans[0].id))
+  assert.equal(result.productCatalogue.floorplans[0].storeys, 2)
+  assert.equal(result.productCatalogue.floorplans[0].unitTypeId, draft.unitTypes[0].id)
+})
+
+test('internal storeys remain independent of the building floor allocation', () => {
+  const draft = grouped()
+  draft.unitTypes[0].floorplans[0].storeys = '2'
+  const result = buildStockSummary(draft)
+  assert.equal(result.structureNodes.filter((node) => node.nodeType === 'floor').length, 2)
+  assert.equal(result.totalUnits, 4)
+  assert.ok(result.generatedUnits.every((unit) => unit.storeys === 2 && unit.structureNodeId))
+})
+
+test('storeys must be positive whole numbers and legacy layouts default to one', () => {
+  const draft = plan()
+  for (const storeys of ['', '0', '-1', '1.5', 'Infinity']) {
+    draft.unitTypes[0].floorplans[0].storeys = storeys
+    assert.throws(() => validateStockStep(draft, 1), /whole number of storeys/)
+  }
+  delete draft.unitTypes[0].floorplans[0].storeys
+  assert.equal(buildStockSummary(draft).productCatalogue.floorplans[0].storeys, 1)
+})
+
 test('same floor label in different buildings stays linked to the correct parent', () => {
   const draft = grouped()
   const result = buildStockSummary(draft)

@@ -59,6 +59,7 @@ function buildLeadActionLink(leadId = '') {
 }
 
 function memberDisplayName(row = {}, fallback = '') {
+  if (!row) return fallback
   return normalizeText([row.first_name, row.last_name].filter(Boolean).join(' ')) ||
     normalizeText(row.name || row.full_name || row.email) ||
     fallback
@@ -442,7 +443,7 @@ async function notifyLeadAssignment({ organisationId, leadId, type, reason, acto
   }
 }
 
-async function updateLeadAssignment({ organisationId, leadId, patch, reason = '', assignmentSource = 'manual', actor = null }) {
+async function updateLeadAssignment({ organisationId, leadId, patch, reason = '', assignmentSource = 'manual', actor = null, notifyAgentEmail = true }) {
   const client = requireClient()
   const previous = await getLead(organisationId, leadId)
   const assignedAt = patch.assigned_at || new Date().toISOString()
@@ -510,12 +511,9 @@ async function updateLeadAssignment({ organisationId, leadId, patch, reason = ''
   })
   let emailNotification = null
   try {
-    emailNotification = await dispatchLeadAssignmentEmail({
-      organisationId,
-      lead,
-      previous,
-      reason,
-    })
+    if (notifyAgentEmail || !lead.assignedAgentId) {
+      emailNotification = await dispatchLeadAssignmentEmail({ organisationId, lead, previous, reason })
+    }
   } catch (emailError) {
     console.warn('[leadAssignmentService] assignment email notification skipped', emailError)
   }
@@ -583,7 +581,7 @@ export function reassignLead({ organisationId = '', leadId = '', agentId = '', r
   return assignLeadToAgent({ organisationId, leadId, agentId, reason, slaHours }, options)
 }
 
-export async function autoAssignLead({ organisationId = '', leadId = '', slaHours = 24 } = {}, { actor = null } = {}) {
+export async function autoAssignLead({ organisationId = '', leadId = '', slaHours = 24 } = {}, { actor = null, notifyAgentEmail = true } = {}) {
   const decision = await evaluateAssignmentRules({ organisationId, leadId })
   if (decision.type === 'agent') {
     const agentIdentity = await findAgentIdentity({ organisationId, agentId: decision.agentId })
@@ -604,6 +602,7 @@ export async function autoAssignLead({ organisationId = '', leadId = '', slaHour
         reason: decision.reason,
         assignmentSource: decision.rule,
         actor,
+        notifyAgentEmail,
       })),
     }
   }

@@ -53,5 +53,17 @@ it('does not show setup to an agent without management permission or pretend mis
   render(<AgentDigitalCardPanel agent={agent} />)
   expect(screen.queryByRole('button', {name:'Set up card'})).toBeNull()
   expect(screen.getByText(/Your principal or admin can activate/)).toBeTruthy()
-  expect(screen.getAllByText('—').length).toBe(6)
+  expect(screen.getAllByText('—').length).toBe(7)
+})
+
+
+it('enables a rental-only card with a custom label and preserves it when editing', async () => {
+  const onSave = vi.fn().mockResolvedValue({})
+  render(<AgentDigitalCardPanel canManage agent={agent} link={{ ...link, enabledIntents: ['rent'], rentalCtaLabel: 'Find a rental' }} shareUrl="https://example.test/card/alex" urls={{ rentalUrl: 'https://example.test/card/alex?intent=rent' }} onSave={onSave} />)
+  expect(screen.getByRole('link', { name: 'Rental enquiry ↗' }).href).toContain('intent=rent')
+  fireEvent.click(screen.getByRole('button', { name: 'Edit card' }))
+  expect(screen.getByLabelText('Rental enquiries').checked).toBe(true)
+  expect(screen.getByLabelText('Rental button label').value).toBe('Find a rental')
+  fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+  await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ rentEnabled: true, buyEnabled: false, sellEnabled: false, rentalCtaLabel: 'Find a rental' }), 'active'))
 })

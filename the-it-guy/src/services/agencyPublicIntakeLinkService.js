@@ -15,6 +15,7 @@ export const AGENCY_PUBLIC_INTAKE_SOURCE_CHANNELS = Object.freeze([
 
 const DEFAULT_PUBLIC_INTAKE_HOST = 'https://app.arch9.co.za'
 const DEFAULT_ENABLED_INTENTS = Object.freeze(['buy', 'sell'])
+const ALLOWED_INTENTS = Object.freeze(['buy', 'sell', 'rent'])
 const AGENT_DIGITAL_CARD_SURFACE = 'agent_digital_card'
 const AGENT_DIGITAL_CARD_VERSION = 1
 const AGENT_DIGITAL_CARD_LEAD_SOURCE = 'Agent Digital Card'
@@ -27,6 +28,7 @@ const AGENT_DIGITAL_CARD_EVENT_TYPES = Object.freeze([
   'email_click',
   'buyer_cta_click',
   'seller_cta_click',
+  'rental_cta_click',
   'listing_click',
   'vcf_download',
   'share_click',
@@ -95,8 +97,8 @@ function normalizeStatus(value = 'draft') {
 function normalizeEnabledIntents(value = DEFAULT_ENABLED_INTENTS) {
   const intents = (Array.isArray(value) ? value : DEFAULT_ENABLED_INTENTS)
     .map(normalizeLower)
-    .filter((intent) => DEFAULT_ENABLED_INTENTS.includes(intent))
-  return [...new Set(intents)].slice(0, 2).length ? [...new Set(intents)].slice(0, 2) : [...DEFAULT_ENABLED_INTENTS]
+    .filter((intent) => ALLOWED_INTENTS.includes(intent))
+  return [...new Set(intents)].slice(0, 3).length ? [...new Set(intents)].slice(0, 3) : [...DEFAULT_ENABLED_INTENTS]
 }
 
 function normalizeSourceChannel(value = 'other') {
@@ -142,6 +144,7 @@ function normalizeLinkRow(row = null) {
     introduction: normalizeText(row.introduction),
     buyerCtaLabel: normalizeText(row.buyer_cta_label),
     sellerCtaLabel: normalizeText(row.seller_cta_label),
+    rentalCtaLabel: normalizeText(metadataJson.agentDigitalCard?.rentalCtaLabel) || 'I am looking to rent',
     enabledIntents: normalizeEnabledIntents(row.enabled_intents),
     leadSourceLabel: normalizeText(row.lead_source_label) || 'Public Intake',
     sourceChannel: normalizeSourceChannel(row.source_channel),
@@ -182,6 +185,7 @@ function buildAgentDigitalCardMetadata(input = {}, defaults = {}) {
     version: AGENT_DIGITAL_CARD_VERSION,
     agentDigitalCard: {
       ...previousCard,
+      rentalCtaLabel: normalizeText(input.rentalCtaLabel ?? previousCard.rentalCtaLabel) || 'I am looking to rent',
       agent: {
         ...normalizeObject(previousCard.agent),
         userId: agentUserId || normalizeText(previousCard.agent?.userId),
@@ -225,7 +229,7 @@ function normalizeSubmissionRow(row = null) {
     intakeLinkId: normalizeText(row.intake_link_id),
     organisationId: normalizeText(row.organisation_id),
     leadId: normalizeText(row.lead_id),
-    intent: DEFAULT_ENABLED_INTENTS.includes(normalizeLower(row.intent)) ? normalizeLower(row.intent) : 'buy',
+    intent: ALLOWED_INTENTS.includes(normalizeLower(row.intent)) ? normalizeLower(row.intent) : 'buy',
     status: SUBMISSION_STATUS_KEYS.includes(normalizeLower(row.status)) ? normalizeLower(row.status) : 'received',
     sourceChannel: normalizeSourceChannel(row.source_channel),
     campaignCode: normalizeText(row.campaign_code),
@@ -276,6 +280,7 @@ function createEmptyAgentCardInsightSummary() {
     emailClicks: 0,
     buyerCtaClicks: 0,
     sellerCtaClicks: 0,
+    rentalCtaClicks: 0,
     listingClicks: 0,
     vcfDownloads: 0,
     shareClicks: 0,
@@ -284,6 +289,7 @@ function createEmptyAgentCardInsightSummary() {
     totalLeads: 0,
     buyerLeads: 0,
     sellerLeads: 0,
+    rentalLeads: 0,
     linkedLeads: 0,
     byEventType: Object.fromEntries(AGENT_DIGITAL_CARD_EVENT_TYPES.map((type) => [type, 0])),
     byIntakeLink: {},
@@ -313,6 +319,7 @@ function applyAgentCardEventToSummary(summary, event) {
   }
   if (type === 'buyer_cta_click') summary.buyerCtaClicks += 1
   if (type === 'seller_cta_click') summary.sellerCtaClicks += 1
+  if (type === 'rental_cta_click') summary.rentalCtaClicks += 1
   if (type === 'listing_click') summary.listingClicks += 1
   if (type === 'vcf_download') summary.vcfDownloads += 1
   if (type === 'share_click') summary.shareClicks += 1
@@ -326,6 +333,7 @@ function applyAgentCardLeadToSummary(summary, submission) {
   summary.totalLeads += 1
   if (submission.intent === 'buy') summary.buyerLeads += 1
   if (submission.intent === 'sell') summary.sellerLeads += 1
+  if (submission.intent === 'rent') summary.rentalLeads += 1
   if (submission.leadId) summary.linkedLeads += 1
   return summary
 }
@@ -375,11 +383,13 @@ function createPerformanceSummary(rows = []) {
     spam: 0,
     buyer: 0,
     seller: 0,
+    rental: 0,
     linkedLeads: 0,
     bySource: {},
   }
   for (const row of rows) {
     if (row.intent === 'sell') summary.seller += 1
+    else if (row.intent === 'rent') summary.rental += 1
     else summary.buyer += 1
     if (row.status === 'accepted') summary.accepted += 1
     if (row.status === 'failed') summary.failed += 1
@@ -487,6 +497,7 @@ export function buildAgencyAgentCardUrls({ slug = '', host = DEFAULT_PUBLIC_INTA
   const baseHost = normalizeText(host).replace(/\/+$/g, '') || DEFAULT_PUBLIC_INTAKE_HOST
   if (!safeSlug) {
     return {
+      rentalUrl: '',
       cardUrl: '',
       shareUrl: '',
       intakeUrl: '',
@@ -497,6 +508,7 @@ export function buildAgencyAgentCardUrls({ slug = '', host = DEFAULT_PUBLIC_INTA
   }
   const intakeUrl = `${baseHost}/intake/${encodeURIComponent(safeSlug)}`
   return {
+    rentalUrl: `${baseHost}/card/${encodeURIComponent(safeSlug)}?intent=rent&source=card`,
     cardUrl: `${baseHost}/card/${encodeURIComponent(safeSlug)}`,
     shareUrl: `${baseHost}/share/card/${encodeURIComponent(safeSlug)}`,
     intakeUrl,

@@ -477,4 +477,22 @@ const honeypotResponse = await createPublicAgencyIntakeResponse({
 assert.equal(honeypotResponse.status, 200)
 assert.equal(honeypotResponse.body.skipped, true)
 
+
+
+const rentalLink = { organisation_id: '11111111-1111-4111-8111-111111111111', default_assigned_agent_id: '33333333-3333-4333-8333-333333333333', default_branch_id: '22222222-2222-4222-8222-222222222222', slug: 'kingdom-kevin', enabled_intents: ['rent'], metadata_json: { surface: 'agent_digital_card', agentDigitalCard: { rentalCtaLabel: 'Find a rental' } } }
+const rentalInput = { intent: 'rent', contact: { name: 'Rental Tenant', email: 'tenant@example.test', phone: '0821234567' }, idempotencyKey: 'rental-card-enquiry-123456', privacyConsent: true, requirement: { budgetMax: 12000, areas: 'Montana', bedroomsMin: 2, propertyType: 'Apartment', timeline: 'now' } }
+const rentalValidation = validateAgencyIntakeSubmission(rentalInput, rentalLink)
+assert.deepEqual(rentalValidation.errors, {})
+assert.ok(validateAgencyIntakeSubmission(rentalInput, { ...rentalLink, enabled_intents: ['buy'] }).errors.intent)
+const rentalRows = buildAgencyPublicIntakeCrmRows({ link: rentalLink, normalized: rentalValidation.normalized, submission: { payload_json: rentalInput } })
+assert.equal(rentalRows.leadRow.lead_category, 'buyer') // Shared CRM category; rental metadata owns the tenant workflow.
+assert.equal(rentalRows.requirementRow, null) // Never creates a sales matching requirement.
+assert.equal(rentalRows.leadRow.assigned_agent_id, rentalLink.default_assigned_agent_id)
+assert.equal(rentalRows.leadRow.raw_enquiry_payload.rentalCrm.role, 'tenant')
+assert.equal(rentalRows.leadRow.raw_enquiry_payload.rentalCrm.classification, 'rental')
+assert.equal(rentalRows.leadRow.raw_enquiry_payload.rentalCrm.qualification.monthlyBudget, 12000)
+assert.equal(rentalRows.leadRow.raw_enquiry_payload.rentalCrm.qualification.desiredArea, 'Montana')
+assert.equal(rentalRows.leadRow.raw_enquiry_payload.rentalCrm.consents.privacy, 'granted')
+assert.equal(buildAgencyPublicIntakeContract({ link: rentalLink }).intake.rentalCtaLabel, 'Find a rental')
+assert.equal(buildAgencyPublicIntakeAutomationEvent({ rows: rentalRows, normalized: rentalValidation.normalized }).subject, 'Tenant public intake received')
 console.log('publicAgencyIntakeApi tests passed')

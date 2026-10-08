@@ -21235,8 +21235,8 @@ export async function saveDevelopmentUnit(input = {}) {
 
   if (error) {
     if (isMissingColumnError(error, 'unit_label') || isMissingColumnError(error, 'list_price') || isMissingColumnError(error, 'structure_node_id') || isMissingColumnError(error, 'unit_type_id') || isMissingColumnError(error, 'catalogue_floorplan_id')) {
-      if (input.requireStructureLink && normalized.structureNodeId) {
-        throw new Error('This environment cannot save the full building and floor stock yet. Unit setup stopped; check the development workspace before retrying.', { cause: error })
+      if ((input.requireStructureLink && normalized.structureNodeId) || normalized.catalogueFloorplanId) {
+        throw new Error('This environment cannot save the full building and floor stock or unit layout links yet. Unit setup stopped; check the development workspace before retrying.', { cause: error })
       }
       const fallbackPayload = {
         id: normalized.id || undefined,
@@ -21318,7 +21318,7 @@ export async function saveDevelopmentStructureNodes({ developmentId, nodes = [] 
 async function fetchDevelopmentProductCatalogue(client, developmentId) {
   const queries = await Promise.all([
     client.from('development_unit_types').select('id, development_id, code, name, description, bedrooms, bathrooms, parking_count, internal_size_sqm, external_size_sqm, vat_applicable, no_transfer_duty, is_active, sort_order').eq('development_id', developmentId).order('sort_order').order('name'),
-    client.from('development_floorplans').select('id, development_id, unit_type_id, code, name, document_id, file_url, thumbnail_url, internal_size_sqm, external_size_sqm, is_active, sort_order').eq('development_id', developmentId).order('sort_order').order('name'),
+    client.from('development_floorplans').select('id, development_id, unit_type_id, code, name, document_id, file_url, thumbnail_url, internal_size_sqm, external_size_sqm, metadata, is_active, sort_order').eq('development_id', developmentId).order('sort_order').order('name'),
     client.from('development_price_books').select('id, development_id, name, currency_code, effective_from, effective_to, status, is_default').eq('development_id', developmentId).order('is_default', { ascending: false }).order('created_at', { ascending: false }),
     client.from('development_unit_prices').select('id, development_id, price_book_id, unit_type_id, floorplan_id, unit_id, list_price, price_from, price_to, reservation_fee, is_active').eq('development_id', developmentId).eq('is_active', true),
   ])
@@ -21342,7 +21342,7 @@ async function fetchDevelopmentProductCatalogue(client, developmentId) {
     unitTypes: unitTypes.map((row) => ({
       id: row.id, code: row.code || '', name: row.name || '', description: row.description || '', bedrooms: row.bedrooms ?? '', bathrooms: row.bathrooms ?? '', parkingCount: row.parking_count ?? '', internalSizeSqm: row.internal_size_sqm ?? '', externalSizeSqm: row.external_size_sqm ?? '', vatApplicable: row.vat_applicable, noTransferDuty: Boolean(row.no_transfer_duty), isActive: row.is_active !== false, sortOrder: row.sort_order || 0,
     })),
-    floorplans: viewingFloorplans.map((row) => ({ id: row.id, unitTypeId: row.unit_type_id || '', code: row.code || '', name: row.name || '', documentId: row.document_id || '', fileUrl: row.file_url || '', thumbnailUrl: row.thumbnail_url || '', internalSizeSqm: row.internal_size_sqm ?? '', externalSizeSqm: row.external_size_sqm ?? '', isActive: row.is_active !== false, sortOrder: row.sort_order || 0 })),
+    floorplans: viewingFloorplans.map((row) => ({ id: row.id, metadata: row.metadata || {}, storeys: row.metadata?.storeys ?? '', unitTypeId: row.unit_type_id || '', code: row.code || '', name: row.name || '', documentId: row.document_id || '', fileUrl: row.file_url || '', thumbnailUrl: row.thumbnail_url || '', internalSizeSqm: row.internal_size_sqm ?? '', externalSizeSqm: row.external_size_sqm ?? '', isActive: row.is_active !== false, sortOrder: row.sort_order || 0 })),
     priceBooks: priceBooks.map((row) => ({ id: row.id, name: row.name || '', currencyCode: row.currency_code || 'ZAR', effectiveFrom: row.effective_from || '', effectiveTo: row.effective_to || '', status: row.status || 'draft', isDefault: Boolean(row.is_default) })),
     prices: prices.map((row) => ({ id: row.id, priceBookId: row.price_book_id, unitTypeId: row.unit_type_id || '', floorplanId: row.floorplan_id || '', unitId: row.unit_id || '', listPrice: row.list_price ?? '', priceFrom: row.price_from ?? '', priceTo: row.price_to ?? '', reservationFee: row.reservation_fee ?? '' })),
   }
@@ -21352,6 +21352,12 @@ export async function saveDevelopmentProductCatalogue({ developmentId, unitTypes
   const client = requireClient()
   const normalizedDevelopmentId = normalizeTextValue(developmentId)
   if (!normalizedDevelopmentId) throw new Error('Development is required.')
+
+  for (const layout of floorplans) {
+    if (layout.storeys !== undefined && layout.storeys !== null && layout.storeys !== '' && (!Number.isInteger(Number(layout.storeys)) || Number(layout.storeys) < 1)) {
+      throw new Error('Number of storeys must be a positive whole number.')
+    }
+  }
 
   const unitTypePayload = unitTypes.filter((item) => normalizeTextValue(item.name)).map((item, index) => ({
     id: item.id || undefined, development_id: normalizedDevelopmentId, code: normalizeNullableText(item.code), name: normalizeTextValue(item.name), description: normalizeNullableText(item.description), bedrooms: normalizeOptionalNumber(item.bedrooms), bathrooms: normalizeOptionalNumber(item.bathrooms), parking_count: normalizeOptionalNumber(item.parkingCount), internal_size_sqm: normalizeOptionalNumber(item.internalSizeSqm), external_size_sqm: normalizeOptionalNumber(item.externalSizeSqm), vat_applicable: normalizeNullableBoolean(item.vatApplicable), no_transfer_duty: Boolean(item.noTransferDuty), is_active: item.isActive !== false, sort_order: index,
@@ -21366,7 +21372,7 @@ export async function saveDevelopmentProductCatalogue({ developmentId, unitTypes
 
   const resolveUnitTypeId = (item) => typeIdByKey.get(String(item.unitTypeId || '')) || typeIdByKey.get(`code:${String(item.unitTypeCode || '').toLowerCase()}`) || typeIdByKey.get(`name:${String(item.unitTypeName || item.name || '').toLowerCase()}`) || null
   const floorplanPayload = persistDevelopmentMedia(client, floorplans.filter((item) => normalizeTextValue(item.name)).map((item, index) => ({
-    id: item.id || undefined, development_id: normalizedDevelopmentId, unit_type_id: resolveUnitTypeId(item), code: normalizeNullableText(item.code), name: normalizeTextValue(item.name), document_id: item.documentId || null, file_url: normalizeNullableText(item.fileUrl), thumbnail_url: normalizeNullableText(item.thumbnailUrl), internal_size_sqm: normalizeOptionalNumber(item.internalSizeSqm), external_size_sqm: normalizeOptionalNumber(item.externalSizeSqm), is_active: item.isActive !== false, sort_order: index,
+    id: item.id || undefined, development_id: normalizedDevelopmentId, unit_type_id: resolveUnitTypeId(item), metadata: { ...(item.metadata || {}), ...(item.storeys !== undefined ? { storeys: item.storeys === null || item.storeys === '' ? null : Number(item.storeys) } : {}) }, code: normalizeNullableText(item.code), name: normalizeTextValue(item.name), document_id: item.documentId || null, file_url: normalizeNullableText(item.fileUrl), thumbnail_url: normalizeNullableText(item.thumbnailUrl), internal_size_sqm: normalizeOptionalNumber(item.internalSizeSqm), external_size_sqm: normalizeOptionalNumber(item.externalSizeSqm), is_active: item.isActive !== false, sort_order: index,
   })), normalizedDevelopmentId)
   if (floorplanPayload.length) {
     const { error: floorplansError } = await client.from('development_floorplans').upsert(floorplanPayload, { onConflict: 'id' }).select('id, code, name')
@@ -52992,6 +52998,7 @@ export async function createDevelopmentWorkspace({
   developmentSettings = {},
   units = [],
   structureNodes = [],
+  productCatalogue = null,
   documents = [],
 } = {}) {
   const structureErrors = validateDevelopmentStructureNodes(structureNodes)
@@ -53104,6 +53111,12 @@ export async function createDevelopmentWorkspace({
       if (structureNodes.some((node) => !savedIds.has(node.id))) {
         throw new Error('The building and floor structure could not be fully saved. Unit creation was stopped.')
       }
+    }
+
+    if (productCatalogue) {
+      // Save layouts first so each generated unit retains its internal storeys
+      // independently of the building/floor node that contains it.
+      await saveDevelopmentProductCatalogue({ ...productCatalogue, developmentId })
     }
 
     for (const unit of units) {

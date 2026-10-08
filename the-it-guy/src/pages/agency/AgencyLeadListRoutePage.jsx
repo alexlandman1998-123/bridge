@@ -8,6 +8,7 @@ import { canAccessPrincipalExperience } from '../../lib/organisationAccess'
 import { getAgencyLeadViewPreference, saveAgencyLeadViewPreference } from '../../lib/agencyLeadViewPreference'
 import { createSellerLeadsPerformanceBaseline } from '../../services/observability/sellerLeadsPerformanceBaseline'
 import LeadListPage from './LeadListPage'
+import { filterAgencyLeadsForAgent } from './agencyLeadAgentScope'
 import {
   invalidateAgencyLeadListCache,
   listAgencyLeadLandingMetrics,
@@ -102,10 +103,10 @@ function mapAgent(row = {}) {
   const lastName = normalizeText(row?.lastName || row?.last_name)
   const email = normalizeText(row?.email).toLowerCase()
   return {
-    membershipId: normalizeText(row?.id),
+    membershipId: normalizeText(row?.organisationUserId || row?.membershipId || row?.id),
     id: normalizeText(row?.userId || row?.user_id || row?.id || email),
     userId: normalizeText(row?.userId || row?.user_id || row?.id),
-    name: normalizeText(row?.fullName || row?.full_name || [firstName, lastName].filter(Boolean).join(' ')) || email || 'Team member',
+    name: normalizeText(row?.fullName || row?.full_name || row?.name || [firstName, lastName].filter(Boolean).join(' ')) || email || 'Team member',
     email,
     branchId: normalizeText(row?.branchId || row?.branch_id),
     avatarUrl: normalizeText(row?.avatarUrl || row?.avatar_url || row?.profilePhotoUrl || row?.profile_photo_url || row?.photoUrl || row?.photo_url || row?.profile?.avatar_url),
@@ -120,7 +121,7 @@ function buildVisiblePages(currentPage, totalPages) {
   return Array.from({ length: Math.max(0, end - start + 1) }, (_, index) => start + index)
 }
 
-export default function AgencyLeadListRoutePage() {
+export default function AgencyLeadListRoutePage({ scopedAgent = null } = {}) {
   const navigate = useNavigate()
   const { role, profile, currentWorkspace, currentMembership, workspace, organisationMembershipRole } = useWorkspace()
   const [organisationId, setOrganisationId] = useState(() => resolveWorkspaceId({ currentWorkspace, currentMembership, workspace }))
@@ -165,9 +166,10 @@ export default function AgencyLeadListRoutePage() {
     roleLabel: profile?.jobTitle || profile?.job_title || 'Agent',
     isCurrentUser: true,
   }), [currentMembership?.branchId, currentMembership?.branch_id, profile])
-  const agentOptions = agents.length ? agents : [currentAgent]
+  const selectedAgent = useMemo(() => scopedAgent ? mapAgent(scopedAgent) : null, [scopedAgent])
+  const agentOptions = selectedAgent ? [selectedAgent] : agents.length ? agents : [currentAgent]
   const isPrincipal = canAccessPrincipalExperience({ appRole: role, membershipRole })
-  const requestedAgentId = searchParams.get('assignAgent') || ''
+  const requestedAgentId = scopedAgent ? '' : searchParams.get('assignAgent') || ''
   const assignmentTarget = isPrincipal ? agentOptions.find((agent) => [agent.id, agent.membershipId].includes(requestedAgentId)) : null
   const closeAssignment = () => {
     const next = new URLSearchParams(searchParams)
@@ -223,18 +225,23 @@ export default function AgencyLeadListRoutePage() {
         setLoading(true)
         return
       }
+      const selectedOrganisationId = normalizeText(scopedAgent?.organisationId || scopedAgent?.organisation_id)
+      if (scopedAgent && selectedOrganisationId !== workspaceId) {
+        throw new Error('This agent is not in the current organisation. Open their organisation before loading leads.')
+      }
       setOrganisationId(workspaceId)
 
-      const landingMetricsRequest = listAgencyLeadLandingMetrics(workspaceId, { forceRefresh }).catch(() => null)
+      const landingMetricsRequest = listAgencyLeadLandingMetrics(workspaceId, { forceRefresh, scopedAgent }).catch(() => null)
       const primary = await listAgencyLeadListRecords(workspaceId, {
         includeRelatedRecords: false,
         forceRefresh,
         page: Math.max(0, requestedPage - 1),
         pageSize: LEAD_LIST_PAGE_SIZE,
+        scopedAgent,
       })
       if (requestId !== loadRequestRef.current) return
       setRecords({
-        leads: Array.isArray(primary?.leads) ? primary.leads : [],
+        leads: filterAgencyLeadsForAgent(Array.isArray(primary?.leads) ? primary.leads : [], scopedAgent, workspaceId),
         contacts: Array.isArray(primary?.contacts) ? primary.contacts : [],
         activities: [],
         tasks: [],
@@ -243,11 +250,11 @@ export default function AgencyLeadListRoutePage() {
       setLoading(false)
       void landingMetricsRequest
         .then((landingMetrics) => {
-          if (requestId === loadRequestRef.current) setLandingMetricLeads(Array.isArray(landingMetrics?.leads) ? landingMetrics.leads : [])
+          if (requestId === loadRequestRef.current) setLandingMetricLeads(filterAgencyLeadsForAgent(Array.isArray(landingMetrics?.leads) ? landingMetrics.leads : [], scopedAgent, workspaceId))
         })
       void performanceRef.current?.recordCheckpoint({ checkpoint: 'first_data', userId: profile?.id, workspaceId, metadata: { surface: 'lead_list', leadCount: primary?.leads?.length || 0, totalLeadCount: primary?.totalCount || 0, page: requestedPage } })
 
-      if (isPrincipal) {
+      if (isPrincipal && !scopedAgent) {
         void loadSettingsActions()
           .then(({ listOrganisationUsersForWorkspace }) => listOrganisationUsersForWorkspace({ organisationId: workspaceId }))
           .then((organisationUsers) => {
@@ -268,9 +275,12 @@ export default function AgencyLeadListRoutePage() {
     } finally {
       if (requestId === loadRequestRef.current) setRefreshing(false)
     }
-  }, [currentAgent, currentMembership, currentWorkspace, isPrincipal, organisationId, page, profile?.id, workspace])
+  }, [currentAgent, currentMembership, currentWorkspace, isPrincipal, organisationId, page, profile?.id, scopedAgent, workspace])
 
-  useEffect(() => { void loadLeads({ requestedPage: page }) }, [loadLeads, page])
+  useEffect(() => {
+    void loadLeads({ requestedPage: page })
+    return () => { loadRequestRef.current += 1 }
+  }, [loadLeads, page])
 
   const listModel = useMemo(() => buildAgencyLeadListModel({
     leads: records.leads,
@@ -301,7 +311,7 @@ export default function AgencyLeadListRoutePage() {
     setError('')
     try {
       const { createAgencyCrmLeadActivity, createAgencyCrmLeadRecord } = await loadLeadMutationActions()
-      const assignedAgent = agentOptions.find((agent) => normalizeKey(agent.id) === normalizeKey(form.agentId)) || currentAgent
+      const assignedAgent = selectedAgent || agentOptions.find((agent) => normalizeKey(agent.id) === normalizeKey(form.agentId)) || currentAgent
       const created = await createAgencyCrmLeadRecord(organisationId, {
         contact: { firstName: form.firstName, lastName: form.lastName, phone: form.phone, email: form.email, notes: form.notes, contactType: form.category },
         assignedAgent,
@@ -464,7 +474,7 @@ export default function AgencyLeadListRoutePage() {
         sources={sources}
         stages={getAgencyLeadStageOptions(category)}
         agents={agentOptions}
-        isPrincipal={isPrincipal}
+        isPrincipal={isPrincipal && !scopedAgent}
         category={category}
         categoryLabel={category === 'seller' ? 'Seller' : 'Buyer'}
         categoryTitle={categoryTitle}
@@ -510,7 +520,7 @@ export default function AgencyLeadListRoutePage() {
           navigate(`/pipeline/leads/${encodeURIComponent(leadId)}?tab=${encodeURIComponent(tab || 'activity')}`)
         }}
       />
-      {createDialog.open ? <LeadCreateDialog open category={createDialog.category} agents={agentOptions} currentAgent={currentAgent} listingOptions={listingOptions} listingOptionsLoading={listingOptionsLoading} listingOptionsError={listingOptionsError} saving={creating} error={error} onClose={() => setCreateDialog((previous) => ({ ...previous, open: false }))} onSave={(form) => void handleCreateLead(form)} /> : null}
+      {createDialog.open ? <LeadCreateDialog open category={createDialog.category} agents={agentOptions} currentAgent={selectedAgent || currentAgent} showAgentAssignment={!scopedAgent} listingOptions={listingOptions} listingOptionsLoading={listingOptionsLoading} listingOptionsError={listingOptionsError} saving={creating} error={error} onClose={() => setCreateDialog((previous) => ({ ...previous, open: false }))} onSave={(form) => void handleCreateLead(form)} /> : null}
       <ConfirmDialog
         open={archiveDialog.open}
         title={`Archive ${category === 'seller' ? 'seller' : 'buyer'} lead?`}

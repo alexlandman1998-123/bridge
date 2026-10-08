@@ -8,7 +8,7 @@ import {
 } from '../server/property24/index.js'
 
 function createQuery(table, rowsByTable) {
-  const state = { action: 'select', filters: [], inFilters: [], payload: null, limit: null }
+  const state = { action: 'select', filters: [], inFilters: [], payload: null, limit: null, offset: 0 }
   const query = {
     select() { return this },
     insert(payload) { state.action = 'insert'; state.payload = payload; return this },
@@ -17,6 +17,8 @@ function createQuery(table, rowsByTable) {
     eq(column, value) { state.filters.push([column, value]); return this },
     in(column, values) { state.inFilters.push([column, values]); return this },
     limit(value) { state.limit = value; return this },
+    order() { return this },
+    range(start, end) { state.offset = start; state.limit = end - start + 1; return this },
     single() { return execute(true) },
     then(resolve, reject) { return execute(false).then(resolve, reject) },
   }
@@ -43,10 +45,12 @@ function createQuery(table, rowsByTable) {
       }
       return { data: null, error: null }
     }
-    let rows = rowsByTable[table]
-    for (const [column, value] of state.filters) rows = rows.filter((row) => row[column] === value)
+    let rows = rowsByTable[table].map((row) => table === 'property24_listing_syncs'
+      ? { ...row, private_listings: rowsByTable.private_listings.find((listing) => listing.id === row.private_listing_id) }
+      : row)
+    for (const [column, value] of state.filters) rows = rows.filter((row) => column.split('.').reduce((value,key) => value?.[key],row) === value)
     for (const [column, values] of state.inFilters) rows = rows.filter((row) => values.includes(row[column]))
-    if (state.limit) rows = rows.slice(0, state.limit)
+    if (state.limit) rows = rows.slice(state.offset, state.offset + state.limit)
     return { data: single ? rows[0] || null : rows, error: null }
   }
   return query

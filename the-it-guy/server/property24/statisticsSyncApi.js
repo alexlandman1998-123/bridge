@@ -1,8 +1,7 @@
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import process from 'node:process'
 import { createProperty24Client, normalizeProperty24Text } from './client.js'
-import { resolveProperty24EnvironmentCredentials } from './environmentService.js'
-import { isProperty24StatisticsApiVersionSupported, syncProperty24ListingStatistics } from './statisticsSyncService.js'
+import { isProperty24StatisticsApiVersionSupported, syncProperty24StatisticsBackfill, resolveProperty24StatisticsCredentials } from './statisticsSyncService.js'
 
 function response(status, body) {
   return { status, headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }, body }
@@ -61,7 +60,7 @@ export async function createProperty24StatisticsSyncResponse({
       userGroupId: credentials.sendUserGroupHeader ? credentials.userGroupId : '',
       apiVersion: credentials.apiVersion,
     }))
-    const syncStatistics = dependencies.syncStatistics || syncProperty24ListingStatistics
+    const syncStatistics = dependencies.syncStatistics || syncProperty24StatisticsBackfill
     const supabase = createSupabase(supabaseUrl, serviceRoleKey)
     const connections = await supabase
       .from('property24_accounts')
@@ -71,16 +70,16 @@ export async function createProperty24StatisticsSyncResponse({
     if (connections.error) throw connections.error
     const reports = []
     for (const connection of connections.data || []) {
-      const credentials = resolveProperty24EnvironmentCredentials({ env, environment: connection.environment })
-      if (!credentials.configured) {
-        reports.push({ organisationId: connection.organisation_id, agencyId: connection.agency_id, status: 'skipped', reason: 'property24_environment_credentials_missing' })
-        continue
-      }
-      if (!isProperty24StatisticsApiVersionSupported(credentials.apiVersion)) {
-        reports.push({ organisationId: connection.organisation_id, agencyId: connection.agency_id, status: 'skipped', reason: 'property24_listing_service_v55_required' })
-        continue
-      }
       try {
+        const credentials = await resolveProperty24StatisticsCredentials({ supabase, env, organisationId: connection.organisation_id, environment: connection.environment })
+        if (!credentials.configured) {
+          reports.push({ organisationId: connection.organisation_id, agencyId: connection.agency_id, status: 'skipped', reason: 'property24_environment_credentials_missing' })
+          continue
+        }
+        if (!isProperty24StatisticsApiVersionSupported(credentials.apiVersion)) {
+          reports.push({ organisationId: connection.organisation_id, agencyId: connection.agency_id, status: 'skipped', reason: 'property24_listing_service_v55_required' })
+          continue
+        }
         const report = await syncStatistics({
           supabase,
           property24: createProperty24(credentials),
@@ -91,6 +90,7 @@ export async function createProperty24StatisticsSyncResponse({
             sourceApiVersion: credentials.apiVersion,
             startDate: normalizeProperty24Text(payload.startDate),
             endDate: normalizeProperty24Text(payload.endDate),
+            days: payload.days ?? 7,
           },
         })
         reports.push({ organisationId: connection.organisation_id, agencyId: connection.agency_id, status: report.status, storedCount: report.storedCount })
@@ -101,7 +101,7 @@ export async function createProperty24StatisticsSyncResponse({
     return response(200, {
       route: 'syncStatistics',
       scheduled: true,
-      status: reports.some((item) => item.status === 'failed') ? 'partial' : 'completed',
+      status: reports.some((item) => item.status === 'failed' || item.status === 'partial') ? 'partial' : 'completed',
       connectionCount: reports.length,
       reports,
     })

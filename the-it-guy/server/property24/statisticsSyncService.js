@@ -1,7 +1,9 @@
 import { normalizeProperty24Text, summarizeProperty24Payload } from './client.js'
-import { fetchProperty24LocalSyncRows } from './reconciliationService.js'
 import { normalizeProperty24ListingStatistics } from './statisticsContract.js'
 import { buildProperty24ListingStatisticsSnapshot } from './statisticsStorage.js'
+import { fetchOrganisationProperty24Credentials } from './organisationCredentialService.js'
+import { resolveProperty24EnvironmentCredentials } from './environmentService.js'
+import { listingStatisticsWindow, shiftStatisticsDate, statisticsDate } from '../services/listingStatisticsDates.js'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 const MAX_DATE_RANGE_DAYS = 62
@@ -27,8 +29,7 @@ function requiredText(value, label) {
 }
 
 function parseDate(value, label) {
-  const normalized = normalizeProperty24Text(value)
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) throw new Error(`${label} must use YYYY-MM-DD.`)
+  const normalized = statisticsDate(normalizeProperty24Text(value), label)
   const date = new Date(`${normalized}T00:00:00.000Z`)
   if (Number.isNaN(date.getTime())) throw new Error(`${label} must be a valid date.`)
   return date
@@ -96,16 +97,30 @@ async function finishSyncRun(supabase, runId, values) {
 }
 
 async function resolveListingIdsByNumber({ supabase, organisationId, environment, agencyId }) {
-  const localRows = await fetchProperty24LocalSyncRows({
-    supabase,
-    organisationId,
-    environment,
-    agencyId,
-    limit: 5000,
-  })
-  return new Map(localRows
-    .map(({ sync, listing }) => [Number(sync?.listing_number), listing?.id || null])
-    .filter(([listingNumber]) => Number.isSafeInteger(listingNumber) && listingNumber > 0))
+  const listings = new Map()
+  // Keep each page below the REST API row cap. Filter ownership in the
+  // database rather than first building a potentially truncated list of IDs.
+  for (let offset = 0; offset < 10_000; offset += 500) {
+    const result = await supabase.from('property24_listing_syncs')
+      .select('listing_number, private_listing_id, private_listings!inner(id, organisation_id)')
+      .eq('environment', environment).eq('agency_id', agencyId)
+      .eq('private_listings.organisation_id', organisationId)
+      .order('listing_number').range(offset, offset + 499)
+    if (result.error) throw result.error
+    const rows = result.data || []
+    for (const row of rows) {
+      const owner = Array.isArray(row.private_listings) ? row.private_listings[0] : row.private_listings
+      const number = Number(row.listing_number)
+      if (owner?.organisation_id !== organisationId || owner?.id !== row.private_listing_id
+        || !Number.isSafeInteger(number) || number <= 0
+        || (listings.has(number) && listings.get(number) !== row.private_listing_id)) {
+        throw new Error('Property24 statistics listing mapping is invalid.')
+      }
+      listings.set(number, row.private_listing_id)
+    }
+    if (rows.length < 500) return listings
+  }
+  throw new Error('Property24 statistics listing inventory exceeds the supported limit.')
 }
 
 function syncErrorSummary(error, recordErrors = []) {
@@ -175,6 +190,13 @@ export async function syncProperty24ListingStatistics({
     for (const row of remoteRows) {
       try {
         const statistic = normalizeProperty24ListingStatistics(row)
+        if (statistic.agencyId !== agencyId) throw new Error('Property24 returned statistics for another agency.')
+        statisticsDate(statistic.statisticDate, 'statistic.date')
+        // Fetching one boundary day on either side permits inclusive/exclusive
+        // supplier boundaries. Persist each requested calendar day once.
+        const storageStart = config.storageStartDate || window.startDate
+        const storageEnd = config.storageEndDate || shiftStatisticsDate(window.endDate, -1)
+        if (statistic.statisticDate < storageStart || statistic.statisticDate > storageEnd) continue
         if (statistic.unexpectedFields.length) {
           recordErrors.push({
             listingNumber: statistic.listingNumber,
@@ -244,4 +266,26 @@ export async function syncProperty24ListingStatistics({
     }).catch(() => undefined)
     throw error
   }
+}
+
+export async function resolveProperty24StatisticsCredentials({ supabase, organisationId, environment, env }) {
+  const runtime = resolveProperty24EnvironmentCredentials({ env, environment })
+  const stored = await fetchOrganisationProperty24Credentials({ supabase, organisationId, environment })
+  const credentials = { ...runtime, ...(stored ? { username: stored.username, password: stored.password, userGroupId: stored.userGroupId, credentialSource: stored.source } : {}) }
+  credentials.configured = Boolean(credentials.environmentMatches && credentials.username && credentials.password)
+  return credentials
+}
+
+export async function syncProperty24StatisticsBackfill({ supabase, property24, config = {}, now = new Date() }) {
+  const window = listingStatisticsWindow({ days: config.days ?? 90, startDate: config.startDate, endDate: config.endDate, now })
+  const reports = []
+  for (let start = window.startDate; start <= window.endDate; start = shiftStatisticsDate(start, 30)) {
+    const end = [shiftStatisticsDate(start, 29), window.endDate].sort()[0]
+    reports.push(await syncProperty24ListingStatistics({ supabase, property24, now, config: {
+      ...config, startDate: shiftStatisticsDate(start, -1), endDate: shiftStatisticsDate(end, 1), storageStartDate: start, storageEndDate: end,
+    } }))
+  }
+  return { status: reports.some((report) => report.status !== 'completed') ? 'partial' : 'completed', window,
+    storedCount: reports.reduce((sum, report) => sum + report.storedCount, 0), receivedCount: reports.reduce((sum, report) => sum + report.receivedCount, 0),
+    chunks: reports.map(({ status, runId, window: chunk, storedCount }) => ({ status, runId, window: chunk, storedCount })) }
 }

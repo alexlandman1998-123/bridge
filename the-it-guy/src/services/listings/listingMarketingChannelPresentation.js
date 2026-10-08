@@ -2,6 +2,19 @@ function text(value) {
   return String(value ?? '').trim()
 }
 
+export function getListingLiveChannels(listing = {}, websitePublication = null) {
+  const source = listing?.listingRecord || listing || {}
+  const isLive = (value) => ['active', 'live', 'published', 'on_portal'].includes(text(value).toLowerCase())
+  const channels = []
+  if (isLive(source.property24Status || source.property24_status)) channels.push({ key: 'property24', label: 'Property24', logoSrc: '/lead-sources/property24.png', canExpire: Boolean(source.property24Reference || source.property24_reference) })
+  if (isLive(source.privatePropertyStatus || source.private_property_status)) channels.push({ key: 'private_property', label: 'Private Property', logoSrc: '/lead-sources/private-property.jpeg', canExpire: true })
+  if (isLive(source.bridgeListingStatus || source.bridge_listing_status || source.publicationStatus)) channels.push({ key: 'arch9', label: 'Arch9 catalogue', canExpire: true })
+  if (websitePublication?.status === 'published' && websitePublication?.websiteStatus === 'published' && websitePublication?.projectionStatus === 'Published' && websitePublication?.hostname) {
+    channels.push({ key: 'agency_website', label: 'Agency website' })
+  }
+  return channels
+}
+
 export function getPrivatePropertyReadinessMessages(payload = {}) {
   const preview = payload?.preview || payload?.readiness?.preview || payload?.report?.preview || {}
   const list = (value) => Array.isArray(value) ? value : []

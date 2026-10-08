@@ -795,11 +795,15 @@ export default function PublicAgencyIntakePage() {
 
   useEffect(() => {
     if (!intake || intent) return
+    if (requestedIntent === 'rent' && intake.card?.enabled && enabledIntents.includes('rent')) {
+      navigate(`/card/${encodeURIComponent(activeAgencySlug)}${window.location.search}`, { replace: true })
+      return
+    }
     if (['buy', 'sell'].includes(requestedIntent) && enabledIntents.includes(requestedIntent)) {
       setIntent(requestedIntent)
     }
     setQueryIntentApplied(true)
-  }, [enabledIntents, intake, intent, requestedIntent])
+  }, [enabledIntents, intake, intent, requestedIntent, navigate, activeAgencySlug])
 
   useEffect(() => {
     if (!intake?.card?.enabled || intent || hasExplicitIntent || !queryIntentApplied || !activeAgencySlug) return

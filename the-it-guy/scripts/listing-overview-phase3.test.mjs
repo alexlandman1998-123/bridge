@@ -14,6 +14,8 @@ assert.doesNotMatch(overview, /label: 'Views'|label: 'Offers'/, 'Unsupported Vie
 assert.match(overview, /label: 'Leads'/)
 assert.match(overview, /label: 'Viewings'/)
 assert.match(overview, /label: 'Days on market'/)
+assert.match(overview, /<ListingChannelStatistics\s+organisationId=\{listingOrganisationId\}\s+listingId=\{listingId\}\s+refreshKey=\{overviewLastRefreshedAt\}/, 'Statistics must use this listing scope and join Overview refreshes.')
+assert.ok(overview.indexOf("label: 'Days on market'") < overview.indexOf('<ListingChannelStatistics') && overview.indexOf('<ListingChannelStatistics') < overview.indexOf('Latest Buyer Activity'), 'The three channel cards must sit below the top three statistics.')
 assert.match(overview, /data-testid="listing-overview-marketing-hero"/, 'Marketing must render as a property hero.')
 assert.match(overview, /getImageBlock\(coverImage\?\.url/, 'The marketing hero must use the listing cover image.')
 assert.match(overview, /marketingDraft\.description/, 'The marketing hero must show public listing copy.')

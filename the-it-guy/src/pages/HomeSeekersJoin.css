@@ -84,8 +84,19 @@
 .hs-join__fees h3 span{display:block;font:400 15px/1.6 Asap,Arial,sans-serif;letter-spacing:0;color:var(--heading);margin-top:8px}
 .hs-join__fees article>p{font-size:16px;color:var(--copy)}
 .hs-join__fees article.is-standard{border:2px solid var(--orange)}
+.hs-join__fees article{position:relative;display:flex;flex-direction:column;transition:border-color .2s,box-shadow .2s}
+.hs-join__fees article:has(.hs-join__option-trigger):hover,.hs-join__fees article:focus-within{border-color:var(--orange);box-shadow:0 6px 20px #0000000a}
+.hs-join__option-trigger{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:auto;padding:22px 0 0;border:0;background:transparent;color:var(--accent);font:700 13px/1.4 Montserrat,Arial,sans-serif;text-align:left;cursor:pointer}
+.hs-join__option-trigger:after{content:'';position:absolute;inset:0;cursor:pointer}
+.hs-join .hs-join__option-trigger:focus-visible{outline:0}
+.hs-join__option-trigger:focus-visible:after{outline:2px solid var(--orange);outline-offset:5px}
 .hs-join__fees h4{font:700 20px/1.3 Montserrat,Arial,sans-serif;color:var(--heading);margin:0 0 14px}
 .hs-join__fees .hs-join__option-annual{font-weight:700}
+.hs-join__commission-banner{--heading:var(--white);--copy:#d0d0d0;--accent:var(--orange);display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);align-items:center;gap:40px;margin:0 0 24px;padding:32px;border-left:3px solid var(--orange);background:var(--ink-deep)}
+.hs-join .hs-join__commission-label{margin:0 0 12px;color:var(--orange);font:700 11px/1.4 Montserrat,Arial,sans-serif;letter-spacing:.08em;text-transform:uppercase}
+.hs-join .hs-join__commission-banner h3{margin:0;font-size:clamp(28px,3vw,40px);line-height:1.15}
+.hs-join .hs-join__commission-copy{max-width:440px;margin:0;font-size:16px;line-height:1.6}
+@media(max-width:600px){.hs-join__commission-banner{grid-template-columns:1fr;gap:20px;padding:24px 20px}}
 .hs-join__fees-section{padding-bottom:56px}
 .hs-join__fees-section + .hs-join__problem{padding-top:56px}
 .hs-join__fee-summary{border:1px solid var(--line);border-left:3px solid var(--orange);background:var(--card);padding:32px}
@@ -110,8 +121,55 @@
 .hs-join__pricing-table thead th{color:var(--muted);font-size:13px;font-weight:400}
 .hs-join__pricing-table tbody th{font-weight:500}
 .hs-join__pricing-table td{color:var(--accent);font-weight:700}
+.hs-join__seat-math{display:block;margin-top:5px;color:#62625d;font:400 12px/1.5 Asap,Arial,sans-serif}
 @media(max-width:600px){.hs-join__pricing-table{font-size:14px}.hs-join__pricing-table th,.hs-join__pricing-table td{padding:16px 5px}.hs-join__pricing-table thead th{font-size:12px}}
 .hs-join__fees details p{font-size:14px;color:var(--muted)}
+.ui-modal.hs-option-modal{width:calc(100% - 32px);max-width:720px;background:#fff;color:#1c1c1c;border-radius:12px;font-family:Asap,Arial,sans-serif}
+.hs-option-modal .ui-modal-head{padding:28px 32px;background:#121212;border-color:#333}
+.hs-option-modal .ui-modal-head h3{color:#fff;font:800 28px/1.2 Montserrat,Arial,sans-serif;letter-spacing:-.025em}
+.hs-option-modal .ui-modal-head p{color:#ff864a;font-size:13px}
+.hs-option-modal .ui-icon-button{color:#fff;background:transparent;border:1px solid #555;border-radius:4px;flex-shrink:0}
+.hs-option-modal .ui-modal-body{padding:28px 32px}
+.hs-option-modal p,.hs-option-modal li{font-size:16px;line-height:1.6;color:#4b4b47}
+.hs-option-modal p{margin:0 0 12px}
+.hs-option-modal h4{margin:0 0 10px;font:700 18px/1.3 Montserrat,Arial,sans-serif;color:#1c1c1c}
+.hs-option-modal section{margin:26px 0}
+.hs-option-modal ol{list-style:decimal;padding-left:22px;margin:0;display:grid;gap:12px}
+.hs-option-modal li::marker{color:#ff6319;font-weight:700}
+.hs-option-modal__price{display:flex;align-items:center;justify-content:space-between;gap:24px;padding-bottom:24px;border-bottom:1px solid #d8d8d2}
+.hs-option-modal__price strong{color:#ff6319;font:800 34px/1.1 Montserrat,Arial,sans-serif}
+.hs-option-modal__price strong span{display:block;margin-top:8px;color:#62625d;font:400 14px/1.4 Asap,Arial,sans-serif}
+.hs-option-modal__price p{max-width:190px;margin:0;text-align:right;font-size:14px;font-weight:600}
+.hs-option-modal__example{padding:22px;background:#fff1e8;border-left:3px solid #ff6319}
+.hs-option-modal__example small{font-size:13px;line-height:1.5;color:#62625d}
+.hs-option-modal table{width:100%;border-collapse:collapse;margin:16px 0;font-size:15px}
+.hs-option-modal caption{text-align:left;font-size:13px;color:#62625d;margin-bottom:12px}
+.hs-option-modal th,.hs-option-modal td{padding:12px 6px;text-align:left;border-bottom:1px solid #d8d8d2}
+.hs-option-modal thead th{font-weight:400;color:#62625d}
+.hs-option-modal tbody th{font-weight:600}
+.hs-option-modal td{color:#ff6319;font-weight:700}
+.hs-option-modal__fees{padding:22px;background:#f4f4f2}
+.hs-option-modal__fees strong{display:block;margin-bottom:10px;font:700 19px/1.3 Montserrat,Arial,sans-serif}
+.hs-option-modal__fees p{font-size:14px}
+.hs-option-modal__fees p:last-child{margin:0}
+.hs-option-modal__actions{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-top:26px}
+.hs-option-modal__actions button{display:inline-flex;align-items:center;justify-content:center;gap:12px;min-height:48px;padding:14px 18px;border-radius:2px;cursor:pointer;font:700 12px/1.4 Montserrat,Arial,sans-serif}
+.hs-option-modal__back{background:#fff;color:#1c1c1c;border:1px solid #d8d8d2}
+.hs-option-modal__join{background:#ff6319;color:#171717;border:1px solid #ff6319}
+.hs-option-modal :is(button,a):focus-visible{outline:2px solid #ff6319;outline-offset:4px}
+.hs-rental-modal .hs-join__checklist{gap:12px}
+.hs-rental-modal .hs-join__checklist li{color:#4b4b47}
+.hs-rental-modal .hs-join__checklist svg{color:#ff6319}
+.hs-rental-modal .hs-rental-modal__example{padding:24px;background:#121212;border-left:4px solid #ff6319}
+.hs-rental-modal__example h4{color:#ff864a}
+.hs-rental-modal__example p{color:#d4d4d4}
+.hs-rental-modal__example dl{margin:20px 0;padding:0}
+.hs-rental-modal__example dl>div{display:flex;justify-content:space-between;align-items:baseline;gap:20px;padding:10px 0;border-bottom:1px solid #3a3a3a;font-size:14px;line-height:1.5;color:#d4d4d4}
+.hs-rental-modal__example dd{flex-shrink:0;margin:0;color:#fff;font-weight:600}
+.hs-rental-modal__income{display:block;color:#fff;font:800 38px/1.2 Montserrat,Arial,sans-serif}
+.hs-rental-modal__income span{display:block;margin-top:8px;color:#ff864a;font:500 16px/1.5 Asap,Arial,sans-serif}
+.hs-rental-modal .hs-rental-modal__note{margin:18px 0 0;color:#b6b6b0;font-size:13px}
+@media(max-width:600px){.ui-modal.hs-option-modal{width:calc(100% - 20px)}.hs-option-modal .ui-modal-head,.hs-option-modal .ui-modal-body{padding:22px 20px}.hs-option-modal .ui-modal-head h3{font-size:23px}.hs-option-modal__price{align-items:flex-start;flex-direction:column;gap:14px}.hs-option-modal__price p{text-align:left;max-width:none}.hs-option-modal__actions{flex-direction:column-reverse;align-items:stretch}}
 .hs-join__fees summary{font-size:14px}
 .hs-join__referral-table{width:100%;border-collapse:collapse;font-size:16px;margin-bottom:32px}
 .hs-join__referral-table caption{text-align:left;color:var(--muted);font-size:14px;margin-bottom:20px}

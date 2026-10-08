@@ -5,6 +5,7 @@ import { recruitmentPricing, recruitmentPaymentOptions, recruitmentExample, trac
 import HomeSeekersMobileNav from './HomeSeekersMobileNav'
 import HomeSeekersFooter from './HomeSeekersFooter'
 import RecruitmentSignupModal from './recruitment/RecruitmentSignupModal'
+import Modal from '../components/ui/Modal'
 import './HomeSeekersJoin.css'
 
 const base = '/demo/homeseekers'
@@ -16,6 +17,27 @@ const annualFee = example.cost
 const traditionalCost = example.traditionalCost
 const balloonCost = example.balloonCost
 const money = (amount) => `R${Math.round(amount).toLocaleString('en-ZA')}`
+const rentalCharges = [
+  ['Home Seekers’ share of the monthly management fee', '3.5% of rent collected'],
+  ['Once-off file fee, per new file', 'R1,000'],
+  ['Administration and contract fee, per lease', 'R1,800'],
+  ['In and out inspection, per tenancy', 'R700'],
+]
+const paymentDetails = {
+  deals: {
+    suits: 'Solo agents who prefer to settle their subscription from registered deals rather than a monthly debit order.',
+    steps: ['R10,000 is added to your subscription balance each month, including quiet months.', 'When a deal registers, a maximum of 50% of that deal goes towards the outstanding subscription balance.', 'Any remaining balance carries forward. The annual subscription commitment is R120,000.'],
+    example: 'Three months without a registration builds a R30,000 subscription balance. On a R40,000 commission cheque, at most R20,000 goes towards that balance. The remaining R10,000 carries forward.',
+  },
+  monthly: {
+    suits: 'Solo agents and teams who want a predictable monthly payment and to settle their subscription separately from their sales.',
+    steps: ['R9,000 is collected by debit order on the first of each month.', 'Your subscription is paid separately from your registered deals. There is no brokerage commission split.', 'The annual subscription is R108,000. Each registered sale adds the same R1,500 fee.'],
+  },
+  upfront: {
+    suits: 'Solo agents and team leaders who prefer to settle their own seat with one annual payment.',
+    steps: ['Pay R100,000 upfront to settle your own seat until the same date next year. In a team, this rate applies only to the team leader.', 'Save R8,000 compared with twelve monthly debit order payments of R9,000 for that seat.', 'Additional team seats are priced separately at their monthly rates. The R1,500 fee still applies to each registered sale.'],
+  },
+}
 const comparisons = [
   { title: 'The traditional split', copy: '70% to you. 30% to the brokerage. The better you do, the more it takes.', cost: traditionalCost },
   { title: 'The balloon model', copy: 'R8,500 a month, plus 10% of gross commission worked on a 6% rate.', cost: balloonCost },
@@ -28,14 +50,14 @@ const included = [
 ]
 const faqs = [
   ['How do the three options differ?', 'The support is the same. Choose R10,000 a month paid from registered deals, R9,000 a month by debit order, or R100,000 upfront for the year. Every option adds R1,500 per registered sale. All fees exclude VAT. You can change your payment option at renewal.'],
-  ['Do you take a share of my commission?', 'There is no brokerage split, cap or royalty, and no R10 million threshold. You keep 100% of your commission, less the agreed subscription and R1,500 fee per registered sale.'],
+  ['Do you take a share of my commission?', 'There is no brokerage split, cap or royalty. You keep 100% of your commission, less the agreed subscription and R1,500 fee per registered sale.'],
   ['What happens if I choose to pay from my deals?', 'The R10,000 monthly fee accrues as a balance. When a deal registers, a maximum of 50% of that deal goes towards the balance, so you retain at least half of each cheque. The balance continues to accrue during quiet months. This option is for solo agents only.'],
   ['Do I need an office?', 'No. There is no desk requirement, office hours, floor duty or compulsory Monday meeting.'],
   ['What happens to my current listings?', 'Mandates stay with your current agency until they expire. We’ll help you plan the move so nothing falls over.'],
   ['Am I an employee?', 'No. You’re an independent practitioner running your own business and keeping your own book.'],
-  ['Can I bring my team?', 'Yes. The leader pays the full rate, seats 2 to 5 cost R7,000 each a month, and seat 6 onwards costs R6,000 each a month. Annual upfront rates are R100,000 for the leader, R84,000 per seat for seats 2 to 5, and R72,000 per seat from seat 6. Teams use option 2 or 3, with one account and one invoice. All fees exclude VAT; registered-sale fees still apply.'],
+  ['Can I bring my team?', 'Yes. The leader pays R9,000 a month or R100,000 upfront for their own seat only. Additional seats 2 to 5 cost R7,000 each a month, which is R84,000 per seat over twelve months (R7,000 × 12). From seat 6, the cost is R6,000 each a month, which is R72,000 per seat over twelve months (R6,000 × 12). The R100,000 upfront rate does not apply to additional team seats. One account, one invoice. All fees exclude VAT; registered-sale fees still apply.'],
   ['What production level is this for?', 'Five registered sales in the last twelve months, or R6 million of property sold. Compare the fees against your own production: a fixed fee can cost more than a split at lower sales levels.'],
-  ['Are there any other joining costs?', 'There is no joining fee, desk fee, franchise royalty, marketing levy or exit fee. The overview lists R950 to transfer your Fidelity Fund Certificate, payable to the PPRA rather than Home Seekers.'],
+  ['Are there any other joining costs?', 'There is no joining fee, desk fee, franchise royalty, marketing levy or exit fee. Your Fidelity Fund Certificate transfer costs R350 for the runner handling the transfer, plus R640 payable directly to the PPRA.'],
 ]
 
 function Eyebrow({ children }) {
@@ -52,6 +74,8 @@ function CheckList({ items }) {
 
 export default function HomeSeekersJoin() {
   const [signupOpen, setSignupOpen] = useState(false)
+  const [selectedOption, setSelectedOption] = useState(null)
+  const [rentalOpen, setRentalOpen] = useState(false)
   const openSignup = () => setSignupOpen(true)
   const [measurementAllowed, setMeasurementAllowed] = useState(false)
   const [applicationVisible, setApplicationVisible] = useState(false)
@@ -114,7 +138,15 @@ export default function HomeSeekersJoin() {
           <h4 id={`option-${option.id}`}>{option.title}</h4>
           <p className="hs-join__option-annual">{option.id === 'upfront' ? 'One payment for the year' : `${money(option.annualFee)} a year`}</p>
           <p>{option.copy}</p><p className="hs-join__fine">{option.note}</p>
+          <button type="button" className="hs-join__option-trigger" aria-label={`View details for ${option.title}`} aria-haspopup="dialog" onClick={() => setSelectedOption(option)}>View option details<ArrowRight size={17} aria-hidden="true" /></button>
         </article>)}
+      </div>
+      <div className="hs-join__commission-banner" aria-labelledby="commission-title">
+        <div>
+          <p className="hs-join__commission-label">All three packages</p>
+          <h3 id="commission-title">Keep <em>100%</em> of your commission.</h3>
+        </div>
+        <p className="hs-join__commission-copy">No commission split. Just your chosen subscription and {money(transactionFee)} per registered sale, excluding VAT.</p>
       </div>
       <div className="hs-join__fee-summary" aria-labelledby="fee-summary-title">
         <div className="hs-join__fee-summary-main">
@@ -129,7 +161,7 @@ export default function HomeSeekersJoin() {
           </ul>
         </div>
         <div className="hs-join__fee-summary-footer">
-          <p><strong>FFC transfer: R950.</strong> Payable directly to the PPRA.</p>
+          <p><strong>FFC transfer:</strong> R350 to the runner handling the transfer, plus R640 payable directly to the PPRA.</p>
           <ApplyLink onOpen={openSignup} />
         </div>
       </div>
@@ -160,16 +192,16 @@ export default function HomeSeekersJoin() {
       <p className="hs-join__intro">Your subscription stays fixed. As your sales grow, the total fees take a smaller share of your commission.</p>
       <div className="hs-join__growth">{[5, 8, 10, 15, 20].map((sales) => <div key={sales}><span>{sales} sales a year</span><strong>{Math.round(recruitmentExample(sales).effectivePercent)}<small>%</small></strong><span>of your commission</span></div>)}</div>
       <div className="hs-join__two-columns hs-join__prose"><p>The traditional split takes thirty percent whether you do four sales or forty. The balloon model takes a monthly fee and then ten percent on top of it.</p><p>On option 2, we charge R9,000 a month and R1,500 per registered sale. At ten sales, that’s {money(annualFee)} for the year. You can plan around it.</p></div>
-      <p className="hs-join__fine">Rounded percentages using option 2, an average R1.5 million sale price and 5% commission, excluding VAT. There is no commission-sharing threshold as your production grows.</p>
+      <p className="hs-join__fine">Rounded percentages using option 2, an average R1.5 million sale price and 5% commission, excluding VAT.</p>
     </section>
 
     <section className="hs-join__section hs-join__light" aria-labelledby="team-title">
       <Eyebrow>Bring <strong>your team</strong></Eyebrow><h2 id="team-title">Your own seat at full price.<br /><em>Every seat after costs less.</em></h2>
-      <p className="hs-join__intro">Teams use option 2 or 3. One account, one invoice, with the team leader carrying the seats.</p>
-      <table className="hs-join__pricing-table"><caption>Team subscriptions, excluding VAT</caption><thead><tr><th scope="col">Seat</th><th scope="col">Per month</th><th scope="col">Annual upfront</th></tr></thead><tbody>
-        <tr><th scope="row">Team leader</th><td>R9,000</td><td>R100,000</td></tr>
-        <tr><th scope="row">Seats 2 to 5</th><td>R7,000 each</td><td>R84,000 each</td></tr>
-        <tr><th scope="row">Seat 6 onwards</th><td>R6,000 each</td><td>R72,000 each</td></tr>
+      <p className="hs-join__intro">The team leader chooses R9,000 monthly or R100,000 upfront for their own seat. Additional seats use the monthly rates below. One account, one invoice.</p>
+      <table className="hs-join__pricing-table"><caption>Team subscriptions, excluding VAT</caption><thead><tr><th scope="col">Seat</th><th scope="col">Per month</th><th scope="col">Annual cost</th></tr></thead><tbody>
+        <tr><th scope="row">Team leader</th><td>R9,000</td><td>R100,000 upfront<span className="hs-join__seat-math">Leader’s own seat only</span></td></tr>
+        <tr><th scope="row">Seats 2 to 5</th><td>R7,000 each</td><td>{money(7000 * 12)} each<span className="hs-join__seat-math">R7,000 × 12 months</span></td></tr>
+        <tr><th scope="row">Seat 6 onwards</th><td>R6,000 each</td><td>{money(6000 * 12)} each<span className="hs-join__seat-math">R6,000 × 12 months</span></td></tr>
       </tbody></table>
       <p className="hs-join__fine">R1,500 per registered sale still applies. Team seats cannot be paid from deals. The leader may pay their own seat upfront while the team pays monthly. Your team structure and agreements stay yours.</p>
     </section>
@@ -188,12 +220,10 @@ export default function HomeSeekersJoin() {
       <Eyebrow>Rentals and <strong>property management</strong></Eyebrow><h2 id="rentals-title">Build a rental book.<br /><em>Keep it yours.</em></h2>
       <p className="hs-join__intro">Home Seekers carries the trust account, PayProp, reconciliations, monthly statements and annual audit. You carry the relationships.</p>
       <table className="hs-join__pricing-table"><caption>Rental charges in the agent overview, excluding VAT</caption><thead><tr><th scope="col">Charge</th><th scope="col">Amount</th></tr></thead><tbody>
-        <tr><th scope="row">Home Seekers’ share of the management fee</th><td>3.5% of rent collected</td></tr>
-        <tr><th scope="row">Once-off file fee, per new file</th><td>R1,000</td></tr>
-        <tr><th scope="row">Administration and contract fee, per lease</th><td>R1,800</td></tr>
-        <tr><th scope="row">In and out inspection, per tenancy</th><td>R700</td></tr>
+        {rentalCharges.map(([charge, amount]) => <tr key={charge}><th scope="row">{charge}</th><td>{amount}</td></tr>)}
       </tbody></table>
       <p className="hs-join__fine">Administration, contract and inspection fees are recovered from the landlord or tenant in the normal way, rather than paid by the agent.</p>
+      <button type="button" className="hs-join__button" aria-haspopup="dialog" onClick={() => setRentalOpen(true)}>Explore the rental offering<ArrowRight size={17} aria-hidden="true" /></button>
     </section>
 
     <section className="hs-join__section hs-join__light hs-join__guarantee" aria-labelledby="guarantee-title">
@@ -218,6 +248,32 @@ export default function HomeSeekersJoin() {
       <div className="hs-join__invitation"><h3>A clearer next step.</h3><ol><li><span>01</span>Create your applicant account</li><li><span>02</span>Verify your email</li><li><span>03</span>Tell us about your experience</li></ol><ApplyLink onOpen={openSignup} /><p className="hs-join__fine">Start with your name, email and mobile number.</p>{campaignMeasurementConfigured && <label className="hs-join__consent"><input type="checkbox" checked={measurementAllowed} onChange={(event) => updateMeasurement(event.target.checked)} /><span>Allow Google and Meta campaign measurement. Optional.</span></label>}</div>
     </section>
     <RecruitmentSignupModal open={signupOpen} onClose={() => setSignupOpen(false)} organisationName="Home Seekers" endpoint="/api/home-seekers/recruitment" onCaptured={(result) => trackRecruitmentConversion('recruitment_contact_captured', { measurementAllowed, duplicate: result.duplicate })} />
+    <Modal open={Boolean(selectedOption)} onClose={() => setSelectedOption(null)} title={selectedOption?.title} subtitle={selectedOption ? `Option ${recruitmentPaymentOptions.indexOf(selectedOption) + 1} · Home Seekers` : ''} className="hs-option-modal">
+      {selectedOption && <>
+        <div className="hs-option-modal__price"><strong>{money(selectedOption.amount)}<span>{selectedOption.period}, excluding VAT</span></strong><p>{money(selectedOption.annualFee)} annual subscription</p></div>
+        <section><h4>Who it suits</h4><p>{paymentDetails[selectedOption.id].suits}</p></section>
+        <section><h4>How payment works</h4><ol>{paymentDetails[selectedOption.id].steps.map((step) => <li key={step}>{step}</li>)}</ol></section>
+        {paymentDetails[selectedOption.id].example && <aside className="hs-option-modal__example"><h4>A subscription example</h4><p>{paymentDetails[selectedOption.id].example}</p><small>This illustrates the subscription deduction only. The registered-sale fee and VAT are separate.</small></aside>}
+        {selectedOption.id !== 'deals' && <section><h4>Bringing a team?</h4><p>R100,000 upfront covers only the leader’s own seat. Additional seats are charged at their monthly rates. One account, one invoice.</p><table><caption>Team seat subscriptions, excluding VAT</caption><thead><tr><th scope="col">Seat</th><th scope="col">Subscription</th></tr></thead><tbody><tr><th scope="row">Team leader</th><td>{money(selectedOption.amount)} {selectedOption.id === 'monthly' ? 'per month' : 'upfront for the year'}</td></tr><tr><th scope="row">Seats 2 to 5</th><td>{money(7000)} each per month<span className="hs-join__seat-math">{money(7000 * 12)} a year (R7,000 × 12)</span></td></tr><tr><th scope="row">Seat 6 onwards</th><td>{money(6000)} each per month<span className="hs-join__seat-math">{money(6000 * 12)} a year (R6,000 × 12)</span></td></tr></tbody></table><p>The registered-sale fee still applies. Team seats cannot be paid from deals.</p></section>}
+        <section><h4>Same support on every option</h4><p>Listing platforms, CRM, deal administration, training, compliance support and your choice of LOOM or CMA Info.</p></section>
+        <div className="hs-option-modal__fees"><strong>Keep 100% of your commission.</strong><p>Less your chosen subscription and {money(transactionFee)} per registered sale. All fees exclude VAT.</p><p>No joining fee, desk fee, royalty, marketing levy or exit fee. FFC transfer: R350 to the runner handling the transfer, plus R640 payable directly to the PPRA.</p></div>
+        <div className="hs-option-modal__actions"><button type="button" className="hs-option-modal__back" onClick={() => setSelectedOption(null)}>Back to options</button><button type="button" className="hs-option-modal__join" onClick={() => { setSelectedOption(null); openSignup() }}>Join Home Seekers<ArrowRight size={17} aria-hidden="true" /></button></div>
+      </>}
+    </Modal>
+    <Modal open={rentalOpen} onClose={() => setRentalOpen(false)} title="Build a rental book." subtitle="Keep it yours. · Rentals and property management" className="hs-option-modal hs-rental-modal">
+      <p>Run your rentals and property management through Home Seekers. We carry the administration behind the book, while you carry the client relationships.</p>
+      <section><h4>What Home Seekers handles</h4><CheckList items={['The trust account', 'PayProp', 'Reconciliations', 'Monthly statements', 'The annual audit']} /></section>
+      <section><h4>The rental charges</h4><table><caption>All fees exclude VAT</caption><thead><tr><th scope="col">Charge</th><th scope="col">Amount</th></tr></thead><tbody>{rentalCharges.map(([charge, amount]) => <tr key={charge}><th scope="row">{charge}</th><td>{amount}</td></tr>)}</tbody></table><p>Administration, contract and inspection fees are recovered from the landlord or tenant in the normal way, rather than paid out of your pocket as the agent.</p></section>
+      <section className="hs-rental-modal__example" aria-labelledby="rental-example-title">
+        <h4 id="rental-example-title">What a book of 50 properties could look like</h4>
+        <p>50 properties renting at R12,000 a month, managed at a 10% fee.</p>
+        <dl><div><dt>Rent collected each month</dt><dd>R600,000</dd></div><div><dt>Management fees at 10%</dt><dd>R60,000</dd></div><div><dt>Home Seekers’ share, 3.5% of rent collected</dt><dd>R21,000</dd></div></dl>
+        <strong className="hs-rental-modal__income">R39,000<span>to you each month, R468,000 a year</span></strong>
+        <p className="hs-rental-modal__note">An illustration, not a promise. Figures exclude VAT and the file, lease and inspection charges above.</p>
+      </section>
+      <section><h4>The book stays yours</h4><p>You own your rental book outright and can sell it when you decide to move on. The relationships and the value you build remain yours.</p><h4>Income for the quieter months</h4><p>Sales income depends on the next deal. A rental book can provide recurring monthly income, including the months when you have not listed or sold a property. It is a business you build over time.</p></section>
+      <div className="hs-option-modal__actions"><button type="button" className="hs-option-modal__back" onClick={() => setRentalOpen(false)}>Back to Join us</button><button type="button" className="hs-option-modal__join" onClick={() => { setRentalOpen(false); openSignup() }}>Join Home Seekers<ArrowRight size={17} aria-hidden="true" /></button></div>
+    </Modal>
     <HomeSeekersFooter />
     {!applicationVisible && <ApplyLink onOpen={openSignup} className="hs-join__sticky-apply">Join now</ApplyLink>}
   </main>

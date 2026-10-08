@@ -1,4 +1,4 @@
-import { activateRecruitmentAgent, getRecruitmentAgentAccessLink } from '../../../services/recruitmentService'
+import { activateRecruitmentAgent, getRecruitmentAgentAccessLink, getRecruitmentInvitationStatus, sendRecruitmentInvitation } from '../../../services/recruitmentService'
 import { saveRecruitmentOnboarding, uploadRecruitmentOnboardingDocument, downloadRecruitmentOnboardingDocument } from '../../../services/recruitmentService'
 import { recruitmentOnboardingDraft } from '../recruitmentOnboardingModel'
 import { recordRecruitmentContractDelivery, recordRecruitmentContractSignature, downloadRecruitmentSignedContract } from '../../../services/recruitmentService'
@@ -7,14 +7,14 @@ import { prepareRecruitmentContract, downloadRecruitmentContract } from '../../.
 import { approveRecruitmentApplication } from '../../../services/recruitmentService'
 import { afterEach, expect, it, vi } from 'vitest'
 import { emptyRecruitmentLead } from '../recruitmentModel'
-const mocks = vi.hoisted(() => ({ from: vi.fn(), storage: vi.fn(), rpc: vi.fn() }))
-vi.mock('../../../lib/supabaseClient', () => ({ supabase: { from: mocks.from, rpc: mocks.rpc, storage: { from: mocks.storage } } }))
+const mocks = vi.hoisted(() => ({ from: vi.fn(), storage: vi.fn(), rpc: vi.fn(), invoke: vi.fn() }))
+vi.mock('../../../lib/supabaseClient', () => ({ supabase: { from: mocks.from, rpc: mocks.rpc, storage: { from: mocks.storage }, functions: {invoke:mocks.invoke} } }))
 import { startRecruitmentReview, saveRecruitmentReview, saveRecruitmentLead, uploadRecruitmentDocument, openRecruitmentDocument } from '../../../services/recruitmentService'
 afterEach(() => vi.clearAllMocks())
 const lead = { ...emptyRecruitmentLead(), id: 'lead', name: 'Sam Agent', email: 'sam@example.test', version: 3 }
 function query(result) {
-  const chain = { update: vi.fn(), insert: vi.fn(), eq: vi.fn(), select: vi.fn(), maybeSingle: vi.fn().mockResolvedValue(result) }
-  for (const key of ['update','insert','eq','select']) chain[key].mockReturnValue(chain)
+  const chain = { in: vi.fn(), update: vi.fn(), insert: vi.fn(), eq: vi.fn(), select: vi.fn(), maybeSingle: vi.fn().mockResolvedValue(result) }
+  for (const key of ['in','update','insert','eq','select']) chain[key].mockReturnValue(chain)
   mocks.from.mockReturnValue(chain)
   return chain
 }
@@ -49,11 +49,10 @@ it('rejects foreign document paths before download', async () => {
 
 it('reuses the intake key after an uncertain create instead of adding a duplicate enquiry', async () => {
   const draft = { ...emptyRecruitmentLead(), name: 'Referral Agent', phone: '0821234567' }
-  const chain = query({ data: null, error: { code: '23505' } })
-  chain.maybeSingle.mockResolvedValueOnce({ data: null, error: { code: '23505' } }).mockResolvedValueOnce({ data: { ...draft, id: 'existing' }, error: null })
+  mocks.rpc.mockResolvedValue({ data: { outcome: 'reused', lead: { ...draft, id: 'existing' } }, error: null })
   expect((await saveRecruitmentLead('org', draft)).id).toBe('existing')
-  expect(chain.insert.mock.calls[0][0]).toMatchObject({ organisation_id: 'org', status: 'lead_received', intake_channel: 'manual', intake_key: draft.intake_key })
-  expect(chain.eq.mock.calls).toEqual([['organisation_id','org'],['intake_key',draft.intake_key]])
+  expect(mocks.rpc).toHaveBeenCalledWith('recruitment_create_joining_lead', expect.objectContaining({ p_organisation_id: 'org', p_lead: expect.objectContaining({ status: 'lead_received', intake_key: draft.intake_key, joining_json: draft.joining_json }) }))
+  expect(mocks.from).not.toHaveBeenCalled()
 })
 it('reports pending schema upgrades and blocks later stages on new enquiries', async () => {
   query({ data: null, error: { code: '42703' } })
@@ -183,11 +182,11 @@ it.each(['40001', 'PT409'])('uploads final documents into a separate immutable p
 })
 
 it.each(['40001', 'PT409'])('prepares or records activation with current organisation/version and never sends or creates an arbitrary privileged member (%s)',async(code)=>{
-  const ready={...lead,status:'onboarding_complete',onboarding_completed_at:'2026-10-05',onboarding_snapshot:{version:'recruitment-onboarding-completion-v1'}}
+  const ready={...lead,joining_json:{...lead.joining_json,branchId:'a1111111-1111-4111-8111-111111111111',businessWorkspaces:['rentals'],startDate:'2026-10-15'},status:'onboarding_complete',onboarding_completed_at:'2026-10-05',onboarding_snapshot:{version:'recruitment-onboarding-completion-v1'}}
   const draft={notes:'  Joining record reviewed and agent access confirmed  ',confirmed:true,userId:'forged',role:'principal'}
   mocks.rpc.mockReturnValue({maybeSingle:vi.fn().mockResolvedValue({data:{...ready,activation_json:{state:'awaiting_acceptance'}},error:null})})
   expect((await activateRecruitmentAgent('org',ready,draft)).status).toBe('onboarding_complete')
-  expect(mocks.rpc).toHaveBeenCalledWith('recruitment_activate_agent',{p_organisation_id:'org',p_lead_id:'lead',p_version:3,p_notes:'Joining record reviewed and agent access confirmed',p_confirmed:true})
+  expect(mocks.rpc).toHaveBeenCalledWith('recruitment_activate_joining_agent_v2',{p_organisation_id:'org',p_lead_id:'lead',p_version:3,p_notes:'Joining record reviewed and agent access confirmed',p_confirmed:true})
   await expect(activateRecruitmentAgent('org',ready,{...draft,confirmed:false})).rejects.toThrow('Confirm')
   mocks.rpc.mockReturnValue({maybeSingle:vi.fn().mockResolvedValue({data:null,error:{code}})})
   await expect(activateRecruitmentAgent('org',ready,draft)).rejects.toThrow('Activation was not saved')
@@ -199,11 +198,40 @@ it('loads only a pending unexpired agent access link with matching identity and 
   const row={id:'invite',token:'sample-token',status:'pending',target_workspace_role:'agent',email:'SAM@example.test',expires_at:new Date(Date.now()+86400000).toISOString()}
   const chain=query({data:row,error:null})
   expect(await getRecruitmentAgentAccessLink('org',waiting)).toContain('/invite/sample-token')
-  expect(chain.eq.mock.calls).toEqual([['id','invite'],['target_workspace_id','org'],['invite_type','workspace_invite']])
+  expect(chain.eq.mock.calls).toEqual([['id','invite'],['target_workspace_id','org']])
+  expect(chain.in).toHaveBeenCalledWith('invite_type',['workspace_invite','branch_invite'])
   for(const patch of [{email:'other@example.test'},{status:'revoked'},{target_workspace_role:'admin'}]) {
     query({data:{...row,...patch},error:null})
     await expect(getRecruitmentAgentAccessLink('org',waiting)).rejects.toThrow('no longer pending or does not match')
   }
   query({data:{...row,expires_at:'2000-01-01'},error:null})
   await expect(getRecruitmentAgentAccessLink('org',waiting)).rejects.toThrow('expired')
+})
+
+it('loads a reused branch invitation with the reviewed senior-agent role and refuses a mismatched branch',async()=>{
+  const waiting={...lead,status:'onboarding_complete',activation_json:{state:'awaiting_acceptance',inviteId:'branch-invite',email:lead.email,joiningPlan:{role:'senior_agent',branchId:'reviewed-branch'}}}
+  const row={token:'sample-token',status:'pending',email:lead.email,target_workspace_role:'senior_agent',target_branch_id:'reviewed-branch',invite_type:'branch_invite'}
+  query({data:row,error:null})
+  expect(await getRecruitmentAgentAccessLink('org',waiting)).toContain('/invite/sample-token')
+  query({data:{...row,target_branch_id:'other-branch'},error:null})
+  await expect(getRecruitmentAgentAccessLink('org',waiting)).rejects.toThrow('does not match')
+})
+
+it('blocks access preparation when the handover migration is absent, without using the old activation endpoint',async()=>{
+  const ready={...lead,status:'onboarding_complete',onboarding_completed_at:'2026-10-05',onboarding_snapshot:{version:'recruitment-onboarding-completion-v1'},joining_json:{...lead.joining_json,branchId:'a1111111-1111-4111-8111-111111111111',businessWorkspaces:['sales'],startDate:'2026-10-15'}}
+  mocks.rpc.mockReturnValue({maybeSingle:vi.fn().mockResolvedValue({data:null,error:{code:'PGRST202'}})})
+  await expect(activateRecruitmentAgent('org',ready,{confirmed:true,notes:'Final joining setup checked'})).rejects.toThrow('setup is pending')
+  expect(mocks.rpc).toHaveBeenCalledTimes(1)
+  expect(mocks.rpc.mock.calls[0][0]).toBe('recruitment_activate_joining_agent_v2')
+})
+
+it('loads invitation status without raw token data and sends only a scoped stable request',async()=>{
+ mocks.rpc.mockResolvedValue({data:{referenceStatus:'prepared',attempt:null}})
+ expect(await getRecruitmentInvitationStatus('org','lead','application','link')).toEqual({referenceStatus:'prepared',attempt:null})
+ expect(mocks.rpc).toHaveBeenCalledWith('recruitment_invitation_status',{p_organisation_id:'org',p_lead_id:'lead',p_kind:'application',p_reference_id:'link'})
+ mocks.invoke.mockResolvedValue({data:{ok:true,status:'provider_accepted'}})
+ await sendRecruitmentInvitation('org','lead','workspace','invite',{requestId:'same-request',applicationLink:'not-applicable',to:'forged@example.test'})
+ expect(mocks.invoke).toHaveBeenCalledWith('send-email',{body:{type:'recruitment_invitation',organisationId:'org',leadId:'lead',kind:'workspace',referenceId:'invite',requestId:'same-request',allowDuplicate:false}})
+ mocks.invoke.mockResolvedValue({error:{context:{json:async()=>({error:'Invitation expired'})}}})
+ await expect(sendRecruitmentInvitation('org','lead','application','link',{requestId:'same-request'})).rejects.toThrow('expired')
 })

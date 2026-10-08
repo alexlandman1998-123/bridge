@@ -4,6 +4,8 @@ import {
   writeNodeJsonResponse,
 } from '../../../server/property24/index.js'
 
+export const config = { maxDuration: 300 }
+
 export default async function handler(request, response) {
   const body = await readNodeRequestBody(request)
   const payload = await createProperty24StatisticsSyncResponse({

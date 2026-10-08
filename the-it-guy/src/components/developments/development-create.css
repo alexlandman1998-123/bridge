@@ -12,7 +12,7 @@
 
 .development-create-progress {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--development-step-count, 4), minmax(0, 1fr));
   gap: 16px;
   margin: 0;
   padding: 0 0 24px;
@@ -20,6 +20,9 @@
 }
 
 .development-create-form { margin-top: 24px; }
+.development-create-step-back { color: inherit; font-size: 14px; font-weight: 600; text-align: left; }
+.development-create-step-back:hover { text-decoration: underline; text-underline-offset: 4px; }
+.development-create-step-back:focus-visible { outline: 2px solid #1f7a5a; outline-offset: 4px; border-radius: 2px; }
 .development-create-content { min-width: 0; margin: 0; padding: 0; border: 0; }
 .development-create-section + .development-create-section,
 .development-create-sections > .development-create-section + .development-create-section {
@@ -41,6 +44,18 @@
 .development-create-form .full-width { grid-column: 1 / -1; }
 .development-create-form label { display: flex; min-width: 0; flex-direction: column; gap: 8px; color: #233247; font-size: 13px; font-weight: 500; }
 .development-create-hint { color: #6b7d93; font-size: 12px; font-weight: 400; }
+
+.development-planned-units { max-width: 240px; }
+.development-unit-method { min-width: 0; margin: 24px 0 0; padding: 0; border: 0; }
+.development-unit-method legend { color: #233247; font-size: 13px; font-weight: 500; }
+.development-unit-method-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 12px; }
+.development-unit-method-option { position: relative; display: flex; flex-direction: column; gap: 10px; min-height: 120px; padding: 20px 32px 20px 20px; border: 1px solid #dce5ef; border-radius: 12px; background: #fff; color: #35546c; text-align: left; transition: border-color 150ms ease, background-color 150ms ease; }
+.development-unit-method-option:hover { border-color: #8bafa0; background: #f7faf8; }
+.development-unit-method-option:focus-visible { outline: 2px solid #1f7a5a; outline-offset: 3px; }
+.development-unit-method-option.is-selected { border-color: #1f7a5a; background: #f2f9f5; color: #176447; }
+.development-unit-method-title { font-size: 14px; font-weight: 600; line-height: 1.4; }
+.development-unit-method-description { color: #6b7d93; font-size: 12px; font-weight: 400; line-height: 1.6; }
+.development-unit-method-check { position: absolute; top: 20px; right: 12px; color: #1f7a5a; }
 
 .development-create-form input:not([type='checkbox']):not([type='radio']),
 .development-create-form select,
@@ -99,7 +114,8 @@
 .stock-master-panel { display: grid; gap: 20px; padding-top: 24px; }
 .stock-master h5 { margin: 0; color: #142132; font-size: 15px; font-weight: 600; }
 .stock-master h6 { margin: 0; color: #233247; font-size: 13px; font-weight: 600; }
-.stock-structure-options { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.stock-structure-options { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.stock-structure-description { max-width: 310px; line-height: 1.6; }
 .stock-group-list { display: grid; gap: 20px; }
 .stock-group { display: grid; gap: 16px; border: 1px solid #e4ebf1; border-radius: 12px; padding: 20px; }
 .stock-group-heading { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 12px; }
@@ -142,14 +158,18 @@
   .development-create-progress { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
   .development-create-fields { grid-template-columns: minmax(0, 1fr); gap: 16px; }
   .development-type-options { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .development-unit-method-options { grid-template-columns: minmax(0, 1fr); }
+  .development-unit-method-option { min-height: 96px; padding: 16px 36px 16px 16px; }
+  .development-planned-units { max-width: none; }
   .stock-structure-options { grid-template-columns: minmax(0, 1fr); }
-  .development-create-form .stock-structure-options .development-type-option { flex-direction: row; justify-content: flex-start; min-height: 72px; padding-right: 36px; }
+  .development-create-form .stock-structure-options .development-type-option { align-items: flex-start; text-align: left; min-height: 160px; padding-right: 36px; }
   .stock-floors { grid-template-columns: minmax(0, 1fr); }
   .stock-group { padding: 16px; }
   .stock-master-progress { gap: 8px; }
   .stock-master-progress li { flex-direction: column; align-items: flex-start; font-size: 11px; }
   .stock-review-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
   .stock-review-table, .stock-review-table tbody { display: block; }
+  .stock-review-table caption { display: block; width: 100%; }
   .stock-review-table tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; padding: 20px 0; border-bottom: 1px solid #e4ebf1; }
   .stock-review-table td { display: block; border: 0; padding: 0; }
   .stock-review-table td:first-child, .stock-review-table td:last-child { grid-column: 1 / -1; }

@@ -397,9 +397,6 @@ function sellerPortalStatusCards({ journey = null, documentCenter = null, requir
 }
 
 const SELLER_PORTAL_LISTING_PERFORMANCE_KEYS = [
-  'totalViews',
-  'portalViews',
-  'bridgeViews',
   'leadCount',
   'newThisWeek',
   'scheduledViewings',
@@ -531,11 +528,6 @@ function collectSellerPortalLeadRows(...sources) {
   })
 }
 
-function isSellerPortalActiveOffer(offer = {}) {
-  const status = normalizeValue(offer?.status || offer?.workflowStatus || offer?.workflow_status)
-  return ['submitted', 'agent_review', 'seller_review', 'buyer_review_counter', 'countered', 'accepted'].includes(status)
-}
-
 function isSellerPortalPendingOffer(offer = {}) {
   const status = normalizeValue(offer?.status || offer?.workflowStatus || offer?.workflow_status)
   return ['submitted', 'agent_review', 'seller_review', 'buyer_review_counter'].includes(status)
@@ -561,7 +553,6 @@ function buildSellerPortalListingPerformance({ listing = {}, formData = {}, offe
   )
   const offerRows = Array.isArray(offers) ? offers : []
   const activeOffers = offerRows.filter((offer) => !['rejected', 'withdrawn', 'expired'].includes(normalizeValue(offer?.status || offer?.workflowStatus || offer?.workflow_status)))
-  const syncedActiveOffers = offerRows.filter((offer) => isSellerPortalActiveOffer(offer))
   const pendingOffers = offerRows.filter((offer) => isSellerPortalPendingOffer(offer)).length
   const visibleAppointments = (Array.isArray(appointments) ? appointments : []).filter((appointment) => {
     const status = normalizeValue(appointment?.status)
@@ -580,17 +571,7 @@ function buildSellerPortalListingPerformance({ listing = {}, formData = {}, offe
     const timestamp = new Date(lead?.createdAt || lead?.created_at || lead?.updatedAt || lead?.updated_at || 0).getTime()
     return Number.isFinite(timestamp) && now - timestamp <= sevenDays
   }).length
-  const explicitViews = normalizeSellerPortalPerformanceNumber(analytics?.totalViews || analytics?.views)
-  const rawPortalViews = normalizeSellerPortalPerformanceNumber(analytics?.portalViews || analytics?.property24Views || analytics?.privatePropertyViews)
-  const rawBridgeViews = normalizeSellerPortalPerformanceNumber(analytics?.bridgeViews || analytics?.websiteViews)
-  const estimatedViews = leadCount * 6 + syncedActiveOffers.length * 8 + 12
-  const totalViews = explicitViews || rawPortalViews + rawBridgeViews || estimatedViews
-  const portalViews = rawPortalViews || Math.max(0, Math.round(totalViews * 0.72))
-  const bridgeViews = rawBridgeViews || Math.max(0, totalViews - portalViews)
   const basePerformance = {
-    totalViews,
-    portalViews,
-    bridgeViews,
     leadCount,
     newThisWeek: newLeadRowsThisWeek || normalizeSellerPortalPerformanceNumber(analytics?.newThisWeek),
     scheduledViewings: visibleAppointments.length,

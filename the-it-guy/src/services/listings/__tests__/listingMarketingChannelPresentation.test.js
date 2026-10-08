@@ -7,9 +7,21 @@ import {
   buildWebsiteListingPublicUrl,
   getPrivatePropertyReadinessMessages,
   getListingChannelViewUrl,
+  getListingLiveChannels,
   normalizeListingChannelPublicUrl,
   normalizeListingChannelReference,
 } from '../listingMarketingChannelPresentation.js'
+
+test('listing cards show the agency website independently of the Arch9 catalogue', () => {
+  const listing = { property24Status: 'active', property24Reference: '123', privatePropertyStatus: 'active', bridgeListingStatus: 'not_published' }
+  const publication = { status: 'published', websiteStatus: 'published', projectionStatus: 'Published', hostname: 'www.kingdomrealestate.co.za' }
+  assert.deepEqual(getListingLiveChannels(listing, publication).map((row) => row.key), ['property24', 'private_property', 'agency_website'])
+  assert.deepEqual(getListingLiveChannels({ bridgeListingStatus: 'published', publicationStatus: 'Published' }), [{ key: 'arch9', label: 'Arch9 catalogue', canExpire: true }])
+  for (const override of [{ status: 'unpublished' }, { websiteStatus: 'draft' }, { projectionStatus: 'Draft' }, { hostname: null }]) {
+    assert.equal(getListingLiveChannels({}, { ...publication, ...override }).length, 0)
+  }
+  assert.equal(getListingLiveChannels({}, null).length, 0)
+})
 
 test('Home Seekers CRM links open the standalone property page and follow a custom domain', () => {
   const site = { websiteSiteId: 'c2fcb2e4-23c1-4302-b490-7332f5075669', hostname: 'home-seekers-2958d402.sites.propdata.co.za' }

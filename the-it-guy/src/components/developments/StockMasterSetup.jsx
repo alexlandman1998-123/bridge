@@ -1,17 +1,16 @@
-import { Building2, Check, House, Layers3, Plus, Trash2 } from 'lucide-react'
+import { Building2, Check, House, Plus, Trash2 } from 'lucide-react'
 import Button from '../ui/Button'
 import { STOCK_STEPS, buildStockSummary, buildStockTargets, createStockFloorplan, createStockGroup, createStockUnitType } from '../../core/developments/developmentStockPlan.js'
 
 const STRUCTURES = [
-  { value: 'none', label: 'Units only', icon: House },
-  { value: 'buildings', label: 'Buildings & floors', icon: Building2 },
-  { value: 'blocks', label: 'Blocks / clusters', icon: Layers3 },
+  { value: 'none', label: 'Units', description: 'Houses, townhouses and duplexes. Each unit can have one or multiple storeys.', icon: House },
+  { value: 'buildings', label: 'Buildings + Units', description: 'One or multiple buildings, with optional floors containing units.', icon: Building2 },
 ]
 
 export default function StockMasterSetup({ plan, onChange, step, onDefer }) {
   const targets = buildStockTargets(plan)
   const summary = step === 2 ? buildStockSummary(plan) : null
-  const groupLabel = plan.structureType === 'blocks' ? 'Block' : 'Building'
+  const groupLabel = 'Building'
 
   function updateGroup(id, changes) {
     onChange((previous) => ({ ...previous, groups: previous.groups.map((group) => group.id === id ? { ...group, ...changes } : group) }))
@@ -25,7 +24,7 @@ export default function StockMasterSetup({ plan, onChange, step, onDefer }) {
   function changeStructure(value) {
     onChange((previous) => ({
       ...previous, structureType: value,
-      groups: value === 'none' ? [] : previous.groups.length ? previous.groups : [createStockGroup(value === 'blocks' ? 'Block A' : 'Building A')],
+      groups: value === 'none' ? [] : previous.groups.length ? previous.groups : [createStockGroup()],
     }))
   }
   function addFloor(group) {
@@ -49,8 +48,8 @@ export default function StockMasterSetup({ plan, onChange, step, onDefer }) {
   }
 
   return <section className="development-create-section stock-master">
-    <div className="stock-layout-heading"><h4>Stock Master</h4><Button type="button" variant="ghost" size="sm" onClick={onDefer}>Set up units later</Button></div>
-    <ol className="stock-master-progress" aria-label="Stock setup progress">
+    <div className="stock-layout-heading"><h4>Unit setup</h4><Button type="button" variant="ghost" size="sm" onClick={onDefer}>Set up units later</Button></div>
+    <ol className="stock-master-progress" aria-label="Unit setup progress">
       {STOCK_STEPS.map((label, index) => <li key={label} aria-current={step === index ? 'step' : undefined} className={step === index ? 'is-current' : step > index ? 'is-complete' : ''}>
         <span>{step > index ? <Check size={14} aria-hidden="true" /> : index + 1}</span><strong>{label}</strong>
       </li>)}
@@ -61,14 +60,16 @@ export default function StockMasterSetup({ plan, onChange, step, onDefer }) {
       <fieldset className="development-type-picker">
         <legend>How are the units organised?</legend>
         <div className="development-type-options stock-structure-options">
-          {STRUCTURES.map((option) => <label key={option.value} className={`development-type-option${plan.structureType === option.value ? ' is-selected' : ''}`}>
-            <input type="radio" name="stockStructure" value={option.value} checked={plan.structureType === option.value} onChange={() => changeStructure(option.value)} />
+          {STRUCTURES.map((option) => <label key={option.value} className={`development-type-option${(plan.structureType === 'blocks' ? 'buildings' : plan.structureType) === option.value ? ' is-selected' : ''}`}>
+            <input type="radio" aria-label={option.label} aria-describedby={`stock-structure-${option.value}-description`} name="stockStructure" value={option.value} checked={(plan.structureType === 'blocks' ? 'buildings' : plan.structureType) === option.value} onChange={() => changeStructure(option.value)} />
             <span className="development-type-icon"><option.icon size={22} aria-hidden="true" /></span><span>{option.label}</span>
-            {plan.structureType === option.value ? <Check className="development-type-check" size={16} aria-hidden="true" /> : null}
+            <span id={`stock-structure-${option.value}-description`} className="development-create-hint stock-structure-description">{option.description}</span>
+            {(plan.structureType === 'blocks' ? 'buildings' : plan.structureType) === option.value ? <Check className="development-type-check" size={16} aria-hidden="true" /> : null}
           </label>)}
         </div>
       </fieldset>
-      {plan.structureType === 'none' ? <p className="development-create-hint">Units sit directly under the development.</p> : <div className="stock-group-list">
+      {plan.structureType === 'none' ? <p className="development-create-hint">Units sit directly under the development. Set the number of storeys inside each unit in its layout on the next screen.</p> : <div className="stock-group-list">
+        <p className="development-create-hint">Add each building, then its floors if needed. For example: Building A → Floor 3 → Apartment 301. Internal unit storeys are set separately in each layout.</p>
         {plan.groups.map((group, index) => <div key={group.id} className="stock-group">
           <div className="stock-group-heading">
             <label>{groupLabel} {index + 1} name<input value={group.name} onChange={(event) => updateGroup(group.id, { name: event.target.value })} /></label>
@@ -84,7 +85,6 @@ export default function StockMasterSetup({ plan, onChange, step, onDefer }) {
         </div>)}
         <Button type="button" variant="secondary" onClick={addGroup}><Plus size={14} />Add {groupLabel.toLowerCase()}</Button>
       </div>}
-      <p className="development-create-hint">Release phases can be planned after the stock exists.</p>
     </div> : null}
 
     {step === 1 ? <div className="stock-master-panel">
@@ -103,6 +103,7 @@ export default function StockMasterSetup({ plan, onChange, step, onDefer }) {
             <div className="development-create-fields">
               <label>Layout name<input aria-label={`Layout name for ${prefix}`} value={layout.name} placeholder="e.g. A1" onChange={(event) => updateLayout(type.id, layout.id, { name: event.target.value })} /></label>
               <label>Size (m²)<input aria-label={`Size for ${prefix}`} type="number" min="0.01" step="0.01" value={layout.sizeSqm} onChange={(event) => updateLayout(type.id, layout.id, { sizeSqm: event.target.value })} /></label>
+              <label>Number of storeys<input aria-label={`Number of storeys for ${prefix}`} aria-describedby={`stock-storeys-${layout.id}-hint`} type="number" min="1" step="1" value={layout.storeys ?? '1'} onChange={(event) => updateLayout(type.id, layout.id, { storeys: event.target.value })} /><span id={`stock-storeys-${layout.id}-hint`} className="development-create-hint">Levels inside one unit: 1 for single-storey, 2 for a duplex.</span></label>
               <label>List price (R)<input aria-label={`List price for ${prefix}`} type="number" min="0.01" step="0.01" value={layout.listPrice} onChange={(event) => updateLayout(type.id, layout.id, { listPrice: event.target.value })} /></label>
               <label>Total units<input aria-label={`Total units for ${prefix}`} type="number" min="1" step="1" value={layout.quantity} onChange={(event) => updateLayout(type.id, layout.id, { quantity: event.target.value })} /></label>
             </div>
@@ -121,14 +122,14 @@ export default function StockMasterSetup({ plan, onChange, step, onDefer }) {
     </div> : null}
 
     {step === 2 ? <div className="stock-master-panel">
-      <div className="stock-layout-heading"><h5>Review stock</h5><strong>{summary.totalUnits} units</strong></div>
+      <div className="stock-layout-heading"><h5>Review units</h5><strong>{summary.totalUnits} units</strong></div>
       <div className="development-create-fields">
         <label>Unit numbering<select value={plan.numberingStrategy} onChange={(event) => onChange((previous) => ({ ...previous, numberingStrategy: event.target.value }))}><option value="sequential">Sequential (001, 002)</option>{plan.structureType !== 'none' ? <option value="structure">Building / floor prefix</option> : null}</select></label>
         <label>Number padding<input type="number" min="1" max="8" value={plan.numberingPadding} onChange={(event) => onChange((previous) => ({ ...previous, numberingPadding: event.target.value }))} /></label>
       </div>
       {summary.warnings.length ? <div className="stock-validation" role="status">{summary.warnings.map((warning) => <p key={warning}>{warning}</p>)}</div> : <>
-        <div className="stock-review-table-wrap"><table className="stock-review-table"><caption>Stock allocation and unit numbers</caption><thead><tr><th>Location</th><th>Unit type / layout</th><th>Units</th><th>Unit numbers</th></tr></thead><tbody>{summary.rows.map((row) => <tr key={row.key}><td data-label="Location">{row.location}</td><td data-label="Unit type / layout">{row.type}<span>{row.layout}</span></td><td data-label="Units">{row.quantity}</td><td data-label="Unit numbers">{row.firstNumber}{row.quantity > 1 ? ` → ${row.lastNumber}` : ''}</td></tr>)}</tbody></table></div>
-        <p className="development-create-hint">Generate stock to continue setup. Units are saved when you create the development or save a draft.</p>
+        <div className="stock-review-table-wrap"><table className="stock-review-table"><caption>Stock allocation and unit numbers</caption><thead><tr><th>Location</th><th>Unit type / layout</th><th>Storeys per unit</th><th>Units</th><th>Unit numbers</th></tr></thead><tbody>{summary.rows.map((row) => <tr key={row.key}><td data-label="Location">{row.location}</td><td data-label="Unit type / layout">{row.type}<span>{row.layout}</span></td><td data-label="Storeys per unit">{row.storeys}</td><td data-label="Units">{row.quantity}</td><td data-label="Unit numbers">{row.firstNumber}{row.quantity > 1 ? ` → ${row.lastNumber}` : ''}</td></tr>)}</tbody></table></div>
+        <p className="development-create-hint">Use these units to continue to Sales setup. Units are saved when you create the development or save a draft.</p>
       </>}
     </div> : null}
   </section>

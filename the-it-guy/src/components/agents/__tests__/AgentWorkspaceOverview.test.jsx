@@ -50,16 +50,12 @@ describe('Agent overview', () => {
     expect(render()).not.toContain('Contact clicks')
   })
 
-  it('shows only this agent’s tasks and offers expansion for more than six', () => {
-    const tasks = Array.from({ length: 8 }, (_, index) => ({
-      id: `task-${index}`, title: `Own task ${index}`, assignedAgentId: agent.userId, status: 'pending',
-    }))
-    tasks.push({ id: 'other', title: 'Other agent task', assignedAgentId: 'another-agent', status: 'pending' })
-    const html = render({ workspaceSnapshot: { tasks } })
-    expect(html).toContain('Own task 5')
-    expect(html).not.toContain('Own task 6')
-    expect(html).not.toContain('Other agent task')
-    expect(html.match(/>View all<\/button>/g)).toHaveLength(2)
+  it('replaces inactive task checkboxes with the persisted attention queue', () => {
+    const html = render({ workspaceSnapshot: { tasks: [{ id: 'fake', title: 'Browser-local task' }] } })
+    expect(html).toContain('Needs attention')
+    expect(html).toContain('Loading next actions')
+    expect(html).not.toContain('Tasks &amp; reminders')
+    expect(html).not.toContain('Browser-local task')
   })
 
   it('uses a compact agent distribution empty state without redundant explanatory text', () => {

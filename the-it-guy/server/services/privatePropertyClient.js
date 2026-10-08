@@ -1,4 +1,5 @@
 import { createHash, randomInt } from 'node:crypto'
+import { statisticsDate } from './listingStatisticsDates.js'
 
 export const PRIVATE_PROPERTY_SANDBOX_BASE_URL = 'https://services.sandbox.pp.co.za/AgentImport/AgentImport.asmx'
 export const PRIVATE_PROPERTY_DEFAULT_TIMEOUT_MS = 25000
@@ -313,6 +314,17 @@ export function createPrivatePropertyClient({
     callSoap,
     createToken: (options = {}) => tokenFactory({ username: user, password: pass, ...options }),
     getCountries: () => callSoap('GetCountries', tokenXml()),
+    getListingPerformanceStats: ({ propertyRefs, date } = {}) => {
+      if (!Array.isArray(propertyRefs) || !propertyRefs.length || propertyRefs.length > 25) throw new Error('Supply 1–25 Private Property references.')
+      const refs = propertyRefs.map(normalizePrivatePropertyText)
+      if (refs.some((ref) => !ref || ref.length > 100) || new Set(refs).size !== refs.length) throw new Error('Private Property references must be non-empty and unique.')
+      const day = statisticsDate(date)
+      return callSoap('ListingPerformanceStats', [
+        `<PropertyRefs>${refs.map((ref) => `<string>${escapePrivatePropertyXml(ref)}</string>`).join('')}</PropertyRefs>`,
+        `<Date>${day}T00:00:00</Date>`,
+        tokenXml(),
+      ].join(''))
+    },
     updateAgent: (agent = {}) => callSoap('UpdateAgent', [
       buildPrivatePropertyAgentXml(agent),
       tokenXml(),

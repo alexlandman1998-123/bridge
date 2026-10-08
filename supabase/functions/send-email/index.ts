@@ -1,3 +1,4 @@
+import { handleRecruitmentInvitationEmail } from "./handlers/recruitmentInvitation.ts";
 import { handleClientOnboardingEmail } from "./handlers/clientOnboarding.ts";
 import { handleClientJourneyEmail } from "./handlers/clientJourneyEmail.ts";
 import { CLIENT_JOURNEY_EMAIL_KINDS } from "./content/clientJourneyEmails.ts";
@@ -158,6 +159,7 @@ Deno.serve(async (req: Request) => {
 
     const normalizedType = normalizeText(payload.type).toLowerCase();
     const type = normalizedType.replaceAll("-", "_");
+    if (type === "recruitment_invitation") return await handleRecruitmentInvitationEmail(req, payload);
     const transactionId = resolveTransactionId(payload);
     const recipient = normalizeText(payload.to).toLowerCase();
     const payloadKeys = Object.keys(payload || {});

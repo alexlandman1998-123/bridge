@@ -5,40 +5,54 @@ import {
   normalizeProperty24LeadForImport,
 } from './reconciliationService.js'
 import { normalizeProperty24Text } from './client.js'
+import { buildNewLeadAgentNotification } from '../../src/services/leads/newLeadAgentNotificationModel.js'
 import { createRentalCrmLeadMetadata } from '../../src/services/rentals/rentalCrmLeadModel.js'
 
-async function sendPortalLeadNotifications({ lead = {}, listing = {}, contact = {}, organisationId = '' } = {}) {
-  const supabaseUrl = normalizeText(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL)
-  const serviceRoleKey = normalizeText(process.env.SUPABASE_SERVICE_ROLE_KEY)
+export async function sendPortalLeadNotifications(
+  { lead = {}, listing = {}, contact = {}, organisationId = '', client = null } = {},
+  { supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL, serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY, fetchImpl = fetch, appUrl = process.env.PUBLIC_APP_URL || process.env.VITE_PUBLIC_APP_URL || process.env.VITE_APP_BASE_URL || 'https://app.arch9.co.za' } = {},
+) {
   const recipient = normalizeEmail(contact.email || lead.email)
-  const agentEmail = normalizeEmail(listing.assigned_agent_email)
-  if (!supabaseUrl || !serviceRoleKey || !recipient) return { acknowledgement: { skipped: true, reason: !recipient ? 'missing_lead_email' : 'missing_email_configuration' }, operations: { skipped: true, reason: !agentEmail ? 'missing_agent_email' : 'missing_email_configuration' } }
-
-  const endpoint = `${supabaseUrl.replace(/\/+$/, '')}/functions/v1/send-email`
-  const send = async (payload) => {
-    const response = await fetch(endpoint, { method: 'POST', headers: { Authorization: `Bearer ${serviceRoleKey}`, apikey: serviceRoleKey, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
-    const data = await response.json().catch(() => ({}))
-    return response.ok && data?.ok !== false && !data?.error ? { sent: true, providerMessageId: data.providerMessageId || data.emailId || null } : { sent: false, error: data?.message || data?.error || `send_email_http_${response.status}` }
+  let agentEmail = normalizeEmail(lead.assigned_agent_email || listing.assigned_agent_email)
+  let agentName = normalizeText(lead.assigned_agent_name || agentEmail)
+  const ownerId = normalizeText(lead.assigned_user_id || lead.assigned_agent_id || listing.assigned_agent_id)
+  if (!normalizeText(supabaseUrl) || !normalizeText(serviceRoleKey)) {
+    return { acknowledgement: { skipped: true, reason: 'missing_email_configuration' }, operations: { skipped: true, reason: 'missing_email_configuration' } }
   }
-
-  const leadName = normalizeText(lead.contactName || recipient)
+  if (!agentEmail && ownerId && client) {
+    const result = await client.from('organisation_users').select('email, first_name, last_name')
+      .eq('organisation_id', organisationId).eq('user_id', ownerId).in('status', ['active', 'accepted']).limit(1).maybeSingle()
+    if (result.error) return { acknowledgement: { skipped: true, reason: 'agent_lookup_failed' }, operations: { sent: false, error: 'agent_lookup_failed' } }
+    agentEmail = normalizeEmail(result.data?.email)
+    agentName = normalizeText([result.data?.first_name, result.data?.last_name].filter(Boolean).join(' ')) || agentEmail
+  }
+  const endpoint = `${normalizeText(supabaseUrl).replace(/\/+$/, '')}/functions/v1/send-email`
+  const send = async (payload) => {
+    try {
+      const response = await fetchImpl(endpoint, { method: 'POST', headers: { Authorization: `Bearer ${serviceRoleKey}`, apikey: serviceRoleKey, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok || data?.ok === false || data?.error) return { sent: false, error: 'email_delivery_failed' }
+      return { sent: data.sent !== false, ...(data.suppressed ? { suppressed: true, reason: data.reason } : {}), providerMessageId: data.providerMessageId || data.emailId || data.providerResponse?.id || null }
+    } catch {
+      return { sent: false, error: 'email_transport_failed' }
+    }
+  }
+  const leadName = normalizeText(lead.contactName || recipient || lead.phone) || 'New lead'
   const propertyLabel = normalizeText(listing.title || lead.listingNumber || 'the property you enquired about')
-  const stableReference = normalizeText(lead.externalReference || lead.dedupeKey || lead.listingNumber || `${recipient}:${listing.id}`)
-  const acknowledgement = await send({
+  const stableReference = normalizeText(lead.externalReference || lead.dedupeKey || lead.leadId)
+  const acknowledgement = recipient ? await send({
     type: 'property_enquiry_acknowledgement', to: recipient,
     recipientName: leadName, organisationId, leadId: lead.leadId || undefined, source: 'Property24',
     originalMessage: `Thank you for your enquiry about ${propertyLabel}. An agent has received your enquiry and will be in touch shortly.`,
-    agentName: agentEmail || 'Your property agent', agentEmail: agentEmail || undefined, replyTo: agentEmail || undefined,
+    agentName: agentName || 'Your property agent', agentEmail: agentEmail || undefined, replyTo: agentEmail || undefined,
     subject: `Thanks for your enquiry about ${propertyLabel}`, idempotencyKey: `portal-lead-introduction:${stableReference}`,
+  }) : { skipped: true, reason: 'missing_lead_email' }
+  const payload = buildNewLeadAgentNotification({
+    organisationId, contact,
+    lead: { ...lead, name: leadName, assignedUserId: ownerId, assignedAgentEmail: agentEmail, assignedAgentName: agentName, leadSource: 'Property24', leadCategory: 'Buyer', propertyInterest: propertyLabel, notes: lead.message },
+    externalReference: stableReference, appUrl,
   })
-  const operations = agentEmail ? await send({
-    type: 'lead_operations_notification', eventKind: 'new_enquiry_assigned_agent', to: agentEmail,
-    recipientName: agentEmail, organisationId, leadId: lead.leadId || undefined, leadName, leadEmail: recipient,
-    leadPhone: lead.phone, leadSource: 'Property24', leadStatus: 'New Lead', propertyLabel,
-    enquiryMessage: lead.message, assignedAgentEmail: agentEmail,
-    message: `Hi, a new Property24 lead has been received. We have sent the inquirer an introduction email and copied you in. Please make first contact promptly.`,
-    subject: `New Property24 lead — ${propertyLabel}`, idempotencyKey: `portal-lead-agent-notification:${stableReference}:${agentEmail}`,
-  }) : { skipped: true, reason: 'missing_agent_email' }
+  const operations = payload ? await send(payload) : { skipped: true, reason: 'missing_agent_email' }
   return { acknowledgement, operations }
 }
 
@@ -532,8 +546,9 @@ export async function importProperty24PreparedLeads({
       const notifications = !sendNotifications || persisted.duplicate
         ? { acknowledgement: { skipped: true, reason: 'recovery_or_duplicate' }, operations: { skipped: true, reason: 'recovery_or_duplicate' } }
         : await sendPortalLeadNotifications({
-        lead: { ...lead, leadId: persisted.leadId },
+        lead: { ...lead, ...persisted.leadRow, leadId: persisted.leadId },
         listing,
+        client: supabase,
         contact: { email: lead.email, phone: lead.phone },
         organisationId: persisted.organisationId,
       }).catch((error) => ({ acknowledgement: { sent: false, error: error?.message || 'notification_failed' }, operations: { sent: false, error: error?.message || 'notification_failed' } }))

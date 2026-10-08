@@ -26,8 +26,10 @@ const DEVELOPMENT_TYPES = [
   { value: 'sectional_title', label: 'Sectional title', icon: Layers3 },
 ]
 
-function getStepsForContext() {
-  return STEPS
+function getStepsForContext(unitConfigurationMethod) {
+  return STEPS.flatMap((step) => step.id === 'units' && unitConfigurationMethod === 'generate_range'
+    ? [step, { id: 'unit_setup', label: 'Unit setup' }]
+    : [step])
 }
 
 const DEFAULT_DETAILS = {
@@ -404,7 +406,7 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const formRef = useRef(null)
-  const activeSteps = useMemo(() => getStepsForContext(), [])
+  const activeSteps = useMemo(() => getStepsForContext(unitConfigurationMethod), [unitConfigurationMethod])
   const currentStepId = activeSteps[stepIndex]?.id || activeSteps[0]?.id || 'basic'
   const maxStepIndex = Math.max(activeSteps.length - 1, 0)
 
@@ -659,7 +661,7 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
       throw new Error('Add at least a street address, suburb, or city for the development.')
     }
     const plannedUnits = Number(details.totalUnitsExpected || 0)
-    if (unitConfigurationMethod !== 'generate_range' && (!Number.isInteger(plannedUnits) || plannedUnits < 0)) {
+    if (!Number.isInteger(plannedUnits) || plannedUnits < 0) {
       throw new Error('Planned units must be a whole number of 0 or greater.')
     }
     if (details.launchDate && details.expectedCompletionDate && details.expectedCompletionDate < details.launchDate) {
@@ -694,6 +696,7 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
     if (currentStepId === 'basic' || currentStepId === 'units') validateDevelopmentDetails()
     if (currentStepId === 'financials') validateSalesSetup()
   }
+
 
   function handleNext() {
     try {
@@ -736,6 +739,23 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
     setStockStepIndex((previous) => Math.max(previous - 1, 0))
   }
 
+  function handleBack() {
+    setError('')
+    if (currentStepId === 'unit_setup' && stockStepIndex > 0) {
+      handleStockStepBack()
+      return
+    }
+    setStepIndex((previous) => Math.max(previous - 1, 0))
+  }
+
+  function deferUnitSetup() {
+    setError('')
+    setUnitConfigurationMethod('import_later')
+    setUnits([])
+    setStockStepIndex(0)
+    setStepIndex(activeSteps.findIndex((step) => step.id === 'units'))
+  }
+
   function handleFinalizeStock() {
     try {
       setError('')
@@ -757,7 +777,7 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
     // The final step replaces this button with a submit button during the click.
     // Cancel the original click's default action before React updates its type.
     event?.preventDefault()
-    if (currentStepId === 'units' && unitConfigurationMethod === 'generate_range') {
+    if (currentStepId === 'unit_setup') {
       if (stockStepIndex === 2) handleFinalizeStock()
       else handleStockStepNext()
     } else {
@@ -778,14 +798,14 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
       try {
         validateSalesSetup()
       } catch (validationError) {
-        setStepIndex(2)
+        setStepIndex(activeSteps.findIndex((step) => step.id === 'financials'))
         throw validationError
       }
       if (unitConfigurationMethod === 'generate_range') {
         try {
           validateStockStep(stockPlan, 2)
         } catch (stockError) {
-          setStepIndex(1)
+          setStepIndex(activeSteps.findIndex((step) => step.id === 'unit_setup'))
           try { validateStockStep(stockPlan, 0); setStockStepIndex(1) }
           catch { setStockStepIndex(0) }
           throw stockError
@@ -881,6 +901,7 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
             rolePlayerDefaults,
           },
         },
+        productCatalogue: unitConfigurationMethod === 'generate_range' ? stockSummary.productCatalogue : null,
         structureNodes: unitConfigurationMethod === 'generate_range' ? stockSummary.structureNodes : [],
         units: (unitConfigurationMethod === 'generate_range' ? stockSummary.generatedUnits : [])
           .filter((unit) => String(unit.unitNumber || '').trim())
@@ -983,7 +1004,7 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
     >
       <div className="space-y-5">
         <div className="overflow-x-auto">
-          <ol className="development-create-progress" aria-label="Development setup progress">
+          <ol className="development-create-progress" style={{ '--development-step-count': activeSteps.length }} aria-label="Development setup progress">
           {activeSteps.map((step, index) => {
             const status = index === stepIndex ? 'active' : index < stepIndex ? 'complete' : ''
             return (
@@ -1010,7 +1031,13 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
                   {index + 1}
                 </span>
                 <div className="min-w-0">
-                  <strong className="block text-sm font-semibold">{step.label}</strong>
+                  {index < stepIndex ? <button
+                    type="button"
+                    className="development-create-step-back"
+                    aria-label={`Back to ${step.label}`}
+                    disabled={saving || Boolean(savedDevelopment)}
+                    onClick={() => { setError(''); setStepIndex(index) }}
+                  >{step.label}</button> : <strong className="block text-sm font-semibold">{step.label}</strong>}
                 </div>
                 {index < activeSteps.length - 1 ? <span className="ml-1 hidden h-px flex-1 bg-[#dce5ef] lg:block" /> : null}
               </li>
@@ -1702,52 +1729,44 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
           ) : null}
 
           {currentStepId === 'units' ? (
-            <div className="space-y-5">
-              {unitConfigurationMethod !== 'generate_range' ? (
-              <section className="development-create-section">
-                <div className="mb-4 space-y-1.5">
-                  <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">Units</h4>
-                </div>
-                <div className="grid gap-5 md:grid-cols-[220px_minmax(0,1fr)]">
-                  <label>
+              <section className="development-create-section" aria-labelledby="development-units-heading">
+                <h4 id="development-units-heading">Units</h4>
+                  <label className="development-planned-units">
                     Planned Units
-                    <input type="number" min="0" value={details.totalUnitsExpected} onChange={(event) => setDetails((previous) => ({ ...previous, totalUnitsExpected: event.target.value }))} />
+                    <input type="number" min="0" step="1" value={details.totalUnitsExpected} onChange={(event) => setDetails((previous) => ({ ...previous, totalUnitsExpected: event.target.value }))} />
                   </label>
-                  <div>
-                    <span className="block text-sm font-medium text-[#233247]">Unit Configuration Method</span>
-                    <div className="mt-2 grid gap-3 md:grid-cols-3">
+                  <fieldset className="development-unit-method">
+                    <legend>Unit Configuration Method</legend>
+                    <div className="development-unit-method-options">
                       {[
-                        { value: 'manual', label: 'Add individual units later' },
-                        { value: 'import_later', label: 'Set up units later' },
-                        { value: 'generate_range', label: 'Generate stock' },
+                        { value: 'manual', label: 'Add individual units later', description: 'Add units one at a time after creating the development.' },
+                        { value: 'import_later', label: 'Import units later', description: 'Upload your unit list from the development workspace.' },
+                        { value: 'generate_range', label: 'Set up units now', description: 'Define unit types, quantities and prices in the next step.' },
                       ].map((option) => (
                         <button
                           key={option.value}
                           type="button"
-                          onClick={() => { setUnitConfigurationMethod(option.value); setUnits([]) }}
-                          className={`rounded-[16px] border px-4 py-3 text-left text-sm font-semibold transition ${
-                            unitConfigurationMethod === option.value
-                              ? 'border-[#102236] bg-[#102236] text-white'
-                              : 'border-[#dce5ef] bg-white text-[#35546c] hover:border-[#b7c8db]'
-                          }`}
+                          aria-label={option.label}
+                          aria-pressed={unitConfigurationMethod === option.value}
+                          aria-describedby={`development-unit-method-${option.value}`}
+                          onClick={() => { setError(''); setUnitConfigurationMethod(option.value); setUnits([]) }}
+                          className={`development-unit-method-option${unitConfigurationMethod === option.value ? ' is-selected' : ''}`}
                         >
-                          {option.label}
+                          <span className="development-unit-method-title">{option.label}</span>
+                          <span className="development-unit-method-description" id={`development-unit-method-${option.value}`}>{option.description}</span>
+                          {unitConfigurationMethod === option.value ? <Check className="development-unit-method-check" size={16} aria-hidden="true" /> : null}
                         </button>
                       ))}
                     </div>
-                  </div>
-                </div>
+                  </fieldset>
+                <p className="development-create-hint mt-4">{unitConfigurationMethod === 'generate_range'
+                  ? 'Next, set up your units. The final unit total will be calculated from your unit types.'
+                  : `You can ${unitConfigurationMethod === 'manual' ? 'add individual units' : 'import or add units'} in the development workspace after creation.`}</p>
               </section>
-              ) : null}
+          ) : null}
 
-              {unitConfigurationMethod !== 'generate_range' ? (
-                <p className="development-create-hint">You can {unitConfigurationMethod === 'manual' ? 'add individual units' : 'import or add units'} in the development workspace after creation.</p>
-              ) : null}
-
-              {unitConfigurationMethod === 'generate_range' ? (
-                <StockMasterSetup plan={stockPlan} onChange={updateStockPlan} step={stockStepIndex} onDefer={() => { setUnitConfigurationMethod('import_later'); setUnits([]) }} />
-              ) : null}
-            </div>
+          {currentStepId === 'unit_setup' ? (
+            <StockMasterSetup plan={stockPlan} onChange={updateStockPlan} step={stockStepIndex} onDefer={deferUnitSetup} />
           ) : null}
 
           {currentStepId === 'documents' ? (
@@ -1833,15 +1852,7 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
             <Button
               type="button"
               variant="ghost"
-              onClick={
-                stepIndex === 0
-                  ? onClose
-                  : currentStepId === 'units' && unitConfigurationMethod === 'generate_range'
-                    ? stockStepIndex === 0
-                      ? () => setStepIndex((previous) => Math.max(previous - 1, 0))
-                      : handleStockStepBack
-                    : () => setStepIndex((previous) => Math.max(previous - 1, 0))
-              }
+              onClick={stepIndex === 0 ? onClose : handleBack}
               disabled={saving || Boolean(savedDevelopment)}
             >
               {stepIndex === 0 ? 'Cancel' : 'Back'}
@@ -1857,7 +1868,7 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
             </Button>
             {stepIndex < maxStepIndex ? (
               <Button type="button" onClick={handleContinue} disabled={saving || Boolean(savedDevelopment)}>
-                {currentStepId === 'units' && unitConfigurationMethod === 'generate_range' && stockStepIndex === 2 ? 'Generate Units' : 'Continue'}
+                {currentStepId === 'unit_setup' && stockStepIndex === 2 ? 'Use these units' : 'Next'}
               </Button>
             ) : (
               <Button type="submit" disabled={saving || Boolean(savedDevelopment)}>

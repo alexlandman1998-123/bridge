@@ -1,3 +1,4 @@
+import { getRecruitmentInvitationStatus, sendRecruitmentInvitation } from './recruitmentService'
 import { buildAgentInviteLink } from '../lib/agentInviteService'
 import { hasOpenAgencyContext } from '../lib/agencyOperationsAccess'
 import { normalizeBusinessWorkspaceList } from '../lib/businessWorkspaceAccess'
@@ -513,6 +514,18 @@ export async function resendWorkspaceUserInvite(input = {}) {
   if (!invite.token) throw new Error('Invite token is missing.')
 
   const inviteLink = buildAgentInviteLink(invite.token)
+  const recruitmentLeadId=invite.raw?.metadata?.recruitment_lead_id || input.raw?.metadata?.recruitment_lead_id || input.metadata?.recruitment_lead_id
+  if(recruitmentLeadId) {
+    const organisationId=invite.organisationId || input.workspaceId
+    const referenceId=invite.inviteId || invite.id
+    const status=await getRecruitmentInvitationStatus(organisationId,recruitmentLeadId,'workspace',referenceId)
+    if(status.referenceStatus!=='prepared' || status.attempt?.reviewRequired) throw new Error('Review this access invitation in Recruitment before sending another email.')
+    const attempt=status.attempt
+    const requestId=attempt && !attempt.retryWindowEnded && attempt.status!=='provider_accepted' ? attempt.id : crypto.randomUUID()
+    const result=await sendRecruitmentInvitation(organisationId,recruitmentLeadId,'workspace',referenceId,{requestId})
+    if(!result.ok)throw new Error(result.error || 'The sending result is pending. Refresh invitation status in Recruitment before retrying.')
+    return {invite,inviteLink,emailResult:result,whatsAppResult:null}
+  }
   const delivery = await deliverWorkspaceInvite({
     invite: {
       ...invite,

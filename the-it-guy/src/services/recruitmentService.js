@@ -6,7 +6,7 @@ import { recruitmentDeliveryErrors, recruitmentSignatureErrors } from '../pages/
 import { recruitmentApprovalErrors } from '../pages/recruitment/recruitmentApprovalModel'
 import { recruitmentReviewErrors } from '../pages/recruitment/recruitmentReviewModel'
 import { validateRecruitmentLead } from '../pages/recruitment/recruitmentModel'
-const fields = 'id,organisation_id,name,email,phone,area,source,status,details_json,documents_json,version,created_at,updated_at,received_at,captured_by,intake_channel,intake_key,activity_json,application_json,application_submitted_at,review_json,review_started_at,review_started_by,review_updated_at,review_updated_by,review_status,approved_at,approved_by,approval_notes,approval_snapshot,contracts_json,contract_delivery_json,contract_signature_json,onboarding_json,onboarding_documents_json,onboarding_completed_at,onboarding_completed_by,onboarding_snapshot,activation_json,activated_at,activated_by,contact_capture_json,email_verification_status,email_verified_at,applicant_draft_json,applicant_draft_revision,applicant_draft_saved_at'
+const fields = 'id,organisation_id,name,email,phone,area,source,status,details_json,documents_json,version,created_at,updated_at,received_at,captured_by,intake_channel,intake_key,activity_json,application_json,application_submitted_at,review_json,review_started_at,review_started_by,review_updated_at,review_updated_by,review_status,approved_at,approved_by,approval_notes,approval_snapshot,contracts_json,contract_delivery_json,contract_signature_json,onboarding_json,onboarding_documents_json,onboarding_completed_at,onboarding_completed_by,onboarding_snapshot,activation_json,activated_at,activated_by,contact_capture_json,email_verification_status,email_verified_at,applicant_draft_json,applicant_draft_revision,applicant_draft_saved_at,joining_json,joining_invite_id'
 function clientFor(organisationId) {
   if (!supabase) throw new Error('Recruitment is unavailable: database connection is not configured.')
   if (!organisationId || organisationId === 'all') throw new Error('Choose an organisation to manage recruitment.')
@@ -16,6 +16,8 @@ function fail(error) {
   if (['42P01','42703','PGRST204','PGRST205','PGRST202'].includes(error?.code)) throw new Error('Recruitment setup is pending. The recruitment database migration must be applied before records can be saved.')
   if (error?.code === '22007' || error?.code === '22008') throw new Error('Choose a valid date for this recruitment action.')
   if (error?.code === '23505') throw new Error('Agent access is already linked to another recruitment record. Reload and check the agent directory before trying again.')
+  if (error?.code === '42501' && /joining branch/.test(error.message || '')) throw new Error(error.message)
+  if (error?.code === 'P0001' && /joining|existing invitation|business areas|active branch|active commission|differs from|pending agent invitations|Commercial.*handover/i.test(error.message || '')) throw new Error(error.message)
   if (error?.code === 'P0001' && /activat|agent|invitation|membership|prepared.*email/i.test(error.message || '')) throw new Error('Agent access could not be completed. Check completed onboarding, the recorded email, invitation acceptance and the active agent membership, then reload if the record changed.')
   if (error?.code === 'P0001' && /onboarding|joining/i.test(error.message || '')) throw new Error('Onboarding could not be saved. Check the signed contract, joining requirements, document pack and date, then reload if the record changed.')
   if (error?.code === 'P0001' && /contract|PDF/i.test(error.message || '')) throw new Error('Contract could not be saved. Check the contract stage, version, dates, findings and uploaded PDF, then reload if the application changed.')
@@ -29,6 +31,16 @@ export async function listRecruitmentLeads(organisationId) {
   if (error) fail(error)
   return data || []
 }
+export async function listJoiningRecruitmentLeads(organisationId, branchId = '', { limitedBranch = false, commercialOnly = false } = {}) {
+  const client = clientFor(organisationId), rows = [], pageSize = 200
+  if(limitedBranch && !branchId) throw new Error('Choose your joining branch.')
+  for(let offset=0; ;offset+=pageSize) {
+    const {data,error}=await client.rpc('recruitment_joining_progress',{p_organisation_id:organisationId,p_branch_id:branchId || null,p_offset:offset,p_commercial:commercialOnly,p_limited:limitedBranch})
+    if(error) fail(error)
+    rows.push(...(data || []))
+    if(!data || data.length<pageSize)return rows
+  }
+}
 export async function getRecruitmentLead(organisationId, id) {
   const { data, error } = await clientFor(organisationId).from('recruitment_leads').select(fields).eq('organisation_id', organisationId).eq('id', id).maybeSingle()
   if (error) fail(error)
@@ -39,20 +51,42 @@ export async function saveRecruitmentLead(organisationId, lead) {
   const validation = validateRecruitmentLead(lead)
   if (validation) throw new Error(validation)
   const payload = Object.fromEntries(['name','email','phone','area','source','status','details_json','documents_json'].map((key) => [key, typeof lead[key] === 'string' ? lead[key].trim() : lead[key]]))
+  if (lead.joining_json !== undefined) payload.joining_json = lead.joining_json
   if (!lead.id) {
     payload.intake_key = lead.intake_key
-    payload.intake_channel = 'manual'
+    payload.joining_invite_id = lead.joining_invite_id || null
+    const { data, error } = await clientFor(organisationId).rpc('recruitment_create_joining_lead', { p_organisation_id: organisationId, p_lead: payload })
+    if (error) fail(error)
+    if (['review_required', 'existing_member'].includes(data?.outcome)) throw new RecruitmentMatchError(data)
+    if (!['created', 'reused'].includes(data?.outcome) || !data.lead?.id) throw new Error('The joining record could not be confirmed. Retry with the same enquiry before creating another.')
+    return data.lead
   }
   const client = clientFor(organisationId)
-  const query = lead.id ? client.from('recruitment_leads').update(payload).eq('organisation_id', organisationId).eq('id', lead.id).eq('version', lead.version) : client.from('recruitment_leads').insert({ ...payload, organisation_id: organisationId })
+  const query = client.from('recruitment_leads').update(payload).eq('organisation_id', organisationId).eq('id', lead.id).eq('version', lead.version)
   const { data, error } = await query.select(fields).maybeSingle()
-  if (error?.code === '23505' && !lead.id && lead.intake_key) {
-    const retry = await client.from('recruitment_leads').select(fields).eq('organisation_id', organisationId).eq('intake_key', lead.intake_key).maybeSingle()
-    if (retry.error) fail(retry.error)
-    if (retry.data) return retry.data
-  }
   if (error) fail(error)
   if (!data) throw new Error('This lead changed or access was removed. Reload it before saving again.')
+  return data
+}
+
+export class RecruitmentMatchError extends Error {
+  constructor(result) {
+    super(result.outcome === 'existing_member'
+      ? 'This person is already an active agency member. Open their existing profile to manage access.'
+      : 'Matching recruitment records or invitations exist. Review them before creating a separate enquiry.')
+    this.name = 'RecruitmentMatchError'
+    this.outcome = result.outcome
+    this.matches = result.matches
+  }
+}
+export async function getRecruitmentJoiningOptions(organisationId) {
+  const { data, error } = await clientFor(organisationId).rpc('recruitment_joining_options', { p_organisation_id: organisationId })
+  if (error) fail(error)
+  return data
+}
+export async function getRecruitmentJoiningConnections(organisationId, leadId) {
+  const { data, error } = await clientFor(organisationId).rpc('recruitment_joining_connections', { p_organisation_id: organisationId, p_lead_id: leadId })
+  if (error) fail(error)
   return data
 }
 export async function uploadRecruitmentDocument(organisationId, lead, file, type) {
@@ -213,7 +247,7 @@ export async function downloadRecruitmentOnboardingDocument(organisationId,lead,
 export async function activateRecruitmentAgent(organisationId,lead,draft) {
   const errors=recruitmentActivationErrors(lead,draft)
   if(errors.length) throw new Error(errors.join(' '))
-  const {data,error}=await clientFor(organisationId).rpc('recruitment_activate_agent',{p_organisation_id:organisationId,p_lead_id:lead.id,p_version:lead.version,p_notes:draft.notes.trim(),p_confirmed:draft.confirmed===true}).maybeSingle()
+  const {data,error}=await clientFor(organisationId).rpc('recruitment_activate_joining_agent_v2',{p_organisation_id:organisationId,p_lead_id:lead.id,p_version:lead.version,p_notes:draft.notes.trim(),p_confirmed:draft.confirmed===true}).maybeSingle()
   if(['40001', 'PT409'].includes(error?.code) || (!error && !data)) throw new Error('This recruitment record changed or access was removed. Activation was not saved. Reload before trying again.')
   if(error) fail(error)
   return data
@@ -221,9 +255,35 @@ export async function activateRecruitmentAgent(organisationId,lead,draft) {
 export async function getRecruitmentAgentAccessLink(organisationId,lead) {
   const access=lead.activation_json
   if(lead.status!=='onboarding_complete' || !access?.inviteId || access.state!=='awaiting_acceptance') throw new Error('Prepare agent access before getting an invitation link.')
-  const {data,error}=await clientFor(organisationId).from('invites').select('id,token,status,email,expires_at,target_workspace_role').eq('id',access.inviteId).eq('target_workspace_id',organisationId).eq('invite_type','workspace_invite').maybeSingle()
+  const {data,error}=await clientFor(organisationId).from('invites').select('id,token,status,email,expires_at,target_workspace_role,target_branch_id,invite_type').eq('id',access.inviteId).eq('target_workspace_id',organisationId).in('invite_type',['workspace_invite','branch_invite']).maybeSingle()
   if(error) fail(error)
-  if(!data || data.status!=='pending' || data.target_workspace_role!=='agent' || data.email?.trim().toLowerCase()!==access.email || !data.token) throw new Error('The invitation is no longer pending or does not match this agent. Check the agent directory and confirm activation again.')
+  const plan=access.joiningPlan
+  if(!data || data.status!=='pending' || data.target_workspace_role!==(plan?.role || 'agent') || (plan && data.target_branch_id!==plan.branchId) || data.email?.trim().toLowerCase()!==access.email || !data.token) throw new Error('The invitation is no longer pending or does not match this agent. Check the agent directory and confirm activation again.')
   if(data.expires_at && new Date(data.expires_at).getTime()<=Date.now()) throw new Error('The invitation expired. Confirm agent activation again to prepare a fresh access link.')
   return buildAgentInviteLink(data.token)
+}
+
+export async function captureBranchRecruitmentLead(organisationId, branchId, contact) {
+  const {data,error} = await clientFor(organisationId).rpc('recruitment_capture_branch_joining', {p_organisation_id:organisationId,p_branch_id:branchId,p_contact:{name:contact.name,email:contact.email,phone:contact.phone,intake_key:contact.intake_key,entryPoint:contact.joining_json?.origin?.entryPoint}})
+  if(error) fail(error)
+  if(!data?.id) throw new Error('The joining enquiry could not be confirmed. Retry this same enquiry.')
+  return data
+}
+
+export async function getRecruitmentInvitationStatus(organisationId, leadId, kind, referenceId) {
+  const {data,error}=await clientFor(organisationId).rpc('recruitment_invitation_status',{p_organisation_id:organisationId,p_lead_id:leadId,p_kind:kind,p_reference_id:referenceId})
+  if(error) fail(error)
+  if(!data?.referenceStatus) throw new Error('Invitation status could not be confirmed. Refresh before sending.')
+  return data
+}
+export async function sendRecruitmentInvitation(organisationId, leadId, kind, referenceId, {requestId, applicationLink, allowDuplicate=false}={}) {
+  if(!leadId || !referenceId || !requestId || !['application','workspace'].includes(kind)) throw new Error('Choose a saved application or workspace invitation.')
+  const {data,error}=await clientFor(organisationId).functions.invoke('send-email',{body:{type:'recruitment_invitation',organisationId,leadId,kind,referenceId,requestId,...(kind==='application' ? {applicationLink} : {}),allowDuplicate:allowDuplicate===true}})
+  if(error) {
+    let detail
+    try {detail=await error.context?.json()} catch { /* The network may have failed after provider acceptance. */ }
+    throw new Error(detail?.error || 'The email result could not be confirmed. Refresh invitation status before retrying.')
+  }
+  if(!data || (!data.status && !data.busy && !data.suppressed)) throw new Error('The email result could not be confirmed. Refresh invitation status before retrying.')
+  return data
 }

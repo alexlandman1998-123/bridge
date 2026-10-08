@@ -8,12 +8,13 @@ import {
   normalizeProperty24Text,
   summarizeProperty24Payload,
 } from '../../../server/property24/client.js'
-import { resolveProperty24EnvironmentCredentials } from '../../../server/property24/environmentService.js'
 import { fetchOrganisationProperty24Connection } from '../../../server/property24/organisationConnectionService.js'
-import { syncProperty24ListingStatistics } from '../../../server/property24/statisticsSyncService.js'
+import { syncProperty24StatisticsBackfill, resolveProperty24StatisticsCredentials } from '../../../server/property24/statisticsSyncService.js'
 import { writeNodeJsonResponse } from '../../../server/services/hqMissionControlApi.js'
 
 const appRoot = fileURLToPath(new URL('../../..', import.meta.url))
+
+export const config = { maxDuration: 300 }
 
 function parseEnvFile(filePath) {
   if (!fs.existsSync(filePath)) return {}
@@ -131,7 +132,7 @@ export default async function handler(request, response) {
       }))
       return
     }
-    const property24Runtime = resolveProperty24EnvironmentCredentials({ env, environment: connection.environment })
+    const property24Runtime = await resolveProperty24StatisticsCredentials({ supabase, env, organisationId, environment: connection.environment })
     if (!property24Runtime.configured) {
       writeNodeJsonResponse(response, buildResponse(503, { error: 'property24_environment_credentials_missing', missingConfiguration: property24Runtime.missing }))
       return
@@ -143,7 +144,7 @@ export default async function handler(request, response) {
       userGroupId: property24Runtime.sendUserGroupHeader ? property24Runtime.userGroupId : '',
       apiVersion: property24Runtime.apiVersion,
     })
-    const report = await syncProperty24ListingStatistics({
+    const report = await syncProperty24StatisticsBackfill({
       supabase,
       property24,
       config: {
@@ -154,6 +155,7 @@ export default async function handler(request, response) {
         requestedBy: auth.user.id,
         startDate: normalizeProperty24Text(body.startDate),
         endDate: normalizeProperty24Text(body.endDate),
+        days: body.days ?? 90,
         listingTypes: Array.isArray(body.listingTypes) ? body.listingTypes : undefined,
       },
     })

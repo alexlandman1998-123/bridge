@@ -6,16 +6,73 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, within, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import RecruitmentPage, { RecruitmentList, RecruitmentWorkspace } from '../RecruitmentPage'
+import { recruitmentStartLocation } from '../recruitmentEntryModel'
+import { createRecruitmentIntakeLink } from '../../../services/recruitmentIntakeService'
 import { WorkspaceContext } from '../../../context/WorkspaceContextBase'
 import { recruitmentLocalDate } from '../recruitmentSigningModel'
 import { emptyRecruitmentLead, recruitmentReadiness } from '../recruitmentModel'
 import { recruitmentReviewDraft } from '../recruitmentReviewModel'
-import { recordRecruitmentContractSignature, approveRecruitmentApplication, getRecruitmentLead, saveRecruitmentLead } from '../../../services/recruitmentService'
+import { getRecruitmentJoiningOptions, recordRecruitmentContractSignature, approveRecruitmentApplication, getRecruitmentLead, saveRecruitmentLead } from '../../../services/recruitmentService'
 vi.mock('../../../services/recruitmentIntakeService', () => ({ createRecruitmentIntakeLink: vi.fn(), listRecruitmentIntakeLinks: vi.fn().mockResolvedValue([]), revokeRecruitmentIntakeLink: vi.fn() }))
-vi.mock('../../../services/recruitmentService', () => ({ activateRecruitmentAgent: vi.fn(), getRecruitmentAgentAccessLink: vi.fn(), saveRecruitmentOnboarding: vi.fn(), uploadRecruitmentOnboardingDocument: vi.fn(), downloadRecruitmentOnboardingDocument: vi.fn(), recordRecruitmentContractDelivery: vi.fn(), recordRecruitmentContractSignature: vi.fn(), downloadRecruitmentSignedContract: vi.fn(), prepareRecruitmentContract: vi.fn(), downloadRecruitmentContract: vi.fn(), approveRecruitmentApplication: vi.fn(), getRecruitmentLead: vi.fn(), listRecruitmentLeads: vi.fn().mockResolvedValue([]), startRecruitmentReview: vi.fn(), saveRecruitmentReview: vi.fn(), saveRecruitmentLead: vi.fn(), uploadRecruitmentDocument: vi.fn(), openRecruitmentDocument: vi.fn() }))
+vi.mock('../../../services/recruitmentService', () => ({ getRecruitmentInvitationStatus: vi.fn().mockResolvedValue({referenceStatus:'prepared',attempt:null}), sendRecruitmentInvitation: vi.fn(), getRecruitmentJoiningOptions: vi.fn().mockResolvedValue({ branches: [{id:'a1111111-1111-4111-8111-111111111111',name:'Head Office'}], commissionStructures: [] }), getRecruitmentJoiningConnections: vi.fn().mockResolvedValue({ applications: [], workspace: [] }), activateRecruitmentAgent: vi.fn(), getRecruitmentAgentAccessLink: vi.fn(), saveRecruitmentOnboarding: vi.fn(), uploadRecruitmentOnboardingDocument: vi.fn(), downloadRecruitmentOnboardingDocument: vi.fn(), recordRecruitmentContractDelivery: vi.fn(), recordRecruitmentContractSignature: vi.fn(), downloadRecruitmentSignedContract: vi.fn(), prepareRecruitmentContract: vi.fn(), downloadRecruitmentContract: vi.fn(), approveRecruitmentApplication: vi.fn(), getRecruitmentLead: vi.fn(), listRecruitmentLeads: vi.fn().mockResolvedValue([]), startRecruitmentReview: vi.fn(), saveRecruitmentReview: vi.fn(), saveRecruitmentLead: vi.fn(), uploadRecruitmentDocument: vi.fn(), openRecruitmentDocument: vi.fn() }))
 afterEach(() => { cleanup(); vi.clearAllMocks() })
 const lead = { ...emptyRecruitmentLead(), id: 'agent-1', name: 'Sam Agent', email: 'sam@example.test', phone: '0821234567', area: 'Pretoria', version: 1 }
 const wrap = (element) => render(<MemoryRouter>{element}</MemoryRouter>)
+it('requires review of matching enquiries and links a selected invitation without merging records', async () => {
+  const matches = { leads: [{ id: 'prior', name: 'Prior Agent', status: 'lead_received' }], members: [], invites: [{ id: 'pending', type: 'branch_invite', role: 'agent' }, { id: 'privileged', role: 'principal' }, { id: 'linked', role: 'agent', linkedLeadId: 'prior' }] }
+  const create = vi.fn().mockRejectedValueOnce(Object.assign(new Error('Review existing records.'), { outcome: 'review_required', matches })).mockResolvedValueOnce({ id: 'new' })
+  wrap(<RecruitmentList leads={[]} openCreate onCreate={create} />)
+  fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Sam Agent' } })
+  fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'sam@example.test' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Create Agent Lead' }))
+  expect(await screen.findByRole('alert')).toHaveProperty('textContent', 'Review existing records.')
+  expect(screen.getByRole('link', { name: 'Open recruitment record: Prior Agent' }).getAttribute('href')).toBe('/agency/recruitment/prior')
+  expect(screen.getByRole('button', { name: 'Create Agent Lead' }).disabled).toBe(true)
+  expect(within(screen.getByLabelText('Link an existing agent invitation')).getAllByRole('option')).toHaveLength(2)
+  fireEvent.click(screen.getByRole('checkbox', { name: /I reviewed the matches/ }))
+  fireEvent.change(screen.getByLabelText('Link an existing agent invitation'), { target: { value: 'pending' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Create Agent Lead' }))
+  await waitFor(() => expect(create).toHaveBeenCalledTimes(2))
+  expect(create.mock.calls[1][0]).toMatchObject({ email: 'sam@example.test', joining_invite_id: 'pending', joining_json: { reviewedMatches: true } })
+  expect(create.mock.calls[1][0].intake_key).toBe(create.mock.calls[0][0].intake_key)
+})
+it('routes an existing active member to their profile and clears the match review when the email changes', async () => {
+  const create = vi.fn().mockRejectedValue(Object.assign(new Error('Manage the existing member.'), { outcome: 'existing_member', matches: { leads: [], invites: [], members: [{ id: 'membership', userId: 'existing-user', role: 'agent' }, { id: 'admin-membership', userId: 'admin-user', role: 'admin' }] } }))
+  wrap(<RecruitmentList leads={[]} openCreate onCreate={create} />)
+  fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Sam Agent' } })
+  fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'sam@example.test' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Create Agent Lead' }))
+  const profiles = await screen.findAllByRole('link', { name: 'Open existing agency member' })
+  expect(profiles.map(profile => profile.getAttribute('href'))).toEqual(['/agency/agents/existing-user', '/settings/users'])
+  expect(screen.getByRole('button', { name: 'Create Agent Lead' }).disabled).toBe(true)
+  expect(screen.queryByRole('checkbox', { name: /I reviewed the matches/ })).toBeNull()
+  fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'different@example.test' } })
+  expect(screen.queryByRole('link', { name: 'Open existing agency member' })).toBeNull()
+  expect(screen.getByRole('button', { name: 'Create Agent Lead' }).disabled).toBe(false)
+})
+it('preserves the email identity of a linked legacy invitation', () => {
+  wrap(<RecruitmentWorkspace lead={{ ...lead, joining_invite_id: 'legacy-invite' }} />)
+  fireEvent.click(screen.getByRole('tab', { name: 'Agent Details' }))
+  expect(screen.getByLabelText('Email').readOnly).toBe(true)
+  expect(screen.getByLabelText('Email').value).toBe(lead.email)
+})
+it('saves planned setup with agent details and protects unsaved joining choices from other writes', async () => {
+  const branch = 'a1111111-1111-4111-8111-111111111111', save = vi.fn()
+  vi.mocked(getRecruitmentJoiningOptions).mockResolvedValueOnce({ branches: [{ id: branch, name: 'Head Office' }], commissionStructures: [] })
+  wrap(<RecruitmentWorkspace lead={lead} organisationId="org" onSave={save} />)
+  fireEvent.click(screen.getByRole('tab', { name: 'Agent Details' }))
+  await screen.findByRole('option', { name: 'Head Office' })
+  fireEvent.change(screen.getByLabelText('Intended branch'), { target: { value: branch } })
+  fireEvent.change(screen.getByLabelText('Planned joining date'), { target: { value: '2026-10-15' } })
+  fireEvent.click(screen.getByLabelText('Rentals'))
+  expect(screen.getByRole('button', { name: 'Close Lead' }).disabled).toBe(true)
+  fireEvent.click(screen.getByRole('tab', { name: 'Documents' }))
+  expect(screen.getByLabelText('Upload document').disabled).toBe(true)
+  fireEvent.click(screen.getByRole('tab', { name: 'Agent Details' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Save Agent Details' }))
+  expect(save).toHaveBeenCalledOnce()
+  expect(save.mock.calls[0][0]).toMatchObject({ id: lead.id, version: lead.version, joining_json: { branchId: branch, startDate: '2026-10-15', businessWorkspaces: ['rentals'] } })
+})
 it('opens the workspace without the contact receipt or invitation containers', () => {
   wrap(<RecruitmentWorkspace lead={{ ...lead, source: 'Website', intake_channel: 'website', email_verification_status: 'pending', contact_capture_json: { version: 'recruitment-contact-v1', firstName: 'Sam', lastName: 'Agent', privacyAccepted: true } }} />)
   expect(screen.queryByRole('region', { name: 'Website recruitment contact' })).toBeNull()
@@ -363,7 +420,7 @@ it('uploads the final pack through Documents after signatures without changing a
   expect(upload).toHaveBeenCalledWith(file,'Training / CPD')
 })
 
-const readyForActivation=()=>({...signedForOnboarding(),status:'onboarding_complete',onboarding_completed_at:'2026-10-05',onboarding_json:{...recruitmentOnboardingDraft(signedForOnboarding()),notes:'Final joining requirements completed',startDate:'2026-10-12'},onboarding_snapshot:{version:'recruitment-onboarding-completion-v1'}})
+const readyForActivation=()=>({...signedForOnboarding(),joining_json:{...emptyRecruitmentLead().joining_json,branchId:'a1111111-1111-4111-8111-111111111111',businessWorkspaces:['rentals'],startDate:'2026-10-12'},status:'onboarding_complete',onboarding_completed_at:'2026-10-05',onboarding_json:{...recruitmentOnboardingDraft(signedForOnboarding()),notes:'Final joining requirements completed',startDate:'2026-10-12'},onboarding_snapshot:{version:'recruitment-onboarding-completion-v1'}})
 const fillActivation=()=>{fireEvent.change(screen.getByLabelText('Activation findings'),{target:{value:'Joining record reviewed and agent access authorised'}});fireEvent.click(screen.getByRole('checkbox',{name:'I confirm the agent identity, completed onboarding and organisation access.'}))}
 it('requires explicit activation findings and preserves dirty work across tabs while blocking other writes',()=>{
   const activate=vi.fn()
@@ -384,7 +441,7 @@ it('shows pending access without claiming activation and exposes a shareable lin
   expect(screen.queryByRole('link',{name:'Open agent'})).toBeNull()
   fireEvent.click(screen.getByRole('button',{name:'Get agent access link'}))
   expect((await screen.findByLabelText('Agent access link')).value).toBe('https://app.example.test/invite/sample-token')
-  expect(screen.getByText('No email was sent when this link was prepared.')).toBeTruthy()
+  expect(screen.getByText('Preparing access does not send an email.')).toBeTruthy()
   fireEvent.click(screen.getByRole('tab',{name:'Agent Details'}))
   expect(screen.getByLabelText('Email').readOnly).toBe(true)
   fireEvent.click(screen.getByRole('tab',{name:'Overview'}))
@@ -450,4 +507,82 @@ it('retains popup details after a failed save and resets them after cancellation
   expect(screen.queryByRole('alert')).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
   expect(screen.queryByRole('dialog')).toBeNull()
+})
+
+it('starts branch recruitment with preselected choices, retains the saved lead after a link failure and returns to the branch', async () => {
+  const branchId='a1111111-1111-4111-8111-111111111111'
+  vi.mocked(getRecruitmentJoiningOptions).mockResolvedValueOnce({branches:[{id:branchId,name:'Branch One'}],commissionStructures:[]})
+  vi.mocked(saveRecruitmentLead).mockImplementationOnce(async(_org,draft)=>({...draft,id:'saved-joining',version:1}))
+  vi.mocked(createRecruitmentIntakeLink).mockRejectedValueOnce(new Error('The application link could not be prepared.')).mockResolvedValueOnce({id:'link',url:'https://app.example.test/join-us/private-token',expires_at:'2099-01-01'})
+  render(<WorkspaceContext.Provider value={{currentWorkspace:{id:'org'},organisationMembershipRole:'principal'}}><MemoryRouter initialEntries={[recruitmentStartLocation({entryPoint:'branch',organisationId:'org',branchId,returnTo:`/agency/branches/${branchId}/staff`})]}><Routes><Route path="/agency/recruitment/:leadId" element={<RecruitmentPage/>}/><Route path="/agency/branches/:branchId/staff" element={<p>Returned to branch staff</p>}/></Routes></MemoryRouter></WorkspaceContext.Provider>)
+  await screen.findByRole('dialog',{name:'Invite new agent'})
+  await screen.findByRole('option',{name:'Branch One'})
+  expect(screen.getByLabelText('Intended branch').value).toBe(branchId)
+  fireEvent.change(screen.getByLabelText('Name'),{target:{value:'New Branch Agent'}})
+  fireEvent.change(screen.getByLabelText('Email'),{target:{value:'new@example.test'}})
+  fireEvent.click(screen.getByRole('button',{name:'Create Agent Lead'}))
+  await screen.findByText(/Joining record saved for New Branch Agent/)
+  expect(saveRecruitmentLead).toHaveBeenCalledWith('org',expect.objectContaining({joining_json:expect.objectContaining({origin:{entryPoint:'branch'},branchId})}))
+  expect(createRecruitmentIntakeLink).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByRole('button',{name:'Create private link'}))
+  await screen.findByText('The application link could not be prepared.')
+  expect(screen.getByRole('link',{name:'Open recruitment record'}).getAttribute('href')).toBe('/agency/recruitment/saved-joining')
+  fireEvent.click(screen.getByRole('button',{name:'Create private link'}))
+  expect((await screen.findByLabelText('Generated Join Us link')).value).toContain('/join-us/private-token')
+  expect(createRecruitmentIntakeLink).toHaveBeenLastCalledWith('org','private_link','saved-joining')
+  expect(saveRecruitmentLead).toHaveBeenCalledOnce()
+  fireEvent.click(screen.getByRole('button',{name:'Done'}))
+  await screen.findByText('Returned to branch staff')
+})
+it('blocks starting in another agency and keeps private application actions locked during unsaved edits',async()=>{
+  const view=render(<WorkspaceContext.Provider value={{currentWorkspace:{id:'another'},organisationMembershipRole:'principal'}}><MemoryRouter initialEntries={[recruitmentStartLocation({entryPoint:'agents',organisationId:'original',returnTo:'/agency/agents'})]}><Routes><Route path="/agency/recruitment/:leadId" element={<RecruitmentPage/>}/></Routes></MemoryRouter></WorkspaceContext.Provider>)
+  expect(screen.getByRole('alert').textContent).toMatch(/Switch to the agency/)
+  expect(screen.queryByRole('dialog')).toBeNull()
+  view.unmount()
+  wrap(<RecruitmentWorkspace lead={lead} organisationId="org" returnTo="/agency/agents"/>)
+  expect(screen.getByRole('link',{name:'Back to Agents'}).getAttribute('href')).toBe('/agency/agents')
+  fireEvent.click(screen.getByRole('tab',{name:'Agent Details'}))
+  expect(screen.getByRole('button',{name:'Create private link'}).disabled).toBe(false)
+  fireEvent.change(screen.getByLabelText('Name'),{target:{value:'Unsaved name'}})
+  expect(screen.getByRole('button',{name:'Create private link'}).disabled).toBe(true)
+})
+
+it('shows the final saved setup before access and blocks unavailable branch choices until reviewed',async()=>{
+  const ready={...readyForActivation(),joining_json:{...readyForActivation().joining_json,role:'senior_agent',commissionStructureId:'a2222222-2222-4222-8222-222222222222'}}
+  vi.mocked(getRecruitmentJoiningOptions).mockResolvedValueOnce({branches:[{id:ready.joining_json.branchId,name:'Planned Office'}],commissionStructures:[{id:ready.joining_json.commissionStructureId,name:'Planned Split'}]})
+  const activate=vi.fn()
+  wrap(<RecruitmentWorkspace lead={ready} organisationId="org" onActivate={activate}/>)
+  await screen.findByText('Planned Office')
+  const review=screen.getByLabelText('Final joining review')
+  for(const value of ['Senior agent','Rentals','Planned Split','2026-10-12'])expect(within(review).getByText(value)).toBeTruthy()
+  fillActivation()
+  fireEvent.click(screen.getByRole('button',{name:'Prepare agent access'}))
+  expect(activate).toHaveBeenCalledTimes(1)
+})
+it('keeps final review errors recoverable and blocks access while saved branch choices are unavailable',async()=>{
+  vi.mocked(getRecruitmentJoiningOptions).mockRejectedValueOnce(new Error('Choices unavailable')).mockResolvedValueOnce({branches:[],commissionStructures:[]})
+  wrap(<RecruitmentWorkspace lead={readyForActivation()} organisationId="org" onActivate={vi.fn()}/>)
+  await screen.findByText('Choices unavailable')
+  fillActivation()
+  expect(screen.getByRole('button',{name:'Prepare agent access'}).disabled).toBe(true)
+  fireEvent.click(screen.getByRole('button',{name:'Retry final review'}))
+  await screen.findByText('Choose an active branch and commission structure in Agent Details.')
+  expect(screen.getByText('Review joining setup')).toBeTruthy()
+  expect(screen.getByRole('button',{name:'Prepare agent access'}).disabled).toBe(true)
+})
+it('preserves the reviewed setup after acceptance and links the verified agent and branch staff',()=>{
+  const ready=readyForActivation(),plan={...ready.joining_json,branchName:'Verified Office',role:'senior_agent'}
+  const active={...ready,status:'agent_activated',activated_at:'2026-10-08',activation_json:{state:'active',userId:'verified-user',role:'senior_agent',joiningPlan:plan}}
+  wrap(<RecruitmentWorkspace lead={active}/>)
+  expect(screen.getByText('Active')).toBeTruthy()
+  expect(within(screen.getByLabelText('Final joining review')).getByText('Verified Office')).toBeTruthy()
+  expect(screen.getByRole('link',{name:'Open agent'}).getAttribute('href')).toBe('/agency/agents/verified-user')
+  expect(screen.getByRole('link',{name:'Open branch staff'}).getAttribute('href')).toBe(`/agency/branches/${plan.branchId}/staff`)
+})
+it('links a verified Commercial broker back to the broker directory and Commercial branches',()=>{
+ const ready=readyForActivation(),plan={...ready.joining_json,branchName:'Commercial Office',role:'commercial_broker',businessWorkspaces:['commercial']}
+ wrap(<RecruitmentWorkspace lead={{...ready,status:'agent_activated',activated_at:'2026-10-08',activation_json:{state:'active',userId:'verified-broker',role:'commercial_broker',joiningPlan:plan}}}/>)
+ expect(screen.getByRole('link',{name:'Open broker'}).getAttribute('href')).toBe('/commercial/brokers/verified-broker')
+ expect(screen.getByRole('link',{name:'Open Commercial branches'}).getAttribute('href')).toBe('/commercial/agency/branches')
+ expect(screen.queryByRole('link',{name:'Open agent'})).toBeNull()
 })

@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import { createClient } from '@supabase/supabase-js'
 import { resolveOnboardingBranding } from '../../src/lib/onboardingBranding.js'
+import { createRentalCrmLeadMetadata } from '../../src/services/rentals/rentalCrmLeadModel.js'
 import { writeNodeJsonResponse } from './hqMissionControlApi.js'
 
 let cachedRuntimeEnv = null
@@ -24,7 +25,7 @@ const DATABASE_SOURCE_CHANNEL_ALIASES = new Map([
   ['card', 'website'],
   ['digital_card', 'website'],
 ])
-const ALLOWED_INTENTS = new Set(['buy', 'sell'])
+const ALLOWED_INTENTS = new Set(['buy', 'sell', 'rent'])
 const DEFAULT_PRIVACY_POLICY_VERSION = 'agency-public-intake-v1'
 const MAX_SELECTED_LISTINGS = 24
 const PUBLIC_INTAKE_AUTOMATION_KEY = 'agency_public_intake_received'
@@ -659,6 +660,7 @@ export function buildAgencyPublicIntakeContract({ link = {}, organisation = {}, 
       introduction: normalizeText(link.introduction),
       buyerCtaLabel: normalizeText(link.buyer_cta_label) || 'I am looking to buy',
       sellerCtaLabel: normalizeText(link.seller_cta_label) || 'I am looking to sell',
+      rentalCtaLabel: normalizeText(agentDigitalCard.rentalCtaLabel) || 'I am looking to rent',
       enabledIntents: enabledIntents.length ? enabledIntents : ['buy', 'sell'],
       privacyPolicyVersion: normalizeText(link.privacy_policy_version) || DEFAULT_PRIVACY_POLICY_VERSION,
       consentCopy: normalizeText(link.consent_copy),
@@ -832,7 +834,8 @@ export function validateAgencyIntakeSubmission(payload = {}, link = {}) {
   const errors = {}
   const enabledIntents = normalizeEnabledIntents(link.enabled_intents)
 
-  if (!ALLOWED_INTENTS.has(normalized.intent)) errors.intent = 'Choose whether this is a buyer or seller enquiry.'
+  if (!ALLOWED_INTENTS.has(normalized.intent)) errors.intent = 'Choose whether this is a buyer, seller or rental enquiry.'
+  if (normalized.intent === 'rent' && safeObject(link.metadata_json).surface !== 'agent_digital_card') errors.intent = 'Rental enquiries require an agent digital card.'
   if (enabledIntents.length && !enabledIntents.includes(normalized.intent)) errors.intent = 'This enquiry type is not available for this agency link.'
   if (!normalized.idempotencyKey || normalized.idempotencyKey.length < 16 || normalized.idempotencyKey.length > 128 || !/^[A-Za-z0-9._:-]+$/.test(normalized.idempotencyKey)) {
     errors.idempotencyKey = 'A valid idempotency key is required.'
@@ -890,6 +893,7 @@ export function buildAgencyPublicIntakeCrmRows({ link = {}, submission = {}, nor
   const leadSource = normalizeText(link.lead_source_label) || 'Public Intake'
   const intent = normalized.intent || submission.intent
   const isSeller = intent === 'sell'
+  const isRental = intent === 'rent'
   const requirement = safeObject(normalized.requirement)
   const seller = safeObject(normalized.seller)
   const areas = normalizeTextList(requirement.areas || requirement.area || submission.payload_json?.requirement?.areas)
@@ -939,7 +943,18 @@ export function buildAgencyPublicIntakeCrmRows({ link = {}, submission = {}, nor
     listing_id: primaryListingId || null,
     enquired_listing_id: primaryListingId || null,
     source_reference_id: normalizeText(submission.idempotency_key || normalized.idempotencyKey),
-    raw_enquiry_payload: safeObject(submission.payload_json),
+    raw_enquiry_payload: {
+      ...safeObject(submission.payload_json),
+      ...(isRental ? { rentalCrm: createRentalCrmLeadMetadata({
+        leadId, organisationId, role: 'tenant', source: leadSource,
+        branchId: link.default_branch_id, assignedAgentId: link.default_assigned_agent_id,
+        campaign: normalized.campaignCode, relationships: { listingId: primaryListingId },
+        consents: { privacy: normalized.privacyConsent === true },
+        qualification: { monthlyBudget: buyerBudgetMax, desiredArea: areas.join(', '),
+          bedrooms: toFiniteNumber(requirement.bedroomsMin), propertyNeed: propertyTypeText,
+          moveTimeline: normalizeRequirementTimeline(requirement.timeline) || null },
+      }) } : {}),
+    },
     notes: leadNotes || null,
     updated_at: nowIso,
   }
@@ -957,7 +972,7 @@ export function buildAgencyPublicIntakeCrmRows({ link = {}, submission = {}, nor
     updated_at: nowIso,
   }
 
-  const requirementRow = !isSeller ? {
+  const requirementRow = intent === 'buy' ? {
     organisation_id: organisationId,
     lead_id: leadId,
     contact_id: contactId,
@@ -1147,7 +1162,7 @@ async function persistLeadActivityAndTask(client, rows, submission = {}) {
         agent_id: rows.leadRow.assigned_agent_id || null,
         activity_type: 'Public intake received',
         activity_note: [
-          `${rows.intent === 'sell' ? 'Seller' : 'Buyer'} public intake submitted.`,
+          `${rows.intent === 'sell' ? 'Seller' : rows.intent === 'rent' ? 'Tenant' : 'Buyer'} public intake submitted.`,
           selectedListingLine,
           submission.idempotency_key ? `Reference: ${submission.idempotency_key}` : '',
         ].filter(Boolean).join('\n'),
@@ -1178,7 +1193,7 @@ async function persistLeadActivityAndTask(client, rows, submission = {}) {
 }
 
 function buildPublicIntakeAutomationPreview({ rows = {}, normalized = {}, submission = {} } = {}) {
-  const intentLabel = rows.intent === 'sell' ? 'Seller' : 'Buyer'
+  const intentLabel = rows.intent === 'sell' ? 'Seller' : rows.intent === 'rent' ? 'Tenant' : 'Buyer'
   const contactName = normalizeText(normalized.contactName || submission.contact_name || [
     rows.contactRow?.first_name,
     rows.contactRow?.last_name,
@@ -1207,7 +1222,7 @@ export function buildAgencyPublicIntakeAutomationEvent({ rows = {}, submission =
   if (!organisationId) return null
 
   const intent = normalizeLower(rows.intent || normalized.intent || submission.intent)
-  const intentLabel = intent === 'sell' ? 'Seller' : 'Buyer'
+  const intentLabel = intent === 'sell' ? 'Seller' : intent === 'rent' ? 'Tenant' : 'Buyer'
   const taskId = normalizeText(rows.task?.task_id)
   const activityId = normalizeText(rows.activity?.activity_id)
   const listingInterestIds = Array.isArray(rows.listingInterests)
@@ -1254,7 +1269,7 @@ export function buildAgencyPublicIntakeAutomationEvent({ rows = {}, submission =
     payload_json: {
       communicationType: PUBLIC_INTAKE_AUTOMATION_KEY,
       intent,
-      leadCategory: rows.leadRow?.lead_category || intent,
+      leadCategory: intent === 'rent' ? 'tenant' : rows.leadRow?.lead_category || intent,
       leadSource: rows.leadSource || rows.leadRow?.lead_source || 'Public Intake',
       sourceChannel: normalizeSourceChannel(normalized.sourceChannel || submission.source_channel || rows.leadRow?.source_channel),
       campaignCode: normalizeCampaignCode(normalized.campaignCode || submission.campaign_code || rows.leadRow?.campaign_code) || null,
@@ -1267,6 +1282,7 @@ export function buildAgencyPublicIntakeAutomationEvent({ rows = {}, submission =
       selectedListings,
       listingInterestIds,
       buyerRequirement: intent === 'buy' ? buyerRequirement : null,
+      rentalRequirement: intent === 'rent' ? requirement : null,
       sellerDetails: intent === 'sell' ? sellerDetails : null,
       message: payloadMessage,
       submissionId: submissionId || null,
@@ -1422,11 +1438,11 @@ function buildLeadOperationBasePayload(rows = {}, submission = {}, normalized = 
     leadEmail: normalizeEmail(normalized.contactEmail || submission.contact_email || rows.contactRow?.email),
     leadPhone: normalizeText(normalized.contactPhone || submission.contact_phone || rows.contactRow?.phone),
     leadSource: normalizeText(rows.leadSource || rows.leadRow?.lead_source || 'Public Intake'),
-    leadCategory: normalizeText(rows.leadRow?.lead_category || rows.intent),
+    leadCategory: rows.intent === 'rent' ? 'tenant' : normalizeText(rows.leadRow?.lead_category || rows.intent),
     leadStatus: normalizeText(rows.leadRow?.status || rows.leadRow?.stage || 'New Lead'),
     propertyLabel: normalizeText(selectedListing.title || selectedListing.address || rows.leadRow?.seller_property_address || rows.leadRow?.property_interest),
     budgetLabel,
-    actionLink: buildLeadActionLink(rows.leadId),
+    actionLink: rows.intent === 'rent' ? `${getAppBaseUrl().replace(/\/+$/, '')}/agent/rentals/pipeline/leads/${encodeURIComponent(rows.leadId)}` : buildLeadActionLink(rows.leadId),
     source: 'agency_public_intake',
     metadata: {
       submissionId: normalizeText(submission.id) || null,
