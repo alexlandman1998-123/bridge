@@ -1,3 +1,4 @@
+import { rentalListingDocumentProgress } from './rentalListingDocumentMatrixModel.js'
 const text = (value) => String(value ?? '').trim()
 const timestamp = (value) => Number.isFinite(Date.parse(value)) ? Date.parse(value) : null
 const metadata = (activity) => activity.metadata || activity.metadata_json || {}
@@ -9,7 +10,7 @@ export const RENTAL_OVERVIEW_TABS = Object.freeze([
   { key: 'activity', label: 'Activity' },
 ])
 
-export function buildRentalListingOverview({ listing = {}, leads = [], applications = [], activity = [], documents = [], requirements = [], tenancies = [], mandates = [], issues = [], now = Date.now() } = {}) {
+export function buildRentalListingOverview({ listing = {}, leads = [], applications = [], activity = [], documents = [], requirements = [], tenancies = [], mandates = [], documentMatrix, issues = [], now = Date.now() } = {}) {
   const listingId = text(listing.id)
   const outcomes = new Map()
   activity.filter((item) => item.activity_type === 'rental_viewing_outcome').sort((a, b) => text(b.created_at).localeCompare(text(a.created_at))).forEach((item) => {
@@ -30,13 +31,14 @@ export function buildRentalListingOverview({ listing = {}, leads = [], applicati
   const complete = needed.filter((item) => satisfied.has(text(item.status).toLowerCase()) || documents.some((doc) => text(doc.requirement_id || doc.requirementId) === text(item.id) && satisfied.has(text(doc.status).toLowerCase()))).length
   const listedAt = listing.listingDate || listing.firstPublishedAt || listing.first_published_at || listing.marketedAt || listing.marketed_at || listing.listedAt || listing.listed_at || listing.publishedAt || listing.published_at || listing.listingPublicationData?.publishedAt
   const start = timestamp(listedAt)
+  const savedProgress = documentMatrix ? rentalListingDocumentProgress(documentMatrix, now) : null
   return {
-    issues, leads: linkedLeads, applications, legacyApplications, activity, documents, requirements, tenant, mandates,
+    issues, leads: linkedLeads, applications, legacyApplications, activity, documents, requirements, documentMatrix: documentMatrix || { landlords: [], tenants: [], issues: [] }, tenant, mandates,
     leadCount: issues.includes('Overview') || issues.includes('Leads') || issues.includes('Applications') || issues.includes('Viewings & activity') ? null : new Set([...referencedLeads, ...linkedLeads.map((lead) => text(lead.id))]).size,
     newLeadCount: linkedLeads.filter((lead) => timestamp(lead.createdAt) >= now - 7 * 86400000).length,
     viewingCount: issues.includes('Overview') || issues.includes('Viewings & activity') ? null : viewings.length,
     viewings, upcoming, daysOnMarket: start === null ? null : Math.max(0, Math.floor((now - start) / 86400000)),
-    documentProgress: { total: needed.length, complete, percent: needed.length ? Math.round(complete / needed.length * 100) : 0 },
+    documentProgress: savedProgress ? savedProgress.available ? { total: savedProgress.total, complete: savedProgress.complete, percent: savedProgress.percent } : null : { total: needed.length, complete, percent: needed.length ? Math.round(complete / needed.length * 100) : 0 },
     refreshedAt: now,
   }
 }

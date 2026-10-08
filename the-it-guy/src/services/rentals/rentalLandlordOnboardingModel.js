@@ -56,7 +56,22 @@ export const LANDLORD_PROPERTY_FIELDS = [
   'ownershipShare',
   'unitNumber',
   'complexName',
+  'serviceType',
+  'schemeType',
+  'payoutBeneficiaryType',
+  'payoutAccountHolder',
+  'payoutAccountReference',
+  'billingResponsibility',
+  'leaseEndDate',
 ]
+export const LANDLORD_CONDITIONAL_OPTIONS = {
+  serviceType: [['letting_only', 'Letting only'], ['managed_rental', 'Managed rental']],
+  schemeType: [['none', 'No scheme'], ['body_corporate', 'Body corporate'], ['hoa', 'Homeowners association']],
+  payoutBeneficiaryType: [['landlord', 'Landlord’s account'], ['third_party', 'Third-party beneficiary']],
+}
+export function rentalLandlordPropertyFieldVisible(key, property = {}) {
+  return !['payoutBeneficiaryType', 'payoutAccountHolder', 'payoutAccountReference', 'billingResponsibility'].includes(key) || property.serviceType === 'managed_rental'
+}
 const object = (value) =>
   value && typeof value === 'object' && !Array.isArray(value) ? value : {}
 const project = (value, keys) =>
@@ -98,6 +113,9 @@ export function mergeRentalLandlordDiscovery(
     for (const [key, value] of Object.entries(row))
       if (key !== 'people' && value !== null && typeof value === 'object')
         throw new Error('Discovery fields must be single values.')
+    for (const [key, options] of Object.entries(LANDLORD_CONDITIONAL_OPTIONS)) {
+      if (row[key] != null && row[key] !== '' && !options.some(([value]) => value === row[key])) throw new Error(`Choose a valid ${key.replace(/([A-Z])/g, ' $1').toLowerCase()}.`)
+    }
     return row
   }
   const next = {
@@ -189,6 +207,11 @@ export function rentalLandlordRequirementTitle(row, data) {
       co_owner_authority: 'Co-owner authority',
       beneficial_ownership: 'Beneficial ownership evidence',
       entity_registration: 'Entity registration',
+      payout_account: 'Rental proceeds account confirmation',
+      third_party_payee_authority: 'Third-party payout authority',
+      management_information: 'Management billing and meter information',
+      scheme_rules: 'Scheme rules and letting permissions',
+      existing_tenancy_pack: 'Existing lease, deposit and inspection records',
     }[row.purpose] || row.purpose.replaceAll('_', ' ')
   const subject = row.scopeKey.startsWith('property:')
     ? data.portfolio?.find((item) => `property:${item.id}` === row.scopeKey)
@@ -203,4 +226,25 @@ export function rentalLandlordRequirementTitle(row, data) {
         : data.profile?.people?.find((person) => person.id === row.subjectId)
             ?.name || 'Relevant person'
   return `${subject}: ${purpose}`
+}
+
+export function rentalLandlordRequirementReason(row) {
+  return {
+    identity: 'Identity evidence for this landlord or relevant person.',
+    address: 'Address evidence for this landlord or relevant person; acceptable alternatives need agency confirmation.',
+    entity_registration: 'The landlord is a company or close corporation.',
+    trust_founding: 'The landlord is a trust; provide the deed and relevant amendments.',
+    trust_authority: 'The landlord is a trust; establish the current trustees’ authority.',
+    beneficial_ownership: 'The landlord is an entity or trust; establish its ownership and control.',
+    signing_authority: 'A signatory acts for the entity or trust on this property.',
+    co_owner_authority: 'Multiple owners must establish authority for this letting arrangement.',
+    property_disclosure: 'This property needs its own completed and signed prescribed disclosure.',
+    right_to_let: 'Establish the landlord’s ownership or other right to let this property.',
+    signed_mandate: 'Provide the signed letting or management mandate for this property.',
+    payout_account: 'Rental management includes paying proceeds to the nominated beneficiary.',
+    third_party_payee_authority: 'Rental proceeds will be paid to someone other than the landlord; establish that person’s authority.',
+    management_information: 'Rental management needs billing responsibility, service and meter information.',
+    scheme_rules: 'This property is in a sectional-title, body corporate or homeowners association scheme.',
+    existing_tenancy_pack: 'Taking over management of a tenanted property needs its current lease, deposit ledger, payment history and inspection records.',
+  }[row.purpose] || ''
 }

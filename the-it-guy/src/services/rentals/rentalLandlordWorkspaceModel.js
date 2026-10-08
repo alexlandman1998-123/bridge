@@ -1,4 +1,5 @@
 import { getRentalLeadMetadata } from './rentalLeadClassificationModel'
+import { LANDLORD_CONDITIONAL_OPTIONS } from './rentalLandlordOnboardingModel.js'
 export const LANDLORD_TABS = [
   'Overview',
   'Landlord profile',
@@ -53,6 +54,17 @@ export const PERSON_FIELDS = [
   ['capacity', 'Capacity / role'],
 ]
 export const PROPERTY_GROUPS = [
+  [
+    'Rental management & evidence',
+    [
+      ['serviceType', 'Rental service', 'serviceType'],
+      ['schemeType', 'Property scheme', 'schemeType'],
+      ['payoutBeneficiaryType', 'Rental proceeds beneficiary', 'payoutBeneficiaryType'],
+      ['payoutAccountHolder', 'Proceeds account holder'],
+      ['payoutAccountReference', 'Proceeds account reference'],
+      ['billingResponsibility', 'Billing and meter responsibility'],
+    ],
+  ],
   [
     'Property profile',
     [
@@ -193,6 +205,9 @@ export function normalizeLandlordProfile(values = {}) {
 }
 export function normalizeLandlordProperty(values = {}) {
   const result = { id: text(values.id), listingId: text(values.listingId) }
+  for (const [key, options] of Object.entries(LANDLORD_CONDITIONAL_OPTIONS)) {
+    if (text(values[key]) && !options.some(([value]) => value === values[key])) throw new Error('Choose a valid rental service, scheme and proceeds beneficiary.')
+  }
   for (const [, fields] of PROPERTY_GROUPS)
     for (const [key, , type] of fields) {
       const value = values[key]

@@ -17,6 +17,18 @@ vi.mock('../../../services/rentals/rentalListingDraftService', () => ({ getRenta
 beforeEach(() => { vi.resetAllMocks(); mocks.channels.mockResolvedValue({ activity: [], errors: {} }); mocks.scope = { organisationId: 'org-1', assignedAgentId: 'agent-1', scopeLevel: 'assigned' }; mocks.workspace = {} })
 afterEach(() => { cleanup(); vi.clearAllMocks(); vi.restoreAllMocks() })
 
+it('opens the saved rental document matrix from the listing Documents route', async () => {
+  const listing = { id: 'listing-1', listingType: 'rental', title: 'Document rental', organisationId: 'org-1' }
+  mocks.load.mockResolvedValue(listing)
+  mocks.overview.mockResolvedValue(buildRentalListingOverview({ listing, documentMatrix: {
+    issues: [], tenants: [], landlords: [{ id: 'owner', title: 'Landlord Example', rows: [{ id: 'disclosure', title: 'Document rental: Signed disclosure', state: 'missing', mode: 'preview', source: 'This property', documents: [] }] }],
+  } }))
+  render(<MemoryRouter initialEntries={['/agent/rentals/listings/listing-1/documents']}><Routes><Route path="/agent/rentals/listings/:listingId/:detailTab?" element={<RentalListingDetailPage />} /></Routes></MemoryRouter>)
+  expect(await screen.findByText('Document rental: Signed disclosure')).toBeTruthy()
+  expect(screen.getByText('Landlord Example')).toBeTruthy()
+  expect(screen.getByRole('tab', { name: 'Documents' }).getAttribute('aria-selected')).toBe('true')
+})
+
 function mediaListing() {
   return { id: 'listing-1', listingCategory: 'rental', title: 'Media rental', updatedAt: '2026-10-04T00:00:00Z', organisationId: 'org-1',
     sellerCanonicalFacts: { marketingMedia: { videoLink: 'https://video.test/watch', virtualTourLink: 'https://tour.test/view' } },

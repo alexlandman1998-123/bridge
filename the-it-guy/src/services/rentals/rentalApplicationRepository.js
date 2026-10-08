@@ -72,11 +72,12 @@ export async function getRentalApplicationDocumentUrl(applicationId, documentId)
 }
 
 // Read the complete application set for one listing; organisation scope is explicit.
-export async function listPersistedRentalApplicationsForListing(organisationId, listingId, { client: db = supabase } = {}) {
+export async function listPersistedRentalApplicationsForListing(organisationId, listingId, { client: db = supabase, includeEvidence = false } = {}) {
   if (!text(organisationId) || !text(listingId)) return []
   const rows = []
   for (let offset = 0; ; offset += 100) {
-    const result = await client(db).from('rental_applications').select(fields)
+    const result = await client(db).from(includeEvidence ? 'rental_application_review_summaries' : 'rental_applications')
+      .select(includeEvidence ? 'id, organisation_id, lead_id, status, version, application_data, submitted_at, updated_at, documents, requirements' : fields)
       .eq('organisation_id', text(organisationId)).eq('application_data->property->>listingId', text(listingId))
       .order('updated_at', { ascending: false }).order('id').range(offset, offset + 99)
     if (result.error) throw result.error

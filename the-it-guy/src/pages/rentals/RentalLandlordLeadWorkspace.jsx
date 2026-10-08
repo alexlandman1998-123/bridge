@@ -1,5 +1,5 @@
 import RentalLandlordOnboardingPanel from '../../modules/rentals/shared/applications/RentalLandlordOnboardingPanel.jsx'
-import { rentalLandlordDiscovery } from '../../services/rentals/rentalLandlordOnboardingModel.js'
+import { rentalLandlordDiscovery, LANDLORD_CONDITIONAL_OPTIONS, rentalLandlordPropertyFieldVisible } from '../../services/rentals/rentalLandlordOnboardingModel.js'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import {
@@ -64,6 +64,7 @@ const date = (value) =>
     : 'Not scheduled'
 const uid = () => crypto.randomUUID()
 const selects = {
+  ...LANDLORD_CONDITIONAL_OPTIONS,
   category: [
     ['residential', 'Residential'],
     ['commercial', 'Commercial'],
@@ -986,8 +987,8 @@ export default function RentalLandlordLeadWorkspace({
                       {fields
                         .filter(
                           ([key]) =>
-                            !['unitNumber', 'complexName'].includes(key) ||
-                            property.ownershipType === 'sectional_title',
+                            rentalLandlordPropertyFieldVisible(key, property) && (!['unitNumber', 'complexName'].includes(key) ||
+                            property.ownershipType === 'sectional_title'),
                         )
                         .map((field) =>
                           field[0] === 'canonicalPropertyId' ? (
@@ -1065,8 +1066,8 @@ export default function RentalLandlordLeadWorkspace({
                       {fields
                         .filter(
                           ([key]) =>
-                            !['unitNumber', 'complexName'].includes(key) ||
-                            selected.ownershipType === 'sectional_title',
+                            rentalLandlordPropertyFieldVisible(key, selected) && (!['unitNumber', 'complexName'].includes(key) ||
+                            selected.ownershipType === 'sectional_title'),
                         )
                         .map(([key, label]) => (
                           <div

@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { initialiseRentalApplicationWizard, rentalApplicationVisibleFields, rentalApplicationDocumentSlots, rentalApplicationDocumentForSlot, rentalApplicationPersonFields, reuseRentalTenantIdentity } from '../rentalApplicationWizardModel.js'
+import { initialiseRentalApplicationWizard, rentalApplicationVisibleFields, rentalApplicationDocumentSlots, rentalApplicationDocumentForSlot, rentalApplicationDocumentProgress, rentalApplicationPersonFields, reuseRentalTenantIdentity } from '../rentalApplicationWizardModel.js'
 import { RENTAL_APPLICATION_FIELD_GROUPS, RENTAL_APPLICATION_SCHEMA_VERSION, validateRentalApplicationFields } from '../rentalApplicationFieldContract.js'
 import { isRentalApplicantPortalReadyToSubmit } from '../rentalApplicantPortalModel.js'
 const group = (key) => RENTAL_APPLICATION_FIELD_GROUPS.find((item) => item.key === key)
@@ -25,7 +25,13 @@ it('keeps evidence attached to the correct person and requires entity authority 
   const consents = { privacy: true, credit_check: true, identity_verification: true }
   expect(isRentalApplicantPortalReadyToSubmit({ data, documents, consents })).toBe(true)
   const wrong = { ...data, documentLinks: data.documentLinks.map((item) => item.subjectId === 'g' ? { ...item, subjectId: 'wrong' } : item) }
-  expect(isRentalApplicantPortalReadyToSubmit({ data: wrong, documents, consents })).toBe(false)
+  // Details submission is deferred from evidence collection; person assignment
+  // must still prevent another person's files from fulfilling this checklist.
+  expect(isRentalApplicantPortalReadyToSubmit({ data: wrong, documents, consents })).toBe(true)
+  const guarantorIdentity = slots.find((slot) => slot.key === 'g:identity')
+  expect(rentalApplicationDocumentForSlot(guarantorIdentity, documents, data)).toBeTruthy()
+  expect(rentalApplicationDocumentForSlot(guarantorIdentity, documents, wrong)).toBeUndefined()
+  expect(rentalApplicationDocumentProgress({ data: wrong, documents }).uploaded).toBeLessThan(rentalApplicationDocumentProgress({ data, documents }).uploaded)
   expect(rentalApplicationDocumentForSlot(slots[0], [{ id: 'legacy', type: 'identity', name: 'ID.pdf', status: 'uploaded' }], {})).toBeTruthy()
 })
 it('shows financial questions for a guarantor and supports student sponsorship without inventing primary income', () => {

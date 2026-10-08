@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { DOCUMENT_UPLOAD_ACCEPT } from '../../../../lib/documentUploadPolicy.js'
-import { rentalLandlordRequirementTitle } from '../../../../services/rentals/rentalLandlordOnboardingModel.js'
+import { rentalLandlordRequirementTitle, rentalLandlordRequirementReason } from '../../../../services/rentals/rentalLandlordOnboardingModel.js'
 export default function RentalLandlordOnboardingDocuments({
   onboarding,
   disabled = false,
@@ -41,6 +41,7 @@ export default function RentalLandlordOnboardingDocuments({
           return (
             <article key={row.id} className="rounded-xl border p-4">
               <h3 className="font-semibold">{title}</h3>
+              <p className="mt-1 text-sm text-slate-600">{rentalLandlordRequirementReason(row)}</p>
               <p className="mt-1 text-sm text-slate-600">
                 {doc ? `${doc.file_name} · ${row.state}` : 'Not uploaded'}
               </p>

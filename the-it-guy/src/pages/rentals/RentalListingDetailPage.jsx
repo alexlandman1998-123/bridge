@@ -31,6 +31,7 @@ import WebsiteListingPublicationPanel from '../../components/listings/WebsiteLis
 import KingdomWebsitePublicationChannel from '../../components/listings/KingdomWebsitePublicationChannel'
 import RentalPortalManagementPanel from './RentalPortalManagementPanel'
 import RentalListingReadinessPanel from './RentalListingReadinessPanel'
+import RentalListingDocumentsPanel from './RentalListingDocumentsPanel'
 import { getRentalPortalReadiness } from '../../services/rentals/rentalListingReadinessPresentation'
 import { buildRentalPortalChannels, buildRentalPublicationSnapshot, buildRentalWebsitePublicationStates } from '../../services/rentals/rentalListingChannelModel'
 import { getRentalPortalStatus, reconcileRentalPortalPublication, loadRentalListingChannels, recordRentalPublicationEvent, runRentalPublicationAction, updateRentalPortalStatus } from '../../services/rentals/rentalListingChannelService'
@@ -369,57 +370,6 @@ function DetailPanel({ title, eyebrow, children }) {
   )
 }
 
-function ListingDocumentsPanel({ documents = [] }) {
-  const [activeGroup, setActiveGroup] = useState('landlord')
-  const documentRows = Array.isArray(documents) ? documents : []
-  const tenantDocuments = documentRows.filter((document) => /tenant|applicant|application|fica|screening|lease/i.test(String(document.party || document.owner || document.category || document.document_type || document.type || document.name || document.file_name || '')))
-  const landlordDocuments = documentRows.filter((document) => !tenantDocuments.includes(document))
-  const isComplete = (document) => ['approved', 'completed', 'accepted', 'signed'].includes(String(document.status || '').toLowerCase())
-  const complete = documentRows.filter(isComplete).length
-  const awaiting = documentRows.filter((document) => ['requested', 'sent', 'awaiting_upload'].includes(String(document.status || '').toLowerCase())).length
-  const review = documentRows.filter((document) => ['uploaded', 'submitted', 'under_review', 'agent_review'].includes(String(document.status || '').toLowerCase())).length
-  const groups = [
-    { key: 'landlord', label: 'Landlord', title: 'Landlord Documents', icon: ShieldCheck, description: 'Ownership, mandate, and landlord supporting documents.', rows: landlordDocuments },
-    { key: 'tenant', label: 'Tenant', title: 'Tenant Documents', icon: Users, description: 'Applications, screening, and tenancy documents.', rows: tenantDocuments },
-  ]
-  const group = groups.find((item) => item.key === activeGroup)
-  const percentage = documentRows.length ? Math.round(complete / documentRows.length * 100) : null
-  return (
-    <section className="space-y-5">
-      <section className="overflow-hidden rounded-[24px] border border-[#dde4ee] bg-white shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
-        <header className="flex items-start gap-3 border-b border-[#edf1f6] p-5">
-          <div className="rounded-[14px] bg-[#eef5fc] p-3 text-[#1f4f78]"><FileText size={22} aria-hidden="true" /></div>
-          <div><h2 className="text-xl font-semibold text-[#142132]">Rental Documents</h2><p className="mt-1 text-sm text-[#607387]">Documents linked to this rental listing.</p></div>
-        </header>
-        <div className="grid gap-3 p-5 sm:grid-cols-3">
-          <div className="flex items-center gap-3 rounded-[16px] border border-[#dce6f2] p-4">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-[#1f7d44]" style={{ background: percentage === null ? '#edf2f7' : `conic-gradient(#23834b ${percentage}%, #dce6f2 0)` }}><span className="flex h-9 w-9 items-center justify-center rounded-full bg-white">{percentage === null ? '—' : `${percentage}%`}</span></div>
-            <div><p className="text-lg font-semibold text-[#142132]">{complete} / {documentRows.length}</p><p className="text-sm text-[#607387]">complete</p></div>
-          </div>
-          {[{ icon: Send, value: awaiting, label: 'awaiting landlord or tenant', tone: 'bg-[#fff8eb] text-[#ac751f]' }, { icon: Eye, value: review, label: 'ready for review', tone: 'bg-[#eef6ff] text-[#306493]' }].map((metric) => <div key={metric.label} className="flex items-center gap-3 rounded-[16px] border border-[#dce6f2] p-4"><div className={`rounded-[14px] p-3 ${metric.tone}`}><metric.icon size={20} aria-hidden="true" /></div><div><p className="text-lg font-semibold text-[#142132]">{metric.value}</p><p className="text-sm text-[#607387]">{metric.label}</p></div></div>)}
-        </div>
-        <div className="flex border-t border-[#edf1f6] px-5" role="tablist" aria-label="Rental document groups">
-          {groups.map((item) => <button key={item.key} type="button" role="tab" id={`rental-documents-${item.key}-tab`} aria-controls="rental-documents-panel" aria-selected={activeGroup === item.key} onClick={() => setActiveGroup(item.key)} className={`flex items-center gap-2 border-b-2 px-3 py-4 text-sm font-semibold ${activeGroup === item.key ? 'border-[#3179a8] text-[#245377]' : 'border-transparent text-[#6b7d93] hover:text-[#245377]'}`}><span>{item.label}</span><span className="rounded-full bg-[#f0f5fa] px-2 py-1 text-xs text-[#6b7d93]">{item.rows.filter(isComplete).length}/{item.rows.length}</span></button>)}
-        </div>
-      </section>
-      <section id="rental-documents-panel" role="tabpanel" aria-labelledby={`rental-documents-${group.key}-tab`} className="overflow-hidden rounded-[24px] border border-[#dde4ee] bg-white shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
-        <header className="flex flex-wrap items-center justify-between gap-3 p-5">
-          <div className="flex items-start gap-3"><div className="rounded-[14px] border border-[#dce6f2] bg-[#f7fbff] p-3 text-[#1f4f78]"><group.icon size={20} aria-hidden="true" /></div><div><h3 className="text-base font-semibold text-[#142132]">{group.title}</h3><p className="mt-1 text-sm text-[#607387]">{group.description}</p></div></div>
-          <span className="rounded-full border border-[#dce6f2] bg-[#f8fbff] px-3 py-1.5 text-xs font-semibold text-[#607891]">{group.rows.filter(isComplete).length} of {group.rows.length} complete</span>
-        </header>
-        <div className="overflow-x-auto">
-          <table className="w-full table-fixed text-left"><thead className="border-y border-[#edf1f6] bg-[#f6f9fc] text-xs font-semibold uppercase tracking-[0.06em] text-[#8195ac]"><tr><th scope="col" className="w-1/2 px-5 py-3">Document</th><th scope="col" className="w-1/4 px-5 py-3">Source</th><th scope="col" className="w-1/4 px-5 py-3">Status</th></tr></thead>
-            <tbody className="divide-y divide-[#edf1f6]">{group.rows.length ? group.rows.map((document, index) => <tr key={document.id || document.path || index}>
-              <td className="px-5 py-5"><div className="flex items-start gap-3"><div className="rounded-[12px] bg-[#eef5fc] p-2.5 text-[#306493]"><FileText size={18} aria-hidden="true" /></div><div className="min-w-0"><p className="break-words text-sm font-semibold text-[#22374d]">{document.name || document.file_name || document.label || document.document_type || 'Listing document'}</p>{document.file_name ? <p className="mt-1 break-words text-xs text-[#8195ac]">{document.file_name}</p> : null}</div></div></td>
-              <td className="break-words px-5 py-5 text-sm text-[#607387]">{document.source || 'Listing file'}</td>
-              <td className="px-5 py-5"><span className="inline-flex rounded-full border border-[#dbe4ef] bg-[#f8fbff] px-2.5 py-1 text-xs font-semibold text-[#48627f]">{String(document.status || 'On file').replace(/_/g, ' ')}</span></td>
-            </tr>) : <tr><td colSpan={3} className="px-5 py-10 text-center text-sm text-[#6b7d93]">No documents in this group yet.</td></tr>}</tbody>
-          </table>
-        </div>
-      </section>
-    </section>
-  )
-}
 
 function formatProperty24PreviewBlocker(value = '') {
   return String(value || '')
@@ -979,7 +929,7 @@ function RentalListingEditPanel({ form, onChange, onCancel, onSubmit, saving, ca
 }
 
 function RentalTabContent({
-  snapshot, agentPanel, onOpenTab, onNavigate, onAddLead, onScheduleViewing, onRefresh,
+  snapshot, agentPanel, onOpenTab, onNavigate, onAddLead, onScheduleViewing, onRefresh, onRefreshDocuments,
   activeTab,
   detail,
   onPublish,
@@ -1050,7 +1000,7 @@ function RentalTabContent({
     )
   }
   if (activeTab === 'mandate') {
-    return snapshot?.issues.includes('Documents') ? <DetailPanel title="Documents"><p>Documents could not be loaded. Refresh to retry.</p></DetailPanel> : <ListingDocumentsPanel documents={snapshot?.documents || []} />
+    return <RentalListingDocumentsPanel snapshot={snapshot} onRefresh={onRefreshDocuments} />
   }
   if (activeTab === 'inspection') {
     return (
@@ -1203,6 +1153,7 @@ function ScopedRentalListingDetailPage() {
   }, [])
   const [listing, setListing] = useState(null)
   const [overviewSnapshot, setOverviewSnapshot] = useState(null)
+  const overviewRequestRef = useRef(0)
   const [tenantLeadOpen, setTenantLeadOpen] = useState(false)
   const [tenantLeadForm, setTenantLeadForm] = useState(() => ({ ...INITIAL_RENTAL_LEAD_FORM, role: 'tenant' }))
   const [tenantLeadSaving, setTenantLeadSaving] = useState(false)
@@ -1255,6 +1206,14 @@ function ScopedRentalListingDetailPage() {
   const onWebsiteStatus = useCallback(value => setWebsiteStatus(value), [])
   const onKingdomStatus = useCallback(value => setKingdomStatus(value), [])
   useEffect(() => { setWebsiteStatus(null); setKingdomStatus(null); setManagePortal('') }, [organisationId, listingId])
+  const refreshDocuments = useCallback(async () => {
+    const request = ++overviewRequestRef.current
+    const result = await loadRentalListingOverview(listing, rentalScope, { ...rentalScope, includeAllOrganisationLeads: rentalScope.scopeLevel === 'organisation' })
+    if (!mountedRef.current || request !== overviewRequestRef.current) throw new Error('The listing changed. Refresh the matrix before continuing.')
+    setOverviewSnapshot(result)
+    return result
+  }, [listing, rentalScope])
+
   useEffect(() => {
     let cancelled = false
     if (!listing?.id) return () => { cancelled = true }
@@ -1339,12 +1298,13 @@ function ScopedRentalListingDetailPage() {
 
   useEffect(() => {
     let cancelled = false
+    const request = ++overviewRequestRef.current
     setOverviewSnapshot(null)
     if (!listing || !organisationId) return () => { cancelled = true }
     void loadRentalListingOverview(listing, rentalScope, {
       ...rentalScope, includeAllOrganisationLeads: rentalScope.scopeLevel === 'organisation',
-    }).then((snapshot) => { if (!cancelled) setOverviewSnapshot(snapshot) }).catch(() => {
-      if (!cancelled) setOverviewSnapshot({ issues: ['Leads', 'Applications', 'Viewings & activity', 'Documents', 'Document requirements', 'Tenant', 'Commission'], leads: [], applications: [], upcoming: [], documents: [], activity: [], mandates: [], newLeadCount: 0 })
+    }).then((snapshot) => { if (!cancelled && request === overviewRequestRef.current) setOverviewSnapshot(snapshot) }).catch(() => {
+      if (!cancelled && request === overviewRequestRef.current) setOverviewSnapshot({ issues: ['Leads', 'Applications', 'Viewings & activity', 'Documents', 'Document requirements', 'Tenant', 'Commission'], leads: [], applications: [], upcoming: [], documents: [], activity: [], mandates: [], documentMatrix: { landlords: [], tenants: [], issues: ['Rental document requirements could not be loaded. Refresh to retry.'] }, newLeadCount: 0 })
     })
     return () => { cancelled = true }
   }, [listing, organisationId, rentalScope])
@@ -1846,6 +1806,7 @@ function ScopedRentalListingDetailPage() {
           onAddLead={openTenantLeadDialog}
           onScheduleViewing={() => navigate(`/agent/rentals/pipeline/viewings?listingId=${encodeURIComponent(listingId)}`)}
           onRefresh={loadListing}
+          onRefreshDocuments={refreshDocuments}
           activeTab={activeTab}
           detail={detail}
           onPublish={handleProperty24Publish}

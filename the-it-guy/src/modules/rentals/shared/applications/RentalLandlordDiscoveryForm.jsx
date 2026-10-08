@@ -2,6 +2,8 @@ import {
   LANDLORD_PROFILE_FIELDS,
   LANDLORD_PERSON_FIELDS,
   LANDLORD_PROPERTY_FIELDS,
+  LANDLORD_CONDITIONAL_OPTIONS,
+  rentalLandlordPropertyFieldVisible,
 } from '../../../../services/rentals/rentalLandlordOnboardingModel.js'
 const title = (value) =>
   value
@@ -15,13 +17,19 @@ export default function RentalLandlordDiscoveryForm({
   const field = (row, key, update, prefix = '') => (
     <label key={key} className="grid gap-1 text-sm">
       <span>{title(key)}</span>
-      <input
+      {LANDLORD_CONDITIONAL_OPTIONS[key] ? <select
         aria-label={`${prefix}${title(key)}`}
         value={row[key] ?? ''}
         disabled={disabled}
         onChange={(event) => update(key, event.target.value)}
         className="min-w-0 rounded-lg border p-2"
-      />
+      ><option value="">Choose {title(key).toLowerCase()}</option>{LANDLORD_CONDITIONAL_OPTIONS[key].map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select> : <input
+        aria-label={`${prefix}${title(key)}`}
+        value={row[key] ?? ''}
+        disabled={disabled}
+        onChange={(event) => update(key, event.target.value)}
+        className="min-w-0 rounded-lg border p-2"
+      />}
     </label>
   )
   const setProfile = (key, value) =>
@@ -142,7 +150,7 @@ export default function RentalLandlordDiscoveryForm({
           </p>
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
             {LANDLORD_PROPERTY_FIELDS.filter(
-              (key) => !['id', 'furnished', 'petsAllowed'].includes(key),
+              (key) => !['id', 'furnished', 'petsAllowed'].includes(key) && rentalLandlordPropertyFieldVisible(key, property),
             ).map((key) =>
               field(
                 property,

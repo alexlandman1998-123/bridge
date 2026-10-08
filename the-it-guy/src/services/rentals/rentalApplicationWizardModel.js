@@ -30,7 +30,7 @@ export function rentalApplicationReviewErrors(data) {
 export function reuseRentalTenantIdentity(profile, current) {
   return mergeRentalApplicationData(current, extractReusableRentalTenantProfile(profile))
 }
-export function rentalApplicationDocumentSlots(data = {}) {
+export function rentalApplicationDocumentSlots(data = {}, policy = { version: 1 }) {
   const slot = (subjectId, purpose, title, required = true) => ({ key: `${subjectId}:${purpose}`, subjectId, purpose, title, required, type: ['identity', 'proof_of_income', 'bank_statement', 'reference'].includes(purpose) ? purpose : 'other' })
   const slots = [slot('primary', 'identity', 'Primary applicant identity'), slot('primary', 'bank_statement', 'Bank statements', false), slot('primary', 'reference', 'Reference evidence', false)]
   if (isRentalEntityApplicant(data) || rentalPrimaryNeedsIncome(data)) slots.push(slot(isRentalEntityApplicant(data) ? 'entity' : 'primary', 'proof_of_income', isRentalEntityApplicant(data) ? 'Entity income evidence' : 'Primary applicant income evidence'))
@@ -41,6 +41,20 @@ export function rentalApplicationDocumentSlots(data = {}) {
     slots.push(slot(person.id, 'identity', `${name}: identity`), slot(person.id, 'signed_consent', `${name}: signed consent evidence`))
     if (person.role === 'guarantor' || person.contributesToAffordability) slots.push(slot(person.id, 'proof_of_income', `${name}: income evidence`))
   }
+  if (policy.version === 4) {
+    const required = policy.extendedRequired === true
+    slots.push(slot('primary', 'address', 'Primary applicant: proof of address', required))
+    for (const person of data.people || []) {
+      if (!person.id || ['primary', 'entity'].includes(person.id)) continue
+      const name = [person.firstName, person.lastName].filter(Boolean).join(' ') || 'Additional person'
+      slots.push(slot(person.id, 'address', `${name}: proof of address`, required))
+      if (['authorised_signatory', 'trustee'].includes(person.role)) slots.push(slot(person.id, 'authority', `${name}: authority to act`))
+    }
+    if (isRentalEntityApplicant(data)) {
+      slots.push(slot('entity', 'address', 'Entity: proof of address', required), slot('entity', 'beneficial_ownership', 'Entity: ownership and control evidence', required))
+      if (data.entity.type === 'trust') slots.push(slot('entity', 'trust_authority', 'Entity: Letters of Authority'))
+    }
+  }
   return slots
 }
 // PostgreSQL timestamps can include microseconds. Preserve that precision so
@@ -50,8 +64,8 @@ function compareEvidenceTime(a, b) {
   const fraction = (value) => Number((String(value || '').match(/\.(\d+)/)?.[1] || '').padEnd(6, '0').slice(3, 6))
   return milliseconds || fraction(a) - fraction(b)
 }
-export function rentalApplicationSavedDocumentSlots(data, requirements) {
-  const slots = rentalApplicationDocumentSlots(data)
+export function rentalApplicationSavedDocumentSlots(data, requirements, policy) {
+  const slots = rentalApplicationDocumentSlots(data, policy)
   if (requirements === undefined) return slots // Older, non-checklist callers.
   if (!requirements?.length) return slots.map((slot) => ({ ...slot, saved: true, state: 'missing' }))
   return (requirements || []).filter((item) => item.active && item.mode === 'active' && item.scopeKey === 'application').map((requirement) => {

@@ -5,7 +5,7 @@ import RentalListingOverview from '../RentalListingOverview'
 import RentalListingRelatedPanels from '../RentalListingRelatedPanels'
 import { buildRentalListingOverview } from '../../../services/rentals/rentalListingOverviewModel'
 afterEach(cleanup)
-const detail = { listing: {}, row: { monthlyRent: 18500, landlordName: 'Owner Example' }, channels: [{ key: 'property24', label: 'Property24', status: 'Not Published' }], mandateStatusLabel: 'Signed', marketingApprovalStatusLabel: 'Approved' }
+const detail = { listing: {}, row: { monthlyRent: 18500, landlordName: 'Owner Example' }, channels: [{ key: 'property24', label: 'Property24', status: 'Not Published' }], mediaProgress: [], mandateStatusLabel: 'Signed', marketingApprovalStatusLabel: 'Approved' }
 it('opens the exact lead, tenancy, documents and pricing actions from loaded records', () => {
   const navigate = vi.fn(), openTab = vi.fn(), edit = vi.fn(), addLead = vi.fn(), schedule = vi.fn()
   const snapshot = buildRentalListingOverview({ listing: { id: 'listing-1' }, leads: [{ id: 'lead-1', name: 'Amy Tenant', role: 'tenant', stageLabel: 'Qualified', relationships: { listingId: 'listing-1' } }], tenancies: [{ id: 'tenancy-1', status: 'active', tenant: { identity: { firstName: 'Amy', lastName: 'Tenant' } } }] })

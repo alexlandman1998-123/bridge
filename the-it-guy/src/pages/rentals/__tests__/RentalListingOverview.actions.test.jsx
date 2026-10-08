@@ -51,6 +51,7 @@ it('marks a lead lost with its selected reason and moves it into Closed Leads', 
   mocks.leads.mockResolvedValue([lead])
   mocks.outcome.mockResolvedValue({ outcome: { status: 'lost', reason: 'budget' } })
   render(<MemoryRouter><RentalLeadsPage /></MemoryRouter>)
+  fireEvent.click(screen.getByRole('button', { name: /Landlord Leads/ }))
   const triggers = await screen.findAllByRole('button', { name: 'Actions for Alex Landlord' })
   fireEvent.click(triggers[0])
   fireEvent.click(screen.getByRole('button', { name: 'Mark as lost' }))
