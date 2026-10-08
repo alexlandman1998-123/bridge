@@ -2,6 +2,44 @@
 
 High-end React + Vite + Supabase transaction workspace for Samlin Construction.
 
+## Mobile push notification test
+
+Open the mobile bell and select **Push notification settings** to reach the
+**Inbox**. In the **Inbox** or **Documents** screen, select **Enable Notifications**,
+allow device notifications, then select **Send me a test**. On iPhone, open Arch9
+from its Home Screen icon on iOS 16.4 or later. Tests target only the requesting
+account's registered device, use fixed test wording and open the mobile Inbox.
+Each account can send one test every 30 seconds. Provider acceptance is reported
+separately from seeing the notification on the phone. **Disable notifications**
+removes this device's server registration and browser subscription. Switching
+accounts or rotating the VAPID key requires re-enabling. This first version does
+not connect transaction, lead or appointment events to push delivery.
+
+The primary app owns `/api/mobile/push` and the push-only `/push-sw.js` worker.
+The worker does not cache application requests. Device encryption material is
+server-only; Supabase verifies the signed-in account for every API action.
+
+Before releasing, apply only the approved forward migration
+`20261008185046_mobile_web_push_subscriptions.sql` using the database release
+runbook, then configure a single stable key pair in server runtime secrets:
+`WEB_PUSH_VAPID_PUBLIC_KEY`, `WEB_PUSH_VAPID_PRIVATE_KEY`, and
+`WEB_PUSH_VAPID_SUBJECT` (a real `mailto:` contact). Generate the pair once with
+`web-push.generateVAPIDKeys()` and provision directly into runtime secret storage;
+never print or commit its private key or put it in a `VITE_` variable. The API
+also uses the existing server `SUPABASE_URL`/`VITE_SUPABASE_URL` and
+`SUPABASE_SERVICE_ROLE_KEY`. Missing setup displays unavailable rather than a
+successful opt-in. Keep the previous app release for rollback and preserve the
+subscription tables and their send limits; no historical data is updated.
+
+Focused check: `npm run test:mobile-web-push` executes the actual migration in an
+isolated PostgreSQL fixture, verifies ownership and grants, generates encrypted
+VAPID requests locally, and checks permission/registration/error states and
+notification taps. It makes no hosted writes and sends no real notifications.
+Local Vite browsing refuses registration/send mutations against hosted data.
+After an approved deployment, confirm the worker is served as JavaScript rather
+than the SPA, then perform an opted-in iPhone lock-screen test and tap it to open
+the Inbox. Local tests do not establish iPhone delivery.
+
 ## Development creation
 
 Add Development uses Details → Units → Sales setup → Review. Details are grouped

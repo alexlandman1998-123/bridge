@@ -1910,7 +1910,8 @@
     "test:document-upload-release-readiness": "node scripts/document-upload-release-readiness.test.mjs",
     "test:arch9-reference-settings-access-lockdown": "node scripts/arch9-reference-settings-access-lockdown.test.mjs",
     "test:online-signing-retirement": "node --test src/core/documents/__tests__/onlineSigningPolicy.test.js",
-    "check:seller-document-release": "node --test scripts/seller-document-release-check.test.mjs && node scripts/seller-document-release-check.mjs"
+    "check:seller-document-release": "node --test scripts/seller-document-release-check.test.mjs && node scripts/seller-document-release-check.mjs",
+    "test:mobile-web-push": "node --test server/services/mobileWebPushApi.test.js server/services/mobilePushWorker.test.js && vitest run src/services/__tests__/mobileWebPushService.test.js src/components/mobile-shell/__tests__/MobilePushOptIn.test.jsx src/components/mobile-shell/__tests__/MobileNotificationBell.test.jsx"
   },
   "dependencies": {
     "@radix-ui/react-accordion": "^1.2.12",
@@ -1936,6 +1937,7 @@
     "react-router-dom": "^7.13.1",
     "sharp": "^0.35.4",
     "tailwind-merge": "^3.5.0",
+    "web-push": "3.6.7",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {

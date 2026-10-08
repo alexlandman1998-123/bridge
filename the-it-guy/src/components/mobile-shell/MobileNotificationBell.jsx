@@ -87,6 +87,7 @@ export default function MobileNotificationBell() {
       <div className="mobile-notification-content" aria-busy={!ready && Boolean(userId)}>
         {!userId ? <p className="mobile-notification-state">Select your workspace to view notifications.</p> : !ready ? <p className="mobile-notification-state" role="status">Loading notifications…</p> : result.error ? <div className="mobile-notification-state" role="alert"><p>{result.error}</p><button type="button" onClick={refresh}>Try again</button></div> : notifications.length ? <ul>{notifications.map((item) => <li key={item.id}><Link to={notificationDestination(item, developer)} onClick={dismiss}><span className="mobile-notification-dot" aria-hidden="true" /><span className="mobile-notification-copy"><strong>{item.title || 'New lead received'}</strong>{item.message && <span>{item.message}</span>}{formatTime(item.createdAt) && <time dateTime={item.createdAt}>{formatTime(item.createdAt)} · SAST</time>}</span><ChevronRight size={16} aria-hidden="true" /></Link></li>)}</ul> : <div className="mobile-notification-empty"><span><Bell size={22} strokeWidth={1.5} aria-hidden="true" /></span><h3>You’re all caught up</h3><p>No unread lead notifications.</p></div>}
       </div>
+      <Link to="/mobile/inbox" onClick={dismiss} className="flex min-h-11 items-center justify-between border-t border-[#e4ebf2] px-[18px] py-3 text-sm font-semibold text-[#166b50]">Push notification settings<ChevronRight size={17} aria-hidden="true" /></Link>
     </section>}
   </>
 }

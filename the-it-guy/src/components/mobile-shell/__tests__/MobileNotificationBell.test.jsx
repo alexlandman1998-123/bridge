@@ -20,6 +20,15 @@ beforeEach(() => {
 })
 afterEach(cleanup)
 
+it('opens push notification settings from the bell and closes the dropdown', async () => {
+  render(page())
+  fireEvent.click(screen.getByRole('button', { name: 'Notifications', exact: true }))
+  await act(async () => {})
+  fireEvent.click(screen.getByRole('link', { name: 'Push notification settings' }))
+  expect(screen.getByLabelText('Current route').textContent).toBe('/mobile/inbox')
+  expect(screen.queryByRole('dialog')).toBeNull()
+})
+
 it('opens in place, shows actual unread alerts, and dismisses with Escape and outside tap', async () => {
   render(page())
   await act(async () => {})

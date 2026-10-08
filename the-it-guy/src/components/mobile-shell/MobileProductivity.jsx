@@ -1,5 +1,4 @@
 import {
-  Bell,
   Camera,
   Check,
   ClipboardCheck,
@@ -28,13 +27,11 @@ import { trackMobileMetric } from '../../services/observability/monitoring'
 import {
   createMobileUploadRecord,
   getMobileCommandBrief,
-  getNotificationPreference,
   getOfflineDrafts,
   getMobileFieldModeSnapshot,
   getMobileHandoffReview,
   getMobileLiveRoomBrief,
   getUploadOptionsForModule,
-  setNotificationPreference,
   syncOfflineDrafts,
 } from '../../services/mobileProductivityService'
 import { MobileCard, MobileEmptyState } from './MobileShellStates'
@@ -787,38 +784,4 @@ export function MobileOfflineDraftPanel() {
   )
 }
 
-export function MobilePushOptIn({ route = '/mobile/notifications' }) {
-  const [enabled, setEnabled] = useState(() => getNotificationPreference())
-  const [message, setMessage] = useState('')
-
-  async function handleEnable() {
-    let allowed = true
-    if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
-      allowed = (await Notification.requestPermission()) === 'granted'
-    } else if (typeof Notification !== 'undefined') {
-      allowed = Notification.permission === 'granted'
-    }
-    setEnabled(allowed)
-    setNotificationPreference(allowed)
-    setMessage(allowed ? 'Push notifications enabled.' : 'Notification permission was not granted.')
-    void trackMobileMetric(allowed ? 'push_notifications_enabled' : 'push_notifications_declined', { route })
-  }
-
-  return (
-    <MobileCard surface="dark">
-      <div className="flex items-start gap-3">
-        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/12 text-white">
-          <Bell className="h-5 w-5" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <h2 className="text-[17px] font-semibold text-white">Push Notifications</h2>
-          <p className="mt-1 text-sm leading-6 text-[#dce8f2]">Deep-link alerts open the relevant mobile workspace directly.</p>
-        </div>
-      </div>
-      <button type="button" className="mt-4 min-h-11 rounded-2xl bg-white px-4 text-sm font-semibold text-[#10243a]" onClick={handleEnable}>
-        {enabled ? 'Notifications Enabled' : 'Enable Notifications'}
-      </button>
-      {message ? <p className="mt-3 text-sm text-[#9fe0bd]">{message}</p> : null}
-    </MobileCard>
-  )
-}
+export { MobilePushOptIn } from './MobilePushOptIn.jsx'

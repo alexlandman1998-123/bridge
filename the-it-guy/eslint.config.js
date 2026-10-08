@@ -32,6 +32,10 @@ export default defineConfig([
     },
   },
   {
+    files: ['public/push-sw.js'],
+    languageOptions: { globals: globals.serviceworker },
+  },
+  {
     files: [
       'api/**/*.js',
       'server/**/*.js',

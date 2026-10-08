@@ -20,6 +20,7 @@ import { createPublicAgencyIntakeResponse } from './server/services/publicAgency
 import { createPublicListingsResponse } from './server/services/publicListingsApi.js'
 import { createProperty24ApiResponse } from './server/property24/api.js'
 import { createPrivatePropertyApiResponse } from './server/private-property/api.js'
+import { createMobileWebPushResponse } from './server/services/mobileWebPushApi.js'
 
 function documentTitleFallbackPlugin() {
   const fallbackDocumentTitle = 'Arch9 | Platform'
@@ -250,6 +251,14 @@ function missionControlApiPlugin() {
           headers: request.headers,
         })
         writeNodeJsonResponse(response, payload)
+      })
+      server.middlewares.use('/api/mobile/push', async (request, response) => {
+        // Local browsing must not register devices or send notifications against hosted data.
+        if (request.method !== 'GET') return writeNodeJsonResponse(response, {
+          status: 503, body: { message: 'Use the deployed Arch9 app to enable notifications and send a test.' },
+        })
+        const env = { ...loadEnv(server.config.mode, server.config.root, ''), ...process.env }
+        writeNodeJsonResponse(response, await createMobileWebPushResponse({ method: request.method, headers: request.headers, env }))
       })
       server.middlewares.use('/api/public/listings', async (request, response) => {
         const payload = await createPublicListingsResponse({
