@@ -1,0 +1,655 @@
+{
+  "status": "RELEASED_AND_VERIFIED",
+  "verifiedAt": "2026-10-08T15:18:53.319Z",
+  "approval": "User requested all outstanding migrations and updates from 8 October 2026 to be pushed to production.",
+  "sourceCommit": "54f4f76a57e83761f841b5bf5253433ef1299e5d",
+  "sourceBranch": "codex/production-updates-20261008",
+  "sourcePushed": true,
+  "baselineCommit": "684415029",
+  "products": [
+    "Primary Arch9 transaction workspace",
+    "Home Seekers standalone website",
+    "Public multi-tenant website runtime",
+    "Shared Supabase migrations and Edge Functions"
+  ],
+  "releaseScope": "Today\u2019s source updates consolidated over the latest deployed October 8 baseline. Unrelated original working-tree changes preserved.",
+  "productionProject": "isdowlnollckzvltkasn",
+  "recovery": "RECOVERY_LOCKED",
+  "database": {
+    "method": "Reviewed include-all push, skip-vault, without seeds or roles",
+    "newlyAppliedMigrationCount": 6,
+    "migrations": [
+      {
+        "file": "20261008113615_listing_overview_channel_statistics.sql",
+        "sha256": "c9746e2af95ad51eaf559661fdfc79dcfd23a9387fb87b70332396d1d97eff14"
+      },
+      {
+        "file": "20261008114647_recruitment_joining_record.sql",
+        "sha256": "73c6c776f79b8be5bda24c272a91e91740d32e52c6871e1ee5d6890a2b10a9c0"
+      },
+      {
+        "file": "20261008125501_recruitment_activation_handover.sql",
+        "sha256": "a23f3972f19e403a3174708174609d78bff31f77e267559987b52c9c397b45bb"
+      },
+      {
+        "file": "20261008131645_recruitment_entry_avenues.sql",
+        "sha256": "7f2418f733de2a049db80eb731d7f8afb3d14a79e0b3c097b2d8558f0e2ba17f"
+      },
+      {
+        "file": "20261008135223_recruitment_invitation_delivery.sql",
+        "sha256": "83987146c05e48afa83a1ed3e0bb808b310e8f1bea84a15418f449de1ed5e1de"
+      },
+      {
+        "file": "20261008140000_agent_card_rental_enquiries.sql",
+        "sha256": "d1da81b112c140d678405235686936798b704ca0ae503e09a8f34156c7820298"
+      }
+    ],
+    "alreadyAppliedToday": "20261008120849_rental_landlord_conditional_document_requirements.sql",
+    "todayRecordedSqlComparisons": [
+      {
+        "version": "20261008113615",
+        "localStatementCount": 29,
+        "remoteStatementCount": 29,
+        "status": "matching",
+        "unmatchedLocalStatementIndexes": [],
+        "unmatchedRemoteStatementIndexes": [],
+        "orderedStatementsMatch": true
+      },
+      {
+        "version": "20261008114647",
+        "localStatementCount": 20,
+        "remoteStatementCount": 20,
+        "status": "matching",
+        "unmatchedLocalStatementIndexes": [],
+        "unmatchedRemoteStatementIndexes": [],
+        "orderedStatementsMatch": true
+      },
+      {
+        "version": "20261008120849",
+        "localStatementCount": 8,
+        "remoteStatementCount": 8,
+        "status": "matching",
+        "unmatchedLocalStatementIndexes": [],
+        "unmatchedRemoteStatementIndexes": [],
+        "orderedStatementsMatch": true
+      },
+      {
+        "version": "20261008125501",
+        "localStatementCount": 14,
+        "remoteStatementCount": 14,
+        "status": "matching",
+        "unmatchedLocalStatementIndexes": [],
+        "unmatchedRemoteStatementIndexes": [],
+        "orderedStatementsMatch": true
+      },
+      {
+        "version": "20261008131645",
+        "localStatementCount": 27,
+        "remoteStatementCount": 27,
+        "status": "matching",
+        "unmatchedLocalStatementIndexes": [],
+        "unmatchedRemoteStatementIndexes": [],
+        "orderedStatementsMatch": true
+      },
+      {
+        "version": "20261008135223",
+        "localStatementCount": 20,
+        "remoteStatementCount": 20,
+        "status": "matching",
+        "unmatchedLocalStatementIndexes": [],
+        "unmatchedRemoteStatementIndexes": [],
+        "orderedStatementsMatch": true
+      },
+      {
+        "version": "20261008140000",
+        "localStatementCount": 5,
+        "remoteStatementCount": 5,
+        "status": "matching",
+        "unmatchedLocalStatementIndexes": [],
+        "unmatchedRemoteStatementIndexes": [],
+        "orderedStatementsMatch": true
+      }
+    ],
+    "remainingMigrations": 0,
+    "lastDryRun": "upToDate=true; migrations=[], seeds=[], roles=[]",
+    "rollbackOnlyBatchRehearsal": "passed; no persistent changes",
+    "objects": {
+      "functions": [
+        {
+          "anonExecute": false,
+          "args": "",
+          "authenticatedExecute": false,
+          "config": [
+            "search_path=\"\""
+          ],
+          "name": "verify_private_property_statistics_owner",
+          "schema": "listing_statistics_private",
+          "securityDefiner": false
+        },
+        {
+          "anonExecute": false,
+          "args": "p_rows jsonb, p_metrics text[], p_start date, p_end date, p_connected boolean",
+          "authenticatedExecute": false,
+          "config": [
+            "search_path=\"\""
+          ],
+          "name": "channel_summary",
+          "schema": "listing_statistics_private",
+          "securityDefiner": false
+        },
+        {
+          "anonExecute": false,
+          "args": "",
+          "authenticatedExecute": false,
+          "config": [
+            "search_path=\"\""
+          ],
+          "name": "recruitment_joining_guard",
+          "schema": "public",
+          "securityDefiner": false
+        },
+        {
+          "anonExecute": false,
+          "args": "",
+          "authenticatedExecute": false,
+          "config": [
+            "search_path=\"\""
+          ],
+          "name": "recruitment_joining_audit",
+          "schema": "public",
+          "securityDefiner": false
+        },
+        {
+          "anonExecute": false,
+          "args": "p_organisation_id uuid, p_email text, p_exclude_lead_id uuid",
+          "authenticatedExecute": true,
+          "config": [
+            "search_path=\"\""
+          ],
+          "name": "recruitment_find_joining_matches",
+          "schema": "public",
+          "securityDefiner": false
+        },
+        {
+          "anonExecute": false,
+          "args": "p_organisation_id uuid, p_lead jsonb",
+          "authenticatedExecute": true,
+          "config": [
+            "search_path=\"\""
+          ],
+          "name": "recruitment_create_joining_lead",
+          "schema": "public",
+          "securityDefiner": false
+        },
+        {
+          "anonExecute": false,
+          "args": "p_organisation_id uuid",
+          "authenticatedExecute": true,
+          "config": [
+            "search_path=\"\""
+          ],
+          "name": "recruitment_joining_options",
+          "schema": "public",
+          "securityDefiner": false
+        },
+        {
+          "anonExecute": false,
+          "args": "p_organisation_id uuid, p_lead_id uuid",
+          "authenticatedExecute": true,
+          "config": [
+            "search_path=\"\""
+          ],
+          "name": "recruitment_joining_connections",
+          "schema": "public",
+          "securityDefiner": false
+        },
+        {
+          "anonExecute": false,
+          "args": "p_organisation_id uuid, p_plan jsonb",
+          "authenticatedExecute": true,
+          "config": [
+            "search_path=\"\""
+          ],
+          "name": "recruitment_activation_plan",
+          "schema": "public",
+          "securityDefiner": false
+        },
+        {
+          "anonExecute": false,
+          "args": "p_organisation_id uuid, p_lead_id uuid, p_version integer, p_notes text, p_confirmed boolean",
+          "authenticatedExecute": true,
+          "config": [
+            "search_path=\"\""
+          ],
+          "name": "recruitment_activate_joining_agent",
+          "schema": "public",
+          "securityDefiner": false
+        },
+        {
+          "anonExecute": false,
+          "args": "p_organisation_id uuid, p_membership_id uuid, p_plan jsonb",
+          "authenticatedExecute": true,
+          "config": [
+            "search_path=\"\""
+          ],
+          "name": "recruitment_verify_joining_membership",
+          "schema": "public",
+          "securityDefiner": false
+        },
+        {
+          "anonExecute": false,
+          "args": "",
+          "authenticatedExecute": false,
+          "config": [
+            "search_path=\"\""
+          ],
+          "name": "recruitment_apply_accepted_joining",
+          "schema": "public",
+          "securityDefiner": true
+        },
+        {
+          "anonExecute": false,
+          "args": "p_org uuid, p_branch uuid",
+          "authenticatedExecute": false,
+          "config": [
+            "search_path=\"\""
+          ],
+          "name": "assert_branch",
+          "schema": "recruitment_private",
+          "securityDefiner": false
+        },
+        {
+          "anonExecute": false,
+          "args": "p_org uuid, p_branch uuid, p_contact jsonb",
+          "authenticatedExecute": true,
+          "config": [
+            "search_path=\"\""
+          ],
+          "name": "capture_branch",
+          "schema": "recruitment_private",
+          "securityDefiner": true
+        },
+        {
+          "anonExecute": false,
+          "args": "p_org uuid, p_branch uuid, p_offset integer, p_commercial boolean",
+          "authenticatedExecute": true,
+          "config": [
+            "search_path=\"\""
+          ],
+          "name": "branch_progress",
+          "schema": "recruitment_private",
+          "securityDefiner": true
+        },
+        {
+          "anonExecute": false,
+          "args": "p_organisation_id uuid, p_branch_id uuid, p_contact jsonb",
+          "authenticatedExecute": true,
+          "config": [
+            "search_path=\"\""
+          ],
+          "name": "recruitment_capture_branch_joining",
+          "schema": "public",
+          "securityDefiner": false
+        },
+        {
+          "anonExecute": false,
+          "args": "p_organisation_id uuid, p_branch_id uuid, p_offset integer, p_commercial boolean",
+          "authenticatedExecute": true,
+          "config": [
+            "search_path=\"\""
+          ],
+          "name": "recruitment_branch_joining_progress",
+          "schema": "public",
+          "securityDefiner": false
+        },
+        {
+          "anonExecute": false,
+          "args": "",
+          "authenticatedExecute": false,
+          "config": [
+            "search_path=\"\""
+          ],
+          "name": "recruitment_activation_guard",
+          "schema": "public",
+          "securityDefiner": false
+        },
+        {
+          "anonExecute": false,
+          "args": "p_organisation_id uuid, p_contact jsonb",
+          "authenticatedExecute": true,
+          "config": [
+            "search_path=\"\""
+          ],
+          "name": "recruitment_capture_setup_joining",
+          "schema": "public",
+          "securityDefiner": false
+        },
+        {
+          "anonExecute": false,
+          "args": "p_organisation_id uuid",
+          "authenticatedExecute": true,
+          "config": [
+            "search_path=\"\""
+          ],
+          "name": "recruitment_assert_joining_manager",
+          "schema": "public",
+          "securityDefiner": false
+        },
+        {
+          "anonExecute": false,
+          "args": "p_actor uuid, p_organisation_id uuid, p_lead_id uuid, p_kind text, p_reference_id uuid, p_request_id uuid, p_token_hash text, p_message jsonb, p_allow_duplicate boolean",
+          "authenticatedExecute": false,
+          "config": [
+            "search_path=\"\""
+          ],
+          "name": "recruitment_begin_invitation_email",
+          "schema": "public",
+          "securityDefiner": true
+        },
+        {
+          "anonExecute": false,
+          "args": "p_request_id uuid, p_lease_id uuid, p_status text, p_provider_id text, p_error_code text",
+          "authenticatedExecute": false,
+          "config": [
+            "search_path=\"\""
+          ],
+          "name": "recruitment_finish_invitation_email",
+          "schema": "public",
+          "securityDefiner": true
+        },
+        {
+          "anonExecute": false,
+          "args": "p_organisation_id uuid, p_lead_id uuid, p_kind text, p_reference_id uuid",
+          "authenticatedExecute": true,
+          "config": [
+            "search_path=\"\""
+          ],
+          "name": "recruitment_invitation_status",
+          "schema": "public",
+          "securityDefiner": true
+        },
+        {
+          "anonExecute": false,
+          "args": "p_organisation_id uuid, p_branch_id uuid, p_offset integer, p_commercial boolean, p_limited boolean",
+          "authenticatedExecute": true,
+          "config": [
+            "search_path=\"\""
+          ],
+          "name": "recruitment_joining_progress",
+          "schema": "public",
+          "securityDefiner": true
+        },
+        {
+          "anonExecute": false,
+          "args": "p_organisation_id uuid, p_listing_id uuid, p_days integer",
+          "authenticatedExecute": true,
+          "config": [
+            "search_path=\"\""
+          ],
+          "name": "listing_overview_performance",
+          "schema": "public",
+          "securityDefiner": true
+        },
+        {
+          "anonExecute": false,
+          "args": "p_organisation_id uuid, p_lead_id uuid, p_version integer, p_notes text, p_confirmed boolean",
+          "authenticatedExecute": true,
+          "config": [
+            "search_path=\"\""
+          ],
+          "name": "recruitment_activate_agent",
+          "schema": "public",
+          "securityDefiner": false
+        }
+      ],
+      "tables": [
+        {
+          "name": "private_property_statistics_attempts",
+          "rls": true,
+          "schema": "public"
+        },
+        {
+          "name": "private_property_statistics_access",
+          "rls": true,
+          "schema": "public"
+        },
+        {
+          "name": "private_property_listing_statistics_daily",
+          "rls": true,
+          "schema": "public"
+        },
+        {
+          "name": "private_property_statistics_sync_runs",
+          "rls": true,
+          "schema": "public"
+        },
+        {
+          "name": "recruitment_invitation_deliveries",
+          "rls": true,
+          "schema": "public"
+        }
+      ]
+    }
+  },
+  "deployments": [
+    {
+      "project": "bridge",
+      "deploymentId": "dpl_7TKhSX9qQFFrpVLBUDtuRYU1u7jR",
+      "url": "https://bridge-58n1l3i4x-alexs-projects-f5496a21.vercel.app",
+      "liveUrl": "https://app.arch9.co.za",
+      "state": "READY/PROMOTED",
+      "rollbackDeploymentId": "dpl_8YttRkA1JVctbyScZNjapuQSrKM6"
+    },
+    {
+      "project": "arch9-websites-production",
+      "deploymentId": "dpl_7iWauokRUCdcNM2TdNtLX9dBqfRu",
+      "url": "https://arch9-websites-production-9i5guu9eo-alexs-projects-f5496a21.vercel.app",
+      "liveUrl": "https://arch9-websites-production.vercel.app",
+      "state": "READY/PROMOTED",
+      "rollbackDeploymentId": "dpl_5befw9DnhUHUNn3jnQHa3zkRFQJS"
+    },
+    {
+      "project": "home-seekers-website",
+      "deploymentId": "dpl_6xz8QhSpSpVVMwfBMwnmPgP9sG8u",
+      "url": "https://home-seekers-website-a8on6i0sy-alexs-projects-f5496a21.vercel.app",
+      "liveUrl": "https://home-seekers-website-alpha.vercel.app",
+      "state": "READY/PROMOTED",
+      "rollbackDeploymentId": "dpl_A6xEcBbfRsanh6XzTNDSvtQBQoun"
+    }
+  ],
+  "edgeFunctions": [
+    {
+      "name": "send-email",
+      "version": 164,
+      "status": "ACTIVE",
+      "verifyJwt": true
+    },
+    {
+      "name": "website-listing-publication",
+      "version": 19,
+      "status": "ACTIVE",
+      "verifyJwt": true
+    }
+  ],
+  "checks": {
+    "supabaseGuard": "passed; zero duplicate local timestamps",
+    "productionRecovery": "passed",
+    "appBaseline": "all nine established checks passed",
+    "appLint": "passed: zero errors, 563 warnings",
+    "appBuild": "passed locally and on Vercel",
+    "appBundleBudget": "passed",
+    "deploymentScriptAudit": "passed",
+    "agentSchemaContract": "passed",
+    "focusedVitest": {
+      "files": 50,
+      "tests": 471,
+      "result": "passed"
+    },
+    "focusedNode": {
+      "tests": 43,
+      "result": "passed"
+    },
+    "serverVitest": {
+      "tests": 26,
+      "result": "passed"
+    },
+    "serverNode": {
+      "tests": 7,
+      "result": "passed"
+    },
+    "edgeFunctionDeno": {
+      "tests": 20,
+      "result": "passed"
+    },
+    "listingSaveRecovery": {
+      "tests": 18,
+      "result": "passed"
+    },
+    "websiteTypecheck": "passed",
+    "websiteTests": {
+      "tests": 37,
+      "result": "passed"
+    },
+    "websiteBuild": "Local default Turbopack rejected shared dependency symlinks; webpack build passed; normal Vercel build passed",
+    "homeSeekersStandaloneBuild": "passed",
+    "securityAdvisorErrors": 0,
+    "newSecurityAdvisorWarnings": [
+      "Authenticated SECURITY DEFINER recruitment_invitation_status and recruitment_joining_progress: organisation or branch checks reviewed and cross-organisation denials tested"
+    ],
+    "deployedFunctionReadback": "Changed entrypoints, recruitment invitation handler and shared website media source match release files",
+    "liveFunctionAuth": [
+      {
+        "name": "send-email",
+        "status": 401,
+        "deniedWithoutCredentials": true
+      },
+      {
+        "name": "website-listing-publication",
+        "status": 401,
+        "deniedWithoutCredentials": true
+      }
+    ],
+    "liveAppAssets": {
+      "version": "arch9_deployed_release_assets_v1",
+      "appUrl": "https://app.arch9.co.za",
+      "releaseId": "54f4f76a57e83761f841b5bf5253433ef1299e5d",
+      "manifestCacheControl": "no-cache, no-store, must-revalidate",
+      "indexCacheControl": "no-cache, no-store, must-revalidate",
+      "criticalAssetCount": 837,
+      "passed": true,
+      "failedAssets": []
+    },
+    "liveAppDatabaseOrigin": "https://isdowlnollckzvltkasn.supabase.co",
+    "liveAuth": "Sign-in page renders at 390px; no overflow or console errors; exact release marker matches",
+    "liveHomeSeekers": "Join page renders, three option-detail controls present, first option dialog opens; 390px page width without overflow",
+    "liveWebsiteRuntime": "READY and promoted; robots.txt blocks indexing; unknown hostname returns 404 as expected"
+  },
+  "verificationLimitations": [
+    "Real signed-in recruitment activation, live invitation inbox delivery and real external portal statistics retrieval were not performed.",
+    "The public website project currently has its stable Vercel alias only. That alias is not an active tenant hostname, so tenant pages return 404. No client domain or DNS configuration was changed.",
+    "Standalone Home Seekers favicon.ico returns 404; the page and option-details interaction work.",
+    "Historical migration SQL reconciliation was not reopened; all seven migrations dated today match recorded SQL."
+  ],
+  "gitMain": "Main is locked in GitHub. Release source is pushed on the named release branch; no branch protection was changed.",
+  "deploymentTooling": "Latest Vercel CLI reported Not authorized while polling the final app rebuild. Independent authenticated inspection confirmed READY, source marker, successful promotion and live assets.",
+  "messagesSentForVerification": false,
+  "evidenceDirectory": "/tmp/arch9-release-20261008",
+  "evidence": [
+    {
+      "file": "/tmp/arch9-release-20261008/migration-scope.json",
+      "sha256": "8ac261d9aa9ee47683782ed7f3e2981d58b454c1d4c36c32de0b995cf203601a"
+    },
+    {
+      "file": "/tmp/arch9-release-20261008/migration-match.json",
+      "sha256": "f67412ec3cb541da0c078c80ab079d2d568654d1a2036a9c29c73e0acdc12a66"
+    },
+    {
+      "file": "/tmp/arch9-release-20261008/migration-final-dry-run.log",
+      "sha256": "3033612a327e0a3b9122b56fe0376c005e106ec9d0bfee590707bc86e6895c66"
+    },
+    {
+      "file": "/tmp/arch9-release-20261008/objects-verification.json",
+      "sha256": "e19c95bdea77c8e12c89cd28a44addfd46f5099e9abb70456dffdb636a83f217"
+    },
+    {
+      "file": "/tmp/arch9-release-20261008/advisors-before.json",
+      "sha256": "4fadc0f3c983ae5bd22e97f88f100fbfba6c05a9310626276a918542fc40d85b"
+    },
+    {
+      "file": "/tmp/arch9-release-20261008/advisors-after.json",
+      "sha256": "dbabc1d9b37ad3c31387aacb9ea45de0855bfab1b9eb002cbf7d2ecdc8683cc0"
+    },
+    {
+      "file": "/tmp/arch9-release-20261008/rollback-smoke.json",
+      "sha256": "5143770d796b070ff053f69503b882f7f3b68c3786700f4883b0b69244a388dc"
+    },
+    {
+      "file": "/tmp/arch9-release-20261008/catalog-before.json",
+      "sha256": "f60a9e8821b3766aff9b828d237914e9e7e44e35a24c50f7a202a48d36be2cc4"
+    },
+    {
+      "file": "/tmp/arch9-release-20261008/live-app-assets.json",
+      "sha256": "260c12488b0a4076b5e85668d9d2d8dec338858ebb619409c3ae6c5742f6408b"
+    },
+    {
+      "file": "/tmp/arch9-release-20261008/live-auth-mobile.txt",
+      "sha256": "8f9b11554b239f1bc155110647a5b66d5b49f3b59539402b0e643f693ed60dc8"
+    },
+    {
+      "file": "/tmp/arch9-release-20261008/live-auth-console.txt",
+      "sha256": "1576bb646bcd20b0f84886823abde69535b7b763fbf502e0e9b7b65642b94af9"
+    },
+    {
+      "file": "/tmp/arch9-release-20261008/functions-after.json",
+      "sha256": "b68ae79ca4d9e8a37349c5d82d46fc91234120343569bb2d5b9635f718afa8a1"
+    },
+    {
+      "file": "/tmp/arch9-release-20261008/live-functions-auth.json",
+      "sha256": "267467c4ed912f214e820ae83d8eb2cef6549974b777397fb77debf1eff0a1c6"
+    },
+    {
+      "file": "/tmp/arch9-release-20261008/final-lint.log",
+      "sha256": "bfb3d4ffa3437eab90a6e2295ee7039977e0635d9578aa552a36e7d720fac7f1"
+    },
+    {
+      "file": "/tmp/arch9-release-20261008/focused-vitest-corrected.log",
+      "sha256": "834d091be6c72fcfa26acd8048a65cbbeaa0d5fb5cc62884573722c532237497"
+    },
+    {
+      "file": "/tmp/arch9-release-20261008/focused-node.log",
+      "sha256": "bb24fd4946b51e048d0de6346d9863d1956caea2eb665faa33ac9c73c756ea53"
+    },
+    {
+      "file": "/tmp/arch9-release-20261008/database-tests.log",
+      "sha256": "0567c6937dc2a887ce161bd9c9928c01c8d0d7aea7bb7874b591300e4fd0aa67"
+    },
+    {
+      "file": "/tmp/arch9-release-20261008/server-node-corrected.log",
+      "sha256": "d6878abc44002399f7f04f2e89b41c94445a1319b0300af45c8c06c3bc1f7aee"
+    },
+    {
+      "file": "/tmp/arch9-release-20261008/function-tests-corrected.log",
+      "sha256": "ddde05aac5f4bb2c51dba63031e2334dcc02f0bd26c2674dececb3537478013d"
+    },
+    {
+      "file": "/tmp/arch9-release-20261008/listing-recovery-tests.log",
+      "sha256": "eb93ea76f90a1082dbf07d5b8ac17a2d5c283e84b0e1cc9421e8f6f930d54818"
+    },
+    {
+      "file": "/tmp/arch9-release-20261008/website-webpack-build.log",
+      "sha256": "57b601d61e2a79b26319442a9d99936c3234bac3f9a00739530a8a217652cbfc"
+    },
+    {
+      "file": "/tmp/arch9-release-20261008/primary-promote.log",
+      "sha256": "98b6137105cca79d246d88856205f8d3042ca9183ffdcaa94c347680271d54ca"
+    },
+    {
+      "file": "/tmp/arch9-release-20261008/websites-promote.log",
+      "sha256": "6864f41fd667af7341281451b642477f621b695ec22f595c4f9d8802d45b6a1f"
+    },
+    {
+      "file": "/tmp/arch9-release-20261008/home-seekers-promote.log",
+      "sha256": "cd95afc609faf8ed26d713a9e0a5ed584222959da3a30a4559df88bf4ed6deea"
+    }
+  ]
+}
