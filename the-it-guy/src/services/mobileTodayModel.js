@@ -17,13 +17,13 @@ function dateLabel(value, now, includeTime = true) {
   return includeTime ? `${day} · ${new Date(value).toLocaleTimeString('en-ZA', { timeZone: CALENDAR_TIMEZONE, hour: '2-digit', minute: '2-digit', hour12: false })}` : day
 }
 
-export function buildMobileToday({ tasks = [], leads = [], contacts = [], appointments = [], deals = [], profile = {}, category = 'agent', now = new Date(), availability = {} } = {}) {
+export function buildMobileToday({ tasks = [], leads = [], contacts = [], appointments = [], deals = [], profile = {}, category = 'agent', includeAllFollowUps = false, now = new Date(), availability = {} } = {}) {
   const todayEnd = addCalendarDays(sastDayStart(now), 1).getTime()
   const nowTime = new Date(now).getTime()
   const keys = new Set([profile.id, profile.userId, profile.email].map((key) => text(key).toLowerCase()).filter(Boolean))
   const followUps = availability.followUps === false ? [] : tasks.filter((task) => {
     if (closedTask(task)) return false
-    return category === 'principal' || [task.assignedAgentId, task.assignedAgentEmail].some((key) => keys.has(text(key).toLowerCase()))
+    return category === 'principal' || includeAllFollowUps || [task.assignedAgentId, task.assignedAgentEmail].some((key) => keys.has(text(key).toLowerCase()))
   }).map((task) => {
     const lead = leads.find((item) => text(item.leadId) === text(task.leadId))
     const contact = contacts.find((item) => text(item.contactId) === text(lead?.contactId))

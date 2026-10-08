@@ -51,6 +51,21 @@ describe('mobile Today priorities', () => {
     expect(today.radar).toEqual([])
   })
 
+  it('gives developer owners identical shared priorities without changing task assignments', () => {
+    const tasks = [task('alex-due', '2026-10-06', { assignedAgentId: 'alex' }), task('alex-late', '2026-10-05', { assignedAgentId: 'alex' }), task('closed', '2026-10-05', { status: 'Completed' })]
+    const options = { now, category: 'developer', includeAllFollowUps: true, tasks,
+      deals: [{ id: 'transfer', nextAction: 'Upload the signed OTP', to: '/mobile/transaction/transfer' }],
+    }
+    const alex = buildMobileToday({ ...options, profile: { id: 'alex' } })
+    const sam = buildMobileToday({ ...options, profile: { id: 'sam' } })
+    expect(sam).toEqual(alex)
+    expect(sam.action.id).toBe('task:alex-late')
+    expect(sam.radar.map((item) => item.id)).toEqual(['task:alex-due', 'deal:transfer'])
+    expect(sam.counts.followUps).toBe(2)
+    expect(tasks[0].assignedAgentId).toBe('alex')
+    expect(buildMobileToday({ ...options, includeAllFollowUps: false, profile: { id: 'sam' } }).items.followUps).toEqual([])
+  })
+
   it('only proposes recorded deal actions, ahead of future follow-ups, with the correct destination', () => {
     const today = buildMobileToday({ now, profile, tasks: [task('future', '2026-10-07')],
       deals: [{ id: 'no-action', title: 'No action' }, { id: 'action', nextAction: 'Send the signed OTP', title: '18 Oak Avenue', to: '/mobile/transaction/action' }],

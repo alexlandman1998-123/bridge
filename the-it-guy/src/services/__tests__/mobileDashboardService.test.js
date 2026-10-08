@@ -49,6 +49,37 @@ it('loads new leads only for the selected developer organisation and retains eve
   expect(snapshot.newLeadsAvailable).toBe(true)
 })
 
+it('aligns both developer owners on shared organisation priorities using the developer layout', async () => {
+  api.crm.mockResolvedValue({ tasksAvailable: true, tasks: [
+    { taskId: 'alex-follow-up', assignedAgentId: 'alex', title: 'Follow up with buyer', dueDate: '2020-01-01' },
+    { taskId: 'closed', assignedAgentId: 'alex', status: 'Completed', dueDate: '2020-01-01' },
+  ] })
+  api.appointments.mockResolvedValue({ appointments: [{ id: 'team-appointment', dateTime: '2099-01-01T10:00:00Z', typeLabel: 'Site visit', status: 'confirmed', statusKey: 'confirmed' }] })
+  api.overview.mockResolvedValue({ rows: [{ transaction: { id: 'transfer', next_action: 'Upload the signed OTP to the transaction documents.' } }], developmentSummaries: [] })
+  const alex = await getMobileDashboardSnapshotAsync({ organisation, workspace: { role: 'developer', workspaceRole: 'owner', profile: { id: 'alex', email: 'alex@example.test' } } })
+  const samWorkspace = { role: 'developer', currentMembership: { raw: { workspace_role: 'owner' } }, profile: { id: 'sam', email: 'sam@example.test' } }
+  const sam = await getMobileDashboardSnapshotAsync({ organisation, workspace: samWorkspace })
+  expect(sam.category).toBe('developer')
+  expect(sam.today).toEqual(alex.today)
+  expect(sam.today.action).toMatchObject({ id: 'task:alex-follow-up', title: 'Follow up with buyer' })
+  expect(sam.today.items.followUps).toHaveLength(1)
+  expect(sam.today.items.appointments).toHaveLength(1)
+  expect(api.crm).toHaveBeenCalledWith('org-one', { includeLocalFallback: false })
+  expect(api.appointments).toHaveBeenLastCalledWith(expect.objectContaining({ organisationId: 'org-one', module: 'developer', includeAll: true }))
+  // A changed membership must not reuse the owner's wider cached attention list.
+  expect(getCachedMobileDashboardSnapshot({ organisation, workspace: { ...samWorkspace, currentMembership: { raw: { workspace_role: 'member' } } } })).toBeNull()
+})
+
+it('retains personal attention scope for developer members', async () => {
+  api.crm.mockResolvedValue({ tasksAvailable: true, tasks: [
+    { taskId: 'mine', assignedAgentId: 'me', dueDate: '2020-01-01' },
+    { taskId: 'other', assignedAgentId: 'other', dueDate: '2020-01-01' },
+  ] })
+  const snapshot = await getMobileDashboardSnapshotAsync({ organisation, workspace: { ...workspace, role: 'developer', workspaceRole: 'member' } })
+  expect(snapshot.today.items.followUps.map((item) => item.id)).toEqual(['task:mine'])
+  expect(api.appointments).toHaveBeenCalledWith(expect.objectContaining({ organisationId: 'org-one', includeAll: false, module: 'developer', userId: 'me' }))
+})
+
 it('keeps the developer portfolio available when leads fail and recovers on refresh', async () => {
   api.leads.mockRejectedValueOnce(new Error('Lead read unavailable'))
   const options = { workspace: { ...workspace, role: 'developer' }, organisation }

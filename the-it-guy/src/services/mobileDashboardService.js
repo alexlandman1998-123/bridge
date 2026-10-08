@@ -1,5 +1,5 @@
 import { getAgentDemoTransactionRowsFromStorage } from '../lib/agentDemoTransactionStorage.js'
-import { resolveMobileRoleCategory } from '../config/mobileShell'
+import { resolveMobileRoleCategory, usesOrganisationMobileAttention } from '../config/mobileShell'
 import { fetchDashboardOverview, fetchTransactionsByParticipantSummary, fetchTransactionsListSummary } from '../domains/reporting/api.js'
 import {
   getDashboardPipelineValue,
@@ -32,6 +32,7 @@ function dashboardCacheKey({ workspace = {}, organisation = null } = {}) {
     resolveMobileRoleCategory(workspace), workspace.role || workspace.baseRole || '',
     workspace.workspaceRole || '', workspace.organisationMembershipRole || '', workspace.currentMembership?.id || '',
     workspace.currentWorkspace?.id || '', workspace.workspace?.id || '', workspace.workspaceType || '',
+    usesOrganisationMobileAttention(workspace),
     sastDayStart(new Date()).getTime(),
   ])
 }
@@ -471,7 +472,8 @@ async function loadMobileDashboardSnapshot({ workspace, organisation }) {
   const organisationId = getOrganisationId(workspace, organisation)
   if (category === 'developer' && !organisationId) throw new Error('Select a developer workspace to load your portfolio.')
   const profile = workspace.profile || {}
-  const includeAll = category === 'principal'
+  // Developer owners share the organisation's priorities, regardless of assignee.
+  const includeAll = usesOrganisationMobileAttention(workspace)
   const todaySources = Promise.allSettled([
     import('../lib/agencyCrmRepository.js').then(({ listAgencyCrmLeadContacts }) => listAgencyCrmLeadContacts(organisationId, { includeLocalFallback: false })),
     getAppointmentDashboardData({
@@ -520,7 +522,7 @@ async function loadMobileDashboardSnapshot({ workspace, organisation }) {
   }) : []
   const crm = crmResult.status === 'fulfilled' ? crmResult.value : {}
   const today = buildMobileToday({
-    ...crm, profile, category, deals: activeWork,
+    ...crm, profile, category, includeAllFollowUps: includeAll, deals: activeWork,
     appointments: appointmentResult.status === 'fulfilled' ? appointmentResult.value.appointments : [],
     availability: { followUps: crmResult.status === 'fulfilled' && crm.tasksAvailable !== false, appointments: appointmentResult.status === 'fulfilled' },
   })

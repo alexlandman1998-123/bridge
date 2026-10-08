@@ -80,7 +80,7 @@ it('opens each current development from the home scroller, includes later cards,
   developments.push({ id: 'archived', title: 'Archived estate', status: 'archived', to: '/mobile/development/archived' })
   const { rerender } = render(<AgentDashboard snapshot={{ ...base, category: 'developer', developments }} onOpen={onOpen} />)
   const scroller = screen.getByRole('region', { name: 'Swipe through current developments' })
-  expect(screen.getByText('Pipeline value').compareDocumentPosition(scroller) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  expect(screen.getByLabelText('Developer summary').compareDocumentPosition(scroller) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   expect(within(scroller).getAllByRole('link')).toHaveLength(6)
   expect(within(scroller).queryByText('Archived estate')).toBeNull()
   const lastCard = within(scroller).getByRole('link', { name: /Estate 6/ })

@@ -102,6 +102,12 @@ export function resolveMobileRoleCategory(workspace = {}) {
   return MOBILE_NAV_BY_CATEGORY[role] ? role : 'default'
 }
 
+export function usesOrganisationMobileAttention(workspace = {}) {
+  const category = resolveMobileRoleCategory(workspace)
+  const membershipRole = readMembershipRole(workspace) || normalize(workspace.organisationMembershipRole)
+  return category === 'principal' || (category === 'developer' && membershipRole === 'owner')
+}
+
 export function getMobileNavItems(workspace = {}) {
   const category = resolveMobileRoleCategory(workspace)
   return (MOBILE_NAV_BY_CATEGORY[category] || MOBILE_NAV_BY_CATEGORY.default).map((key) =>
