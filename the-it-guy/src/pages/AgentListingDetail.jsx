@@ -1,3 +1,5 @@
+import { listingIssueEditorUrl, listingPublicationIssueTarget, publicationReadinessCodes } from '../services/listings/listingPublicationIssueTarget'
+import { focusListingField } from '../components/listings/useListingIssueNavigation'
 import { prepareSellerMandateReviewPreview } from '../lib/sellerMandateReviewPreview.js'
 import SellerMandateDetailsEditor from '../components/documents/SellerMandateDetailsEditor.jsx'
 import { buildSellerMandateTermsFormPatch, getSellerMandatePreparationIssues, isMandateCalendarDate, readSellerMandateTerms } from '../lib/sellerMandateCapture.js'
@@ -10168,6 +10170,31 @@ function AgentListingDetail() {
   const property24Published = ['published', 'live', 'active'].includes(property24StatusKey)
   const property24PreviewCounts = getProperty24ReadinessCounts(property24Preview)
   const property24ReadinessIssues = getProperty24ReadinessIssues(property24Preview)
+  function openFirstPublishingIssue(channel) {
+    const payload = channel === 'property24' ? property24Preview : privatePropertyPreview
+    for (const code of publicationReadinessCodes(payload)) {
+      const target = listingPublicationIssueTarget(code)
+      if (target && target.step !== 'expiry') {
+        const message = channel === 'property24' ? formatProperty24Blocker(code) : formatPrivatePropertyBlocker(code)
+        navigate(listingIssueEditorUrl(`/listings/${encodeURIComponent(listingId)}/edit`, target, message, { publicationScope: true }))
+        return true
+      }
+    }
+    return false
+  }
+  function readinessFixForMessage(message, channel) {
+    const payload = channel === 'property24' ? property24Preview : privatePropertyPreview
+    const code = publicationReadinessCodes(payload).find((code) => {
+      const formatted = channel === 'property24' ? formatProperty24Blocker(code) : String(code).replace(/^missing_/, 'missing ').replace(/^private_property_/, 'Private Property ').replace(/_/g, ' ')
+      return message === formatted || message === `Setup: ${formatted}`
+    })
+    if (!code) return null
+    const target = listingPublicationIssueTarget(code)
+    if (target?.step === 'expiry') return <button type="button" className="p24-manage-link" onClick={() => focusListingField('property24ExpiryDate')}>Fix expiry date</button>
+    if (target) return <button type="button" className="p24-manage-link" onClick={() => navigate(listingIssueEditorUrl(`/listings/${encodeURIComponent(listingId)}/edit`, target, message, { publicationScope: true }))}>Fix this field</button>
+    if (/agent|agency|branch_guid|credential|config|runtime_secret|approval|allowlist|pilot|sandbox/.test(code)) return <button type="button" className="p24-manage-link" onClick={() => navigate(`/settings/syndication/${channel === 'property24' ? 'property24' : 'private-property'}`)}>Open portal settings</button>
+    return null
+  }
   const property24LeadImportCounts = getProperty24LeadImportCounts(property24LeadImport)
   const property24StatusCheckedAt = getProperty24StatusCheckedAt(property24StatusCheck)
   const property24HasReference = Boolean(property24Reference)
@@ -12464,9 +12491,9 @@ function AgentListingDetail() {
                 <p>{property24NextStep}</p>
                 <dl><div><dt>Photos loaded</dt><dd>{property24PreviewCounts.imagesLoaded}</dd></div><div><dt>Photo errors</dt><dd>{property24PreviewCounts.imagesFailed}</dd></div></dl>
               </div> : null}
-              {property24ReadinessIssues.length ? <div className="p24-manage-issues"><strong>Before publishing</strong><ul>{property24ReadinessIssues.map((issue) => <li key={issue}>{issue}</li>)}</ul></div> : null}
+              {property24ReadinessIssues.length ? <div className="p24-manage-issues"><strong>Before publishing</strong><ul>{property24ReadinessIssues.map((issue) => <li key={issue}>{issue} {readinessFixForMessage(issue, 'property24')}</li>)}</ul></div> : null}
             </section>
-            <section className="p24-manage-section">
+            <section id="listing-field-property24ExpiryDate" tabIndex={-1} className="p24-manage-section">
               <h4>Publication expiry</h4>
               <p>Set when this listing should leave Property24.</p>
               <label className="p24-manage-field"><span>Expiry date</span><Field type="date" min={addDaysToDateInput('', 1)} value={property24ExpiryDate} onChange={(event) => setMarketingDraft((previous) => ({ ...previous, property24ExpiryDate: event.target.value }))} disabled={Boolean(property24Action)} /></label>
@@ -12588,7 +12615,7 @@ function AgentListingDetail() {
             ) : hasIssues ? (
               <ul className="mt-3 grid gap-2">
                 {privatePropertyReadinessIssues.map((issue) => (
-                  <li key={issue} className="rounded-lg border border-[#f0d6a8] bg-[#fff9ed] px-3 py-2 text-sm font-medium text-[#8a5b13]">{issue}</li>
+                  <li key={issue} className="rounded-lg border border-[#f0d6a8] bg-[#fff9ed] px-3 py-2 text-sm font-medium text-[#8a5b13]">{issue} {readinessFixForMessage(issue, 'private_property')}</li>
                 ))}
               </ul>
             ) : (
@@ -12729,11 +12756,12 @@ function AgentListingDetail() {
           <Button type="button" size="sm" variant="secondary" onClick={refreshProperty24ListingStatus}><RefreshCw size={15} />Refresh status</Button>
         ) : property24ChannelStatus === 'needs_attention' || property24CanSubmit !== true ? (
           <Button type="button" size="sm" variant="secondary" onClick={() => {
+            if (openFirstPublishingIssue('property24')) return
             setProperty24ManageOpen(true)
             if (!property24Preview) void previewProperty24Listing()
           }}>
             <CircleAlert size={15} />
-            Review issues
+            Fix publishing issues
           </Button>
         ) : (
           <Button type="button" size="sm" onClick={publishProperty24Listing} disabled={property24PublishDisabled}>
@@ -12796,9 +12824,9 @@ function AgentListingDetail() {
         ) : privatePropertySubmitted ? (
           <Button type="button" size="sm" variant="secondary" onClick={refreshPrivatePropertyListingStatus}><RefreshCw size={15} />Refresh status</Button>
         ) : privatePropertyChannelStatus === 'needs_attention' ? (
-          <Button type="button" size="sm" variant="secondary" onClick={reviewPrivatePropertyIssues} disabled={Boolean(privatePropertyAction)}>
+          <Button type="button" size="sm" variant="secondary" onClick={() => { if (!openFirstPublishingIssue('private_property')) reviewPrivatePropertyIssues() }} disabled={Boolean(privatePropertyAction)}>
             <CircleAlert size={15} />
-            Review issues
+            Fix publishing issues
           </Button>
         ) : (
           <Button type="button" size="sm" onClick={publishPrivatePropertyListing} disabled={Boolean(privatePropertyAction)}>

@@ -1,9 +1,10 @@
+import { listingPublicationIssueTarget } from '../listings/listingPublicationIssueTarget.js'
 import { RENTAL_PORTAL_FIELDS } from './rentalPortalFieldCatalog.js'
 
 const text = value => String(value ?? '').trim()
 const list = value => Array.isArray(value) ? value : []
 const editor = step => ({ kind: 'editor', step, label: `Open ${{ property: 'Property details', features: 'Additional property details', terms: 'Rental terms', landlord: 'Landlord & Mandate', marketing: 'Marketing' }[step] || 'listing editor'}` })
-const settings = channel => ({ kind: 'settings', path: channel === 'property24' ? '/settings/syndication/property24' : '/settings/integrations', label: 'Open portal settings' })
+const settings = channel => ({ kind: 'settings', path: channel === 'property24' ? '/settings/syndication/property24' : '/settings/syndication/private-property', label: 'Open portal settings' })
 
 export function describeRentalPortalRequirement(value, channel, source = 'listing') {
   const code = text(typeof value === 'object' ? value?.code || value?.key || value?.message : value)
@@ -16,7 +17,7 @@ export function describeRentalPortalRequirement(value, channel, source = 'listin
     const field = RENTAL_PORTAL_FIELDS.find(item => item.key === code.slice('invalid_rental_field:'.length))
     if (field) {
       const step = ['bedrooms','bathrooms','garages','parkingBays','unitNumber','complexName'].includes(field.formKey) ? 'property' : field.derivedFrom === 'availableFrom' || field.formKey === 'furnishedStatus' ? 'terms' : 'features'
-      return { key:code, label:`Enter a valid ${field.label.toLowerCase()}`, detail:`Review ${field.label} in the relevant editor step, save, then check again.`, action:editor(step), category:'Listing field' }
+      return { key:code, label:`Enter a valid ${field.label.toLowerCase()}`, detail:`Review ${field.label} in the relevant editor step, save, then check again.`, action:{ ...editor(step), ...listingPublicationIssueTarget(code, { rental: true }), message: `Enter a valid ${field.label.toLowerCase()}` }, category:'Listing field' }
     }
     return { key:code, label, detail, action:null, category }
   }
@@ -51,6 +52,9 @@ export function describeRentalPortalRequirement(value, channel, source = 'listin
     detail = 'Review the property type, dimensions and features, save the changes, then check again.'
     action = editor(/type|category|bedroom|bathroom|garage|floor|land_area/.test(code) ? 'property' : 'features'); category = 'Listing field'
   }
+  const target = listingPublicationIssueTarget(code, { rental: true })
+  if (!action && target) { action = editor(target.step); category = 'Listing field'; detail = 'Correct this field in the listing editor, save, then check again.' }
+  if (action?.kind === 'editor') action = { ...action, ...target, message: label }
   return { key: code || label, label: label || 'Portal requirement needs review', detail, action, category }
 }
 

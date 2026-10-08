@@ -1,3 +1,6 @@
+import { useListingIssueNavigation } from '../components/listings/useListingIssueNavigation'
+import { salesListingCaptureIssues, salesPortalCaptureIssues, issuesBeforeListingStep } from '../services/listings/listingCaptureValidation'
+import { ListingValidationProvider, ListingValidationTarget, ListingValidationSummary } from '../components/listings/ListingValidation'
 import { Archive, ArrowLeft, ArrowRight, Building2, CheckCircle2, Circle, CircleAlert, FileText, FolderKanban, Globe2, HelpCircle, House, LandPlot, Sprout, Store, Warehouse, Blocks, ImagePlus, Loader2, Mail, MoreVertical, Plus, RotateCcw, Search, Share2, ShieldCheck, Sparkles, Trash2, UserRound, UsersRound, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
@@ -699,24 +702,24 @@ function ListingWizardHeader({ eyebrow = '', title, description }) {
   )
 }
 
-function ListingWizardSection({ title, description = '', divided = false, children }) {
+function ListingWizardSection({ title, description = '', divided = false, children, validationField }) {
   return (
-    <section className={`${divided ? 'border-t border-[#e6edf5] pt-6' : ''}`}>
+    <ListingValidationTarget field={validationField || `section-${title}`}><section className={`${divided ? 'border-t border-[#e6edf5] pt-6' : ''}`}>
       <div className="mb-3">
         <h3 className="text-sm font-bold text-[#142132]">{title}</h3>
         {description ? <p className="mt-1 text-sm text-[#607387]">{description}</p> : null}
       </div>
       {children}
-    </section>
+    </section></ListingValidationTarget>
   )
 }
 
-function FormField({ label, children, className = '' }) {
+function FormField({ label, children, className = '', validationField }) {
   return (
-    <label className={`grid gap-2 ${className}`}>
+    <ListingValidationTarget field={validationField || `label-${label}`} className={className}><label className="grid gap-2">
       <span className="text-sm font-semibold text-[#2d445e]">{label}</span>
       {children}
-    </label>
+    </label></ListingValidationTarget>
   )
 }
 
@@ -754,7 +757,7 @@ function NumberStepper({ label, value = '', onChange, min = 0 }) {
   }
 
   return (
-    <div className="grid gap-2">
+    <ListingValidationTarget field={({ Bedrooms: 'bedrooms', Bathrooms: 'bathrooms', Garages: 'garages', Parking: 'parkingCount' })[label]}><div className="grid gap-2">
       <span className="text-sm font-semibold text-[#2d445e]">{label}</span>
       <div className="grid h-11 grid-cols-[48px_minmax(56px,1fr)_48px] overflow-hidden rounded-[12px] border border-[#dce6f2] bg-white">
         <button
@@ -782,13 +785,13 @@ function NumberStepper({ label, value = '', onChange, min = 0 }) {
           +
         </button>
       </div>
-    </div>
+    </div></ListingValidationTarget>
   )
 }
 
-function CurrencyInput({ label, value = '', onChange, placeholder = '1,000,000' }) {
+function CurrencyInput({ label, value = '', onChange, placeholder = '1,000,000', validationField }) {
   return (
-    <FormField label={label}>
+    <FormField label={label} validationField={validationField}>
       <div className="grid h-11 grid-cols-[52px_minmax(0,1fr)] overflow-hidden rounded-[12px] border border-[#dce6f2] bg-white focus-within:border-[#1f8a4c] focus-within:ring-2 focus-within:ring-[#d8efdf]">
         <span className="grid place-items-center border-r border-[#e3ebf4] bg-[#f8fafc] text-sm font-semibold text-[#607387]">R</span>
         <input
@@ -805,7 +808,7 @@ function CurrencyInput({ label, value = '', onChange, placeholder = '1,000,000' 
 
 function UnitInput({ label, value = '', unit = 'm²', onChange }) {
   return (
-    <FormField label={label}>
+    <FormField label={label} validationField={label === 'Floor size' ? 'floorSize' : label === 'Erf size' ? 'erfSize' : undefined}>
       <div className="grid h-11 grid-cols-[minmax(0,1fr)_52px] overflow-hidden rounded-[12px] border border-[#dce6f2] bg-white focus-within:border-[#1f8a4c] focus-within:ring-2 focus-within:ring-[#d8efdf]">
         <input
           value={normalizeText(value)}
@@ -967,26 +970,16 @@ function buildQuickListingPublicationFeatures(form = {}, keySellingPoints = []) 
 }
 
 function buildCreateListingPortalStatuses(form = {}, availability = UNAVAILABLE_SYNDICATION_CHANNELS, availabilityLoading = false) {
-  const hasDescription = Boolean(normalizeText(form.listingDescription))
-  const hasImages = Array.isArray(form.listingImages) && form.listingImages.length > 0
-  const property24Missing = [
-    !normalizeText(form.propertyAddress) ? 'Address' : '',
-    !hasListingPriceOrPoa(form) ? 'Price or POA' : '',
-    !hasDescription ? 'Description' : '',
-    !hasImages ? 'Photos' : '',
-    !normalizeText(form.floorSize) ? 'Floor size' : '',
-  ].filter(Boolean)
-  const privatePropertyMissing = [
-    !normalizeText(form.propertyAddress) ? 'Address' : '',
-    !hasListingPriceOrPoa(form) ? 'Price or POA' : '',
-    !hasDescription ? 'Description' : '',
-    !hasImages ? 'Photos' : '',
-  ].filter(Boolean)
+  const property24Issues = salesPortalCaptureIssues(form, 'property24')
+  const privatePropertyIssues = salesPortalCaptureIssues(form, 'private_property')
+  const agencyWebsiteIssues = salesPortalCaptureIssues(form, 'agency_website')
+  const property24Missing = property24Issues.map((issue) => issue.message)
+  const privatePropertyMissing = privatePropertyIssues.map((issue) => issue.message)
 
   return [
-    { key: 'property24', label: 'Property24', enabled: form.selectedSyndicationChannels?.includes('property24'), missing: property24Missing, availability: availability.property24, availabilityLoading },
-    { key: 'private_property', label: 'Private Property', enabled: form.selectedSyndicationChannels?.includes('private_property'), missing: privatePropertyMissing, availability: availability.private_property, availabilityLoading },
-    { key: 'agency_website', label: 'Agency Website', enabled: form.selectedSyndicationChannels?.includes('agency_website'), missing: hasDescription ? [] : ['Description'], availability: availability.agency_website, availabilityLoading },
+    { key: 'property24', label: 'Property24', enabled: form.selectedSyndicationChannels?.includes('property24'), missing: property24Missing, issues: property24Issues, availability: availability.property24, availabilityLoading },
+    { key: 'private_property', label: 'Private Property', enabled: form.selectedSyndicationChannels?.includes('private_property'), missing: privatePropertyMissing, issues: privatePropertyIssues, availability: availability.private_property, availabilityLoading },
+    { key: 'agency_website', label: 'Agency Website', enabled: form.selectedSyndicationChannels?.includes('agency_website'), missing: agencyWebsiteIssues.map((issue) => issue.message), issues: agencyWebsiteIssues, availability: availability.agency_website, availabilityLoading },
     { key: 'arch9_seller_experience', label: 'Arch9 Platform', enabled: true, missing: [], internalOnly: true, availability: { available: true }, availabilityLoading: false },
   ]
 }
@@ -4550,9 +4543,24 @@ function AgentListings({ initialTab = null, mobileEditor = false } = {}) {
     return required
   }, [form])
 
-  function openCreateListingStep(stepKey, { allowForward = false } = {}) {
+  const createListingIssues = useMemo(() => salesListingCaptureIssues(form, {
+    sellerName: getQuickAddSellerDisplayName(form),
+    sellerUnidentified: isQuickAddSellerUnidentified(form),
+    developer: isDeveloperWorkspace,
+  }).filter((issue) => listingEditorSteps.some((step) => step.key === issue.step)), [form, isDeveloperWorkspace, listingEditorSteps])
+  const { openIssue: openCreateListingIssue, focusRequest: createListingFocusRequest, clearIssueForChange } = useListingIssueNavigation(createListingStep, (step) => openCreateListingStep(step, { allowForward: true, fixingIssue: true }), { ready: !loading && (!isEditListingWorkspace || Boolean(editListingRecord)), search: location.search })
+  const visibleCreateListingIssues = createListingFocusRequest?.code === 'portal-readiness' && createListingFocusRequest.message ? [...createListingIssues, createListingFocusRequest] : createListingIssues
+  const currentCreateListingIssues = ['syndication', 'review'].includes(createListingStep)
+    ? visibleCreateListingIssues : visibleCreateListingIssues.filter((issue) => issue.step === createListingStep)
+
+  function openCreateListingStep(stepKey, { allowForward = false, fixingIssue = false } = {}) {
     const targetIndex = listingEditorSteps.findIndex((step) => step.key === stepKey)
     if (targetIndex < 0 || (!isEditListingWorkspace && !allowForward && targetIndex > createListingMaxVisitedStep)) return
+    if (!fixingIssue && targetIndex > createListingStepIndex) {
+      const issues = issuesBeforeListingStep(createListingIssues, listingEditorSteps, stepKey)
+      if (issues.length) { openCreateListingIssue(issues[0]); return false }
+    }
+    setError('')
     setCreateListingStep(stepKey)
     if (isListingEditorWorkspace) {
       const params = new URLSearchParams(window.location.search || location.search || '')
@@ -4562,6 +4570,8 @@ function AgentListings({ initialTab = null, mobileEditor = false } = {}) {
   }
 
   async function goToNextCreateListingStep() {
+    const blockingIssues = ['syndication', 'review'].includes(createListingStep) ? createListingIssues : issuesBeforeListingStep(createListingIssues, listingEditorSteps, listingEditorSteps[Math.min(createListingStepIndex + 1, listingEditorSteps.length - 1)].key)
+    if (blockingIssues.length) { openCreateListingIssue(blockingIssues[0]); return }
     const nextIndex = Math.min(createListingStepIndex + 1, listingEditorSteps.length - 1)
     if (isEditListingWorkspace && !isListingSaving) {
       setIsListingSaving(true)
@@ -7059,6 +7069,7 @@ function AgentListings({ initialTab = null, mobileEditor = false } = {}) {
   async function handleSaveListing(event) {
     event.preventDefault()
     if (isListingSaving || listingSaveInFlightRef.current || (isCreateListingWorkspace && completedCreateListingRef.current)) return
+    if (isListingEditorWorkspace && createListingIssues.length) { openCreateListingIssue(createListingIssues[0]); return }
     listingSaveInFlightRef.current = true
 
     setError('')
@@ -8000,7 +8011,8 @@ function AgentListings({ initialTab = null, mobileEditor = false } = {}) {
     const cancelEditor = () => navigate(mobileEditor ? '/mobile/listings' : isEditListingWorkspace ? `/agent/listings/${encodeURIComponent(editListingId)}` : '/listings')
 
     return (
-      <form className={`space-y-5 pb-6 ${mobileEditor ? 'mobile-listing-editor' : ''}`} onSubmit={(event) => { event.preventDefault(); if (isFinalCreateListingStep) void handleSaveListing(event); else void goToNextCreateListingStep() }} noValidate>
+<ListingValidationProvider value={visibleCreateListingIssues}>
+      <form onChangeCapture={clearIssueForChange} onClickCapture={clearIssueForChange} className={`space-y-5 pb-6 ${mobileEditor ? 'mobile-listing-editor' : ''}`} onSubmit={(event) => { event.preventDefault(); if (isFinalCreateListingStep) void handleSaveListing(event); else void goToNextCreateListingStep() }} noValidate>
         <header className="flex flex-wrap items-start justify-between gap-3">
           {mobileEditor ? <div className="mobile-listing-editor-intro"><p>{isDeveloperWorkspace ? 'Development portfolio' : 'Property portfolio'}</p><h1>{isEditListingWorkspace ? 'Edit listing' : 'New listing'}</h1><span>Save your progress. Finish when you’re ready.</span></div> : isEditListingWorkspace ? (
             <div>
@@ -8065,6 +8077,7 @@ function AgentListings({ initialTab = null, mobileEditor = false } = {}) {
             />
           )}
         >
+            <ListingValidationSummary issues={currentCreateListingIssues} onFix={openCreateListingIssue} />
             {createListingStep === 'seller' && mobileEditor && isDeveloperWorkspace ? <MobileDeveloperListingStock form={form} update={updateForm} developments={developmentOptions} units={listingUnitOptions} unitsLoading={listingUnitsLoading} onSelectUnit={applyDeveloperUnitSelection} agents={assignableAgents} branches={effectiveBranchOptions} canAssign={canAssignAcrossOrganisation || canAssignWithinBranch} canAssignAcross={canAssignAcrossOrganisation} /> : createListingStep === 'seller' ? (
               <div className="space-y-6">
                 <ListingWizardHeader
@@ -8073,6 +8086,9 @@ function AgentListings({ initialTab = null, mobileEditor = false } = {}) {
                   eyebrow={`Step ${listingEditorSteps.findIndex((step) => step.key === 'seller') + 1} of ${listingEditorSteps.length}`}
                 />
 
+                <ListingWizardSection title="Where will this listing be advertised?" description="Choose channels now so their required fields are checked as you enter the listing. You can change these choices in Syndication.">
+                  <div className="flex flex-wrap gap-4">{createListingPortalStatuses.filter((channel) => !channel.internalOnly).map((channel) => <label key={channel.key} className="flex items-center gap-2 text-sm font-semibold text-[#2d445e]"><input type="checkbox" checked={Boolean(channel.enabled)} disabled={channel.availabilityLoading || channel.availability?.available !== true} onChange={() => toggleCreateListingSyndicationChannel(channel.key)} />{channel.label}{!channel.availabilityLoading && channel.availability?.available !== true ? <span className="text-xs font-normal">(not connected)</span> : null}</label>)}</div>
+                </ListingWizardSection>
                 <ListingWizardSection title="Ownership type">
                   <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
                     {QUICK_ADD_SELLER_TYPE_CARDS.map((option) => (
@@ -8091,7 +8107,7 @@ function AgentListings({ initialTab = null, mobileEditor = false } = {}) {
                 <ListingWizardSection title="Seller details" divided>
                   {['company', 'close_corporation', 'trust', 'other'].includes(sellerTypeKey) ? (
                     <div className="mt-3 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                      <FormField label={sellerTypeKey === 'trust' ? 'Trust name *' : sellerTypeKey === 'close_corporation' ? 'CC name *' : sellerTypeKey === 'other' ? 'Entity name *' : 'Company name *'}>
+                      <FormField validationField="entityName" label={sellerTypeKey === 'trust' ? 'Trust name *' : sellerTypeKey === 'close_corporation' ? 'CC name *' : sellerTypeKey === 'other' ? 'Entity name *' : 'Company name *'}>
                         <Field value={sellerTypeKey === 'trust' ? form.trustName : form.companyName} onChange={(event) => updateForm(sellerTypeKey === 'trust' ? 'trustName' : 'companyName', event.target.value)} />
                       </FormField>
                       <FormField label={sellerTypeKey === 'trust' ? 'Trust registration/reference number' : 'Registration number'}>
@@ -8100,22 +8116,22 @@ function AgentListings({ initialTab = null, mobileEditor = false } = {}) {
                       <FormField label="Contact person">
                         <Field value={form.sellerName} onChange={(event) => updateForm('sellerName', event.target.value)} />
                       </FormField>
-                      <FormField label="Mobile *">
+                      <FormField validationField="sellerContact" label="Mobile *">
                         <Field value={form.sellerPhone} onChange={(event) => updateForm('sellerPhone', event.target.value)} />
                       </FormField>
-                      <FormField label="Email *">
+                      <FormField validationField="sellerEmail" label="Email *">
                         <Field type="email" value={form.sellerEmail} onChange={(event) => updateForm('sellerEmail', event.target.value)} />
                       </FormField>
                     </div>
                   ) : (
                     <div className="mt-3 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                      <FormField label={sellerDetailsRequired ? 'Full name *' : 'Full name'}>
+                      <FormField validationField="sellerName" label={sellerDetailsRequired ? 'Full name *' : 'Full name'}>
                         <Field value={form.sellerName} onChange={(event) => updateForm('sellerName', event.target.value)} />
                       </FormField>
-                      <FormField label={sellerDetailsRequired ? 'Mobile *' : 'Mobile'}>
+                      <FormField validationField="sellerContact" label={sellerDetailsRequired ? 'Mobile *' : 'Mobile'}>
                         <Field value={form.sellerPhone} onChange={(event) => updateForm('sellerPhone', event.target.value)} />
                       </FormField>
-                      <FormField label={sellerDetailsRequired ? 'Email *' : 'Email'}>
+                      <FormField validationField="sellerEmail" label={sellerDetailsRequired ? 'Email *' : 'Email'}>
                         <Field type="email" value={form.sellerEmail} onChange={(event) => updateForm('sellerEmail', event.target.value)} />
                       </FormField>
                       <FormField label="ID number">
@@ -8225,7 +8241,7 @@ function AgentListings({ initialTab = null, mobileEditor = false } = {}) {
               <div className="space-y-6">
                 <ListingWizardHeader title="Property details" />
 
-                <ListingWizardSection title="Property category">
+                <ListingWizardSection validationField="propertyCategory" title="Property category">
                   <div className="sales-property-categories" role="group" aria-label="Property category">
                     {PROPERTY_CATEGORIES.map((category) => {
                       const CategoryIcon = { residential: House, commercial: Building2, industrial: Warehouse, retail: Store, agricultural: Sprout, vacant_land: LandPlot, mixed_use: Blocks }[category] || Building2
@@ -8243,7 +8259,7 @@ function AgentListings({ initialTab = null, mobileEditor = false } = {}) {
                         ))}
                       </Field>
                     </FormField>
-                    <FormField label="Property type *">
+                    <FormField validationField="propertyType" label="Property type *">
                       <Field as="select" value={form.propertyType} onChange={(event) => updateForm('propertyType', event.target.value)}>
                         {CREATE_LISTING_DESCRIPTIVE_PROPERTY_TYPES.map((option) => (
                           <option key={option.value} value={option.value}>{option.label}</option>
@@ -8253,7 +8269,8 @@ function AgentListings({ initialTab = null, mobileEditor = false } = {}) {
                   </div>
                 </ListingWizardSection>
 
-                <ListingWizardSection title="Property address" divided>
+                <ListingWizardSection validationField="propertyAddress" title="Property address" divided>
+                  <p className="mb-3 text-sm text-[#607387]">For Property24 and Private Property, include the suburb so the portal can match this address.</p>
                   <AddressAutocomplete
                     label="Property address"
                     value={buildListingAddressValueFromForm(form)}
@@ -8267,19 +8284,19 @@ function AgentListings({ initialTab = null, mobileEditor = false } = {}) {
                   <details className="mt-4 rounded-xl border border-[#dbe6f2] bg-[#fbfdff] p-4">
                     <summary className="cursor-pointer text-sm font-semibold text-[#1f4f78]">Address details</summary>
                   <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
-                    <FormField label="Street number">
+                    <FormField validationField="streetNumber" label="Street number">
                       <Field value={form.streetNumber} onChange={(event) => updatePropertyAddressPart('streetNumber', event.target.value)} />
                     </FormField>
-                    <FormField label="Street name" className="xl:col-span-2">
+                    <FormField validationField="streetName" label="Street name" className="xl:col-span-2">
                       <Field value={form.streetName} onChange={(event) => updatePropertyAddressPart('streetName', event.target.value)} />
                     </FormField>
-                    <FormField label="Suburb">
+                    <FormField validationField="suburb" label="Suburb">
                       <Field value={form.suburb} onChange={(event) => updatePropertyAddressPart('suburb', event.target.value)} />
                     </FormField>
-                    <FormField label="City / Town">
+                    <FormField validationField="city" label="City / Town">
                       <Field value={form.city} onChange={(event) => updatePropertyAddressPart('city', event.target.value)} />
                     </FormField>
-                    <FormField label="Province">
+                    <FormField validationField="province" label="Province">
                       <Field value={form.province} onChange={(event) => updatePropertyAddressPart('province', event.target.value)} />
                     </FormField>
                     <FormField label="Postal code">
@@ -8312,15 +8329,15 @@ function AgentListings({ initialTab = null, mobileEditor = false } = {}) {
                   </div>
                   <div className="mt-4 grid gap-4 md:grid-cols-2">
                     <UnitInput label="Floor size" value={form.floorSize} onChange={(value) => updateForm('floorSize', value)} />
-                    {normalizeDirectListingKey(form.propertyType) !== 'apartment' ? (
+                    {normalizeDirectListingKey(form.propertyType) !== 'apartment' || ['vacant_land', 'land'].includes(form.propertyCategory) ? (
                       <UnitInput label="Erf size" value={form.erfSize} onChange={(value) => updateForm('erfSize', value)} />
                     ) : null}
                   </div>
                   <div className="mt-4 grid gap-4 md:grid-cols-2">
-                    <FormField label="Monthly rates and taxes (R)">
+                    <FormField validationField="ratesTaxes" label="Monthly rates and taxes (R)">
                       <Field type="number" min="0" step="1" value={form.ratesTaxes} onChange={(event) => updateForm('ratesTaxes', event.target.value)} placeholder="Optional" />
                     </FormField>
-                    <FormField label="Monthly levies (R)">
+                    <FormField validationField="levies" label="Monthly levies (R)">
                       <Field type="number" min="0" step="1" value={form.levies} onChange={(event) => updateForm('levies', event.target.value)} placeholder="Optional" />
                     </FormField>
                   </div>
@@ -8329,6 +8346,7 @@ function AgentListings({ initialTab = null, mobileEditor = false } = {}) {
                 <ListingWizardSection title="Price & sales options" divided>
                   <div className="mb-4 grid gap-4 md:grid-cols-2">
                     <CurrencyInput
+                      validationField="listingPrice"
                       label={form.listingType === 'rental' ? (form.priceOnApplication ? 'Monthly rent' : 'Monthly rent *') : (form.priceOnApplication ? 'Listing price' : 'Listing price *')}
                       value={form.listingPrice}
                       onChange={(value) => updateForm('listingPrice', value)}
@@ -8375,7 +8393,7 @@ function AgentListings({ initialTab = null, mobileEditor = false } = {}) {
                         field.kind === 'boolean' ? (
                           <BooleanChoiceField key={field.key} label={field.label} value={Boolean(form[field.key])} yesDescription="Available at this property." noDescription="Not available or not confirmed." onChange={(value) => updateForm(field.key, value)} />
                         ) : (
-                          <FormField key={field.key} label={`${field.key === 'parking' ? 'Parking details' : field.label}${field.required ? ' *' : ''}`} className={field.kind === 'terms' ? 'md:col-span-2' : ''}>
+                          <FormField key={field.key} validationField={field.key} label={`${field.key === 'parking' ? 'Parking details' : field.label}${field.required && !(field.key === 'listingTerms' && Number(form.listingPrice || form.estimatedAskingPrice) > 0) ? ' *' : ''}`} className={field.kind === 'terms' ? 'md:col-span-2' : ''}>
                             <Field as={field.kind === 'terms' ? 'textarea' : undefined} type={field.kind === 'measurement' ? 'number' : undefined} min={field.kind === 'measurement' ? '0' : undefined} step={field.kind === 'measurement' ? '0.1' : undefined} value={form[field.key] || ''} onChange={(event) => updateForm(field.key, event.target.value)} placeholder={field.unit ? `Enter ${field.label.toLowerCase()} in ${field.unit}` : `Enter ${field.label.toLowerCase()}`} />
                           </FormField>
                         )
@@ -8396,16 +8414,16 @@ function AgentListings({ initialTab = null, mobileEditor = false } = {}) {
                   <p className="text-xs font-bold uppercase text-[#1f7d44]">Step {listingEditorSteps.findIndex((step) => step.key === 'marketing') + 1} of {listingEditorSteps.length}</p>
                   <h2 className="mt-2 text-2xl font-semibold text-[#142132]">Marketing</h2>
                 </div>
-                <div className="rounded-[8px] border border-dashed border-[#c8d7e8] bg-[#fbfdff] p-5">
+                <ListingValidationTarget field="listingImages"><div className="rounded-[8px] border border-dashed border-[#c8d7e8] bg-[#fbfdff] p-5">
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                     <div>
-                      <h3 className="text-sm font-bold text-[#142132]">Photos</h3>
+                      <h3 className="text-sm font-bold text-[#142132]">Photos</h3><p className="text-sm text-[#607387]">Property24 and the agency website require at least one photo; Private Property requires three. Public channels require a description.</p>
                       <p className="mt-1 text-sm text-[#607387]">{form.listingImages.length ? `${form.listingImages.length} image${form.listingImages.length === 1 ? '' : 's'} selected` : 'No images selected yet'}</p>
                     </div>
                     <label className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-[8px] border border-[#1f7d44] bg-[#1f7d44] px-3 text-sm font-semibold text-white transition hover:bg-[#176437]">
                       <ImagePlus size={16} />
                       Upload images
-                      <input type="file" accept="image/*" multiple className="hidden" onChange={handleCreateListingImageUpload} />
+                      <input type="file" accept="image/*" multiple className="sr-only" aria-label="Upload listing photos" onChange={handleCreateListingImageUpload} />
                     </label>
                   </div>
                   {form.listingImages.length ? (
@@ -8438,17 +8456,17 @@ function AgentListings({ initialTab = null, mobileEditor = false } = {}) {
                       })}
                     </div>
                   ) : null}
-                </div>
+                </div></ListingValidationTarget>
 
                 <div className="grid gap-4">
-                  <label className="grid gap-2">
+                  <ListingValidationTarget field="listingTitle"><label className="grid gap-2">
                     <span className="text-sm font-semibold text-[#2d445e]">Listing title</span>
                     <Field value={form.listingTitle} onChange={(event) => updateForm('listingTitle', event.target.value)} placeholder="Modern family home in..." />
-                  </label>
-                  <label className="grid gap-2">
+                  </label></ListingValidationTarget>
+                  <ListingValidationTarget field="listingDescription"><label className="grid gap-2">
                     <span className="text-sm font-semibold text-[#2d445e]">Listing description</span>
                     <Field as="textarea" value={form.listingDescription} onChange={(event) => updateForm('listingDescription', event.target.value)} placeholder="Describe the property, lifestyle, and standout value." />
-                  </label>
+                  </label></ListingValidationTarget>
 
                 </div>
               </div>
@@ -8466,7 +8484,7 @@ function AgentListings({ initialTab = null, mobileEditor = false } = {}) {
                     const channelAvailable = portal.internalOnly || portal.availability?.available === true
                     const needsAttention = portal.internalOnly ? '' : portal.availabilityLoading ? 'Checking channel connection…' : !channelAvailable ? 'Not connected for this organisation' : portal.missing.length ? `${portal.missing.length} required field${portal.missing.length === 1 ? '' : 's'} missing` : ''
                     return <ListingSyndicationChannelCard key={portal.key} channel={portal} selected={Boolean(portal.enabled)} disabled={!channelAvailable || portal.availabilityLoading} needsAttention={needsAttention} agencyLogo={agencyLogo} onToggle={toggleCreateListingSyndicationChannel}>
-                      {channelAvailable && portal.missing.length ? <Button type="button" size="sm" variant="secondary" onClick={() => setCreateListingStep(portal.missing.some((item) => ['Description', 'Photos'].includes(item)) ? 'marketing' : 'property')}>Fix {portal.missing.length} field{portal.missing.length === 1 ? '' : 's'}</Button> : null}
+                      {channelAvailable && portal.issues?.length ? <ListingValidationSummary issues={portal.issues} onFix={openCreateListingIssue} title="Complete these fields for this channel" /> : null}
                     </ListingSyndicationChannelCard>
                   })}
                 </div>
@@ -8552,7 +8570,7 @@ function AgentListings({ initialTab = null, mobileEditor = false } = {}) {
             ) : null}
 
         </ListingWizard>
-      </form>
+      </form></ListingValidationProvider>
     )
   }
 

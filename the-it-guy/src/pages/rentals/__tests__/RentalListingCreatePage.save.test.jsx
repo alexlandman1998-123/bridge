@@ -55,7 +55,7 @@ it('searches and selects an address, wires property cards and neutral counters, 
   fireEvent.click(increase)
   fireEvent.click(increase)
   fireEvent.click(screen.getByRole('button', { name: 'Decrease Bedrooms' }))
-  const search = screen.getByRole('combobox', { name: '' })
+  const search = screen.getByRole('combobox', { name: 'Property address' })
   fireEvent.focus(search)
   await waitFor(() => expect(mocks.loadMaps).toHaveBeenCalled())
   fireEvent.change(search, { target: { value: '81 Wild' } })
@@ -136,7 +136,7 @@ it('shows photo progress, prevents duplicate submissions, and retries the existi
 })
 
 it('asks documented category questions, filters property types, and retains hidden answers across category/title changes', async () => {
-  window.sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ activeStep: 'property', form: {} }))
+  window.sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ activeStep: 'property', form: { landlordName: 'Owner', propertyAddress: '12 Example Road' } }))
   render(<MemoryRouter><RentalListingCreatePage /></MemoryRouter>)
   const title = await screen.findByLabelText('Ownership / title type')
   expect(screen.queryByLabelText('Unit number')).toBeNull()
@@ -268,4 +268,75 @@ it('does not create remotely when browser storage cannot retain the recovery ide
     await screen.findByText('Browser storage unavailable')
     expect(mocks.create).not.toHaveBeenCalled()
   } finally { storage.mockRestore() }
+})
+
+
+it('blocks forward navigation and focuses the missing landlord field while still allowing a session draft', async () => {
+  render(<MemoryRouter><RentalListingCreatePage /></MemoryRouter>)
+  fireEvent.click(screen.getByRole('button', { name: 'Step 7: Review' }))
+  const owner = screen.getByLabelText('Full name *')
+  expect(document.activeElement).toBe(owner)
+  expect(owner.getAttribute('aria-invalid')).toBe('true')
+  expect(document.getElementById('listing-field-landlordName').textContent).toContain('Landlord or entity name is required.')
+  fireEvent.click(screen.getByRole('button', { name: 'Save draft' }))
+  expect(JSON.parse(window.sessionStorage.getItem(DRAFT_KEY)).form.landlordName).toBe('')
+  expect(mocks.create).not.toHaveBeenCalled()
+  fireEvent.change(owner, { target: { value: 'Owner' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+  expect(await screen.findByLabelText('Property type')).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+  expect(document.activeElement).toBe(screen.getByRole('combobox', { name: 'Property address' }))
+})
+
+it('shows negative rental amount beside its input and will not advance until corrected', async () => {
+  window.sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ activeStep: 'terms', form: { landlordName: 'Owner', propertyAddress: '12 Example Road', monthlyRent: '-1', depositPolicy: 'no_deposit', availableFrom: '2026-11-01', description: 'Rental home' } }))
+  render(<MemoryRouter><RentalListingCreatePage /></MemoryRouter>)
+  const rent = await screen.findByLabelText('Rental amount')
+  fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+  expect(document.activeElement).toBe(rent)
+  expect(document.getElementById('listing-field-monthlyRent').textContent).toContain('Enter a rental amount greater than zero.')
+  fireEvent.change(rent, { target: { value: '11000' } })
+  expect(rent.hasAttribute('aria-describedby')).toBe(false)
+  fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+  expect(await screen.findByLabelText('Upload listing photos')).toBeTruthy()
+  expect(mocks.create).not.toHaveBeenCalled()
+})
+
+it('takes a selected channel photo error directly from syndication to the photo uploader', async () => {
+  window.sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ activeStep: 'syndication', form: { landlordName: 'Owner', propertyAddress: '12 Example Road', streetNumber: '12', streetName: 'Example Road', suburb: 'Newlands', city: 'Pretoria', province: 'Gauteng', bedrooms: '0', bathrooms: '0', monthlyRent: '11000', depositPolicy: 'no_deposit', availableFrom: '2026-11-01', description: 'Rental home', selectedSyndicationChannels: ['private_property'], galleryImages: [{ id: '1', url: 'https://photos.test/1.jpg' }, { id: '2', url: 'https://photos.test/2.jpg' }] } }))
+  render(<MemoryRouter><RentalListingCreatePage /></MemoryRouter>)
+  fireEvent.click(await screen.findByRole('button', { name: /Add at least 3 listing photos.*Fix here/ }))
+  const uploader = await screen.findByLabelText('Upload listing photos')
+  expect(document.activeElement).toBe(uploader)
+  expect(document.getElementById('listing-field-galleryImages').textContent).toContain('Add at least 3 listing photos')
+  expect(mocks.create).not.toHaveBeenCalled()
+})
+
+it('opens the exact additional-details dialog and field for an invalid portal fact', async () => {
+  window.sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ activeStep: 'review', form: { landlordName: 'Owner', propertyAddress: '12 Example Road', monthlyRent: '11000', depositPolicy: 'no_deposit', availableFrom: '2026-11-01', description: 'Rental home', rentalPortalFacts: { 'propertyInfo.age': -1 } } }))
+  render(<MemoryRouter><RentalListingCreatePage /></MemoryRouter>)
+  fireEvent.click(await screen.findByRole('button', { name: /Enter a valid age.*Fix here/ }))
+  const age = await screen.findByLabelText('Age')
+  expect(document.activeElement).toBe(age)
+  expect(screen.getByRole('dialog')).toBeTruthy()
+  expect(document.getElementById('listing-field-propertyInfo.age').textContent).toContain('Enter a valid age.')
+  fireEvent.change(age, { target: { value: '0' } })
+  expect(document.getElementById('listing-field-propertyInfo.age').textContent).not.toContain('Enter a valid age.')
+  fireEvent.click(screen.getByRole('button', { name: 'Done' }))
+  expect(screen.queryByRole('dialog')).toBeNull()
+})
+
+
+it('lets an agent explicitly confirm zero bedrooms and bathrooms without increasing the counters first', async () => {
+  window.sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ activeStep: 'property', form: { landlordName: 'Owner', propertyAddress: '12 Example Road', streetNumber: '12', streetName: 'Example Road', suburb: 'Newlands', city: 'Pretoria', province: 'Gauteng', selectedSyndicationChannels: ['private_property'] } }))
+  render(<MemoryRouter><RentalListingCreatePage /></MemoryRouter>)
+  const bedrooms = await screen.findByLabelText('Bedrooms')
+  const bathrooms = screen.getByLabelText('Bathrooms')
+  expect(document.getElementById('listing-field-bedrooms').textContent).toContain('Confirm bedrooms')
+  fireEvent.change(bedrooms, { target: { value: '0' } })
+  fireEvent.change(bathrooms, { target: { value: '0' } })
+  expect(document.getElementById('listing-field-bedrooms').textContent).not.toContain('Confirm bedrooms')
+  fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+  expect(await screen.findByRole('button', { name: 'Open Rooms & living' })).toBeTruthy()
+  expect(mocks.create).not.toHaveBeenCalled()
 })

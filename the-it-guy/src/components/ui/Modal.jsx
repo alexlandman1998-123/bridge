@@ -11,7 +11,7 @@ const FOCUSABLE_SELECTOR = [
   '[tabindex]:not([tabindex="-1"])',
 ].join(',')
 
-function Modal({ open, onClose, title, subtitle = '', footer = null, className = '', children }) {
+function Modal({ open, onClose, title, subtitle = '', footer = null, className = '', children, initialFocusId = '' }) {
   const dialogRef = useRef(null)
   const onCloseRef = useRef(onClose)
   const titleId = useId()
@@ -28,7 +28,10 @@ function Modal({ open, onClose, title, subtitle = '', footer = null, className =
     document.body.style.overflow = 'hidden'
 
     const focusTimer = window.setTimeout(() => {
-      const preferredTarget = dialogRef.current?.querySelector('[autofocus]')
+      const targetContainer = initialFocusId ? document.getElementById(initialFocusId) : null
+      const initialTarget = targetContainer && dialogRef.current?.contains(targetContainer)
+        ? targetContainer.querySelector('input, select, textarea') || targetContainer.querySelector('button') || targetContainer : null
+      const preferredTarget = initialTarget || dialogRef.current?.querySelector('[autofocus]')
         || dialogRef.current?.querySelector(FOCUSABLE_SELECTOR)
         || dialogRef.current
       preferredTarget?.focus()
@@ -68,7 +71,7 @@ function Modal({ open, onClose, title, subtitle = '', footer = null, className =
         previouslyFocused.focus()
       }
     }
-  }, [open])
+  }, [open, initialFocusId])
 
   if (!open || typeof document === 'undefined') return null
 

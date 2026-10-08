@@ -1,3 +1,4 @@
+import { listingIssueEditorUrl } from '../../services/listings/listingPublicationIssueTarget'
 import { buildRentalWorkspaceKey } from '../../services/rentals/rentalWorkspaceScope'
 import { getListingChannelViewUrl } from '../../services/listings/listingMarketingChannelPresentation'
 import ListingChannelTableHeader from '../../components/listings/ListingChannelTableHeader'
@@ -1343,7 +1344,10 @@ function ScopedRentalListingDetailPage() {
   }
 
   function handleReadinessFix(action) {
-    if (action.kind === 'editor') openEditPanel(action.step)
+    if (action.kind === 'editor') {
+      if (action.field) navigate(listingIssueEditorUrl(`/agent/rentals/listings/${encodeURIComponent(listingId)}/edit`, action, action.message))
+      else openEditPanel(action.step)
+    }
     else if (action.kind === 'settings') navigate(action.path)
     else if (action.kind === 'expiry') document.getElementById('rental-property24-expiry')?.focus()
     else if (action.kind === 'check') void (action.channel === 'property24' ? handleCheckProperty24Readiness() : handleCheckPrivatePropertyReadiness())

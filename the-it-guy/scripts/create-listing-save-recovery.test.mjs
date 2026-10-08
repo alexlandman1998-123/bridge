@@ -1,3 +1,4 @@
+import { issuesBeforeListingStep } from '../src/services/listings/listingCaptureValidation.js'
 import assert from 'node:assert/strict'
 import { File } from 'node:buffer'
 import { readFileSync } from 'node:fs'
@@ -309,6 +310,7 @@ test('two immediate submit events cannot create two listings', async () => {
   let saves = 0
   const context = {
     isListingSaving: false, isCreateListingWorkspace: true, isEditListingWorkspace: false,
+    isListingEditorWorkspace: true, createListingIssues: [], openCreateListingIssue() {},
     listingSaveInFlightRef: { current: false }, completedCreateListingRef: { current: false },
     setError() {}, setWorkflowMessage() {}, setIsListingSaving() {}, assertMvpPilotCreationAllowed() {}, console: quietConsole,
     performSaveListing: () => { saves += 1; return new Promise((resolve) => { finishSave = resolve }) },
@@ -319,6 +321,23 @@ test('two immediate submit events cannot create two listings', async () => {
   assert.equal(saves, 1)
   finishSave()
   await first
+  assert.equal(context.listingSaveInFlightRef.current, false)
+})
+
+test('a final submit opens the exact capture issue before creating or updating anything', async () => {
+  const issue = { field: 'listingPrice', step: 'property', message: 'Enter a valid price.' }
+  let opened
+  let saves = 0
+  const context = {
+    isListingSaving: false, isCreateListingWorkspace: true, isEditListingWorkspace: false,
+    isListingEditorWorkspace: true, createListingIssues: [issue], openCreateListingIssue(value) { opened = value },
+    listingSaveInFlightRef: { current: false }, completedCreateListingRef: { current: false },
+    performSaveListing() { saves += 1 },
+  }
+  const submit = bind(context, between('async function handleSaveListing(', 'function requestListingDeletion('), 'handleSaveListing')
+  await submit({ preventDefault() {} })
+  assert.deepEqual(opened, issue)
+  assert.equal(saves, 0)
   assert.equal(context.listingSaveInFlightRef.current, false)
 })
 
@@ -391,4 +410,36 @@ test('the real creation mapper persists the listing price and developer stock re
   assert.equal(saved.unitNumber, '001')
   assert.equal(saved.developmentId, 'development-1')
   assert.equal(saved.unitId, 'unit-1')
+})
+
+
+test('sales Continue blocks the current field and does not autosave an invalid edit', async () => {
+  const issue = { field: 'listingPrice', step: 'property', message: 'Enter a valid price.' }
+  let opened, saves = 0, advanced = false
+  const context = {
+    createListingIssues: [issue], createListingStep: 'property', createListingStepIndex: 1,
+    listingEditorSteps: ['seller','property','features','marketing','syndication','review'].map(key => ({key})),
+    issuesBeforeListingStep,
+    openCreateListingIssue(value) { opened = value },
+    isEditListingWorkspace: true, isListingSaving: false,
+    performUpdateExistingListing() { saves += 1 },
+    openCreateListingStep() { advanced = true },
+  }
+  const next = bind(context, between('async function goToNextCreateListingStep(', 'function goToPreviousCreateListingStep('), 'goToNextCreateListingStep')
+  await next()
+  assert.deepEqual(opened, issue); assert.equal(saves, 0); assert.equal(advanced, false)
+})
+
+test('sales progress clicks cannot skip an invalid revisited page', () => {
+  const issue = { field: 'suburb', step: 'property', message: 'Enter a suburb.' }
+  let opened, changed = false
+  const context = {
+    createListingIssues: [issue], createListingStepIndex: 1, createListingMaxVisitedStep: 5,
+    listingEditorSteps: ['seller','property','features','marketing','syndication','review'].map(key => ({key})),
+    isEditListingWorkspace: false, issuesBeforeListingStep,
+    openCreateListingIssue(value) { opened = value }, setCreateListingStep() { changed = true },
+  }
+  const open = bind(context, between('function openCreateListingStep(', 'async function goToNextCreateListingStep('), 'openCreateListingStep')
+  open('review')
+  assert.deepEqual(opened, issue); assert.equal(changed, false)
 })

@@ -2746,3 +2746,33 @@ Focused checks:
 `node --test src/services/__tests__/privateListingService.mobileInventory.test.js`,
 `npm run test:direct-listing-persistence-phase3`, and
 `npm run test:mobile-shell-routing`.
+
+
+### Listing capture validation (8 October 2026)
+
+Sales and rental capture now check fields on their owning page. Agents can select
+publication channels at the start, so portal requirements appear before they fill
+Property details, Rental terms or Marketing. Continue, forward progress clicks
+and the final submit cannot bypass incomplete earlier pages. Save draft retains
+its existing recovery path and does not require publication-ready photos or
+signed mandate/FICA evidence.
+
+Each issue links to the exact field or container, expands address details or the
+appropriate feature dialog, focuses its input, and shows the correction beside
+it. Saved listing channel issues carry their message into the same editor target;
+portal account and agent-mapping issues retain their settings destination.
+
+Capture checks include Private Property's three-photo minimum, address details,
+confirmed bedroom/bathroom counts (zero is accepted), description restrictions,
+positive pricing, valid rental dates and amounts, future Property24 expiry and
+category support. Residential floor size remains optional. Property24 category
+and type rules reuse the server's pure contract; the authoritative server check
+still verifies account/location mappings and prepares media before publishing.
+This change owns only the primary app and requires no database migration.
+
+Focused verification:
+`node --test src/services/listings/__tests__/listingCaptureValidation.test.js src/services/rentals/__tests__/rentalListingReadinessPresentation.test.js`,
+`npx vitest run src/pages/rentals/__tests__/RentalListingCreatePage.save.test.jsx src/pages/mobile/__tests__/MobileListingWizardKeyboard.test.jsx src/pages/mobile/__tests__/MobileListingFields.test.jsx`,
+`npm run test:direct-listing-persistence-phase3`,
+`npm run test:property24-commercial-listing-readiness`, and
+`npm run test:public-listing-readiness`.
