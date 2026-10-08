@@ -2776,3 +2776,15 @@ Focused verification:
 `npm run test:direct-listing-persistence-phase3`,
 `npm run test:property24-commercial-listing-readiness`, and
 `npm run test:public-listing-readiness`.
+
+Release verified at `https://app.arch9.co.za` on 8 October 2026: runtime commit
+`51956d7b7ad978c8b598679b711b6e331126a94d`, Vercel deployment
+`dpl_8YttRkA1JVctbyScZNjapuQSrKM6`. This includes the already-live Home Seekers
+commit `80d1180f840863e66930a9051b0c41494bf47cc9`; the rollback deployment is
+`dpl_EGXGLggC5oEcyLNxXmXra9gfwSev`. No migration or live listing write was performed.
+The primary app check, exact-source production build, 57 focused tests, local
+desktop/mobile capture interactions and all 830 deployed critical assets passed.
+The live app shell identifies the same runtime commit. Signed-in production
+capture was not retested because no authenticated browser was available.
+The older `test:listing-portal-readiness-phase5` source-text assertion still expects
+the previously removed rental readiness grid; use the focused behavior checks above.
