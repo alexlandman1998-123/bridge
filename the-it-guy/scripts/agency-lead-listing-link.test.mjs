@@ -14,9 +14,9 @@ try {
     buildLeadListingLinkPatch,
     getBuyerLeadOptions,
     isLeadLinkedToListing,
-    isSellerLeadForListing,
     mapAgencyLeadSelectionRows,
   } = await server.ssrLoadModule('/src/lib/agencyLeadSelection.js')
+  const { isSellerLeadForListing } = await server.ssrLoadModule('/src/lib/listingLeadScope.js')
   const { __agencyCrmRepositoryTestUtils } = await server.ssrLoadModule('/src/lib/agencyCrmRepository.js')
 
   const listing = {

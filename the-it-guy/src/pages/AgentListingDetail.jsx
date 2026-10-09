@@ -195,9 +195,9 @@ import {
   buildLeadListingLinkPatch,
   getBuyerLeadOptions,
   isLeadLinkedToListing,
-  isSellerLeadForListing,
   mapAgencyLeadSelectionRows,
 } from '../lib/agencyLeadSelection'
+import { isSellerLeadForListing } from '../lib/listingLeadScope.js'
 import { assessBuyerOfferEligibility, assessBuyerOfferIntegrity, assessSellerOnboardingIntegrity } from '../lib/listingDataIntegrity'
 import { buildAgentAssistedOfferEntry, buildManualBuyerCapture } from '../lib/agentAssistedOfferEntry'
 import {
