@@ -770,7 +770,7 @@
     "reconcile:invite-acceptance": "node scripts/reconcile-invite-acceptance.mjs",
     "verify:invite-acceptance-health": "node scripts/verify-invite-acceptance-health.mjs",
     "prepare:invite-acceptance-rollout": "node scripts/prepare-invite-acceptance-rollout.mjs",
-    "test:partner-invite-durable-acceptance": "node scripts/partner-invite-durable-acceptance.test.mjs",
+    "test:partner-invite-durable-acceptance": "node scripts/partner-invite-durable-acceptance.test.mjs && vitest run src/lib/__tests__/pendingPartnerInvite.test.js src/pages/__tests__/PartnerInvitationAcceptPage.test.jsx",
     "test:transaction-partner-invite-org-connection": "node scripts/transaction-partner-invite-org-connection.test.mjs && node scripts/transaction-partner-handoff-binding.test.mjs && vitest run src/pages/__tests__/TransactionPartnerInvitePage.test.jsx src/services/__tests__/transactionPartnerHandoffService.test.js",
     "test:invite-acceptance-reconciliation": "node scripts/invite-acceptance-reconciliation.test.mjs",
     "test:invite-acceptance-health": "node scripts/invite-acceptance-health.test.mjs",

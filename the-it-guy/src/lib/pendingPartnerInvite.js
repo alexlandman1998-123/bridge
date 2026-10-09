@@ -1,3 +1,5 @@
+import { POST_LOGIN_REDIRECT_STORAGE_KEY } from './resolveMobileAwareRedirect'
+
 const PENDING_PARTNER_INVITE_PATH_STORAGE_KEY = 'itg:pending-partner-invite-path'
 
 function readStorage(storage, key) {
@@ -68,10 +70,20 @@ export function buildPartnerInviteAutoAcceptPath(path = '') {
 
 export function clearPendingPartnerInvitePath(path = '') {
   if (typeof window === 'undefined') return
-  const currentPath = readPendingPartnerInvitePath()
   const safePath = String(path || '').trim()
-  if (!safePath || safePath === currentPath) {
+  if (safePath && !isPartnerInviteReturnPath(safePath)) return
+  // Refresh and auto-accept parameters do not change which invitation is pending.
+  const invitationPath = safePath.split(/[?#]/)[0]
+  const matchesInvitation = (savedPath) => isPartnerInviteReturnPath(savedPath) &&
+    (!safePath || savedPath.split(/[?#]/)[0] === invitationPath)
+  // A different tab may have saved another invitation in localStorage.
+  if (!safePath || matchesInvitation(readStorage(window.sessionStorage, PENDING_PARTNER_INVITE_PATH_STORAGE_KEY))) {
     removeStorage(window.sessionStorage, PENDING_PARTNER_INVITE_PATH_STORAGE_KEY)
+  }
+  if (!safePath || matchesInvitation(readStorage(window.localStorage, PENDING_PARTNER_INVITE_PATH_STORAGE_KEY))) {
     removeStorage(window.localStorage, PENDING_PARTNER_INVITE_PATH_STORAGE_KEY)
+  }
+  if (matchesInvitation(readStorage(window.sessionStorage, POST_LOGIN_REDIRECT_STORAGE_KEY))) {
+    removeStorage(window.sessionStorage, POST_LOGIN_REDIRECT_STORAGE_KEY)
   }
 }

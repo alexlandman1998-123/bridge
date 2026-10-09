@@ -28,6 +28,10 @@ function normalizeText(value = '') {
   return String(value || '').trim()
 }
 
+function isUnavailableInvitation(error) {
+  return ['not_found', 'expired', 'revoked', 'declined'].includes(normalizeText(error?.code).toLowerCase())
+}
+
 function titleize(value = '') {
   return normalizeText(value)
     .replace(/[_-]+/g, ' ')
@@ -272,6 +276,7 @@ export default function PartnerInvitationAcceptPage() {
         setAccepted(Boolean(result?.alreadyAccepted))
       } catch (previewError) {
         if (active) {
+          if (isUnavailableInvitation(previewError)) clearPendingPartnerInvitePath(returnPath)
           setPreview(null)
           setError(previewError?.message || 'Unable to load this partner invitation.')
         }
@@ -285,7 +290,7 @@ export default function PartnerInvitationAcceptPage() {
     return () => {
       active = false
     }
-  }, [invitationId, session, workspaceId])
+  }, [invitationId, returnPath, session, workspaceId])
 
   const handleAccept = useCallback(async function handleAccept({ redirectOnSuccess = false } = {}) {
     try {
@@ -302,6 +307,7 @@ export default function PartnerInvitationAcceptPage() {
         navigate(autoAcceptRedirectPath, { replace: true })
       }
     } catch (acceptError) {
+      if (isUnavailableInvitation(acceptError)) clearPendingPartnerInvitePath(returnPath)
       if (acceptError?.details?.invitation || acceptError?.invitation) {
         setPreview(acceptError.details?.invitation || acceptError.invitation)
       }
@@ -360,6 +366,7 @@ export default function PartnerInvitationAcceptPage() {
   }, [accepting, autoAccept, canAcceptInvitation, error, handleAccept, loadingPreview, preview, session, workspaceId])
 
   function openPartners() {
+    clearPendingPartnerInvitePath(returnPath)
     navigate('/partners?tab=invitations', { replace: true })
   }
 
@@ -516,8 +523,11 @@ export default function PartnerInvitationAcceptPage() {
                       {error}
                     </StatusPanel>
                     <div className="flex flex-wrap gap-3">
+                      <Button asChild size="lg" className="rounded-[14px]">
+                        <Link to={autoAcceptRedirectPath} replace onClick={() => clearPendingPartnerInvitePath(returnPath)}>Return to dashboard</Link>
+                      </Button>
                       <Button asChild variant="secondary" size="lg" className="rounded-[14px] border-[#d8dfd4] bg-[#fffdf8]">
-                        <Link to="/partners?tab=invitations">Open Partners</Link>
+                        <Link to="/partners?tab=invitations" replace onClick={() => clearPendingPartnerInvitePath(returnPath)}>Open Partners</Link>
                       </Button>
                       <Button asChild variant="ghost" size="lg" className="rounded-[14px]">
                         <Link to={authPath}>Use another account</Link>
