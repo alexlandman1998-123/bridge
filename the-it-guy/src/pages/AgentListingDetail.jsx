@@ -5141,8 +5141,9 @@ function AgentListingDetail() {
       if (!propertySaveVerification.ready || !poaVerified) {
         throw new Error(listingPropertySaveErrorMessage(propertySaveVerification))
       }
+      const committedListing = verifiedListing?.id ? mergeListingRecord(mergedSavedListing, verifiedListing) : mergedSavedListing
       if (verifiedListing?.id) {
-        setPrivateListings((rows) => upsertListingRecord(rows, mergeListingRecord(verifiedListing, mergedSavedListing)))
+        setPrivateListings((rows) => upsertListingRecord(rows, committedListing))
       }
       let priceHistoryIssue = false
       if (!options.skipPriceHistory && previousAskingPrice > 0 && normalizedPrice > 0 && previousAskingPrice !== normalizedPrice) {
@@ -5170,7 +5171,7 @@ function AgentListingDetail() {
       hydratedMarketingListingIdRef.current = String(mergedSavedListing?.id || updatedListing.id || listingId || '').trim()
       clearStoredMarketingDraft(hydratedMarketingListingIdRef.current)
       setDetailMessage(priceHistoryIssue ? 'Listing price saved, but pricing history could not be recorded. Please retry or contact support.' : options.successMessage || 'Listing details saved.')
-      return { ok: true, listing: mergedSavedListing, distributionSync }
+      return { ok: true, listing: committedListing, draft: effectiveDraft, distributionSync }
     } catch (error) {
       console.error('[AgentListingDetail] Supabase listing save failed', error)
       setDetailError(error?.message || 'Saved locally, but Supabase could not be updated.')
@@ -5701,7 +5702,7 @@ function AgentListingDetail() {
     setMarketingDraft(nextDraft)
     markMarketingDraftDirty(false)
     clearStoredMarketingDraft(listingRecord.id)
-    if (savedListing?.id) setPrivateListings((rows) => upsertListingRecord(rows, mergeListingRecord(savedListing, listingRecord)))
+    if (savedListing?.id) setPrivateListings((rows) => upsertListingRecord(rows, mergeListingRecord(listingRecord, savedListing)))
     return { savedListing, distributionSync }
   }
 
@@ -5740,6 +5741,7 @@ function AgentListingDetail() {
   }
 
   async function withdrawListingFromMarketing() {
+    let withdrawalDraft = marketingDraft
     const previousResults = new Map(listingWithdrawalResults.map((result) => [result.key, result]))
     let results = getListingWithdrawalPlan().map((result) => {
       const previous = previousResults.get(result.key)
@@ -5758,6 +5760,23 @@ function AgentListingDetail() {
     setPublicationSaving(true)
     setDetailError('')
     setDetailMessage('Withdrawing the listing from its public channels...')
+
+    // Save the complete edit before changing any channel. Keep its materialized
+    // media in the withdrawal snapshot so a blob preview cannot replace a saved photo.
+    if (marketingDraftDirtyRef.current) {
+      try {
+        const saveResult = await saveMarketingDraft({ ...withdrawalDraft, publicationStatus: 'Draft' })
+        if (!saveResult?.ok || saveResult.localOnly || !saveResult.draft) {
+          throw saveResult?.error || new Error('Your listing changes could not be saved. Withdrawal has not started; save your changes and try again.')
+        }
+        withdrawalDraft = saveResult.draft
+      } catch (error) {
+        setDetailMessage('')
+        setDetailError(error?.message || 'Your listing changes could not be saved. Withdrawal has not started.')
+        setPublicationSaving(false)
+        return
+      }
+    }
 
     for (const channel of results) {
       if (!channel.active || channel.status === 'succeeded' || channel.key === 'arch9_catalogue') continue
@@ -5795,7 +5814,7 @@ function AgentListingDetail() {
     }
 
     const completeBeforeSave = listingWithdrawalIsComplete(results)
-    const nextDraft = applyListingWithdrawalResults(marketingDraft, results, { complete: completeBeforeSave })
+    const nextDraft = applyListingWithdrawalResults(withdrawalDraft, results, { complete: completeBeforeSave })
     try {
       await persistListingWithdrawalState(nextDraft, completeBeforeSave)
       await recordListingWithdrawalChannelResults(results.filter((result) => attemptedChannelKeys.has(result.key)))
@@ -16440,12 +16459,6 @@ function AgentListingDetail() {
                       icon: BarChart3,
                     },
                   ]}
-                />
-
-                <ListingChannelStatistics
-                  organisationId={listingOrganisationId}
-                  listingId={listingId}
-                  refreshKey={overviewLastRefreshedAt}
                 />
 
                 <div className="mt-4 flex flex-wrap items-center justify-between gap-3" aria-live="polite">
