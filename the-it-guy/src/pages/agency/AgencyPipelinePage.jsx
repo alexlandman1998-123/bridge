@@ -13515,13 +13515,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }, [isLeadWorkspaceRoute, records.leads, routeLeadId, selectedLeadId])
 
-  useEffect(() => {
-    if (!selectedAppointmentId) return
-    if (![...records.appointments, ...(isCalendarMode ? calendarAppointmentLoad.rows : [])].some((appointment) => normalizeText(appointment?.appointmentId) === normalizeText(selectedAppointmentId))) {
-      setSelectedAppointmentId('')
-    }
-  }, [records.appointments, selectedAppointmentId, isCalendarMode, calendarAppointmentLoad.rows])
-
   const leadSourceOptions = MANUAL_LEAD_SOURCE_OPTIONS
 
   const filteredLeads = useMemo(() => {
@@ -14641,6 +14634,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     enabled: Boolean(selectedLead?.leadId) && !isCalendarMode,
     timeoutMs: PIPELINE_APPOINTMENT_RECORDS_TIMEOUT_MS,
   })
+  useEffect(() => {
+    if (!selectedAppointmentId) return
+    if (![...records.appointments, ...(isCalendarMode ? calendarAppointmentLoad.rows : [])].some((appointment) => normalizeText(appointment?.appointmentId) === normalizeText(selectedAppointmentId))) {
+      setSelectedAppointmentId('')
+    }
+  }, [records.appointments, selectedAppointmentId, isCalendarMode, calendarAppointmentLoad.rows])
+
   useEffect(() => {
     if (calendarAppointmentLoad.status !== 'ready') return
     const scopedAppointments = mergeCalendarAppointmentRows(
