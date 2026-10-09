@@ -15,7 +15,7 @@ import { saveListingSellerCanonicalUpdate } from '../../services/listings/listin
 import { buildListingSellerCanonicalUpdate } from '../../services/listings/listingSellerCanonicalUpdateModel.js'
 import { AlertTriangle, ArrowLeft, ArrowUpRight, Bath, BedDouble, Bold, Bookmark, Box, Building2, CalendarDays, Car, Check, CheckCircle2, CheckSquare, ChevronDown, ChevronRight, Clock3, Columns3, Copy, Download, ExternalLink, Eye, FileText, Filter, Gauge, Home, ImageIcon, Italic, Lightbulb, Link2, List, Lock, Mail, MapPin, MessageCircle, MoreHorizontal, Paperclip, Pencil, Phone, Plus, RefreshCw, Ruler, Search, Send, Settings, ShieldCheck, Smile, Star, Table2, Tag, Trash2, TrendingUp, Upload, UserRound, X, Zap } from 'lucide-react'
 import { Suspense, createElement, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useLocation, useNavigate, useParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import LoadingSkeleton from '../../components/LoadingSkeleton'
 import JourneyStageOverrideActions from '../../components/journey/JourneyStageOverrideActions'
 import AddressAutocomplete from '../../components/location/AddressAutocomplete'
@@ -52,6 +52,7 @@ import {
   buildSellerLeadManualCapturePayload,
   buildSellerLeadSigningPackTermsPatch,
   createSellerLeadAgentOnboardingDraft,
+  getSellerLeadProfileEditChanges,
 } from '../../lib/sellerLeadManualCaptureModel'
 import {
   addListingSellerProfileDraftPerson,
@@ -11935,6 +11936,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   })
   const [leadDetailForm, setLeadDetailForm] = useState(LEAD_DETAIL_DEFAULTS)
   const [sellerProfileEditForm, setSellerProfileEditForm] = useState(KINGSTONS_SELLER_PROFILE_EDIT_DEFAULTS)
+  const sellerProfileEditBaselineRef = useRef(null)
   const [buyerProfileForm, setBuyerProfileForm] = useState({})
   const [editingBuyerProfileSectionKey, setEditingBuyerProfileSectionKey] = useState('')
   const buyerProfileEditBaselineRef = useRef(null)
@@ -15279,7 +15281,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   useEffect(() => {
     if (!selectedLead) {
       setLeadDetailForm(LEAD_DETAIL_DEFAULTS)
-      setSellerProfileEditForm(KINGSTONS_SELLER_PROFILE_EDIT_DEFAULTS)
+      if (!sellerLeadEditModal.open && !isLeadDetailSaving) {
+        setSellerProfileEditForm(KINGSTONS_SELLER_PROFILE_EDIT_DEFAULTS)
+      }
       setBuyerProfileForm({})
       setBuyerQualificationForm(BUYER_QUALIFICATION_FORM_DEFAULTS)
       buyerQualificationBaselineRef.current = BUYER_QUALIFICATION_FORM_DEFAULTS
@@ -22887,17 +22891,23 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }
 
   function openSellerLeadEditModal(mode = 'profile') {
-    setSellerProfileEditForm(buildKingstonsSellerProfileEditForm({
+    const draft = buildKingstonsSellerProfileEditForm({
       lead: selectedLead,
       contact: selectedLeadContact,
       listing: selectedLeadLinkedListing,
-    }))
+    })
+    sellerProfileEditBaselineRef.current = {
+      leadId: normalizeLeadIdentityKey(selectedLead?.leadId || selectedLead?.lead_id),
+      form: structuredClone(draft),
+    }
+    setSellerProfileEditForm(draft)
     setSellerLeadEditModal({ open: true, mode: normalizeKey(mode) || 'personal' })
     setError('')
   }
 
   function closeSellerLeadEditModal() {
     if (isLeadDetailSaving) return
+    sellerProfileEditBaselineRef.current = null
     setSellerLeadEditModal((previous) => ({ ...previous, open: false }))
   }
 
@@ -22905,6 +22915,19 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     event.preventDefault()
     if (!organisationId || !selectedLead || isLeadDetailSaving) return
     const isCharacteristicsEdit = normalizeKey(sellerLeadEditModal.mode) === 'characteristics'
+    const baseline = sellerProfileEditBaselineRef.current
+    if (!baseline || baseline.leadId !== normalizeLeadIdentityKey(selectedLead.leadId || selectedLead.lead_id)) {
+      setError('Reopen this seller editor before saving so the original details can be checked.')
+      return
+    }
+    const editedFields = getSellerLeadProfileEditChanges(baseline.form, sellerProfileEditForm,
+      isCharacteristicsEdit ? Object.keys(buildSellerPropertyCharacteristicsPatch(sellerProfileEditForm)) : null)
+    if (!editedFields.length) {
+      setError('')
+      setMessage('No changes to save.')
+      closeSellerLeadEditModal()
+      return
+    }
     const email = normalizeText(sellerProfileEditForm.email).toLowerCase()
     if (!isCharacteristicsEdit && email && !isValidEmail(email)) {
       setError('Enter a valid seller email before saving.')
@@ -23150,6 +23173,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }))
       setError('')
       setMessage(canonicalSaveResult?.warnings?.[0]?.message || (isCharacteristicsEdit ? 'Property characteristics saved.' : 'Seller profile saved.'))
+      sellerProfileEditBaselineRef.current = null
       setSellerLeadEditModal((previous) => ({ ...previous, open: false }))
       scheduleRecordsReload(organisationId, 500)
     } catch (saveError) {
@@ -27362,7 +27386,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         listingSnapshot = await getPrivateListing(listingId, { includeRequirementsAndDocuments: false })
         if (listingSnapshot?.id !== listingId) throw new Error('The linked seller record could not be loaded. Try refreshing the lead again.')
         setSelectedLeadHydratedListing(listingSnapshot)
-        throw new Error('Latest seller information loaded. Review the updated onboarding fields before approving again.')
+        throw new Error('Latest saved seller version loaded. Review the onboarding information before approving again.')
       }
       if (listingSnapshot?.id !== listingId) throw new Error('The linked seller record could not be confirmed. Reload before approving onboarding.')
       const canonicalSaveResult = await saveListingSellerCanonicalUpdate({
@@ -27490,7 +27514,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setSellerSigningPackNeedsRefresh(false)
       // Keep the user's commercial terms. Refresh only the saved seller facts;
       // the agent must review them and click Approve again before dispatch.
-      setSellerSigningPackNotice('Latest seller information loaded. Your mandate entries are retained. Review the seller details and required signers before approving again. No signing links were sent by this refresh.')
+      setSellerSigningPackNotice('Latest saved seller version loaded. Your mandate entries are retained. Review the seller details and required signers before approving again. No signing links were sent by this refresh.')
     } catch (refreshError) {
       setSellerSigningPackError(refreshError?.message || 'Unable to load the latest seller information.')
     } finally {
@@ -27749,12 +27773,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setMessage(digitalKeys.length ? `Signature links sent for ${sent.length} document${sent.length === 1 ? '' : 's'}. Track each signer in Documents.` : 'Physical FICA and mandate copies are prepared. Download them from Documents and upload the wet-ink signed copies when returned.')
       scheduleRecordsReload(organisationId, 750)
     } catch (signingError) {
-      if (!dispatchedDocuments && ['SELLER_UPDATE_CONFLICT', 'PT409'].includes(signingError?.code)) {
+      const versionConflict = !dispatchedDocuments && ['SELLER_UPDATE_CONFLICT', 'PT409'].includes(signingError?.code)
+      if (versionConflict) {
         setSellerSigningPackNeedsRefresh(true)
       }
       setSellerSigningPackError(dispatchedDocuments
         ? `${dispatchedDocuments} document${dispatchedDocuments === 1 ? '' : 's'} already sent. ${signingError?.message || 'A later signing request failed.'} Open Documents to retry the outstanding document without changing the approved versions.`
-        : signingError?.message || 'Unable to prepare and send the seller signing pack.')
+        : versionConflict
+          ? 'A newer saved version of this seller record is available. This can happen after a background update. Refresh seller information, review it, and approve again. Your mandate entries will be kept.'
+          : signingError?.message || 'Unable to prepare and send the seller signing pack.')
       setSellerSigningPackModalOpen(true)
     } finally {
       setSellerSigningPackSaving(false)
@@ -27953,7 +27980,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
     if (id === 'open_listing' || id === 'complete_listing' || id === 'view_enquiries' || id === 'view_performance' || id === 'monitor_performance') {
       const listingId = normalizeText(selectedLeadLinkedListing?.id || selectedLead?.listingId)
-      if (listingId) navigate(`/listings/${listingId}`)
+      if (listingId) navigate(`/agent/listings/${encodeURIComponent(listingId)}`)
       return
     }
     if (id === 'activate_listing') {
@@ -40196,7 +40223,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       {selectedLeadPropertyWorkspace.listing.hasListing ? (
                         <div className="mt-5 space-y-4">
                           {selectedLeadPropertyWorkspace.listing.id ? (
-                            <Button type="button" size="sm" variant="secondary" className="rounded-[12px]" onClick={() => navigate(`/listings/${selectedLeadPropertyWorkspace.listing.id}`)}>
+                            <Button type="button" size="sm" variant="secondary" className="rounded-[12px]" onClick={() => navigate(`/agent/listings/${encodeURIComponent(selectedLeadPropertyWorkspace.listing.id)}`)}>
                               Open {selectedLeadPropertyWorkspace.listing.isPrivateDraft ? 'Draft Listing' : 'Listing'}
                             </Button>
                           ) : null}
@@ -40206,7 +40233,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           <div className="rounded-[16px] border border-[#e6eef7] bg-[#fbfdff] p-4">
                             <p className="text-xs font-semibold text-[#607891]">Linked listing</p>
                             <p className="mt-1 break-words text-sm font-semibold text-[#102033]">{selectedLeadPropertyWorkspace.listing.title || 'Listing'}</p>
-                            <p className="mt-1 break-all text-xs font-semibold text-[#7890a8]">{selectedLeadPropertyWorkspace.listing.reference || selectedLeadPropertyWorkspace.listing.id}</p>
+                            {selectedLeadPropertyWorkspace.listing.id ? (
+                              <Link
+                                to={`/agent/listings/${encodeURIComponent(selectedLeadPropertyWorkspace.listing.id)}`}
+                                className="mt-1 inline-block break-all text-xs font-semibold text-[#12764f] underline underline-offset-2 hover:text-[#0d573a]"
+                                aria-label={`Open ${selectedLeadPropertyWorkspace.listing.isPrivateDraft ? 'draft listing' : 'listing'} ${selectedLeadPropertyWorkspace.listing.reference || selectedLeadPropertyWorkspace.listing.id}`}
+                              >
+                                {selectedLeadPropertyWorkspace.listing.reference || selectedLeadPropertyWorkspace.listing.id}
+                              </Link>
+                            ) : null}
                           </div>
                           <div className="grid gap-3 sm:grid-cols-2">
                             {[

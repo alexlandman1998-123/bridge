@@ -6,7 +6,18 @@ import {
   buildSellerLeadAgentOnboardingSubmission,
   buildSellerLeadManualCapturePayload,
   createSellerLeadAgentOnboardingDraft,
+  getSellerLeadProfileEditChanges,
 } from '../sellerLeadManualCaptureModel.js'
+
+test('unchanged seller drafts ignore object key order, whitespace, email case and number input types', () => {
+  const before = { firstName: 'Jane', email: 'jane@example.com', garages: 0, notes: '', companyDirectors: [{ name: 'Jane', idNumber: '123', email: 'jane@example.com' }] }
+  const after = { ...before, firstName: ' Jane ', email: 'JANE@example.com', garages: '0', notes: undefined,
+    companyDirectors: [{ email: 'JANE@example.com', idNumber: '123', name: ' Jane ' }] }
+  assert.deepEqual(getSellerLeadProfileEditChanges(before, after), [])
+  assert.deepEqual(getSellerLeadProfileEditChanges(before, { ...after, garages: '', firstName: 'Pat' }), ['firstName', 'garages'])
+  assert.deepEqual(getSellerLeadProfileEditChanges({ consent: false }, { consent: true }), ['consent'])
+  assert.deepEqual(getSellerLeadProfileEditChanges(before, { ...before, companyDirectors: [{ ...before.companyDirectors[0], idNumber: '' }] }), ['companyDirectors'])
+})
 
 test('seller-lead manual capture produces the same canonical source marker as listings', () => {
   const result = buildSellerLeadManualCapturePayload({

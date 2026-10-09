@@ -3936,7 +3936,7 @@ function AgentListingDetail() {
     if (isSupabaseConfigured && listingId && !listingId.startsWith('development-')) {
       try {
         const [dbListing, channelActivity] = await Promise.all([
-          getPrivateListing(listingId),
+          getPrivateListing(listingId, { includePreviousListings: true }),
           getPrivateListingActivity(listingId, { requireAvailable: true })
             .then((rows) => ({ rows, available: true }))
             .catch(() => ({ rows: [], available: false })),

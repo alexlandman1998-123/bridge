@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Loader2, Plus } from 'lucide-react'
 import AgentAssignmentSelect from '../AgentAssignmentSelect'
+import AddressAutocomplete from '../location/AddressAutocomplete'
 import Button from '../ui/Button'
 import Field from '../ui/Field'
 import Modal from '../ui/Modal'
@@ -63,6 +64,7 @@ function LeadCreateDialogContent({
     agentId: currentAgent.id || currentAgent.userId || '',
     property: propertyLabel,
   }))
+  const [selectedPropertyAddress, setSelectedPropertyAddress] = useState(null)
   const controlled = Boolean(draft && typeof onChange === 'function')
   const form = controlled ? draft : localDraft
 
@@ -161,15 +163,35 @@ function LeadCreateDialogContent({
             {listingOptionsError ? <span role="alert" className="text-xs font-normal text-[#9f3028]">{listingOptionsError}</span> : null}
           </label>
         ) : null}
-        <label className="grid min-w-0 gap-1.5 text-sm font-semibold text-[#29435d]">
-          {buyer && !lockProperty ? 'Property or area of interest' : 'Property address'}
-          <Field
-            value={propertyValue}
-            readOnly={lockProperty}
-            className={lockProperty ? 'bg-[#f5f8fb] text-[#526b82]' : ''}
-            onChange={(event) => setField('property', event.target.value)}
+        {!buyer && !lockProperty ? (
+          <AddressAutocomplete
+            label="Property address"
+            value={selectedPropertyAddress?.formattedAddress === propertyValue
+              ? selectedPropertyAddress
+              : propertyValue ? { formattedAddress: propertyValue } : null}
+            onInputValueChange={(value) => {
+              setSelectedPropertyAddress(null)
+              setField('property', value)
+            }}
+            onChange={(value) => {
+              setSelectedPropertyAddress(value)
+              setField('property', value?.formattedAddress || '')
+            }}
+            placeholder="Search for a property address"
+            description="Start typing and choose the property address from Google."
+            disabled={saving}
           />
-        </label>
+        ) : (
+          <label className="grid min-w-0 gap-1.5 text-sm font-semibold text-[#29435d]">
+            {buyer && !lockProperty ? 'Property or area of interest' : 'Property address'}
+            <Field
+              value={propertyValue}
+              readOnly={lockProperty}
+              className={lockProperty ? 'bg-[#f5f8fb] text-[#526b82]' : ''}
+              onChange={(event) => setField('property', event.target.value)}
+            />
+          </label>
+        )}
         <label className="grid min-w-0 gap-1.5 text-sm font-semibold text-[#29435d]">
           <span className="flex items-center justify-between gap-3"><span>Notes</span><span className="text-xs font-normal text-[#8295a9]">Optional</span></span>
           <Field as="textarea" rows={3} value={form.notes || ''} onChange={(event) => setField('notes', event.target.value)} />

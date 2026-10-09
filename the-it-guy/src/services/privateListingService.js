@@ -6096,8 +6096,8 @@ export async function savePrivateListingSellerCanonicalUpdate(update = {}, optio
     if (isMissingRpcError(result.error, 'save_private_listing_seller_canonical_update')) {
       throw new Error('Canonical seller saving is not available in this environment yet. Apply the listing seller canonical update migration before editing seller details.')
     }
-    if (normalizeText(result.error.code) === '40001' || normalizeText(result.error.message).toLowerCase().includes('changed after you opened')) {
-      const conflict = new Error('This seller record changed after you opened it. Reload the listing and review the latest details before saving.')
+    if (['40001', 'PT409'].includes(normalizeText(result.error.code)) || normalizeText(result.error.message).toLowerCase().includes('changed after you opened')) {
+      const conflict = new Error('A newer saved version of this seller record is available. This can happen after a background update. Reload the listing and review the latest information before saving.')
       conflict.code = 'SELLER_UPDATE_CONFLICT'
       conflict.recoverable = true
       throw conflict

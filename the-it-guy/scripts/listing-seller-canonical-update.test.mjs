@@ -161,7 +161,7 @@ await test('the existing seller client handles PT409 once and keeps the reload-b
       calls += 1
       return { abortSignal: async () => ({ error: {
         code: 'PT409',
-        message: 'This seller record changed after you opened it. Reload the listing and review the latest details before saving.',
+        message: 'Saved record version mismatch.',
       } }) }
     } }),
     normalizeUuid: value => value,
@@ -176,7 +176,8 @@ await test('the existing seller client handles PT409 once and keeps the reload-b
   const save = Function(...Object.keys(scope), `${source.slice(start, end).replace(/^export /, '')}\nreturn savePrivateListingSellerCanonicalUpdate`)(...Object.values(scope))
   const update = buildListingSellerCanonicalUpdate({ listing, formPatch: { sellerFirstName: 'Updated' },
     mutationId: '33333333-3333-4333-8333-333333333333' })
-  await assert.rejects(save(update), error => error.code === 'SELLER_UPDATE_CONFLICT' && error.recoverable === true && /Reload the listing/.test(error.message))
+  await assert.rejects(save(update), error => error.code === 'SELLER_UPDATE_CONFLICT' && error.recoverable === true &&
+    /A newer saved version/.test(error.message) && /background update/.test(error.message) && /Reload the listing/.test(error.message))
   assert.equal(calls, 1)
   assert.equal(listing.sellerOnboarding.formData.sellerFirstName, 'Old')
 })
@@ -574,9 +575,12 @@ await test('changing company ownership clears retired fields and keeps the conta
   assert.equal(createListingSellerProfileBuilderDraft(applyListingSellerCanonicalUpdateSnapshot(company, contactUpdate)).primaryContactName, 'New Contact')
 })
 
-await test('a signing-pack conflict offers refresh and never retries or sends', async () => {
-  const events = await runLeadPreparation({ digital: true, saveError: Object.assign(new Error('Seller record changed.'), { code: 'SELLER_UPDATE_CONFLICT' }) })
+for (const code of ['SELLER_UPDATE_CONFLICT', 'PT409']) await test(`a ${code} signing-pack conflict explains saved versions, offers refresh and never retries or sends`, async () => {
+  const events = await runLeadPreparation({ digital: true, saveError: Object.assign(new Error('Seller record changed.'), { code }) })
   assert.equal(events.needsRefresh, true)
+  assert.match(events.errors[0], /A newer saved version.*background update/)
+  assert.match(events.errors[0], /Your mandate entries will be kept/)
+  assert.doesNotMatch(events.errors[0], /agent.*changed|details.*changed/i)
   assert.equal(events.saves.length, 1)
   assert.deepEqual(events.sends, [])
   assert.deepEqual(events.listingWrites, [])

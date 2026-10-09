@@ -19,6 +19,23 @@ function isAffirmative(value) {
   return value === true || ['accepted', 'yes', 'true', '1'].includes(text(value).toLowerCase())
 }
 
+function editValue(value, field = '') {
+  if (Array.isArray(value)) return value.map((entry) => editValue(entry))
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, editValue(value[key], key)]))
+  }
+  if (typeof value === 'boolean') return value
+  const normalized = text(value)
+  return /email$/i.test(field) ? normalized.toLowerCase() : normalized
+}
+
+// Compare the editable draft, not regenerated aliases, canonical metadata or
+// saved timestamps. Keep explicit zero/false values and deliberate clears.
+export function getSellerLeadProfileEditChanges(before = {}, after = {}, fields = null) {
+  const keys = fields || [...new Set([...Object.keys(before), ...Object.keys(after)])]
+  return keys.filter((key) => JSON.stringify(editValue(before[key], key)) !== JSON.stringify(editValue(after[key], key)))
+}
+
 /**
  * Adapts the seller-lead agent editor to the same capture payload used by the
  * listing-side Seller Profile Builder. The lead UI may remain compact, but its

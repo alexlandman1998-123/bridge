@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
+import { matchRoutes } from 'react-router-dom'
 
 const source = await readFile(new URL('../src/pages/agency/AgencyPipelinePage.jsx', import.meta.url), 'utf8')
 
@@ -29,6 +30,29 @@ assert.ok(!propertyWorkspace.includes('listing.status}'), 'The raw private listi
 assert.ok(propertyWorkspace.includes('selectedSellerJourney.onboardingSubmitted ? ('), 'Create Draft Listing must require submitted onboarding.')
 assert.ok(propertyWorkspace.includes('handleCreateSellerPropertyDraftListing()'), 'Listing readiness must use the private draft creation action.')
 assert.ok(propertyWorkspace.includes('Open {selectedLeadPropertyWorkspace.listing.isPrivateDraft'), 'A created draft must be openable from Listing & Readiness.')
+// Execute the rendered navigation callback, then resolve it against the app's
+// real listing routes. /listings/:listingSection accepts an ID but opens the
+// collection; only the detail route passes that ID to the listing workspace.
+const appSource = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8')
+const listingRoutesStart = appSource.indexOf('path="/listings/:listingId/edit"')
+const listingRoutesEnd = appSource.indexOf('path="/agency"', listingRoutesStart)
+const listingRoutes = [...appSource.slice(listingRoutesStart, listingRoutesEnd).matchAll(/path="([^"]+)"/g)]
+  .map((match) => ({ path: match[1] }))
+const openListingCallback = propertyWorkspace.match(/onClick=\{(\(\) => navigate\(`[^`]*selectedLeadPropertyWorkspace\.listing\.id[^`]*`\))\}/)?.[1]
+assert.ok(openListingCallback, 'The linked draft needs an open-listing action.')
+const listingReferenceHref = propertyWorkspace.match(/<Link\s+to=\{(`[^`]*selectedLeadPropertyWorkspace\.listing\.id[^`]*`)\}/)?.[1]
+assert.ok(listingReferenceHref, 'The displayed listing reference must be clickable.')
+for (const listingId of ['11111111-2222-4333-8444-555555555555', 'draft / one']) {
+  let destination = ''
+  Function('navigate', 'selectedLeadPropertyWorkspace', `return (${openListingCallback})()`)(
+    (path) => { destination = path }, { listing: { id: listingId } },
+  )
+  const route = matchRoutes(listingRoutes, destination)?.at(-1)
+  assert.equal(route?.route.path, '/agent/listings/:listingId', 'Opening a seller draft must resolve to its workspace, not the listings collection.')
+  assert.equal(route?.params.listingId, listingId, 'The draft ID must survive navigation.')
+  const referenceDestination = Function('selectedLeadPropertyWorkspace', `return ${listingReferenceHref}`)({ listing: { id: listingId } })
+  assert.equal(referenceDestination, destination, 'The listing reference and Open Draft Listing must open the same draft.')
+}
 assert.ok(!propertyWorkspace.includes("handleSellerJourneyAction('create_listing')"), 'Listing readiness must not use the mandate-gated journey action.')
 
 const propertyEditor = source.slice(source.indexOf("sellerLeadEditMode === 'property' ? ("), source.indexOf("sellerLeadEditMode === 'characteristics' ? ("))
@@ -60,7 +84,7 @@ console.log('Seller lead property workspace presentation and capture contract ve
 const { getListingSellerFormData } = await import('../src/lib/listingSellerProfileBuilderModel.js')
 const { projectSellerProfilePeople } = await import('../src/lib/sellerProfileCaptureModel.js')
 const { resolveSellerLeadOwnershipRoute } = await import('../src/lib/sellerLeadOwnershipSetupModel.js')
-const { buildSellerLeadManualCapturePayload } = await import('../src/lib/sellerLeadManualCaptureModel.js')
+const { buildSellerLeadManualCapturePayload, getSellerLeadProfileEditChanges } = await import('../src/lib/sellerLeadManualCaptureModel.js')
 const { formatPropertyAddress } = await import('../src/lib/sellerPropertyAddress.js')
 const { readSellerPopiConsent } = await import('../src/core/documents/sellerOnboardingConsent.js')
 const { getSellerProfileNarrativeNotes } = await import('../src/lib/sellerLeadProfileNotesModel.js')
@@ -110,6 +134,26 @@ const staleLead = {
   leadId: 'fixture-lead', contactId: 'fixture-contact', bedrooms: 21, bathrooms: 21, garages: 21, parking: 21, erfSize: 1, floorSize: 500,
   sellerOnboarding: { formData: { ...savedForm, bedrooms: '21', garages: '21', floorSize: '500' } },
 }
+const opened = { baseline: { current: null }, modal: null, form: null }
+const openScope = {
+  selectedLead: staleLead, selectedLeadContact: {}, selectedLeadLinkedListing: listing,
+  normalizeLeadIdentityKey: value => String(value || '').trim(), normalizeKey,
+  buildKingstonsSellerProfileEditForm: readers.edit,
+  sellerProfileEditBaselineRef: opened.baseline, isLeadDetailSaving: false,
+  setSellerProfileEditForm: value => { opened.form = value },
+  setSellerLeadEditModal: value => { opened.modal = typeof value === 'function' ? value(opened.modal) : value },
+  setError: () => {},
+}
+const editorActions = source.slice(source.indexOf('  function openSellerLeadEditModal('), source.indexOf('  async function handleSaveSellerLeadEditDetails('))
+const editor = Function(...Object.keys(openScope), `${editorActions}; return { open: openSellerLeadEditModal, close: closeSellerLeadEditModal }`)(...Object.values(openScope))
+editor.open('characteristics')
+assert.equal(opened.baseline.current.leadId, staleLead.leadId)
+assert.deepEqual(opened.baseline.current.form, opened.form)
+opened.form.firstName = 'Temporary edit'
+assert.notEqual(opened.baseline.current.form.firstName, opened.form.firstName, 'Typing must not mutate the original editor snapshot.')
+editor.close()
+assert.equal(opened.baseline.current, null, 'Cancel must discard the original editor snapshot.')
+assert.equal(opened.modal.open, false)
 function assertReadersUseSaved(lead, listing, expected) {
   const edit = readers.edit({ lead, listing })
   const view = readers.view({ lead, listing })
@@ -128,31 +172,56 @@ const latestListing = { ...listing, updatedAt: '2026-10-09T07:01:00Z' }
 assert.equal(readers.latest(latestListing, listing), latestListing, 'A late hydration response must not replace the committed save.')
 assert.equal(readers.latest(listing, latestListing), latestListing)
 
-async function runSave({ failCommit = false, failCrm = false, busy = false } = {}) {
+async function runSave({ failCommit = false, failCrm = false, busy = false, unchanged = false, mode = 'characteristics', baselineLeadId = 'fixture-lead', profileEdit = false } = {}) {
   const state = { closed: false, busy, contactCalls: 0, activityCalls: 0, crmCalls: 0 }
-  const form = { ...readers.edit({ lead: staleLead, listing }), bedrooms: '5', bathrooms: '0', garages: '', floorSize: '460', incomeTaxNumber: 'Unrelated draft value' }
+  const baselineForm = readers.edit({ lead: staleLead, listing })
+  const form = unchanged ? structuredClone(baselineForm)
+    : profileEdit ? { ...baselineForm, firstName: 'Changed' }
+      : { ...baselineForm, bedrooms: '5', bathrooms: '0', garages: '', floorSize: '460', incomeTaxNumber: 'Unrelated draft value' }
+  if (unchanged) {
+    // Typing then reverting, harmless whitespace, and equivalent numeric
+    // inputs must not create an agent-change event or advance a timestamp.
+    form.bedrooms = '9'
+    form.bedrooms = ` ${baselineForm.bedrooms} `
+    form.garages = 0
+    form.email = String(baselineForm.email || '').toUpperCase()
+    if (mode === 'characteristics') form.incomeTaxNumber = 'Hidden field must not be submitted'
+  }
+  const baselineRef = { current: { leadId: baselineLeadId, form: structuredClone(baselineForm) } }
   const scope = {
     ...dependencies, organisationId: 'fixture-org', selectedLead: staleLead,
     selectedLeadContact: { contactId: 'fixture-contact' }, selectedLeadLinkedListing: listing,
-    sellerProfileEditForm: form, sellerLeadEditModal: { mode: 'characteristics', open: true },
+    sellerProfileEditForm: form, sellerLeadEditModal: { mode, open: true },
+    sellerProfileEditBaselineRef: baselineRef, getSellerLeadProfileEditChanges,
+    normalizeLeadIdentityKey: value => String(value || '').trim(),
+    closeSellerLeadEditModal: () => { state.closed = true; baselineRef.current = null },
     isLeadDetailSaving: busy, isSupabaseConfigured: true, currentAgent: { id: 'fixture-agent' },
     isValidEmail: () => true, buildKingstonsSellerProfileFormData: readers.form,
     buildSellerPropertyCharacteristicsPatch: readers.patch, getWorkspaceSellerOnboarding: readers.onboarding, buildSellerLeadManualCapturePayload,
-    needsSellerOnboardingReplacement: () => { throw Error('A characteristics edit must not change ownership.') },
+    needsSellerOnboardingReplacement: () => {
+      if (mode === 'characteristics') throw Error('A characteristics edit must not change ownership.')
+      return false
+    },
     setIsLeadDetailSaving: value => { state.busy = value },
     setError: value => { state.error = value }, setMessage: value => { state.message = value },
     setSelectedLeadHydratedListing: value => { state.listing = value },
     setRecords: () => {}, setLeadDetailForm: () => {}, scheduleRecordsReload: () => {},
     setSellerLeadEditModal: callback => { state.closed = callback({ open: true }).open === false },
     patchSelectedLeadRecord: patch => { state.leadPatch = patch },
-    updateAgencyCrmContactRecord: () => { state.contactCalls++; throw Error('Must not write the contact') },
+    updateAgencyCrmContactRecord: async () => {
+      state.contactCalls++
+      if (mode === 'characteristics') throw Error('Must not write the contact')
+    },
     updateAgencyCrmLeadRecord: async (org, id, patch) => {
       state.crmCalls++
       if (failCrm) throw Error('CRM unavailable')
       state.crmPatch = patch
     },
     // Activity may remain pending; the completed property save must still close.
-    createAgencyCrmLeadActivity: () => { state.activityCalls++; return new Promise(() => {}) },
+    createAgencyCrmLeadActivity: () => {
+      state.activityCalls++
+      return mode === 'characteristics' ? new Promise(() => {}) : Promise.resolve({})
+    },
     saveListingSellerCanonicalUpdate: input => {
       state.input = input
       return saveListingSellerCanonicalUpdate(input, {
@@ -199,5 +268,23 @@ assert.equal(crmFailed.closed, false)
 assert.match(crmFailed.error, /saved on the listing/)
 assertReadersUseSaved(staleLead, crmFailed.listing, form)
 assert.equal((await runSave({ busy: true })).state.input, undefined, 'Ignore a second submit while a save is already pending.')
+for (const mode of ['characteristics', 'profile', 'property', 'notes']) {
+  const noChange = (await runSave({ unchanged: true, mode })).state
+  assert.equal(noChange.message, 'No changes to save.')
+  assert.equal(noChange.closed, true)
+  assert.equal(noChange.input, undefined, 'An unchanged draft must not write canonical facts or timestamps.')
+  assert.equal(noChange.crmCalls, 0, 'An unchanged draft must not write a lead.')
+  assert.equal(noChange.contactCalls, 0, 'An unchanged draft must not write a contact.')
+  assert.equal(noChange.activityCalls, 0, 'An unchanged draft must not attribute a change to the agent.')
+}
+const switchedLead = (await runSave({ baselineLeadId: 'different-lead' })).state
+assert.equal(switchedLead.closed, false)
+assert.equal(switchedLead.input, undefined)
+assert.match(switchedLead.error, /Reopen this seller editor/)
+const profileChanged = (await runSave({ mode: 'profile', profileEdit: true })).state
+assert.equal(profileChanged.closed, true)
+assert.equal(profileChanged.update.nextFormData.firstName, 'Changed', 'A genuine profile edit must still persist.')
+assert.equal(profileChanged.activityCalls, 1, 'A genuine profile edit must record one agent activity.')
+assert.equal(profileChanged.contactCalls, 1)
 assert.ok(source.includes('{error ? <p role="alert"'), 'Save errors must remain visible inside the open edit form.')
-console.log('Seller property characteristics: saved values, clears, zeroes, reopen, stale hydration, delayed activity and failed saves verified.')
+console.log('Seller profile and characteristics: unchanged/reverted saves create no writes or activity; real edits, clears, zeroes, reopen, stale hydration and failures verified.')
