@@ -37,6 +37,7 @@ const admin = {
       neq(key, value) { filters.push(row => row[key] !== value); return query },
       in(key, values) { filters.push(row => values.includes(row[key])); return query },
       gt(key, value) { filters.push(row => row[key] > value); return query },
+      order() { return query },
       limit(value) { limit = value; return query },
       maybeSingle() { single = true; return query },
       single() { single = true; return query },
@@ -89,7 +90,7 @@ async function prepare(branch = 'multiple_owners', format = 'current', generator
   }
   tables = { private_listings: [{ id: listingId, organisation_id: 'synthetic-organisation' }],
     [onboardingTable]: [{ private_listing_id: listingId, status: 'completed', form_data: form }],
-    [documentsTable]: [], [recipientsTable]: [], [evidenceTable]: [],
+    [documentsTable]: [], [recipientsTable]: [], [evidenceTable]: [], private_listing_documents: [],
   }
   emails = []; writeCount = 0
   return { form, frozen, listingId, index }
@@ -213,6 +214,34 @@ try {
   const fixture = await prepare()
   assert.equal((await request('issue', { listingId: fixture.listingId, documentKey: 'signed_mandate' }, false)).status, 403)
   assert.equal(writeCount, 0)
+  const recovery = await prepare()
+  const reviewedId = recovery.frozen.documents.find(row => row.key === 'signed_mandate').versionId
+  globalThis.__sellerVersionEmail = options => { emails.push(options); return { ok: false, error: 'Synthetic delivery failure' } }
+  const failedSend = await request('issue', { listingId: recovery.listingId, documentKey: 'signed_mandate' })
+  assert.equal(failedSend.status, 502)
+  const failedList = await request('list', { listingId: recovery.listingId })
+  assert.equal(failedList.status, 200)
+  assert.equal(failedList.body.documents[0].status, 'revoked')
+  assert.equal(failedList.body.documents[0].revoke_reason, 'delivery_failed')
+  assert.equal(failedList.body.documents[0].signed_count, 0)
+  assert.equal(failedList.body.documents[0].signer_count, 2)
+  const failedRequestId = failedList.body.documents[0].id
+  globalThis.__sellerVersionEmail = options => { emails.push(options); return { ok: true, data: { id: `synthetic-retry-${emails.length}` } } }
+  const recovered = await request('issue', { listingId: recovery.listingId, documentKey: 'signed_mandate' })
+  assert.equal(recovered.status, 200)
+  assert.notEqual(recovered.body.signingDocumentId, failedRequestId)
+  assert.equal(tables[documentsTable].find(row => row.id === recovered.body.signingDocumentId).version_id, reviewedId)
+  const signers = tables[recipientsTable].filter(row => row.signing_document_id === recovered.body.signingDocumentId)
+  signers[0].status = 'signed'
+  const progress = await request('list', { listingId: recovery.listingId })
+  assert.equal(progress.body.documents.find(row => row.id === recovered.body.signingDocumentId).signed_count, 1)
+  assert.equal(progress.body.documents.find(row => row.id === recovered.body.signingDocumentId).signer_count, 2)
+  const enabledEnvironment = Deno.env.get
+  Deno.env.get = key => key === 'SELLER_PORTAL_SIGNING_ENABLED' ? 'false' : enabledEnvironment(key)
+  assert.equal((await request('issue', { listingId: recovery.listingId, documentKey: 'signed_fica_declaration' })).status, 503)
+  assert.equal((await request('list', { listingId: recovery.listingId })).status, 200)
+  Deno.env.get = enabledEnvironment
+  console.log('Failed delivery remains visible, fresh links reuse the frozen version, signer counts and the operator kill switch pass')
   console.log(`Seller version contract passed: ${issuedCount} local issuance/viewing flows, ${tampering.length + 2} tampering cases, legacy compatibility and agent access. No remote writes or email delivery.`)
 } finally {
   globalThis.Deno = previousDeno

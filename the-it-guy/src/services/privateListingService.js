@@ -8315,6 +8315,9 @@ export async function submitSellerOnboarding(token, payload = {}) {
   })
   const rawFormData = stripSellerOnboardingTransferAttorneyFields({
     ...(payload.formData || {}),
+    ...(completionMode === 'agent_assisted' && payload.formData?.sellerDisclosureCapture?.mode === 'agent_assisted' ? {
+      sellerDisclosureCapture: { ...payload.formData.sellerDisclosureCapture, capturedBy: completedBy },
+    } : {}),
     completionMode,
     completion_mode: completionMode,
     completedBy: completionRecord.completedBy,
@@ -8973,6 +8976,7 @@ export async function uploadPrivateListingDocument(listingId, file, {
   visibility = 'internal',
   status = 'uploaded',
   deferMandateSigning = false,
+  existingSignedEvidence = false,
   reviewedSigningVersionId = '',
   reviewedSigningVersionDigest = '',
 } = {}) {
@@ -8984,7 +8988,8 @@ export async function uploadPrivateListingDocument(listingId, file, {
   if (Boolean(reviewedSigningVersionId) !== Boolean(reviewedSigningVersionDigest)) {
     throw new Error('A reviewed signing upload needs both its version ID and digest.')
   }
-  const shouldDeferMandateSigning = deferMandateSigning || Boolean(reviewedSigningVersionId)
+  if (existingSignedEvidence && (reviewedSigningVersionId || reviewedSigningVersionDigest)) throw new Error('An existing signed document cannot claim a generated signing version.')
+  const shouldDeferMandateSigning = existingSignedEvidence || deferMandateSigning || Boolean(reviewedSigningVersionId)
   const filePolicy = validateDocumentUploadFile(file, { surface: 'agent_listing', listingId: normalizedListingId })
   const accessibleListing = await getPrivateListingById(normalizedListingId, {
     includeRequirementsAndDocuments: false,
@@ -9028,7 +9033,7 @@ export async function uploadPrivateListingDocument(listingId, file, {
   })
 
   const safeOriginalName = sanitizeDocumentFileName(documentName || filePolicy.safeName, 'listing-document')
-  return runRecoverableDocumentUpload({ client: client, scope: ['agent_listing', normalizedListingId, requirementId, requirementKey, documentType, documentCategory, documentName, visibility, status, reviewedSigningVersionId, reviewedSigningVersionDigest], file, storageBuckets: DOCUMENTS_BUCKET_CANDIDATES,
+  return runRecoverableDocumentUpload({ client: client, scope: ['agent_listing', normalizedListingId, requirementId, requirementKey, documentType, documentCategory, documentName, visibility, status, ...(existingSignedEvidence ? ['existing_signed_upload'] : []), reviewedSigningVersionId, reviewedSigningVersionDigest], file, storageBuckets: DOCUMENTS_BUCKET_CANDIDATES,
     toSavedReceipt: result => ({ ...normalizeDocumentRows([result.data])[0], privateListingId: normalizedListingId, requirementId: result.data.requirement_id, requirementKey, persistence: buildPrivateListingDocumentPersistenceReceipt({ documentRow: result.data, storagePath: result.data.storage_path }) }),
     run: async attempt => {
       const filePath = attempt.path(`private-listings/${normalizedListingId}/documents/${Date.now()}-${safeOriginalName}`)
@@ -9058,6 +9063,7 @@ export async function uploadPrivateListingDocument(listingId, file, {
         visibility: normalizeText(visibility) || 'internal',
         canonical_requirement_instance_id: matchedRequirement?.canonical_requirement_instance_id || null,
         uploaded_at: new Date().toISOString(),
+        ...(existingSignedEvidence ? { seller_signing_evidence_source: 'existing_signed_upload' } : {}),
         ...(reviewedSigningVersionId && reviewedSigningVersionDigest ? {
           reviewed_signing_version_id: reviewedSigningVersionId,
           reviewed_signing_version_digest: reviewedSigningVersionDigest,
@@ -9069,6 +9075,7 @@ export async function uploadPrivateListingDocument(listingId, file, {
           const inserted = await insertPrivateListingDocumentRow(client, insertPayload, {
             requiredColumns: [
               ...(matchedRequirement ? ['requirement_id', 'canonical_requirement_instance_id'] : []),
+              ...(existingSignedEvidence ? ['seller_signing_evidence_source'] : []),
               ...(reviewedSigningVersionId ? ['reviewed_signing_version_id', 'reviewed_signing_version_digest'] : []),
             ],
           })

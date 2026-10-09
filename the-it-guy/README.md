@@ -393,9 +393,9 @@ pagination performed by the app. Mobile previews retain the complete text.
 
 The separate seller-document signing service supports the full layout behind
 explicit approval gates. `sellerMandateWordingRelease.js` pins the complete three
-source drafts and their hashes; all releases remain pending and the agency
-approval register is empty. An old template approval or client flag cannot enable
-them. Exact business/counsel wording approval, matching agency-schedule approval,
+source drafts and their hashes. Exact wording approvals are recorded in the
+release manifest; the separate agency approval register is currently empty. An
+old template approval or client flag cannot bypass these gates. Exact business/counsel wording approval, matching agency-schedule approval,
 checked authority/signed disclosure/FFC evidence and complete captured terms are
 required before a signing version can freeze. Agency certificates must remain
 current when links are issued or used. Do not populate approvals from synthetic
@@ -445,6 +445,15 @@ the final PDFs must include the actual drawn signatures and persisted agency log
 The signature certificate uses the source template's A4 page class to avoid an
 extra blank page between the reviewed document and its signature evidence.
 
+A sixteenth journey saves agent-captured disclosure without a seller signature,
+downloads the three prepared copies, and records separate existing signed files.
+Each upload remains incomplete and blocks a conflicting online request until the
+actual browser review records the required signature confirmation. Reopening uses
+the reviewed files and preserves all generated versions. This is synthetic
+external evidence; the check does not establish wet-ink authenticity. The same
+command now also checks shared identity/FICA/POPI fields, explicit clears, consent
+history and the full agent disclosure questionnaire.
+
 This check also runs the disclosure, branding and profile-alignment regressions
 and is included in `check:listing-seller-workspace`. PDFs, selected rendered pages
 and a machine-readable report are written to `test-results/seller-document-journey/`.
@@ -471,6 +480,61 @@ approval. Export validates and embeds configured image bytes in the temporary
 PDF stage, rather than silently dropping logos or signatures. Old signed links
 in the public `organisation-branding` bucket use public access; private document
 and signature links retain their signed access. No data migration is needed.
+
+The agent document workspace uses the same three actions for mandate, FICA and
+outstanding disclosure: **Generate and download**, **Generate and send for online
+signature**, and **Upload existing**. Each document can use a different action;
+preparing copies does not mark a mandate sent, and an upload does not mark it
+signed. Progress distinguishes prepared copies, online signer counts, failed or
+expired requests, signed/uploaded evidence awaiting review, and reviewed completion.
+Failed sends retry the frozen version with fresh links while retaining the revoked
+request. An active online request prevents switching to uploaded evidence.
+
+The approved per-document portal route is enabled by default in source. Explicit
+`VITE_SELLER_PORTAL_SIGNING_ENABLED=false` and `SELLER_PORTAL_SIGNING_ENABLED=false`
+remain operator kill switches. The retired listing-mandate route stays disabled;
+wording, agency approval, authority, FFC and exact-version checks still apply.
+The additive migration `20261009150000_seller_existing_signed_evidence.sql` must
+be released with this workflow before agents use **Upload existing**. It records
+existing evidence separately from returned generated copies, requires a signature
+review, protects active online evidence, and preserves the exact-version guard.
+No historical documents or approvals are changed by this migration.
+
+Focused checks: the seller workflow model/component/service tests, the actual SQL
+existing-evidence test, `test:listing-seller-canonical-update`,
+`test:seller-reviewed-document-versions`, and the connected document journey above.
+These checks use synthetic local fixtures and send no live email.
+
+Phase 4 adds the complete workflow to the existing release candidate and check.
+The candidate locks the new existing-evidence migration, onboarding/profile and
+consent changes, the assisted-disclosure editor and the three document actions.
+Release readiness requires a complete matching 16-journey run, all three existing
+uploads reviewed and unsigned agent capture; a partial rerun or earlier report
+cannot satisfy it. Run `npm run check:seller-document-release` after the full
+journey, and export a fresh candidate/pending decision using the release commands
+below. Do not reuse the older saved mandate candidate or its decision.
+
+The local acceptance checks use the actual signing handler and relevant PostgreSQL
+commands with synthetic Auth, email and Storage transport. The app baseline, lint
+and Vite production build must pass for the same candidate. On this machine the
+build uses `NODE_OPTIONS=--max-old-space-size=4096 npx vite build`; the knowledge
+login probe is explicitly disabled to avoid an unapproved live login.
+Complete migration replay, target/recovery and scoped dry-run evidence, exact
+agency-schedule approvals, hosted UI/Storage/session acceptance and real delivery
+remain release requirements. The full replay currently cannot start because the
+local Docker engine is unavailable. Nothing in this phase deploys, applies remote
+SQL, sends email or grants an agency approval. Follow the
+[seller action release steps](../docs/database-release-runbook.md#seller-document-action-update)
+when a release is explicitly requested.
+
+Local acceptance on 9 October 2026 passed: 16 journeys, 54 actual PDFs across
+293 pages, nine browser signatures, five browser signature reviews, all three
+independent signed uploads and unsigned agent capture. Workflow/SQL, canonical
+save, correction, access and release-package checks passed, along with the app
+baseline, lint (zero errors; existing warnings) and production build. The fresh
+candidate matches the tested source. Full clean replay could not start without
+a running Docker daemon; target, hosted delivery and human approval evidence
+remain pending. These results grant no deployment approval.
 
 Seller portal corrections regenerate the mandate, FICA and disclosure from a
 local projection of the captured facts. The primary person's corrected name,
@@ -1287,6 +1351,21 @@ References checked during implementation:
 and [WhatsApp Business Messaging Policy](https://whatsappbusiness.com/policy/).
 
 ## Seller onboarding access
+
+Agent-assisted seller onboarding includes the same 20 Annexure A questions as
+seller self-service, question explanations, remote quantities and final comments.
+**Save Draft** keeps partial answers for reopening; **Save and Submit Onboarding**
+requires the complete questionnaire. Capturing or submitting answers never records
+a seller signature or declaration acknowledgements. The seller reviews the captured
+answers on their signing link, then signs. Existing signed disclosures, co-owner
+signature evidence and reviewed uploads remain locked during assisted capture.
+
+Focused assisted-capture checks (local fixtures; no client messages or remote writes):
+
+```bash
+node --test src/lib/__tests__/sellerAgentAssistedDisclosure.test.js src/lib/__tests__/sellerLeadManualCaptureModel.test.js scripts/seller-onboarding-access.test.mjs
+./node_modules/.bin/vitest run src/components/listings/__tests__/ListingSellerInformationEditor.test.jsx src/services/__tests__/privateListingService.sellerAccess.test.js
+```
 
 Seller onboarding table access follows `bridge_can_access_private_listing` for
 signed-in staff. Public onboarding reads and writes use an exact, unexpired
@@ -2483,7 +2562,7 @@ node scripts/seller-document-release-check.mjs --candidate-out=docs/mandate-word
 ```
 
 The decision writer refuses to overwrite an existing file. The candidate locks
-the three wording hashes, fifteen synthetic PDF proofs, both scoped migrations,
+the three wording hashes, fifteen synthetic PDF proofs, all three scoped migrations,
 rollback, the signing import graph and the relevant app/QA source. The journey
 records that source fingerprint and rejects changes made during its run. Its
 transactional rollback rehearsal preserves every fixture record and signature;

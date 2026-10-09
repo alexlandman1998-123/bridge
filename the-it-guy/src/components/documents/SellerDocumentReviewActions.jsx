@@ -8,6 +8,7 @@ function SellerDocumentReviewActions({
   onReminder = null,
   compact = false,
   requireSignedCopyCheck = false,
+  requireSignedEvidenceCheck = false,
 }) {
   const [rejecting, setRejecting] = useState(false)
   const [confirmingSignedCopy, setConfirmingSignedCopy] = useState(false)
@@ -40,12 +41,12 @@ function SellerDocumentReviewActions({
   }
 
   const submitApproval = async () => {
-    if (requireSignedCopyCheck && !signedCopyChecked) return
+    if ((requireSignedCopyCheck || requireSignedEvidenceCheck) && !signedCopyChecked) return
     const reason = requireSignedCopyCheck
       ? isMandate
         ? 'Reviewed the uploaded signed mandate against the current signing copy and checked every required seller signature and each contracting agency acceptance.'
         : 'Reviewed the uploaded signed file against the current signing copy and checked every required signature.'
-      : ''
+      : requireSignedEvidenceCheck ? 'Reviewed the existing signed document and checked every required seller signature and any required agency acceptance.' : ''
     const completed = await onReview?.({ item, document, action: 'approve', reason })
     if (completed !== false) {
       setConfirmingSignedCopy(false)
@@ -62,10 +63,12 @@ function SellerDocumentReviewActions({
     <div className={compact ? '' : 'mt-4 border-t border-[#e2eaf3] pt-4'}>
       {confirmingSignedCopy ? (
         <div className="rounded-[14px] border border-[#cfe3d7] bg-[#f4fbf6] p-3">
-          <p className="text-xs font-semibold text-[#195a3a]">Check the physical signed copy</p>
+          <p className="text-xs font-semibold text-[#195a3a]">Check the signed document</p>
           <label className="mt-2 flex items-start gap-2 text-xs leading-5 text-[#315b45]">
             <input type="checkbox" checked={signedCopyChecked} onChange={(event) => setSignedCopyChecked(event.target.checked)} disabled={isBusy} className="mt-1" />
-            <span>{isMandate
+            <span>{!requireSignedCopyCheck
+              ? 'I checked this existing signed document, every required seller signature, and any required agency acceptance.'
+              : isMandate
               ? 'I compared the uploaded mandate with the reviewed signing copy and checked every required seller signature and each contracting agency acceptance.'
               : 'I compared the uploaded file with the reviewed signing copy and checked that every required seller has signed.'}</span>
           </label>
@@ -149,7 +152,7 @@ function SellerDocumentReviewActions({
               </button>
               <button
                 type="button"
-                onClick={() => requireSignedCopyCheck ? setConfirmingSignedCopy(true) : void submitApproval()}
+                onClick={() => requireSignedCopyCheck || requireSignedEvidenceCheck ? setConfirmingSignedCopy(true) : void submitApproval()}
                 disabled={isBusy}
                 className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-[#1f7a46] px-3 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
               >

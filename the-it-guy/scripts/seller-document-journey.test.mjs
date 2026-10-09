@@ -28,6 +28,8 @@ import { createSellerReviewedDocumentVersions, buildSellerReviewedDocumentVersio
 import { buildSellerDocumentSourceOfTruth } from '../src/services/sellerDocumentRequirementsService.js'
 import { hasCompletedSellerDisclosure, hasCompletedOnboardingDisclosureSignature } from '../src/core/documents/sellerDocumentSigningContract.js'
 import { buildSellerOnboardingSigningPackSnapshot } from '../src/core/documents/sellerOnboardingSigningPackSnapshot.js'
+import { buildSellerAgentAssistedDisclosurePatch, getSellerDisclosureQuestionMissing } from '../src/lib/sellerAgentAssistedDisclosure.js'
+import { buildSellerDocumentWorkflow } from '../src/core/documents/sellerDocumentWorkflow.js'
 
 // The same saved records pass through application preparation, Chromium PDF
 // downloads, the complete Edge handler and unchanged PostgreSQL commands.
@@ -51,6 +53,7 @@ const encode = value => value && typeof value === 'object' ? JSON.stringify(valu
 let handler, signature, browser, page, portalPage, server, baseUrl, deliveryFailure = false
 const emails = [], report = [], browserErrors = []
 let downloads = 0, downloadedPages = 0, browserSignatures = 0, browserPhysicalReviews = 0
+let existingSignedUploads = 0, agentAssistedCaptures = 0
 const rpcArguments = {
   bridge_update_seller_portal_document_corrections: ['p_token_hash', 'p_expected_version_digest', 'p_updates'],
   bridge_submit_seller_portal_document_signature: ['p_token_hash', 'p_signed_name', 'p_signature_type', 'p_signature_value', 'p_signed_date', 'p_signed_place', 'p_acceptance_ip', 'p_acceptance_user_agent', 'p_expected_version_digest'],
@@ -174,11 +177,19 @@ async function mandateCapturePersistence() {
   }
 }
 
-async function prepare(branch, mandateType, route = 'digital_pack') {
+async function prepare(branch, mandateType, route = 'digital_pack', { agentAssisted = false } = {}) {
   const listingId = randomUUID(), copy = createSellerCorrectionFixture(branch)
   const form = copy.form
   // The unsigned disclosure must follow the selected document-signing route.
   form.propertyDisclosure.signature = ''; form.propertyDisclosure.signedAt = ''
+  if (agentAssisted) {
+    Object.assign(form, buildSellerAgentAssistedDisclosurePatch({ disclosure: form.propertyDisclosure, capturedBy: actor, existingFormData: {} }))
+    assert.deepEqual(getSellerDisclosureQuestionMissing(form.propertyDisclosure), [])
+    assert.equal(form.propertyDisclosure.declarationAccepted, false)
+    assert.equal(form.propertyDisclosure.signature, '')
+    assert.equal(form.sellerDisclosureCapture.status, 'awaiting_seller_review_and_signature')
+    agentAssistedCaptures++
+  }
   form.mandateType = mandateType; form.askingPrice = '2450000'
   const signingPack = copy.pack.signingPackSnapshot
   signingPack.disclosure = structuredClone(form.propertyDisclosure)
@@ -205,6 +216,11 @@ async function prepare(branch, mandateType, route = 'digital_pack') {
   await save(opened, { sellerPostOnboardingDrafts: drafts, sellerOnboardingReview: { status: 'approved' }, sellerOnboardingFormalPackApproval: approval,
     sellerOnboardingManualSigningPack: { ...prepared, documents: frozen.documents }, sellerReviewedDocumentVersions: buildSellerReviewedDocumentVersionIndex(frozen) })
   const persisted = (await reopened(listingId)).sellerOnboarding.formData
+  if (agentAssisted) {
+    assert.equal(persisted.sellerDisclosureCapture.capturedBy, actor)
+    assert.equal(persisted.propertyDisclosure.signature, '')
+    assert.equal(hasCompletedOnboardingDisclosureSignature(persisted), false, 'Agent capture cannot attest on behalf of the seller')
+  }
   assert.deepEqual(persisted.sellerOnboardingManualSigningPack.signingPackSnapshot.branding, signingPack.branding)
   assert.deepEqual(persisted.sellerOnboardingManualSigningPack.documents, frozen.documents, 'Reopening must preserve every approved byte, signer and digest')
   return { listingId, copy, form: persisted, frozen, branch, mandateType, route }
@@ -648,20 +664,60 @@ async function completeConnectedPhysical(fixture, document) {
   const stored = (await sql('select * from private_listing_documents where id=$1', [uploaded.id]))[0]
   assert.equal(stored.reviewed_signing_version_id, reference.reviewedSigningVersionId)
   assert.equal(stored.reviewed_signing_version_digest, reference.reviewedSigningVersionDigest)
-  await portalPage.goto(`${baseUrl}/review/${uploaded.id}`)
+  await reviewPhysicalInBrowser(uploaded.id, document.key)
+  return uploaded.id
+}
+
+async function reviewPhysicalInBrowser(documentId, documentKey) {
+  await portalPage.goto(`${baseUrl}/review/${documentId}`)
   await portalPage.getByRole('button', { name: 'Approve', exact: true }).click()
   const approve = portalPage.getByRole('button', { name: 'Approve signed copy', exact: true })
   assert.equal(await approve.isDisabled(), true)
-  const attestation = portalPage.getByRole('checkbox', { name: document.key === 'signed_mandate' ? /each contracting agency acceptance/ : /every required seller/ })
+  const attestation = portalPage.getByRole('checkbox', { name: documentKey === 'signed_mandate' ? /each contracting agency acceptance/ : /every required seller/ })
   await attestation.check()
   await approve.click()
   await portalPage.getByRole('status').waitFor()
   assert.equal(await portalPage.getByRole('status').textContent(), 'Signed copy approved')
-  const events = await sql('select reason from seller_document_review_events where document_id=$1', [uploaded.id])
+  const events = await sql('select reason from seller_document_review_events where document_id=$1', [documentId])
   assert.equal(events.length, 1)
-  if (document.key === 'signed_mandate') assert.match(events[0].reason, /every required seller signature and each contracting agency acceptance/)
+  if (documentKey === 'signed_mandate') assert.match(events[0].reason, /every required seller signature and each contracting agency acceptance/)
   browserPhysicalReviews++
-  return uploaded.id
+}
+
+async function existingSignedJourney() {
+  const fixture = await prepare('individual', 'sole', 'manual_upload', { agentAssisted: true })
+  const original = (await reopened(fixture.listingId)).sellerOnboarding.formData.sellerOnboardingManualSigningPack
+  for (const document of fixture.frozen.documents) {
+    const bytesPath = await download(document.generatedHtml, `existing-${document.key}-prepared`)
+    assert.ok((await fs.stat(bytesPath)).size > 10000)
+    const requirement = (await sql('select id from private_listing_document_requirements where private_listing_id=$1 and requirement_key=$2', [fixture.listingId, document.key]))[0]
+    // The stored file represents a synthetic externally signed copy. Auth and
+    // Storage transport are fixtures; the evidence and review guards are real SQL.
+    const uploaded = (await sql(`insert into private_listing_documents(private_listing_id,requirement_id,document_type,status,storage_path,uploaded_by,seller_signing_evidence_source)
+      values($1,$2,$3,'uploaded',$4,$5,'existing_signed_upload') returning *`,
+    [fixture.listingId, requirement.id, document.key, `synthetic/existing/${fixture.listingId}/${document.key}.pdf`, actor]))[0]
+    assert.equal(uploaded.reviewed_signing_version_id, null)
+    assert.equal(uploaded.reviewed_signing_version_digest, null)
+    const pending = await workspace(fixture.listingId)
+    const row = pending.source.rows.find(row => row.key === document.key)
+    assert.equal(row.complete, false, 'An existing upload remains incomplete until its signatures are reviewed')
+    assert.equal(buildSellerDocumentWorkflow({ item: row, copy: document }).state, 'review')
+    assert.equal((await request('issue', { listingId: fixture.listingId, documentKey: document.key }, true)).status, 409,
+      'The actual issuance handler must reject a conflicting pending signed upload')
+    await reviewPhysicalInBrowser(uploaded.id, document.key)
+    const reviewed = (await workspace(fixture.listingId)).source.rows.find(row => row.key === document.key)
+    assert.equal(reviewed.complete, true)
+    assert.equal(buildSellerDocumentWorkflow({ item: reviewed }).state, 'complete')
+    assert.equal(reviewed.original.document.id, uploaded.id, 'Reopening uses the existing reviewed file rather than a generated unsigned copy')
+    assert.equal(reviewed.original.document.seller_signing_evidence_source, 'existing_signed_upload')
+    existingSignedUploads++
+  }
+  await assertCompleted(fixture)
+  assert.deepEqual((await reopened(fixture.listingId)).sellerOnboarding.formData.sellerOnboardingManualSigningPack, original,
+    'Reviewing independent evidence preserves every previously generated byte and version')
+  assert.equal((await sql(`select count(*)::int as count from ${signingTable} where private_listing_id=$1`, [fixture.listingId]))[0].count, 0)
+  report.push({ route: 'existing_signed_upload', branch: 'individual', mandateType: 'sole', agentAssisted: true, documents: 3, result: 'passed' })
+  console.log('Agent-assisted disclosure saved unsigned → all three existing signed uploads → real browser signature review → complete on reopen; generated versions preserved')
 }
 
 async function connectedJourney(runtime, branch, mandateType, { physical = false, browserSign = false } = {}) {
@@ -821,7 +877,7 @@ try {
   await sql('insert into auth.users values($1)', [actor]); await sql('insert into organisations values($1)', [organisation])
   await sql("select set_config('app.uid',$1,false),set_config('app.org',$2,false)", [actor, organisation])
   for (const file of ['20260924151653_listing_seller_canonical_update_phase2.sql', '20260927102934_seller_portal_document_signing_foundation.sql',
-    '20260928092501_seller_portal_signature_place_and_date.sql', '20261004121736_seller_document_review_runtime_reconciliation.sql', '20260927122535_seller_physical_signing_version_review.sql']) {
+    '20260928092501_seller_portal_signature_place_and_date.sql', '20261004121736_seller_document_review_runtime_reconciliation.sql', '20260927122535_seller_physical_signing_version_review.sql', '20261009150000_seller_existing_signed_evidence.sql']) {
     await db.exec(await fs.readFile(new URL(`../../supabase/migrations/${file}`, import.meta.url), 'utf8'))
   }
   const uploadBase = await fs.readFile(new URL('../../supabase/migrations/202608090001_seller_portal_upload_rls_context_fix.sql', import.meta.url), 'utf8')
@@ -905,6 +961,7 @@ try {
     for (const [branch, mandateType] of [['individual', 'sole'], ['multiple_owners', 'dual'], ['company', 'exclusive'], ['trust', 'open']]) await digitalJourney(branch, mandateType)
     for (const [branch, mandateType] of [['individual', 'exclusive'], ['multiple_owners', 'open'], ['company', 'dual'], ['trust', 'sole']]) await physicalJourney(branch, mandateType)
     await expiryAndDeliveryRetries()
+    await existingSignedJourney()
   }
   if (!process.argv.includes('--connected-only')) for (const mandateType of ['sole', 'open', 'dual']) await fullMandateJourney(mandateRuntime, mandateType)
   if (!process.argv.includes('--full-mandates-only')) {
@@ -919,7 +976,8 @@ try {
   assert.equal((await collectSellerReleaseSource(path.resolve(appRoot, '..'), await collectSellerSigningBundle())).fingerprint,
     sourceFingerprint, 'Seller release source changed during acceptance; rerun against the final source')
   await fs.writeFile(path.join(output, 'report.json'), JSON.stringify({ result: 'passed', localOnly: true, sourceFingerprint,
-    verifiedAt: new Date().toISOString(), downloads, downloadedPages, browserSignatures, browserPhysicalReviews, journeys: report,
+    verifiedAt: new Date().toISOString(), downloads, downloadedPages, browserSignatures, browserPhysicalReviews,
+    existingSignedUploads, agentAssistedCaptures, journeys: report,
     boundaries: ['synthetic auth/session', 'email transport', 'Storage bytes', 'pre-transaction promotion'],
     localRollbackVerified: true, pendingHostedAcceptance: true, fullMigrationChainVerified: false }, null, 2))
   console.log(`Seller document journey passed: ${report.length} journeys, ${downloads} actual PDF downloads (${downloadedPages} pages), corrections, expired links and retries. No remote writes or email delivery.`)

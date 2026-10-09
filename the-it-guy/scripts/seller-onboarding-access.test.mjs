@@ -2,7 +2,8 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { readFileSync } from 'node:fs'
 import { PGlite } from '@electric-sql/pglite'
-import { buildSellerLeadManualCapturePayload, buildSellerLeadSigningPackTermsPatch } from '../src/lib/sellerLeadManualCaptureModel.js'
+import { buildSellerLeadAgentOnboardingSubmission, createSellerLeadAgentOnboardingDraft, buildSellerLeadManualCapturePayload, buildSellerLeadSigningPackTermsPatch } from '../src/lib/sellerLeadManualCaptureModel.js'
+import { PROPERTY_DISCLOSURE_QUESTIONS, isPropertyDisclosureDigitallyComplete } from '../src/lib/propertyDisclosure.js'
 import { buildListingSellerCanonicalUpdate, applyListingSellerCanonicalUpdateSnapshot } from '../src/services/listings/listingSellerCanonicalUpdateModel.js'
 import { buildSellerSigningPlan } from '../src/lib/sellerSigningPlanModel.js'
 import { buildSellerOnboardingSigningPackSnapshot } from '../src/core/documents/sellerOnboardingSigningPackSnapshot.js'
@@ -82,6 +83,39 @@ async function rpc(db, name, token, data = undefined) {
   const sqlArgs = data === undefined ? '$1' : '$1, p_form_data := $2::jsonb'
   return (await db.query(`select public.${name}(${sqlArgs}) result`, args)).rows[0].result
 }
+
+test('assisted disclosure drafts and completed intake round-trip through the real token RPCs without signing', async () => {
+  const db = await fixture()
+  try {
+    await actor(db, 'authenticated', agentA)
+    const partial = buildSellerLeadAgentOnboardingSubmission({ saveAsDraft: true, capturedBy: agentA,
+      draft: { propertyDisclosure: { responses: { electrical_faults: { answer: 'yes', note: 'Seller reports a fault.' } }, comments: 'Agent captured by phone.', remoteControlsQuantity: 0 } } })
+    await rpc(db, 'bridge_update_private_listing_seller_onboarding_progress', 'token-a', partial.formData)
+    const reopened = await rpc(db, 'bridge_get_private_listing_seller_onboarding_form', 'token-a')
+    const draft = createSellerLeadAgentOnboardingDraft({ formData: reopened.form_data })
+    assert.equal(draft.propertyDisclosure.responses.electrical_faults.note, 'Seller reports a fault.')
+    assert.equal(draft.propertyDisclosure.remoteControlsQuantity, '0')
+    assert.equal(reopened.form_data.sellerDisclosureCapture.status, 'draft')
+    const completed = buildSellerLeadAgentOnboardingSubmission({ capturedBy: agentA, existingFormData: reopened.form_data,
+      draft: { ...draft, branch: 'individual', sellerFirstName: 'Jane', sellerSurname: 'Owner', phone: '0820000000',
+        idNumber: '8001015009087', dateOfBirth: '1980-01-01', nationality: 'South African', residentialAddress: '1 Main Road',
+        incomeTaxNumber: '12345', saResident: 'yes', maritalStatus: 'single', popiConsentAccepted: true,
+        propertyAddress: '1 Main Road', propertySuburb: 'Sandton', propertyCity: 'Johannesburg', propertyProvince: 'Gauteng',
+        ratesTaxes: '0', leviesNotApplicable: true, waterBillingType: 'municipal', occupation: 'Teacher', sourceOfFunds: 'Salary', politicallyExposedPerson: 'no',
+        propertyDisclosure: { ...draft.propertyDisclosure, responses: Object.fromEntries(PROPERTY_DISCLOSURE_QUESTIONS.map(question => [question.key, question.key === 'electrical_faults' ? draft.propertyDisclosure.responses.electrical_faults : { answer: 'no', note: '' }])) } } })
+    assert.deepEqual(completed.errors, [])
+    await rpc(db, 'bridge_complete_private_listing_seller_onboarding', 'token-a', { ...completed.formData, completionMode: 'agent_assisted', completedBy: agentA })
+    const saved = await rpc(db, 'bridge_get_private_listing_seller_onboarding_form', 'token-a')
+    assert.equal(saved.status, 'completed')
+    assert.equal(saved.form_data.sellerDisclosureCapture.capturedBy, agentA)
+    assert.equal(saved.form_data.sellerDisclosureCapture.status, 'awaiting_seller_review_and_signature')
+    assert.equal(Object.values(saved.form_data.propertyDisclosure.responses).filter(response => response.answer).length, 20)
+    assert.equal(saved.form_data.propertyDisclosure.signature, '')
+    assert.equal(saved.form_data.propertyDisclosure.declarationAccepted, false)
+    assert.equal(isPropertyDisclosureDigitallyComplete(saved.form_data.propertyDisclosure), false)
+    assert.equal(saved.form_data.propertyDisclosureStatus, 'pending_seller_completion')
+  } finally { await db.close() }
+})
 
 test('policies remove historical bypasses; assigned agents/admins remain scoped for CRUD', async () => {
   const db = await fixture()

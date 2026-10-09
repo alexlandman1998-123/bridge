@@ -30,7 +30,7 @@ test('seller onboarding persists profile-compatible aliases on draft and submit'
   )
   assertSourceIncludes(
     sellerOnboardingSource,
-    '...buildSellerEntityProfileAliases(formForDraft)',
+    '...buildSellerEntityProfileAliases(capturedFormForDraft)',
     'Draft saves should persist entity/profile aliases.',
   )
   assertSourceIncludes(

@@ -10,6 +10,9 @@ import { buildSellerProfileCanonicalPayload } from './sellerProfileCaptureModel.
 import { validateSellerOnboardingFacts } from '../services/documents/sellerOnboardingFactTransformer.js'
 import { resolveSellerLeadOwnershipRoute } from './sellerLeadOwnershipSetupModel.js'
 import { getSellerFicaOnboardingMissing } from './sellerFicaOnboardingFields.js'
+import { readSellerPopiConsent, sellerPopiConsentDisplayValue } from '../core/documents/sellerOnboardingConsent.js'
+import { normalizePropertyDisclosure } from './propertyDisclosure.js'
+import { buildSellerAgentAssistedDisclosurePatch, getSellerDisclosureQuestionMissing, isSellerDisclosureCaptureLocked } from './sellerAgentAssistedDisclosure.js'
 
 function text(value = '') {
   return String(value ?? '').trim()
@@ -55,7 +58,20 @@ export function buildSellerLeadManualCapturePayload({ form = {}, listing = {}, l
     email: text(source.email ?? source.sellerEmail).toLowerCase(),
     phone: text(source.phone ?? source.sellerPhone ?? source.mobile),
     idNumber: text(source.idNumber || source.sellerIdNumber),
-    residentialAddress: text(source.residentialAddress || source.residentialStreet),
+    residentialAddress: text(source.residentialStreet ?? source.residentialAddress ?? source.residential_address),
+    dateOfBirth: text(source.dateOfBirth ?? source.date_of_birth),
+    nationality: text(source.nationality),
+    incomeTaxNumber: text(source.incomeTaxNumber ?? source.income_tax_number ?? source.sellerTaxNumber ?? source.taxNumber),
+    saResident: text(source.saResident ?? source.sa_resident ?? source.taxResident),
+    vatRegistered: text(source.vatRegistered ?? source.vat_registered),
+    occupation: text(source.occupation),
+    sourceOfFunds: text(source.sourceOfFunds ?? source.source_of_funds),
+    politicallyExposedPerson: text(source.politicallyExposedPerson ?? source.politically_exposed_person).toLowerCase(),
+    politicallyExposedDetails: text(source.politicallyExposedDetails ?? source.politically_exposed_details),
+    companyBeneficialOwners: source.companyBeneficialOwners ?? source.company_beneficial_owners ?? [],
+    trustFounders: source.trustFounders ?? source.trust_founders ?? [],
+    trustBeneficiaries: source.trustBeneficiaries ?? source.trust_beneficiaries ?? [],
+    trustBeneficiaryClass: text(source.trustBeneficiaryClass ?? source.trust_beneficiary_class),
     maritalStatus: text(source.maritalStatus || source.maritalRegime),
     spouseName: text(source.spouseName),
     spouseEmail: text(source.spouseEmail),
@@ -110,13 +126,13 @@ export function buildSellerLeadManualCapturePayload({ form = {}, listing = {}, l
     askingPrice: text(source.askingPrice),
     mandateType: text(source.mandateType),
     otherAgencyName: text(source.otherAgencyName),
-    popiConsent: text(source.popiConsent),
+    popiConsent: Object.hasOwn(form, 'popiConsent') ? text(form.popiConsent) : sellerPopiConsentDisplayValue(source),
     ...buildSellerMandateTermsFormPatch(source),
   }
 
   return {
     draft,
-    ...buildListingSellerProfileCapturePayload(draft, listing, { draft: true }),
+    ...buildListingSellerProfileCapturePayload(draft, listing, { draft: true, existingFormData: legacyFormData }),
   }
 }
 
@@ -141,7 +157,7 @@ export function createSellerLeadAgentOnboardingDraft({ lead = {}, contact = {}, 
     sellerSurname: text(formData.sellerSurname || formData.lastName || contact.lastName || (naturalPerson ? lead.sellerSurname : '')),
     email: text(formData.email ?? formData.sellerEmail ?? contact.email ?? lead.sellerEmail),
     phone: text(formData.phone ?? formData.sellerPhone ?? contact.phone ?? lead.sellerPhone),
-    residentialAddress: text(formData.residentialAddress || formData.residentialStreet || formData.streetAddress),
+    residentialAddress: text(formData.residentialAddress ?? formData.residential_address ?? formData.residentialStreet ?? formData.streetAddress),
     propertyAddress: text(formData.propertyAddress || lead.sellerPropertyAddress || lead.formattedAddress || listing.formattedAddress),
   }
   const draft = createListingSellerProfileBuilderDraft({
@@ -151,21 +167,24 @@ export function createSellerLeadAgentOnboardingDraft({ lead = {}, contact = {}, 
     seller_onboarding_form_data: source,
   })
   for (const field of EXTRA_ONBOARDING_FIELDS) draft[field] = text(formData[field] ?? listing[field] ?? draft[field])
-  draft.incomeTaxNumber = text(formData.incomeTaxNumber || formData.sellerTaxNumber || formData.taxNumber)
-  draft.saResident = text(formData.saResident || formData.taxResident)
   draft.propertySuburb = text(formData.propertySuburb || formData.suburb || listing.suburb)
   draft.propertyCity = text(formData.propertyCity || formData.city || listing.city)
   draft.propertyProvince = text(formData.propertyProvince || formData.province || listing.province)
   draft.leaseExists = isAffirmative(formData.leaseExists)
-  draft.popiConsentAccepted = isAffirmative(formData.popiConsentAccepted || formData.popi_consent_accepted || formData.popiConsent)
+  draft.popiConsentAccepted = readSellerPopiConsent(source).accepted
+  draft.propertyDisclosure = normalizePropertyDisclosure(formData.propertyDisclosure || formData.property_disclosure || {}, { kind: formData.propertyDisclosure?.kind || formData.property_disclosure?.kind || 'residential' })
+  draft.disclosureLocked = isSellerDisclosureCaptureLocked(formData)
   return draft
 }
 
-export function buildSellerLeadAgentOnboardingSubmission({ draft = {}, listing = {}, existingFormData = {} } = {}) {
-  const errors = validateListingSellerProfileBuilderDraft(draft)
-  errors.push(...getSellerFicaOnboardingMissing(draft))
-  if (!draft.popiConsentAccepted) errors.push('Confirm that the seller gave POPI consent before submitting.')
-  const { formPatch } = buildListingSellerProfileCapturePayload(draft, listing, { draft: false })
+export function buildSellerLeadAgentOnboardingSubmission({ draft = {}, listing = {}, existingFormData = {}, saveAsDraft = false, capturedBy = '', capturedAt } = {}) {
+  const errors = saveAsDraft ? [] : validateListingSellerProfileBuilderDraft(draft)
+  if (!saveAsDraft) {
+    errors.push(...getSellerFicaOnboardingMissing(draft))
+    if (!draft.popiConsentAccepted) errors.push('Confirm that the seller gave POPI consent before submitting.')
+    if (!isSellerDisclosureCaptureLocked(existingFormData)) errors.push(...getSellerDisclosureQuestionMissing(draft.propertyDisclosure))
+  }
+  const { formPatch } = buildListingSellerProfileCapturePayload(draft, listing, { draft: saveAsDraft, existingFormData })
   const formData = {
     ...existingFormData,
     ...formPatch,
@@ -181,21 +200,17 @@ export function buildSellerLeadAgentOnboardingSubmission({ draft = {}, listing =
     sellerTaxNumber: text(draft.incomeTaxNumber),
     taxNumber: text(draft.incomeTaxNumber),
     sa_resident: text(draft.saResident),
-    popiConsent: draft.popiConsentAccepted ? 'Accepted' : '',
-    popiConsentAccepted: Boolean(draft.popiConsentAccepted),
-    popiConsentAcceptedAt: draft.popiConsentAccepted
-      ? text(existingFormData.popiConsentAcceptedAt) || new Date().toISOString()
-      : '',
     sellerOwnershipRoute: text(draft.branch),
     ownershipRouteConfirmed: true,
     leaseExists: Boolean(draft.leaseExists),
     leaseExpiryDate: text(draft.leaseExpiryDate),
+    ...buildSellerAgentAssistedDisclosurePatch({ disclosure: draft.propertyDisclosure, existingFormData, capturedBy, capturedAt, draft: saveAsDraft }),
   }
   const canonicalPayload = buildSellerProfileCanonicalPayload(formData, listing, {
-    source: 'seller_onboarding_submit',
-    draft: false,
+    source: saveAsDraft ? 'seller_onboarding_progress' : 'seller_onboarding_submit',
+    draft: saveAsDraft,
   })
-  if (canonicalPayload.canonicalSellerFacts) {
+  if (!saveAsDraft && canonicalPayload.canonicalSellerFacts) {
     const factValidation = validateSellerOnboardingFacts(canonicalPayload.canonicalSellerFacts, { draft: false })
     errors.push(...factValidation.required.map((issue) => issue.message))
   }

@@ -1,6 +1,8 @@
+import SellerDocumentWorkflowActions from '../../components/documents/SellerDocumentWorkflowActions'
+import { SELLER_DOCUMENT_ACTIONS, SELLER_DOCUMENT_SELECTION_KEYS, sellerGeneratedDocumentSelection, buildSellerDocumentWorkflow, getSellerDocumentSigningRequest, sellerDocumentHasActiveSigning, sellerDocumentHasUploadedEvidence } from '../../core/documents/sellerDocumentWorkflow'
 import { projectSellerProfilePeople } from '../../lib/sellerProfileCaptureModel'
 import { formatPropertyAddress } from '../../lib/sellerPropertyAddress'
-import { readSellerPopiConsent } from '../../core/documents/sellerOnboardingConsent'
+import { readSellerPopiConsent, sellerPopiConsentDisplayValue } from '../../core/documents/sellerOnboardingConsent'
 import CalendarHealthPanel from '../../components/appointments/CalendarHealthPanel'
 import ConnectedCalendarPanel from '../../components/appointments/ConnectedCalendarPanel'
 import { appointmentMatchesAgent, appointmentReadState } from '../../core/appointments/appointmentReadModel.js'
@@ -34,6 +36,8 @@ import {
 import Button from '../../components/ui/Button'
 import Field from '../../components/ui/Field'
 import SellerLeadAgentOnboardingEditor from '../../components/leads/SellerLeadAgentOnboardingEditor'
+import SellerFicaQuestions from '../../components/onboarding/SellerFicaQuestions'
+import { sellerYesNoValue } from '../../lib/sellerFicaOnboardingFields'
 import SellerOnboardingAgentReviewPanel from '../../components/onboarding/SellerOnboardingAgentReviewPanel'
 import { summarizeLeadDocumentCategory } from '../../components/documents/leadDocumentProgressModel'
 import SellerDocumentReviewActions from '../../components/documents/SellerDocumentReviewActions'
@@ -56,6 +60,7 @@ import {
 } from '../../lib/sellerLeadManualCaptureModel'
 import {
   addListingSellerProfileDraftPerson,
+  createListingSellerProfileBuilderDraft,
   getListingSellerFormData,
   hasListingSellerProfileBranchDetailsToDiscard,
   removeListingSellerProfileDraftPerson,
@@ -180,7 +185,7 @@ import { createSellerOnboardingManualSigningPack, createSellerOnboardingSigningC
 import { createSellerReviewedDocumentVersions, buildSellerReviewedDocumentVersionIndex } from '../../core/documents/sellerReviewedDocumentVersions'
 import { downloadSellerPhysicalSigningCopy, getSellerPhysicalSigningCopy, requireSellerPhysicalSigningCopy } from '../../core/documents/sellerPhysicalSigningCopy'
 import { SELLER_PORTAL_SIGNING_ENABLED } from '../../core/documents/sellerPortalSigningPolicy'
-import { listSellerPortalSigningRequests, previewSellerPortalSignedDocument, reviewSellerPortalSignedDocument, sendSellerDocumentForSignature } from '../../services/sellerPortalDocumentSigningService'
+import { assertSellerDocumentUploadAvailable, listSellerPortalSigningRequests, previewSellerPortalSignedDocument, reviewSellerPortalSignedDocument, sendSellerDocumentForSignature } from '../../services/sellerPortalDocumentSigningService'
 import { reviewSellerDocument } from '../../services/sellerDocumentReviewWorkflowService'
 import { hasCompletedSellerDisclosure } from '../../core/documents/sellerDocumentSigningContract'
 import { SELLER_ONBOARDING_SIGNING_STAGES, createSellerOnboardingSigningLifecycle } from '../../core/documents/sellerOnboardingSigningLifecycle'
@@ -428,6 +433,7 @@ const linkPrivateListingDocument = createDeferredAction(loadPrivateListingAction
 const markPrivateListingDocumentsPendingTransactionPromotion = createDeferredAction(loadPrivateListingActions, 'markPrivateListingDocumentsPendingTransactionPromotion')
 const persistSellerProfileOnboardingFormData = createDeferredAction(loadPrivateListingActions, 'persistSellerProfileOnboardingFormData')
 const submitSellerOnboarding = createDeferredAction(loadPrivateListingActions, 'submitSellerOnboarding')
+const updateSellerOnboardingProgress = createDeferredAction(loadPrivateListingActions, 'updateSellerOnboardingProgress')
 const sendSellerOnboarding = createDeferredAction(loadPrivateListingActions, 'sendSellerOnboarding')
 const syncPrivateListingDistributionData = createDeferredAction(loadPrivateListingActions, 'syncPrivateListingDistributionData')
 const updatePrivateListing = createDeferredAction(loadPrivateListingActions, 'updatePrivateListing')
@@ -9064,6 +9070,7 @@ function toSellerProfileText(value) {
 function buildKingstonsSellerProfileEditForm({ lead = {}, contact = {}, listing = {} } = {}) {
   const listingSource = listing?.sourceListing && isPlainObject(listing.sourceListing) ? listing.sourceListing : (listing || {})
   const onboarding = getWorkspaceSellerOnboarding(lead, listingSource)
+  const sharedDraft = createListingSellerProfileBuilderDraft({ ...listingSource, sellerOnboarding: { formData: onboarding }, sellerOnboardingFormData: onboarding })
   const company = isPlainObject(onboarding?.company) ? onboarding.company : {}
   const trust = isPlainObject(onboarding?.trust) ? onboarding.trust : {}
   const foreign = isPlainObject(onboarding?.foreign) ? onboarding.foreign : {}
@@ -9082,13 +9089,6 @@ function buildKingstonsSellerProfileEditForm({ lead = {}, contact = {}, listing 
       lead?.name ||
       contact?.fullName,
   )
-  const resolvedTaxNumber = normalizeText(
-    onboarding?.incomeTaxNumber ||
-      onboarding?.income_tax_number ||
-      onboarding?.sellerTaxNumber ||
-      onboarding?.taxNumber ||
-      onboarding?.tax_number,
-  )
   const nameParts = splitSellerNameParts(resolvedName)
   return {
     ...KINGSTONS_SELLER_PROFILE_EDIT_DEFAULTS,
@@ -9101,13 +9101,20 @@ function buildKingstonsSellerProfileEditForm({ lead = {}, contact = {}, listing 
     phone: normalizeText(onboarding?.phone ?? onboarding?.sellerPhone ?? onboarding?.mobile ?? contact?.phone ?? lead?.sellerPhone ?? lead?.phone),
     email: normalizeText(onboarding?.email ?? onboarding?.sellerEmail ?? contact?.email ?? lead?.sellerEmail ?? lead?.email).toLowerCase(),
     idNumber: normalizeText(onboarding?.idNumber || onboarding?.id_number || onboarding?.sellerIdNumber || lead?.sellerIdNumber || lead?.idNumber),
-    dateOfBirth: normalizeText(onboarding?.dateOfBirth || onboarding?.date_of_birth || onboarding?.birthDate),
-    nationality: normalizeText(onboarding?.nationality || lead?.nationality),
+    dateOfBirth: sharedDraft.dateOfBirth,
+    nationality: normalizeText(onboarding?.nationality ?? (sharedDraft.nationality || lead?.nationality)),
     maritalStatus: normalizeText(onboarding?.maritalStatus || onboarding?.marital_status || lead?.maritalStatus),
-    occupation: normalizeText(onboarding?.occupation || lead?.occupation),
+    occupation: normalizeText(onboarding?.occupation ?? (sharedDraft.occupation || lead?.occupation)),
+    sourceOfFunds: sharedDraft.sourceOfFunds,
+    politicallyExposedPerson: sellerYesNoValue(sharedDraft.politicallyExposedPerson),
+    politicallyExposedDetails: sharedDraft.politicallyExposedDetails,
+    companyBeneficialOwners: sharedDraft.companyBeneficialOwners,
+    trustFounders: sharedDraft.trustFounders,
+    trustBeneficiaries: sharedDraft.trustBeneficiaries,
+    trustBeneficiaryClass: sharedDraft.trustBeneficiaryClass,
     employer: normalizeText(onboarding?.employer || lead?.employer),
     alternativeNumber: normalizeText(onboarding?.alternativeNumber || onboarding?.alternative_number || onboarding?.alternatePhone),
-    residentialStreet: normalizeText(onboarding?.residentialStreet || onboarding?.streetAddress || lead?.streetAddress),
+    residentialStreet: normalizeText(onboarding?.residentialStreet ?? onboarding?.residentialAddress ?? onboarding?.residential_address ?? onboarding?.streetAddress ?? lead?.streetAddress),
     residentialSuburb: normalizeText(onboarding?.residentialSuburb || onboarding?.suburb || lead?.suburb),
     residentialCity: normalizeText(onboarding?.residentialCity || onboarding?.city || lead?.city),
     residentialProvince: normalizeText(onboarding?.residentialProvince || onboarding?.province || lead?.province),
@@ -9118,11 +9125,11 @@ function buildKingstonsSellerProfileEditForm({ lead = {}, contact = {}, listing 
     accountNumber: normalizeText(onboarding?.accountNumber || onboarding?.account_number || lead?.accountNumber || lead?.bankAccountNumber),
     branchCode: normalizeText(onboarding?.branchCode || onboarding?.branch_code || lead?.branchCode),
     accountType: normalizeText(onboarding?.accountType || onboarding?.account_type || lead?.accountType),
-    saResident: toSellerProfileText(onboarding?.saResident || onboarding?.sa_resident || onboarding?.taxResident),
-    incomeTaxNumber: resolvedTaxNumber,
-    vatRegistered: toSellerProfileText(onboarding?.vatRegistered || onboarding?.vat_registered),
+    saResident: sellerYesNoValue(sharedDraft.saResident),
+    incomeTaxNumber: sharedDraft.incomeTaxNumber,
+    vatRegistered: sellerYesNoValue(sharedDraft.vatRegistered),
     ficaStatus: normalizeText(onboarding?.ficaStatus || onboarding?.fica_status),
-    popiConsent: readSellerPopiConsent(onboarding).accepted ? 'Accepted' : 'No',
+    popiConsent: sellerPopiConsentDisplayValue(onboarding),
     electronicSignature: toSellerProfileText(onboarding?.electronicSignature || onboarding?.electronic_signature),
     ownershipType: normalizeText(onboarding?.ownershipType || onboarding?.ownership_type || lead?.ownershipType),
     multipleOwnersRecords: onboarding.multipleOwners || onboarding.multiple_owners || onboarding.owners || [],
@@ -9407,6 +9414,13 @@ function buildKingstonsSellerProfileFormData(form = {}) {
     nationality: normalizeText(form.nationality),
     maritalStatus: normalizeText(form.maritalStatus),
     occupation: normalizeText(form.occupation),
+    sourceOfFunds: normalizeText(form.sourceOfFunds),
+    politicallyExposedPerson: sellerYesNoValue(form.politicallyExposedPerson),
+    politicallyExposedDetails: normalizeText(form.politicallyExposedDetails),
+    companyBeneficialOwners: form.companyBeneficialOwners || [],
+    trustFounders: form.trustFounders || [],
+    trustBeneficiaries: form.trustBeneficiaries || [],
+    trustBeneficiaryClass: normalizeText(form.trustBeneficiaryClass),
     employer: normalizeText(form.employer),
     alternativeNumber: normalizeText(form.alternativeNumber),
     residentialStreet: normalizeText(form.residentialStreet),
@@ -9431,10 +9445,7 @@ function buildKingstonsSellerProfileFormData(form = {}) {
     tax_number: taxNumber,
     vatRegistered: normalizeText(form.vatRegistered),
     ficaStatus: normalizeText(form.ficaStatus),
-    popiConsent,
-    popi_consent: popiConsent,
-    popiConsentAccepted,
-    popi_consent_accepted: popiConsentAccepted,
+    ...(popiConsent ? { popiConsent, popi_consent: popiConsent, popiConsentAccepted, popi_consent_accepted: popiConsentAccepted } : {}),
     electronicSignature: normalizeText(form.electronicSignature),
     ownershipType: normalizeText(form.ownershipType),
     multipleOwners,
@@ -10547,6 +10558,13 @@ const KINGSTONS_SELLER_PROFILE_EDIT_DEFAULTS = {
   nationality: '',
   maritalStatus: '',
   occupation: '',
+  sourceOfFunds: '',
+  politicallyExposedPerson: '',
+  politicallyExposedDetails: '',
+  companyBeneficialOwners: [],
+  trustFounders: [],
+  trustBeneficiaries: [],
+  trustBeneficiaryClass: '',
   employer: '',
   alternativeNumber: '',
   residentialStreet: '',
@@ -11913,6 +11931,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setSellerOnboardingReviewRoute('manual_upload')
     }
   }, [sellerOnboardingReviewRoute])
+  const [sellerSigningPackDownloadKey, setSellerSigningPackDownloadKey] = useState('')
   const [sellerSigningPackModalOpen, setSellerSigningPackModalOpen] = useState(false)
   const [sellerSigningPackSaving, setSellerSigningPackSaving] = useState(false)
   const [sellerSigningPackProgress, setSellerSigningPackProgress] = useState('')
@@ -14445,7 +14464,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       selectedLead?.private_listing_id,
   )
   useEffect(() => {
-    if (!SELLER_PORTAL_SIGNING_ENABLED || !selectedLeadLinkedListingId) {
+    if (!selectedLeadLinkedListingId) {
       setSellerPortalSigningRequests([])
       return
     }
@@ -14476,7 +14495,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     let active = true
     setSellerPortalSigningRequests([])
     let timer = null
-    if (selectedLeadLinkedListingId && selectedLeadIsSeller && SELLER_PORTAL_SIGNING_ENABLED) {
+    if (selectedLeadLinkedListingId && selectedLeadIsSeller) {
       const refresh = () => listSellerPortalSigningRequests(selectedLeadLinkedListingId)
         .then((result) => { if (active) setSellerPortalSigningRequests(result.documents || []) })
         .catch(() => {})
@@ -18298,7 +18317,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             ['SA Resident', field(onboarding?.saResident, onboarding?.sa_resident, onboarding?.taxResident)],
             ['Tax Number', field(onboarding?.incomeTaxNumber, onboarding?.income_tax_number, onboarding?.sellerTaxNumber, onboarding?.taxNumber, onboarding?.tax_number)],
             ['VAT Registered', field(onboarding?.vatRegistered, onboarding?.vat_registered)],
-            ['POPI Consent', readSellerPopiConsent(onboarding).accepted ? 'Accepted' : 'No'],
+            ['POPI Consent', sellerPopiConsentDisplayValue(onboarding) || 'Not captured'],
+            ['Occupation / Business Activity', field(onboarding?.occupation, canonicalSellerFacts?.seller?.occupation)],
+            ['Source of Funds / Wealth', field(onboarding?.sourceOfFunds, onboarding?.source_of_funds, canonicalSellerFacts?.seller?.source_of_funds)],
+            ['Political Exposure', field(onboarding?.politicallyExposedPerson, onboarding?.politically_exposed_person, canonicalSellerFacts?.seller?.politically_exposed_person)],
+            ['Political Exposure Details', field(onboarding?.politicallyExposedDetails, onboarding?.politically_exposed_details, canonicalSellerFacts?.seller?.politically_exposed_details)],
           ],
         },
         {
@@ -22942,7 +22965,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     let canonicalSaveResult = null
     try {
       const savedAt = new Date().toISOString()
-      const legacyFormData = buildKingstonsSellerProfileFormData(sellerProfileEditForm)
+      const legacyFormData = {
+        ...getWorkspaceSellerOnboarding(selectedLead, selectedLeadLinkedListing),
+        ...buildKingstonsSellerProfileFormData(sellerProfileEditForm),
+      }
       const manualCapture = buildSellerLeadManualCapturePayload({
         form: sellerProfileEditForm,
         legacyFormData,
@@ -26423,8 +26449,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     setSellerLeadMandateUploading(true)
     setError('')
     try {
-      const signingCopy = getSellerPhysicalSigningCopy(documentRow) ? await requireSellerPhysicalSigningCopy(documentRow) : null
-      if (signingCopy?.signingRoute === 'digital_pack') throw new Error('This mandate was approved for portal signing. Use its signing status in Documents.')
+      const signingCopy = !documentRow.uploadExisting && getSellerPhysicalSigningCopy(documentRow) ? await requireSellerPhysicalSigningCopy(documentRow) : null
+      if (selectedLeadLinkedListingId) await assertSellerDocumentUploadAvailable(selectedLeadLinkedListingId, 'signed_mandate')
       let targetListingId = normalizeText(
         selectedLeadLinkedListing?.id ||
           selectedLeadLinkedListing?.listingId ||
@@ -26459,44 +26485,40 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         documentName: normalizeText(file.name || documentRow?.label || documentRow?.title) || 'Signed Mandate',
         visibility: 'internal',
         status: 'uploaded',
-        deferMandateSigning: Boolean(signingCopy),
+        deferMandateSigning: true,
+        existingSignedEvidence: documentRow.uploadExisting === true,
         reviewedSigningVersionId: signingCopy?.versionId || '',
         reviewedSigningVersionDigest: signingCopy?.versionDigest || '',
       })
 
       await updatePrivateListing(targetListingId, {
-        listingStatus: 'mandate_signed',
-        listingVisibility: 'internal',
-        isActive: false,
         mandateStatus: 'signed_uploaded',
       }, { includeRequirementsAndDocuments: false })
 
       const leadPatch = {
-        stage: 'Mandate Signed',
-        status: 'Signed',
+        status: 'Mandate uploaded — awaiting agent review',
         mandateStatus: 'signed_uploaded',
-        mandateSignedAt: uploadedAt,
+        mandateUploadedAt: uploadedAt,
         listingId: targetListingId,
         sellerOnboarding: {
           ...(selectedLead?.sellerOnboarding || {}),
-          status: 'signed',
-          signedAt: uploadedAt,
+          status: selectedLead?.sellerOnboarding?.status || 'completed',
         },
       }
       patchSelectedLeadRecord(leadPatch, selectedLead.leadId)
       await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, leadPatch)
       await createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
         agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
-        activityType: 'Mandate Signed',
-        activityNote: 'Signed hard-copy mandate uploaded.',
-        outcome: 'Hard-copy mandate signed',
+        activityType: 'Document Uploaded',
+        activityNote: 'Existing signed mandate uploaded; awaiting agent review.',
+        outcome: 'Mandate awaiting review',
         activityDate: uploadedAt,
       }, { actor: currentAgent })
       await createPrivateListingActivity({
         privateListingId: targetListingId,
-        activityType: 'mandate_signed',
-        activityTitle: 'Hard-copy mandate signed',
-        activityDescription: `${uploadedDocument?.document_name || uploadedDocument?.documentName || file.name || 'Signed mandate'} uploaded and marked signed.`,
+        activityType: 'document_uploaded',
+        activityTitle: 'Mandate uploaded for review',
+        activityDescription: `${uploadedDocument?.document_name || uploadedDocument?.documentName || file.name || 'Signed mandate'} uploaded for agent review.`,
         performedBy: normalizeText(currentAgent.id),
         visibility: 'internal',
         metadata: {
@@ -26504,12 +26526,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           documentId: normalizeText(uploadedDocument?.id),
           documentPath: normalizeText(uploadedDocument?.storage_path || uploadedDocument?.storagePath),
           signingMethod: 'hard_copy',
+          existingSignedEvidence: documentRow.uploadExisting === true,
           reviewedSigningVersionId: signingCopy?.versionId || '',
           reviewedSigningVersionDigest: signingCopy?.versionDigest || '',
         },
       }).catch(() => null)
 
-      setMessage('Signed hard-copy mandate uploaded. Draft Listing is ready to complete and review.')
+      setMessage('Mandate uploaded. Review the signed evidence in Documents before marking it complete.')
     } catch (uploadError) {
       setError(uploadError?.message || 'Unable to upload the signed mandate right now.')
     } finally {
@@ -26517,8 +26540,18 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }
 
+  function getSellerLeadDocumentWorkflowStatusMeta(row = {}) {
+    const meta = getSellerLeadDocumentStatusMeta(row)
+    const key = normalizeSellerBasePackKey(getSellerLeadDocumentCanonicalKey(row))
+    if (!SELLER_DOCUMENT_SELECTION_KEYS[key]) return meta
+    const copy = getSellerPhysicalSigningCopy(row)
+    const request = copy ? getSellerDocumentSigningRequest(sellerPortalSigningRequests, key, copy.versionId) : null
+    const workflow = buildSellerDocumentWorkflow({ item: row, copy, request })
+    return { ...meta, label: workflow.label, state: workflow.state === 'complete' ? 'complete' : workflow.state === 'retry' ? 'danger' : meta.state }
+  }
+
   async function handleSellerLeadPortalSigningAction(documentKey, requestId = '') {
-    if (!SELLER_PORTAL_SIGNING_ENABLED || !selectedLeadLinkedListingId || sellerPortalSigningBusy) return
+    if ((!requestId && !SELLER_PORTAL_SIGNING_ENABLED) || !selectedLeadLinkedListingId || sellerPortalSigningBusy) return
     setSellerPortalSigningBusy(documentKey)
     setError('')
     try {
@@ -26530,18 +26563,30 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         const result = await sendSellerDocumentForSignature(selectedLeadLinkedListingId, documentKey)
         setMessage(`Private signature links were sent to ${result.sentCount} required signer${result.sentCount === 1 ? '' : 's'}.`)
       }
+      if (documentKey === 'signed_mandate' && organisationId && selectedLead?.leadId) {
+        const leadPatch = requestId
+          ? { stage: 'Mandate Signed', status: 'Mandate signed and reviewed', mandateStatus: 'signed', mandateReviewedAt: new Date().toISOString() }
+          : { stage: 'Mandate Sent', status: 'Mandate sent — awaiting online signatures', mandateExecutionMode: 'digital', mandateSentAt: new Date().toISOString() }
+        try {
+          await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, leadPatch)
+          patchSelectedLeadRecord(leadPatch, selectedLead.leadId)
+        } catch {
+          setMessage('The document action completed. The lead stage could not be refreshed; reload the lead to reconcile its progress.')
+        }
+      }
       const refreshed = await listSellerPortalSigningRequests(selectedLeadLinkedListingId)
       setSellerPortalSigningRequests(refreshed.documents || [])
       scheduleRecordsReload(organisationId, 750)
     } catch (reason) {
       setError(reason?.message || 'The seller signing action failed.')
+      try { const refreshed = await listSellerPortalSigningRequests(selectedLeadLinkedListingId); setSellerPortalSigningRequests(refreshed.documents || []) } catch { /* Preserve action error. */ }
     } finally {
       setSellerPortalSigningBusy('')
     }
   }
 
   async function handleSellerLeadPortalSigningRefresh() {
-    if (!SELLER_PORTAL_SIGNING_ENABLED || !selectedLeadLinkedListingId || sellerPortalSigningBusy) return
+    if (!selectedLeadLinkedListingId || sellerPortalSigningBusy) return
     setSellerPortalSigningBusy('refresh')
     setError('')
     try {
@@ -26555,7 +26600,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }
 
   async function handleSellerLeadPortalSigningPreview(documentKey, requestId) {
-    if (!SELLER_PORTAL_SIGNING_ENABLED || !requestId || sellerPortalSigningBusy) return
+    if (!requestId || sellerPortalSigningBusy) return
     setSellerPortalSigningBusy(documentKey)
     setError('')
     try {
@@ -26608,8 +26653,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     setSellerLeadDocumentUploadingKey(uploadKey)
     setError('')
     try {
-      const signingCopy = getSellerPhysicalSigningCopy(documentRow) ? await requireSellerPhysicalSigningCopy(documentRow) : null
-      if (signingCopy?.signingRoute === 'digital_pack') throw new Error('This document was approved for portal signing. Use its signing status in Documents.')
+      const signingCopy = !documentRow.uploadExisting && getSellerPhysicalSigningCopy(documentRow) ? await requireSellerPhysicalSigningCopy(documentRow) : null
+      if (SELLER_DOCUMENT_SELECTION_KEYS[documentKey] && selectedLeadLinkedListingId) await assertSellerDocumentUploadAvailable(selectedLeadLinkedListingId, documentKey)
       let targetListingId = normalizeText(
         selectedLeadLinkedListing?.id ||
           selectedLeadLinkedListing?.listingId ||
@@ -26648,7 +26693,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           documentName: normalizeText(file.name || documentLabel || documentRow?.title) || 'Seller document',
           visibility: resolveSellerLeadUploadVisibility(documentRow),
           status: 'uploaded',
-          deferMandateSigning: Boolean(signingCopy),
+          deferMandateSigning: Boolean(signingCopy) || Boolean(SELLER_DOCUMENT_SELECTION_KEYS[documentKey]),
+          existingSignedEvidence: documentRow.uploadExisting === true,
           reviewedSigningVersionId: signingCopy?.versionId || '',
           reviewedSigningVersionDigest: signingCopy?.versionDigest || '',
         }),
@@ -26985,6 +27031,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         replaceToken: selectedLeadNeedsOnboardingReplacement,
       })
       const savedToken = normalizeText(onboarding?.token)
+      const savedFormData = onboarding?.formData || onboarding?.form_data || formData
+      setMessage('')
       if (!savedToken) throw new Error('Unable to prepare a seller onboarding record for this lead.')
       const leadPatch = {
         listingId,
@@ -26999,13 +27047,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         lead: selectedLead,
         contact: selectedLeadContact || {},
         listing: { ...(listingResult?.listing || {}), id: listingId },
-        formData,
+        formData: savedFormData,
       }))
       setManualSellerOnboarding({
         leadId: selectedLead.leadId,
         listing: { ...(listingResult?.listing || {}), id: listingId },
         token: savedToken,
-        formData,
+        formData: savedFormData,
       })
     } catch (captureError) {
       setError(captureError?.message || 'Unable to prepare manual seller onboarding right now.')
@@ -27014,13 +27062,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }
 
-  async function handleSubmitManualSellerOnboarding(event) {
+  async function handleSubmitManualSellerOnboarding(event, saveAsDraft = false) {
     event?.preventDefault()
     if (!manualSellerOnboarding || isManualSellerOnboardingSaving) return
     const { errors, formData } = buildSellerLeadAgentOnboardingSubmission({
       draft: manualSellerOnboardingDraft,
       listing: manualSellerOnboarding.listing,
       existingFormData: manualSellerOnboarding.formData,
+      saveAsDraft,
+      capturedBy: normalizeText(currentAgent.id),
     })
     if (errors.length) {
       setError(`Finish the required onboarding details: ${errors.join(' ')}`)
@@ -27029,6 +27079,19 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     setIsManualSellerOnboardingSaving(true)
     setError('')
     try {
+      if (saveAsDraft) {
+        const result = await updateSellerOnboardingProgress(manualSellerOnboarding.token, {
+          status: 'in_progress', formData,
+          sellerType: formData.sellerLegalType, ownershipStructure: formData.ownerStructureType,
+          maritalRegime: formData.maritalRegime, listingSnapshot: manualSellerOnboarding.listing,
+        })
+        if (!result?.listing) throw new Error('Draft save could not be confirmed. Please retry.')
+        setManualSellerOnboarding((previous) => ({ ...previous, formData, listing: result.listing }))
+        setSelectedLeadHydratedListing({ ...result.listing, sellerOnboarding: { ...result.onboarding, formData } })
+        patchSelectedLeadRecord({ sellerOnboardingStatus: 'in_progress', sellerOnboarding: { ...result.onboarding, formData } }, manualSellerOnboarding.leadId)
+        setMessage('Seller onboarding draft saved. Continue here or reopen it later; the seller still needs to review and sign the disclosure.')
+        return
+      }
       const result = await submitSellerOnboarding(manualSellerOnboarding.token, {
         status: 'completed',
         formData,
@@ -27079,7 +27142,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setManualSellerOnboardingDraft({})
       setMessage(leadSyncFailed
         ? 'Seller onboarding was submitted, but the lead stage could not be confirmed. Refresh to check its status.'
-        : 'Seller onboarding submitted. The lead is now in Onboarding Submitted.')
+        : 'Seller onboarding submitted for review. The disclosure answers await the seller’s review and signature.')
       scheduleRecordsReload(organisationId, 500)
     } catch (submitError) {
       setError(submitError?.message || 'Unable to submit manual seller onboarding right now.')
@@ -27296,18 +27359,23 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     })
   }
 
-  function openSellerOnboardingReview() {
+  function openSellerOnboardingReview(documentKey = '', route = 'manual_upload') {
+    setSellerSigningPackDownloadKey(SELLER_DOCUMENT_SELECTION_KEYS[documentKey] && route === 'manual_upload' ? documentKey : '')
     if (!selectedLeadLinkedListingId) {
       setError('This seller lead does not yet have its onboarding intake record. Reload the lead and try again; do not create a market listing to send the signing pack.')
       return
     }
     const formData = getLeadSellerOnboardingFormData(selectedLead)
     const savedRoutes = formData.sellerOnboardingFormalPackApproval?.documentRoutes || {}
-    setSellerOnboardingDocumentRoutes({
-      ...(!selectedSellerDisclosureComplete ? { signed_disclosure_form: savedRoutes.signed_disclosure_form === 'digital_pack' && SELLER_PORTAL_SIGNING_ENABLED ? 'digital_pack' : 'manual_upload' } : {}),
-      signed_fica_declaration: savedRoutes.signed_fica_declaration === 'digital_pack' && SELLER_PORTAL_SIGNING_ENABLED ? 'digital_pack' : 'manual_upload',
-      signed_mandate: savedRoutes.signed_mandate === 'digital_pack' && SELLER_PORTAL_SIGNING_ENABLED ? 'digital_pack' : 'manual_upload',
+    setSellerOnboardingDocumentRoutes(SELLER_DOCUMENT_SELECTION_KEYS[documentKey] ? { [documentKey]: route } : {
+      ...(!selectedSellerDisclosureComplete ? { signed_disclosure_form: savedRoutes.signed_disclosure_form || 'manual_upload' } : {}),
+      signed_fica_declaration: savedRoutes.signed_fica_declaration || 'manual_upload',
+      signed_mandate: savedRoutes.signed_mandate || 'manual_upload',
     })
+    if (!SELLER_DOCUMENT_SELECTION_KEYS[documentKey]) {
+      const completedKeys = new Set(selectedSellerDocumentCategories.flatMap(category => category.items || []).filter(item => getSellerLeadDocumentStatusMeta(item).state === 'complete').map(item => normalizeSellerBasePackKey(getSellerLeadDocumentCanonicalKey(item))))
+      setSellerOnboardingDocumentRoutes(previous => Object.fromEntries(Object.entries(previous).filter(([key]) => !completedKeys.has(key))))
+    }
     setSellerOnboardingReviewRoute('manual_upload')
     setSellerOnboardingCorrectionReason('')
     setSellerOnboardingReviewError('')
@@ -27530,6 +27598,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     const disclosureOutstanding = !selectedSellerDisclosureComplete
     const selectedDocumentRoutes = { ...sellerOnboardingDocumentRoutes }
     if (!disclosureOutstanding) delete selectedDocumentRoutes.signed_disclosure_form
+    const selectedDocuments = sellerGeneratedDocumentSelection(selectedDocumentRoutes)
+    if (!selectedDocuments.length) {
+      setSellerSigningPackModalOpen(false)
+      handleLeadWorkspaceTabSelection('documents')
+      setMessage('Upload each existing signed document in Documents. Each upload will need agent review.')
+      return
+    }
     const digitalKeys = Object.entries(selectedDocumentRoutes).filter(([, route]) => route === 'digital_pack').map(([key]) => key)
     if (digitalKeys.length && !SELLER_PORTAL_SIGNING_ENABLED) {
       setSellerSigningPackError('Seller portal signing is not enabled for this release. Choose physical signing for each document.')
@@ -27563,7 +27638,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setSellerSigningPackError(`Complete required signer details before sending: ${incompleteRecipients.join('; ') || 'at least one signer is required'}.`)
       return
     }
-    const mandateIssues = selectedDocumentRoutes.signed_mandate ? getSellerMandatePreparationIssues(sellerSigningPackTerms, { ownershipType: formData.ownerStructureType || formData.ownershipType || formData.sellerLegalType || formData.sellerType }) : []
+    const mandateIssues = selectedDocuments.includes('mandate') ? getSellerMandatePreparationIssues(sellerSigningPackTerms, { ownershipType: formData.ownerStructureType || formData.ownershipType || formData.sellerLegalType || formData.sellerType }) : []
     if (mandateIssues.length) {
       setSellerSigningPackError(`Complete the mandate details before preparing copies: ${mandateIssues.join('; ')}.`)
       return
@@ -27574,6 +27649,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     setSellerSigningPackSaving(true)
     setSellerSigningPackProgress('Preparing reviewed documents…')
     let dispatchedDocuments = 0
+    let approvedCopiesSaved = false
     try {
     let listingSnapshot = selectedLeadLinkedListing?.sourceListing || selectedLeadLinkedListing
     if (!listingSnapshot?.updatedAt && !listingSnapshot?.updated_at) {
@@ -27583,13 +27659,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     const termsPatch = buildSellerLeadSigningPackTermsPatch(sellerSigningPackTerms)
     const formData = buildListingSellerCanonicalUpdate({
       listing: listingSnapshot,
-      formPatch: { ...getSellerLeadReviewFormData(selectedLead, listingSnapshot), ...termsPatch },
+      formPatch: { ...getSellerLeadReviewFormData(selectedLead, listingSnapshot), ...(selectedDocuments.includes('mandate') ? termsPatch : {}) },
       onboardingStatus: 'completed',
       source: 'seller_lead_signing_pack',
     }).nextFormData
-    if (digitalKeys.length && (formData.sellerReviewedDocumentVersions || formData.seller_reviewed_document_versions)?.documents?.length) {
+    {
       const existingRequests = await listSellerPortalSigningRequests(listingId)
-      if ((existingRequests.documents || []).some((request) => ['sent', 'partially_signed', 'signed', 'reviewed'].includes(request.status))) {
+      if (Object.keys(selectedDocumentRoutes).filter(key => selectedDocumentRoutes[key] !== 'upload_existing').some(key => sellerDocumentHasUploadedEvidence(existingRequests.uploads || [], key))) throw new Error('This document already has signed evidence. Review it in Documents or use the replacement workflow before generating another copy.')
+      if (Object.keys(selectedDocumentRoutes).some(key => sellerDocumentHasActiveSigning(existingRequests.documents || [], key))) {
         throw new Error('A seller signing request already exists. Use Documents to track or retry the approved version before preparing a new pack.')
       }
     }
@@ -27617,7 +27694,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     const formalPackApproval = createSellerOnboardingFormalPackApproval({
       existing: formData.sellerOnboardingFormalPackApproval || formData.seller_onboarding_formal_pack_approval,
       reviewApproved: true,
-      selectedDocuments: disclosureOutstanding ? ['disclosure', 'fica', 'mandate'] : ['fica', 'mandate'],
+      selectedDocuments,
       commission,
       signingRoute: digitalKeys.length ? 'digital_pack' : 'manual_upload',
       documentRoutes: selectedDocumentRoutes,
@@ -27648,7 +27725,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       formData,
       listing: listingSnapshot,
       recipients,
-      selectedDocuments: disclosureOutstanding ? ['disclosure', 'fica', 'mandate'] : ['fica', 'mandate'],
+      selectedDocuments,
       propertyAddress,
       branding: signingBranding,
       practitioner: {
@@ -27706,7 +27783,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     reviewedSigningPack.documents = frozenVersions.documents
     const nextFormData = {
       ...formData,
-      mandateSignatureRoute: sellerOnboardingDocumentRoutes.signed_mandate,
+      ...(selectedDocuments.includes('mandate') ? { mandateSignatureRoute: sellerOnboardingDocumentRoutes.signed_mandate } : {}),
       sellerOnboardingReview: review,
       seller_onboarding_review: review,
       sellerOnboardingFormalPackApproval: formalPackApproval,
@@ -27722,7 +27799,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         stage: digitalKeys.length ? SELLER_ONBOARDING_SIGNING_STAGES.packPrepared : SELLER_ONBOARDING_SIGNING_STAGES.manualAwaitingUpload,
         actor: normalizeText(currentAgent?.id),
         at: now,
-        metadata: { selectedDocuments: disclosureOutstanding ? ['disclosure', 'fica', 'mandate'] : ['fica', 'mandate'], documentRoutes: selectedDocumentRoutes },
+        metadata: { selectedDocuments, documentRoutes: selectedDocumentRoutes },
       }),
     }
     nextFormData.seller_onboarding_signing_lifecycle = nextFormData.sellerOnboardingSigningLifecycle
@@ -27744,6 +27821,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         throw new Error(canonicalSaveResult.warnings.map((warning) => warning.message).join(' '))
       }
 
+      approvedCopiesSaved = true
       const sent = []
       for (const documentKey of digitalKeys) {
         setSellerSigningPackProgress(`Sending signing links (${sent.length + 1} of ${digitalKeys.length})…`)
@@ -27757,22 +27835,31 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }
 
       setSellerSigningPackProgress('Finishing the seller workflow…')
-      const generatedListing = await updatePrivateListing(listingId, {
+      const generatedListing = selectedDocuments.includes('mandate') ? await updatePrivateListing(listingId, {
         mandateStatus: 'generated',
-      }, { includeRequirementsAndDocuments: false })
+      }, { includeRequirementsAndDocuments: false }) : null
       if (generatedListing?.id === listingId) setSelectedLeadHydratedListing(generatedListing)
       const leadPatch = {
-        stage: 'Mandate Sent',
-        status: digitalKeys.length ? 'Seller documents sent for digital signature' : 'Physical FICA and mandate pack prepared — awaiting signed upload',
-        mandateExecutionMode: sellerOnboardingDocumentRoutes.signed_mandate === 'digital_pack' ? 'digital' : 'manual',
-        mandatePreparedAt: now,
+        ...(digitalKeys.includes('signed_mandate') ? { stage: 'Mandate Sent' } : {}),
+        status: digitalKeys.length ? 'Seller documents sent for online signature' : 'Seller documents prepared — awaiting signed upload and review',
+        ...(selectedDocuments.includes('mandate') ? { mandateExecutionMode: sellerOnboardingDocumentRoutes.signed_mandate === 'digital_pack' ? 'digital' : 'manual' } : {}),
+        ...(selectedDocuments.includes('mandate') ? { mandatePreparedAt: now } : {}),
       }
       await updateAgencyCrmLeadRecord(organisationId, leadId, leadPatch)
       patchSelectedLeadRecord(leadPatch, leadId)
       setSellerSigningPackModalOpen(false)
-      setMessage(digitalKeys.length ? `Signature links sent for ${sent.length} document${sent.length === 1 ? '' : 's'}. Track each signer in Documents.` : 'Physical FICA and mandate copies are prepared. Download them from Documents and upload the wet-ink signed copies when returned.')
+      handleLeadWorkspaceTabSelection('documents')
+      if (sellerSigningPackDownloadKey && selectedDocumentRoutes[sellerSigningPackDownloadKey] === 'manual_upload') {
+        const copy = reviewedSigningPack.documents.find(document => document.key === sellerSigningPackDownloadKey)
+        if (copy) await handleDownloadSellerLeadPhysicalSigningCopy({ ...copy, source: 'seller_onboarding.manual_signing_pack' })
+      }
+      setMessage(digitalKeys.length ? `Signature links sent for ${sent.length} document${sent.length === 1 ? '' : 's'}. Track each signer in Documents.` : 'Selected signing copies are prepared in Documents. Upload each signed copy for agent review when returned.')
       scheduleRecordsReload(organisationId, 750)
     } catch (signingError) {
+      try {
+        const requests = await listSellerPortalSigningRequests(listingId)
+        setSellerPortalSigningRequests(requests.documents || [])
+      } catch { /* Keep the original preparation or delivery failure. */ }
       const versionConflict = !dispatchedDocuments && ['SELLER_UPDATE_CONFLICT', 'PT409'].includes(signingError?.code)
       if (versionConflict) {
         setSellerSigningPackNeedsRefresh(true)
@@ -27782,7 +27869,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         : versionConflict
           ? 'A newer saved version of this seller record is available. This can happen after a background update. Refresh seller information, review it, and approve again. Your mandate entries will be kept.'
           : signingError?.message || 'Unable to prepare and send the seller signing pack.')
-      setSellerSigningPackModalOpen(true)
+      setSellerSigningPackModalOpen(!approvedCopiesSaved)
+      if (approvedCopiesSaved) {
+        handleLeadWorkspaceTabSelection('documents')
+        setError(`${dispatchedDocuments ? `${dispatchedDocuments} document(s) already sent. ` : ''}${signingError?.message || 'Signature sending failed.'} Retry the outstanding reviewed document in Documents.`)
+      }
     } finally {
       setSellerSigningPackSaving(false)
       setSellerSigningPackProgress('')
@@ -28234,6 +28325,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       if (listingId) {
         const refreshedListing = await getPrivateListing(listingId, { includeRequirementsAndDocuments: true }).catch(() => null)
         if (refreshedListing) setSelectedLeadHydratedListing({ ...refreshedListing, listingOptionSourceAuthority: 'canonical_hydrated_listing' })
+      }
+      if (action === 'approve' && result?.ok !== false && organisationId && normalizeSellerBasePackKey(getSellerLeadDocumentCanonicalKey(item)) === 'signed_mandate' && selectedLead?.leadId) {
+        const leadPatch = { stage: 'Mandate Signed', status: 'Mandate signed and reviewed', mandateStatus: 'signed', mandateReviewedAt: new Date().toISOString() }
+        await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, leadPatch)
+        patchSelectedLeadRecord(leadPatch, selectedLead.leadId)
       }
       if (action === 'approve' && organisationId) void reloadRecords(organisationId).catch(() => null)
       setMessage(action === 'approve' ? `${item?.label || 'Seller document'} approved.` : action === 'reject' ? `${item?.label || 'Seller document'} rejected; a replacement is required.` : `${item?.label || 'Seller document'} is under review.`)
@@ -40395,7 +40491,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       partyType={selectedLeadIsSeller ? 'seller' : 'buyer'}
                       partyName={selectedLeadDisplayName}
                       categories={selectedLeadIsSeller ? selectedSellerDocumentCategories : selectedBuyerDocumentCategories}
-                      getStatusMeta={getSellerLeadDocumentStatusMeta}
+                      getStatusMeta={getSellerLeadDocumentWorkflowStatusMeta}
                       portalAction={selectedLeadIsSeller ? handleSellerOnboardingCommand : () => setLeadWorkspaceTab(BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY)}
                       portalActionLabel={selectedLeadIsSeller ? selectedLeadSellerOnboardingCommandLabel : 'Buyer Portal Workflow'}
                       reviewSigningAction={selectedLeadIsSeller && selectedLeadOnboardingCompleted && selectedLeadLinkedListingId && !sellerPortalSigningRequests.some((request) => ['sent', 'partially_signed', 'signed', 'reviewed'].includes(request.status)) ? openSellerOnboardingReview : null}
@@ -40434,13 +40530,17 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         const isSignedMandate = !physicalCopy && !selectedLeadHasKingstonsPipelineSignal && basePackDocumentKey === SELLER_BASE_PACK_KEYS.SIGNED_MANDATE
                         const uploadKey = normalizeText(documentRow.id || documentRow.requirementId || documentRow.requirement_id || documentKey || documentRow.label)
                         const uploadBusy = sellerLeadDocumentUploadingKey === uploadKey || (isFormalValuation ? formalValuationUploading : sellerPackUploadingKey === documentKey)
-                        const portalSigningRequest = physicalCopy ? sellerPortalSigningRequests.find((request) => request.document_key === basePackDocumentKey && request.version_id === physicalCopy.versionId && !['revoked', 'expired'].includes(request.status)) : null
+                        const portalSigningRequest = physicalCopy ? getSellerDocumentSigningRequest(sellerPortalSigningRequests, basePackDocumentKey, physicalCopy.versionId) : null
                         return <>
-                          {physicalCopy && approvedSigningRoute === 'manual_upload' ? <button type="button" disabled={openingSellerLeadDocumentId === normalizeText(documentRow.id || documentRow.key)} onClick={() => void handleDownloadSellerLeadPhysicalSigningCopy(documentRow)} className="inline-flex min-h-9 items-center gap-1.5 rounded-[11px] border border-[#cfdceb] bg-white px-3 text-xs font-semibold text-[#315b7a] disabled:opacity-60"><Download className="h-3.5 w-3.5" /> Generate and download</button> : null}
-                          {physicalCopy && approvedSigningRoute === 'digital_pack' && !portalSigningRequest ? <button type="button" disabled={!SELLER_PORTAL_SIGNING_ENABLED || Boolean(sellerPortalSigningBusy)} onClick={() => void handleSellerLeadPortalSigningAction(basePackDocumentKey)} className="inline-flex min-h-9 items-center rounded-[11px] border border-[#cfdceb] bg-white px-3 text-xs font-semibold text-[#315b7a] disabled:opacity-50">{sellerPortalSigningBusy === basePackDocumentKey ? 'Sending…' : 'Send signing links'}</button> : null}
-                          {portalSigningRequest?.status === 'signed' ? <button type="button" disabled={Boolean(sellerPortalSigningBusy)} onClick={() => void handleSellerLeadPortalSigningPreview(basePackDocumentKey, portalSigningRequest.id)} className="inline-flex min-h-9 items-center rounded-[11px] bg-[#13784f] px-3 text-xs font-semibold text-white disabled:opacity-50">Review signed copy</button> : null}
-                          {portalSigningRequest && portalSigningRequest.status !== 'signed' ? <span className="inline-flex min-h-9 items-center rounded-full bg-[#edf5f0] px-3 text-xs font-semibold text-[#176842]">Portal: {portalSigningRequest.status.replaceAll('_', ' ')}</span> : null}
-                          {portalSigningRequest && !['reviewed', 'revoked', 'expired'].includes(portalSigningRequest.status) ? <button type="button" onClick={() => void handleSellerLeadPortalSigningRefresh()} disabled={Boolean(sellerPortalSigningBusy)} className="inline-flex min-h-9 items-center rounded-[11px] border border-[#cfdceb] bg-white px-3 text-xs font-semibold text-[#315b7a] disabled:opacity-50">Refresh status</button> : null}
+                          {SELLER_DOCUMENT_SELECTION_KEYS[basePackDocumentKey] ? <SellerDocumentWorkflowActions
+                            item={documentRow} copy={physicalCopy} request={portalSigningRequest}
+                            busy={Boolean(sellerPortalSigningBusy || sellerLeadDocumentUploadingKey || sellerLeadMandateUploading || openingSellerLeadDocumentId)} onlineEnabled={SELLER_PORTAL_SIGNING_ENABLED}
+                            onDownload={() => physicalCopy ? void handleDownloadSellerLeadPhysicalSigningCopy(documentRow) : openSellerOnboardingReview(basePackDocumentKey, 'manual_upload')}
+                            onSend={() => physicalCopy?.signingRoute === 'digital_pack' ? void handleSellerLeadPortalSigningAction(basePackDocumentKey) : openSellerOnboardingReview(basePackDocumentKey, 'digital_pack')}
+                            onUpload={event => void handleSellerLeadDocumentUpload(event, { ...documentRow, uploadExisting: true }, category)}
+                            onReview={() => void handleSellerLeadPortalSigningPreview(basePackDocumentKey, portalSigningRequest.id)}
+                            onRefresh={() => void handleSellerLeadPortalSigningRefresh()}
+                          /> : null}
                           {(documentRow.canDownload !== false && documentRow.can_download !== false) && (hasFile || (!awaitingServerPdf && generatedHtml) || documentRow.canonicalFinalArtifact) ? <button type="button" disabled={openingSellerLeadDocumentId === normalizeText(documentRow.id || documentRow.key)} onClick={() => {
                             if (generatedHtml && !documentStoragePath && !documentUrl) openSellerLeadGeneratedDocumentHtml(generatedHtml, documentRow.generatedFileName || documentRow.generated_file_name || `${documentRow.label || 'seller-document'}.html`, { canDownload: !physicalCopy && documentRow.canDownload !== false && documentRow.can_download !== false })
                             else if (documentRow.canonicalFinalArtifact && !documentStoragePath && !documentUrl) void handleOpenSellerLeadFinalSignedDocument(documentRow)
@@ -40449,16 +40549,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           {awaitingServerPdf ? <span className="inline-flex min-h-9 items-center gap-1.5 rounded-[11px] border border-[#dbe4ee] bg-[#f7fafc] px-3 text-xs font-semibold text-[#6a8098]"><Clock3 className="h-3.5 w-3.5" /> Finalising PDF</span> : null}
                           {isFicaDocument && requiresOwnershipSetup ? <button type="button" onClick={() => openSellerLeadEditModal('profile')} className="inline-flex min-h-9 items-center rounded-[11px] bg-[#13784f] px-3 text-xs font-semibold text-white">Set Up Ownership</button> : null}
                           {selectedLeadHasKingstonsPipelineSignal && isFicaDocument && !physicalCopy && !completionAcknowledgementOnly && !isPostOnboardingDocument && !requiresOwnershipSetup && !detailsCaptured ? <button type="button" onClick={() => openKingstonsSellerPackWizard(selectedKingstonsSellerPackSummary.sellerTypeCaptured ? 'details' : 'type')} className="inline-flex min-h-9 items-center rounded-[11px] bg-[#13784f] px-3 text-xs font-semibold text-white">Capture details</button> : null}
-                          {requestPresentation.action === 'generate_document' && !hasFile && !generatedHtml ? <button type="button" title={requestPresentation.helpText} onClick={() => setMessage(requestPresentation.helpText)} className="inline-flex min-h-9 items-center gap-1.5 rounded-[11px] border border-[#cfdceb] bg-white px-3 text-xs font-semibold text-[#315b7a]"><FileText className="h-3.5 w-3.5" />{requestPresentation.actionLabel}</button> : null}
+                          {!SELLER_DOCUMENT_SELECTION_KEYS[basePackDocumentKey] && requestPresentation.action === 'generate_document' && !hasFile && !generatedHtml ? <button type="button" title={requestPresentation.helpText} onClick={() => setMessage(requestPresentation.helpText)} className="inline-flex min-h-9 items-center gap-1.5 rounded-[11px] border border-[#cfdceb] bg-white px-3 text-xs font-semibold text-[#315b7a]"><FileText className="h-3.5 w-3.5" />{requestPresentation.actionLabel}</button> : null}
                           {requestPresentation.action === 'capture_details' ? <button type="button" title={requestPresentation.helpText} onClick={() => openSellerLeadEditModal('property')} className="inline-flex min-h-9 items-center gap-1.5 rounded-[11px] bg-[#13784f] px-3 text-xs font-semibold text-white"><UserRound className="h-3.5 w-3.5" />{requestPresentation.actionLabel}</button> : null}
-                          {approvedSigningRoute !== 'digital_pack' && documentRow.canUpload !== false && documentRow.can_upload !== false && !completionAcknowledgementOnly && (physicalCopy || requestPresentation.action === 'upload_document') && (physicalCopy || !isFicaDocument || detailsCaptured) ? <label className={`inline-flex min-h-9 items-center gap-1.5 rounded-[11px] border px-3 text-xs font-semibold ${uploadBusy || sellerLeadMandateUploading ? 'cursor-not-allowed border-[#e5edf5] text-[#a0afbf]' : 'cursor-pointer border-[#cfdceb] text-[#315b7a]'}`}><Upload className="h-3.5 w-3.5" />{uploadBusy || (isSignedMandate && sellerLeadMandateUploading) ? 'Uploading...' : hasFile ? 'Replace' : physicalCopy ? 'Upload signed copy' : 'Upload'}<input type="file" className="sr-only" accept=".pdf,.png,.jpg,.jpeg,.doc,.docx" disabled={uploadBusy || sellerLeadMandateUploading} onChange={(event) => {
+                          {!SELLER_DOCUMENT_SELECTION_KEYS[basePackDocumentKey] && documentRow.canUpload !== false && documentRow.can_upload !== false && !completionAcknowledgementOnly && (physicalCopy || requestPresentation.action === 'upload_document') && (physicalCopy || !isFicaDocument || detailsCaptured) ? <label className={`inline-flex min-h-9 items-center gap-1.5 rounded-[11px] border px-3 text-xs font-semibold ${uploadBusy || sellerLeadMandateUploading ? 'cursor-not-allowed border-[#e5edf5] text-[#a0afbf]' : 'cursor-pointer border-[#cfdceb] text-[#315b7a]'}`}><Upload className="h-3.5 w-3.5" />{uploadBusy || (isSignedMandate && sellerLeadMandateUploading) ? 'Uploading...' : hasFile ? 'Replace' : physicalCopy ? 'Upload signed copy' : 'Upload'}<input type="file" className="sr-only" accept=".pdf,.png,.jpg,.jpeg,.doc,.docx" disabled={uploadBusy || sellerLeadMandateUploading} onChange={(event) => {
                             if (isSignedMandate) void handleSellerLeadSignedMandateUpload(event, documentRow)
                             else if (!physicalCopy && canUseKingstonsUpload) {
                               if (isFormalValuation) void handleKingstonsFormalValuationUpload(event)
                               else void handleKingstonsSellerPackUpload(documentKey, event, documentRow)
                             } else void handleSellerLeadDocumentUpload(event, documentRow, category)
                           }} /></label> : null}
-                          {physicalCopy && reviewDocument && isUuidLike(normalizeText(documentRow.requirementId || documentRow.requirement_id)) ? <SellerDocumentReviewActions item={{ ...documentRow, linkedDocument: reviewDocument, requirementId: documentRow.requirementId || documentRow.requirement_id }} busyAction={sellerLeadDocumentReviewAction} onReview={handleSellerLeadDocumentReview} requireSignedCopyCheck compact /> : null}
+                          {(physicalCopy || SELLER_DOCUMENT_SELECTION_KEYS[basePackDocumentKey]) && reviewDocument && isUuidLike(normalizeText(documentRow.requirementId || documentRow.requirement_id)) ? <SellerDocumentReviewActions item={{ ...documentRow, linkedDocument: reviewDocument, requirementId: documentRow.requirementId || documentRow.requirement_id }} busyAction={sellerLeadDocumentReviewAction} onReview={handleSellerLeadDocumentReview} requireSignedCopyCheck={Boolean(reviewDocument.reviewed_signing_version_id || reviewDocument.reviewedSigningVersionId)} requireSignedEvidenceCheck compact /> : null}
                         </>
                       }}
                     />
@@ -40574,7 +40674,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                     ) : null}
                                     <div className="mt-4 grid gap-2">
                                       {displayDocumentItems.length ? displayDocumentItems.map((documentRow) => {
-                                        const statusMeta = getSellerLeadDocumentStatusMeta(documentRow)
+                                        const statusMeta = getSellerLeadDocumentWorkflowStatusMeta(documentRow)
                                         const StatusIcon = statusMeta.Icon
                                         const documentUrl = documentRow.url || documentRow.fileUrl || documentRow.file_url || documentRow.downloadUrl || documentRow.download_url
 	                                        const documentStoragePath = normalizeText(documentRow.storagePath || documentRow.storage_path)
@@ -40601,9 +40701,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                                        const documentRequirementLane = normalizeKey(documentRow.requirementLane || documentRow.requirement_lane)
 	                                        const documentRequirementSection = normalizeKey(documentRow.documentRequirementSection || documentRow.document_requirement_section)
 	                                        const basePackDocumentKey = normalizeSellerBasePackKey(documentKey)
-	                                        const portalSigningRequest = physicalCopy ? sellerPortalSigningRequests.find((request) =>
-	                                          request.document_key === basePackDocumentKey && request.version_id === physicalCopy.versionId &&
-	                                          !['revoked', 'expired'].includes(request.status)) : null
+	                                        const portalSigningRequest = physicalCopy ? getSellerDocumentSigningRequest(sellerPortalSigningRequests, basePackDocumentKey, physicalCopy.versionId) : null
 	                                        const isKingstonsSellerPackDocument = selectedLeadHasKingstonsPipelineSignal && KINGSTONS_SELLER_PACK_KEY_SET.has(basePackDocumentKey || documentKey)
 	                                        const isKingstonsOwnershipDrivenDocument = selectedLeadHasKingstonsPipelineSignal && (
 	                                          documentRequirementLane === 'ownership_driven' ||
@@ -40656,11 +40754,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                             </div>
 	                                            <div className="flex items-center gap-2">
 	                                              <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${statusMeta.pillClass}`}>{statusMeta.label}</span>
-	                                              {physicalCopy && approvedSigningRoute === 'manual_upload' ? <button type="button" onClick={() => void handleDownloadSellerLeadPhysicalSigningCopy(documentRow)} disabled={openingCanonicalArtifact} className="inline-flex min-h-9 items-center gap-1.5 rounded-[12px] border border-[#dbe4ee] bg-white px-3 text-xs font-semibold text-[#315b7a] disabled:opacity-60"><Download className="h-3.5 w-3.5" /> Generate and download</button> : null}
-                                              {physicalCopy && approvedSigningRoute === 'digital_pack' && !portalSigningRequest ? <button type="button" onClick={() => void handleSellerLeadPortalSigningAction(basePackDocumentKey)} disabled={!SELLER_PORTAL_SIGNING_ENABLED || Boolean(sellerPortalSigningBusy)} title={SELLER_PORTAL_SIGNING_ENABLED ? 'Send each required signer a private document link' : 'Portal signing is awaiting release'} className="inline-flex min-h-9 items-center gap-1.5 rounded-[12px] border border-[#dbe4ee] bg-white px-3 text-xs font-semibold text-[#315b7a] disabled:cursor-not-allowed disabled:opacity-50"><Send className="h-3.5 w-3.5" /> {sellerPortalSigningBusy === basePackDocumentKey ? 'Sending…' : 'Send for signature'}</button> : null}
-                                              {portalSigningRequest?.status === 'signed' ? <button type="button" onClick={() => void handleSellerLeadPortalSigningPreview(basePackDocumentKey, portalSigningRequest.id)} disabled={!SELLER_PORTAL_SIGNING_ENABLED || Boolean(sellerPortalSigningBusy)} className="inline-flex min-h-9 items-center gap-1.5 rounded-[12px] bg-[#13784f] px-3 text-xs font-semibold text-white disabled:opacity-50">Review signed copy</button> : null}
-                                              {portalSigningRequest && portalSigningRequest.status !== 'signed' ? <span className="rounded-full bg-[#edf5f0] px-2.5 py-1 text-xs font-semibold text-[#176842]">Portal: {portalSigningRequest.status.replaceAll('_', ' ')}</span> : null}
-                                              {portalSigningRequest && !['reviewed', 'revoked', 'expired'].includes(portalSigningRequest.status) ? <button type="button" onClick={() => void handleSellerLeadPortalSigningRefresh()} disabled={Boolean(sellerPortalSigningBusy)} className="inline-flex min-h-9 items-center rounded-[12px] border border-[#dbe4ee] bg-white px-3 text-xs font-semibold text-[#315b7a] disabled:opacity-50">Refresh status</button> : null}
+	                                              {SELLER_DOCUMENT_SELECTION_KEYS[basePackDocumentKey] ? <SellerDocumentWorkflowActions
+                            item={documentRow} copy={physicalCopy} request={portalSigningRequest}
+                            busy={Boolean(sellerPortalSigningBusy || sellerLeadDocumentUploadingKey || sellerLeadMandateUploading || openingSellerLeadDocumentId)} onlineEnabled={SELLER_PORTAL_SIGNING_ENABLED}
+                            onDownload={() => physicalCopy ? void handleDownloadSellerLeadPhysicalSigningCopy(documentRow) : openSellerOnboardingReview(basePackDocumentKey, 'manual_upload')}
+                            onSend={() => physicalCopy?.signingRoute === 'digital_pack' ? void handleSellerLeadPortalSigningAction(basePackDocumentKey) : openSellerOnboardingReview(basePackDocumentKey, 'digital_pack')}
+                            onUpload={event => void handleSellerLeadDocumentUpload(event, { ...documentRow, uploadExisting: true }, category)}
+                            onReview={() => void handleSellerLeadPortalSigningPreview(basePackDocumentKey, portalSigningRequest.id)}
+                            onRefresh={() => void handleSellerLeadPortalSigningRefresh()}
+                          /> : null}
                                               {documentHasFile ? (
                                                 shouldDownloadDocument || documentStoragePath || !documentUrl ? (
                                                   <button
@@ -40710,7 +40812,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 		                                                  Capture details
 		                                                </button>
 		                                              ) : null}
-		                                              {canUploadSellerLeadSignedMandate ? (
+		                                              {!SELLER_DOCUMENT_SELECTION_KEYS[basePackDocumentKey] && canUploadSellerLeadSignedMandate ? (
 		                                                <label className={`inline-flex min-h-9 items-center gap-1.5 rounded-[12px] border px-3 text-xs font-semibold transition ${sellerLeadMandateUploading ? 'cursor-not-allowed border-[#e5edf5] bg-[#f8fbff] text-[#a0afbf]' : 'cursor-pointer border-[#cfdceb] bg-white text-[#315b7a] hover:border-[#a9bfd6]'}`}>
 		                                                  <Upload className="h-3.5 w-3.5" />
 		                                                  {sellerLeadMandateUploading ? 'Uploading...' : documentHasFile ? 'Replace' : 'Upload Signed Mandate'}
@@ -40723,7 +40825,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 		                                                  />
 			                                                </label>
 			                                              ) : null}
-		                                              {canUploadSellerLeadDocument ? (
+		                                              {!SELLER_DOCUMENT_SELECTION_KEYS[basePackDocumentKey] && canUploadSellerLeadDocument ? (
 		                                                <label className={`inline-flex min-h-9 items-center gap-1.5 rounded-[12px] border px-3 text-xs font-semibold transition ${sellerLeadDocumentUploadBlocked || isUploadingSellerLeadDocument ? 'cursor-not-allowed border-[#e5edf5] bg-[#f8fbff] text-[#a0afbf]' : 'cursor-pointer border-[#cfdceb] bg-white text-[#315b7a] hover:border-[#a9bfd6]'}`}>
 		                                                  <Upload className="h-3.5 w-3.5" />
 		                                                  {isUploadingSellerLeadDocument ? 'Uploading...' : documentHasFile ? 'Replace' : physicalCopy ? 'Upload signed copy' : 'Upload'}
@@ -40736,8 +40838,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 		                                                  />
 		                                                </label>
 		                                              ) : null}
-		                                              {physicalCopy && reviewDocument && isUuidLike(normalizeText(documentRow.requirementId || documentRow.requirement_id)) ? <SellerDocumentReviewActions item={{ ...documentRow, linkedDocument: reviewDocument, requirementId: documentRow.requirementId || documentRow.requirement_id }} busyAction={sellerLeadDocumentReviewAction} onReview={handleSellerLeadDocumentReview} requireSignedCopyCheck compact /> : null}
-			                                              {canUploadKingstonsDocument ? (
+		                                              {(physicalCopy || SELLER_DOCUMENT_SELECTION_KEYS[basePackDocumentKey]) && reviewDocument && isUuidLike(normalizeText(documentRow.requirementId || documentRow.requirement_id)) ? <SellerDocumentReviewActions item={{ ...documentRow, linkedDocument: reviewDocument, requirementId: documentRow.requirementId || documentRow.requirement_id }} busyAction={sellerLeadDocumentReviewAction} onReview={handleSellerLeadDocumentReview} requireSignedCopyCheck={Boolean(reviewDocument.reviewed_signing_version_id || reviewDocument.reviewedSigningVersionId)} requireSignedEvidenceCheck compact /> : null}
+			                                              {!SELLER_DOCUMENT_SELECTION_KEYS[basePackDocumentKey] && canUploadKingstonsDocument ? (
 	                                                <label className={`inline-flex min-h-9 items-center gap-1.5 rounded-[12px] border px-3 text-xs font-semibold transition ${isUploadingKingstonsDocument ? 'cursor-not-allowed border-[#e5edf5] bg-[#f8fbff] text-[#a0afbf]' : 'cursor-pointer border-[#cfdceb] bg-white text-[#315b7a] hover:border-[#a9bfd6]'}`}>
 	                                                  <Upload className="h-3.5 w-3.5" />
 	                                                  {isUploadingKingstonsDocument ? 'Uploading...' : documentHasFile ? 'Replace' : 'Upload'}
@@ -41102,14 +41204,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               ...(!selectedSellerDisclosureComplete ? [['signed_disclosure_form', 'Mandatory Disclosure / Defects Form']] : []),
               ['signed_fica_declaration', 'Seller FICA declaration'],
               ['signed_mandate', 'Seller mandate'],
-            ].map(([documentKey, label]) => (
+            ].filter(([key]) => key in sellerOnboardingDocumentRoutes).map(([documentKey, label]) => (
               <div key={documentKey} className="grid gap-3 rounded-xl border border-[#dce6f2] p-3 text-sm font-semibold text-[#243d56]">
                 <span>{label}</span>
-                <div role="group" aria-label={`${label} signing route`} className="grid gap-2 sm:grid-cols-2">
-                  {[
-                    ['manual_upload', 'Sign physically', 'Upload the signed original'],
-                    ['digital_pack', 'Sign digitally', 'Send private signing links'],
-                  ].map(([route, title, description]) => {
+                <div role="group" aria-label={`${label} document action`} className="grid gap-2 sm:grid-cols-3">
+                  {SELLER_DOCUMENT_ACTIONS.map(([route, title, description]) => {
                     const selected = sellerOnboardingDocumentRoutes[documentKey] === route
                     return (
                       <button
@@ -41144,7 +41243,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <Button type="button" variant="secondary" disabled={sellerSigningPackSaving} onClick={() => setSellerSigningPackModalOpen(false)}>Cancel</Button>
             <Button type="button" disabled={sellerSigningPackSaving || sellerSigningPackNeedsRefresh} onClick={() => void sendSellerLeadSigningPack()}>
-              {sellerSigningPackSaving ? sellerSigningPackProgress || 'Preparing…' : Object.values(sellerOnboardingDocumentRoutes).includes('digital_pack') ? 'Approve and send selected links' : 'Prepare physical copies'}
+              {sellerSigningPackSaving ? sellerSigningPackProgress || 'Preparing…' : Object.values(sellerOnboardingDocumentRoutes).includes('digital_pack') ? 'Approve and send selected links' : sellerGeneratedDocumentSelection(sellerOnboardingDocumentRoutes).length ? 'Prepare copies for download' : 'Continue to upload existing'}
             </Button>
           </div>
         )}
@@ -41167,9 +41266,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           </div>
           <fieldset className="grid gap-3 rounded-[16px] border border-[#dce6f2] bg-white p-4">
             <legend className="px-1 text-sm font-semibold text-[#243d56]">Signing routes</legend>
-            <div className="grid gap-1 text-sm text-[#243d56]">{Object.entries({ signed_disclosure_form: 'Disclosure', signed_fica_declaration: 'FICA', signed_mandate: 'Mandate' }).filter(([key]) => key in sellerOnboardingDocumentRoutes).map(([key, label]) => <span key={key}>{label}: {sellerOnboardingDocumentRoutes[key] === 'digital_pack' ? 'private signing links will be emailed to every required signer' : 'download and upload the signed original'}</span>)}</div>
+            <div className="grid gap-1 text-sm text-[#243d56]">{Object.entries({ signed_disclosure_form: 'Disclosure', signed_fica_declaration: 'FICA', signed_mandate: 'Mandate' }).filter(([key]) => key in sellerOnboardingDocumentRoutes).map(([key, label]) => <span key={key}>{label}: {sellerOnboardingDocumentRoutes[key] === 'digital_pack' ? 'private signing links will be emailed to every required signer' : sellerOnboardingDocumentRoutes[key] === 'upload_existing' ? 'upload an existing signed document for review' : 'download and upload the signed original'}</span>)}</div>
           </fieldset>
-          <SellerMandateDetailsEditor value={sellerSigningPackTerms} allowExtendedCapture={false} captureReadOnly ownershipType={getSellerLeadReviewFormData(selectedLead, selectedLeadLinkedListing).sellerLegalType} onChange={setSellerSigningPackTerms} />
+          {sellerGeneratedDocumentSelection(sellerOnboardingDocumentRoutes).includes('mandate') ? <SellerMandateDetailsEditor value={sellerSigningPackTerms} allowExtendedCapture={false} captureReadOnly ownershipType={getSellerLeadReviewFormData(selectedLead, selectedLeadLinkedListing).sellerLegalType} onChange={setSellerSigningPackTerms} /> : null}
           <section className="rounded-[16px] border border-[#dce6f2] bg-white p-4 text-sm">
             <p className="font-semibold text-[#243d56]">Required signer{getSellerLeadSigningRecipients().length === 1 ? '' : 's'}</p>
             <div className="mt-3 space-y-2">{getSellerLeadSigningRecipients().map((signer, index) => <div key={`${signer.email}:${signer.role}:${index}`} className="flex flex-wrap justify-between gap-2 rounded-xl bg-[#f8fbff] px-3 py-2"><span className="font-semibold text-[#243d56]">{signer.name || 'Name required'} <span className="font-normal text-[#607387]">· Required signer</span></span><span className="text-[#607387]">{signer.email || 'Email required'}</span></div>)}</div>
@@ -41180,16 +41279,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       <Modal
         open={mandateExecutionModalOpen}
         onClose={() => setMandateExecutionModalOpen(false)}
-        title="Prepare the physical mandate pack"
-        subtitle="Arch9 supports wet-ink mandate signatures only. Preparing copies does not mark the mandate as signed."
+        title="Record physical mandate handover"
+        subtitle="Use this after giving the copies to the seller for signature. Upload the signed original for review when it is returned."
         className="max-w-2xl"
       >
         <div className="grid gap-3">
           <section className="rounded-[16px] border border-[#dbe3ec] bg-[#f8fafc] p-4">
             <p className="text-sm font-semibold text-[#20364c]">Wet-ink signatures required</p>
-            <p className="mt-2 text-sm leading-6 text-[#60758b]">Prepare physical FICA and mandate copies, arrange signatures, then upload the signed originals from Documents for review.</p>
+            <p className="mt-2 text-sm leading-6 text-[#60758b]">Give the printable copies to the required signers. Record the handover below, then upload the signed originals in Documents for review.</p>
             <Button type="button" variant="secondary" className="mt-4 w-full" onClick={recordManualMandateSent}>
-              Record physical mandate pack prepared
+              Record copies given to the seller for signature
             </Button>
           </section>
         </div>
@@ -41476,6 +41575,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         footer={(
           <div className="flex flex-wrap justify-end gap-2">
             <Button type="button" variant="secondary" onClick={() => { setManualSellerOnboarding(null); setError('') }} disabled={isManualSellerOnboardingSaving}>Cancel</Button>
+            <Button type="button" variant="secondary" onClick={() => void handleSubmitManualSellerOnboarding(null, true)} disabled={isManualSellerOnboardingSaving}>Save Draft</Button>
             <Button type="button" onClick={() => void handleSubmitManualSellerOnboarding()} disabled={isManualSellerOnboardingSaving}>
               {isManualSellerOnboardingSaving ? 'Submitting…' : 'Save and Submit Onboarding'}
             </Button>
@@ -41483,6 +41583,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         )}
       >
         {error ? <div role="alert" className="mb-4 rounded-[12px] border border-[#f3d2cc] bg-[#fef3f2] p-3 text-sm text-[#b42318]">{error}</div> : null}
+        {message ? <div role="status" className="mb-4 rounded-[12px] border border-[#cfe8da] bg-[#f2fbf5] p-3 text-sm text-[#25603d]">{message}</div> : null}
         <SellerLeadAgentOnboardingEditor
           draft={manualSellerOnboardingDraft}
           saving={isManualSellerOnboardingSaving}
@@ -41661,10 +41762,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
             {sellerLeadEditMode === 'tax' ? (
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                <Field placeholder="SA resident" value={sellerProfileEditForm.saResident} onChange={(event) => updateSellerProfileEditField('saResident', event.target.value)} />
+                <label className="grid gap-1 text-sm font-medium text-[#2a4057]">SA resident<Field as="select" value={sellerYesNoValue(sellerProfileEditForm.saResident)} onChange={(event) => updateSellerProfileEditField('saResident', event.target.value)}><option value="">Not captured</option><option value="yes">Yes</option><option value="no">No</option></Field></label>
                 <Field placeholder="Income tax number" value={sellerProfileEditForm.incomeTaxNumber} onChange={(event) => updateSellerProfileEditField('incomeTaxNumber', event.target.value)} />
-                <Field placeholder="VAT registered" value={sellerProfileEditForm.vatRegistered} onChange={(event) => updateSellerProfileEditField('vatRegistered', event.target.value)} />
-                <Field placeholder="POPI consent" value={sellerProfileEditForm.popiConsent} onChange={(event) => updateSellerProfileEditField('popiConsent', event.target.value)} />
+                <label className="grid gap-1 text-xs font-semibold text-[#607387]">VAT registered<Field as="select" value={sellerYesNoValue(sellerProfileEditForm.vatRegistered)} onChange={(event) => updateSellerProfileEditField('vatRegistered', event.target.value)}><option value="">Not captured</option><option value="yes">Yes</option><option value="no">No</option></Field></label>
+                <label className="grid gap-1 text-sm font-medium text-[#2a4057]">POPI consent<Field as="select" value={sellerProfileEditForm.popiConsent} onChange={(event) => updateSellerProfileEditField('popiConsent', event.target.value)}><option value="" disabled={Boolean(sellerProfileEditForm.popiConsent)}>Not captured</option><option value="Accepted">Seller gave consent</option><option value="No">Seller has not given consent</option></Field><span className="text-xs text-[#607387]">Record the seller's permission to process these details. This does not sign any document.</span></label>
+                <div className="sm:col-span-2"><SellerFicaQuestions form={sellerProfileEditForm} onChange={updateSellerProfileEditField} onAddPerson={(key, roleTitle) => setSellerProfileEditForm((previous) => addListingSellerProfileDraftPerson(previous, key, roleTitle))} onUpdatePerson={(key, index, field, value) => setSellerProfileEditForm((previous) => updateListingSellerProfileDraftPerson(previous, key, index, field, value))} onRemovePerson={(key, index) => setSellerProfileEditForm((previous) => removeListingSellerProfileDraftPerson(previous, key, index))} /></div>
               </div>
             ) : null}
 

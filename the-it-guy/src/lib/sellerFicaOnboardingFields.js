@@ -1,5 +1,12 @@
 const text = (value) => String(value ?? '').trim()
 
+export function sellerYesNoValue(value) {
+  const normalized = text(value).toLowerCase()
+  if (['yes', 'true', '1'].includes(normalized)) return 'yes'
+  if (['no', 'false', '0'].includes(normalized)) return 'no'
+  return ''
+}
+
 export function sellerFicaBranch(form = {}) {
   const branch = text(form.branch || form.ownerStructureType || form.ownershipType).toLowerCase()
   if (branch.includes('company') || branch === 'close_corporation') return 'company'

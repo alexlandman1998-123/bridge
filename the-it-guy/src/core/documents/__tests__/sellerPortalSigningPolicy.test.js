@@ -9,9 +9,9 @@ import {
 
 test('new per-document portal route remains independent of the retired online signing route', () => {
   assert.equal(ONLINE_SIGNING_DISABLED, true)
-  assert.equal(SELLER_PORTAL_SIGNING_ENABLED, false)
+  assert.equal(SELLER_PORTAL_SIGNING_ENABLED, true)
   for (const workflow of ['seller_disclosure', 'seller_fica_declaration', 'seller_mandate']) {
-    assert.throws(() => assertSellerPortalSigningAvailable(workflow), { code: 'seller_portal_signing_unavailable' })
+    assert.doesNotThrow(() => assertSellerPortalSigningAvailable(workflow))
   }
 })
 

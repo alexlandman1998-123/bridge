@@ -44,3 +44,15 @@ test('records the agency-upload choice without approving its mandate or confirmi
   assert.throws(() => createSellerOnboardingFormalPackApproval({ ...input, selectedDocuments: [] }), /Include FICA/)
   assert.throws(() => createSellerOnboardingFormalPackApproval({ ...input, mandateSource: 'unknown' }), /Choose a mandate document source/)
 })
+
+test('preparing only FICA preserves prior mandate commission and agency-document choice', () => {
+  const approval = createSellerOnboardingFormalPackApproval({
+    existing: { mandateSource: 'agency_upload', commission: { confirmed: true, basis: 'fixed', amount: '75000', vatHandling: 'inclusive' } },
+    reviewApproved: true, selectedDocuments: ['fica'], signingRoute: 'digital_pack', commission: {},
+    documentRoutes: { signed_fica_declaration: 'digital_pack' }, actor: 'agent',
+  })
+  assert.equal(approval.mandateSource, 'agency_upload')
+  assert.equal(approval.commission.amount, '75000')
+  assert.equal(approval.commission.confirmed, true)
+  assert.deepEqual(approval.selectedDocuments, ['fica'])
+})

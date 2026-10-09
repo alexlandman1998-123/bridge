@@ -1,9 +1,9 @@
 import { assertElectronicSigningApproved } from './signingClassificationPolicy.js'
 
-// Separate from the retired listing-mandate signing route. Enabling this
-// requires a reviewed per-document server flow, recorded legal approvals,
-// and the release checks for token issuance, signing evidence, and storage.
-export const SELLER_PORTAL_SIGNING_ENABLED = import.meta.env?.VITE_SELLER_PORTAL_SIGNING_ENABLED === 'true'
+// The reviewed per-document route is independent of retired listing signing.
+// An explicit false remains a release/operator kill switch; document-level
+// approval, actor access and evidence checks still apply on the server.
+export const SELLER_PORTAL_SIGNING_ENABLED = import.meta.env?.VITE_SELLER_PORTAL_SIGNING_ENABLED !== 'false'
 export const SELLER_PORTAL_SIGNING_UNAVAILABLE_CODE = 'seller_portal_signing_unavailable'
 
 export function assertSellerPortalSigningAvailable(workflowKey = '') {

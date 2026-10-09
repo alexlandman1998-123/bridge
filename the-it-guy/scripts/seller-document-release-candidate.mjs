@@ -12,6 +12,7 @@ const variants = [['sole', 'exclusive'], ['open', 'open'], ['dual', 'dual']]
 export const SELLER_RELEASE_MIGRATIONS = [
   'supabase/migrations/20261004121736_seller_document_review_runtime_reconciliation.sql',
   'supabase/migrations/20261004181626_seller_portal_signed_upload_version_binding.sql',
+  'supabase/migrations/20261009150000_seller_existing_signed_evidence.sql',
 ]
 const rollback = 'docs/seller-document-review-runtime-rollback.sql'
 // These app entry points own preparation, correction, upload, review and PDF
@@ -19,17 +20,38 @@ const rollback = 'docs/seller-document-review-runtime-rollback.sql'
 const appFiles = [
   'src/pages/AgentListingDetail.jsx', 'src/pages/agency/AgencyPipelinePage.jsx',
   'src/pages/ClientPortal.jsx', 'src/pages/SellerDocumentSigning.jsx',
+  'src/pages/SellerOnboarding.jsx',
   'src/components/documents/SellerMandateDetailsEditor.jsx', 'src/components/documents/SellerDocumentReviewActions.jsx',
+  'src/components/documents/SellerDocumentWorkflowActions.jsx',
+  'src/components/leads/SellerLeadAgentOnboardingEditor.jsx',
+  'src/components/listings/ListingSellerInformationEditor.jsx',
+  'src/components/onboarding/SellerFicaQuestions.jsx', 'src/components/onboarding/PropertyDisclosureQuestionnaire.jsx',
   'src/services/privateListingService.js', 'src/services/sellerPortalDocumentSigningService.js',
   'src/services/sellerDocumentRequirementsService.js',
   'src/services/listings/listingSellerCanonicalUpdateService.js',
+  'src/services/listings/listingSellerCanonicalUpdateModel.js',
+  'src/services/documents/sellerOnboardingFactTransformer.js',
   'src/core/documents/sellerOnboardingManualSigningPack.js', 'src/core/documents/sellerPhysicalSigningCopy.js',
+  'src/core/documents/sellerOnboardingFormalPackApproval.js', 'src/core/documents/sellerDocumentWorkflow.js',
+  'src/core/documents/sellerPortalSigningPolicy.js', 'src/core/documents/sellerOnboardingConsent.js',
   'src/core/documents/sellerPostOnboardingDrafts.js', 'src/core/documents/sellerOnboardingSigningPackSnapshot.js',
   'src/lib/sellerMandateCapture.js', 'src/lib/sellerMandateReviewPreview.js',
+  'src/lib/sellerAgentAssistedDisclosure.js', 'src/lib/listingSellerProfileBuilderModel.js',
+  'src/lib/sellerLeadManualCaptureModel.js', 'src/lib/sellerProfileCaptureModel.js', 'src/lib/sellerFicaOnboardingFields.js',
   'src/lib/sellerMandateReviewPagination.js', 'src/lib/htmlDocumentPdf.js', 'src/lib/featureFlags.js',
   'src/index.css', 'src/App.css', 'tailwind.config.js', 'postcss.config.js', 'vite.config.js', 'package.json', 'package-lock.json',
 ].map(name => `the-it-guy/${name}`)
 const qaFiles = ['scripts/seller-document-journey.test.mjs', 'scripts/fixtures/seller-document-journey-browser.jsx',
+  'scripts/fixtures/seller-document-journey.sql', 'scripts/listing-seller-canonical-update.test.mjs',
+  'scripts/seller-onboarding-profile-alignment-phase6.test.mjs', 'scripts/seller-reviewed-document-versions.test.mjs',
+  'src/lib/__tests__/sellerAgentAssistedDisclosure.test.js', 'src/lib/__tests__/sellerLeadManualCaptureModel.test.js',
+  'src/lib/__tests__/sellerFicaOnboardingFields.test.js', 'src/core/documents/__tests__/sellerOnboardingConsent.test.js',
+  'src/core/documents/__tests__/sellerDocumentWorkflow.test.js', 'src/core/documents/__tests__/sellerExistingSignedEvidence.test.js',
+  'src/components/documents/__tests__/SellerDocumentWorkflowActions.test.jsx',
+  'src/components/documents/__tests__/SellerDocumentReviewActions.test.jsx',
+  'src/components/listings/__tests__/ListingSellerInformationEditor.test.jsx',
+  'src/services/__tests__/sellerPortalDocumentSigningService.test.js',
+  'scripts/seller-document-release-check.test.mjs',
   'scripts/fixtures/seller-mandate-signing.mjs', 'scripts/fixtures/seller-mandate-review.mjs',
   'scripts/fixtures/seller-mandate-capture.mjs', 'scripts/fixtures/seller-document-corrections.mjs',
   'scripts/seller-document-release-check.mjs', 'scripts/seller-document-release-candidate.mjs'].map(name => `the-it-guy/${name}`)
@@ -87,7 +109,8 @@ export async function buildSellerReleaseCandidate(root, bundle) {
     localAcceptance: { ...await artifact(root, qaName), result: qa.result, localOnly: qa.localOnly,
       sourceMatches: qa.sourceFingerprint === source.fingerprint, journeys: qa.journeys?.length || 0,
       downloads: qa.downloads, pages: qa.downloadedPages, browserSignatures: qa.browserSignatures,
-      browserPhysicalReviews: qa.browserPhysicalReviews, localRollbackVerified: qa.localRollbackVerified === true },
+      browserPhysicalReviews: qa.browserPhysicalReviews, existingSignedUploads: qa.existingSignedUploads,
+      agentAssistedCaptures: qa.agentAssistedCaptures, localRollbackVerified: qa.localRollbackVerified === true },
   }
   candidate.candidateDigest = sellerCandidateDigest(candidate)
   return candidate
@@ -130,8 +153,9 @@ export function assessSellerReleaseReadiness(candidate, decision, deployed = {},
   const present = value => typeof value === 'string' && value.trim().length > 0
   const dated = value => present(value) && Number.isFinite(Date.parse(value)) && Date.parse(value) <= Date.now()
   add(candidate.localAcceptance.result === 'passed' && candidate.localAcceptance.sourceMatches === true &&
-    candidate.localAcceptance.localOnly === true && candidate.localAcceptance.journeys >= 15 &&
+    candidate.localAcceptance.localOnly === true && candidate.localAcceptance.journeys >= 16 &&
     candidate.localAcceptance.browserSignatures >= 9 && candidate.localAcceptance.browserPhysicalReviews >= 2 &&
+    candidate.localAcceptance.existingSignedUploads >= 3 && candidate.localAcceptance.agentAssistedCaptures >= 1 &&
     candidate.localAcceptance.localRollbackVerified === true,
   'Complete local acceptance must match this exact source.')
   for (const item of candidate.wording) add(item.approval.status === 'approved' &&

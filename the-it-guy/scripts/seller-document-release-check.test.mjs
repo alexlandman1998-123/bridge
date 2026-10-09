@@ -69,13 +69,17 @@ test('frontend verification rejects stale releases, protected HTML and inconsist
 
 const candidate = await buildSellerReleaseCandidate(root, bundle)
 
-test('sign-off pack identifies all exact wording, PDF proofs, app source and both migration dependencies', () => {
+test('sign-off pack identifies exact wording, PDF proofs, seller workflow source and every migration dependency', () => {
   assert.equal(candidate.wording.length, 3)
   assert.equal(candidate.proofs.length, 15)
   assert.equal(candidate.proofs.reduce((sum, proof) => sum + proof.pages, 0), 100)
   assert.ok(candidate.proofs.every(proof => proof.synthetic === true && /^[a-f0-9]{64}$/.test(proof.sha256)))
-  assert.equal(candidate.migrations.length, 2)
+  assert.equal(candidate.migrations.length, 3)
+  assert.ok(candidate.migrations.some(file => file.name.endsWith('/20261009150000_seller_existing_signed_evidence.sql')))
   for (const name of ['ClientPortal.jsx', 'privateListingService.js', 'SellerDocumentSigning.jsx',
+    'SellerOnboarding.jsx', 'PropertyDisclosureQuestionnaire.jsx', 'SellerDocumentWorkflowActions.jsx',
+    'sellerAgentAssistedDisclosure.js', 'sellerOnboardingConsent.js', 'listingSellerProfileBuilderModel.js',
+    'sellerDocumentWorkflow.js', 'sellerPortalSigningPolicy.js',
     'sellerMandateWordingRelease.js', 'sellerDocumentSignatureEvidence.js']) assert.ok(candidate.source.files.some(file => file.name.endsWith('/' + name)), name)
   assert.equal(candidate.candidateDigest, sellerCandidateDigest(candidate))
   assert.equal(verifySellerReleaseCandidate(candidate, candidate), true)
@@ -116,7 +120,7 @@ function syntheticReleaseEvidence() {
   const current = structuredClone(candidate)
   Object.assign(current.localAcceptance, {
     result: 'passed', localOnly: true, sourceMatches: true, localRollbackVerified: true,
-    journeys: 15, browserSignatures: 9, browserPhysicalReviews: 2,
+    journeys: 16, browserSignatures: 9, browserPhysicalReviews: 2, existingSignedUploads: 3, agentAssistedCaptures: 1,
   })
   const decision = createSellerReleaseDecision(current)
   const time = '2026-10-04T00:00:00Z'
@@ -156,6 +160,8 @@ test('wrong project, candidate, wording, schedule, design and stale or future ev
     value => { value.decision.checks.hostedAcceptance.sourceFingerprint = 'old-source' },
     value => { value.decision.checks.schemaCatalog.checkedAt = '2099-01-01' },
     value => { value.current.localAcceptance.sourceMatches = false },
+    value => { value.current.localAcceptance.existingSignedUploads = 0 },
+    value => { value.current.localAcceptance.agentAssistedCaptures = 0 },
   ]) {
     const fixture = syntheticReleaseEvidence()
     change(fixture)

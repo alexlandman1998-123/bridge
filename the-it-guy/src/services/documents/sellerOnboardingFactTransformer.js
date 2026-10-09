@@ -230,11 +230,13 @@ function normalizePersonRecord(entry = {}, index = 0, { defaultRoleTitle = '' } 
 
 function resolveSellerResidentialAddress(form = {}) {
   return normalizeText(
-    form.residentialAddress ||
-      form.sellerResidentialAddress ||
-      form.physicalAddress ||
-      form.domiciliumAddress ||
-      form.domicilium_address ||
+    form.residentialAddress ??
+      form.residential_address ??
+      form.residentialStreet ??
+      form.sellerResidentialAddress ??
+      form.physicalAddress ??
+      form.domiciliumAddress ??
+      form.domicilium_address ??
       form.address,
   )
 }
@@ -485,7 +487,7 @@ export function transformSellerOnboardingToFacts(form = {}, listing = {}, option
   const foreignOwner = normalizeBoolean(form.foreignOwner ?? form.foreign_owner, false) || ownerEntityType === 'foreign' || ownerStructureType.startsWith('foreign_')
   const multipleOwnerCaptureMode = 'capture_now'
   const popiConsent = readSellerPopiConsent(form)
-  const popiConsentAccepted = popiConsent.accepted || normalizeBoolean(form.arch9TermsAccepted ?? form.arch9_terms_accepted, false)
+  const popiConsentAccepted = popiConsent.accepted
 
   return {
     seller_branch: flow.seller_branch,
@@ -527,17 +529,17 @@ export function transformSellerOnboardingToFacts(form = {}, listing = {}, option
       phone: normalizeText(form.phone ?? form.sellerPhone ?? form.mobile),
       alternative_number: normalizeText(form.alternativeNumber || form.alternative_number || form.alternatePhone || form.alternate_phone),
       id_number: normalizeText(form.idNumber || form.id_number || form.sellerIdNumber),
-      date_of_birth: normalizeDate(form.dateOfBirth || form.date_of_birth || form.birthDate),
+      date_of_birth: normalizeDate(form.dateOfBirth ?? form.date_of_birth ?? form.birthDate),
       nationality: normalizeText(form.nationality),
       occupation: normalizeText(form.occupation),
-      source_of_funds: normalizeText(form.sourceOfFunds || form.source_of_funds),
-      politically_exposed_person: normalizeText(form.politicallyExposedPerson || form.politically_exposed_person),
-      politically_exposed_details: normalizeText(form.politicallyExposedDetails || form.politically_exposed_details),
+      source_of_funds: normalizeText(form.sourceOfFunds ?? form.source_of_funds),
+      politically_exposed_person: normalizeText(form.politicallyExposedPerson ?? form.politically_exposed_person),
+      politically_exposed_details: normalizeText(form.politicallyExposedDetails ?? form.politically_exposed_details),
       residential_address: resolveSellerResidentialAddress(form),
       authorised_representative: normalizeText(form.authorisedRepresentative || form.companyDirectorName || form.trusteeName),
-      tax_number: normalizeText(form.sellerTaxNumber || form.incomeTaxNumber || form.income_tax_number || form.taxNumber || form.tax_number),
-      sa_resident: normalizeText(form.saResident || form.sa_resident || form.taxResident || form.tax_resident),
-      tax_resident: normalizeText(form.taxResident || form.tax_resident || form.saResident || form.sa_resident),
+      tax_number: normalizeText(form.sellerTaxNumber ?? form.incomeTaxNumber ?? form.income_tax_number ?? form.taxNumber ?? form.tax_number),
+      sa_resident: normalizeText(form.saResident ?? form.sa_resident ?? form.taxResident ?? form.tax_resident),
+      tax_resident: normalizeText(form.taxResident ?? form.tax_resident ?? form.saResident ?? form.sa_resident),
       popi_consent: popiConsentAccepted ? 'Accepted' : '',
       popi_consent_accepted: popiConsentAccepted,
       popi_consent_accepted_at: popiConsentAccepted

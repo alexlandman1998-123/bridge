@@ -1,6 +1,7 @@
 import ListingSellerInformationEditor from '../listings/ListingSellerInformationEditor.jsx'
-import SellerFicaQuestions from '../onboarding/SellerFicaQuestions.jsx'
 import Field from '../ui/Field.jsx'
+import PropertyDisclosureQuestionnaire from '../onboarding/PropertyDisclosureQuestionnaire.jsx'
+import { getPropertyDisclosureAnswerSummary } from '../../lib/propertyDisclosure.js'
 
 function Input({ label, field, draft, onChange, type = 'text' }) {
   return (
@@ -22,36 +23,29 @@ export default function SellerLeadAgentOnboardingEditor({
 }) {
   const company = ['company', 'close_corporation', 'foreign_company'].includes(draft.branch)
   const trust = ['trust', 'foreign_trust'].includes(draft.branch)
-  const naturalPerson = ['individual', 'married', 'foreign_individual'].includes(draft.branch)
+  const disclosure = draft.propertyDisclosure || {}
+  const summary = getPropertyDisclosureAnswerSummary(disclosure)
+  function patchDisclosure(patch) {
+    onChange('propertyDisclosure', { ...disclosure, ...patch })
+  }
 
   return (
-    <div className="space-y-4">
+    <fieldset disabled={saving} className="min-w-0 space-y-4">
       <p className="rounded-[14px] border border-[#dbe6f2] bg-[#f7fbff] p-3 text-sm text-[#405b75]">
-        Capture the seller’s answers here. Saving submits onboarding for agent review; it does not send a link or sign a mandate.
+        Capture the seller’s answers here. Save a draft to continue later, or submit the completed answers for review. The seller must review and sign the disclosure themselves.
       </p>
       <ListingSellerInformationEditor
         draft={draft}
         saving={saving}
+        showConsent={false}
         onChange={onChange}
         onAddPerson={onAddPerson}
         onUpdatePerson={onUpdatePerson}
         onRemovePerson={onRemovePerson}
         onSubmit={onSubmit}
       />
-      <section className="grid gap-4 rounded-[18px] border border-[#dce6f2] bg-white p-4 sm:grid-cols-2">
-        <h4 className="text-sm font-semibold text-[#243d56] sm:col-span-2">Onboarding identity and tax details</h4>
-        {naturalPerson ? <>
-          <Input label="Date of birth" field="dateOfBirth" type="date" draft={draft} onChange={onChange} />
-          <Input label="Nationality" field="nationality" draft={draft} onChange={onChange} />
-          <Input label="Residential address" field="residentialAddress" draft={draft} onChange={onChange} />
-        </> : null}
-        <Input label="Income tax number" field="incomeTaxNumber" draft={draft} onChange={onChange} />
-        <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
-          SA tax resident
-          <Field as="select" value={draft.saResident || ''} onChange={(event) => onChange('saResident', event.target.value)}>
-            <option value="">Select</option><option value="Yes">Yes</option><option value="No">No</option>
-          </Field>
-        </label>
+      {company || trust ? <section className="grid gap-4 rounded-[18px] border border-[#dce6f2] bg-white p-4 sm:grid-cols-2">
+        <h4 className="text-sm font-semibold text-[#243d56] sm:col-span-2">Representative identity details</h4>
         {company ? <>
           <Input label="Signatory ID / passport (if not listed above)" field="authorisedSignatoryIdNumber" draft={draft} onChange={onChange} />
           <Input label="Signatory nationality (if not listed above)" field="authorisedSignatoryNationality" draft={draft} onChange={onChange} />
@@ -62,8 +56,7 @@ export default function SellerLeadAgentOnboardingEditor({
           <Input label="Authorised trustee nationality (if not listed above)" field="authorisedTrusteeNationality" draft={draft} onChange={onChange} />
           <Input label="Authorised trustee residential address (if not listed above)" field="authorisedTrusteeAddress" draft={draft} onChange={onChange} />
         </> : null}
-      </section>
-      <SellerFicaQuestions form={draft} onChange={onChange} onAddPerson={onAddPerson} onUpdatePerson={onUpdatePerson} onRemovePerson={onRemovePerson} />
+      </section> : null}
       <section className="grid gap-4 rounded-[18px] border border-[#dce6f2] bg-white p-4 sm:grid-cols-2">
         <h4 className="text-sm font-semibold text-[#243d56] sm:col-span-2">Property and mandate details</h4>
         <Input label="Suburb" field="propertySuburb" draft={draft} onChange={onChange} />
@@ -86,12 +79,24 @@ export default function SellerLeadAgentOnboardingEditor({
         </label>
         {draft.leaseExists ? <Input label="Lease expiry date" field="leaseExpiryDate" type="date" draft={draft} onChange={onChange} /> : null}
       </section>
+      <section className="min-w-0 rounded-[18px] border border-[#dce6f2] bg-white p-4">
+        <h4 className="text-base font-semibold text-[#243d56]">Property disclosure — Annexure A</h4>
+        <p className="my-3 text-sm text-[#405b75]">{summary.answered} / {summary.total} answered. Record Yes, No or Unsure exactly as the seller answers, with explanations where needed.</p>
+        {draft.disclosureLocked ? <p role="status" className="mb-3 rounded-[12px] bg-[#f2fbf5] p-3 text-sm text-[#25603d]">This disclosure already has signature evidence or a reviewed upload. Its answers are locked to preserve the original document.</p> : <p className="mb-3 text-sm text-[#405b75]">These answers are captured by the agent and await the seller’s review and signature.</p>}
+        <PropertyDisclosureQuestionnaire
+          disclosure={disclosure}
+          disabled={Boolean(draft.disclosureLocked)}
+          onAnswerChange={(key, answer) => patchDisclosure({ responses: { ...disclosure.responses, [key]: { ...disclosure.responses?.[key], answer } } })}
+          onNoteChange={(key, note) => patchDisclosure({ responses: { ...disclosure.responses, [key]: { ...disclosure.responses?.[key], note } } })}
+          onDisclosureChange={(key, value) => patchDisclosure(typeof key === 'object' ? key : { [key]: value })}
+        />
+      </section>
       <section className="rounded-[18px] border border-[#dce6f2] bg-white p-4">
         <label className="flex items-start gap-2 text-sm font-semibold text-[#2d445e]">
           <input type="checkbox" className="mt-1" checked={Boolean(draft.popiConsentAccepted)} onChange={(event) => onChange('popiConsentAccepted', event.target.checked)} />
           I confirm the seller gave consent to capture and process these details for onboarding.
         </label>
       </section>
-    </div>
+    </fieldset>
   )
 }

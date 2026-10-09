@@ -66,8 +66,8 @@ export function createSellerOnboardingFormalPackApproval({
     signingRoute: validation.signingRoute,
     documentRoutes: { ...documentRoutes },
     selectedDocuments: validation.selectedDocuments,
-    commission: validation.commission,
-    ...(mandateSource ? { mandateSource } : {}),
+    commission: validation.selectedDocuments.includes('mandate') ? validation.commission : current.commission || validation.commission,
+    ...(mandateSource ? { mandateSource } : !validation.selectedDocuments.includes('mandate') && current.mandateSource ? { mandateSource: current.mandateSource } : {}),
   }
   return {
     contract: SELLER_ONBOARDING_FORMAL_PACK_APPROVAL_CONTRACT,

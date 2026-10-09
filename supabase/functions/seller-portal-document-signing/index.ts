@@ -37,7 +37,7 @@ const documentLabels: Record<string, string> = {
   signed_mandate: "Seller Mandate",
 };
 const approvalReference = "2026-09-27";
-const enabled = () => Deno.env.get("SELLER_PORTAL_SIGNING_ENABLED") === "true";
+const enabled = () => Deno.env.get("SELLER_PORTAL_SIGNING_ENABLED") !== "false";
 
 function canonical(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonical);
@@ -279,7 +279,7 @@ async function issue(req: Request, admin: AdminClient, url: string, anonKey: str
   if (deliveryFailed) {
     await admin.from("private_listing_seller_portal_signing_recipients").update({ status: "revoked" }).eq("signing_document_id", signingDocumentId);
     await admin.from("private_listing_seller_portal_signing_documents").update({ status: "revoked", revoked_at: new Date().toISOString(), revoke_reason: "delivery_failed" }).eq("id", signingDocumentId);
-    return respond(502, { error: "A signature email could not be delivered. This request was revoked; prepare a new one." });
+    return respond(502, { error: "A signature email could not be delivered. This request was revoked. Retry sending the same reviewed document from Documents." });
   }
   const sent = await admin.from("private_listing_seller_portal_signing_documents")
     .update({ status: "sent", sent_at: new Date().toISOString() }).eq("id", signingDocumentId);
@@ -442,10 +442,21 @@ async function list(req: Request, admin: AdminClient, url: string, anonKey: stri
   if (!context) return respond(403, { error: "Agent access to this listing is required." });
   await expireStaleRequests(admin, text(context.listing.id));
   const documents = await admin.from("private_listing_seller_portal_signing_documents")
-    .select("id, document_key, version_id, status, created_at, sent_at, signed_at, reviewed_at, signed_document_id")
+    .select("id, document_key, version_id, status, created_at, sent_at, signed_at, reviewed_at, signed_document_id, revoked_at, revoke_reason")
     .eq("private_listing_id", context.listing.id).order("created_at", { ascending: false });
   if (documents.error) return respond(500, { error: "Unable to load signing requests." });
-  return respond(200, { documents: documents.data || [] });
+  const [recipients, uploads] = await Promise.all([
+    admin.from("private_listing_seller_portal_signing_recipients")
+      .select("signing_document_id, status").in("signing_document_id", (documents.data || []).map(row => row.id)),
+    admin.from("private_listing_documents").select("document_type, status")
+      .eq("private_listing_id", context.listing.id).in("document_type", ["signed_mandate", "signed_fica_declaration", "signed_disclosure_form"])
+      .in("status", ["uploaded", "under_review", "approved"]),
+  ]);
+  if (recipients.error || uploads.error) return respond(500, { error: "Unable to load document and signer progress." });
+  return respond(200, { documents: (documents.data || []).map(document => {
+    const signers = (recipients.data || []).filter(row => row.signing_document_id === document.id);
+    return { ...document, signer_count: signers.length, signed_count: signers.filter(row => row.status === "signed").length };
+  }), uploads: uploads.data || [] });
 }
 
 async function completeSignatureEvidence(admin: AdminClient, id: string, current: Row) {

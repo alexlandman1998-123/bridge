@@ -85,6 +85,48 @@ locally, including stale-version/session rejection, rollback, Storage cleanup
 and physical review. It does not replace complete migration replay, hosted
 Storage/session acceptance or an approved target-specific database release.
 
+## Seller document action update
+
+The seller workspace's **Generate and download**, **Generate and send for online
+signature**, and **Upload existing** actions require the matching app, complete
+`seller-portal-document-signing` bundle and
+`20261009150000_seller_existing_signed_evidence.sql`. Apply that additive update
+before exposing Upload existing. Verify the existing canonical seller save,
+portal signing foundation, physical-version review, review runtime and
+version-bound portal upload prerequisites in the target catalog. Do not infer
+their presence from a migration timestamp alone.
+
+The new update records independent signed uploads without attaching an unrelated
+generated version. Approval still requires a recorded signature review; generated
+returns still require their exact reviewed version. Both upload and online request
+creation lock the same listing/document key to prevent conflicting actions. No
+historical records are backfilled. Capture the target's pre-change review-trigger
+definition and relevant app/function bundles before any approved release.
+
+Run the primary app's `test:seller-document-journey`,
+`test:seller-reviewed-document-versions`, `test:listing-seller-canonical-update`
+and `check:seller-document-release`. Export a fresh candidate and pending decision
+only after the complete journey; partial reruns cannot satisfy the release check.
+The candidate now includes all three scoped seller migrations and the onboarding,
+consent, agent disclosure and three-action workflow source and checks. The local
+journey must include unsigned agent capture and review of all three independent
+signed uploads as well as the existing generated and online routes.
+
+For a live canary, use an authorised disposable listing in each affected agency.
+Check save/reopen and POPI consent, agent-assisted disclosure followed by seller
+signature, generated downloads, real invitation delivery, every required signer,
+an existing signed upload, review and reopened completion. Check failed/expired
+links and preserving signed history. Full generated mandates retain the exact
+contracting-agency schedule, authority, disclosure and FFC approval requirements.
+Local synthetic approval fixtures must never populate those registers.
+
+Recover by restoring the captured app/function bundles and pausing new online
+requests with the existing feature switches under the approved recovery plan.
+Retain the additive evidence column, guards and all uploaded/signed/review records.
+The older seller-runtime rollback is not a rollback of this update; do not execute
+it for this change. Complete target-specific recovery, full migration replay,
+hosted acceptance and delivery verification before declaring the release ready.
+
 ## Current safety state
 
 Outside the temporary pilot above, broad linked-database pushes remain frozen while historical migration drift exists. Do not override the Phase 0 guard and do not use `--include-all`.

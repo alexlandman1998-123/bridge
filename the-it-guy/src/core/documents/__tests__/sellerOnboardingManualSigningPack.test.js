@@ -233,3 +233,44 @@ test('the agency-upload route freezes FICA without blank Arch9 schedules and arc
   // The generated option still enforces its incomplete revised schedule.
   assert.throws(() => createSellerOnboardingSigningCopyPack({ formalPackApproval: initialApproval, signingPack: ownPack, postOnboardingDrafts: drafts, disclosureSigned: true }), /mandate|schedule|approval/i)
 })
+
+test('disclosure-only preparation and mixed existing uploads never regenerate unselected documents', async () => {
+  for (const createPack of [createSellerOnboardingManualSigningPack, createSellerOnboardingSigningCopyPack]) {
+    const pack = createPack({
+      formalPackApproval: { status: 'approved', signingRoute: 'digital_pack', selectedDocuments: ['disclosure'], documentRoutes: { signed_disclosure_form: 'digital_pack', signed_fica_declaration: 'upload_existing', signed_mandate: 'upload_existing' } },
+      signingPack: { signers: [{ name: 'Alex Seller', email: 'alex@example.test', role: 'Seller' }] },
+      postOnboardingDrafts: { documents: [{ key: 'signed_disclosure_form', generatedHtml: '<html>Reviewed disclosure answers</html>' }] }, actor: 'agent',
+    })
+    assert.deepEqual(pack.documents.map(row => row.key), ['signed_disclosure_form'])
+    assert.equal(pack.documents[0].signingRoute, 'digital_pack')
+    const frozen = await createSellerReviewedDocumentVersions({ manualSigningPack: pack, formalPackApproval: { status: 'approved', signingRoute: 'digital_pack', selectedDocuments: ['disclosure'] }, signingPack: pack.signingPackSnapshot, actor: 'agent' })
+    assert.equal(await verifySellerReviewedDocumentVersion(frozen.documents[0]), true)
+  }
+})
+
+test('explicit upload-existing disclosure is excluded when only FICA is generated', () => {
+  for (const createPack of [createSellerOnboardingManualSigningPack, createSellerOnboardingSigningCopyPack]) {
+    const pack = createPack({
+      formalPackApproval: { status: 'approved', signingRoute: 'manual_upload', selectedDocuments: ['fica'], documentRoutes: { signed_disclosure_form: 'upload_existing', signed_fica_declaration: 'manual_upload', signed_mandate: 'upload_existing' } },
+      signingPack: { signers: [{ name: 'Alex Seller', role: 'Seller' }] },
+      postOnboardingDrafts: { documents: [{ key: 'signed_disclosure_form', generatedHtml: '<html>Do not generate this</html>' }, { key: 'signed_fica_declaration', generatedHtml: '<html>FICA</html>' }] },
+    })
+    assert.deepEqual(pack.documents.map(row => row.key), ['signed_fica_declaration'])
+  }
+})
+
+test('single-document preparation cannot retain an unsigned disclosure with changed answers', () => {
+  for (const createPack of [createSellerOnboardingManualSigningPack, createSellerOnboardingSigningCopyPack]) {
+    const input = {
+      existing: { documents: [{ key: 'signed_disclosure_form', versionId: 'old', versionDigest: 'digest', generatedHtml: '<html>Old answers</html>', sourceDraftFingerprint: 'old-answers' }] },
+      formalPackApproval: { status: 'approved', signingRoute: 'manual_upload', selectedDocuments: ['fica'], documentRoutes: { signed_fica_declaration: 'manual_upload' } },
+      signingPack: { signers: [{ name: 'Alex Seller', role: 'Seller' }] },
+      postOnboardingDrafts: { documents: [{ key: 'signed_disclosure_form', contentFingerprint: 'new-answers', generatedHtml: '<html>New answers</html>' }, { key: 'signed_fica_declaration', generatedHtml: '<html>FICA</html>' }] },
+    }
+    assert.throws(() => createPack(input), /disclosure answers changed/)
+    const unchangedAnswers = createPack({ ...input, postOnboardingDrafts: { documents: input.postOnboardingDrafts.documents.map(row => row.key === 'signed_disclosure_form' ? { ...row, generatedHtml: '<html>Old answers</html>' } : row) } })
+    assert.equal(unchangedAnswers.documents.find(row => row.key === 'signed_disclosure_form').sourceDraftFingerprint, 'old-answers', 'New draft timestamps must not invalidate unchanged answers')
+    const completed = createPack({ ...input, disclosureSigned: true })
+    assert.equal(completed.documents.find(row => row.key === 'signed_disclosure_form').sourceDraftFingerprint, 'old-answers')
+  }
+})

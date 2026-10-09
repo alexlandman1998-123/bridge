@@ -1,3 +1,4 @@
+import { sellerDocumentHasActiveSigning } from '../core/documents/sellerDocumentWorkflow.js'
 import { supabase } from '../lib/supabaseClient'
 
 const FUNCTION_NAME = 'seller-portal-document-signing'
@@ -8,7 +9,9 @@ async function invoke(action, fields = {}) {
   if (error || data?.error) {
     let response = null
     try { response = await error?.context?.json?.() } catch { /* Use the client error below. */ }
-    throw new Error(data?.error || response?.error || error?.message || 'The signing request failed.')
+    const failure = new Error(data?.error || response?.error || error?.message || 'The signing request failed.')
+    failure.code = data?.code || response?.code || ''
+    throw failure
   }
   return data || {}
 }
@@ -22,3 +25,12 @@ export const signSellerDocumentInPortal = (token, { signedName, signatureType, s
   invoke('sign', { token, signedName, signatureType, signatureValue, signedDate, signedPlace, versionDigest, accepted: true })
 export const previewSellerPortalSignedDocument = (signingDocumentId) => invoke('preview', { signingDocumentId })
 export const reviewSellerPortalSignedDocument = (signingDocumentId) => invoke('review', { signingDocumentId })
+
+// Refresh before switching a document to uploaded evidence. Do not discard an
+// active online request or its signatures based on a stale screen snapshot.
+export async function assertSellerDocumentUploadAvailable(listingId, documentKey) {
+  const current = await listSellerPortalSigningRequests(listingId)
+  if (sellerDocumentHasActiveSigning(current.documents || [], documentKey)) {
+    throw new Error('This document has an active or completed online signing request. Review that request in Documents before uploading a replacement.')
+  }
+}

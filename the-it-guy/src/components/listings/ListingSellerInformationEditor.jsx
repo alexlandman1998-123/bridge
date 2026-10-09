@@ -1,4 +1,6 @@
 import SellerMandateDetailsEditor from '../documents/SellerMandateDetailsEditor.jsx'
+import SellerFicaQuestions from '../onboarding/SellerFicaQuestions.jsx'
+import { sellerYesNoValue } from '../../lib/sellerFicaOnboardingFields.js'
 import { Plus, Trash2 } from 'lucide-react'
 
 import { LISTING_SELLER_PROFILE_BRANCHES } from '../../lib/listingSellerProfileBuilderModel.js'
@@ -45,6 +47,7 @@ function PeopleEditor({ title, rows = [], ownerFields = false, onAdd, onUpdate, 
 export default function ListingSellerInformationEditor({
   draft = {},
   saving = false,
+  showConsent = true,
   onChange,
   onAddPerson,
   onUpdatePerson,
@@ -97,7 +100,6 @@ export default function ListingSellerInformationEditor({
           <Input label="Trust registration number" field="trustRegistrationNumber" draft={draft} onChange={onChange} />
           <Input label="Registered address" field="trustRegisteredAddress" draft={draft} onChange={onChange} className="sm:col-span-2" />
           <PeopleEditor title="Trustees" rows={draft.trustees} onAdd={() => onAddPerson('trustees', 'Trustee')} onUpdate={(index, field, value) => onUpdatePerson('trustees', index, field, value)} onRemove={(index) => onRemovePerson('trustees', index)} />
-          <PeopleEditor title="Beneficial owners" rows={draft.trustBeneficiaries} onAdd={() => onAddPerson('trustBeneficiaries', 'Beneficiary')} onUpdate={(index, field, value) => onUpdatePerson('trustBeneficiaries', index, field, value)} onRemove={(index) => onRemovePerson('trustBeneficiaries', index)} />
           <Input label="Trust authority basis" field="trustAuthorityBasis" draft={draft} onChange={onChange} />
           <Input label="Authorised trustee" field="authorisedTrusteeName" draft={draft} onChange={onChange} />
           <Input label="Trustee capacity" field="authorisedTrusteeCapacity" draft={draft} onChange={onChange} />
@@ -117,6 +119,18 @@ export default function ListingSellerInformationEditor({
         <Input label="Alternative contact" field="alternativeContact" draft={draft} onChange={onChange} />
         <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">Preferred contact<Field as="select" value={draft.preferredContactMethod || ''} onChange={(event) => onChange('preferredContactMethod', event.target.value)}><option value="">Not captured</option><option value="email">Email</option><option value="phone">Phone</option><option value="whatsapp">WhatsApp</option></Field></label>
       </section>
+
+      <section className="grid gap-4 rounded-[18px] border border-[#dce6f2] bg-white p-4 sm:grid-cols-2">
+        <div className="sm:col-span-2"><h4 className="text-sm font-semibold text-[#243d56]">Seller identity and consent</h4></div>
+        <Input label="Residential address" field="residentialAddress" draft={draft} onChange={onChange} className="sm:col-span-2" />
+        {individual ? <><Input label="Date of birth" field="dateOfBirth" type="date" draft={draft} onChange={onChange} /><Input label="Nationality" field="nationality" draft={draft} onChange={onChange} /></> : null}
+        <Input label="Income tax number" field="incomeTaxNumber" draft={draft} onChange={onChange} />
+        {company || trust ? <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">VAT registered<Field as="select" value={sellerYesNoValue(draft.vatRegistered)} onChange={(event) => onChange('vatRegistered', event.target.value)}><option value="">Not captured</option><option value="yes">Yes</option><option value="no">No</option></Field></label> : null}
+        <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">SA resident<Field as="select" value={sellerYesNoValue(draft.saResident)} onChange={(event) => onChange('saResident', event.target.value)}><option value="">Not captured</option><option value="yes">Yes</option><option value="no">No</option></Field></label>
+        {showConsent ? <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">POPI consent<Field as="select" value={draft.popiConsent || ''} onChange={(event) => onChange('popiConsent', event.target.value)}><option value="" disabled={Boolean(draft.popiConsent)}>Not captured</option><option value="Accepted">Seller gave consent</option><option value="No">Seller has not given consent</option></Field><span className="text-xs font-normal text-[#607387]">Record the seller’s permission to process these details. This does not sign any document.</span></label> : null}
+      </section>
+
+      <SellerFicaQuestions form={draft} onChange={onChange} onAddPerson={onAddPerson} onUpdatePerson={onUpdatePerson} onRemovePerson={onRemovePerson} />
 
       <section className="grid gap-4 rounded-[18px] border border-[#dce6f2] bg-white p-4 sm:grid-cols-2">
         <div className="sm:col-span-2"><h4 className="text-sm font-semibold text-[#243d56]">Property and ownership details</h4></div>

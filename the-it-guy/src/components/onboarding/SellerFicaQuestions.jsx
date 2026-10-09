@@ -1,4 +1,4 @@
-import { sellerFicaBranch } from '../../lib/sellerFicaOnboardingFields.js'
+import { sellerFicaBranch, sellerYesNoValue } from '../../lib/sellerFicaOnboardingFields.js'
 
 const inputClass = 'min-h-[42px] w-full rounded-[10px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm text-[#22364a] outline-none focus:border-[#5b829e]'
 
@@ -48,11 +48,11 @@ export default function SellerFicaQuestions({ form = {}, onChange, onAddPerson, 
           <input className={inputClass} value={form.sourceOfFunds || ''} onChange={(event) => onChange('sourceOfFunds', event.target.value)} placeholder="For example, employment, business or inheritance" />
         </label>
         <label className="grid gap-1 text-sm font-medium text-[#2a4057]">Is the seller, an owner / controller or a representative politically exposed?
-          <select className={inputClass} value={String(form.politicallyExposedPerson || '').toLowerCase()} onChange={(event) => onChange('politicallyExposedPerson', event.target.value)}>
+          <select className={inputClass} value={sellerYesNoValue(form.politicallyExposedPerson)} onChange={(event) => onChange('politicallyExposedPerson', event.target.value)}>
             <option value="">Select one</option><option value="no">No</option><option value="yes">Yes</option>
           </select>
         </label>
-        {String(form.politicallyExposedPerson || '').toLowerCase() === 'yes' ? <label className="grid gap-1 text-sm font-medium text-[#2a4057]">Who and in what capacity?
+        {sellerYesNoValue(form.politicallyExposedPerson) === 'yes' ? <label className="grid gap-1 text-sm font-medium text-[#2a4057]">Who and in what capacity?
           <input className={inputClass} value={form.politicallyExposedDetails || ''} onChange={(event) => onChange('politicallyExposedDetails', event.target.value)} />
         </label> : null}
       </div>

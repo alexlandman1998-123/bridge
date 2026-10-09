@@ -85,7 +85,7 @@ export async function createSellerReviewedDocumentVersions({
   }
   const documents = Array.isArray(manualSigningPack?.documents) ? manualSigningPack.documents : []
   const selected = Array.isArray(approval.selectedDocuments) ? approval.selectedDocuments.map(text) : ['fica', 'mandate']
-  const selectedKeys = new Set(selected.map((value) => value === 'fica' ? SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION : value === 'mandate' ? SELLER_BASE_PACK_KEYS.SIGNED_MANDATE : value))
+  const selectedKeys = new Set(selected.map((value) => value === 'fica' ? SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION : value === 'mandate' ? SELLER_BASE_PACK_KEYS.SIGNED_MANDATE : value === 'disclosure' ? SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM : value))
   const seen = new Set()
   if (!documents.length) throw new Error('No reviewed seller documents are available to freeze.')
   const mandateTerms = record(signingPack?.mandate)

@@ -1,8 +1,9 @@
+import { sellerGeneratedDocumentSelection, sellerDocumentHasActiveSigning, sellerDocumentHasUploadedEvidence } from '../src/core/documents/sellerDocumentWorkflow.js'
 import { readSellerOnboardingReview, recordSellerOnboardingReview, SELLER_ONBOARDING_REVIEW_STATUS } from '../src/core/documents/sellerOnboardingReview.js'
 import { createSellerOnboardingCorrectionControl } from '../src/core/documents/sellerOnboardingCorrectionControl.js'
 import { getSellerMandatePreparationIssues } from '../src/lib/sellerMandateCapture.js'
 import assert from 'node:assert/strict'
-import { createListingSellerProfileBuilderDraft, buildListingSellerProfileFormPatch, selectListingSellerProfileBranch } from '../src/lib/listingSellerProfileBuilderModel.js'
+import { createListingSellerProfileBuilderDraft, buildListingSellerProfileFormPatch, buildListingSellerProfileCapturePayload, selectListingSellerProfileBranch } from '../src/lib/listingSellerProfileBuilderModel.js'
 import { readFile } from 'node:fs/promises'
 import { PGlite } from '@electric-sql/pglite'
 
@@ -81,9 +82,19 @@ await test('stale seller saves return a non-retryable conflict without writes, w
     const definition = async () => (await db.query('select prosrc,prosecdef,proacl::text as acl,proconfig from pg_proc where oid=$1::regprocedure', [signature])).rows[0]
     const before = await definition()
     const enterActor = () => db.exec(`set role authenticated; select set_config('request.jwt.claim.sub','${actor}',false);`)
+    const sourceForm = {
+      ownerEntityType: 'natural_person', ownerStructureType: 'individual', ownershipRouteConfirmed: true,
+      sellerFirstName: 'Updated', sellerSurname: 'Owner', residentialAddress: '1 Home Road',
+      dateOfBirth: '1980-01-01', nationality: 'South African', incomeTaxNumber: 'TAX-123', saResident: 'no',
+      occupation: 'Teacher', sourceOfFunds: 'Salary', politicallyExposedPerson: 'no',
+      sellerOnboardingConsents: { privacyProcessing: { accepted: true, acceptedAt: '2026-09-30T08:00:00Z', wordingVersion: 'original' } },
+    }
+    const captureListing = { id: owned, sellerOnboarding: { formData: sourceForm } }
+    const capture = buildListingSellerProfileCapturePayload(createListingSellerProfileBuilderDraft(captureListing), captureListing, { draft: true })
+    const nextForm = { ...sourceForm, ...capture.formPatch }
     const save = async (id, expected, mutationId = mutation) => (await db.query(
       `select public.save_private_listing_seller_canonical_update($1,$2::jsonb,$3::jsonb,$4::jsonb,$5::jsonb,$6,$7,$8,$9,$10::uuid,$11,$12,$13::text[],$14::timestamptz) as receipt`,
-      [id, '{"sellerFirstName":"Updated"}', '{"seller":{"name":"Updated Owner"}}', '{}', '{"askingPrice":"1250000"}', 'in_progress', 'individual', null, null, mutationId, 'seller_edit', 'test_fixture', ['sellerFirstName'], expected],
+      [id, JSON.stringify(nextForm), JSON.stringify(capture.canonicalSellerFacts), '{}', '{"askingPrice":"1250000"}', 'in_progress', 'individual', null, null, mutationId, 'seller_edit', 'test_fixture', ['sellerFirstName'], expected],
     )).rows[0].receipt
     const state = async () => (await db.query(`select jsonb_build_object(
       'listing',(select to_jsonb(p) from private_listings p where id=$1),
@@ -109,6 +120,11 @@ await test('stale seller saves return a non-retryable conflict without writes, w
     assert.equal(saved.idempotentReplay, false)
     assert.equal(saved.listing.asking_price, 1250000)
     assert.equal(saved.onboarding.form_data.sellerFirstName, 'Updated')
+    assert.deepEqual(saved.onboarding.form_data.sellerOnboardingConsents, sourceForm.sellerOnboardingConsents)
+    assert.equal(saved.onboarding.form_data.popiConsentAcceptedAt, sourceForm.sellerOnboardingConsents.privacyProcessing.acceptedAt)
+    const reopened = createListingSellerProfileBuilderDraft({ sellerOnboarding: { formData: saved.onboarding.form_data } })
+    for (const key of ['incomeTaxNumber', 'saResident', 'occupation', 'sourceOfFunds', 'politicallyExposedPerson', 'residentialAddress']) assert.equal(reopened[key], sourceForm[key], key)
+    assert.equal(reopened.popiConsent, 'Accepted')
     const committed = await state()
     const replay = await save(owned, initial)
     assert.equal(replay.idempotentReplay, true)
@@ -397,20 +413,22 @@ const leadPreparationAction = leadPageSource.slice(
   leadPageSource.indexOf('  function handleSellerJourneyAction(', leadPageSource.indexOf('  async function sendSellerLeadSigningPack() {')),
 )
 
-async function runLeadPreparation({ mandateType = 'dual', digital = false, saveError = null, warning = null, priorListing = null, askingPrice = '2000000', generatedListing = null, needsRefresh = false } = {}) {
-  const events = { saves: [], sends: [], errors: [], listingWrites: [] }
+async function runLeadPreparation({ mandateType = 'dual', digital = false, saveError = null, warning = null, priorListing = null, askingPrice = '2000000', generatedListing = null, needsRefresh = false, routes = null, sendFailureAt = 0, uploads = [], downloadKey = '' } = {}) {
+  const events = { leadPatches: [], downloads: [], tabs: [], saves: [], sends: [], errors: [], listingWrites: [] }
   const originalForm = { ...listing.sellerOnboarding.formData, otherAgencyName: 'Old Agency', coAgencyName: 'Old Agency',
-    askingPrice: '1000000', mandateType: 'sole', propertyDisclosure: { comments: 'Retain this explanation.' } }
+    askingPrice: '1000000', mandateType: 'sole', mandateSignatureRoute: 'manual_upload', propertyDisclosure: { comments: 'Retain this explanation.' } }
   const currentListing = priorListing || { ...listing, sellerOnboarding: { status: 'completed', formData: originalForm } }
   const scope = {
-    getSellerMandatePreparationIssues,
+    getSellerMandatePreparationIssues, sellerGeneratedDocumentSelection, sellerDocumentHasActiveSigning, sellerDocumentHasUploadedEvidence,
     selectedLeadLinkedListingId: listing.id, selectedLeadLinkedListing: currentListing,
     selectedLead: { leadId: 'lead-1', sellerOnboarding: { formData: { ...originalForm, sellerSurname: 'Stale CRM' } } },
+    sellerSigningPackDownloadKey: downloadKey, handleLeadWorkspaceTabSelection: tab => events.tabs.push(tab),
+    handleDownloadSellerLeadPhysicalSigningCopy: async copy => events.downloads.push(copy),
     sellerSigningPackSaving: false, sellerSigningPackNeedsRefresh: needsRefresh, SELLER_PORTAL_SIGNING_ENABLED: true,
     sellerSigningPackTerms: { mandateType, otherAgencyName: mandateType === 'dual' ? 'Updated Agency' : '',
       askingPrice, startDate: '2026-10-01', endDate: '2026-12-01', protectionPeriod: '0', protectionPeriodDays: '30',
       commissionBasis: 'fixed', commissionPercentage: '5', commissionAmount: '75000', vatHandling: 'inclusive' },
-    sellerOnboardingDocumentRoutes: Object.fromEntries(['signed_mandate', 'signed_fica_declaration', 'signed_disclosure_form'].map(key => [key, digital ? 'digital_pack' : 'manual_upload'])),
+    sellerOnboardingDocumentRoutes: routes || Object.fromEntries(['signed_mandate', 'signed_fica_declaration', 'signed_disclosure_form'].map(key => [key, digital ? 'digital_pack' : 'manual_upload'])),
     currentAgent: { id: '33333333-3333-4333-8333-333333333333', fullName: 'Test Agent' },
     currentWorkspace: { branding: { organisationName: 'Test Agency' } }, organisationId: listing.organisationId,
     normalizeText: value => String(value ?? '').trim(), isValidEmail: value => String(value).includes('@'),
@@ -440,14 +458,15 @@ async function runLeadPreparation({ mandateType = 'dual', digital = false, saveE
       },
     }),
     setSelectedLeadHydratedListing: row => { events.hydrated = row },
-    sendSellerDocumentForSignature: async (_id, key) => { events.sends.push(key); return { sentCount: 1 } },
-    listSellerPortalSigningRequests: async () => ({ documents: [] }), setSellerPortalSigningRequests: () => {},
+    sendSellerDocumentForSignature: async (_id, key) => { events.sends.push(key); if (events.sends.length === sendFailureAt) throw new Error('Synthetic email delivery failure'); return { sentCount: 1 } },
+    listSellerPortalSigningRequests: async () => ({ documents: [], uploads }), setSellerPortalSigningRequests: rows => { events.requests = rows },
     updatePrivateListing: async (_id, patch) => { events.listingWrites.push(patch); return generatedListing },
-    updateAgencyCrmLeadRecord: async () => {}, patchSelectedLeadRecord: () => {},
+    updateAgencyCrmLeadRecord: async (_organisation, _lead, patch) => { events.leadPatches.push(patch) }, patchSelectedLeadRecord: () => {},
+    setError: message => { if (message) events.workspaceError = message },
     setSellerSigningPackError: message => { if (message) events.errors.push(message) },
     setSellerSigningPackNeedsRefresh: value => { events.needsRefresh = value },
     setSellerSigningPackNotice: value => { events.notice = value },
-    setSellerSigningPackProgress: () => {}, setSellerSigningPackSaving: () => {}, setSellerSigningPackModalOpen: () => {},
+    setSellerSigningPackProgress: () => {}, setSellerSigningPackSaving: () => {}, setSellerSigningPackModalOpen: open => { events.modalOpen = open },
     setMessage: () => {}, scheduleRecordsReload: () => {},
   }
   await Function(...Object.keys(scope), `${leadPreparationAction}\nreturn sendSellerLeadSigningPack()`)(...Object.values(scope))
@@ -463,6 +482,7 @@ for (const mandateType of ['sole', 'open', 'dual']) {
       assert.equal(events.saveOptions.forceRequirementSync, true)
       assert.deepEqual(events.listingWrites, [{ mandateStatus: 'generated' }])
       assert.equal(events.sends.length, digital ? 3 : 0)
+      assert.equal(events.leadPatches[0].stage, digital ? 'Mandate Sent' : undefined)
       const update = events.saves[0]
       assert.equal(update.expectedUpdatedAt, listing.updatedAt)
       assert.equal(update.canonicalFacts.transaction.asking_price, 2000000)
@@ -487,6 +507,41 @@ for (const mandateType of ['sole', 'open', 'dual']) {
     })
   }
 }
+
+await test('mixed existing uploads generate and send only FICA without rewriting mandate terms', async () => {
+  const events = await runLeadPreparation({ routes: { signed_fica_declaration: 'digital_pack', signed_mandate: 'upload_existing', signed_disclosure_form: 'upload_existing' } })
+  assert.deepEqual(events.errors, [])
+  assert.deepEqual(events.sends, ['signed_fica_declaration'])
+  assert.deepEqual(events.listingWrites, [])
+  assert.equal(events.leadPatches[0].stage, undefined)
+  assert.equal(events.committed.sellerOnboarding.formData.mandateSignatureRoute, 'manual_upload', 'Sending only FICA must not change the mandate signing route')
+  assert.equal(events.committed.sellerOnboarding.formData.mandateType, 'sole')
+  assert.equal(events.committed.sellerOnboarding.formData.askingPrice, '1000000')
+  assert.deepEqual(events.committed.sellerOnboarding.formData.sellerOnboardingManualSigningPack.documents.map(row => row.key), ['signed_fica_declaration'])
+})
+await test('choosing existing uploads opens Documents without generating or sending', async () => {
+  const events = await runLeadPreparation({ routes: { signed_mandate: 'upload_existing' } })
+  assert.deepEqual(events.tabs, ['documents']); assert.deepEqual(events.saves, []); assert.deepEqual(events.sends, [])
+})
+await test('a saved pack survives partial delivery failure and opens Documents for version-preserving retry', async () => {
+  const events = await runLeadPreparation({ digital: true, sendFailureAt: 2 })
+  assert.equal(events.saves.length, 1); assert.equal(events.sends.length, 2)
+  assert.equal(events.modalOpen, false); assert.deepEqual(events.tabs, ['documents'])
+  assert.match(events.workspaceError, /1 document.*already sent.*Retry/)
+  assert.deepEqual(events.leadPatches, [])
+  assert.ok(events.committed.sellerOnboarding.formData.sellerReviewedDocumentVersions.documents.length)
+})
+await test('a single generate-and-download action downloads the frozen copy after saving', async () => {
+  const events = await runLeadPreparation({ routes: { signed_disclosure_form: 'manual_upload' }, downloadKey: 'signed_disclosure_form' })
+  assert.deepEqual(events.errors, []); assert.equal(events.downloads.length, 1)
+  assert.equal(events.downloads[0].source, 'seller_onboarding.manual_signing_pack')
+  assert.equal(await verifySellerReviewedDocumentVersion(events.downloads[0]), true)
+  assert.deepEqual(events.sends, []); assert.deepEqual(events.listingWrites, [])
+})
+await test('existing signed evidence blocks automatic regeneration before saving', async () => {
+  const events = await runLeadPreparation({ uploads: [{ document_type: 'signed_mandate', status: 'approved' }] })
+  assert.deepEqual(events.saves, []); assert.deepEqual(events.sends, []); assert.match(events.errors[0], /already has signed evidence/)
+})
 
 for (const message of ['Database write failed', 'This seller record changed after you opened it.', 'The seller save request timed out and its completion could not be confirmed.']) {
   await test(`actual preparation stops before dispatch or local success when ${message}`, async () => {
@@ -699,3 +754,46 @@ for (const failRead of [false, true]) {
 }
 assert.ok(leadPageSource.includes('Refresh seller information and keep mandate entries'))
 assert.ok(leadPageSource.includes('disabled={sellerSigningPackSaving || sellerSigningPackNeedsRefresh}'))
+
+const portalActionSource = leadPageSource.slice(
+  leadPageSource.indexOf('  async function handleSellerLeadPortalSigningAction('),
+  leadPageSource.indexOf('  async function handleSellerLeadPortalSigningRefresh('),
+)
+async function runPortalAction({ key = 'signed_mandate', requestId = '', fail = false, stageFailure = false, enabled = true } = {}) {
+  const events = { patches: [], messages: [], errors: [], sends: 0, reviews: 0 }
+  const scope = {
+    SELLER_PORTAL_SIGNING_ENABLED: enabled, selectedLeadLinkedListingId: 'listing-1', sellerPortalSigningBusy: '',
+    selectedLead: { leadId: 'lead-1' }, organisationId: 'org-1',
+    setSellerPortalSigningBusy: () => {}, setError: message => { if (message) events.errors.push(message) },
+    setMessage: message => events.messages.push(message), setSellerLeadGeneratedPreview: () => {},
+    sendSellerDocumentForSignature: async () => { events.sends++; if (fail) throw new Error('Synthetic delivery failed'); return { sentCount: 2 } },
+    reviewSellerPortalSignedDocument: async () => { events.reviews++; if (fail) throw new Error('Synthetic review failed'); return { success: true } },
+    listSellerPortalSigningRequests: async () => ({ documents: [{ document_key: key, status: fail ? 'revoked' : requestId ? 'reviewed' : 'sent' }] }),
+    setSellerPortalSigningRequests: rows => { events.requests = rows },
+    updateAgencyCrmLeadRecord: async (_org, _lead, patch) => { if (stageFailure) throw new Error('Synthetic stage update failed'); events.patches.push(patch) },
+    patchSelectedLeadRecord: () => {}, scheduleRecordsReload: () => {},
+  }
+  await Function(...Object.keys(scope), `${portalActionSource};return handleSellerLeadPortalSigningAction(${JSON.stringify(key)},${JSON.stringify(requestId)})`)(...Object.values(scope))
+  return events
+}
+await test('retrying the reviewed mandate advances its lead only after a successful send', async () => {
+  const sent = await runPortalAction()
+  assert.equal(sent.patches[0].stage, 'Mandate Sent'); assert.equal(sent.requests[0].status, 'sent')
+  const failed = await runPortalAction({ fail: true })
+  assert.deepEqual(failed.patches, []); assert.equal(failed.requests[0].status, 'revoked'); assert.match(failed.errors[0], /delivery failed/)
+  const fica = await runPortalAction({ key: 'signed_fica_declaration' })
+  assert.deepEqual(fica.patches, [])
+})
+await test('mandate completion follows review and remains available when new signing is switched off', async () => {
+  const reviewed = await runPortalAction({ requestId: 'request-1', enabled: false })
+  assert.equal(reviewed.reviews, 1); assert.equal(reviewed.patches[0].stage, 'Mandate Signed')
+  const failed = await runPortalAction({ requestId: 'request-1', fail: true })
+  assert.deepEqual(failed.patches, []); assert.match(failed.errors[0], /review failed/)
+  const unavailable = await runPortalAction({ enabled: false })
+  assert.equal(unavailable.sends, 0); assert.deepEqual(unavailable.patches, [])
+})
+await test('a lead-stage failure cannot turn successful delivery into a failed signature request', async () => {
+  const events = await runPortalAction({ stageFailure: true })
+  assert.deepEqual(events.errors, []); assert.equal(events.requests[0].status, 'sent')
+  assert.ok(events.messages.some(message => /action completed.*stage could not be refreshed/.test(message)))
+})

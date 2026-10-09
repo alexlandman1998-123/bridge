@@ -1,5 +1,7 @@
 import { readSellerMandateTerms, buildSellerMandateTermsFormPatch, getSellerMandatePreparationIssues, normalizeSellerMandateType } from './sellerMandateCapture.js'
 import { resolveSellerBondStatus, sellerBondDeclaration } from './sellerBondStatus.js'
+import { buildSellerPopiConsentPatch, sellerPopiConsentDisplayValue } from '../core/documents/sellerOnboardingConsent.js'
+import { sellerYesNoValue } from './sellerFicaOnboardingFields.js'
 import {
   buildSellerEntityProfileAliases,
   buildSellerProfileCanonicalPayload,
@@ -86,7 +88,7 @@ export function selectListingSellerProfileBranch(draft = {}, nextBranch = '') {
   if (!BRANCH_VALUES.has(nextBranch) || (draft.branch === nextBranch && nextBranch !== 'multiple_owners')) return draft
   const next = { ...draft, branch: nextBranch }
   clearedBranchFields(draft.branch, nextBranch).forEach((field) => {
-    next[field] = Array.isArray(draft[field]) ? [] : ''
+    next[field] = ['multipleOwners', 'companyDirectors', 'companyBeneficialOwners', 'trustees', 'trustFounders', 'trustBeneficiaries'].includes(field) ? [] : ''
   })
   if (nextBranch === 'multiple_owners') {
     const owners = draft.branch === 'multiple_owners' && Array.isArray(next.multipleOwners) ? [...next.multipleOwners] : []
@@ -302,7 +304,12 @@ export function createListingSellerProfileBuilderDraft(listing = {}) {
     email: normalizeText(ownerFallback.email).toLowerCase(),
     phone: normalizeText(ownerFallback.phone),
     idNumber: normalizeText(ownerFallback.idNumber),
-    residentialAddress: normalizeText(pickFirst(form.residentialAddress, form.residential_address, form.physicalAddress, sellerFacts.residential_address)),
+    residentialAddress: normalizeText(form.residentialAddress ?? form.residential_address ?? form.residentialStreet ?? form.physicalAddress ?? sellerFacts.residential_address),
+    dateOfBirth: normalizeText(form.dateOfBirth ?? form.date_of_birth ?? form.birthDate ?? sellerFacts.date_of_birth),
+    nationality: normalizeText(form.nationality ?? sellerFacts.nationality),
+    incomeTaxNumber: normalizeText(form.incomeTaxNumber ?? form.income_tax_number ?? form.sellerTaxNumber ?? form.taxNumber ?? form.tax_number ?? sellerFacts.tax_number),
+    saResident: sellerYesNoValue(form.saResident ?? form.sa_resident ?? form.taxResident ?? form.tax_resident ?? sellerFacts.sa_resident),
+    vatRegistered: sellerYesNoValue(form.vatRegistered ?? form.vat_registered ?? sellerFacts.vat_registered),
     alternativeContact: normalizeText(pickFirst(form.alternativeContact, form.alternateContact, form.secondaryPhone, form.alternativePhone)),
     preferredContactMethod: normalizeText(pickFirst(form.preferredContactMethod, form.contactPreference)),
     maritalStatus: normalizeText(pickFirst(form.maritalStatus, form.marital_status, sellerFacts.marital_status)),
@@ -320,7 +327,7 @@ export function createListingSellerProfileBuilderDraft(listing = {}) {
     companyRegistrationNumber: normalizeText(pickFirst(form.companyRegistrationNumber, form.foreignRegistrationNumber, canonicalCompany.registration_number, canonicalCompany.registrationNumber)),
     companyRegisteredAddress: normalizeText(pickFirst(form.companyRegisteredAddress, canonicalCompany.registered_address, canonicalCompany.registeredAddress)),
     companyDirectors: normalizePersonCollectionForSellerProfile(form.companyDirectors || canonicalCompany.directors || [], null, 'Director'),
-    companyBeneficialOwners: normalizePersonCollectionForSellerProfile(form.companyBeneficialOwners || canonicalCompany.beneficial_owners || [], null, 'Beneficial Owner'),
+    companyBeneficialOwners: normalizePersonCollectionForSellerProfile(form.companyBeneficialOwners ?? form.company_beneficial_owners ?? canonicalCompany.beneficial_owners ?? [], null, 'Beneficial Owner'),
     authorisedSignatoryName: normalizeText(pickFirst(form.authorisedSignatoryName, canonicalCompany.authorised_signatory?.full_name, canonicalCompany.authorised_signatory?.name)),
     authorisedSignatoryCapacity: normalizeText(pickFirst(form.authorisedSignatoryCapacity, canonicalCompany.authorised_signatory?.capacity)),
     authorisedSignatoryEmail: normalizeText(pickFirst(form.authorisedSignatoryEmail, canonicalCompany.authorised_signatory?.email)).toLowerCase(),
@@ -331,19 +338,19 @@ export function createListingSellerProfileBuilderDraft(listing = {}) {
     trustRegistrationNumber: normalizeText(pickFirst(form.trustRegistrationNumber, form.foreignRegistrationNumber, canonicalTrust.registration_number, canonicalTrust.registrationNumber)),
     trustRegisteredAddress: normalizeText(pickFirst(form.trustRegisteredAddress, canonicalTrust.registered_address, canonicalTrust.registeredAddress)),
     trustees: normalizePersonCollectionForSellerProfile(form.trustees || canonicalTrust.trustees || [], null, 'Trustee'),
-    trustFounders: normalizePersonCollectionForSellerProfile(form.trustFounders || canonicalTrust.founders || [], null, 'Founder'),
-    trustBeneficiaries: normalizePersonCollectionForSellerProfile(form.trustBeneficiaries || form.beneficiaries || canonicalTrust.beneficiaries || [], null, 'Beneficiary'),
-    trustBeneficiaryClass: normalizeText(pickFirst(form.trustBeneficiaryClass, canonicalTrust.beneficiary_class)),
+    trustFounders: normalizePersonCollectionForSellerProfile(form.trustFounders ?? form.trust_founders ?? canonicalTrust.founders ?? [], null, 'Founder'),
+    trustBeneficiaries: normalizePersonCollectionForSellerProfile(form.trustBeneficiaries ?? form.trust_beneficiaries ?? form.beneficiaries ?? canonicalTrust.beneficiaries ?? [], null, 'Beneficiary'),
+    trustBeneficiaryClass: normalizeText(form.trustBeneficiaryClass ?? form.trust_beneficiary_class ?? canonicalTrust.beneficiary_class),
     authorisedTrusteeName: normalizeText(pickFirst(form.authorisedTrusteeName, canonicalTrust.authorised_trustee?.full_name, canonicalTrust.authorised_trustee?.name)),
     authorisedTrusteeCapacity: normalizeText(pickFirst(form.authorisedTrusteeCapacity, canonicalTrust.authorised_trustee?.capacity)),
     authorisedTrusteeEmail: normalizeText(pickFirst(form.authorisedTrusteeEmail, canonicalTrust.authorised_trustee?.email)).toLowerCase(),
     authorisedTrusteeIdNumber: normalizeText(pickFirst(form.authorisedTrusteeIdNumber, canonicalTrust.authorised_trustee?.id_number)),
     authorisedTrusteeNationality: normalizeText(pickFirst(form.authorisedTrusteeNationality, canonicalTrust.authorised_trustee?.nationality)),
     authorisedTrusteeAddress: normalizeText(pickFirst(form.authorisedTrusteeAddress, canonicalTrust.authorised_trustee?.residential_address)),
-    occupation: normalizeText(pickFirst(form.occupation, sellerFacts.occupation)),
-    sourceOfFunds: normalizeText(pickFirst(form.sourceOfFunds, sellerFacts.source_of_funds)),
-    politicallyExposedPerson: normalizeText(pickFirst(form.politicallyExposedPerson, sellerFacts.politically_exposed_person)),
-    politicallyExposedDetails: normalizeText(pickFirst(form.politicallyExposedDetails, sellerFacts.politically_exposed_details)),
+    occupation: normalizeText(form.occupation ?? sellerFacts.occupation),
+    sourceOfFunds: normalizeText(form.sourceOfFunds ?? form.source_of_funds ?? sellerFacts.source_of_funds),
+    politicallyExposedPerson: sellerYesNoValue(form.politicallyExposedPerson ?? form.politically_exposed_person ?? sellerFacts.politically_exposed_person),
+    politicallyExposedDetails: normalizeText(form.politicallyExposedDetails ?? form.politically_exposed_details ?? sellerFacts.politically_exposed_details),
     deceasedEstateName: normalizeText(pickFirst(form.deceasedEstateName, sellerFacts.deceased_estate?.name)),
     estateReferenceNumber: normalizeText(pickFirst(form.estateReferenceNumber, form.deceasedEstateReferenceNumber, form.estateReference, sellerFacts.deceased_estate?.reference_number, sellerFacts.deceased_estate?.estate_reference)),
     executorName: normalizeText(pickFirst(form.executorName, sellerFacts.deceased_estate?.executor?.full_name, sellerFacts.deceased_estate?.executor?.name)),
@@ -399,7 +406,7 @@ export function createListingSellerProfileBuilderDraft(listing = {}) {
     ...(mandateTerms.mandateAcceptanceReview ? { mandateAcceptanceReview: mandateTerms.mandateAcceptanceReview } : {}),
     commissionPreference: normalizeText(pickFirst(form.commissionPreference, form.commissionType, form.commissionStructure)),
     mandateTerms: normalizeText(pickFirst(form.mandateTerms, form.mandateCommissionTerms)),
-    popiConsent: normalizeText(pickFirst(form.popiConsent, form.privacyConsent)),
+    popiConsent: sellerPopiConsentDisplayValue(form),
   }
 }
 
@@ -515,6 +522,21 @@ export function buildListingSellerProfileFormPatch(draft = {}) {
     sellerIdNumber: normalizeText(draft.idNumber),
     residentialAddress: normalizeText(draft.residentialAddress),
     residential_address: normalizeText(draft.residentialAddress),
+    residentialStreet: normalizeText(draft.residentialAddress),
+    dateOfBirth: normalizeText(draft.dateOfBirth),
+    date_of_birth: normalizeText(draft.dateOfBirth),
+    nationality: normalizeText(draft.nationality),
+    incomeTaxNumber: normalizeText(draft.incomeTaxNumber),
+    income_tax_number: normalizeText(draft.incomeTaxNumber),
+    sellerTaxNumber: normalizeText(draft.incomeTaxNumber),
+    taxNumber: normalizeText(draft.incomeTaxNumber),
+    tax_number: normalizeText(draft.incomeTaxNumber),
+    saResident: normalizeText(draft.saResident),
+    sa_resident: normalizeText(draft.saResident),
+    taxResident: normalizeText(draft.saResident),
+    tax_resident: normalizeText(draft.saResident),
+    vatRegistered: normalizeText(draft.vatRegistered),
+    vat_registered: normalizeText(draft.vatRegistered),
     maritalStatus,
     maritalRegime,
     marital_status: maritalStatus,
@@ -575,12 +597,14 @@ export function buildListingSellerProfileFormPatch(draft = {}) {
     commissionType: normalizeText(draft.commissionPreference),
     mandateTerms: normalizeText(draft.mandateTerms),
     mandateCommissionTerms: normalizeText(draft.mandateTerms),
-    popiConsent: normalizeText(draft.popiConsent),
     occupation: normalizeText(draft.occupation),
     sourceOfFunds: normalizeText(draft.sourceOfFunds),
+    source_of_funds: normalizeText(draft.sourceOfFunds),
     politicallyExposedPerson: normalizeText(draft.politicallyExposedPerson),
+    politically_exposed_person: normalizeText(draft.politicallyExposedPerson),
     politicallyExposedDetails: normalizeText(draft.politicallyExposedDetails),
-    privacyConsent: normalizeText(draft.popiConsent),
+    politically_exposed_details: normalizeText(draft.politicallyExposedDetails),
+    ...buildSellerPopiConsentPatch(draft, Object.hasOwn(draft, 'popiConsentAccepted') ? draft.popiConsentAccepted : draft.popiConsent),
     ...capturedMandateTerms,
   }
 
@@ -682,6 +706,14 @@ export function buildListingSellerProfileFormPatch(draft = {}) {
     if (Object.hasOwn(base, key)) patch[key] = base[key]
   }
   for (const key of ['sellerName', 'fullName', 'sellerFirstName', 'sellerSurname', 'firstName', 'lastName', 'primaryContactName', 'contactName', 'idNumber', 'residentialAddress']) patch[key] = base[key] ?? ''
+  // Profile edits must carry intentional clears through the saved-data merge.
+  for (const key of ['residential_address', 'residentialStreet', 'dateOfBirth', 'date_of_birth', 'nationality',
+    'incomeTaxNumber', 'income_tax_number', 'sellerTaxNumber', 'taxNumber', 'tax_number',
+    'saResident', 'sa_resident', 'taxResident', 'tax_resident', 'vatRegistered', 'vat_registered',
+    'occupation', 'sourceOfFunds', 'source_of_funds', 'politicallyExposedPerson', 'politically_exposed_person',
+    'politicallyExposedDetails', 'politically_exposed_details', 'popiConsentAcceptedAt', 'popi_consent_accepted_at']) {
+    if (Object.hasOwn(base, key)) patch[key] = base[key]
+  }
   // Optional contacts and dual-agency details can be deliberately cleared.
   for (const key of ['email', 'sellerEmail', 'phone', 'sellerPhone', 'mobile', 'otherAgencyName', 'coAgencyName', 'spouseEmail', 'authorisedSignatoryEmail', 'authorisedTrusteeEmail', 'executorEmail', 'powerOfAttorneyEmail']) {
     if (Object.hasOwn(base, key)) patch[key] = base[key]
@@ -818,8 +850,13 @@ export function buildListingSellerDocumentReadiness(listing = {}, commission = {
 }
 
 export function buildListingSellerProfileCapturePayload(draft = {}, listing = {}, options = {}) {
-  const formPatch = buildListingSellerProfileFormPatch(draft)
-  const canonicalPayload = buildSellerProfileCanonicalPayload(formPatch, listing, {
+  const existingFormData = { ...getListingSellerFormData(listing), ...(options.existingFormData || {}) }
+  const consentValue = Object.hasOwn(draft, 'popiConsentAccepted') ? draft.popiConsentAccepted : draft.popiConsent
+  const formPatch = {
+    ...buildListingSellerProfileFormPatch(draft),
+    ...buildSellerPopiConsentPatch(existingFormData, consentValue),
+  }
+  const canonicalPayload = buildSellerProfileCanonicalPayload({ ...existingFormData, ...formPatch }, listing, {
     draft: Boolean(options.draft),
     env: options.env,
     source: LISTING_SELLER_PROFILE_CAPTURE_SOURCE,

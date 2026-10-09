@@ -26,6 +26,17 @@ beforeEach(() => {
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers() })
 
 describe('seller token mutation boundary', () => {
+  it('agent submission records its capture actor and a later seller submission preserves it', async () => {
+    client.rpc.mockImplementation(name => rpcResult(name === 'bridge_can_access_private_listing' ? false : { listingId, onboardingId, status: 'completed', submittedAt: '2026-10-09T10:00:00Z' }))
+    const capture = { mode: 'agent_assisted', status: 'awaiting_seller_review_and_signature', capturedBy: 'original-agent', capturedAt: '2026-10-09T09:00:00Z' }
+    await submitSellerOnboarding('valid-token', { completionMode: 'agent_assisted', completedBy: 'agent-a', listingSnapshot: { id: listingId }, formData: { sellerDisclosureCapture: capture } })
+    let calls = client.rpc.mock.calls.filter(([name]) => name === 'bridge_complete_private_listing_seller_onboarding')
+    expect(calls.at(-1)[1].p_form_data.sellerDisclosureCapture).toEqual({ ...capture, capturedBy: 'agent-a' })
+    await submitSellerOnboarding('valid-token', { listingSnapshot: { id: listingId }, formData: { sellerDisclosureCapture: capture } })
+    calls = client.rpc.mock.calls.filter(([name]) => name === 'bridge_complete_private_listing_seller_onboarding')
+    expect(calls.at(-1)[1].p_form_data.sellerDisclosureCapture).toEqual(capture)
+  })
+
   it.each(['PGRST202', '57014', '42501'])('progress fails closed for %s without a table fallback', async (code) => {
     const error = { code, message: 'bridge_update_private_listing_seller_onboarding_progress unavailable' }
     client.rpc.mockReturnValue(rpcResult(null, error))

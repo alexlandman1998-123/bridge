@@ -81,12 +81,13 @@ console.log('Seller lead property workspace presentation and capture contract ve
 
 // Execute the production readers and save handler against isolated persisted
 // fixtures: stale CRM data must not win after saving, clearing, or reopening.
-const { getListingSellerFormData } = await import('../src/lib/listingSellerProfileBuilderModel.js')
+const { getListingSellerFormData, createListingSellerProfileBuilderDraft } = await import('../src/lib/listingSellerProfileBuilderModel.js')
 const { projectSellerProfilePeople } = await import('../src/lib/sellerProfileCaptureModel.js')
 const { resolveSellerLeadOwnershipRoute } = await import('../src/lib/sellerLeadOwnershipSetupModel.js')
 const { buildSellerLeadManualCapturePayload, getSellerLeadProfileEditChanges } = await import('../src/lib/sellerLeadManualCaptureModel.js')
 const { formatPropertyAddress } = await import('../src/lib/sellerPropertyAddress.js')
-const { readSellerPopiConsent } = await import('../src/core/documents/sellerOnboardingConsent.js')
+const { readSellerPopiConsent, sellerPopiConsentDisplayValue } = await import('../src/core/documents/sellerOnboardingConsent.js')
+const { sellerYesNoValue } = await import('../src/lib/sellerFicaOnboardingFields.js')
 const { getSellerProfileNarrativeNotes } = await import('../src/lib/sellerLeadProfileNotesModel.js')
 const { saveListingSellerCanonicalUpdate } = await import('../src/services/listings/listingSellerCanonicalUpdateService.js')
 const normalizeStart = source.indexOf('function normalizeText(')
@@ -102,8 +103,8 @@ function functionsBetween(first, last) {
   return source.slice(start, end)
 }
 const dependencies = {
-  normalizeText, normalizeKey, isPlainObject, getListingSellerFormData, projectSellerProfilePeople,
-  resolveSellerLeadOwnershipRoute, formatPropertyAddress, readSellerPopiConsent, getSellerProfileNarrativeNotes,
+  normalizeText, normalizeKey, isPlainObject, getListingSellerFormData, createListingSellerProfileBuilderDraft, projectSellerProfilePeople,
+  resolveSellerLeadOwnershipRoute, formatPropertyAddress, readSellerPopiConsent, sellerPopiConsentDisplayValue, sellerYesNoValue, getSellerProfileNarrativeNotes,
   getMigrationGuardedSellerOnboardingSnapshot: candidate => candidate,
   parseLeadRawEnquiryPayload: value => typeof value === 'string' ? JSON.parse(value) : value || {},
   KINGSTONS_SELLER_PROFILE_EDIT_DEFAULTS: {}, PROPERTY_WORKSPACE_FIELD_MAPPING: {},
@@ -122,6 +123,11 @@ const savedForm = {
   phone: '0100000000', propertyAddress: '1 Fixture Road',
   bedrooms: '4', bathrooms: '2.5', garages: 0, parking: '3', erfSize: '17000', floorSize: '',
   levies: 0, ratesAndTaxes: '', monthlyRates: '99', askingPrice: '10700000',
+  occupation: 'Teacher', sourceOfFunds: 'Employment income', politicallyExposedPerson: 'no',
+  dateOfBirth: '1980-01-01', nationality: 'South African', residentialAddress: '10 Home Road',
+  incomeTaxNumber: 'TAX-1', saResident: 'no',
+  sellerOnboardingConsents: { privacyProcessing: { accepted: true, acceptedAt: '2026-09-30T08:00:00Z', wordingVersion: 'original' } },
+  propertyDisclosure: { answers: { roof: 'no' }, sellerSignature: { name: 'Fixture Owner' } },
 }
 const listing = {
   id: '11111111-1111-4111-8111-111111111111', updatedAt: '2026-10-09T06:58:13Z',
@@ -172,12 +178,13 @@ const latestListing = { ...listing, updatedAt: '2026-10-09T07:01:00Z' }
 assert.equal(readers.latest(latestListing, listing), latestListing, 'A late hydration response must not replace the committed save.')
 assert.equal(readers.latest(listing, latestListing), latestListing)
 
-async function runSave({ failCommit = false, failCrm = false, busy = false, unchanged = false, mode = 'characteristics', baselineLeadId = 'fixture-lead', profileEdit = false } = {}) {
+async function runSave({ failCommit = false, failCrm = false, busy = false, unchanged = false, mode = 'characteristics', baselineLeadId = 'fixture-lead', profileEdit = false, formOverrides = {} } = {}) {
   const state = { closed: false, busy, contactCalls: 0, activityCalls: 0, crmCalls: 0 }
   const baselineForm = readers.edit({ lead: staleLead, listing })
   const form = unchanged ? structuredClone(baselineForm)
     : profileEdit ? { ...baselineForm, firstName: 'Changed' }
       : { ...baselineForm, bedrooms: '5', bathrooms: '0', garages: '', floorSize: '460', incomeTaxNumber: 'Unrelated draft value' }
+  Object.assign(form, formOverrides)
   if (unchanged) {
     // Typing then reverting, harmless whitespace, and equivalent numeric
     // inputs must not create an agent-change event or advance a timestamp.
@@ -253,7 +260,7 @@ assert.equal(state.activityCalls, 1)
 assert.equal(state.options.includeRequirementsAndDocuments, false)
 assert.equal(state.update.requirementsAffected, false)
 assert.deepEqual(state.input.formPatch, readers.patch(form), 'Send only the nine editable characteristics, keeping unrelated seller facts intact.')
-assert.equal(state.update.nextFormData.incomeTaxNumber, undefined)
+assert.equal(state.update.nextFormData.incomeTaxNumber, savedForm.incomeTaxNumber)
 assert.equal(state.crmPatch.sellerOnboarding.formData.bedrooms, '5')
 assert.equal(state.listing.documents[0].id, 'existing-document')
 assert.deepEqual(state.listing.galleryImages, listing.galleryImages)
@@ -286,5 +293,21 @@ assert.equal(profileChanged.closed, true)
 assert.equal(profileChanged.update.nextFormData.firstName, 'Changed', 'A genuine profile edit must still persist.')
 assert.equal(profileChanged.activityCalls, 1, 'A genuine profile edit must record one agent activity.')
 assert.equal(profileChanged.contactCalls, 1)
+assert.equal(profileChanged.update.nextFormData.occupation, savedForm.occupation)
+assert.equal(profileChanged.update.nextFormData.sourceOfFunds, savedForm.sourceOfFunds)
+assert.equal(profileChanged.update.nextFormData.popiConsentAcceptedAt, savedForm.sellerOnboardingConsents.privacyProcessing.acceptedAt)
+assert.deepEqual(profileChanged.update.nextFormData.sellerOnboardingConsents, savedForm.sellerOnboardingConsents)
+assert.deepEqual(profileChanged.update.nextFormData.propertyDisclosure, savedForm.propertyDisclosure)
+assert.deepEqual(profileChanged.listing.documents, listing.documents)
+const taxChanged = (await runSave({ mode: 'tax', formOverrides: { sourceOfFunds: 'Savings', incomeTaxNumber: '', residentialStreet: '', popiConsent: 'No' } })).state
+assert.equal(taxChanged.closed, true, taxChanged.error)
+assert.equal(taxChanged.update.canonicalFacts.seller.popi_consent_accepted, false)
+const reopenedTax = readers.edit({ lead: taxChanged.leadPatch, listing: taxChanged.listing })
+assert.equal(reopenedTax.sourceOfFunds, 'Savings')
+assert.equal(reopenedTax.incomeTaxNumber, '')
+assert.equal(reopenedTax.residentialStreet, '')
+assert.equal(reopenedTax.popiConsent, 'No')
+assert.equal(taxChanged.update.nextFormData.sellerOnboardingConsents.privacyProcessing.history[0].acceptedAt, savedForm.sellerOnboardingConsents.privacyProcessing.acceptedAt)
+assert.deepEqual(taxChanged.update.nextFormData.propertyDisclosure, savedForm.propertyDisclosure)
 assert.ok(source.includes('{error ? <p role="alert"'), 'Save errors must remain visible inside the open edit form.')
 console.log('Seller profile and characteristics: unchanged/reverted saves create no writes or activity; real edits, clears, zeroes, reopen, stale hydration and failures verified.')

@@ -1,3 +1,5 @@
+import { buildSellerAgentAssistedDisclosurePatch, isSellerDisclosureCaptureLocked } from '../lib/sellerAgentAssistedDisclosure.js'
+import PropertyDisclosureQuestionnaire from '../components/onboarding/PropertyDisclosureQuestionnaire.jsx'
 import {
   BadgeCheck,
   Building2,
@@ -19,7 +21,7 @@ import {
   UserRound,
   X,
 } from 'lucide-react'
-import { createContext, createElement, Fragment, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { createContext, createElement, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
   OnboardingSectionHeader,
@@ -86,7 +88,6 @@ import {
   normalizePropertyAddress,
 } from '../lib/sellerPropertyAddress'
 import {
-  PROPERTY_DISCLOSURE_ANSWER,
   PROPERTY_DISCLOSURE_QUESTIONS,
   buildPropertyDisclosureAnnexureSnapshot,
   buildPropertyDisclosureDocumentMarkup,
@@ -95,7 +96,6 @@ import {
   getPropertyDisclosureStatusLabel,
   isPropertyDisclosureDigitallyComplete,
   normalizePropertyDisclosure,
-  shouldPromptPropertyDisclosureComment,
 } from '../lib/propertyDisclosure'
 import {
   applySellerComplianceSignerAcknowledgementsToForm,
@@ -445,14 +445,6 @@ function getPropertyStructureOptionsByCategory(category) {
 function chipChoiceClass(isActive) {
   return `inline-flex items-center gap-2 rounded-full border px-3.5 py-2.5 text-xs font-semibold transition ${
     isActive ? 'border-[var(--seller-brand-action-border)] bg-[var(--seller-brand-action-softer)] text-[var(--seller-brand-action)]' : 'border-[#d6e1ee] bg-white text-[#35546c]'
-  }`
-}
-
-function disclosureAnswerClass(isActive) {
-  return `inline-flex min-h-[44px] items-center justify-center rounded-[14px] border px-3 text-sm font-semibold transition ${
-    isActive
-      ? 'border-[var(--seller-brand-action)] bg-[var(--seller-brand-action-softer)] text-[var(--seller-brand-action)] shadow-[0_10px_22px_rgba(15,23,42,0.08)]'
-      : 'border-[#d8e2ec] bg-white text-[#4f6378]'
   }`
 }
 
@@ -916,11 +908,13 @@ function getDisclosureQuestionGroups() {
   return groups
 }
 
-function getPropertyDisclosureMissingItems(disclosure = {}) {
+function getPropertyDisclosureMissingItems(disclosure = {}, { requireSignature = true, preserveSigned = false } = {}) {
   const normalized = normalizePropertyDisclosure(disclosure, { kind: disclosure.kind || 'residential' })
   const missing = []
+  if (preserveSigned) return missing
   const unanswered = PROPERTY_DISCLOSURE_QUESTIONS.filter((question) => !normalized.responses?.[question.key]?.answer)
   if (unanswered.length) missing.push(`answer all Annexure A questions (${unanswered.length} remaining)`)
+  if (!requireSignature) return missing
   const acknowledgementValue = normalized.sellerDisclosureAcknowledgements || normalized.seller_disclosure_acknowledgements
   if (acknowledgementValue && !areRequiredSellerDisclosureAcknowledgementsAccepted(acknowledgementValue)) {
     missing.push('accept the required seller declaration acknowledgements')
@@ -1464,6 +1458,8 @@ function normalizeFormData(listing) {
     return existing.idNumber || existing.id_number || existing.sellerIdNumber || existing.foreignPassportNumber || existing.foreign_passport_number || existing.passportNumber || existing.passport_number || canonicalFacts?.seller?.id_number || canonicalFacts?.seller?.foreign?.passport_number || ''
   }
   const resolveAddress = () => {
+    const captured = existing.residentialAddress ?? existing.residential_address ?? existing.residentialStreet
+    if (captured !== undefined && captured !== null) return captured
     if (sellerBranch === 'company') return canonicalFacts?.seller?.company?.registered_address || canonicalFacts?.seller?.residential_address || existing.residentialAddress || ''
     if (sellerBranch === 'trust') return canonicalFacts?.seller?.trust?.registered_address || canonicalFacts?.seller?.residential_address || existing.residentialAddress || ''
     return canonicalFacts?.seller?.residential_address || resolveSellerResidentialAddress(existing)
@@ -1594,12 +1590,12 @@ function normalizeFormData(listing) {
     sellerFirstName: existing.sellerFirstName || canonicalFacts?.seller?.first_name || split.firstName,
     sellerSurname: existing.sellerSurname || canonicalFacts?.seller?.surname || split.surname,
     idNumber: resolveIdNumber(),
-    dateOfBirth: existing.dateOfBirth || existing.date_of_birth || existing.birthDate || canonicalFacts?.seller?.date_of_birth || '',
-    occupation: existing.occupation || canonicalFacts?.seller?.occupation || '',
-    sourceOfFunds: existing.sourceOfFunds || existing.source_of_funds || canonicalFacts?.seller?.source_of_funds || '',
-    politicallyExposedPerson: existing.politicallyExposedPerson || existing.politically_exposed_person || canonicalFacts?.seller?.politically_exposed_person || '',
-    politicallyExposedDetails: existing.politicallyExposedDetails || existing.politically_exposed_details || canonicalFacts?.seller?.politically_exposed_details || '',
-    nationality: existing.nationality || canonicalFacts?.seller?.nationality || '',
+    dateOfBirth: existing.dateOfBirth ?? existing.date_of_birth ?? existing.birthDate ?? canonicalFacts?.seller?.date_of_birth ?? '',
+    occupation: existing.occupation ?? canonicalFacts?.seller?.occupation ?? '',
+    sourceOfFunds: existing.sourceOfFunds ?? existing.source_of_funds ?? canonicalFacts?.seller?.source_of_funds ?? '',
+    politicallyExposedPerson: normalizeYesNoValue(existing.politicallyExposedPerson ?? existing.politically_exposed_person ?? canonicalFacts?.seller?.politically_exposed_person),
+    politicallyExposedDetails: existing.politicallyExposedDetails ?? existing.politically_exposed_details ?? canonicalFacts?.seller?.politically_exposed_details ?? '',
+    nationality: existing.nationality ?? canonicalFacts?.seller?.nationality ?? '',
     email: existing.email || canonicalFacts?.seller?.email || seller.email || '',
     phone: existing.phone || canonicalFacts?.seller?.phone || seller.phone || '',
     alternativeNumber: existing.alternativeNumber || existing.alternative_number || existing.alternatePhone || existing.alternate_phone || canonicalFacts?.seller?.alternative_number || canonicalFacts?.seller?.alternate_phone || '',
@@ -1626,11 +1622,11 @@ function normalizeFormData(listing) {
     foreignResidencyStatus: existing.foreignResidencyStatus || existing.foreign_residency_status || existing.residencyStatus || existing.foreign?.residencyStatus || existing.foreign?.residency_status || canonicalFacts?.seller?.foreign?.residency_status || '',
     multipleOwnerCaptureMode,
     primaryContactIsOwnerOne: Boolean(existing.primaryContactIsOwnerOne || existing.primary_contact_is_owner_one),
-    sellerTaxNumber: existing.sellerTaxNumber || existing.incomeTaxNumber || existing.income_tax_number || canonicalFacts?.seller?.tax_number || existing.taxNumber || existing.tax_number || '',
+    sellerTaxNumber: existing.sellerTaxNumber ?? existing.incomeTaxNumber ?? existing.income_tax_number ?? existing.taxNumber ?? existing.tax_number ?? canonicalFacts?.seller?.tax_number ?? '',
     saResident: normalizeYesNoValue(existing.saResident ?? existing.sa_resident ?? existing.taxResident ?? existing.tax_resident ?? canonicalFacts?.seller?.sa_resident ?? canonicalFacts?.seller?.tax_resident),
     popiConsent: readSellerPopiConsent({ ...(canonicalFacts?.seller || {}), ...existing }).accepted,
     sellerOnboardingConsents: readSellerOnboardingConsents(existing),
-    vatRegistered: isVatEligibleOwnership ? Boolean(existing.vatRegistered) : false,
+    vatRegistered: isVatEligibleOwnership ? normalizeYesNoValue(existing.vatRegistered ?? existing.vat_registered ?? canonicalFacts?.seller?.vat_registered) === 'yes' : false,
     vatNumber: isVatEligibleOwnership ? (existing.vatNumber || '') : '',
     maritalStatus: ownershipBranch === 'married' ? (existing.maritalStatus || canonicalFacts?.seller?.marital_status || 'married') : 'not_married',
     maritalRegime: ownershipBranch === 'married' ? (existing.maritalRegime || canonicalFacts?.seller?.marital_regime || (ownershipType === 'married_cop' ? 'in_community' : ownershipType === 'married_anc' ? 'anc' : 'unknown')) : 'not_applicable',
@@ -1663,7 +1659,7 @@ function normalizeFormData(listing) {
     trustees: trustTrustees,
     trustFounders,
     trustBeneficiaries,
-    trustBeneficiaryClass: existing.trustBeneficiaryClass || canonicalFacts?.seller?.trust?.beneficiary_class || '',
+    trustBeneficiaryClass: existing.trustBeneficiaryClass ?? existing.trust_beneficiary_class ?? canonicalFacts?.seller?.trust?.beneficiary_class ?? '',
     trusteeName: existing.trusteeName || trustTrustees[0]?.name || canonicalFacts?.seller?.trust?.trustee_name || canonicalFacts?.seller?.trust?.authorised_trustee?.name || existing.entityRepresentative || '',
     trusteeEmail: existing.trusteeEmail || trustTrustees[0]?.email || canonicalFacts?.seller?.trust?.trustee_email || canonicalFacts?.seller?.trust?.authorised_trustee?.email || '',
     trusteePhone: existing.trusteePhone || trustTrustees[0]?.phone || canonicalFacts?.seller?.trust?.trustee_phone || canonicalFacts?.seller?.trust?.authorised_trustee?.phone || '',
@@ -2430,6 +2426,8 @@ function PropertyDisclosureSection({
   signingStatus = null,
   hasRequestedSigner = false,
   signatureOnly = false,
+  agentAssisted = false,
+  disclosureLocked = false,
   onAnswerChange,
   onNoteChange,
   onDownload,
@@ -2446,11 +2444,6 @@ function PropertyDisclosureSection({
   const acknowledgements = readSellerDisclosureAcknowledgements(acknowledgementValue)
   const statusLabel = getPropertyDisclosureStatusLabel(getPropertyDisclosureStatus(normalized))
   const answerSummary = getPropertyDisclosureAnswerSummary(normalized)
-  const answerOptions = [
-    { key: PROPERTY_DISCLOSURE_ANSWER.yes, label: 'Yes' },
-    { key: PROPERTY_DISCLOSURE_ANSWER.no, label: 'No' },
-    { key: PROPERTY_DISCLOSURE_ANSWER.unsure, label: 'Unsure' },
-  ]
   const disclosureQuestionGroups = getDisclosureQuestionGroups()
   const commentsPaneIndex = disclosureQuestionGroups.length + 1
   const declarationPaneIndex = commentsPaneIndex + 1
@@ -2458,10 +2451,10 @@ function PropertyDisclosureSection({
     <StepShell
       eyebrow="Property Disclosure"
       title={signatureOnly ? 'Review and sign your seller declaration' : 'Declaration by Seller - Annexure A'}
-      description={signatureOnly ? 'This secure link is for your signature only. The seller intake and disclosure answers are already complete.' : 'Complete the disclosure in the same structure as the mandate annexure. It can be downloaded as its own PDF afterwards.'}
+      description={signatureOnly ? 'Review the captured answers below before signing your declaration.' : agentAssisted ? 'Record the seller’s answers. The seller reviews and signs the disclosure after agent review.' : 'Complete the disclosure in the same structure as the mandate annexure. It can be downloaded as its own PDF afterwards.'}
     >
       <div className="space-y-5">
-        {activeSigner ? (
+        {activeSigner && !agentAssisted ? (
           <section className="rounded-[18px] border border-[#cfe8da] bg-[#f2fbf5] p-4 text-sm leading-6 text-[#25603d]">
             <p className="font-semibold text-[#14532d]">
               Signing as {activeSigner.name || activeSigner.roleLabel || 'seller'}
@@ -2485,161 +2478,27 @@ function PropertyDisclosureSection({
             <span>{answerSummary.answered} / {answerSummary.total} answered</span>
           </div>
           </MobileQuestionPane>
-          <div className="space-y-3 sm:hidden">
-            {disclosureQuestionGroups.map((questions, groupIndex) => {
-              const firstQuestion = questions[0]
-              const lastQuestion = questions[questions.length - 1]
-              const answeredInGroup = questions.filter((question) => normalized.responses?.[question.key]?.answer).length
-              return (
-                <MobileQuestionPane key={`${firstQuestion?.key || groupIndex}-group`} paneIndex={groupIndex + 1} className="space-y-3">
-                  <div className="flex items-center justify-between gap-3 rounded-[14px] border border-[#dbe6f2] bg-[#f8fbff] px-3 py-2 text-xs font-semibold text-[#4f6378]">
-                    <span>Questions {firstQuestion?.number}-{lastQuestion?.number}</span>
-                    <span>{answeredInGroup} / {questions.length} answered</span>
-                  </div>
-                  {questions.map((question) => {
-                    const response = normalized.responses?.[question.key] || {}
-                    const showIssueComment = shouldPromptPropertyDisclosureComment(question, response.answer)
-                    return (
-                      <article key={question.key} className="rounded-[18px] border border-[#dfe8f2] bg-white p-3 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
-                        <div className="flex items-start gap-3">
-                          <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--seller-brand-action-soft)] text-sm font-semibold text-[var(--seller-brand-action)]">
-                            {question.number}
-                          </span>
-                          <p className="min-w-0 text-sm font-semibold leading-6 text-[#172334]">{question.text}</p>
-                        </div>
-                        {question.extraLabel ? (
-                          <label className="mt-3 grid gap-1.5 text-xs font-semibold text-[#4f6378]">
-                            {question.extraLabel}
-                            <input
-                              className="min-h-11 rounded-[12px] border border-[#d7e2ed] bg-white px-3 text-sm text-[#142334] outline-none focus:border-[#35546c]/40 focus:ring-2 focus:ring-[#35546c]/10"
-                              value={normalized.remoteControlsQuantity}
-                              onChange={(event) => onDisclosureChange('remoteControlsQuantity', event.target.value)}
-                              placeholder="e.g. 2 gate remotes, 1 garage remote"
-                            />
-                          </label>
-                        ) : null}
-                        <div className="mt-3 grid grid-cols-3 gap-2">
-                          {answerOptions.map((option) => (
-                            <button
-                              key={option.key}
-                              type="button"
-                              aria-pressed={response.answer === option.key}
-                              onClick={() => onAnswerChange(question.key, option.key)}
-                              className={disclosureAnswerClass(response.answer === option.key)}
-                            >
-                              {option.label}
-                            </button>
-                          ))}
-                        </div>
-                        {showIssueComment ? (
-                          <label className="mt-3 grid gap-1.5 text-xs font-semibold text-[#7c3f13]">
-                            Describe the issue or uncertainty
-                            <textarea
-                              className={`${DETAIL_INPUT_CLASS} min-h-[96px] resize-y border-[#edc68c] bg-[#fffaf2]`}
-                              value={response.note || ''}
-                              onChange={(event) => onNoteChange(question.key, event.target.value)}
-                              placeholder="What is broken, not working, damaged, missing, or uncertain?"
-                            />
-                          </label>
-                        ) : null}
-                      </article>
-                    )
-                  })}
-                </MobileQuestionPane>
-              )
-            })}
-          </div>
-          <div className="hidden overflow-hidden rounded-[18px] border border-[#1f2937] bg-white sm:block">
-            <table className="w-full table-fixed border-collapse text-left text-sm text-[#172334]">
-              <thead>
-                <tr className="bg-[#d9dde2]">
-                  <th className="border-b border-r border-[#1f2937] px-3 py-2 font-semibold">Question</th>
-                  {answerOptions.map((option) => (
-                    <th
-                      key={option.key}
-                      className={`${option.key === PROPERTY_DISCLOSURE_ANSWER.unsure ? 'w-[88px]' : 'w-[72px]'} whitespace-nowrap border-b border-r border-[#1f2937] px-1 py-2 text-center text-xs font-semibold last:border-r-0`}
-                    >
-                      {option.label}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {PROPERTY_DISCLOSURE_QUESTIONS.map((question) => {
-                  const response = normalized.responses?.[question.key] || {}
-                  const showIssueComment = shouldPromptPropertyDisclosureComment(question, response.answer)
-                  return (
-                    <Fragment key={question.key}>
-                      <tr>
-                        <td className="border-r border-t border-[#1f2937] px-3 py-2 align-top leading-6">
-                          <span className="font-semibold">{question.number}.</span> {question.text}
-                          {question.extraLabel ? (
-                            <label className="mt-2 grid max-w-[320px] gap-1 text-xs font-semibold text-[#4f6378]">
-                              {question.extraLabel}
-                              <input
-                                className="min-h-10 rounded-[10px] border border-[#d7e2ed] bg-white px-3 text-sm text-[#142334] outline-none focus:border-[#35546c]/40 focus:ring-2 focus:ring-[#35546c]/10"
-                                value={normalized.remoteControlsQuantity}
-                                onChange={(event) => onDisclosureChange('remoteControlsQuantity', event.target.value)}
-                                placeholder="e.g. 2 gate remotes, 1 garage remote"
-                              />
-                            </label>
-                          ) : null}
-                        </td>
-                        {answerOptions.map((option) => (
-                          <td key={option.key} className="border-r border-t border-[#1f2937] px-2 py-2 text-center align-middle last:border-r-0">
-                            <label className="inline-flex h-10 w-10 cursor-pointer items-center justify-center rounded-full border border-[#cbd7e4] bg-white">
-                              <input
-                                type="radio"
-                                className="h-4 w-4 accent-[#172334]"
-                                name={`disclosure-${question.key}`}
-                                checked={response.answer === option.key}
-                                onChange={() => onAnswerChange(question.key, option.key)}
-                              />
-                              <span className="sr-only">{option.label}</span>
-                            </label>
-                          </td>
-                        ))}
-                      </tr>
-                      {showIssueComment ? (
-                        <tr>
-                          <td colSpan={4} className="border-t border-[#1f2937] bg-[#fffaf2] px-3 py-3">
-                            <label className="grid gap-1.5 text-xs font-semibold text-[#7c3f13]">
-                              Describe the issue or uncertainty for question {question.number}
-                              <textarea
-                                className={`${DETAIL_INPUT_CLASS} min-h-[88px] resize-y border-[#edc68c] bg-white`}
-                                value={response.note || ''}
-                                onChange={(event) => onNoteChange(question.key, event.target.value)}
-                                placeholder="What is broken, not working, damaged, missing, or uncertain?"
-                              />
-                            </label>
-                          </td>
-                        </tr>
-                      ) : null}
-                    </Fragment>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-          <MobileQuestionPane paneIndex={commentsPaneIndex}>
-            <label className="mt-4 grid gap-2 text-sm font-medium text-[#2a4057]">
-              21. Comments or explanation for any of the above
-              <textarea
-                className={`${DETAIL_INPUT_CLASS} min-h-[150px] resize-y`}
-                value={normalized.comments}
-                onChange={(event) => onDisclosureChange({ comments: event.target.value, otherDisclosure: event.target.value })}
-                placeholder="Explain any yes or unsure answers, or add any other relevant disclosure."
-              />
-            </label>
-          </MobileQuestionPane>
+          <PropertyDisclosureQuestionnaire
+            disclosure={normalized}
+            onAnswerChange={onAnswerChange}
+            onNoteChange={onNoteChange}
+            onDisclosureChange={onDisclosureChange}
+            PaneComponent={MobileQuestionPane}
+            disabled={agentAssisted && disclosureLocked}
+          />
         </FormSection>) : (
           <section className="rounded-[18px] border border-[#dbe6f2] bg-[#f8fbff] p-4 text-sm leading-6 text-[#35546c]">
             <p className="font-semibold text-[#172334]">Disclosure details are ready for signature</p>
-            <p className="mt-1">{answerSummary.answered} of {answerSummary.total} disclosure questions have been completed by the primary contact. This signing link cannot change the seller intake or disclosure answers.</p>
+            <p className="mt-1">{answerSummary.answered} of {answerSummary.total} disclosure questions have been completed. Review the answers and comments before signing. Contact the agent if a correction is needed.</p>
+            <PropertyDisclosureQuestionnaire disclosure={normalized} disabled />
           </section>
         )}
 
-        {answerSummary.answered ? (
+        {agentAssisted ? (
+          <FormSection icon={FileCheck2} title="Seller review and signature" mobilePaneIndex={declarationPaneIndex}>
+            <p className="text-sm leading-6 text-[#35546c]">{disclosureLocked ? 'The existing signed disclosure is preserved. Its answers cannot be changed here.' : 'The agent has captured these answers. Submitting onboarding sends them for agent review; the seller must review and sign the disclosure themselves. No seller signature is recorded here.'}</p>
+          </FormSection>
+        ) : answerSummary.answered ? (
           <FormSection
             icon={FileCheck2}
             title="Seller Declaration"
@@ -2999,7 +2858,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   const signerAcknowledgementPersistenceRef = useRef(Promise.resolve())
   const requestedComplianceSignerId = useMemo(() => getSellerComplianceSignerIdFromUrl(), [token])
   const onboardingCompletionMode = useMemo(() => getSellerOnboardingCompletionModeFromUrl(), [token])
-  const isAgentAssistedCompletion = onboardingCompletionMode === SELLER_ONBOARDING_COMPLETION_MODES.agentAssisted
+  const isAgentAssistedCompletion = onboardingCompletionMode === SELLER_ONBOARDING_COMPLETION_MODES.agentAssisted && !requestedComplianceSignerId
   const agentLeadIdFromUrl = isAgentAssistedCompletion && typeof window !== 'undefined'
     ? new URLSearchParams(window.location.search).get('lead_id') || ''
     : ''
@@ -3219,6 +3078,8 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   const sellerComplianceSigning = sellerComplianceSigningFlow.model
   const activeComplianceSigner = sellerComplianceSigningFlow.activeSigner
   const hasRequestedComplianceSigner = Boolean(sellerComplianceSigningFlow.requestedSignerMatched)
+  const assistedDisclosureSource = listing?.sellerOnboarding?.formData || listing?.sellerOnboarding?.form_data || form || {}
+  const assistedDisclosureLocked = isAgentAssistedCompletion && isSellerDisclosureCaptureLocked(assistedDisclosureSource)
   const pendingSignatureRequests = Array.isArray(sellerComplianceSigning?.signatureRequests)
     ? sellerComplianceSigning.signatureRequests.filter((request) => request.signerId !== activeComplianceSigner?.id)
     : []
@@ -3675,6 +3536,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   }
 
   function patchPropertyDisclosure(patchOrKey = {}, value = undefined) {
+    if (assistedDisclosureLocked) return
     setTermsAcceptanceError('')
     if (hasRequestedComplianceSigner && activeComplianceSigner?.id) {
       const patch = typeof patchOrKey === 'string' ? { [patchOrKey]: value } : patchOrKey
@@ -3773,6 +3635,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   }
 
   function handleDisclosureAnswerChange(questionKey, answer) {
+    if (assistedDisclosureLocked) return
     setForm((previous) => {
       const current = normalizePropertyDisclosure(previous?.propertyDisclosure || {}, {
         kind: propertyBranch === 'commercial' || propertyBranch === 'mixed_use' ? 'commercial' : 'residential',
@@ -3796,6 +3659,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   }
 
   function handleDisclosureNoteChange(questionKey, note) {
+    if (assistedDisclosureLocked) return
     setForm((previous) => {
       const current = normalizePropertyDisclosure(previous?.propertyDisclosure || {}, {
         kind: propertyBranch === 'commercial' || propertyBranch === 'mixed_use' ? 'commercial' : 'residential',
@@ -3953,7 +3817,13 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     if (!form || hasRequestedComplianceSigner) return false
     const silent = Boolean(options.silent)
     const formForDraft = normalizeSellerFormForProgression(form || {}, listing || {})
+    // Compare editable input only. Capture audit timestamps must not make an
+    // unchanged form dirty again after a successful autosave.
     const signature = buildSellerDraftSignature(formForDraft, nextStep)
+    const capturedFormForDraft = isAgentAssistedCompletion ? {
+      ...formForDraft,
+      ...buildSellerAgentAssistedDisclosurePatch({ disclosure: formForDraft.propertyDisclosure, existingFormData: assistedDisclosureSource, draft: true }),
+    } : formForDraft
     const savedAt = new Date().toISOString()
     const offlineBlocksRemoteSave = useDbFirstSellerOnboarding && (
       isOffline ||
@@ -3974,13 +3844,13 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     setDraftSyncStatus('saving')
 
     try {
-      const canonicalPayload = buildCanonicalPayload({ ...formForDraft, currentStep: nextStep }, {
+      const canonicalPayload = buildCanonicalPayload({ ...capturedFormForDraft, currentStep: nextStep }, {
         draft: true,
         source: 'seller_onboarding_draft',
       })
       const draftFormData = {
-        ...formForDraft,
-        ...buildSellerEntityProfileAliases(formForDraft),
+        ...capturedFormForDraft,
+        ...buildSellerEntityProfileAliases(capturedFormForDraft),
         currentStep: nextStep,
         ...canonicalPayload,
       }
@@ -4320,7 +4190,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     }
 
     if (currentStep === 2) {
-      const missingDisclosureItems = getPropertyDisclosureMissingItems(activePropertyDisclosure || {})
+      const missingDisclosureItems = getPropertyDisclosureMissingItems(activePropertyDisclosure || {}, { requireSignature: !isAgentAssistedCompletion, preserveSigned: assistedDisclosureLocked })
       if (missingDisclosureItems.length) {
         return `Please complete the Property Disclosure declaration before continuing: ${missingDisclosureItems.join(', ')}.`
       }
@@ -4494,7 +4364,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         }
       }
       if (activeMobilePaneIndex === disclosureQuestionGroups.length + 2) {
-        const missingDisclosureItems = getPropertyDisclosureMissingItems(activePropertyDisclosure || {})
+        const missingDisclosureItems = getPropertyDisclosureMissingItems(activePropertyDisclosure || {}, { requireSignature: !isAgentAssistedCompletion, preserveSigned: assistedDisclosureLocked })
         if (missingDisclosureItems.length) {
           return `Please complete the Property Disclosure declaration before continuing: ${missingDisclosureItems.join(', ')}.`
         }
@@ -4649,14 +4519,18 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     setError('')
     setTermsAcceptanceError('')
     setSuccess('')
-    const submissionForm = normalizeSellerFormForProgression(form || {}, listing || {})
+    let submissionForm = normalizeSellerFormForProgression(form || {}, listing || {})
+    if (isAgentAssistedCompletion) submissionForm = {
+      ...submissionForm,
+      ...buildSellerAgentAssistedDisclosurePatch({ disclosure: submissionForm.propertyDisclosure, existingFormData: assistedDisclosureSource }),
+    }
     const submissionDisclosure = hasRequestedComplianceSigner
       ? normalizePropertyDisclosure(activePropertyDisclosure || {}, {
           kind: propertyBranch === 'commercial' || propertyBranch === 'mixed_use' ? 'commercial' : 'residential',
         })
       : submissionForm.propertyDisclosure
     const submissionAcknowledgements = submissionDisclosure?.sellerDisclosureAcknowledgements || submissionDisclosure?.seller_disclosure_acknowledgements || {}
-    if (!areRequiredSellerDisclosureAcknowledgementsAccepted(submissionAcknowledgements)) {
+    if (!isAgentAssistedCompletion && !areRequiredSellerDisclosureAcknowledgementsAccepted(submissionAcknowledgements)) {
       const message = 'Please accept the required seller declaration acknowledgements before signing the declaration.'
       setTermsAcceptanceError(message)
       setError(message)
@@ -4703,7 +4577,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       ...getSellerFicaOnboardingMissing(submissionForm).map((item) => `FICA: ${item}`),
       ...mandateMissing.map((item) => `Mandate: ${item}`),
       ...submissionPropertyMissing.map((item) => `Property: ${item}`),
-      ...getPropertyDisclosureMissingItems(submissionDisclosure || {}).map((item) => `Disclosure: ${item}`),
+      ...getPropertyDisclosureMissingItems(submissionDisclosure || {}, { requireSignature: !isAgentAssistedCompletion, preserveSigned: assistedDisclosureLocked }).map((item) => `Disclosure: ${item}`),
     ]
     if (finalRequiredMissing.length) {
       setError(`Please finish the required items before submitting: ${finalRequiredMissing.join(', ')}.`)
@@ -4846,6 +4720,10 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         }),
         currentStep: FINAL_STEP_INDEX,
       }
+      if (isAgentAssistedCompletion) finalForm = {
+        ...finalForm,
+        ...buildSellerAgentAssistedDisclosurePatch({ disclosure: submissionForm.propertyDisclosure, existingFormData: assistedDisclosureSource }),
+      }
       // Retain review-only HTML drafts from the submitted facts. No signing or
       // delivery state changes here; the agent still reviews commission and
       // chooses the digital or manual mandate route later.
@@ -4887,7 +4765,18 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         sellerPostOnboardingDrafts: postOnboardingDrafts,
         seller_post_onboarding_drafts: postOnboardingDrafts,
       }
-      if (isPropertyDisclosureDigitallyComplete(finalForm.propertyDisclosure || {})) {
+      if (assistedDisclosureLocked) {
+        for (const key of [
+          'propertyDisclosure', 'property_disclosure', 'propertyDisclosureStatus',
+          'sellerOnboardingDisclosureSnapshot', 'seller_onboarding_disclosure_snapshot',
+          'sellerOnboardingGeneratedDocuments', 'seller_onboarding_generated_documents',
+          'sellerPostOnboardingDrafts', 'seller_post_onboarding_drafts',
+        ]) {
+          if (Object.hasOwn(assistedDisclosureSource, key)) finalForm[key] = assistedDisclosureSource[key]
+          else delete finalForm[key]
+        }
+      }
+      if (!isAgentAssistedCompletion && isPropertyDisclosureDigitallyComplete(finalForm.propertyDisclosure || {})) {
         finalForm = applySellerComplianceSignatureToForm({
           formData: finalForm,
           listing: listing || {},
@@ -5095,7 +4984,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     if (currentStep === 2) {
       if (hasRequestedComplianceSigner) return 1
       const disclosureAnswered = getPropertyDisclosureAnswerSummary(form.propertyDisclosure || {}).answered
-      return 1 + getDisclosureQuestionPaneCount() + 1 + (disclosureAnswered ? 1 : 0)
+      return 1 + getDisclosureQuestionPaneCount() + 1 + (disclosureAnswered || isAgentAssistedCompletion ? 1 : 0)
     }
     return 1
   })()
@@ -5191,7 +5080,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         : showCommercialDetails
           ? [form.commercialUseDescription, form.floorSize ? `${form.floorSize} m2` : ''].filter(Boolean).join(' / ')
           : `${form.erfSize || 'Not provided'} m2`
-  const disclosureMissing = getPropertyDisclosureMissingItems(activePropertyDisclosure || {})
+  const disclosureMissing = getPropertyDisclosureMissingItems(activePropertyDisclosure || {}, { requireSignature: !isAgentAssistedCompletion, preserveSigned: assistedDisclosureLocked })
   const submitIssueGroups = [
     { label: 'Seller details', missing: sellerMissing, onEdit: () => setCurrentStep(0) },
     { label: 'Mandate preferences', missing: mandateMissing, onEdit: () => setCurrentStep(0) },
@@ -6805,6 +6694,8 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
               signingStatus={sellerComplianceSigning}
               hasRequestedSigner={hasRequestedComplianceSigner}
               signatureOnly={hasRequestedComplianceSigner}
+              agentAssisted={isAgentAssistedCompletion}
+              disclosureLocked={assistedDisclosureLocked}
               onAnswerChange={handleDisclosureAnswerChange}
               onNoteChange={handleDisclosureNoteChange}
               onDownload={handleDownloadDisclosurePdf}

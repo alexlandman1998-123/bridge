@@ -1,3 +1,5 @@
+import SellerDocumentWorkflowActions from '../components/documents/SellerDocumentWorkflowActions'
+import { SELLER_DOCUMENT_ACTIONS, SELLER_DOCUMENT_SELECTION_KEYS, buildSellerDocumentWorkflow, getSellerDocumentSigningRequest, sellerDocumentHasActiveSigning, sellerDocumentHasUploadedEvidence } from '../core/documents/sellerDocumentWorkflow'
 import { DOCUMENT_UPLOAD_ACCEPT, DOCUMENT_UPLOAD_HELP_TEXT } from '../lib/documentUploadPolicy.js'
 import { listingIssueEditorUrl, listingPublicationIssueTarget, publicationReadinessCodes } from '../services/listings/listingPublicationIssueTarget'
 import { focusListingField } from '../components/listings/useListingIssueNavigation'
@@ -169,7 +171,7 @@ import { buildSellerPostOnboardingDrafts } from '../core/documents/sellerPostOnb
 import { createSellerReviewedDocumentVersions, buildSellerReviewedDocumentVersionIndex } from '../core/documents/sellerReviewedDocumentVersions'
 import { downloadSellerPhysicalSigningCopy, getSellerPhysicalSigningCopy, requireSellerPhysicalSigningCopy } from '../core/documents/sellerPhysicalSigningCopy'
 import { SELLER_PORTAL_SIGNING_ENABLED } from '../core/documents/sellerPortalSigningPolicy'
-import { listSellerPortalSigningRequests, previewSellerPortalSignedDocument, reviewSellerPortalSignedDocument, sendSellerDocumentForSignature } from '../services/sellerPortalDocumentSigningService'
+import { assertSellerDocumentUploadAvailable, listSellerPortalSigningRequests, previewSellerPortalSignedDocument, reviewSellerPortalSignedDocument, sendSellerDocumentForSignature } from '../services/sellerPortalDocumentSigningService'
 import { hasCompletedSellerDisclosure } from '../core/documents/sellerDocumentSigningContract'
 import { ONLINE_SIGNING_DISABLED, ONLINE_SIGNING_DISABLED_MESSAGE } from '../core/documents/onlineSigningPolicy'
 import { buildSellerOnboardingSigningPackSnapshot } from '../core/documents/sellerOnboardingSigningPackSnapshot'
@@ -3799,15 +3801,16 @@ function AgentListingDetail() {
   const [mandateReplacementOpen, setMandateReplacementOpen] = useState(false)
   const [mandateReplacementReason, setMandateReplacementReason] = useState('')
   const [mandateReplacementIntent, setMandateReplacementIntent] = useState(false)
+  const [sellerDocumentPreparationKey, setSellerDocumentPreparationKey] = useState('')
   const [sellerMandateSignatureRoute, setSellerMandateSignatureRouteState] = useState('manual_upload')
   const [sellerPortalSigningRequests, setSellerPortalSigningRequests] = useState([])
   const [sellerPortalSigningBusy, setSellerPortalSigningBusy] = useState('')
   const [sellerPortalSignedPreview, setSellerPortalSignedPreview] = useState(null)
   const setSellerMandateSignatureRoute = useCallback((route) => {
-    setSellerMandateSignatureRouteState(ONLINE_SIGNING_DISABLED ? 'manual_upload' : route)
+    setSellerMandateSignatureRouteState(!SELLER_PORTAL_SIGNING_ENABLED ? 'manual_upload' : route)
   }, [])
   useEffect(() => {
-    if (ONLINE_SIGNING_DISABLED && sellerMandateSignatureRoute !== 'manual_upload') {
+    if (!SELLER_PORTAL_SIGNING_ENABLED && sellerMandateSignatureRoute !== 'manual_upload') {
       setSellerMandateSignatureRoute('manual_upload')
     }
   }, [sellerMandateSignatureRoute])
@@ -3995,7 +3998,7 @@ function AgentListingDetail() {
     let active = true
     setSellerPortalSigningRequests([])
     let timer = null
-    if (listingRecord?.id && sellerWorkspaceTab === 'documents' && SELLER_PORTAL_SIGNING_ENABLED) {
+    if (listingRecord?.id && sellerWorkspaceTab === 'documents') {
       const refresh = () => listSellerPortalSigningRequests(listingRecord.id)
         .then((result) => { if (active) setSellerPortalSigningRequests(result.documents || []) })
         .catch(() => {})
@@ -4019,7 +4022,7 @@ function AgentListingDetail() {
     if (!['digital_pack', 'manual_upload'].includes(requestedAction) || !listingRecord?.id) return
 
     openSellerDocumentSend({ fica: true, mandate: true })
-    setSellerMandateSignatureRoute(ONLINE_SIGNING_DISABLED ? 'manual_upload' : requestedAction)
+    setSellerMandateSignatureRoute(requestedAction)
     params.delete('sellerDocumentAction')
     navigate({
       pathname: location.pathname,
@@ -7063,7 +7066,7 @@ function AgentListingDetail() {
   }
 
   async function handleSellerPortalSigningAction(documentKey, requestId = '') {
-    if (!SELLER_PORTAL_SIGNING_ENABLED || !listingRecord?.id || sellerPortalSigningBusy) return
+    if ((!requestId && !SELLER_PORTAL_SIGNING_ENABLED) || !listingRecord?.id || sellerPortalSigningBusy) return
     setSellerPortalSigningBusy(documentKey)
     setDetailError('')
     try {
@@ -7080,13 +7083,14 @@ function AgentListingDetail() {
       await loadListingData()
     } catch (reason) {
       setDetailError(reason?.message || 'The seller signing action failed.')
+      try { const refreshed = await listSellerPortalSigningRequests(listingRecord.id); setSellerPortalSigningRequests(refreshed.documents || []) } catch { /* Preserve action error. */ }
     } finally {
       setSellerPortalSigningBusy('')
     }
   }
 
   async function handleSellerPortalSigningPreview(documentKey, requestId) {
-    if (!SELLER_PORTAL_SIGNING_ENABLED || !requestId || sellerPortalSigningBusy) return
+    if (!requestId || sellerPortalSigningBusy) return
     setSellerPortalSigningBusy(documentKey)
     setDetailError('')
     try {
@@ -7854,6 +7858,7 @@ function AgentListingDetail() {
   }
 
   function openSellerDocumentSend(selectionOverride = null, correctionRequest = null) {
+    setSellerDocumentPreparationKey('')
     resetSellerDocumentMandateTerms()
     const replacement = Boolean(correctionRequest?.metadata?.mandateReplacementIntent)
     const savedSource = getListingSellerFormData(listingRecord).sellerMandateDocumentSource
@@ -8016,10 +8021,28 @@ function AgentListingDetail() {
     setDetailMessage('Seller signing audit downloaded.')
   }
 
+  function prepareSellerDocumentAction(documentKey, route) {
+    const key = SELLER_DOCUMENT_SELECTION_KEYS[documentKey]
+    if (!key) return
+    openSellerDocumentSend({ fica: key === 'fica', mandate: key === 'mandate', disclosure: key === 'disclosure' })
+    setSellerDocumentSendSelection({ fica: key === 'fica', mandate: key === 'mandate', disclosure: key === 'disclosure' })
+    setSellerDocumentPreparationKey(documentKey)
+    setSellerMandateDocumentSource('arch9_generated')
+    setSellerMandateSignatureRoute(route)
+  }
+
+  async function refreshSellerDocumentSigning() {
+    if (!listingRecord?.id || sellerPortalSigningBusy) return
+    setSellerPortalSigningBusy('refresh')
+    try { const refreshed = await listSellerPortalSigningRequests(listingRecord.id); setSellerPortalSigningRequests(refreshed.documents || []) }
+    catch (error) { setDetailError(error?.message || 'Unable to refresh signing status.') }
+    finally { setSellerPortalSigningBusy('') }
+  }
+
   async function saveSellerDocumentSendSelection() {
-    if (ONLINE_SIGNING_DISABLED && sellerMandateSignatureRoute !== 'manual_upload') {
+    if (!SELLER_PORTAL_SIGNING_ENABLED && sellerMandateSignatureRoute !== 'manual_upload') {
       setSellerMandateSignatureRoute('manual_upload')
-      setDetailError(`${ONLINE_SIGNING_DISABLED_MESSAGE} The physical-signature route has been selected instead.`)
+      setDetailError('Online seller signing is currently unavailable. Choose download or upload existing.')
       return
     }
     if (!hasIdentifiedSellerEntity()) {
@@ -8038,13 +8061,11 @@ function AgentListingDetail() {
       return
     }
     const formalSelection = validateSellerOnboardingFormalSigningSelection(sellerDocumentSendSelection, { mandateReplacement: mandateReplacementIntent, mandateSource: sellerMandateDocumentSource })
-    if (!formalSelection.valid) {
+    if (!sellerDocumentPreparationKey && !formalSelection.valid) {
       setDetailError(`Include ${formalSelection.missing.join(' and ')} in the post-review signing pack.`)
       return
     }
-    const selected = documents
-      .filter((document) => ['fica', 'mandate'].includes(document.key) && sellerDocumentSendSelection[document.key])
-      .map((document) => document.key)
+    const selected = ['disclosure', 'fica', 'mandate'].filter(key => sellerDocumentSendSelection[key])
     if (!selected.length) {
       setDetailError('Choose at least one document for this secure signing pack.')
       return
@@ -8054,7 +8075,7 @@ function AgentListingDetail() {
       setDetailError(mandateReadiness.missing[0] || 'Complete the listing details required for the mandate before preparing a signing link.')
       return
     }
-    const incompleteSelection = documents.find((document) => selected.includes(document.key) && !document.ready)
+    const incompleteSelection = documents.find((document) => document.key !== 'disclosure' && selected.includes(document.key) && !document.ready)
     if (incompleteSelection) {
       setDetailError(incompleteSelection.missing[0] || `${incompleteSelection.title} is not ready yet.`)
       return
@@ -8114,6 +8135,11 @@ function AgentListingDetail() {
       if (onboardingReview.status !== SELLER_ONBOARDING_REVIEW_STATUS.approved) {
         throw new Error('The seller onboarding approval changed. Review the latest details before preparing documents.')
       }
+      const currentRequests = await listSellerPortalSigningRequests(listingRecord.id)
+      const generatedKeys = sellerDocumentPreparationKey ? [sellerDocumentPreparationKey] : Object.keys(SELLER_DOCUMENT_SELECTION_KEYS).filter(key => selected.includes(SELLER_DOCUMENT_SELECTION_KEYS[key]) || key === 'signed_disclosure_form' && !hasCompletedSellerDisclosure({ formData: existingForm, documentRows: sellerDocumentSource?.rows }))
+      if (generatedKeys.some(key => sellerDocumentHasActiveSigning(currentRequests.documents || [], key))) throw new Error('A signing request already exists for this document. Track or retry its reviewed version in Documents.')
+      if (generatedKeys.some(key => sellerDocumentHasUploadedEvidence(currentRequests.uploads || [], key, { replacement: mandateReplacementIntent }))) throw new Error('This document already has signed evidence. Review it in Documents or use the replacement workflow.')
+      const documentRoutes = Object.fromEntries(generatedKeys.map(key => [key, sellerMandateSignatureRoute]))
       const packReview = onboardingReview
       const formalPackApproval = createSellerOnboardingFormalPackApproval({
         existing: existingForm.sellerOnboardingFormalPackApproval || existingForm.seller_onboarding_formal_pack_approval,
@@ -8126,7 +8152,8 @@ function AgentListingDetail() {
           vatHandling: commissionDraft.vatHandling,
         },
         signingRoute: sellerMandateSignatureRoute,
-        mandateSource: sellerMandateDocumentSource,
+        documentRoutes,
+        mandateSource: sellerDocumentPreparationKey && !selected.includes('mandate') ? '' : sellerMandateDocumentSource,
         actor: String(listingActor?.id || profile?.id || ''),
       })
       const proposedTransferAttorney = preferredTransferAttorneyOptions.find((partner) => String(partner?.id || '') === preferredTransferAttorneyOptionId) || null
@@ -8163,9 +8190,9 @@ function AgentListingDetail() {
         sellerOnboardingFormalPackApproval: formalPackApproval,
         seller_onboarding_formal_pack_approval: formalPackApproval,
         sellerDocumentSendSelection: sellerDocumentSendSelection,
-        sellerMandateDocumentSource,
+        sellerMandateDocumentSource: selected.includes('mandate') ? sellerMandateDocumentSource : existingForm.sellerMandateDocumentSource,
         sellerDocumentSendSelectionUpdatedAt: new Date().toISOString(),
-        mandateSignatureRoute: sellerMandateSignatureRoute,
+        ...(selected.includes('mandate') ? { mandateSignatureRoute: sellerMandateSignatureRoute } : {}),
         sellerOnboardingSigningLifecycle: createSellerOnboardingSigningLifecycle({
           existing: existingForm.sellerOnboardingSigningLifecycle || existingForm.seller_onboarding_signing_lifecycle,
           stage: sellerMandateSignatureRoute === 'manual_upload' ? SELLER_ONBOARDING_SIGNING_STAGES.manualAwaitingUpload : SELLER_ONBOARDING_SIGNING_STAGES.packPrepared,
@@ -8217,14 +8244,29 @@ function AgentListingDetail() {
       }))
       setSellerDocumentSendOpen(false)
       setMandateReplacementIntent(false)
+      if (sellerMandateSignatureRoute === 'digital_pack') {
+        for (const key of generatedKeys) await sendSellerDocumentForSignature(listingRecord.id, key)
+        const refreshed = await listSellerPortalSigningRequests(listingRecord.id)
+        setSellerPortalSigningRequests(refreshed.documents || [])
+        setSellerWorkspaceTab('documents')
+        setDetailMessage('Online signature links sent. Track each document and signer in Documents.')
+        return
+      }
       if (sellerMandateDocumentSource === 'agency_upload') setSellerWorkspaceTab('documents')
       setDetailMessage(sellerMandateDocumentSource === 'agency_upload'
         ? 'FICA copies are ready in Documents. Upload your agency’s signed mandate there for review. Preparing FICA does not complete the mandate requirement.'
         : sellerMandateSignatureRoute === 'manual_upload'
-        ? `Physical ${manualSigningPack.documents.some((document) => document.key === 'signed_disclosure_form') ? 'disclosure, FICA and mandate' : 'FICA and mandate'} copies are ready in Documents. Download them for wet-ink signature, then upload each signed copy; the documents remain outstanding until signed evidence is reviewed.`
-        : 'Reviewed FICA and mandate copies are ready in Documents. Send each document for portal signature from there.')
+        ? 'Selected signing copies are ready in Documents. Upload each signed copy for agent review when returned.'
+        : 'Reviewed copies are ready in Documents.')
+      setSellerWorkspaceTab('documents')
+      if (sellerDocumentPreparationKey && sellerMandateSignatureRoute === 'manual_upload') {
+        const copy = manualSigningPack.documents.find(document => document.key === sellerDocumentPreparationKey)
+        if (copy) await handleOpenSellerDocument({ ...copy, source: 'seller_onboarding.manual_signing_pack' })
+      }
     } catch (error) {
-      setDetailError(error?.message || 'Unable to save the selected seller documents.')
+      setSellerWorkspaceTab('documents')
+      try { const refreshed = await listSellerPortalSigningRequests(listingRecord.id); setSellerPortalSigningRequests(refreshed.documents || []) } catch { /* Preserve the preparation/send error. */ }
+      setDetailError(`${error?.message || 'Unable to save the selected seller documents.'} Any saved copies remain in Documents; retry the outstanding send there.`)
     } finally {
       setSellerDocumentSendSaving(false)
     }
@@ -11384,7 +11426,8 @@ function AgentListingDetail() {
     setDetailError('')
     setDetailMessage('')
     try {
-      const signingCopy = getSellerPhysicalSigningCopy(doc) ? await requireSellerPhysicalSigningCopy(doc) : null
+      if (SELLER_DOCUMENT_SELECTION_KEYS[doc.key]) await assertSellerDocumentUploadAvailable(listingRecord.id, doc.key)
+      const signingCopy = !doc.uploadExisting && getSellerPhysicalSigningCopy(doc) ? await requireSellerPhysicalSigningCopy(doc) : null
       const uploadedDocument = await uploadPrivateListingDocument(listingRecord.id, file, {
         requirementId: doc.requirementId || doc.requirement_id || doc.id || '',
         requirementKey: doc.key || doc.requirementKey || doc.requirement_key || '',
@@ -11393,7 +11436,8 @@ function AgentListingDetail() {
         documentName: file.name || doc.label || 'Seller document',
         visibility: 'seller_visible',
         status: 'uploaded',
-        deferMandateSigning: Boolean(signingCopy) || (getListingSellerFormData(listingRecord).sellerMandateDocumentSource === 'agency_upload' && (doc.key || doc.requirementKey) === 'signed_mandate'),
+        deferMandateSigning: Boolean(SELLER_DOCUMENT_SELECTION_KEYS[doc.key]) || Boolean(signingCopy) || (getListingSellerFormData(listingRecord).sellerMandateDocumentSource === 'agency_upload' && (doc.key || doc.requirementKey) === 'signed_mandate'),
+        existingSignedEvidence: doc.uploadExisting === true,
         reviewedSigningVersionId: signingCopy?.versionId || '',
         reviewedSigningVersionDigest: signingCopy?.versionDigest || '',
       })
@@ -13644,14 +13688,14 @@ function AgentListingDetail() {
         open={sellerDocumentSendOpen}
         onClose={sellerDocumentSendSaving ? undefined : () => { setSellerDocumentSendOpen(false); setMandateReplacementIntent(false) }}
         title={mandateReplacementIntent ? 'Prepare replacement mandate copies' : 'Prepare seller documents'}
-        subtitle="Choose your mandate document, then prepare the selected copies for wet-ink signatures."
+        subtitle="Generate copies for download, send private online signing links, or upload an existing signed document."
         className="max-w-xl"
         footer={(
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <Button type="button" variant="secondary" disabled={sellerDocumentSendSaving} onClick={() => { setSellerDocumentSendOpen(false); setMandateReplacementIntent(false) }}>Cancel</Button>
             <Button type="button" disabled={sellerDocumentSendSaving || !sellerMandateDocumentSource || (sellerDocumentSendOpen && sellerDocumentSendSelection.mandate && !getListingMandateReadiness().ready) || (sellerDocumentSendOpen && !mandateReplacementIntent && (readSellerOnboardingReview(getListingSellerFormData(listingRecord).sellerOnboardingReview || getListingSellerFormData(listingRecord).seller_onboarding_review).status !== SELLER_ONBOARDING_REVIEW_STATUS.approved || !sellerOnboardingReviewChecklist?.ready))} onClick={() => void saveSellerDocumentSendSelection()}>
               {sellerDocumentSendSaving ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
-              {sellerDocumentSendSaving ? 'Preparing...' : sellerMandateDocumentSource === 'agency_upload' ? 'Prepare FICA and continue to Documents' : sellerMandateSignatureRoute === 'manual_upload' ? 'Approve and prepare physical copies' : 'Approve and prepare portal copies'}
+              {sellerDocumentSendSaving ? 'Preparing...' : sellerMandateDocumentSource === 'agency_upload' ? 'Prepare FICA and continue to Documents' : sellerMandateSignatureRoute === 'manual_upload' ? 'Approve and prepare physical copies' : 'Approve and send for online signature'}
             </Button>
           </div>
         )}
@@ -13680,7 +13724,7 @@ function AgentListingDetail() {
               </section>
             </>
           })() : null}
-          <fieldset disabled={sellerDocumentSendSaving} className="space-y-3 rounded-[16px] border border-[#dce6f2] bg-white p-4">
+          {!sellerDocumentPreparationKey ? <fieldset disabled={sellerDocumentSendSaving} className="space-y-3 rounded-[16px] border border-[#dce6f2] bg-white p-4">
             <legend className="px-1 text-sm font-semibold text-[#243d56]">Which mandate would you like to use?</legend>
             {[
               ['arch9_generated', 'Generate an Arch9 mandate', 'Prepare a printable mandate from the saved terms. Complete its agency schedules and approval checks before preparing it.'],
@@ -13693,9 +13737,9 @@ function AgentListingDetail() {
               }} className="mt-1" />
               <span><span className="block font-semibold text-[#243d56]">{label}</span><span className="mt-1 block text-xs leading-5 text-[#607387]">{description}</span></span>
             </label>)}
-          </fieldset>
+          </fieldset> : <p className="text-sm font-semibold">Preparing {SELLER_DOCUMENT_SELECTION_KEYS[sellerDocumentPreparationKey]} only. Other documents keep their reviewed copies.</p>}
           {sellerMandateDocumentSource === 'agency_upload' ? <div className="rounded-[16px] border border-[#dce6f2] bg-[#f8fbff] p-4 text-sm leading-6 text-[#47637d]">Your agency mandate remains a separate required document. Upload the signed copy in Documents for review; the selected route does not mark it signed or approved.</div> : null}
-          {sellerMandateDocumentSource === 'arch9_generated' ? <>
+          {sellerDocumentSendSelection.mandate && sellerMandateDocumentSource === 'arch9_generated' ? <>
             {(() => {
               const mandateReadiness = getListingMandateReadiness()
               return <div data-testid="listing-mandate-readiness" className={`rounded-[16px] border p-4 text-sm leading-5 ${mandateReadiness.ready ? 'border-[#c9e8d5] bg-[#f0faf3] text-[#176842]' : 'border-[#f2dfbd] bg-[#fff9ec] text-[#7a5a17]'}`}>
@@ -13722,7 +13766,16 @@ function AgentListingDetail() {
               <Field type="number" min="0" step="1" value={sellerDocumentProtectionPeriodDays} onChange={(event) => setSellerDocumentProtectionPeriodDays(event.target.value)} placeholder="Enter 0 for none" />
             </label>
           </> : null}
-          {ONLINE_SIGNING_DISABLED ? <div className="rounded-[16px] border border-[#f2dfbd] bg-[#fff9ec] p-4 text-sm leading-6 text-[#7a5a17]"><p className="font-semibold">Wet-ink signatures required</p><p className="mt-1">Download the prepared copies, arrange physical signatures, then upload the signed originals in Documents.</p></div> : null}
+          <fieldset disabled={sellerDocumentSendSaving} className="space-y-3 rounded-xl border border-[#dce6f2] p-4">
+            <legend className="px-1 text-sm font-semibold">Choose a document action</legend>
+            {SELLER_DOCUMENT_ACTIONS.map(([value, label, description]) => <label key={value} className="flex items-start gap-3 text-sm">
+              <input type="radio" name="seller-document-action" checked={sellerMandateSignatureRoute === value} disabled={value === 'digital_pack' && !SELLER_PORTAL_SIGNING_ENABLED} onChange={() => {
+                if (value === 'upload_existing') { setSellerDocumentSendOpen(false); setSellerWorkspaceTab('documents'); setDetailMessage('Upload the existing signed document in Documents for agent review.') }
+                else setSellerMandateSignatureRoute(value)
+              }} className="mt-1" />
+              <span><span className="block font-semibold">{label}</span><span className="text-xs text-[#607387]">{description}</span></span>
+            </label>)}
+          </fieldset>
         </div>
       </Modal>
       <Modal
@@ -17798,16 +17851,16 @@ function AgentListingDetail() {
                           <span>Document</span><span>Source</span><span>Status</span><span className="text-right">Actions</span>
                         </div>
                         {group.documents.map((doc) => {
-                          const status = resolveListingSellerDocumentStatus(doc)
+                          const baseStatus = resolveListingSellerDocumentStatus(doc)
                           const actions = resolveListingSellerDocumentActions(doc)
                           const activity = resolveListingSellerDocumentActivity(doc)
                           const delivery = sellerDocumentDeliveryIndex.forDocument(doc)
                           const deliveryPresentation = getSellerDocumentDeliveryPresentation(delivery)
                           const physicalCopy = getSellerPhysicalSigningCopy(doc)
                           const portalDocumentKey = physicalCopy?.key || physicalCopy?.requirementKey || doc.key
-                          const portalRequest = physicalCopy ? sellerPortalSigningRequests.find((request) =>
-                            request.document_key === portalDocumentKey && request.version_id === physicalCopy.versionId &&
-                            !['revoked', 'expired'].includes(request.status)) : null
+                          const portalRequest = physicalCopy ? getSellerDocumentSigningRequest(sellerPortalSigningRequests, portalDocumentKey, physicalCopy.versionId) : null
+                          const workflow = buildSellerDocumentWorkflow({ item: doc, copy: physicalCopy, request: portalRequest })
+                          const status = SELLER_DOCUMENT_SELECTION_KEYS[portalDocumentKey] ? { ...baseStatus, label: workflow.label } : baseStatus
                           return (
                           <div key={doc.key} className="grid gap-3 border-t border-[#edf2f7] px-5 py-4 first:border-t-0 lg:min-h-[72px] lg:grid-cols-[minmax(0,1.45fr)_minmax(150px,0.8fr)_minmax(145px,0.65fr)_minmax(260px,1fr)] lg:items-center lg:gap-4">
                             <div className="flex min-w-0 items-start gap-3">
@@ -17850,7 +17903,7 @@ function AgentListingDetail() {
                                   Retry message
                                 </Button>
                               ) : null}
-                              {actions.canUpload ? (
+                              {!SELLER_DOCUMENT_SELECTION_KEYS[portalDocumentKey] && actions.canUpload ? (
                                 <><label className={`inline-flex min-h-9 items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#1f4f78] transition ${sellerDocumentUploadKey ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:border-[#b7c8db] hover:bg-[#f7fbff]'}`}>
                                   {sellerDocumentUploadKey === (doc.key || doc.id || doc.label) ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
                                   {actions.uploadLabel}
@@ -17866,7 +17919,7 @@ function AgentListingDetail() {
                                 </label>
 <span className="block text-xs font-normal text-slate-500">{DOCUMENT_UPLOAD_HELP_TEXT}</span></>
                               ) : null}
-                              {(actions.canOpen || physicalCopy || (doc.status === 'approved' && (doc.generatedHtml || doc.generated_html))) ? (
+                              {!physicalCopy && (actions.canOpen || (doc.status === 'approved' && (doc.generatedHtml || doc.generated_html))) ? (
                                 <button
                                   type="button"
                                   onClick={() => handleOpenSellerDocument(doc)}
@@ -17877,15 +17930,22 @@ function AgentListingDetail() {
                                   {getSellerPhysicalSigningCopy(doc) ? 'Generate and download' : 'View'}
                                 </button>
                               ) : null}
-                              {physicalCopy && !portalRequest ? <Button type="button" size="sm" variant="secondary" onClick={() => void handleSellerPortalSigningAction(portalDocumentKey)} disabled={!SELLER_PORTAL_SIGNING_ENABLED || Boolean(sellerPortalSigningBusy)} title={SELLER_PORTAL_SIGNING_ENABLED ? 'Send each required signer a private document link' : 'Portal signing is awaiting release'}><Send size={14} /> {sellerPortalSigningBusy === portalDocumentKey ? 'Sending…' : 'Send for signature'}</Button> : null}
-                              {portalRequest?.status === 'signed' ? <Button type="button" size="sm" onClick={() => void handleSellerPortalSigningPreview(portalDocumentKey, portalRequest.id)} disabled={!SELLER_PORTAL_SIGNING_ENABLED || Boolean(sellerPortalSigningBusy)}>Review signed copy</Button> : null}
-                              {portalRequest && portalRequest.status !== 'signed' ? <span className="rounded-full bg-[#edf5f0] px-2.5 py-1 text-xs font-semibold text-[#176842]">Portal: {portalRequest.status.replaceAll('_', ' ')}</span> : null}
+                              {SELLER_DOCUMENT_SELECTION_KEYS[portalDocumentKey] ? <SellerDocumentWorkflowActions
+                                item={doc} copy={physicalCopy} request={portalRequest}
+                                busy={Boolean(sellerPortalSigningBusy || sellerDocumentUploadKey || openingSellerDocumentKey)} onlineEnabled={SELLER_PORTAL_SIGNING_ENABLED}
+                                onDownload={() => physicalCopy ? void handleOpenSellerDocument(doc) : prepareSellerDocumentAction(portalDocumentKey, 'manual_upload')}
+                                onSend={() => physicalCopy?.signingRoute === 'digital_pack' ? void handleSellerPortalSigningAction(portalDocumentKey) : prepareSellerDocumentAction(portalDocumentKey, 'digital_pack')}
+                                onUpload={event => void handleSellerDocumentUpload({ ...doc, uploadExisting: true }, event)}
+                                onReview={() => void handleSellerPortalSigningPreview(portalDocumentKey, portalRequest.id)}
+                                onRefresh={() => void refreshSellerDocumentSigning()}
+                              /> : null}
                               <SellerDocumentReviewActions
                                 item={doc}
                                 busyAction={sellerDocumentWorkflowAction}
                                 onReview={handleSellerDocumentReview}
                                 onReminder={handleSellerDocumentReminder}
-                                requireSignedCopyCheck={Boolean(physicalCopy)}
+                                requireSignedCopyCheck={Boolean(doc.linkedDocument?.reviewed_signing_version_id || doc.linkedDocument?.reviewedSigningVersionId)}
+                                requireSignedEvidenceCheck={Boolean(SELLER_DOCUMENT_SELECTION_KEYS[portalDocumentKey])}
                                 compact
                               />
                             </div>
