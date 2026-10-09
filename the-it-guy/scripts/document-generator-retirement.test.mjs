@@ -225,7 +225,7 @@ test('listing intake mandate evidence persists without a checklist and never com
 })
 
 
-test('signed mandate upload prepares a missing saved-model target before Storage without replacing protected requests', async () => {
+test('mandate and FICA uploads prepare a missing saved-model target before Storage without replacing protected requests', async () => {
   const listingId = '11111111-1111-4111-8111-111111111111'
   const requirementId = '22222222-2222-4222-8222-222222222222'
   const staleId = '33333333-3333-4333-8333-333333333333'
@@ -235,43 +235,46 @@ test('signed mandate upload prepares a missing saved-model target before Storage
     normalizeUuid, normalizeCompatibilityKey: normalizeKey,
     getPrivateListingDocumentMatchAliases: getSellerBasePackAliases,
   })
-  for (const mode of ['missing', 'existing', 'retired', 'stale_id', 'frozen_copy', 'unknown_owner', 'early_intake', 'ensure_failed', 'ensure_unavailable', 'unreadable']) {
-    const calls = []
-    let matched
-    const mandate = { id: requirementId, requirement_key: 'signed_mandate', status: mode === 'retired' ? 'not_applicable' : 'required', is_required: mode !== 'retired' }
-    const stored = ['existing', 'retired'].includes(mode) ? [mandate] : [{ id: staleId, requirement_key: 'seller_onboarding_submission', status: 'requested', is_required: true }]
-    const listing = { id: listingId, listingStatus: mode === 'early_intake' ? 'seller_lead' : 'onboarding_completed', sellerType: mode === 'unknown_owner' ? 'unknown' : 'company' }
-    const upload = vm.runInNewContext(`(${functionSource('../src/services/privateListingService.js', 'uploadPrivateListingDocument')})`, {
-      requireClient: () => ({}), getCurrentUser: async () => ({ id: 'agent' }), normalizeUuid,
-      normalizeCompatibilityKey: normalizeKey, normalizeText: normalizeKey,
-      validateDocumentUploadFile: file => ({ safeName: file.name }),
-      getPrivateListingById: async () => listing,
-      getPrivateListingDocumentRequirements: async () => { if (mode === 'unreadable') throw Error('Checklist unavailable'); return stored },
-      getPrivateListingDocumentMatchAliases: getSellerBasePackAliases,
-      syncSellerDocumentRequirementsFromEngine,
-      ensurePrivateListingDocumentRequirements: async (id, rows, options) => {
-        assert.equal(id, listingId)
-        assert.equal(rows.length, 1)
-        assert.equal(rows[0].requirement_key, 'signed_mandate')
-        assert.equal(options.reason, 'agent_signed_mandate_upload_preflight')
-        calls.push('prepare_exact_mandate')
-        if (mode === 'ensure_failed') throw Error('Checklist save denied')
-        return mode === 'ensure_unavailable' ? stored : [...stored, mandate]
-      },
-      resolvePrivateListingDocumentRequirement: (rows, options) => { matched = resolve(rows, options); calls.push('resolved'); return matched },
-      sanitizeDocumentFileName: value => value,
-      DOCUMENTS_BUCKET_CANDIDATES: ['documents'],
-      runRecoverableDocumentUpload: async () => { calls.push('Storage'); return { requirementId: matched.id } },
-    })
-    const options = { requirementKey: 'signed_mandate', documentType: 'signed_mandate', requirementId: mode === 'stale_id' ? staleId : '', reviewedSigningVersionId: mode === 'frozen_copy' ? 'version-1' : '', reviewedSigningVersionDigest: mode === 'frozen_copy' ? 'digest-1' : '' }
-    if (['missing', 'existing'].includes(mode)) {
-      const result = await upload(listingId, { name: 'signed-mandate.pdf' }, options)
-      assert.equal(result.requirementId, requirementId)
-      assert.deepEqual(calls, mode === 'missing' ? ['prepare_exact_mandate', 'resolved', 'Storage'] : ['resolved', 'Storage'])
-    } else {
-      await assert.rejects(upload(listingId, { name: 'signed-mandate.pdf' }, options), /No active seller requirement|unavailable|does not match|checklist is not ready|Checklist save denied/)
-      assert.equal(calls.includes('Storage'), false, mode)
-      if (!['ensure_failed', 'ensure_unavailable'].includes(mode)) assert.equal(calls.includes('prepare_exact_mandate'), false, mode)
+  for (const requirementKey of ['signed_mandate', 'signed_fica_declaration']) {
+    for (const mode of ['missing', 'existing', 'existing_alias', 'retired', 'retired_alias', 'stale_id', 'frozen_copy', 'unknown_owner', 'early_intake', 'ensure_failed', 'ensure_unavailable', 'unreadable']) {
+      const calls = []
+      let matched
+      const retired = mode.startsWith('retired')
+      const signingRequest = { id: requirementId, requirement_key: mode.endsWith('_alias') ? getSellerBasePackAliases(requirementKey).find(key => key !== requirementKey) : requirementKey, status: retired ? 'not_applicable' : 'required', is_required: !retired }
+      const stored = ['existing', 'existing_alias', 'retired', 'retired_alias'].includes(mode) ? [signingRequest] : [{ id: staleId, requirement_key: 'seller_onboarding_submission', status: 'requested', is_required: true }]
+      const listing = { id: listingId, listingStatus: mode === 'early_intake' ? 'seller_lead' : 'onboarding_completed', sellerType: mode === 'unknown_owner' ? 'unknown' : 'company' }
+      const upload = vm.runInNewContext(`(${functionSource('../src/services/privateListingService.js', 'uploadPrivateListingDocument')})`, {
+        requireClient: () => ({}), getCurrentUser: async () => ({ id: 'agent' }), normalizeUuid,
+        normalizeCompatibilityKey: normalizeKey, normalizeText: normalizeKey,
+        validateDocumentUploadFile: file => ({ safeName: file.name }),
+        getPrivateListingById: async () => listing,
+        getPrivateListingDocumentRequirements: async () => { if (mode === 'unreadable') throw Error('Checklist unavailable'); return stored },
+        getPrivateListingDocumentMatchAliases: getSellerBasePackAliases,
+        syncSellerDocumentRequirementsFromEngine,
+        ensurePrivateListingDocumentRequirements: async (id, rows, options) => {
+          assert.equal(id, listingId)
+          assert.equal(rows.length, 1)
+          assert.equal(rows[0].requirement_key, requirementKey)
+          assert.equal(options.reason, 'agent_seller_signing_upload_preflight')
+          calls.push('prepare_exact_target')
+          if (mode === 'ensure_failed') throw Error('Checklist save denied')
+          return mode === 'ensure_unavailable' ? stored : [...stored, signingRequest]
+        },
+        resolvePrivateListingDocumentRequirement: (rows, options) => { matched = resolve(rows, options); calls.push('resolved'); return matched },
+        sanitizeDocumentFileName: value => value,
+        DOCUMENTS_BUCKET_CANDIDATES: ['documents'],
+        runRecoverableDocumentUpload: async () => { calls.push('Storage'); return { requirementId: matched.id } },
+      })
+      const options = { requirementKey, documentType: requirementKey, requirementId: mode === 'stale_id' ? staleId : '', reviewedSigningVersionId: mode === 'frozen_copy' ? 'version-1' : '', reviewedSigningVersionDigest: mode === 'frozen_copy' ? 'digest-1' : '' }
+      if (['missing', 'existing', 'existing_alias'].includes(mode)) {
+        const result = await upload(listingId, { name: `${requirementKey}.pdf` }, options)
+        assert.equal(result.requirementId, requirementId)
+        assert.deepEqual(calls, mode === 'missing' ? ['prepare_exact_target', 'resolved', 'Storage'] : ['resolved', 'Storage'])
+      } else {
+        await assert.rejects(upload(listingId, { name: `${requirementKey}.pdf` }, options), /No active seller requirement|unavailable|does not match|checklist is not ready|Checklist save denied/)
+        assert.equal(calls.includes('Storage'), false, mode)
+        if (!['ensure_failed', 'ensure_unavailable'].includes(mode)) assert.equal(calls.includes('prepare_exact_target'), false, mode)
+      }
     }
   }
 })
