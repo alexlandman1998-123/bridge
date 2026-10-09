@@ -208,9 +208,17 @@ export function getListingSellerFormData(listing = {}) {
   const canonicalFacts = getCanonicalFacts(listing)
   const sellerFacts = canonicalFacts?.seller && typeof canonicalFacts.seller === 'object' ? canonicalFacts.seller : {}
   const propertyFacts = canonicalFacts?.property && typeof canonicalFacts.property === 'object' ? canonicalFacts.property : {}
+  const editableSellerFacts = { ...sellerFacts }
+  // Canonical readiness projects uncaptured consent as false. That default is
+  // not a recorded refusal; keep the original form evidence authoritative.
+  if (editableSellerFacts.popi_consent_accepted === false &&
+      !normalizeText(editableSellerFacts.popi_consent) &&
+      !normalizeText(editableSellerFacts.popi_consent_accepted_at)) {
+    delete editableSellerFacts.popi_consent_accepted
+  }
 
   return mergeObjects(
-    sellerFacts,
+    editableSellerFacts,
     propertyFacts,
     canonicalFacts,
     listing?.seller_onboarding_form_data,

@@ -1,4 +1,5 @@
 import SellerDocumentWorkflowActions from '../components/documents/SellerDocumentWorkflowActions'
+import { sellerPopiConsentDisplayValue } from '../core/documents/sellerOnboardingConsent.js'
 import { SELLER_DOCUMENT_ACTIONS, SELLER_DOCUMENT_SELECTION_KEYS, buildSellerDocumentWorkflow, getSellerDocumentSigningRequest, sellerDocumentHasActiveSigning, sellerDocumentHasUploadedEvidence } from '../core/documents/sellerDocumentWorkflow'
 import { DOCUMENT_UPLOAD_ACCEPT, DOCUMENT_UPLOAD_HELP_TEXT } from '../lib/documentUploadPolicy.js'
 import { listingIssueEditorUrl, listingPublicationIssueTarget, publicationReadinessCodes } from '../services/listings/listingPublicationIssueTarget'
@@ -9856,7 +9857,8 @@ function AgentListingDetail() {
     )
     const mandateType = raw(valueFor('mandateType'), listingRecord?.mandateType, listingRecord?.mandate?.type, sellerOwnershipUnidentified ? '' : 'sole')
     const askingPrice = raw(valueFor('askingPrice', 'price'), marketingDraft.price, listingRecord?.askingPrice)
-    const popiConsent = raw(valueFor('popiConsent', 'privacyConsent'), seller.popiConsent, listingRecord?.popiConsent)
+    const popiConsent = sellerPopiConsentDisplayValue(form) ||
+      sellerPopiConsentDisplayValue({ popiConsent: raw(seller.popiConsent, listingRecord?.popiConsent) })
     const sections = [
       section('seller_details', 'Seller Details', UserRound, [
         field('fullName', 'Full name', [sellerName]),
