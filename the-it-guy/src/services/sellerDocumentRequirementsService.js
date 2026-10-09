@@ -2241,13 +2241,17 @@ function getOnboardingDisclosure(formData = {}) {
 function getOnboardingDisclosureSigningState(formData = {}, listing = {}) {
   const disclosure = getOnboardingDisclosure(formData)
   if (!disclosure || !Object.keys(disclosure).length) return null
+  const hasPrimarySignature = Boolean(
+    normalizeText(disclosure.signature || disclosure.signatureValue || disclosure.signature_value) &&
+    normalizeText(disclosure.signedAt || disclosure.signed_at),
+  )
+  // Captured answers and canonical defaults are unsigned facts, not an
+  // onboarding signing artifact that can replace the document requirement.
+  if (!hasPrimarySignature) return null
   const signing = buildSellerCompliancePortalModel({ formData, listing })
   return {
     complete: hasCompletedOnboardingDisclosureSignature(formData) && signing.complete,
-    hasPrimarySignature: Boolean(
-      normalizeText(disclosure.signature || disclosure.signatureValue || disclosure.signature_value) &&
-      normalizeText(disclosure.signedAt || disclosure.signed_at),
-    ),
+    hasPrimarySignature,
   }
 }
 
@@ -3084,7 +3088,9 @@ export function buildSellerDocumentSourceOfTruth({
     ...(propertyDisclosureDocument ? [propertyDisclosureDocument] : []),
     ...(sellerFicaDeclarationDocument ? [sellerFicaDeclarationDocument] : []),
     ...manualSigningDocuments,
-    ...postOnboardingDraftDocuments,
+    // Unsigned review drafts stay in onboarding preparation. They must not
+    // occupy a signed requirement or suppress download/send/upload choices.
+    ...postOnboardingDraftDocuments.filter((document) => document.documentContract?.stage !== 'review_draft'),
   ]
   const sourceListing = {
     ...listing,

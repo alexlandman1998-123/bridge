@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { buildSellerDocumentSourceOfTruth } from '../sellerDocumentRequirementsService.js'
+import { buildSellerDocumentWorkflow } from '../../core/documents/sellerDocumentWorkflow.js'
 
 const requirement = { id: 'disclosure', key: 'signed_disclosure_form', is_required: true, status: 'required' }
 const disclosure = {
@@ -44,6 +45,26 @@ function projectDisclosure(formOverrides = {}, documents = []) {
     formData,
   }).rows.find((row) => row.key === 'signed_disclosure_form')
 }
+
+test('unsigned disclosure defaults and agent-captured answers leave the three document routes available', () => {
+  for (const propertyDisclosure of [
+    { signature: '', signedAt: '', declarationAccepted: false, responses: {} },
+    { signature: '', signedAt: '', responses: { roof: { answer: 'no' } }, captureMode: 'agent_assisted' },
+  ]) {
+    for (const documents of [[], [{ key: 'signed_disclosure_form', artifactStage: 'review_draft', status: 'awaiting_agent_review', generatedHtml: '<html>unsigned frozen answers</html>' }]]) {
+      const row = projectDisclosure({ propertyDisclosure, sellerPostOnboardingDrafts: { documents }, sellerOnboardingManualSigningPack: {} })
+      assert.equal(row.status, 'required')
+      assert.equal(row.complete, false)
+      assert.equal(row.hasUpload, false)
+      assert.equal(row.canUpload, true)
+      const workflow = buildSellerDocumentWorkflow({ item: row })
+      assert.equal(workflow.state, 'not_prepared')
+      assert.equal(workflow.canPrepare, true)
+      assert.equal(workflow.canSend, true)
+      assert.equal(workflow.canUpload, true)
+    }
+  }
+})
 
 test('completed single-seller onboarding uses the frozen signed disclosure over an old physical copy', () => {
   const row = projectDisclosure()
