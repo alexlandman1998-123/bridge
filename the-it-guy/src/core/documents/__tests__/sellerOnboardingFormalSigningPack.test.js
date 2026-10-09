@@ -23,3 +23,13 @@ test('does not allow a mandate-only post-review signing pack', () => {
 test('allows a mandate-only pack when replacing an already reviewed mandate', () => {
   assert.equal(validateSellerOnboardingFormalSigningSelection({ mandate: true }, { mandateReplacement: true }).valid, true)
 })
+
+
+test('an explicitly selected agency mandate permits FICA-only preparation while the mandate stays a separate upload', () => {
+  const selection = { fica: true, mandate: false }
+  assert.equal(validateSellerOnboardingFormalSigningSelection(selection, { mandateSource: 'agency_upload' }).valid, true)
+  assert.deepEqual(validateSellerOnboardingFormalSigningSelection(selection, { mandateSource: 'agency_upload' }).selectedDocuments, ['fica'])
+  for (const mandateSource of ['', 'arch9_generated', 'unknown']) assert.equal(validateSellerOnboardingFormalSigningSelection(selection, { mandateSource }).valid, false)
+  assert.equal(validateSellerOnboardingFormalSigningSelection({ fica: true, mandate: true }, { mandateSource: 'agency_upload' }).valid, false)
+  assert.equal(validateSellerOnboardingFormalSigningSelection({}, { mandateSource: 'agency_upload' }).valid, false)
+})

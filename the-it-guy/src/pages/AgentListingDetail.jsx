@@ -3793,6 +3793,7 @@ function AgentListingDetail() {
   const [sellerDocumentProtectionPeriodDays, setSellerDocumentProtectionPeriodDays] = useState('')
   const [sellerDocumentMandateEndDate, setSellerDocumentMandateEndDate] = useState('')
   const [sellerDocumentSendSelection, setSellerDocumentSendSelection] = useState({ disclosure: false, fica: false, mandate: false })
+  const [sellerMandateDocumentSource, setSellerMandateDocumentSource] = useState('')
   const [sellerDocumentReplacementGroupId, setSellerDocumentReplacementGroupId] = useState('')
   const [sellerDocumentReplacementReason, setSellerDocumentReplacementReason] = useState('')
   const [mandateReplacementOpen, setMandateReplacementOpen] = useState(false)
@@ -7854,9 +7855,13 @@ function AgentListingDetail() {
 
   function openSellerDocumentSend(selectionOverride = null, correctionRequest = null) {
     resetSellerDocumentMandateTerms()
+    const replacement = Boolean(correctionRequest?.metadata?.mandateReplacementIntent)
+    const savedSource = getListingSellerFormData(listingRecord).sellerMandateDocumentSource
+    const mandateSource = replacement ? 'arch9_generated' : ['arch9_generated', 'agency_upload'].includes(savedSource) ? savedSource : ''
+    setSellerMandateDocumentSource(mandateSource)
     setSellerDocumentSendSelection(normalizeSellerOnboardingFormalSigningSelection({
       fica: true,
-      mandate: true,
+      mandate: mandateSource !== 'agency_upload',
       ...(selectionOverride || {}),
     }))
     setDetailError('')
@@ -8028,7 +8033,11 @@ function AgentListingDetail() {
       return
     }
     const { documents } = getSellerSigningDocumentOptions()
-    const formalSelection = validateSellerOnboardingFormalSigningSelection(sellerDocumentSendSelection, { mandateReplacement: mandateReplacementIntent })
+    if (!['arch9_generated', 'agency_upload'].includes(sellerMandateDocumentSource)) {
+      setDetailError('Choose an Arch9-generated mandate or your agency’s own mandate before continuing.')
+      return
+    }
+    const formalSelection = validateSellerOnboardingFormalSigningSelection(sellerDocumentSendSelection, { mandateReplacement: mandateReplacementIntent, mandateSource: sellerMandateDocumentSource })
     if (!formalSelection.valid) {
       setDetailError(`Include ${formalSelection.missing.join(' and ')} in the post-review signing pack.`)
       return
@@ -8117,6 +8126,7 @@ function AgentListingDetail() {
           vatHandling: commissionDraft.vatHandling,
         },
         signingRoute: sellerMandateSignatureRoute,
+        mandateSource: sellerMandateDocumentSource,
         actor: String(listingActor?.id || profile?.id || ''),
       })
       const proposedTransferAttorney = preferredTransferAttorneyOptions.find((partner) => String(partner?.id || '') === preferredTransferAttorneyOptionId) || null
@@ -8153,30 +8163,20 @@ function AgentListingDetail() {
         sellerOnboardingFormalPackApproval: formalPackApproval,
         seller_onboarding_formal_pack_approval: formalPackApproval,
         sellerDocumentSendSelection: sellerDocumentSendSelection,
-        mandateType,
-        otherAgencyName: sellerDocumentOtherAgencyName.trim(),
-        protectionPeriodDays: sellerDocumentProtectionPeriodDays.trim(),
-        commissionBasis,
-        commission_basis: commissionBasis,
-        commissionPercentage: commissionBasis === 'percentage' ? String(commissionDraft.percentage || '').trim() : '',
-        commission_percent: commissionBasis === 'percentage' ? String(commissionDraft.percentage || '').trim() : '',
-        mandateCommissionPercentage: commissionBasis === 'percentage' ? String(commissionDraft.percentage || '').trim() : '',
-        commissionAmount: commissionBasis === 'fixed' ? String(commissionDraft.amount || '').trim() : '',
-        commission_amount: commissionBasis === 'fixed' ? String(commissionDraft.amount || '').trim() : '',
-        vatHandling: String(commissionDraft.vatHandling || '').trim(),
+        sellerMandateDocumentSource,
         sellerDocumentSendSelectionUpdatedAt: new Date().toISOString(),
         mandateSignatureRoute: sellerMandateSignatureRoute,
         sellerOnboardingSigningLifecycle: createSellerOnboardingSigningLifecycle({
           existing: existingForm.sellerOnboardingSigningLifecycle || existingForm.seller_onboarding_signing_lifecycle,
           stage: sellerMandateSignatureRoute === 'manual_upload' ? SELLER_ONBOARDING_SIGNING_STAGES.manualAwaitingUpload : SELLER_ONBOARDING_SIGNING_STAGES.packPrepared,
           actor: String(listingActor?.id || profile?.id || ''),
-          metadata: { selectedDocuments: selected, route: sellerMandateSignatureRoute },
+          metadata: { selectedDocuments: selected, route: sellerMandateSignatureRoute, mandateSource: sellerMandateDocumentSource },
         }),
-        manualMandateSignature: sellerMandateSignatureRoute === 'manual_upload' ? {
+        manualMandateSignature: selected.includes('mandate') && sellerMandateSignatureRoute === 'manual_upload' ? {
           status: 'awaiting_upload',
           requestedAt: new Date().toISOString(),
           requestedBy: String(listingActor?.id || profile?.id || ''),
-        } : null,
+        } : existingForm.manualMandateSignature || null,
         sellerOnboardingManualSigningPack: manualSigningPack || existingForm.sellerOnboardingManualSigningPack || existingForm.seller_onboarding_manual_signing_pack || null,
         seller_onboarding_manual_signing_pack: manualSigningPack || existingForm.sellerOnboardingManualSigningPack || existingForm.seller_onboarding_manual_signing_pack || null,
         sellerPostOnboardingDrafts: postOnboardingDrafts,
@@ -8202,8 +8202,8 @@ function AgentListingDetail() {
           requestedBy: String(listingActor?.id || profile?.id || ''),
         } : existingForm.mandateReplacementRequest || null,
       }
-      const listingPatch = { mandateType }
-      await updatePrivateListing(listingRecord.id, listingPatch, { includeRequirementsAndDocuments: false })
+      const listingPatch = selected.includes('mandate') ? { mandateType } : {}
+      if (selected.includes('mandate')) await updatePrivateListing(listingRecord.id, listingPatch, { includeRequirementsAndDocuments: false })
       await updatePrivateListingOnboardingFormData(listingRecord.id, {
         ...nextFormData,
       }, { status: listingRecord?.sellerOnboardingStatus || listingRecord?.sellerOnboarding?.status || 'not_started', syncRequirements: false })
@@ -8217,7 +8217,10 @@ function AgentListingDetail() {
       }))
       setSellerDocumentSendOpen(false)
       setMandateReplacementIntent(false)
-      setDetailMessage(sellerMandateSignatureRoute === 'manual_upload'
+      if (sellerMandateDocumentSource === 'agency_upload') setSellerWorkspaceTab('documents')
+      setDetailMessage(sellerMandateDocumentSource === 'agency_upload'
+        ? 'FICA copies are ready in Documents. Upload your agency’s signed mandate there for review. Preparing FICA does not complete the mandate requirement.'
+        : sellerMandateSignatureRoute === 'manual_upload'
         ? `Physical ${manualSigningPack.documents.some((document) => document.key === 'signed_disclosure_form') ? 'disclosure, FICA and mandate' : 'FICA and mandate'} copies are ready in Documents. Download them for wet-ink signature, then upload each signed copy; the documents remain outstanding until signed evidence is reviewed.`
         : 'Reviewed FICA and mandate copies are ready in Documents. Send each document for portal signature from there.')
     } catch (error) {
@@ -11390,7 +11393,7 @@ function AgentListingDetail() {
         documentName: file.name || doc.label || 'Seller document',
         visibility: 'seller_visible',
         status: 'uploaded',
-        deferMandateSigning: Boolean(signingCopy),
+        deferMandateSigning: Boolean(signingCopy) || (getListingSellerFormData(listingRecord).sellerMandateDocumentSource === 'agency_upload' && (doc.key || doc.requirementKey) === 'signed_mandate'),
         reviewedSigningVersionId: signingCopy?.versionId || '',
         reviewedSigningVersionDigest: signingCopy?.versionDigest || '',
       })
@@ -13640,15 +13643,15 @@ function AgentListingDetail() {
       <Modal
         open={sellerDocumentSendOpen}
         onClose={sellerDocumentSendSaving ? undefined : () => { setSellerDocumentSendOpen(false); setMandateReplacementIntent(false) }}
-        title={mandateReplacementIntent ? 'Prepare replacement mandate copies' : 'Prepare FICA + mandate copies'}
-        subtitle="Check the submitted seller details and commercial terms, then prepare the documents for wet-ink signatures."
+        title={mandateReplacementIntent ? 'Prepare replacement mandate copies' : 'Prepare seller documents'}
+        subtitle="Choose your mandate document, then prepare the selected copies for wet-ink signatures."
         className="max-w-xl"
         footer={(
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <Button type="button" variant="secondary" disabled={sellerDocumentSendSaving} onClick={() => { setSellerDocumentSendOpen(false); setMandateReplacementIntent(false) }}>Cancel</Button>
-            <Button type="button" disabled={sellerDocumentSendSaving || (sellerDocumentSendOpen && sellerDocumentSendSelection.mandate && !getListingMandateReadiness().ready) || (sellerDocumentSendOpen && !mandateReplacementIntent && (readSellerOnboardingReview(getListingSellerFormData(listingRecord).sellerOnboardingReview || getListingSellerFormData(listingRecord).seller_onboarding_review).status !== SELLER_ONBOARDING_REVIEW_STATUS.approved || !sellerOnboardingReviewChecklist?.ready))} onClick={() => void saveSellerDocumentSendSelection()}>
+            <Button type="button" disabled={sellerDocumentSendSaving || !sellerMandateDocumentSource || (sellerDocumentSendOpen && sellerDocumentSendSelection.mandate && !getListingMandateReadiness().ready) || (sellerDocumentSendOpen && !mandateReplacementIntent && (readSellerOnboardingReview(getListingSellerFormData(listingRecord).sellerOnboardingReview || getListingSellerFormData(listingRecord).seller_onboarding_review).status !== SELLER_ONBOARDING_REVIEW_STATUS.approved || !sellerOnboardingReviewChecklist?.ready))} onClick={() => void saveSellerDocumentSendSelection()}>
               {sellerDocumentSendSaving ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
-              {sellerDocumentSendSaving ? 'Preparing...' : sellerMandateSignatureRoute === 'manual_upload' ? 'Approve and prepare physical copies' : 'Approve and prepare portal copies'}
+              {sellerDocumentSendSaving ? 'Preparing...' : sellerMandateDocumentSource === 'agency_upload' ? 'Prepare FICA and continue to Documents' : sellerMandateSignatureRoute === 'manual_upload' ? 'Approve and prepare physical copies' : 'Approve and prepare portal copies'}
             </Button>
           </div>
         )}
@@ -13677,31 +13680,49 @@ function AgentListingDetail() {
               </section>
             </>
           })() : null}
-          {(() => {
-            const mandateReadiness = getListingMandateReadiness()
-            return <div data-testid="listing-mandate-readiness" className={`rounded-[16px] border p-4 text-sm leading-5 ${mandateReadiness.ready ? 'border-[#c9e8d5] bg-[#f0faf3] text-[#176842]' : 'border-[#f2dfbd] bg-[#fff9ec] text-[#7a5a17]'}`}>
-              <p className="font-semibold">{mandateReadiness.ready ? 'Mandate ready to prepare' : 'Mandate details still needed'}</p>
-              <p className="mt-1">{mandateReadiness.summary}</p>
-              {!mandateReadiness.ready ? <><ul className="mt-2 list-disc space-y-1 pl-5 text-xs">{mandateReadiness.missing.map((item) => <li key={item}>{item}</li>)}</ul><div className="mt-3 flex flex-wrap gap-2"><Button type="button" size="sm" variant="secondary" onClick={() => { setSellerProfileBuilderReturnToDocuments(true); setSellerDocumentSendOpen(false); openSellerProfileBuilder('Complete the seller details needed for the mandate, then return to send the secure pack.') }}>Edit seller details</Button><Button type="button" size="sm" variant="secondary" onClick={() => { setSellerSectionReturnToDocuments(true); setSellerDocumentSendOpen(false); openSellerSectionEditor(sellerProfile.sections.find((section) => section.key === 'mandate_details')) }}>Edit mandate details</Button></div></> : null}
-            </div>
-          })()}
-          {ONLINE_SIGNING_DISABLED ? <div className="rounded-[16px] border border-[#f2dfbd] bg-[#fff9ec] p-4 text-sm leading-6 text-[#7a5a17]"><p className="font-semibold">Wet-ink signatures required</p><p className="mt-1">We will prepare printable FICA and mandate copies. Download them, arrange physical signatures, then upload the signed originals in Documents.</p></div> : null}
-          {(marketingDraft.mandateType || listingRecord?.mandateType || getListingSellerFormData(listingRecord).mandateType) === 'dual' ? <label className="grid gap-1.5 rounded-[16px] border border-[#dce6f2] bg-white p-4 text-sm font-semibold text-[#243d56]">Second agency named in the dual mandate
-            <Field value={sellerDocumentOtherAgencyName} onChange={(event) => setSellerDocumentOtherAgencyName(event.target.value)} placeholder="Other agency name" />
-          </label> : null}
-          {getSellerDocumentMandateTerms().mandateDuration === 'fixed' ? <label className="grid gap-1.5 rounded-[16px] border border-[#dce6f2] bg-white p-4 text-sm font-semibold text-[#243d56]">Mandate end date
-            <Field type="date" value={sellerDocumentMandateEndDate} onChange={(event) => setSellerDocumentMandateEndDate(event.target.value)} />
+          <fieldset disabled={sellerDocumentSendSaving} className="space-y-3 rounded-[16px] border border-[#dce6f2] bg-white p-4">
+            <legend className="px-1 text-sm font-semibold text-[#243d56]">Which mandate would you like to use?</legend>
+            {[
+              ['arch9_generated', 'Generate an Arch9 mandate', 'Prepare a printable mandate from the saved terms. Complete its agency schedules and approval checks before preparing it.'],
+              ['agency_upload', 'Use my agency’s own mandate', 'Prepare FICA here and upload your agency’s signed mandate in Documents. Arch9 mandate schedules are not required for this route.'],
+            ].map(([value, label, description]) => <label key={value} className="flex cursor-pointer items-start gap-3 rounded-xl border border-[#dce6f2] p-3 text-sm">
+              <input type="radio" name="seller-mandate-document-source" value={value} checked={sellerMandateDocumentSource === value} onChange={() => {
+                setSellerMandateDocumentSource(value)
+                setSellerDocumentSendSelection({ disclosure: false, fica: value === 'agency_upload' || !mandateReplacementIntent, mandate: value === 'arch9_generated' })
+                setDetailError('')
+              }} className="mt-1" />
+              <span><span className="block font-semibold text-[#243d56]">{label}</span><span className="mt-1 block text-xs leading-5 text-[#607387]">{description}</span></span>
+            </label>)}
+          </fieldset>
+          {sellerMandateDocumentSource === 'agency_upload' ? <div className="rounded-[16px] border border-[#dce6f2] bg-[#f8fbff] p-4 text-sm leading-6 text-[#47637d]">Your agency mandate remains a separate required document. Upload the signed copy in Documents for review; the selected route does not mark it signed or approved.</div> : null}
+          {sellerMandateDocumentSource === 'arch9_generated' ? <>
             {(() => {
-              const form = getListingSellerFormData(listingRecord)
-              const savedExpiry = String(form.expiryDate || form.mandateEndDate || '').slice(0, 10)
-              return !sellerDocumentMandateEndDate && isMandateCalendarDate(savedExpiry)
-                ? <span className="text-xs font-normal text-[#607387]">Saved expiry: {formatDate(savedExpiry)}. <button type="button" className="font-semibold underline" onClick={() => setSellerDocumentMandateEndDate(savedExpiry)}>Use this date for the new copy</button></span>
-                : null
+              const mandateReadiness = getListingMandateReadiness()
+              return <div data-testid="listing-mandate-readiness" className={`rounded-[16px] border p-4 text-sm leading-5 ${mandateReadiness.ready ? 'border-[#c9e8d5] bg-[#f0faf3] text-[#176842]' : 'border-[#f2dfbd] bg-[#fff9ec] text-[#7a5a17]'}`}>
+                <p className="font-semibold">{mandateReadiness.ready ? 'Mandate ready to prepare' : 'Mandate details still needed'}</p>
+                <p className="mt-1">{mandateReadiness.summary}</p>
+                {!mandateReadiness.ready ? <><ul className="mt-2 list-disc space-y-1 pl-5 text-xs">{mandateReadiness.missing.map((item) => <li key={item}>{item}</li>)}</ul><div className="mt-3 flex flex-wrap gap-2"><Button type="button" size="sm" variant="secondary" onClick={() => { setSellerProfileBuilderReturnToDocuments(true); setSellerDocumentSendOpen(false); openSellerProfileBuilder('Complete the seller details needed for the mandate, then return to send the secure pack.') }}>Edit seller details</Button><Button type="button" size="sm" variant="secondary" onClick={() => { setSellerSectionReturnToDocuments(true); setSellerDocumentSendOpen(false); openSellerSectionEditor(sellerProfile.sections.find((section) => section.key === 'mandate_details')) }}>Edit mandate details</Button></div></> : null}
+              </div>
             })()}
-          </label> : null}
-          <label className="grid gap-1.5 rounded-[16px] border border-[#dce6f2] bg-white p-4 text-sm font-semibold text-[#243d56]">Introduced-buyer protection period (calendar days)
-            <Field type="number" min="0" step="1" value={sellerDocumentProtectionPeriodDays} onChange={(event) => setSellerDocumentProtectionPeriodDays(event.target.value)} placeholder="Enter 0 for none" />
-          </label>
+
+            {(marketingDraft.mandateType || listingRecord?.mandateType || getListingSellerFormData(listingRecord).mandateType) === 'dual' ? <label className="grid gap-1.5 rounded-[16px] border border-[#dce6f2] bg-white p-4 text-sm font-semibold text-[#243d56]">Second agency named in the dual mandate
+              <Field value={sellerDocumentOtherAgencyName} onChange={(event) => setSellerDocumentOtherAgencyName(event.target.value)} placeholder="Other agency name" />
+            </label> : null}
+            {getSellerDocumentMandateTerms().mandateDuration === 'fixed' ? <label className="grid gap-1.5 rounded-[16px] border border-[#dce6f2] bg-white p-4 text-sm font-semibold text-[#243d56]">Mandate end date
+              <Field type="date" value={sellerDocumentMandateEndDate} onChange={(event) => setSellerDocumentMandateEndDate(event.target.value)} />
+              {(() => {
+                const form = getListingSellerFormData(listingRecord)
+                const savedExpiry = String(form.expiryDate || form.mandateEndDate || '').slice(0, 10)
+                return !sellerDocumentMandateEndDate && isMandateCalendarDate(savedExpiry)
+                  ? <span className="text-xs font-normal text-[#607387]">Saved expiry: {formatDate(savedExpiry)}. <button type="button" className="font-semibold underline" onClick={() => setSellerDocumentMandateEndDate(savedExpiry)}>Use this date for the new copy</button></span>
+                  : null
+              })()}
+            </label> : null}
+            <label className="grid gap-1.5 rounded-[16px] border border-[#dce6f2] bg-white p-4 text-sm font-semibold text-[#243d56]">Introduced-buyer protection period (calendar days)
+              <Field type="number" min="0" step="1" value={sellerDocumentProtectionPeriodDays} onChange={(event) => setSellerDocumentProtectionPeriodDays(event.target.value)} placeholder="Enter 0 for none" />
+            </label>
+          </> : null}
+          {ONLINE_SIGNING_DISABLED ? <div className="rounded-[16px] border border-[#f2dfbd] bg-[#fff9ec] p-4 text-sm leading-6 text-[#7a5a17]"><p className="font-semibold">Wet-ink signatures required</p><p className="mt-1">Download the prepared copies, arrange physical signatures, then upload the signed originals in Documents.</p></div> : null}
         </div>
       </Modal>
       <Modal

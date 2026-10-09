@@ -95,7 +95,7 @@ function retainUnselectedCopies({ entry, current, includeFica, includeMandate, d
   const retainedKeys = new Set([
     ...(disclosureComplete ? ['signed_disclosure_form'] : []),
     ...(!includeFica ? ['signed_fica_declaration'] : []),
-    ...(!includeMandate ? ['signed_mandate'] : []),
+    ...(!includeMandate && approval.mandateSource !== 'agency_upload' ? ['signed_mandate'] : []),
   ])
   const retained = (Array.isArray(current.documents) ? current.documents : []).filter((document) =>
     retainedKeys.has(text(document?.key)) && !freshKeys.has(text(document?.key)) &&

@@ -278,3 +278,132 @@ test('mandate and FICA uploads prepare a missing saved-model target before Stora
     }
   }
 })
+
+
+test('listing preparation offers the agency-upload route without requiring or overwriting Arch9 mandate terms', async () => {
+  const { validateSellerOnboardingFormalSigningSelection } = await import('../src/core/documents/sellerOnboardingFormalSigningPack.js')
+  const { createSellerOnboardingFormalPackApproval } = await import('../src/core/documents/sellerOnboardingFormalPackApproval.js')
+  const { createSellerOnboardingSigningCopyPack } = await import('../src/core/documents/sellerOnboardingManualSigningPack.js')
+  const { createSellerReviewedDocumentVersions, buildSellerReviewedDocumentVersionIndex } = await import('../src/core/documents/sellerReviewedDocumentVersions.js')
+  const source = read('../src/pages/AgentListingDetail.jsx')
+  const ast = parse(source, { sourceType: 'module', plugins: ['jsx'] })
+  const find = node => {
+    if (!node || typeof node !== 'object') return null
+    if (node.type === 'FunctionDeclaration' && node.id?.name === 'saveSellerDocumentSendSelection') return node
+    for (const child of Object.values(node)) {
+      const found = Array.isArray(child) ? child.map(find).find(Boolean) : find(child)
+      if (found) return found
+    }
+    return null
+  }
+  const node = find(ast)
+  assert.ok(node)
+  const handler = source.slice(node.start, node.end)
+  for (const mode of ['agency_upload', 'arch9_generated', 'unselected', 'unreviewed', 'save_failed']) {
+    const calls = [], errors = [], messages = []
+    let saved
+    const form = { sellerOnboardingReview: { status: mode === 'unreviewed' ? 'pending' : 'approved' },
+      mandateType: 'exclusive', commissionPercentage: '7', protectionPeriod: '', mandateCapture: {},
+      sellerName: 'Synthetic Seller', sellerEmail: 'seller@example.test' }
+    const before = structuredClone(form)
+    const listing = { id: '11111111-1111-4111-8111-111111111111', sellerOnboardingStatus: 'completed', sellerOnboarding: { formData: form } }
+    const signingPack = { seller: { name: form.sellerName }, signers: [{ name: form.sellerName, role: 'Seller', email: form.sellerEmail }], mandate: { mandateType: 'exclusive', mandateCapture: {} } }
+    const setters = Object.fromEntries(['setSellerDocumentSendSaving', 'setSellerDocumentSendOpen', 'setMandateReplacementIntent'].map(name => [name, () => {}]))
+    const save = vm.runInNewContext(`(${handler})`, {
+      ...setters, ONLINE_SIGNING_DISABLED: true, sellerMandateSignatureRoute: 'manual_upload', listingRecord: listing,
+      sellerMandateDocumentSource: mode === 'unselected' ? '' : mode === 'arch9_generated' ? mode : 'agency_upload',
+      sellerDocumentSendSelection: { fica: true, mandate: mode === 'arch9_generated' }, mandateReplacementIntent: false,
+      hasIdentifiedSellerEntity: () => true, getSellerSigningPlan: () => ({ recipients: signingPack.signers, ready: true }),
+      getSellerSigningDocumentOptions: () => ({ documents: [{ key: 'fica', ready: true }, { key: 'mandate', ready: false }] }),
+      validateSellerOnboardingFormalSigningSelection,
+      getListingMandateReadiness: () => ({ ready: false, missing: ['Agency schedules are incomplete'] }),
+      getListingSellerFormData: () => form, readSellerOnboardingReview: value => value,
+      getSellerOnboardingReviewChecklist: () => ({ ready: true }),
+      SELLER_ONBOARDING_REVIEW_STATUS: { approved: 'approved', correctionRequested: 'correction_requested' },
+      commissionDraft: { basis: 'percentage', percentage: '', amount: '', vatHandling: '' }, marketingDraft: {},
+      sellerDocumentReplacementGroupId: '', sellerDocumentReplacementReason: '', listingActor: { id: 'agent-1' }, profile: {},
+      saveCommissionDraft: () => { throw Error('Agency-upload preparation must not save commission') },
+      requireSellerMandateWording: () => { throw Error('Agency-upload preparation must not select Arch9 wording') },
+      buildSellerSigningPackSnapshot: () => signingPack,
+      createSellerOnboardingFormalPackApproval, createSellerOnboardingSigningCopyPack,
+      createSellerReviewedDocumentVersions, buildSellerReviewedDocumentVersionIndex,
+      buildSellerPostOnboardingDrafts: () => ({ documents: [{ targetRequirementKey: 'signed_fica_declaration', generatedHtml: '<article>Reviewed FICA</article>' }] }),
+      hasCompletedSellerDisclosure: () => true, sellerDocumentSource: { rows: [] },
+      preferredTransferAttorneyOptions: [], preferredTransferAttorneyOptionId: '',
+      createSellerOnboardingSigningLifecycle: value => ({ stage: value.stage, metadata: value.metadata }),
+      SELLER_ONBOARDING_SIGNING_STAGES: { manualAwaitingUpload: 'manual_awaiting_upload', packPrepared: 'pack_prepared' },
+      updatePrivateListing: () => { throw Error('Agency-upload preparation must not write mandate listing fields') },
+      updatePrivateListingOnboardingFormData: async (id, data) => {
+        assert.equal(id, listing.id)
+        if (mode === 'save_failed') throw Error('Save failed')
+        calls.push('saved'); saved = data
+      },
+      patchListing: callback => callback(listing),
+      setSellerWorkspaceTab: value => calls.push(value),
+      setDetailError: value => errors.push(value), setDetailMessage: value => messages.push(value),
+    })
+    await save()
+    assert.deepEqual(form, before)
+    if (mode === 'agency_upload') {
+      assert.deepEqual(calls, ['saved', 'documents'])
+      assert.deepEqual(errors, [])
+      assert.match(messages[0], /Upload your agency.*signed mandate/)
+      assert.equal(saved.sellerMandateDocumentSource, 'agency_upload')
+      assert.deepEqual(saved.sellerOnboardingFormalPackApproval.selectedDocuments, ['fica'])
+      assert.equal(saved.sellerOnboardingFormalPackApproval.commission.confirmed, false)
+      assert.deepEqual(saved.sellerOnboardingManualSigningPack.documents.map(row => row.key), ['signed_fica_declaration'])
+      assert.equal(saved.commissionPercentage, '7')
+      assert.equal(saved.mandateType, 'exclusive')
+      assert.equal(saved.protectionPeriod, '')
+      assert.deepEqual(saved.mandateCapture, {})
+      assert.equal(saved.manualMandateSignature, null)
+    } else {
+      assert.deepEqual(calls, [])
+      assert.equal(saved, undefined)
+      assert.equal(messages.length, 0)
+      assert.ok(errors[0], mode)
+    }
+  }
+})
+
+
+test('the listing mandate choice has no forced default and both visible options update the actual selection', async () => {
+  const React = await import('react')
+  const { transformSync } = await import('esbuild')
+  const source = read('../src/pages/AgentListingDetail.jsx')
+  const ast = parse(source, { sourceType: 'module', plugins: ['jsx'] })
+  const find = node => {
+    if (!node || typeof node !== 'object') return null
+    if (node.type === 'JSXElement' && node.openingElement.name.name === 'fieldset' && source.slice(node.start, node.end).includes('Which mandate would you like to use?')) return node
+    for (const child of Object.values(node)) {
+      const found = Array.isArray(child) ? child.map(find).find(Boolean) : find(child)
+      if (found) return found
+    }
+    return null
+  }
+  const node = find(ast)
+  assert.ok(node)
+  const code = transformSync(`const choice = (${source.slice(node.start, node.end)});`, { loader: 'jsx' }).code
+  for (const mandateReplacementIntent of [false, true]) {
+    const updates = []
+    const tree = vm.runInNewContext(`${code}; choice`, { React, sellerDocumentSendSaving: false, sellerMandateDocumentSource: '', mandateReplacementIntent,
+      setSellerMandateDocumentSource: value => updates.push(value), setSellerDocumentSendSelection: value => updates.push(value), setDetailError: () => {} })
+    const controls = []
+    const walk = element => {
+      if (!element || typeof element !== 'object') return
+      if (element.type === 'input') controls.push(element.props)
+      React.Children.toArray(element.props?.children).forEach(walk)
+    }
+    walk(tree)
+    assert.deepEqual(controls.map(input => input.value), ['arch9_generated', 'agency_upload'])
+    assert.equal(controls.every(input => input.checked === false && input.type === 'radio'), true)
+    controls[0].onChange()
+    assert.equal(updates[0], 'arch9_generated')
+    assert.equal(updates[1].mandate, true)
+    assert.equal(updates[1].fica, !mandateReplacementIntent)
+    controls[1].onChange()
+    assert.equal(updates[2], 'agency_upload')
+    assert.equal(updates[3].mandate, false)
+    assert.equal(updates[3].fica, true)
+  }
+})

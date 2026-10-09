@@ -30,3 +30,17 @@ test('records the approved route and frozen commission terms', () => {
   assert.equal(approval.commission.confirmed, true)
   assert.equal(approval.history.length, 1)
 })
+
+
+test('records the agency-upload choice without approving its mandate or confirming unset commercial terms', () => {
+  const input = { reviewApproved: true, selectedDocuments: ['fica'], signingRoute: 'manual_upload', mandateSource: 'agency_upload', actor: 'agent-1' }
+  const approval = createSellerOnboardingFormalPackApproval(input)
+  assert.equal(approval.mandateSource, 'agency_upload')
+  assert.equal(approval.history[0].mandateSource, 'agency_upload')
+  assert.deepEqual(approval.selectedDocuments, ['fica'])
+  assert.equal(approval.commission.confirmed, false)
+  assert.throws(() => createSellerOnboardingFormalPackApproval({ ...input, reviewApproved: false }), /Approve seller onboarding/)
+  assert.throws(() => createSellerOnboardingFormalPackApproval({ ...input, selectedDocuments: ['fica', 'mandate'] }), /Upload the agency mandate separately/)
+  assert.throws(() => createSellerOnboardingFormalPackApproval({ ...input, selectedDocuments: [] }), /Include FICA/)
+  assert.throws(() => createSellerOnboardingFormalPackApproval({ ...input, mandateSource: 'unknown' }), /Choose a mandate document source/)
+})

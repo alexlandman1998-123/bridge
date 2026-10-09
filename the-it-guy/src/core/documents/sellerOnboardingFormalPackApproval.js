@@ -16,6 +16,7 @@ export function validateSellerOnboardingFormalPackApproval({
   selectedDocuments = [],
   commission = {},
   signingRoute = 'digital_pack',
+  mandateSource = '',
 } = {}) {
   const selected = Array.isArray(selectedDocuments) ? selectedDocuments.map(text).filter(Boolean) : []
   const includesMandate = selected.includes('mandate')
@@ -24,6 +25,9 @@ export function validateSellerOnboardingFormalPackApproval({
   const vatHandling = text(commission?.vatHandling || commission?.vat_handling)
   const missing = []
   if (!reviewApproved) missing.push('Approve seller onboarding')
+  if (mandateSource && !['arch9_generated', 'agency_upload'].includes(mandateSource)) missing.push('Choose a mandate document source')
+  if (mandateSource === 'agency_upload' && !selected.includes('fica')) missing.push('Include FICA')
+  if (mandateSource === 'agency_upload' && includesMandate) missing.push('Upload the agency mandate separately in Documents')
   if (includesMandate && value <= 0) missing.push(basis === 'fixed' ? 'Fixed commission amount' : 'Commission percentage')
   if (includesMandate && !vatHandling) missing.push('VAT treatment')
   return {
@@ -48,11 +52,12 @@ export function createSellerOnboardingFormalPackApproval({
   selectedDocuments = [],
   commission = {},
   signingRoute = 'digital_pack',
+  mandateSource = '',
   documentRoutes = {},
   actor = '',
   at = new Date().toISOString(),
 } = {}) {
-  const validation = validateSellerOnboardingFormalPackApproval({ reviewApproved, selectedDocuments, commission, signingRoute })
+  const validation = validateSellerOnboardingFormalPackApproval({ reviewApproved, selectedDocuments, commission, signingRoute, mandateSource })
   if (!validation.valid) throw new Error(`Complete ${validation.missing.join(' and ')} before preparing the signing pack.`)
   const current = existing && typeof existing === 'object' ? existing : {}
   const entry = {
@@ -62,6 +67,7 @@ export function createSellerOnboardingFormalPackApproval({
     documentRoutes: { ...documentRoutes },
     selectedDocuments: validation.selectedDocuments,
     commission: validation.commission,
+    ...(mandateSource ? { mandateSource } : {}),
   }
   return {
     contract: SELLER_ONBOARDING_FORMAL_PACK_APPROVAL_CONTRACT,
@@ -77,6 +83,7 @@ export function createSellerOnboardingFormalPackApproval({
     selectedDocuments: entry.selectedDocuments,
     selected_documents: entry.selectedDocuments,
     commission: entry.commission,
+    ...(entry.mandateSource ? { mandateSource: entry.mandateSource } : {}),
     history: [...(Array.isArray(current.history) ? current.history : []), entry],
   }
 }

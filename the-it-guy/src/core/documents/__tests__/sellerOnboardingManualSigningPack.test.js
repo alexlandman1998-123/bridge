@@ -209,3 +209,27 @@ test('digital preparation can select FICA alone without requiring mandate terms'
   assert.equal(pack.documents.some(d => d.key === 'signed_mandate'), false)
   assert.equal(pack.documents.some(d => d.key === 'signed_fica_declaration'), true)
 })
+
+
+test('the agency-upload route freezes FICA without blank Arch9 schedules and archives previous mandate copies', async () => {
+  const signingPack = { branding: { organisationName: 'Synthetic Agency' }, seller: { name: 'Synthetic Seller' }, signers: [{ name: 'Synthetic Seller', role: 'Seller', email: 'seller@example.test' }], mandate: { mandateType: 'sole' } }
+  const drafts = { documents: [{ targetRequirementKey: 'signed_fica_declaration', generatedHtml: '<article>Reviewed FICA</article>' }] }
+  const initialApproval = { status: 'approved', signingRoute: 'manual_upload', selectedDocuments: ['fica', 'mandate'], commission: { confirmed: true, basis: 'percentage', percentage: '5', vatHandling: 'inclusive' } }
+  const initial = createSellerOnboardingSigningCopyPack({ formalPackApproval: initialApproval, signingPack, postOnboardingDrafts: drafts, disclosureSigned: true })
+  const frozen = await createSellerReviewedDocumentVersions({ manualSigningPack: initial, formalPackApproval: initialApproval, signingPack, actor: 'agent-1' })
+  initial.documents = frozen.documents
+  const before = structuredClone(initial)
+  const ownPack = { ...signingPack, mandate: { mandateType: 'sole', mandateCapture: {} } }
+  const approval = { status: 'approved', signingRoute: 'manual_upload', mandateSource: 'agency_upload', selectedDocuments: ['fica'], commission: { confirmed: false } }
+  const physical = createSellerOnboardingSigningCopyPack({ existing: initial, formalPackApproval: approval, signingPack: ownPack, postOnboardingDrafts: drafts, disclosureSigned: true })
+  assert.deepEqual(physical.documents.map(row => row.key), ['signed_fica_declaration'])
+  assert.equal(physical.status, 'awaiting_signed_hard_copy')
+  assert.deepEqual(physical.versionHistory[0].documents, before.documents)
+  assert.deepEqual(initial, before)
+  const reviewed = await createSellerReviewedDocumentVersions({ existing: frozen, manualSigningPack: physical, formalPackApproval: approval, signingPack: ownPack, actor: 'agent-1' })
+  assert.deepEqual(reviewed.documents.map(row => row.key), ['signed_fica_declaration'])
+  assert.equal(await verifySellerReviewedDocumentVersion(reviewed.documents[0]), true)
+  assert.deepEqual(reviewed.history[0].documents, before.documents)
+  // The generated option still enforces its incomplete revised schedule.
+  assert.throws(() => createSellerOnboardingSigningCopyPack({ formalPackApproval: initialApproval, signingPack: ownPack, postOnboardingDrafts: drafts, disclosureSigned: true }), /mandate|schedule|approval/i)
+})
