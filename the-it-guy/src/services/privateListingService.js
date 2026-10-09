@@ -8994,9 +8994,27 @@ export async function uploadPrivateListingDocument(listingId, file, {
   }
 
   // Resolve before Storage so a missing or unreadable checklist leaves no file behind.
-  const requirements = await getPrivateListingDocumentRequirements(normalizedListingId)
+  let requirements = await getPrivateListingDocumentRequirements(normalizedListingId)
   const normalizedRequirementId = normalizeUuid(requirementId)
   const normalizedRequirementKey = normalizeCompatibilityKey(requirementKey || documentType || documentCategory)
+  // A completed intake can still have only its old onboarding checklist when
+  // the background projection failed. Prepare the exact saved-model mandate
+  // request before Storage; never invent a target for a retired/selected request
+  // or a version-bound signing copy.
+  if (normalizedRequirementKey === 'signed_mandate' && !normalizedRequirementId && !reviewedSigningVersionId) {
+    const aliases = getPrivateListingDocumentMatchAliases(normalizedRequirementKey)
+    const hasMandateRequest = requirements.some((row) => aliases.includes(normalizeCompatibilityKey(row.requirement_key || row.key)))
+    if (!hasMandateRequest) {
+      const mandateRows = (syncSellerDocumentRequirementsFromEngine(accessibleListing, requirements).upsertRows || [])
+        .filter((row) => normalizeCompatibilityKey(row.requirement_key || row.key) === 'signed_mandate')
+      if (mandateRows.length !== 1) {
+        throw new Error('The signed-mandate checklist is not ready. Save the completed seller onboarding and ownership details before uploading the signed mandate.')
+      }
+      requirements = await ensurePrivateListingDocumentRequirements(normalizedListingId, mandateRows, {
+        reason: 'agent_signed_mandate_upload_preflight',
+      })
+    }
+  }
   // Internal buyer-offer evidence uses offer-specific references rather than
   // seller checklist requirements (for example a wet-ink OTP pack).
   const isInternalOfferEvidence = normalizeCompatibilityKey(documentCategory) === 'buyer_offer' && visibility === 'internal' && !requirementId && !reviewedSigningVersionId
