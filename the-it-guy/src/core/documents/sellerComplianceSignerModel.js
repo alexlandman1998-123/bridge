@@ -194,6 +194,7 @@ export function normalizeSellerComplianceSigner(input = {}, index = 0) {
 
   return {
     id,
+    idNumber: text(input.idNumber || input.id_number || input.passportNumber || input.passport_number),
     identityCaptured: input.identityCaptured ?? Boolean(text(input.name || input.signerName || input.signer_name || input.fullName || input.full_name)),
     name: text(input.name || input.signerName || input.signer_name || input.fullName || input.full_name) || roleLabel(role),
     email: text(input.email || input.signerEmail || input.signer_email).toLowerCase(),

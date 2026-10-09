@@ -1,3 +1,5 @@
+import { readSellerDisclosureAcknowledgements, SELLER_DISCLOSURE_ACKNOWLEDGEMENT_KEYS } from './sellerDisclosureAcknowledgements.js'
+
 export const SELLER_ONBOARDING_CONSENT_VERSION = 'arch9-seller-onboarding-consents-v1'
 
 export const SELLER_ONBOARDING_CONSENTS = Object.freeze([
@@ -58,4 +60,35 @@ export function updateSellerOnboardingConsent(formData = {}, consentKey = '', is
 
 export function areSellerOnboardingConsentsComplete(formData = {}) {
   return Object.values(readSellerOnboardingConsents(formData)).every((consent) => consent.accepted)
+}
+
+// Prefer the actual privacy choice over legacy summary fields. Private signer
+// links store this choice on the primary signer rather than the shared disclosure.
+export function readSellerPopiConsent(formData = {}) {
+  const signers = formData.sellerComplianceSigners || formData.seller_compliance_signers ||
+    formData.sellerComplianceSigning?.signers || formData.seller_compliance_signing?.signers || []
+  const primarySigner = Array.isArray(signers)
+    ? [...signers].sort((a, b) => Number(a.order || 1) - Number(b.order || 1))[0]
+    : null
+  const disclosure = formData.propertyDisclosure || formData.property_disclosure || {}
+  const privacy = readSellerOnboardingConsents(formData).privacyProcessing
+  if (privacy.accepted) return { accepted: true, acceptedAt: privacy.acceptedAt }
+  const privacyKey = SELLER_DISCLOSURE_ACKNOWLEDGEMENT_KEYS.privacyAndPaiaNotice
+  for (const value of [
+    primarySigner?.acknowledgements,
+    disclosure.sellerDisclosureAcknowledgements,
+    disclosure.seller_disclosure_acknowledgements,
+  ]) {
+    const entries = Array.isArray(value?.acknowledgements) ? value.acknowledgements : []
+    const item = entries.find((entry) => entry?.key === privacyKey) ?? value?.[privacyKey]
+    if (item === undefined) continue
+    const evidence = readSellerDisclosureAcknowledgements(value)
+    const isAccepted = evidence.acknowledgements.find((entry) => entry.key === privacyKey).accepted
+    return { accepted: isAccepted, acceptedAt: isAccepted ? evidence.acceptedAt : '' }
+  }
+  const isAccepted = [formData.popiConsentAccepted, formData.popi_consent_accepted, formData.popiConsent, formData.popi_consent].some(accepted)
+  return {
+    accepted: isAccepted,
+    acceptedAt: isAccepted ? text(formData.popiConsentAcceptedAt || formData.popi_consent_accepted_at) : '',
+  }
 }

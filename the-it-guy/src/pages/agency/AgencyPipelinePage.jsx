@@ -1,3 +1,6 @@
+import { projectSellerProfilePeople } from '../../lib/sellerProfileCaptureModel'
+import { formatPropertyAddress } from '../../lib/sellerPropertyAddress'
+import { readSellerPopiConsent } from '../../core/documents/sellerOnboardingConsent'
 import CalendarHealthPanel from '../../components/appointments/CalendarHealthPanel'
 import ConnectedCalendarPanel from '../../components/appointments/ConnectedCalendarPanel'
 import { appointmentMatchesAgent, appointmentReadState } from '../../core/appointments/appointmentReadModel.js'
@@ -6285,16 +6288,7 @@ function workspaceTextLooksLikeAddress(value = '') {
 }
 
 function buildWorkspaceFormattedAddress(addressLine = '', ...parts) {
-  const line = normalizeText(addressLine)
-  const lineKey = line.toLowerCase()
-  const rows = [line]
-  for (const part of parts.map(normalizeText).filter(Boolean)) {
-    const partKey = part.toLowerCase()
-    if (rows.some((row) => row.toLowerCase() === partKey)) continue
-    if (lineKey && lineKey.includes(partKey)) continue
-    rows.push(part)
-  }
-  return rows.filter(Boolean).join(', ')
+  return formatPropertyAddress({ formatted: [addressLine, ...parts].map(normalizeText).filter(Boolean).join(', ') })
 }
 
 function firstWorkspaceValue(...values) {
@@ -6410,11 +6404,45 @@ function countWorkspaceMedia(...groups) {
   }).filter(Boolean).length
 }
 
+function getWorkspaceSellerCanonicalFacts(lead = {}, listing = {}) {
+  const source = listing?.sourceListing || listing || {}
+  const onboarding = source.sellerOnboarding || source.seller_onboarding || {}
+  return [
+    source.sellerCanonicalFacts, source.seller_canonical_facts, source.seller_canonical_facts_json,
+    onboarding.canonicalFacts, onboarding.canonical_facts, onboarding.canonical_facts_json,
+    onboarding.formData?.canonicalSellerFacts, onboarding.form_data?.canonicalSellerFacts,
+    source.sellerOnboardingFormData?.canonicalSellerFacts, source.seller_onboarding_form_data?.canonicalSellerFacts,
+    lead.sellerCanonicalFacts, lead.seller_canonical_facts,
+    lead.sellerOnboarding?.formData?.canonicalSellerFacts, lead.seller_onboarding?.form_data?.canonicalSellerFacts,
+  ].find((value) => isPlainObject(value) && isPlainObject(value.seller)) || {}
+}
+
 function getWorkspaceSellerOnboarding(lead = {}, listing = {}) {
-  return {
+  return projectSellerProfilePeople({
     ...getLeadSellerOnboardingFormData(lead),
     ...getListingSellerFormData(listing?.sourceListing || listing || {}),
-  }
+  }, getWorkspaceSellerCanonicalFacts(lead, listing))
+}
+
+// Saved empty and zero values are deliberate edits; legacy lead fields must
+// only fill fields that have never been captured on the onboarding record.
+function getWorkspacePropertyCharacteristic(onboarding, keys, ...fallbacks) {
+  const savedKey = keys.find((key) => Object.hasOwn(onboarding, key))
+  const value = savedKey ? onboarding[savedKey] : fallbacks.find((entry) => String(entry ?? '').trim() !== '')
+  return String(value ?? '').trim()
+}
+
+function buildSellerPropertyCharacteristicsPatch(form = {}) {
+  return Object.fromEntries([
+    'askingPrice', 'bedrooms', 'bathrooms', 'garages', 'parking',
+    'erfSize', 'floorSize', 'levies', 'ratesAndTaxes',
+  ].map((key) => [key, String(form[key] ?? '').trim()]))
+}
+
+function retainLatestSellerListing(current, incoming) {
+  if (current?.id === incoming?.id &&
+      Date.parse(current?.updatedAt || current?.updated_at) > Date.parse(incoming?.updatedAt || incoming?.updated_at)) return current
+  return incoming
 }
 
 function getWorkspacePropertyPostalCode(onboarding = {}) {
@@ -6542,12 +6570,12 @@ function buildSellerPropertyWorkspaceViewModel({ lead = {}, listing = null, jour
     },
     characteristics: {
       metrics: [
-        { label: 'Bedrooms', value: firstWorkspaceValue(lead?.bedrooms, onboarding?.bedrooms, propertyDetails?.bedrooms, listingSource?.bedrooms, listing?.bedrooms), Icon: BedDouble },
-        { label: 'Bathrooms', value: firstWorkspaceValue(lead?.bathrooms, onboarding?.bathrooms, propertyDetails?.bathrooms, listingSource?.bathrooms, listing?.bathrooms), Icon: Bath },
-        { label: 'Garages', value: firstWorkspaceValue(lead?.garages, onboarding?.garages, propertyDetails?.garages, listingSource?.garages), Icon: Home },
-        { label: 'Parking', value: firstWorkspaceValue(lead?.parking, onboarding?.parking, onboarding?.parkingSpaces, propertyDetails?.parking, listingSource?.coveredParking, listingSource?.openParking, listing?.parking), Icon: Car },
-        { label: 'Erf size', value: firstWorkspaceValue(lead?.erfSize, onboarding?.erfSize, onboarding?.propertySize, propertyDetails?.erfSize, listingSource?.erfSize), suffix: 'm²', Icon: Ruler },
-        { label: 'Floor size', value: firstWorkspaceValue(lead?.floorSize, onboarding?.floorSize, propertyDetails?.floorSize, listingSource?.floorSize), suffix: 'm²', Icon: Building2 },
+        { label: 'Bedrooms', value: getWorkspacePropertyCharacteristic(onboarding, ['bedrooms'], listingSource?.bedrooms, listing?.bedrooms, propertyDetails?.bedrooms, lead?.bedrooms), Icon: BedDouble },
+        { label: 'Bathrooms', value: getWorkspacePropertyCharacteristic(onboarding, ['bathrooms'], listingSource?.bathrooms, listing?.bathrooms, propertyDetails?.bathrooms, lead?.bathrooms), Icon: Bath },
+        { label: 'Garages', value: getWorkspacePropertyCharacteristic(onboarding, ['garages'], listingSource?.garages, propertyDetails?.garages, lead?.garages), Icon: Home },
+        { label: 'Parking', value: getWorkspacePropertyCharacteristic(onboarding, ['parking', 'parkingSpaces'], listingSource?.parking, listing?.parking, propertyDetails?.parking, lead?.parking, listingSource?.coveredParking, listingSource?.openParking), Icon: Car },
+        { label: 'Erf size', value: getWorkspacePropertyCharacteristic(onboarding, ['erfSize', 'propertySize', 'erf_size'], listingSource?.erfSize, propertyDetails?.erfSize, lead?.erfSize), suffix: 'm²', Icon: Ruler },
+        { label: 'Floor size', value: getWorkspacePropertyCharacteristic(onboarding, ['floorSize', 'floor_size'], listingSource?.floorSize, propertyDetails?.floorSize, lead?.floorSize), suffix: 'm²', Icon: Building2 },
       ],
       features,
     },
@@ -6558,8 +6586,8 @@ function buildSellerPropertyWorkspaceViewModel({ lead = {}, listing = null, jour
         { label: 'Vacant from', value: firstWorkspaceText(onboarding?.vacantFrom, onboarding?.vacant_from), Icon: CalendarDays },
         { label: 'Tenancy', value: firstWorkspaceText(onboarding?.tenancyStatus, onboarding?.tenancy_status, onboarding?.leaseStatus), Icon: FileText },
         { label: 'Lease end date', value: firstWorkspaceText(onboarding?.leaseEndDate, onboarding?.lease_end_date), Icon: Clock3 },
-        { label: 'Rates & taxes', value: firstWorkspaceValue(onboarding?.ratesAndTaxes, onboarding?.ratesTaxes, onboarding?.monthlyRates), Icon: Tag, format: 'currency' },
-        { label: 'Levies', value: firstWorkspaceValue(onboarding?.levies, onboarding?.monthlyLevies), Icon: Columns3, format: 'currency' },
+        { label: 'Rates & taxes', value: getWorkspacePropertyCharacteristic(onboarding, ['ratesAndTaxes', 'ratesTaxes', 'monthlyRates']), Icon: Tag, format: 'currency' },
+        { label: 'Levies', value: getWorkspacePropertyCharacteristic(onboarding, ['levies', 'monthlyLevies']), Icon: Columns3, format: 'currency' },
         { label: 'Viewing availability', value: firstWorkspaceText(onboarding?.viewingAvailabilityWindows, onboarding?.viewing_availability_windows, onboarding?.canonicalSellerFacts?.occupancy?.viewing_availability_windows), Icon: CalendarDays },
         { label: 'Access arrangement', value: firstWorkspaceText(onboarding?.viewingAccessInstructions, onboarding?.viewing_access_instructions, onboarding?.accessArrangement, onboarding?.accessInstructions, onboarding?.viewingInstructions), Icon: Lock },
       ],
@@ -9093,9 +9121,10 @@ function buildKingstonsSellerProfileEditForm({ lead = {}, contact = {}, listing 
     incomeTaxNumber: resolvedTaxNumber,
     vatRegistered: toSellerProfileText(onboarding?.vatRegistered || onboarding?.vat_registered),
     ficaStatus: normalizeText(onboarding?.ficaStatus || onboarding?.fica_status),
-    popiConsent: toSellerProfileText(onboarding?.popiConsent || onboarding?.popi_consent || (onboarding?.popiConsentAccepted || onboarding?.popi_consent_accepted ? 'Accepted' : '')),
+    popiConsent: readSellerPopiConsent(onboarding).accepted ? 'Accepted' : 'No',
     electronicSignature: toSellerProfileText(onboarding?.electronicSignature || onboarding?.electronic_signature),
     ownershipType: normalizeText(onboarding?.ownershipType || onboarding?.ownership_type || lead?.ownershipType),
+    multipleOwnersRecords: onboarding.multipleOwners || onboarding.multiple_owners || onboarding.owners || [],
     multipleOwnersText: toSellerProfileText(onboarding?.multipleOwners || onboarding?.multiple_owners || onboarding?.owners),
     deceasedEstateName: normalizeText(onboarding?.deceasedEstateName || onboarding?.deceased_estate_name || onboarding?.estateName),
     estateReference: normalizeText(onboarding?.estateReference || onboarding?.estate_reference),
@@ -9134,22 +9163,28 @@ function buildKingstonsSellerProfileEditForm({ lead = {}, contact = {}, listing 
     companyName: normalizeText(onboarding?.companyName || onboarding?.company_name || company?.name || company?.companyName || company?.company_name),
     companyRegistrationNumber: normalizeText(onboarding?.companyRegistrationNumber || onboarding?.company_registration_number || company?.registrationNumber || company?.registration_number),
     companyRegisteredAddress: normalizeText(onboarding?.companyRegisteredAddress || onboarding?.company_registered_address || company?.registeredAddress || company?.registered_address),
+    companyDirectorsRecords: onboarding.companyDirectors || [],
     companyDirectorsText: formatKingstonsSellerProfilePeople(onboarding?.companyDirectors || onboarding?.company_directors || onboarding?.directors || company?.directors),
     authorisedSignatoryName: normalizeText(onboarding?.authorisedSignatoryName || onboarding?.authorised_signatory_name || company?.authorisedSignatoryName || company?.authorised_signatory_name || company?.authorisedSignatory?.name || company?.authorised_signatory?.name),
     authorisedSignatoryCapacity: normalizeText(onboarding?.authorisedSignatoryCapacity || onboarding?.authorised_signatory_capacity || company?.authorisedSignatoryCapacity || company?.authorised_signatory_capacity || company?.authorisedSignatory?.capacity || company?.authorised_signatory?.capacity),
     authorisedSignatoryEmail: normalizeText(onboarding?.authorisedSignatoryEmail || onboarding?.authorised_signatory_email || company?.authorisedSignatoryEmail || company?.authorised_signatory_email || company?.authorisedSignatory?.email || company?.authorised_signatory?.email).toLowerCase(),
     authorisedSignatoryPhone: normalizeText(onboarding?.authorisedSignatoryPhone || onboarding?.authorised_signatory_phone || company?.authorisedSignatoryPhone || company?.authorised_signatory_phone || company?.authorisedSignatory?.phone || company?.authorised_signatory?.phone),
+    authorisedSignatoryIdNumber: normalizeText(onboarding.authorisedSignatoryIdNumber || onboarding.authorised_signatory_id_number),
+    authorisedSignatoryNationality: normalizeText(onboarding.authorisedSignatoryNationality || onboarding.authorised_signatory_nationality),
     authorisedSignatoryAddress: normalizeText(onboarding?.authorisedSignatoryAddress || onboarding?.authorised_signatory_address || company?.authorisedSignatoryAddress || company?.authorised_signatory_address || company?.authorisedSignatory?.address || company?.authorised_signatory?.address),
     companyResolutionDate: normalizeText(onboarding?.companyResolutionDate || onboarding?.company_resolution_date || company?.resolutionDate || company?.resolution_date),
     companyAuthorityBasis: normalizeText(onboarding?.companyAuthorityBasis || onboarding?.company_authority_basis || company?.authorityBasis || company?.authority_basis),
     trustName: normalizeText(onboarding?.trustName || onboarding?.trust_name || trust?.name || trust?.trustName || trust?.trust_name),
     trustRegistrationNumber: normalizeText(onboarding?.trustRegistrationNumber || onboarding?.trust_registration_number || trust?.registrationNumber || trust?.registration_number),
     trustRegisteredAddress: normalizeText(onboarding?.trustRegisteredAddress || onboarding?.trust_registered_address || trust?.registeredAddress || trust?.registered_address),
+    trusteesRecords: onboarding.trustees || [],
     trusteesText: formatKingstonsSellerProfilePeople(onboarding?.trustees || onboarding?.trust_trustees || trust?.trustees),
     authorisedTrusteeName: normalizeText(onboarding?.authorisedTrusteeName || onboarding?.authorised_trustee_name || trust?.authorisedTrusteeName || trust?.authorised_trustee_name || trust?.authorisedTrustee?.name || trust?.authorised_trustee?.name),
     authorisedTrusteeCapacity: normalizeText(onboarding?.authorisedTrusteeCapacity || onboarding?.authorised_trustee_capacity || trust?.authorisedTrusteeCapacity || trust?.authorised_trustee_capacity || trust?.authorisedTrustee?.capacity || trust?.authorised_trustee?.capacity),
     authorisedTrusteeEmail: normalizeText(onboarding?.authorisedTrusteeEmail || onboarding?.authorised_trustee_email || trust?.authorisedTrusteeEmail || trust?.authorised_trustee_email || trust?.authorisedTrustee?.email || trust?.authorised_trustee?.email).toLowerCase(),
     authorisedTrusteePhone: normalizeText(onboarding?.authorisedTrusteePhone || onboarding?.authorised_trustee_phone || trust?.authorisedTrusteePhone || trust?.authorised_trustee_phone || trust?.authorisedTrustee?.phone || trust?.authorised_trustee?.phone),
+    authorisedTrusteeIdNumber: normalizeText(onboarding.authorisedTrusteeIdNumber || onboarding.authorised_trustee_id_number),
+    authorisedTrusteeNationality: normalizeText(onboarding.authorisedTrusteeNationality || onboarding.authorised_trustee_nationality),
     authorisedTrusteeAddress: normalizeText(onboarding?.authorisedTrusteeAddress || onboarding?.authorised_trustee_address || trust?.authorisedTrusteeAddress || trust?.authorised_trustee_address || trust?.authorisedTrustee?.address || trust?.authorised_trustee?.address),
     trustAuthorityBasis: normalizeText(onboarding?.trustAuthorityBasis || onboarding?.trust_authority_basis || trust?.authorityBasis || trust?.authority_basis),
     foreignOwnerCountry: normalizeText(onboarding?.foreignOwnerCountry || onboarding?.foreign_owner_country || foreign?.country || foreign?.jurisdiction),
@@ -9162,7 +9197,7 @@ function buildKingstonsSellerProfileEditForm({ lead = {}, contact = {}, listing 
     mortgageBank: normalizeText(onboarding?.mortgageBank || onboarding?.mortgage_bank),
     bondBalance: normalizeText(onboarding?.bondBalance || onboarding?.bond_balance || onboarding?.approxBondBalance),
     primaryResidence: toSellerProfileText(onboarding?.primaryResidence || onboarding?.primary_residence),
-    propertyAddress: normalizeText(onboarding?.propertyAddress || onboarding?.propertyAddressDetails?.formatted || onboarding?.formattedAddress || lead?.sellerPropertyAddress || lead?.formattedAddress),
+    propertyAddress: formatPropertyAddress({ formatted: onboarding?.propertyAddress || onboarding?.propertyAddressDetails?.formatted || onboarding?.formattedAddress || lead?.sellerPropertyAddress || lead?.formattedAddress }),
     propertyType: normalizeText(onboarding?.propertyType || onboarding?.property_type || lead?.propertyType || propertyDetails?.propertyType || (workspaceTextLooksLikeAddress(lead?.propertyInterest) ? '' : lead?.propertyInterest)),
     estateComplexName: normalizeText(onboarding?.estateComplexName || onboarding?.complexName || onboarding?.estateName || onboarding?.schemeName || propertyDetails?.complexName || propertyDetails?.schemeName),
     erfNumber: normalizeText(onboarding?.erfNumber || onboarding?.standNumber || lead?.erfNumber || propertyDetails?.erfNumber),
@@ -9176,15 +9211,15 @@ function buildKingstonsSellerProfileEditForm({ lead = {}, contact = {}, listing 
     propertyCity: normalizeText(onboarding?.city || onboarding?.propertyCity || onboarding?.propertyAddressDetails?.city || lead?.city || propertyDetails?.city),
     propertyProvince: normalizeText(onboarding?.province || onboarding?.propertyProvince || onboarding?.propertyAddressDetails?.province || lead?.province || propertyDetails?.province),
     propertyPostalCode: normalizeText(getWorkspacePropertyPostalCode(onboarding) || lead?.postalCode || propertyDetails?.postalCode),
-    bedrooms: normalizeText(lead?.bedrooms || onboarding?.bedrooms || propertyDetails?.bedrooms),
-    bathrooms: normalizeText(lead?.bathrooms || onboarding?.bathrooms || propertyDetails?.bathrooms),
-    garages: normalizeText(lead?.garages || onboarding?.garages || propertyDetails?.garages),
-    parking: normalizeText(lead?.parking || onboarding?.parking || onboarding?.parkingSpaces || propertyDetails?.parking),
-    erfSize: normalizeText(lead?.erfSize || onboarding?.erfSize || onboarding?.propertySize || propertyDetails?.erfSize),
-    floorSize: normalizeText(lead?.floorSize || onboarding?.floorSize || propertyDetails?.floorSize),
-    levies: normalizeText(onboarding?.levies || onboarding?.monthlyLevies),
-    ratesAndTaxes: normalizeText(onboarding?.ratesAndTaxes || onboarding?.ratesTaxes || onboarding?.monthlyRates),
-    askingPrice: normalizeText(listingSource?.askingPrice || listingSource?.asking_price || lead?.estimatedValue || onboarding?.askingPrice),
+    bedrooms: getWorkspacePropertyCharacteristic(onboarding, ['bedrooms'], listingSource?.bedrooms, propertyDetails?.bedrooms, lead?.bedrooms),
+    bathrooms: getWorkspacePropertyCharacteristic(onboarding, ['bathrooms'], listingSource?.bathrooms, propertyDetails?.bathrooms, lead?.bathrooms),
+    garages: getWorkspacePropertyCharacteristic(onboarding, ['garages'], listingSource?.garages, propertyDetails?.garages, lead?.garages),
+    parking: getWorkspacePropertyCharacteristic(onboarding, ['parking', 'parkingSpaces'], listingSource?.parking, propertyDetails?.parking, lead?.parking),
+    erfSize: getWorkspacePropertyCharacteristic(onboarding, ['erfSize', 'propertySize', 'erf_size'], listingSource?.erfSize, propertyDetails?.erfSize, lead?.erfSize),
+    floorSize: getWorkspacePropertyCharacteristic(onboarding, ['floorSize', 'floor_size'], listingSource?.floorSize, propertyDetails?.floorSize, lead?.floorSize),
+    levies: getWorkspacePropertyCharacteristic(onboarding, ['levies', 'monthlyLevies']),
+    ratesAndTaxes: getWorkspacePropertyCharacteristic(onboarding, ['ratesAndTaxes', 'ratesTaxes', 'monthlyRates']),
+    askingPrice: getWorkspacePropertyCharacteristic(onboarding, ['askingPrice'], listingSource?.askingPrice, listingSource?.asking_price, lead?.estimatedValue),
     propertyFeaturesText: toSellerProfileText(onboarding?.propertyFeatures || onboarding?.features || onboarding?.property_features),
     roofDefect: normalizeText(onboarding?.roofDefect || onboarding?.roof_defect || onboarding?.roofCondition),
     plumbingDefect: normalizeText(onboarding?.plumbingDefect || onboarding?.plumbing_defect || onboarding?.plumbingCondition),
@@ -9226,8 +9261,14 @@ function formatKingstonsSellerProfilePeople(value = []) {
   return normalizeText(value)
 }
 
-function buildKingstonsSellerProfilePeople(value = '') {
+function buildKingstonsSellerProfilePeople(value = '', existingRecords = []) {
   return splitKingstonsSellerProfileList(value).map((name, index) => {
+    const matches = (Array.isArray(existingRecords) ? existingRecords : []).filter((record) =>
+      normalizeText(formatKingstonsSellerProfilePeople([record])).toLowerCase() === name.toLowerCase(),
+    )
+    // Preserve the structured record for an unchanged, unambiguous list entry.
+    // A renamed or ambiguous person must not inherit someone else's identity.
+    if (matches.length === 1) return { ...matches[0] }
     const parts = name.split(/\s+/).filter(Boolean)
     const firstName = parts.length > 1 ? parts.slice(0, -1).join(' ') : name
     const surname = parts.length > 1 ? parts.slice(-1).join(' ') : ''
@@ -9310,15 +9351,19 @@ function buildKingstonsSellerProfileFormData(form = {}) {
   const ownershipDeclarationPending = Boolean((form.ownershipDeclarationPending || form.ownership_declaration_pending) && !sellerOwnershipRoute)
   const ownershipScheme = normalizeText(form.ownershipScheme || form.propertyStructureType)
   const estateOrHoa = normalizeText(form.estateOrHoa)
-  const companyDirectors = buildKingstonsSellerProfilePeople(form.companyDirectorsText)
-  const trustees = buildKingstonsSellerProfilePeople(form.trusteesText)
-  const multipleOwners = buildKingstonsSellerProfilePeople(form.multipleOwnersText)
+  const companyDirectors = buildKingstonsSellerProfilePeople(form.companyDirectorsText, form.companyDirectorsRecords)
+  const trustees = buildKingstonsSellerProfilePeople(form.trusteesText, form.trusteesRecords)
+  const multipleOwners = buildKingstonsSellerProfilePeople(form.multipleOwnersText, form.multipleOwnersRecords)
   const authorisedSignatory = {
     name: normalizeText(form.authorisedSignatoryName),
     capacity: normalizeText(form.authorisedSignatoryCapacity),
     email: normalizeText(form.authorisedSignatoryEmail).toLowerCase(),
     phone: normalizeText(form.authorisedSignatoryPhone),
     address: normalizeText(form.authorisedSignatoryAddress),
+    residentialAddress: normalizeText(form.authorisedSignatoryAddress),
+    idNumber: normalizeText(form.authorisedSignatoryIdNumber),
+    id_number: normalizeText(form.authorisedSignatoryIdNumber),
+    nationality: normalizeText(form.authorisedSignatoryNationality),
   }
   const authorisedTrustee = {
     name: normalizeText(form.authorisedTrusteeName),
@@ -9326,6 +9371,10 @@ function buildKingstonsSellerProfileFormData(form = {}) {
     email: normalizeText(form.authorisedTrusteeEmail).toLowerCase(),
     phone: normalizeText(form.authorisedTrusteePhone),
     address: normalizeText(form.authorisedTrusteeAddress),
+    residentialAddress: normalizeText(form.authorisedTrusteeAddress),
+    idNumber: normalizeText(form.authorisedTrusteeIdNumber),
+    id_number: normalizeText(form.authorisedTrusteeIdNumber),
+    nationality: normalizeText(form.authorisedTrusteeNationality),
   }
   return {
     sellerOwnershipRoute,
@@ -9440,6 +9489,8 @@ function buildKingstonsSellerProfileFormData(form = {}) {
     authorisedSignatoryPhone: authorisedSignatory.phone,
     authorised_signatory_phone: authorisedSignatory.phone,
     authorisedSignatoryAddress: authorisedSignatory.address,
+    authorisedSignatoryIdNumber: authorisedSignatory.idNumber,
+    authorisedSignatoryNationality: authorisedSignatory.nationality,
     authorised_signatory_address: authorisedSignatory.address,
     companyResolutionDate: normalizeText(form.companyResolutionDate),
     company_resolution_date: normalizeText(form.companyResolutionDate),
@@ -9478,6 +9529,8 @@ function buildKingstonsSellerProfileFormData(form = {}) {
     authorisedTrusteePhone: authorisedTrustee.phone,
     authorised_trustee_phone: authorisedTrustee.phone,
     authorisedTrusteeAddress: authorisedTrustee.address,
+    authorisedTrusteeIdNumber: authorisedTrustee.idNumber,
+    authorisedTrusteeNationality: authorisedTrustee.nationality,
     authorised_trustee_address: authorisedTrustee.address,
     trustAuthorityBasis: normalizeText(form.trustAuthorityBasis),
     trust_authority_basis: normalizeText(form.trustAuthorityBasis),
@@ -9521,8 +9574,8 @@ function buildKingstonsSellerProfileFormData(form = {}) {
     mortgageBank: normalizeText(form.mortgageBank),
     bondBalance: normalizeText(form.bondBalance),
     primaryResidence: normalizeText(form.primaryResidence),
-    propertyAddress: normalizeText(form.propertyAddress),
-    formattedAddress: normalizeText(form.propertyAddress),
+    propertyAddress: formatPropertyAddress({ formatted: form.propertyAddress }),
+    formattedAddress: formatPropertyAddress({ formatted: form.propertyAddress }),
     propertyType: normalizeText(form.propertyType),
     estateComplexName: normalizeText(form.estateComplexName),
     erfNumber: normalizeText(form.erfNumber),
@@ -11863,6 +11916,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [sellerSigningPackSaving, setSellerSigningPackSaving] = useState(false)
   const [sellerSigningPackProgress, setSellerSigningPackProgress] = useState('')
   const [sellerSigningPackError, setSellerSigningPackError] = useState('')
+  const [sellerSigningPackNeedsRefresh, setSellerSigningPackNeedsRefresh] = useState(false)
+  const [sellerSigningPackNotice, setSellerSigningPackNotice] = useState('')
   const [sellerPortalSigningRequests, setSellerPortalSigningRequests] = useState([])
   const [sellerPortalSigningBusy, setSellerPortalSigningBusy] = useState('')
   const [sellerSigningPackTerms, setSellerSigningPackTerms] = useState({
@@ -14456,7 +14511,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         ...listing,
         listingOptionSourceAuthority: 'canonical_hydrated_listing',
       }
-      setSelectedLeadHydratedListing(hydratedListing)
+      setSelectedLeadHydratedListing((current) => retainLatestSellerListing(current, hydratedListing))
       setSelectedLeadDocumentHydrationStatus('ready')
       const option = normalizeAppointmentListingOption(hydratedListing)
       if (!option) return
@@ -18029,19 +18084,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       ? selectedLeadLinkedListing.sourceListing
       : (selectedLeadLinkedListing || {})
     const onboarding = getWorkspaceSellerOnboarding(lead, listing)
-    const canonicalSellerFacts = isPlainObject(lead?.sellerCanonicalFacts)
-      ? lead.sellerCanonicalFacts
-      : isPlainObject(lead?.seller_canonical_facts)
-        ? lead.seller_canonical_facts
-        : isPlainObject(onboarding?.canonicalSellerFacts)
-          ? onboarding.canonicalSellerFacts
-          : isPlainObject(onboarding?.canonical_facts)
-            ? onboarding.canonical_facts
-            : isPlainObject(listing?.sellerCanonicalFacts)
-              ? listing.sellerCanonicalFacts
-              : isPlainObject(listing?.seller_canonical_facts)
-                ? listing.seller_canonical_facts
-                : {}
+    const canonicalSellerFacts = getWorkspaceSellerCanonicalFacts(lead, listing)
     const sellerSubject = buildSellerSubject({
       formData: onboarding,
       lead: { ...lead, ...selectedLeadContact },
@@ -18251,7 +18294,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             ['SA Resident', field(onboarding?.saResident, onboarding?.sa_resident, onboarding?.taxResident)],
             ['Tax Number', field(onboarding?.incomeTaxNumber, onboarding?.income_tax_number, onboarding?.sellerTaxNumber, onboarding?.taxNumber, onboarding?.tax_number)],
             ['VAT Registered', field(onboarding?.vatRegistered, onboarding?.vat_registered)],
-            ['POPI Consent', field(onboarding?.popiConsent, onboarding?.popi_consent, onboarding?.popiConsentAccepted || onboarding?.popi_consent_accepted ? 'Accepted' : '', selectedLeadOnboardingCompleted ? 'Accepted' : '')],
+            ['POPI Consent', readSellerPopiConsent(onboarding).accepted ? 'Accepted' : 'No'],
           ],
         },
         {
@@ -18310,7 +18353,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           fullName: sellerSubject.legalOwner?.name || sellerFullName,
           idNumber: sellerSubject.legalOwner?.registrationNumber || firstWorkspaceText(onboarding?.idNumber, onboarding?.id_number, onboarding?.sellerIdNumber, lead?.sellerIdNumber, lead?.idNumber, onboarding?.foreignPassportNumber),
           dateOfBirth: firstWorkspaceText(onboarding?.dateOfBirth, onboarding?.date_of_birth, onboarding?.birthDate),
-          nationality: firstWorkspaceText(onboarding?.nationality, lead?.nationality, onboarding?.foreignOwnerCountry),
+          nationality: firstWorkspaceText(onboarding?.nationality, lead?.nationality, onboarding?.foreignOwnerCountry, !isNaturalSellerProfile ? onboarding?.country || lead?.country : ''),
           street: firstWorkspaceText(onboarding?.residentialStreet, onboarding?.streetAddress, lead?.streetAddress, propertyDetails?.streetAddress, onboarding?.companyRegisteredAddress, onboarding?.trustRegisteredAddress),
           suburb: firstWorkspaceText(onboarding?.residentialSuburb, onboarding?.suburb, lead?.suburb, propertyDetails?.suburb),
           city: firstWorkspaceText(onboarding?.residentialCity, onboarding?.city, lead?.city, propertyDetails?.city),
@@ -18366,7 +18409,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     ? [
         {
           ...activeSellerProfileRoleplayer.card,
-          rows: compactSellerProfileRows(activeSellerProfileRoleplayer.card.rows),
+          editMode: 'profile',
+          rows: compactSellerProfileRows(activeSellerProfileRoleplayer.card.rows, { retainLabels: ['ID Number / Passport', 'Nationality', 'Residential Address'] }),
         },
         ...selectedSellerProfileWorkspace.cards.filter((card) => !['personal', 'address'].includes(card.key)),
       ].filter((card) => card.rows.length > 0)
@@ -22859,9 +22903,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   async function handleSaveSellerLeadEditDetails(event) {
     event.preventDefault()
-    if (!organisationId || !selectedLead) return
+    if (!organisationId || !selectedLead || isLeadDetailSaving) return
+    const isCharacteristicsEdit = normalizeKey(sellerLeadEditModal.mode) === 'characteristics'
     const email = normalizeText(sellerProfileEditForm.email).toLowerCase()
-    if (email && !isValidEmail(email)) {
+    if (!isCharacteristicsEdit && email && !isValidEmail(email)) {
       setError('Enter a valid seller email before saving.')
       return
     }
@@ -22933,7 +22978,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         ...(isPlainObject(existingOnboarding.formData) ? existingOnboarding.formData : {}),
         ...(isPlainObject(existingOnboarding.form_data) ? existingOnboarding.form_data : {}),
       }
-      const sellerOnboardingReplacementRequired = needsSellerOnboardingReplacement({
+      if (isCharacteristicsEdit) {
+        // Also preserve hidden seller fields when the lead has an onboarding
+        // token but no linked listing available for the canonical save path.
+        formData = {
+          ...getWorkspaceSellerOnboarding(selectedLead, selectedLeadLinkedListing),
+          ...buildSellerPropertyCharacteristicsPatch(sellerProfileEditForm),
+        }
+      }
+      const sellerOnboardingReplacementRequired = !isCharacteristicsEdit && needsSellerOnboardingReplacement({
         previousFormData: existingSellerOnboardingFormData,
         nextFormData: formData,
         onboardingStatus: existingOnboarding.status || rawOnboarding.status || selectedLead?.sellerOnboardingStatus,
@@ -22943,13 +22996,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       if (!sellerOnboardingReplacementRequired && isSupabaseConfigured && sellerProfileListingId) {
         let listingSnapshot = selectedLeadLinkedListing?.sourceListing || selectedLeadLinkedListing
         if (!listingSnapshot?.updatedAt && !listingSnapshot?.updated_at) {
-          listingSnapshot = await getPrivateListing(sellerProfileListingId)
+          listingSnapshot = await getPrivateListing(sellerProfileListingId, { includeRequirementsAndDocuments: !isCharacteristicsEdit })
         }
         if (!listingSnapshot?.id) throw new Error('The linked listing could not be loaded. Reload before saving the seller profile.')
         canonicalSaveResult = await saveListingSellerCanonicalUpdate({
           listing: listingSnapshot,
-          formPatch: formData,
-          mutationType: 'seller_profile_capture',
+          formPatch: isCharacteristicsEdit ? buildSellerPropertyCharacteristicsPatch(sellerProfileEditForm) : formData,
+          includeRequirementsAndDocuments: !isCharacteristicsEdit,
+          mutationType: isCharacteristicsEdit ? 'seller_property_characteristics_edit' : 'seller_profile_capture',
           source: 'seller_lead_profile_editor',
           organisationId,
           syncLinkedCrmContact: false,
@@ -23051,7 +23105,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }
       const resolvedContactId = normalizeText(selectedLeadContact?.contactId || selectedLead?.contactId)
 
-      if (resolvedContactId) {
+      if (resolvedContactId && !isCharacteristicsEdit) {
         await updateAgencyCrmContactRecord(organisationId, resolvedContactId, contactPatch)
         setRecords((previous) => ({
           ...previous,
@@ -23064,7 +23118,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }
       await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, leadPatch)
       patchSelectedLeadRecord(leadPatch, selectedLead.leadId)
-      await createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
+      const activitySave = createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
         agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
         activityType: 'Seller Profile Updated',
         activityNote: sellerOnboardingReplacementRequired
@@ -23075,6 +23129,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }, { actor: currentAgent }).catch((activityError) => {
         console.warn('[AgencyPipelinePage] Seller profile update activity could not be recorded.', activityError)
       })
+      if (!isCharacteristicsEdit) await activitySave
 
       setLeadDetailForm((previous) => ({
         ...previous,
@@ -23094,7 +23149,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         estimatedValue: String(leadPatch.estimatedValue || ''),
       }))
       setError('')
-      setMessage(canonicalSaveResult?.warnings?.[0]?.message || 'Seller profile saved.')
+      setMessage(canonicalSaveResult?.warnings?.[0]?.message || (isCharacteristicsEdit ? 'Property characteristics saved.' : 'Seller profile saved.'))
       setSellerLeadEditModal((previous) => ({ ...previous, open: false }))
       scheduleRecordsReload(organisationId, 500)
     } catch (saveError) {
@@ -27302,22 +27357,42 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }
       nextFormData.seller_onboarding_signing_lifecycle = nextFormData.sellerOnboardingSigningLifecycle
       const nextStatus = correction ? 'in_progress' : 'completed'
-      await persistSellerProfileOnboardingFormData({ listingId, formData: nextFormData, status: nextStatus })
+      let listingSnapshot = selectedLeadLinkedListing?.sourceListing || selectedLeadLinkedListing
+      if (!listingSnapshot?.updatedAt && !listingSnapshot?.updated_at) {
+        listingSnapshot = await getPrivateListing(listingId, { includeRequirementsAndDocuments: false })
+        if (listingSnapshot?.id !== listingId) throw new Error('The linked seller record could not be loaded. Try refreshing the lead again.')
+        setSelectedLeadHydratedListing(listingSnapshot)
+        throw new Error('Latest seller information loaded. Review the updated onboarding fields before approving again.')
+      }
+      if (listingSnapshot?.id !== listingId) throw new Error('The linked seller record could not be confirmed. Reload before approving onboarding.')
+      const canonicalSaveResult = await saveListingSellerCanonicalUpdate({
+        listing: listingSnapshot,
+        formPatch: nextFormData,
+        onboardingStatus: nextStatus,
+        mutationType: 'seller_onboarding_review',
+        source: 'seller_lead_onboarding_review',
+        organisationId,
+        syncLinkedCrmContact: false,
+        includeRequirementsAndDocuments: false,
+      })
+      // Approval can trigger listing reconciliation. Use the committed listing
+      // timestamp for the signing-pack save, rather than the pre-review snapshot.
+      setSelectedLeadHydratedListing(canonicalSaveResult.listing)
+      if (canonicalSaveResult.warnings.length) {
+        throw new Error(canonicalSaveResult.warnings.map((warning) => warning.message).join(' '))
+      }
+      const committedFormData = canonicalSaveResult.update.nextFormData
       const leadId = normalizeText(selectedLead?.leadId || selectedLead?.lead_id || selectedLead?.id)
       const leadPatch = {
         sellerOnboardingStatus: nextStatus,
         sellerOnboarding: {
           ...(selectedLead?.sellerOnboarding || {}),
           status: nextStatus,
-          formData: nextFormData,
+          formData: committedFormData,
+          form_data: committedFormData,
         },
       }
       patchSelectedLeadRecord(leadPatch, leadId)
-      setSelectedLeadHydratedListing((listing) => listing ? {
-        ...listing,
-        sellerOnboardingStatus: nextStatus,
-        sellerOnboarding: { ...(listing.sellerOnboarding || {}), status: nextStatus, formData: nextFormData },
-      } : listing)
       try {
         await updateAgencyCrmLeadRecord(organisationId, leadId, leadPatch)
       } catch (projectionError) {
@@ -27382,6 +27457,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     if (!SELLER_PORTAL_SIGNING_ENABLED) setSellerOnboardingReviewRoute('manual_upload')
     const formData = getSellerLeadReviewFormData(selectedLead, selectedLeadLinkedListing)
     setSellerSigningPackError('')
+    setSellerSigningPackNeedsRefresh(false)
+    setSellerSigningPackNotice('')
     setSellerSigningPackTerms(readSellerMandateTerms(formData, selectedLeadLinkedListing || {}))
     setSellerSigningPackModalOpen(true)
   }
@@ -27398,10 +27475,34 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     openSellerLeadSigningPack()
   }
 
+  async function refreshSellerSigningPackRecord() {
+    if (sellerSigningPackSaving) return
+    const listingId = normalizeText(selectedLeadLinkedListingId)
+    if (!listingId) return
+    setSellerSigningPackSaving(true)
+    setSellerSigningPackError('')
+    setSellerSigningPackNotice('')
+    setSellerSigningPackProgress('Loading latest seller information…')
+    try {
+      const listing = await getPrivateListing(listingId, { includeRequirementsAndDocuments: false })
+      if (listing?.id !== listingId) throw new Error('The latest seller record could not be loaded. Try refreshing again.')
+      setSelectedLeadHydratedListing((current) => retainLatestSellerListing(current, listing))
+      setSellerSigningPackNeedsRefresh(false)
+      // Keep the user's commercial terms. Refresh only the saved seller facts;
+      // the agent must review them and click Approve again before dispatch.
+      setSellerSigningPackNotice('Latest seller information loaded. Your mandate entries are retained. Review the seller details and required signers before approving again. No signing links were sent by this refresh.')
+    } catch (refreshError) {
+      setSellerSigningPackError(refreshError?.message || 'Unable to load the latest seller information.')
+    } finally {
+      setSellerSigningPackSaving(false)
+      setSellerSigningPackProgress('')
+    }
+  }
+
   async function sendSellerLeadSigningPack() {
     const listingId = normalizeText(selectedLeadLinkedListingId)
     const leadId = normalizeText(selectedLead?.leadId || selectedLead?.lead_id || selectedLead?.id)
-    if (sellerSigningPackSaving) return
+    if (sellerSigningPackSaving || sellerSigningPackNeedsRefresh) return
     const disclosureOutstanding = !selectedSellerDisclosureComplete
     const selectedDocumentRoutes = { ...sellerOnboardingDocumentRoutes }
     if (!disclosureOutstanding) delete selectedDocumentRoutes.signed_disclosure_form
@@ -27445,6 +27546,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
 
     setSellerSigningPackError('')
+    setSellerSigningPackNotice('')
     setSellerSigningPackSaving(true)
     setSellerSigningPackProgress('Preparing reviewed documents…')
     let dispatchedDocuments = 0
@@ -27631,9 +27733,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }
 
       setSellerSigningPackProgress('Finishing the seller workflow…')
-      await updatePrivateListing(listingId, {
+      const generatedListing = await updatePrivateListing(listingId, {
         mandateStatus: 'generated',
       }, { includeRequirementsAndDocuments: false })
+      if (generatedListing?.id === listingId) setSelectedLeadHydratedListing(generatedListing)
       const leadPatch = {
         stage: 'Mandate Sent',
         status: digitalKeys.length ? 'Seller documents sent for digital signature' : 'Physical FICA and mandate pack prepared — awaiting signed upload',
@@ -27646,6 +27749,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setMessage(digitalKeys.length ? `Signature links sent for ${sent.length} document${sent.length === 1 ? '' : 's'}. Track each signer in Documents.` : 'Physical FICA and mandate copies are prepared. Download them from Documents and upload the wet-ink signed copies when returned.')
       scheduleRecordsReload(organisationId, 750)
     } catch (signingError) {
+      if (!dispatchedDocuments && ['SELLER_UPDATE_CONFLICT', 'PT409'].includes(signingError?.code)) {
+        setSellerSigningPackNeedsRefresh(true)
+      }
       setSellerSigningPackError(dispatchedDocuments
         ? `${dispatchedDocuments} document${dispatchedDocuments === 1 ? '' : 's'} already sent. ${signingError?.message || 'A later signing request failed.'} Open Documents to retry the outstanding document without changing the approved versions.`
         : signingError?.message || 'Unable to prepare and send the seller signing pack.')
@@ -39927,17 +40033,37 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         <div className="flex flex-wrap items-start justify-between gap-2">
                           <div>
                             <h4 className="text-sm font-semibold text-[#102033]">People and entities to assess</h4>
-                            <p className="mt-1 text-xs leading-5 text-[#60758b]">Multiple parties may need separate checks. Final scope requires compliance review.</p>
+                            <p className="mt-1 text-xs leading-5 text-[#60758b]">One person can hold several roles. Roles are combined when the saved ID or passport matches. Verification results are shown above. Final scope requires compliance review.</p>
                           </div>
-                          <span className="rounded-full border border-[#dbe7f2] bg-white px-3 py-1 text-xs font-semibold text-[#405b75]">{selectedSellerProfileWorkspace.ficaScope.subjects.length} in scope</span>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="rounded-full border border-[#dbe7f2] bg-white px-3 py-1 text-xs font-semibold text-[#405b75]">{selectedSellerProfileWorkspace.ficaScope.subjects.length} in scope</span>
+                            <Button type="button" size="sm" variant="secondary" onClick={() => openSellerLeadEditModal('profile')}>Review information</Button>
+                          </div>
                         </div>
-                        <div className="mt-3 flex flex-wrap gap-2">
+                        <div className="mt-3 grid gap-3 sm:grid-cols-2">
                           {selectedSellerProfileWorkspace.ficaScope.subjects.map((subject, index) => (
-                            <span key={`${subject.type}-${subject.label}-${index}`} className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${subject.complete ? 'border-[#cfe8dc] bg-[#f2fbf5] text-[#286b43]' : 'border-[#f1dfbd] bg-[#fff9ec] text-[#8a641d]'}`}>
-                              {subject.label} · {subject.roles.join(', ')} · {subject.complete ? 'facts captured' : `${subject.missing.length} missing`}
-                            </span>
+                            <div key={`${subject.type}-${subject.label}-${index}`} className={`min-w-0 rounded-[12px] border p-3 text-xs ${subject.complete ? 'border-[#cfe8dc] bg-[#f2fbf5] text-[#286b43]' : 'border-[#f1dfbd] bg-[#fff9ec] text-[#8a641d]'}`}>
+                              <p className="font-semibold">{subject.label}</p>
+                              <p className="mt-1">{subject.roles.join(' · ')}</p>
+                              {subject.complete ? <p className="mt-2">Information captured</p> : (
+                                <div className="mt-2">
+                                  <p className="font-semibold">Missing information</p>
+                                  <ul className="mt-1 list-disc space-y-1 pl-4">
+                                    {subject.missing.map((field) => <li key={field}>{field}</li>)}
+                                  </ul>
+                                </div>
+                              )}
+                            </div>
                           ))}
                         </div>
+                        {selectedSellerProfileWorkspace.ficaScope.missing.filter((gap) => !selectedSellerProfileWorkspace.ficaScope.subjects.some((subject) => subject.missing.some((field) => gap === `${subject.label}: ${field}`))).length ? (
+                          <div className="mt-3 text-xs text-[#8a641d]">
+                            <p className="font-semibold">Other information to confirm</p>
+                            <ul className="mt-1 list-disc space-y-1 pl-4">
+                              {selectedSellerProfileWorkspace.ficaScope.missing.filter((gap) => !selectedSellerProfileWorkspace.ficaScope.subjects.some((subject) => subject.missing.some((field) => gap === `${subject.label}: ${field}`))).map((gap) => <li key={gap}>{gap}</li>)}
+                            </ul>
+                          </div>
+                        ) : null}
                       </section>
                       ) : null}
 
@@ -40982,7 +41108,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         footer={(
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <Button type="button" variant="secondary" disabled={sellerSigningPackSaving} onClick={() => setSellerSigningPackModalOpen(false)}>Cancel</Button>
-            <Button type="button" disabled={sellerSigningPackSaving} onClick={() => void sendSellerLeadSigningPack()}>
+            <Button type="button" disabled={sellerSigningPackSaving || sellerSigningPackNeedsRefresh} onClick={() => void sendSellerLeadSigningPack()}>
               {sellerSigningPackSaving ? sellerSigningPackProgress || 'Preparing…' : Object.values(sellerOnboardingDocumentRoutes).includes('digital_pack') ? 'Approve and send selected links' : 'Prepare physical copies'}
             </Button>
           </div>
@@ -40990,9 +41116,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       >
         <div className="space-y-5">
           {sellerSigningPackSaving ? <p role="status" aria-live="polite" className="text-sm font-semibold text-[#47637d]">{sellerSigningPackProgress}</p> : null}
+          {sellerSigningPackNotice ? <p role="status" className="rounded-[16px] border border-[#dce6f2] bg-[#f8fbff] px-4 py-3 text-sm leading-6 text-[#47637d]">{sellerSigningPackNotice}</p> : null}
           {sellerSigningPackError ? (
             <div role="alert" className="rounded-[16px] border border-[#f3c6c1] bg-[#fff6f5] px-4 py-3 text-sm leading-6 text-[#a33c32]">
               {sellerSigningPackError}
+              {sellerSigningPackNeedsRefresh ? (
+                <Button type="button" variant="secondary" className="mt-3" disabled={sellerSigningPackSaving} onClick={() => void refreshSellerSigningPackRecord()}>
+                  Refresh seller information and keep mandate entries
+                </Button>
+              ) : null}
             </div>
           ) : null}
           <div className="rounded-[16px] border border-[#dce6f2] bg-[#f8fbff] p-4 text-sm leading-6 text-[#47637d]">
@@ -41352,6 +41484,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         )}
       >
         <form id="kingstons-seller-lead-edit-form" className="grid gap-5" onSubmit={(event) => void handleSaveSellerLeadEditDetails(event)}>
+          {error ? <p role="alert" className="rounded-[12px] border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p> : null}
           <section className="rounded-[18px] border border-[#dfe8f2] bg-[#fbfdff] p-4">
             <div className="flex items-start gap-3">
               <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[14px] bg-[#eaf7ef] text-[#167348]">
@@ -41441,6 +41574,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                     <Field placeholder="Signatory capacity" value={sellerProfileEditForm.authorisedSignatoryCapacity} onChange={(event) => updateSellerProfileEditField('authorisedSignatoryCapacity', event.target.value)} />
                     <Field placeholder="Signatory email" value={sellerProfileEditForm.authorisedSignatoryEmail} onChange={(event) => updateSellerProfileEditField('authorisedSignatoryEmail', event.target.value)} />
                     <Field placeholder="Signatory phone" value={sellerProfileEditForm.authorisedSignatoryPhone} onChange={(event) => updateSellerProfileEditField('authorisedSignatoryPhone', event.target.value)} />
+                    <Field placeholder="Signatory ID / passport" value={sellerProfileEditForm.authorisedSignatoryIdNumber || ''} onChange={(event) => updateSellerProfileEditField('authorisedSignatoryIdNumber', event.target.value)} />
+                    <Field placeholder="Signatory nationality" value={sellerProfileEditForm.authorisedSignatoryNationality || ''} onChange={(event) => updateSellerProfileEditField('authorisedSignatoryNationality', event.target.value)} />
                     <Field placeholder="Signatory address" className="sm:col-span-2" value={sellerProfileEditForm.authorisedSignatoryAddress} onChange={(event) => updateSellerProfileEditField('authorisedSignatoryAddress', event.target.value)} />
                     <Field type="date" placeholder="Resolution date" value={sellerProfileEditForm.companyResolutionDate} onChange={(event) => updateSellerProfileEditField('companyResolutionDate', event.target.value)} />
                     <Field placeholder="Authority basis" value={sellerProfileEditForm.companyAuthorityBasis} onChange={(event) => updateSellerProfileEditField('companyAuthorityBasis', event.target.value)} />
@@ -41457,6 +41592,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                     <Field placeholder="Trustee capacity" value={sellerProfileEditForm.authorisedTrusteeCapacity} onChange={(event) => updateSellerProfileEditField('authorisedTrusteeCapacity', event.target.value)} />
                     <Field placeholder="Trustee email" value={sellerProfileEditForm.authorisedTrusteeEmail} onChange={(event) => updateSellerProfileEditField('authorisedTrusteeEmail', event.target.value)} />
                     <Field placeholder="Trustee phone" value={sellerProfileEditForm.authorisedTrusteePhone} onChange={(event) => updateSellerProfileEditField('authorisedTrusteePhone', event.target.value)} />
+                    <Field placeholder="Trustee ID / passport" value={sellerProfileEditForm.authorisedTrusteeIdNumber || ''} onChange={(event) => updateSellerProfileEditField('authorisedTrusteeIdNumber', event.target.value)} />
+                    <Field placeholder="Trustee nationality" value={sellerProfileEditForm.authorisedTrusteeNationality || ''} onChange={(event) => updateSellerProfileEditField('authorisedTrusteeNationality', event.target.value)} />
                     <Field placeholder="Trustee address" className="sm:col-span-2" value={sellerProfileEditForm.authorisedTrusteeAddress} onChange={(event) => updateSellerProfileEditField('authorisedTrusteeAddress', event.target.value)} />
                     <Field placeholder="Authority basis" className="sm:col-span-2" value={sellerProfileEditForm.trustAuthorityBasis} onChange={(event) => updateSellerProfileEditField('trustAuthorityBasis', event.target.value)} />
                   </>

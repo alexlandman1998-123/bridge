@@ -106,6 +106,7 @@ import {
 import {
   areSellerOnboardingConsentsComplete,
   readSellerOnboardingConsents,
+  readSellerPopiConsent,
   updateSellerOnboardingConsent,
   SELLER_ONBOARDING_CONSENTS,
 } from '../core/documents/sellerOnboardingConsent'
@@ -484,14 +485,6 @@ function normalizeYesNoValue(value, fallback = '') {
   const normalized = String(value ?? '').trim().toLowerCase()
   if (['true', 'yes', 'y', '1', 'on', 'accepted'].includes(normalized)) return 'yes'
   if (['false', 'no', 'n', '0', 'off', 'declined'].includes(normalized)) return 'no'
-  return fallback
-}
-
-function normalizeAcceptedValue(value, fallback = false) {
-  if (typeof value === 'boolean') return value
-  const normalized = String(value ?? '').trim().toLowerCase()
-  if (['true', 'yes', 'y', '1', 'on', 'accepted'].includes(normalized)) return true
-  if (['false', 'no', 'n', '0', 'off', 'declined'].includes(normalized)) return false
   return fallback
 }
 
@@ -1468,7 +1461,7 @@ function normalizeFormData(listing) {
     if (sellerBranch === 'deceased_estate') return canonicalFacts?.seller?.deceased_estate?.estate_reference || existing.idNumber || ''
     if (sellerBranch === 'power_of_attorney') return canonicalFacts?.seller?.power_of_attorney?.reference || existing.idNumber || ''
     if (sellerBranch === 'multiple_owners') return existing.idNumber || ''
-    return existing.idNumber || existing.foreignPassportNumber || existing.passportNumber || canonicalFacts?.seller?.id_number || canonicalFacts?.seller?.foreign?.passport_number || ''
+    return existing.idNumber || existing.id_number || existing.sellerIdNumber || existing.foreignPassportNumber || existing.foreign_passport_number || existing.passportNumber || existing.passport_number || canonicalFacts?.seller?.id_number || canonicalFacts?.seller?.foreign?.passport_number || ''
   }
   const resolveAddress = () => {
     if (sellerBranch === 'company') return canonicalFacts?.seller?.company?.registered_address || canonicalFacts?.seller?.residential_address || existing.residentialAddress || ''
@@ -1635,7 +1628,7 @@ function normalizeFormData(listing) {
     primaryContactIsOwnerOne: Boolean(existing.primaryContactIsOwnerOne || existing.primary_contact_is_owner_one),
     sellerTaxNumber: existing.sellerTaxNumber || existing.incomeTaxNumber || existing.income_tax_number || canonicalFacts?.seller?.tax_number || existing.taxNumber || existing.tax_number || '',
     saResident: normalizeYesNoValue(existing.saResident ?? existing.sa_resident ?? existing.taxResident ?? existing.tax_resident ?? canonicalFacts?.seller?.sa_resident ?? canonicalFacts?.seller?.tax_resident),
-    popiConsent: normalizeAcceptedValue(existing.popiConsentAccepted ?? existing.popi_consent_accepted ?? existing.popiConsent ?? existing.popi_consent ?? canonicalFacts?.seller?.popi_consent_accepted ?? canonicalFacts?.seller?.popi_consent),
+    popiConsent: readSellerPopiConsent({ ...(canonicalFacts?.seller || {}), ...existing }).accepted,
     sellerOnboardingConsents: readSellerOnboardingConsents(existing),
     vatRegistered: isVatEligibleOwnership ? Boolean(existing.vatRegistered) : false,
     vatNumber: isVatEligibleOwnership ? (existing.vatNumber || '') : '',
@@ -1658,7 +1651,7 @@ function normalizeFormData(listing) {
     authorisedSignatoryName: existing.authorisedSignatoryName || existing.authorised_signatory_name || canonicalFacts?.seller?.company?.authorised_signatory?.name || existing.company?.authorisedSignatory?.name || existing.company?.authorised_signatory?.name || '',
     authorisedSignatoryCapacity: existing.authorisedSignatoryCapacity || existing.authorised_signatory_capacity || canonicalFacts?.seller?.company?.authorised_signatory?.capacity || existing.company?.authorisedSignatory?.capacity || existing.company?.authorised_signatory?.capacity || '',
     authorisedSignatoryEmail: existing.authorisedSignatoryEmail || existing.authorised_signatory_email || canonicalFacts?.seller?.company?.authorised_signatory?.email || existing.company?.authorisedSignatory?.email || existing.company?.authorised_signatory?.email || '',
-    authorisedSignatoryIdNumber: existing.authorisedSignatoryIdNumber || canonicalFacts?.seller?.company?.authorised_signatory?.id_number || '',
+    authorisedSignatoryIdNumber: existing.authorisedSignatoryIdNumber || existing.authorised_signatory_id_number || canonicalFacts?.seller?.company?.authorised_signatory?.id_number || existing.company?.authorisedSignatory?.idNumber || existing.company?.authorisedSignatory?.id_number || existing.company?.authorised_signatory?.id_number || '',
     authorisedSignatoryNationality: existing.authorisedSignatoryNationality || canonicalFacts?.seller?.company?.authorised_signatory?.nationality || '',
     authorisedSignatoryPhone: existing.authorisedSignatoryPhone || existing.authorised_signatory_phone || canonicalFacts?.seller?.company?.authorised_signatory?.phone || existing.company?.authorisedSignatory?.phone || existing.company?.authorised_signatory?.phone || '',
     authorisedSignatoryAddress: existing.authorisedSignatoryAddress || existing.authorised_signatory_address || canonicalFacts?.seller?.company?.authorised_signatory?.residential_address || existing.company?.authorisedSignatory?.residentialAddress || existing.company?.authorisedSignatory?.residential_address || existing.company?.authorisedSignatory?.address || existing.company?.authorised_signatory?.residentialAddress || existing.company?.authorised_signatory?.residential_address || existing.company?.authorised_signatory?.address || '',
@@ -1678,7 +1671,7 @@ function normalizeFormData(listing) {
     authorisedTrusteeName: existing.authorisedTrusteeName || existing.authorised_trustee_name || canonicalFacts?.seller?.trust?.authorised_trustee?.name || existing.trust?.authorisedTrustee?.name || existing.trust?.authorised_trustee?.name || '',
     authorisedTrusteeCapacity: existing.authorisedTrusteeCapacity || existing.authorised_trustee_capacity || canonicalFacts?.seller?.trust?.authorised_trustee?.capacity || existing.trust?.authorisedTrustee?.capacity || existing.trust?.authorised_trustee?.capacity || '',
     authorisedTrusteeEmail: existing.authorisedTrusteeEmail || existing.authorised_trustee_email || canonicalFacts?.seller?.trust?.authorised_trustee?.email || existing.trust?.authorisedTrustee?.email || existing.trust?.authorised_trustee?.email || '',
-    authorisedTrusteeIdNumber: existing.authorisedTrusteeIdNumber || canonicalFacts?.seller?.trust?.authorised_trustee?.id_number || '',
+    authorisedTrusteeIdNumber: existing.authorisedTrusteeIdNumber || existing.authorised_trustee_id_number || canonicalFacts?.seller?.trust?.authorised_trustee?.id_number || existing.trust?.authorisedTrustee?.idNumber || existing.trust?.authorisedTrustee?.id_number || existing.trust?.authorised_trustee?.id_number || '',
     authorisedTrusteeNationality: existing.authorisedTrusteeNationality || canonicalFacts?.seller?.trust?.authorised_trustee?.nationality || '',
     authorisedTrusteePhone: existing.authorisedTrusteePhone || existing.authorised_trustee_phone || canonicalFacts?.seller?.trust?.authorised_trustee?.phone || existing.trust?.authorisedTrustee?.phone || existing.trust?.authorised_trustee?.phone || '',
     authorisedTrusteeAddress: existing.authorisedTrusteeAddress || existing.authorised_trustee_address || canonicalFacts?.seller?.trust?.authorised_trustee?.residential_address || existing.trust?.authorisedTrustee?.residentialAddress || existing.trust?.authorisedTrustee?.residential_address || existing.trust?.authorisedTrustee?.address || existing.trust?.authorised_trustee?.residentialAddress || existing.trust?.authorised_trustee?.residential_address || existing.trust?.authorised_trustee?.address || '',
@@ -3850,8 +3843,8 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       })
       const propertyAddress = getPropertyDisplayAddress(listing, form)
       const markup = buildPropertyDisclosureDocumentMarkup(normalizedDisclosure, {
-        sellerName: getSellerDisplayName(listing, form),
-        sellerIdNumber: form.idNumber || form.foreignPassportNumber || form.passportNumber || '',
+        sellerName: activeComplianceSigner?.name || getSellerDisplayName(listing, form),
+        sellerIdNumber: activeComplianceSigner?.idNumber || '',
         propertyAddress,
         listingId: String(listing?.id || '').trim(),
         documentReference: String(
@@ -4733,15 +4726,10 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       ).trim()
       const normalizedSaResident = normalizeYesNoValue(submissionForm.saResident ?? submissionForm.sa_resident ?? submissionForm.taxResident ?? submissionForm.tax_resident)
       const normalizedSaResidentText = normalizedSaResident === 'yes' ? 'Yes' : normalizedSaResident === 'no' ? 'No' : ''
-      const submittedAcknowledgements = readSellerDisclosureAcknowledgements(
-        submissionDisclosure?.sellerDisclosureAcknowledgements || submissionDisclosure?.seller_disclosure_acknowledgements || {},
-      )
-      const submittedPrivacyAcknowledgement = submittedAcknowledgements.acknowledgements.find((item) => item.key === SELLER_DISCLOSURE_ACKNOWLEDGEMENT_KEYS.privacyAndPaiaNotice)
-      const normalizedPopiConsent =
-        normalizeAcceptedValue(submissionForm.popiConsent ?? submissionForm.popiConsentAccepted ?? submissionForm.popi_consent ?? submissionForm.popi_consent_accepted) ||
-        Boolean(submittedPrivacyAcknowledgement?.accepted)
+      const popiConsent = readSellerPopiConsent(submissionForm)
+      const normalizedPopiConsent = popiConsent.accepted
       const normalizedPopiConsentAt = normalizedPopiConsent
-        ? String(submissionForm.popiConsentAcceptedAt || submissionForm.popi_consent_accepted_at || '').trim() || new Date().toISOString()
+        ? popiConsent.acceptedAt || new Date().toISOString()
         : ''
       const arch9TermsAcceptance = readArch9SellerTermsAcceptance(submissionForm)
       const arch9TermsAcceptedAt = arch9TermsAcceptance.acceptedAt || arch9TermsAcceptance.accepted_at || new Date().toISOString()
@@ -4751,8 +4739,8 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       })
       const frozenDisclosureAt = new Date().toISOString()
       const frozenDisclosureSnapshot = buildPropertyDisclosureAnnexureSnapshot(submissionDisclosure || {}, {
-        sellerName: getSellerDisplayName(listing, submissionForm),
-        sellerIdNumber: submissionForm.idNumber || submissionForm.foreignPassportNumber || submissionForm.passportNumber || '',
+        sellerName: activeComplianceSigner?.name || getSellerDisplayName(listing, submissionForm),
+        sellerIdNumber: activeComplianceSigner?.idNumber || '',
         propertyAddress: getPropertyDisplayAddress(listing, submissionForm),
       })
       let finalForm = {
@@ -6812,7 +6800,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
               disclosure={activePropertyDisclosure}
               disclosureKind={propertyBranch === 'commercial' || propertyBranch === 'mixed_use' ? 'commercial' : 'residential'}
               sellerName={activeComplianceSigner?.name || getSellerDisplayName(listing, form)}
-              sellerIdNumber={form.idNumber || form.foreignPassportNumber || form.passportNumber || ''}
+              sellerIdNumber={activeComplianceSigner?.idNumber || ''}
               activeSigner={activeComplianceSigner}
               signingStatus={sellerComplianceSigning}
               hasRequestedSigner={hasRequestedComplianceSigner}

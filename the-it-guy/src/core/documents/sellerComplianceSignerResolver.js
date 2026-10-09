@@ -59,6 +59,7 @@ function normalizeFactsInput(input = {}) {
 function primarySellerPerson(seller = {}) {
   return {
     name: firstText(seller.name, seller.full_name, [seller.first_name, seller.surname].filter(Boolean).join(' ')),
+    id_number: firstText(seller.id_number, seller.foreign?.passport_number),
     email: seller.email,
     phone: seller.phone,
   }
@@ -77,6 +78,7 @@ function signerFromPerson({
     id,
     name: fullName(person) || text(fallbackName),
     identityCaptured: Boolean(fullName(person)),
+    idNumber: firstText(person.idNumber, person.id_number, person.passportNumber, person.passport_number),
     email: emailOf(person),
     mobile: phoneOf(person),
     capacity: text(person.capacity || person.role_capacity || person.roleCapacity || person.role_title || person.roleTitle),

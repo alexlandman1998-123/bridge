@@ -1,3 +1,6 @@
+import { transformSync } from 'esbuild'
+import { createElement } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { getComplianceProvider, isMockComplianceRun } from '../src/services/complianceProviderRegistry.js'
@@ -41,3 +44,30 @@ assert.equal(isMockComplianceRun({ provider: 'configured provider', providerRefe
 assert.equal(isMockComplianceRun({ provider: 'Knowledge Factory', providerReference: 'KF-123' }), false)
 
 console.log('seller profile FICA verification contract passed')
+
+
+// Render the actual panel markup with fixtures, without loading live data.
+const panelMarker = page.indexOf('data-testid="seller-fica-scope"')
+const panelStart = page.lastIndexOf('<section', panelMarker)
+const panelEnd = page.indexOf('</section>', panelMarker) + '</section>'.length
+assert.ok(panelStart >= 0 && panelEnd > panelStart)
+const panelCode = transformSync(`function ScopePanel({ scope }) {
+  const selectedSellerProfileWorkspace = { ficaScope: scope };
+  const openSellerLeadEditModal = () => {};
+  return (${page.slice(panelStart, panelEnd)});
+}`, { loader: 'jsx', jsxFactory: 'React.createElement' }).code
+const Button = ({ children }) => createElement('button', { type: 'button' }, children)
+const ScopePanel = new Function('React', 'Button', `${panelCode}; return ScopePanel`)({ createElement }, Button)
+const missingPanel = renderToStaticMarkup(createElement(ScopePanel, { scope: {
+  subjects: [
+    { type: 'entity', label: 'Example Company', roles: ['Company'], complete: true, missing: [] },
+    { type: 'person', label: 'Captured Director', roles: ['Director', 'Authorised representative'], complete: false, missing: ['ID or passport number', 'residential address', 'nationality / jurisdiction'] },
+  ],
+  missing: ['Captured Director: ID or passport number', 'Captured Director: residential address', 'Captured Director: nationality / jurisdiction', 'Beneficial ownership / control declaration'],
+} }))
+for (const field of ['ID or passport number', 'residential address', 'nationality / jurisdiction', 'Beneficial ownership / control declaration']) assert.ok(missingPanel.includes(field))
+assert.ok(missingPanel.includes('Review information'))
+assert.ok(!missingPanel.includes('3 missing'), 'A missing count cannot replace the actual missing fields.')
+assert.equal((missingPanel.match(/Captured Director/g) || []).length, 1, 'One identified person has one row listing their roles.')
+assert.ok(missingPanel.includes('Verification results are shown above.') && !missingPanel.includes('verified'), 'Captured facts must not imply completed verification.')
+console.log('seller FICA scope missing-field rendering regression: ok')

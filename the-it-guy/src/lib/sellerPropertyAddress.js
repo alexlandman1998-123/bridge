@@ -97,6 +97,20 @@ export function createBlankPropertyAddress() {
   }
 }
 
+function formatAddressParts(values = []) {
+  const seen = new Set()
+  return values.flatMap((value) => normalizeText(value).split(','))
+    .map(normalizeText)
+    .filter((part) => {
+      if (!part || isPlaceholderPropertyAddressText(part)) return false
+      const key = part.toLowerCase().replace(/\s+/g, ' ')
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+    .join(', ')
+}
+
 export function formatPropertyAddress(address = {}) {
   const record = pickRecord(address, {})
   const parts = [
@@ -110,9 +124,9 @@ export function formatPropertyAddress(address = {}) {
     .map(normalizeText)
     .filter((part) => part && !isPlaceholderPropertyAddressText(part))
 
-  if (parts.length) return parts.join(', ')
+  if (parts.length) return formatAddressParts(parts)
 
-  return firstAddressText(record.formatted, record.query)
+  return formatAddressParts([firstAddressText(record.formatted, record.query)])
 }
 
 export function normalizePropertyAddress(source = {}, listing = {}, fallback = {}) {

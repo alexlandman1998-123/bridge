@@ -1,3 +1,6 @@
+import { normalizePersonCollectionForSellerProfile } from '../../../lib/sellerProfileCaptureModel.js'
+import { readSellerPopiConsent } from '../sellerOnboardingConsent.js'
+import { transformSellerOnboardingToFacts } from '../../../services/documents/sellerOnboardingFactTransformer.js'
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
@@ -181,4 +184,65 @@ test('a signer-specific declaration submission preserves the primary seller disc
   assert.equal(afterSpouse.propertyDisclosure.signature, 'John Smith')
   assert.equal(afterSpouse.propertyDisclosure.signedAt, '2026-08-25')
   assert.equal(afterSpouse.sellerComplianceSigners.find((signer) => signer.id === 'spouse').signature.value, 'Jane Smith')
+})
+
+
+test('company declaration keeps the director identity and privacy evidence through save/reload', () => {
+  const formData = {
+    ownershipType: 'company', companyName: 'Example Company', companyRegistrationNumber: '2020/000001/07',
+    authorisedSignatoryName: 'Casey Director', authorisedSignatoryEmail: 'casey@example.test',
+    companyDirectors: [{ name: 'Casey', surname: 'Director', idNumber: '8001015009087' }],
+    popiConsent: 'No', popiConsentAccepted: false,
+  }
+  const flow = buildSellerComplianceSigningForForm({ formData, signerId: 'company-authorised-signatory' })
+  assert.equal(flow.activeSigner.idNumber, '8001015009087')
+  assert.notEqual(flow.activeSigner.idNumber, formData.companyRegistrationNumber)
+  const signed = applySellerComplianceSignatureToForm({
+    formData, signerId: flow.activeSigner.id,
+    disclosure: { signature: 'Casey Director', signedAt: '2026-10-09' },
+    acknowledgements: requiredAcknowledgements(),
+  })
+  const reloaded = JSON.parse(JSON.stringify(signed))
+  assert.equal(buildSellerComplianceSigningForForm({ formData: reloaded, signerId: flow.activeSigner.id }).activeSigner.idNumber, '8001015009087')
+  const consent = readSellerPopiConsent(reloaded)
+  assert.equal(consent.accepted, true)
+  assert.ok(consent.acceptedAt)
+  const facts = transformSellerOnboardingToFacts(reloaded)
+  assert.equal(facts.seller.popi_consent, 'Accepted')
+  assert.equal(facts.seller.popi_consent_accepted_at, consent.acceptedAt)
+})
+
+test('each declaration uses its own signer ID or passport', () => {
+  const formData = {
+    ownershipType: 'multiple_owners', ownerStructureType: 'multiple_owners',
+    multipleOwners: [
+      { name: 'First Owner', id_number: '8001015009087' },
+      { name: 'Second Owner', idNumber: '9001015009084' },
+    ],
+  }
+  assert.equal(buildSellerComplianceSigningForForm({ formData, signerId: 'seller-1' }).activeSigner.idNumber, '8001015009087')
+  assert.equal(buildSellerComplianceSigningForForm({ formData, signerId: 'seller-2' }).activeSigner.idNumber, '9001015009084')
+  const foreign = buildSellerComplianceSigningForForm({ formData: {
+    ownershipType: 'foreign_individual', ownerStructureType: 'foreign_individual',
+    sellerFirstName: 'Foreign', sellerSurname: 'Owner', foreignPassportNumber: 'P1234567',
+  } })
+  assert.equal(foreign.activeSigner.idNumber, 'P1234567')
+})
+
+
+test('legacy company and trustee representative names retain their captured ID or passport', () => {
+  const company = buildSellerComplianceSigningForForm({ formData: {
+    ownershipType: 'company', companyDirectorName: 'Legacy Director',
+    companyDirectors: [{ name: 'Legacy Director', idNumber: '8001015009087' }],
+  } })
+  assert.equal(company.activeSigner.idNumber, '8001015009087')
+  const trust = buildSellerComplianceSigningForForm({ formData: {
+    ownershipType: 'trust', trusteeName: 'Foreign Trustee',
+    trustees: normalizePersonCollectionForSellerProfile([{ name: 'Foreign Trustee', passportNumber: 'P7654321' }], null, 'Trustee'),
+  } })
+  assert.equal(trust.activeSigner.idNumber, 'P7654321')
+  const individual = buildSellerComplianceSigningForForm({ formData: {
+    ownershipType: 'individual', sellerFirstName: 'Alias', sellerSurname: 'Owner', id_number: '8001015009087',
+  } })
+  assert.equal(individual.activeSigner.idNumber, '8001015009087')
 })

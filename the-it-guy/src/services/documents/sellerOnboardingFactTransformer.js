@@ -1,3 +1,4 @@
+import { readSellerPopiConsent } from '../../core/documents/sellerOnboardingConsent.js'
 import { resolveSellerBondStatus, sellerBondDeclaration } from '../../lib/sellerBondStatus.js'
 import { getPropertyCategoryLabel, normalizePropertyCategory, normalizePropertyStructureType } from '../../lib/propertyTaxonomy.js'
 import {
@@ -210,7 +211,7 @@ function normalizePersonRecord(entry = {}, index = 0, { defaultRoleTitle = '' } 
     name: normalizeText([firstName, surname].filter(Boolean).join(' ') || fullName),
     first_name: firstName,
     surname,
-    id_number: normalizeText(entry.id_number || entry.idNumber || entry.identity_number || entry.identityNumber),
+    id_number: normalizeText(entry.id_number || entry.idNumber || entry.identity_number || entry.identityNumber || entry.passport_number || entry.passportNumber),
     nationality: normalizeText(entry.nationality || entry.citizenship),
     email: normalizeText(entry.email),
     phone: normalizeText(entry.phone),
@@ -433,8 +434,8 @@ export function transformSellerOnboardingToFacts(form = {}, listing = {}, option
     { defaultRoleTitle: 'Trustee' },
   )
   const trustBeneficiaries = normalizePeopleCollection(form.trustBeneficiaries || form.beneficiaries || [], null, { defaultRoleTitle: 'Beneficiary' })
-  const companySignatoryPerson = companyDirectors.find((person) => normalizeKey(person.full_name) === normalizeKey(form.authorisedSignatoryName))
-  const authorisedTrusteePerson = trustTrustees.find((person) => normalizeKey(person.full_name) === normalizeKey(form.authorisedTrusteeName))
+  const companySignatoryPerson = companyDirectors.find((person) => normalizeKey(person.full_name) === normalizeKey(form.authorisedSignatoryName || form.companyDirectorName || companyDirectors[0]?.full_name))
+  const authorisedTrusteePerson = trustTrustees.find((person) => normalizeKey(person.full_name) === normalizeKey(form.authorisedTrusteeName || form.trusteeName || trustTrustees[0]?.full_name))
   const executors = normalizePeopleCollection(
     form.executors || [],
     {
@@ -483,10 +484,8 @@ export function transformSellerOnboardingToFacts(form = {}, listing = {}, option
   const ownerStructureType = ownerStructureCandidate || (sellerLegalType === 'individual' ? 'individual' : sellerLegalType)
   const foreignOwner = normalizeBoolean(form.foreignOwner ?? form.foreign_owner, false) || ownerEntityType === 'foreign' || ownerStructureType.startsWith('foreign_')
   const multipleOwnerCaptureMode = 'capture_now'
-  const popiConsentAccepted =
-    normalizeBoolean(form.popiConsentAccepted ?? form.popi_consent_accepted ?? form.popiConsent ?? form.popi_consent, false) ||
-    normalizeBoolean(form.arch9TermsAccepted ?? form.arch9_terms_accepted, false) ||
-    normalizeKey(form.popiConsent || form.popi_consent) === 'accepted'
+  const popiConsent = readSellerPopiConsent(form)
+  const popiConsentAccepted = popiConsent.accepted || normalizeBoolean(form.arch9TermsAccepted ?? form.arch9_terms_accepted, false)
 
   return {
     seller_branch: flow.seller_branch,
@@ -527,7 +526,7 @@ export function transformSellerOnboardingToFacts(form = {}, listing = {}, option
       email: normalizeText(form.email ?? form.sellerEmail),
       phone: normalizeText(form.phone ?? form.sellerPhone ?? form.mobile),
       alternative_number: normalizeText(form.alternativeNumber || form.alternative_number || form.alternatePhone || form.alternate_phone),
-      id_number: normalizeText(form.idNumber),
+      id_number: normalizeText(form.idNumber || form.id_number || form.sellerIdNumber),
       date_of_birth: normalizeDate(form.dateOfBirth || form.date_of_birth || form.birthDate),
       nationality: normalizeText(form.nationality),
       occupation: normalizeText(form.occupation),
@@ -542,7 +541,7 @@ export function transformSellerOnboardingToFacts(form = {}, listing = {}, option
       popi_consent: popiConsentAccepted ? 'Accepted' : '',
       popi_consent_accepted: popiConsentAccepted,
       popi_consent_accepted_at: popiConsentAccepted
-        ? normalizeText(form.popiConsentAcceptedAt || form.popi_consent_accepted_at)
+        ? popiConsent.acceptedAt
         : '',
       residency_status: normalizeText(form.foreignResidencyStatus || form.residencyStatus),
       vat_registered: vatEligibleSeller ? normalizeBoolean(form.vatRegistered, false) : false,

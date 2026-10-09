@@ -1,3 +1,5 @@
+import { readSellerOnboardingReview, recordSellerOnboardingReview, SELLER_ONBOARDING_REVIEW_STATUS } from '../src/core/documents/sellerOnboardingReview.js'
+import { createSellerOnboardingCorrectionControl } from '../src/core/documents/sellerOnboardingCorrectionControl.js'
 import { getSellerMandatePreparationIssues } from '../src/lib/sellerMandateCapture.js'
 import assert from 'node:assert/strict'
 import { createListingSellerProfileBuilderDraft, buildListingSellerProfileFormPatch, selectListingSellerProfileBranch } from '../src/lib/listingSellerProfileBuilderModel.js'
@@ -394,7 +396,7 @@ const leadPreparationAction = leadPageSource.slice(
   leadPageSource.indexOf('  function handleSellerJourneyAction(', leadPageSource.indexOf('  async function sendSellerLeadSigningPack() {')),
 )
 
-async function runLeadPreparation({ mandateType = 'dual', digital = false, saveError = null, warning = null, priorListing = null, askingPrice = '2000000' } = {}) {
+async function runLeadPreparation({ mandateType = 'dual', digital = false, saveError = null, warning = null, priorListing = null, askingPrice = '2000000', generatedListing = null, needsRefresh = false } = {}) {
   const events = { saves: [], sends: [], errors: [], listingWrites: [] }
   const originalForm = { ...listing.sellerOnboarding.formData, otherAgencyName: 'Old Agency', coAgencyName: 'Old Agency',
     askingPrice: '1000000', mandateType: 'sole', propertyDisclosure: { comments: 'Retain this explanation.' } }
@@ -403,7 +405,7 @@ async function runLeadPreparation({ mandateType = 'dual', digital = false, saveE
     getSellerMandatePreparationIssues,
     selectedLeadLinkedListingId: listing.id, selectedLeadLinkedListing: currentListing,
     selectedLead: { leadId: 'lead-1', sellerOnboarding: { formData: { ...originalForm, sellerSurname: 'Stale CRM' } } },
-    sellerSigningPackSaving: false, SELLER_PORTAL_SIGNING_ENABLED: true,
+    sellerSigningPackSaving: false, sellerSigningPackNeedsRefresh: needsRefresh, SELLER_PORTAL_SIGNING_ENABLED: true,
     sellerSigningPackTerms: { mandateType, otherAgencyName: mandateType === 'dual' ? 'Updated Agency' : '',
       askingPrice, startDate: '2026-10-01', endDate: '2026-12-01', protectionPeriod: '0', protectionPeriodDays: '30',
       commissionBasis: 'fixed', commissionPercentage: '5', commissionAmount: '75000', vatHandling: 'inclusive' },
@@ -439,9 +441,11 @@ async function runLeadPreparation({ mandateType = 'dual', digital = false, saveE
     setSelectedLeadHydratedListing: row => { events.hydrated = row },
     sendSellerDocumentForSignature: async (_id, key) => { events.sends.push(key); return { sentCount: 1 } },
     listSellerPortalSigningRequests: async () => ({ documents: [] }), setSellerPortalSigningRequests: () => {},
-    updatePrivateListing: async (_id, patch) => { events.listingWrites.push(patch) },
+    updatePrivateListing: async (_id, patch) => { events.listingWrites.push(patch); return generatedListing },
     updateAgencyCrmLeadRecord: async () => {}, patchSelectedLeadRecord: () => {},
     setSellerSigningPackError: message => { if (message) events.errors.push(message) },
+    setSellerSigningPackNeedsRefresh: value => { events.needsRefresh = value },
+    setSellerSigningPackNotice: value => { events.notice = value },
     setSellerSigningPackProgress: () => {}, setSellerSigningPackSaving: () => {}, setSellerSigningPackModalOpen: () => {},
     setMessage: () => {}, scheduleRecordsReload: () => {},
   }
@@ -569,3 +573,125 @@ await test('changing company ownership clears retired fields and keeps the conta
   assert.equal(contactUpdate.nextFormData.sellerSurname, 'Contact')
   assert.equal(createListingSellerProfileBuilderDraft(applyListingSellerCanonicalUpdateSnapshot(company, contactUpdate)).primaryContactName, 'New Contact')
 })
+
+await test('a signing-pack conflict offers refresh and never retries or sends', async () => {
+  const events = await runLeadPreparation({ digital: true, saveError: Object.assign(new Error('Seller record changed.'), { code: 'SELLER_UPDATE_CONFLICT' }) })
+  assert.equal(events.needsRefresh, true)
+  assert.equal(events.saves.length, 1)
+  assert.deepEqual(events.sends, [])
+  assert.deepEqual(events.listingWrites, [])
+  const blocked = await runLeadPreparation({ digital: true, needsRefresh: true })
+  assert.deepEqual(blocked.saves, [], 'The stale pack must not be submitted again before refresh.')
+})
+
+await test('the final generated listing timestamp becomes the next workspace snapshot', async () => {
+  const generatedListing = { ...listing, updatedAt: '2026-10-09T07:10:01Z', mandateStatus: 'generated' }
+  const events = await runLeadPreparation({ generatedListing })
+  assert.deepEqual(events.errors, [])
+  assert.equal(events.hydrated, generatedListing)
+})
+
+const reviewAction = leadPageSource.slice(
+  leadPageSource.indexOf('  async function saveSellerLeadOnboardingReview('),
+  leadPageSource.indexOf('\n  function getSellerLeadSigningRecipients('),
+)
+async function runOnboardingReview({ error = null } = {}) {
+  const events = { errors: [], saves: [], leads: [] }
+  const before = { ...listing, sellerOnboarding: { status: 'completed', formData: listing.sellerOnboarding.formData } }
+  const committedTimestamp = '2026-10-09T07:10:00.123456Z'
+  const scope = {
+    selectedLeadLinkedListingId: listing.id, selectedLeadLinkedListing: before,
+    selectedLead: { leadId: 'fixture-lead' }, sellerOnboardingReviewSaving: false,
+    currentAgent: { id: 'fixture-agent' }, organisationId: listing.organisationId,
+    sellerOnboardingCorrectionReason: '', normalizeText: value => String(value ?? '').trim(),
+    readSellerOnboardingReview, recordSellerOnboardingReview, SELLER_ONBOARDING_REVIEW_STATUS,
+    createSellerOnboardingCorrectionControl, createSellerOnboardingSigningLifecycle: value => value,
+    SELLER_ONBOARDING_SIGNING_STAGES: { agentReviewApproved: 'agent_review_approved', correctionRequested: 'correction_requested' },
+    getSellerLeadReviewFormData: () => before.sellerOnboarding.formData,
+    getSellerLeadOnboardingReviewChecklist: () => ({ ready: true }),
+    saveListingSellerCanonicalUpdate: input => saveListingSellerCanonicalUpdate(input, {
+      savePrivateListingSellerCanonicalUpdate: async update => {
+        events.saves.push(update)
+        if (error) throw error
+        return { listing: { ...applyListingSellerCanonicalUpdateSnapshot(before, update), updatedAt: committedTimestamp }, receipt: { committed: true }, syncedRequirements: [] }
+      },
+    }),
+    persistSellerProfileOnboardingFormData: () => { throw Error('Review must not make a separate onboarding write.') },
+    setSelectedLeadHydratedListing: value => { events.hydrated = value },
+    patchSelectedLeadRecord: patch => { events.leads.push(patch) }, updateAgencyCrmLeadRecord: async () => {},
+    setSellerOnboardingReviewSaving: value => { events.saving = value },
+    setSellerOnboardingReviewError: value => { if (value) events.errors.push(value) },
+    setMessage: () => {}, scheduleRecordsReload: () => {},
+  }
+  events.ok = await Function(...Object.keys(scope), `${reviewAction}; return saveSellerLeadOnboardingReview('approved')`)(...Object.values(scope))
+  return events
+}
+
+await test('approving onboarding hands the exact committed timestamp and facts to pack preparation', async () => {
+  const review = await runOnboardingReview()
+  assert.equal(review.ok, true)
+  assert.equal(review.saving, false)
+  assert.deepEqual(review.errors, [])
+  assert.equal(review.saves.length, 1)
+  assert.equal(review.hydrated.updatedAt, '2026-10-09T07:10:00.123456Z')
+  assert.equal(review.leads[0].sellerOnboarding.formData, review.hydrated.sellerOnboarding.formData)
+  assert.equal(readSellerOnboardingReview(review.hydrated.sellerOnboarding.formData.sellerOnboardingReview).status, 'approved')
+  const pack = await runLeadPreparation({ priorListing: review.hydrated })
+  assert.deepEqual(pack.errors, [])
+  assert.equal(pack.saves[0].expectedUpdatedAt, review.hydrated.updatedAt, 'The pack must use the approval receipt timestamp rather than the timestamp before approval.')
+})
+
+await test('a failed review does not claim approval or replace the listing snapshot', async () => {
+  const events = await runOnboardingReview({ error: Object.assign(new Error('Review changed.'), { code: 'SELLER_UPDATE_CONFLICT' }) })
+  assert.equal(events.ok, false)
+  assert.deepEqual(events.errors, ['Review changed.'])
+  assert.equal(events.hydrated, undefined)
+  assert.deepEqual(events.leads, [])
+  assert.equal(events.saving, false)
+})
+
+const refreshAction = leadPageSource.slice(
+  leadPageSource.indexOf('  async function refreshSellerSigningPackRecord('),
+  leadPageSource.indexOf('\n  async function sendSellerLeadSigningPack('),
+)
+const latestStart = leadPageSource.indexOf('function retainLatestSellerListing(')
+const latestEnd = leadPageSource.indexOf('\nfunction getWorkspacePropertyPostalCode(', latestStart)
+const retainLatestSellerListing = Function(`${leadPageSource.slice(latestStart, latestEnd)}; return retainLatestSellerListing`)()
+for (const failRead of [false, true]) {
+  await test(`conflict refresh preserves mandate inputs and performs only a read (read failure: ${failRead})`, async () => {
+    const latest = { ...listing, updatedAt: '2026-10-09T07:11:00Z', sellerOnboarding: { formData: { ...listing.sellerOnboarding.formData, sellerFirstName: 'Latest' } } }
+    const events = { current: listing, needsRefresh: true, reads: 0 }
+    const mandateEntries = { askingPrice: '10700000', commissionPercentage: '4.5', startDate: '2026-10-01', endDate: '2027-04-01' }
+    const originalEntries = structuredClone(mandateEntries)
+    const scope = {
+      sellerSigningPackSaving: false, selectedLeadLinkedListingId: listing.id,
+      normalizeText: value => String(value ?? '').trim(), retainLatestSellerListing,
+      sellerSigningPackTerms: mandateEntries,
+      getPrivateListing: async (id, options) => {
+        events.reads++
+        assert.equal(id, listing.id)
+        assert.equal(options.includeRequirementsAndDocuments, false)
+        if (failRead) throw Error('Refresh unavailable')
+        return latest
+      },
+      setSelectedLeadHydratedListing: callback => { events.current = callback(events.current) },
+      setSellerSigningPackSaving: value => { events.saving = value },
+      setSellerSigningPackNeedsRefresh: value => { events.needsRefresh = value },
+      setSellerSigningPackError: value => { events.error = value }, setSellerSigningPackProgress: () => {},
+      setSellerSigningPackNotice: value => { events.notice = value },
+      setSellerSigningPackTerms: () => { throw Error('Must preserve the user mandate entries.') },
+      saveListingSellerCanonicalUpdate: () => { throw Error('Refresh must not save.') },
+      sendSellerDocumentForSignature: () => { throw Error('Refresh must not dispatch.') },
+    }
+    await Function(...Object.keys(scope), `${refreshAction}; return refreshSellerSigningPackRecord()`)(...Object.values(scope))
+    assert.deepEqual(mandateEntries, originalEntries)
+    assert.equal(events.reads, 1)
+    assert.equal(events.saving, false)
+    assert.equal(events.needsRefresh, failRead)
+    assert.equal(events.current, failRead ? listing : latest)
+    assert.match(failRead ? events.error : events.notice, failRead ? /Refresh unavailable/ : /Review the seller details and required signers before approving again/)
+    if (!failRead) assert.equal(events.error, '', 'A successful refresh should show a notice rather than a red error.')
+  })
+}
+assert.ok(leadPageSource.includes('Refresh seller information and keep mandate entries'))
+assert.ok(leadPageSource.includes('disabled={sellerSigningPackSaving || sellerSigningPackNeedsRefresh}'))

@@ -46,7 +46,7 @@ export function normalizePersonRecordForSellerProfile(entry = {}, index = 0, rol
     email: normalizeText(entry.email),
     phone: normalizeText(entry.phone),
     residentialAddress: normalizeText(entry.residentialAddress || entry.residential_address || entry.address),
-    idNumber: normalizeText(entry.idNumber || entry.id_number || entry.identityNumber || entry.identity_number),
+    idNumber: normalizeText(entry.idNumber || entry.id_number || entry.identityNumber || entry.identity_number || entry.passportNumber || entry.passport_number),
     nationality: normalizeText(entry.nationality || entry.citizenship),
     ownershipShare: normalizeText(entry.ownershipShare || entry.ownership_share),
     controlBasis: normalizeText(entry.controlBasis || entry.control_basis || entry.authority_details),
@@ -138,6 +138,8 @@ export function buildSellerEntityProfileAliases(form = {}) {
   const trustBeneficiaries = normalizeSellerProfileEntityPersonAliasCollection(form.trustBeneficiaries || form.trust_beneficiaries || form.beneficiaries || [], 'Beneficiary')
   const authorisedSignatory = normalizeSellerProfileEntityPersonAliases({
     name: form.authorisedSignatoryName || form.authorised_signatory_name,
+    idNumber: form.authorisedSignatoryIdNumber || form.authorised_signatory_id_number,
+    nationality: form.authorisedSignatoryNationality || form.authorised_signatory_nationality,
     capacity: form.authorisedSignatoryCapacity || form.authorised_signatory_capacity,
     email: form.authorisedSignatoryEmail || form.authorised_signatory_email,
     phone: form.authorisedSignatoryPhone || form.authorised_signatory_phone,
@@ -146,6 +148,8 @@ export function buildSellerEntityProfileAliases(form = {}) {
   }, 0, 'Authorised Signatory')
   const authorisedTrustee = normalizeSellerProfileEntityPersonAliases({
     name: form.authorisedTrusteeName || form.authorised_trustee_name,
+    idNumber: form.authorisedTrusteeIdNumber || form.authorised_trustee_id_number,
+    nationality: form.authorisedTrusteeNationality || form.authorised_trustee_nationality,
     capacity: form.authorisedTrusteeCapacity || form.authorised_trustee_capacity,
     email: form.authorisedTrusteeEmail || form.authorised_trustee_email,
     phone: form.authorisedTrusteePhone || form.authorised_trustee_phone,
@@ -210,6 +214,10 @@ export function buildSellerEntityProfileAliases(form = {}) {
     authorisedSignatoryPhone: authorisedSignatory.phone,
     authorised_signatory_phone: authorisedSignatory.phone,
     authorisedSignatoryAddress: authorisedSignatory.residentialAddress,
+    authorisedSignatoryIdNumber: authorisedSignatory.idNumber,
+    authorised_signatory_id_number: authorisedSignatory.idNumber,
+    authorisedSignatoryNationality: authorisedSignatory.nationality,
+    authorised_signatory_nationality: authorisedSignatory.nationality,
     authorised_signatory_address: authorisedSignatory.residentialAddress,
     companyResolutionDate: normalizeText(form.companyResolutionDate || form.company_resolution_date),
     company_resolution_date: normalizeText(form.companyResolutionDate || form.company_resolution_date),
@@ -251,6 +259,10 @@ export function buildSellerEntityProfileAliases(form = {}) {
     authorisedTrusteePhone: authorisedTrustee.phone,
     authorised_trustee_phone: authorisedTrustee.phone,
     authorisedTrusteeAddress: authorisedTrustee.residentialAddress,
+    authorisedTrusteeIdNumber: authorisedTrustee.idNumber,
+    authorised_trustee_id_number: authorisedTrustee.idNumber,
+    authorisedTrusteeNationality: authorisedTrustee.nationality,
+    authorised_trustee_nationality: authorisedTrustee.nationality,
     authorised_trustee_address: authorisedTrustee.residentialAddress,
     trustAuthorityBasis: normalizeText(form.trustAuthorityBasis || form.trust_authority_basis),
     trust_authority_basis: normalizeText(form.trustAuthorityBasis || form.trust_authority_basis),
@@ -296,4 +308,36 @@ export default {
   normalizePersonRecordForSellerProfile,
   normalizeSellerProfileEntityPersonAliasCollection,
   normalizeSellerProfileEntityPersonAliases,
+}
+
+
+// The committed listing facts own the people roster. CRM summaries can contain
+// only names; they must not shadow captured identities in the seller workspace.
+export function projectSellerProfilePeople(formData = {}, canonicalFacts = {}) {
+  const seller = canonicalFacts.seller || {}
+  const result = { ...formData }
+  for (const [field, value, role] of [
+    ['companyDirectors', seller.company?.directors, 'Director'],
+    ['companyBeneficialOwners', seller.company?.beneficial_owners, 'Beneficial Owner'],
+    ['trustees', seller.trust?.trustees, 'Trustee'],
+    ['trustFounders', seller.trust?.founders, 'Founder'],
+    ['trustBeneficiaries', seller.trust?.beneficiaries, 'Beneficiary'],
+    ['multipleOwners', seller.owners, 'Owner'],
+  ]) {
+    if (Array.isArray(value)) result[field] = value.map((entry, index) => ({
+      ...entry, ...normalizePersonRecordForSellerProfile(entry, index, role),
+    }))
+  }
+  for (const [prefix, person] of [
+    ['authorisedSignatory', seller.company?.authorised_signatory],
+    ['authorisedTrustee', seller.trust?.authorised_trustee],
+  ]) {
+    if (!person || typeof person !== 'object') continue
+    const normalized = normalizeSellerProfileEntityPersonAliases(person)
+    for (const [suffix, value] of Object.entries({
+      Name: normalized.fullName, IdNumber: normalized.idNumber, Nationality: normalized.nationality,
+      Address: normalized.residentialAddress, Email: normalized.email, Phone: normalized.phone, Capacity: normalized.capacity,
+    })) result[`${prefix}${suffix}`] = value
+  }
+  return result
 }
