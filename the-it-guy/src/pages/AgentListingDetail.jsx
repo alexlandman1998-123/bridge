@@ -195,6 +195,7 @@ import {
   buildLeadListingLinkPatch,
   getBuyerLeadOptions,
   isLeadLinkedToListing,
+  isSellerLeadForListing,
   mapAgencyLeadSelectionRows,
 } from '../lib/agencyLeadSelection'
 import { assessBuyerOfferEligibility, assessBuyerOfferIntegrity, assessSellerOnboardingIntegrity } from '../lib/listingDataIntegrity'
@@ -9004,7 +9005,7 @@ function AgentListingDetail() {
 
   const listingLeads = useMemo(() => {
     if (!listingRecord) return []
-    return pipelineLeads.filter((lead) => isLeadLinkedToListing(lead, listingRecord))
+    return pipelineLeads.filter((lead) => isLeadLinkedToListing(lead, listingRecord) && !isSellerLeadForListing(lead, listingRecord))
   }, [listingRecord, pipelineLeads])
 
   const buyerOfferLeads = useMemo(
@@ -9016,6 +9017,7 @@ function AgentListingDetail() {
     const leadMap = new Map()
     const addLead = (lead = {}, extras = {}) => {
       const leadId = getLeadRecordId(lead) || String(extras.leadId || '').trim()
+      if (isSellerLeadForListing({ ...lead, leadId }, listingRecord)) return
       const contactId = getLeadContactId(lead) || String(extras.contactId || '').trim()
       const key = leadId || contactId || String(extras.fallbackKey || '').trim()
       if (!key) return

@@ -56,7 +56,7 @@ assert.equal(isBookedListingViewing({ status: 'cancelled' }), false)
 
 const listingDetail = await readFile(new URL('../src/pages/AgentListingDetail.jsx', import.meta.url), 'utf8')
 const listingInterestService = await readFile(new URL('../src/services/leadListingInterestService.js', import.meta.url), 'utf8')
-const leadsTabStart = listingDetail.indexOf("sellerWorkspaceTab === 'leads'")
+const leadsTabStart = listingDetail.indexOf("{sellerWorkspaceTab === 'leads'")
 const leadsTabEnd = listingDetail.indexOf("sellerWorkspaceTab === 'marketing'", leadsTabStart)
 const leadsTab = listingDetail.slice(leadsTabStart, leadsTabEnd > leadsTabStart ? leadsTabEnd : undefined)
 
@@ -70,6 +70,6 @@ assert.match(leadsTab, /label: 'Contacted'/)
 assert.match(leadsTab, /label: 'Viewings booked'/)
 assert.doesNotMatch(leadsTab, /label: 'Offers'/)
 assert.doesNotMatch(leadsTab, /label: 'Converted'/)
-assert.match(leadsTab, /sm:grid-cols-2 xl:grid-cols-4/)
+assert.match(leadsTab, /className="[^"]*grid-cols-2[^"]*(?:xl|lg):grid-cols-4/)
 
 console.log('Listing Leads Phase 3 metric contract passed')
