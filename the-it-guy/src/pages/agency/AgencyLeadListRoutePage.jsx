@@ -11,7 +11,6 @@ import LeadListPage from './LeadListPage'
 import { filterAgencyLeadsForAgent } from './agencyLeadAgentScope'
 import {
   invalidateAgencyLeadListCache,
-  listAgencyLeadLandingMetrics,
   listAgencyLeadListRecords,
   preloadAgencyLeadCoreRecord,
 } from './agencyLeadListReadRepository'
@@ -231,27 +230,27 @@ export default function AgencyLeadListRoutePage({ scopedAgent = null } = {}) {
       }
       setOrganisationId(workspaceId)
 
-      const landingMetricsRequest = listAgencyLeadLandingMetrics(workspaceId, { forceRefresh, scopedAgent }).catch(() => null)
       const primary = await listAgencyLeadListRecords(workspaceId, {
         includeRelatedRecords: false,
         forceRefresh,
         page: Math.max(0, requestedPage - 1),
         pageSize: LEAD_LIST_PAGE_SIZE,
         scopedAgent,
+        category,
+        filters: deferredFilters,
       })
       if (requestId !== loadRequestRef.current) return
       setRecords({
         leads: filterAgencyLeadsForAgent(Array.isArray(primary?.leads) ? primary.leads : [], scopedAgent, workspaceId),
         contacts: Array.isArray(primary?.contacts) ? primary.contacts : [],
+        sources: primary?.sources,
         activities: [],
         tasks: [],
       })
       setTotalLeadCount(Number(primary?.totalCount || 0))
+      if (Number.isFinite(primary?.page) && primary.page + 1 !== requestedPage) setPage(primary.page + 1)
+      setLandingMetricLeads(filterAgencyLeadsForAgent(primary?.metricLeads || primary?.leads || [], scopedAgent, workspaceId))
       setLoading(false)
-      void landingMetricsRequest
-        .then((landingMetrics) => {
-          if (requestId === loadRequestRef.current) setLandingMetricLeads(filterAgencyLeadsForAgent(Array.isArray(landingMetrics?.leads) ? landingMetrics.leads : [], scopedAgent, workspaceId))
-        })
       void performanceRef.current?.recordCheckpoint({ checkpoint: 'first_data', userId: profile?.id, workspaceId, metadata: { surface: 'lead_list', leadCount: primary?.leads?.length || 0, totalLeadCount: primary?.totalCount || 0, page: requestedPage } })
 
       if (isPrincipal && !scopedAgent) {
@@ -275,7 +274,7 @@ export default function AgencyLeadListRoutePage({ scopedAgent = null } = {}) {
     } finally {
       if (requestId === loadRequestRef.current) setRefreshing(false)
     }
-  }, [currentAgent, currentMembership, currentWorkspace, isPrincipal, organisationId, page, profile?.id, scopedAgent, workspace])
+  }, [category, currentAgent, currentMembership, currentWorkspace, deferredFilters, isPrincipal, organisationId, page, profile?.id, scopedAgent, workspace])
 
   useEffect(() => {
     void loadLeads({ requestedPage: page })
@@ -290,14 +289,14 @@ export default function AgencyLeadListRoutePage({ scopedAgent = null } = {}) {
     category,
     filters: deferredFilters,
   }), [category, deferredFilters, records])
-  const summaryModel = useMemo(() => buildAgencyLeadListSummary(records), [records])
+  const summaryModel = useMemo(() => buildAgencyLeadListSummary({ ...records, leads: landingMetricLeads }), [landingMetricLeads, records])
   const landingMetrics = useMemo(() => buildAgencyLeadLandingMetrics(landingMetricLeads), [landingMetricLeads])
   const totalPages = Math.max(1, Math.ceil(totalLeadCount / LEAD_LIST_PAGE_SIZE))
   const currentPage = Math.min(page, totalPages)
   const pageStart = listModel.rows.length ? (currentPage - 1) * LEAD_LIST_PAGE_SIZE + 1 : 0
   const pageEnd = pageStart ? pageStart + listModel.rows.length - 1 : 0
   const pageRows = listModel.rows
-  const sources = useMemo(() => [...new Set(records.leads.map((lead) => normalizeText(lead?.leadSource)).filter(Boolean))].sort(), [records.leads])
+  const sources = useMemo(() => records.sources || [...new Set(records.leads.map((lead) => normalizeText(lead?.leadSource)).filter(Boolean))].sort(), [records])
   const categoryTitle = category === 'seller' ? 'Seller Leads' : category === 'archived' ? 'Archived Leads' : 'Buyer Leads'
 
   const handleCreateLead = async (form) => {
@@ -356,9 +355,10 @@ export default function AgencyLeadListRoutePage({ scopedAgent = null } = {}) {
       setTotalLeadCount((count) => count + 1)
       setCreateDialog((previous) => ({ ...previous, open: false }))
       setCategory(form.category)
+      setPage(1)
       setMessage('Lead created.')
       invalidateAgencyLeadListCache(organisationId)
-      void loadLeads({ forceRefresh: true })
+      void loadLeads({ forceRefresh: true, requestedPage: 1 })
     } catch (createError) {
       setError(createError?.message || 'Unable to create this lead.')
     } finally {
@@ -480,7 +480,7 @@ export default function AgencyLeadListRoutePage({ scopedAgent = null } = {}) {
         categoryTitle={categoryTitle}
         categoryCounts={landingMetrics.categoryCounts}
         categoryTabs={AGENCY_LEAD_CATEGORY_TABS}
-        summary={{ total: totalLeadCount, filtered: listModel.rows.length, newThisWeek: summaryModel.metrics.newThisWeek }}
+        summary={{ total: landingMetrics.categoryCounts[category] || totalLeadCount, filtered: totalLeadCount, newThisWeek: summaryModel.metrics.newThisWeek }}
         sellerJourneyMetrics={summaryModel.sellerJourneyMetrics}
         operationalSummary={summaryModel.operationalSummary}
         showDaySummary={summaryModel.showDaySummary}
@@ -513,7 +513,7 @@ export default function AgencyLeadListRoutePage({ scopedAgent = null } = {}) {
         onArchiveLead={(leadId) => { setError(''); setArchiveDialog({ open: true, leadId }) }}
         onDeleteLead={(leadId) => { setError(''); setDeleteDialog({ open: true, leadId }) }}
         onMoveLead={(leadId, columnId) => void handleMoveLead(leadId, columnId)}
-        onOpenShowDayQueue={() => setFilters((previous) => ({ ...previous, source: 'Show Day' }))}
+        onOpenShowDayQueue={() => { setPage(1); setFilters((previous) => ({ ...previous, source: 'Show Day' })) }}
         onOpenShowDayLead={(row, tab) => {
           const leadId = row.leadId || row.id
           handleLeadIntent(leadId)

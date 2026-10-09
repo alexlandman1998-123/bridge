@@ -193,6 +193,17 @@ Kanban views, capture and lead actions. Assignment is locked to the selected age
 queries, cached pages and summary counts use that agent's user/membership IDs or
 saved assignment email within the current organisation. New leads go to that agent
 while the signed-in manager remains the recorded creator. No migration is required.
+
+The lead list applies buyer/seller/archive categories, search and filters before
+dividing matches into pages. It reuses the complete, authorised summary snapshot
+and reads category contacts in bounded batches so an older seller or a contact
+name on a later mixed page remains discoverable. Table totals and pagination count
+all matching leads; category badges and seller journey totals use the same snapshot.
+Refresh after deletion clamps the list to the last remaining page.
+Focused checks: `npx vitest run src/pages/agency/__tests__/AgencyLeadListRoutePage.agentScope.test.jsx
+src/pages/agency/__tests__/agencyLeadListReadRepository.agentScope.test.js
+src/pages/agency/__tests__/LeadListPage.kanban.test.jsx`.
+These checks use local fixtures and make no hosted CRM changes.
 Focused checks: `npx vitest run src/pages/agency/__tests__/AgencyLeadListRoutePage.agentScope.test.jsx
 src/pages/agency/__tests__/agencyLeadListReadRepository.agentScope.test.js
 src/pages/agency/__tests__/LeadListPage.kanban.test.jsx` and

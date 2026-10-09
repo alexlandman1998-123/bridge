@@ -1,4 +1,5 @@
 import { agencyLeadAgentFilter, agencyLeadAgentScope } from './agencyLeadAgentScope'
+import { buildAgencyLeadListModel } from './agencyLeadListModel'
 import { inferLeadCategoryFromRecord } from '../../lib/leadCategory'
 import { isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
 import {
@@ -73,7 +74,7 @@ async function selectCompatibleLeads(workspaceId, leadId = '', { page = 0, pageS
     if (!leadId && agentScope) query = query.or(agencyLeadAgentFilter(agentScope, fields))
     query = leadId
       ? query.eq('lead_id', leadId).limit(1).maybeSingle()
-      : query.order('updated_at', { ascending: false })
+      : query.order('updated_at', { ascending: false }).order('lead_id', { ascending: true })
     if (!leadId && pageSize > 0) {
       const from = Math.max(0, Number(page) || 0) * pageSize
       query = query.range(from, from + pageSize - 1)
@@ -286,6 +287,28 @@ async function fetchLandingMetricLeads(workspaceId, { forceRefresh = false, agen
   return promise
 }
 
+async function fetchCategoryRecords(workspaceId, { category, forceRefresh = false, agentScope = null } = {}) {
+  // The summary already reads every lead in this scope. Use that same snapshot
+  // to filter before paging, including legacy records whose category is inferred.
+  const snapshot = await fetchLandingMetricLeads(workspaceId, { forceRefresh, agentScope })
+  const cacheKey = `${workspaceId}:category:${category}` + (agentScope ? `:agent:${JSON.stringify(agentScope)}` : '')
+  const cached = readFreshCache(primaryRecordsCache, cacheKey)
+  if (!forceRefresh && cached?.data?.metricLeads === snapshot.leads) return cached.data
+
+  const leads = buildAgencyLeadListModel({ leads: snapshot.leads, category }).rows.map((row) => row.raw)
+  const contactIds = [...new Set(leads.map((lead) => lead.contactId).filter(Boolean))]
+  const contacts = []
+  // Bound the URL size and stay below the API row limit when searching names.
+  for (let offset = 0; offset < contactIds.length; offset += 200) {
+    const result = await supabase.from('contacts').select(CONTACT_FIELDS).eq('organisation_id', workspaceId).in('contact_id', contactIds.slice(offset, offset + 200))
+    if (result.error && !isUnavailable(result.error)) throw result.error
+    contacts.push(...(Array.isArray(result.data) ? result.data.map(mapContact) : []))
+  }
+  const data = { leads, contacts, metricLeads: snapshot.leads, totalCount: leads.length }
+  primaryRecordsCache.set(cacheKey, { data, expiresAt: Date.now() + PRIMARY_RECORDS_CACHE_TTL_MS })
+  return data
+}
+
 function findLeadCoreInPrimaryCache(workspaceId, leadId) {
   const cached = readFreshCache(primaryRecordsCache, workspaceId)?.data
   if (!cached) return null
@@ -386,14 +409,20 @@ export async function listAgencyLeadListRecords(organisationId, options = {}) {
 
   const includePrimaryRecords = options.includePrimaryRecords !== false
   const includeRelatedRecords = options.includeRelatedRecords !== false
+  const category = ['buyer', 'seller', 'archived'].includes(options.category) ? options.category : ''
+  const agentScope = agencyLeadAgentScope(options.scopedAgent)
   const empty = Promise.resolve({ data: [], error: null })
   const requests = [
     includePrimaryRecords
-      ? fetchPrimaryRecords(workspaceId, {
+      ? category ? fetchCategoryRecords(workspaceId, {
+          category,
+          forceRefresh: options.forceRefresh === true,
+          agentScope,
+        }) : fetchPrimaryRecords(workspaceId, {
           forceRefresh: options.forceRefresh === true,
           page: options.page,
           pageSize: options.pageSize,
-          agentScope: agencyLeadAgentScope(options.scopedAgent),
+          agentScope,
         })
       : Promise.resolve({ leads: [], contacts: [], totalCount: 0, page: 0, pageSize: 0 }),
     includeRelatedRecords
@@ -409,14 +438,31 @@ export async function listAgencyLeadListRecords(organisationId, options = {}) {
     if (result.error && !isUnavailable(result.error)) throw result.error
   }
 
+  const leadActivities = Array.isArray(activities.data) ? activities.data.map(mapActivity) : []
+  const mappedTasks = Array.isArray(tasks.data) ? tasks.data.map(mapTask) : []
+  const rows = category && includePrimaryRecords ? buildAgencyLeadListModel({
+    leads: primary.leads, contacts: primary.contacts, activities: leadActivities, tasks: mappedTasks,
+    category, filters: options.filters,
+  }).rows : null
+  const totalCount = rows ? rows.length : Number(primary.totalCount || 0)
+  const pageSize = rows ? Math.max(0, Math.round(Number(options.pageSize) || 0)) : Number(primary.pageSize || 0)
+  const requestedPage = Math.max(0, Math.round(Number(options.page) || 0))
+  const page = rows ? (pageSize ? Math.min(requestedPage, Math.max(0, Math.ceil(totalCount / pageSize) - 1)) : 0) : Number(primary.page || 0)
+  const leads = rows ? (pageSize ? rows.slice(page * pageSize, (page + 1) * pageSize) : rows).map((row) => row.raw) : primary.leads
+  const pageContactIds = new Set(leads.map((lead) => lead.contactId))
+
   return {
-    leads: Array.isArray(primary.leads) ? primary.leads : [],
-    contacts: Array.isArray(primary.contacts) ? primary.contacts : [],
-    leadActivities: Array.isArray(activities.data) ? activities.data.map(mapActivity) : [],
-    tasks: Array.isArray(tasks.data) ? tasks.data.map(mapTask) : [],
-    totalCount: Number(primary.totalCount || 0),
-    page: Number(primary.page || 0),
-    pageSize: Number(primary.pageSize || 0),
+    leads,
+    contacts: rows ? primary.contacts.filter((contact) => pageContactIds.has(contact.contactId)) : primary.contacts,
+    leadActivities,
+    tasks: mappedTasks,
+    totalCount,
+    page,
+    pageSize,
+    ...(rows ? {
+      metricLeads: primary.metricLeads,
+      sources: [...new Set(primary.leads.map((lead) => lead.leadSource).filter(Boolean))].sort(),
+    } : {}),
     source: 'remote',
   }
 }

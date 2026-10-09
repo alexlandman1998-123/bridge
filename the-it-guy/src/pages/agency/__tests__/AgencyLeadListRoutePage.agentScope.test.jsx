@@ -3,6 +3,8 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import AgencyLeadListRoutePage from '../AgencyLeadListRoutePage'
+import { buildAgencyLeadListModel } from '../agencyLeadListModel'
+import { filterAgencyLeadsForAgent } from '../agencyLeadAgentScope'
 const mocks = vi.hoisted(() => ({ list: vi.fn(), metrics: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn(), audit: vi.fn(), directory: vi.fn(), preload: vi.fn() }))
 const org = '00000000-0000-4000-8000-000000000010'
 const actorId = '00000000-0000-4000-8000-000000000011'
@@ -26,7 +28,12 @@ beforeEach(() => {
   window.localStorage.clear()
   mocks.preload.mockResolvedValue(null)
   leads = [buyer, seller, archived, other]
-  mocks.list.mockImplementation(async () => ({ leads, contacts, totalCount: 3 }))
+  mocks.list.mockImplementation(async (_, options) => {
+    const metricLeads = filterAgencyLeadsForAgent(leads, options.scopedAgent, org)
+    const rows = buildAgencyLeadListModel({ leads: metricLeads, contacts, category: options.category, filters: options.filters }).rows
+    const page = Math.min(options.page, Math.max(0, Math.ceil(rows.length / options.pageSize) - 1))
+    return { leads: rows.slice(page * options.pageSize, (page + 1) * options.pageSize).map((row) => row.raw), contacts, totalCount: rows.length, page, metricLeads }
+  })
   mocks.metrics.mockImplementation(async () => ({ leads }))
   mocks.audit.mockResolvedValue({})
   mocks.update.mockResolvedValue({})
@@ -47,7 +54,7 @@ it('uses the normal table, categories and filters with a locked agent scope', as
   expect(screen.queryByText('Other Agent Lead')).toBeNull()
   expect(screen.queryByText('All Agents')).toBeNull()
   expect(mocks.list).toHaveBeenCalledWith(org, expect.objectContaining({ scopedAgent: agent, pageSize: 25 }))
-  expect(mocks.metrics).toHaveBeenCalledWith(org, expect.objectContaining({ scopedAgent: agent }))
+  expect(mocks.list).toHaveBeenCalledWith(org, expect.objectContaining({ category: 'buyer', filters: expect.objectContaining({ search: '' }) }))
   expect(mocks.directory).not.toHaveBeenCalled()
   fireEvent.change(screen.getByPlaceholderText('Search leads, addresses or names...'), { target: { value: 'not here' } })
   await screen.findAllByText('No leads match these filters')
@@ -126,4 +133,55 @@ it('moves an allocated lead using the normal Kanban stage action', async () => {
   fireEvent.drop(column, { dataTransfer: { getData: () => 'buyer-1' } })
   await waitFor(() => expect(mocks.update).toHaveBeenCalledWith(org, 'buyer-1', { stage: 'Contacted', status: 'Contacted' }))
   expect(mocks.audit).toHaveBeenCalledWith(org, 'buyer-1', expect.objectContaining({ activityType: 'Stage Change', agent: expect.objectContaining({ id: actorId }) }), { actor: expect.objectContaining({ id: actorId }) })
+})
+
+it('shows an older seller on seller page one instead of hiding it behind two buyer pages', async () => {
+  leads = [...Array.from({ length: 55 }, (_, i) => ({ ...buyer, leadId: `buyer-${i}`, updatedAt: '2026-10-08T10:00:00Z' })), { ...seller, updatedAt: '2026-09-01T00:00:00Z' }]
+  show()
+  await screen.findByRole('tab', { name: 'Seller Leads 1' })
+  fireEvent.click(screen.getByRole('button', { name: '3', exact: true }))
+  await screen.findByText('Showing 51 to 55 of 55 leads')
+  fireEvent.click(screen.getByRole('tab', { name: 'Seller Leads 1' }))
+  await screen.findAllByText('Sam Seller')
+  expect(screen.getByText('Showing 1 to 1 of 1 leads')).toBeTruthy()
+  expect(screen.getByText('1 seller leads · 0 mandates signed · 0 listings live')).toBeTruthy()
+  expect(screen.queryByRole('button', { name: '2', exact: true })).toBeNull()
+  expect(screen.queryByText('No leads match these filters')).toBeNull()
+  expect(mocks.list).toHaveBeenLastCalledWith(org, expect.objectContaining({ category: 'seller', page: 0, scopedAgent: agent }))
+})
+
+it('searches contacts on later pages and resets the filtered page count', async () => {
+  leads = [...Array.from({ length: 55 }, (_, i) => ({ ...buyer, leadId: `buyer-${i}`, updatedAt: '2026-10-08T10:00:00Z' })), { ...buyer, leadId: 'older-buyer', contactId: 'contact-2', updatedAt: '2026-09-01T00:00:00Z' }]
+  show()
+  await screen.findByRole('tab', { name: 'Buyer Leads 56' })
+  fireEvent.click(screen.getByRole('button', { name: '3', exact: true }))
+  await screen.findByText('Showing 51 to 56 of 56 leads')
+  fireEvent.change(screen.getByPlaceholderText('Search leads, addresses or names...'), { target: { value: 'Sam Seller' } })
+  await screen.findByText('Showing 1 to 1 of 1 leads')
+  expect(screen.getAllByText('Sam Seller').length).toBeGreaterThan(0)
+  expect(screen.queryByRole('button', { name: '2', exact: true })).toBeNull()
+  fireEvent.change(screen.getByPlaceholderText('Search leads, addresses or names...'), { target: { value: 'no matching contact' } })
+  await screen.findAllByText('No leads match these filters')
+  expect(screen.getByRole('tab', { name: 'Buyer Leads 56' })).toBeTruthy()
+  expect(screen.getByText('Showing 0 to 0 of 0 leads')).toBeTruthy()
+})
+
+it('returns to page one after capturing a new lead from a later page', async () => {
+  leads = Array.from({ length: 55 }, (_, i) => ({ ...buyer, leadId: `buyer-${i}`, updatedAt: '2026-10-08T10:00:00Z' }))
+  mocks.create.mockImplementation(async () => {
+    const created = { ...buyer, leadId: 'new-buyer', contactId: '', name: 'New Buyer', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
+    leads.push(created)
+    return created
+  })
+  show()
+  await screen.findByRole('tab', { name: 'Buyer Leads 55' })
+  fireEvent.click(screen.getByRole('button', { name: '3', exact: true }))
+  await screen.findByText('Showing 51 to 55 of 55 leads')
+  fireEvent.click(screen.getByRole('button', { name: 'Add Buyer Lead' }))
+  const dialog = await screen.findByRole('dialog')
+  for (const [label, value] of [['First name', 'New'], ['Last name', 'Buyer'], ['Mobile', '0721234567'], ['Email', 'new@example.test']]) fireEvent.change(within(dialog).getByLabelText(label), { target: { value } })
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Create Lead' }))
+  await screen.findAllByText('New Buyer')
+  await screen.findByText('Showing 1 to 25 of 56 leads')
+  expect(mocks.list).toHaveBeenCalledWith(org, expect.objectContaining({ page: 0, forceRefresh: true }))
 })
