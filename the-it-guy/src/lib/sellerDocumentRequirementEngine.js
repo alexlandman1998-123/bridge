@@ -481,7 +481,9 @@ function appendComplianceTriggerRequirements(docs, generatedFrom, triggers = [])
       generatedFrom,
     }))
   }
-  if (triggerSet.has('occupation_certificate')) {
+  // Commercial / mixed-use property rules may already provide this slot.
+  // Sending the same key twice makes PostgreSQL reject the entire checklist.
+  if (triggerSet.has('occupation_certificate') && !docs.some((requirement) => requirement.requirement_key === 'occupation_certificate')) {
     docs.push(buildRequirement({
       key: 'occupation_certificate',
       name: 'Occupation Certificate',

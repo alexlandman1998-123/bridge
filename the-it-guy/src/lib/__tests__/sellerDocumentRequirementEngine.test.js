@@ -75,3 +75,36 @@ test('keeps data-capture requirements out of the upload checklist and exposes th
   }])
   assert.equal(legacySync.markNotApplicableRows.find((row) => row.requirement_key === 'body_corporate_details')?.status, 'not_applicable')
 })
+
+
+test('commercial and mixed-use profiles generate one occupation-certificate upload when the compliance trigger overlaps', () => {
+  for (const propertyCategory of ['commercial', 'mixed_use']) {
+    const listing = {
+      id: 'listing-commercial-company', listingStatus: 'onboarding_completed', sellerType: 'company',
+      sellerOnboarding: { formData: {
+        ownerStructureType: 'company', ownerEntityType: 'company', sellerBranch: 'individual',
+        propertyCategory, propertyBranch: 'residential', propertyStructureType: 'full_title',
+        ownershipScheme: 'agricultural_holding', occupancyStatus: 'owner_occupied', bondStatus: 'no_bond',
+      } },
+    }
+    const synced = syncSellerDocumentRequirements(listing, [{
+      id: 'approved-occupation-certificate', requirement_key: 'occupation_certificate', status: 'approved',
+      satisfied_by_document_id: 'saved-certificate', request_metadata: { delivered: true },
+    }])
+    assert.equal(synced.requirementProfile.documentTriggers.includes('occupation_certificate'), true)
+    const keys = synced.upsertRows.map(row => row.requirement_key)
+    assert.equal(new Set(keys).size, keys.length)
+    const certificates = synced.upsertRows.filter(row => row.requirement_key === 'occupation_certificate')
+    assert.equal(certificates.length, 1)
+    assert.equal(certificates[0].id, 'approved-occupation-certificate')
+    assert.equal(certificates[0].status, 'approved')
+    assert.equal(certificates[0].satisfied_by_document_id, 'saved-certificate')
+    assert.deepEqual(certificates[0].request_metadata, { delivered: true })
+    assert.equal(certificates[0].is_required, false)
+    assert.equal(synced.markNotApplicableRows.length, 0)
+  }
+  // A residential alteration still needs its own optional certificate slot.
+  const residential = getRequiredSellerDocuments({ sellerBranch: 'individual', lifecycleStatus: 'onboarding_completed',
+    propertyBranch: 'residential', documentTriggers: ['occupation_certificate'] })
+  assert.equal(residential.filter(row => row.requirement_key === 'occupation_certificate').length, 1)
+})

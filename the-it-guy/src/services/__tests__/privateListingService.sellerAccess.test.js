@@ -235,6 +235,46 @@ describe('seller checklist persistence with PostgreSQL date fields', () => {
     expect(client.from.mock.calls.some(([table]) => table === 'private_listings')).toBe(false)
   })
 
+  it.each(['commercial', 'mixed_use'])('refreshes a saved company profile for %s without duplicate occupation-certificate writes', async (propertyCategory) => {
+    const oldOnboardingId = crypto.randomUUID()
+    await writeRows([{ id: oldOnboardingId, private_listing_id: listingId,
+      requirement_key: 'seller_onboarding_submission', requirement_name: 'Seller Onboarding Submission',
+      status: 'requested', is_required: true }])
+    const listing = { ...savedListing, listingStatus: 'onboarding_completed', sellerType: 'company',
+      sellerOnboarding: { ...savedListing.sellerOnboarding, formData: { ...savedListing.sellerOnboarding.formData,
+        ownerStructureType: 'company', ownerEntityType: 'company', sellerBranch: 'individual',
+        propertyCategory, propertyBranch: 'residential', propertyStructureType: 'full_title',
+        ownershipScheme: 'agricultural_holding', occupancyStatus: 'owner_occupied', bondStatus: 'no_bond',
+      } } }
+    const update = buildListingSellerCanonicalUpdate({ listing, formPatch: { sellerSurname: 'Corrected' },
+      mutationType: 'seller_profile_capture', mutationId: crypto.randomUUID() })
+    confirmSave(update)
+    const options = { includeRequirementsAndDocuments: false, forceRequirementSync: true }
+    const first = await savePrivateListingSellerCanonicalUpdate(update, options)
+    expect(first.requirementSyncResult.requestIssuance.counts.failed).toBe(0)
+    let rows = await readRows()
+    expect(rows.find(row => row.id === oldOnboardingId)).toMatchObject({ status: 'not_applicable', is_required: false })
+    for (const key of ['signed_mandate', 'signed_fica_declaration', 'company_registration', 'occupation_certificate']) {
+      expect(rows.filter(row => row.requirement_key === key)).toHaveLength(1)
+    }
+    const certificate = rows.find(row => row.requirement_key === 'occupation_certificate')
+    const documentId = crypto.randomUUID()
+    await writeRows([{ ...certificate, status: 'approved', satisfied_by_document_id: documentId,
+      request_metadata: { delivered: true }, request_due_date: '2026-10-12' }])
+    const retried = await savePrivateListingSellerCanonicalUpdate(update, options)
+    expect(retried.requirementSyncResult.requestIssuance.counts.failed).toBe(0)
+    rows = await readRows()
+    expect(rows.filter(row => row.requirement_key === 'occupation_certificate')).toHaveLength(1)
+    expect(rows.find(row => row.requirement_key === 'occupation_certificate')).toMatchObject({
+      id: certificate.id, status: 'approved', satisfied_by_document_id: documentId,
+      request_metadata: { delivered: true }, request_due_date: '2026-10-12',
+    })
+    for (const batch of batches) {
+      const keys = batch.map(row => `${row.private_listing_id}:${row.requirement_key}`)
+      expect(new Set(keys).size).toBe(keys.length)
+    }
+  })
+
   it('reports a committed correction when request issuance fails, then refreshes on a forced retry', async () => {
     const update = { ...buildListingSellerCanonicalUpdate({ listing: savedListing, formPatch: { sellerSurname: 'Corrected' }, mutationId: crypto.randomUUID() }), requirementsAffected: false }
     confirmSave(update)
