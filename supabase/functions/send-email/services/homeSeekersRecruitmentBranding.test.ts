@@ -148,7 +148,7 @@ Deno.test("staff and applicant sends resolve only a verified unpaused Home Seeke
   }
 });
 
-Deno.test("missing, unverified, paused, wrong-domain and unavailable senders cannot fall back to Arch9", async () => {
+Deno.test("missing and wrong-domain senders fail without the approved Arch9 fallback", async () => {
   for (
     const database of [
       identityDatabase(),
@@ -162,10 +162,32 @@ Deno.test("missing, unverified, paused, wrong-domain and unavailable senders can
       await resolveHomeSeekersRecruitmentSender({
         branding: { fromEmail: "admin@homeseekers.co.za" },
         supabase: database,
+        platformSender: "",
       });
     } catch (error) {
       blocked = error instanceof HomeSeekersRecruitmentSenderUnavailable;
     }
     assert(blocked);
   }
+});
+
+Deno.test("pending Home Seekers sender uses only the configured Arch9 fallback and retains branding", async () => {
+  assert(await resolveHomeSeekersRecruitmentSender({
+    branding: {}, supabase: identityDatabase(), platformSender: "notifications@arch9.co.za",
+  }) === "Home Seekers <notifications@arch9.co.za>");
+  assert(await resolveHomeSeekersRecruitmentSender({
+    branding: {}, supabase: identityDatabase("thomas@homeseekers.co.za"), platformSender: "notifications@arch9.co.za",
+  }) === "Home Seekers <thomas@homeseekers.co.za>");
+  for (const fallback of ["onboarding@resend.dev", "notify@arch9.co.za.evil.test", "notify@homeseekers.co.za"]) {
+    let blocked = false;
+    try {
+      await resolveHomeSeekersRecruitmentSender({ branding: {}, supabase: identityDatabase(), platformSender: fallback });
+    } catch (error) { blocked = error instanceof HomeSeekersRecruitmentSenderUnavailable; }
+    assert(blocked);
+  }
+  let blocked = false;
+  try {
+    await resolveHomeSeekersRecruitmentSender({ branding: {}, supabase: identityDatabase("other@arch9.co.za"), platformSender: "notifications@arch9.co.za" });
+  } catch (error) { blocked = error instanceof HomeSeekersRecruitmentSenderUnavailable; }
+  assert(blocked, "An unrelated Arch9 address must not become the configured sender");
 });

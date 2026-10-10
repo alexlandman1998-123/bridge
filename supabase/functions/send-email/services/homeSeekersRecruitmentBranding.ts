@@ -9,6 +9,7 @@ import {
 export const HOME_SEEKERS_RECRUITMENT_ORGANISATION_ID =
   "2958d402-368e-43c9-b728-0098e10505f1";
 export const HOME_SEEKERS_RECRUITMENT_ACCENT = "#f25c1f";
+export const HOME_SEEKERS_RECRUITMENT_REPLY_TO = "thomas@homeseekers.co.za";
 export const HOME_SEEKERS_RECRUITMENT_LOGO =
   "https://app.arch9.co.za/brand/homeseekers/recruitment-logo-on-white.png";
 
@@ -46,24 +47,30 @@ export async function resolveHomeSeekersRecruitmentSender({
   branding,
   supabase,
   sender = resolveAudienceEmailSender,
+  platformSender = Deno.env.get("HOME_SEEKERS_RECRUITMENT_FALLBACK_FROM") || "",
 }: {
   branding: Partial<EmailBranding>;
   supabase: Parameters<typeof resolveAudienceEmailSender>[0]["supabase"];
   sender?: typeof resolveAudienceEmailSender;
+  platformSender?: string;
 }) {
-  // Staff and applicant recruitment emails both originate from Home Seekers.
-  // An empty platform fallback prevents an Arch9 mailbox being used when the
-  // organisation has no verified, unpaused Resend identity.
+  // The explicitly configured Arch9 fallback is temporary. A verified,
+  // unpaused Home Seekers identity takes precedence once DNS is ready.
+  const fallbackEmail = normalizeEmailAddress(platformSender);
+  const fallbackDomain = fallbackEmail.split("@")[1] || "";
+  const arch9Fallback = fallbackDomain === "arch9.co.za" ||
+    fallbackDomain.endsWith(".arch9.co.za");
   const resolved = await sender({
     audience: "client",
     branding: homeSeekersRecruitmentBranding(branding),
     supabase,
-    platformSender: "",
+    platformSender: arch9Fallback ? fallbackEmail : "",
   });
   const email = normalizeEmailAddress(resolved);
   const domain = email.split("@")[1] || "";
   if (
-    domain !== "homeseekers.co.za" && !domain.endsWith(".homeseekers.co.za")
+    domain !== "homeseekers.co.za" && !domain.endsWith(".homeseekers.co.za") &&
+    !(arch9Fallback && email === fallbackEmail)
   ) {
     throw new HomeSeekersRecruitmentSenderUnavailable();
   }

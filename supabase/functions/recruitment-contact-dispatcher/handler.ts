@@ -8,6 +8,7 @@ import { assessControlledTestRecipient } from "../send-email/utils/controlledTes
 import {
   homeSeekersRecruitmentBranding,
   resolveHomeSeekersRecruitmentSender,
+  HOME_SEEKERS_RECRUITMENT_REPLY_TO,
 } from "../send-email/services/homeSeekersRecruitmentBranding.ts";
 
 const organisationId = "2958d402-368e-43c9-b728-0098e10505f1";
@@ -141,6 +142,7 @@ export async function dispatchRecruitmentContacts(request: Request, {
         apiKey,
         from: frozen.from,
         to: frozen.to,
+        replyTo: HOME_SEEKERS_RECRUITMENT_REPLY_TO,
         subject: frozen.subject,
         html: frozen.html,
         text: frozen.text,

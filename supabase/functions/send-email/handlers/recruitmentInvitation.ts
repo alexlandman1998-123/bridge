@@ -23,6 +23,7 @@ import {
   homeSeekersRecruitmentBranding,
   HomeSeekersRecruitmentSenderUnavailable,
   resolveHomeSeekersRecruitmentSender,
+  HOME_SEEKERS_RECRUITMENT_REPLY_TO,
 } from "../services/homeSeekersRecruitmentBranding.ts";
 
 const uuid = (value: unknown) =>
@@ -237,6 +238,7 @@ export async function handleRecruitmentInvitationEmail(
     const message = {
       from,
       to,
+      ...(isHomeSeekers ? { replyTo: HOME_SEEKERS_RECRUITMENT_REPLY_TO } : {}),
       subject,
       html: renderBridgeEmailLayout({
         title,

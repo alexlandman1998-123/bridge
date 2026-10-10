@@ -96,6 +96,7 @@ Deno.test("saved first-screen contact notifies exactly the three recipients, ign
   );
   for (const email of h.sends) {
     assert(email.from === "Home Seekers <recruitment@homeseekers.co.za>");
+    assert(email.replyTo === "thomas@homeseekers.co.za");
     assert(
       email.text.includes(contact.email) &&
         email.text.includes(contact.phone) &&
@@ -110,6 +111,22 @@ Deno.test("saved first-screen contact notifies exactly the three recipients, ign
       call.name === "recruitment_complete_contact_notification"
     ).every((call) => call.args.p_provider_id && !call.args.p_error),
   );
+});
+
+Deno.test("staff notifications use the temporary Arch9 sender with Thomas reply-to", async () => {
+  const previous = Deno.env.get("HOME_SEEKERS_RECRUITMENT_FALLBACK_FROM");
+  Deno.env.set("HOME_SEEKERS_RECRUITMENT_FALLBACK_FROM", "notifications@arch9.co.za");
+  try {
+    const h = harness([{ ...base, recipient: recipients[0] }]);
+    h.dependencies.sender = async (args: any) => args.platformSender;
+    const result = await (await dispatchRecruitmentContacts(request(), h.dependencies as any)).json();
+    assert(result.accepted === 1 && h.sends.length === 1);
+    assert(h.sends[0].from === "Home Seekers <notifications@arch9.co.za>");
+    assert(h.sends[0].replyTo === "thomas@homeseekers.co.za");
+    assert(h.sends[0].to === recipients[0]);
+  } finally {
+    previous === undefined ? Deno.env.delete("HOME_SEEKERS_RECRUITMENT_FALLBACK_FROM") : Deno.env.set("HOME_SEEKERS_RECRUITMENT_FALLBACK_FROM", previous);
+  }
 });
 
 Deno.test("a missing Home Seekers sender keeps notifications pending without freezing an Arch9 fallback", async () => {

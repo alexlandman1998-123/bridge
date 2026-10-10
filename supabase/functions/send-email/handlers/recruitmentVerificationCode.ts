@@ -10,6 +10,7 @@ import { jsonResponse } from "../utils/http.ts";
 import { HOME_SEEKERS_ORGANISATION_ID } from "./homeSeekersSellerEnquiry.ts";
 import {
   homeSeekersRecruitmentBranding,
+  HOME_SEEKERS_RECRUITMENT_REPLY_TO,
   resolveHomeSeekersRecruitmentSender,
 } from "../services/homeSeekersRecruitmentBranding.ts";
 
@@ -127,6 +128,7 @@ export async function handleHomeSeekersRecruitmentCodeEmail(
       apiKey,
       from,
       to,
+      replyTo: HOME_SEEKERS_RECRUITMENT_REPLY_TO,
       ...email,
       idempotencyKey: `home-seekers-recruitment-code:${digest}`,
       timeoutMs: 10_000,

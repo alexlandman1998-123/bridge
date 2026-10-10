@@ -401,6 +401,7 @@ Deno.test("Home Seekers receipt, document instructions, follow-up and approval l
           f.senderArgs.platformSender === "",
       );
       assert(f.sent.from === "Home Seekers <recruitment@homeseekers.co.za>");
+      assert(f.sent.replyTo === "thomas@homeseekers.co.za");
       assert(
         f.sent.subject.startsWith("Home Seekers:") &&
           f.sent.html.includes(
@@ -409,6 +410,23 @@ Deno.test("Home Seekers receipt, document instructions, follow-up and approval l
       );
       assert(!/Powered by Arch9|through Arch9|From Agency/.test(f.sent.html));
       assert(f.sent.html.includes("admin@homeseekers.co.za"));
+    }
+  }));
+
+Deno.test("Home Seekers applicant emails freeze the temporary Arch9 sender and Thomas reply-to", () =>
+  fixture(async (f) => {
+    const previous = Deno.env.get("HOME_SEEKERS_RECRUITMENT_FALLBACK_FROM");
+    Deno.env.set("HOME_SEEKERS_RECRUITMENT_FALLBACK_FROM", "notifications@arch9.co.za");
+    try {
+      f.kind = "documents_reminder";
+      f.senderOverride = "notifications@arch9.co.za";
+      assert((await f.dispatch({ organisationId: "2958d402-368e-43c9-b728-0098e10505f1", referenceId: lead })).ok === true);
+      assert(f.senderArgs.platformSender === "notifications@arch9.co.za");
+      assert(f.sent.from === "Home Seekers <notifications@arch9.co.za>");
+      assert(f.sent.replyTo === "thomas@homeseekers.co.za");
+      assert(f.calls[0].args.p_message.replyTo === f.sent.replyTo);
+    } finally {
+      previous === undefined ? Deno.env.delete("HOME_SEEKERS_RECRUITMENT_FALLBACK_FROM") : Deno.env.set("HOME_SEEKERS_RECRUITMENT_FALLBACK_FROM", previous);
     }
   }));
 

@@ -37,6 +37,7 @@ function fixture(
     sendError = false,
     generatedEmail = contact.email,
     senderAddress = "Home Seekers <recruitment@homeseekers.co.za>",
+    expectedPlatformSender = "",
   } = {},
 ) {
   const filters: unknown[][] = [], sends: any[] = [], generations: any[] = [];
@@ -89,7 +90,7 @@ function fixture(
     sender: async (args: any) => {
       assert(
         args.supabase === admin && args.audience === "client" &&
-          args.platformSender === "",
+          args.platformSender === expectedPlatformSender,
       );
       return senderAddress;
     },
@@ -121,6 +122,22 @@ function fixture(
     );
   return { filters, sends, generations, run };
 }
+Deno.test("verification codes use the approved temporary Arch9 sender and Thomas reply-to", () =>
+  configured(async () => {
+    const previous = Deno.env.get("HOME_SEEKERS_RECRUITMENT_FALLBACK_FROM");
+    Deno.env.set("HOME_SEEKERS_RECRUITMENT_FALLBACK_FROM", "notifications@arch9.co.za");
+    try {
+      const f = fixture({ senderAddress: "notifications@arch9.co.za", expectedPlatformSender: "notifications@arch9.co.za" });
+      assert((await f.run()).status === 200);
+      assert(f.sends.length === 1);
+      assert(f.sends[0].from === "Home Seekers <notifications@arch9.co.za>");
+      assert(f.sends[0].replyTo === "thomas@homeseekers.co.za");
+      assert(f.sends[0].to === contact.email);
+    } finally {
+      previous === undefined ? Deno.env.delete("HOME_SEEKERS_RECRUITMENT_FALLBACK_FROM") : Deno.env.set("HOME_SEEKERS_RECRUITMENT_FALLBACK_FROM", previous);
+    }
+  }));
+
 Deno.test("recruitment code email requires the configured server credential before reading or sending", () =>
   configured(async () => {
     const f = fixture();
@@ -159,6 +176,7 @@ Deno.test("recruitment code email uses only the canonical Home Seekers contact a
     const sent = f.sends[0];
     assert(sent.to === contact.email && sent.subject.includes("Home Seekers"));
     assert(sent.from === "Home Seekers <recruitment@homeseekers.co.za>");
+    assert(sent.replyTo === "thomas@homeseekers.co.za");
     assert(sent.html.includes("12345678") && sent.text.includes("12345678"));
     assert(
       sent.html.includes("&lt;Applicant&gt;") &&
