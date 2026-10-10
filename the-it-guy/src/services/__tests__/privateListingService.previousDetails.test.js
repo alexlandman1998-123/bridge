@@ -18,6 +18,11 @@ it('loads saved historic rental details only when previous listings are requeste
   expect(await getPrivateListing(id, { includeRequirementsAndDocuments: false })).toBeNull()
   expect(await getPrivateListing(id, options)).toMatchObject({ id, listingCategory: 'rental', listingVisibility: 'archived' })
 })
+it('renders a core record without downloading seller onboarding or document history', async () => {
+  const listing = await getPrivateListing(id, { ...options, includeRelatedData: false })
+  expect(listing).toMatchObject({ id, listingCategory: 'rental' })
+  expect(mocks.from.mock.calls.map(([table]) => table)).toEqual(['private_listings'])
+})
 it.each([
   { deleted_at: '2026-10-05T10:00:00Z' },
   { is_deleted: true },

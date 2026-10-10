@@ -1,3 +1,4 @@
+import { buildRentalPublicationSnapshot } from './rentalListingChannelModel'
 import { isRentalCreationId } from './rentalListingCreationRecovery.js'
 import { isRentalListingInWorkspace } from './rentalWorkspaceScope.js'
 import {
@@ -7,6 +8,7 @@ import {
   getPrivateListing,
   saveRentalListingSnapshot,
   saveRentalListingExpiry,
+  updatePrivateListing,
   signPrivateListingMediaAsset,
   uploadPrivateListingMediaAsset,
 } from '../privateListingService'
@@ -25,6 +27,17 @@ import {
 } from './rentalListingProperty24PublishModel'
 import { isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
 import { buildRentalMediaEdits } from './rentalListingMediaModel'
+import { getInitialProperty24Expiry, publishInitialListingChannels } from '../listings/listingInitialPublicationService'
+
+// Called only by the explicit Submit & activate action after verified saving.
+// Portal submissions run independently while the saved rental opens.
+export async function activateRentalListing(listing, form, { websiteDestination } = {}) {
+  const id = listing?.id
+  if (!id) throw new Error('Save the rental before activating it.')
+  await updatePrivateListing(id, { listingStatus: 'active', expiryDate: form.property24ExpiryDate || getInitialProperty24Expiry() }, { includeRequirementsAndDocuments: false })
+  await publishInitialListingChannels({ listingId: id, listingType: 'rental', listingStatus: 'active', channels: form.selectedSyndicationChannels,
+    websiteDestination, snapshot: buildRentalPublicationSnapshot({ ...listing, listingStatus: 'active' }) })
+}
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -260,6 +273,7 @@ export async function listRentalListingsForAgent(agentId, options = {}) {
     includeArchivedImports: options.includePreviousListings === true,
     includeWithdrawnListings: options.includePreviousListings === true || options.includeWithdrawnListings === true,
     includeMedia: true,
+    includeRequirementsAndDocuments: false,
     requireAvailable: true,
   })
   return rows.filter(row => isRentalListingRecord(row) && isRentalListingInWorkspace(row, agentId, options))

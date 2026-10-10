@@ -91,9 +91,7 @@ export function selectListingSellerProfileBranch(draft = {}, nextBranch = '') {
     next[field] = ['multipleOwners', 'companyDirectors', 'companyBeneficialOwners', 'trustees', 'trustFounders', 'trustBeneficiaries'].includes(field) ? [] : ''
   })
   if (nextBranch === 'multiple_owners') {
-    // Historical forms can still say individual after co-owners were captured.
-    // Retain those people when the agent confirms the joint ownership route.
-    const owners = Array.isArray(next.multipleOwners) ? [...next.multipleOwners] : []
+    const owners = draft.branch === 'multiple_owners' && Array.isArray(next.multipleOwners) ? [...next.multipleOwners] : []
     if (!owners.length && [draft.sellerFirstName, draft.sellerSurname, draft.email, draft.phone, draft.idNumber].some(normalizeText)) {
       owners.push({
         ...createBlankSellerProfilePersonRecord('Owner', 0),
@@ -210,17 +208,9 @@ export function getListingSellerFormData(listing = {}) {
   const canonicalFacts = getCanonicalFacts(listing)
   const sellerFacts = canonicalFacts?.seller && typeof canonicalFacts.seller === 'object' ? canonicalFacts.seller : {}
   const propertyFacts = canonicalFacts?.property && typeof canonicalFacts.property === 'object' ? canonicalFacts.property : {}
-  const editableSellerFacts = { ...sellerFacts }
-  // Canonical readiness projects uncaptured consent as false. That default is
-  // not a recorded refusal; keep the original form evidence authoritative.
-  if (editableSellerFacts.popi_consent_accepted === false &&
-      !normalizeText(editableSellerFacts.popi_consent) &&
-      !normalizeText(editableSellerFacts.popi_consent_accepted_at)) {
-    delete editableSellerFacts.popi_consent_accepted
-  }
 
   return mergeObjects(
-    editableSellerFacts,
+    sellerFacts,
     propertyFacts,
     canonicalFacts,
     listing?.seller_onboarding_form_data,

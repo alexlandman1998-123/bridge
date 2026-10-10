@@ -1,4 +1,6 @@
 'use client'
+import { rentalPriceSuffix } from '@/lib/listing-price'
+
 
 import Image from 'next/image'
 import Link from 'next/link'
@@ -28,7 +30,7 @@ function CompactCard({ property, showConsultant }: { property: PublicProperty; s
       {image ? <Image src={image.url} alt={image.caption || property.title} fill quality={88} sizes="(max-width: 760px) 85vw, (max-width: 1120px) 46vw, 28vw" /> : <div className="featured-property-placeholder" />}
     </Link>
     <Link className="featured-property-details" href={href} aria-label={`View ${property.title}`}>
-      <strong>{property.price ? money.format(property.price) : 'Price on request'}</strong>
+      <strong>{property.price ? money.format(property.price) : 'Price on request'}{property.price ? <small>{rentalPriceSuffix(property)}</small> : null}</strong>
       <span className="featured-property-suburb">{property.suburb || 'Location on request'}</span>
       {property.province ? <span className="featured-property-region">{property.province}</span> : null}
       <span className="featured-property-divider" aria-hidden="true" />

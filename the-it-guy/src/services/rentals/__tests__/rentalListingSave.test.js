@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 import { beforeEach, expect, it, vi } from 'vitest'
-import { listRentalListingsForAgent, createRentalListingDraft, updateRentalListingDraft, updateRentalListingGallery, updateRentalProperty24Expiry, uploadRentalGalleryImages } from '../rentalListingDraftService'
+import { activateRentalListing, listRentalListingsForAgent, createRentalListingDraft, updateRentalListingDraft, updateRentalListingGallery, updateRentalProperty24Expiry, uploadRentalGalleryImages } from '../rentalListingDraftService'
 import { buildRentalListingEditForm } from '../rentalListingEditModel'
 import { buildRentalListingIndexRow } from '../rentalListingIndexModel'
 
-const mocks = vi.hoisted(() => ({ listings: vi.fn(), create: vi.fn(), update: vi.fn(), get: vi.fn(), upload: vi.fn(), sign: vi.fn(), sync: vi.fn(), expiry: vi.fn(), saved: null }))
+const mocks = vi.hoisted(() => ({ publish: vi.fn(async () => []), listings: vi.fn(), create: vi.fn(), update: vi.fn(), get: vi.fn(), upload: vi.fn(), sign: vi.fn(), sync: vi.fn(), expiry: vi.fn(), saved: null }))
 vi.mock('../../privateListingService', () => ({
   createPrivateListing: mocks.create,
   updatePrivateListing: mocks.update,
@@ -16,6 +16,7 @@ vi.mock('../../privateListingService', () => ({
   getAgentPrivateListings: mocks.listings,
   getPrivateListing: mocks.get,
 }))
+vi.mock('../../listings/listingInitialPublicationService', () => ({ publishInitialListingChannels: mocks.publish, getInitialProperty24Expiry: () => '2027-01-08' }))
 vi.mock('../../../lib/supabaseClient', () => ({ isSupabaseConfigured: false, supabase: null }))
 
 const photo = (index) => ({ id: `photo-${index}`, name: `${index}.jpg`, url: `blob:${index}`, file: new File(['image'], `${index}.jpg`, { type: 'image/jpeg' }) })
@@ -162,9 +163,10 @@ it('keeps agent and landlord contact details separate', () => {
   expect(buildRentalListingIndexRow({ sellerEmail: 'owner@example.com' }).assignedAgentContact).toBe('')
 })
 
-it('rejects incomplete owner details and prevents edits to missing or non-rental listings', async () => {
-  await expect(createRentalListingDraft({ ...form(), landlordName: '' }, context)).rejects.toThrow('Landlord or entity name is required')
-  expect(mocks.create).not.toHaveBeenCalled()
+it('allows landlord capture later and prevents edits to missing or non-rental listings', async () => {
+  await expect(createRentalListingDraft({ ...form(), landlordName: '' }, context)).resolves.toHaveProperty('listing.id', 'listing-1')
+  expect(mocks.create).toHaveBeenCalledTimes(1)
+  mocks.sync.mockClear()
   for (const existing of [null, { id: 'listing-1', listingCategory: 'private_sale' }]) {
     mocks.get.mockResolvedValueOnce(existing)
     await expect(updateRentalListingDraft('listing-1', form(), context)).rejects.toThrow('Rental listing not found')
@@ -249,4 +251,23 @@ it('includes previous listings only when requested and preserves organisation an
   expect(mocks.listings.mock.calls[0][1]).toMatchObject({ organisationId: context.organisationId, includeArchivedListings: true, includeArchivedImports: true, includeWithdrawnListings: true })
   await listRentalListingsForAgent(context.assignedAgentId, { organisationId: context.organisationId })
   expect(mocks.listings.mock.calls[1][1]).toMatchObject({ includeArchivedListings: false, includeWithdrawnListings: false })
+})
+
+it('activates only after a verified save and waits for the durable publishing receipt', async () => {
+  const saved = await createRentalListingDraft({ ...form(), landlordName: '' }, context)
+  mocks.publish.mockResolvedValueOnce([{ status: 'publishing', jobId: 'queued-job' }])
+  await activateRentalListing(saved.listing, { ...form(), selectedSyndicationChannels: ['property24', 'agency_website'] })
+  expect(mocks.update).toHaveBeenCalledWith('listing-1', { listingStatus: 'active', expiryDate: '2027-01-08' }, { includeRequirementsAndDocuments: false })
+  expect(mocks.publish).toHaveBeenCalledWith(expect.objectContaining({ listingId: 'listing-1', listingType: 'rental', listingStatus: 'active', channels: ['property24', 'agency_website'] }))
+  expect(mocks.update.mock.invocationCallOrder.at(-1)).toBeLessThan(mocks.publish.mock.invocationCallOrder[0])
+})
+it('never submits if activation cannot be saved', async () => {
+  mocks.update.mockRejectedValueOnce(new Error('Could not save activation'))
+  await expect(activateRentalListing({ id: 'listing-1' }, form())).rejects.toThrow('Could not save activation')
+  expect(mocks.publish).not.toHaveBeenCalled()
+})
+
+it('retains the saved rental when its publishing queue cannot be confirmed', async () => {
+ mocks.publish.mockRejectedValueOnce(new Error('Queue unavailable'))
+ await expect(activateRentalListing({id:'saved-rental'},form())).rejects.toThrow('Queue unavailable')
 })

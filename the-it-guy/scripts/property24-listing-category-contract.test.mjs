@@ -28,13 +28,13 @@ assert.equal(commercial.publishingStatus, 'supported')
 assert.ok(commercial.documentedProperty24Fields.includes('commercialInfo.grossLettableAreaSqm'))
 assert.deepEqual(commercial.verifiedProperty24Fields, [])
 const commercialRental = evaluateProperty24ListingCategoryContract({ listing: { property_category: 'commercial' }, listingType: 'Rental' })
-assert.deepEqual(commercialRental.blockers, ['property24_commercial_rental_not_supported'])
+assert.deepEqual(commercialRental.blockers, [])
 
 const vacantLand = evaluateProperty24ListingCategoryContract({
   listing: { property_type: 'vacant land' },
   listingType: 'Rental',
 })
-assert.deepEqual(vacantLand.blockers, ['property24_land_rental_not_supported'])
+assert.deepEqual(vacantLand.blockers, [])
 assert.deepEqual(evaluateProperty24ListingCategoryContract({ listing: { property_type: 'vacant land' }, listingType: 'Sale' }).blockers, [])
 assert.equal(resolveProperty24ListingCategory({ property_type: 'development' }), PROPERTY24_LISTING_CATEGORIES.UNKNOWN)
 
@@ -79,8 +79,8 @@ const incomplete = createProperty24ListingPlan({
 })
 assert.equal(incomplete.summary.propertyTypeId, 11)
 assert.equal(incomplete.dataBlockers.includes('property24_commercial_gross_lettable_area_required'), false)
-assert.ok(incomplete.dataBlockers.includes('property24_commercial_zoning_required'))
-assert.ok(incomplete.dataBlockers.includes('property24_commercial_parking_required'))
+assert.equal(incomplete.dataBlockers.includes('property24_commercial_zoning_required'), false)
+assert.equal(incomplete.dataBlockers.includes('property24_commercial_parking_required'), false)
 assert.deepEqual(evaluateProperty24CommercialSaleFacts({
   listing: { seller_canonical_facts_json: { property: { specialistFacts: { zoning: 'Residential' } } } },
   publication: { parking_bays: 12 },
@@ -131,3 +131,17 @@ for (const listingType of ['Sale', 'Rental']) {
 assert.equal(resolveProperty24CategoryPropertyTypeId(11, 'agricultural'), 11)
 
 console.log('Property24 listing category contract passed')
+
+// v55 does not require an internal mandate, zoning, parking or floor-size checklist.
+for (const [category, type, id] of [['residential', 'House', 4], ['commercial', 'Office', 11], ['industrial', 'Warehouse', 12], ['retail', 'Shop', 11], ['mixed_use', 'Mixed Use', 11], ['agricultural', 'Farm', 10], ['vacant_land', 'Vacant Land', 8]]) {
+  for (const listingType of ['Sale', 'Rental']) {
+    const plan = createProperty24ListingPlan({
+      listing: { id: 'minimal', property_category: category, property_type: type, asking_price: 25000, listing_status: 'active' },
+      publication: { listing_type: listingType, description: 'Available property.', asking_price: 25000, rental_price_frequency: 'monthly' },
+      media: [{ media_type: 'image', bytes: 'test-image' }], agentMapping: { property24AgentId: 77 }, catalogMapping: { suburbId: 309 },
+      options: { agencyId: 39837, expiryDate: '2027-01-08', environment: 'production' },
+    })
+    assert.equal(plan.canSubmit, true, `${category} ${listingType}: ${JSON.stringify(plan.dataBlockers)}`)
+    assert.equal(plan.previewPayload.propertyInfo.propertyTypeId, id)
+  }
+}

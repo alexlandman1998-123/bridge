@@ -1,3 +1,4 @@
+import { getListingLiveChannels } from '../services/listings/listingMarketingChannelPresentation.js'
 import { createFreshDocumentSignedUrl } from './documentAccess.js'
 import { runRecoverableDocumentUpload, readSavedUploadByPath, isDefiniteUploadSaveRejection } from './documentUploadRecovery.js'
 import { buildTransactionPartiesSnapshot, transactionPartiesOnboardingSeed } from '../core/transactions/transactionPartyProfile.js'
@@ -20146,7 +20147,15 @@ function privateListingMatchesDevelopment(row = {}, { development = {}, units = 
   return Boolean(developmentName && searchableText.includes(developmentName))
 }
 
-function mapDevelopmentLinkedListing(row = {}) {
+function mapDevelopmentLinkedListing(row = {}, publication = {}, media = {}, organisation = {}) {
+  const property = row.property_details && typeof row.property_details === 'object' ? row.property_details : {}
+  const fact = key => {
+    const value = [media[key], publication[key], row[key], property[key]].find(item => item != null && item !== '')
+    return value == null || value === '' || !Number.isFinite(Number(value)) ? null : Number(value)
+  }
+  const images = Array.isArray(media.image_gallery) ? media.image_gallery : []
+  const cover = images.find(image => image.id === media.cover_image_id) || images[0]
+
   const linkSignals = getDevelopmentListingLinkSignals(row)
   const title = normalizeTextValue(row.title || row.listing_title || row.address_line_1) || 'Development listing'
   const location = [row.address_line_1, row.suburb, row.city].map(normalizeTextValue).filter(Boolean).join(', ')
@@ -20164,6 +20173,14 @@ function mapDevelopmentLinkedListing(row = {}) {
 
   return {
     id: normalizeTextValue(row.id),
+    organisationId: normalizeTextValue(row.organisation_id),
+    assignedAgentId: normalizeTextValue(row.assigned_agent_id || row.assigned_user_id),
+    assignedAgentAvatarUrl: normalizeTextValue(row.assigned_agent_avatar_url),
+    bedrooms: fact('bedrooms'),
+    bathrooms: fact('bathrooms'),
+    garages: fact('garages'),
+    marketStartDate: normalizeTextValue(media.listing_date || row.listing_date || row.listingDate || row.first_published_at || row.published_at || property.listingDate),
+    liveChannels: getListingLiveChannels(row),
     title,
     location: location || 'Location pending',
     price: Number(row.asking_price || row.estimated_value || 0) || 0,
@@ -20171,7 +20188,7 @@ function mapDevelopmentLinkedListing(row = {}) {
     visibility: normalizeTextValue(row.listing_visibility || row.visibility || 'internal') || 'internal',
     source,
     sourceLabel: source.replace(/_/g, ' ') || 'private listing',
-    agencyName: normalizeTextValue(row.agency_organisation || row.agency_name || row.organisation_name) || 'Agency / direct team',
+    agencyName: normalizeTextValue(organisation.name || row.agency_organisation || row.agency_name || row.organisation_name) || 'Agency / direct team',
     assignedAgent: normalizeTextValue(row.assigned_agent_name || row.assigned_agent || row.assigned_agent_email) || 'Agent pending',
     assignedAgentEmail: normalizeTextValue(row.assigned_agent_email),
     unitId: linkSignals.unitId,
@@ -20179,7 +20196,7 @@ function mapDevelopmentLinkedListing(row = {}) {
     portalSignals,
     platforms,
     coverImageUrl: normalizeTextValue(
-      row.hero_image_url || row.heroImageUrl || row.cover_image_url || row.coverImageUrl || row.image_url || row.imageUrl || row.primary_image_url || row.primaryImageUrl,
+      cover?.url || cover?.fileUrl || (typeof cover === 'string' ? cover : '') || row.hero_image_url || row.heroImageUrl || row.cover_image_url || row.coverImageUrl || row.image_url || row.imageUrl || row.primary_image_url || row.primaryImageUrl,
     ),
     updatedAt: row.updated_at || row.created_at || null,
   }
@@ -20189,34 +20206,41 @@ async function fetchDevelopmentLinkedListings(client, { development = {}, units 
   const developmentId = normalizeTextValue(development?.id)
   if (!developmentId) return []
 
-  let query = await client
-    .from('private_listings')
-    .select('*')
-    .eq('development_id', developmentId)
-    .order('updated_at', { ascending: false })
-
-  if (query.error && isMissingColumnError(query.error, 'development_id')) {
-    query = await client
-      .from('private_listings')
-      .select('*')
-      .order('updated_at', { ascending: false })
-      .limit(500)
-  }
-
-  if (query.error) {
-    if (
-      isMissingTableError(query.error, 'private_listings') ||
-      isPermissionDeniedError(query.error) ||
-      isMissingSchemaError(query.error)
-    ) {
-      return []
+  const rows = []
+  let legacy = false
+  for (let offset = 0; ; offset += 1000) {
+    let builder = client.from('private_listings').select('*').order('updated_at', { ascending: false }).order('id')
+    if (!legacy) builder = builder.eq('development_id', developmentId)
+    const query = await builder.range(offset, offset + 999)
+    if (query.error && !legacy && isMissingColumnError(query.error, 'development_id')) {
+      legacy = true
+      offset = -1000
+      continue
     }
-    throw query.error
+    if (query.error) {
+      if (isMissingTableError(query.error, 'private_listings') || isPermissionDeniedError(query.error) || isMissingSchemaError(query.error)) return []
+      throw query.error
+    }
+    rows.push(...(query.data || []))
+    if ((query.data || []).length < 1000) break
   }
-
-  return (query.data || [])
-    .filter((row) => privateListingMatchesDevelopment(row, { development, units }))
-    .map(mapDevelopmentLinkedListing)
+  const linked = rows.filter(row => row.is_active !== false && !['archived', 'deleted'].includes(String(row.listing_status || row.status || '').toLowerCase()) && privateListingMatchesDevelopment(row, { development, units }))
+  const publications = new Map(), media = new Map(), organisations = new Map()
+  for (let offset = 0; offset < linked.length; offset += 100) {
+    const chunk = linked.slice(offset, offset + 100)
+    const ids = chunk.map(row => row.id)
+    const orgIds = [...new Set(chunk.map(row => row.organisation_id).filter(Boolean))]
+    const results = await Promise.allSettled([
+      client.from('listing_publication_data').select('listing_id,bedrooms,bathrooms,garages').in('listing_id', ids),
+      client.from('private_listing_seller_onboarding').select('private_listing_id,image_gallery:form_data->imageGallery,cover_image_id:form_data->>coverImageId,listing_date:form_data->>listingDate,bedrooms:form_data->>bedrooms,bathrooms:form_data->>bathrooms,garages:form_data->>garages').in('private_listing_id', ids),
+      orgIds.length ? client.from('organisations').select('id,name').in('id', orgIds) : Promise.resolve({ data: [] }),
+    ])
+    // Optional display facts must not hide a listing when its related record is inaccessible.
+    if (results[0].status === 'fulfilled' && !results[0].value.error) (results[0].value.data || []).forEach(row => publications.set(row.listing_id, row))
+    if (results[1].status === 'fulfilled' && !results[1].value.error) (results[1].value.data || []).forEach(row => media.set(row.private_listing_id, row))
+    if (results[2].status === 'fulfilled' && !results[2].value.error) (results[2].value.data || []).forEach(row => organisations.set(row.id, row))
+  }
+  return linked.map(row => mapDevelopmentLinkedListing(row, publications.get(row.id), media.get(row.id), organisations.get(row.organisation_id)))
 }
 
 export async function fetchDevelopmentFinancials(developmentId) {
@@ -20526,6 +20550,7 @@ function normalizeDevelopmentMarketingEventRow(row = {}) {
     description: normalizeTextValue(row.description),
     imageUrl: normalizeTextValue(row.image_url ?? row.imageUrl),
     createdAt: row.created_at || row.createdAt || null,
+    createdBy: row.created_by || row.createdBy || null,
   }
 }
 
@@ -20534,7 +20559,7 @@ export async function fetchDevelopmentMarketingEvents(developmentId, organisatio
   if (!developmentId || !organisationId) return []
   const { data, error } = await client
     .from('marketing_events')
-    .select('id, title, event_type, status, starts_at, ends_at, location, address, description, image_url, created_at')
+    .select('id, title, event_type, status, starts_at, ends_at, location, address, description, image_url, created_at, created_by')
     .eq('organisation_id', organisationId)
     .eq('subject_type', 'development')
     .eq('subject_id', developmentId)
@@ -20615,7 +20640,7 @@ export async function createDevelopmentMarketingEvent({
       description: normalizeNullableText(description),
       created_by: authData.user.id,
     })
-    .select('id, title, event_type, status, starts_at, ends_at, location, address, description, image_url, created_at')
+    .select('id, title, event_type, status, starts_at, ends_at, location, address, description, image_url, created_at, created_by')
     .single()
 
   if (error) throw error

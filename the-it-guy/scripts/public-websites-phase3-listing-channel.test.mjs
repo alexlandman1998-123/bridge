@@ -98,9 +98,9 @@ assert.match(panel, /Live on website/, 'labels a published website listing as li
 assert.match(panel, /Agency Website/, 'identifies the first-party website channel')
 assert.match(listingDetail, /prepareAgencyWebsiteListing/, 'saves current CRM details before a channel publish/update')
 assert.match(panel, /const hasConnectedWebsite = Boolean\(publication\?\.websiteSiteId && publication\?\.hostname\)/, 'only treats an active website with a domain as a listing channel')
-assert.match(panel, /if \(!hasConnectedWebsite\) return showConnectionState[\s\S]*?: null/, 'hides the disconnected website channel unless its setup state is explicitly requested')
+assert.match(panel, /if \(!hasConnectedWebsite\) return null/, 'hides the website channel until a connected website exists')
 assert.match(panel, /SlidersHorizontal size=\{15\}[^]*?Manage/, 'groups website-channel actions under Manage')
-assert.match(listingDetail, /function DistributionChannel\([^]*?const manageActions = \[secondaryAction, \.\.\.menuActions\]/, 'groups portal-channel actions under one Manage control')
+assert.match(listingDetail, /function DistributionChannel\([^]*?const manageActions = \[primaryAction, secondaryAction, \.\.\.menuActions\]/, 'groups portal-channel actions under one Manage control')
 assert.doesNotMatch(listingDetail, /\.\.\.\(agencyWebsiteLink \? \[\{/, 'does not render a separate manual website row ahead of the connected website channel')
 
 assert.match(publicRepository, /from\('website_listing_publications'\)/, 'public rendering requires an explicit website-channel row')

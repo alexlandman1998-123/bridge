@@ -3,6 +3,7 @@ export const LISTING_PUBLICATION_CHANNELS = Object.freeze([
   { key: 'private_property', label: 'Private Property' },
   { key: 'arch9_catalogue', label: 'Arch9 public catalogue' },
   { key: 'agency_website', label: 'Agency Website' },
+  { key: 'kingdom_website', label: 'Kingdom Website' },
 ])
 
 const SNAPSHOT_FIELDS = Object.freeze([
@@ -106,6 +107,7 @@ function channelKey(value = '') {
   const normalized = text(value).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')
   if (normalized.includes('property24')) return 'property24'
   if (normalized.includes('private_property') || normalized === 'privateproperty') return 'private_property'
+  if (normalized.includes('kingdom') && normalized.includes('website')) return 'kingdom_website'
   if (normalized.includes('agency_website') || normalized === 'website') return 'agency_website'
   if (normalized.includes('arch9') || normalized.includes('catalogue')) return 'arch9_catalogue'
   return normalized
@@ -221,7 +223,7 @@ export function deriveListingPublicationStates(activityRows = [], currentSnapsho
   for (const row of rows) {
     const type = eventType(row)
     const metadata = eventMetadata(row)
-    const key = channelKey(metadata.channel)
+    const key = channelKey(metadata.channelKey || metadata.channel)
     if (!states[key]) continue
     const occurredAt = eventTime(row)
     const snapshot = metadata.snapshot && typeof metadata.snapshot === 'object' ? metadata.snapshot : null

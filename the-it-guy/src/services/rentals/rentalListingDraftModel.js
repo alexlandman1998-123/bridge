@@ -1,6 +1,6 @@
-import { listingCapturePublicationIssues } from '../listings/listingCaptureValidation.js'
-import { captureRentalPortalFacts, validateRentalPortalFacts, RENTAL_PORTAL_FIELDS } from './rentalPortalFieldContract.js'
+import { captureRentalPortalFacts, validateRentalPortalFacts } from './rentalPortalFieldContract.js'
 import { isRentalMediaLink } from './rentalListingMediaModel.js'
+import { getListingFieldIssues } from '../listings/listingFieldRequirements.js'
 
 export const RENTAL_LISTING_CAPTURE_VERSION = 'arch9_rental_listing_capture_v1'
 
@@ -320,91 +320,34 @@ export function buildRentalListingTitle(form = {}) {
     'Rental listing draft'
 }
 
-export function validateRentalListingDraftIssues(form = {}, context = {}) {
+export function validateRentalListingDraftForm(form = {}, context = {}) {
   const errors = []
-  const add = (field, step, message, code = field) => errors.push({ code, field, step, message })
-  if (!normalizeText(context.organisationId)) add('organisation', 'review', 'Organisation context is required.')
-  if (!normalizeText(form.landlordName)) add('landlordName', 'landlord', 'Landlord or entity name is required.')
+  if (!normalizeText(context.organisationId)) errors.push('Organisation context is required.')
   const landlordType = normalizeText(form.landlordType) || 'individual'
-  if (!RENTAL_SELECT_OPTIONS.landlordType.some((option) => option.value === landlordType)) add('landlordType', 'landlord', 'Choose a supported landlord type.')
+  if (!RENTAL_SELECT_OPTIONS.landlordType.some((option) => option.value === landlordType)) errors.push('Choose a supported landlord type.')
   const landlordEmail = normalizeText(form.landlordEmail)
-  if (landlordEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(landlordEmail)) add('landlordEmail', 'landlord', 'Enter a valid landlord email address.')
+  if (landlordEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(landlordEmail)) errors.push('Enter a valid landlord email address.')
   const mandateStatus = normalizeText(form.mandateStatus) || 'not_started'
   const persistedMandateStatuses = ['ready', 'generated', 'viewed', 'signed_external_pending_upload', 'rejected', 'expired']
-  if (!RENTAL_SELECT_OPTIONS.mandateStatus.some((option) => option.value === mandateStatus) && !persistedMandateStatuses.includes(mandateStatus)) add('mandateStatus', 'landlord', 'Choose a supported rental mandate status.')
+  if (!RENTAL_SELECT_OPTIONS.mandateStatus.some((option) => option.value === mandateStatus) && !persistedMandateStatuses.includes(mandateStatus)) errors.push('Choose a supported rental mandate status.')
   const marketingApproval = normalizeText(form.marketingApprovalStatus) || 'draft'
-  if (!RENTAL_SELECT_OPTIONS.marketingApprovalStatus.some((option) => option.value === marketingApproval)) add('marketingApprovalStatus', 'landlord', 'Choose a supported marketing approval status.')
+  if (!RENTAL_SELECT_OPTIONS.marketingApprovalStatus.some((option) => option.value === marketingApproval)) errors.push('Choose a supported marketing approval status.')
   for (const [field, label] of [['mandateStartDate', 'Mandate start date'], ['mandateEndDate', 'Mandate end date']]) {
     const value = normalizeText(form[field])
     if (!value) continue
     const parsed = new Date(`${value}T00:00:00Z`)
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || !Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value) add(field, 'landlord', `${label} must be a valid date.`)
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || !Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value) errors.push(`${label} must be a valid date.`)
   }
-  if (form.mandateStartDate && form.mandateEndDate && form.mandateEndDate < form.mandateStartDate) add('mandateEndDate', 'landlord', 'Mandate end date cannot be before its start date.')
-  if (!normalizeText(form.propertyAddress)) add('propertyAddress', 'property', 'Property address is required.')
-  if (!Number.isFinite(Number(form.monthlyRent)) || Number(form.monthlyRent) <= 0) add('monthlyRent', 'terms', 'Enter a rental amount greater than zero.')
-  if (!normalizeText(form.rentalPriceFrequency)) add('rentalPriceFrequency', 'terms', 'Rental price frequency is required.')
-  if (normalizeRentalDepositPolicy(form.depositPolicy) === 'not_captured') add('depositPolicy', 'terms', 'Choose whether a deposit is required.')
-  if (!normalizeText(form.availableFrom) && !normalizeText(form.occupationDate)) add('availableFrom', 'terms', 'Available from or occupation date is required.')
-  if (!normalizeText(form.description)) add('description', 'marketing', 'Public rental description is required.')
+  if (form.mandateStartDate && form.mandateEndDate && form.mandateEndDate < form.mandateStartDate) errors.push('Mandate end date cannot be before its start date.')
+  if (!normalizeText(form.propertyAddress)) errors.push('Property address is required.')
+  if (!normalizeNumber(form.monthlyRent)) errors.push('Rental amount is required.')
+  if (!normalizeText(form.rentalPriceFrequency)) errors.push('Rental price frequency is required.')
   for (const [field, label] of [['videoLink', 'Video link'], ['virtualTourLink', 'Virtual tour link']]) {
-    if (normalizeText(form[field]) && !isRentalMediaLink(form[field])) add(field, 'marketing', `${label} must be a valid HTTP or HTTPS URL.`)
+    if (normalizeText(form[field]) && !isRentalMediaLink(form[field])) errors.push(`${label} must be a valid HTTP or HTTPS URL.`)
   }
-  const propertyFields = new Set(['floorSize', 'erfSize', 'bedrooms', 'bathrooms', 'garages', 'parkingBays', 'unitNumber', 'complexName', 'coveredParking', 'openParking', 'carports', 'enSuiteBathrooms', 'lounges', 'diningRooms', 'kitchens', 'studies', 'staffRooms'])
-  for (const message of validateRentalPortalFacts(form)) {
-    const catalogField = RENTAL_PORTAL_FIELDS.find((field) => message === `Enter a valid ${field.label.toLowerCase()}.`)
-    const field = catalogField?.formKey || catalogField?.key || 'portalFacts'
-    const step = propertyFields.has(field) || field === 'propertyInfo.propertyDescription.propertyDescriptionType' ? 'property' : 'features'
-    add(field === 'propertyInfo.propertyDescription.propertyDescriptionType' ? 'rentalTitleType' : field, step, message)
-  }
-  if (!normalizeText(form.propertyType)) add('propertyType', 'property', 'Choose a property type.')
-  const frequency = normalizeText(form.rentalPriceFrequency)
-  if (frequency && (!RENTAL_SELECT_OPTIONS.rentalPriceFrequency.some((option) => option.value === frequency) || (frequency === 'per_square_metre' && !['commercial', 'industrial', 'retail', 'vacant_land', 'mixed_use'].includes(form.propertyCategory)))) add('rentalPriceFrequency', 'terms', 'Choose a rental price frequency supported for this property category.')
-  for (const field of ['availableFrom', 'occupationDate', 'property24ExpiryDate']) {
-    if (normalizeText(form[field]) && !isRentalCaptureDate(form[field])) add(field, 'terms', `${field === 'property24ExpiryDate' ? 'Property24 expiry date' : field === 'availableFrom' ? 'Available from' : 'Occupation date'} must be a valid date.`)
-  }
-  for (const field of ['depositAmount', 'applicationFee', 'leaseAdminFee', 'creditCheckFee', 'keyDepositAmount', 'utilityDepositAmount']) {
-    if (field === 'depositAmount' && form.depositPolicy === 'no_deposit') continue
-    if (normalizeText(form[field]) && (!Number.isFinite(Number(form[field])) || Number(form[field]) < 0)) add(field, 'terms', 'Enter an amount of zero or more.', field)
-  }
-  for (const [field, label] of Object.entries({ floorSize: 'Floor size', erfSize: 'Erf size', bedrooms: 'Bedrooms', bathrooms: 'Bathrooms', garages: 'Garages', parkingBays: 'Parking', coveredParking: 'Covered parking', openParking: 'Open parking', carports: 'Carports', enSuiteBathrooms: 'En-suite bathrooms', lounges: 'Lounges', diningRooms: 'Dining rooms', kitchens: 'Kitchens', studies: 'Studies', staffRooms: 'Staff rooms' })) {
-    if (normalizeText(form[field]) && (!Number.isFinite(Number(form[field])) || Number(form[field]) < 0) && !errors.some((issue) => issue.field === field)) add(field, 'property', `${label} must be a number of zero or more.`)
-  }
-  for (const [field, label] of [['leasePeriodMonths', 'Lease period'], ['depositMultiplier', 'Deposit multiplier']]) {
-    if (field === 'depositMultiplier' && form.depositPolicy === 'no_deposit') continue
-    if (normalizeText(form[field]) && (!Number.isFinite(Number(form[field])) || Number(form[field]) <= 0)) add(field, 'terms', `${label} must be a number greater than zero.`)
-  }
+  errors.push(...validateRentalPortalFacts(form))
+  errors.push(...getListingFieldIssues(form, { rental: true }).map(issue => issue.message))
   return errors
-}
-
-function isRentalCaptureDate(value) {
-  const parsed = new Date(`${value}T00:00:00Z`)
-  return /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value
-}
-
-export function validateRentalListingDraftForm(form = {}, context = {}) {
-  return validateRentalListingDraftIssues(form, context).map((issue) => issue.message)
-}
-
-export function rentalListingPublicationIssues(form = {}, { now = new Date() } = {}) {
-  const issues = listingCapturePublicationIssues(form, { rental: true })
-  const add = (field, step, message) => issues.push({ code: `publication-${field}`, field, step, message })
-  const channels = normalizeRentalDistributionChannels(form.selectedSyndicationChannels)
-  if (channels.includes('private_property')) {
-    for (const item of RENTAL_PORTAL_FIELDS.filter((field) => ['Rates', 'Levies'].includes(field.pp))) {
-      const value = form.rentalPortalFacts?.[item.key]
-      if (value === null || value === undefined || value === '') continue
-      if (!Number.isInteger(Number(value))) add(item.key, 'features', `${item.label} must be a whole amount for Private Property.`)
-      const unit = form.rentalPortalFacts?.[item.key.replace(/amount$/, 'unit')]
-      if (unit && unit !== 'TotalPrice') add(item.key.replace(/amount$/, 'unit'), 'features', `Choose total price for ${item.pp.toLowerCase()} on Private Property.`)
-    }
-  }
-  if (channels.includes('property24')) {
-    const expiry = normalizeText(form.property24ExpiryDate || form.mandateEndDate)
-    if (!isRentalCaptureDate(expiry) || new Date(`${expiry}T00:00:00Z`).getTime() <= now.getTime()) add('property24ExpiryDate', 'terms', 'Choose a future Property24 expiry date, or supply a future mandate end date.')
-    if (form.rentalMandateType === 'house_share') add('rentalMandateType', 'terms', 'Property24 does not support house share listings. Choose a supported rental type or remove Property24.')
-  }
-  return issues
 }
 
 export function buildRentalCanonicalFacts(form = {}) {

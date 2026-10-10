@@ -14,7 +14,7 @@ function clientFor(rows, { failurePage = -1, missingTable = false } = {}) {
     const request = { table, filters: [], orders: [], range: null }
     requests.push(request)
     const query = {
-      select() { return this }, not() { return this }, neq() { return this }, or() { return this },
+      select(columns) { request.columns = columns; return this }, not() { return this }, neq() { return this }, or() { return this },
       eq(key, value) { request.filters.push([key, value]); return this },
       in(key, value) { request.filters.push([key, value]); return this },
       order(key, options) { request.orders.push([key, options]); return this },
@@ -39,9 +39,9 @@ test('mobile inventory reads every scoped page with stable ordering and complete
   const server = await createServer({ root, logLevel: 'silent', server: { middlewareMode: true } })
   try {
     const { getAgentPrivateListingSummaries } = await server.ssrLoadModule('/src/services/privateListingService.js')
-    const rows = Array.from({ length: 405 }, (_, i) => ({ id: uuid(i), organisation_id: org, assigned_agent_id: user, listing_status: 'active', title: `Unit ${i}`, is_active: true, seller_canonical_facts_json: { property: i === 404 ? { scheme: { unit_number: String(i) } } : { unitNumber: String(i) } } }))
+    const rows = Array.from({ length: 405 }, (_, i) => ({ id: uuid(i), organisation_id: org, assigned_agent_id: user, listing_status: 'active', title: `Unit ${i}`, is_active: true, development_id: i === 404 ? uuid(997) : null, unit_id: i === 404 ? uuid(996) : null, property_category: i === 404 ? 'commercial' : 'residential', seller_canonical_facts_json: { property: i === 404 ? { scheme: { unit_number: String(i) } } : { unitNumber: String(i) } } }))
     const client = clientFor(rows)
-    const inventory = await getAgentPrivateListingSummaries(user, { organisationId: org, fetchAll: true, includePublicationDetails: true, requireAvailable: true, client })
+    const inventory = await getAgentPrivateListingSummaries(user, { organisationId: org, fetchAll: true, coreFieldsOnly: true, includePublicationDetails: true, requireAvailable: true, client })
     assert.equal(inventory.length, 405)
     assert.deepEqual(client.requests.filter((r) => r.table === 'private_listings').map((r) => r.range), [[0, 199], [200, 399], [400, 599]])
     for (const request of client.requests.filter((r) => r.table === 'private_listings')) {
@@ -49,6 +49,11 @@ test('mobile inventory reads every scoped page with stable ordering and complete
       assert.deepEqual(request.orders, [['updated_at', { ascending: false }], ['id', { ascending: true }]])
     }
     assert.deepEqual(client.requests.filter((r) => r.table === 'listing_publication_data').map((r) => r.filters[0][1].length), [200, 200, 5])
+    assert.equal(inventory[404].developmentId, uuid(997))
+    assert.equal(inventory[404].unitId, uuid(996))
+    assert.equal(inventory[404].propertyCategory, 'commercial')
+    assert.ok(client.requests[0].columns.includes('development_id'))
+    assert.ok(client.requests[0].columns.includes('property_category'))
     assert.equal(inventory[404].unitNumber, '404')
     assert.equal(inventory[404].bedrooms, 3)
     assert.equal(inventory[404].bathrooms, 1.5)

@@ -1,8 +1,9 @@
 import './listing-channel-table.css'
 import { useCallback, useEffect, useState } from 'react'
-import { ExternalLink, Globe2, Loader2, RefreshCw, SlidersHorizontal } from 'lucide-react'
+import { ExternalLink, Globe2, Loader2, RefreshCw } from 'lucide-react'
 import Button from '../ui/Button'
-import Modal from '../ui/Modal'
+import ListingChannelManageMenu from './ListingChannelManageMenu'
+import ListingChannelLastUpdate from './ListingChannelLastUpdate'
 import { getKingdomWebsitePublicationStatus, setKingdomWebsitePublication } from '../../services/kingdomWebsitePublicationService'
 import { normalizeListingChannelPublicUrl } from '../../services/listings/listingMarketingChannelPresentation'
 import ListingWebsiteConnectionState from './ListingWebsiteConnectionState'
@@ -15,11 +16,10 @@ function publicSlug(title, reference, listingId) {
   return `${slug}-${listingId}`
 }
 
-export default function KingdomWebsitePublicationChannel({ listingId, listingTitle, listingReference, onPrepare, onStatusChange, onPublicationAction, publicationState = null, savedAt = '', showConnectionState = false }) {
+export default function KingdomWebsitePublicationChannel({ listingId, listingTitle, listingReference, onPrepare, onEdit, onStatusChange, onPublicationAction, publicationState = null, savedAt = '', showConnectionState = false }) {
   const [publication, setPublication] = useState(null)
   const [loading, setLoading] = useState(true)
   const [action, setAction] = useState('')
-  const [manageOpen, setManageOpen] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
 
@@ -50,7 +50,7 @@ export default function KingdomWebsitePublicationChannel({ listingId, listingTit
     ? normalizeListingChannelPublicUrl(`https://${publication.hostname}/properties/${publicSlug(listingTitle, listingReference, listingId)}`)
     : ''
   const stale = publication.stale || publicationState?.changeCount > 0
-  const statusLabel = live ? stale ? 'Update available' : 'Live' : blockers.length ? 'Needs attention' : 'Not published'
+  const statusLabel = live ? stale ? 'Changes not published' : 'Live' : blockers.length ? 'Needs attention' : 'Not published'
   const statusColor = live && !stale ? 'text-[#18713e]' : blockers.length || stale ? 'text-[#9a5b13]' : 'text-[#526a82]'
   const infrastructureBlocked = blockers.some((blocker) => /Kingdom website|Kingdom website domain/.test(String(blocker)))
 
@@ -91,17 +91,19 @@ export default function KingdomWebsitePublicationChannel({ listingId, listingTit
     <div className="listing-channel-columns border-t border-[#edf2f7]">
       <div className="flex min-w-0 items-center gap-3">
         <span className="grid h-12 w-12 shrink-0 place-items-center rounded-[14px] border border-[#cfe4d8] bg-[#f2faf5] text-[#18713e]"><Globe2 size={21} /></span>
-        <div className="min-w-0"><p className="truncate text-sm font-semibold text-[#142132]">Kingdom Website</p><p className="truncate text-xs text-[#607387]">Kingdom Real Estate property website</p></div>
+        <div className="min-w-0"><p className="truncate text-sm font-semibold text-[#142132]">Kingdom Website</p></div>
       </div>
       <div className="min-w-0"><p className="truncate text-sm font-semibold text-[#243d56]">{listingReference || 'Not assigned'}</p>{link ? <a href={link} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-1 text-xs font-semibold text-[#1f4f78] hover:underline">View listing <ExternalLink size={12} /></a> : <p className="mt-1 text-xs text-[#8a98a8]">Listing link unavailable</p>}</div>
       <div className="min-w-0"><p className={`inline-flex items-center gap-2 text-sm font-semibold ${statusColor}`}><span className={`h-2 w-2 rounded-full ${live && !stale ? 'bg-[#1f9d64]' : blockers.length || stale ? 'bg-[#d99321]' : 'border border-[#aebdca] bg-white'}`} />{statusLabel}</p>{blockers.length ? <p className="mt-1 text-xs text-[#8a641d]">{blockers[0]}</p> : null}</div>
-      <div className="listing-channel-activity">{savedAt ? <p><span >Arch9 saved</span> · {savedAt}</p> : null}{[['Submitted', publicationState?.submittedAt], ['Accepted', publicationState?.acceptedAt], ['Withdrawn', publicationState?.withdrawnAt], ['Failed', publicationState?.failedAt], ['Published', publication.publishedAt]].filter(([,time]) => time).map(([label,time]) => <p key={label}><span>{label}</span> · {new Date(time).toLocaleString()}</p>)}{publication.lastSyncedAt ? <p><span >Kingdom updated</span> · {new Date(publication.lastSyncedAt).toLocaleString()}</p> : null}</div>
-      <div className="flex justify-start lg:justify-end"><Button type="button" size="sm" variant="secondary" onClick={() => setManageOpen(true)}><SlidersHorizontal size={15} />Manage</Button></div>
+      <ListingChannelLastUpdate publicationState={publicationState} publication={publication} fallback={savedAt ? `Saved in Arch9 · ${savedAt}` : ''} />
+      <div className="flex justify-start lg:justify-end"><ListingChannelManageMenu channelName="Kingdom Website">
+        <Button type="button" variant="secondary" onClick={() => void load()} disabled={loading || Boolean(action)}><RefreshCw size={15} />Refresh status</Button>
+        <Button type="button" variant="secondary" onClick={() => onEdit ? onEdit() : void run(published ? 'update' : 'publish')} disabled={Boolean(action) || loading || (!onEdit && infrastructureBlocked)}>{action ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}{onEdit ? 'Edit listing' : published ? 'Update website' : 'Publish to Kingdom'}</Button>
+        {published ? <Button type="button" variant="secondary" className="text-[#a43d35]" onClick={() => void run('unpublish')} disabled={Boolean(action)}>Remove from website</Button> : null}
+      </ListingChannelManageMenu></div>
       {error ? <p className="text-sm text-[#b42318] lg:col-span-5" role="alert">{error}</p> : null}
       {notice ? <p className="text-sm text-[#257044] lg:col-span-5" role="status">{notice}</p> : null}
     </div>
-    <Modal open={manageOpen} onClose={() => setManageOpen(false)} title="Manage Kingdom Website" subtitle="Publish, update, or remove this I Sell listing from Kingdom's property website." className="max-w-2xl" footer={<div className="flex flex-wrap justify-end gap-2"><Button type="button" variant="secondary" onClick={() => setManageOpen(false)}>Close</Button><Button type="button" variant="secondary" onClick={() => void load()} disabled={loading || Boolean(action)}><RefreshCw size={15} />Refresh status</Button>{published ? <><Button type="button" variant="secondary" onClick={() => void run('unpublish')} disabled={Boolean(action)}>Unpublish</Button><Button type="button" onClick={() => void run('update')} disabled={Boolean(action) || infrastructureBlocked}>{action === 'update' ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}Update website</Button></> : <Button type="button" onClick={() => void run('publish')} disabled={Boolean(action) || loading || infrastructureBlocked}>{action === 'publish' ? <Loader2 size={15} className="animate-spin" /> : <Globe2 size={15} />}Publish to Kingdom</Button>}</div>}>
-      <div className="space-y-4 text-sm text-[#35546c]"><p>Publish saves the latest listing details in Arch9, then sends them to Kingdom. Publishing on Arch9's website is optional. Saved changes appear on Kingdom after you select Update.</p>{blockers.length ? <div className="rounded-[12px] border border-[#f0d9ad] bg-[#fff9ec] p-3"><strong className="text-[#825514]">Before publishing</strong><ul className="mt-2 list-disc space-y-1 pl-5 text-[#825514]">{blockers.map((blocker) => <li key={blocker}>{blocker}</li>)}</ul></div> : null}{error ? <p className="text-[#b42318]" role="alert">{error}</p> : null}{notice ? <p className="text-[#257044]" role="status">{notice}</p> : null}{link ? <a href={link} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-semibold text-[#1f4f78] hover:underline">Open Kingdom listing <ExternalLink size={14} /></a> : null}</div>
-    </Modal>
+
   </>
 }

@@ -395,7 +395,7 @@ export async function loadProperty24ImageBytesForPreview({
   const nextMedia = rows.map((item) => ({ ...item }))
   let totalImageBytes = 0
 
-  for (const { item, index } of selectedIndexes) {
+  async function prepareImage({ item, index }) {
     const url = getMediaUrl(item)
     const storageLocation = parseSupabaseStorageLocation(url)
     const storageHostMismatch = (() => {
@@ -429,24 +429,7 @@ export async function loadProperty24ImageBytesForPreview({
       if (finalBuffer.byteLength > maxBytesPerImage) {
         throw new Error(`Image is ${finalBuffer.byteLength} bytes after conversion, above the ${maxBytesPerImage} byte safety limit.`)
       }
-      if (totalImageBytes + finalBuffer.byteLength > maxTotalImageBytes) {
-        results.push({
-          index,
-          status: 'SKIPPED',
-          sourceUrl: sanitizeUrl(url),
-          message: `Adding this image would exceed the ${maxTotalImageBytes}-byte Property24 image budget.`,
-          byteLength: finalBuffer.byteLength,
-        })
-        continue
-      }
-      totalImageBytes += finalBuffer.byteLength
-      nextMedia[index] = {
-        ...nextMedia[index],
-        bytes: finalBuffer.toString('base64'),
-        mimeContentType: contentType,
-        mime_content_type: contentType,
-      }
-      results.push({
+      return { finalBuffer, result: {
         index,
         status: 'LOADED',
         sourceUrl: sanitizeUrl(url),
@@ -460,15 +443,46 @@ export async function loadProperty24ImageBytesForPreview({
           : {}),
         source: download.source,
         ...(storageHostMismatch ? { storageHostMismatch: true } : {}),
-      })
+      } }
     } catch (error) {
-      results.push({
+      return { result: {
         index,
         status: 'FAILED',
         sourceUrl: sanitizeUrl(url),
         message: error.message,
         ...(storageHostMismatch ? { storageHostMismatch: true } : {}),
-      })
+      } }
+    }
+  }
+
+  // Overlap network waits without flooding storage or retaining an entire
+  // gallery of raw buffers. Apply the byte budget in cover/gallery order,
+  // regardless of which download finishes first.
+  for (let offset = 0; offset < selectedIndexes.length; offset += 2) {
+    const prepared = await Promise.all(selectedIndexes.slice(offset, offset + 2).map(prepareImage))
+    for (const { finalBuffer, result } of prepared) {
+      if (result.status === 'FAILED') {
+        results.push(result)
+        continue
+      }
+      if (totalImageBytes + finalBuffer.byteLength > maxTotalImageBytes) {
+        results.push({
+          index: result.index,
+          status: 'SKIPPED',
+          sourceUrl: result.sourceUrl,
+          message: `Adding this image would exceed the ${maxTotalImageBytes}-byte Property24 image budget.`,
+          byteLength: finalBuffer.byteLength,
+        })
+        continue
+      }
+      totalImageBytes += finalBuffer.byteLength
+      nextMedia[result.index] = {
+        ...nextMedia[result.index],
+        bytes: finalBuffer.toString('base64'),
+        mimeContentType: result.mimeContentType,
+        mime_content_type: result.mimeContentType,
+      }
+      results.push(result)
     }
   }
 

@@ -86,7 +86,8 @@ for (const entry of cases) {
     assert.equal(plan.previewPayload.propertyInfo.propertyTypeId, 10)
     assert.deepEqual(plan.previewPayload.propertyInfo.erf, { size: 425000, areaUnit: 'SquareMetres' })
   } else {
-    assert.ok(plan.dataBlockers.includes(`property24_${entry.category === 'vacant_land' ? 'land' : entry.category}_mapping_not_verified`))
+    assert.equal(plan.canSubmit, true, JSON.stringify(plan.dataBlockers))
+    assert.equal(plan.previewPayload.propertyInfo.propertyTypeId, 12)
   }
 }
 
@@ -113,8 +114,8 @@ for (const measurement of [
   assert.equal(p24.summary.propertyTypeId, 8)
   assert.equal(pp.summary.category, 'Land')
   if (measurement.expectedError) {
-    assert.equal(p24.canSubmit, false)
-    assert.ok(p24.dataBlockers.includes(`property24_${measurement.expectedError}`))
+    assert.equal(p24.canSubmit, measurement.expectedError === 'land_area_required')
+    if (measurement.expectedError !== 'land_area_required') assert.ok(p24.dataBlockers.includes(`property24_${measurement.expectedError}`))
     assert.ok(pp.dataBlockers.includes(`private_property_${measurement.expectedError}`))
   } else {
     assert.equal(pp.canPreview, true)

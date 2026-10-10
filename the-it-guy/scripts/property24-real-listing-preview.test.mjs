@@ -446,3 +446,47 @@ assert.equal(packageJson.scripts['property24:preview-listing'], 'node scripts/pr
 assert.equal(packageJson.scripts['test:property24-preview-listing'], 'node scripts/property24-real-listing-preview.test.mjs')
 
 console.log('Property24 real listing preview contract passed')
+
+// Responses finish out of order: retain the cover and budget in gallery order.
+const concurrentStarts = []
+const completeDownloads = new Map()
+const concurrentMedia = [
+  { media_type: 'image', file_url: 'https://images.example/second.jpg', sort_order: 1 },
+  { media_type: 'image', file_url: 'https://images.example/cover.jpg', is_cover: true },
+  { media_type: 'image', file_url: 'https://images.example/third.jpg', sort_order: 2 },
+]
+const concurrentLoad = loadProperty24ImageBytesForPreview({
+  media: concurrentMedia, maxTotalImageBytes: 3,
+  fetchImpl: url => {
+    concurrentStarts.push(url)
+    return new Promise(resolve => completeDownloads.set(url, () => resolve({
+      ok: true, status: 200, headers: { get: () => 'image/jpeg' },
+      arrayBuffer: async () => new Uint8Array([1, 2]).buffer,
+    })))
+  },
+})
+assert.deepEqual(concurrentStarts, ['https://images.example/cover.jpg', 'https://images.example/second.jpg'])
+completeDownloads.get('https://images.example/second.jpg')()
+await new Promise(resolve => setImmediate(resolve))
+assert.equal(concurrentStarts.length, 2, 'bound work while the cover is still loading')
+completeDownloads.get('https://images.example/cover.jpg')()
+await new Promise(resolve => setImmediate(resolve))
+assert.equal(concurrentStarts.length, 3)
+completeDownloads.get('https://images.example/third.jpg')()
+const concurrentResult = await concurrentLoad
+assert.deepEqual(concurrentResult.results.map(row => [row.index, row.status]), [[1, 'LOADED'], [0, 'SKIPPED'], [2, 'SKIPPED']])
+assert.equal(concurrentResult.media[1].bytes, 'AQI=')
+assert.equal(concurrentResult.media[0].bytes, undefined)
+assert.equal(concurrentResult.summary.totalImageBytes, 2)
+assert.equal(concurrentMedia[1].bytes, undefined)
+const partialFailure = await loadProperty24ImageBytesForPreview({
+  media: concurrentMedia,
+  fetchImpl: async url => {
+    if (url.endsWith('cover.jpg')) throw new Error('Photo download unavailable')
+    return { ok: true, status: 200, headers: { get: () => 'image/jpeg' }, arrayBuffer: async () => new Uint8Array([3]).buffer }
+  },
+})
+assert.deepEqual(partialFailure.results.map(row => row.status), ['FAILED', 'LOADED', 'LOADED'])
+assert.equal(partialFailure.summary.failed, 1)
+assert.equal(partialFailure.summary.loaded, 2)
+console.log('Property24 bounded photo preparation and ordered byte budget checks passed.')

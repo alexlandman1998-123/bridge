@@ -1,3 +1,4 @@
+import { rentalPriceSuffix } from '@/lib/listing-price'
 import type { Metadata } from 'next'
 import { headers } from 'next/headers'
 import Image from 'next/image'
@@ -66,7 +67,7 @@ export default async function PropertyPage({ params }: Props) {
   const consultant = property.consultant
   const whatsappHref = listingWhatsappHref(property, site)
   const lwp = hasEditorialPropertyExperience(site)
-  const pricePanel = <div className="listing-price"><p>{property.transactionType === 'rental' ? 'MONTHLY RENTAL' : 'ASKING PRICE'}</p><strong>{property.price ? money.format(property.price) : 'Price on request'}{property.transactionType === 'rental' && property.price ? <small> / pm</small> : null}</strong>{property.price ? <Link href={`/calculators?price=${property.price}#bond-calculator`}>{property.transactionType === 'rental' ? 'Check affordability' : 'Estimate your monthly bond payment'}</Link> : null}</div>
+  const pricePanel = <div className="listing-price"><p>{property.transactionType === 'rental' ? 'RENTAL PRICE' : 'ASKING PRICE'}</p><strong>{property.price ? money.format(property.price) : 'Price on request'}{property.price ? <small>{rentalPriceSuffix(property)}</small> : null}</strong>{property.price ? <Link href={`/calculators?price=${property.price}#bond-calculator`}>{property.transactionType === 'rental' ? 'Check affordability' : 'Estimate your monthly bond payment'}</Link> : null}</div>
 
   return <main className={`property-page listing-detail-page ${templateClassName(site.templateKey)}${lwp ? ' lwp-listing-page' : ''}`} style={{ '--primary': site.primaryColor, '--secondary': site.secondaryColor, '--accent': site.accentColor } as React.CSSProperties}>
     {!property.partnerListing ? <ListingAnalyticsTracker listingId={property.id} /> : null}

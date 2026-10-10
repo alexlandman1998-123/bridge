@@ -599,6 +599,7 @@ function HeaderSkeleton() {
 
 function getStableRouteContentKey(pathname = '') {
   if (pathname.startsWith('/settings')) return 'settings-shell'
+  if (/^\/listings(?:\/(?:all|residential|commercial|developments))?\/?$/.test(pathname)) return 'listings-index'
   if (pathname.startsWith('/pipeline/leads/')) return pathname
 
   // A branch workspace owns several URL-addressable tabs. Treating each tab

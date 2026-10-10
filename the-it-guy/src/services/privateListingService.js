@@ -3,7 +3,7 @@ import { readSellerMandateTerms } from '../lib/sellerMandateCapture.js'
 import { normalizeListingExternalLinkStatus } from '../lib/listingExternalLinkStatus.js'
 import { normalizePortalStatus } from '../lib/listingDataMapper.js'
 import { getSellerPortalSignedUploadReference } from '../core/documents/sellerPhysicalSigningCopy.js'
-import { insertRentalListingOnce } from './rentals/rentalListingCreationRecovery.js'
+import { insertRentalListingOnce, insertPrivateListingOnce } from './rentals/rentalListingCreationRecovery.js'
 import { assertDocumentGeneratorAvailable } from '../core/documents/documentGeneratorRetirement'
 import { advanceSellerWorkflowState, createSellerWorkflowState, SELLER_WORKFLOW_STAGES } from '../core/documents/sellerWorkflowState'
 import {
@@ -3331,6 +3331,8 @@ function mapPrivateListingSummaryRow(row = {}, onboardingCommissionByListingId =
 
   return {
     id: row.id,
+    developmentId: row.development_id || null,
+    unitId: row.unit_id || null,
     organisationId: row.organisation_id || null,
     branchId: row.branch_id || null,
     assignedAgentId: row.assigned_agent_id || null,
@@ -5539,7 +5541,7 @@ export async function createPrivateListing(payload = {}, options = {}) {
   const skipRequirementSync = options?.syncRequirements === false
 
   const originatingCrmLeadId = normalizeUuid(payload.originatingCrmLeadId)
-  if (originatingCrmLeadId && !options.rentalCreationId) {
+  if (originatingCrmLeadId && !options.rentalCreationId && !options.creationId) {
     const existingQuery = await client
       .from('private_listings')
       .select('*')
@@ -5561,7 +5563,9 @@ export async function createPrivateListing(payload = {}, options = {}) {
   }
 
   const listingPayload = buildPrivateListingPayload(payload, user.id)
-  let insert = options.rentalCreationId
+  let insert = options.creationId
+    ? await insertPrivateListingOnce(client, listingPayload, options.creationId, user.id)
+    : options.rentalCreationId
     ? await insertRentalListingOnce(client, listingPayload, options.rentalCreationId, user.id)
     : await client.from('private_listings').insert(listingPayload).select('*').single()
   const rentalCaptureColumns = isRentalPrivateListingPayload(payload) ? missingRentalCaptureColumns(insert.error) : []
@@ -5578,6 +5582,7 @@ export async function createPrivateListing(payload = {}, options = {}) {
       `(${buildSupabaseErrorSummary(insert.error)})`,
     )
   }
+  if (options.creationId && insert.error) throw insert.error
   if (insert.error && (
     isMissingColumnError(insert.error, 'branch_id') ||
     isMissingColumnError(insert.error, 'property_category') ||
@@ -5623,7 +5628,7 @@ export async function createPrivateListing(payload = {}, options = {}) {
     throw insert.error
   }
 
-  if (options.rentalCreationId) {
+  if (options.rentalCreationId || options.creationId) {
     const shell = mapPrivateListingRow(insert.data, new Map(), new Map(), new Map(), null, null, new Map())
     options.onListingCreated?.(shell.id, shell)
     if (insert.existing) return { listing: shell, existing: true }
@@ -6387,7 +6392,7 @@ export async function getPrivateListing(listingId, options = {}) {
   return getPrivateListingById(listingId, options)
 }
 
-async function getPrivateListingById(listingId, { includeRequirementsAndDocuments = true, requireDistributionData = false, includePreviousListings = false } = {}) {
+async function getPrivateListingById(listingId, { includeRequirementsAndDocuments = true, includeRelatedData = true, requireDistributionData = false, includePreviousListings = false } = {}) {
   const client = requireClient()
   const normalizedId = normalizeUuid(listingId)
   if (!normalizedId) throw new Error('Listing id is required.')
@@ -6401,6 +6406,7 @@ async function getPrivateListingById(listingId, { includeRequirementsAndDocument
     includeArchivedImports: includePreviousListings,
     includeWithdrawnListings: includePreviousListings,
   })) return null
+  if (!includeRelatedData) return mapPrivateListingRow(query.data)
   const [onboardingMap, requirementsMap, documentsMap, externalLinksMap, publicationMap, mandatePacketsMap, mediaMap, assignedAgentsMap] = await Promise.all([
     fetchOnboardingRowsForListings(client, [query.data.id]),
     includeRequirementsAndDocuments ? fetchRequirementRowsForListings(client, [query.data.id]) : Promise.resolve(new Map()),
@@ -6522,6 +6528,8 @@ export async function getOrganisationPrivateListings(organisationId, options = {
   // Detail screens retain the existing related-data hydration by default.
   const includeRelatedData = options?.includeRelatedData !== false
   const includeRequirementsAndDocuments = includeRelatedData && options?.includeRequirementsAndDocuments !== false
+  const includeExternalLinks = includeRelatedData && options?.includeExternalLinks !== false
+  const includePublicationDetails = includeRelatedData && options?.includePublicationDetails !== false
   const client = requireClient()
   const normalizedOrgId = normalizeUuid(organisationId)
   if (!normalizedOrgId) throw new Error('Organisation id is required.')
@@ -6541,8 +6549,8 @@ export async function getOrganisationPrivateListings(organisationId, options = {
     includeRelatedData ? fetchOnboardingRowsForListings(client, listingIds) : Promise.resolve(new Map()),
     includeRequirementsAndDocuments ? fetchRequirementRowsForListings(client, listingIds) : Promise.resolve(new Map()),
     includeRequirementsAndDocuments ? fetchDocumentRowsForListings(client, listingIds) : Promise.resolve(new Map()),
-    includeRelatedData ? fetchExternalLinkRowsForListings(client, listingIds) : Promise.resolve(new Map()),
-    includeRelatedData ? fetchPublicationRowsForListings(client, listingIds) : Promise.resolve(new Map()),
+    includeExternalLinks ? fetchExternalLinkRowsForListings(client, listingIds) : Promise.resolve(new Map()),
+    includePublicationDetails ? fetchPublicationRowsForListings(client, listingIds) : Promise.resolve(new Map()),
     includeRequirementsAndDocuments ? fetchMandatePacketRowsForListings(client, rows) : Promise.resolve(new Map()),
     includeRelatedData ? fetchAssignedAgentProfilesForListings(client, rows) : Promise.resolve(new Map()),
   ])
@@ -6557,6 +6565,7 @@ export async function getAgentPrivateListings(
     includeAllOrganisationListings = false,
     assignedAgentIds = [],
     includeMedia = false,
+    includeRequirementsAndDocuments = true,
     includeArchivedImports = false,
     includeArchivedListings = false,
     includeWithdrawnListings = false,
@@ -6607,11 +6616,11 @@ export async function getAgentPrivateListings(
   const listingIds = rows.map((row) => row.id)
   const [onboardingMap, requirementsMap, documentsMap, externalLinksMap, publicationMap, mandatePacketsMap, assignedAgentsMap, mediaMap] = await Promise.all([
     fetchOnboardingRowsForListings(client, listingIds),
-    fetchRequirementRowsForListings(client, listingIds),
-    fetchDocumentRowsForListings(client, listingIds),
+    includeRequirementsAndDocuments ? fetchRequirementRowsForListings(client, listingIds) : Promise.resolve(new Map()),
+    includeRequirementsAndDocuments ? fetchDocumentRowsForListings(client, listingIds) : Promise.resolve(new Map()),
     fetchExternalLinkRowsForListings(client, listingIds, { strict: requireAvailable }),
     fetchPublicationRowsForListings(client, listingIds, { strict: requireAvailable }),
-    fetchMandatePacketRowsForListings(client, rows),
+    includeRequirementsAndDocuments ? fetchMandatePacketRowsForListings(client, rows) : Promise.resolve(new Map()),
     fetchAssignedAgentProfilesForListings(client, rows),
     includeMedia ? fetchMediaRowsForListings(client, listingIds, { strict: requireAvailable }) : Promise.resolve(new Map()),
   ])
@@ -6666,6 +6675,9 @@ export async function getAgentPrivateListingSummaries(
       'finance_context',
       'mandate_type',
       'property_type',
+      'property_category',
+      'development_id',
+      'unit_id',
       'seller_lead_id',
       'seller_profile_id',
       'property_profile_id',

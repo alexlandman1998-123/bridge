@@ -3,9 +3,7 @@ import { readSellerOnboardingReview, recordSellerOnboardingReview, SELLER_ONBOAR
 import { createSellerOnboardingCorrectionControl } from '../src/core/documents/sellerOnboardingCorrectionControl.js'
 import { getSellerMandatePreparationIssues } from '../src/lib/sellerMandateCapture.js'
 import assert from 'node:assert/strict'
-import { createListingSellerProfileBuilderDraft, buildListingSellerProfileFormPatch, buildListingSellerProfileCapturePayload, selectListingSellerProfileBranch, getListingSellerFormData } from '../src/lib/listingSellerProfileBuilderModel.js'
-import { buildCanonicalSellerOnboardingPayload } from '../src/services/documents/sellerOnboardingFactTransformer.js'
-import { sellerPopiConsentDisplayValue } from '../src/core/documents/sellerOnboardingConsent.js'
+import { createListingSellerProfileBuilderDraft, buildListingSellerProfileFormPatch, buildListingSellerProfileCapturePayload, selectListingSellerProfileBranch } from '../src/lib/listingSellerProfileBuilderModel.js'
 import { readFile } from 'node:fs/promises'
 import { PGlite } from '@electric-sql/pglite'
 
@@ -34,29 +32,6 @@ function test(name, fn) {
       throw error
     })
 }
-
-await test('reopening a projected seller record preserves missing consent separately from a recorded decline', () => {
-  const form = { sellerType: 'individual', sellerFirstName: 'Test', sellerSurname: 'Owner' }
-  const canonical = buildCanonicalSellerOnboardingPayload(form).canonicalSellerFacts
-  assert.equal(canonical.seller.popi_consent_accepted, false)
-  const record = { seller_canonical_facts_json: canonical, sellerOnboarding: { formData: form } }
-  const original = structuredClone(record)
-  const draft = createListingSellerProfileBuilderDraft(record)
-  assert.equal(draft.popiConsent, '')
-  assert.equal(sellerPopiConsentDisplayValue(getListingSellerFormData(record)), '')
-  assert.equal(buildListingSellerProfileFormPatch(draft).popiConsentAccepted, undefined)
-  assert.deepEqual(record, original)
-  for (const accepted of [false, true]) {
-    const captured = { ...record, sellerOnboarding: { formData: { ...form, sellerOnboardingConsents: { privacyProcessing: { accepted } } } } }
-    assert.equal(createListingSellerProfileBuilderDraft(captured).popiConsent, accepted ? 'Accepted' : 'No')
-    assert.equal(sellerPopiConsentDisplayValue(getListingSellerFormData(captured)), accepted ? 'Accepted' : 'No')
-  }
-  for (const popiConsent of ['No', 'Accepted']) {
-    assert.equal(createListingSellerProfileBuilderDraft({ ...record, sellerOnboarding: { formData: { ...form, popiConsent } } }).popiConsent, popiConsent)
-  }
-  assert.equal(createListingSellerProfileBuilderDraft({ seller_canonical_facts_json: { seller: { popi_consent_accepted: true, popi_consent: 'Accepted' } } }).popiConsent, 'Accepted')
-  assert.equal(createListingSellerProfileBuilderDraft({ seller_canonical_facts_json: { seller: { popi_consent_accepted: false, popi_consent: 'No' } } }).popiConsent, 'No')
-})
 
 await test('stale seller saves return a non-retryable conflict without writes, while valid saves and replay retain RLS', async () => {
   const db = new PGlite()

@@ -1,3 +1,4 @@
+import { websitePublicationJobContext } from "../_shared/listingPublicationJob.ts";
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "supabase";
 import {
@@ -335,7 +336,9 @@ Deno.serve(async (req) => {
     const admin = createClient(supabaseUrl, serviceKey, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
-    const userResult = await admin.auth.getUser(token);
+    const payload = await req.json().catch(() => ({})) as JsonRecord;
+    const background = await websitePublicationJobContext({ admin, token, serviceKey, payload });
+    const userResult = background?.actor || await admin.auth.getUser(token);
     if (userResult.error || !userResult.data.user?.id) {
       throw new RequestError(
         401,
@@ -344,7 +347,6 @@ Deno.serve(async (req) => {
       );
     }
 
-    const payload = await req.json().catch(() => ({})) as JsonRecord;
     const listingId = text(payload.listingId || payload.listing_id);
     const action = normalizeWebsiteListingAction(payload.action);
     if (
@@ -359,7 +361,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    const userClient = createClient(supabaseUrl, anonKey, {
+    const userClient = background?.statusClient || createClient(supabaseUrl, anonKey, {
       auth: { persistSession: false, autoRefreshToken: false },
       global: { headers: { Authorization: `Bearer ${token}` } },
     });

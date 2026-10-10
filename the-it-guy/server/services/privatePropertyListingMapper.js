@@ -641,6 +641,7 @@ function buildAttributes({ listing = {}, publication = {}, category = 'Residenti
 
 function validateDescription(description = '') {
   const blockers = []
+  if (description.length > 4000) blockers.push('description_exceeds_4000_characters')
   if (/https?:\/\/|www\./i.test(description)) blockers.push('illegal_description_web_address')
   if (/(?:\+?\d[\s().-]*){9,}/.test(description)) blockers.push('illegal_description_phone_number')
   return blockers
@@ -796,13 +797,16 @@ export function createPrivatePropertyListingPlan({
   if (!listingDate) dataBlockers.push('missing_listing_date')
   if (!address.streetName) dataBlockers.push('missing_street_name')
   if (!address.streetNumber) dataBlockers.push('missing_street_number')
+  if (address.streetName.length > 100) dataBlockers.push('street_name_exceeds_100_characters')
+  if (address.streetNumber.length > 10) dataBlockers.push('street_number_exceeds_10_characters')
+  if (listingType === 'Sale' && price > 0 && price < 10000) dataBlockers.push('sale_price_below_10000')
   if (!address.suburbId && !address.suburb) dataBlockers.push('missing_suburb_or_suburb_id')
   if (!address.suburbId && !address.town) dataBlockers.push('missing_town_without_suburb_id')
   if (!address.suburbId && !address.province) dataBlockers.push('missing_province_without_suburb_id')
   if (includePhotos && imageRows.length < 3) dataBlockers.push('minimum_three_listing_image_urls_required')
   if (category === 'Residential') {
     if (!attributes.some((item) => item.attributeType === 'Bedrooms')) dataBlockers.push('missing_bedrooms_attribute')
-    if (!attributes.some((item) => item.attributeType === 'Bathrooms')) dataBlockers.push('missing_bathrooms_attribute')
+    if (!attributes.some((item) => item.attributeType === 'Bathrooms' && Number(item.value) > 0)) dataBlockers.push('missing_bathrooms_attribute')
     if (!attributes.some((item) => item.attributeType === 'HomeType')) dataBlockers.push('missing_home_type_attribute')
   }
   if (category === 'Land' && !attributes.some((item) => item.attributeType === 'LandArea')) dataBlockers.push('missing_land_area_attribute')

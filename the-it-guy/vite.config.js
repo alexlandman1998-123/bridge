@@ -1,4 +1,6 @@
 import externalWebsiteHandler from './api/integrations/v1/[...path].js'
+import listingPublicationJobsHandler from './api/listings/publication-jobs.js'
+import listingSyndicationAvailabilityHandler from './api/listings/syndication-availability.js'
 import { createLocalRecruitmentIntakeResponse } from './server/services/recruitmentIntakeApi.js'
 import { createHomeSeekersSignupResponse } from './server/services/homeSeekersRecruitmentSignupApi.js'
 import { createSellerOnboardingBrandingResponse } from './server/services/sellerOnboardingBrandingApi.js'
@@ -189,6 +191,14 @@ function missionControlApiPlugin() {
   return {
     name: 'mission-control-api',
     configureServer(server) {
+      server.middlewares.use('/api/listings/publication-jobs', (request, response) => {
+        const env = { ...loadEnv(server.config.mode, server.config.root, ''), ...process.env }
+        return listingPublicationJobsHandler(request, response, { ...env, SUPABASE_URL: env.VITE_SUPABASE_URL || env.SUPABASE_URL })
+      })
+      server.middlewares.use('/api/listings/syndication-availability', (request, response) => {
+        const env = { ...loadEnv(server.config.mode, server.config.root, ''), ...process.env }
+        return listingSyndicationAvailabilityHandler(request, response, { ...env, SUPABASE_URL: env.VITE_SUPABASE_URL || env.SUPABASE_URL })
+      })
       server.middlewares.use('/api/integrations/v1', (request, response) => {
         request.url = `/api/integrations/v1${request.url}`
         return externalWebsiteHandler(request, response)

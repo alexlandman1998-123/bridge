@@ -1,9 +1,11 @@
-import { useListingIssueNavigation } from '../../components/listings/useListingIssueNavigation'
-import { issuesBeforeListingStep } from '../../services/listings/listingCaptureValidation'
-import { ListingValidationProvider, ListingValidationTarget, ListingValidationSummary } from '../../components/listings/ListingValidation'
+import { saveListingRecoveryDraft, readListingRecoveryDraft, clearListingRecoveryDraft } from '../../services/listings/listingDraftRecovery'
+import ListingChannelLogo from '../../components/listings/ListingChannelLogo'
+import ListingFieldIssues from '../../components/listings/ListingFieldIssues'
+import { getListingFieldIssues } from '../../services/listings/listingFieldRequirements'
+import { getSyndicationChannelAvailability, UNAVAILABLE_SYNDICATION_CHANNELS } from '../../services/syndicationChannelAvailabilityService'
 import { isRentalCreationId, serializeRentalCreationDraft } from '../../services/rentals/rentalListingCreationRecovery'
 import { buildRentalWorkspaceKey, buildRentalListingDraftStorageKey, buildRentalListingQueryOptions } from '../../services/rentals/rentalWorkspaceScope'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Blocks, Building2, CalendarDays, CheckCircle2, ClipboardCheck, ChevronLeft, ChevronRight, Coins, FileText, Globe2, House, ImagePlus, Landmark, LandPlot, Loader2, Minus, Plus, Save, ShieldCheck, Sprout, Store, Trash2, UserRound, Users, Wallet, Warehouse, X } from 'lucide-react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useWorkspace } from '../../context/WorkspaceContext'
@@ -15,15 +17,14 @@ import ListingSyndicationChannelCard from '../../components/listings/ListingSynd
 import RentalCategoryFields from '../../components/listings/RentalCategoryFields'
 import { rentalFeatureAnswerLabels, restoreRentalFeatureSelections } from '../../services/rentals/rentalFeatureCaptureModel'
 import { RENTAL_CATEGORY_TYPES, RENTAL_PORTAL_FIELDS } from '../../services/rentals/rentalPortalFieldContract'
-import { createRentalListingDraft, getRentalListingForAgent, updateRentalListingDraft } from '../../services/rentals/rentalListingDraftService'
+import { activateRentalListing, createRentalListingDraft, getRentalListingForAgent, updateRentalListingDraft } from '../../services/rentals/rentalListingDraftService'
 import {
   buildRentalListingTitle,
   normalizeRentalDistributionChannels,
   RENTAL_DISTRIBUTION_CHANNELS,
   RENTAL_LISTING_INITIAL_FORM,
   RENTAL_SELECT_OPTIONS,
-  validateRentalListingDraftIssues,
-  rentalListingPublicationIssues,
+  validateRentalListingDraftForm,
 } from '../../services/rentals/rentalListingDraftModel'
 import { buildRentalListingEditForm } from '../../services/rentals/rentalListingEditModel'
 import { resolveRentalWorkspaceScope } from '../../services/rentals/rentalWorkspaceScope'
@@ -89,6 +90,7 @@ const LANDLORD_TYPE_CARDS = Object.freeze([
 
 function formField(name, value, onChange) {
   return {
+    name,
     value,
     onChange: (event) => onChange(name, event.target.value),
   }
@@ -154,7 +156,7 @@ async function buildGalleryDrafts(files = []) {
 
 function SelectField({ label, name, value, options, onChange }) {
   return (
-    <ListingValidationTarget field={name}><label className="form-field">
+    <label className="form-field">
       <span>{label}</span>
       <select {...formField(name, value, onChange)}>
         {value && !options.some((option) => option.value === value) ? <option value={value}>{String(value).replaceAll('_', ' ')} (existing value)</option> : null}
@@ -162,7 +164,7 @@ function SelectField({ label, name, value, options, onChange }) {
           <option key={option.value} value={option.value}>{option.label}</option>
         ))}
       </select>
-    </label></ListingValidationTarget>
+    </label>
   )
 }
 
@@ -225,18 +227,18 @@ function PropertyCounter({ label, value, onChange, step = 1 }) {
   const changeValue = (nextValue) => onChange(String(Math.max(0, Number(nextValue.toFixed(1)))))
 
   return (
-    <ListingValidationTarget field={({ Bedrooms: 'bedrooms', Bathrooms: 'bathrooms', Garages: 'garages', Parking: 'parkingBays', 'Covered parking': 'coveredParking', 'Open parking': 'openParking', Carports: 'carports', 'En-suite bathrooms': 'enSuiteBathrooms', Lounges: 'lounges', 'Dining rooms': 'diningRooms', Kitchens: 'kitchens', Studies: 'studies', 'Staff rooms': 'staffRooms' })[label]}><div className="grid gap-2">
+    <div className="grid gap-2">
       <span className="text-sm font-semibold text-[#2d445e]">{label}</span>
       <div className="grid min-h-12 grid-cols-[3rem_1fr_3rem] overflow-hidden rounded-xl border border-[#dbe6f2] bg-white">
         <button data-rental-control type="button" aria-label={`Decrease ${label}`} disabled={safeValue <= 0} onClick={() => changeValue(safeValue - step)} className="inline-flex items-center justify-center border-r border-[#e6edf5] bg-white text-lg font-semibold text-[#1f4f78] transition hover:bg-[#f4f8fc] disabled:cursor-not-allowed disabled:text-[#b5c3d1]">
           <Minus size={17} aria-hidden="true" />
         </button>
-        <input type="number" min="0" step={step} aria-label={label} value={value ?? ''} placeholder="Not captured" onChange={(event) => onChange(event.target.value)} className="min-w-0 border-0 bg-white px-2 text-center text-sm font-semibold text-[#18324b] outline-none" />
+        <output className="flex items-center justify-center text-sm font-semibold text-[#18324b]">{safeValue}</output>
         <button data-rental-control type="button" aria-label={`Increase ${label}`} onClick={() => changeValue(safeValue + step)} className="inline-flex items-center justify-center border-l border-[#e6edf5] bg-white text-lg font-semibold text-[#1f4f78] transition hover:bg-[#f4f8fc]">
           <Plus size={17} aria-hidden="true" />
         </button>
       </div>
-    </div></ListingValidationTarget>
+    </div>
   )
 }
 
@@ -261,13 +263,24 @@ function ReviewSummaryCard({ title, details, onEdit }) {
   )
 }
 
-function RentalCreateProgressNav({ activeStep, onStepClick }) {
-  const activeIndex = CREATE_STEPS.findIndex((step) => step.key === activeStep)
-  const compactLabels = ['Landlord', 'Property', 'Features', 'Terms', 'Marketing', 'Portals', 'Review']
+function stepForValidationError(error = '') {
+  const normalized = String(error).toLowerCase()
+  if (normalized.includes('landlord') || normalized.includes('mandate') || normalized.includes('marketing approval')) return 'landlord'
+  if (normalized.includes('video link') || normalized.includes('virtual tour link')) return 'marketing'
+  if (normalized.includes('property address')) return 'property'
+  if (normalized.includes('rental amount') || normalized.includes('rental price frequency') || normalized.includes('deposit') || normalized.includes('available from') || normalized.includes('occupation date')) return 'terms'
+  if (normalized.startsWith('enter a valid ') && !normalized.includes('landlord')) return 'features'
+  if (normalized.includes('public rental description')) return 'marketing'
+  return 'review'
+}
+
+function RentalCreateProgressNav({ activeStep, onStepClick, steps = CREATE_STEPS }) {
+  const activeIndex = steps.findIndex((step) => step.key === activeStep)
+  const compactLabels = steps.map(step => step.label)
   return (
     <nav className="rental-create-progress" aria-label="Create rental listing progress">
       <div className="rental-create-progress-grid">
-        {CREATE_STEPS.map((step, index) => {
+        {steps.map((step, index) => {
           const complete = index < activeIndex
           const active = index === activeIndex
           return (
@@ -308,15 +321,19 @@ function ScopedRentalListingCreatePage() {
   const assignedAgentId = rentalScope.assignedAgentId
   const editListingId = String(params.listingId || '').trim()
   const isEditing = Boolean(editListingId)
+  const steps = useMemo(() => CREATE_STEPS.filter(step => isEditing || step.key !== 'landlord'), [isEditing])
   const portfolioPropertyId = String(searchParams.get('portfolioPropertyId') || '').trim()
   const draftStorageKey = buildRentalListingDraftStorageKey(rentalScope, { leadId: searchParams.get('leadId') || '', portfolioPropertyId }) + (isEditing ? `:edit:${editListingId}` : '')
+  const [draftReadyKey, setDraftReadyKey] = useState('')
+  const completedDraftRef = useRef(false)
   const [form, setForm] = useState(createInitialFormState)
-  const [activeStep, setActiveStep] = useState(() => isEditing && CREATE_STEPS.some((step) => step.key === searchParams.get('step')) ? searchParams.get('step') : 'landlord')
+  const [activeStep, setActiveStep] = useState(() => isEditing && CREATE_STEPS.some((step) => step.key === searchParams.get('step')) ? searchParams.get('step') : 'property')
   const galleryImagesRef = useRef(form.galleryImages)
   const [saving, setSaving] = useState(false)
   const savingRef = useRef(false)
   const [saveProgress, setSaveProgress] = useState('')
   const [error, setError] = useState('')
+  const [validationAttemptedStep, setValidationAttemptedStep] = useState('')
   const [notice, setNotice] = useState('')
   const [linkedLandlordLead, setLinkedLandlordLead] = useState(null)
   const [pendingListingId, setPendingListingId] = useState('')
@@ -328,14 +345,14 @@ function ScopedRentalListingCreatePage() {
   const mountedRef = useRef(true)
   useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false } }, [])
 
-  const validationIssues = useMemo(
-    () => [...validateRentalListingDraftIssues(form, { organisationId }), ...rentalListingPublicationIssues(form)],
+  const [channelAvailability, setChannelAvailability] = useState(UNAVAILABLE_SYNDICATION_CHANNELS)
+  useEffect(() => { let cancelled = false; getSyndicationChannelAvailability(organisationId, { listingType: 'rental' }).then(value => { if (!cancelled) setChannelAvailability(value) }).catch(() => {}); return () => { cancelled = true } }, [organisationId])
+  const fieldIssues = useMemo(() => getListingFieldIssues(form, { rental: true }), [form])
+  const stepForError = message => fieldIssues.find(issue => issue.message === message)?.step || stepForValidationError(message)
+  const validationErrors = useMemo(
+    () => validateRentalListingDraftForm(form, { organisationId }),
     [form, organisationId],
   )
-  const validationErrors = validationIssues.map((issue) => issue.message)
-  const { openIssue, focusRequest, clearIssueForChange } = useListingIssueNavigation(activeStep, (step) => goToStep(step, { fixingIssue: true }), { ready: !saving && !recovering, search: searchParams.toString() })
-  const visibleValidationIssues = focusRequest?.code === 'portal-readiness' && focusRequest.message ? [...validationIssues, focusRequest] : validationIssues
-  const currentStepIssues = ['review', 'syndication'].includes(activeStep) ? visibleValidationIssues : visibleValidationIssues.filter((issue) => issue.step === activeStep)
   const suggestedDepositAmount = useMemo(() => {
     const rent = Number(form.monthlyRent || 0)
     const multiplier = Number(form.depositMultiplier || 0)
@@ -350,17 +367,23 @@ function ScopedRentalListingCreatePage() {
     () => normalizeRentalDistributionChannels(form.selectedSyndicationChannels),
     [form.selectedSyndicationChannels],
   )
-  const canSubmit = validationErrors.length === 0 && !saving && !recovering && !recoveryBlocked && (!searchParams.get('leadId') || Boolean(linkedLandlordLead))
-  const activeStepIndex = CREATE_STEPS.findIndex((step) => step.key === activeStep)
+  const canSubmit = validationErrors.length === 0 && !saving && !recovering && !recoveryBlocked && (isEditing || draftReadyKey === draftStorageKey) && (!searchParams.get('leadId') || Boolean(linkedLandlordLead))
+  const activeStepIndex = steps.findIndex((step) => step.key === activeStep)
   const priceFrequencyOptions = rentalPriceFrequencyOptions(form.propertyCategory)
 
   useEffect(() => {
     if (isEditing) return
     let cancelled = false
+    let recoveredDraft
+    completedDraftRef.current = false
+    void (async () => {
     try {
-      const storedDraft = window.sessionStorage.getItem(draftStorageKey)
-      if (!storedDraft) return
-      const parsedDraft = JSON.parse(storedDraft)
+      recoveredDraft = await readListingRecoveryDraft(draftStorageKey).catch(() => null)
+      if (cancelled) { recoveredDraft?.release(); return }
+      const storedDraft = window.localStorage.getItem(draftStorageKey) || window.sessionStorage.getItem(draftStorageKey)
+      if (!storedDraft && !recoveredDraft) return
+      const localDraft = storedDraft ? JSON.parse(storedDraft) : null
+      const parsedDraft = recoveredDraft ? { ...recoveredDraft.recovery, ...(localDraft || {}), form: recoveredDraft.form, missingPhotoCount: recoveredDraft.missingPhotos } : localDraft
       if (!parsedDraft || typeof parsedDraft !== 'object') throw new Error('Invalid saved draft.')
       if (parsedDraft.creationId && !isRentalCreationId(parsedDraft.creationId)) throw new Error('The saved creation identity is invalid. Open Rental Listings to find the existing draft.')
       pendingListingIdRef.current = parsedDraft.pendingListingId || ''
@@ -369,9 +392,9 @@ function ScopedRentalListingCreatePage() {
       const restored = restoreRentalFeatureSelections({ ...createInitialFormState(), ...parsedDraft.form,
         galleryImages: parsedDraft.form?.galleryImages || [], coverImageId: parsedDraft.form?.coverImageId || '' })
       setForm(restored)
-      if (CREATE_STEPS.some(step => step.key === parsedDraft.activeStep)) setActiveStep(parsedDraft.activeStep)
+      if (steps.some(step => step.key === parsedDraft.activeStep)) setActiveStep(parsedDraft.activeStep); else setActiveStep('property')
       const missingPhotos = parsedDraft.missingPhotoCount ? ' Reselect photos that had not finished uploading before the refresh.' : ''
-      setNotice(`Your saved rental draft was restored for this browser session.${missingPhotos}`)
+      setNotice(`Your saved rental draft was restored on this device.${missingPhotos}`)
       const recoveryId = parsedDraft.pendingListingId || parsedDraft.creationId
       if (recoveryId) {
         setRecovering(true)
@@ -391,7 +414,7 @@ function ScopedRentalListingCreatePage() {
             savedForm.galleryImages = restored.galleryImages
             savedForm.coverImageId = restored.coverImageId
           }
-          setForm(savedForm)
+          setForm(recoveredDraft ? restored : savedForm)
           setNotice(`Your existing rental was recovered. Review its saved details before retrying.${missingPhotos}`)
         }).catch(loadError => {
           if (!cancelled) { setRecoveryBlocked(true); setError(loadError?.message || 'Unable to verify the existing rental. Reload before retrying.') }
@@ -399,10 +422,27 @@ function ScopedRentalListingCreatePage() {
       }
     } catch (restoreError) {
       setRecoveryBlocked(true)
-      setError(restoreError?.message || 'Unable to recover the saved draft. Open Rental Listings before creating another rental.')
-    }
-    return () => { cancelled = true }
-  }, [assignedAgentId, draftStorageKey, isEditing, rentalScope])
+      if (!cancelled) setError(restoreError?.message || 'Unable to recover the saved draft. Open Rental Listings before creating another rental.')
+    } finally { if (!cancelled) setDraftReadyKey(draftStorageKey) }
+    })()
+    return () => { cancelled = true; recoveredDraft?.release() }
+  }, [assignedAgentId, draftStorageKey, isEditing, rentalScope, steps])
+
+  const persistRecoveryDraft = useCallback((currentForm, pendingId = pendingListingIdRef.current) => {
+    const draft = serializeRentalCreationDraft(currentForm, { activeStep, creationId: creationIdRef.current, pendingListingId: pendingId })
+    window.localStorage.setItem(draftStorageKey, JSON.stringify(draft))
+    void saveListingRecoveryDraft(draftStorageKey, { form: currentForm, recovery: { activeStep, creationId: creationIdRef.current, pendingListingId: pendingId }, photoField: 'galleryImages' })
+      .catch(() => { if (mountedRef.current) setNotice('Automatic photo recovery is unavailable. Keep this tab open until the listing is saved.') })
+  }, [activeStep, draftStorageKey])
+
+  useEffect(() => {
+    if (isEditing || draftReadyKey !== draftStorageKey || recovering || recoveryBlocked || saving || completedDraftRef.current) return
+    const timer = setTimeout(() => {
+      try { persistRecoveryDraft(form) }
+      catch { setNotice('Automatic draft recovery is unavailable. Keep this tab open until the listing is saved.') }
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [form, activeStep, isEditing, draftReadyKey, draftStorageKey, recovering, recoveryBlocked, saving, persistRecoveryDraft])
 
   useEffect(() => {
     if (!isEditing || !organisationId) return
@@ -438,7 +478,7 @@ function ScopedRentalListingCreatePage() {
         if (property.listingId) throw new Error('This portfolio property already has a rental listing. Open that listing to edit it.')
         const mandates = property.canonicalPropertyId ? await listRentalPropertyMandates(property.canonicalPropertyId) : []
         if (!findLeadMandate(lead, mandates, property.canonicalPropertyId, organisationId)) throw new Error('Record a signed mandate for this portfolio property before creating its rental listing.')
-        if (!window.sessionStorage.getItem(draftStorageKey)) setForm(current => ({ ...current, ...Object.fromEntries(Object.entries(landlordListingPrefill(lead, portfolioPropertyId)).filter(([, value]) => value !== undefined)) }))
+        if (!window.localStorage.getItem(draftStorageKey) && !window.sessionStorage.getItem(draftStorageKey)) setForm(current => ({ ...current, ...Object.fromEntries(Object.entries(landlordListingPrefill(lead, portfolioPropertyId)).filter(([, value]) => value !== undefined)) }))
       }
       setLinkedLandlordLead(lead)
       if (!lead) setError('The requested landlord lead is not available at Listing ready in your current scope.')
@@ -549,12 +589,8 @@ function ScopedRentalListingCreatePage() {
     updateForm('coverImageId', imageId)
   }
 
-  function goToStep(stepKey, { fixingIssue = false } = {}) {
-    if (CREATE_STEPS.some((step) => step.key === stepKey)) {
-      if (!fixingIssue && CREATE_STEPS.findIndex((step) => step.key === stepKey) > activeStepIndex) {
-        const issues = issuesBeforeListingStep(validationIssues, CREATE_STEPS, stepKey)
-        if (issues.length) { openIssue(issues[0]); return }
-      }
+  function goToStep(stepKey) {
+    if (steps.some((step) => step.key === stepKey)) {
       setActiveStep(stepKey)
       setError('')
       setNotice('')
@@ -563,31 +599,29 @@ function ScopedRentalListingCreatePage() {
   }
 
   function goToNextStep() {
-    const stepErrors = ['syndication', 'review'].includes(activeStep) ? validationIssues : validationIssues.filter((issue) => issue.step === activeStep)
+    setValidationAttemptedStep(activeStep)
+    const stepErrors = validationErrors.filter((validationError) => activeStep === 'syndication' || stepForError(validationError) === activeStep)
     if (stepErrors.length) {
-      openIssue(stepErrors[0])
+      setError(stepErrors.join(' '))
       return
     }
-    const next = CREATE_STEPS[activeStepIndex + 1]
+    const next = steps[activeStepIndex + 1]
     if (next) goToStep(next.key)
   }
 
   function goToPreviousStep() {
-    const previous = CREATE_STEPS[activeStepIndex - 1]
+    const previous = steps[activeStepIndex - 1]
     if (previous) goToStep(previous.key)
   }
 
-  function persistRecoveryDraft(currentForm, pendingId = pendingListingIdRef.current) {
-    const draft = serializeRentalCreationDraft(currentForm, { activeStep, creationId: creationIdRef.current, pendingListingId: pendingId })
-    window.sessionStorage.setItem(draftStorageKey, JSON.stringify(draft))
-  }
+
 
   function saveDraftForSession() {
     if (recoveryBlocked || recovering) return
     try {
       persistRecoveryDraft(form)
       setError('')
-      setNotice('Draft saved for this browser session. Photos that have not uploaded must be reselected after a refresh.')
+      setNotice('Draft saved. Selected photos are being saved for recovery on this device.')
     } catch {
       setError('Unable to save this draft in the current browser session.')
     }
@@ -601,10 +635,7 @@ function ScopedRentalListingCreatePage() {
       return
     }
     if (!canSubmit) {
-      if (!recoveryBlocked && !recovering) {
-        if (validationIssues.length) openIssue(validationIssues[0])
-        else setError('Complete the required rental listing fields.')
-      }
+      if (!recoveryBlocked && !recovering) { setValidationAttemptedStep(validationErrors[0] ? stepForError(validationErrors[0]) : activeStep); setError(validationErrors[0] || 'Complete the required rental listing fields.'); if (validationErrors[0]) setActiveStep(stepForError(validationErrors[0])) }
       return
     }
     try {
@@ -662,7 +693,9 @@ function ScopedRentalListingCreatePage() {
           }
         }
         if (!mountedRef.current) return
-        if (!isEditing) { try { window.sessionStorage.removeItem(draftStorageKey) } catch { /* The saved identity still prevents duplication. */ } }
+        if (!isEditing) await activateRentalListing(result.listing, form, { websiteDestination: channelAvailability.agency_website })
+        if (!mountedRef.current) return
+        if (!isEditing) { completedDraftRef.current = true; void clearListingRecoveryDraft(draftStorageKey).catch(() => {}); try { window.localStorage.removeItem(draftStorageKey); window.sessionStorage.removeItem(draftStorageKey) } catch { /* The saved identity still prevents duplication. */ } }
         navigate(`/agent/rentals/listings/${encodeURIComponent(listingId)}/marketing`, {
           state: {
             [isEditing ? 'rentalListingUpdatedTitle' : 'rentalListingCreatedTitle']: buildRentalListingTitle(form),
@@ -692,9 +725,11 @@ function ScopedRentalListingCreatePage() {
     }
   }
 
+  if (!isEditing && draftReadyKey !== draftStorageKey) return <p role="status">Restoring listing draft…</p>
+
   return (
     <section className="page-content w-full min-w-0 max-w-full overflow-x-hidden">
-      <ListingValidationProvider value={visibleValidationIssues}><form noValidate onChangeCapture={clearIssueForChange} onClickCapture={clearIssueForChange} onSubmit={handleSubmit} className="ui-section-stack w-full min-w-0 max-w-full">
+      <form onSubmit={handleSubmit} className="ui-section-stack w-full min-w-0 max-w-full">
         <header className="flex items-stretch gap-3">
           <div className="flex min-w-0 flex-1 items-center rounded-[16px] border border-[#dde6ef] bg-white px-5 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.035)]">
             <h1 className="text-[1.8rem] font-semibold tracking-[-0.03em] text-[#18324b]">{isEditing ? 'Edit rental listing' : 'Create new listing'}</h1>
@@ -723,18 +758,18 @@ function ScopedRentalListingCreatePage() {
         ) : null}
 
         <fieldset disabled={saving} className="m-0 min-w-0 space-y-6 border-0 p-0">
-        <RentalCreateProgressNav activeStep={activeStep} onStepClick={goToStep} />
+        <RentalCreateProgressNav steps={steps} activeStep={activeStep} onStepClick={goToStep} />
 
-        <ListingValidationSummary issues={currentStepIssues} onFix={openIssue} />
+        <ListingFieldIssues issues={fieldIssues} step={activeStep} form={form} attempted={validationAttemptedStep === activeStep} onGoToStep={goToStep} />
         <div className="grid w-full min-w-0 max-w-full gap-6">
           {linkedLandlordLead ? <p className="rounded-[8px] border border-[#cfe8dc] bg-[#f2fbf5] px-4 py-3 text-sm font-semibold text-[#286b43]">Creating this listing for landlord lead {linkedLandlordLead.name}. The listing will be linked after it is created.</p> : null}
           {activeStep === 'property' ? <FormSection>
-            <ListingValidationTarget field="propertyCategory"><section>
+            <section>
               <h3 id="rental-property-category-label" className="text-sm font-semibold text-[#18324b]">Property category</h3>
               <div role="group" aria-labelledby="rental-property-category-label" className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {PROPERTY_CATEGORY_OPTIONS.filter((option) => option.value !== 'mixed_use' || form.propertyCategory === 'mixed_use').map((option) => <PropertyChoiceCard key={option.value} label={option.label} icon={option.icon} active={form.propertyCategory === option.value} onClick={() => { updateForm('propertyCategory', option.value); if (!RENTAL_CATEGORY_TYPES[option.value]?.includes(form.propertyType)) updateForm('propertyType', RENTAL_CATEGORY_TYPES[option.value]?.[0] || 'Apartment') }} />)}
               </div>
-            </section></ListingValidationTarget>
+            </section>
             <section className="border-t border-[#e6edf5] pt-6">
               <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                 <SelectField label="Ownership / title type" name="rentalTitleType" value={form.rentalPortalFacts?.['propertyInfo.propertyDescription.propertyDescriptionType'] || ''} onChange={(_, value) => updateForm('rentalPortalFacts', { ...form.rentalPortalFacts, ['propertyInfo.propertyDescription.propertyDescriptionType']: value })} options={[{ value: '', label: 'Not captured' }, ...RENTAL_PORTAL_FIELDS.find((field) => field.key === 'propertyInfo.propertyDescription.propertyDescriptionType').options.map((value) => ({ value, label: ({ Erf: 'Freehold / erf', Unit: 'Sectional title', ExclusiveUseArea: 'Sectional title — exclusive use area', AgriculturalHolding: 'Agricultural holding' })[value] || value }))]} />
@@ -744,7 +779,7 @@ function ScopedRentalListingCreatePage() {
             </section>
             <section>
               <div>
-                <ListingValidationTarget field="propertyAddress"><p className="mb-3 text-sm text-[#607891]">For Property24 and Private Property, include the suburb so the portal can match this address.</p><AddressAutocomplete
+                <AddressAutocomplete
                   label="Property address"
                   value={{ formattedAddress: form.propertyAddress, streetNumber: form.streetNumber, streetName: form.streetName, suburb: form.suburb, city: form.city, province: form.province, postalCode: form.postalCode, latitude: form.latitude, longitude: form.longitude, googlePlaceId: form.googlePlaceId }}
                   onChange={updatePropertyAddress}
@@ -752,19 +787,19 @@ function ScopedRentalListingCreatePage() {
                   predictionTypes={['address']}
                   placeholder="Search for the property address..."
                   hideUnavailableMessage
-                /></ListingValidationTarget>
+                />
               </div>
               <details className="mt-4 rounded-xl border border-[#dbe6f2] bg-[#fbfdff] p-4">
                 <summary className="cursor-pointer text-sm font-semibold text-[#1f4f78]">Address details and portal display</summary>
                 <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                  {['Unit', 'ExclusiveUseArea'].includes(form.rentalPortalFacts?.['propertyInfo.propertyDescription.propertyDescriptionType']) ? <><ListingValidationTarget field="unitNumber"><label className="form-field"><span>Unit number</span><input {...formField('unitNumber', form.unitNumber, updateForm)} placeholder="Unit 12" /></label></ListingValidationTarget>
-                  <ListingValidationTarget field="complexName"><label className="form-field"><span>Complex / building</span><input {...formField('complexName', form.complexName, updateForm)} placeholder="The Atrium" /></label></ListingValidationTarget></> : null}
-                  <ListingValidationTarget field="streetNumber"><label className="form-field"><span>Street number</span><input {...formField('streetNumber', form.streetNumber, updateForm)} placeholder="10" /></label></ListingValidationTarget>
-                  <ListingValidationTarget field="streetName"><label className="form-field"><span>Street name</span><input {...formField('streetName', form.streetName, updateForm)} placeholder="Beach Road" /></label></ListingValidationTarget>
-                  <ListingValidationTarget field="suburb"><label className="form-field"><span>Suburb</span><input {...formField('suburb', form.suburb, updateForm)} placeholder="Suburb" /></label></ListingValidationTarget>
-                  <ListingValidationTarget field="city"><label className="form-field"><span>City</span><input {...formField('city', form.city, updateForm)} placeholder="City" /></label></ListingValidationTarget>
-                  <ListingValidationTarget field="province"><label className="form-field"><span>Province</span><input {...formField('province', form.province, updateForm)} placeholder="Province" /></label></ListingValidationTarget>
-                  <ListingValidationTarget field="postalCode"><label className="form-field"><span>Postal code</span><input {...formField('postalCode', form.postalCode, updateForm)} placeholder="8005" /></label></ListingValidationTarget>
+                  {['Unit', 'ExclusiveUseArea'].includes(form.rentalPortalFacts?.['propertyInfo.propertyDescription.propertyDescriptionType']) ? <><label className="form-field"><span>Unit number</span><input {...formField('unitNumber', form.unitNumber, updateForm)} placeholder="Unit 12" /></label>
+                  <label className="form-field"><span>Complex / building</span><input {...formField('complexName', form.complexName, updateForm)} placeholder="The Atrium" /></label></> : null}
+                  <label className="form-field"><span>Street number</span><input {...formField('streetNumber', form.streetNumber, updateForm)} placeholder="10" /></label>
+                  <label className="form-field"><span>Street name</span><input {...formField('streetName', form.streetName, updateForm)} placeholder="Beach Road" /></label>
+                  <label className="form-field"><span>Suburb</span><input {...formField('suburb', form.suburb, updateForm)} placeholder="Suburb" /></label>
+                  <label className="form-field"><span>City</span><input {...formField('city', form.city, updateForm)} placeholder="City" /></label>
+                  <label className="form-field"><span>Province</span><input {...formField('province', form.province, updateForm)} placeholder="Province" /></label>
+                  <label className="form-field"><span>Postal code</span><input {...formField('postalCode', form.postalCode, updateForm)} placeholder="8005" /></label>
                   <SelectField label="Portal address display" name="exactAddressVisibility" value={form.exactAddressVisibility} onChange={updateForm} options={RENTAL_SELECT_OPTIONS.exactAddressVisibility} />
                 </div>
               </details>
@@ -779,8 +814,8 @@ function ScopedRentalListingCreatePage() {
                 <PropertyCounter label="Parking" value={form.parkingBays} onChange={(value) => updateForm('parkingBays', value)} />
               </div>
               <div className="mt-4 grid gap-4 md:grid-cols-2">
-                <ListingValidationTarget field="floorSize"><label className="form-field"><span>Floor size (m²)</span><input type="number" min="0" step="0.1" {...formField('floorSize', form.floorSize, updateForm)} placeholder="120" /></label></ListingValidationTarget>
-                <ListingValidationTarget field="erfSize"><label className="form-field"><span>Erf size (m²)</span><input type="number" min="0" step="0.1" {...formField('erfSize', form.erfSize, updateForm)} placeholder="350" /></label></ListingValidationTarget>
+                <label className="form-field"><span>Floor size (m²)</span><input type="number" min="0" step="0.1" {...formField('floorSize', form.floorSize, updateForm)} placeholder="120" /></label>
+                <label className="form-field"><span>Erf size (m²)</span><input type="number" min="0" step="0.1" {...formField('erfSize', form.erfSize, updateForm)} placeholder="350" /></label>
               </div>
               {['residential', 'agricultural'].includes(form.propertyCategory) ? <details className="mt-5 rounded-xl border border-[#dbe6f2] bg-[#fbfdff] p-4">
                 <summary className="cursor-pointer text-sm font-semibold text-[#1f4f78]">More specifications</summary>
@@ -800,12 +835,10 @@ function ScopedRentalListingCreatePage() {
             </section>
           </FormSection> : null}
 
-          {activeStep === 'features' ? <FormSection><RentalCategoryFields form={form} onChange={updateForm} disabled={saving} focusRequest={focusRequest} /></FormSection> : null}
+          {activeStep === 'features' ? <FormSection><RentalCategoryFields form={form} onChange={updateForm} disabled={saving} /></FormSection> : null}
 
-          {activeStep === 'landlord' ? <FormSection>
-            <section><h3 className="text-sm font-semibold text-[#18324b]">Where will this listing be advertised?</h3><p className="mt-1 text-sm text-[#607891]">Choose channels now so their required fields are checked as you enter the listing. You can change these choices in Syndication.</p><div className="mt-3 flex flex-wrap gap-4">{RENTAL_DISTRIBUTION_CHANNELS.map((channel) => <label key={channel.key} className="flex items-center gap-2 text-sm font-semibold text-[#18324b]"><input type="checkbox" checked={selectedDistributionChannels.includes(channel.key)} onChange={() => toggleDistributionChannel(channel.key)} />{channel.label}</label>)}</div></section>
-
-            <ListingValidationTarget field="landlordType"><section>
+          {isEditing && activeStep === 'landlord' ? <FormSection>
+            <section>
               <h3 className="text-sm font-semibold text-[#18324b]">Landlord type</h3>
               <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 {LANDLORD_TYPE_CARDS.map((option) => (
@@ -817,23 +850,23 @@ function ScopedRentalListingCreatePage() {
                   />
                 ))}
               </div>
-            </section></ListingValidationTarget>
+            </section>
 
             <section className="border-t border-[#e6edf5] pt-6">
               <h3 className="text-sm font-semibold text-[#18324b]">Landlord details</h3>
               <div className="mt-4 grid gap-4 md:grid-cols-3">
-                <ListingValidationTarget field="landlordName"><label className="form-field">
+                <label className="form-field">
                   <span>{form.landlordType === 'company' ? 'Company name *' : form.landlordType === 'trust' ? 'Trust name *' : form.landlordType === 'multiple_owners' ? 'Primary owner full name *' : form.landlordType === 'foreign_owner' ? 'Owner or entity name *' : form.landlordType === 'individual' ? 'Full name *' : 'Entity name *'}</span>
                   <input required {...formField('landlordName', form.landlordName, updateForm)} placeholder={form.landlordType === 'individual' ? 'Landlord full name' : 'Registered entity name'} />
-                </label></ListingValidationTarget>
-                <ListingValidationTarget field="landlordPhone"><label className="form-field">
+                </label>
+                <label className="form-field">
                   <span>Mobile</span>
                   <input {...formField('landlordPhone', form.landlordPhone, updateForm)} placeholder="+27..." />
-                </label></ListingValidationTarget>
-                <ListingValidationTarget field="landlordEmail"><label className="form-field">
+                </label>
+                <label className="form-field">
                   <span>Email</span>
                   <input type="email" {...formField('landlordEmail', form.landlordEmail, updateForm)} placeholder="landlord@example.com" />
-                </label></ListingValidationTarget>
+                </label>
               </div>
             </section>
 
@@ -843,14 +876,14 @@ function ScopedRentalListingCreatePage() {
               <div className="mt-4 grid gap-4 md:grid-cols-3">
                 <SelectField label="Rental mandate" name="mandateStatus" value={form.mandateStatus} onChange={updateForm} options={RENTAL_SELECT_OPTIONS.mandateStatus} />
                 <SelectField label="Marketing approval" name="marketingApprovalStatus" value={form.marketingApprovalStatus} onChange={updateForm} options={RENTAL_SELECT_OPTIONS.marketingApprovalStatus} />
-                <ListingValidationTarget field="mandateStartDate"><label className="form-field">
+                <label className="form-field">
                   <span>Mandate start date</span>
                   <input type="date" {...formField('mandateStartDate', form.mandateStartDate, updateForm)} />
-                </label></ListingValidationTarget>
-                <ListingValidationTarget field="mandateEndDate"><label className="form-field">
+                </label>
+                <label className="form-field">
                   <span>Mandate end / expiry date</span>
                   <input type="date" {...formField('mandateEndDate', form.mandateEndDate, updateForm)} />
-                </label></ListingValidationTarget>
+                </label>
               </div>
             </section>
           </FormSection> : null}
@@ -858,16 +891,15 @@ function ScopedRentalListingCreatePage() {
           {activeStep === 'terms' ? <FormSection title="Rental terms">
             <div className="grid min-w-0 items-start gap-4 xl:grid-cols-2">
               <RentalTermsCard title="Rent" icon={Coins}>
-                <ListingValidationTarget field="monthlyRent"><label className="form-field"><span>Rental amount</span><input type="number" min="0" {...formField('monthlyRent', form.monthlyRent, updateForm)} placeholder="Amount in rand" /></label></ListingValidationTarget>
+                <label className="form-field"><span>Rental amount</span><input type="number" min="0" {...formField('monthlyRent', form.monthlyRent, updateForm)} placeholder="Amount in rand" /></label>
                 <SelectField label="Rental price frequency" name="rentalPriceFrequency" value={form.rentalPriceFrequency} onChange={updateForm} options={priceFrequencyOptions} />
                 <div className="sm:col-span-2"><SelectField label="Furnished" name="furnishedStatus" value={form.furnishedStatus} onChange={updateForm} options={RENTAL_SELECT_OPTIONS.furnishedStatus} /></div>
               </RentalTermsCard>
 
               <RentalTermsCard title="Availability & lease" icon={CalendarDays}>
-                <ListingValidationTarget field="property24ExpiryDate"><label className="form-field"><span>Property24 expiry date</span><input type="date" {...formField('property24ExpiryDate', form.property24ExpiryDate, updateForm)} /></label><p className="mt-2 text-xs text-[#607891]">Required for Property24 when no future mandate end date is supplied. Optional for a private draft.</p></ListingValidationTarget>
-                <ListingValidationTarget field="availableFrom"><label className="form-field"><span>Available from</span><input type="date" {...formField('availableFrom', form.availableFrom, updateForm)} /></label></ListingValidationTarget>
-                <ListingValidationTarget field="occupationDate"><label className="form-field"><span>Occupation date</span><input type="date" {...formField('occupationDate', form.occupationDate, updateForm)} /></label></ListingValidationTarget>
-                <ListingValidationTarget field="leasePeriodMonths"><label className="form-field"><span>Lease period (months)</span><input type="number" min="1" {...formField('leasePeriodMonths', form.leasePeriodMonths, updateForm)} /></label></ListingValidationTarget>
+                <label className="form-field"><span>Available from</span><input type="date" {...formField('availableFrom', form.availableFrom, updateForm)} /></label>
+                <label className="form-field"><span>Occupation date</span><input type="date" {...formField('occupationDate', form.occupationDate, updateForm)} /></label>
+                <label className="form-field"><span>Lease period (months)</span><input type="number" min="1" {...formField('leasePeriodMonths', form.leasePeriodMonths, updateForm)} /></label>
                 <SelectField label="Lease period type" name="leasePeriodType" value={form.leasePeriodType} onChange={updateForm} options={RENTAL_SELECT_OPTIONS.leasePeriodType} />
                 <div className="sm:col-span-2"><SelectField label="Rental type" name="rentalMandateType" value={form.rentalMandateType} onChange={updateForm} options={RENTAL_SELECT_OPTIONS.rentalMandateType} /></div>
               </RentalTermsCard>
@@ -875,8 +907,8 @@ function ScopedRentalListingCreatePage() {
               <RentalTermsCard title="Deposit" icon={ShieldCheck}>
                 <div className="sm:col-span-2"><SelectField label="Deposit policy" name="depositPolicy" value={form.depositPolicy} onChange={updateForm} options={RENTAL_SELECT_OPTIONS.depositPolicy} /></div>
                 {form.depositPolicy !== 'no_deposit' ? <>
-                  <ListingValidationTarget field="depositAmount"><label className="form-field"><span>Deposit amount</span><input type="number" min="0" {...formField('depositAmount', form.depositAmount, updateForm)} placeholder="Amount in rand" /></label></ListingValidationTarget>
-                  <ListingValidationTarget field="depositMultiplier"><label className="form-field"><span>Deposit multiplier</span><input type="number" min="0" step="0.5" {...formField('depositMultiplier', form.depositMultiplier, updateForm)} placeholder="e.g. 1.5" /></label></ListingValidationTarget>
+                  <label className="form-field"><span>Deposit amount</span><input type="number" min="0" {...formField('depositAmount', form.depositAmount, updateForm)} placeholder="Amount in rand" /></label>
+                  <label className="form-field"><span>Deposit multiplier</span><input type="number" min="0" step="0.5" {...formField('depositMultiplier', form.depositMultiplier, updateForm)} placeholder="e.g. 1.5" /></label>
                   <label className="form-field sm:col-span-2"><span>Deposit requirements</span><input {...formField('depositRequirement', form.depositRequirement, updateForm)} placeholder="e.g. One and a half months’ rent" /></label>
                   <p className="text-xs text-[#607891] sm:col-span-2">The entered amount takes priority over the multiplier.</p>
                   {suggestedDepositAmount ? <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-[#f4f8fc] px-3 py-3 text-sm text-[#315f80] sm:col-span-2">
@@ -900,11 +932,11 @@ function ScopedRentalListingCreatePage() {
               <details className="min-w-0 rounded-2xl border border-[#dbe6f2] bg-white p-4 sm:p-5">
                 <summary className="cursor-pointer text-sm font-semibold text-[#18324b]"><span className="inline-flex items-center gap-3 align-middle"><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#eef4fa] text-[#315f80]"><FileText size={18} aria-hidden="true" /></span>Additional deposits & fees</span></summary>
                 <div className="mt-5 grid min-w-0 gap-4 sm:grid-cols-2">
-                  <ListingValidationTarget field="applicationFee"><label className="form-field"><span>Application fee</span><input type="number" min="0" {...formField('applicationFee', form.applicationFee, updateForm)} /></label></ListingValidationTarget>
-                  <ListingValidationTarget field="leaseAdminFee"><label className="form-field"><span>Lease admin fee</span><input type="number" min="0" {...formField('leaseAdminFee', form.leaseAdminFee, updateForm)} /></label></ListingValidationTarget>
-                  <ListingValidationTarget field="creditCheckFee"><label className="form-field"><span>Credit check fee</span><input type="number" min="0" {...formField('creditCheckFee', form.creditCheckFee, updateForm)} /></label></ListingValidationTarget>
-                  <ListingValidationTarget field="keyDepositAmount"><label className="form-field"><span>Key deposit</span><input type="number" min="0" {...formField('keyDepositAmount', form.keyDepositAmount, updateForm)} /></label></ListingValidationTarget>
-                  <ListingValidationTarget field="utilityDepositAmount"><label className="form-field"><span>Utility deposit</span><input type="number" min="0" {...formField('utilityDepositAmount', form.utilityDepositAmount, updateForm)} /></label></ListingValidationTarget>
+                  <label className="form-field"><span>Application fee</span><input type="number" min="0" {...formField('applicationFee', form.applicationFee, updateForm)} /></label>
+                  <label className="form-field"><span>Lease admin fee</span><input type="number" min="0" {...formField('leaseAdminFee', form.leaseAdminFee, updateForm)} /></label>
+                  <label className="form-field"><span>Credit check fee</span><input type="number" min="0" {...formField('creditCheckFee', form.creditCheckFee, updateForm)} /></label>
+                  <label className="form-field"><span>Key deposit</span><input type="number" min="0" {...formField('keyDepositAmount', form.keyDepositAmount, updateForm)} /></label>
+                  <label className="form-field"><span>Utility deposit</span><input type="number" min="0" {...formField('utilityDepositAmount', form.utilityDepositAmount, updateForm)} /></label>
                 </div>
               </details>
             </div>
@@ -912,14 +944,14 @@ function ScopedRentalListingCreatePage() {
 
           {activeStep === 'marketing' ? <FormSection title="Marketing">
             <section className="min-w-0 rounded-2xl border border-[#dbe6f2] bg-white p-4 sm:p-5">
-              <ListingValidationTarget field="galleryImages"><div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
+              <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
                   <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#eef4fa] text-[#315f80]"><ImagePlus size={18} aria-hidden="true" /></span>
-                  <h3 className="text-sm font-semibold text-[#18324b]">Photos</h3><p className="text-xs text-[#607891]">Property24 and the agency website require at least one photo; Private Property requires three.</p>
+                  <h3 className="text-sm font-semibold text-[#18324b]">Photos</h3>
                   <span className="rounded-full bg-[#eef4fa] px-2.5 py-1 text-xs font-semibold text-[#526f88]">{form.galleryImages.length}</span>
                 </div>
                 <label className="inline-flex cursor-pointer items-center gap-2 rounded-[10px] border border-[#1f7d44] bg-[#1f7d44] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#176338] focus-within:ring-2 focus-within:ring-[#286b43] focus-within:ring-offset-2"><ImagePlus size={16} aria-hidden="true" />Upload photos<input type="file" accept="image/*" multiple className="sr-only" onChange={handleGalleryUpload} aria-label="Upload listing photos" /></label>
-              </div></ListingValidationTarget>
+              </div>
               {form.galleryImages.length ? <div className="mt-5 grid max-h-[30rem] min-w-0 grid-cols-1 gap-3 overflow-y-auto pr-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                 {form.galleryImages.map((image, index) => {
                   const isCover = String(form.coverImageId) === String(image.id)
@@ -946,15 +978,15 @@ function ScopedRentalListingCreatePage() {
             </section>
 
             <section className="grid gap-4 rounded-2xl border border-[#dbe6f2] bg-white p-4 sm:grid-cols-2 sm:p-5">
-              <ListingValidationTarget field="videoLink"><label className="form-field"><span>Video link</span><input type="url" aria-label="Video link" {...formField('videoLink', form.videoLink, updateForm)} placeholder="https://youtu.be/..." /><small>Optional public video URL.</small></label></ListingValidationTarget>
-              <ListingValidationTarget field="virtualTourLink"><label className="form-field"><span>Virtual tour link</span><input type="url" aria-label="Virtual tour link" {...formField('virtualTourLink', form.virtualTourLink, updateForm)} placeholder="https://my.matterport.com/..." /><small>Optional public virtual tour URL.</small></label></ListingValidationTarget>
+              <label className="form-field"><span>Video link</span><input type="url" aria-label="Video link" {...formField('videoLink', form.videoLink, updateForm)} placeholder="https://youtu.be/..." /><small>Optional public video URL.</small></label>
+              <label className="form-field"><span>Virtual tour link</span><input type="url" aria-label="Virtual tour link" {...formField('virtualTourLink', form.virtualTourLink, updateForm)} placeholder="https://my.matterport.com/..." /><small>Optional public virtual tour URL.</small></label>
             </section>
             <div className="grid min-w-0 items-start gap-4 xl:grid-cols-3">
               <section className="min-w-0 rounded-2xl border border-[#dbe6f2] bg-white p-4 sm:p-5 xl:col-span-2">
                 <div className="mb-5 flex items-center gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#eef4fa] text-[#315f80]"><FileText size={18} aria-hidden="true" /></span><h3 className="text-sm font-semibold text-[#18324b]">Listing copy</h3></div>
                 <div className="grid min-w-0 gap-4">
-                  <ListingValidationTarget field="title"><label className="form-field"><span>Listing title</span><input {...formField('title', form.title, updateForm)} placeholder="e.g. Bright two-bedroom apartment in Green Point" /></label></ListingValidationTarget>
-                  <ListingValidationTarget field="description"><label className="form-field"><span>Listing description</span><textarea rows={8} {...formField('description', form.description, updateForm)} placeholder="Describe the home and what makes it stand out" /></label></ListingValidationTarget>
+                  <label className="form-field"><span>Listing title</span><input {...formField('title', form.title, updateForm)} placeholder="e.g. Bright two-bedroom apartment in Green Point" /></label>
+                  <label className="form-field"><span>Listing description</span><textarea rows={8} {...formField('description', form.description, updateForm)} placeholder="Describe the home and what makes it stand out" /></label>
                 </div>
               </section>
 
@@ -971,7 +1003,7 @@ function ScopedRentalListingCreatePage() {
             </div>
           </FormSection> : null}
 
-          {activeStep === 'syndication' ? <FormSection title="Syndication">
+          {activeStep === 'syndication' ? <FormSection title="Where to publish">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <h3 className="text-sm font-semibold text-[#18324b]">Publication channels</h3>
               <span className="rounded-full bg-[#eef4fa] px-3 py-1 text-xs font-semibold text-[#526f88]">{selectedDistributionChannels.length} external selected</span>
@@ -984,30 +1016,42 @@ function ScopedRentalListingCreatePage() {
                   : channel.key === 'agency_website' && form.galleryImages.length < 1
                     ? 'Add at least 1 photo.'
                     : ''
-                return <ListingSyndicationChannelCard key={channel.key} channel={channel} selected={selected} needsAttention={selected ? needsAttention : ''} onToggle={toggleDistributionChannel} agencyLogo={agencyLogo} />
+                return <ListingSyndicationChannelCard key={channel.key} channel={{ ...channel, availability: channelAvailability[channel.key] }} selected={selected} disabled={!channelAvailability[channel.key]?.available} needsAttention={!channelAvailability[channel.key]?.available ? 'Connection needed' : selected && validationAttemptedStep === activeStep ? needsAttention : ''} onToggle={toggleDistributionChannel} agencyLogo={agencyLogo} />
               })}
               <ListingSyndicationChannelCard channel={{ key: 'arch9_internal', label: 'Arch9 Platform', internalOnly: true }} selected />
             </div>
-            {selectedDistributionChannels.some((key) => (key === 'private_property' && form.galleryImages.length < 3) || (key === 'agency_website' && form.galleryImages.length < 1)) ? <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#f1d4a6] bg-[#fffaf0] px-4 py-3 text-sm text-[#8a5a12]">
+            {validationAttemptedStep === activeStep && selectedDistributionChannels.some((key) => (key === 'private_property' && form.galleryImages.length < 3) || (key === 'agency_website' && form.galleryImages.length < 1)) ? <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#f1d4a6] bg-[#fffaf0] px-4 py-3 text-sm text-[#8a5a12]">
               <span>Selected channels need more photos.</span>
-              <button type="button" data-rental-control="syndication-photos" className="font-semibold underline underline-offset-2" onClick={() => openIssue({ step: 'marketing', field: 'galleryImages' })}>Add photos</button>
+              <button type="button" data-rental-control="syndication-photos" className="font-semibold underline underline-offset-2" onClick={() => goToStep('marketing')}>Add photos</button>
             </div> : null}
-            <p className="text-xs leading-5 text-[#607891]">Choose where to publish this rental. Your selections are saved with the draft; publish to each channel from the listing workspace once its checks pass.</p>
+            <p className="text-xs leading-5 text-[#607891]">Choose where to publish this rental. Submit & activate saves the rental and sends it to these channels. Add the landlord and mandate from the saved rental.</p>
           </FormSection> : null}
 
-          {activeStep === 'review' ? <section id="listing-field-organisation" tabIndex={-1} className="ui-panel ui-panel-body grid gap-6">
+          {activeStep === 'review' ? <section className="ui-panel ui-panel-body grid gap-6">
             <div className="flex flex-col gap-4 border-b border-[#e6edf5] pb-5 md:flex-row md:items-start md:justify-between">
-              <div><p className="text-xs font-semibold uppercase text-[#607891]">Step 7 of 7</p><h2 className="text-2xl font-semibold text-[#18324b]">Review rental listing</h2><p className="mt-1 text-sm text-[#607891]">Check the capture is complete, then {isEditing ? 'save the rental changes.' : 'create the rental draft.'}</p></div>
-              <span className={`rounded-full px-3 py-1 text-xs font-bold ${validationErrors.length ? 'bg-[#fff5e5] text-[#a76a12]' : 'bg-[#eef9f1] text-[#286b43]'}`}>{validationErrors.length ? `${validationErrors.length} items still needed` : isEditing ? 'Ready to save' : 'Ready to create'}</span>
+              <div><p className="text-xs font-semibold uppercase text-[#607891]">Step {steps.length} of {steps.length}</p><h2 className="text-2xl font-semibold text-[#18324b]">Review rental listing</h2><p className="mt-1 text-sm text-[#607891]">Check the capture is complete, then {isEditing ? 'save the rental changes.' : 'submit to the selected channels.'}</p></div>
+              <span className={`rounded-full px-3 py-1 text-xs font-bold ${validationAttemptedStep === activeStep && validationErrors.length ? 'bg-[#fff5e5] text-[#a76a12]' : 'bg-[#eef9f1] text-[#286b43]'}`}>{validationAttemptedStep !== activeStep ? 'Review details' : validationErrors.length ? `${validationErrors.length} items still needed` : isEditing ? 'Ready to save' : 'Ready to create'}</span>
             </div>
             <div className="grid gap-4 md:grid-cols-2">
-              <ReviewSummaryCard title="Landlord & mandate" onEdit={() => goToStep('landlord')} details={[{ label: 'Landlord', value: form.landlordName || 'Not added' }, { label: 'Contact', value: form.landlordEmail || form.landlordPhone || 'Not added' }, { label: 'Mandate', value: RENTAL_SELECT_OPTIONS.mandateStatus.find((option) => option.value === form.mandateStatus)?.label || 'Not captured' }]} />
+              {isEditing ? <ReviewSummaryCard title="Landlord & mandate" onEdit={() => goToStep('landlord')} details={[{ label: 'Landlord', value: form.landlordName || 'Not added' }, { label: 'Contact', value: form.landlordEmail || form.landlordPhone || 'Not added' }, { label: 'Mandate', value: RENTAL_SELECT_OPTIONS.mandateStatus.find((option) => option.value === form.mandateStatus)?.label || 'Not captured' }]} /> : null}
               <ReviewSummaryCard title="Property" onEdit={() => goToStep('property')} details={[{ label: 'Listing', value: buildRentalListingTitle(form) || 'Untitled rental listing' }, { label: 'Address', value: form.propertyAddress || 'Not added' }, { label: 'Type', value: form.propertyType || 'Not captured' }]} />
               <ReviewSummaryCard title="Additional property details" onEdit={() => goToStep('features')} details={[{ label: 'Confirmed features', value: `${selectedSellingPoints.length} confirmed` }, { label: 'Pet friendly', value: form.petsPolicy === 'allowed' ? 'Yes' : form.petsPolicy === 'not_allowed' ? 'No' : 'Subject to approval' }]} />
               <ReviewSummaryCard title="Rental terms" onEdit={() => goToStep('terms')} details={[{ label: 'Rental amount', value: form.monthlyRent ? `R ${Number(form.monthlyRent).toLocaleString('en-ZA')}` : 'Not added' }, { label: 'Frequency', value: RENTAL_SELECT_OPTIONS.rentalPriceFrequency.find((option) => option.value === form.rentalPriceFrequency)?.label || 'Not captured' }, { label: 'Available', value: form.availableFrom || 'Not added' }, { label: 'Lease', value: form.leasePeriodMonths ? `${form.leasePeriodMonths} months` : 'Not captured' }]} />
               <ReviewSummaryCard title="Marketing" onEdit={() => goToStep('marketing')} details={[{ label: 'Photos', value: `${form.galleryImages.length} selected` }, { label: 'Video', value: form.videoLink ? 'Added' : 'Not added (optional)' }, { label: 'Virtual tour', value: form.virtualTourLink ? 'Added' : 'Not added (optional)' }, { label: 'Description', value: form.description ? 'Added' : 'Not added' }, { label: 'Selling points', value: `${selectedSellingPoints.length} selected` }]} />
             </div>
-
+            <div className="rounded-xl border border-[#dce6f2] bg-[#fbfdff] p-4">
+              <h3 className="text-sm font-semibold text-[#18324b]">Publishing readiness</h3>
+              <div className="mt-3 grid gap-2">
+                {[...RENTAL_DISTRIBUTION_CHANNELS.filter(channel => selectedDistributionChannels.includes(channel.key)), { key: 'arch9_internal', label: 'Arch9 Platform', internalOnly: true }].map(channel => {
+                  const destination = channelAvailability[channel.key]
+                  return <div key={channel.key} className="flex flex-wrap items-center gap-5 rounded-lg border border-[#dce6f2] bg-white p-3">
+                    <ListingChannelLogo channel={{ ...channel, availability: destination }} agencyLogo={agencyLogo} />
+                    <span className="text-sm text-[#2d445e]">{destination?.label || channel.label}</span>
+                  </div>
+                })}
+              </div>
+            </div>
+            {validationAttemptedStep === activeStep && validationErrors.length ? <div className="rounded-[12px] border border-[#f1d4a6] bg-[#fffaf0] p-4"><p className="font-semibold text-[#8a5a12]">Complete these required items before creating</p><ul className="mt-3 grid gap-2 text-sm text-[#8a5a12]">{validationErrors.map((item) => { const step = stepForError(item); return <li key={item} className="flex flex-wrap items-center justify-between gap-2"><span>{item}</span>{step !== 'review' ? <button type="button" className="font-semibold underline underline-offset-2" onClick={() => goToStep(step)}>Fix in {steps.find((entry) => entry.key === step)?.label}</button> : null}</li> })}</ul></div> : null}
           </section> : null}
 
           <footer className="ui-panel ui-panel-body flex flex-wrap items-center justify-between gap-3">
@@ -1027,13 +1071,13 @@ function ScopedRentalListingCreatePage() {
                 disabled={saving || recovering || recoveryBlocked}
               >
                 {activeStep === 'review' && saving ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : activeStep === 'review' ? <Save size={16} aria-hidden="true" /> : <ChevronRight size={16} aria-hidden="true" />}
-                {activeStep === 'review' ? (saving ? 'Saving rental…' : isEditing ? 'Save rental changes' : pendingListingId || creationId ? 'Retry saving rental' : 'Create rental listing') : 'Continue'}
+                {activeStep === 'review' ? (saving ? 'Saving rental…' : isEditing ? 'Save rental changes' : pendingListingId || creationId ? 'Retry submit & activate' : 'Submit & activate') : 'Continue'}
               </Button>
             </div>
           </footer>
         </div>
         </fieldset>
-      </form></ListingValidationProvider>
+      </form>
     </section>
   )
 }

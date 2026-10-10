@@ -127,33 +127,6 @@ test('ordinary contact and mandate edits cannot flatten a conflicting stored onb
   assert.equal(reviewed.audit.classification, 'configured', 'An explicit profile review may confirm the current chosen type')
 })
 
-test('confirming joint ownership retains both captured owners when the saved form still says individual', async () => {
-  const listing = await fixture('multiple_owners'), before = await documents(listing.id)
-  const staleType = { ownerStructureType: 'individual', sellerLegalType: 'individual', sellerType: 'individual', ownershipType: 'individual' }
-  Object.assign(listing.sellerOnboarding.formData, staleType)
-  listing.sellerCanonicalFacts.seller.owner_structure_type = 'individual'
-  listing.sellerCanonicalFacts.seller.legal_type = 'individual'
-  await rows(`update private_listings set seller_type='individual',seller_canonical_facts_json=$2 where id=$1`,
-    [listing.id, JSON.stringify(listing.sellerCanonicalFacts)])
-  await rows(`update private_listing_seller_onboarding set seller_type='individual',form_data=form_data||$2::jsonb where private_listing_id=$1`,
-    [listing.id, JSON.stringify(staleType)])
-  assert.equal((await audit(listing.id)).classification, 'inconsistent')
-
-  const initial = createListingSellerProfileBuilderDraft(listing)
-  const capturedOwners = structuredClone(initial.multipleOwners)
-  assert.equal(initial.branch, 'individual')
-  const reviewed = selectListingSellerProfileBranch(initial, 'multiple_owners')
-  assert.deepEqual(reviewed.multipleOwners, initial.multipleOwners, 'Choosing joint ownership must retain the captured co-owner')
-  const saved = await save(listing, buildListingSellerProfileFormPatch(reviewed))
-  assert.equal(saved.audit.classification, 'configured')
-  assert.equal(saved.receipt.listing.seller_canonical_facts_json.seller.owner_structure_type, 'multiple_owners')
-  assert.equal(saved.receipt.onboarding.canonical_facts_json.seller.owner_structure_type, 'multiple_owners')
-  assert.deepEqual(saved.receipt.onboarding.form_data.owners, capturedOwners)
-  assert.equal(saved.receipt.listing.seller_canonical_facts_json.seller.owners.length, 2)
-  assert.equal(saved.update.authority.signatoryPolicy.mode, 'all_owners_unless_delegated')
-  assert.deepEqual(await documents(listing.id), before, 'Confirming joint ownership must preserve frozen signed history')
-})
-
 test('compatible entity families still reject unrelated populated entity details', async () => {
   const listing = await fixture('foreign_company')
   await rows(`update private_listing_seller_onboarding set form_data=form_data||'{"trustName":"Conflicting trust"}'::jsonb where private_listing_id=$1`, [listing.id])

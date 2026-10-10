@@ -15,7 +15,7 @@ assert.deepEqual(commercial.requiredMeasurements, [])
 assert.ok(commercial.allowedLifecycle.includes('Sold'))
 assert.deepEqual(commercial.blockers, [])
 const commercialRental = evaluateProperty24ListingCategoryModel({ category: 'commercial', listingType: 'Rental', status: 'Active', propertyTypeId: 11 })
-assert.ok(commercialRental.blockers.includes('property24_commercial_rental_not_supported'))
+assert.deepEqual(commercialRental.blockers, [])
 
 const rentalSold = evaluateProperty24ListingCategoryModel({
   listing: { property_type: 'apartment' },

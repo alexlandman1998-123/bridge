@@ -4,7 +4,6 @@ import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 import { createClient } from '@supabase/supabase-js'
 import { writeNodeJsonResponse } from '../../server/services/hqMissionControlApi.js'
-import { normalizeProperty24Text } from '../../server/property24/client.js'
 import { fetchOrganisationProperty24Connection } from '../../server/property24/organisationConnectionService.js'
 import { resolvePrivatePropertyAgencyConfig } from '../../server/services/privatePropertyAgencyConfigService.js'
 
@@ -44,12 +43,41 @@ function activeMembership(row = {}) {
   return ['active', 'accepted', 'approved'].includes(text(row.membership_status || row.status).toLowerCase())
 }
 
-export default async function handler(request, nodeResponse) {
+export async function resolveListingWebsiteDestination(supabase, organisationId) {
+  const ownSite = await supabase.from('website_sites').select('id, status, organisation_id').eq('organisation_id', organisationId).maybeSingle()
+  if (ownSite.error) throw ownSite.error
+  let site = ownSite.data
+  let channel = 'agency_website'
+  if (!site) {
+    const grants = await supabase.from('website_partner_listing_grants').select('website_site_id')
+      .eq('source_organisation_id', organisationId).eq('enabled', true).order('created_at').limit(1)
+    if (grants.error) {
+      if (!['42P01', 'PGRST205'].includes(grants.error.code)) throw grants.error
+    } else if (grants.data?.length) {
+      const partnerSite = await supabase.from('website_sites').select('id, status, organisation_id').eq('id', grants.data[0].website_site_id).maybeSingle()
+      if (partnerSite.error) throw partnerSite.error
+      if (partnerSite.data?.organisation_id !== organisationId) site = partnerSite.data
+      channel = 'kingdom_website'
+    }
+  }
+  if (!site) return { available: false, reason: 'website_not_configured' }
+  const [domains, owner, branding] = await Promise.all([
+    supabase.from('website_domains').select('hostname').eq('website_site_id', site.id).eq('status', 'active').order('is_primary', { ascending: false }).limit(1),
+    supabase.from('organisations').select('name, logo_url').eq('id', site.organisation_id).maybeSingle(),
+    supabase.from('organisation_branding').select('logo_light_url, logo_dark_url').eq('organisation_id', site.organisation_id).maybeSingle(),
+  ])
+  if (domains.error) throw domains.error
+  if (owner.error) throw owner.error
+  const available = site.status === 'published' && Boolean(domains.data?.length)
+  return { available, reason: available ? '' : 'website_or_domain_not_live', channel, websiteSiteId: site.id, hostname: domains.data?.[0]?.hostname || '', label: owner.data?.name ? `${owner.data.name} Website` : 'Agency Website', logoUrl: text(branding.data?.logo_light_url || owner.data?.logo_url || branding.data?.logo_dark_url) }
+}
+
+export default async function handler(request, nodeResponse, envOverride = null) {
   if (request.method === 'OPTIONS') return writeNodeJsonResponse(nodeResponse, response(204, null))
   if (request.method !== 'GET') return writeNodeJsonResponse(nodeResponse, response(405, { error: 'method_not_allowed', message: 'Syndication availability supports GET only.' }))
 
   try {
-    const env = runtimeEnv()
+    const env = envOverride || runtimeEnv()
     const supabaseUrl = text(env.SUPABASE_URL || env.VITE_SUPABASE_URL)
     const serviceRoleKey = text(env.SUPABASE_SERVICE_ROLE_KEY)
     if (!supabaseUrl || !serviceRoleKey) {
@@ -76,22 +104,18 @@ export default async function handler(request, nodeResponse) {
       return writeNodeJsonResponse(nodeResponse, response(403, { error: 'forbidden', message: 'Your account does not have access to this organisation.' }))
     }
 
-    const [property24, privateProperty, websiteSite] = await Promise.all([
+    const [property24, privateProperty, websiteDestination] = await Promise.all([
       fetchOrganisationProperty24Connection({ supabase, organisationId, environment: 'production' }),
       resolvePrivatePropertyAgencyConfig({ client: supabase, organisationId, environment: 'production' }),
-      supabase.from('website_sites').select('id, status').eq('organisation_id', organisationId).maybeSingle(),
+      resolveListingWebsiteDestination(supabase, organisationId),
     ])
-    if (websiteSite.error) throw websiteSite.error
-    const websiteDomain = websiteSite.data?.id
-      ? await supabase.from('website_domains').select('id').eq('website_site_id', websiteSite.data.id).eq('status', 'active').limit(1)
-      : { data: [], error: null }
-    if (websiteDomain.error) throw websiteDomain.error
 
+    const rentalDisabled = requestUrl.searchParams.get('listingType') === 'rental' && !['true', '1', 'yes', 'on'].includes(text(env.PROPERTY24_RENTAL_LIVE_PUBLISH_ENABLED).toLowerCase())
     return writeNodeJsonResponse(nodeResponse, response(200, {
       channels: {
-        property24: { available: property24.configured && property24.enabled, reason: property24.configured ? 'connection_disabled' : 'connection_not_configured' },
+        property24: { available: property24.configured && property24.enabled && !rentalDisabled, reason: rentalDisabled ? 'rental_publishing_not_enabled' : property24.configured ? (property24.enabled ? '' : 'connection_disabled') : 'connection_not_configured' },
         private_property: { available: privateProperty.ready, reason: privateProperty.blockers[0] || '' },
-        agency_website: { available: websiteSite.data?.status === 'published' && Boolean(websiteDomain.data?.length), reason: websiteSite.data ? 'website_or_domain_not_live' : 'website_not_configured' },
+        agency_website: websiteDestination,
       },
     }))
   } catch (error) {

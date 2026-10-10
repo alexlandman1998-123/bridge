@@ -1,3 +1,4 @@
+import { rentalPriceSuffix } from '@/lib/listing-price'
 import Link from 'next/link'
 import Image from 'next/image'
 import { propertySlug } from '@/lib/site-repository'
@@ -19,7 +20,7 @@ export function PropertyCard({ property, variant = 'default' }: { property: Publ
     </Link>
     <div className="property-result-copy">
       <p className="property-result-type">{property.propertyType} · {property.transactionType === 'rental' ? 'To rent' : 'For sale'}</p>
-      <strong>{property.price ? money.format(property.price) : 'Price on request'}{property.price && property.transactionType === 'rental' ? <small> / month</small> : null}</strong>
+      <strong>{property.price ? money.format(property.price) : 'Price on request'}{property.price ? <small>{rentalPriceSuffix(property)}</small> : null}</strong>
       <h2 className="property-result-suburb"><Link href={`/properties/${propertySlug(property)}`}>{property.suburb || property.title}</Link></h2>
       <p className="property-result-region">{property.title}{property.province ? ` · ${property.province}` : ''}</p>
       <div className="property-result-divider" />
@@ -35,5 +36,5 @@ export function PropertyCard({ property, variant = 'default' }: { property: Publ
       {image ? <Image src={image.url} alt={image.caption || property.title} fill sizes="(max-width: 760px) 100vw, 33vw" /> : <div className="image-placeholder" />}
       <span className="property-status">{property.isShowcase ? 'Preview listing' : property.transactionType === 'rental' ? 'To let' : 'For sale'}</span>
     </Link>
-    <div className="property-copy"><strong>{property.price ? money.format(property.price) : 'Price on request'}</strong><p>{property.suburb}{property.province ? `, ${property.province}` : ''}</p><h3><Link href={`/properties/${propertySlug(property)}`}>{property.title}</Link></h3><dl><div><dt>Bedrooms</dt><dd>{property.bedrooms || '—'} beds</dd></div><div><dt>Bathrooms</dt><dd>{property.bathrooms || '—'} baths</dd></div><div><dt>Parking</dt><dd>{property.parkingBays || '—'} parking</dd></div></dl></div></article>
+    <div className="property-copy"><strong>{property.price ? money.format(property.price) : 'Price on request'}{property.price ? <small>{rentalPriceSuffix(property)}</small> : null}</strong><p>{property.suburb}{property.province ? `, ${property.province}` : ''}</p><h3><Link href={`/properties/${propertySlug(property)}`}>{property.title}</Link></h3><dl><div><dt>Bedrooms</dt><dd>{property.bedrooms || '—'} beds</dd></div><div><dt>Bathrooms</dt><dd>{property.bathrooms || '—'} baths</dd></div><div><dt>Parking</dt><dd>{property.parkingBays || '—'} parking</dd></div></dl></div></article>
 }
