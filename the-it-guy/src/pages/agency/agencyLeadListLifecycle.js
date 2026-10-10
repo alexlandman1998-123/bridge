@@ -1,4 +1,5 @@
 import { inferLeadCategoryFromRecord } from '../../lib/leadCategory'
+import { getDevelopmentLeadStage, isDevelopmentBuyerLead } from '../../core/leads/developmentBuyerLead.js'
 
 export const BUYER_LEAD_LIST_STAGES = Object.freeze([
   ['captured', 'Captured', 'Buyer lead has been captured and is ready for first contact.'],
@@ -80,6 +81,10 @@ export function resolveAgencyLeadListLifecycle(lead = {}) {
   const category = inferLeadCategoryFromRecord(lead, 'buyer')
   if (category !== 'seller') {
     const stage = getBuyerLeadListStage(rawStage)
+    if (isDevelopmentBuyerLead(lead)) {
+      const developmentStage = getDevelopmentLeadStage(rawStage, stage.key)
+      return { key: developmentStage.key, label: developmentStage.label, columnId: developmentStage.key, category: 'development' }
+    }
     return { key: stage.key, label: stage.label, columnId: stage.key, category }
   }
 

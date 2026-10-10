@@ -1,6 +1,7 @@
 import { inferLeadCategoryFromRecord } from '../../lib/leadCategory'
 import { resolveLeadPropertyAddress } from '../../lib/agencyLeadSelection'
 import { BUYER_LEAD_LIST_STAGES, resolveAgencyLeadListLifecycle } from './agencyLeadListLifecycle'
+import { DEVELOPMENT_LEAD_STAGES, isDevelopmentBuyerLead } from '../../core/leads/developmentBuyerLead.js'
 
 export const LEAD_LIST_PAGE_SIZE = 25
 
@@ -15,6 +16,7 @@ export const DEFAULT_AGENCY_LEAD_FILTERS = Object.freeze({
 export const AGENCY_LEAD_CATEGORY_TABS = Object.freeze([
   { key: 'buyer', label: 'Buyer Leads' },
   { key: 'seller', label: 'Seller Leads' },
+  { key: 'development', label: 'Development' },
   { key: 'archived', label: 'Archived' },
 ])
 
@@ -63,10 +65,14 @@ export function isAgencyLeadArchived(row = {}) {
 }
 
 export function getAgencyLeadCategory(row = {}) {
+  if (isDevelopmentBuyerLead(row)) return 'development'
   return inferLeadCategoryFromRecord(row, 'buyer')
 }
 
 export function getAgencyLeadColumns(category = 'buyer') {
+  if (category === 'development') {
+    return DEVELOPMENT_LEAD_STAGES.map(([id, label, description]) => ({ id, label, stageValue: label, description }))
+  }
   if (category === 'seller') {
     return SELLER_STAGES.map(([id, label, stageValue, description]) => ({ id, label, stageValue, description }))
   }
@@ -163,7 +169,7 @@ export function buildAgencyLeadListModel({ leads = [], contacts = [], activities
   const contactById = buildContactById(contacts)
   const activitiesByLead = groupRowsByLeadId(activities)
   const tasksByLead = groupRowsByLeadId(tasks)
-  const categoryCounts = { buyer: 0, seller: 0, archived: 0 }
+  const categoryCounts = { buyer: 0, seller: 0, development: 0, archived: 0 }
 
   for (const lead of leads) {
     if (isAgencyLeadArchived(lead)) categoryCounts.archived += 1
@@ -229,6 +235,8 @@ export function buildAgencyLeadListModel({ leads = [], contacts = [], activities
       assignedAgent: normalizeText(lead?.assignedAgentName || lead?.assignedAgentEmail) || 'Unassigned',
       lastActivity: formatRelativeTime(latestActivity?.activityDate || latestActivity?.createdAt || lead?.updatedAt || lead?.createdAt),
       nextStep: normalizeText(nextTask?.title || nextTask?.description) || 'No follow-up scheduled',
+      nextStepDueDate: nextTask?.dueDate || null,
+      unitLabel: normalizeText(lead?.developmentLeadContext?.preferredUnitLabel || lead?.unitLabel || lead?.unitNumber),
       raw: lead,
     }
   })
@@ -321,7 +329,7 @@ export function buildAgencyLeadLandingMetrics(leads = [], { now = new Date() } =
   let buyerConvertedMtd = 0
   let sellerMandatesMtd = 0
   let lostLeads = 0
-  const categoryCounts = { buyer: 0, seller: 0, archived: 0 }
+  const categoryCounts = { buyer: 0, seller: 0, development: 0, archived: 0 }
 
   for (const lead of rows) {
     const category = getAgencyLeadCategory(lead)
