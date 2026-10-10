@@ -371,3 +371,21 @@ verify_jwt = false
 
 [functions.calendar-provider-sync-worker]
 verify_jwt = false
+
+[functions.recruitment-submission-dispatcher]
+enabled = true
+verify_jwt = true
+import_map = "./functions/send-email/deno.json"
+entrypoint = "./functions/recruitment-submission-dispatcher/index.ts"
+
+[functions.recruitment-approval-dispatcher]
+enabled = true
+verify_jwt = true
+import_map = "./functions/send-email/deno.json"
+entrypoint = "./functions/recruitment-approval-dispatcher/index.ts"
+
+[functions.recruitment-contact-dispatcher]
+enabled = true
+verify_jwt = true
+import_map = "./functions/send-email/deno.json"
+entrypoint = "./functions/recruitment-contact-dispatcher/index.ts"
