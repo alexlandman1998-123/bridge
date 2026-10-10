@@ -37,6 +37,7 @@
 .recruitment-profile__forward-actions { display: flex; align-items: center; gap: 12px; margin-left: auto; }
 .recruitment-signup .recruitment-profile__actions :is(.recruitment-signup__submit,.recruitment-signup__secondary) { width: auto; min-height: 48px; margin: 0; padding: 12px 20px; }
 .recruitment-signup .recruitment-profile__actions .recruitment-profile__back { border: 0; background: transparent; padding-inline: 0; }
+.recruitment-signup--home-seekers .recruitment-profile__actions .recruitment-profile__back { border: 1px solid #d8d8d2; background: #fff; padding-inline: 20px; }
 .recruitment-signup .recruitment-profile__save-status { margin: 20px 0 0; color: #62625d; font-size: 12px; line-height: 1.5; }
 @media(max-width:600px) {
   .recruitment-profile__actions { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }

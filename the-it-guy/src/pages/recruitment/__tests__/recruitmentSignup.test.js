@@ -95,14 +95,15 @@ it('uses the same signup process for another receiving agency on the shared endp
   expect((await request(db)).body.verificationRequired).toBe(true)
   expect(db.auth.admin.createUser.mock.calls[0][0].app_metadata.recruitment_organisation_id).toBe('another-agency')
 })
-it('saves Home Seekers contact details without a password and safely recovers the same enquiry', async () => {
+it('creates a Home Seekers password without storing it in CRM and safely recovers the same enquiry', async () => {
   const db = client({ lostResponse: true })
-  const homeBody = { ...body, password: undefined, codeOnlyVerification: false, organisationId: 'forged' }
+  const homeBody = { ...body, codeOnlyVerification: false, organisationId: 'forged' }
   const send = () => createHomeSeekersSignupResponse({ body: homeBody, env, client: db })
   expect((await send()).body).toMatchObject({ contactAccepted: true, verificationRequired: true })
   expect((await send()).body.duplicate).toBe(true)
   expect(db.auth.admin.createUser).toHaveBeenCalledTimes(1)
-  expect(db.auth.admin.createUser.mock.calls[0][0]).not.toHaveProperty('password')
+  expect(db.auth.admin.createUser.mock.calls[0][0].password).toBe(password)
+  expect(JSON.stringify(db.rpc.mock.calls)).not.toContain(password)
   expect(db.rpc.mock.invocationCallOrder[0]).toBeLessThan(db.auth.admin.createUser.mock.invocationCallOrder[0])
   const existing = client({ accountError: { code: 'email_exists' } })
   expect((await createHomeSeekersSignupResponse({ body: homeBody, env, client: existing })).body.verificationRequired).toBe(true)
@@ -110,16 +111,30 @@ it('saves Home Seekers contact details without a password and safely recovers th
   const contextResult = await createHomeSeekersSignupResponse({ body: { action: 'context' }, env, client: db })
   expect(contextResult.body.verificationMethod).toBe('email_code')
   const shared = client()
-  expect((await request(shared, { body: { ...homeBody, codeOnlyVerification: true } })).status).toBe(400)
+  expect((await request(shared, { body: { ...homeBody, password: undefined, codeOnlyVerification: true } })).status).toBe(400)
   expect(shared.rpc).not.toHaveBeenCalled()
 })
-it('the Home Seekers browser sends contact and consent without password or verification-mode overrides', async () => {
+it('the Home Seekers browser sends the password only for account creation and strips verification-mode overrides', async () => {
   const fetcher = vi.fn(async () => ({ ok: true, status: 201, json: async () => ({ accepted: true, contactAccepted: true, verificationRequired: true }) }))
-  await recruitmentSignupRequest('signup', { contact, submissionKey, password: 'ignored', codeOnlyVerification: true }, { codeOnly: true, endpoint: '/api/home-seekers/recruitment', fetcher })
+  await recruitmentSignupRequest('signup', { contact, submissionKey, password, codeOnlyVerification: true }, { codeOnly: true, endpoint: '/api/home-seekers/recruitment', fetcher })
   const sent = JSON.parse(fetcher.mock.calls[0][1].body)
   expect(sent).toMatchObject({ action: 'signup', contact: { ...contact, consentVersion: 'recruitment-contact-v1' }, submissionKey })
-  expect(sent).not.toHaveProperty('password')
+  expect(sent.password).toBe(password)
+  expect(sent.contact).not.toHaveProperty('password')
   expect(sent).not.toHaveProperty('codeOnlyVerification')
+})
+it('Home Seekers cannot skip password validation before contact capture or through a browser option', async () => {
+  for (const password of [undefined, '', 'short', '🙂'.repeat(20)]) {
+    const db = client()
+    const result = await createHomeSeekersSignupResponse({ body: { ...body, password }, env, client: db })
+    expect(result.status).toBe(400)
+    expect(result.body.errors).toHaveProperty('password')
+    expect(db.from).not.toHaveBeenCalled()
+    expect(db.auth.admin.createUser).not.toHaveBeenCalled()
+  }
+  const fetcher = vi.fn()
+  await expect(recruitmentSignupRequest('signup', { contact, submissionKey }, { codeOnly: true, fetcher })).rejects.toThrow('password')
+  expect(fetcher).not.toHaveBeenCalled()
 })
 it('uses the server deployment environment for preview and rejects every write even with production credentials', async () => {
   const db = client()

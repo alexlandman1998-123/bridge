@@ -29,6 +29,15 @@ test('publication snapshots normalize unordered feature fields', () => {
   assert.deepEqual(diffListingPublicationSnapshots(first, second), [])
 })
 
+test('shared website names retain the explicit owned or partner publication history', () => {
+  const snapshot = buildListingPublicationSnapshot(baseDraft)
+  for (const channelKey of ['agency_website', 'kingdom_website']) {
+    const states = deriveListingPublicationStates([{ activity_type: 'listing_channel_publication_accepted', created_at: '2026-10-10T09:00:00Z', metadata: { channel: 'Kingdom Real Estate Website', channelKey, snapshot } }], snapshot)
+    assert.equal(states[channelKey].stage, 'accepted')
+    assert.equal(states[channelKey === 'agency_website' ? 'kingdom_website' : 'agency_website'].stage, 'not_published')
+  }
+})
+
 test('snapshot differences identify exact changed fields', () => {
   const published = buildListingPublicationSnapshot(baseDraft)
   const current = buildListingPublicationSnapshot({ ...baseDraft, description: '', price: '2400000' })

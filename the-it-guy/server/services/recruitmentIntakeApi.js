@@ -30,7 +30,7 @@ export async function createRecruitmentIntakeResponse({ method = 'POST', headers
   const capturing = body.action === 'capture_contact' || signingUp
   if (capturing && (!body.contact || typeof body.contact !== 'object' || Array.isArray(body.contact))) return reply(400, { error: 'Please complete your contact details.' })
   if (capturing) {
-    const errors = signingUp && !codeOnlyVerification ? recruitmentSignupErrors(body.contact, body.password) : recruitmentContactErrors(body.contact)
+    const errors = signingUp ? recruitmentSignupErrors(body.contact, body.password) : recruitmentContactErrors(body.contact)
     if (Object.keys(errors).length) return reply(400, { error: 'Please check your contact details.', errors })
   }
   if (body.action !== 'context' && body.companyWebsite) return reply(202, { accepted: true, duplicate: true })
@@ -84,7 +84,7 @@ export async function createRecruitmentIntakeResponse({ method = 'POST', headers
     if (data?.accepted !== true) throw new Error('unavailable')
     if (signingUp) {
       try {
-        const account = await createRecruitmentApplicant(db, link, body.submissionKey, normalizeRecruitmentContact(body.contact), codeOnlyVerification ? undefined : body.password)
+        const account = await createRecruitmentApplicant(db, link, body.submissionKey, normalizeRecruitmentContact(body.contact), body.password)
         // Keep the v1 readiness acknowledgement for forms opened before the
         // verification-required contract was released. It grants no session;
         // both existing and new accounts still require email ownership proof.

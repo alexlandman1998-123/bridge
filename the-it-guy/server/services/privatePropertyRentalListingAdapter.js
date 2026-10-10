@@ -46,9 +46,9 @@ function normalizeDateOnly(value = '') {
   return Number.isNaN(date.getTime()) ? '' : date.toISOString().slice(0, 10)
 }
 
-function isSpecialistRentalCategory(value = '') {
-  return ['commercial', 'industrial', 'retail', 'vacant_land', 'land', 'mixed_use']
-    .includes(normalizeKey(value))
+function isSpecialistRentalCategory(value = '', propertyType = '') {
+  return ['commercial', 'industrial', 'retail', 'mixed_use'].includes(normalizeKey(value)) ||
+    (['land', 'vacant_land'].includes(normalizeKey(value)) && normalizeKey(propertyType) === 'commercial_land')
 }
 
 function normalizeMedia(media = []) {
@@ -147,7 +147,7 @@ function getAdapterDataBlockers({ values = {}, options = {} } = {}) {
   // ID is supplied.
   if (!values.rentalPriceFrequency) blockers.push('missing_rental_price_frequency')
   if (normalizeKey(values.rentalPriceFrequency) === 'annual') blockers.push('private_property_rental_price_frequency_not_supported')
-  if (normalizeKey(values.rentalPriceFrequency) === 'per_square_metre' && !isSpecialistRentalCategory(values.propertyCategory)) {
+  if (normalizeKey(values.rentalPriceFrequency) === 'per_square_metre' && !isSpecialistRentalCategory(values.propertyCategory, values.propertyType)) {
     blockers.push('private_property_per_square_metre_requires_specialist_category')
   }
   if (values.depositAmount === null || values.depositAmount < 0) blockers.push('missing_or_invalid_rental_deposit_amount')
@@ -285,6 +285,7 @@ export function createPrivatePropertyRentalListingPlan({
     depositPolicy,
     rentalPriceFrequency,
     propertyCategory: adaptedListing.propertyCategory,
+    propertyType: adaptedListing.propertyType,
     availableFrom,
     suburbId,
     mandateStatus: row.mandateStatus,

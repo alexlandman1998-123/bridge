@@ -16,5 +16,5 @@ export async function createHomeSeekersSignupResponse({ method = 'POST', headers
   if (!/^[a-f0-9]{64}$/.test(token)) return reply(503, { error: 'Recruitment signup is temporarily unavailable. Please try again later.' })
   // A website cannot select another agency's link, tenant or lead through JSON.
   return createRecruitmentIntakeResponse({ method, headers, env, client, authClient, expectedOrganisationId: HOME_SEEKERS_ORGANISATION_ID, codeOnlyVerification: true,
-    body: { action: body.action, token, contact: body.contact, password: body.password, submissionKey: body.submissionKey, companyWebsite: body.companyWebsite, email: body.email, code: body.code, answers: body.answers, revision: body.revision, page: body.page, intent: body.intent, privacyAccepted: body.privacyAccepted, declarationAccepted: body.declarationAccepted } })
+    body: { action: body.action, token, contact: body.contact, password: body.password, submissionKey: body.submissionKey, companyWebsite: body.companyWebsite, email: body.email, code: body.code, answers: body.answers, revision: body.revision, page: body.page, intent: body.intent, privacyAccepted: body.privacyAccepted, declarationAccepted: body.declarationAccepted, requestId: body.requestId, document: body.document, documentPath: body.documentPath } })
 }

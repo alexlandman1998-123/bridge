@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { HOME_SEEKERS_ORGANISATION_ID } from './homeSeekersWebsiteBridge.js'
 import { normalizeRecruitmentProfile, recruitmentProfileErrors } from '../../src/pages/recruitment/recruitmentProfileModel.js'
 
-export const applicantActions = ['send_verification', 'verify_email', 'sign_in', 'resume', 'sign_out', 'save_profile', 'submit_profile']
+export const applicantActions = ['send_verification', 'verify_email', 'sign_in', 'resume', 'sign_out', 'save_profile', 'submit_profile', 'prepare_document', 'commit_document', 'download_document']
 const reply = (status, body) => ({ status, headers: { 'Cache-Control': 'private, no-store', 'Referrer-Policy': 'no-referrer' }, body })
 const hash = (value) => createHash('sha256').update(value).digest('hex')
 const cookieName = (org) => `a9_recruitment_${org.replaceAll('-', '')}`
@@ -34,6 +34,43 @@ export async function recruitmentApplicantAccess({ db, authClient, link, headers
   const org = link.organisation_id, action = body.action
   const homeSeekers = org === HOME_SEEKERS_ORGANISATION_ID
   try {
+    if (['prepare_document', 'commit_document', 'download_document'].includes(action)) {
+      const saved = cookie(headers, org)
+      if (!saved) return reply(401, { error: 'Verify your email to open your document pack.' })
+      const tokenHash = hash(saved)
+      const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i
+      if (action === 'prepare_document') {
+        if (!uuid.test(body.requestId || '') || !body.document || typeof body.document !== 'object' || Array.isArray(body.document)) return reply(400, { error: 'Choose a document to upload.' })
+        const document = Object.fromEntries(['name', 'type', 'mimeType', 'size'].map(key => [key, body.document[key]]))
+        const { data, error } = await db.rpc('recruitment_prepare_applicant_document', { p_organisation_id: org, p_token_hash: tokenHash, p_request_id: body.requestId, p_document: document })
+        if (error) return reply(422, { error: 'Choose a PDF, JPG or PNG up to 10 MB, or contact the agency if the upload limit was reached.' })
+        if (data?.unavailable || !data?.path) return reply(401, { error: 'Your session expired or this document pack is locked. Verify your email again.' })
+        if (data.committed) return reply(200, { committed: true })
+        const signed = await db.storage.from('recruitment-documents').createSignedUploadUrl(data.path, { upsert: false })
+        if (signed.error || !signed.data?.signedUrl) throw new Error('unavailable')
+        return reply(200, { uploadUrl: signed.data.signedUrl })
+      }
+      if (action === 'commit_document') {
+        if (!uuid.test(body.requestId || '')) return reply(400, { error: 'Invalid document upload request.' })
+        const { data, error } = await db.rpc('recruitment_commit_applicant_document', { p_organisation_id: org, p_token_hash: tokenHash, p_request_id: body.requestId })
+        if (error) return reply(409, { error: 'The file could not be confirmed. Retry this upload or contact the agency.' })
+        if (data?.unavailable) return reply(401, { error: 'Your session expired or this document pack is locked. Verify your email again.' })
+        if (!data?.saved) throw new Error('unavailable')
+        const resumed = await db.rpc('recruitment_resume_applicant', { p_organisation_id: org, p_token_hash: tokenHash })
+        if (resumed.error || !resumed.data) throw new Error('unavailable')
+        return reply(200, { saved: true, applicant: resumed.data })
+      }
+      // Caller selects a retained document, never an arbitrary Storage path.
+      const access = await db.rpc('recruitment_applicant_document_access', { p_organisation_id: org, p_token_hash: tokenHash })
+      if (access.error) throw access.error
+      const lead = access.data?.[0]
+      if (!lead) return reply(401, { error: 'Verify your email to open your document pack.' })
+      const document = lead.documents_json?.find(item => item.path === body.documentPath)
+      if (!document || !document.path.startsWith(`${org}/${lead.id}/`)) return reply(404, { error: 'Document unavailable.' })
+      const signed = await db.storage.from('recruitment-documents').createSignedUrl(document.path, 300, { download: document.name })
+      if (signed.error || !signed.data?.signedUrl) throw new Error('unavailable')
+      return reply(200, { downloadUrl: signed.data.signedUrl })
+    }
     if (action === 'submit_profile') {
       const saved = cookie(headers, org)
       if (!saved) return reply(401, { error: 'Sign in and verify your email to submit your application.' })

@@ -8,6 +8,10 @@ import { sendViaResendApi } from "../services/resend.ts";
 import { assessControlledTestRecipient } from "../utils/controlledTestRecipient.ts";
 import { jsonResponse } from "../utils/http.ts";
 import { HOME_SEEKERS_ORGANISATION_ID } from "./homeSeekersSellerEnquiry.ts";
+import {
+  homeSeekersRecruitmentBranding,
+  resolveHomeSeekersRecruitmentSender,
+} from "../services/homeSeekersRecruitmentBranding.ts";
 
 export async function handleHomeSeekersRecruitmentCodeEmail(
   request: Request,
@@ -72,23 +76,23 @@ export async function handleHomeSeekersRecruitmentCodeEmail(
         verificationRequested: false,
       });
     }
-    const branding = await (dependencies?.branding || resolveEmailBranding)({
-      supabase: admin,
-      payload: {},
-      organisationId: HOME_SEEKERS_ORGANISATION_ID,
-      defaults: {
+    const branding = homeSeekersRecruitmentBranding(
+      await (dependencies?.branding || resolveEmailBranding)({
+        supabase: admin,
+        payload: {},
         organisationId: HOME_SEEKERS_ORGANISATION_ID,
-        organisationName: "Home Seekers",
-        primaryColor: "#f25c1f",
-        secondaryColor: "#171717",
-      },
-    });
-    const from = await (dependencies?.sender || resolveAudienceEmailSender)({
-      audience: "client",
-      branding: { ...branding, organisationName: "Home Seekers" },
+        defaults: {
+          organisationId: HOME_SEEKERS_ORGANISATION_ID,
+          organisationName: "Home Seekers",
+          primaryColor: "#f25c1f",
+          secondaryColor: "#171717",
+        },
+      }),
+    );
+    const from = await resolveHomeSeekersRecruitmentSender({
+      branding,
       supabase: admin,
-      platformSender: Deno.env.get("ARCH9_RESEND_FROM_EMAIL") ||
-        Deno.env.get("RESEND_FROM_EMAIL") || "no-reply@arch9.co.za",
+      sender: dependencies?.sender,
     });
     // generateLink generates the provider OTP without sending the shared Auth
     // email. Only the numeric code is used; no activation URL leaves the server.

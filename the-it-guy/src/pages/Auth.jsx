@@ -17,6 +17,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import Arch9AccessLayout from '../components/auth/Arch9AccessLayout'
+import { homeSeekersLoginTarget } from './recruitment/homeSeekersLoginTarget'
 import { setStoredDevAuthRole } from '../lib/devAuth'
 import { isDevAuthBypassEnabled } from '../lib/devAuth'
 import { clearPostLoginRedirect, getPostLoginRedirect } from '../lib/resolveMobileAwareRedirect'
@@ -454,7 +455,7 @@ function isExistingOrUnconfirmedUserError(error) {
   )
 }
 
-function Auth({ onDevBypass = null }) {
+function Auth({ onDevBypass = null, homeSeekers = false }) {
   const navigate = useNavigate()
   const location = useLocation()
   const initialInvitedEmail = useMemo(() => resolveInviteEmailFromLocation(location), [location])
@@ -464,7 +465,7 @@ function Auth({ onDevBypass = null }) {
     () => resolveInviteSignupPosition({ moduleContext: inviteModuleContext, role: inviteRole }),
     [inviteModuleContext, inviteRole],
   )
-  const [mode, setMode] = useState(() => (new URLSearchParams(location.search).get('mode') === 'signup' ? 'signup' : 'login'))
+  const [mode, setMode] = useState(() => (!homeSeekers && new URLSearchParams(location.search).get('mode') === 'signup' ? 'signup' : 'login'))
   const [signupStep, setSignupStep] = useState(0)
   const [businessType, setBusinessType] = useState('')
   const [position, setPosition] = useState('')
@@ -481,7 +482,7 @@ function Auth({ onDevBypass = null }) {
   const [pendingVerificationEmail, setPendingVerificationEmail] = useState(() => initialInvitedEmail)
   const authFormRef = useRef(null)
 
-  const redirectTo = useMemo(() => getRedirectPath(location), [location])
+  const redirectTo = useMemo(() => homeSeekers ? '/dashboard' : getRedirectPath(location), [homeSeekers, location])
   const inviteToken = useMemo(() => resolveInviteTokenFromLocation(location), [location])
   const partnerHandoffToken = useMemo(() => {
     const path = new URLSearchParams(location.search).get('next') || ''
@@ -529,7 +530,11 @@ function Auth({ onDevBypass = null }) {
       }
       if (data?.session) {
         const pendingInvitePath = resolvePendingInvitePath(location)
-        const target = pendingInvitePath || redirectTo
+        let target = pendingInvitePath || redirectTo
+        if (homeSeekers && !pendingInvitePath) {
+          try { target = await homeSeekersLoginTarget(supabase) }
+          catch (failure) { setError(failure.message); return }
+        }
         clearPostLoginRedirect()
         console.debug('[REDIRECT] auth:session-present', { target, pendingInvite: Boolean(pendingInvitePath) })
         navigate(target, { replace: true })
@@ -537,7 +542,7 @@ function Auth({ onDevBypass = null }) {
     }
 
     void checkSession()
-  }, [location, navigate, redirectTo])
+  }, [homeSeekers, location, navigate, redirectTo])
 
   useEffect(() => {
     if (!inviteDrivenSignup) return
@@ -590,7 +595,7 @@ function Auth({ onDevBypass = null }) {
     event.preventDefault()
 
     if (!isSupabaseConfigured || !supabase) {
-      setError('Supabase is not configured yet. Add VITE_SUPABASE_URL and VITE_SUPABASE_KEY in .env.')
+      setError(homeSeekers ? 'Login is temporarily unavailable. Please try again later.' : 'Supabase is not configured yet. Add VITE_SUPABASE_URL and VITE_SUPABASE_KEY in .env.')
       return
     }
 
@@ -630,7 +635,7 @@ function Auth({ onDevBypass = null }) {
         setPendingVerificationEmail('')
         setPassword('')
         setConfirmPassword('')
-        setMessage('If an Arch9 account exists for that email, a password reset link has been sent.')
+        setMessage(homeSeekers ? 'If an account exists for that email, a password reset link has been sent.' : 'If an Arch9 account exists for that email, a password reset link has been sent.')
       } catch (recoveryRequestError) {
         setError(recoveryRequestError?.message || 'Unable to request a password reset right now.')
       } finally {
@@ -702,7 +707,7 @@ function Auth({ onDevBypass = null }) {
         }
 
         const pendingInvitePath = resolvePendingInvitePath(location)
-        const target = pendingInvitePath || await resolveFounderLoginTargetSafely(redirectTo)
+        const target = pendingInvitePath || await (homeSeekers ? homeSeekersLoginTarget(supabase) : resolveFounderLoginTargetSafely(redirectTo))
         clearPostLoginRedirect()
         console.debug('[AUTH] login:success', { target, pendingInvite: Boolean(pendingInvitePath) })
         navigate(target, { replace: true })
@@ -862,7 +867,7 @@ function Auth({ onDevBypass = null }) {
   const showingAuthFields = mode === 'login' || mode === 'forgot_password' || signupStep === 2
 
   return (
-    <Arch9AccessLayout mode={mode} audience={mode === 'login' ? '' : undefined}>
+    <Arch9AccessLayout mode={mode} audience={homeSeekers ? 'Home Seekers' : mode === 'login' ? '' : undefined} homeSeekers={homeSeekers}>
         <section className={`auth-card ${mode === 'signup' ? 'auth-card-signup' : 'auth-card-login'} ${inviteDrivenSignup ? 'invite-auth-card' : ''}`}>
           {mode === 'login' && securityLogoutMessage ? (
             <div className="auth-security-notice" role="status">
@@ -1021,8 +1026,8 @@ function Auth({ onDevBypass = null }) {
               <>
                 {mode === 'login' ? (
                   <div className="auth-card-head compact">
-                    <h2>Welcome back.</h2>
-                    <p>Sign in and make your next move.</p>
+                    <h2>{homeSeekers ? 'Welcome to Home Seekers.' : 'Welcome back.'}</h2>
+                    <p>{homeSeekers ? 'Log in to continue your application or open your agent workspace.' : 'Sign in and make your next move.'}</p>
                   </div>
                 ) : null}
 
@@ -1206,7 +1211,7 @@ function Auth({ onDevBypass = null }) {
 
           {showingAuthFields ? (
             <button type="submit" form="auth-form" className="auth-submit" disabled={loading}>
-              {loading ? 'Processing...' : mode === 'forgot_password' ? 'Send reset link' : mode === 'login' ? 'Sign in' : 'Create Account'}
+              {loading ? 'Processing...' : mode === 'forgot_password' ? 'Send reset link' : mode === 'login' ? homeSeekers ? 'Log in' : 'Sign in' : 'Create Account'}
               {!loading ? <ArrowRight size={15} /> : null}
             </button>
           ) : null}
@@ -1224,7 +1229,7 @@ function Auth({ onDevBypass = null }) {
             </div>
           ) : null}
 
-          {!inviteDrivenSignup ? (
+          {!homeSeekers && !inviteDrivenSignup ? (
             <div className="auth-footer">
             <span>
               {mode === 'login' ? "Don't have an account?" : mode === 'forgot_password' ? 'Remembered your password?' : 'Already have an account?'}
@@ -1244,13 +1249,16 @@ function Auth({ onDevBypass = null }) {
           </div>
           ) : null}
 
+          {homeSeekers && <p className="auth-footer">{mode === 'forgot_password' ? <button type="button" onClick={() => { setMode('login'); setError(''); setMessage('') }}>Back to log in</button> : <>Haven’t applied yet? <a href="https://homeseeker.co.za/join">Join Home Seekers</a></>}</p>}
+          {!homeSeekers && mode === 'login' && !inviteDrivenSignup && <p className="auth-footer"><a href="/applicant/my-profile">Applied to join Home Seekers? Open My Profile</a></p>}
+
           {!isSupabaseConfigured ? (
             <p className="auth-demo-note">
-              Supabase env vars are missing, so Arch9 authentication is disabled until the environment is configured.
+              {homeSeekers ? 'Login is unavailable in this preview.' : 'Supabase env vars are missing, so Arch9 authentication is disabled until the environment is configured.'}
             </p>
           ) : null}
 
-          {isDevAuthBypassEnabled() && !inviteDrivenSignup ? (
+          {isDevAuthBypassEnabled() && !homeSeekers && !inviteDrivenSignup ? (
             <div className="auth-dev-bypass mt-6 rounded-[24px] border border-[#d8e2f0] bg-[#f4f7fb] p-4">
               <div className="mb-3">
                 <h3 className="text-sm font-semibold uppercase tracking-[0.24em] text-[#6f87a7]">Local Dev Bypass</h3>

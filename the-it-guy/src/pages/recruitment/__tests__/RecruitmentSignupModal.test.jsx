@@ -109,10 +109,10 @@ const verifiedApplicant = {emailVerification:'verified',stage:'lead_received',ap
 const codeContext = { ...context, verificationMethod: 'email_code' }
 async function fillHomeContact() {
   await screen.findByRole('form', { name: 'Start recruitment enquiry' })
-  for (const [label,value] of [['First name','Fixture'],['Surname','Applicant'],['Email address','applicant@example.test'],['Mobile number','+27821234567']]) fireEvent.change(screen.getByLabelText(new RegExp(`^${label} `)), { target: { value } })
+  for (const [label,value] of [['First name','Fixture'],['Surname','Applicant'],['Email address','applicant@example.test'],['Mobile number','+27821234567'],['Password','FixturePass123']]) fireEvent.change(screen.getByLabelText(new RegExp(`^${label} `)), { target: { value } })
   fireEvent.click(screen.getByRole('checkbox'))
 }
-it('Home Seekers saves contact without a password and continues with a code in the same popup', async () => {
+it('Home Seekers creates a password and continues with a code in the same popup', async () => {
   fetch.mockImplementation(async (_url,options) => {
     const body=JSON.parse(options.body);requests.push(body)
     return response(body.action==='context'?codeContext:body.action==='signup'?{accepted:true,contactAccepted:true,verificationRequired:true}:body.action==='send_verification'?{verificationRequested:true,resendAfterSeconds:60,codeLength:8}:{applicant:verifiedApplicant})
@@ -120,14 +120,14 @@ it('Home Seekers saves contact without a password and continues with a code in t
   render(<HomeSeekersJoin />)
   fireEvent.click(screen.getAllByRole('button',{name:/^Join Home Seekers$/i})[0])
   await fillHomeContact()
-  expect(screen.queryByLabelText(/^Password/)).toBeNull()
+  expect(screen.getByLabelText(/^Password/).type).toBe('password')
   fireEvent.click(screen.getByRole('button',{name:'Save & continue'}))
   await screen.findByRole('form',{name:'Verify applicant email'})
   await waitFor(()=>expect(screen.getByRole('button',{name:'Verify & continue'}).disabled).toBe(false))
   expect(screen.getByLabelText('Email address').readOnly).toBe(true)
   expect(screen.queryByRole('button',{name:'Sign in with a password'})).toBeNull()
   expect(screen.getByRole('button',{name:/Request a new code in/}).disabled).toBe(true)
-  expect(requests.find(r=>r.action==='signup')).not.toHaveProperty('password')
+  expect(requests.find(r=>r.action==='signup').password).toBe('FixturePass123')
   fireEvent.change(screen.getByLabelText('Verification code'),{target:{value:'12345678'}})
   fireEvent.click(screen.getByRole('button',{name:'Verify & continue'}))
   await screen.findByRole('form',{name:'Applicant questionnaire form'})
@@ -196,7 +196,7 @@ it('Home Seekers retries preparation after capture with the same details and rec
   const captures=requests.filter(r=>r.action==='signup')
   expect(captures).toHaveLength(2)
   expect(captures[1]).toEqual(captures[0])
-  expect(captures[1]).not.toHaveProperty('password')
+  expect(captures[1].password).toBe('FixturePass123')
 })
 it('Home Seekers saves changed questionnaire answers before signing out', async () => {
   const saved={...verifiedApplicant,contactSubmissionKey:'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'}
@@ -338,7 +338,7 @@ it.each(['123 456', '1234 5678'])('Home Seekers accepts the complete pasted code
   fireEvent.click(screen.getByRole('button',{name:'Verify & continue'}))
   const code=screen.getByLabelText('Verification code')
   expect(document.activeElement).toBe(code)
-  expect(code.getAttribute('aria-invalid')).toBe('true')
+  await waitFor(()=>expect(code.getAttribute('aria-invalid')).toBe('true'))
   expect(screen.getByRole('alert').textContent).toBe('Enter the six- or eight-digit code from your email.')
   expect(requests.filter(r=>r.action==='verify_email')).toHaveLength(0)
   fireEvent.paste(code,{clipboardData:{getData:()=>pasted}})
@@ -371,6 +371,7 @@ it('Home Seekers corrects a mistyped email with fresh consent and a new receipt,
   expect(screen.getByRole('checkbox').checked).toBe(false)
   expect(screen.getByLabelText(/^First name/).value).toBe('Fixture')
   fireEvent.change(email,{target:{value:'correct@example.test'}})
+  fireEvent.change(screen.getByLabelText(/^Password/),{target:{value:'CorrectFixture123'}})
   fireEvent.click(screen.getByRole('button',{name:'Save & continue'}))
   expect(requests.filter(r=>r.action==='signup')).toHaveLength(1)
   fireEvent.click(screen.getByRole('checkbox'))
@@ -414,9 +415,21 @@ it('Home Seekers reopens a submitted application as a receipt without another ca
   const applicant={...verifiedApplicant,applicationSubmitted:true,applicationSubmittedAt:'2026-10-10T12:00:00Z',submittedApplication:{answers:{packagePreference:'decide_later'}}}
   fetch.mockImplementation(async (_url,options) => {requests.push(JSON.parse(options.body));return response({...codeContext,applicant})})
   render(<RecruitmentSignupModal open onClose={()=>{}} />)
-  await screen.findByText('Application submitted')
-  expect(screen.getByText(/has been received by Home Seekers/)).toBeTruthy()
+  await screen.findByText('Application under review')
+  expect(screen.getByText(/has been submitted to Home Seekers/)).toBeTruthy()
+  expect(screen.getByRole('link',{name:'Log in & upload documents'}).getAttribute('href')).toBe('https://app.arch9.co.za/applicant/my-profile')
+  expect(screen.queryByLabelText('Upload CV')).toBeNull()
   expect(screen.queryByRole('button',{name:'Submit application'})).toBeNull()
   expect(screen.queryByRole('button',{name:'Use a different email'})).toBeNull()
+  expect(requests).toEqual([{action:'context'}])
+})
+it('Home Seekers shows the saved approval when an approved applicant returns', async () => {
+  const applicant={...verifiedApplicant,stage:'application_approved',applicationSubmitted:true,documentsEditable:false}
+  fetch.mockImplementation(async (_url,options) => {requests.push(JSON.parse(options.body));return response({...codeContext,applicant})})
+  render(<RecruitmentSignupModal open onClose={()=>{}} />)
+  await screen.findByRole('heading',{name:'Application approved',exact:true})
+  expect(screen.queryByText('Application under review')).toBeNull()
+  expect(screen.queryByText(/Upload your supporting FICA documents/)).toBeNull()
+  expect(screen.getByRole('link',{name:'Log in & view application'}).getAttribute('href')).toBe('https://app.arch9.co.za/applicant/my-profile')
   expect(requests).toEqual([{action:'context'}])
 })

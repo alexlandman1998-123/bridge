@@ -1,4 +1,4 @@
-import { issuesBeforeListingStep } from '../src/services/listings/listingCaptureValidation.js'
+import { getListingFieldIssues } from '../src/services/listings/listingFieldRequirements.js'
 import assert from 'node:assert/strict'
 import { File } from 'node:buffer'
 import { readFileSync } from 'node:fs'
@@ -26,10 +26,48 @@ function bind(context, code, expression) {
   return new Function('context', `with (context) { ${code}; return ${expression}; }`)(context)
 }
 
+test('older feature-step drafts resume in Marketing with a navigable previous step', () => {
+  const steps = bind({}, source.match(/const CREATE_LISTING_WORKFLOW_STEPS = \[[\s\S]*?\n\]/)[0], 'CREATE_LISTING_WORKFLOW_STEPS')
+  const resolve = bind({ CREATE_LISTING_WORKFLOW_STEPS: steps, normalizeDirectListingKey: normalizeKey }, between('function resolveListingEditorStep(', 'function buildListingEditorFormFromListing('), 'resolveListingEditorStep')
+  assert.equal(resolve('features', 'property'), 'marketing')
+  const newListingSteps = steps.filter(step => step.key !== 'seller')
+  const restoredIndex = newListingSteps.findIndex(step => step.key === resolve('features'))
+  assert.equal(newListingSteps[restoredIndex - 1].key, 'property')
+  assert.equal(newListingSteps[restoredIndex + 1].key, 'syndication')
+  assert.equal(resolve('marketing'), 'marketing')
+})
+
+test('listing validation accepts incomplete sellers of every ownership type while retaining property requirements', () => {
+  const context = { normalizeText, normalizeKey, MANUAL_LISTING_STATUSES: ['draft', 'active', 'mandate_signed', 'under_offer', 'sold'] }
+  context.hasListingPriceOrPoa = bind(context, between('function hasListingPriceOrPoa(', 'function listingHasPriceOrPoa('), 'hasListingPriceOrPoa')
+  const validate = bind(context, between('function validateQuickListingMinimumFields(', 'function getDeveloperOrganisationName('), 'validateQuickListingMinimumFields')
+  const form = { propertyType: 'House', suburb: 'Test suburb', streetNumber: '18', streetName: 'Test Avenue', city: 'Cape Town', province: 'Western Cape', bedrooms: 2, bathrooms: 1, propertyAddress: '18 Test Avenue', listingPrice: '2500000', propertyType: 'House', listingStatus: 'active' }
+  for (const sellerType of ['unknown', 'individual', 'company', 'trust', 'close_corporation', 'deceased_estate', 'multiple_owners']) {
+    assert.deepEqual(validate({ form: { ...form, sellerType, sellerName: '', sellerEmail: '', sellerPhone: '', hasSignedMandate: false }, assignedAgentKey: 'agent-1' }), [])
+  }
+  assert.deepEqual(validate({ form: { ...form, propertyAddress: '' }, assignedAgentKey: 'agent-1' }), ['Property address is required.'])
+  assert.deepEqual(validate({ form: { ...form, listingPrice: '' }, assignedAgentKey: 'agent-1' }), ['Listing price or price on application is required.'])
+})
+
+test('initial channel guidance follows the integration photo and price requirements without inventing a floor-size blocker', () => {
+  const context = { normalizeText, getListingFieldIssues, UNAVAILABLE_SYNDICATION_CHANNELS: {} }
+  context.hasListingPriceOrPoa = bind(context, between('function hasListingPriceOrPoa(', 'function listingHasPriceOrPoa('), 'hasListingPriceOrPoa')
+  const statuses = bind(context, between('function buildCreateListingPortalStatuses(', 'function shouldAutoPublishToAgencyWebsite('), 'buildCreateListingPortalStatuses')
+  const form = { propertyType: 'House', suburb: 'Test suburb', streetNumber: '18', streetName: 'Test Avenue', city: 'Cape Town', province: 'Western Cape', bedrooms: 2, bathrooms: 1, propertyAddress: '18 Test Avenue', listingPrice: '', priceOnApplication: true, listingDescription: 'A family home.', listingImages: [{ id: 'photo-1' }], floorSize: '' }
+  const result = statuses(form)
+  assert.deepEqual(result.find(row => row.key === 'property24').missing, [])
+  assert.deepEqual(result.find(row => row.key === 'private_property').missing, ['Enter a price greater than zero.', 'Add at least 3 photos.'])
+  assert.deepEqual(statuses({ ...form, listingPrice: '2500000', listingImages: [{ id: 'a' }, { id: 'b' }, { id: 'c' }] }).find(row => row.key === 'private_property').missing, [])
+})
+
 function storageContext() {
   const data = new Map()
   const context = {
     normalizeText, isUnstorableCreateListingImageUrl, console: quietConsole,
+    saveListingRecoveryDraft: async () => {}, readListingRecoveryDraft: async () => null, clearListingRecoveryDraft: async () => {},
+    listingCreationIdRef: { current: "" }, reserveListingCreationId: () => "00000000-0000-4000-8000-000000000001",
+    isDeveloperWorkspace: false, legacyCreateListingDraftStorageKey: "legacy",
+    setTimeout: (callback) => { callback(); return 1 }, clearTimeout() {},
     window: {
       localStorage: {
         getItem: (key) => data.get(key) || null,
@@ -73,14 +111,14 @@ test('drafts retain their step and listing receipt, without putting photo bytes 
 
 const restoreMarker = source.indexOf('// An edit form must always open')
 const restoreStart = source.lastIndexOf('useEffect(() => {', restoreMarker)
-const restoreEnd = source.indexOf('}, [createListingDraftScopeKey', restoreStart)
+const restoreEnd = source.indexOf('}, [isDeveloperWorkspace, createListingDraftScopeKey', restoreStart)
 const restoreBody = source.slice(restoreStart + 'useEffect(() => {'.length, restoreEnd)
 const autosaveMarker = source.indexOf('if (createListingDraftHydratedKey !== createListingDraftScopeKey')
 const autosaveStart = source.lastIndexOf('useEffect(() => {', autosaveMarker)
 const autosaveEnd = source.indexOf('}, [form,', autosaveStart)
 const autosaveBody = source.slice(autosaveStart + 'useEffect(() => {'.length, autosaveEnd)
 
-test('refresh resumes the photo step and its existing listing before autosave runs', () => {
+test('refresh resumes the photo step and its existing listing before autosave runs', async () => {
   const { context, data } = storageContext()
   const pendingState = []
   const steps = ['seller', 'property', 'features', 'marketing', 'syndication', 'review'].map((key) => ({ key }))
@@ -110,6 +148,7 @@ test('refresh resumes the photo step and its existing listing before autosave ru
   restore()
   autosave()
   assert.equal(JSON.parse(data.get('draft')).propertyAddress, '18 Test Avenue', 'initial defaults must not overwrite the saved draft')
+  await new Promise(resolve => setImmediate(resolve))
   pendingState.splice(0).forEach((apply) => apply())
   assert.equal(context.form.propertyAddress, '18 Test Avenue')
   assert.equal(context.createListingStep, 'marketing')
@@ -118,6 +157,18 @@ test('refresh resumes the photo step and its existing listing before autosave ru
   assert.equal(context.missingDraftPhotoCount, 2)
   autosave()
   assert.equal(JSON.parse(data.get('draft')).__draftRecovery.pendingListingId, 'listing-1')
+  const legacyDraft = JSON.parse(data.get('draft'))
+  legacyDraft.__draftRecovery.step = 'seller'
+  legacyDraft.__draftRecovery.creationId = '00000000-0000-4000-8000-000000000007'
+  context.readListingRecoveryDraft = async () => ({ form: { ...context.form }, recovery: { pendingListingId: '', creationId: '' }, missingPhotos: 2, release() {} })
+  data.set('draft', JSON.stringify(legacyDraft))
+  context.listingEditorSteps = steps.filter(step => step.key !== 'seller')
+  restore()
+  await new Promise(resolve => setImmediate(resolve))
+  pendingState.splice(0).forEach((apply) => apply())
+  assert.equal(context.createListingStep, 'property', 'old seller-step drafts must resume at the property without losing their saved listing')
+  assert.equal(context.listingCreationIdRef.current, legacyDraft.__draftRecovery.creationId, 'the synchronous identity must survive an older photo transaction')
+  assert.equal(context.pendingCreatedListingIdRef.current, 'listing-1')
   context.completedCreateListingRef.current = true
   data.delete('draft')
   autosave()
@@ -207,7 +258,7 @@ function saveContext() {
     completeness: {}, CANONICAL_LISTING_STRUCTURE: {}, createdListingId: '', createdListingTitle: '',
     directListingPersistence: { sellerOnboardingFormData: {}, seller: { sellerLegalType: 'unknown' } },
     pendingCreatedListingIdRef: { current: '' }, completedCreateListingRef: { current: false },
-    isCreateListingWorkspace: true, createListingDraftStorageKey: 'draft',
+    isCreateListingWorkspace: true, isDeveloperWorkspace: false, createListingDraftStorageKey: 'draft',
     profile: { id: 'agent-1' }, activationTier: { statusLabel: 'Draft' }, complianceWarnings: [],
     listingDistributionSync: null, documentUploadQueue: [], normalizedStatus: 'draft',
     selectedQuickAddIntent: {}, activationWarnings: [], mandateUploaded: false, quickAddDuplicateOverride: false, mandatePack: {},
@@ -227,17 +278,23 @@ function saveContext() {
       calls.push(['media']); if (context.failure === 'photos') throw new Error('Photo upload failed'); return { publication: { listing_id: 'listing-1' } }
     },
     retainUploadedListingImage() {},
+    persistCapturedListingSellerLead: async () => null,
+    setInitialChannelResults() {},
+    syndicationAvailability: { agency_website: { available: true, label: 'Agency Website' } },
+    buildListingPublicationSnapshot: (draft) => draft,
+    mergeListingFeatureSelections: (features) => features,
+    publishInitialListingChannels: async (input) => { calls.push(['publish', input]); return [{ key: 'private_property', status: 'publishing' }] },
+    readInitialListingChannelResults: () => context.resolvedListingStatus === 'active' ? [{ key: 'private_property', label: 'Private Property', status: 'publishing', message: 'Submitting…' }] : [],
     getPrivateListing: async () => { calls.push(['readback']); return { id: 'listing-1' } },
     verifyListingPropertyPersistenceCopies: () => {
       calls.push(['verify']); return { ready: context.failure !== 'verification', mismatches: [{ label: 'Bedrooms' }] }
     },
-    persistCapturedListingSellerLead: async () => null,
     shouldAutoPublishToAgencyWebsite: () => false,
     deliverQuickAddSellerPortalInvite: async () => { calls.push(['invite']); return { requested: false } },
     buildQuickAddHandoffPlan: () => ({}), mergeQuickListingMetadataInNotes: () => '',
     createPrivateListingActivity: async () => null,
     resetForm: () => calls.push(['reset']),
-    navigate: (path) => calls.push(['navigate', path]),
+    navigate: (path, options) => { context.navigationState = options?.state; calls.push(['navigate', path]) },
     setWorkflowMessage: (message) => calls.push(['message', message]),
     setQuickAddSuccess: (value) => calls.push(['success', value]),
     setShowNewListingModal() {}, setError() {}, setQuickAddDuplicateMatches() {}, setQuickAddDuplicateOverride() {},
@@ -252,7 +309,7 @@ for (const failure of ['onboarding', 'photos', 'verification']) {
     await assert.rejects(save(), /saving is incomplete.*same listing/)
     assert.equal(context.pendingCreatedListingIdRef.current, 'listing-1')
     assert.equal(JSON.parse(data.get('draft')).__draftRecovery.pendingListingId, 'listing-1')
-    assert.equal(calls.some(([action]) => ['reset', 'success', 'navigate', 'invite'].includes(action)), false)
+    assert.equal(calls.some(([action]) => ['reset', 'success', 'navigate', 'invite', 'publish'].includes(action)), false)
     assert.equal(context.completedCreateListingRef.current, false)
   })
 }
@@ -279,10 +336,10 @@ test('retry updates the original listing and opens it only after verified persis
   assert.equal(context.completedCreateListingRef.current, true)
 })
 
-for (const mobile of [false, true]) test(`saving a ${mobile ? 'mobile developer' : 'desktop'} photo draft retries the same record and waits for saved marketing details`, async () => {
+for (const [mobile, developer] of [[false, false], [false, true], [true, true]]) test(`saving a ${mobile ? 'mobile' : 'desktop'} ${developer ? 'developer' : 'sale'} photo draft retries the same record and waits for saved marketing details`, async () => {
   const { context, data, calls, createdCount } = saveContext()
   Object.assign(context, {
-    mobileEditor: mobile, isDeveloperWorkspace: mobile, workspace: {}, buildDeveloperSellerFacts: () => ({ sellerRole: 'developer' }),
+    mobileEditor: mobile, isDeveloperWorkspace: developer, workspace: {}, buildDeveloperSellerFacts: () => ({ sellerRole: 'developer' }),
     isSupabaseConfigured: true, MOCK_DATA_ENABLED: false,
     listingSaveInFlightRef: { current: false }, currentBranchId: '',
     createListingStep: 'marketing', CREATE_LISTING_DRAFT_STORAGE_KEY: 'draft-prefix',
@@ -302,16 +359,36 @@ for (const mobile of [false, true]) test(`saving a ${mobile ? 'mobile developer'
   context.failure = ''
   await saveDraft()
   assert.equal(createdCount(), 1)
+  assert.equal(calls.find(([action]) => action === 'create')[1].listingCategory, developer ? 'development_unit' : 'private_sale')
   assert.ok(calls.findIndex(([action]) => action === 'navigate') > calls.findLastIndex(([action]) => action === 'media'))
   assert.deepEqual(calls.find(([action]) => action === 'navigate'), ['navigate', `${mobile ? '/mobile/listings' : '/listings'}/listing-1/edit?step=marketing`])
+})
+
+for (const mobile of [false, true]) test(`${mobile ? 'mobile' : 'desktop'} activation sends selected channels after verified persistence and opens without waiting for a slow portal`, async () => {
+  const { context, calls, save } = saveContext()
+  context.mobileEditor = mobile
+  context.resolvedListingStatus = 'active'
+  context.form.sellerType = 'unknown'
+  context.form.mandateType = ''
+  context.form.hasSignedMandate = false
+  context.persistCapturedListingSellerLead = async () => { throw new Error('Seller CRM unavailable') }
+  await save()
+  const publishIndex = calls.findIndex(([action]) => action === 'publish')
+  assert.ok(publishIndex > calls.findIndex(([action]) => action === 'verify'))
+  const request = calls[publishIndex][1]
+  assert.equal(request.listingId, 'listing-1')
+  assert.equal(request.listingStatus, 'active')
+  assert.deepEqual(request.channels, ['private_property'])
+  assert.equal(context.navigationState.initialChannelResults[0].status, 'publishing')
+  assert.ok(calls.findIndex(([action]) => action === 'navigate') > publishIndex)
 })
 
 test('two immediate submit events cannot create two listings', async () => {
   let finishSave
   let saves = 0
   const context = {
-    isListingSaving: false, isCreateListingWorkspace: true, isEditListingWorkspace: false,
-    isListingEditorWorkspace: true, createListingIssues: [], openCreateListingIssue() {},
+    createListingDraftHydratedKey: 'draft', createListingDraftScopeKey: 'draft',
+    floorplanUploading: false, isListingSaving: false, isCreateListingWorkspace: true, isEditListingWorkspace: false, form: { listingStatus: "active" }, listingFieldIssues: [],
     listingSaveInFlightRef: { current: false }, completedCreateListingRef: { current: false },
     setError() {}, setWorkflowMessage() {}, setIsListingSaving() {}, assertMvpPilotCreationAllowed() {}, console: quietConsole,
     performSaveListing: () => { saves += 1; return new Promise((resolve) => { finishSave = resolve }) },
@@ -322,23 +399,6 @@ test('two immediate submit events cannot create two listings', async () => {
   assert.equal(saves, 1)
   finishSave()
   await first
-  assert.equal(context.listingSaveInFlightRef.current, false)
-})
-
-test('a final submit opens the exact capture issue before creating or updating anything', async () => {
-  const issue = { field: 'listingPrice', step: 'property', message: 'Enter a valid price.' }
-  let opened
-  let saves = 0
-  const context = {
-    isListingSaving: false, isCreateListingWorkspace: true, isEditListingWorkspace: false,
-    isListingEditorWorkspace: true, createListingIssues: [issue], openCreateListingIssue(value) { opened = value },
-    listingSaveInFlightRef: { current: false }, completedCreateListingRef: { current: false },
-    performSaveListing() { saves += 1 },
-  }
-  const submit = bind(context, between('async function handleSaveListing(', 'function requestListingDeletion('), 'handleSaveListing')
-  await submit({ preventDefault() {} })
-  assert.deepEqual(opened, issue)
-  assert.equal(saves, 0)
   assert.equal(context.listingSaveInFlightRef.current, false)
 })
 
@@ -354,10 +414,10 @@ const developerStart = source.indexOf('const developerPayload = {', source.index
 const developerEnd = source.indexOf('await createPrivateListingActivity({', developerStart)
 const developerSaveBody = source.slice(developerStart, developerEnd)
 
-test('mobile developer creation saves unit assignment, marketing and photos, and reuses the record on retry', async () => {
+for (const mobileEditor of [false, true]) test(`${mobileEditor ? 'mobile' : 'desktop'} developer creation saves unit assignment, marketing and photos, and reuses the record on retry`, async () => {
   const { context, calls, data, createdCount } = saveContext()
   Object.assign(context, {
-    mobileEditor: true, developerTitle: 'Unit 001 - Oak Court', developerListingStatus: 'active',
+    mobileEditor, isDeveloperWorkspace: true, developerTitle: 'Unit 001 - Oak Court', developerListingStatus: 'active',
     developerVisibility: 'public', estimatedPrice: 2500000, developerNotes: 'Developer listing',
     developerSellerFacts: { sellerRole: 'developer', unitNumber: '001' }, developerReadinessWarnings: [],
     developerCompleteness: {}, sourceMode: 'development_unit',
@@ -413,34 +473,17 @@ test('the real creation mapper persists the listing price and developer stock re
   assert.equal(saved.unitId, 'unit-1')
 })
 
-
-test('sales Continue blocks the current field and does not autosave an invalid edit', async () => {
-  const issue = { field: 'listingPrice', step: 'property', message: 'Enter a valid price.' }
-  let opened, saves = 0, advanced = false
+test('final edit save sends updates while an intermediate step only saves', async () => {
+  const calls = []
   const context = {
-    createListingIssues: [issue], createListingStep: 'property', createListingStepIndex: 1,
-    listingEditorSteps: ['seller','property','features','marketing','syndication','review'].map(key => ({key})),
-    issuesBeforeListingStep,
-    openCreateListingIssue(value) { opened = value },
-    isEditListingWorkspace: true, isListingSaving: false,
-    performUpdateExistingListing() { saves += 1 },
-    openCreateListingStep() { advanced = true },
+    floorplanUploading: false, isListingSaving: false, isCreateListingWorkspace: false, isEditListingWorkspace: true,
+    form: { listingStatus: 'active' }, listingFieldIssues: [], listingSaveInFlightRef: { current: false },
+    setError() {}, setWorkflowMessage() {}, setIsListingSaving() {}, console: quietConsole,
+    performUpdateExistingListing: async options => calls.push(options),
   }
-  const next = bind(context, between('async function goToNextCreateListingStep(', 'function goToPreviousCreateListingStep('), 'goToNextCreateListingStep')
-  await next()
-  assert.deepEqual(opened, issue); assert.equal(saves, 0); assert.equal(advanced, false)
-})
-
-test('sales progress clicks cannot skip an invalid revisited page', () => {
-  const issue = { field: 'suburb', step: 'property', message: 'Enter a suburb.' }
-  let opened, changed = false
-  const context = {
-    createListingIssues: [issue], createListingStepIndex: 1, createListingMaxVisitedStep: 5,
-    listingEditorSteps: ['seller','property','features','marketing','syndication','review'].map(key => ({key})),
-    isEditListingWorkspace: false, issuesBeforeListingStep,
-    openCreateListingIssue(value) { opened = value }, setCreateListingStep() { changed = true },
-  }
-  const open = bind(context, between('function openCreateListingStep(', 'async function goToNextCreateListingStep('), 'openCreateListingStep')
-  open('review')
-  assert.deepEqual(opened, issue); assert.equal(changed, false)
+  const submit = bind(context, between('async function handleSaveListing(', 'function requestListingDeletion('), 'handleSaveListing')
+  await submit({ preventDefault() {} })
+  assert.deepEqual(calls, [{ sendUpdates: true }])
+  const nextSource = between('async function goToNextCreateListingStep(', 'function goToPreviousCreateListingStep(')
+  assert.doesNotMatch(nextSource, /sendUpdates: true/)
 })

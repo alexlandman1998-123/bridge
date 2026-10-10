@@ -1,0 +1,37 @@
+body .arch9-access.auth-page.home-seekers-access {
+  --access-ink: #171717;
+  --access-muted: #686863;
+  --access-accent: #ff6319;
+  background: #fff;
+  font-family: Asap, Arial, sans-serif;
+}
+.home-seekers-access-brand { width: 168px; }
+.home-seekers-access-brand img { display: block; width: 100%; height: auto; }
+.home-seekers-access .arch9-access-story {
+  background: linear-gradient(#171717df, #171717ea), url('/brand/homeseekers/join-property-hero.avif') center/cover;
+  border-radius: 6px;
+}
+.home-seekers-access .arch9-access-story .home-seekers-access-brand { filter: brightness(0) invert(1); }
+.home-seekers-access .arch9-access-story h1 { font-family: Montserrat, Arial, sans-serif; font-weight: 800; font-size: clamp(44px, 4.7vw, 72px); }
+.home-seekers-access .arch9-access-story h1 > span { color: #ff6319; }
+.home-seekers-access .arch9-access-kicker,
+.home-seekers-access .arch9-access-story-copy > p:last-child,
+.home-seekers-access .arch9-access-story-footer { color: #d0d0c8; }
+.home-seekers-access .arch9-access-topbar { justify-content: space-between; }
+.home-seekers-access .arch9-access-topbar > .home-seekers-access-brand { display: inline-flex; }
+.home-seekers-access .arch9-access-audience > i { background: #ff6319; }
+body .home-seekers-access.auth-page .arch9-access-main .auth-card-head h2 { font-family: Montserrat, Arial, sans-serif; font-weight: 800; font-size: 32px; line-height: 1.2; }
+body .home-seekers-access.auth-page .arch9-access-main .auth-form label { color: #343430; }
+body .home-seekers-access.auth-page .arch9-access-main .auth-form input { border-color: #d9d9d3; border-radius: 5px; }
+body .home-seekers-access.auth-page .arch9-access-main .auth-form input:focus { border-color: #ff6319; box-shadow: 0 0 0 3px #ff63191a; }
+body .home-seekers-access.auth-page .arch9-access-main .auth-submit { background: #ff6319; color: #171717; border-color: #ff6319; border-radius: 5px; font-weight: 700; }
+body .home-seekers-access.auth-page .arch9-access-main .auth-submit:hover { background: #e9530c; border-color: #e9530c; }
+body .home-seekers-access.auth-page .arch9-access-main .auth-footer :is(a,button),
+body .home-seekers-access.auth-page .arch9-access-main .auth-recovery-link { color: #343430; }
+.home-seekers-access :is(a,button):focus-visible { outline: 2px solid #ff6319; outline-offset: 4px; }
+@media (max-width: 600px) {
+  .home-seekers-access .arch9-access-topbar { padding-bottom: 20px; border-bottom: 1px solid #e7e7e2; }
+  .home-seekers-access .home-seekers-access-brand { width: 143px; }
+  body .home-seekers-access.auth-page .arch9-access-main .auth-card-head h2 { font-size: 28px; }
+  .home-seekers-access .arch9-access-audience { font-size: 9px; }
+}

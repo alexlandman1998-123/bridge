@@ -244,11 +244,11 @@ function getAuthFailure({ headers = {}, config = {}, route = {} } = {}) {
   })
 }
 
-function hasPrivatePropertyPublishRole(row = {}) {
+function hasPrivatePropertyPublishRole(row = {}, listingCategory = '') {
   const role = normalizeKey(row.workspace_role || row.organisation_role || row.organization_role || row.role)
   const status = normalizeKey(row.membership_status || row.status)
   if (!['active', 'accepted', 'approved'].includes(status)) return false
-  return ['principal', 'owner', 'admin', 'manager', 'branch_manager', 'agency_principal', 'agent', 'estate_agent', 'sales_agent'].includes(role)
+  return (role === 'developer' && listingCategory === 'development_unit') || ['principal', 'owner', 'admin', 'manager', 'branch_manager', 'agency_principal', 'agent', 'estate_agent', 'sales_agent'].includes(role)
 }
 
 function hasPrivatePropertyAdminPublishRole(row = {}) {
@@ -284,7 +284,7 @@ async function authenticateBrowserPrivatePropertyListingRequest({ supabase, head
   const listingResult = await fetchMaybeSingle(
     supabase
       .from('private_listings')
-      .select('id, organisation_id, assigned_agent_id, assigned_agent_email, created_by')
+      .select('id, organisation_id, assigned_agent_id, assigned_agent_email, created_by, listing_category')
       .eq('id', config.listingId),
   )
   if (listingResult.error && listingResult.error.code !== 'PGRST116') throw listingResult.error
@@ -305,7 +305,7 @@ async function authenticateBrowserPrivatePropertyListingRequest({ supabase, head
 
   if (membership.error) throw membership.error
   const memberships = membership.data || []
-  const activeMembership = memberships.find(hasPrivatePropertyPublishRole)
+  const activeMembership = memberships.find(row => hasPrivatePropertyPublishRole(row, listing.listing_category))
   if (!activeMembership) {
     return buildJsonResponse(403, {
       error: 'forbidden',

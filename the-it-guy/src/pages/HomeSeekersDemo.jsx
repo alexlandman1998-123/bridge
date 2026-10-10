@@ -1,3 +1,4 @@
+import HomeSeekersLoginLink from './HomeSeekersLoginLink'
 import { homeSeekersPath } from './homeSeekersRoutes.js'
 import { ArrowRight, Bath, BedDouble, Car, Search } from "lucide-react";
 import { useState } from "react";
@@ -122,7 +123,7 @@ export default function HomeSeekersDemo({ guaranteePage = false }) {
               {label}
             </a>
           ))}
-        </nav>
+        <HomeSeekersLoginLink /></nav>
         <a
           className="hs-campaign-header__guarantee"
           href={homeSeekersPath("/guarantee")}

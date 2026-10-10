@@ -1,3 +1,4 @@
+import HomeSeekersLoginLink from './HomeSeekersLoginLink'
 import { homeSeekersPath } from './homeSeekersRoutes.js'
 import { ArrowRight, Check, Plus } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
@@ -17,25 +18,34 @@ const annualFee = example.cost
 const traditionalCost = example.traditionalCost
 const balloonCost = example.balloonCost
 const money = (amount) => `R${Math.round(amount).toLocaleString('en-ZA')}`
-const rentalCharges = [
-  ['Home Seekers’ share of the monthly management fee', '3.5% of rent collected'],
-  ['Once-off file fee, per new file', 'R1,000'],
-  ['Administration and contract fee, per lease', 'R1,800'],
-  ['In and out inspection, per tenancy', 'R700'],
+const rentalFileFee = 1000
+const rentalCommissionRate = 0.035
+const rentalAgentCharges = [
+  ['File administration and contract fee, per new lease / rental file', `${money(rentalFileFee)} once off`],
+  ['Home Seekers’ commission fee', '3.5% of your rental commission'],
 ]
+const rentalClientRecommendations = [
+  ['Recommended administration and contract fee, per lease', money(1800)],
+  ['Recommended in and out inspections, per tenancy', money(700)],
+]
+const rentalExampleRent = 12000
+const rentalExampleManagementRate = 0.1
+const rentalExampleCommission = rentalExampleRent * rentalExampleManagementRate
+const rentalExampleFee = rentalExampleCommission * rentalCommissionRate
+const rentalExampleAgentIncome = rentalExampleCommission - rentalExampleFee
 const paymentDetails = {
   deals: {
-    suits: 'Solo agents who prefer to settle their subscription from registered deals rather than a monthly debit order.',
+    suits: 'Solo agents who prefer to settle their subscription from registered deals instead of paying in advance each month.',
     steps: ['R10,000 is added to your subscription balance each month, including quiet months.', 'When a deal registers, a maximum of 50% of that deal goes towards the outstanding subscription balance.', 'Any remaining balance carries forward. The annual subscription commitment is R120,000.'],
     example: 'Three months without a registration builds a R30,000 subscription balance. On a R40,000 commission cheque, at most R20,000 goes towards that balance. The remaining R10,000 carries forward.',
   },
   monthly: {
     suits: 'Solo agents and teams who want a predictable monthly payment and to settle their subscription separately from their sales.',
-    steps: ['R9,000 is collected by debit order on the first of each month.', 'Your subscription is paid separately from your registered deals. There is no brokerage commission split.', 'The annual subscription is R108,000. Each registered sale adds the same R1,500 fee.'],
+    steps: ['Your R9,000 monthly invoice must be paid on the 1st of every month, in advance.', 'Your subscription is paid separately from your registered deals. There is no brokerage commission split.', 'Twelve monthly payments total R108,000 for the year. Each registered sale adds the same R1,500 fee.'],
   },
   upfront: {
-    suits: 'Solo agents and team leaders who prefer to settle their own seat with one annual payment.',
-    steps: ['Pay R100,000 upfront to settle your own seat until the same date next year. In a team, this rate applies only to the team leader.', 'Save R8,000 compared with twelve monthly debit order payments of R9,000 for that seat.', 'Additional team seats are priced separately at their monthly rates. The R1,500 fee still applies to each registered sale.'],
+    suits: 'Team leaders who prefer to settle their own seat with one annual payment.',
+    steps: ['The team leader pays R100,000 upfront for their own seat, covering the year until the same date next year.', 'Save R8,000 compared with twelve Prepaid payments of R9,000 for the leader’s seat.', 'Additional team seats are paid monthly at their own rates. The R100,000 upfront rate is for the leader only. The R1,500 fee still applies to each registered sale.'],
   },
 }
 const comparisons = [
@@ -49,7 +59,7 @@ const included = [
   { title: 'The brand in front of you', items: ['Print-ready For Sale board artwork with your face and number', 'Listing presentations and seller proposal material', 'Our in-house design studio', 'Social templates and campaign artwork', 'Live and recorded sales training from practising agents', 'Bond origination: earn on the bonds you refer', 'The 45-Day Guarantee'] },
 ]
 const faqs = [
-  ['How do the three options differ?', 'The support is the same. Choose R10,000 a month paid from registered deals, R9,000 a month by debit order, or R100,000 upfront for the year. Every option adds R1,500 per registered sale. All fees exclude VAT. You can change your payment option at renewal.'],
+  ['How do the three options differ?', 'The support is the same. Option 1, Post Paid: R10,000 a month settled from registered deals, for solo agents. Option 2, Prepaid: R9,000 on invoice, due on the 1st of every month. Option 3, Upfront: R100,000 for the team leader’s own seat for the year. Additional team seats are paid monthly. Every option adds R1,500 per registered sale. All fees exclude VAT. You can change your payment option at renewal.'],
   ['Do you take a share of my commission?', 'There is no brokerage split, cap or royalty. You keep 100% of your commission, less the agreed subscription and R1,500 fee per registered sale.'],
   ['What happens if I choose to pay from my deals?', 'The R10,000 monthly fee accrues as a balance. When a deal registers, a maximum of 50% of that deal goes towards the balance, so you retain at least half of each cheque. The balance continues to accrue during quiet months. This option is for solo agents only.'],
   ['Do I need an office?', 'No. There is no desk requirement, office hours, floor duty or compulsory Monday meeting.'],
@@ -72,24 +82,69 @@ function CheckList({ items }) {
   return <ul className="hs-join__checklist">{items.map((item) => <li key={item}><Check size={18} aria-hidden="true" /><span>{item}</span></li>)}</ul>
 }
 
+function RentalFees({ compact = false }) {
+  const Heading = compact ? 'h4' : 'h3'
+  return <div className="hs-join__rental-fees">
+    <section>
+      <Heading>What Home Seekers charges you, the agent</Heading>
+      <table className="hs-join__pricing-table"><caption>Agent charges, excluding VAT</caption><thead><tr><th scope="col">Charge</th><th scope="col">Amount</th></tr></thead><tbody>
+        {rentalAgentCharges.map(([charge, amount]) => <tr key={charge}><th scope="row">{charge}</th><td>{amount}</td></tr>)}
+      </tbody></table>
+      <p className="hs-join__fine">The {money(rentalFileFee)} file fee is paid by the agent once per new rental file. The 3.5% fee is calculated on your commission.</p>
+    </section>
+    <section>
+      <Heading>What you can charge your client</Heading>
+      <table className="hs-join__pricing-table"><caption>Recommended client charges, excluding VAT</caption><thead><tr><th scope="col">Suggested charge</th><th scope="col">Amount</th></tr></thead><tbody>
+        {rentalClientRecommendations.map(([charge, amount]) => <tr key={charge}><th scope="row">{charge}</th><td>{amount}</td></tr>)}
+      </tbody></table>
+      <p className="hs-join__fine">These are suggested fees for you to agree with your landlord or tenant. Home Seekers does not charge you these amounts.</p>
+    </section>
+  </div>
+}
+
+function RentalExample({ compact = false }) {
+  const Heading = compact ? 'h4' : 'h3'
+  return <aside className="hs-join__rental-example">
+    <Heading>One property. The numbers made clear.</Heading>
+    <p>For illustration, a property rents for {money(rentalExampleRent)} a month and you charge a 10% management fee.</p>
+    <dl>
+      <div><dt>Your monthly commission: {money(rentalExampleRent)} × 10%</dt><dd>{money(rentalExampleCommission)}</dd></div>
+      <div><dt>Home Seekers’ fee: {money(rentalExampleCommission)} × 3.5%</dt><dd>{money(rentalExampleFee)}</dd></div>
+      <div><dt>Remaining for you: {money(rentalExampleCommission)} − {money(rentalExampleFee)}</dt><dd>{money(rentalExampleAgentIncome)} / month</dd></div>
+    </dl>
+    <p className="hs-join__fine">The {money(rentalFileFee)} file fee is once off, separate from this monthly calculation. All figures exclude VAT and other costs.</p>
+    <Heading>A new lease: suggested client fees</Heading>
+    <p>{money(1800)} admin / contract + {money(700)} in and out inspections = <strong>{money(1800 + 700)}</strong> in suggested client charges.</p>
+    <p>Less the {money(rentalFileFee)} Home Seekers file fee leaves <strong>{money(1800 + 700 - rentalFileFee)}</strong> before your inspection and other costs, separate from your management commission.</p>
+  </aside>
+}
+
 export default function HomeSeekersJoin() {
-  const [signupOpen, setSignupOpen] = useState(false)
+  const [signupOpen, setSignupOpen] = useState(() => typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('documents') === '1')
   const [selectedOption, setSelectedOption] = useState(null)
   const [rentalOpen, setRentalOpen] = useState(false)
   const openSignup = () => setSignupOpen(true)
   const [measurementAllowed, setMeasurementAllowed] = useState(false)
+  const [heroPassed, setHeroPassed] = useState(false)
   const [applicationVisible, setApplicationVisible] = useState(false)
+  const heroRef = useRef(null)
   const applicationRef = useRef(null)
   useEffect(() => {
     const previousTitle = document.title
     const description = document.querySelector('meta[name="description"]')
     const previousDescription = description?.content
     document.title = 'Join Home Seekers | Three ways in. Your commission.'
-    if (description) description.content = 'Choose R10,000 a month from your deals, R9,000 by monthly debit order or R100,000 upfront annually. All exclude VAT, plus R1,500 per registered sale.'
+    if (description) description.content = 'Choose Post Paid at R10,000 a month from your deals, Prepaid at R9,000 on invoice on the 1st of every month, or Upfront at R100,000 for the leader’s annual seat. All exclude VAT, plus R1,500 per registered sale.'
     return () => {
       document.title = previousTitle
       if (description) description.content = previousDescription
     }
+  }, [])
+  useEffect(() => {
+    if (!heroRef.current || typeof IntersectionObserver === 'undefined') return undefined
+    const observer = new IntersectionObserver(([entry]) => setHeroPassed(!entry.isIntersecting && entry.boundingClientRect.bottom <= 0))
+    observer.observe(heroRef.current)
+    return () => observer.disconnect()
   }, [])
   useEffect(() => {
     if (!applicationRef.current || typeof IntersectionObserver === 'undefined') return undefined
@@ -111,19 +166,19 @@ export default function HomeSeekersJoin() {
     <a className="hs-join__skip" href="#join-content">Skip to content</a>
     <header className="hs-join__header">
       <a href={homeSeekersPath('/')} aria-label="Home Seekers home"><img src="/brand/homeseekers/home-seekers-horizontal-black.svg" width="158" height="45" alt="Home Seekers" /></a>
-      <nav aria-label="Main navigation">{nav.map(([label, slug]) => <a aria-current={slug === 'join' ? 'page' : undefined} href={homeSeekersPath(`/${slug}`)} key={slug}>{label}</a>)}</nav>
+      <nav aria-label="Main navigation">{nav.map(([label, slug]) => <a aria-current={slug === 'join' ? 'page' : undefined} href={homeSeekersPath(`/${slug}`)} key={slug}>{label}</a>)}<HomeSeekersLoginLink /></nav>
       <ApplyLink onOpen={openSignup} />
       <HomeSeekersMobileNav links={[...nav.map(([label, slug]) => [label, homeSeekersPath(`/${slug}`)]), ['Apply to join', '#apply']]} active="join us" />
     </header>
 
-    <section className="hs-join__hero" id="join-content" tabIndex={-1} aria-labelledby="join-title">
+    <section ref={heroRef} className="hs-join__hero" id="join-content" tabIndex={-1} aria-labelledby="join-title">
       <img className="hs-join__hero-photo" src="/brand/homeseekers/join-property-hero.avif" alt="" width="1440" height="900" fetchPriority="high" />
       <div className="hs-join__hero-copy">
         <Eyebrow>Join <strong>Home Seekers</strong></Eyebrow>
-        <h1 id="join-title">Your commission is not<br /><em>our business model.</em></h1>
-        <p>Keep 100% of your commission. Choose how to pay your fixed fee: from your deals, by monthly debit order, or upfront for the year. <a href="#fees">Compare the three options.</a></p>
+        <h1 id="join-title"><span>Your commission is not</span> <em>our business model.</em></h1>
+        <p>Keep 100% of your commission. Choose a payment option that fits your cash flow.</p>
         <div className="hs-join__actions"><ApplyLink onOpen={openSignup} /><a className="hs-join__text-link" href="#fees">See the three options<ArrowRight size={18} aria-hidden="true" /></a></div>
-        <small>All fees exclude VAT. R1,500 per registered sale on every option.<br />For agents with five registered sales in the last twelve months, or R6 million of property sold.</small>
+        <div className="hs-join__hero-notes"><small>All fees exclude VAT. R1,500 per registered sale on every option.</small><small>For agents with five registered sales in the last twelve months, or R6 million of property sold.</small></div>
       </div>
       <div className="hs-join__hero-bottom"><span>Your business. Your book.</span><span>A fixed fee. A clearer future.</span></div>
     </section>
@@ -131,7 +186,8 @@ export default function HomeSeekersJoin() {
     <section className="hs-join__section hs-join__light hs-join__fees-section" id="fees" aria-labelledby="fees-title">
       <Eyebrow>Three <strong>ways in</strong></Eyebrow><h2 id="fees-title">Same support.<br /><em>Choose what suits your cash flow.</em></h2>
       <p className="hs-join__intro">Three payment options. No commission split, no cap and no royalty. You can change your option at renewal.</p>
-      <div className="hs-join__fees">
+      <p className="hs-join__options-hint">Swipe to compare the options<ArrowRight size={16} aria-hidden="true" /></p>
+      <div className="hs-join__fees" role="region" aria-label="Payment options" tabIndex={0}>
         {recruitmentPaymentOptions.map((option, index) => <article aria-labelledby={`option-${option.id}`} key={option.id} className={option.id === 'monthly' ? 'is-standard' : undefined}>
           <span className="hs-join__card-label">Option {index + 1}{option.id === 'monthly' && ' · The standard'}</span>
           <h3>{money(option.amount)}<span>{option.period} · excluding VAT</span></h3>
@@ -174,7 +230,7 @@ export default function HomeSeekersJoin() {
 
     <section className="hs-join__section hs-join__light hs-join__white" id="maths" aria-labelledby="maths-title">
       <Eyebrow>The <strong>maths</strong></Eyebrow><h2 id="maths-title">Ten sales a year.<br /><em>Here’s where it goes.</em></h2>
-      <p className="hs-join__intro">R15 million of property. {money(annualCommission)} of commission at 5%, excluding VAT.</p><p>The same ten registered sales, compared using the models in the agent overview. Home Seekers uses option 2, the monthly debit order.</p>
+      <p className="hs-join__intro">R15 million of property. {money(annualCommission)} of commission at 5%, excluding VAT.</p><p>The same ten registered sales, compared using the models in the agent overview. Home Seekers uses option 2, Prepaid.</p>
       <div className="hs-join__comparison" role="table" aria-label="Annual brokerage cost comparison">
         <div className="hs-join__comparison-head" role="row"><span role="columnheader">The model</span><span role="columnheader">They take</span><span role="columnheader">You keep</span></div>
         {comparisons.map((row) => <div role="row" className={`hs-join__comparison-row${row.featured ? ' is-featured' : ''}`} key={row.title}>
@@ -219,10 +275,8 @@ export default function HomeSeekersJoin() {
     <section className="hs-join__section hs-join__light hs-join__white" aria-labelledby="rentals-title">
       <Eyebrow>Rentals and <strong>property management</strong></Eyebrow><h2 id="rentals-title">Build a rental book.<br /><em>Keep it yours.</em></h2>
       <p className="hs-join__intro">Home Seekers carries the trust account, PayProp, reconciliations, monthly statements and annual audit. You carry the relationships.</p>
-      <table className="hs-join__pricing-table"><caption>Rental charges in the agent overview, excluding VAT</caption><thead><tr><th scope="col">Charge</th><th scope="col">Amount</th></tr></thead><tbody>
-        {rentalCharges.map(([charge, amount]) => <tr key={charge}><th scope="row">{charge}</th><td>{amount}</td></tr>)}
-      </tbody></table>
-      <p className="hs-join__fine">Administration, contract and inspection fees are recovered from the landlord or tenant in the normal way, rather than paid by the agent.</p>
+      <RentalFees />
+      <RentalExample />
       <button type="button" className="hs-join__button" aria-haspopup="dialog" onClick={() => setRentalOpen(true)}>Explore the rental offering<ArrowRight size={17} aria-hidden="true" /></button>
     </section>
 
@@ -247,14 +301,14 @@ export default function HomeSeekersJoin() {
       <div><Eyebrow>Your next <strong>move</strong></Eyebrow><h2 id="apply-title">Join Home Seekers.<br /><em>Build your next chapter with us.</em></h2><p>Your business. Your book. A team behind you. Start with your contact details, then enter the code we email you in the same form.</p><p className="hs-join__fine">Joining starts with a conversation. Applying does not commit you to moving agencies or choosing a package.</p></div>
       <div className="hs-join__invitation"><h3>A clearer next step.</h3><ol><li><span>01</span>Save your contact details</li><li><span>02</span>Verify your email with a code</li><li><span>03</span>Tell us about your experience</li></ol><ApplyLink onOpen={openSignup} /><p className="hs-join__fine">Start with your name, email and mobile number.</p>{campaignMeasurementConfigured && <label className="hs-join__consent"><input type="checkbox" checked={measurementAllowed} onChange={(event) => updateMeasurement(event.target.checked)} /><span>Allow Google and Meta campaign measurement. Optional.</span></label>}</div>
     </section>
-    <RecruitmentSignupModal open={signupOpen} onClose={() => setSignupOpen(false)} organisationName="Home Seekers" endpoint="/api/home-seekers/recruitment" onCaptured={(result) => trackRecruitmentConversion('recruitment_contact_captured', { measurementAllowed, duplicate: result.duplicate })} />
+    <RecruitmentSignupModal open={signupOpen} onClose={() => setSignupOpen(false)} organisationName="Home Seekers" returningApplicant={new URLSearchParams(window.location.search).get('documents') === '1'} endpoint="/api/home-seekers/recruitment" onCaptured={(result) => trackRecruitmentConversion('recruitment_contact_captured', { measurementAllowed, duplicate: result.duplicate })} />
     <Modal open={Boolean(selectedOption)} onClose={() => setSelectedOption(null)} title={selectedOption?.title} subtitle={selectedOption ? `Option ${recruitmentPaymentOptions.indexOf(selectedOption) + 1} · Home Seekers` : ''} className="hs-option-modal">
       {selectedOption && <>
         <div className="hs-option-modal__price"><strong>{money(selectedOption.amount)}<span>{selectedOption.period}, excluding VAT</span></strong><p>{money(selectedOption.annualFee)} annual subscription</p></div>
         <section><h4>Who it suits</h4><p>{paymentDetails[selectedOption.id].suits}</p></section>
         <section><h4>How payment works</h4><ol>{paymentDetails[selectedOption.id].steps.map((step) => <li key={step}>{step}</li>)}</ol></section>
         {paymentDetails[selectedOption.id].example && <aside className="hs-option-modal__example"><h4>A subscription example</h4><p>{paymentDetails[selectedOption.id].example}</p><small>This illustrates the subscription deduction only. The registered-sale fee and VAT are separate.</small></aside>}
-        {selectedOption.id !== 'deals' && <section><h4>Bringing a team?</h4><p>R100,000 upfront covers only the leader’s own seat. Additional seats are charged at their monthly rates. One account, one invoice.</p><table><caption>Team seat subscriptions, excluding VAT</caption><thead><tr><th scope="col">Seat</th><th scope="col">Subscription</th></tr></thead><tbody><tr><th scope="row">Team leader</th><td>{money(selectedOption.amount)} {selectedOption.id === 'monthly' ? 'per month' : 'upfront for the year'}</td></tr><tr><th scope="row">Seats 2 to 5</th><td>{money(7000)} each per month<span className="hs-join__seat-math">{money(7000 * 12)} a year (R7,000 × 12)</span></td></tr><tr><th scope="row">Seat 6 onwards</th><td>{money(6000)} each per month<span className="hs-join__seat-math">{money(6000 * 12)} a year (R6,000 × 12)</span></td></tr></tbody></table><p>The registered-sale fee still applies. Team seats cannot be paid from deals.</p></section>}
+        {selectedOption.id !== 'deals' && <section><h4>Bringing a team?</h4><p>{selectedOption.id === 'monthly' ? 'The team leader pays R9,000 on invoice on the 1st of every month. Additional seats are paid monthly at the rates below.' : 'R100,000 upfront covers the leader’s own seat for the year. Additional seats are paid monthly at the rates below.'} One account, one invoice.</p><table><caption>Team seat subscriptions, excluding VAT</caption><thead><tr><th scope="col">Seat</th><th scope="col">Subscription</th></tr></thead><tbody><tr><th scope="row">Team leader</th><td>{money(selectedOption.amount)} {selectedOption.id === 'monthly' ? 'per month' : 'upfront for the year'}</td></tr><tr><th scope="row">Seats 2 to 5</th><td>{money(7000)} each per month<span className="hs-join__seat-math">{money(7000 * 12)} a year (R7,000 × 12)</span></td></tr><tr><th scope="row">Seat 6 onwards</th><td>{money(6000)} each per month<span className="hs-join__seat-math">{money(6000 * 12)} a year (R6,000 × 12)</span></td></tr></tbody></table><p>The registered-sale fee still applies. Team seats cannot be paid from deals.</p></section>}
         <section><h4>Same support on every option</h4><p>Listing platforms, CRM, deal administration, training, compliance support and your choice of LOOM or CMA Info.</p></section>
         <div className="hs-option-modal__fees"><strong>Keep 100% of your commission.</strong><p>Less your chosen subscription and {money(transactionFee)} per registered sale. All fees exclude VAT.</p><p>No joining fee, desk fee, royalty, marketing levy or exit fee. FFC transfer: R350 to the runner handling the transfer, plus R640 payable directly to the PPRA.</p></div>
         <div className="hs-option-modal__actions"><button type="button" className="hs-option-modal__back" onClick={() => setSelectedOption(null)}>Back to options</button><button type="button" className="hs-option-modal__join" onClick={() => { setSelectedOption(null); openSignup() }}>Join Home Seekers<ArrowRight size={17} aria-hidden="true" /></button></div>
@@ -263,18 +317,19 @@ export default function HomeSeekersJoin() {
     <Modal open={rentalOpen} onClose={() => setRentalOpen(false)} title="Build a rental book." subtitle="Keep it yours. · Rentals and property management" className="hs-option-modal hs-rental-modal">
       <p>Run your rentals and property management through Home Seekers. We carry the administration behind the book, while you carry the client relationships.</p>
       <section><h4>What Home Seekers handles</h4><CheckList items={['The trust account', 'PayProp', 'Reconciliations', 'Monthly statements', 'The annual audit']} /></section>
-      <section><h4>The rental charges</h4><table><caption>All fees exclude VAT</caption><thead><tr><th scope="col">Charge</th><th scope="col">Amount</th></tr></thead><tbody>{rentalCharges.map(([charge, amount]) => <tr key={charge}><th scope="row">{charge}</th><td>{amount}</td></tr>)}</tbody></table><p>Administration, contract and inspection fees are recovered from the landlord or tenant in the normal way, rather than paid out of your pocket as the agent.</p></section>
+      <RentalFees compact />
+      <RentalExample compact />
       <section className="hs-rental-modal__example" aria-labelledby="rental-example-title">
         <h4 id="rental-example-title">What a book of 50 properties could look like</h4>
         <p>50 properties renting at R12,000 a month, managed at a 10% fee.</p>
-        <dl><div><dt>Rent collected each month</dt><dd>R600,000</dd></div><div><dt>Management fees at 10%</dt><dd>R60,000</dd></div><div><dt>Home Seekers’ share, 3.5% of rent collected</dt><dd>R21,000</dd></div></dl>
-        <strong className="hs-rental-modal__income">R39,000<span>to you each month, R468,000 a year</span></strong>
-        <p className="hs-rental-modal__note">An illustration, not a promise. Figures exclude VAT and the file, lease and inspection charges above.</p>
+        <dl><div><dt>Rent collected: 50 × {money(rentalExampleRent)}</dt><dd>{money(50 * rentalExampleRent)}</dd></div><div><dt>Your monthly commission at 10%</dt><dd>{money(50 * rentalExampleCommission)}</dd></div><div><dt>Home Seekers’ fee: {money(50 * rentalExampleCommission)} × 3.5%</dt><dd>{money(50 * rentalExampleFee)}</dd></div></dl>
+        <strong className="hs-rental-modal__income">{money(50 * rentalExampleAgentIncome)}<span>remaining each month, {money(50 * rentalExampleAgentIncome * 12)} a year</span></strong>
+        <p className="hs-rental-modal__note">An illustration, not a promise. Figures exclude VAT, once-off file fees and other costs. Opening 50 new rental files would incur {money(50 * rentalFileFee)} in once-off file fees.</p>
       </section>
       <section><h4>The book stays yours</h4><p>You own your rental book outright and can sell it when you decide to move on. The relationships and the value you build remain yours.</p><h4>Income for the quieter months</h4><p>Sales income depends on the next deal. A rental book can provide recurring monthly income, including the months when you have not listed or sold a property. It is a business you build over time.</p></section>
       <div className="hs-option-modal__actions"><button type="button" className="hs-option-modal__back" onClick={() => setRentalOpen(false)}>Back to Join us</button><button type="button" className="hs-option-modal__join" onClick={() => { setRentalOpen(false); openSignup() }}>Join Home Seekers<ArrowRight size={17} aria-hidden="true" /></button></div>
     </Modal>
     <HomeSeekersFooter />
-    {!applicationVisible && <ApplyLink onOpen={openSignup} className="hs-join__sticky-apply">Join now</ApplyLink>}
+    {heroPassed && !applicationVisible && !signupOpen && !selectedOption && !rentalOpen && <ApplyLink onOpen={openSignup} className="hs-join__sticky-apply">Join now</ApplyLink>}
   </main>
 }

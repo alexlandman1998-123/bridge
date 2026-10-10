@@ -67,3 +67,10 @@ it('includes historic imports when opening by reference', async () => {
   expect(await getRentalListingForAgent('HISTORIC-REF', 'agent-a', { organisationId: 'org-a' })).toMatchObject({ id })
   expect(mocks.list).toHaveBeenCalledWith('agent-a', expect.objectContaining({ includeArchivedImports: true, includeArchivedListings: true, includeWithdrawnListings: true, organisationId: 'org-a' }))
 })
+
+it('loads rental cards without document and mandate history', async () => {
+  await listRentalListingsForAgent('agent-a', { organisationId: 'org-a' })
+  expect(mocks.list).toHaveBeenCalledWith('agent-a', expect.objectContaining({
+    includeRequirementsAndDocuments: false, includeMedia: true, requireAvailable: true,
+  }))
+})

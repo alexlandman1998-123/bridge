@@ -1,3 +1,4 @@
+import { resolveRentalPriceFrequency } from './listing-price'
 import { additionalMockProperties } from '@/lib/mock-properties'
 import { applyBlogMediaAssets, visiblePublishedBlogPosts } from '@/lib/blog-publication'
 import { resolveListingTransactionType } from '@/lib/listing-transaction-type'
@@ -134,6 +135,7 @@ function mapProperty(row: Record<string, unknown>, media: PublicProperty['media'
     reference: String(row.arch9_reference || row.listing_id),
     title: String(row.title || 'Property listing'),
     transactionType,
+    rentalPriceFrequency: transactionType === 'rental' ? resolveRentalPriceFrequency(row.rental_price_frequency) : undefined,
     propertyType: String(row.property_type || 'Property'),
     suburb: String(row.suburb || ''),
     province: row.province ? String(row.province) : undefined,

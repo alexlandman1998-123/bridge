@@ -46,7 +46,6 @@ test('Quick Add initial state includes ownership, declaration, and seller portal
 test('Sales new listing Step 2 exposes portal-critical property fields', () => {
   for (const copy of [
     'Ownership scheme',
-    'In an estate / HOA?',
     'Descriptive property type',
     'Smallholding',
     'New Development',

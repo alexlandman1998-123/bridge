@@ -368,11 +368,13 @@ class AppErrorBoundary extends Component {
     const staleChunkError = !import.meta.env.DEV && moduleLoadError
     const staleChunkExhausted = staleChunkError && this.state.staleChunkRecoveryExhausted
     const browserStorageQuotaError = isBrowserStorageQuotaError(this.state.error)
+    const brandName = this.props.brandName || 'Arch9'
+    const homeSeekers = brandName === 'Home Seekers'
 
     return (
-      <section className="auth-loading-screen">
+      <section className="auth-loading-screen" style={homeSeekers ? { background: '#f5f5f2', color: '#171717', fontFamily: 'Asap, Arial, sans-serif' } : undefined}>
         <div className="auth-loading-card">
-          <h2>
+          <h2 style={homeSeekers ? { color: '#171717', fontFamily: 'Montserrat, Arial, sans-serif' } : undefined}>
             {localModuleLoadError
               ? 'This page couldn’t load locally'
               : staleChunkExhausted
@@ -385,7 +387,7 @@ class AppErrorBoundary extends Component {
             {localModuleLoadError
               ? 'The development server could not load this page or one of its dependencies. Check the server output, then refresh the page.'
               : this.state.recoveringFromStaleChunk
-              ? `A newer version of Arch9 is available. Checking app files before refreshing${this.state.staleChunkRecoveryAttempt > 1 ? `, attempt ${this.state.staleChunkRecoveryAttempt}` : ''}.`
+              ? `A newer version of ${brandName} is available. Checking app files before refreshing${this.state.staleChunkRecoveryAttempt > 1 ? `, attempt ${this.state.staleChunkRecoveryAttempt}` : ''}.`
               : staleChunkExhausted
                 ? 'One of the app files is still unavailable at this location. Refresh again in a moment, or open the dashboard while the app file catches up.'
               : staleChunkError
@@ -404,6 +406,7 @@ class AppErrorBoundary extends Component {
             <button
               type="button"
               className="auth-primary-cta"
+              style={homeSeekers ? { background: '#ff6319', borderColor: '#ff6319', color: '#171717' } : undefined}
               onClick={() => {
                 if (localModuleLoadError) {
                   window.location.reload()
@@ -422,7 +425,7 @@ class AppErrorBoundary extends Component {
             >
               {localModuleLoadError ? 'Refresh Page' : staleChunkError ? 'Refresh App' : browserStorageQuotaError ? 'Clear Local Draft' : 'Retry'}
             </button>
-            <Link to={this.props.fallbackPath || '/dashboard'} className="auth-secondary-cta">
+            <Link to={this.props.fallbackPath || '/dashboard'} className="auth-secondary-cta" style={homeSeekers ? { color: '#171717', borderColor: '#d9d9d1' } : undefined}>
               {this.props.fallbackLabel || 'Go to Dashboard'}
             </Link>
           </div>

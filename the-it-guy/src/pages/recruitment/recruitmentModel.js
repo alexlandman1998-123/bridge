@@ -3,11 +3,11 @@ import { emptyJoiningPlan, joiningPlanError } from './recruitmentJoiningModel'
 export const recruitmentStages = [
   ['lead_received', 'Lead Received'],
   ['application_submitted', 'Application Submitted'],
+  ['documents_uploaded', 'Documents Uploaded'],
   ['under_review', 'Under Review'],
   ['application_approved', 'Application Approved'],
   ['contract_sent', 'Contract Sent'],
   ['contract_signed', 'Contract Signed'],
-  ['onboarding_complete', 'Onboarding Complete'],
   ['agent_activated', 'Agent Activated'],
 ]
 export const recruitmentOutcomes = [
@@ -24,9 +24,9 @@ export const emptyRecruitmentLead = () => ({
   joining_json: emptyJoiningPlan(),
 })
 export const isClosedRecruitmentLead = (lead) => ['agent_activated', 'legacy_joined', 'closed_lost'].includes(lead.status)
-export const stageLabel = (status) => [...recruitmentStages, ...recruitmentOutcomes].find(([key]) => key === status)?.[1] || 'Lead Received'
+export const stageLabel = (status) => [...recruitmentStages, ...recruitmentOutcomes].find(([key]) => key === (status === 'onboarding_complete' ? 'contract_signed' : status))?.[1] || 'Lead Received'
 export const intakeChannelLabel = (channel) => ({ manual: 'Staff capture', public_link: 'Public application link', website: 'Website', private_link: 'Private onboarding link' })[channel] || 'Staff capture'
-export const activityLabel = (type) => ({ lead_received: 'Lead received', application_draft_saved: 'Applicant questionnaire saved', application_submitted: 'Application submitted', review_started: 'Application review started', review_updated: 'Review findings updated', application_approved: 'Application approved', contract_prepared: 'Contract version prepared', contract_delivery_recorded: 'Prior contract delivery recorded', contract_signed: 'Signed contract verified', onboarding_updated: 'Onboarding findings updated', onboarding_document_uploaded: 'Onboarding document uploaded', onboarding_completed: 'Onboarding completed', agent_access_prepared: 'Agent access prepared', agent_activated: 'Agent activated', joining_choices_saved: 'Joining choices saved', lead_updated: 'Lead details updated', lead_closed: 'Lead closed', lead_reopened: 'Lead reopened', existing_record_imported: 'Existing recruitment record retained' })[type] || 'Recruitment activity'
+export const activityLabel = (type) => ({ lead_contacted: 'Lead contacted', document_uploaded: 'Document uploaded', document_exception_recorded: 'Document exception recorded', application_rejected: 'Application rejected', lead_received: 'Lead received', application_draft_saved: 'Applicant questionnaire saved', application_submitted: 'Application submitted', review_started: 'Application review started', review_updated: 'Review findings updated', application_approved: 'Application approved', contract_prepared: 'Contract version prepared', contract_delivery_recorded: 'Prior contract delivery recorded', contract_signed: 'Signed contract verified', onboarding_updated: 'Onboarding findings updated', onboarding_document_uploaded: 'Onboarding document uploaded', onboarding_completed: 'Onboarding completed', agent_access_prepared: 'Agent access prepared', agent_activated: 'Agent activated', joining_choices_saved: 'Joining choices saved', lead_updated: 'Lead details updated', lead_closed: 'Lead closed', lead_reopened: 'Lead reopened', existing_record_imported: 'Existing recruitment record retained' })[type] || 'Recruitment activity'
 export function recruitmentReadiness(lead = {}) {
   const details = lead.details_json || {}
   const application = lead.application_json?.answers
@@ -49,7 +49,7 @@ export function validateRecruitmentLead(lead = {}) {
   if (phone.length > 50 || (phone && phone.replace(/\D/g, '').length < 9)) return 'Enter a valid phone number.'
   if (!String(lead.source || '').trim() || String(lead.source).trim().length > 120) return 'Choose or enter the lead source (up to 120 characters).'
   if (String(lead.area || '').length > 254) return 'Enter a preferred area up to 254 characters.'
-  if (![...recruitmentStages, ...recruitmentOutcomes].some(([key]) => key === lead.status)) return 'Choose a valid recruitment stage.'
+  if (lead.status !== 'onboarding_complete' && ![...recruitmentStages, ...recruitmentOutcomes].some(([key]) => key === lead.status)) return 'Choose a valid recruitment stage.'
   if (!lead.id && lead.status !== 'lead_received') return 'New enquiries start at Lead Received.'
   const joiningError = joiningPlanError(lead.joining_json)
   if (joiningError) return joiningError

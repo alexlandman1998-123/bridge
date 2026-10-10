@@ -1,19 +1,24 @@
 import { normalizeRecruitmentProfile } from '../pages/recruitment/recruitmentProfileModel'
-import { normalizeRecruitmentContact, recruitmentContactErrors, recruitmentSignupErrors } from '../pages/recruitment/recruitmentContactModel'
+import { normalizeRecruitmentContact, recruitmentSignupErrors } from '../pages/recruitment/recruitmentContactModel'
 
-export async function recruitmentSignupRequest(action, details = {}, { endpoint = '/api/public/recruitment-intake', token, fetcher = fetch, timeoutMs = 20000, codeOnly = false } = {}) {
-  if (action === 'signup' && Object.keys(codeOnly ? recruitmentContactErrors(details.contact) : recruitmentSignupErrors(details.contact, details.password)).length) throw new Error(codeOnly ? 'Check your contact details and consent.' : 'Check your contact details, password and consent.')
+export async function recruitmentSignupRequest(action, details = {}, { endpoint = '/api/public/recruitment-intake', token, fetcher = fetch, timeoutMs = 20000, accessToken } = {}) {
+  if (action === 'signup' && Object.keys(recruitmentSignupErrors(details.contact, details.password)).length) throw new Error('Check your contact details, password and consent.')
   const body = action === 'signup'
-    ? { action, contact: normalizeRecruitmentContact(details.contact), ...(!codeOnly ? { password: details.password } : {}), submissionKey: details.submissionKey, companyWebsite: details.companyWebsite || '' }
+    ? { action, contact: normalizeRecruitmentContact(details.contact), password: details.password, submissionKey: details.submissionKey, companyWebsite: details.companyWebsite || '' }
     : action === 'submit_profile' ? { action, revision: details.revision, submissionKey: details.submissionKey, privacyAccepted: details.privacyAccepted === true, declarationAccepted: details.declarationAccepted === true }
     : action === 'save_profile' ? { action, answers: normalizeRecruitmentProfile(details.answers), revision: details.revision, page: details.page, intent: details.intent }
+    : action === 'prepare_photo' ? { action, requestId: details.requestId, photo: Object.fromEntries(['name', 'mimeType', 'size'].map(key => [key, details.photo?.[key]])) }
+    : action === 'commit_photo' ? { action, requestId: details.requestId }
+    : action === 'prepare_document' ? { action, requestId: details.requestId, document: Object.fromEntries(['name', 'type', 'mimeType', 'size'].map(key => [key, details.document?.[key]])) }
+    : action === 'commit_document' ? { action, requestId: details.requestId }
+    : action === 'download_document' ? { action, documentPath: details.documentPath }
     : ['send_verification', 'verify_email', 'sign_in'].includes(action)
       ? { action, email: details.email, ...(details.submissionKey ? { submissionKey: details.submissionKey } : {}), ...(action === 'verify_email' ? { code: details.code } : {}), ...(action === 'sign_in' ? { password: details.password } : {}) }
-      : { action: ['resume', 'sign_out'].includes(action) ? action : 'context' }
+      : { action: ['resume', 'sign_out', 'open_account'].includes(action) ? action : 'context' }
   if (token) body.token = token
   const controller = new AbortController(), timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
-    const response = await fetcher(endpoint, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, signal: controller.signal, body: JSON.stringify(body) })
+    const response = await fetcher(endpoint, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}) }, signal: controller.signal, body: JSON.stringify(body) })
     const result = await response.json().catch(() => ({}))
     const signupReady = result.accepted === true && (result.accountCreated === true || (result.contactAccepted === true && result.verificationRequired === true))
     if (!response.ok || (action === 'send_verification' && result.verificationRequested !== true) || (action === 'submit_profile' && (result.accepted !== true || result.applicant?.applicationSubmitted !== true || result.applicant.emailVerification !== 'verified')) || (action === 'signup' && !signupReady) || (action === 'save_profile' && (result.saved !== true || result.applicant?.emailVerification !== 'verified'))) {

@@ -2778,10 +2778,22 @@ stamped by the database. Repeating the same draft creation recovers its original
 record. An append-only activity history records receipt, edits, closure and
 reopening; receipt metadata cannot be changed by callers.
 
-The Overview shows the agreed eight-stage journey. The stage is read-only in
-this phase, and database guards reject advancement to later stages. Historical
-joined records are retained separately without implying that an agent account
-was activated. The onboarding readiness indicator does not advance the journey.
+The Overview shows **Lead Received → Application Submitted → Documents Uploaded →
+Under Review → Application Approved → Contract Sent → Contract Signed → Agent
+Activated**. Documents Uploaded reflects saved supporting files after application
+submission; later records without files show “Not uploaded” for that milestone.
+Onboarding checks remain part of the work between Contract Signed and actual
+activation. A completed onboarding record stays at Contract Signed in the journey
+until activation is recorded. Historical joined records are retained separately
+without implying that an agent account was activated. The onboarding readiness
+indicator does not advance the journey.
+The Next best action box provides contact recording, a document reminder,
+manual document upload, application review and approval/rejection, contract
+delivery and signature recording, and activation. Contact recording keeps the
+lead at Lead Received; only a completed, verified application reaches Application
+Submitted. Review requires saved files or recorded exceptions for all four
+required document types. Approval queues the notice automatically. Contract and
+activation actions open the existing evidence checks before advancing the stage.
 Public links, website intake and automated invitations are covered by the later
 workspace phases below.
 
@@ -2820,6 +2832,58 @@ database function in isolated PostgreSQL, retry/conflict handling, tenant and
 role isolation, metadata protection, rate limits and rollback without orphan leads.
 
 ### Shared signup popup (signup journey phase 2)
+
+**Home Seekers contact-first refinement (10 October 2026, phase 1):** the
+Home Seekers wrapper now advertises `verificationMethod: email_code`. Its form
+collects name, surname, email, mobile, a login password and contact consent without a
+package commitment. `signup` saves the contact enquiry first and prepares an
+unconfirmed Auth account with that password; existing accounts are never reset or
+given organisation membership. The same contact receipt and submission key
+recover uncertain responses without another lead.
+
+**Submission and document handoff (10 October 2026):** Home Seekers final review
+uses **Submit Application**, followed by **Application under review** and a
+**Log in & upload documents** link. The initial password is sent only to Auth,
+never to contact capture, questionnaire JSON or email. The account is still
+unconfirmed until the numeric email code is verified. Existing accounts retain
+their password; returning applicants can continue using an email code.
+
+`/applicant/my-profile` now offers email/password login first, with code recovery.
+Its server endpoint accepts `sign_in` through the existing canonical applicant
+session checks. It exposes the submitted application and protected uploads,
+including ID/passport guidance for FICA, an FFC certificate under registration
+evidence, and supporting FICA/proof-of-address files under the existing `Other`
+document type. It does not grant agency membership or approve an application.
+
+The existing submission queue and dispatcher send a Home Seekers confirmation
+with the canonical login link, password login instructions and FICA/FFC next
+steps. The message never contains the password and retains the queued delivery's
+idempotency and recovery behavior. No new migration is needed for these changes;
+the existing applicant setup/document and submission queue migrations must be
+present. Release the website/API, primary app and email handler together. Local
+previews simulate submission and send no accounts, applications or emails.
+
+Home Seekers `send_verification` uses the existing request budget and invokes
+the server-only `home_seekers_recruitment_code` route in `send-email`. That route
+loads the immutable contact capture within the fixed Home Seekers organisation,
+generates the Auth OTP without sending the shared Auth email, and sends only
+the numeric code through Resend. No activation link or button is included.
+The applicant stays in the open form, can request another code after the
+cooldown, and continues on the same saved enquiry after canonical Auth
+verification. Send failures acknowledge the saved contact; invalid, used or
+expired codes offer same-form recovery. Both six- and eight-digit provider
+codes are supported; expiry follows the deployed Auth configuration. Shared
+recruitment links retain their existing password and Auth-email behaviour.
+
+Release requires the updated `send-email` function before the Home Seekers
+website/API artifact and the primary app. No database migration or global Auth
+template change is required. A real-inbox verification check remains necessary
+after an explicitly approved release; local checks send no email. In addition
+to the focused checks below, run `deno test --allow-env --allow-read --allow-net
+--config ../supabase/functions/send-email/deno.json --no-lock
+../supabase/functions/send-email/handlers/recruitmentVerificationCode.test.ts`.
+
+The earlier shared-popup foundation is described below for context.
 
 The Home Seekers Join page replaces its embedded legacy application form with a
 **Join Home Seekers** invitation. The header, hero, FAQ, bottom invitation and
@@ -2916,6 +2980,103 @@ Use the recruitment Vitest directory and standalone website packaging tests abov
 The database journey covers actual migrated SQL, server verification, cookie
 resume, sign-out, canonical ownership, agency isolation and session expiry using
 synthetic Auth responses. No check sends email or changes a remote account.
+
+### Home Seekers questionnaire refinement (phase 2)
+
+The Home Seekers popup saves valid partial answers after a 1.5-second pause,
+shows whether the draft is saved, and restores both answers and the saved step.
+Named steps let applicants revisit earlier sections; required answers still gate
+progress. Save & close and sign-out save changed answers first. Refreshing or
+closing the browser warns while there are unsaved changes. Draft saving never
+submits an application, and answers are not stored in browser storage.
+
+An expired session offers email-code verification inside the same popup while
+retaining the unsaved answers. The server returns the original contact receipt
+only after checking canonical applicant access, so recovery stays attached to
+that enquiry. A draft changed elsewhere requires an explicit reload. Uncertain
+save responses retain the exact request for retry before saving newer typing;
+automatic saves never replace answers typed while a request is in flight.
+Review declarations must be confirmed again after verification recovery.
+
+This refinement uses the existing questionnaire and session migrations. No new
+schema or global Auth configuration is needed. The recruitment Vitest directory
+and standalone Home Seekers packaging checks cover saves, resume, conflicts,
+retries and session recovery using isolated SQL and synthetic Auth responses.
+Desktop and mobile browser checks use a synthetic local applicant; live email
+delivery and the production journey still need an approved release and check.
+
+### Home Seekers package preference (phase 3)
+
+The last questionnaire screen asks which of the website's three payment options
+interests the applicant: Paid from your deals, Monthly debit order, or Annual
+upfront payment. Decide later is an equal choice. No option is preselected. A
+valid partial draft can be saved without a choice; final review requires an
+explicit preference or Decide later. The wording makes clear this is not a
+commitment, and there is no payment or package activation in this flow.
+
+The choice saves and resumes with the existing lead, appears in final review and
+the Recruitment questionnaire/application summary, and is copied from the saved
+draft into the immutable submitted application. Browser-supplied answers cannot
+override the reviewed choice during submission. Older complete drafts retain
+their answers and return to the last screen to choose; already submitted
+applications remain unchanged.
+
+Apply `20261010131128_home_seekers_recruitment_package_preference.sql` after the
+existing verified-submission migration before releasing this frontend/API change.
+It extends the existing JSON normalizer, draft/submission validation and guards;
+no table or column is added. Home Seekers is matched by its canonical organisation
+ID, and package fields are rejected for other organisations. Function privileges,
+verified session checks, revision conflicts and idempotent retries remain in place.
+
+Use the recruitment Vitest directory and standalone Home Seekers packaging check.
+The isolated database journey covers all four choices, missing/invalid choices,
+partial saves, resume, retries, immutable submission, old-record compatibility and
+agency/role isolation. Browser checks use a synthetic local applicant. No remote
+migration, email, payment or deployment has been performed for this phase.
+
+### Home Seekers final journey checks (refinement phase 4)
+
+Code entry accepts a complete pasted six- or eight-digit code even when copied
+with spaces. Missing email, code or password errors describe the relevant field,
+focus it and associate the message with it for assistive technology. Home Seekers
+never asks for a password in this journey.
+
+Before verification, **Use a different email** lets an applicant correct a typo.
+The original contact capture is retained; the corrected email requires fresh
+consent and a new receipt. A request in flight cannot be interrupted by this
+action. Closing and reopening the popup before verification retains the original
+receipt without another capture or automatic email. Returning after a page reload
+uses **Already started? Continue with an email code**. Verified applicants resume
+through their opaque session; submitted applications reopen as confirmation.
+
+Run the existing recruitment Vitest directory, standalone Home Seekers packaging
+check and code-email handler tests described above. Browser acceptance covers
+contact capture, invalid/expired codes and resend, all questionnaire screens,
+save/close/reopen, verification recovery, package preference, review consent and
+submission on desktop and mobile. The fixtures are local and send no email.
+
+Local acceptance on 10 October 2026 passed 324 recruitment checks, 16 standalone
+packaging checks, five code-email checks and `check:app` (lint has existing
+warnings and no errors). The browser rehearsal retained all 26 normalized answer
+fields through expiry/reopen and produced one capture and one submission, with
+Decide later retained. At 390px, the popup's client and scroll widths were both
+344px. Evidence is in `output/playwright/home-seekers-phase4/`; this is synthetic
+local acceptance, with the real-inbox check still outstanding.
+
+For an approved release, first confirm the target and recovery evidence using the
+[database release runbook](../docs/database-release-runbook.md), and inspect the
+exact pending migration scope. Apply the phase 3 package-preference migration
+before dependent code, release the code-email `send-email` handler, then deploy
+the Home Seekers website/API and matching primary app. Build from an approved
+production base with the scoped recruitment changes; do not release unrelated
+work from the active working tree.
+
+After release, an approved real-inbox canary must prove delivery, the provider's
+actual code length/expiry and latest-code recovery, same-tab completion, resumed
+answers, one unchanged lead through retries, and the chosen non-binding preference
+in Recruitment. Check all four preferences, including Decide later. Local tests
+do not prove hosted Auth configuration, inbox delivery or production behaviour.
+No remote migration, email or deployment is performed by the local checks.
 
 ### Applicant questionnaire (signup journey phase 4)
 
@@ -3341,6 +3502,123 @@ An uncertain result beyond that window requires staff review and explicit
 acknowledgement before another email. A new acknowledged send preserves the old
 receipt. Sending failure leaves the joining record, evidence and planned access intact.
 
+Home Seekers verified Join Us submissions queue **Thank you for your application**
+followed by separate **Log in and upload your documents** instructions. The controlled login link opens
+`/applicant/my-profile`, with one navigation item, **My Profile**. It shows a
+private profile picture, the submitted questionnaire snapshot and the four
+required document uploads, plus the required supporting FICA/proof-of-address upload
+(retained as the `Other` upload type).
+The website confirmation points to this profile screen. Applicants log in with
+their application email and password, with an email code available for recovery.
+A normal app login also redirects a pending
+applicant here and opens their restricted session using a server-validated Auth
+identity. Invitation acceptance remains reachable, while agency navigation stays
+locked until the latest submitted application reaches Agent Activated.
+
+The applicant login and My Profile screens use Home Seekers' logo, charcoal and
+orange palette, typography, browser icon and page title. The responsive profile
+puts the saved application status and document checklist first, with custom file
+controls, saved filenames and downloads. Submitted answers stay available in an
+expandable summary. These presentation changes retain the existing restricted
+login, private uploads and activation gate; other organisations' signup forms
+keep their current presentation.
+
+Profile pictures use a separate private `recruitment-profile-photos` bucket
+(JPG/PNG up to 2 MB). Prepared immutable upload requests and actual Storage
+metadata must match before confirmation. They do not count toward Documents
+Uploaded, change the submitted questionnaire, create membership or publish agent
+media. Documents and pictures are preserved after approval. The submission email
+queue uses the verified applicant binding, its own server-only dispatcher, saved
+provider attempts and the existing 23-hour retry window. Older submissions are
+not automatically emailed.
+
+Apply the append-only migrations `20261010145840_recruitment_applicant_arch9_setup`,
+`20261010150417_recruitment_applicant_login_gate` and
+`20261010151044_recruitment_activation_access_gate` after the recruitment journey
+migration. Deploy the updated `send-email` function and
+`recruitment-submission-dispatcher` before the updated app and Home Seekers website.
+The new dispatcher uses the existing Vault project URL/service key and pg_cron
+schedule. Verify a new submission's queue, provider receipt and applicant setup
+after an approved release; local tests use simulated storage and email providers.
+
+New Home Seekers **first-screen contact receipts** also queue three separate staff
+notifications: `thomas@homeseekers.co.za`, `admin@homeseekers.co.za` and
+`alex@arch9.co.za`. The event is the committed contact save, before account
+preparation, email verification or full questionnaire submission. Notifications
+include the original contact details and a link to the saved recruitment lead.
+Manual leads, other agencies and historical contacts are excluded. Contact-save
+retries reuse the same three jobs. Each recipient has a saved provider payload,
+lease and receipt; failed recipients retry independently and uncertain sends stop
+before Resend's 24-hour idempotency window expires. Controlled test contacts are
+suppressed before notifying real staff addresses.
+
+This follow-up requires the append-only
+`20261010153201_home_seekers_recruitment_contact_notifications.sql` migration and
+`recruitment-contact-dispatcher` Edge Function. Deploy the function before applying
+the migration after approval. The existing Vault project URL/service key and
+pg_cron invoke the worker every minute when notifications are pending. No frontend
+change is required. Verify a new contact's three queue rows, provider receipts and
+recipient inboxes after release; local checks do not send actual emails.
+
+The append-only `20261010154503_home_seekers_recruitment_email_flow.sql` migration
+extends the existing queues and workers with the complete Home Seekers email flow:
+
+- **New Lead Received** is queued when the first contact form commits to the CRM.
+- **New Application Received** is queued when the complete verified questionnaire commits.
+- **{Applicant} has uploaded their documents** is queued when the requested document
+  pack becomes complete, including proof of address and any recorded exceptions
+  for the four original document categories.
+- All three staff events have separate retained jobs for `thomas@homeseekers.co.za`,
+  `admin@homeseekers.co.za` and `alex@arch9.co.za`.
+- Applicants receive a thank-you explaining the second email, followed by a
+  My Profile login link and a checklist explaining each requested document. A single
+  follow-up becomes due 24 hours after submission if files are missing. It lists
+  remaining files and stops after completion, approval, closure or activation.
+
+The instructions wait for the thank-you's provider acceptance (or an explicit
+suppression/review state), and the one-day reminder requires accepted instructions.
+Every email has its own provider attempt and queue lease. Retry payloads stay
+frozen. The reminder's 23-hour retry window starts with its first provider attempt,
+so being scheduled a day later does not expire it before it can send. Historical
+emails are not backfilled. Proof of address is included in Home Seekers readiness
+and review checks; other agencies retain their existing document rules. Private
+queues remain inaccessible to applicants and managers.
+
+Release requires the updated `send-email`, `recruitment-contact-dispatcher` and
+`recruitment-submission-dispatcher` functions, this migration and the primary app.
+Stop the workers during the schema/function cutover because the submission
+completion RPC now carries a queue lease. Resume the existing one-minute schedules
+once versions match. Apply and dispatch only after release approval. Confirm
+recipient inboxes separately from provider acceptance; local database/provider
+fixtures and email previews do not establish inbox delivery.
+
+Home Seekers recruitment branding is shared across these six notifications,
+verification codes, approval notices and recruitment invitations. Staff recipients
+use the same Home Seekers sender as applicants, including notifications addressed
+to `alex@arch9.co.za`. Fresh sends require an unpaused, verified Resend identity
+in `email_sender_identities` for the Home Seekers organisation, using
+`homeseekers.co.za` or its sending subdomain. They cannot fall back to an Arch9
+mailbox. A missing identity leaves automated notifications pending and prevents
+verification code generation; configure the verified domain and identity before
+releasing this change. Frozen provider retries retain their original payload.
+
+Branding resolves server-side from the saved organisation. The black
+light-background logo is used on white. Saved SVG logos fall back to the email
+PNG at `public/brand/homeseekers/recruitment-logo-on-white.png`, exported from
+the existing black wordmark with an opaque white background. Publish this asset
+with the primary app before releasing the handlers. Orange buttons use dark
+text; support links use dark text on white and point to Home Seekers. Approval
+and code messages provide the appropriate next step without an activation CTA.
+The browser previews use a local copy of the same asset and do not send email.
+
+Focused branding checks: `deno test --allow-env --allow-read --import-map
+supabase/functions/send-email/deno.json
+supabase/functions/send-email/services/homeSeekersRecruitmentBranding.test.ts`
+from the repository root, together with the recruitment handler/dispatcher and
+shared email branding/layout tests. A post-release inbox review in Gmail/Outlook
+is still required; browser rendering does not establish inbox delivery or
+client-specific dark-mode behaviour.
+
 Release requirements for this consolidation:
 
 - Apply the reviewed joining-record, activation-handover and entry-avenues
@@ -3563,3 +3841,31 @@ The live app shell identifies the same runtime commit. Signed-in production
 capture was not retested because no authenticated browser was available.
 The older `test:listing-portal-readiness-phase5` source-text assertion still expects
 the previously removed rental readiness grid; use the focused behavior checks above.
+
+### Home Seekers common login (10 October 2026)
+
+The public desktop menu, mobile drawer and shared footer link to
+`https://app.arch9.co.za/homeseekers/login`. This is a Home Seekers-branded page
+in the primary app, using its existing password login and password recovery.
+It does not create a second account or an embedded cross-domain session.
+
+After authentication, the validated Auth identity and existing database
+applicant gate determine the destination. Verified drafts and submitted
+applications open My Profile; approved, contracted and onboarding applicants
+remain there until staff activation. Activated users continue to `/dashboard`,
+where existing workspace membership and permission checks still apply.
+No application status is disclosed through an anonymous email lookup.
+Invitation acceptance remains reachable through the established invite routes.
+
+`20261010162130_home_seekers_unified_login.sql` extends the existing gate and
+server-only account receipt to verified saved drafts. The primary applicant
+API can then open that owned draft using the usual restricted cookie. Uploads
+still require a submitted application. This migration changes no records,
+memberships, approval rules, email queues or document permissions.
+
+Verify with the Home Seekers login/listing/form checks, applicant setup checks,
+`homeSeekersLoginTarget.test.js`, `recruitmentApplicantGateCheck.test.js`, and
+`recruitmentDatabase.test.js`. Run `npm run check:app` from the repository root
+for the shared login change and rebuild the standalone website. Release needs
+this migration and the updated primary app and website together; local checks
+and the login layout preview do not confirm a production login or deployment.

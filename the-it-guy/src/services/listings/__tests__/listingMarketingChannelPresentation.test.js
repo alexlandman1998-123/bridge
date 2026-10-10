@@ -32,6 +32,12 @@ test('Home Seekers CRM links open the standalone property page and follow a cust
   assert.equal(buildWebsiteListingPublicUrl({}, 'listing-1'), '')
 })
 
+test('iSell cards show the live Kingdom snapshot independently of their Arch9 draft', () => {
+  const publication = { status: 'published', websiteStatus: 'published', projectionStatus: 'Draft', hostname: 'kingdomrealestate.co.za', websiteChannel: 'kingdom_website', websiteLabel: 'Kingdom Real Estate Website' }
+  assert.deepEqual(getListingLiveChannels({}, publication), [{ key: 'kingdom_website', label: 'Kingdom Real Estate Website' }])
+  assert.equal(getListingLiveChannels({}, { ...publication, status: 'unpublished' }).length, 0)
+})
+
 test('PP organisation defaults are notes and do not become missing requirements', () => {
   const warning = 'using_organisation_default_private_property_config'
   const result = getPrivatePropertyReadinessMessages({

@@ -6,8 +6,8 @@ export const ffcTypeOptions = [['candidate','Candidate property practitioner'],[
 export const referralOptions = [['referral','Referral'],['social_media','Social media'],['website','Agency website'],['search','Search engine'],['event','Industry event'],['other','Other']]
 export const provinceOptions = ['Eastern Cape','Free State','Gauteng','KwaZulu-Natal','Limpopo','Mpumalanga','North West','Northern Cape','Western Cape'].map(value => [value,value])
 export const callingCodes = [['+27','South Africa'],['+1','United States / Canada'],['+44','United Kingdom'],['+61','Australia'],['+64','New Zealand'],['+91','India'],['+49','Germany'],['+33','France'],['+971','United Arab Emirates'],['+86','China'],['+234','Nigeria'],['+254','Kenya'],['+263','Zimbabwe'],['+267','Botswana'],['+264','Namibia'],['+258','Mozambique'],['+260','Zambia'],['+266','Lesotho'],['+268','Eswatini']]
-export const homeSeekersPackageOptions = [['deals','Paid from your deals'],['monthly','Monthly debit order'],['upfront','Annual upfront payment'],['decide_later','Decide later']]
-export const homeSeekersPackageNote = 'This is a starting preference, not a commitment. We’ll discuss the options with you before you decide.'
+export const homeSeekersPackageOptions = [['deals','Post Paid'],['monthly','Prepaid'],['upfront','Upfront'],['decide_later','Decide later']]
+export const homeSeekersPackageNote = 'Let us know which option interests you. You can decide after we’ve talked it through together.'
 // Page descriptors also define the server whitelist; country-specific questions remain explicit.
 export const profileFields = {
   firstName:{label:'First name',page:0,required:true,max:60}, middleName:{label:'Middle name',page:0,max:60}, lastName:{label:'Surname',page:0,required:true,max:60}, preferredName:{label:'Preferred name',page:0,max:60}, dateOfBirth:{label:'Date of birth',page:0,required:true,type:'birth',max:10},

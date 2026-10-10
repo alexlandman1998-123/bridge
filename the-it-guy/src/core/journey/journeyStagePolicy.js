@@ -120,6 +120,7 @@ export const JOURNEY_STAGE_POLICY_REGISTRY = Object.freeze({
     qualification: catchUpPolicy('Qualification'),
     qualified: catchUpPolicy('Qualified'),
     viewing: catchUpPolicy('Viewing'),
+    development_selection: evidencePolicy('Unit Selection & Reservation', ['development_unit', 'unit_reservation']),
     offer: evidencePolicy('Offer', ['signed_otp']),
     otp: evidencePolicy('OTP', ['signed_otp']),
     transactionSetup: evidencePolicy('Transaction Setup', ['buyer_profile', 'transaction_terms']),

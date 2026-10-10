@@ -36,7 +36,7 @@ export function recruitmentReviewSummary(lead) {
   const settled = complete === 4 && docs.every((doc) => ['reviewed','not_applicable'].includes(doc.status))
   return { status:missing ? 'needs_information' : settled ? 'ready_for_approval' : 'in_progress',label:missing ? 'Needs information' : settled ? 'Ready for approval' : 'Review in progress',complete,total:4 }
 }
-export const reopenRecruitmentStage = (lead) => lead.onboarding_completed_at ? 'onboarding_complete' : lead.contract_signature_json?.recordedAt ? 'contract_signed' : lead.contract_delivery_json?.recordedAt ? 'contract_sent' : lead.approved_at ? 'application_approved' : lead.review_started_at ? 'under_review' : lead.application_submitted_at ? 'application_submitted' : 'lead_received'
+export const reopenRecruitmentStage = (lead) => lead.onboarding_completed_at ? 'onboarding_complete' : lead.contract_signature_json?.recordedAt ? 'contract_signed' : lead.contract_delivery_json?.recordedAt ? 'contract_sent' : lead.approved_at ? 'application_approved' : lead.review_started_at ? 'under_review' : lead.documents_uploaded_at ? 'documents_uploaded' : lead.application_submitted_at ? 'application_submitted' : 'lead_received'
 
 export function documentReviewLabel(lead, path) {
   const status = lead.review_json?.documents?.find((item) => item.path === path)?.status || 'pending'

@@ -38,3 +38,14 @@ Production promotion and rollback follow `docs/public-websites-phase8-controlled
 - A custom domain becomes indexable only after it is an active domain for a published site.
 - `sitemap.xml` is generated per resolved custom domain and contains only approved public pages and published property paths.
 - Use the Phase 4 runbook before activating a custom domain. It requires only website A/ALIAS/CNAME and verification TXT records; it explicitly prohibits email and nameserver changes.
+
+## Listing price terms
+
+Published website snapshots carry `rental_price_frequency` (monthly, weekly,
+daily, annual or per_square_metre). Cards, the featured carousel and detail pages
+show that unit without converting the amount. Legacy snapshots without a cadence
+retain the previous monthly convention; update their website channel to capture
+current terms. Explicit sale POA suppresses the public numeric price, including
+when a numeric amount was supplied for another portal. The forward migration
+`20261010111500_website_listing_public_price_terms.sql` applies this to both own
+and partner website publication, retaining membership, grant and media checks.

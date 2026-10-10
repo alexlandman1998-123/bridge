@@ -7,6 +7,7 @@ export type PublicProperty = {
   propertyType: string
   suburb: string
   province?: string
+  rentalPriceFrequency?: import('./listing-price').RentalPriceFrequency
   price?: number
   bedrooms?: number
   bathrooms?: number

@@ -8,7 +8,7 @@ import { recruitmentDeliveryErrors, recruitmentSignatureErrors } from '../pages/
 import { recruitmentApprovalErrors } from '../pages/recruitment/recruitmentApprovalModel'
 import { recruitmentReviewErrors } from '../pages/recruitment/recruitmentReviewModel'
 import { validateRecruitmentLead } from '../pages/recruitment/recruitmentModel'
-const fields = 'id,organisation_id,name,email,phone,area,source,status,details_json,documents_json,version,created_at,updated_at,received_at,captured_by,intake_channel,intake_key,activity_json,application_json,application_submitted_at,review_json,review_started_at,review_started_by,review_updated_at,review_updated_by,review_status,approved_at,approved_by,approval_notes,approval_snapshot,contracts_json,contract_delivery_json,contract_signature_json,onboarding_json,onboarding_documents_json,onboarding_completed_at,onboarding_completed_by,onboarding_snapshot,activation_json,activated_at,activated_by,contact_capture_json,email_verification_status,email_verified_at,applicant_draft_json,applicant_draft_revision,applicant_draft_saved_at,joining_json,joining_invite_id'
+const fields = 'id,organisation_id,name,email,phone,area,source,status,details_json,documents_json,version,created_at,updated_at,received_at,captured_by,intake_channel,intake_key,activity_json,application_json,application_submitted_at,review_json,review_started_at,review_started_by,review_updated_at,review_updated_by,review_status,approved_at,approved_by,approval_notes,approval_snapshot,contracts_json,contract_delivery_json,contract_signature_json,onboarding_json,onboarding_documents_json,onboarding_completed_at,onboarding_completed_by,onboarding_snapshot,activation_json,activated_at,activated_by,contact_capture_json,email_verification_status,email_verified_at,applicant_draft_json,applicant_draft_revision,applicant_draft_saved_at,joining_json,joining_invite_id,contacted_at,contacted_by,documents_uploaded_at,document_waivers_json,rejection_json'
 function clientFor(organisationId) {
   if (!supabase) throw new Error('Recruitment is unavailable: database connection is not configured.')
   if (!organisationId || organisationId === 'all') throw new Error('Choose an organisation to manage recruitment.')
@@ -34,6 +34,25 @@ export async function listRecruitmentLeads(organisationId) {
   const { data, error } = await clientFor(organisationId).from('recruitment_leads').select(fields).eq('organisation_id', organisationId).order('created_at', { ascending: false })
   if (error) fail(error)
   return data || []
+}
+export async function recordRecruitmentContact(organisationId, lead) {
+  const { data, error } = await clientFor(organisationId).rpc('recruitment_record_contact', { p_organisation_id: organisationId, p_lead_id: lead.id, p_version: lead.version }).maybeSingle()
+  if (error) fail(error)
+  if (!data) throw new Error('This lead changed. Reload before recording contact.')
+  return data
+}
+export async function rejectRecruitmentApplication(organisationId, lead, reason) {
+  if (typeof reason !== 'string' || reason.trim().length < 5 || reason.trim().length > 3000) throw new Error('Record a rejection reason (5–3,000 characters).')
+  const { data, error } = await clientFor(organisationId).rpc('recruitment_reject_application', { p_organisation_id: organisationId, p_lead_id: lead.id, p_version: lead.version, p_reason: reason.trim() }).maybeSingle()
+  if (error) fail(error)
+  if (!data) throw new Error('This application changed. Reload before rejecting.')
+  return data
+}
+export async function saveRecruitmentDocumentExceptions(organisationId, lead, waivers) {
+  const { data, error } = await clientFor(organisationId).from('recruitment_leads').update({ document_waivers_json: waivers }).eq('organisation_id', organisationId).eq('id', lead.id).eq('version', lead.version).select(fields).maybeSingle()
+  if (error) fail(error)
+  if (!data) throw new Error('This application changed. Reload before saving document exceptions.')
+  return data
 }
 export async function listJoiningRecruitmentLeads(organisationId, branchId = '', { limitedBranch = false, commercialOnly = false } = {}) {
   const client = clientFor(organisationId), rows = [], pageSize = 200
@@ -128,7 +147,7 @@ export async function openRecruitmentDocument(organisationId, leadId, document) 
   setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 export async function startRecruitmentReview(organisationId, lead) {
-  if (!lead.id || lead.status !== 'application_submitted' || !lead.application_submitted_at) throw new Error('A submitted application is required to start review.')
+  if (!lead.id || !['application_submitted', 'documents_uploaded'].includes(lead.status) || !lead.application_submitted_at) throw new Error('A submitted application is required to start review.')
   const { data, error } = await clientFor(organisationId).rpc('recruitment_start_review', { p_organisation_id: organisationId, p_lead_id: lead.id, p_version: lead.version }).maybeSingle()
   if (['40001', 'PT409'].includes(error?.code)) throw new Error('This application changed or access was removed. Reload before starting review.')
   if (error) fail(error)

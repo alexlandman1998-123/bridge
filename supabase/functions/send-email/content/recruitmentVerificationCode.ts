@@ -1,5 +1,9 @@
-import { renderBridgeEmailLayout } from "./bridgeEmailLayout.ts";
+import {
+  renderBridgeEmailLayout,
+  renderBridgeIntroParagraphs,
+} from "./bridgeEmailLayout.ts";
 import type { EmailBranding } from "../services/emailBranding.ts";
+import { homeSeekersRecruitmentBranding } from "../services/homeSeekersRecruitmentBranding.ts";
 
 export function buildHomeSeekersRecruitmentCodeEmail(
   code: string,
@@ -21,9 +25,10 @@ export function buildHomeSeekersRecruitmentCodeEmail(
       preheader: "Enter your code in the Home Seekers application form.",
       greeting: firstName ? `Hi ${firstName},` : "Hello,",
       organisationName: "Home Seekers",
-      branding: { ...branding, organisationName: "Home Seekers" },
-      contentHtml:
-        `<p>${instructions}</p><p style="font-family:monospace;font-size:32px;font-weight:700;letter-spacing:6px;text-align:center;padding:20px;background:#fff1e8;color:#171717">${code}</p><p>${expiry}</p>`,
+      branding: homeSeekersRecruitmentBranding(branding),
+      contentHtml: renderBridgeIntroParagraphs([instructions]) +
+        `<p style="font-family:monospace;font-size:32px;font-weight:700;letter-spacing:6px;text-align:center;padding:20px;background:#fff1e8;color:#171717">${code}</p>` +
+        renderBridgeIntroParagraphs([expiry]),
       securityTitle: "Keep your code private",
       securityBody:
         "Do not share this code. If you did not request it, you can ignore this email.",

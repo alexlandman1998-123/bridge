@@ -1,7 +1,9 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "buildCommand": "npm run build && node scripts/agent-bundle-budget.mjs && node scripts/operational-script-deployment-audit.mjs && node scripts/agent-schema-compatibility-contract.test.mjs",
-  "regions": ["cpt1"],
+  "regions": [
+    "cpt1"
+  ],
   "functions": {
     "api/property24/leads/sync.js": {
       "maxDuration": 300
@@ -11,6 +13,12 @@
       "maxDuration": 300
     },
     "api/cron/external-websites.js": {
+      "maxDuration": 300
+    },
+    "api/cron/listing-publication.js": {
+      "maxDuration": 300
+    },
+    "api/listings/publication-jobs.js": {
       "maxDuration": 300
     }
   },
@@ -46,6 +54,10 @@
     {
       "path": "/api/cron/external-websites",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/listing-publication",
+      "schedule": "* * * * *"
     }
   ],
   "redirects": [
@@ -64,31 +76,46 @@
     {
       "source": "/",
       "headers": [
-        { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, no-store, must-revalidate"
+        }
       ]
     },
     {
       "source": "/index.html",
       "headers": [
-        { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, no-store, must-revalidate"
+        }
       ]
     },
     {
       "source": "/((?!api/|assets/|brand/|favicon(?:-[^/]+)?\\.(?:png|svg|ico)|arch9-launch-preview\\.png|vite\\.svg).*)",
       "headers": [
-        { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, no-store, must-revalidate"
+        }
       ]
     },
     {
       "source": "/release-manifest.json",
       "headers": [
-        { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, no-store, must-revalidate"
+        }
       ]
     },
     {
       "source": "/assets/:path*",
       "headers": [
-        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
       ]
     }
   ],

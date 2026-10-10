@@ -79,7 +79,7 @@ test('the standalone website artifact serves its own CRM APIs', async (t) => {
           return
         }
         assert.equal(user.email_confirm, false)
-        assert.equal(user.password, undefined)
+        assert.equal(user.password, 'FixturePassword123')
         assert.equal(user.app_metadata.recruitment_organisation_id, ORG_ID)
         // Store only the synthetic user acknowledgement, never its password.
         const saved = { id: user.id, email: user.email, app_metadata: user.app_metadata }
@@ -349,7 +349,7 @@ test('the standalone website artifact serves its own CRM APIs', async (t) => {
       const context = await send('/api/home-seekers/recruitment', { action: 'context', token: 'forged' })
       assert.equal(context.status, 200)
       assert.equal((await context.json()).verificationMethod, 'email_code')
-      const details = { action: 'signup', submissionKey: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+      const details = { action: 'signup', submissionKey: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee', password: 'FixturePassword123',
         contact: { firstName: 'Fixture', lastName: 'Applicant', email: 'applicant@example.test', phone: '+27821234567', privacyAccepted: true },
         organisationId: 'forged' }
       const first = await send('/api/home-seekers/recruitment', details)

@@ -893,8 +893,18 @@ function profileDbClient() {
     recruitment_submit_verified_profile:['select recruitment_submit_verified_profile($1,$2,$3,$4,$5,$6) as result',a=>[a.p_organisation_id,a.p_token_hash,a.p_revision,a.p_submission_key,a.p_privacy_accepted,a.p_declaration_accepted]],
     recruitment_save_profile:['select recruitment_save_profile($1,$2,$3::jsonb,$4,$5,$6) as result',a=>[a.p_organisation_id,a.p_token_hash,JSON.stringify(a.p_answers),a.p_revision,a.p_page,a.p_intent]],
     recruitment_resume_applicant:['select recruitment_resume_applicant($1,$2) as result',a=>[a.p_organisation_id,a.p_token_hash]],
+    recruitment_prepare_applicant_document:['select recruitment_prepare_applicant_document($1,$2,$3,$4::jsonb) as result',a=>[a.p_organisation_id,a.p_token_hash,a.p_request_id,JSON.stringify(a.p_document)]],
+    recruitment_commit_applicant_document:['select recruitment_commit_applicant_document($1,$2,$3) as result',a=>[a.p_organisation_id,a.p_token_hash,a.p_request_id]],
+    recruitment_applicant_document_access:['select coalesce(jsonb_agg(l),\'[]\'::jsonb) as result from recruitment_applicant_document_access($1,$2) l',a=>[a.p_organisation_id,a.p_token_hash]],
   }
   client.rpc=async(name,args)=>({data:(await db.query(calls[name][0],calls[name][1](args))).rows[0].result})
+  client.storage={from:bucket=>{
+    if(bucket!=='recruitment-documents') throw new Error('Unexpected document bucket')
+    return {
+      createSignedUploadUrl:async(path,options)=>options.upsert===false ? {data:{signedUrl:`https://storage.test/upload/${path}`}} : {error:new Error('Existing uploads must be preserved')},
+      createSignedUrl:async(path,seconds)=>({data:{signedUrl:`https://storage.test/download/${path}?expires=${seconds}`}}),
+    }
+  }}
   return client
 }
 function profileApi(body, headers = {}) {
@@ -1823,4 +1833,582 @@ it('submits the reviewed Home Seekers preference and enforces agency and staff b
   await expect(db.query("update recruitment_leads set applicant_draft_json=jsonb_set(applicant_draft_json,'{answers,packagePreference}','\"monthly\"') where id=$1",[homeDraft.id])).rejects.toThrow('Applicant drafts require verified access')
   await db.exec('reset role; set role anon;')
   await expect(db.query('select recruitment_home_seekers_package_errors($1,$2::jsonb,null,true)',[homeOrg,'{}'])).rejects.toThrow('permission denied')
+})
+
+let journeyLead, journeyUpload, journeyApproval;
+it('installs the journey without rewriting history and keeps applicant uploads and email jobs server-only', async () => {
+  await db.exec('reset role; alter table storage.objects add column metadata jsonb; grant usage on schema storage to service_role; grant select on storage.objects to service_role;')
+  const before = (await db.query('select id,status,version,activity_json from recruitment_leads order by id')).rows
+  await db.exec(readFileSync(new URL('../../../../../supabase/migrations/20261010142843_home_seekers_recruitment_journey.sql', import.meta.url), 'utf8'))
+  expect((await db.query('select id,status,version,activity_json from recruitment_leads order by id')).rows).toEqual(before)
+  await db.exec('set role authenticated;')
+  for (const name of ['recruitment_applicant_uploads','recruitment_approval_email_queue']) await expect(db.query('select * from '+name)).rejects.toThrow('permission denied')
+  await expect(db.query('select recruitment_claim_approval_emails(3)')).rejects.toThrow('permission denied')
+  await expect(db.query('select recruitment_applicant_document_access($1,$2)', [homeOrg,homeHash])).rejects.toThrow('permission denied')
+})
+it('records staff contact once without advancing or forging verified form submission', async () => {
+  await asUser(manager)
+  journeyLead=(await db.query("insert into recruitment_leads(organisation_id,name,email) values($1,'Journey Contact','journey@agency.test') returning *",[homeOrg])).rows[0]
+  const contacted=(await db.query('select * from recruitment_record_contact($1,$2,$3)',[homeOrg,journeyLead.id,journeyLead.version])).rows[0]
+  expect(contacted).toMatchObject({status:'lead_received',contacted_by:manager,application_submitted_at:null})
+  expect(contacted.contacted_at).toBeTruthy()
+  expect(contacted.activity_json.at(-1).type).toBe('lead_contacted')
+  await expect(db.query('select * from recruitment_record_contact($1,$2,$3)',[homeOrg,journeyLead.id,journeyLead.version])).rejects.toThrow('changed')
+  await expect(db.query("update recruitment_leads set status='application_submitted' where id=$1",[journeyLead.id])).rejects.toThrow('Later recruitment phases')
+  await expect(db.query("update recruitment_leads set contacted_at=now() where id=$1",[journeyLead.id])).rejects.toThrow('does not submit')
+  await asUser(agent)
+  await expect(db.query('select * from recruitment_record_contact($1,$2,$3)',[homeOrg,journeyLead.id,contacted.version])).rejects.toThrow('management')
+})
+it('prepares only the verified submitted applicant’s document and protects fixed retry details', async () => {
+  await contactServer()
+  journeyUpload=crypto.randomUUID()
+  const prepare=(org=homeOrg,hash=homeHash,document={name:'identity.pdf',type:'Identity document',mimeType:'application/pdf',size:128})=>db.query('select recruitment_prepare_applicant_document($1,$2,$3,$4::jsonb) as result',[org,hash,journeyUpload,JSON.stringify(document)])
+  expect((await prepare(other)).rows[0].result).toEqual({unavailable:true})
+  expect((await prepare(homeOrg,'e'.repeat(64))).rows[0].result).toEqual({unavailable:true})
+  const first=(await prepare()).rows[0].result
+  expect(first).toEqual({path:`${homeOrg}/${homeDraft.id}/${journeyUpload}`,committed:false})
+  expect((await prepare()).rows[0].result).toEqual(first)
+  const apiPrepared=await homeProfileApi({action:'prepare_document',requestId:journeyUpload,document:{name:'identity.pdf',type:'Identity document',mimeType:'application/pdf',size:128,path:'foreign/file'},organisationId:other,leadId:otherLead,role:'admin'})
+  expect(apiPrepared).toMatchObject({status:200,body:{uploadUrl:`https://storage.test/upload/${homeOrg}/${homeDraft.id}/${journeyUpload}`}})
+  expect(JSON.stringify(apiPrepared.body)).not.toContain('foreign')
+  await expect(prepare(homeOrg,homeHash,{name:'different.pdf',type:'Identity document',mimeType:'application/pdf',size:128})).rejects.toThrow('different document')
+  await expect(prepare(homeOrg,homeHash,{name:'malware.exe',type:'Identity document',mimeType:'application/exe',size:128})).rejects.toThrow('PDF')
+  await db.exec('reset role;')
+  expect((await db.query('select count(*)::int as count from organisation_users where user_id=$1',[homeUser])).rows[0].count).toBe(0)
+  await contactServer()
+  await expect(db.query('select recruitment_commit_applicant_document($1,$2,$3)',[homeOrg,homeHash,journeyUpload])).rejects.toThrow('could not be verified')
+})
+it('records the real private upload as Documents Uploaded and recovers the same commit without duplication', async () => {
+  await db.exec('reset role;')
+  await db.query("insert into storage.objects(bucket_id,name,metadata) values('recruitment-documents',$1,'{\"size\":128,\"mimetype\":\"application/pdf\"}')",[`${homeOrg}/${homeDraft.id}/${journeyUpload}`])
+  await contactServer()
+  const commit=()=>db.query('select recruitment_commit_applicant_document($1,$2,$3) as result',[homeOrg,homeHash,journeyUpload])
+  const throughApi=await homeProfileApi({action:'commit_document',requestId:journeyUpload,leadId:otherLead,path:'foreign/file'})
+  expect(throughApi).toMatchObject({status:200,body:{saved:true,applicant:{stage:'documents_uploaded',documents:[{name:'identity.pdf',type:'Identity document',path:`${homeOrg}/${homeDraft.id}/${journeyUpload}`}]}}})
+  const saved=(await db.query('select * from recruitment_leads where id=$1',[homeDraft.id])).rows[0]
+  expect(saved.status).toBe('documents_uploaded');expect(saved.documents_uploaded_at).toBeTruthy()
+  expect(saved.documents_json).toHaveLength(1)
+  expect(saved.documents_json[0]).toMatchObject({type:'Identity document',uploadedBy:'applicant'})
+  expect((await commit()).rows[0].result).toEqual({saved:true,duplicate:true})
+  expect((await db.query('select version from recruitment_leads where id=$1',[homeDraft.id])).rows[0].version).toBe(saved.version)
+  expect((await homeProfileApi({action:'commit_document',requestId:journeyUpload})).body.applicant.documents).toHaveLength(1)
+  expect((await homeProfileApi({action:'download_document',documentPath:`${homeOrg}/${homeDraft.id}/${journeyUpload}`}))).toMatchObject({status:200,body:{downloadUrl:`https://storage.test/download/${homeOrg}/${homeDraft.id}/${journeyUpload}?expires=300`}})
+  expect((await homeProfileApi({action:'download_document',documentPath:`${other}/${homeDraft.id}/${journeyUpload}`})).status).toBe(404)
+  const resumed=(await db.query('select recruitment_resume_applicant($1,$2) as result',[homeOrg,homeHash])).rows[0].result
+  expect(resumed).toMatchObject({documentsEditable:true,documentsComplete:false,stage:'documents_uploaded',documents:[{type:'Identity document'}]})
+  await asUser(manager)
+  await expect(db.query('select * from recruitment_start_review($1,$2,$3)',[homeOrg,homeDraft.id,saved.version])).rejects.toThrow('required document pack')
+  await expect(db.query("update recruitment_leads set documents_uploaded_at=now() where id=$1",[homeDraft.id])).rejects.toThrow('authored')
+  await expect(db.query("update recruitment_leads set documents_json='[{\"name\":\"forged.pdf\",\"type\":\"CV\",\"path\":\"foreign/file\"}]' where id=$1",[homeDraft.id])).rejects.toThrow('belonging')
+})
+it('requires saved document exceptions, starts review and supports a reasoned rejection with preserved submission', async () => {
+  await asUser(manager)
+  await expect(db.query("update recruitment_leads set document_waivers_json='{\"CV\":\"no\"}' where id=$1",[homeDraft.id])).rejects.toThrow('exception reason')
+  const saved=(await db.query("update recruitment_leads set document_waivers_json='{\"CV\":\"Experience recorded in application\",\"Qualifications\":\"Candidate with no completed qualification yet\",\"Registration evidence\":\"Registration pending; agency will follow up\"}' where id=$1 returning *",[homeDraft.id])).rows[0]
+  const reviewed=(await db.query('select * from recruitment_start_review($1,$2,$3)',[homeOrg,homeDraft.id,saved.version])).rows[0]
+  expect(reviewed).toMatchObject({status:'under_review',review_started_by:manager})
+  const rejected=(await db.query('select * from recruitment_reject_application($1,$2,$3,$4)',[homeOrg,homeDraft.id,reviewed.version,'Required experience does not meet this opening'])).rows[0]
+  expect(rejected.status).toBe('closed_lost');expect(rejected.application_json).toEqual(reviewed.application_json)
+  expect(rejected.rejection_json).toMatchObject({rejectedBy:manager,reason:'Required experience does not meet this opening'})
+  expect(rejected.activity_json.at(-1).type).toBe('application_rejected')
+  await contactServer()
+  expect((await db.query('select recruitment_resume_applicant($1,$2) as result',[homeOrg,homeHash])).rows[0].result).toBeNull()
+  await asUser(manager)
+  expect((await db.query("update recruitment_leads set status='under_review' where id=$1 returning status",[homeDraft.id])).rows[0].status).toBe('under_review')
+})
+it('queues approval email atomically and never grants agency membership when an application is approved', async () => {
+  await asUser(manager)
+  const candidate=(await db.query('select * from recruitment_leads where id=$1',[homeDraft.id])).rows[0]
+  const checks=Object.fromEntries(['registration','qualifications','training','handover'].map(key=>[key,{status:'not_applicable',notes:'Reasoned fixture finding for this candidate',evidence:[]}]))
+  const review={version:'recruitment-review-v1',checks,documents:candidate.documents_json.map(doc=>({path:doc.path,status:'reviewed',notes:'Identity file opened and checked'})),notes:'Interview completed',followUpOn:''}
+  const ready=(await db.query('update recruitment_leads set review_json=$1::jsonb where id=$2 returning *',[JSON.stringify(review),homeDraft.id])).rows[0]
+  journeyApproval=(await db.query('select * from recruitment_approve_application($1,$2,$3,$4)',[homeOrg,homeDraft.id,ready.version,'Approved after interview and evidence review'])).rows[0]
+  expect(journeyApproval.status).toBe('application_approved')
+  await db.exec('reset role;')
+  const queue=(await db.query('select * from recruitment_approval_email_queue where lead_id=$1',[homeDraft.id])).rows
+  expect(queue).toHaveLength(1);expect(queue[0]).toMatchObject({status:'pending',actor_id:manager})
+  expect((await db.query('select count(*)::int as count from organisation_users where user_id=$1',[homeUser])).rows[0].count).toBe(0)
+  await contactServer()
+  expect((await db.query('select recruitment_resume_applicant($1,$2) as result',[homeOrg,homeHash])).rows[0].result.documentsEditable).toBe(false)
+  expect((await db.query('select recruitment_prepare_applicant_document($1,$2,$3,$4::jsonb) as result',[homeOrg,homeHash,crypto.randomUUID(),'{"name":"later.pdf","type":"CV","size":128,"mimeType":"application/pdf"}'])).rows[0].result).toEqual({unavailable:true})
+})
+it('leases automatic approval jobs and makes a repeated email claim use the same provider attempt', async () => {
+  await contactServer()
+  const jobs=(await db.query('select recruitment_claim_approval_emails(3) as result')).rows[0].result
+  expect(jobs).toHaveLength(1)
+  expect((await db.query('select recruitment_claim_approval_emails(3) as result')).rows[0].result).toEqual([])
+  const claim=id=>db.query('select recruitment_begin_invitation_email($1,$2,$3,$4,$3,$5,null,$6::jsonb,false) as result',[manager,homeOrg,homeDraft.id,'approval',id,JSON.stringify({to:homeEmail,subject:'Approved',text:'We will send the contract shortly'})])
+  const first=(await claim(jobs[0].id)).rows[0].result
+  expect(first.send).toBe(true)
+  expect((await claim(jobs[0].id)).rows[0].result.busy).toBe(true)
+  expect((await db.query("select recruitment_finish_invitation_email($1,$2,'provider_accepted','provider-approval',null) as result",[first.attempt.id,first.attempt.lease_id])).rows[0].result).toBe(true)
+  expect((await claim(crypto.randomUUID())).rows[0].result).toMatchObject({send:false,attempt:{status:'provider_accepted',id:first.attempt.id}})
+  expect((await db.query('select recruitment_complete_approval_email($1,true,null) as result',[jobs[0].id])).rows[0].result).toBe(true)
+  await asUser(manager)
+  const status=(await db.query('select recruitment_invitation_status($1,$2,$3,$2) as result',[homeOrg,homeDraft.id,'approval'])).rows[0].result
+  expect(status).toMatchObject({queueStatus:'provider_accepted',attempt:{status:'provider_accepted'}})
+})
+
+it('installs Arch9 setup without emailing historical applications or exposing private photos and queues', async () => {
+  await db.exec('reset role;')
+  const before=(await db.query('select id,version,application_json from recruitment_leads order by id')).rows
+  for (const file of ['20261010145840_recruitment_applicant_arch9_setup.sql','20261010150417_recruitment_applicant_login_gate.sql','20261010151044_recruitment_activation_access_gate.sql']) await db.exec(readFileSync(new URL('../../../../../supabase/migrations/'+file,import.meta.url),'utf8'))
+  expect((await db.query('select id,version,application_json from recruitment_leads order by id')).rows).toEqual(before)
+  expect((await db.query('select * from recruitment_submission_email_queue')).rows).toEqual([])
+  expect((await db.query("select public from storage.buckets where id='recruitment-profile-photos'")).rows[0].public).toBe(false)
+  await asUser(homeUser)
+  expect((await db.query('select recruitment_applicant_portal_required() as required')).rows[0].required).toBe(true)
+  for (const table of ['recruitment_applicant_photo_uploads','recruitment_submission_email_queue']) await expect(db.query('select * from '+table)).rejects.toThrow('permission denied')
+  await expect(db.query('select recruitment_claim_submission_emails(3)')).rejects.toThrow('permission denied')
+  await asUser(manager)
+  expect((await db.query('select recruitment_applicant_portal_required() as required')).rows[0].required).toBe(false)
+  await db.query("update recruitment_leads set name='Contact still editable' where id=$1",[journeyLead.id])
+})
+it('retains immutable private photos only after actual storage receipt, independently of document milestones', async () => {
+  await contactServer()
+  const oldHash='0'.repeat(64),id=crypto.randomUUID(),photo={name:'profile.png',mimeType:'image/png',size:128}
+  const prepare=(organisation=homeOrg,hash=oldHash,details=photo)=>db.query('select recruitment_prepare_applicant_photo($1,$2,$3,$4::jsonb) as result',[organisation,hash,id,JSON.stringify(details)])
+  expect((await prepare(other)).rows[0].result).toEqual({unavailable:true})
+  expect((await prepare(homeOrg,'f'.repeat(64))).rows[0].result).toEqual({unavailable:true})
+  const before=(await db.query('select status,documents_json,documents_uploaded_at from recruitment_leads where id=$1',[oldHomeSubmission.id])).rows[0]
+  const first=(await prepare()).rows[0].result
+  expect(first.path).toBe(`${homeOrg}/${oldHomeSubmission.id}/${id}`)
+  expect((await prepare()).rows[0].result).toEqual(first)
+  await expect(prepare(homeOrg,oldHash,{...photo,name:'other.png'})).rejects.toThrow('different photo')
+  await expect(prepare(homeOrg,oldHash,{...photo,mimeType:'image/svg+xml'})).rejects.toThrow('JPG')
+  await expect(db.query('select recruitment_commit_applicant_photo($1,$2,$3)',[homeOrg,oldHash,id])).rejects.toThrow('could not be verified')
+  await db.exec('reset role;')
+  await db.query("insert into storage.objects(bucket_id,name,metadata) values('recruitment-profile-photos',$1,'{\"size\":128,\"mimetype\":\"image/png\"}')",[first.path])
+  await contactServer()
+  expect((await db.query('select recruitment_commit_applicant_photo($1,$2,$3) as result',[homeOrg,oldHash,id])).rows[0].result).toEqual({saved:true,duplicate:false})
+  expect((await db.query('select recruitment_commit_applicant_photo($1,$2,$3) as result',[homeOrg,oldHash,id])).rows[0].result).toEqual({saved:true,duplicate:true})
+  expect((await db.query('select status,documents_json,documents_uploaded_at from recruitment_leads where id=$1',[oldHomeSubmission.id])).rows[0]).toEqual(before)
+  expect((await db.query('select recruitment_applicant_setup_photo($1,$2) as result',[homeOrg,oldHash])).rows[0].result.path).toBe(first.path)
+  expect((await prepare(homeOrg,homeHash)).rows[0].result).toEqual({unavailable:true})
+  await asUser(manager)
+  await expect(db.query('update recruitment_leads set applicant_photo_json=$1::jsonb where id=$2',[JSON.stringify({path:'foreign'}),oldHomeSubmission.id])).rejects.toThrow('verified applicant photo')
+})
+let setupLead,setupHash,setupJob
+it('queues one login email atomically with a newly completed, verified form and retains no membership', async () => {
+  await contactServer()
+  const link=(await db.query("select id from recruitment_intake_links where organisation_id=$1 and channel='website'",[homeOrg])).rows[0].id
+  const receipt=crypto.randomUUID();setupHash='f'.repeat(64)
+  expect((await captureContact(link,receipt,{...contact,email:homeEmail},'6'.repeat(64))).accepted).toBe(true)
+  expect((await db.query('select recruitment_open_applicant_session($1,$2,$3,$4) as result',[homeOrg,homeUser,setupHash,receipt])).rows[0].result).toBe(true)
+  const profile=(await db.query("select recruitment_save_profile($1,$2,$3::jsonb,0,3,'complete') as result",[homeOrg,setupHash,JSON.stringify({...profileAnswers,email:homeEmail,packagePreference:'decide_later'})])).rows[0].result
+  expect(profile.saved).toBe(true)
+  expect((await db.query('select * from recruitment_submission_email_queue')).rows).toEqual([])
+  const key=crypto.randomUUID()
+  const submit=()=>db.query('select recruitment_submit_verified_profile($1,$2,$3,$4,true,true) as result',[homeOrg,setupHash,profile.applicant.profileRevision,key])
+  expect((await submit()).rows[0].result.accepted).toBe(true)
+  expect((await submit()).rows[0].result.duplicate).toBe(true)
+  const jobs=(await db.query('select * from recruitment_submission_email_queue')).rows
+  expect(jobs).toHaveLength(1);setupJob=jobs[0];setupLead=jobs[0].lead_id
+  expect(setupJob).toMatchObject({actor_id:homeUser,status:'pending',organisation_id:homeOrg})
+  await db.exec('reset role;')
+  expect((await db.query('select count(*)::int as n from organisation_users where user_id=$1',[homeUser])).rows[0].n).toBe(0)
+  await contactServer()
+  expect((await db.query('select recruitment_applicant_account_receipt($1) as receipt',[homeUser])).rows[0].receipt).toBe(receipt)
+})
+it('claims submission jobs with immutable recipient and provider retry evidence, denying forged actors', async () => {
+  await contactServer()
+  const begin=(actor=homeUser,id=setupJob.id,email=homeEmail)=>db.query('select recruitment_begin_submission_email($1,$2,$3,\'documents_reminder\',$3,$4,null,$5::jsonb,false) as result',[actor,homeOrg,setupLead,id,JSON.stringify({to:email,text:'Log in to Arch9'})])
+  await expect(begin()).rejects.toThrow('Claim the saved')
+  const claimed=(await db.query('select recruitment_claim_submission_emails(3) as result')).rows[0].result
+  expect(claimed).toHaveLength(1)
+  expect((await db.query('select recruitment_claim_submission_emails(3) as result')).rows[0].result).toEqual([])
+  await expect(begin(manager)).rejects.toThrow('Claim the saved')
+  await expect(begin(homeUser,crypto.randomUUID())).rejects.toThrow('Claim the saved')
+  await expect(begin(homeUser,setupJob.id,'attacker@agency.test')).rejects.toThrow('saved applicant')
+  const first=(await begin()).rows[0].result
+  expect(first.send).toBe(true)
+  expect((await begin()).rows[0].result.busy).toBe(true)
+  expect((await db.query("select recruitment_finish_invitation_email($1,$2,'unknown',null,'uncertain') as result",[first.attempt.id,first.attempt.lease_id])).rows[0].result).toBe(true)
+  const retry=(await begin()).rows[0].result
+  expect(retry.attempt.id).toBe(first.attempt.id);expect(retry.attempt.message_json).toEqual(first.attempt.message_json)
+  expect((await db.query("select recruitment_finish_invitation_email($1,$2,'provider_accepted','provider-submission',null) as result",[retry.attempt.id,retry.attempt.lease_id])).rows[0].result).toBe(true)
+  expect((await begin()).rows[0].result).toMatchObject({send:false,attempt:{status:'provider_accepted'}})
+  expect((await db.query('select recruitment_complete_submission_email($1,true,null) as result',[setupJob.id])).rows[0].result).toBe(true)
+  expect((await db.query('select recruitment_claim_submission_emails(3) as result')).rows[0].result).toEqual([])
+  await db.exec('reset role;')
+  await db.query("insert into organisation_users values($1,$2,'active','agent')",[homeOrg,homeUser])
+  await asUser(homeUser)
+  expect((await db.query('select recruitment_applicant_portal_required() as required')).rows[0].required).toBe(true)
+  await db.exec('reset role;')
+  await db.query('delete from organisation_users where organisation_id=$1 and user_id=$2',[homeOrg,homeUser])
+})
+
+let notificationLead, notificationJobs, claimedNotifications
+const notificationKey=crypto.randomUUID()
+const notificationContact={...contact,firstName:'New',lastName:'Recruit',email:'new.recruit@homeseekers.co.za'}
+it('installs first-screen staff notifications without notifying any historical contacts',async()=>{
+  await db.exec('reset role;')
+  await db.exec(`create schema cron; create table cron.job(jobid bigint generated always as identity primary key,jobname text,schedule text,command text);
+    create function cron.schedule(text,text,text) returns bigint language sql as $$ insert into cron.job(jobname,schedule,command) values($1,$2,$3) returning jobid $$;`)
+  await db.exec(readFileSync(new URL('../../../../../supabase/migrations/20261010153201_home_seekers_recruitment_contact_notifications.sql',import.meta.url),'utf8'))
+  expect((await db.query('select count(*) from recruitment_contact_notifications')).rows[0].count).toBe(0)
+  expect((await db.query('select jobname,schedule,command from cron.job')).rows).toEqual([{jobname:'arch9-recruitment-contact-dispatcher-1m',schedule:'* * * * *',command:'select public.recruitment_run_contact_dispatcher();'}])
+})
+const notificationSignup=()=>createHomeSeekersSignupResponse({client:contactClient(),env:{HOME_SEEKERS_RECRUITMENT_INTAKE_TOKEN:homeToken,RECRUITMENT_INTAKE_FINGERPRINT_SECRET:'x'.repeat(32)},headers:{host:'homeseekers.test',origin:'https://homeseekers.test','x-forwarded-for':'192.0.2.115'},body:{action:'signup',submissionKey:notificationKey,contact:notificationContact,password:'NotificationFixture23',organisationId:other,to:['attacker@other.test']}})
+it('queues exactly the requested three recipients through real Home Seekers signup, even when account preparation fails after the contact save',async()=>{
+  await contactServer()
+  const response=await notificationSignup()
+  expect(response).toMatchObject({status:503,body:{contactAccepted:true}})
+  notificationLead=(await db.query('select * from recruitment_leads where organisation_id=$1 and intake_key=$2',[homeOrg,notificationKey])).rows[0]
+  expect(notificationLead).toMatchObject({status:'lead_received',email_verification_status:'pending',application_submitted_at:null,application_json:{}})
+  expect((await db.query('select * from recruitment_applicant_links where lead_id=$1',[notificationLead.id])).rows).toEqual([])
+  notificationJobs=(await db.query('select * from recruitment_contact_notifications where lead_id=$1 order by recipient',[notificationLead.id])).rows
+  expect(notificationJobs.map(job=>job.recipient)).toEqual(['admin@homeseekers.co.za','alex@arch9.co.za','thomas@homeseekers.co.za'])
+  expect(notificationJobs.every(job=>job.status==='pending'&&job.organisation_id===homeOrg&&job.contact_json.email===notificationContact.email)).toBe(true)
+})
+it('recovers repeated first-screen saves without duplicate jobs or changing the saved recipient list',async()=>{
+  await contactServer()
+  expect((await notificationSignup()).body.contactAccepted).toBe(true)
+  expect((await db.query('select id from recruitment_contact_notifications where lead_id=$1',[notificationLead.id])).rows.map(job=>job.id).sort()).toEqual(notificationJobs.map(job=>job.id).sort())
+  expect((await db.query('select count(*) from recruitment_contact_receipts where lead_id=$1',[notificationLead.id])).rows[0].count).toBe(1)
+})
+it('keeps invalid contacts, other agencies, manual leads and rolled-back contact transactions out of the notification queue',async()=>{
+  await contactServer()
+  const homeLink=(await db.query("select id from recruitment_intake_links where organisation_id=$1 and channel='website'",[homeOrg])).rows[0].id
+  await expect(captureContact(homeLink,crypto.randomUUID(),{...notificationContact,privacyAccepted:false},'4'.repeat(64))).rejects.toThrow('Invalid recruitment contact')
+  await asUser(manager)
+  const otherNotificationLink=(await db.query("insert into recruitment_intake_links(organisation_id,channel,created_by,token_hash,expires_at) values($1,'website',$2,$3,now()+interval '1 day') returning id",[org,manager,createHash('sha256').update(crypto.randomUUID()).digest('hex')])).rows[0].id
+  await contactServer()
+  expect((await captureContact(otherNotificationLink,crypto.randomUUID(),{...notificationContact,email:'other@homeseekers.co.za'},createHash('sha256').update(crypto.randomUUID()).digest('hex'))).accepted).toBe(true)
+  await asUser(manager)
+  await db.query("insert into recruitment_leads(organisation_id,name,email) values($1,'Manual notification check','manual@homeseekers.co.za')",[homeOrg])
+  await contactServer()
+  await db.exec('begin;')
+  expect((await captureContact(homeLink,crypto.randomUUID(),{...notificationContact,email:'rollback@homeseekers.co.za'},createHash('sha256').update(crypto.randomUUID()).digest('hex'))).accepted).toBe(true)
+  expect((await db.query('select count(*) from recruitment_contact_notifications')).rows[0].count).toBe(6)
+  await db.exec('rollback;')
+  expect((await db.query('select count(*) from recruitment_contact_notifications')).rows[0].count).toBe(3)
+})
+it('claims each recipient once, rejects forged recipient payloads and freezes the exact message before sending',async()=>{
+  await contactServer()
+  claimedNotifications=(await db.query('select recruitment_claim_contact_notifications(3) as result')).rows[0].result
+  expect(claimedNotifications).toHaveLength(3)
+  expect((await db.query('select recruitment_claim_contact_notifications(3) as result')).rows[0].result).toEqual([])
+  const job=claimedNotifications[0]
+  const prepare=(lease=job.lease_id,to=job.recipient,text='Original saved content')=>db.query('select recruitment_prepare_contact_notification($1,$2,$3::jsonb) as result',[job.id,lease,JSON.stringify({to,from:'Arch9 <no-reply@arch9.co.za>',subject:'Saved contact',html:'<p>Original</p>',text,extra:'discard'})])
+  await expect(prepare(crypto.randomUUID())).rejects.toThrow('Claim the saved')
+  await expect(prepare(job.lease_id,'attacker@other.co.za')).rejects.toThrow('Saved notification recipient')
+  const first=(await prepare()).rows[0].result
+  expect(first.extra).toBeUndefined()
+  expect((await prepare(job.lease_id,job.recipient,'Changed retry content')).rows[0].result).toEqual(first)
+})
+it('records provider acceptance only with a receipt, retries failed recipients independently and refuses stale completions',async()=>{
+  await contactServer()
+  const accepted=claimedNotifications[0],failed=claimedNotifications[1],unknown=claimedNotifications[2]
+  const finish=(job,provider,error=null,lease=job.lease_id)=>db.query('select recruitment_complete_contact_notification($1,$2,$3,$4) as result',[job.id,lease,provider,error])
+  expect((await finish(unknown,'forged-before-prepare')).rows[0].result).toBe(false)
+  expect((await finish(accepted,'synthetic-provider-receipt')).rows[0].result).toBe(true)
+  expect((await finish(accepted,'duplicate')).rows[0].result).toBe(false)
+  expect((await finish(failed,null,'dispatch_unconfirmed')).rows[0].result).toBe(true)
+  expect((await finish(unknown,null,'dispatch_unconfirmed')).rows[0].result).toBe(true)
+  await db.query("update recruitment_contact_notifications set next_attempt_at=now()-interval '1 second' where status='pending'")
+  const retries=(await db.query('select recruitment_claim_contact_notifications(3) as result')).rows[0].result
+  expect(retries.map(row=>row.id).sort()).toEqual([failed.id,unknown.id].sort())
+  expect(retries.every(row=>row.lease_id!==claimedNotifications.find(old=>old.id===row.id).lease_id&&row.attempts===2)).toBe(true)
+  expect((await finish(failed,null,'dispatch_unconfirmed')).rows[0].result).toBe(false)
+  for(const job of retries) expect((await finish(job,null,'dispatch_unconfirmed')).rows[0].result).toBe(true)
+})
+it('recovers expired worker leases with the same payload, then stops uncertain retries before provider idempotency expires',async()=>{
+  await contactServer()
+  const job=claimedNotifications[1]
+  await db.query("update recruitment_contact_notifications set next_attempt_at=now()-interval '1 second' where id=$1",[job.id])
+  const current=(await db.query('select recruitment_claim_contact_notifications(1) as result')).rows[0].result[0]
+  const payload={from:'Arch9 <no-reply@arch9.co.za>',to:current.recipient,subject:'Retry',html:'<p>Retry</p>',text:'Retry'}
+  const first=(await db.query('select recruitment_prepare_contact_notification($1,$2,$3::jsonb) as result',[current.id,current.lease_id,JSON.stringify(payload)])).rows[0].result
+  await db.query("update recruitment_contact_notifications set leased_until=now()-interval '1 second' where id=$1",[current.id])
+  const recovered=(await db.query('select recruitment_claim_contact_notifications(1) as result')).rows[0].result[0]
+  expect(recovered.message_json).toEqual(first)
+  expect(recovered.lease_id).not.toBe(current.lease_id)
+  await expect(db.query('select recruitment_prepare_contact_notification($1,$2,$3::jsonb)',[current.id,current.lease_id,JSON.stringify(payload)])).rejects.toThrow('Claim the saved')
+  await db.query("update recruitment_contact_notifications set first_attempt_at=now()-interval '23 hours 1 minute',leased_until=now()-interval '1 second' where id=$1",[current.id])
+  expect((await db.query('select recruitment_claim_contact_notifications(3) as result')).rows[0].result).toEqual([])
+  expect((await db.query('select status,last_error from recruitment_contact_notifications where id=$1',[current.id])).rows[0]).toEqual({status:'needs_attention',last_error:'retry_window_ended'})
+})
+it('blocks anonymous and logged-in users from notification routing, queue access and all service-only dispatch RPCs',async()=>{
+  for(const role of ['anon','authenticated']){
+    await db.exec(`reset role; set role ${role};`)
+    await expect(db.query('select * from recruitment_contact_notifications')).rejects.toThrow('permission denied')
+    await expect(db.query('select recruitment_claim_contact_notifications(3)')).rejects.toThrow('permission denied')
+    await expect(db.query("select recruitment_prepare_contact_notification($1,$2,'{}')",[notificationJobs[0].id,crypto.randomUUID()])).rejects.toThrow('permission denied')
+    await expect(db.query('select recruitment_complete_contact_notification($1,$2,null,null)',[notificationJobs[0].id,crypto.randomUUID()])).rejects.toThrow('permission denied')
+    await expect(db.query('select recruitment_run_contact_dispatcher()')).rejects.toThrow('permission denied')
+  }
+  await db.exec('reset role;')
+  expect((await db.query("select relrowsecurity from pg_class where relname='recruitment_contact_notifications'")).rows[0].relrowsecurity).toBe(true)
+})
+it('schedules only pending work through the configured Vault server identity without exposing the credential',async()=>{
+  await db.exec('reset role;')
+  await db.exec(`create schema vault; create table vault.decrypted_secrets(name text,decrypted_secret text);
+    create schema net; create table net.test_requests(id bigint generated always as identity primary key,url text,headers jsonb,body jsonb,timeout_milliseconds integer);
+    create function net.http_post(url text,headers jsonb,body jsonb,timeout_milliseconds integer) returns bigint language sql as $$
+      insert into net.test_requests(url,headers,body,timeout_milliseconds) values($1,$2,$3,$4) returning id $$;`)
+  await contactServer()
+  expect((await db.query('select recruitment_run_contact_dispatcher() as result')).rows[0].result).toEqual({scheduled:false,reason:'no_pending_notifications'})
+  await db.query("update recruitment_contact_notifications set next_attempt_at=now()-interval '1 second' where status='pending'")
+  expect((await db.query('select recruitment_run_contact_dispatcher() as result')).rows[0].result).toEqual({scheduled:false,reason:'vault_configuration_missing'})
+  await db.exec("reset role; insert into vault.decrypted_secrets values('arch9_project_url','https://supabase.fixture.test'),('arch9_service_role_key','synthetic-server-only-key');")
+  await contactServer()
+  expect((await db.query('select recruitment_run_contact_dispatcher() as result')).rows[0].result).toEqual({scheduled:true,requestId:1})
+  await db.exec('reset role;')
+  const dispatched=(await db.query('select * from net.test_requests')).rows[0]
+  expect(dispatched).toMatchObject({url:'https://supabase.fixture.test/functions/v1/recruitment-contact-dispatcher',headers:{Authorization:'Bearer synthetic-server-only-key',apikey:'synthetic-server-only-key'},body:{},timeout_milliseconds:120000})
+})
+
+let mailApplication, mailJobs, thanksClaim, requestClaim
+const emailFlowMigration='20261010154503_home_seekers_recruitment_email_flow.sql'
+const staffRecipients=['admin@homeseekers.co.za','alex@arch9.co.za','thomas@homeseekers.co.za']
+async function newMailApplication(submit=true) {
+  await contactServer()
+  const link=(await db.query("select id from recruitment_intake_links where organisation_id=$1 and channel='website'",[homeOrg])).rows[0].id
+  const receipt=crypto.randomUUID(),hash=createHash('sha256').update(crypto.randomUUID()).digest('hex')
+  await captureContact(link,receipt,{...contact,email:homeEmail},createHash('sha256').update(crypto.randomUUID()).digest('hex'))
+  await db.query('select recruitment_open_applicant_session($1,$2,$3,$4)',[homeOrg,homeUser,hash,receipt])
+  const profile=(await db.query("select recruitment_save_profile($1,$2,$3::jsonb,0,3,'complete') as result",[homeOrg,hash,JSON.stringify({...profileAnswers,email:homeEmail,packagePreference:'decide_later'})])).rows[0].result
+  const id=(await db.query('select lead_id from recruitment_contact_receipts where submission_key=$1',[receipt])).rows[0].lead_id
+  const key=crypto.randomUUID()
+  const apply=()=>db.query('select recruitment_submit_verified_profile($1,$2,$3,$4,true,true) as result',[homeOrg,hash,profile.applicant.profileRevision,key])
+  if(submit) expect((await apply()).rows[0].result.accepted).toBe(true)
+  return {id,hash,apply}
+}
+async function claimMail() { await contactServer(); return (await db.query('select recruitment_claim_submission_emails(3) as result')).rows[0].result }
+async function beginMail(job,kind=job.email_kind,message={to:homeEmail,subject:'Fixture',html:'<p>Fixture</p>',text:'Fixture'}) {
+  return (await db.query('select recruitment_begin_submission_email($1,$2,$3,$4,$3,$5,null,$6::jsonb,false) as result',[homeUser,homeOrg,job.lead_id,kind,job.id,JSON.stringify(message)])).rows[0].result
+}
+async function acceptMail(job) {
+  const begun=await beginMail(job)
+  if(begun.send) await db.query("select recruitment_finish_invitation_email($1,$2,'provider_accepted',$3,null)",[job.id,begun.attempt.lease_id,'local-provider-'+job.id])
+  return (await db.query('select recruitment_complete_submission_email($1,true,null,$2) as result',[job.id,job.lease_id])).rows[0].result
+}
+async function uploadMailDocument(application,type) {
+  await contactServer()
+  const id=crypto.randomUUID(),document={name:type+'.pdf',type,mimeType:'application/pdf',size:128}
+  const prepared=(await db.query('select recruitment_prepare_applicant_document($1,$2,$3,$4::jsonb) as result',[homeOrg,application.hash,id,JSON.stringify(document)])).rows[0].result
+  await db.exec('reset role;')
+  await db.query("insert into storage.objects(bucket_id,name,metadata) values('recruitment-documents',$1,'{\"size\":128,\"mimetype\":\"application/pdf\"}')",[prepared.path])
+  await contactServer()
+  expect((await db.query('select recruitment_commit_applicant_document($1,$2,$3) as result',[homeOrg,application.hash,id])).rows[0].result.saved).toBe(true)
+  return id
+}
+async function ageMailApplication(application,hours=25) {
+  // This isolated PGlite fixture advances its saved timestamps; no remote database is used.
+  await db.exec('reset role; alter table recruitment_leads disable trigger user;')
+  await db.query("update recruitment_leads set application_submitted_at=now()-make_interval(hours=>$2) where id=$1",[application.id,hours])
+  await db.exec('alter table recruitment_leads enable trigger user;')
+  await contactServer()
+  await db.query("update recruitment_submission_email_queue set next_attempt_at=now()-interval '1 second',created_at=now()-interval '25 hours' where lead_id=$1 and email_kind='documents_followup'",[application.id])
+}
+it('extends both existing email workers without queuing any historical application or document notifications',async()=>{
+  await db.exec('reset role;')
+  const queues=(await db.query('select id,status from recruitment_submission_email_queue order by id')).rows
+  const leads=(await db.query('select id,version,documents_json from recruitment_leads order by id')).rows
+  const staff=(await db.query('select count(*) from recruitment_contact_notifications')).rows[0].count
+  await db.exec(readFileSync(new URL('../../../../../supabase/migrations/'+emailFlowMigration,import.meta.url),'utf8'))
+  expect((await db.query('select id,status from recruitment_submission_email_queue order by id')).rows).toEqual(queues)
+  expect((await db.query('select id,version,documents_json from recruitment_leads order by id')).rows).toEqual(leads)
+  expect((await db.query('select count(*) from recruitment_contact_notifications')).rows[0].count).toBe(staff)
+})
+it('preserves all three first-form recipients and sends no full-application emails for a saved draft',async()=>{
+  mailApplication=await newMailApplication(false)
+  expect((await db.query('select recipient,event_kind from recruitment_contact_notifications where lead_id=$1 order by recipient',[mailApplication.id])).rows).toEqual(staffRecipients.map(recipient=>({recipient,event_kind:'lead_received'})))
+  expect((await db.query('select * from recruitment_submission_email_queue where lead_id=$1',[mailApplication.id])).rows).toEqual([])
+})
+it('rolls back application emails with a failed transaction and queues all six once when the verified full form commits',async()=>{
+  await db.exec('begin;')
+  await mailApplication.apply()
+  expect((await db.query('select id from recruitment_submission_email_queue where lead_id=$1',[mailApplication.id])).rows).toHaveLength(3)
+  await db.exec('rollback;')
+  expect((await db.query('select id from recruitment_submission_email_queue where lead_id=$1',[mailApplication.id])).rows).toHaveLength(0)
+  expect((await mailApplication.apply()).rows[0].result.accepted).toBe(true)
+  mailJobs=(await db.query('select * from recruitment_submission_email_queue where lead_id=$1 order by email_kind',[mailApplication.id])).rows
+  expect(mailJobs.map(job=>job.email_kind)).toEqual(['application_thanks','documents_followup','documents_reminder'])
+  const followup=mailJobs.find(job=>job.email_kind==='documents_followup')
+  const submitted=(await db.query('select application_submitted_at from recruitment_leads where id=$1',[mailApplication.id])).rows[0].application_submitted_at
+  expect(new Date(followup.next_attempt_at)-new Date(submitted)).toBe(24*60*60*1000)
+  expect((await db.query("select recipient from recruitment_contact_notifications where lead_id=$1 and event_kind='application_received' order by recipient",[mailApplication.id])).rows.map(row=>row.recipient)).toEqual(staffRecipients)
+  expect((await mailApplication.apply()).rows[0].result.duplicate).toBe(true)
+  expect((await db.query('select id from recruitment_submission_email_queue where lead_id=$1 order by email_kind',[mailApplication.id])).rows.map(row=>row.id)).toEqual(mailJobs.map(job=>job.id))
+})
+it('sends the thank-you before document instructions, keeps the one-day reminder deferred and rejects forged email kinds',async()=>{
+  const claims=await claimMail();expect(claims).toHaveLength(1);thanksClaim=claims[0]
+  expect(thanksClaim.email_kind).toBe('application_thanks')
+  expect(await claimMail()).toEqual([])
+  await expect(beginMail(thanksClaim,'documents_reminder')).rejects.toThrow('Claim the saved')
+  expect((await db.query('select recruitment_complete_submission_email($1,true,null,$2) as result',[thanksClaim.id,thanksClaim.lease_id])).rows[0].result).toBe(false)
+  expect(await acceptMail(thanksClaim)).toBe(true)
+  const next=await claimMail();expect(next).toHaveLength(1);requestClaim=next[0]
+  expect(requestClaim.email_kind).toBe('documents_reminder')
+})
+it('retains the document email payload through uncertain retries and requires the current queue lease and provider receipt',async()=>{
+  const first=await beginMail(requestClaim)
+  expect(first.send).toBe(true)
+  expect((await beginMail(requestClaim)).busy).toBe(true)
+  await db.query("select recruitment_finish_invitation_email($1,$2,'unknown',null,'dispatch_unconfirmed')",[requestClaim.id,first.attempt.lease_id])
+  const retry=await beginMail(requestClaim,requestClaim.email_kind,{to:homeEmail,subject:'Changed',text:'Changed'})
+  expect(retry.attempt.message_json).toEqual(first.attempt.message_json)
+  await db.query("select recruitment_finish_invitation_email($1,$2,'provider_accepted','local-documents-provider',null)",[requestClaim.id,retry.attempt.lease_id])
+  expect((await db.query('select recruitment_complete_submission_email($1,true,null,$2) as result',[requestClaim.id,crypto.randomUUID()])).rows[0].result).toBe(false)
+  expect((await db.query('select recruitment_complete_submission_email($1,true,null,$2) as result',[requestClaim.id,requestClaim.lease_id])).rows[0].result).toBe(true)
+  expect(await claimMail()).toEqual([])
+})
+it('starts the deferred reminder after 24 hours even though its queue row was created more than 23 hours ago',async()=>{
+  await ageMailApplication(mailApplication)
+  const claims=await claimMail();expect(claims).toHaveLength(1)
+  expect(claims[0]).toMatchObject({email_kind:'documents_followup',first_attempt_at:null,status:'sending'})
+  expect(await acceptMail(claims[0])).toBe(true)
+  expect(await claimMail()).toEqual([])
+})
+it('does not notify staff or mark the applicant pack complete after only the original four requested files',async()=>{
+  for(const type of ['CV','Identity document','Qualifications','Registration evidence']) await uploadMailDocument(mailApplication,type)
+  expect((await db.query("select id from recruitment_contact_notifications where lead_id=$1 and event_kind='documents_received'",[mailApplication.id])).rows).toHaveLength(0)
+  expect((await db.query('select recruitment_resume_applicant($1,$2) as result',[homeOrg,mailApplication.hash])).rows[0].result.documentsComplete).toBe(false)
+  await asUser(manager)
+  await expect(db.query("update recruitment_leads set status='under_review' where id=$1",[mailApplication.id])).rejects.toThrow('proof of address')
+})
+it('queues the completed-pack notice for all three recipients only after the fifth retained file and never repeats it on a retry or replacement',async()=>{
+  const id=await uploadMailDocument(mailApplication,'Other')
+  const notices=(await db.query("select id,recipient from recruitment_contact_notifications where lead_id=$1 and event_kind='documents_received' order by recipient",[mailApplication.id])).rows
+  expect(notices.map(row=>row.recipient)).toEqual(staffRecipients)
+  expect((await db.query('select recruitment_resume_applicant($1,$2) as result',[homeOrg,mailApplication.hash])).rows[0].result.documentsComplete).toBe(true)
+  expect((await db.query('select recruitment_commit_applicant_document($1,$2,$3) as result',[homeOrg,mailApplication.hash,id])).rows[0].result.duplicate).toBe(true)
+  await uploadMailDocument(mailApplication,'Other')
+  expect((await db.query("select id,recipient from recruitment_contact_notifications where lead_id=$1 and event_kind='documents_received' order by recipient",[mailApplication.id])).rows).toEqual(notices)
+})
+it('cancels a due reminder if the pack completes after claim, preventing a late provider call or stale completion',async()=>{
+  const application=await newMailApplication()
+  expect(await acceptMail((await claimMail())[0])).toBe(true)
+  expect(await acceptMail((await claimMail())[0])).toBe(true)
+  await ageMailApplication(application)
+  const followup=(await claimMail())[0]
+  expect(followup.email_kind).toBe('documents_followup')
+  for(const type of ['CV','Identity document','Qualifications','Registration evidence','Other']) await uploadMailDocument(application,type)
+  expect((await db.query('select status,last_error from recruitment_submission_email_queue where id=$1',[followup.id])).rows[0]).toEqual({status:'cancelled',last_error:'documents_complete'})
+  await expect(beginMail(followup)).rejects.toThrow('Claim the saved')
+  expect((await db.query('select recruitment_complete_submission_email($1,false,null,$2) as result',[followup.id,followup.lease_id])).rows[0].result).toBe(false)
+  expect(await claimMail()).toEqual([])
+})
+it('cancels unsent applicant messages and the reminder after application closure',async()=>{
+  const application=await newMailApplication()
+  await asUser(manager)
+  await db.query("update recruitment_leads set status='closed_lost' where id=$1",[application.id])
+  expect(await claimMail()).toEqual([])
+  expect((await db.query('select status from recruitment_submission_email_queue where lead_id=$1',[application.id])).rows.map(row=>row.status)).toEqual(['cancelled','cancelled','cancelled'])
+})
+it('keeps the extended queues and mail controls inaccessible to applicants, managers and anonymous callers',async()=>{
+  for(const actor of [homeUser,manager,null]) {
+    if(actor) await asUser(actor);else await db.exec('reset role; set role anon;')
+    await expect(db.query('select * from recruitment_submission_email_queue')).rejects.toThrow('permission denied')
+    await expect(db.query('select * from recruitment_contact_notifications')).rejects.toThrow('permission denied')
+    await expect(db.query('select recruitment_claim_submission_emails(3)')).rejects.toThrow('permission denied')
+    await expect(db.query('select recruitment_complete_submission_email($1,true,null,$2)',[thanksClaim.id,thanksClaim.lease_id])).rejects.toThrow('permission denied')
+    await expect(db.query('select recruitment_queue_application_notifications()')).rejects.toThrow('permission denied')
+  }
+  await db.exec('reset role;')
+  expect((await db.query("select count(*) from pg_class where relname in ('recruitment_submission_email_queue','recruitment_contact_notifications') and relrowsecurity")).rows[0].count).toBe(2)
+})
+it('recovers an expired queue lease with the same provider payload and blocks the old worker from completing it',async()=>{
+  const application=await newMailApplication()
+  const first=(await claimMail())[0],attempt=await beginMail(first)
+  await db.query("select recruitment_finish_invitation_email($1,$2,'unknown',null,'dispatch_unconfirmed')",[first.id,attempt.attempt.lease_id])
+  await db.query("update recruitment_submission_email_queue set next_attempt_at=now()-interval '1 second',leased_until=now()-interval '1 second' where id=$1",[first.id])
+  const recovered=(await claimMail())[0]
+  expect(recovered.id).toBe(first.id);expect(recovered.lease_id).not.toBe(first.lease_id)
+  expect((await db.query('select recruitment_complete_submission_email($1,false,null,$2) as result',[first.id,first.lease_id])).rows[0].result).toBe(false)
+  expect((await beginMail(recovered,recovered.email_kind,{to:homeEmail,text:'Changed'})).attempt.message_json).toEqual(attempt.attempt.message_json)
+  await db.query("update recruitment_invitation_deliveries set leased_at=now()-interval '61 seconds' where id=$1",[first.id])
+  expect(await acceptMail(recovered)).toBe(true)
+  expect(await acceptMail((await claimMail())[0])).toBe(true)
+  await asUser(manager);await db.query("update recruitment_leads set status='closed_lost' where id=$1",[application.id])
+  expect(await claimMail()).toEqual([])
+})
+it('stops uncertain retries 23 hours after the first provider attempt, preserving the saved receipt for staff review',async()=>{
+  const application=await newMailApplication(),job=(await claimMail())[0]
+  const first=await beginMail(job)
+  await db.query("select recruitment_finish_invitation_email($1,$2,'unknown',null,'dispatch_unconfirmed')",[job.id,first.attempt.lease_id])
+  await db.query("update recruitment_submission_email_queue set first_attempt_at=now()-interval '23 hours 1 minute',next_attempt_at=now()-interval '1 second',leased_until=now()-interval '1 second' where id=$1",[job.id])
+  await claimMail()
+  expect((await db.query('select status,last_error from recruitment_submission_email_queue where id=$1',[job.id])).rows[0]).toEqual({status:'needs_attention',last_error:'retry_window_ended'})
+  expect((await db.query('select message_json,status from recruitment_invitation_deliveries where id=$1',[job.id])).rows[0]).toEqual({message_json:first.attempt.message_json,status:'unknown'})
+  await asUser(manager);await db.query("update recruitment_leads set status='closed_lost' where id=$1",[application.id])
+  await claimMail()
+})
+it('requires the extra FICA proof only for Home Seekers, preserving other agencies document rules',async()=>{
+  await contactServer()
+  const files=JSON.stringify(['CV','Identity document','Qualifications','Registration evidence'].map(type=>({type,path:'own/'+type})))
+  expect((await db.query("select recruitment_requested_documents_complete($1,$2::jsonb,'{}') as result",[org,files])).rows[0].result).toBe(true)
+  expect((await db.query("select recruitment_requested_documents_complete($1,$2::jsonb,'{}') as result",[homeOrg,files])).rows[0].result).toBe(false)
+})
+it('denies forged applicants, agencies, references, recipients and force-send flags in the expanded automation claim',async()=>{
+  const application=await newMailApplication(),job=(await claimMail())[0]
+  const args=[homeUser,homeOrg,application.id,job.email_kind,application.id,job.id,null,JSON.stringify({to:homeEmail,text:'Fixture'}),false]
+  const invoke=values=>db.query('select recruitment_begin_submission_email($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9) as result',values)
+  for(const [index,value] of [[0,manager],[1,other],[2,otherLead],[4,otherLead],[6,'a'.repeat(64)],[8,true]]) {
+    const forged=[...args];forged[index]=value
+    await expect(invoke(forged)).rejects.toThrow('Claim the saved')
+  }
+  const recipient=[...args];recipient[7]=JSON.stringify({to:'attacker@agency.test',text:'Fixture'})
+  await expect(invoke(recipient)).rejects.toThrow('saved applicant')
+  expect(await acceptMail(job)).toBe(true)
+  await asUser(manager);await db.query("update recruitment_leads set status='closed_lost' where id=$1",[application.id])
+  expect(await claimMail()).toEqual([])
+})
+
+let unifiedLoginUser, unifiedLoginLead, unifiedLoginReceipt
+it('extends the common login to verified saved drafts without changing existing records or sending mail', async () => {
+  await db.exec('reset role;')
+  const before=(await db.query('select id,status,application_submitted_at from recruitment_leads order by id')).rows
+  const queues=(await db.query('select count(*)::int as n from recruitment_submission_email_queue')).rows[0].n
+  await db.exec(readFileSync(new URL('../../../../../supabase/migrations/20261010162130_home_seekers_unified_login.sql',import.meta.url),'utf8'))
+  expect((await db.query('select id,status,application_submitted_at from recruitment_leads order by id')).rows).toEqual(before)
+  expect((await db.query('select count(*)::int as n from recruitment_submission_email_queue')).rows[0].n).toBe(queues)
+  unifiedLoginUser=crypto.randomUUID();unifiedLoginReceipt=crypto.randomUUID()
+  const email='unified.login@example.test',hash=createHash('sha256').update(crypto.randomUUID()).digest('hex')
+  await db.query('insert into auth.users(id,email,email_confirmed_at) values($1,$2,now())',[unifiedLoginUser,email])
+  await contactServer()
+  const link=(await db.query("select id from recruitment_intake_links where organisation_id=$1 and channel='website'",[homeOrg])).rows[0].id
+  expect((await captureContact(link,unifiedLoginReceipt,{...contact,email},hash)).accepted).toBe(true)
+  expect((await db.query('select recruitment_open_applicant_session($1,$2,$3,$4) as opened',[homeOrg,unifiedLoginUser,hash,unifiedLoginReceipt])).rows[0].opened).toBe(true)
+  unifiedLoginLead=(await db.query('select lead_id from recruitment_contact_receipts where submission_key=$1',[unifiedLoginReceipt])).rows[0].lead_id
+  expect((await db.query('select recruitment_applicant_account_receipt($1) as receipt',[unifiedLoginUser])).rows[0].receipt).toBe(unifiedLoginReceipt)
+  await asUser(unifiedLoginUser)
+  expect((await db.query('select recruitment_applicant_portal_required() as required')).rows[0].required).toBe(true)
+  await expect(db.query('select recruitment_applicant_account_receipt($1)',[unifiedLoginUser])).rejects.toThrow('permission denied')
+  await asUser(manager)
+  expect((await db.query('select recruitment_applicant_portal_required() as required')).rows[0].required).toBe(false)
+})
+it('keeps approved and onboarding applicants in My Profile until activation, even with an accepted membership',async()=>{
+  await db.exec('reset role;')
+  await db.query("insert into organisation_users values($1,$2,'active','agent')",[homeOrg,unifiedLoginUser])
+  // Isolated stage fixtures exercise the login gate; the existing activation
+  // journey above separately proves the transitions and membership checks.
+  for(const stage of ['application_submitted','application_approved','contract_signed','onboarding_complete','agent_activated']) {
+    await db.exec("reset role; set session_replication_role='replica';")
+    try { await db.query('update recruitment_leads set status=$1 where id=$2',[stage,unifiedLoginLead]) }
+    finally { await db.exec("set session_replication_role='origin';") }
+    await asUser(unifiedLoginUser)
+    expect((await db.query('select recruitment_applicant_portal_required() as required')).rows[0].required).toBe(stage!=='agent_activated')
+  }
+  await contactServer()
+  expect((await db.query('select recruitment_applicant_account_receipt($1) as receipt',[unifiedLoginUser])).rows[0].receipt).toBeNull()
+})
+it('does not route a foreign, banned or changed-email identity into another person’s application',async()=>{
+  await db.exec("reset role; set session_replication_role='replica';")
+  try { await db.query("update recruitment_leads set status='lead_received' where id=$1",[unifiedLoginLead]) }
+  finally { await db.exec("set session_replication_role='origin';") }
+  for(const update of ["banned_until=now()+interval '1 day'", "banned_until=null,email='changed.unified@example.test'"]) {
+    await db.exec('reset role;')
+    await db.query(`update auth.users set ${update} where id=$1`,[unifiedLoginUser])
+    await asUser(unifiedLoginUser)
+    expect((await db.query('select recruitment_applicant_portal_required() as required')).rows[0].required).toBe(false)
+    await contactServer()
+    expect((await db.query('select recruitment_applicant_account_receipt($1) as receipt',[unifiedLoginUser])).rows[0].receipt).toBeNull()
+  }
+  await asUser(agent)
+  expect((await db.query('select recruitment_applicant_portal_required() as required')).rows[0].required).toBe(false)
+  await db.exec('reset role; set role anon;')
+  await expect(db.query('select recruitment_applicant_portal_required()')).rejects.toThrow('permission denied')
 })

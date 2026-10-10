@@ -9,6 +9,11 @@ assert.match(
   /path="\/listings\/:listingSection\?"/,
   'Listings tabs should share a single route so tab clicks do not remount the Listings page.',
 )
+assert.match(
+  appSource,
+  /all\|residential\|commercial\|developments[\s\S]*?return 'listings-index'/,
+  'Category URLs must share the app shell content key to preserve the mounted index and its data.',
+)
 assert.doesNotMatch(
   appSource,
   /path="\/listings\/developments"[\s\S]*?<AgentListings\s+initialTab="developments"/,
@@ -16,12 +21,12 @@ assert.doesNotMatch(
 )
 assert.match(
   listingsSource,
-  /const nextTab = pathIsDevelopments \? 'developments' : 'residential'/,
-  'AgentListings should sync both Listings tab states from the URL for direct links and browser navigation.',
+  /const nextTab = resolveListingIndexTab\(location\.pathname, location\.search\)/,
+  'AgentListings should sync all category states from the URL for direct links and browser navigation.',
 )
 assert.match(
   listingsSource,
-  /navigate\('\/listings\/developments'\)/,
+  /nextTab === 'all' \? '\/listings' : `\/listings\/\$\{nextTab\}`/,
   'The Developments tab should keep the deep-link URL while staying within the shared route element.',
 )
 

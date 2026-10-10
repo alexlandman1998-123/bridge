@@ -107,16 +107,18 @@ export function normalizeListingOverviewAnalytics(value = {}) {
   }
 }
 
-export async function getListingOverviewAnalytics({ organisationId = '', listingId = '', days = 30 } = {}) {
+export async function getListingOverviewAnalytics({ organisationId = '', listingId = '', days = 30, signal } = {}) {
   const orgId = text(organisationId)
   const id = text(listingId)
   if (!orgId || !id || !isSupabaseConfigured || !supabase) return createEmptyListingOverviewAnalytics()
 
-  const result = await supabase.rpc('listing_overview_performance', {
+  let request = supabase.rpc('listing_overview_performance', {
     p_organisation_id: orgId,
     p_listing_id: id,
     p_days: Math.max(1, Math.min(90, count(days) || 30)),
   })
+  if (signal) request = request.abortSignal(signal)
+  const result = await request
   if (result.error) throw result.error
   return normalizeListingOverviewAnalytics(result.data)
 }

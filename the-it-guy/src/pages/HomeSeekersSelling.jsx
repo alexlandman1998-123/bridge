@@ -1,3 +1,4 @@
+import HomeSeekersLoginLink from './HomeSeekersLoginLink'
 import { homeSeekersPath } from './homeSeekersRoutes.js'
 import { ArrowRight, ArrowUpRight } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -90,7 +91,7 @@ export default function HomeSeekersSelling() {
               {label}
             </a>
           ))}
-        </nav>
+        <HomeSeekersLoginLink /></nav>
         <button
           type="button"
           onClick={() => setValuationOpen(true)}

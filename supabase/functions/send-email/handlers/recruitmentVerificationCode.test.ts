@@ -36,6 +36,7 @@ function fixture(
     generationError = false,
     sendError = false,
     generatedEmail = contact.email,
+    senderAddress = "Home Seekers <recruitment@homeseekers.co.za>",
   } = {},
 ) {
   const filters: unknown[][] = [], sends: any[] = [], generations: any[] = [];
@@ -85,7 +86,13 @@ function fixture(
         secondaryColor: "#171717",
       };
     },
-    sender: async () => "Home Seekers <no-reply@arch9.co.za>",
+    sender: async (args: any) => {
+      assert(
+        args.supabase === admin && args.audience === "client" &&
+          args.platformSender === "",
+      );
+      return senderAddress;
+    },
     send: async (args: any) => {
       sends.push(args);
       return sendError
@@ -151,6 +158,7 @@ Deno.test("recruitment code email uses only the canonical Home Seekers contact a
     );
     const sent = f.sends[0];
     assert(sent.to === contact.email && sent.subject.includes("Home Seekers"));
+    assert(sent.from === "Home Seekers <recruitment@homeseekers.co.za>");
     assert(sent.html.includes("12345678") && sent.text.includes("12345678"));
     assert(
       sent.html.includes("&lt;Applicant&gt;") &&
@@ -161,7 +169,11 @@ Deno.test("recruitment code email uses only the canonical Home Seekers contact a
         JSON.stringify(sent),
       ),
     );
-    assert(!/href=|activate account|sign in to arch9/i.test(sent.html));
+    assert(
+      !/\/invite\/|\/activate|activate account|sign in to arch9/i.test(
+        sent.html,
+      ),
+    );
     assert(
       sent.idempotencyKey.match(/^home-seekers-recruitment-code:[a-f0-9]{64}$/),
     );
@@ -228,7 +240,7 @@ Deno.test("six and eight digit recruitment emails explain expiry and same-form r
     );
     assert(
       email.text.includes("same form") &&
-        !/href=|activate account/i.test(email.html),
+        !/\/invite\/|\/activate|activate account/i.test(email.html),
     );
   }
   let rejected = false;
@@ -239,3 +251,14 @@ Deno.test("six and eight digit recruitment emails explain expiry and same-form r
   }
   assert(rejected);
 });
+
+Deno.test("an unconfigured Home Seekers sender cannot generate or send a code from an Arch9 mailbox", () =>
+  configured(async () => {
+    for (
+      const senderAddress of ["", "Home Seekers <notifications@arch9.co.za>"]
+    ) {
+      const f = fixture({ senderAddress });
+      assert((await f.run()).status === 503);
+      assert(f.generations.length === 0 && f.sends.length === 0);
+    }
+  }));

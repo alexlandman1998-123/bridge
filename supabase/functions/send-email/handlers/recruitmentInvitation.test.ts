@@ -50,7 +50,10 @@ async function fixture(run: (f: any) => Promise<void>) {
     },
     rpc: async (name: string, args: any) => {
       calls.push({ name, args });
-      if (name === "recruitment_begin_invitation_email") {
+      if (
+        name === "recruitment_begin_invitation_email" ||
+        name === "recruitment_begin_submission_email"
+      ) {
         return {
           error: f.claimError,
           data: f.claimError ? null : {
@@ -93,14 +96,23 @@ async function fixture(run: (f: any) => Promise<void>) {
       f.sent = args;
       return f.outcome;
     },
-    branding: async () => ({
-      organisationName: "Agency",
-      primaryColor: "#123456",
-      supportEmail: "",
-      supportPhone: "",
-      logoUrl: "",
-    }),
-    sender: async () => "Agency <verified@agency.co.za>",
+    branding: async (args: any) => {
+      f.brandingArgs = args;
+      return ({
+        organisationName: "Agency",
+        primaryColor: "#123456",
+        supportEmail: "",
+        supportPhone: "",
+        logoUrl: "",
+      });
+    },
+    sender: async (args: any) => {
+      f.senderArgs = args;
+      return f.senderOverride ??
+        (args.branding.organisationName === "Home Seekers"
+          ? "Home Seekers <recruitment@homeseekers.co.za>"
+          : "Agency <verified@agency.co.za>");
+    },
   };
   f.dispatch = async (patch: any = {}, auth = true) => {
     const response = await handleRecruitmentInvitationEmail(
@@ -115,7 +127,12 @@ async function fixture(run: (f: any) => Promise<void>) {
         kind: f.kind,
         ...patch,
       },
-      dependencies,
+      {
+        ...dependencies,
+        ...(f.submissionAutomation
+          ? { automationActor: actor, submissionAutomation: true }
+          : {}),
+      },
     );
     return { status: response.status, ...await response.json() };
   };
@@ -238,4 +255,174 @@ Deno.test("provider rejection is distinct from uncertain 5xx or missing receipt 
     const result = await f.dispatch();
     assert(result.ok === false && result.status === "unknown");
     assert(!result.error.includes("delivered"));
+  }));
+Deno.test("document reminder uses the canonical Home Seekers login screen without granting workspace access", () =>
+  fixture(async (f) => {
+    f.kind = "documents_reminder";
+    const response = await f.dispatch({
+      organisationId: "2958d402-368e-43c9-b728-0098e10505f1",
+      referenceId: lead,
+      applicationLink: "https://evil.test",
+      to: "attacker@test",
+      role: "admin",
+      password: "FixturePass123",
+    });
+    assert(response.ok === true);
+    const message = f.calls.find((call: any) =>
+      call.name === "recruitment_begin_invitation_email"
+    ).args.p_message;
+    assert(
+      message.text.includes("https://app.arch9.test/applicant/my-profile"),
+    );
+    assert(message.text.includes("password you set when applying"));
+    assert(message.text.includes("FICA documents and FFC certificate"));
+    assert(message.text.includes("review and approve your application"));
+    assert(!message.text.includes("Log in to Arch9"));
+    assert(!message.html.includes("Powered by Arch9"));
+    assert(!message.html.includes("through Arch9"));
+    assert(!message.html.includes("FixturePass123"));
+    assert(!message.text.includes("evil.test"));
+    assert(!message.html.includes("/invite/"));
+    assert(message.to === f.email);
+  }));
+Deno.test("approval notice contains the saved decision message and promises a contract without offering access", () =>
+  fixture(async (f) => {
+    f.kind = "approval";
+    const response = await f.dispatch({
+      referenceId: lead,
+      to: "attacker@test",
+      text: "Forged content",
+    });
+    assert(response.ok === true);
+    const message = f.calls.find((call: any) =>
+      call.name === "recruitment_begin_invitation_email"
+    ).args.p_message;
+    assert(message.text.includes("Your application has been approved"));
+    assert(message.text.includes("We will send you the contract shortly."));
+    assert(!message.text.includes("/invite/"));
+    assert(!message.html.includes("Accept workspace access"));
+    assert(!message.text.includes("Forged content"));
+  }));
+Deno.test("automatic submission delivery uses the queued applicant claim and the same retained provider key", () =>
+  fixture(async (f) => {
+    f.kind = "documents_reminder";
+    f.submissionAutomation = true;
+    f.authenticated = false;
+    f.allowed = false;
+    const response = await f.dispatch({
+      organisationId: "2958d402-368e-43c9-b728-0098e10505f1",
+      referenceId: lead,
+    });
+    assert(response.ok === true && response.status === "provider_accepted");
+    const claim = f.calls.find((call: any) =>
+      call.name === "recruitment_begin_submission_email"
+    );
+    assert(
+      claim.args.p_actor === actor &&
+        claim.args.p_kind === "documents_reminder",
+    );
+    assert(claim.args.p_message.text.includes("open My Profile"));
+    assert(f.sends() === 1);
+    f.kind = "workspace";
+    assert((await f.dispatch()).status === 400);
+    assert(f.sends() === 1);
+  }));
+Deno.test("thank-you and one-day follow-up can send only through their saved automation kind and applicant claim", () =>
+  fixture(async (f) => {
+    f.submissionAutomation = true;
+    f.authenticated = false;
+    f.allowed = false;
+    for (const kind of ["application_thanks", "documents_followup"]) {
+      f.kind = kind;
+      const response = await f.dispatch({
+        organisationId: "2958d402-368e-43c9-b728-0098e10505f1",
+        referenceId: lead,
+        subject: "Forged",
+        to: "attacker@test",
+        applicationLink: "https://evil.test",
+      });
+      assert(response.ok === true && response.status === "provider_accepted");
+      const claim = f.calls.filter((call: any) =>
+        call.name === "recruitment_begin_submission_email"
+      ).at(-1);
+      assert(
+        claim.args.p_kind === kind && claim.args.p_actor === actor &&
+          claim.args.p_message.to === f.email,
+      );
+      assert(
+        !f.sent.text.includes("evil.test") &&
+          f.sent.idempotencyKey === `recruitment-invitation/${id}`,
+      );
+      assert(
+        kind === "application_thanks"
+          ? f.sent.text.includes("second email")
+          : f.sent.text.includes("still missing"),
+      );
+    }
+    f.submissionAutomation = false;
+    f.authenticated = true;
+    f.allowed = true;
+    assert(
+      (await f.dispatch({
+        organisationId: "2958d402-368e-43c9-b728-0098e10505f1",
+        referenceId: lead,
+      })).status === 400,
+    );
+    assert(f.sends() === 2);
+  }));
+
+Deno.test("Home Seekers receipt, document instructions, follow-up and approval load saved branding and use its verified sender", () =>
+  fixture(async (f) => {
+    const organisationId = "2958d402-368e-43c9-b728-0098e10505f1";
+    for (
+      const kind of [
+        "application_thanks",
+        "documents_reminder",
+        "documents_followup",
+        "approval",
+      ]
+    ) {
+      f.kind = kind;
+      f.submissionAutomation = kind !== "approval";
+      assert(
+        (await f.dispatch({
+          organisationId,
+          referenceId: lead,
+          branding: { organisationName: "Forged" },
+        })).ok === true,
+      );
+      assert(
+        f.brandingArgs.supabase &&
+          f.brandingArgs.organisationId === organisationId,
+      );
+      assert(
+        f.senderArgs.supabase === f.brandingArgs.supabase &&
+          f.senderArgs.audience === "client" &&
+          f.senderArgs.platformSender === "",
+      );
+      assert(f.sent.from === "Home Seekers <recruitment@homeseekers.co.za>");
+      assert(
+        f.sent.subject.startsWith("Home Seekers:") &&
+          f.sent.html.includes(
+            "/brand/homeseekers/recruitment-logo-on-white.png",
+          ),
+      );
+      assert(!/Powered by Arch9|through Arch9|From Agency/.test(f.sent.html));
+      assert(f.sent.html.includes("admin@homeseekers.co.za"));
+    }
+  }));
+
+Deno.test("an unconfigured Home Seekers sender returns a setup error before creating an attempt or sending", () =>
+  fixture(async (f) => {
+    f.kind = "documents_reminder";
+    f.senderOverride = "";
+    const response = await f.dispatch({
+      organisationId: "2958d402-368e-43c9-b728-0098e10505f1",
+      referenceId: lead,
+    });
+    assert(
+      response.status === 503 &&
+        response.error.includes("verified Home Seekers"),
+    );
+    assert(f.sends() === 0 && !f.calls.length);
   }));

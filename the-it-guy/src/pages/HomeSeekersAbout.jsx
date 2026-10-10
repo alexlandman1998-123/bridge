@@ -1,3 +1,4 @@
+import HomeSeekersLoginLink from './HomeSeekersLoginLink'
 import { homeSeekersPath } from './homeSeekersRoutes.js'
 import { ArrowRight, ArrowUpRight, Compass, MapPin } from "lucide-react";
 import { useState } from "react";
@@ -54,7 +55,7 @@ export default function HomeSeekersAbout() {
               {label}
             </a>
           ))}
-        </nav>
+        <HomeSeekersLoginLink /></nav>
         <button type="button" onClick={() => setValuationOpen(true)}>
           Book a free valuation
         </button>
@@ -95,7 +96,7 @@ export default function HomeSeekersAbout() {
         </div>
         <div className="hs-about-next__hero-image">
           <img
-            src="https://d21tw07c6rnmp0.cloudfront.net/media/uploads/869/pages/2025/12/869_f2db92d285f848d6bef749c6ec27e2cd_t_w_639_h_728.avif"
+            src="/brand/homeseekers/about-family-hero-charcoal.jpg"
             alt="Family at home"
           />
           <div>

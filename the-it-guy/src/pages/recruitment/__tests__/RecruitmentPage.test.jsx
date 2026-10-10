@@ -12,6 +12,7 @@ import { WorkspaceContext } from '../../../context/WorkspaceContextBase'
 import { recruitmentLocalDate } from '../recruitmentSigningModel'
 import { emptyRecruitmentLead, recruitmentReadiness } from '../recruitmentModel'
 import { recruitmentReviewDraft } from '../recruitmentReviewModel'
+import RecruitmentJourney from '../RecruitmentJourney'
 import { getRecruitmentJoiningOptions, recordRecruitmentContractSignature, approveRecruitmentApplication, getRecruitmentLead, saveRecruitmentLead } from '../../../services/recruitmentService'
 vi.mock('../../../services/recruitmentIntakeService', () => ({ createRecruitmentIntakeLink: vi.fn(), listRecruitmentIntakeLinks: vi.fn().mockResolvedValue([]), revokeRecruitmentIntakeLink: vi.fn() }))
 vi.mock('../../../services/recruitmentService', () => ({ getRecruitmentInvitationStatus: vi.fn().mockResolvedValue({referenceStatus:'prepared',attempt:null}), sendRecruitmentInvitation: vi.fn(), getRecruitmentJoiningOptions: vi.fn().mockResolvedValue({ branches: [{id:'a1111111-1111-4111-8111-111111111111',name:'Head Office'}], commissionStructures: [] }), getRecruitmentJoiningConnections: vi.fn().mockResolvedValue({ applications: [], workspace: [] }), activateRecruitmentAgent: vi.fn(), getRecruitmentAgentAccessLink: vi.fn(), saveRecruitmentOnboarding: vi.fn(), uploadRecruitmentOnboardingDocument: vi.fn(), downloadRecruitmentOnboardingDocument: vi.fn(), recordRecruitmentContractDelivery: vi.fn(), recordRecruitmentContractSignature: vi.fn(), downloadRecruitmentSignedContract: vi.fn(), prepareRecruitmentContract: vi.fn(), downloadRecruitmentContract: vi.fn(), approveRecruitmentApplication: vi.fn(), getRecruitmentLead: vi.fn(), listRecruitmentLeads: vi.fn().mockResolvedValue([]), startRecruitmentReview: vi.fn(), saveRecruitmentReview: vi.fn(), saveRecruitmentLead: vi.fn(), uploadRecruitmentDocument: vi.fn(), openRecruitmentDocument: vi.fn() }))
@@ -79,22 +80,69 @@ it('opens the workspace without the contact receipt or invitation containers', (
   expect(screen.queryByText('Recruitment contact received')).toBeNull()
   expect(screen.queryByText('Join Us invitation')).toBeNull()
   expect(document.querySelector('[aria-current="step"]').textContent).toBe('1Lead Received')
-  expect(within(screen.getByRole('region', { name: 'Agent journey stages' })).getAllByRole('listitem')).toHaveLength(8)
+  const journey = screen.getByRole('region', { name: 'Agent journey stages' })
+  expect(within(journey).getAllByRole('listitem').map((stage) => stage.querySelector('p').textContent)).toEqual([
+    'Lead Received', 'Application Submitted', 'Documents Uploaded', 'Under Review',
+    'Application Approved', 'Contract Sent', 'Contract Signed', 'Agent Activated',
+  ])
 })
 it('shows completed, current and upcoming recruitment stages from the saved lead', () => {
-  wrap(<RecruitmentWorkspace lead={{ ...lead, status: 'under_review', application_submitted_at: '2026-10-05', review_started_at: '2026-10-05' }} />)
+  wrap(<RecruitmentWorkspace lead={{ ...lead, status: 'under_review', application_submitted_at: '2026-10-05', review_started_at: '2026-10-05', documents_json: [{ path: 'org/agent-1/cv.pdf' }] }} />)
   const stages = within(screen.getByRole('region', { name: 'Agent journey stages' })).getAllByRole('listitem')
   expect(within(stages[0]).getByText('Complete')).toBeTruthy()
   expect(within(stages[1]).getByText('Complete')).toBeTruthy()
-  expect(document.querySelector('[aria-current="step"]').textContent).toBe('3Under Review')
-  expect(within(stages[2]).getByText('Current Stage')).toBeTruthy()
+  expect(within(stages[2]).getByText('Complete')).toBeTruthy()
+  expect(document.querySelector('[aria-current="step"]').textContent).toBe('4Under Review')
+  expect(within(stages[3]).getByText('Current Stage')).toBeTruthy()
+  expect(within(stages[4]).getByText('Upcoming')).toBeTruthy()
+})
+it('advances the upload milestone only after an application and its documents are saved', () => {
+  const documents = [{ path: 'org/agent-1/cv.pdf' }]
+  const { rerender } = render(<RecruitmentJourney lead={{ ...lead, documents_json: documents }} />)
+  expect(document.querySelector('[aria-current="step"]').textContent).toBe('1Lead Received')
+  const submitted = { ...lead, status: 'application_submitted', application_submitted_at: '2026-10-05' }
+  rerender(<RecruitmentJourney lead={{ ...submitted, documents_json: [{ name: 'unsaved.pdf' }, { path: ' ' }] }} />)
+  expect(document.querySelector('[aria-current="step"]').textContent).toBe('2Application Submitted')
+  rerender(<RecruitmentJourney lead={{ ...submitted, documents_json: documents }} />)
+  expect(document.querySelector('[aria-current="step"]').textContent).toBe('3Documents Uploaded')
+  expect(screen.getByRole('heading', { name: 'Documents Uploaded' })).toBeTruthy()
+  const stages = within(screen.getByRole('region', { name: 'Agent journey stages' })).getAllByRole('listitem')
+  expect(within(stages[1]).getByText('Complete')).toBeTruthy()
   expect(within(stages[3]).getByText('Upcoming')).toBeTruthy()
+})
+it('does not claim documents were uploaded for a later-stage record without saved files', () => {
+  render(<RecruitmentJourney lead={{ ...lead, status: 'under_review', application_submitted_at: '2026-10-05', review_started_at: '2026-10-05' }} />)
+  const stages = within(screen.getByRole('region', { name: 'Agent journey stages' })).getAllByRole('listitem')
+  expect(within(stages[2]).getByText('Not uploaded')).toBeTruthy()
+  expect(within(stages[2]).queryByLabelText('Completed')).toBeNull()
+  expect(document.querySelector('[aria-current="step"]').textContent).toBe('4Under Review')
+})
+it('keeps a signed and onboarded agent awaiting activation until activation is saved', () => {
+  const onboarded = { ...lead, status: 'onboarding_complete', onboarding_completed_at: '2026-10-05', documents_json: [{ path: 'org/agent-1/cv.pdf' }] }
+  const { rerender } = render(<RecruitmentJourney lead={onboarded} />)
+  expect(document.querySelector('[aria-current="step"]').textContent).toBe('7Contract Signed')
+  expect(screen.getByRole('heading', { name: 'Contract Signed' })).toBeTruthy()
+  let stages = within(screen.getByRole('region', { name: 'Agent journey stages' })).getAllByRole('listitem')
+  expect(within(stages[7]).getByText('Upcoming')).toBeTruthy()
+  expect(screen.queryByText('Onboarding Complete')).toBeNull()
+  rerender(<RecruitmentJourney lead={{ ...onboarded, status: 'agent_activated', activated_at: '2026-10-06' }} />)
+  expect(document.querySelector('[aria-current="step"]').textContent).toBe('8Agent Activated')
+  stages = within(screen.getByRole('region', { name: 'Agent journey stages' })).getAllByRole('listitem')
+  expect(stages.every((stage) => within(stage).queryByText('Complete'))).toBe(true)
 })
 it('shows where a closed lead stopped without marking a future stage as current', () => {
   wrap(<RecruitmentWorkspace lead={{ ...lead, status: 'closed_lost', application_submitted_at: '2026-10-05', review_started_at: '2026-10-05' }} />)
   const stages = within(screen.getByRole('region', { name: 'Agent journey stages' })).getAllByRole('listitem')
   expect(document.querySelector('[aria-current="step"]')).toBeNull()
   expect(within(stages[1]).getByText('Complete')).toBeTruthy()
+  expect(within(stages[2]).getByText('Not uploaded')).toBeTruthy()
+  expect(within(stages[3]).getByText('Stopped here')).toBeTruthy()
+  expect(within(stages[4]).getByText('Not reached')).toBeTruthy()
+})
+it('shows a closed application stopped at uploaded documents without advancing review', () => {
+  render(<RecruitmentJourney lead={{ ...lead, status: 'closed_lost', application_submitted_at: '2026-10-05', documents_json: [{ path: 'org/agent-1/cv.pdf' }] }} />)
+  const stages = within(screen.getByRole('region', { name: 'Agent journey stages' })).getAllByRole('listitem')
+  expect(document.querySelector('[aria-current="step"]')).toBeNull()
   expect(within(stages[2]).getByText('Stopped here')).toBeTruthy()
   expect(within(stages[3]).getByText('Not reached')).toBeTruthy()
 })
@@ -169,7 +217,7 @@ it('shows all eight journey stages and the authoritative receipt history', () =>
   expect(screen.getByText('Agent Activated')).toBeTruthy()
   expect(screen.getByText('Application Submitted')).toBeTruthy()
   expect(document.querySelector('[aria-current="step"]').textContent).toBe('1Lead Received')
-  expect(screen.getByText('Staff capture')).toBeTruthy()
+  expect(screen.getByRole('heading', { name: 'Contact details' })).toBeTruthy()
   expect(screen.getByText('Lead received')).toBeTruthy()
 })
 
@@ -187,9 +235,10 @@ it('feeds the submitted answers and review requirements into the recruitment wor
 })
 
 const submitted = {...lead,status:'application_submitted',application_submitted_at:'2026-10-05',application_json:{version:'recruitment-application-v1',answers:{practitionerStatus:'candidate',ffcStatus:'pending',activeMandates:'no'}}}
-it('starts review from a submitted application and disables the action while agent details are unsaved', () => {
+it('starts review with a submitted application and complete documents, and protects unsaved details', () => {
   const start = vi.fn()
-  wrap(<RecruitmentWorkspace lead={submitted} onStartReview={start} />)
+  const documents = ['CV','Identity document','Qualifications','Registration evidence'].map((type, index) => ({ type, name: `Document ${index + 1}.pdf`, path: `org/agent-1/${index}.pdf` }))
+  wrap(<RecruitmentWorkspace lead={{ ...submitted, status: 'documents_uploaded', documents_json: documents }} onStartReview={start} />)
   fireEvent.click(screen.getByRole('button',{name:'Start review'}))
   expect(start).toHaveBeenCalledOnce()
   expect(screen.queryByRole('button',{name:'Approve application'})).toBeNull()
@@ -277,9 +326,9 @@ it.each([false,true])('handles an approval response and preserves the decision o
     expect(await screen.findByRole('alert')).toBeTruthy()
     expect(screen.getByLabelText('Approval reason').value).toBe(reason)
   }else{
-    expect(await screen.findByText('Application approved.')).toBeTruthy()
+    expect(await screen.findByText('Application approved. Approval email queued automatically.')).toBeTruthy()
     expect(screen.queryByLabelText('Approval reason')).toBeNull()
-    expect(document.querySelector('[aria-current="step"]').textContent).toBe('4Application Approved')
+    expect(document.querySelector('[aria-current="step"]').textContent).toBe('5Application Approved')
   }
   expect(approveRecruitmentApplication).toHaveBeenCalledWith('org',ready,{notes:reason,confirmed:true})
 })
@@ -453,7 +502,7 @@ it('shows a preserved activation link and closes the recruitment journey without
   expect(screen.getByRole('link',{name:'Open agent'}).getAttribute('href')).toBe('/agency/agents/actual-user')
   expect(screen.queryByRole('button',{name:'Close Lead'})).toBeNull()
   expect(screen.queryByRole('button',{name:'Prepare agent access'})).toBeNull()
-  expect(screen.getByText('Agent activated. Recruitment is complete.')).toBeTruthy()
+  expect(within(screen.getByRole('region', { name: 'Agent journey stages' })).getAllByRole('listitem').at(-1).textContent).toContain('Complete')
 })
 it.each([false,true])('handles activation responses and retains findings on failure (failure=%s)',async failure=>{
   const ready=readyForActivation()
@@ -585,4 +634,32 @@ it('links a verified Commercial broker back to the broker directory and Commerci
  expect(screen.getByRole('link',{name:'Open broker'}).getAttribute('href')).toBe('/commercial/brokers/verified-broker')
  expect(screen.getByRole('link',{name:'Open Commercial branches'}).getAttribute('href')).toBe('/commercial/agency/branches')
  expect(screen.queryByRole('link',{name:'Open agent'})).toBeNull()
+})
+it('opens the application popup with submitted answers and private documents from the next action', async () => {
+  const onDownload=vi.fn(), profile={...submitted,status:'under_review',review_started_at:'2026-10-10',documents_json:[{name:'identity.pdf',type:'Identity document',path:'org/agent-1/identity'}]}
+  wrap(<RecruitmentWorkspace lead={profile} organisationId="org" onDownload={onDownload} />)
+  fireEvent.click(within(screen.getByLabelText('Next best action')).getByRole('button',{name:'Open Application'}))
+  const popup=within(screen.getByRole('dialog',{name:'Application and documents'}))
+  expect(popup.getByText('Sam Agent · sam@example.test · 0821234567')).toBeTruthy()
+  expect(popup.getByLabelText('Required application documents')).toBeTruthy()
+  fireEvent.click(popup.getByRole('button',{name:'Download identity.pdf'}))
+  expect(onDownload).toHaveBeenCalledWith(profile.documents_json[0])
+})
+it('opens manual required document upload and records a reasoned rejection from the next action',async()=>{
+  const onUpload=vi.fn(), onReject=vi.fn().mockResolvedValue({...submitted,status:'closed_lost'})
+  const view=wrap(<RecruitmentWorkspace lead={{...submitted,status:'documents_uploaded'}} onUpload={onUpload} />)
+  fireEvent.click(within(screen.getByLabelText('Next best action')).getByRole('button',{name:'Upload manually'}))
+  const popup=within(screen.getByRole('dialog',{name:'Required documents'}))
+  expect(popup.getAllByLabelText(/^Upload .* manually$/)).toHaveLength(4)
+  const file=new File(['%PDF'],'id.pdf',{type:'application/pdf'})
+  fireEvent.change(popup.getByLabelText('Upload Identity document manually'),{target:{files:[file]}})
+  expect(onUpload).toHaveBeenCalledWith(file,'Identity document')
+  view.unmount()
+  wrap(<RecruitmentWorkspace lead={{...submitted,status:'under_review',review_started_at:'2026-10-10'}} onReject={onReject} />)
+  fireEvent.click(within(screen.getByLabelText('Next best action')).getByRole('button',{name:'Reject Application'}))
+  const rejection=within(screen.getByRole('dialog',{name:'Reject application'}))
+  fireEvent.change(rejection.getByLabelText('Rejection reason'),{target:{value:'This opening needs more experience'}})
+  fireEvent.click(rejection.getByRole('button',{name:'Reject Application'}))
+  await waitFor(()=>expect(onReject).toHaveBeenCalledWith('This opening needs more experience'))
+  await waitFor(()=>expect(screen.queryByRole('dialog')).toBeNull())
 })

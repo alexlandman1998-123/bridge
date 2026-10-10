@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { PGlite } from '@electric-sql/pglite'
-import { insertRentalListingOnce, serializeRentalCreationDraft } from '../rentalListingCreationRecovery.js'
+import { insertPrivateListingOnce, insertRentalListingOnce, serializeRentalCreationDraft } from '../rentalListingCreationRecovery.js'
 
 const id = '11111111-1111-4111-8111-111111111111'
 const actor = '22222222-2222-4222-8222-222222222222'
@@ -91,4 +91,16 @@ test('retains uploaded photo identity while excluding browser-only URLs and file
   assert.equal(draft.form.galleryImages.length, 1)
   assert.equal(draft.form.galleryImages[0].file, undefined)
   assert.equal(draft.form.coverImageId, 'saved')
+})
+
+for (const category of ['private_sale','development_unit']) test(`recovers ${category} after a lost response without creating duplicates`, async () => {
+ const {db,client,state}=await fixture()
+ try {
+  state.loseResponse=true
+  const source={...payload,listing_category:category}
+  const first=await insertPrivateListingOnce(client,source,id,actor)
+  const retry=await insertPrivateListingOnce(client,source,id,actor)
+  assert.equal(first.data.id,retry.data.id);assert.equal(state.inserts,1)
+  await assert.rejects(insertPrivateListingOnce(client,{...source,listing_category:'rental'},id,actor),/unavailable in this workspace/)
+ } finally {await db.close()}
 })

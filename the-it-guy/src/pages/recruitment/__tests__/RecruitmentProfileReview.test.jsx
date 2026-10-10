@@ -65,6 +65,16 @@ it('simulates final submission without sending answers or claiming a real applic
   await waitFor(()=>expect(callbacks.onSubmitted).toHaveBeenCalledWith(expect.objectContaining({submissionPreview:true,applicationSubmitted:true})))
   expect(fetcher).not.toHaveBeenCalled()
 })
+it('Home Seekers shows Submit Application before a preview receipt and never sends preview answers',async()=>{
+  const fetcher=vi.fn();vi.stubGlobal('fetch',fetcher)
+  const callbacks=review({preview:true,homeSeekers:true,applicant:{...applicant,profile:{...applicant.profile,answers:{...applicant.profile.answers,packagePreference:'decide_later'}}}})
+  expect(screen.queryByRole('button',{name:'Preview submission'})).toBeNull()
+  fireEvent.click(screen.getByRole('button',{name:'Submit Application',exact:true}))
+  expect(callbacks.onSubmitted).not.toHaveBeenCalled()
+  consent();fireEvent.click(screen.getByRole('button',{name:'Submit Application',exact:true}))
+  await waitFor(()=>expect(callbacks.onSubmitted).toHaveBeenCalledWith(expect.objectContaining({submissionPreview:true,applicationSubmitted:true})))
+  expect(fetcher).not.toHaveBeenCalled()
+})
 it('restores submitted applicants at the confirmation screen with no questionnaire or resubmission',async()=>{
   vi.stubGlobal('fetch',vi.fn(async()=>response({branding:{organisationName:'Home Seekers'},applicant:submitted})))
   render(<RecruitmentSignupModal open onClose={()=>{}} />)

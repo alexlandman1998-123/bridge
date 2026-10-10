@@ -5,10 +5,9 @@ import { recruitmentSignupRequest } from '../../services/recruitmentSignupServic
 import { callingCodes, homeSeekersPackageNote, homeSeekersPackageOptions, initialRecruitmentProfile, normalizeRecruitmentProfile, profileFields, profilePages, recruitmentProfileErrors, recruitmentProfileSteps } from './recruitmentProfileModel'
 import './RecruitmentProfileQuestionnaire.css'
 
-function ProfileField({ name, value, onChange, error, validLicense }) {
+function ProfileField({ name, value, onChange, error, validLicense, homeSeekers }) {
   const field = profileFields[name], id = `recruitment-profile-${name}`
   const required = field.required || (validLicense && ['ffcNumber','ffcType'].includes(name))
-  const props = {id,name,value,onChange:event=>onChange(name,event.target.value),required,maxLength:field.max,'aria-invalid':!!error,'aria-describedby':`${id}-help`}
   if (field.type === 'yesno') return <fieldset id={id} tabIndex={-1} className="recruitment-profile__radio recruitment-profile__wide" aria-describedby={`${id}-help`}>
     <legend>{field.label} <span aria-hidden="true">*</span></legend>
     <div className="recruitment-profile__radio-options">
@@ -16,17 +15,18 @@ function ProfileField({ name, value, onChange, error, validLicense }) {
     </div>
     <small id={`${id}-help`} className="recruitment-signup__error">{error || ''}</small>
   </fieldset>
-  const hint = name==='email' ? 'Verified email. Your account and saved enquiry use this address.' : name==='dateOfBirth' ? 'You must be at least 18 years old to apply.' : name==='ffcNumber' ? 'Fidelity Fund Certificate issued by the PPRA.' : field.type==='code' ? 'Choose a country code or enter another international code.' : field.type==='phone' ? 'Enter the number without the country code.' : field.type==='count' ? 'Whole numbers from 0 to 999, including zero.' : field.type==='postal' ? '4 or 5 digits only.' : field.type==='future' ? 'Choose a future date.' : !required ? 'Optional' : ''
+  const hint = name==='currentEmployer' && homeSeekers ? 'We will not contact them.' : name==='email' ? 'Verified email. Your account and saved enquiry use this address.' : name==='dateOfBirth' ? 'You must be at least 18 years old to apply.' : name==='ffcNumber' ? 'Fidelity Fund Certificate issued by the PPRA.' : field.type==='code' ? 'Choose a country code or enter another international code.' : field.type==='phone' ? 'Enter the number without the country code.' : field.type==='count' ? homeSeekers ? '' : 'Whole numbers from 0 to 999, including zero.' : field.type==='postal' ? '4 or 5 digits only.' : field.type==='future' ? 'Choose a future date.' : !required ? 'Optional' : ''
+  const props = {id,name,value,onChange:event=>onChange(name,event.target.value),required,maxLength:field.max,'aria-invalid':!!error,'aria-describedby':error || hint ? `${id}-help` : undefined}
   return <div className={['streetAddress','currentEmployer','referralSource'].includes(name)?'recruitment-profile__wide':undefined}>
     <label htmlFor={id}>{field.label}{required && <span aria-hidden="true"> *</span>}</label>
     {field.options ? <select {...props}><option value="">Select an option</option>{field.options.map(([key,label])=><option key={key} value={key}>{label}</option>)}</select>
       : <input {...props} type={['birth','future'].includes(field.type)?'date':field.type==='count'?'number':field.type==='email'?'email':['phone','code'].includes(field.type)?'tel':'text'} inputMode={['count','postal','phone'].includes(field.type)?'numeric':undefined} min={field.type==='count'?0:undefined} max={field.type==='count'?999:undefined} step={field.type==='count'?1:undefined} readOnly={name==='email'} list={field.type==='code'?`${id}-codes`:undefined} autoComplete={name==='firstName'?'given-name':name==='lastName'?'family-name':name==='email'?'email':name==='streetAddress'?'street-address':name==='postalCode'?'postal-code':name==='dateOfBirth'?'bday':'off'} />}
     {field.type==='code' && <datalist id={`${id}-codes`}>{callingCodes.map(([code,country])=><option key={code} value={code}>{country}</option>)}</datalist>}
-    <small id={`${id}-help`} className={error?'recruitment-signup__error':undefined}>{error || hint}</small>
+    {(error || hint) && <small id={`${id}-help`} className={error?'recruitment-signup__error':undefined}>{error || hint}</small>}
   </div>
 }
 function PackagePreference({value, onChange, error}) {
-  const descriptions = ['Pay your fixed fee from registered deals.','Pay your fixed fee by monthly debit order.','Pay your fixed fee upfront for the year.','Discuss the options with Home Seekers before choosing.']
+  const descriptions = ['Pay your fixed fee from registered deals.','Pay your monthly invoice in advance on the 1st of every month.','R100,000 upfront for the team leader’s own seat for the year.','Discuss the options with Home Seekers before choosing.']
   return <fieldset id="recruitment-profile-packagePreference" tabIndex={-1} className="recruitment-profile__packages" aria-describedby="recruitment-package-note recruitment-package-error">
     <legend>Which Home Seekers option interests you?</legend>
     <p id="recruitment-package-note">{homeSeekersPackageNote}</p>
@@ -182,10 +182,10 @@ export default function RecruitmentProfileQuestionnaire({ applicant, endpoint, t
         <p className="recruitment-profile__part">Part {page<2?1:2} of 2 · Step {page+1} of 4</p>
         <h4 ref={heading} tabIndex={-1}>{profilePages[page]}</h4>
         <fieldset disabled={busy || conflict || sessionExpired}>
-          {groups.map(([label,keys])=><section key={label} className="recruitment-profile__group" aria-label={label}>{label!==profilePages[page] && <h5>{label}</h5>}<div className="recruitment-signup__fields">{keys.map(key=><ProfileField key={key} name={key} value={answers[key]} onChange={change} error={errors[key]} validLicense={answers.licenseStatus==='valid'} />)}</div></section>)}
+          {groups.map(([label,keys])=><section key={label} className="recruitment-profile__group" aria-label={label}>{label!==profilePages[page] && <h5>{label}</h5>}<div className="recruitment-signup__fields">{keys.map(key=><ProfileField key={key} name={key} value={answers[key]} onChange={change} error={errors[key]} validLicense={answers.licenseStatus==='valid'} homeSeekers={homeSeekers} />)}</div></section>)}
           {homeSeekers && page===3 && <PackagePreference value={answers.packagePreference} onChange={change} error={errors.packagePreference} />}
           {page===2 && <p className="recruitment-signup__note">FFC details are self-declared and will be checked by the recruitment team.</p>}
-          <p className="recruitment-profile__save-status" role={enhanced || notice?'status':undefined}>{enhanced?draftStatus:notice || 'You can save incomplete answers and return later.'}</p>
+          {!(homeSeekers && preview) && <p className="recruitment-profile__save-status" role={enhanced || notice?'status':undefined}>{enhanced?draftStatus:notice || 'You can save incomplete answers and return later.'}</p>}
           <div className="recruitment-profile__actions">
             {page>0 && <button type="button" disabled={enhanced && actionsBlocked} className="recruitment-signup__secondary recruitment-profile__back" onClick={()=>visit(page-1)}>Back</button>}
             <div className="recruitment-profile__forward-actions">

@@ -54,8 +54,14 @@ it('standalone navigation, search, mobile menu and property links use the domain
   expect(screen.getByRole('search').getAttribute('action')).toBe('/buying#properties')
   expect(document.querySelector('a[href="/buying?q=Moreleta+Park#properties"]')).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: 'Open navigation' }))
-  expect(screen.getByRole('dialog', { name: 'Home Seekers navigation' }).querySelector('a').getAttribute('href')).toBe('/selling')
+  const drawer = screen.getByRole('dialog', { name: 'Home Seekers navigation' })
+  expect([...drawer.querySelectorAll('a')].map((link) => link.getAttribute('href'))).toEqual(['/', '/selling', '/buying', '/renting', '/about', '/join', '/guarantee', '/contact', 'https://app.arch9.co.za/homeseekers/login'])
   expect(document.querySelector('[href*="/demo/homeseekers"], [action*="/demo/homeseekers"]')).toBeNull()
+  expect(document.body.style.overflow).toBe('hidden')
+  fireEvent.keyDown(document, { key: 'Escape' })
+  expect(screen.queryByRole('dialog', { name: 'Home Seekers navigation' })).toBeNull()
+  expect(document.body.style.overflow).toBe('')
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Open navigation' }))
 })
 
 it('keeps deferred sample areas off the guarantee page', () => {

@@ -1,12 +1,15 @@
+import HomeSeekersLoginLink from './HomeSeekersLoginLink'
 import { homeSeekersPath } from './homeSeekersRoutes.js'
 import { ArrowRight, ChevronDown, Mail, MapPin, Phone } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import HomeSeekersMobileNav from './HomeSeekersMobileNav'
 import { useHomeSeekersLeadSubmission, useHomeSeekersPageTracking } from './homeSeekersWebsiteData'
 import './HomeSeekersDemo.css'
 import './HomeSeekersContact.css'
 
 const nav = ['Buy', 'Sell', 'Rent', 'Developments', 'Our people', 'About', 'Contact']
 const hrefFor = (item) => ({ Buy: homeSeekersPath("/buy"), Sell: homeSeekersPath("/sell"), Rent: homeSeekersPath("/rent"), Developments: homeSeekersPath("/developments"), 'Our people': homeSeekersPath("/people"), About: homeSeekersPath("/about"), Contact: homeSeekersPath("/contact") }[item] || homeSeekersPath("/"))
+const mobileNavigation = [['Selling', '/selling'], ['Buying', '/buying'], ['Renting', '/renting'], ['About', '/about'], ['Join us', '/join']].map(([label, path]) => [label, homeSeekersPath(path)])
 
 function HomeSeekersContact() {
   const submitLead = useHomeSeekersLeadSubmission()
@@ -29,7 +32,7 @@ function HomeSeekersContact() {
   }
 
   return <main className="hs-site hs-contact-site">
-    <header className={`hs-header hs-contact-header${headerScrolled ? ' hs-contact-header--scrolled' : ''}`}><a className="hs-logo" href={homeSeekersPath("/")}><img src="/brand/homeseekers/logo.png" alt="Home Seekers" /></a><nav className="hs-nav" aria-label="Main navigation">{nav.map((item, index) => <a className={item === 'Contact' ? 'is-active' : ''} href={hrefFor(item)} key={item}>{item}{index < 3 && <ChevronDown size={13} />}</a>)}</nav></header>
+    <header className={`hs-header hs-contact-header${headerScrolled ? ' hs-contact-header--scrolled' : ''}`}><a className="hs-logo" href={homeSeekersPath("/")}><img src="/brand/homeseekers/logo.png" alt="Home Seekers" /></a><nav className="hs-nav" aria-label="Main navigation">{nav.map((item, index) => <a className={item === 'Contact' ? 'is-active' : ''} href={hrefFor(item)} key={item}>{item}{index < 3 && <ChevronDown size={13} />}</a>)}<HomeSeekersLoginLink /></nav><HomeSeekersMobileNav links={mobileNavigation} active="contact" /></header>
 
     <section className="hs-contact-hero"><div><p className="hs-eyebrow">Get in touch</p><h1>Let’s talk<br />property.</h1><p>Whether you are ready to make a move or simply want an honest view of the market, the Home Seekers team is here.</p></div><p className="hs-contact-hero-note">Pretoria,<br />South Africa.</p></section>
 

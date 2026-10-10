@@ -113,11 +113,11 @@ assert.equal(buildRentalListingEditForm({
 
 assert.deepEqual(
   validateRentalListingDraftForm({ ...form, depositPolicy: 'not_captured' }, { organisationId: 'org-1' }),
-  ['Choose whether a deposit is required.'],
+  [],
 )
 assert.deepEqual(
   validateRentalListingDraftForm({ ...form, availableFrom: '', occupationDate: '' }, { organisationId: 'org-1' }),
-  ['Available from or occupation date is required.'],
+  [],
 )
 
 const legacyFacts = buildRentalCanonicalFacts({

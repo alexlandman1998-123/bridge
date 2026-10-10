@@ -1,4 +1,4 @@
-import { listingIssueEditorUrl } from '../../services/listings/listingPublicationIssueTarget'
+import { INITIAL_LISTING_PUBLICATION_EVENT, readInitialListingChannelResults, watchInitialListingPublication } from '../../services/listings/listingInitialPublicationService'
 import { buildRentalWorkspaceKey } from '../../services/rentals/rentalWorkspaceScope'
 import { getListingChannelViewUrl } from '../../services/listings/listingMarketingChannelPresentation'
 import ListingChannelTableHeader from '../../components/listings/ListingChannelTableHeader'
@@ -963,6 +963,7 @@ function RentalTabContent({
   onPrepareKingdomPublication,
   onWebsiteStatus,
   onKingdomStatus,
+  kingdomWebsiteAvailable,
   onWebsiteEvent,
   onKingdomEvent,
   portalChannels,
@@ -1091,7 +1092,7 @@ function RentalTabContent({
               privatePropertyReference && !['not_published', 'inactive', 'expired', 'removed', 'withdrawn'].includes(privatePropertyStatus) ? <button key="withdraw" type="button" onClick={onWithdrawPrivateProperty} disabled={publishingPrivateProperty || privatePropertyChannel.loading || privatePropertyChannel.loadError || privatePropertyChannel.requiresReconciliation} className={`${channelMenuItemClass} text-[#a43d35] hover:bg-[#fff5f5]`}>{publishingPrivateProperty ? <Loader2 size={15} className="animate-spin" /> : <CalendarDays size={15} />}Withdraw listing</button> : null,
             ].filter(Boolean)}
           />
-          <WebsiteListingPublicationPanel key={`agency:${row.id}`} variant="channel" showConnectionState listingId={row.id} listingTitle={row.title} listingReference={listing.arch9Reference || listing.listingReference || listing.listingCode || ''} savedAt={formatRelativeTime(detail.lastUpdatedAt)} onPrepare={onPrepareWebsitePublication} onStatusChange={onWebsiteStatus} onPublicationAction={onWebsiteEvent} publicationState={websitePublicationStates.agency_website} />
+          <WebsiteListingPublicationPanel key={`agency:${row.id}`} variant="channel" showConnectionState hideDisconnected={kingdomWebsiteAvailable} listingId={row.id} listingTitle={row.title} listingReference={listing.arch9Reference || listing.listingReference || listing.listingCode || ''} savedAt={formatRelativeTime(detail.lastUpdatedAt)} onPrepare={onPrepareWebsitePublication} onStatusChange={onWebsiteStatus} onPublicationAction={onWebsiteEvent} publicationState={websitePublicationStates.agency_website} />
           <KingdomWebsitePublicationChannel key={`kingdom:${row.id}`} showConnectionState listingId={row.id} listingTitle={row.title} listingReference={listing.arch9Reference || listing.listingReference || listing.listingCode || ''} savedAt={formatRelativeTime(detail.lastUpdatedAt)} onPrepare={onPrepareKingdomPublication} onStatusChange={onKingdomStatus} onPublicationAction={onKingdomEvent} publicationState={websitePublicationStates.kingdom_website} />
         </article>
         {channelHistoryError ? <p role="alert" className="text-sm text-[#9f3131]">Website publication history: {channelHistoryError}</p> : null}
@@ -1198,6 +1199,16 @@ function ScopedRentalListingDetailPage() {
   const listingMutationRef = useRef(false)
   const mediaSavingRef = useRef(false)
   useEffect(() => { setMediaError('') }, [organisationId, listingId])
+  const [initialChannelResults, setInitialChannelResults] = useState(() => readInitialListingChannelResults(listingId))
+  useEffect(() => watchInitialListingPublication(listingId), [listingId])
+  useEffect(() => {
+    setInitialChannelResults(readInitialListingChannelResults(listingId))
+    const refresh = event => {
+      if (event.detail?.listingId === listingId) setInitialChannelResults(event.detail.results)
+    }
+    window.addEventListener(INITIAL_LISTING_PUBLICATION_EVENT, refresh)
+    return () => window.removeEventListener(INITIAL_LISTING_PUBLICATION_EVENT, refresh)
+  }, [listingId])
   const [channelData, setChannelData] = useState({ errors: {}, activity: [], loading: true })
   const [websiteStatus, setWebsiteStatus] = useState(null)
   const [kingdomStatus, setKingdomStatus] = useState(null)
@@ -1249,7 +1260,7 @@ function ScopedRentalListingDetailPage() {
   )
   const canSaveEdit = editValidationErrors.length === 0 && !savingEdit
 
-  const loadListing = useCallback(async () => {
+  const loadListing = useCallback(async ({ background = false } = {}) => {
     if (!mountedRef.current) return
     const request = ++loadRequestRef.current
     readinessRequestsRef.current.property24 += 1
@@ -1262,7 +1273,7 @@ function ScopedRentalListingDetailPage() {
       return
     }
     try {
-      setLoading(true)
+      if (!background) setLoading(true)
       setError('')
       const row = await getRentalListingForAgent(
         listingId,
@@ -1282,7 +1293,7 @@ function ScopedRentalListingDetailPage() {
       setProperty24PreviewError('')
     } catch (loadError) {
       if (!mountedRef.current || request !== loadRequestRef.current) return
-      setListing(null)
+      if (!background) setListing(null)
       setError(loadError?.message || 'Unable to load the rental listing.')
     } finally {
       if (mountedRef.current && request === loadRequestRef.current) setLoading(false)
@@ -1292,6 +1303,14 @@ function ScopedRentalListingDetailPage() {
   useEffect(() => {
     void loadListing()
   }, [loadListing])
+
+  useEffect(() => {
+    const refresh = event => {
+      if (event.detail?.listingId === listingId) void loadListing({ background: true })
+    }
+    window.addEventListener('itg:listings-updated', refresh)
+    return () => window.removeEventListener('itg:listings-updated', refresh)
+  }, [listingId, loadListing])
 
   useEffect(() => {
     setActiveTab(routeTab)
@@ -1344,10 +1363,7 @@ function ScopedRentalListingDetailPage() {
   }
 
   function handleReadinessFix(action) {
-    if (action.kind === 'editor') {
-      if (action.field) navigate(listingIssueEditorUrl(`/agent/rentals/listings/${encodeURIComponent(listingId)}/edit`, action, action.message))
-      else openEditPanel(action.step)
-    }
+    if (action.kind === 'editor') openEditPanel(action.step)
     else if (action.kind === 'settings') navigate(action.path)
     else if (action.kind === 'expiry') document.getElementById('rental-property24-expiry')?.focus()
     else if (action.kind === 'check') void (action.channel === 'property24' ? handleCheckProperty24Readiness() : handleCheckPrivatePropertyReadiness())
@@ -1538,6 +1554,9 @@ function ScopedRentalListingDetailPage() {
   }
 
   async function handleProperty24Publish() {
+    if (readInitialListingChannelResults(listingId).some(result => result.key === 'property24' && result.status === 'publishing')) {
+      setPublishError('The initial submission is still in progress. Wait for its result.'); return
+    }
     const previewDetails = getProperty24PreviewDetails(property24Preview)
     if (!property24Preview || !previewDetails.canSubmit) {
       setPublishError('Run a clean Property24 readiness check before publishing this rental.')
@@ -1640,6 +1659,9 @@ function ScopedRentalListingDetailPage() {
   }
 
   async function handlePrivatePropertyPublish() {
+    if (readInitialListingChannelResults(listingId).some(result => result.key === 'private_property' && result.status === 'publishing')) {
+      setPrivatePropertyError('The initial submission is still in progress. Wait for its result.'); return
+    }
     if (!getRentalPortalReadiness('private_property',privatePropertyPreview).ready) {
       setPrivatePropertyError('Check and resolve the Private Property listing requirements before publishing this rental.')
       return
@@ -1744,6 +1766,10 @@ function ScopedRentalListingDetailPage() {
   return (
     <section className="page-content rental-listing-detail">
       <div className="ui-section-stack">
+        {initialChannelResults.length ? <div role="status" aria-live="polite" className="rounded-xl border border-[#dce6f2] p-4 text-sm">
+          <p className="font-semibold">Initial channel submission</p>
+          {initialChannelResults.map(result => <p key={result.key} className="mt-2">{result.label}: {result.message}</p>)}
+        </div> : null}
         <header className="relative isolate min-h-[240px] overflow-hidden rounded-[24px] border border-[#d7e1eb] bg-[#153751] shadow-[0_12px_28px_rgba(15,23,42,0.12)] sm:min-h-[300px]">
           <div className="absolute inset-0 -z-20">
             <RentalListingImage src={row.imageUrl} title={row.title} />
@@ -1843,6 +1869,7 @@ function ScopedRentalListingDetailPage() {
           onPrepareKingdomPublication={() => prepareRentalWebsitePublication('kingdom_website')}
           onWebsiteStatus={onWebsiteStatus}
           onKingdomStatus={onKingdomStatus}
+          kingdomWebsiteAvailable={kingdomStatus?.available === true}
           onWebsiteEvent={event => recordWebsiteEvent('agency_website',event)}
           onKingdomEvent={event => recordWebsiteEvent('kingdom_website',event)}
           portalChannels={portalChannels}

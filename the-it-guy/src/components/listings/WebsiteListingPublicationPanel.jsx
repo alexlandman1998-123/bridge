@@ -1,9 +1,10 @@
 import './listing-channel-table.css'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { CalendarDays, CheckCircle2, ExternalLink, Globe2, Loader2, RefreshCw, Send, SlidersHorizontal, X } from 'lucide-react'
+import { CheckCircle2, ExternalLink, Globe2, Loader2, RefreshCw, Send, X } from 'lucide-react'
 import ListingWebsiteConnectionState from './ListingWebsiteConnectionState'
 import Button from '../ui/Button'
-import Modal from '../ui/Modal'
+import ListingChannelManageMenu from './ListingChannelManageMenu'
+import ListingChannelLastUpdate from './ListingChannelLastUpdate'
 import { getWebsiteListingPublicationStatus, setWebsiteListingPublication } from '../../services/websiteListingPublicationService'
 import {
   buildWebsiteListingPublicUrl,
@@ -32,20 +33,19 @@ function describeWebsiteBlocker(blocker) {
   return message
 }
 
-export default function WebsiteListingPublicationPanel({ listingId, listingTitle, listingReference = '', preparationBlockers = [], onPrepare, onStatusChange, onPublicationAction, publicationState = null, onReviewChanges, savedAt = '', variant = 'panel', showConnectionState = false }) {
+export default function WebsiteListingPublicationPanel({ listingId, listingTitle, listingReference = '', preparationBlockers = [], onPrepare, onEdit, onStatusChange, onPublicationAction, publicationState = null, onReviewChanges, savedAt = '', variant = 'panel', showConnectionState = false, hideDisconnected = false }) {
   const [publication, setPublication] = useState(null)
   const [loading, setLoading] = useState(true)
   const [action, setAction] = useState('')
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
-  const [manageOpen, setManageOpen] = useState(false)
 
   const load = useCallback(async () => {
     if (!listingId) return
     setLoading(true)
     setError('')
     try {
-      setPublication(await getWebsiteListingPublicationStatus(listingId))
+      setPublication(await getWebsiteListingPublicationStatus(listingId, { includePartner: false }))
     } catch (loadError) {
       setError(loadError?.message || 'Website publication status could not be loaded.')
     } finally {
@@ -72,6 +72,7 @@ export default function WebsiteListingPublicationPanel({ listingId, listingTitle
   const infrastructureBlocked = readinessBlockers.some((blocker) => INFRASTRUCTURE_BLOCKERS.some((prefix) => String(blocker).startsWith(prefix)))
   const itemsToFix = [...new Set(readinessBlockers.filter((blocker) => !AUTOMATIC_PREPARATION_BLOCKERS.has(blocker)).map(describeWebsiteBlocker))]
   const hasConnectedWebsite = Boolean(publication?.websiteSiteId && publication?.hostname)
+  const websiteLabel = publication?.websiteLabel || 'Agency Website'
 
   const run = async (nextAction) => {
     if (!listingId || action) return
@@ -135,7 +136,7 @@ export default function WebsiteListingPublicationPanel({ listingId, listingTitle
     : withdrawn
       ? 'Withdrawn'
     : effectivelyLive
-      ? stale ? 'Update available' : 'Live on website'
+      ? stale ? 'Changes not published' : 'Live on website'
       : published ? 'Not visible on website' : 'Not on website'
   const statusClass = withdrawn
     ? 'text-[#526a82]'
@@ -169,7 +170,7 @@ export default function WebsiteListingPublicationPanel({ listingId, listingTitle
   if (variant === 'channel') {
     // A website channel only makes sense after the organisation has a live site
     // with an active domain. Avoid showing a disabled, misleading channel row.
-    if (!hasConnectedWebsite) return showConnectionState
+    if (!hasConnectedWebsite) return showConnectionState && !hideDisconnected
       ? <ListingWebsiteConnectionState name="Agency Website" loading={loading} error={error} detail={readinessBlockers.join(' ') || 'No agency website with an active domain is connected to this organisation.'} onRetry={() => void load()} />
       : null
 
@@ -181,8 +182,8 @@ export default function WebsiteListingPublicationPanel({ listingId, listingTitle
               <Globe2 size={21} />
             </span>
             <div className="min-w-0">
-              <p className="truncate text-sm font-semibold leading-5 text-[#142132]">Agency Website</p>
-              <p className="truncate text-xs leading-5 text-[#607387]">Your public property website</p>
+              <p className="truncate text-sm font-semibold leading-5 text-[#142132]">{websiteLabel}</p>
+              <p className="truncate text-xs leading-5 text-[#607387]">{publication.hostname}</p>
             </div>
           </div>
           <div className="min-w-0">
@@ -202,57 +203,21 @@ export default function WebsiteListingPublicationPanel({ listingId, listingTitle
               <span className={`h-2 w-2 rounded-full ${statusDotClass}`} />
               {statusLabel}
             </p>
-            {publicationState?.changeCount ? <button type="button" onClick={onReviewChanges} className="mt-1 inline-flex items-center gap-1 rounded-full border border-[#f1dfb8] bg-[#fff8e8] px-2 py-1 text-[0.68rem] font-semibold text-[#8a641d]">{publicationState.changeCount} unpublished change{publicationState.changeCount === 1 ? '' : 's'}</button> : publicationState?.stage === 'verified' ? <p className="mt-1 text-[0.68rem] font-semibold text-[#1f7d44]">Matches verified snapshot</p> : null}
+            {publicationState?.changeCount ? <button type="button" onClick={onReviewChanges} className="mt-1 inline-flex items-center gap-1 rounded-full border border-[#f1dfb8] bg-[#fff8e8] px-2 py-1 text-[0.68rem] font-semibold text-[#8a641d]">{publicationState.changeCount} unpublished change{publicationState.changeCount === 1 ? '' : 's'}</button> : null}
           </div>
-          <div className="min-w-0">
-            <div className="listing-channel-activity grid gap-1">
-              {savedAt ? <p><span >Arch9 saved</span> · {savedAt}</p> : null}
-              {publicationState?.submittedAt ? <p><span >Submitted</span> · {new Date(publicationState.submittedAt).toLocaleString()}</p> : null}
-              {publicationState?.acceptedAt ? <p><span >Accepted</span> · {new Date(publicationState.acceptedAt).toLocaleString()}</p> : null}
-              {publicationState?.verifiedAt ? <p><span >Verified</span> · {new Date(publicationState.verifiedAt).toLocaleString()}</p> : null}
-              {publicationState?.withdrawnAt ? <p><span >Withdrawn</span> · {new Date(publicationState.withdrawnAt).toLocaleString()}</p> : null}
-              {publicationState?.failedAt ? <p><span >Failed</span> · {new Date(publicationState.failedAt).toLocaleString()}</p> : null}
-              {publication?.publishedAt ? <p><span >Published</span> · {new Date(publication.publishedAt).toLocaleString()}</p> : null}
-              {!savedAt && !publicationState?.submittedAt && publication?.updatedAt ? <p><span >Last updated</span> · {new Date(publication.updatedAt).toLocaleDateString()}</p> : null}
-            </div>
-          </div>
-          <div className="flex justify-start lg:justify-end">
-            <Button type="button" size="sm" variant="secondary" onClick={() => setManageOpen(true)}>
-              <SlidersHorizontal size={15} />
-              Manage
-            </Button>
-          </div>
+          <ListingChannelLastUpdate publicationState={publicationState} publication={publication} fallback={savedAt ? `Saved in Arch9 · ${savedAt}` : ''} />
+          <div className="flex justify-start lg:justify-end"><ListingChannelManageMenu channelName={websiteLabel}>
+            <Button type="button" variant="secondary" onClick={() => void load()} disabled={Boolean(action) || loading}><RefreshCw size={15} />Refresh status</Button>
+            <Button type="button" variant="secondary" onClick={() => onEdit ? onEdit() : void run(published ? 'update' : 'publish')} disabled={Boolean(action) || loading || (!onEdit && infrastructureBlocked)}>{action ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}{onEdit ? 'Edit listing' : published ? publishButtonLabel : 'Publish to website'}</Button>
+            {published || publication?.mediaCleanupPending > 0 ? <Button type="button" variant="secondary" className="text-[#a43d35]" onClick={() => void run('unpublish')} disabled={Boolean(action)}><X size={15} />Remove from website</Button> : null}
+          </ListingChannelManageMenu></div>
+          {itemsToFix.length ? <p className="text-xs text-[#825514] lg:col-span-5">{itemsToFix.join(' ')}</p> : null}
+          {publication?.mediaCleanupPending > 0 ? <p className="text-xs text-[#8a3030] lg:col-span-5">{publication.mediaCleanupPending} website photos could not be removed. Choose Remove from website again to retry.</p> : null}
           {error ? <p className="lg:col-span-5 rounded-[12px] border border-[#f4d4d4] bg-[#fff5f5] px-3 py-2 text-sm text-[#b42318]" role="alert">{error}</p> : null}
           {notice ? <p className="lg:col-span-5 rounded-[12px] border border-[#cfe7d7] bg-[#eef9f2] px-3 py-2 text-sm text-[#257044]" role="status">{notice}</p> : null}
         </div>
 
-        <Modal
-          open={manageOpen}
-          onClose={() => setManageOpen(false)}
-          title="Manage Agency Website"
-          subtitle="Publish, update, or remove this listing from the agency website."
-          className="max-w-3xl"
-          footer={(
-            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-              <Button type="button" variant="secondary" onClick={() => setManageOpen(false)}>Close</Button>
-              <Button type="button" variant="secondary" onClick={() => void load()} disabled={Boolean(action) || loading}><RefreshCw size={15} className={loading ? 'animate-spin' : ''} />Refresh status</Button>
-              {published
-                ? <Button type="button" onClick={() => void run('update')} disabled={Boolean(action) || loading || infrastructureBlocked}>{action === 'update' ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}{publishButtonLabel}</Button>
-                : <Button type="button" onClick={() => void run('publish')} disabled={Boolean(action) || loading || infrastructureBlocked}>{action === 'publish' ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}Publish to website</Button>}
-            </div>
-          )}
-        >
-          <div className="grid gap-5">
-            {websiteSummary}
-            {publication?.mediaCleanupPending > 0 ? <section className="rounded-[14px] border border-[#efc4c4] bg-[#fff5f5] p-3 text-xs leading-5 text-[#8a3030]">{publication.mediaCleanupPending} website photo{publication.mediaCleanupPending === 1 ? '' : 's'} could not be removed yet. Choose Remove from website again to retry.</section> : null}
-            {error ? <p className="rounded-[12px] border border-[#f4d4d4] bg-[#fff5f5] px-3 py-2 text-sm text-[#b42318]" role="alert">{error}</p> : null}
-            {notice ? <p className="rounded-[12px] border border-[#cfe7d7] bg-[#eef9f2] px-3 py-2 text-sm text-[#257044]" role="status">{notice}</p> : null}
-            <div className="flex flex-wrap gap-2">
-              {safePublicUrl ? <a className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-[#c9d9cf] bg-white px-3 text-sm font-semibold text-[#2f6346]" href={safePublicUrl} target="_blank" rel="noreferrer">View listing <ExternalLink size={14} /></a> : null}
-              {published ? <Button type="button" variant="secondary" className="border-[#f3c9c9] text-[#a43d35] hover:bg-[#fff5f5]" onClick={() => void run('unpublish')} disabled={Boolean(action)}>{action === 'unpublish' ? <Loader2 size={15} className="animate-spin" /> : <CalendarDays size={15} />}Remove from website</Button> : null}
-            </div>
-          </div>
-        </Modal>
+
       </>
     )
   }

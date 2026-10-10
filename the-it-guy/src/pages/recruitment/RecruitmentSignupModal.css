@@ -43,3 +43,31 @@
 .recruitment-signup form .recruitment-signup__secondary { margin-right: 8px; }
 .recruitment-signup__account-action { display: inline-block; margin: 0 0 8px; padding: 4px 0; border: 0; background: transparent; color: #62625d; font: inherit; font-size: 12px; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 .recruitment-signup fieldset > label + label { margin-top: 16px; }
+
+.recruitment-profile__document { margin: 18px 0; padding: 16px; border: 1px solid #dbe6f1; border-radius: 12px; }
+.recruitment-profile__document input { max-width: 100%; min-width: 0; }
+.recruitment-profile__document span { overflow-wrap: anywhere; }
+
+/* Home Seekers' contact-first popup uses short, consistently aligned steps. */
+.recruitment-signup--home-seekers .ui-modal-head{display:grid;grid-template-columns:minmax(0,1fr) 44px;align-items:start;gap:16px;padding:24px 28px}
+.recruitment-signup--home-seekers .ui-modal-head>div{min-width:0}
+.recruitment-signup--home-seekers .ui-modal-head h3{margin:0;line-height:1.3;letter-spacing:-.025em}
+.recruitment-signup--home-seekers .ui-modal-head p{margin:8px 0 0;font-size:13px}
+.recruitment-signup--home-seekers .ui-modal-head .ui-icon-button{display:grid;place-items:center;width:44px;height:44px;padding:0;flex-shrink:0;border:1px solid #e6e4df;border-radius:50%;background:#fff;color:#62625d;box-shadow:none;cursor:pointer}
+.recruitment-signup--home-seekers .recruitment-signup__steps{gap:12px;margin:0 0 28px}
+.recruitment-signup--home-seekers .recruitment-signup__steps li{display:flex;flex-direction:column;align-items:center;gap:10px;min-width:0;padding:0 0 14px;text-align:center;font:500 12px/1.4 Asap,Arial,sans-serif;white-space:nowrap}
+.recruitment-signup--home-seekers .recruitment-signup__steps li>span{width:28px;height:28px;margin:0;font:600 12px/1 Montserrat,Arial,sans-serif}
+.recruitment-signup--home-seekers .recruitment-signup__steps li[aria-current]{font-weight:700}
+.recruitment-signup--home-seekers form>h4:first-child{margin:0 0 20px}
+.recruitment-signup--home-seekers .recruitment-signup__email-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px}
+.recruitment-signup--home-seekers .recruitment-signup__email-actions .recruitment-signup__secondary{width:100%;min-height:44px;margin:0;padding:10px 12px;font:400 13px/1.4 Asap,Arial,sans-serif}
+@media(max-width:600px){
+  .recruitment-signup--home-seekers .ui-modal-head{gap:12px;padding:20px}
+  .recruitment-signup--home-seekers .ui-modal-head h3{font-size:18px}
+  .recruitment-signup--home-seekers .ui-modal-head p{font-size:12px}
+  .recruitment-signup--home-seekers .recruitment-signup__steps{gap:8px;margin-bottom:24px}
+  .recruitment-signup--home-seekers .recruitment-signup__steps li{gap:9px;padding-bottom:12px;font-size:10.5px}
+  .recruitment-signup--home-seekers .recruitment-signup__steps li>span{width:26px;height:26px;font-size:11px}
+  .recruitment-signup--home-seekers .recruitment-signup__email-actions{gap:8px}
+  .recruitment-signup--home-seekers .recruitment-signup__email-actions .recruitment-signup__secondary{min-height:48px;padding:10px 8px;font-size:12px}
+}

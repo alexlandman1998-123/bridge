@@ -23,10 +23,10 @@ assert.match(
   'Quick Add draft creation should require property address as the location anchor.',
 )
 
-assert.match(
-  source,
-  /Seller email or (phone|mobile) is required\./,
-  'Quick Add should require at least one seller contact method.',
+assert.doesNotMatch(
+  source.slice(source.indexOf('function validateQuickListingMinimumFields('), source.indexOf('function getDeveloperOrganisationName(')),
+  /form\.(?:seller|mandate|hasSigned)/i,
+  'Listing validation must not require seller capture or mandate paperwork.',
 )
 
 assert.match(
@@ -165,8 +165,8 @@ assert.doesNotMatch(
 
 assert.match(
   source,
-  /Active With Warning/,
-  'Quick Add should surface active listings with compliance gaps as Active With Warning.',
+  /key: 'active',\s+statusLabel: 'Active'/,
+  'Active listings should stay labelled Active while documents are completed separately.',
 )
 
 assert.match(

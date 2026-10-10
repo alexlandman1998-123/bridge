@@ -1,3 +1,4 @@
+import HomeSeekersLoginLink from './HomeSeekersLoginLink'
 import { homeSeekersPath } from './homeSeekersRoutes.js'
 import {
   ArrowRight,
@@ -115,7 +116,7 @@ export default function HomeSeekersBuying() {
               {label}
             </a>
           ))}
-        </nav>
+        <HomeSeekersLoginLink /></nav>
         <button
           type="button"
           onClick={() => setValuationOpen(true)}

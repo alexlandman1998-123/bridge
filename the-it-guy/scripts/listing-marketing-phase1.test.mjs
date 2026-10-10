@@ -7,16 +7,13 @@ import { fileURLToPath } from 'node:url'
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const detailSource = fs.readFileSync(path.join(root, 'src/pages/AgentListingDetail.jsx'), 'utf8')
 
-test('marketing actions are consolidated at the bottom of the tab', () => {
-  assert.match(detailSource, /Unsaved marketing changes/)
-  assert.match(detailSource, /Marketing changes saved/)
-  assert.match(detailSource, /Preview listing/)
-  assert.match(detailSource, /Review channels/)
-  assert.match(detailSource, /Save changes/)
-  assert.match(detailSource, /marketingSaveConfirmed \? 'Marketing changes saved' : 'No unsaved marketing changes'/)
-  assert.doesNotMatch(detailSource, /arch9PublicListingUrl \|\| `\$\{ARCH9_PUBLIC_SITE_ORIGIN\}\/buy`/)
-  assert.match(detailSource, /previewListingUrl \? \(/)
-  assert.doesNotMatch(detailSource, /<section className="space-y-5">\s*<div className="flex flex-wrap justify-end gap-2">/)
+test('marketing has one edit route and no duplicate save toolbar', () => {
+  assert.match(detailSource, /Listing content &amp; media/)
+  assert.match(detailSource, /onClick=\{openPropertyDetailsFromMarketing\}/)
+  assert.doesNotMatch(detailSource, /Marketing changes saved/)
+  assert.doesNotMatch(detailSource, /Save the Arch9 record before reviewing/)
+  assert.doesNotMatch(detailSource, /Save Arch9 changes/)
+  assert.match(detailSource, /onEdit=\{openPropertyDetailsFromMarketing\}/)
 })
 
 test('marketing navigation and unsafe media have explicit safeguards', () => {

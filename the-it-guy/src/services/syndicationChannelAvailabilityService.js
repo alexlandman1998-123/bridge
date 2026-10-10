@@ -6,13 +6,13 @@ export const UNAVAILABLE_SYNDICATION_CHANNELS = Object.freeze({
   agency_website: { available: false, reason: 'website_not_configured' },
 })
 
-export async function getSyndicationChannelAvailability(organisationId = '') {
+export async function getSyndicationChannelAvailability(organisationId = '', { listingType = 'sale' } = {}) {
   const safeOrganisationId = String(organisationId || '').trim()
   if (!safeOrganisationId || !isSupabaseConfigured || !supabase) return { ...UNAVAILABLE_SYNDICATION_CHANNELS }
   const sessionResult = await supabase.auth.getSession()
   const token = sessionResult.data?.session?.access_token
   if (!token) throw new Error('Sign in again to check publishing destinations.')
-  const query = new URLSearchParams({ organisationId: safeOrganisationId })
+  const query = new URLSearchParams({ organisationId: safeOrganisationId, listingType })
   const result = await fetch(`/api/listings/syndication-availability?${query.toString()}`, {
     headers: { Authorization: `Bearer ${token}` },
   })

@@ -1,17 +1,15 @@
-import { useState } from 'react'
-import { CheckCircle2, Globe2 } from 'lucide-react'
+import { CheckCircle2 } from 'lucide-react'
 import './listing-syndication.css'
+import ListingChannelLogo from './ListingChannelLogo'
 
 export default function ListingSyndicationChannelCard({ channel, selected, onToggle, agencyLogo = '', disabled = false, status = '', needsAttention = '', description = '', children }) {
-  const [failedLogo, setFailedLogo] = useState('')
   const internal = Boolean(channel.internalOnly)
-  const logo = internal ? '/favicon-light.svg' : channel.key === 'property24' ? '/lead-sources/property24.png' : channel.key === 'private_property' ? '/lead-sources/private-property.jpeg' : agencyLogo
-  const label = channel.key === 'agency_website' ? 'Agency website' : channel.label
-  const channelDescription = description || (internal ? 'Keep your listing in Arch9. External publication is optional.' : channel.key === 'agency_website' ? 'Publish on your agency’s property website.' : `Syndicate your listing to ${label}.`)
+  const label = channel.key === 'agency_website' ? channel.availability?.label || 'Agency website' : channel.label
+  const channelDescription = description || (internal ? 'Keep your listing in Arch9. External publication is optional.' : channel.key === 'agency_website' ? channel.availability?.hostname ? `Publish on ${channel.availability.hostname}.` : 'Publish on your agency’s property website.' : `Syndicate your listing to ${label}.`)
   return <article className={`listing-syndication-card ${selected ? 'is-selected' : ''}`}>
     <button type="button" data-rental-control="distribution-channel" aria-label={label} aria-pressed={selected} disabled={disabled || internal} onClick={() => onToggle?.(channel.key)}>
       <span className="listing-syndication-card-top">
-        <span className={`listing-syndication-logo ${internal ? 'is-internal' : ''}`}>{logo && failedLogo !== logo ? <img src={logo} alt="" onError={() => setFailedLogo(logo)} /> : <Globe2 size={28} aria-hidden="true" />}{internal ? <span>Arch9</span> : null}</span>
+        <ListingChannelLogo channel={channel} agencyLogo={agencyLogo} />
         <span className="listing-syndication-check" aria-hidden="true">{selected ? <CheckCircle2 size={16} /> : null}</span>
       </span>
       <span className="listing-syndication-label">{label}</span>

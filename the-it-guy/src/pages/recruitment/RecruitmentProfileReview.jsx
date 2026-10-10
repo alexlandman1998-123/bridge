@@ -38,7 +38,7 @@ export default function RecruitmentProfileReview({ applicant, endpoint, token, p
       <div className="recruitment-profile__review-heading"><h5>{label}</h5><button className="recruitment-signup__secondary" type="button" disabled={busy || locked || conflict} onClick={()=>onEdit(page)} aria-label={`Edit ${label}`}>Edit</button></div>
       <dl>{summary.filter(([name])=>Object.values(profileFields).find(field=>field.label===name)?.page===page).map(([name,value])=><div key={name}><dt>{name}</dt><dd>{value}</dd></div>)}</dl>
     </section>)}
-    <p>FFC and professional details are self-declared. The recruitment team will review your application and contact you about the next steps.</p>
+    {!homeSeekers && <p>FFC and professional details are self-declared. The recruitment team will review your application and contact you about the next steps.</p>}
     {homeSeekers && <p className="recruitment-signup__note">{homeSeekersPackageNote}</p>}
     <fieldset disabled={busy || locked || conflict}>
       <label className="recruitment-signup__consent"><input type="checkbox" checked={privacy} onChange={event=>{setPrivacy(event.target.checked);setMissing(false)}} aria-invalid={missing && !privacy} aria-describedby={missing?'recruitment-submit-error':undefined} /><span>{submissionPrivacyText}</span></label>
@@ -50,7 +50,7 @@ export default function RecruitmentProfileReview({ applicant, endpoint, token, p
     <div className="recruitment-profile__actions">
       <div className="recruitment-profile__forward-actions">
         <button className="recruitment-signup__secondary" type="button" disabled={busy} onClick={onClose}>Save & close</button>
-        <button className="recruitment-signup__submit" type="submit" disabled={busy || conflict}>{busy?'Submitting…':preview?'Preview submission':locked?'Retry submission':'Submit application'}</button>
+        <button className="recruitment-signup__submit" type="submit" disabled={busy || conflict}>{busy?'Submitting…':homeSeekers?locked?'Retry submission':'Submit Application':preview?'Preview submission':locked?'Retry submission':'Submit application'}</button>
       </div>
     </div>
   </form>

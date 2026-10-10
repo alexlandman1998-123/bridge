@@ -1,3 +1,4 @@
+import { websitePublicationJobContext } from "../_shared/listingPublicationJob.ts";
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "supabase";
 import {
@@ -101,14 +102,15 @@ Deno.serve(async (request) => {
     const token = value(request.headers.get("authorization")).replace(/^Bearer\s+/i, "");
     if (!token) failure(401, "Sign in before publishing a listing.");
     const admin = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
-    const actor = await admin.auth.getUser(token);
-    if (actor.error || !actor.data.user?.id) failure(401, "Your session could not be verified.");
     const body = await request.json().catch(() => ({})) as RecordValue;
+    const background = await websitePublicationJobContext({ admin, token, serviceKey, payload: body, partner: true });
+    const actor = background?.actor || await admin.auth.getUser(token);
+    if (actor.error || !actor.data.user?.id) failure(401, "Your session could not be verified.");
     const listingId = value(body.listingId);
     const action = normalizeWebsiteListingAction(body.action);
     if (!uuid.test(listingId) || !action) failure(400, "Choose a saved listing and a valid website action.");
 
-    const userClient = createClient(supabaseUrl, anonKey, {
+    const userClient = background?.statusClient || createClient(supabaseUrl, anonKey, {
       auth: { persistSession: false, autoRefreshToken: false },
       global: { headers: { Authorization: `Bearer ${token}` } },
     });

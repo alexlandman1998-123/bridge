@@ -24,7 +24,7 @@ function StatisticsCard({ definition, source, loading, unavailable }) {
   const anyData = Object.values(metrics).some(hasValue)
   const views = metrics.views
   const initialLoading = loading && !source
-  const label = initialLoading ? 'Loading…' : unavailable && !source ? 'Unavailable'
+  const label = initialLoading ? 'Loading…' : (unavailable && !source) || (source?.statisticsUnavailable && !anyData) ? 'Unavailable'
     : anyData ? (source.complete ? 'Views complete' : 'Partial data')
       : source?.published ? (source.lastAttempt ? 'Awaiting statistics' : 'Awaiting first sync') : 'Not published'
   const showLogo = definition.logo && failedLogo !== definition.logo
@@ -53,7 +53,7 @@ function StatisticsCard({ definition, source, loading, unavailable }) {
         {!initialLoading && !hasValue(views) ? <p className="mt-1 text-xs text-[#607387]">Views unavailable</p> : null}
         {definition.key !== 'website' && hasValue(views) ? (
           <p className="mt-1 text-xs text-[#607387]">
-            {views.coveredDays} of {views.expectedDays} days covered{views.complete ? '' : ' · Partial count'}
+            {views.coveredDays} of {views.expectedDays} {source?.listingCount ? 'listing-days' : 'days'} covered{views.complete ? '' : ' · Partial count'}
           </p>
         ) : null}
       </div>
@@ -85,16 +85,6 @@ export default function ListingChannelStatistics({ organisationId, listingId, re
   const key = `${organisationId || ''}:${listingId || ''}:${days}`
   const [request, setRequest] = useState({ key: '', loading: true, data: null, error: '' })
   const current = request.key === key ? request : { loading: true, data: null, error: '' }
-  const viewMetrics = CHANNELS.map(({ key: channelKey }) => current.data?.[channelKey]?.metrics?.views)
-  const availableViews = viewMetrics.filter(hasValue)
-  const totalViews = availableViews.length ? availableViews.reduce((total, metric) => total + metric.value, 0) : null
-  const completeViews = viewMetrics.every((metric) => hasValue(metric) && metric.complete)
-  const cards = [{
-    label: 'Total views',
-    value: current.loading && !current.data ? '…' : totalViews === null ? '—' : numberFormat.format(totalViews),
-    meta: current.loading && !current.data ? 'Loading views…' : totalViews === null ? 'Views unavailable' : `${completeViews ? 'Across all channels' : 'Partial count'} · ${days} days`,
-    icon: Eye,
-  }, ...summaryCards]
 
   useEffect(() => {
     let cancelled = false
@@ -118,6 +108,22 @@ export default function ListingChannelStatistics({ organisationId, listingId, re
     return () => { cancelled = true }
   }, [organisationId, listingId, days, key, refreshKey, retry])
 
+  return <ListingStatisticsPanel data={current.data} loading={current.loading} error={current.error} days={days} onDaysChange={setDays} onRetry={() => setRetry(value => value + 1)} summaryCards={summaryCards} scopeId={listingId} />
+}
+
+export function ListingStatisticsPanel({ data, loading = false, error = '', days = 30, onDaysChange, onRetry, summaryCards = [], scopeId = 'listing' }) {
+  const current = { data, loading, error }
+  const viewMetrics = CHANNELS.map(({ key: channelKey }) => current.data?.[channelKey]?.metrics?.views)
+  const availableViews = viewMetrics.filter(hasValue)
+  const totalViews = availableViews.length ? availableViews.reduce((total, metric) => total + metric.value, 0) : null
+  const completeViews = viewMetrics.every((metric) => hasValue(metric) && metric.complete)
+  const cards = [{
+    label: 'Total views',
+    value: current.loading && !current.data ? '…' : totalViews === null ? '—' : numberFormat.format(totalViews),
+    meta: current.loading && !current.data ? 'Loading views…' : totalViews === null ? 'Views unavailable' : `${completeViews ? 'Across all channels' : 'Partial count'} · ${days} days`,
+    icon: Eye,
+  }, ...summaryCards]
+
   return (
     <section aria-label="Listing channel statistics" data-testid="listing-channel-statistics">
       {summaryCards.length ? <div role="group" aria-label="Listing performance summary" className="grid grid-cols-2 gap-3 xl:grid-cols-4">
@@ -139,7 +145,7 @@ export default function ListingChannelStatistics({ organisationId, listingId, re
             <legend className="sr-only">Statistics period</legend>
             {[7, 30, 90].map((value) => (
               <label key={value} className="cursor-pointer">
-                <input type="radio" name={`channel-statistics-period-${listingId}`} value={value} checked={days === value} onChange={() => setDays(value)} className="peer sr-only" />
+                <input type="radio" name={`channel-statistics-period-${scopeId}`} value={value} checked={days === value} onChange={() => onDaysChange(value)} className="peer sr-only" />
                 <span className="inline-flex min-h-9 items-center justify-center rounded-lg px-4 text-xs font-semibold text-[#607387] transition peer-checked:bg-white peer-checked:text-[#174c3f] peer-checked:shadow-sm peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[#174c3f]">{value} days</span>
               </label>
             ))}
@@ -150,7 +156,7 @@ export default function ListingChannelStatistics({ organisationId, listingId, re
           {current.error ? (
             <div role="alert" className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-[10px] border border-[#f3d7a8] bg-[#fff8ea] px-3 py-2 text-xs text-[#8a5a16]">
               <p>{current.data ? 'Could not refresh statistics. Showing last loaded counts.' : current.error}</p>
-              <button type="button" className="min-h-8 font-semibold underline underline-offset-2" onClick={() => setRetry((value) => value + 1)}>Try again</button>
+              <button type="button" className="min-h-8 font-semibold underline underline-offset-2" onClick={() => onRetry()}>Try again</button>
             </div>
           ) : null}
         </div>

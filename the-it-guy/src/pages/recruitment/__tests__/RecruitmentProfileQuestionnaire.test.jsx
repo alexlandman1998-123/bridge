@@ -38,20 +38,20 @@ it('Home Seekers keeps older complete answers and asks for an explicit package p
   expect(requests[0]).toMatchObject({action:'save_profile',intent:'complete',revision:4,answers:{packagePreference:'decide_later'}})
   expect(screen.getByText('Home Seekers package preference')).toBeTruthy()
   expect(screen.getByText('Decide later')).toBeTruthy()
-  expect(screen.getByText(/starting preference, not a commitment/)).toBeTruthy()
+  expect(screen.getByText(/decide after we’ve talked it through together/)).toBeTruthy()
   expect(screen.getAllByRole('checkbox').every(input=>!input.checked)).toBe(true)
 })
 it('Home Seekers automatically saves and restores a changed package without submitting',async()=>{
   vi.useFakeTimers()
   const saved={...homeApplicant,profile:{answers:validProfile(),page:3,complete:false},profileRevision:4}
   const onSaved=vi.fn(),view=render(<RecruitmentProfileQuestionnaire {...homeProps} applicant={saved} onSaved={onSaved} />)
-  fireEvent.click(screen.getByRole('radio',{name:/Paid from your deals/}));await pause()
+  fireEvent.click(screen.getByRole('radio',{name:/Post Paid/}));await pause()
   expect(requests[0]).toMatchObject({intent:'save',revision:4,answers:{packagePreference:'deals'}})
-  fireEvent.click(screen.getByRole('radio',{name:/Monthly debit order/}));await pause()
+  fireEvent.click(screen.getByRole('radio',{name:/Prepaid/}));await pause()
   expect(requests[1]).toMatchObject({intent:'save',revision:5,answers:{packagePreference:'monthly'}})
   const updated=onSaved.mock.calls.at(-1)[0]
   view.unmount();render(<RecruitmentProfileQuestionnaire {...homeProps} applicant={updated} />)
-  expect(screen.getByRole('radio',{name:/Monthly debit order/}).checked).toBe(true)
+  expect(screen.getByRole('radio',{name:/Prepaid/}).checked).toBe(true)
   expect(requests.some(row=>row.action==='submit_profile')).toBe(false)
 })
 it('other agencies finish the existing questionnaire without Home Seekers options',async()=>{
@@ -64,8 +64,8 @@ it('other agencies finish the existing questionnaire without Home Seekers option
 it('the Recruitment contact view labels the saved package as a non-binding preference',()=>{
   render(<RecruitmentContactReceipt lead={{contact_capture_json:{version:'recruitment-contact-v1'},applicant_draft_json:{version:'recruitment-profile-v1',answers:{...validProfile(),packagePreference:'upfront'}}}} />)
   expect(screen.getByText('Home Seekers package preference')).toBeTruthy()
-  expect(screen.getByText('Annual upfront payment')).toBeTruthy()
-  expect(screen.getByText(/starting preference, not a commitment/)).toBeTruthy()
+  expect(screen.getByText('Upfront')).toBeTruthy()
+  expect(screen.getByText(/decide after we’ve talked it through together/)).toBeTruthy()
 })
 it('Home Seekers automatically saves an incomplete draft and restores the saved step',async()=>{
   vi.useFakeTimers()
@@ -195,7 +195,7 @@ it('Home Seekers reopens review after session expiry and requires fresh declarat
   })
   render(<RecruitmentProfileQuestionnaire {...homeProps} applicant={saved} />)
   for(const checkbox of screen.getAllByRole('checkbox'))fireEvent.click(checkbox)
-  fireEvent.click(screen.getByRole('button',{name:'Submit application'}))
+  fireEvent.click(screen.getByRole('button',{name:'Submit Application'}))
   const access=await screen.findByRole('form',{name:'Verify applicant email'})
   fireEvent.change(within(access).getByLabelText('Verification code'),{target:{value:'12345678'}})
   fireEvent.click(within(access).getByRole('button',{name:'Verify & continue'}))

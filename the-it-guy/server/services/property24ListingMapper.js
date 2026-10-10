@@ -337,8 +337,6 @@ export function evaluateProperty24CommercialSaleFacts({ listing = {}, publicatio
   if (grossLettableArea !== null && (!Number.isInteger(grossLettableArea) || grossLettableArea <= 0)) {
     blockers.push('property24_commercial_gross_lettable_area_whole_sqm_required')
   }
-  if (!firstText(facts.zoning)) blockers.push('property24_commercial_zoning_required')
-  if (!parking) blockers.push('property24_commercial_parking_required')
   if (!saleTerms && !(askingPrice > 0) && !resolvePoa(listing, publication, options)) {
     blockers.push('property24_commercial_sale_terms_required')
   }
@@ -712,7 +710,7 @@ export function createProperty24ListingPlan({
   dataBlockers.push(...categoryModel.blockers)
   if (categoryContract.category === 'land') {
     const area = resolveListingLandArea({ listing, publication, specialistFacts: resolveSpecialistFacts(listing, publication, options) })
-    if (area.error) dataBlockers.push(`property24_${area.error}`)
+    if (area.error && area.error !== 'land_area_required') dataBlockers.push(`property24_${area.error}`)
   }
   if (categoryContract.category === 'commercial' && listingType === 'Sale') {
     dataBlockers.push(...evaluateProperty24CommercialSaleFacts({ listing, publication, options }).blockers)
