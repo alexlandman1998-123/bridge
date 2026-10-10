@@ -95,6 +95,32 @@ it('uses the same signup process for another receiving agency on the shared endp
   expect((await request(db)).body.verificationRequired).toBe(true)
   expect(db.auth.admin.createUser.mock.calls[0][0].app_metadata.recruitment_organisation_id).toBe('another-agency')
 })
+it('saves Home Seekers contact details without a password and safely recovers the same enquiry', async () => {
+  const db = client({ lostResponse: true })
+  const homeBody = { ...body, password: undefined, codeOnlyVerification: false, organisationId: 'forged' }
+  const send = () => createHomeSeekersSignupResponse({ body: homeBody, env, client: db })
+  expect((await send()).body).toMatchObject({ contactAccepted: true, verificationRequired: true })
+  expect((await send()).body.duplicate).toBe(true)
+  expect(db.auth.admin.createUser).toHaveBeenCalledTimes(1)
+  expect(db.auth.admin.createUser.mock.calls[0][0]).not.toHaveProperty('password')
+  expect(db.rpc.mock.invocationCallOrder[0]).toBeLessThan(db.auth.admin.createUser.mock.invocationCallOrder[0])
+  const existing = client({ accountError: { code: 'email_exists' } })
+  expect((await createHomeSeekersSignupResponse({ body: homeBody, env, client: existing })).body.verificationRequired).toBe(true)
+  expect(existing.users.size).toBe(0)
+  const contextResult = await createHomeSeekersSignupResponse({ body: { action: 'context' }, env, client: db })
+  expect(contextResult.body.verificationMethod).toBe('email_code')
+  const shared = client()
+  expect((await request(shared, { body: { ...homeBody, codeOnlyVerification: true } })).status).toBe(400)
+  expect(shared.rpc).not.toHaveBeenCalled()
+})
+it('the Home Seekers browser sends contact and consent without password or verification-mode overrides', async () => {
+  const fetcher = vi.fn(async () => ({ ok: true, status: 201, json: async () => ({ accepted: true, contactAccepted: true, verificationRequired: true }) }))
+  await recruitmentSignupRequest('signup', { contact, submissionKey, password: 'ignored', codeOnlyVerification: true }, { codeOnly: true, endpoint: '/api/home-seekers/recruitment', fetcher })
+  const sent = JSON.parse(fetcher.mock.calls[0][1].body)
+  expect(sent).toMatchObject({ action: 'signup', contact: { ...contact, consentVersion: 'recruitment-contact-v1' }, submissionKey })
+  expect(sent).not.toHaveProperty('password')
+  expect(sent).not.toHaveProperty('codeOnlyVerification')
+})
 it('uses the server deployment environment for preview and rejects every write even with production credentials', async () => {
   const db = client()
   const previewEnv = { ...env, VERCEL_ENV: 'preview' }

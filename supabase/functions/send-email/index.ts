@@ -1,4 +1,5 @@
 import { handleRecruitmentInvitationEmail } from "./handlers/recruitmentInvitation.ts";
+import { handleHomeSeekersRecruitmentCodeEmail } from "./handlers/recruitmentVerificationCode.ts";
 import { handleClientOnboardingEmail } from "./handlers/clientOnboarding.ts";
 import { handleClientJourneyEmail } from "./handlers/clientJourneyEmail.ts";
 import { CLIENT_JOURNEY_EMAIL_KINDS } from "./content/clientJourneyEmails.ts";
@@ -160,6 +161,7 @@ Deno.serve(async (req: Request) => {
 
     const normalizedType = normalizeText(payload.type).toLowerCase();
     const type = normalizedType.replaceAll("-", "_");
+    if (type === "home_seekers_recruitment_code") return await handleHomeSeekersRecruitmentCodeEmail(req, payload);
     if (type === "recruitment_invitation") return await handleRecruitmentInvitationEmail(req, payload);
     // Durable calendar payloads are prepared and frozen only by the server worker.
     if (normalizeText(payload.idempotencyKey).startsWith('calendar-appointment:')) {

@@ -1,3 +1,4 @@
+import { homeSeekersPath } from './homeSeekersRoutes.js'
 import { ArrowRight, ArrowUpRight, Bath, BedDouble, Car, MapPin } from 'lucide-react'
 import './HomeSeekersFeaturedHomes.css'
 
@@ -16,7 +17,7 @@ function FeaturedCard({ home, index }) {
         {home.baths && <span><Bath size={16} aria-hidden="true" /> {home.baths} baths</span>}
         {home.cars && <span><Car size={16} aria-hidden="true" /> {home.cars} parking</span>}
       </div>
-      <a href={`/demo/homeseekers/properties/${home.id}`}>
+      <a href={homeSeekersPath(`/properties/${home.id}`)}>
         View this home <ArrowUpRight size={16} aria-hidden="true" />
       </a>
     </div>
@@ -34,10 +35,10 @@ export default function HomeSeekersFeaturedHomes({ listings = [], loading = fals
       </div>
       <div className="hs-featured__heading-side">
         <p>A closer look at homes currently available through Home Seekers.</p>
-        <a href="/demo/homeseekers/buying">Browse all homes <ArrowRight size={17} aria-hidden="true" /></a>
+        <a href={homeSeekersPath("/buying")}>Browse all homes <ArrowRight size={17} aria-hidden="true" /></a>
       </div>
     </div>
-    {!homes.length && <p className="hs-featured__notice" role={error ? 'alert' : 'status'}>{loading ? 'Loading current homes…' : error ? 'The current homes could not be loaded. Please try again shortly.' : 'No homes are available online right now.'} {!loading && <a href="/demo/homeseekers/contact">Contact us to find your next home.</a>}</p>}
+    {!homes.length && <p className="hs-featured__notice" role={error ? 'alert' : 'status'}>{loading ? 'Loading current homes…' : error ? 'The current homes could not be loaded. Please try again shortly.' : 'No homes are available online right now.'} {!loading && <a href={homeSeekersPath("/contact")}>Contact us to find your next home.</a>}</p>}
     {homes.length > 0 && <div className="hs-featured__grid">
       {homes.map((home, index) => <FeaturedCard home={home} index={index} key={home.id} />)}
     </div>}

@@ -1,3 +1,4 @@
+import { homeSeekersPath } from './homeSeekersRoutes.js'
 import { ArrowRight } from 'lucide-react'
 import { useState } from 'react'
 import HomeSeekersValuationModal from './HomeSeekersValuationModal'
@@ -19,8 +20,8 @@ export default function HomeSeekersPageShell({ page }) {
   const [valuationOpen, setValuationOpen] = useState(false)
   const content = pages[page] || pages.about
   return <main className="hs-page-shell">
-    <header className="hs-page-shell__header"><a href="/demo/homeseekers" aria-label="Home Seekers home"><img src="/brand/homeseekers/home-seekers-horizontal-black.svg" alt="Home Seekers" /></a><nav>{navigation.map(([label, slug]) => <a className={slug === page ? 'is-active' : ''} href={`/demo/homeseekers/${slug}`} key={slug}>{label}</a>)}</nav><button type="button" onClick={() => setValuationOpen(true)} className="hs-page-shell__button">Book a free valuation</button><HomeSeekersMobileNav links={navigation.map(([label, slug]) => [label, `/demo/homeseekers/${slug}`])} active={page} onValuation={() => setValuationOpen(true)} /></header>
-    <section className="hs-page-shell__hero"><p>❯ {content.label}</p><h1>{content.title}</h1><div><span>PAGE IN PROGRESS</span><p>{content.copy}</p><a href="/demo/homeseekers">Back to homepage <ArrowRight size={17} /></a></div></section>
+    <header className="hs-page-shell__header"><a href={homeSeekersPath("/")} aria-label="Home Seekers home"><img src="/brand/homeseekers/home-seekers-horizontal-black.svg" alt="Home Seekers" /></a><nav>{navigation.map(([label, slug]) => <a className={slug === page ? 'is-active' : ''} href={homeSeekersPath(`/${slug}`)} key={slug}>{label}</a>)}</nav><button type="button" onClick={() => setValuationOpen(true)} className="hs-page-shell__button">Book a free valuation</button><HomeSeekersMobileNav links={navigation.map(([label, slug]) => [label, homeSeekersPath(`/${slug}`)])} active={page} onValuation={() => setValuationOpen(true)} /></header>
+    <section className="hs-page-shell__hero"><p>❯ {content.label}</p><h1>{content.title}</h1><div><span>PAGE IN PROGRESS</span><p>{content.copy}</p><a href={homeSeekersPath("/")}>Back to homepage <ArrowRight size={17} /></a></div></section>
     {valuationOpen && <HomeSeekersValuationModal onClose={() => setValuationOpen(false)} />}
   </main>
 }

@@ -3,6 +3,13 @@ import { createClient } from '@supabase/supabase-js'
 export const HOME_SEEKERS_ORGANISATION_ID = '2958d402-368e-43c9-b728-0098e10505f1'
 export const HOME_SEEKERS_PUBLIC_PATH = '/demo/homeseekers'
 
+export function homeSeekersPagePath(pathname) {
+  const path = pathname === HOME_SEEKERS_PUBLIC_PATH || pathname.startsWith(`${HOME_SEEKERS_PUBLIC_PATH}/`)
+    ? pathname.slice(HOME_SEEKERS_PUBLIC_PATH.length) || '/'
+    : pathname
+  return path.replace(/\/$/, '') || '/'
+}
+
 function adminClient() {
   const url = String(process.env.SUPABASE_URL || '').trim()
   const key = String(process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim()
@@ -14,6 +21,7 @@ export function isHomeSeekersPageUrl(value) {
   try {
     const path = new URL(String(value)).pathname
     return path === HOME_SEEKERS_PUBLIC_PATH || path.startsWith(`${HOME_SEEKERS_PUBLIC_PATH}/`)
+      || /^\/(?:$|(?:guarantee|about|contact|selling|buying|renting|join)\/?$|(?:buying|properties)\/[0-9a-f-]{36}\/?$)/i.test(path)
   } catch {
     return false
   }

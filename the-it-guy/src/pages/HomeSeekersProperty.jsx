@@ -1,3 +1,4 @@
+import { homeSeekersPath } from './homeSeekersRoutes.js'
 import { ArrowLeft, ArrowRight, ArrowUpRight, Bath, BedDouble, Car, MapPin } from 'lucide-react'
 import { useParams } from 'react-router-dom'
 import { useEffect, useState } from 'react'
@@ -16,11 +17,11 @@ export default function HomeSeekersProperty() {
   useEffect(() => { if (home?.id) trackHomeSeekersEvent('listing_view', home.id) }, [home?.id])
 
   if (loading) return <main className="hs-property hs-property--missing"><h1>Loading this home…</h1></main>
-  if (!home) return <main className="hs-property hs-property--missing"><p>❯ HOME SEEKERS / PROPERTY</p><h1>{error || <>This home has<br />moved on.</>}</h1><a href="/demo/homeseekers/buying">Browse current homes <ArrowRight size={18} /></a></main>
+  if (!home) return <main className="hs-property hs-property--missing"><p>❯ HOME SEEKERS / PROPERTY</p><h1>{error || <>This home has<br />moved on.</>}</h1><a href={homeSeekersPath("/buying")}>Browse current homes <ArrowRight size={18} /></a></main>
 
   const images = home.images || []
   const rental = home.transactionType === 'rental'
-  const collectionUrl = `/demo/homeseekers/${rental ? 'renting' : 'buying'}`
+  const collectionUrl = homeSeekersPath(`/${rental ? 'renting' : 'buying'}`)
   const listingLabel = rental ? 'TO LET' : 'FOR SALE'
   const price = formatHomeSeekersPrice(home.price, home.transactionType)
   const facts = [[BedDouble, home.bedrooms || '-', 'Bedrooms'], [Bath, home.bathrooms || '-', 'Bathrooms'], [Car, home.parkingBays || '-', 'Parking']]
@@ -40,7 +41,7 @@ export default function HomeSeekersProperty() {
   }
 
   return <main className="hs-property">
-    <header className="hs-property__header"><a href={collectionUrl}><ArrowLeft size={18} /> {rental ? 'All rentals' : 'All homes'}</a><a className="hs-property__brand" href="/demo/homeseekers"><img src="/brand/homeseekers/home-seekers-horizontal-black.svg" alt="Home Seekers" /></a></header>
+    <header className="hs-property__header"><a href={collectionUrl}><ArrowLeft size={18} /> {rental ? 'All rentals' : 'All homes'}</a><a className="hs-property__brand" href={homeSeekersPath("/")}><img src="/brand/homeseekers/home-seekers-horizontal-black.svg" alt="Home Seekers" /></a></header>
     <section className="hs-property__hero">
       {images.length ? <img src={images[activeImage]} alt={`${home.title} image ${activeImage + 1}`} /> : <div className="hs-property__image-placeholder" aria-hidden="true" />}
       <div className="hs-property__shade" />

@@ -1,3 +1,4 @@
+import { homeSeekersPath } from './homeSeekersRoutes.js'
 import { ArrowRight } from "lucide-react";
 import "./HomeSeekersFastTrack.css";
 
@@ -49,7 +50,7 @@ export default function HomeSeekersFastTrack({ compact = false, onValuation }) {
         {!compact && (
           <small>
             Exclusive mandate and recommended-price conditions apply.{" "}
-            <a href="/demo/homeseekers/guarantee#guarantee">Read the guarantee terms.</a>
+            <a href={homeSeekersPath("/guarantee#guarantee")}>Read the guarantee terms.</a>
           </small>
         )}
       </header>
@@ -77,7 +78,7 @@ export default function HomeSeekersFastTrack({ compact = false, onValuation }) {
           </span>
         </div>
         {compact ? (
-          <a href="/demo/homeseekers/selling">
+          <a href={homeSeekersPath("/selling")}>
             See how we sell <ArrowRight size={16} />
           </a>
         ) : (

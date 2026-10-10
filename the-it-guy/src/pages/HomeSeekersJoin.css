@@ -46,7 +46,7 @@
 .hs-join__invitation .hs-join__button{width:100%;margin-bottom:18px}
 .hs-join__invitation p.hs-join__fine{margin:0}
 /* Follow the homepage's charcoal, neutral off-white and white section rhythm. */
-.hs-join__light{--surface:#f4f4f2;--heading:var(--ink);--copy:#4b4b47;--muted:#62625d;--line:#d8d8d2;--accent:#c24000;--card:var(--white);--highlight:#f4f4f2}
+.hs-join__light{--surface:#f4f4f2;--heading:var(--ink);--copy:#4b4b47;--muted:#62625d;--line:#d8d8d2;--accent:var(--orange);--card:var(--white);--highlight:#f4f4f2}
 .hs-join__white{--surface:var(--white)}
 .hs-join__problem,.hs-join__referral,.hs-join__faq,.hs-join__apply{display:grid;grid-template-columns:1fr 1fr;gap:clamp(36px,6vw,96px)}
 .hs-join__prose{color:var(--copy)}
@@ -231,4 +231,4 @@
 .hs-join .hs-site-footer nav a,.hs-join .hs-site-footer__bottom a{display:inline-flex;align-items:center;min-height:32px}
 
 /* Modal content is portalled to body; scope its brand to the Home Seekers page. */
-body:has(.hs-join) .recruitment-signup{--recruitment-accent:#ff6319;--recruitment-accent-hover:#ff864a;--recruitment-accent-text:#c24000;--recruitment-on-accent:#171717;--recruitment-accent-soft:#fff2eb}
+body:has(.hs-join) .recruitment-signup{--recruitment-accent:#ff6319;--recruitment-accent-hover:#ff864a;--recruitment-accent-text:#ff6319;--recruitment-on-accent:#171717;--recruitment-accent-soft:#fff2eb}

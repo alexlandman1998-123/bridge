@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { recruitmentSignupRequest } from '../../services/recruitmentSignupService'
-import { profileFields, profilePages, recruitmentProfileSummary } from './recruitmentProfileModel'
+import { homeSeekersPackageNote, homeSeekersPackageOptions, profileFields, profilePages, recruitmentProfileSummary } from './recruitmentProfileModel'
 
 export const submissionConsentVersion = 'recruitment-submission-v1'
 export const submissionPrivacyText = 'I agree that the agency may process my application and contact me about recruitment.'
 export const submissionDeclarationText = 'I confirm that the information in my application is accurate to the best of my knowledge.'
 
-export default function RecruitmentProfileReview({ applicant, endpoint, token, preview, onSubmitted, onBusy, onEdit, onReload, onClose }) {
+export default function RecruitmentProfileReview({ applicant, endpoint, token, preview, homeSeekers = false, onSubmitted, onBusy, onEdit, onReload, onClose, onSessionExpired }) {
   const [privacy,setPrivacy] = useState(false), [declaration,setDeclaration] = useState(false)
   const [busy,setBusy] = useState(false), [locked,setLocked] = useState(false), [message,setMessage] = useState(''), [conflict,setConflict] = useState(false), [missing,setMissing] = useState(false)
   const attempt = useRef(null), working = useRef(false), heading = useRef(null)
@@ -15,6 +15,7 @@ export default function RecruitmentProfileReview({ applicant, endpoint, token, p
   async function submit(event) {
     event.preventDefault()
     if (working.current || conflict) return
+    if (homeSeekers && !homeSeekersPackageOptions.some(([key])=>key===applicant.profile.answers.packagePreference)) { setMessage('Choose a package preference or decide later before submitting.');return }
     if (!privacy || !declaration) { setMissing(true);setMessage('Confirm processing consent and the accuracy declaration.');return }
     if (!attempt.current) attempt.current = { revision:applicant.profileRevision, submissionKey:crypto.randomUUID(), privacyAccepted:true, declarationAccepted:true }
     working.current=true;setBusy(true);onBusy(true);setLocked(true);setMessage('');setMissing(false)
@@ -23,6 +24,7 @@ export default function RecruitmentProfileReview({ applicant, endpoint, token, p
         : await recruitmentSignupRequest('submit_profile',attempt.current,{endpoint,token})
       onSubmitted(result.applicant)
     } catch(error) {
+      if (error.status === 401) onSessionExpired?.()
       setMessage(error.message)
       setConflict(error.conflict===true)
       // An uncertain response keeps the exact revision, declaration and retry key.
@@ -37,6 +39,7 @@ export default function RecruitmentProfileReview({ applicant, endpoint, token, p
       <dl>{summary.filter(([name])=>Object.values(profileFields).find(field=>field.label===name)?.page===page).map(([name,value])=><div key={name}><dt>{name}</dt><dd>{value}</dd></div>)}</dl>
     </section>)}
     <p>FFC and professional details are self-declared. The recruitment team will review your application and contact you about the next steps.</p>
+    {homeSeekers && <p className="recruitment-signup__note">{homeSeekersPackageNote}</p>}
     <fieldset disabled={busy || locked || conflict}>
       <label className="recruitment-signup__consent"><input type="checkbox" checked={privacy} onChange={event=>{setPrivacy(event.target.checked);setMissing(false)}} aria-invalid={missing && !privacy} aria-describedby={missing?'recruitment-submit-error':undefined} /><span>{submissionPrivacyText}</span></label>
       <label className="recruitment-signup__consent"><input type="checkbox" checked={declaration} onChange={event=>{setDeclaration(event.target.checked);setMissing(false)}} aria-invalid={missing && !declaration} aria-describedby={missing?'recruitment-submit-error':undefined} /><span>{submissionDeclarationText}</span></label>

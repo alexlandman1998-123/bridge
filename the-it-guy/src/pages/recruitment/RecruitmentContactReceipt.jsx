@@ -1,4 +1,4 @@
-import { recruitmentProfileSummary } from './recruitmentProfileModel'
+import { homeSeekersPackageNote, recruitmentProfileSummary } from './recruitmentProfileModel'
 
 export default function RecruitmentContactReceipt({ lead }) {
   const capture = lead.contact_capture_json
@@ -15,6 +15,7 @@ export default function RecruitmentContactReceipt({ lead }) {
       <summary className="cursor-pointer text-sm font-semibold text-[#142132]">Saved applicant questionnaire</summary>
       <p className="mt-2 text-xs text-[#60758b]">{lead.application_submitted_at ? 'Applicant answers saved before application submission.' : 'Draft answers supplied by the applicant. The full application has not been submitted.'}</p>
       <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">{recruitmentProfileSummary(lead.applicant_draft_json.answers).map(([label,value])=><div key={label}><dt className="text-[#60758b]">{label}</dt><dd className="break-words font-semibold text-[#142132]">{value}</dd></div>)}</dl>
+      {lead.applicant_draft_json.answers?.packagePreference && <p className="mt-3 text-xs text-[#60758b]">{homeSeekersPackageNote}</p>}
     </details>}
 
   </section>

@@ -1,3 +1,4 @@
+import { homeSeekersPath } from './homeSeekersRoutes.js'
 // Agent overview supplied on 8 October 2026. All fees and examples exclude VAT.
 export const recruitmentPricing = Object.freeze({ monthlyFee: 9000, dealFundedMonthlyFee: 10000, upfrontAnnualFee: 100000, transactionFee: 1500, averageSalePrice: 1500000, commissionRate: 0.05, traditionalSplit: 0.3, balloonMonthlyFee: 8500, balloonSplit: 0.1, balloonCommissionRate: 0.06, capMonthlyFee: 950, capSplit: 0.29, annualCap: 150000, capRoyalty: 0.04, referralMonthlyCredit: 750, referralLimit: 12 })
 export const recruitmentPaymentOptions = Object.freeze([
@@ -59,7 +60,7 @@ export function disableRecruitmentMeasurement() {
 export function trackRecruitmentConversion(eventType, { measurementAllowed = false, duplicate = false, gaId = import.meta.env?.VITE_HOME_SEEKERS_GOOGLE_ANALYTICS_ID, pixelId = import.meta.env?.VITE_HOME_SEEKERS_META_PIXEL_ID } = {}) {
   if (duplicate || !measurementAllowed) return
   try {
-    if (/^G-[A-Z0-9]+$/.test(gaId || '')) window.gtag?.('event', eventType, { send_to: gaId, page_path: '/demo/homeseekers/join' })
-    if (/^\d+$/.test(pixelId || '')) window.fbq?.('trackSingleCustom', pixelId, eventType, { page_path: '/demo/homeseekers/join' })
+    if (/^G-[A-Z0-9]+$/.test(gaId || '')) window.gtag?.('event', eventType, { send_to: gaId, page_path: homeSeekersPath("/join") })
+    if (/^\d+$/.test(pixelId || '')) window.fbq?.('trackSingleCustom', pixelId, eventType, { page_path: homeSeekersPath("/join") })
   } catch { /* Measurement must never change the application result or navigation. */ }
 }

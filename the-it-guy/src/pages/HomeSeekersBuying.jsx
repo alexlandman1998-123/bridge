@@ -1,3 +1,4 @@
+import { homeSeekersPath } from './homeSeekersRoutes.js'
 import {
   ArrowRight,
   ArrowUpRight,
@@ -65,7 +66,7 @@ function PropertyCard({ listing, featured }) {
             </span>
           )}
         </div>
-        <a href={`/demo/homeseekers/properties/${listing.id}`}>
+        <a href={homeSeekersPath(`/properties/${listing.id}`)}>
           View property <ArrowUpRight size={17} />
         </a>
       </div>
@@ -98,7 +99,7 @@ export default function HomeSeekersBuying() {
   return (
     <main className="hs-buying">
       <header className="hs-buying__header">
-        <a href="/demo/homeseekers" aria-label="Home Seekers home">
+        <a href={homeSeekersPath("/")} aria-label="Home Seekers home">
           <img
             src="/brand/homeseekers/home-seekers-horizontal-black.svg"
             alt="Home Seekers"
@@ -108,7 +109,7 @@ export default function HomeSeekersBuying() {
           {navigation.map(([label, slug]) => (
             <a
               className={slug === "buying" ? "is-active" : ""}
-              href={`/demo/homeseekers/${slug}`}
+              href={homeSeekersPath(`/${slug}`)}
               key={slug}
             >
               {label}
@@ -125,7 +126,7 @@ export default function HomeSeekersBuying() {
         <HomeSeekersMobileNav
           links={navigation.map(([label, slug]) => [
             label,
-            `/demo/homeseekers/${slug}`,
+            homeSeekersPath(`/${slug}`),
           ])}
           active="buying"
           onValuation={() => setValuationOpen(true)}

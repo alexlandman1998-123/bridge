@@ -2,6 +2,8 @@ import { afterAll, beforeAll, expect, it } from 'vitest'
 import { PGlite } from '@electric-sql/pglite'
 import { readFileSync } from 'node:fs'
 import { createRecruitmentIntakeResponse } from '../../../../server/services/recruitmentIntakeApi'
+import { createHomeSeekersSignupResponse } from '../../../../server/services/homeSeekersRecruitmentSignupApi'
+import { HOME_SEEKERS_ORGANISATION_ID as homeOrg } from '../../../../server/services/homeSeekersWebsiteBridge'
 import { createHash } from 'node:crypto'
 const org = '11111111-1111-4111-8111-111111111111', other = '22222222-2222-4222-8222-222222222222'
 const manager = '33333333-3333-4333-8333-333333333333', agent = '44444444-4444-4444-8444-444444444444'
@@ -619,9 +621,14 @@ async function contactServer() { await db.exec("reset role; select set_config('t
 function contactClient() {
   return {
     from(table) {
+      if (table === 'recruitment_applicant_sessions') {
+        const filters={}
+        const query={select:()=>query,eq:(key,value)=>{filters[key]=value;return query},maybeSingle:async()=>({data:(await db.query('select lead_id from recruitment_applicant_sessions where organisation_id=$1 and token_hash=$2',[filters.organisation_id,filters.token_hash])).rows[0]})}
+        return query
+      }
       if (table === 'recruitment_contact_receipts') {
         const filters = {}
-        const query = { select: () => query, eq: (key, value) => { filters[key] = value; return query }, maybeSingle: async () => ({ data: (await db.query('select lead_id from recruitment_contact_receipts where organisation_id=$1 and link_id=$2 and submission_key=$3', [filters.organisation_id,filters.link_id,filters.submission_key])).rows[0], error: null }) }
+        const query = { select: () => query, eq: (key, value) => { filters[key] = value; return query },order:()=>query,limit:()=>query, maybeSingle: async () => ({ data: (filters.lead_id ? await db.query('select submission_key from recruitment_contact_receipts where organisation_id=$1 and lead_id=$2 order by created_at desc limit 1',[filters.organisation_id,filters.lead_id]) : await db.query('select lead_id from recruitment_contact_receipts where organisation_id=$1 and link_id=$2 and submission_key=$3', [filters.organisation_id,filters.link_id,filters.submission_key])).rows[0], error: null }) }
         return query
       }
       if (table !== 'recruitment_intake_links') throw new Error('Unexpected intake lookup')
@@ -857,7 +864,7 @@ it('runs verification, cookie resume and sign-out through the shared API against
   }
   client.rpc=async(name,args)=>({data:(await db.query(calls[name][0],calls[name][1](args))).rows[0].result})
   const authClient={verifyOtp:async()=>({data:{session:{access_token:'fixture-only'}}}),getUser:async()=>({data:{user:{id,email:'flow@example.test',email_confirmed_at:'2026-10-07'}}})}
-  const options={client,authClient,env:{RECRUITMENT_INTAKE_FINGERPRINT_SECRET:'x'.repeat(32)},headers:{host:'agency.test',origin:'https://agency.test','x-forwarded-for':'192.0.2.90'},body:{action:'verify_email',token:contactToken,email:'flow@example.test',code:'123456',submissionKey:key,emailVerified:true,userId:otherApplicant}}
+  const options={client,authClient,codeOnlyVerification:true,env:{RECRUITMENT_INTAKE_FINGERPRINT_SECRET:'x'.repeat(32)},headers:{host:'agency.test',origin:'https://agency.test','x-forwarded-for':'192.0.2.90'},body:{action:'verify_email',token:contactToken,email:'flow@example.test',code:'123456',submissionKey:key,emailVerified:true,userId:otherApplicant}}
   // Even a claimed verified provider result cannot bypass canonical Auth evidence.
   expect((await createRecruitmentIntakeResponse(options)).status).toBe(409)
   await db.exec(`reset role; update auth.users set email_confirmed_at=now() where id='${id}';`)
@@ -865,12 +872,14 @@ it('runs verification, cookie resume and sign-out through the shared API against
   const verified=await createRecruitmentIntakeResponse(options)
   expect(verified.status).toBe(200)
   expect(verified.body.applicant.contact.email).toBe('flow@example.test')
+  expect(verified.body.applicant.contactSubmissionKey).toBe(key)
   const cookie=verified.headers['Set-Cookie'].split(';')[0]
   const resume={...options,headers:{...options.headers,cookie},body:{action:'resume',token:contactToken}}
   expect((await createRecruitmentIntakeResponse(resume)).body).toEqual(verified.body)
   expect((await createRecruitmentIntakeResponse({...resume,body:{action:'sign_out',token:contactToken}})).body.signedOut).toBe(true)
   expect((await createRecruitmentIntakeResponse(resume)).body.applicant).toBeNull()
   const row=(await db.query('select * from recruitment_leads where intake_key=$1',[key])).rows[0]
+  expect(JSON.stringify(verified.body)).not.toContain(row.id)
   expect(row.status).toBe('lead_received'); expect(row.email_verification_status).toBe('verified')
   expect(row.application_submitted_at).toBeNull()
   expect((await db.query('select count(*) from recruitment_contact_receipts where organisation_id=$1 and submission_key=$2',[org,key])).rows[0].count).toBe(1)
@@ -1718,4 +1727,100 @@ it('redirects a stale failed-send retry to the latest uncertain attempt instead 
  expect(recovered.attempt.id).toBe(latest.id)
  await asUser(manager)
  expect((await db.query('select id from recruitment_invitation_deliveries where lead_id=$1',[candidate.id])).rows).toHaveLength(2)
+})
+
+const homeToken='9'.repeat(64),homeOpaque='8'.repeat(64),homeHash=createHash('sha256').update(homeOpaque).digest('hex')
+const homeUser='abcd1234-abcd-4abc-8def-abcdefabcdef',homeEmail='packages@example.test'
+let homeDraft,homeRevision,oldHomeSubmission
+function homeProfileApi(body) {
+  return createHomeSeekersSignupResponse({client:profileDbClient(),env:{HOME_SEEKERS_RECRUITMENT_INTAKE_TOKEN:homeToken,RECRUITMENT_INTAKE_FINGERPRINT_SECRET:'x'.repeat(32)},headers:{host:'homeseekers.test',origin:'https://homeseekers.test',cookie:`a9_recruitment_${homeOrg.replaceAll('-','')}=${homeOpaque}`},body})
+}
+it('adds Home Seekers preference validation without changing older drafts or submitted applications',async()=>{
+  await db.exec('reset role;')
+  await db.query('insert into organisations values($1)',[homeOrg])
+  await db.query("insert into organisation_users values($1,$2,'active','principal')",[homeOrg,manager])
+  await db.query('insert into auth.users(id,email,email_confirmed_at) values($1,$2,now())',[homeUser,homeEmail])
+  await asUser(manager)
+  const link=(await db.query("insert into recruitment_intake_links(organisation_id,channel,token_hash,expires_at) values($1,'website',$2,now()+interval '1 year') returning id",[homeOrg,createHash('sha256').update(homeToken).digest('hex')])).rows[0].id
+  const keys=[crypto.randomUUID(),crypto.randomUUID()]
+  await contactServer()
+  for(const key of keys) expect(await captureContact(link,key,{...contact,email:homeEmail},'7'.repeat(64))).toEqual({accepted:true,duplicate:false})
+  const saveOld=async(key,hash)=>{
+    expect((await db.query('select recruitment_open_applicant_session($1,$2,$3,$4) as result',[homeOrg,homeUser,hash,key])).rows[0].result).toBe(true)
+    return (await db.query("select recruitment_save_profile($1,$2,$3::jsonb,0,3,'complete') as result",[homeOrg,hash,JSON.stringify({...profileAnswers,email:homeEmail})])).rows[0].result
+  }
+  expect((await saveOld(keys[0],homeHash)).saved).toBe(true)
+  const oldHash='0'.repeat(64)
+  expect((await saveOld(keys[1],oldHash)).saved).toBe(true)
+  expect((await db.query('select recruitment_submit_verified_profile($1,$2,1,$3,true,true) as result',[homeOrg,oldHash,crypto.randomUUID()])).rows[0].result.accepted).toBe(true)
+  const before=(await db.query('select id,applicant_draft_json,applicant_draft_revision,application_json from recruitment_leads where organisation_id=$1 order by id',[homeOrg])).rows
+  homeDraft=before.find(row=>!row.application_json.answers)
+  oldHomeSubmission=before.find(row=>row.application_json.answers)
+  homeRevision=1
+  await db.exec('reset role;')
+  await db.exec(readFileSync(new URL('../../../../../supabase/migrations/20261010131128_home_seekers_recruitment_package_preference.sql',import.meta.url),'utf8'))
+  await contactServer()
+  expect((await db.query('select id,applicant_draft_json,applicant_draft_revision,application_json from recruitment_leads where organisation_id=$1 order by id',[homeOrg])).rows).toEqual(before)
+  const missing=await homeProfileApi({action:'save_profile',answers:{...profileAnswers,email:homeEmail},revision:homeRevision,page:3,intent:'complete'})
+  expect(missing).toMatchObject({status:422,body:{errors:{packagePreference:expect.any(String)}}})
+  const submitMissing=await homeProfileApi({action:'submit_profile',revision:homeRevision,submissionKey:crypto.randomUUID(),privacyAccepted:true,declarationAccepted:true})
+  expect(submitMissing).toMatchObject({status:422,body:{errors:{packagePreference:expect.any(String)}}})
+  expect((await db.query('select recruitment_submit_verified_profile($1,$2,1,$3,true,true) as result',[homeOrg,oldHash,crypto.randomUUID()])).rows[0].result).toMatchObject({accepted:true,duplicate:true})
+})
+it('saves every Home Seekers choice on the original lead, supports partial drafts and protects revision retries',async()=>{
+  await contactServer()
+  for(const packagePreference of ['deals','monthly','upfront','decide_later']) {
+    const request={action:'save_profile',answers:{...profileAnswers,email:homeEmail,packagePreference},revision:homeRevision,page:3,intent:'complete'}
+    const saved=await homeProfileApi(request)
+    expect(saved.status).toBe(200)
+    homeRevision=saved.body.applicant.profileRevision
+    expect(saved.body.applicant.profile.answers.packagePreference).toBe(packagePreference)
+    expect(saved.body.applicant.applicationSubmitted).toBe(false)
+    expect((await homeProfileApi(request)).body).toMatchObject({duplicate:true,applicant:{profileRevision:homeRevision}})
+    const restored=await homeProfileApi({action:'resume'})
+    expect(restored.body.applicant.profile.answers.packagePreference).toBe(packagePreference)
+    expect(restored.body.applicant.contactSubmissionKey).toBeTruthy()
+  }
+  for(const packagePreference of ['forged',{},true]) {
+    const bad=await homeProfileApi({action:'save_profile',answers:{...profileAnswers,email:homeEmail,packagePreference},revision:homeRevision,page:3,intent:'save'})
+    expect(bad).toMatchObject({status:422,body:{errors:{packagePreference:expect.any(String)}}})
+  }
+  const rawBad=(await db.query("select recruitment_save_profile($1,$2,$3::jsonb,$4,3,'save') as result",[homeOrg,homeHash,JSON.stringify({...profileAnswers,email:homeEmail,packagePreference:'forged'}),homeRevision])).rows[0].result
+  expect(rawBad).toMatchObject({invalid:true,errors:{packagePreference:expect.any(String)}})
+  const stale=await homeProfileApi({action:'save_profile',answers:{...profileAnswers,email:homeEmail,packagePreference:'monthly'},revision:0,page:3,intent:'complete'})
+  expect(stale).toMatchObject({status:409,body:{conflict:true}})
+  const partial=await homeProfileApi({action:'save_profile',answers:{...profileAnswers,email:homeEmail},revision:homeRevision,page:3,intent:'save'})
+  expect(partial.status).toBe(200);homeRevision=partial.body.applicant.profileRevision
+  expect(partial.body.applicant.profile.complete).toBe(false)
+  expect(partial.body.applicant.profile.answers).not.toHaveProperty('packagePreference')
+  const saved=await homeProfileApi({action:'save_profile',answers:{...profileAnswers,email:homeEmail,packagePreference:'decide_later'},revision:homeRevision,page:3,intent:'complete'})
+  homeRevision=saved.body.applicant.profileRevision
+  const row=(await db.query('select * from recruitment_leads where id=$1',[homeDraft.id])).rows[0]
+  expect(row.status).toBe('lead_received');expect(row.application_json).toEqual({})
+  expect(row.contact_capture_json.email).toBe(homeEmail)
+  expect((await db.query('select count(*) from recruitment_leads where organisation_id=$1',[homeOrg])).rows[0].count).toBe(2)
+})
+it('submits the reviewed Home Seekers preference and enforces agency and staff boundaries in SQL',async()=>{
+  await contactServer()
+  const submission={action:'submit_profile',revision:homeRevision,submissionKey:crypto.randomUUID(),privacyAccepted:true,declarationAccepted:true,answers:{packagePreference:'monthly'},organisationId:other}
+  const accepted=await homeProfileApi(submission)
+  expect(accepted.status).toBe(200)
+  expect(accepted.body.applicant.submittedApplication.answers.packagePreference).toBe('decide_later')
+  expect(accepted.body.applicant.stage).toBe('application_submitted')
+  expect((await homeProfileApi(submission)).body.duplicate).toBe(true)
+  const row=(await db.query('select * from recruitment_leads where id=$1',[homeDraft.id])).rows[0]
+  expect(row.application_json.answers.packagePreference).toBe('decide_later')
+  expect(row.activation_json).toEqual({})
+  await db.exec('reset role;')
+  expect((await db.query('select count(*) from organisation_users where user_id=$1',[homeUser])).rows[0].count).toBe(0)
+  expect((await db.query('select application_json from recruitment_leads where id=$1',[oldHomeSubmission.id])).rows[0].application_json).toEqual(oldHomeSubmission.application_json)
+  await contactServer()
+  expect((await db.query('select recruitment_home_seekers_package_errors($1,$2::jsonb,null,false) as result',[org,JSON.stringify({packagePreference:'decide_later'})])).rows[0].result).toHaveProperty('packagePreference')
+  expect((await db.query('select recruitment_home_seekers_package_errors($1,$2::jsonb,null,true) as result',[org,JSON.stringify(profileAnswers)])).rows[0].result).toEqual({})
+  expect((await db.query('select recruitment_resume_applicant($1,$2) as result',[other,homeHash])).rows[0].result).toBeNull()
+  await asUser(manager)
+  expect((await db.query('select application_json from recruitment_leads where id=$1',[homeDraft.id])).rows[0].application_json.answers.packagePreference).toBe('decide_later')
+  await expect(db.query("update recruitment_leads set applicant_draft_json=jsonb_set(applicant_draft_json,'{answers,packagePreference}','\"monthly\"') where id=$1",[homeDraft.id])).rejects.toThrow('Applicant drafts require verified access')
+  await db.exec('reset role; set role anon;')
+  await expect(db.query('select recruitment_home_seekers_package_errors($1,$2::jsonb,null,true)',[homeOrg,'{}'])).rejects.toThrow('permission denied')
 })

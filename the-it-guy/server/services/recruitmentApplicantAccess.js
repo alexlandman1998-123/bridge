@@ -1,5 +1,6 @@
 import { createHash, createHmac, randomBytes } from 'node:crypto'
 import { createClient } from '@supabase/supabase-js'
+import { HOME_SEEKERS_ORGANISATION_ID } from './homeSeekersWebsiteBridge.js'
 import { normalizeRecruitmentProfile, recruitmentProfileErrors } from '../../src/pages/recruitment/recruitmentProfileModel.js'
 
 export const applicantActions = ['send_verification', 'verify_email', 'sign_in', 'resume', 'sign_out', 'save_profile', 'submit_profile']
@@ -20,8 +21,18 @@ function authProvider(env) {
   // Isolated client: signing in must never replace the service-role DB session.
   return createClient(env.SUPABASE_URL, env.SUPABASE_ANON_KEY || env.SUPABASE_SERVICE_ROLE_KEY, { auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false } }).auth
 }
-export async function recruitmentApplicantAccess({ db, authClient, link, headers, body, env }) {
+async function homeSeekersDraftReceipt(db, org, tokenHash, applicant) {
+  // Return only the random contact receipt key, after canonical session access.
+  // It pins later code verification to this enquiry; it grants no access itself.
+  const session = await db.from('recruitment_applicant_sessions').select('lead_id').eq('organisation_id', org).eq('token_hash', tokenHash).maybeSingle()
+  if (session.error || !session.data?.lead_id) throw new Error('unavailable')
+  const receipt = await db.from('recruitment_contact_receipts').select('submission_key').eq('organisation_id', org).eq('lead_id', session.data.lead_id).order('created_at', { ascending: false }).limit(1).maybeSingle()
+  if (receipt.error || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(receipt.data?.submission_key || '')) throw new Error('unavailable')
+  return { ...applicant, contactSubmissionKey: receipt.data.submission_key }
+}
+export async function recruitmentApplicantAccess({ db, authClient, link, headers, body, env, codeOnlyVerification = false }) {
   const org = link.organisation_id, action = body.action
+  const homeSeekers = org === HOME_SEEKERS_ORGANISATION_ID
   try {
     if (action === 'submit_profile') {
       const saved = cookie(headers, org)
@@ -44,7 +55,7 @@ export async function recruitmentApplicantAccess({ db, authClient, link, headers
         || !Number.isInteger(body.revision) || body.revision < 0 || body.revision > 2147483646 || !Number.isInteger(body.page) || body.page < 0 || body.page > 3
         || !['save','continue','complete'].includes(body.intent)) return reply(400, { error: 'Invalid questionnaire request.' })
       const answers = normalizeRecruitmentProfile(body.answers)
-      const errors = { ...recruitmentProfileErrors(answers), ...recruitmentProfileErrors(answers, { page: body.intent === 'continue' ? body.page : undefined, required: body.intent !== 'save' }) }
+      const errors = { ...recruitmentProfileErrors(body.answers, {homeSeekers}), ...recruitmentProfileErrors(body.answers, { page: body.intent === 'continue' ? body.page : undefined, required: body.intent !== 'save', homeSeekers }) }
       if (Object.keys(errors).length) return reply(422, { error: 'Check the highlighted answers.', errors })
       const { data, error } = await db.rpc('recruitment_save_profile', { p_organisation_id: org, p_token_hash: hash(saved), p_answers: answers, p_revision: body.revision, p_page: body.page, p_intent: body.intent })
       if (error) throw error
@@ -68,7 +79,7 @@ export async function recruitmentApplicantAccess({ db, authClient, link, headers
       if (!saved) return reply(200, { applicant: null })
       const { data, error } = await db.rpc('recruitment_resume_applicant', { p_organisation_id: org, p_token_hash: hash(saved) })
       if (error) throw error
-      const result = reply(200, { applicant: data || null })
+      const result = reply(200, { applicant: data && codeOnlyVerification ? await homeSeekersDraftReceipt(db, org, hash(saved), data) : data || null })
       if (!data) result.headers['Set-Cookie'] = sessionCookie(headers, org, '', true)
       return result
     }
@@ -85,12 +96,37 @@ export async function recruitmentApplicantAccess({ db, authClient, link, headers
       p_kind: action === 'send_verification' ? 'send' : 'authenticate', p_fingerprint: digest(`recruitment-auth:${address}`), p_email_hash: digest(`recruitment-email:${email}`),
     })
     if (budgetError) throw budgetError
-    if (allowed !== true) return reply(429, { error: 'Please wait before trying again. Verification emails can be requested once a minute.' })
+    if (allowed !== true) {
+      const response = reply(429, { error: 'Please wait before trying again. Verification emails can be requested once a minute.', retryAfterSeconds: 60 })
+      response.headers['Retry-After'] = '60'
+      return response
+    }
     const auth = authClient || authProvider(env)
     if (action === 'send_verification') {
-      const { data: enquiry, error } = await db.from('recruitment_leads').select('id').eq('organisation_id', org).eq('contact_capture_json->>email', email).limit(1).maybeSingle()
+      let query = db.from('recruitment_leads').select('id').eq('organisation_id', org).eq('contact_capture_json->>email', email)
+      if (codeOnlyVerification) {
+        query = query.not('status', 'in', '(closed_lost,legacy_joined,agent_activated)').order('created_at', { ascending: false })
+        if (body.submissionKey) {
+          const receipt = await db.from('recruitment_contact_receipts').select('lead_id').eq('organisation_id', org).eq('submission_key', body.submissionKey).maybeSingle()
+          if (receipt.error) throw receipt.error
+          if (!receipt.data?.lead_id) return reply(202, { verificationRequested: true, resendAfterSeconds: 60 })
+          query = query.eq('id', receipt.data.lead_id)
+        }
+      }
+      const { data: enquiry, error } = await query.limit(1).maybeSingle()
       if (error) throw error
       if (enquiry) {
+        if (codeOnlyVerification) {
+          // Home Seekers uses its own code-only message. Auth templates and
+          // activation links for every other organisation remain independent.
+          try {
+            const delivered = await db.functions.invoke('send-email', { body: { type: 'home_seekers_recruitment_code', leadId: enquiry.id } })
+            if (delivered.error || delivered.data?.verificationRequested !== true) throw new Error('unavailable')
+            return reply(202, { verificationRequested: true, resendAfterSeconds: 60, codeLength: delivered.data.codeLength })
+          } catch {
+            return reply(503, { error: 'Your contact details are saved. The verification email could not be sent. Please wait a minute, then request a new code.', retryAfterSeconds: 60 })
+          }
+        }
         const sent = await auth.signInWithOtp({ email, options: { shouldCreateUser: false } })
         // Nonexistent accounts deliberately receive the same acknowledgement.
         if (sent.error && !['user_not_found', 'signup_disabled', 'otp_disabled'].includes(sent.error.code)) {
@@ -98,7 +134,7 @@ export async function recruitmentApplicantAccess({ db, authClient, link, headers
           throw sent.error
         }
       }
-      return reply(202, { verificationRequested: true })
+      return reply(202, { verificationRequested: true, ...(codeOnlyVerification ? { resendAfterSeconds: 60 } : {}) })
     }
     const result = action === 'verify_email'
       ? await auth.verifyOtp({ email, token: body.code, type: 'email' })
@@ -117,7 +153,7 @@ export async function recruitmentApplicantAccess({ db, authClient, link, headers
     if (opened !== true) return reply(409, { error: 'No available recruitment enquiry matches this account. Start with your contact details or contact the agency.' })
     const resumed = await db.rpc('recruitment_resume_applicant', { p_organisation_id: org, p_token_hash: hash(opaque) })
     if (resumed.error || !resumed.data) throw resumed.error || new Error('unavailable')
-    const response = reply(200, { applicant: resumed.data })
+    const response = reply(200, { applicant: codeOnlyVerification ? await homeSeekersDraftReceipt(db, org, hash(opaque), resumed.data) : resumed.data })
     response.headers['Set-Cookie'] = sessionCookie(headers, org, opaque)
     return response
   } catch { return reply(503, { error: 'Applicant access is temporarily unavailable. Your saved contact enquiry is safe. Please try again.' }) }

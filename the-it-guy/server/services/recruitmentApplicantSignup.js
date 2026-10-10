@@ -23,7 +23,7 @@ export async function createRecruitmentApplicant(db, link, submissionKey, contac
     return { duplicate: true }
   }
   const created = await db.auth.admin.createUser({
-    id, email: contact.email, password, email_confirm: false,
+    id, email: contact.email, ...(password ? { password } : {}), email_confirm: false,
     user_metadata: { full_name: `${contact.firstName} ${contact.lastName}` },
     // Server-authored association is pending ownership proof. It grants no
     // organisation membership, staff role or applicant CRM access.

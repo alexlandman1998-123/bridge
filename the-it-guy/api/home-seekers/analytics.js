@@ -1,4 +1,4 @@
-import { getHomeSeekersWebsiteConnection, isHomeSeekersPageUrl } from '../../server/services/homeSeekersWebsiteBridge.js'
+import { getHomeSeekersWebsiteConnection, homeSeekersPagePath, HOME_SEEKERS_PUBLIC_PATH, isHomeSeekersPageUrl } from '../../server/services/homeSeekersWebsiteBridge.js'
 import { writeHomeSeekersJsonResponse as writeNodeJsonResponse } from '../../server/services/homeSeekersApiResponse.js'
 
 async function readBody(request) {
@@ -21,9 +21,10 @@ export default async function handler(request, response) {
   const body = await readBody(request).catch(() => ({}))
   const eventType = String(body.eventType || '')
   const path = String(body.path || '')
+  const conversion = ['guarantee_opened', 'ppra_letter_opened'].includes(eventType)
   const listingId = String(body.listingId || '') || null
   if (!['site_visit', 'page_view', 'listing_view', 'guarantee_opened', 'ppra_letter_opened'].includes(eventType)
-    || (['guarantee_opened', 'ppra_letter_opened'].includes(eventType) && path !== '/demo/homeseekers/join')
+    || (conversion && homeSeekersPagePath(path) !== '/join')
     || !isHomeSeekersPageUrl(`${origin.origin}${path}`)
     || (eventType === 'listing_view' && !listingId)
     || (eventType !== 'listing_view' && listingId)) return ignore()
@@ -32,7 +33,9 @@ export default async function handler(request, response) {
     const { error } = await client.rpc('website_record_analytics_event', {
       p_hostname: hostname,
       p_event_type: eventType,
-      p_page_path: path,
+      // Conversion events retain the existing database's /join attribution
+      // contract. Page and listing views record their actual public URL.
+      p_page_path: conversion ? `${HOME_SEEKERS_PUBLIC_PATH}/join` : path,
       p_listing_id: listingId,
     })
     if (error) throw error

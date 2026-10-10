@@ -1,3 +1,4 @@
+import { homeSeekersPath } from './homeSeekersRoutes.js'
 import { ArrowRight, Bath, BedDouble, ChevronDown, ChevronRight, MapPin, Ruler } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import './HomeSeekersDemo.css'
@@ -10,7 +11,7 @@ const developments = [
 ]
 
 const nav = ['Buy', 'Sell', 'Rent', 'Developments', 'Our people', 'About', 'Contact']
-const hrefFor = (item) => ({ Buy: '/demo/homeseekers/buy', Sell: '/demo/homeseekers/sell', Rent: '/demo/homeseekers/rent', Developments: '/demo/homeseekers/developments', 'Our people': '/demo/homeseekers/people', About: '/demo/homeseekers/about', Contact: '/demo/homeseekers/contact' }[item] || '/demo/homeseekers')
+const hrefFor = (item) => ({ Buy: homeSeekersPath("/buy"), Sell: homeSeekersPath("/sell"), Rent: homeSeekersPath("/rent"), Developments: homeSeekersPath("/developments"), 'Our people': homeSeekersPath("/people"), About: homeSeekersPath("/about"), Contact: homeSeekersPath("/contact") }[item] || homeSeekersPath("/"))
 
 const availabilityUnits = [
   { id: 'A-01', block: 'A', type: '2 Bed', beds: 2, baths: 2, size: '87 m²', price: 'From R 1.65m', status: 'Available' },
@@ -39,7 +40,7 @@ function HomeSeekersDevelopments() {
 
   return <main className="hs-site hs-developments-site">
     <header className={`hs-header hs-developments-header${headerScrolled ? ' hs-developments-header--scrolled' : ''}`}>
-      <a className="hs-logo" href="/demo/homeseekers"><img src="/brand/homeseekers/logo.png" alt="Home Seekers" /></a>
+      <a className="hs-logo" href={homeSeekersPath("/")}><img src="/brand/homeseekers/logo.png" alt="Home Seekers" /></a>
       <nav className="hs-nav" aria-label="Main navigation">{nav.map((item, index) => <a className={item === 'Developments' ? 'is-active' : ''} href={hrefFor(item)} key={item}>{item}{index < 3 && <ChevronDown size={13} />}</a>)}</nav>
     </header>
 
@@ -62,7 +63,7 @@ function HomeSeekersDevelopments() {
 
     <section className="hs-developments-cta"><div><p className="hs-eyebrow">Have a project in mind?</p><h2>Let’s find your<br />next beginning.</h2><a href="mailto:hello@homeseekers.co.za">Speak to our team <ArrowRight size={17} /></a></div><img src="https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=1400&q=88" alt="Modern new home interior" /></section>
 
-    <footer className="hs-footer"><div><img src="/brand/homeseekers/logo.png" alt="Home Seekers" /><p>Gauteng property. Done differently.</p></div><div><h3>Properties</h3><a href="/demo/homeseekers/buy">Buy</a><a href="/demo/homeseekers/rent">Rent</a><a href="/demo/homeseekers/developments">Developments</a><a href="/demo/homeseekers">Areas</a></div><div><h3>Sell</h3><a href="/demo/homeseekers/sell">Sell with Home Seekers</a><a href="/demo/homeseekers/sell#valuation">Request a valuation</a><a href="/demo/homeseekers/sell#promise">45 Day Promise</a></div><div><h3>Company</h3><a href="/demo/homeseekers">About</a><a href="/demo/homeseekers#people">Our people</a><a href="/demo/homeseekers">Contact</a></div><div className="hs-footer-bottom"><span>© Home Seekers</span><span>Privacy · Terms · POPIA</span><span>Powered by Arch9</span></div></footer>
+    <footer className="hs-footer"><div><img src="/brand/homeseekers/logo.png" alt="Home Seekers" /><p>Gauteng property. Done differently.</p></div><div><h3>Properties</h3><a href={homeSeekersPath("/buy")}>Buy</a><a href={homeSeekersPath("/rent")}>Rent</a><a href={homeSeekersPath("/developments")}>Developments</a><a href={homeSeekersPath("/")}>Areas</a></div><div><h3>Sell</h3><a href={homeSeekersPath("/sell")}>Sell with Home Seekers</a><a href={homeSeekersPath("/sell#valuation")}>Request a valuation</a><a href={homeSeekersPath("/sell#promise")}>45 Day Promise</a></div><div><h3>Company</h3><a href={homeSeekersPath("/")}>About</a><a href={homeSeekersPath("/#people")}>Our people</a><a href={homeSeekersPath("/")}>Contact</a></div><div className="hs-footer-bottom"><span>© Home Seekers</span><span>Privacy · Terms · POPIA</span><span>Powered by Arch9</span></div></footer>
   </main>
 }
 

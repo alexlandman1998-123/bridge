@@ -1,3 +1,4 @@
+import { homeSeekersPath } from './homeSeekersRoutes.js'
 import { ArrowUpRight, Search } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { homeSeekersAreas } from './homeSeekersAreasData'
@@ -35,7 +36,7 @@ export default function HomeSeekersAreaAtlas({ id = 'atlas', onSelectedChange })
         <h3>{selected.name}</h3>
         <p>{selected.note}</p>
         <ul>{selected.tags.map((tag) => <li key={tag}>{tag}</li>)}</ul>
-        <a href="/demo/homeseekers/contact">Talk to a local advisor <ArrowUpRight size={17} aria-hidden="true" /></a>
+        <a href={homeSeekersPath("/contact")}>Talk to a local advisor <ArrowUpRight size={17} aria-hidden="true" /></a>
         <small>Profile copy is a design preview. Local specialist and live market information will connect here.</small>
       </aside>
     </div>

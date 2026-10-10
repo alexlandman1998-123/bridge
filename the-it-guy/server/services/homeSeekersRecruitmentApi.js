@@ -1,5 +1,5 @@
 import { createHmac } from 'node:crypto'
-import { getHomeSeekersWebsiteConnection } from './homeSeekersWebsiteBridge.js'
+import { getHomeSeekersWebsiteConnection, homeSeekersPagePath, HOME_SEEKERS_PUBLIC_PATH } from './homeSeekersWebsiteBridge.js'
 
 const reply = (status, body) => ({ status, headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }, body })
 const clean = (value, limit) => typeof value === 'string' ? value.trim().slice(0, limit) : ''
@@ -9,9 +9,11 @@ export async function createHomeSeekersRecruitmentResponse({ method = 'POST', he
   const host = clean(headers.host || headers.Host, 255).toLowerCase()
   let page
   try { page = new URL(body.pageUrl) } catch { return reply(400, { error: 'Invalid application page.' }) }
-  if (!['http:', 'https:'].includes(page.protocol) || page.host.toLowerCase() !== host || page.pathname !== '/demo/homeseekers/join') return reply(400, { error: 'Invalid application page.' })
+  if (!['http:', 'https:'].includes(page.protocol) || page.host.toLowerCase() !== host || homeSeekersPagePath(page.pathname) !== '/join') return reply(400, { error: 'Invalid application page.' })
   if (clean(body.companyWebsite, 256)) return reply(202, { accepted: true, duplicate: true })
-  const payload = { name: clean(body.name, 120), email: clean(body.email, 254).toLowerCase(), phone: clean(body.phone, 30), area: clean(body.area, 120), message: clean(body.message, 3000), sales: body.sales, privacyAccepted: body.privacyAccepted === true, pagePath: page.pathname }
+  // The existing database capture contract retains this internal attribution
+  // path while the public website uses /join. No migration is required.
+  const payload = { name: clean(body.name, 120), email: clean(body.email, 254).toLowerCase(), phone: clean(body.phone, 30), area: clean(body.area, 120), message: clean(body.message, 3000), sales: body.sales, privacyAccepted: body.privacyAccepted === true, pagePath: `${HOME_SEEKERS_PUBLIC_PATH}/join` }
   if (payload.name.length < 2 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payload.email) || payload.phone.replace(/\D/g, '').length < 9 || payload.area.length < 2 || !Number.isInteger(payload.sales) || payload.sales < 0 || payload.sales > 10000 || !payload.message || !payload.privacyAccepted || !/^[A-Za-z0-9._:-]{16,128}$/.test(body.idempotencyKey || '')) return reply(400, { error: 'Please complete the required fields with a valid email, mobile number and sales count.' })
   const secret = clean(env.WEBSITES_LEAD_FINGERPRINT_SECRET, 256)
   if (secret.length < 32) return reply(503, { error: 'Applications are temporarily unavailable. Please try again later.' })

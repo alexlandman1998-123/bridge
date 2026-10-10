@@ -21,6 +21,7 @@ export async function buildHomeSeekersFrontend(frontendDirectory) {
     configFile: false,
     envFile: false,
     plugins: [react()],
+    define: { 'import.meta.env.VITE_HOME_SEEKERS_STANDALONE': JSON.stringify('true') },
     build: {
       outDir: frontendDirectory,
       emptyOutDir: true,
@@ -36,11 +37,12 @@ export async function buildHomeSeekersFrontend(frontendDirectory) {
 export const HOME_SEEKERS_OUTPUT_CONFIG = {
   version: 3,
   routes: [
-    { src: '^/$', status: 307, headers: { Location: '/demo/homeseekers', 'Cache-Control': 'no-store' } },
     { src: '^/assets/.*$', headers: { 'Cache-Control': 'public, max-age=31536000, immutable' }, continue: true },
+    { src: '^/(?:$|(?:guarantee|about|contact|selling|buying|renting|join|buy|sell|rent|developments|people|areas|valuation)/?$|(?:buying|properties)/[^/]+/?$)', headers: { 'Cache-Control': 'no-store' }, continue: true },
     { src: '^/demo/homeseekers(?:/.*)?$', headers: { 'Cache-Control': 'no-store' }, continue: true },
     { handle: 'filesystem' },
     { src: '^/api(?:/.*)?$', dest: '/api-not-found.json', status: 404 },
+    { src: '^/(?:$|(?:guarantee|about|contact|selling|buying|renting|join|buy|sell|rent|developments|people|areas|valuation)/?$|(?:buying|properties)/[^/]+/?$)', dest: '/index.html' },
     { src: '^/demo/homeseekers(?:/.*)?$', dest: '/index.html' },
     { src: '^/.*$', dest: '/not-found.html', status: 404 },
   ],
@@ -85,7 +87,7 @@ export async function packageHomeSeekersWebsite({ frontendDirectory, deploymentR
   await cp(frontendDirectory, join(outputRoot, 'static'), { recursive: true })
   await buildHomeSeekersFunctions(outputRoot)
   await writeFile(join(outputRoot, 'static/api-not-found.json'), '{"error":"not_found"}\n')
-  await writeFile(join(outputRoot, 'static/not-found.html'), '<!doctype html><title>Page not found | Home Seekers</title><h1>Page not found</h1><a href="/demo/homeseekers">Home Seekers home</a>\n')
+  await writeFile(join(outputRoot, 'static/not-found.html'), '<!doctype html><title>Page not found | Home Seekers</title><h1>Page not found</h1><a href="/">Home Seekers home</a>\n')
   await writeFile(join(outputRoot, 'config.json'), `${JSON.stringify(HOME_SEEKERS_OUTPUT_CONFIG, null, 2)}\n`)
   // Bind the prebuilt output to Home Seekers without changing the main app's
   // existing local Vercel link or copying any credentials into the artifact.

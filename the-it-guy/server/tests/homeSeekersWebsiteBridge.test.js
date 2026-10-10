@@ -37,6 +37,11 @@ test('Home Seekers enquiries use the published CRM page and registered domain', 
       ['general_enquiry', '/demo/homeseekers/contact', 'contact', null],
       ['valuation_request', '/demo/homeseekers/selling', 'valuation', null],
       ['property_enquiry', `/demo/homeseekers/buying/${LISTING_ID}`, null, LISTING_ID],
+      ['general_enquiry', '/', 'home', null],
+      ['general_enquiry', '/contact', 'contact', null],
+      ['general_enquiry', '/about/', 'about', null],
+      ['valuation_request', '/selling', 'valuation', null],
+      ['property_enquiry', `/properties/${LISTING_ID}`, null, LISTING_ID],
     ]) {
       const calls = []
       let captured
@@ -59,6 +64,7 @@ test('Home Seekers enquiries use the published CRM page and registered domain', 
       assert.equal(captured.params.p_hostname, 'home-seekers-website-alpha.vercel.app')
       assert.equal(captured.params.p_page_id, expectedKind ? `page-${expectedKind}` : null)
       assert.equal(captured.params.p_listing_id, listingId)
+      assert.equal(captured.params.p_attribution.pagePath, pathname)
       assert.equal(captured.params.p_attribution.leadIntent, type === 'property_enquiry' ? undefined : 'sell')
       if (expectedKind) assert.deepEqual(calls, [
         ['website_site_id', SITE_ID], ['revision_id', REVISION_ID], ['page_kind', expectedKind],
@@ -78,6 +84,35 @@ test('Home Seekers lead endpoint rejects pages on another host before CRM access
     getConnection: () => { throw new Error('Must not access CRM') },
   })
   assert.equal(result.status, 400)
+})
+
+test('clean buying and renting enquiries retain their CRM intent', async () => {
+  const previous = process.env.WEBSITES_LEAD_FINGERPRINT_SECRET
+  process.env.WEBSITES_LEAD_FINGERPRINT_SECRET = 'a'.repeat(64)
+  try {
+    for (const [path, intent] of [['/buying', 'buy'], ['/renting', 'rent']]) {
+      let attribution
+      const result = await createHomeSeekersLeadCaptureResponse({
+        headers: { host: 'homeseeker.co.za' },
+        body: { type: 'general_enquiry', name: 'Fixture Visitor', email: 'visitor@example.test', privacyAccepted: true, pageUrl: `https://homeseeker.co.za${path}`, idempotencyKey: 'fixture-enquiry-123456' },
+        getConnection: async () => ({ site: { id: SITE_ID, published_revision_id: REVISION_ID }, hostname: 'homeseeker.co.za', client: {
+          from() { return pageQuery([], 'home') },
+          async rpc(_name, params) { attribution = params.p_attribution; return { data: { accepted: true } } },
+        } }),
+      })
+      assert.equal(result.status, 201)
+      assert.equal(attribution.leadIntent, intent)
+    }
+    const rejected = await createHomeSeekersLeadCaptureResponse({
+      headers: { host: 'homeseeker.co.za' },
+      body: { type: 'general_enquiry', name: 'Fixture Visitor', email: 'visitor@example.test', privacyAccepted: true, pageUrl: 'https://homeseeker.co.za/agency/dashboard', idempotencyKey: 'fixture-enquiry-123456' },
+      getConnection: () => assert.fail('Private paths must fail before database access'),
+    })
+    assert.equal(rejected.status, 400)
+  } finally {
+    if (previous === undefined) delete process.env.WEBSITES_LEAD_FINGERPRINT_SECRET
+    else process.env.WEBSITES_LEAD_FINGERPRINT_SECRET = previous
+  }
 })
 
 test('public property feed includes only Home Seekers listings approved for this website', async () => {

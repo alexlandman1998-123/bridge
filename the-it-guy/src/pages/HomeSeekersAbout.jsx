@@ -1,3 +1,4 @@
+import { homeSeekersPath } from './homeSeekersRoutes.js'
 import { ArrowRight, ArrowUpRight, Compass, MapPin } from "lucide-react";
 import { useState } from "react";
 import HomeSeekersMobileNav from "./HomeSeekersMobileNav";
@@ -37,7 +38,7 @@ export default function HomeSeekersAbout() {
   return (
     <main className="hs-about-next">
       <header className="hs-about-next__header">
-        <a href="/demo/homeseekers" aria-label="Home Seekers home">
+        <a href={homeSeekersPath("/")} aria-label="Home Seekers home">
           <img
             src="/brand/homeseekers/home-seekers-horizontal-black.svg"
             alt="Home Seekers"
@@ -47,7 +48,7 @@ export default function HomeSeekersAbout() {
           {nav.map(([label, slug]) => (
             <a
               className={slug === "about" ? "is-active" : ""}
-              href={`/demo/homeseekers/${slug}`}
+              href={homeSeekersPath(`/${slug}`)}
               key={slug}
             >
               {label}
@@ -60,7 +61,7 @@ export default function HomeSeekersAbout() {
         <HomeSeekersMobileNav
           links={nav.map(([label, slug]) => [
             label,
-            `/demo/homeseekers/${slug}`,
+            homeSeekersPath(`/${slug}`),
           ])}
           active="about"
           onValuation={() => setValuationOpen(true)}
@@ -228,7 +229,7 @@ export default function HomeSeekersAbout() {
             with a genuine understanding of what makes an address feel like
             home.
           </p>
-          <a href="/demo/homeseekers/contact">
+          <a href={homeSeekersPath("/contact")}>
             Talk to our local team <ArrowRight size={18} />
           </a>
         </div>

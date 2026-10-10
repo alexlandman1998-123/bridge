@@ -1,3 +1,4 @@
+import { homeSeekersPath } from './homeSeekersRoutes.js'
 import { ArrowRight, Bath, BedDouble, Car, Search } from "lucide-react";
 import { useState } from "react";
 import HomeSeekersValuationModal from "./HomeSeekersValuationModal";
@@ -24,11 +25,11 @@ const images = {
   careers: `${asset}pages/2025/12/869_424ce675e29a4906a0d709d7ef138c88_t_w_639_h_728.avif`,
 };
 const nav = [
-  ["Selling", "/demo/homeseekers/selling"],
-  ["Buying", "/demo/homeseekers/buying"],
-  ["Renting", "/demo/homeseekers/renting"],
-  ["About", "/demo/homeseekers/about"],
-  ["Join us", "/demo/homeseekers/join"],
+  ["Selling", homeSeekersPath("/selling")],
+  ["Buying", homeSeekersPath("/buying")],
+  ["Renting", homeSeekersPath("/renting")],
+  ["About", homeSeekersPath("/about")],
+  ["Join us", homeSeekersPath("/join")],
 ];
 
 function Eyebrow({ children }) {
@@ -69,7 +70,7 @@ function ListingCard({ listing }) {
             </>
           )}
         </span>
-        <a href={`/demo/homeseekers/properties/${listing.id}`}>
+        <a href={homeSeekersPath(`/properties/${listing.id}`)}>
           View property <ArrowRight size={15} />
         </a>
       </div>
@@ -109,7 +110,7 @@ export default function HomeSeekersDemo({ guaranteePage = false }) {
   return (
     <main className="hs-site hs-brief" id="top">
       <header className="hs-brief-header hs-campaign-header">
-        <a href="/demo/homeseekers" className="hs-brief-logo" aria-label="Home Seekers home">
+        <a href={homeSeekersPath("/")} className="hs-brief-logo" aria-label="Home Seekers home">
           <img
             src="/brand/homeseekers/home-seekers-horizontal-black.svg"
             alt="Home Seekers"
@@ -124,7 +125,7 @@ export default function HomeSeekersDemo({ guaranteePage = false }) {
         </nav>
         <a
           className="hs-campaign-header__guarantee"
-          href="/demo/homeseekers/guarantee"
+          href={homeSeekersPath("/guarantee")}
           aria-label="Read about the 45-day guarantee"
         >
           <strong>45</strong>
@@ -138,7 +139,7 @@ export default function HomeSeekersDemo({ guaranteePage = false }) {
           Book a free valuation
         </button>
         <HomeSeekersMobileNav
-          links={[...nav, ["45-day guarantee", "/demo/homeseekers/guarantee"]]}
+          links={[...nav, ["45-day guarantee", homeSeekersPath("/guarantee")]]}
           active=""
           onValuation={() => setValuationOpen(true)}
         />
@@ -182,7 +183,7 @@ export default function HomeSeekersDemo({ guaranteePage = false }) {
           <p className="hs-home-hero__eyebrow"><span /> HOME SEEKERS</p>
           <h1 id="hs-home-hero-title">Find a home<br />that <em>moves you.</em></h1>
           <p className="hs-home-hero__intro">Real homes. Real local knowledge. A better way to move forward.</p>
-          <form className="hs-home-hero__search" action="/demo/homeseekers/buying#properties" method="get" role="search">
+          <form className="hs-home-hero__search" action={homeSeekersPath("/buying#properties")} method="get" role="search">
             <Search size={24} aria-hidden="true" />
             <label className="hs-home-hero__search-label" htmlFor="hs-home-search">Search homes by suburb or address</label>
             <input id="hs-home-search" name="q" type="search" placeholder="Search suburb or address" autoComplete="off" />
@@ -190,9 +191,9 @@ export default function HomeSeekersDemo({ guaranteePage = false }) {
           </form>
           <div className="hs-home-hero__shortcuts" aria-label="Popular property searches">
             <span>START SOMEWHERE LOCAL</span>
-            <a href="/demo/homeseekers/buying?q=Moreleta+Park#properties">Moreleta Park</a>
-            <a href="/demo/homeseekers/buying?q=Garsfontein#properties">Garsfontein</a>
-            <a href="/demo/homeseekers/buying?q=Olympus#properties">Olympus</a>
+            <a href={homeSeekersPath("/buying?q=Moreleta+Park#properties")}>Moreleta Park</a>
+            <a href={homeSeekersPath("/buying?q=Garsfontein#properties")}>Garsfontein</a>
+            <a href={homeSeekersPath("/buying?q=Olympus#properties")}>Olympus</a>
           </div>
         </div>
       </section>
@@ -442,7 +443,7 @@ export default function HomeSeekersDemo({ guaranteePage = false }) {
               moving for.
             </h2>
           </div>
-          <a className="hs-brief-text-link" href="/demo/homeseekers/buying">
+          <a className="hs-brief-text-link" href={homeSeekersPath("/buying")}>
             Browse all properties <ArrowRight size={16} />
           </a>
         </div>
@@ -471,7 +472,7 @@ export default function HomeSeekersDemo({ guaranteePage = false }) {
             made of wishful thinking. We train people who want to become the
             name their suburb recommends.
           </p>
-          <a className="hs-academy-link" href="/demo/homeseekers/join">
+          <a className="hs-academy-link" href={homeSeekersPath("/join")}>
             See what you are signing up for <ArrowRight size={18} />
           </a>
         </div>

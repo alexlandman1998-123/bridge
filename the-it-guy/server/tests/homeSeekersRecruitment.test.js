@@ -43,6 +43,9 @@ test('local SQL captures separately, deduplicates, counts conversions and enforc
     } } })
     const capture = (changes = {}, requestHeaders = headers) => createHomeSeekersRecruitmentResponse({ headers: requestHeaders, env, body: { ...body, ...changes }, getConnection: connection })
     assert.equal((await capture()).status, 201); assert.equal((await capture()).body.duplicate, true)
+    const cleanRetry = await capture({ pageUrl: 'https://homeseeker.co.za/join' }, { ...headers, host: 'homeseeker.co.za' })
+    assert.equal(cleanRetry.status, 202)
+    assert.equal(cleanRetry.body.duplicate, true)
     assert.deepEqual((await db.query('select (select count(*) from public.home_seekers_applications)::int as applications, (select count(*) from public.transaction_notifications)::int as alerts, (select sum(event_count) from public.website_analytics_daily)::int as conversions')).rows[0], { applications: 1, alerts: 1, conversions: 1 })
     const payload = (await db.query('select payload_json from public.home_seekers_applications')).rows[0].payload_json
     assert.equal(payload.area, 'Pretoria'); assert.equal(payload.sales, 4)

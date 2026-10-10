@@ -1,3 +1,4 @@
+import { homeSeekersPath } from './homeSeekersRoutes.js'
 import { ArrowRight, ArrowUpRight } from "lucide-react";
 import { useEffect, useState } from "react";
 import HomeSeekersMobileNav from "./HomeSeekersMobileNav";
@@ -73,7 +74,7 @@ export default function HomeSeekersSelling() {
   return (
     <main className="hs-selling">
       <header className="hs-selling__header">
-        <a href="/demo/homeseekers" aria-label="Home Seekers home">
+        <a href={homeSeekersPath("/")} aria-label="Home Seekers home">
           <img
             src="/brand/homeseekers/home-seekers-horizontal-black.svg"
             alt="Home Seekers"
@@ -83,7 +84,7 @@ export default function HomeSeekersSelling() {
           {nav.map(([label, slug]) => (
             <a
               className={slug === "selling" ? "is-active" : ""}
-              href={`/demo/homeseekers/${slug}`}
+              href={homeSeekersPath(`/${slug}`)}
               key={slug}
             >
               {label}
@@ -100,7 +101,7 @@ export default function HomeSeekersSelling() {
         <HomeSeekersMobileNav
           links={nav.map(([label, slug]) => [
             label,
-            `/demo/homeseekers/${slug}`,
+            homeSeekersPath(`/${slug}`),
           ])}
           active="selling"
           onValuation={() => setValuationOpen(true)}

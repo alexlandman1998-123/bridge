@@ -1,3 +1,4 @@
+import { homeSeekersPath } from './homeSeekersRoutes.js'
 import { ArrowRight, Check, Plus } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { trackHomeSeekersEvent } from './homeSeekersWebsiteData'
@@ -8,7 +9,6 @@ import RecruitmentSignupModal from './recruitment/RecruitmentSignupModal'
 import Modal from '../components/ui/Modal'
 import './HomeSeekersJoin.css'
 
-const base = '/demo/homeseekers'
 const nav = [['Selling', 'selling'], ['Buying', 'buying'], ['Renting', 'renting'], ['About', 'about'], ['Join us', 'join']]
 const { monthlyFee, transactionFee, referralMonthlyCredit, referralLimit } = recruitmentPricing
 const example = recruitmentExample()
@@ -110,10 +110,10 @@ export default function HomeSeekersJoin() {
   return <main className="hs-join">
     <a className="hs-join__skip" href="#join-content">Skip to content</a>
     <header className="hs-join__header">
-      <a href={base} aria-label="Home Seekers home"><img src="/brand/homeseekers/home-seekers-horizontal-black.svg" width="158" height="45" alt="Home Seekers" /></a>
-      <nav aria-label="Main navigation">{nav.map(([label, slug]) => <a aria-current={slug === 'join' ? 'page' : undefined} href={`${base}/${slug}`} key={slug}>{label}</a>)}</nav>
+      <a href={homeSeekersPath('/')} aria-label="Home Seekers home"><img src="/brand/homeseekers/home-seekers-horizontal-black.svg" width="158" height="45" alt="Home Seekers" /></a>
+      <nav aria-label="Main navigation">{nav.map(([label, slug]) => <a aria-current={slug === 'join' ? 'page' : undefined} href={homeSeekersPath(`/${slug}`)} key={slug}>{label}</a>)}</nav>
       <ApplyLink onOpen={openSignup} />
-      <HomeSeekersMobileNav links={[...nav.map(([label, slug]) => [label, `${base}/${slug}`]), ['Apply to join', '#apply']]} active="join us" />
+      <HomeSeekersMobileNav links={[...nav.map(([label, slug]) => [label, homeSeekersPath(`/${slug}`)]), ['Apply to join', '#apply']]} active="join us" />
     </header>
 
     <section className="hs-join__hero" id="join-content" tabIndex={-1} aria-labelledby="join-title">
@@ -228,7 +228,7 @@ export default function HomeSeekersJoin() {
 
     <section className="hs-join__section hs-join__light hs-join__guarantee" aria-labelledby="guarantee-title">
       <div className="hs-join__badge" aria-label="45-day guarantee"><strong>45</strong><span>Day</span><b>Guarantee</b></div>
-      <div><Eyebrow>One more <strong>thing</strong></Eyebrow><h2 id="guarantee-title">Something to say<br /><em>when you walk in the door.</em></h2><p className="hs-join__statement">Sold in 45 days,<br />or we cut our commission.</p><p>Sole mandate, listed at the price we recommend, subject to the published terms. Give a seller a reason to pick you over the agent who sat in that chair yesterday.</p><a className="hs-join__text-link" href={`${base}/guarantee#guarantee`} onClick={openGuarantee}>How the guarantee works<ArrowRight size={18} aria-hidden="true" /></a></div>
+      <div><Eyebrow>One more <strong>thing</strong></Eyebrow><h2 id="guarantee-title">Something to say<br /><em>when you walk in the door.</em></h2><p className="hs-join__statement">Sold in 45 days,<br />or we cut our commission.</p><p>Sole mandate, listed at the price we recommend, subject to the published terms. Give a seller a reason to pick you over the agent who sat in that chair yesterday.</p><a className="hs-join__text-link" href={homeSeekersPath(`/guarantee#guarantee`)} onClick={openGuarantee}>How the guarantee works<ArrowRight size={18} aria-hidden="true" /></a></div>
     </section>
 
     <section className="hs-join__section hs-join__light hs-join__white" aria-labelledby="fit-title">
@@ -244,8 +244,8 @@ export default function HomeSeekersJoin() {
     </section>
 
     <section className="hs-join__section hs-join__apply hs-join__band" id="apply" ref={applicationRef} aria-labelledby="apply-title">
-      <div><Eyebrow>Your next <strong>move</strong></Eyebrow><h2 id="apply-title">Join Home Seekers.<br /><em>Build your next chapter with us.</em></h2><p>Your business. Your book. A team behind you. Start with your contact details and create your applicant account.</p><p className="hs-join__fine">Joining starts with a conversation. Applying does not commit you to moving agencies.</p></div>
-      <div className="hs-join__invitation"><h3>A clearer next step.</h3><ol><li><span>01</span>Create your applicant account</li><li><span>02</span>Verify your email</li><li><span>03</span>Tell us about your experience</li></ol><ApplyLink onOpen={openSignup} /><p className="hs-join__fine">Start with your name, email and mobile number.</p>{campaignMeasurementConfigured && <label className="hs-join__consent"><input type="checkbox" checked={measurementAllowed} onChange={(event) => updateMeasurement(event.target.checked)} /><span>Allow Google and Meta campaign measurement. Optional.</span></label>}</div>
+      <div><Eyebrow>Your next <strong>move</strong></Eyebrow><h2 id="apply-title">Join Home Seekers.<br /><em>Build your next chapter with us.</em></h2><p>Your business. Your book. A team behind you. Start with your contact details, then enter the code we email you in the same form.</p><p className="hs-join__fine">Joining starts with a conversation. Applying does not commit you to moving agencies or choosing a package.</p></div>
+      <div className="hs-join__invitation"><h3>A clearer next step.</h3><ol><li><span>01</span>Save your contact details</li><li><span>02</span>Verify your email with a code</li><li><span>03</span>Tell us about your experience</li></ol><ApplyLink onOpen={openSignup} /><p className="hs-join__fine">Start with your name, email and mobile number.</p>{campaignMeasurementConfigured && <label className="hs-join__consent"><input type="checkbox" checked={measurementAllowed} onChange={(event) => updateMeasurement(event.target.checked)} /><span>Allow Google and Meta campaign measurement. Optional.</span></label>}</div>
     </section>
     <RecruitmentSignupModal open={signupOpen} onClose={() => setSignupOpen(false)} organisationName="Home Seekers" endpoint="/api/home-seekers/recruitment" onCaptured={(result) => trackRecruitmentConversion('recruitment_contact_captured', { measurementAllowed, duplicate: result.duplicate })} />
     <Modal open={Boolean(selectedOption)} onClose={() => setSelectedOption(null)} title={selectedOption?.title} subtitle={selectedOption ? `Option ${recruitmentPaymentOptions.indexOf(selectedOption) + 1} · Home Seekers` : ''} className="hs-option-modal">

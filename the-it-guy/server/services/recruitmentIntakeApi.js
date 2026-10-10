@@ -5,6 +5,7 @@ import { resolveOnboardingBranding } from '../../src/lib/onboardingBranding.js'
 import { normalizeRecruitmentContact, recruitmentContactErrors, recruitmentSignupErrors } from '../../src/pages/recruitment/recruitmentContactModel.js'
 import { createRecruitmentApplicant } from './recruitmentApplicantSignup.js'
 import { applicantActions, recruitmentApplicantAccess } from './recruitmentApplicantAccess.js'
+import { HOME_SEEKERS_ORGANISATION_ID } from './homeSeekersWebsiteBridge.js'
 const reply = (status, body) => ({ status, headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'private, no-store', 'Referrer-Policy': 'no-referrer' }, body })
 const tokenPattern = /^[a-f0-9]{64}$/
 function serverClient(env) {
@@ -18,7 +19,7 @@ export async function createLocalRecruitmentIntakeResponse(options = {}) {
   const result = await createRecruitmentIntakeResponse(options)
   return result.status === 200 ? { ...result, body: { ...result.body, preview: true } } : result
 }
-export async function createRecruitmentIntakeResponse({ method = 'POST', headers = {}, body = {}, env = process.env, client, now = new Date(), expectedOrganisationId, authClient } = {}) {
+export async function createRecruitmentIntakeResponse({ method = 'POST', headers = {}, body = {}, env = process.env, client, now = new Date(), expectedOrganisationId, authClient, codeOnlyVerification = false } = {}) {
   if (method !== 'POST') return reply(405, { error: 'Use POST for application requests.' })
   if (!body || typeof body !== 'object' || Array.isArray(body) || !tokenPattern.test(body.token || '') || !['context','submit','capture_contact','signup', ...applicantActions].includes(body.action)) return reply(400, { error: 'Invalid application request.' })
   // Embedded forms post back to their own host; arbitrary cross-origin JSON submissions are rejected.
@@ -29,7 +30,7 @@ export async function createRecruitmentIntakeResponse({ method = 'POST', headers
   const capturing = body.action === 'capture_contact' || signingUp
   if (capturing && (!body.contact || typeof body.contact !== 'object' || Array.isArray(body.contact))) return reply(400, { error: 'Please complete your contact details.' })
   if (capturing) {
-    const errors = signingUp ? recruitmentSignupErrors(body.contact, body.password) : recruitmentContactErrors(body.contact)
+    const errors = signingUp && !codeOnlyVerification ? recruitmentSignupErrors(body.contact, body.password) : recruitmentContactErrors(body.contact)
     if (Object.keys(errors).length) return reply(400, { error: 'Please check your contact details.', errors })
   }
   if (body.action !== 'context' && body.companyWebsite) return reply(202, { accepted: true, duplicate: true })
@@ -41,7 +42,7 @@ export async function createRecruitmentIntakeResponse({ method = 'POST', headers
     if (!link || (expectedOrganisationId && link.organisation_id !== expectedOrganisationId) || link.revoked_at || (new Date(link.expires_at) <= now && !['resume', 'sign_out'].includes(body.action))) return reply(410, { error: 'This application link is unavailable or has expired. Ask the organisation for a new link.' })
     if (applicantActions.includes(body.action)) {
       if (link.lead_id || !['website', 'public_link'].includes(link.channel)) return reply(409, { error: 'Use the public Join Us page to access your applicant account.' })
-      return recruitmentApplicantAccess({ db, authClient, link, headers, body, env })
+      return recruitmentApplicantAccess({ db, authClient, link, headers, body, env, codeOnlyVerification })
     }
     if (capturing && (link.lead_id || !['website', 'public_link'].includes(link.channel))) return reply(409, { error: 'Use a public Join Us link to start a new recruitment enquiry.' })
     let submitted = Boolean(link.submitted_at)
@@ -59,11 +60,11 @@ export async function createRecruitmentIntakeResponse({ method = 'POST', headers
       const branding = resolveOnboardingBranding({ ...brand, organisationName: brand?.organisation_display_name || organisation.name })
       let applicant = null
       if (String(headers.cookie || '').includes('a9_recruitment_')) {
-        const resumed = await recruitmentApplicantAccess({ db, authClient, link, headers, body: { action: 'resume' }, env })
+        const resumed = await recruitmentApplicantAccess({ db, authClient, link, headers, body: { action: 'resume' }, env, codeOnlyVerification })
         if (resumed.status !== 200) return resumed
         applicant = resumed.body.applicant
       }
-      return reply(200, { branding: { organisationName: branding.organisationName, logoLightUrl: safeLogo(branding.logoLightUrl), logoDarkUrl: safeLogo(branding.logoDarkUrl), primaryColour: /^#[a-f0-9]{6}$/i.test(branding.primaryColour) ? branding.primaryColour : '#153c35', accentColour: /^#[a-f0-9]{6}$/i.test(branding.accentColour) ? branding.accentColour : '#d4e9dc' }, channel: link.channel, submitted, ...(applicant ? { applicant } : {}) })
+      return reply(200, { branding: { organisationName: branding.organisationName, logoLightUrl: safeLogo(branding.logoLightUrl), logoDarkUrl: safeLogo(branding.logoDarkUrl), primaryColour: /^#[a-f0-9]{6}$/i.test(branding.primaryColour) ? branding.primaryColour : '#153c35', accentColour: /^#[a-f0-9]{6}$/i.test(branding.accentColour) ? branding.accentColour : '#d4e9dc' }, channel: link.channel, submitted, ...(codeOnlyVerification ? { verificationMethod: 'email_code' } : {}), ...(link.organisation_id===HOME_SEEKERS_ORGANISATION_ID ? {packagePreferenceRequired:true} : {}), ...(applicant ? { applicant } : {}) })
     }
     if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(body.submissionKey || '')) return reply(400, { error: 'Invalid application request.' })
     const errors = capturing ? {} : applicationErrors(body.answers)
@@ -83,13 +84,13 @@ export async function createRecruitmentIntakeResponse({ method = 'POST', headers
     if (data?.accepted !== true) throw new Error('unavailable')
     if (signingUp) {
       try {
-        const account = await createRecruitmentApplicant(db, link, body.submissionKey, normalizeRecruitmentContact(body.contact), body.password)
+        const account = await createRecruitmentApplicant(db, link, body.submissionKey, normalizeRecruitmentContact(body.contact), codeOnlyVerification ? undefined : body.password)
         // Keep the v1 readiness acknowledgement for forms opened before the
         // verification-required contract was released. It grants no session;
         // both existing and new accounts still require email ownership proof.
         return reply(account.duplicate ? 202 : 201, { accepted: true, contactAccepted: true, accountCreated: true, verificationRequired: true, duplicate: account.duplicate, stage: 'lead_received', emailVerification: 'pending' })
       } catch {
-        return reply(503, { contactAccepted: true, error: 'Your contact details are saved. Your account could not be created. Please retry, or contact the agency if you already have an account.' })
+        return reply(503, { contactAccepted: true, error: codeOnlyVerification ? 'Your contact details are saved. Email verification could not be prepared. Please retry with the same details.' : 'Your contact details are saved. Your account could not be created. Please retry, or contact the agency if you already have an account.' })
       }
     }
     return reply(data.duplicate ? 202 : 201, { accepted: true, duplicate: data.duplicate === true, ...(capturing ? { stage: 'lead_received', emailVerification: 'pending' } : {}) })

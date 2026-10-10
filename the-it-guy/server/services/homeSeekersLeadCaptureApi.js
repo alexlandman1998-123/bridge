@@ -1,5 +1,5 @@
 import { createHmac } from 'node:crypto'
-import { HOME_SEEKERS_PUBLIC_PATH, getHomeSeekersWebsiteConnection, isHomeSeekersPageUrl } from './homeSeekersWebsiteBridge.js'
+import { getHomeSeekersWebsiteConnection, homeSeekersPagePath, isHomeSeekersPageUrl } from './homeSeekersWebsiteBridge.js'
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const IDEMPOTENCY_PATTERN = /^[A-Za-z0-9._:-]{16,128}$/
@@ -84,11 +84,12 @@ export async function createHomeSeekersLeadCaptureResponse({ method = 'POST', he
 
   try {
     const { client, site, hostname: websiteHostname } = await getConnection()
+    const pagePath = homeSeekersPagePath(page.pathname)
     let pageId = null
     if (type !== 'property_enquiry') {
       const pageKind = type === 'valuation_request' ? 'valuation'
-        : page.pathname === `${HOME_SEEKERS_PUBLIC_PATH}/contact` ? 'contact'
-          : page.pathname === `${HOME_SEEKERS_PUBLIC_PATH}/about` ? 'about' : 'home'
+        : pagePath === '/contact' ? 'contact'
+          : pagePath === '/about' ? 'about' : 'home'
       const { data: publishedPage, error: pageError } = await client.from('website_pages')
         .select('id')
         .eq('website_site_id', site.id)
@@ -117,8 +118,8 @@ export async function createHomeSeekersLeadCaptureResponse({ method = 'POST', he
         userAgent: text(headers['user-agent'] || headers['User-Agent'], 512),
         leadIntent: type === 'valuation_request' ? 'sell'
           : type === 'general_enquiry' ? (['buy', 'sell', 'rent', 'other'].includes(leadIntent) ? leadIntent
-            : page.pathname === `${HOME_SEEKERS_PUBLIC_PATH}/renting` ? 'rent'
-              : page.pathname === `${HOME_SEEKERS_PUBLIC_PATH}/buying` ? 'buy' : 'other') : undefined,
+            : pagePath === '/renting' ? 'rent'
+              : pagePath === '/buying' ? 'buy' : 'other') : undefined,
       },
     })
     if (capture.error) throw capture.error

@@ -19,7 +19,7 @@ beforeEach(() => {
   Object.defineProperty(navigator, 'sendBeacon', { configurable: true, value: vi.fn(() => true) })
   feed([sale, rental])
 })
-afterEach(() => { cleanup(); vi.unstubAllGlobals() })
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.unstubAllEnvs() })
 
 it.each([
   [{ loading: true }, 'Loading current homes…'],
@@ -41,6 +41,21 @@ it('shows only published sales on the home page and hides deferred areas', async
   expect(document.querySelector('a[href="/demo/homeseekers/areas"]')).toBeNull()
   expect(document.querySelector('#areas')).toBeNull()
   expect(fetch).toHaveBeenCalledWith('/api/home-seekers/site', expect.objectContaining({ signal: expect.any(AbortSignal) }))
+})
+
+it('standalone navigation, search, mobile menu and property links use the domain root', async () => {
+  vi.stubEnv('VITE_HOME_SEEKERS_STANDALONE', 'true')
+  // Navigation arrays are created when the public entry's modules load.
+  vi.resetModules()
+  const { default: StandaloneHome } = await import('../HomeSeekersDemo')
+  render(<StandaloneHome />)
+  expect((await screen.findByRole('link', { name: 'View this home' })).getAttribute('href')).toBe('/properties/sale-1')
+  expect(screen.getByRole('link', { name: 'Home Seekers home' }).getAttribute('href')).toBe('/')
+  expect(screen.getByRole('search').getAttribute('action')).toBe('/buying#properties')
+  expect(document.querySelector('a[href="/buying?q=Moreleta+Park#properties"]')).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Open navigation' }))
+  expect(screen.getByRole('dialog', { name: 'Home Seekers navigation' }).querySelector('a').getAttribute('href')).toBe('/selling')
+  expect(document.querySelector('[href*="/demo/homeseekers"], [action*="/demo/homeseekers"]')).toBeNull()
 })
 
 it('keeps deferred sample areas off the guarantee page', () => {

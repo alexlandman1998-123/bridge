@@ -1,6 +1,6 @@
 import { Component, lazy, StrictMode, Suspense } from 'react'
 import { createRoot } from 'react-dom/client'
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import './index.css'
 
 // The public deployment must not import App or its private CRM/auth shell.
@@ -32,32 +32,41 @@ class WebsiteErrorBoundary extends Component {
   }
 }
 
-const base = '/demo/homeseekers'
+function LegacyDemoRedirect() {
+  const { pathname } = useLocation()
+  const path = pathname.slice('/demo/homeseekers'.length).replace(/^\/+/, '')
+  return <PageRedirect to={`/${path}`} />
+}
+
+function PageRedirect({ to }) {
+  const { search, hash } = useLocation()
+  return <Navigate to={`${to}${search}${hash}`} replace />
+}
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <BrowserRouter>
       <WebsiteErrorBoundary>
         <Suspense fallback={<main role="status" style={{ padding: '48px 24px', textAlign: 'center' }}>Loading Home Seekers…</main>}>
           <Routes>
-            <Route path="/" element={<Navigate to={base} replace />} />
-            <Route path={base} element={<Home />} />
-            <Route path={`${base}/guarantee`} element={<Home guaranteePage />} />
-            <Route path={`${base}/about`} element={<About />} />
-            <Route path={`${base}/contact`} element={<Contact />} />
-            <Route path={`${base}/selling`} element={<Selling />} />
-            <Route path={`${base}/buying`} element={<Buying />} />
-            <Route path={`${base}/buying/:propertyId`} element={<Property />} />
-            <Route path={`${base}/properties/:propertyId`} element={<Property />} />
-            <Route path={`${base}/renting`} element={<Renting />} />
-            <Route path={`${base}/join`} element={<Join />} />
-            <Route path={`${base}/buy`} element={<Navigate to={`${base}/buying`} replace />} />
-            <Route path={`${base}/sell`} element={<Navigate to={`${base}/selling`} replace />} />
-            <Route path={`${base}/rent`} element={<Navigate to={`${base}/renting`} replace />} />
-            <Route path={`${base}/developments`} element={<Navigate to={`${base}/buying`} replace />} />
-            <Route path={`${base}/people`} element={<Navigate to={`${base}/about`} replace />} />
-            <Route path={`${base}/areas`} element={<Navigate to={base} replace />} />
-            <Route path={`${base}/valuation`} element={<Navigate to={`${base}/selling`} replace />} />
-            <Route path="*" element={<main style={{ padding: '48px 24px', textAlign: 'center' }}><h1>Page not found</h1><a href={base}>Home Seekers home</a></main>} />
+            <Route path="/" element={<Home />} />
+            <Route path="/demo/homeseekers/*" element={<LegacyDemoRedirect />} />
+            <Route path="/guarantee" element={<Home guaranteePage />} />
+            <Route path="/about" element={<About />} />
+            <Route path="/contact" element={<Contact />} />
+            <Route path="/selling" element={<Selling />} />
+            <Route path="/buying" element={<Buying />} />
+            <Route path="/buying/:propertyId" element={<Property />} />
+            <Route path="/properties/:propertyId" element={<Property />} />
+            <Route path="/renting" element={<Renting />} />
+            <Route path="/join" element={<Join />} />
+            <Route path="/buy" element={<PageRedirect to="/buying" />} />
+            <Route path="/sell" element={<PageRedirect to="/selling" />} />
+            <Route path="/rent" element={<PageRedirect to="/renting" />} />
+            <Route path="/developments" element={<PageRedirect to="/buying" />} />
+            <Route path="/people" element={<PageRedirect to="/about" />} />
+            <Route path="/areas" element={<PageRedirect to="/" />} />
+            <Route path="/valuation" element={<PageRedirect to="/selling" />} />
+            <Route path="*" element={<main style={{ padding: '48px 24px', textAlign: 'center' }}><h1>Page not found</h1><a href="/">Home Seekers home</a></main>} />
           </Routes>
         </Suspense>
       </WebsiteErrorBoundary>

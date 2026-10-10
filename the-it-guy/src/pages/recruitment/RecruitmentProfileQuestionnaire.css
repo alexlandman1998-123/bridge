@@ -1,4 +1,24 @@
 .recruitment-profile { margin-top: 24px; }
+.recruitment-profile__navigation ol { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 8px; list-style: none; margin: 0 0 24px; padding: 0; }
+.recruitment-profile__navigation button { width: 100%; height: 100%; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 12px; border: 1px solid #d8d8d2; border-radius: 8px; background: #fff; color: #31312e; font: 600 12px/1.4 Asap,Arial,sans-serif; text-align: left; cursor: pointer; }
+.recruitment-profile__navigation button[aria-current] { border-color: var(--recruitment-accent,#f25c1f); background: var(--recruitment-accent-soft,#fff0e8); }
+.recruitment-profile__navigation button:focus-visible { outline: 2px solid var(--recruitment-accent,#f25c1f); outline-offset: 3px; }
+.recruitment-profile__navigation button:disabled { cursor: default; opacity: .65; }
+.recruitment-profile__navigation span { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: #f4f4f2; color: #31312e; }
+.recruitment-profile__navigation small { font-size: 11px; font-weight: 400; }
+.recruitment-profile__recovery { padding: 18px; margin: 20px 0; border: 1px solid #f25c1f; border-radius: 10px; background: #fff8f3; }
+.recruitment-profile .recruitment-profile__packages { padding: 0; margin-top: 28px; }
+.recruitment-profile__packages legend { color: #31312e; font-size: 16px; font-weight: 600; }
+.recruitment-profile__packages > p { color: #62625d; font-size: 13px; line-height: 1.6; }
+.recruitment-profile__packages > div { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }
+.recruitment-signup .recruitment-profile__packages label { display: flex; align-items: flex-start; gap: 10px; padding: 14px; margin: 0; border: 1px solid #d8d8d2; border-radius: 8px; cursor: pointer; }
+.recruitment-profile__packages label:has(input:checked) { border-color: var(--recruitment-accent,#f25c1f); background: var(--recruitment-accent-soft,#fff0e8); }
+.recruitment-profile__packages label:focus-within { outline: 2px solid var(--recruitment-accent,#f25c1f); outline-offset: 3px; }
+.recruitment-signup .recruitment-profile__packages input[type=radio] { width: 18px; height: 18px; min-height: 0; flex: 0 0 18px; margin: 2px 0 0; padding: 0; accent-color: var(--recruitment-accent,#f25c1f); }
+.recruitment-profile__packages strong { display: block; font-size: 13px; }
+.recruitment-profile__packages small { display: block; margin-top: 6px; font-size: 12px; line-height: 1.5; font-weight: 400; }
+@media(max-width:600px) { .recruitment-profile__packages > div { grid-template-columns: 1fr; } }
+@media(max-width:600px) { .recruitment-profile__navigation ol { grid-template-columns: repeat(2,minmax(0,1fr)); } }
 .recruitment-profile .recruitment-profile__part { color: var(--recruitment-accent-text,#bd4515); font-size: 12px; font-weight: 600; margin-top: 20px; }
 .recruitment-profile h4 { margin-top: 12px; }
 .recruitment-profile h5 { color: #31312e; font-size: 14px; margin: 20px 0 16px; }

@@ -8,7 +8,7 @@ const env={RECRUITMENT_INTAKE_FINGERPRINT_SECRET:'x'.repeat(32),HOME_SEEKERS_REC
 const applicant={emailVerification:'verified',stage:'lead_received',applicationSubmitted:false,contact:{firstName:'Fixture',lastName:'Applicant',email:'applicant@example.test',phone:'+27821234567'}}
 const email=applicant.contact.email, headers={host:'agency.test',origin:'https://agency.test'}
 function fixture({allowed=true, opened=true, error, verified=true, mismatch=false, enquiry=true}={}) {
-  const db={from:vi.fn(table=>{const q={select:()=>q,eq:()=>q,limit:()=>q,maybeSingle:async()=>({data:table==='recruitment_intake_links'?{id:'link',organisation_id:org,channel:'website',expires_at:'2099-01-01'}:enquiry?{id:'saved-enquiry'}:null})};return q}),rpc:vi.fn(async name=>({data:name==='recruitment_auth_budget'?allowed:name==='recruitment_open_applicant_session'?opened:name==='recruitment_resume_applicant'?applicant:null}))}
+  const db={functions:{invoke:vi.fn(async()=>({data:{verificationRequested:true,codeLength:8}}))},from:vi.fn(table=>{const q={select:()=>q,eq:vi.fn(()=>q),not:()=>q,order:()=>q,limit:()=>q,maybeSingle:async()=>({data:table==='recruitment_intake_links'?{id:'link',organisation_id:org,channel:'website',expires_at:'2099-01-01'}:enquiry?table==='recruitment_contact_receipts'?{lead_id:'saved-enquiry',submission_key:'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'}:table==='recruitment_applicant_sessions'?{lead_id:'saved-enquiry'}:{id:'saved-enquiry'}:null})};return q}),rpc:vi.fn(async name=>({data:name==='recruitment_auth_budget'?allowed:name==='recruitment_open_applicant_session'?opened:name==='recruitment_resume_applicant'?applicant:null}))}
   const session={data:{session:{access_token:'private-access',refresh_token:'private-refresh'}},error}
   const authClient={signInWithOtp:vi.fn(async()=>({error})),verifyOtp:vi.fn(async()=>session),signInWithPassword:vi.fn(async()=>session),getUser:vi.fn(async()=>({data:{user:{id:userId,email:mismatch?'foreign@example.test':email,email_confirmed_at:verified?'2026-10-07':null}}}))}
   return {db,authClient}
@@ -78,4 +78,44 @@ it('browser sends only selected auth fields with same-origin cookies',async()=>{
   const options=fetcher.mock.calls[0][1]
   expect(JSON.parse(options.body)).toEqual({action:'verify_email',email,code:'123456',token})
   expect(options.credentials).toBe('same-origin')
+  await expect(recruitmentSignupRequest('send_verification',{email},{fetcher:async()=>({ok:true,status:202,json:async()=>({})})})).rejects.toThrow('could not be requested')
+})
+it('Home Seekers sends its code-only email after the request budget and retains receipt binding',async()=>{
+  const f=fixture(), submissionKey='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+  const home=(fixture,extra={})=>createHomeSeekersSignupResponse({client:fixture.db,authClient:fixture.authClient,env,headers,body:{action:'send_verification',email,submissionKey,...extra}})
+  expect((await home(f)).body).toEqual({verificationRequested:true,resendAfterSeconds:60,codeLength:8})
+  expect(f.db.functions.invoke).toHaveBeenCalledWith('send-email',{body:{type:'home_seekers_recruitment_code',leadId:'saved-enquiry'}})
+  expect(f.db.rpc.mock.invocationCallOrder[0]).toBeLessThan(f.db.functions.invoke.mock.invocationCallOrder[0])
+  expect(f.authClient.signInWithOtp).not.toHaveBeenCalled()
+  const leads=f.db.from.mock.results.find((_,i)=>f.db.from.mock.calls[i][0]==='recruitment_leads').value
+  expect(leads.eq).toHaveBeenCalledWith('id','saved-enquiry')
+  expect(leads.eq).toHaveBeenCalledWith('contact_capture_json->>email',email)
+  const receipt=f.db.from.mock.results.find((_,i)=>f.db.from.mock.calls[i][0]==='recruitment_contact_receipts').value
+  expect(receipt.eq).toHaveBeenCalledWith('organisation_id',org)
+  expect(receipt.eq).toHaveBeenCalledWith('submission_key',submissionKey)
+  // Returning applicants keep their receipt when the public intake link rotates.
+  expect(receipt.eq.mock.calls.some(([column])=>column==='link_id')).toBe(false)
+  const blocked=fixture({allowed:false}), limited=await home(blocked)
+  expect(limited).toMatchObject({status:429,body:{retryAfterSeconds:60},headers:{'Retry-After':'60'}})
+  expect(blocked.db.functions.invoke).not.toHaveBeenCalled()
+  const failed=fixture();failed.db.functions.invoke.mockResolvedValue({error:{message:'private error'}})
+  const failure=await home(failed)
+  expect(failure).toMatchObject({status:503,body:{retryAfterSeconds:60}})
+  expect(failure.body.error).toContain('contact details are saved')
+  expect(JSON.stringify(failure)).not.toContain('private error')
+  const absent=fixture({enquiry:false})
+  expect((await home(absent)).body).toEqual({verificationRequested:true,resendAfterSeconds:60})
+  expect(absent.db.functions.invoke).not.toHaveBeenCalled()
+})
+it('Home Seekers exposes only the canonical receipt key after verification and restores it from a scoped cookie',async()=>{
+  const f=fixture(), submissionKey='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+  const home=(body,extra={})=>createHomeSeekersSignupResponse({client:f.db,authClient:f.authClient,env,headers,body,...extra})
+  const verified=await home({action:'verify_email',email,code:'12345678',submissionKey,contactSubmissionKey:'forged'})
+  expect(verified.body.applicant).toEqual({...applicant,contactSubmissionKey:submissionKey})
+  const session=f.db.from.mock.results.find((_,i)=>f.db.from.mock.calls[i][0]==='recruitment_applicant_sessions').value
+  expect(session.eq).toHaveBeenCalledWith('organisation_id',org)
+  expect(session.eq).toHaveBeenCalledWith('token_hash',expect.stringMatching(/^[a-f0-9]{64}$/))
+  const cookie=verified.headers['Set-Cookie'].split(';')[0]
+  expect((await home({action:'context'},{headers:{...headers,cookie}})).body.applicant).toEqual(verified.body.applicant)
+  expect(JSON.stringify(verified.body)).not.toMatch(/saved-enquiry|private-access|private-refresh|forged/)
 })

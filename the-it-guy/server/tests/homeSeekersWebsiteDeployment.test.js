@@ -37,11 +37,12 @@ test('the standalone website artifact serves its own CRM APIs', async (t) => {
   const previousEnv = Object.fromEntries(['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'WEBSITES_LEAD_FINGERPRINT_SECRET', 'HOME_SEEKERS_RECRUITMENT_INTAKE_TOKEN'].map((key) => [key, process.env[key]]))
   const rpcCalls = []
   const dispatchCalls = []
+  const verificationEmails = []
   const readQueries = []
   const applicantAccounts = new Map()
   const applicantSessions = new Map()
   const authRequests = []
-  const resumedApplicant = {emailVerification:'verified',stage:'lead_received',applicationSubmitted:false,contact:{firstName:'Fixture',lastName:'Applicant',email:'applicant@example.test',phone:'+27821234567'}}
+  const resumedApplicant = {emailVerification:'verified',stage:'lead_received',applicationSubmitted:false,contactSubmissionKey:'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',contact:{firstName:'Fixture',lastName:'Applicant',email:'applicant@example.test',phone:'+27821234567'}}
   let fixtureApplicant = resumedApplicant
   let accountCreations = 0
   let publications = [{
@@ -78,7 +79,7 @@ test('the standalone website artifact serves its own CRM APIs', async (t) => {
           return
         }
         assert.equal(user.email_confirm, false)
-        assert.equal(user.password, 'FixturePassword123')
+        assert.equal(user.password, undefined)
         assert.equal(user.app_metadata.recruitment_organisation_id, ORG_ID)
         // Store only the synthetic user acknowledgement, never its password.
         const saved = { id: user.id, email: user.email, app_metadata: user.app_metadata }
@@ -92,6 +93,12 @@ test('the standalone website artifact serves its own CRM APIs', async (t) => {
       return
     }
     if (request.method === 'POST') {
+      if (url.pathname === '/functions/v1/send-email') {
+        assert.equal(request.headers.authorization, 'Bearer fixture-server-key-never-public')
+        verificationEmails.push(await readBody(request))
+        response.end(JSON.stringify({ verificationRequested: true, codeLength: 8 }))
+        return
+      }
       if (url.pathname === '/functions/v1/website-lead-dispatcher') {
         dispatchCalls.push(await readBody(request))
         response.end(JSON.stringify({ dispatched: true }))
@@ -99,11 +106,16 @@ test('the standalone website artifact serves its own CRM APIs', async (t) => {
       }
       rpcCalls.push({ name: table, body: await readBody(request) })
       const args=rpcCalls.at(-1).body
+      if (table === 'recruitment_capture_contact') {
+        resumedApplicant.contactSubmissionKey=args.p_submission_key
+        fixtureApplicant.contactSubmissionKey=args.p_submission_key
+      }
       if (table === 'recruitment_auth_budget') { response.end('true'); return }
       if (table === 'recruitment_open_applicant_session') {
         assert.equal(args.p_organisation_id,ORG_ID)
         assert.equal(args.p_user_id,[...applicantAccounts.values()][0].id)
         assert.match(args.p_token_hash,/^[a-f0-9]{64}$/)
+        if (args.p_submission_key) assert.equal(args.p_submission_key,resumedApplicant.contactSubmissionKey)
         applicantSessions.set(args.p_token_hash,fixtureApplicant)
         response.end('true'); return
       }
@@ -143,7 +155,8 @@ test('the standalone website artifact serves its own CRM APIs', async (t) => {
       website_pages: [{ id: '7a9ecb18-5864-4ef8-b06f-bc5502a0a515' }],
       recruitment_intake_links: [{ id: 'c7f2c758-74fb-4b0f-b5a7-950732de0404', organisation_id: ORG_ID, channel: 'website', expires_at: '2099-10-07' }],
       recruitment_leads: [{id:'743f9651-330f-4c1a-909d-14c0e1e17092'}],
-      recruitment_contact_receipts: [{ lead_id: '743f9651-330f-4c1a-909d-14c0e1e17092' }],
+      recruitment_contact_receipts: [{ lead_id: '743f9651-330f-4c1a-909d-14c0e1e17092', submission_key: resumedApplicant.contactSubmissionKey }],
+      recruitment_applicant_sessions: applicantSessions.has(String(url.searchParams.get('token_hash') || '').slice(3)) ? [{ lead_id: '743f9651-330f-4c1a-909d-14c0e1e17092' }] : [],
       organisation_branding: [{ organisation_display_name: 'Home Seekers' }],
       organisations: [{ name: 'Home Seekers' }],
     }
@@ -237,7 +250,7 @@ test('the standalone website artifact serves its own CRM APIs', async (t) => {
         assert.ok(!bundled.includes(process.env.HOME_SEEKERS_RECRUITMENT_INTAKE_TOKEN))
         assert.ok(!bundled.includes('getMissionControlSnapshot'))
       }
-      assert.equal(config.routes[0].headers.Location, '/demo/homeseekers')
+      assert.ok(!config.routes.some((route) => route.src === '^/$' && route.headers?.Location))
     })
 
     await t.test('a hosted preview blocks every write before CRM or Auth access', async () => {
@@ -246,7 +259,7 @@ test('the standalone website artifact serves its own CRM APIs', async (t) => {
       process.env.VERCEL_ENV = 'preview'
       try {
         const context = await send('/api/home-seekers/recruitment', { action: 'context', preview: false })
-        assert.deepEqual(await context.json(), { preview: true, branding: { organisationName: 'Home Seekers' } })
+        assert.deepEqual(await context.json(), { preview: true, branding: { organisationName: 'Home Seekers' }, verificationMethod: 'email_code' })
         for (const action of ['signup', 'send_verification', 'verify_email', 'sign_in', 'resume', 'sign_out', 'save_profile', 'submit_profile']) {
           assert.equal((await send('/api/home-seekers/recruitment', { action, preview: false })).status, 503)
         }
@@ -277,6 +290,9 @@ test('the standalone website artifact serves its own CRM APIs', async (t) => {
         [REGISTERED_HOST, 'general_enquiry', '/demo/homeseekers/contact'],
         [WEBSITE_HOST, 'valuation_request', '/demo/homeseekers/selling'],
         [WEBSITE_HOST, 'property_enquiry', `/demo/homeseekers/buying/${LISTING_ID}`],
+        [WEBSITE_HOST, 'general_enquiry', '/contact'],
+        [WEBSITE_HOST, 'valuation_request', '/selling'],
+        [WEBSITE_HOST, 'property_enquiry', `/properties/${LISTING_ID}`],
       ]) {
         const response = await send('/api/home-seekers/leads', {
           type, name: 'Fixture Visitor', email: 'visitor@example.test', privacyAccepted: true,
@@ -291,7 +307,7 @@ test('the standalone website artifact serves its own CRM APIs', async (t) => {
         assert.equal(capture.body.p_attribution.pagePath, path)
       }
       const callCount = rpcCalls.length
-      assert.equal(dispatchCalls.length, 3)
+      assert.equal(dispatchCalls.length, 6)
       assert.ok(dispatchCalls.every((call) => Object.keys(call).length === 1 && call.eventId === '77777777-7777-4777-8777-777777777777'))
       const rejected = await send('/api/home-seekers/leads', {
         type: 'general_enquiry', name: 'Fixture Visitor', email: 'visitor@example.test', privacyAccepted: true,
@@ -315,10 +331,15 @@ test('the standalone website artifact serves its own CRM APIs', async (t) => {
       const analytics = await send('/api/home-seekers/analytics', { eventType: 'page_view', path: '/demo/homeseekers' })
       assert.equal(analytics.status, 204)
       assert.equal(rpcCalls.at(-1).name, 'website_record_analytics_event')
+      for (const [eventType, path, storedPath] of [['page_view', '/buying', '/buying'], ['guarantee_opened', '/join', '/demo/homeseekers/join']]) {
+        assert.equal((await send('/api/home-seekers/analytics', { eventType, path })).status, 204)
+        assert.equal(rpcCalls.at(-1).name, 'website_record_analytics_event')
+        assert.equal(rpcCalls.at(-1).body.p_page_path, storedPath)
+      }
       const application = await send('/api/home-seekers/applications', {
         name: 'Fixture Agent', email: 'agent@example.test', phone: '0820000000', area: 'Pretoria', sales: 4,
         message: 'Fixture application', privacyAccepted: true, idempotencyKey: 'fixture-application-1234567890',
-        pageUrl: `https://${WEBSITE_HOST}/demo/homeseekers/join`,
+        pageUrl: `https://${WEBSITE_HOST}/join`,
       })
       assert.equal(application.status, 201)
       assert.equal(rpcCalls.at(-1).name, 'home_seekers_capture_application')
@@ -327,15 +348,15 @@ test('the standalone website artifact serves its own CRM APIs', async (t) => {
     await t.test('the packaged signup endpoint saves contact then creates an unverified applicant and recovers retries', async () => {
       const context = await send('/api/home-seekers/recruitment', { action: 'context', token: 'forged' })
       assert.equal(context.status, 200)
-      assert.equal((await context.json()).branding.organisationName, 'Home Seekers')
+      assert.equal((await context.json()).verificationMethod, 'email_code')
       const details = { action: 'signup', submissionKey: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
         contact: { firstName: 'Fixture', lastName: 'Applicant', email: 'applicant@example.test', phone: '+27821234567', privacyAccepted: true },
-        password: 'FixturePassword123', organisationId: 'forged' }
+        organisationId: 'forged' }
       const first = await send('/api/home-seekers/recruitment', details)
       assert.equal(first.status, 201)
       assert.deepEqual(await first.json(), { accepted: true, contactAccepted: true, accountCreated: true, verificationRequired: true, duplicate: false, stage: 'lead_received', emailVerification: 'pending' })
       assert.equal(rpcCalls.at(-1).name, 'recruitment_capture_contact')
-      assert.ok(!JSON.stringify(rpcCalls.at(-1)).includes(details.password))
+      assert.ok(!JSON.stringify(rpcCalls.at(-1)).includes('password'))
       const retry = await send('/api/home-seekers/recruitment', details)
       assert.equal(retry.status, 202)
       assert.equal((await retry.json()).duplicate, true)
@@ -351,6 +372,8 @@ test('the standalone website artifact serves its own CRM APIs', async (t) => {
       const path='/api/home-seekers/recruitment', email='applicant@example.test'
       const sent=await send(path,{action:'send_verification',email})
       assert.equal(sent.status,202); assert.equal((await sent.json()).verificationRequested,true)
+      assert.deepEqual(verificationEmails.at(-1), { type: 'home_seekers_recruitment_code', leadId: '743f9651-330f-4c1a-909d-14c0e1e17092' })
+      assert.ok(!authRequests.some(row => row.path === '/auth/v1/otp'))
       const invalid=await send(path,{action:'verify_email',email,code:'654321'})
       assert.equal(invalid.status,401); assert.equal(invalid.headers['set-cookie'],undefined)
       const verified=await send(path,{action:'verify_email',email,code:'123456',userId:'forged',emailVerified:true})
@@ -380,7 +403,7 @@ test('the standalone website artifact serves its own CRM APIs', async (t) => {
       const signedIn=await send(path,{action:'sign_in',email:resumedApplicant.contact.email,password:'FixturePassword123'})
       assert.equal(signedIn.status,200)
       const headers={Cookie:signedIn.headers['set-cookie'][0].split(';')[0]}
-      const answers=validProfile(resumedApplicant.contact.email)
+      const answers={...validProfile(resumedApplicant.contact.email),packagePreference:'decide_later'}
       const response=await send(path,{action:'save_profile',answers:{...answers,password:'must-not-enter-the-CRM'},revision:0,page:3,intent:'complete',organisationId:'forged',leadId:'forged'},WEBSITE_HOST,headers)
       assert.equal(response.status,200)
       const result=await response.json()
@@ -407,7 +430,25 @@ test('the standalone website artifact serves its own CRM APIs', async (t) => {
       assert.equal((await conflict.json()).conflict,true)
     })
 
+    await t.test('the packaged Home Seekers flow re-verifies the original receipt and restores its saved draft', async () => {
+      const path='/api/home-seekers/recruitment', email=resumedApplicant.contact.email
+      const signedIn=await send(path,{action:'verify_email',email,code:'123456',submissionKey:resumedApplicant.contactSubmissionKey})
+      assert.equal(signedIn.status,200)
+      const saved=(await signedIn.json()).applicant
+      assert.equal(saved.contactSubmissionKey,resumedApplicant.contactSubmissionKey)
+      const headers={Cookie:signedIn.headers['set-cookie'][0].split(';')[0]}
+      await send(path,{action:'sign_out'},WEBSITE_HOST,headers)
+      assert.equal((await send(path,{action:'save_profile',answers:saved.profile.answers,page:3,revision:1,intent:'complete'},WEBSITE_HOST,headers)).status,401)
+      const requested=await send(path,{action:'send_verification',email,submissionKey:saved.contactSubmissionKey})
+      assert.equal(requested.status,202)
+      const reopened=await send(path,{action:'verify_email',email,code:'123456',submissionKey:saved.contactSubmissionKey})
+      assert.equal(reopened.status,200)
+      assert.deepEqual((await reopened.json()).applicant,saved)
+      assert.equal(accountCreations,1)
+      assert.equal(verificationEmails.at(-1).leadId,'743f9651-330f-4c1a-909d-14c0e1e17092')
+    })
     await t.test('the packaged review submits the saved profile, recovers retries and resumes its confirmation', async () => {
+      const leadDispatchCount = dispatchCalls.length
       const path='/api/home-seekers/recruitment'
       const signedIn=await send(path,{action:'sign_in',email:resumedApplicant.contact.email,password:'FixturePassword123'})
       const headers={Cookie:signedIn.headers['set-cookie'][0].split(';')[0]}
@@ -421,7 +462,7 @@ test('the standalone website artifact serves its own CRM APIs', async (t) => {
       const result=await response.json()
       assert.equal(result.accepted,true);assert.equal(result.duplicate,false)
       assert.equal(result.applicant.applicationSubmitted,true);assert.equal(result.applicant.stage,'application_submitted')
-      assert.deepEqual(result.applicant.submittedApplication.answers,validProfile(resumedApplicant.contact.email))
+      assert.deepEqual(result.applicant.submittedApplication.answers,{...validProfile(resumedApplicant.contact.email),packagePreference:'decide_later'})
       const call=rpcCalls.at(-1)
       assert.equal(call.name,'recruitment_submit_verified_profile')
       assert.equal(call.body.p_organisation_id,ORG_ID)
@@ -431,7 +472,7 @@ test('the standalone website artifact serves its own CRM APIs', async (t) => {
       const returning=await send(path,{action:'sign_in',email:resumedApplicant.contact.email,password:'FixturePassword123'})
       assert.equal((await returning.json()).applicant.applicationSubmitted,true)
       assert.equal(accountCreations,1)
-      assert.equal(dispatchCalls.length,3)
+      assert.equal(dispatchCalls.length,leadDispatchCount)
     })
 
     await t.test('an existing platform account proceeds from contact capture to verified applicant access without changing its account', async () => {
@@ -468,9 +509,12 @@ test('the standalone website artifact serves its own CRM APIs', async (t) => {
         assert.equal(response.status, 404)
         assert.deepEqual(await response.json(), { error: 'not_found' })
       }
-      const page = await fetch(`${websiteUrl}/demo/homeseekers/buying`)
-      assert.equal(page.status, 200)
-      assert.match(await page.text(), /<title>Home Seekers<\/title>/)
+      for (const path of ['/', '/about', '/contact', '/selling', '/buying?q=Moreleta+Park', '/renting', '/join', '/guarantee', `/properties/${LISTING_ID}`, '/demo/homeseekers', '/demo/homeseekers/buying']) {
+        const page = await fetch(`${websiteUrl}${path}`, { redirect: 'manual' })
+        assert.equal(page.status, 200, path)
+        assert.equal(page.headers.get('location'), null, path)
+        assert.match(await page.text(), /<title>Home Seekers<\/title>/)
+      }
       assert.equal((await fetch(`${websiteUrl}/agency/dashboard`)).status, 404)
     })
 
