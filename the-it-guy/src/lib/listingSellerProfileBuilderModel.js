@@ -91,7 +91,9 @@ export function selectListingSellerProfileBranch(draft = {}, nextBranch = '') {
     next[field] = ['multipleOwners', 'companyDirectors', 'companyBeneficialOwners', 'trustees', 'trustFounders', 'trustBeneficiaries'].includes(field) ? [] : ''
   })
   if (nextBranch === 'multiple_owners') {
-    const owners = draft.branch === 'multiple_owners' && Array.isArray(next.multipleOwners) ? [...next.multipleOwners] : []
+    // Historical forms can still say individual after co-owners were captured.
+    // Retain those people when the agent confirms the joint ownership route.
+    const owners = Array.isArray(next.multipleOwners) ? [...next.multipleOwners] : []
     if (!owners.length && [draft.sellerFirstName, draft.sellerSurname, draft.email, draft.phone, draft.idNumber].some(normalizeText)) {
       owners.push({
         ...createBlankSellerProfilePersonRecord('Owner', 0),
