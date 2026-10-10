@@ -1,6 +1,4 @@
 import { useEffect, useState } from 'react'
-import { supabase } from '../../lib/supabaseClient'
-import { checkRecruitmentApplicantGate } from './recruitmentApplicantGateCheck'
 
 export default function useRecruitmentApplicantGate(session) {
   const id = session?.user?.id || null
@@ -10,7 +8,7 @@ export default function useRecruitmentApplicantGate(session) {
     if (!id) return undefined
     let active = true
     function check() {
-      checkRecruitmentApplicantGate(supabase, id, { development: import.meta.env.DEV, listingPreview: import.meta.env.VITE_LOCAL_LISTING_PREVIEW === 'true' }).then(result => {
+      import('./recruitmentApplicantGateCheck').then(({ checkCurrentRecruitmentApplicantGate }) => checkCurrentRecruitmentApplicantGate(id)).then(result => {
         if (active) setState({ id, ...result })
       }).catch(() => { if (active) setState({ id, required: false, error: true }) })
     }
