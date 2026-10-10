@@ -39,7 +39,7 @@ test('mobile inventory reads every scoped page with stable ordering and complete
   const server = await createServer({ root, logLevel: 'silent', server: { middlewareMode: true } })
   try {
     const { getAgentPrivateListingSummaries } = await server.ssrLoadModule('/src/services/privateListingService.js')
-    const rows = Array.from({ length: 405 }, (_, i) => ({ id: uuid(i), organisation_id: org, assigned_agent_id: user, listing_status: 'active', title: `Unit ${i}`, is_active: true, development_id: i === 404 ? uuid(997) : null, unit_id: i === 404 ? uuid(996) : null, property_category: i === 404 ? 'commercial' : 'residential', seller_canonical_facts_json: { property: i === 404 ? { scheme: { unit_number: String(i) } } : { unitNumber: String(i) } } }))
+    const rows = Array.from({ length: 405 }, (_, i) => ({ id: uuid(i), organisation_id: org, assigned_agent_id: user, listing_status: 'active', title: `Unit ${i}`, listing_category: i === 0 ? 'rental' : 'private_sale', is_active: true, development_id: i === 404 ? uuid(997) : null, unit_id: i === 404 ? uuid(996) : null, property_category: i === 404 ? 'commercial' : 'residential', seller_canonical_facts_json: { property: i === 404 ? { scheme: { unit_number: String(i) } } : { unitNumber: String(i) } } }))
     const client = clientFor(rows)
     const inventory = await getAgentPrivateListingSummaries(user, { organisationId: org, fetchAll: true, coreFieldsOnly: true, includePublicationDetails: true, requireAvailable: true, client })
     assert.equal(inventory.length, 405)
@@ -54,6 +54,9 @@ test('mobile inventory reads every scoped page with stable ordering and complete
     assert.equal(inventory[404].propertyCategory, 'commercial')
     assert.ok(client.requests[0].columns.includes('development_id'))
     assert.ok(client.requests[0].columns.includes('property_category'))
+    assert.ok(client.requests[0].columns.includes('listing_category'))
+    assert.equal(inventory[0].listingCategory, 'rental')
+    assert.equal(inventory[1].listingCategory, 'private_sale')
     assert.equal(inventory[404].unitNumber, '404')
     assert.equal(inventory[404].bedrooms, 3)
     assert.equal(inventory[404].bathrooms, 1.5)

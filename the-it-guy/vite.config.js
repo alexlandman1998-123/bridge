@@ -390,6 +390,8 @@ export default defineConfig({
           if (normalizedId.includes('vite/preload-helper') || normalizedId.includes('commonjsHelpers.js')) {
             return 'vendor-runtime'
           }
+          // Share upload validation across listing and recruitment documents.
+          if (normalizedId.endsWith('/src/lib/documentUploadPolicy.js') || normalizedId.endsWith('/src/lib/documentUploadObservability.js')) return 'document-upload-policy'
           if (!normalizedId.includes('node_modules')) return undefined
           if (normalizedId.includes('/react/') || normalizedId.includes('/react-dom/') || normalizedId.includes('/react-router-dom/')) {
             return 'vendor-react'

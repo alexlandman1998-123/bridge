@@ -6676,6 +6676,7 @@ export async function getAgentPrivateListingSummaries(
       'mandate_type',
       'property_type',
       'property_category',
+      'listing_category',
       'development_id',
       'unit_id',
       'seller_lead_id',
