@@ -7,6 +7,17 @@ function rowLabels(model) {
   return model.groups.flatMap((group) => group.rows.map((row) => row.label))
 }
 
+test('saved joint ownership displays its owner structure beside both captured owners', () => {
+  const model = buildListingSellerInformationModel({ sellerOnboarding: { formData: {
+    ownerStructureType: 'multiple_owners',
+    owners: [{ name: 'First', surname: 'Owner' }, { name: 'Second', surname: 'Owner' }],
+    propertyAddress: '10 Example Street',
+  } } })
+  assert.equal(model.profileLabel, 'Multiple owners')
+  assert.equal(model.groups.find(group => group.key === 'property').rows.find(row => row.key === 'ownership').value, 'Multiple owners')
+  assert.deepEqual(model.groups.find(group => group.key === 'owners').rows.map(row => row.value), ['First Owner', 'Second Owner'])
+})
+
 test('company sellers show company, contact, authority and relevant property groups', () => {
   const model = buildListingSellerInformationModel({
     sellerOnboarding: {

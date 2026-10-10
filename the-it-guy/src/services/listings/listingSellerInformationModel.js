@@ -1,5 +1,5 @@
 import { createListingSellerProfileBuilderDraft } from '../../lib/listingSellerProfileBuilderModel.js'
-import { resolveListingSellerAuthorityContract } from '../../lib/sellerPartyAuthorityContract.js'
+import { getSellerProfileAuthorityContract, resolveListingSellerAuthorityContract } from '../../lib/sellerPartyAuthorityContract.js'
 
 export const LISTING_SELLER_INFORMATION_MODEL_VERSION = 'listing_seller_information_phase4_v1'
 
@@ -39,6 +39,7 @@ export function buildListingSellerInformationModel(listing = {}) {
   const authority = resolveListingSellerAuthorityContract(listing)
   const draft = createListingSellerProfileBuilderDraft(listing)
   const profileType = authority.profileType
+  const profileLabel = getSellerProfileAuthorityContract(profileType).label
   const groups = []
   const ownerName = clean([draft.sellerFirstName, draft.sellerSurname].filter(Boolean).join(' '))
 
@@ -121,7 +122,7 @@ export function buildListingSellerInformationModel(listing = {}) {
   const bonded = clean(draft.bondStatus).toLowerCase() === 'bonded' || clean(draft.bondHolder) || clean(draft.outstandingBond)
   groups.push(group('property', 'Property and ownership details', [
     { key: 'address', label: 'Property address', value: draft.propertyAddress, always: true },
-    { key: 'ownership', label: 'Owner structure', value: authority.label, always: true },
+    { key: 'ownership', label: 'Owner structure', value: profileLabel, always: true },
     { key: 'titleDeed', label: 'Title deed number', value: draft.titleDeedNumber },
     { key: 'bondStatus', label: 'Bond status', value: draft.bondStatus && draft.bondStatus !== 'unknown' ? draft.bondStatus : '' },
     { key: 'bondHolder', label: 'Bond holder', value: bonded ? draft.bondHolder : '' },
@@ -131,7 +132,7 @@ export function buildListingSellerInformationModel(listing = {}) {
   return Object.freeze({
     version: LISTING_SELLER_INFORMATION_MODEL_VERSION,
     profileType,
-    profileLabel: authority.label,
+    profileLabel,
     groups: Object.freeze(groups.filter(Boolean)),
     draft,
   })

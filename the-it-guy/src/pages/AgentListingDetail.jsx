@@ -13913,9 +13913,9 @@ function AgentListingDetail() {
               </Button>
               {sellerProfileBuilderStep > 1 ? <Button type="button" variant="secondary" onClick={() => setSellerProfileBuilderStep((step) => step - 1)} disabled={sellerProfileBuilderSaving}>Back</Button> : null}
               {sellerProfileBuilderStep < 3 ? (
-                <Button type="button" onClick={advanceSellerProfileBuilder} disabled={sellerProfileBuilderSaving}>Continue</Button>
+                <Button key="continue-seller-profile" type="button" onClick={advanceSellerProfileBuilder} disabled={sellerProfileBuilderSaving}>Continue</Button>
               ) : (
-                <Button type="submit" form="listing-seller-profile-builder-form" disabled={sellerProfileBuilderSaving}>
+                <Button key="save-seller-profile" type="submit" form="listing-seller-profile-builder-form" disabled={sellerProfileBuilderSaving}>
                   {sellerProfileBuilderSaving ? 'Saving...' : sellerOwnershipUnidentified ? 'Save Owner Details' : 'Save Seller Profile'}
                 </Button>
               )}
