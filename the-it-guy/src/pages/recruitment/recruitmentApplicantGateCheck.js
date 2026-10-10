@@ -8,11 +8,3 @@ export async function checkRecruitmentApplicantGate(client, userId, { developmen
   const membership = await client.from('organisation_users').select('user_id').eq('user_id', userId).eq('status', 'active').limit(1)
   return { required: false, error: Boolean(membership.error) || !membership.data?.length }
 }
-
-export async function checkCurrentRecruitmentApplicantGate(userId) {
-  const { supabase } = await import('../../lib/supabaseClient')
-  return checkRecruitmentApplicantGate(supabase, userId, {
-    development: import.meta.env.DEV,
-    listingPreview: import.meta.env.VITE_LOCAL_LISTING_PREVIEW === 'true',
-  })
-}

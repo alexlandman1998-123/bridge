@@ -7,7 +7,6 @@ import MobileRouteGuard from './components/mobile-shell/MobileRouteGuard'
 import PermissionGate from './components/PermissionGate'
 import TokenRouteGate from './components/routing/TokenRouteGate'
 import { AuthSessionProvider, useAuthSession } from './context/AuthSessionContext'
-import useRecruitmentApplicantGate from './pages/recruitment/useRecruitmentApplicantGate'
 import { OrganisationProvider, useOrganisation } from './context/OrganisationContext'
 import { WorkspaceProvider } from './context/WorkspaceContext'
 import { useWorkspace } from './context/WorkspaceContext'
@@ -359,7 +358,6 @@ const HomeSeekersBuying = lazy(() => import('./pages/HomeSeekersBuying'))
 const HomeSeekersProperty = lazy(() => import('./pages/HomeSeekersProperty'))
 const HomeSeekersRenting = lazy(() => import('./pages/HomeSeekersRenting'))
 const HomeSeekersJoin = lazy(() => import('./pages/HomeSeekersJoin'))
-const HomeSeekersLogin = lazy(() => import('./pages/HomeSeekersLogin'))
 const PublicDevelopmentLandingPage = lazy(() => import('./pages/PublicDevelopmentResponsiveRoute'))
 const BondDashboardPage = lazy(() => import('./pages/bond/BondDashboardPage'))
 const BondDevelopmentsPage = lazy(() => import('./pages/bond/BondDevelopmentsPage'))
@@ -477,8 +475,8 @@ const OnboardingLinksDemoPage = lazy(() => import('./pages/OnboardingLinksDemoPa
 const Pipeline = lazy(() => import('./pages/Pipeline'))
 const RevoSharedInboxPage = lazy(() => import('./pages/revo/RevoSharedInboxPage'))
 const RevoSharedInboxSettingsPage = lazy(() => import('./pages/revo/RevoSharedInboxSettingsPage'))
+const RecruitmentRouteAccess = lazy(() => import('./pages/recruitment/RecruitmentRouteAccess'))
 const RecruitmentApplicationPage = lazy(() => import('./pages/recruitment/RecruitmentApplicationPage'))
-const RecruitmentApplicantSetupPage = lazy(() => import('./pages/recruitment/RecruitmentApplicantSetupPage'))
 const RecruitmentPage = lazy(() => import('./pages/recruitment/RecruitmentPage'))
 const AgencyLeadListRoutePage = lazy(loadAgencyLeadListRouteModule)
 const AgencyLeadWorkspaceRoutePage = lazy(loadAgencyLeadWorkspaceRouteModule)
@@ -1884,7 +1882,6 @@ function RouteObservability() {
 function AppRoutes() {
   const location = useLocation()
   const { session, authLoading, authError, retryAuthBootstrap, logout, devAuthRole, setDevAuthRole } = useAuthSession()
-  const applicantGate = useRecruitmentApplicantGate(session)
   const pendingInvitePath = (() => {
     if (typeof window === 'undefined') return ''
     const partnerInvitePath = readPendingPartnerInvitePath()
@@ -1894,21 +1891,9 @@ function AppRoutes() {
     return `/invite/${token}`
   })()
 
-  if (location.pathname === '/applicant' || location.pathname.startsWith('/applicant/')) {
-    if (session?.user && !applicantGate.checking && !applicantGate.error && !applicantGate.required) return <Navigate to="/dashboard" replace />
-    return <Suspense fallback={<PageSkeleton label="Opening My Profile" />}><AppErrorBoundary scope="applicant-setup" title="My Profile failed to load" brandName="Home Seekers" fallbackPath="/applicant/my-profile" fallbackLabel="My Profile"><RecruitmentApplicantSetupPage /></AppErrorBoundary></Suspense>
-  }
-  if (applicantGate.checking) return <PageSkeleton label="Checking workspace access" />
-  if (applicantGate.error) return <div role="alert"><p>Workspace access could not be checked.</p><button type="button" onClick={applicantGate.retry}>Retry</button><button type="button" onClick={logout}>Sign out</button></div>
-  // The invitation is a separate acceptance step required before activation;
-  // it must remain reachable without opening an agency navigation shell.
-  const applicantAcceptanceRoute = /^\/(?:agent\/)?invite\/[^/]+$/.test(location.pathname) || location.pathname === '/auth/callback'
-  if (applicantGate.required && !applicantAcceptanceRoute) return <Navigate to="/applicant/my-profile" replace />
-  if (location.pathname === '/homeseekers/login') {
-    if (session?.user) return <Navigate to={pendingInvitePath || '/dashboard'} replace />
-    return <Suspense fallback={<PageSkeleton label="Opening Home Seekers login" />}><AppErrorBoundary scope="homeseekers-login" title="Login failed to load" brandName="Home Seekers" fallbackPath="/homeseekers/login" fallbackLabel="Log in"><HomeSeekersLogin /></AppErrorBoundary></Suspense>
-  }
   return (
+    <Suspense fallback={<PageSkeleton label="Checking workspace access" />}>
+      <RecruitmentRouteAccess session={session} logout={logout} pendingInvitePath={pendingInvitePath} Loading={PageSkeleton}>
     <WorkspaceProvider user={session?.user || null} authBypassRole={devAuthRole}>
       <OrganisationProvider>
         <EnvironmentValidationBanner />
@@ -4211,6 +4196,8 @@ function AppRoutes() {
         </Suspense>
       </OrganisationProvider>
       </WorkspaceProvider>
+      </RecruitmentRouteAccess>
+    </Suspense>
   )
 }
 
