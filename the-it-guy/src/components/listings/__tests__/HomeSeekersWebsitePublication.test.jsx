@@ -115,3 +115,12 @@ it('Edit listing opens the shared editor without saving or publishing', async ()
  expect(onEdit).toHaveBeenCalledTimes(1)
  expect(mocks.set).not.toHaveBeenCalled()
 })
+
+it('lifecycle mode hides content issues and unpublished edits and exposes no publishing actions', async () => {
+  mocks.get.mockResolvedValue({ ...connected, blockers: ['Content needs correcting.'], stale: true })
+  render(<WebsiteListingPublicationPanel {...props} publicationState={{ changeCount: 3, failedAt: '2026-10-10T10:00:00Z' }} manageActions={<button type="button">Manage listing</button>} />)
+  await screen.findByRole('button', { name: 'Manage listing' })
+  expect(screen.queryByText(/Changes not published|unpublished change|Content needs correcting|Failed ·/)).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Update website listing' })).toBeNull()
+  expect(mocks.set).not.toHaveBeenCalled()
+})

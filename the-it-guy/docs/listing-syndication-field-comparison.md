@@ -1,150 +1,108 @@
-# Arch9 listing syndication field comparison
+# Listing fields: portal contract audit
 
-Status: proposed product contract, based on the implemented Arch9 mappers and
-the Private Property Agency Feed Service API Rev 4.7.
+Audited 10 October 2026. Owner: primary Arch9 workspace and its existing portal adapters. This covers ordinary sale and rental creation, including residential, commercial, industrial, retail, mixed-use, agricultural and vacant-land categories.
 
-This is a comparison of listing data, not a decision to make one portal the
-source of truth. Arch9 owns the listing. Private Property and Property24 each
-receive a channel-specific representation of the same listing.
+## Sources and evidence
 
-## Reading this document
+- Property24 Listing Service **v55**, downloaded from <https://api.property24.com/swagger/v55-listing/docs>. Checked Listing, PropertyInfo, PropertyFeatures, CommercialInfo and RentalInfo schemas and enums. The local audit copy is `tmp/listing-contract-audit-20261010/property24-v55.json` at repository root.
+- Private Property **Agency Feed Service Rev 4.7**, supplied PDF `Agency Feed Service - Rev 4.7-1.pdf`: listing fields pp.14–20, attribute matrix and Appendix B moderation rules pp.100 onwards. The extracted local audit copy is `tmp/listing-contract-audit-20261010/private-property-rev47.txt`. Private Property supplies the feed contract through its integration team: <https://helpdesk.privateproperty.co.za/portal/en/kb/articles/getting-started-with-a-feed-integration>.
+- Actual Arch9 mappers: `server/services/property24ListingMapper.js`, both rental adapters and `server/services/privatePropertyListingMapper.js`.
+- Website publication RPC and Edge Function; notably `supabase/migrations/20260916121032_website_listing_optional_metadata.sql` at repository root. It supersedes older mandatory suburb/property-type rules.
 
-| Status | Meaning |
-| --- | --- |
-| Ready | Arch9 has a mapped field and the channel contract is verified. |
-| Capture | The fact belongs in Arch9, but is not consistently captured in the listing workflow yet. |
-| Transform | Arch9 owns the fact, but the channel needs a controlled mapping or code lookup. |
-| Blocked | We must not publish this category or feature to that channel until its exact contract is verified. |
-| Channel-only | A portal-specific setting that belongs in the publishing review, not the everyday listing form. |
+These are contract and local implementation checks. They do not prove a particular agency connection is enabled, that hosted migrations match the repository, or that a portal has accepted a live listing.
 
-## Product decision
+## Required fields by channel
 
-The standard listing form must capture real-world facts only. It must not ask
-an agent to choose a portal's XML enum or external identifier.
-
-The publishing review is where Arch9 resolves those facts for each channel,
-shows the result, and asks only for genuine portal-specific choices. A channel
-must be blocked when Arch9 cannot represent the listing truthfully.
-
-For example, a rental amount is stored as an amount plus a cadence. Arch9 must
-not silently turn a weekly rental into a monthly rental for a portal.
-
-## Shared core: one Arch9 fact, two channel outputs
-
-| Listing fact | Arch9 canonical field or model | Private Property | Property24 | Decision |
-| --- | --- | --- | --- | --- |
-| Listing reference | Stable Arch9 listing ID/reference | Required `PropertyId` | Required source reference/listing number linkage | Ready. Keep the Arch9 reference immutable after first publication. |
-| Listing purpose | Sale or rental | Required `ListingType` | Required `listingType` | Ready. |
-| Lifecycle | Draft, active, pending, sold/let, withdrawn | `ForSale`, `ToLet`, `PendingOffer`, `Sold`, `Inactive` | Sale: `Active`, `Pending`, `Sold`, `Withdrawn`; rental: `Active`, `Pending`, `Rented`, `Withdrawn` | Transform. Keep one richer Arch9 lifecycle and map deliberately. |
-| Listing category | Residential, land, farm/agricultural, commercial, industrial | Residential, Land, Farms, Commercial | Residential verified; commercial, industrial, agricultural and land/development currently blocked | Capture category once. Property24 non-residential publication remains blocked until its exact contract is verified. |
-| Property subtype | House, apartment, townhouse, office, warehouse, etc. | Home Type, Business Type, Farm Type, Land Type attributes as applicable | Verified Property24 property-type ID for residential | Transform through maintained channel catalogues, never free-text at publish time. |
-| Headline | Marketing title | Optional headline, maximum 200 characters | Recommended `descriptionHeader` | Ready. Require it as an Arch9 quality rule. |
-| Description | Marketing description | Required, maximum 4,000 characters | Required | Ready. Validate length and unsafe characters before both submissions. |
-| Address | Street number/name, unit, complex, suburb, town, province, coordinates and visibility preferences | Street name/number required; address is locked after activation; suburb ID preferred | Suburb ID required; street details supported | Capture completely before first publication. Treat post-activation address changes as a manual Private Property support case. |
-| Location privacy | Hide street, number, unit and complex settings | Explicit hide flags | `showLocation` control | One Arch9 privacy policy with portal-specific mapping. Warn that Private Property says hidden address detail can reduce ranking. |
-| Bedrooms and bathrooms | Numeric facts | Required for residential | Required for verified residential dwellings | Ready. |
-| Floor area | Square metres | Attribute where applicable | Required for verified residential dwellings; mapped as `floorArea` | Ready for residential. Capture universally where known. |
-| Erf/land area | Square metres/hectares and unit | Required `LandArea` for land | Available in Property24 property info; land category publication blocked | Capture now. Publish to Private Property; hold Property24 land until verified. |
-| Rates and taxes | Monthly amount and known/not-applicable state | Rates or combined levy/rates attribute | Mapped `municipalRatesAndTaxes` | Ready to capture; use a money amount plus frequency, not a display string. |
-| Levies | Monthly amount and known/not-applicable state | Levies or combined levy/rates attribute | Mapped `monthlyLevy` | Ready to capture. |
-| Parking | Garages, covered bays, open bays, carports | Parking/carport attributes | Garages and open parking are mapped | Capture structured counts rather than a single text field. |
-| Garden, pool and flatlet | Explicit yes/no/unknown facts | Attribute/feature mapping where supported | Present in Property24 feature payload | Ready in the data model. The UI must collect an explicit answer, including `No`, rather than infer it from omissions. |
-| Pets and furnished status | Explicit rental facts | PetsAllowed and related attributes | Required Property24 feature values for rental readiness | Ready as core rental data. |
-| Fibre and other features | Canonical feature catalogue with yes/no/unknown or applicable/not-applicable | Private Property attribute mapping | Property24 feature mapping only where its contract has a matching feature | Capture once. A feature may be shown on one portal only; never invent an equivalent where none exists. |
-| Images | Ordered image records, captions, cover choice and update timestamp | Minimum 3; up to 256 URLs; unchanged images must be sent as an explicit nil update | Required on a new listing; bytes are loaded for submit | Ready, with channel-specific delivery. Track image changes separately from listing changes. |
-| Floor plans | Media type `floor_plan` | Channel capability must be confirmed per feed payload | Supported as an identified floor-plan photo | Keep as a distinct media type. Do not flatten it into a generic image. |
-| Video and virtual tour | Canonical YouTube and Matterport links, validated into portal IDs | Separate `UpdateListingVideoOrMatterport` action after activation | Listing Service v55 accepts `youTubeVideoId` and `matterportSpaceId` | The listing preview shows both mapped IDs. Property24 receives them in the listing payload; Private Property needs its separate post-activation update. Other video providers are not mapped. |
-| Assigned agent | Primary Arch9 agent and optional additional agents | Agent must exist first; comma-separated multi-agent IDs accepted | One mapped contact agent is currently verified | Store ordered Arch9 agent assignments. Private Property may receive multiple; Property24 must show that it currently sends only the verified primary contact. |
-| Agency and branch | Organisation plus operating branch | Required branch GUID and active branch agent IDs | Required connected agency ID | Channel configuration, not listing data. Resolve server-side. |
-
-## Pricing and commercial terms
-
-| Listing fact | Private Property | Property24 | Arch9 decision |
+| Field or setting | Property24 | Private Property | Website |
 | --- | --- | --- | --- |
-| Standard sale price | Required positive `Price` | Verified `price` | Core amount and currency. |
-| POA | `SalesPricePresentation = Poa`; price is hidden | Verified `isPOA` | Core price presentation. |
-| Negotiable | Supported `SalesPricePresentation = Negotiable` | Not verified in the current Property24 contract | Core presentation plus a Property24 review warning until confirmed. |
-| Offers From | `SalesPricePresentation = OffersFrom` and a required positive `OffersFromPrice` no greater than price | Not verified in the current Property24 contract | Capture both asking price and minimum offer. Block or clearly omit the presentation on Property24 until confirmed. |
-| Auction | `AuctionOnly` mandate plus a separate auction/venue workflow | Not verified in the current Property24 contract | Core sales method, then Private Property-specific auction details in review. Do not publish an auction to Property24 without its approved schema. |
-| Rental amount | Required positive `Price` | Property24 rental implementation currently expects a monthly-rent model | Store amount separately from cadence. No automatic conversion. |
-| Rental cadence | Per month, week, day; per m2 additionally for Private Property commercial and commercial land | Current verified Property24 rental model is monthly only; weekly/daily/per-m2 mapping is not verified | Core enum. Private Property publishes directly; Property24 blocks non-monthly values until we obtain and test its supported representation. |
-| Rental deposit | Required for Private Property rentals | Captured by Property24 rental readiness, currently optional in its listing payload | Core rental term. Require in Arch9 for policy reasons if it is needed by the agency. |
-| Availability/occupation date | Optional `AvailableFrom` | Required by Arch9 Property24 rental readiness | Core rental fact. |
-| Lease term, utility inclusions and rental fees | Private Property attributes may represent some values | No direct verified Property24 Listing Service v53 mapping for utilities; some rental fields are readiness/marketing metadata | Core rental facts. Display as channel result, rather than pretending every fact is sent. |
-| Commercial price per m2 | Supported for commercial and commercial land rentals | Not verified | Core commercial pricing model, but Property24 publication is blocked pending the commercial contract. |
+| Seller/landlord name, contact or CRM record | Not required by listing payload | Not required; OwnerID is optional | Not required |
+| Signed mandate, mandate pack, FICA, disclosure, internal marketing approval | Not listing prerequisites | Not listing prerequisites | Not listing prerequisites |
+| Agency and agent connection | Connected agency and mapped contact agent IDs | Approved branch and mapped agent IDs | Published site, active domain and permitted organisation/destination |
+| Price | Positive price or sale POA | Positive amount; sale moderation minimum R10,000, including a numeric amount when hiding price with POA | Positive amount or explicit sale POA; POA hides the numeric public price |
+| Description | Required | Required, maximum 4,000 characters; no URLs, telephone numbers or physical address in public copy | Not a publication prerequisite |
+| Title | Optional descriptionHeader | Headline optional | Required; generated from property/address when no custom title is entered |
+| Photos on initial publish | At least one | At least three for sales and rentals | At least one HTTPS image, copied to durable public media automatically |
+| Location | Property24 suburb ID, resolved from address | Street number/name; suburb/town/province for text matching, or supported suburb lookup; sectional-title unit and complex | Suburb and property type are optional metadata |
+| Property type/category | Valid catalog type ID | Residential, Commercial, Farms or Land with the relevant type attribute | Optional metadata |
+| Floor size, zoning, parking | Optional; supplied values must fit schema | Optional except positive land area for Land | Optional |
+| Residential beds/baths | Optional | Bedrooms required (zero allowed); bathrooms required and greater than zero | Optional |
+| Rental deposit | Optional | Known amount required; zero is valid, including explicit No deposit | Optional |
+| Rental availability / lease period | Optional | Optional | Optional |
+| Rental cadence | Month, Week, Day, Year, SquareMetre | PerMonth, PerWeek, PerDay; PerM2 only Commercial/commercial land. Annual unsupported | Amount and cadence retained; labels reflect month/week/day/year/m² |
+| Expiry | Required API date, initial default 90 days independent of mandate | Deprecated feed expiry is not an agent capture prerequisite | Not a capture prerequisite |
+| Required feature enums | Adapter supplies supported unknown/default schema values; no new user checklist | Category-specific attributes below | No user checklist |
 
-## Specialist categories
+Private Property's feed `MandateType` is an API enum (sale/rental/house-share etc.). It does **not** require Arch9's signed mandate workflow to be completed. Full/sole mandate exclusivity and auction-specific metadata remain conditional features. No legal compliance conclusion is implied by the API contract.
 
-| Category | Private Property requirements and capabilities | Property24 status | Arch9 facts to capture before any UI work |
-| --- | --- | --- | --- |
-| Residential | Bedrooms, bathrooms and Home Type are mandatory | Verified for house, apartment/flat and townhouse | Property subtype, beds, baths, floor size, parking, pets, furnished, garden, pool, flatlet. |
-| Land | Land Area mandatory; Land Type defaults to residential land if omitted | Blocked pending land/development contract | Erf/land size and unit, zoning, development rights, rates, levies, price presentation. |
-| Farm/agricultural | Farm Type mandatory; Farm Name supported; auction flow supported | Blocked pending agricultural contract | Farm name, farm type, size/unit, water supply/rights, agricultural use, access, infrastructure, auction details where relevant. |
-| Commercial | Business Type mandatory; commercial rentals support per m2 | Blocked pending commercial contract | Gross lettable area, zoning, business type, parking, sale/lease terms, price cadence. |
-| Industrial | Maps under Private Property Commercial category with appropriate business type | Blocked pending industrial contract | Warehouse/factory area, yard size, power supply, loading access, zoning, parking. |
+## Category coverage
 
-## Channel-only settings for the publishing review
-
-These settings do not belong in the ordinary listing form. They should be
-shown only when a selected channel and listing category make them relevant.
-
-| Channel | Setting | Rule |
+| Arch9 category | Property24 type IDs / transactions | Private Property mapping / special requirement |
 | --- | --- | --- |
-| Private Property | Branch connection and approval | Resolved from the organisation. Publishing is blocked without enabled, approved configuration and server-held credentials. |
-| Private Property | Agent mapping and order | The selected agents must exist on the branch. Preserve Arch9 order in the request and show any Private Property normalization as a warning. |
-| Private Property | Mandate type | Required: rental, house share, full/sole, open, auction-only. Restricted financial-institution mandate types need Private Property authorisation. |
-| Private Property | Sales price presentation | Standard, POA, Negotiable, Offers From; validate the Offer From amount before submit. |
-| Private Property | Exclusive days | Sale plus full mandate only, 1-92 days, subject to the Exclusive Listings agreement. |
-| Private Property | Auction details | Venue and auction details must be configured through the Private Property auction workflow. |
-| Private Property | Image update choice | The adapter decides whether images changed. It must send the explicit nil image collection when they did not. This is not an agent-facing toggle. |
-| Property24 | Organisation connection and mapped primary agent | Resolved from server-side settings and the Arch9 assignment. |
-| Property24 | Property type and suburb mapping | Required external catalogue mappings. Surface any unmapped value as a blocker. |
-| Property24 | Expiry date | Required and must be in the future. |
-| Property24 | Category availability | Residential is currently eligible; commercial, industrial, agricultural and land/development remain explicitly blocked pending verified contracts. |
-| Property24 | Rental cadence | Monthly is the only currently verified model. Weekly, daily and per-m2 must be blocked until verified. |
+| Residential | House 4, Apartment 5, Townhouse 6; Sale + Rental | Residential; HomeType, bedrooms, positive bathrooms |
+| Commercial | 11; Sale + Rental | Commercial; BusinessType |
+| Industrial | 12; Sale + Rental | Commercial; Industrial BusinessType |
+| Retail | 11; Sale + Rental | Commercial; Retail BusinessType |
+| Mixed use | 11; Sale + Rental | Commercial; subtype mapped by adapter |
+| Agricultural | 10; Sale + Rental | Farms; FarmType |
+| Vacant land | 8; Sale + Rental | Land; positive LandArea and unit; LandType defaults to residential land |
 
-## Lifecycle and operational actions
+The old Property24 commercial-rental, land-rental and industrial category blocks were Arch9 restrictions. v55 exposes the relevant category fields and Rental transaction schema. Those blocks are removed locally. Missing zoning, parking and floor/land size no longer block Property24; malformed supplied measurements still do. Private Property's positive land area requirement remains channel-specific.
 
-| Action | Private Property | Property24 | Product rule |
-| --- | --- | --- | --- |
-| Create | `UpdateListing` with a new external listing ID | Create/publish through the listing service | One user command, two independent channel submissions and results. |
-| General update | `UpdateListing`; do not resend images unless changed | Update through the verified listing service | Diff listing facts and media separately. |
-| Price or feature update | `UpdateListing` | Update through the verified listing service | Preflight again before submission because rules may have changed. |
-| Image update | Update listing with the current ordered image set | Update with image bytes | Maintain one media library and per-channel delivery audit. |
-| Change address | Ignored after activation; Private Property support must correct it | Channel behaviour must be confirmed | Warn before first submit and block silent edits after Private Property activation. |
-| Change agent | Multi-agent update supported | One verified contact-agent reassignment | Keep an ordered agent roster in Arch9; the review must say exactly what each portal will receive. |
-| Deactivate/withdraw | `Inactive` via the prescribed status update flow | `Withdrawn` | Present as a channel-specific result, not a single assumed status. |
-| Sold/let | `Sold` or applicable status | `Sold` / `Rented` | Map from the same Arch9 outcome. |
-| Reactivate | Status update/republication where permitted | Lifecycle update where permitted | Require a fresh readiness check and preserve external reference. |
+House-share remains unsupported in the current Property24 adapter and is explained before submission. Private Property supports it. Auction-specific workflows, institutional mandate types and special price presentations must still use their documented adapters; ordinary activation does not fabricate those settings.
 
-## Gaps to settle before building the publishing review UI
+## User flow and findings
 
-1. Obtain the exact Property24 schemas and supported enumerations for commercial,
-   industrial, agricultural/farm and land/development listings. These categories
-   are intentionally blocked in the current Arch9 implementation.
-2. Confirm Property24's official handling of weekly, daily and per-m2 rental
-   pricing, Offers From, Negotiable pricing, auctions, farm name
-   and multiple listing agents. Do not infer support from the public website.
-3. Define the Arch9 canonical feature catalogue: each feature needs a stable key,
-   a type (boolean, count, enum or text), applicability rules and mappings for
-   both channels. Fibre is one entry in this catalogue, not a special case.
-4. Replace scattered free-text listing facts with typed facts where necessary:
-   rental cadence, price presentation, mandate type, property category/subtype,
-   areas and area units, availability, agent roster/order, and address privacy.
-5. Decide the organisation policy for optional-but-commercially-important facts
-   such as deposit, rates, levies, utilities and lease term. A portal may allow
-   omission, while Arch9 may choose to require it for quality.
+- Choose channels in Property details, so their field requirements are known while capturing. Address/type issues appear there, description/photo issues in Marketing, and rental price/deposit/cadence issues in Rental terms. Review links return to the relevant step. Requirements disappear when their channel is deselected.
+- New sales listings defer seller capture. New rentals defer landlord and mandate capture. Missing mandate, internal approval, availability, pets or deposit policy do not create a Property24 publication gate. Supplied optional data is still validated rather than silently replaced.
+- Submit & activate saves and verifies property details/photos, then starts selected channel requests concurrently and opens the saved record. Agents do not need a separate readiness-check/prepare/publish sequence for initial submission. Background receipts distinguish submission, rejection and uncertainty; live status requires external confirmation.
+- Website initial submission previously left `listing_publication_data.status` as Draft, which the website function refuses to publish. Initial activation now prepares that projection automatically before requesting publication.
+- Website pricing previously required a numeric price even for explicit POA, and the renderer labelled all rentals per month. The forward migration and website renderer now preserve explicit POA and the captured rental cadence.
+- Property24 rental publishing has a server enablement setting. Rental capture checks it up front through channel availability. Changing that hosted setting is separate from changing listing fields.
+- Channels remain for subsequent updates and individual withdrawals. Landlord CRM stage transitions and document signing remain separate workflows; no signed evidence is fabricated by listing activation.
 
-## Recommended build sequence
+## Remaining provider checks and practical limits
 
-1. Approve the canonical Arch9 field list and feature catalogue from this matrix.
-2. Add the missing core capture fields to the listing and rental workflows.
-3. Complete the official Property24 contract audit and add tested mappers for
-   each currently blocked category.
-4. Build one server-side channel preflight response that returns the status,
-   mapped outcome, warnings and blockers for both portals.
-5. Build the publishing-review modal from that response. It should offer
-   `Private Property settings` and `Property24 settings` sections, but it must
-   not allow a browser request to bypass the server-side checks.
-6. Pilot each category/channel combination using controlled test listings,
-   then enable it per organisation only after the outcome is verified.
+Client validation cannot prove a free-text suburb matches a portal catalog, detect a duplicate portal advert, inspect photo moderation, or guarantee the agency/agent remains connected between capture and submission. Those checks still run at the integration boundary and can return channel errors. Private Property also applies subjective description/photo moderation. There is no evidence here that either portal promises instantaneous publication.
+
+The local forward migration `20261010111500_website_listing_public_price_terms.sql` adds explicit sale POA support to both own and partner website publication and carries rental cadence into new/updated snapshots. Existing website snapshots need a channel update to refresh their public terms; the migration does not silently republish existing stock. Provider processing time and live publication latency have not been measured in this local audit. No live listings, paid deeds requests, remote data changes or deployments were performed.
+
+## Local verification
+
+- `npm run check:app`: lint completed with no errors (existing warnings remain), baseline tests and production build passed.
+- `npm run check:website`: website tests, type checking and production build passed. The final website test run includes 39 passing tests.
+- Focused Vitest coverage: channel field rules, initial publication, rental creation UI/recovery, rental saving, portal blockers and field mapping. Tests include all seven mapped categories, portal requests running independently, no duplicate creation, no landlord/mandate prerequisites, scoped website preparation and immediate address/marketing guidance.
+- Existing Node contracts passed for category models, specialist mappings, commercial facts/readiness, rental backend/API publication, Private Property preview, listing save recovery and rental data capture.
+- `node --test the-it-guy/server/tests/websiteListingPriceTerms.test.js` (from repository root): executes the actual own/partner website functions and new migration in local PostgreSQL/PGlite; verifies POA, all five rental cadences, missing-price rejection, media and organisation checks, and service-only commit permissions.
+
+
+## Listing performance follow-up — 10 October 2026
+
+Verified local changes in the primary workspace/shared portal code:
+
+- Property24 prepared photos serially before sending the payload. It now prepares two at a time for sale and rental submissions, with at most two raw-image preparations in flight. The cover/gallery order determines the total byte budget even if a later photo downloads first. Existing image quality, original-format fallback, size limits and failure reporting remain in place.
+- Each initial channel completion dispatched a full listing refresh, potentially repeating rental overview, media, status and sales offer reads three times. Per-channel receipts still update immediately; one full refresh follows all initial submissions. The full channel-detail refresh therefore waits for the slowest selected submission, while its faster peers' submission receipts are already visible.
+- Rental list loading fetched document requirements, uploaded documents and mandate packet/version history for card/list callers. These reads are now omitted. Existing agent-list callers retain the full default. Organisation/branch/agent scope, visibility, exact-count completeness checks, canonical terms, onboarding compatibility and distribution reads are preserved.
+
+Controlled benchmark against the pre-change implementation: **24 JPEGs with a synthetic 40 ms download delay each**, 1,002 ms before and 507 ms after; identical returned media and reports. Peak downloads changed from one to two; the number of downloads remained 24. This is a local photo-preparation benchmark, not production upload latency, conversion throughput or portal publication time. Evidence: repository-root `tmp/listing-performance-20261010/photo-benchmark.json`.
+
+Verification: 64 focused Vitest tests passed (rental save/retry/workspace/stock, publication receipts and listing reads); nine upload-queue/storage tests and the Property24 real-listing preview, sale publish and rental publish API scripts passed. ESLint on changed implementation files reported no errors and two existing unused-function warnings. Tests cover reversed download completion, ordered byte budgets, partial photo failures, independent channel receipts and one final refresh. No live listing was sent and no hosted changes were made.
+
+Remaining measurement: production save/upload/portal-acceptance timings and portal-confirmed-live time have not been measured. Rental lists still load full onboarding and publication data for legacy compatibility and all media for their existing consumers; further slimming needs representative hosted-data profiling. Browser upload concurrency remains bounded rather than increased indiscriminately. Private Property and website publication retain their provider/public-media processing; this change does not promise instant external publication.
+
+## Background publishing and draft/photo recovery — 10 October 2026
+
+Implemented in the primary Arch9 workspace, with a shared database queue and website Edge Function delegation. This replaces the browser-owned initial publication requests described above. The public website renderer is unchanged by this follow-up.
+
+- Sales, rentals and developer creation now wait for a durable publication acknowledgement, then open the saved listing. A server worker submits selected Property24, Private Property and website channels independently. Closing the tab after acknowledgement does not abandon publication. Provider acceptance remains distinct from a confirmed live advert.
+- Initial requests are idempotent per listing/channel. Claim tokens prevent competing workers from sending the same queued job. A one-minute recovery cron picks up queued work; stale pre-dispatch claims can resume. Interrupted provider calls become **uncertain**, with no automatic resend that could create duplicate adverts. Failed/uncertain submissions require the existing Channels review/update action.
+- Queue requests use the signed-in actor; the worker resolves that stored actor afresh and rechecks organisation access and active listing state. Website delegation is service-only, bound to a particular listing, job and claim. Browser readers can see receipts but not claim tokens or insert/update jobs directly.
+- Creation forms automatically save text and original photo files in this browser. Recovery keeps photo order, cover selection and the listing identity, scoped to user/workspace/type. Drafts expire after seven days. Storage failures show a warning; a failed recovery read cannot overwrite the previous photo copy. Clearing browser data or using another device does not recover an unsaved browser draft.
+- Sales and developer inserts now use the same reserved-identity protection as rental creation. A lost insert response retries the original record. Synchronous identity receipts take precedence over an older photo transaction when reopening. Existing compatible sale/developer text drafts migrate to the new workspace-scoped key.
+- Desktop developer creation and Save Draft now retain the development/unit classification and persist marketing/photos through the same verified path as mobile creation. Private Property permits an active developer member to publish their assigned/created development-unit listing, retaining ownership checks.
+- Activity receipts include queue-wait and worker-processing milliseconds. These are instrumentation for future measurements, not a measured production speed improvement.
+
+Release dependencies, not yet applied: migration `20261010135448_listing_background_publication_jobs.sql`, both website publication Edge Functions, and the primary app/API deployment together. The worker requires existing server-only Supabase/provider configuration, an anon key for authenticated enqueue, and `CRON_SECRET` for the configured cron. The Vite development middleware also exposes the same enqueue handler. Apply the migration and Edge Functions before exposing the new frontend. No live publishing, hosted migration or deployment was performed in this task.
+
+Verification includes executable local PostgreSQL queue/RLS/claim tests, API acknowledgement tests, worker outcome and actor tests, original-file IndexedDB tests, creation/retry handlers, rental UI tests, and website function type/security checks. A Chromium reload check restored the original photo bytes, cover and listing identity for sales, rentals and developer drafts. The final `npm run check:app` passed: lint had no errors (existing warnings remain), baseline tests passed, and the production build passed. Evidence is recorded in `tmp/listing-durable-recovery-20261010/check-app-final.log` at repository root.
+
+Not included in this delivery: uploading photos before submission, further Private Property query consolidation, cross-device recovery of unsaved drafts, or a production latency benchmark.

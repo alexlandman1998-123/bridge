@@ -39,7 +39,7 @@ function PropertyCard({ listing, featured }) {
         <button type="button" aria-label={`Save ${listing.address}`}>
           <Heart size={18} />
         </button>
-        <span>{listing.type === "Land" ? "LAND" : "FOR SALE"}</span>
+        <span>{listing.statusLabel.toUpperCase()}</span>
       </div>
       <div className="hs-buying-card__body">
         <p>

@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs'
 import { PGlite } from '@electric-sql/pglite'
 import { buildSellerLeadAgentOnboardingSubmission, createSellerLeadAgentOnboardingDraft, buildSellerLeadManualCapturePayload, buildSellerLeadSigningPackTermsPatch } from '../src/lib/sellerLeadManualCaptureModel.js'
 import { PROPERTY_DISCLOSURE_QUESTIONS, isPropertyDisclosureDigitallyComplete } from '../src/lib/propertyDisclosure.js'
-import { buildListingSellerCanonicalUpdate, applyListingSellerCanonicalUpdateSnapshot } from '../src/services/listings/listingSellerCanonicalUpdateModel.js'
+import { buildListingSellerCanonicalUpdate, applyListingSellerCanonicalUpdateSnapshot, applyListingSellerOnboardingSaveSnapshot, getSellerOnboardingSaveRevision } from '../src/services/listings/listingSellerCanonicalUpdateModel.js'
 import { buildSellerSigningPlan } from '../src/lib/sellerSigningPlanModel.js'
 import { buildSellerOnboardingSigningPackSnapshot } from '../src/core/documents/sellerOnboardingSigningPackSnapshot.js'
 import { buildSellerPostOnboardingDrafts } from '../src/core/documents/sellerPostOnboardingDrafts.js'
@@ -411,5 +411,170 @@ test('manual seller matrix survives persisted capture, listing edit and reviewed
         }
       })
     }
+  } finally { await db.close() }
+})
+
+async function guardedFixture() {
+  const db = await fixture()
+  await installCanonicalSave(db)
+  await db.exec(readFileSync(new URL('../../supabase/migrations/20261006095510_seller_save_non_retryable_conflict.sql', import.meta.url), 'utf8'))
+  await db.exec(readFileSync(new URL('../../supabase/migrations/20261010215549_seller_save_concurrency_guards.sql', import.meta.url), 'utf8'))
+  return db
+}
+const revisionOf = (onboarding) => ({ onboardingId: onboarding.id, updatedAt: onboarding.updated_at })
+async function savedState(db) {
+  await actor(db, 'postgres')
+  return (await db.query('select to_jsonb(l) listing, to_jsonb(o) onboarding from private_listings l join private_listing_seller_onboarding o on o.private_listing_id=l.id where l.id=$1', [listingA])).rows[0]
+}
+async function guardedAgentSave(db, baseline, mutation, name) {
+  await actor(db, 'authenticated', agentA)
+  return (await db.query(`select save_private_listing_seller_canonical_update(
+    $1::uuid,$2::jsonb,$3::jsonb,'{}'::jsonb,'{}'::jsonb,'in_progress','individual','individual','single',
+    $4::uuid,'seller_edit','test',array['sellerName'],$5::timestamptz) result`, [listingA,
+    { sellerName: name, __sellerSave: revisionOf(baseline.onboarding) }, { seller: { name } }, mutation, baseline.listing.updated_at])).rows[0].result
+}
+async function guardedProgress(db, baseline, form = {}) {
+  await actor(db, 'anon')
+  return rpc(db, 'bridge_update_private_listing_seller_onboarding_progress', 'token-a', { ...form, __sellerSave: revisionOf(baseline.onboarding) })
+}
+async function guardedProfile(db, baseline, form = {}, status = 'in_progress') {
+  await actor(db, 'authenticated', agentA)
+  return (await db.query(`select save_private_listing_seller_onboarding_profile(
+    $1::uuid,'token-a',$2::jsonb,$3::jsonb,$4,'individual','individual','single') result`,
+  [listingA, form, revisionOf(baseline.onboarding), status])).rows[0].result
+}
+
+test('guarded seller and agent saves reject both stale interleavings without losing the committed data', async () => {
+  const db = await guardedFixture()
+  try {
+    const original = await savedState(db)
+    const agentSaved = await guardedAgentSave(db, original, uuid(501), 'Agent update')
+    await assert.rejects(guardedProgress(db, original, { sellerName: 'Old seller draft' }), error => error.code === 'PT409')
+    const afterConflict = await savedState(db)
+    assert.equal(afterConflict.onboarding.form_data.sellerName, 'Agent update')
+    assert.deepEqual(afterConflict.listing.seller_canonical_facts_json, agentSaved.listing.seller_canonical_facts_json)
+    const sellerSaved = await guardedProgress(db, afterConflict, { sellerName: 'Seller update', canonicalSellerFacts: { seller: { name: 'Seller update' } } })
+    await assert.rejects(guardedAgentSave(db, afterConflict, uuid(502), 'Older agent draft'), error => error.code === 'PT409')
+    const latest = await savedState(db)
+    assert.equal(latest.onboarding.form_data.sellerName, 'Seller update')
+    assert.deepEqual(latest.listing.seller_canonical_facts_json, sellerSaved.listing.seller_canonical_facts_json)
+    assert.equal(latest.onboarding.form_data.__sellerSave, undefined)
+    assert.equal((await db.query("select count(*)::int n from private_listing_activity where activity_type='seller_canonical_update'")).rows[0].n, 1)
+  } finally { await db.close() }
+})
+
+test('guarded submission rejects stale forms and a late draft cannot reopen completed onboarding', async () => {
+  const db = await guardedFixture()
+  try {
+    const original = await savedState(db)
+    await guardedAgentSave(db, original, uuid(503), 'Latest agent details')
+    await actor(db, 'anon')
+    await assert.rejects(rpc(db, 'bridge_complete_private_listing_seller_onboarding', 'token-a', {
+      sellerName: 'Stale submission', __sellerSave: revisionOf(original.onboarding),
+    }), error => error.code === 'PT409')
+    const baseline = await savedState(db)
+    await actor(db, 'anon')
+    const receipt = await rpc(db, 'bridge_complete_private_listing_seller_onboarding', 'token-a', {
+      sellerName: 'Latest agent details', __sellerSave: revisionOf(baseline.onboarding),
+    })
+    assert.equal(receipt.status, 'completed')
+    await assert.rejects(guardedProgress(db, baseline, { sellerName: 'Late autosave' }), error => error.code === 'PT409')
+    const completed = await savedState(db)
+    await assert.rejects(guardedProgress(db, completed, { currentStep: 1 }), error => error.code === 'PT409')
+    const edited = await guardedProfile(db, completed, { ...completed.onboarding.form_data, phone: '0820000000' }, 'in_progress')
+    assert.equal(edited.status, 'completed')
+    const final = await savedState(db)
+    assert.equal(final.listing.seller_onboarding_status, 'completed')
+    assert.equal(final.onboarding.submitted_at, completed.onboarding.submitted_at)
+    assert.equal(final.onboarding.form_data.sellerName, 'Latest agent details')
+  } finally { await db.close() }
+})
+
+test('staff profile saves compare the editor revision, commit canonical facts together and reject obsolete tokens', async () => {
+  const db = await guardedFixture()
+  try {
+    const original = await savedState(db)
+    const facts = { seller: { name: 'New profile' } }
+    const saved = await guardedProfile(db, original, { sellerName: 'New profile', canonicalSellerFacts: facts })
+    assert.equal(saved.form_data.sellerName, 'New profile')
+    assert.doesNotMatch(JSON.stringify(saved), /password-secret|access-secret|invite-secret|recovery-secret/)
+    await assert.rejects(guardedProfile(db, original, { sellerName: 'Old profile' }), error => error.code === 'PT409')
+    const latest = await savedState(db)
+    assert.deepEqual(latest.listing.seller_canonical_facts_json, facts)
+    assert.deepEqual(latest.onboarding.canonical_facts_json, facts)
+    const nextEditor = applyListingSellerOnboardingSaveSnapshot({ ...original.listing, sellerOnboarding: original.onboarding }, saved)
+    assert.equal(nextEditor.updatedAt, latest.listing.updated_at)
+    const nextRevision = getSellerOnboardingSaveRevision(nextEditor)
+    const nextReceipt = await guardedAgentSave(db, { listing: { updated_at: nextEditor.updatedAt }, onboarding: { id: nextRevision.onboardingId, updated_at: nextRevision.updatedAt } }, uuid(506), 'Next deliberate edit')
+    assert.equal(nextReceipt.onboarding.form_data.sellerName, 'Next deliberate edit')
+    await actor(db, 'anon')
+    await assert.rejects(rpc(db, 'bridge_update_private_listing_seller_onboarding_progress', 'token-a', { sellerName: 'Legacy client without version' }), error => error.code === 'PT409')
+    for (const token of ['wrong', 'expired', 'stable-a']) {
+      assert.equal(await rpc(db, 'bridge_update_private_listing_seller_onboarding_progress', token, { __sellerSave: revisionOf(latest.onboarding) }), null)
+    }
+    await assert.rejects(db.query("select seller_save_private.bridge_update_private_listing_seller_onboarding_progress('token-a')"), /permission denied/)
+    await assert.rejects(db.query("select save_private_listing_seller_onboarding_profile($1,'token-a','{}','{}','in_progress',null,null,null)", [listingA]), /permission denied/)
+    await actor(db, 'authenticated', outsider)
+    await assert.rejects(db.query("select save_private_listing_seller_onboarding_profile($1,'token-a','{}','{}','in_progress',null,null,null)", [listingA]), /not found or is no longer available/)
+  } finally { await db.close() }
+})
+
+test('onboarding-only changes conflict with an agent editor even when listing updated_at is unchanged', async () => {
+  const db = await guardedFixture()
+  try {
+    const original = await savedState(db)
+    await db.query("update private_listing_seller_onboarding set form_data=form_data || '{\"email\":\"new@example.test\"}', updated_at=clock_timestamp() where token='token-a'")
+    await assert.rejects(guardedAgentSave(db, original, uuid(504), 'Older contact'), error => error.code === 'PT409')
+    const latest = await savedState(db)
+    assert.equal(latest.onboarding.form_data.email, 'new@example.test')
+    assert.deepEqual(latest.listing, original.listing)
+  } finally { await db.close() }
+})
+
+test('guarded draft and profile writes roll back both records if either write fails', async () => {
+  const db = await guardedFixture()
+  try {
+    const original = await savedState(db)
+    await db.exec(`create function reject_listing_projection() returns trigger language plpgsql as $$begin raise exception 'test projection failure'; end$$;
+      create trigger reject_listing_projection before update on private_listings for each row execute function reject_listing_projection();`)
+    await assert.rejects(guardedProgress(db, original, { sellerName: 'Uncommitted draft' }), /test projection failure/)
+    await assert.rejects(guardedProfile(db, original, { sellerName: 'Uncommitted profile' }), /test projection failure/)
+    const latest = await savedState(db)
+    assert.deepEqual(latest, original)
+  } finally { await db.close() }
+})
+
+test('only an explicit staff correction reopens submitted onboarding; subsequent seller drafts save with its new revision', async () => {
+  const db = await guardedFixture()
+  try {
+    const initial = await savedState(db)
+    await actor(db, 'anon')
+    await rpc(db, 'bridge_complete_private_listing_seller_onboarding', 'token-a', { __sellerSave: revisionOf(initial.onboarding), sellerName: 'Submitted owner' })
+    const completed = await savedState(db)
+    const agentEdit = await guardedAgentSave(db, completed, uuid(505), 'Correct contact')
+    assert.equal(agentEdit.onboarding.status, 'completed')
+    const baseline = await savedState(db)
+    await actor(db, 'authenticated', agentA)
+    await db.query(`select save_private_listing_seller_onboarding_profile($1,'token-a',$2::jsonb,$3::jsonb,'in_progress',null,null,null,false,true)`,
+      [listingA, baseline.onboarding.form_data, revisionOf(baseline.onboarding)])
+    const reopened = await savedState(db)
+    assert.equal(reopened.onboarding.status, 'in_progress')
+    assert.equal(reopened.onboarding.submitted_at, null)
+    const saved = await guardedProgress(db, reopened, { sellerName: 'Seller correction' })
+    assert.equal(saved.onboarding.form_data.sellerName, 'Seller correction')
+  } finally { await db.close() }
+})
+
+test('profile creation checks the absence of an onboarding row under the listing lock', async () => {
+  const db = await guardedFixture()
+  try {
+    await db.query('insert into private_listings(id,organisation_id,assigned_agent_id) values($1,$2,$3)', [uuid(3), uuid(21), agentA])
+    await actor(db, 'authenticated', agentA)
+    const create = () => db.query(`select save_private_listing_seller_onboarding_profile($1,'new-token', '{"sellerName":"New owner"}',
+      '{"onboardingId":null,"updatedAt":null}', 'not_started','individual','individual',null) result`, [uuid(3)])
+    const saved = (await create()).rows[0].result
+    assert.equal(saved.form_data.sellerName, 'New owner')
+    await assert.rejects(create(), error => error.code === 'PT409')
+    assert.equal((await db.query('select count(*)::int n from private_listing_seller_onboarding where private_listing_id=$1', [uuid(3)])).rows[0].n, 1)
   } finally { await db.close() }
 })

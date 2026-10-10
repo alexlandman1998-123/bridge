@@ -18,6 +18,8 @@ export function buildRecruitmentContactNotification(
     email: string;
     phone: string;
     name?: string;
+    contractVersion?: number;
+    contractFilename?: string;
   },
   branding: Partial<EmailBranding>,
   eventKind = "lead_received",
@@ -26,24 +28,25 @@ export function buildRecruitmentContactNotification(
     throw new Error("Saved lead required");
   }
   if (
-    !["lead_received", "application_received", "documents_received"].includes(
+    !["lead_received", "application_received", "documents_received", "contract_returned"].includes(
       eventKind,
     )
   ) throw new Error("Saved recruitment event required");
   const name =
     (contact.name || `${contact.firstName || ""} ${contact.lastName || ""}`)
       .replace(/\p{Cc}/gu, " ").trim().slice(0, 160);
-  const subject = eventKind === "application_received"
+  const returned = eventKind === "contract_returned";
+  const subject = returned ? `Home Seekers: ${name} has returned their signed contract` : eventKind === "application_received"
     ? "Home Seekers: New Application Received"
     : eventKind === "documents_received"
     ? `Home Seekers: ${name} has uploaded their documents`
     : "Home Seekers: New Lead Received";
-  const title = eventKind === "application_received"
+  const title = returned ? "Signed contract returned" : eventKind === "application_received"
     ? "New application received"
     : eventKind === "documents_received"
     ? "Documents ready for review"
     : "New recruitment lead";
-  const action = eventKind === "lead_received"
+  const action = returned ? "Review signed contract" : eventKind === "lead_received"
     ? "Open recruitment lead"
     : "Open application";
   const url = `https://app.arch9.co.za/agency/recruitment/${leadId}`;
@@ -51,7 +54,9 @@ export function buildRecruitmentContactNotification(
     `Name: ${name}`,
     `Email: ${contact.email}`,
     `Phone: ${contact.phone}`,
-    eventKind === "lead_received"
+    returned
+      ? `The applicant has uploaded their signed contract${contact.contractVersion ? ` (version ${contact.contractVersion})` : ""} through My Profile. Open the application to download the private PDF and verify all pages and signatures. This upload does not yet confirm the contract as signed.`
+      : eventKind === "lead_received"
       ? "Their contact details were saved from the first Join Us screen. This notification does not mean the full application was submitted. Open the saved lead for their current progress and contact them to help them continue."
       : eventKind === "application_received"
       ? "Their entire Join Us application has been completed, verified and saved in the CRM. Open the application to review their information and track the requested documents."
@@ -65,7 +70,8 @@ export function buildRecruitmentContactNotification(
     html: renderBridgeEmailLayout({
       title,
       preheader: `${name} — ${
-        eventKind === "lead_received"
+        returned ? "Their signed PDF is ready for the agency to verify."
+          : eventKind === "lead_received"
           ? "Contact them to help them complete their application."
           : eventKind === "application_received"
           ? "Their verified application is ready. Track the requested documents."

@@ -178,10 +178,16 @@ test('CRM publication snapshots control sales, rentals, updates and withdrawals 
   assert.equal(feed[0].title, 'Published snapshot', 'editing CRM details alone does not overwrite the approved snapshot')
   assert.deepEqual(feed[0].images, ['https://example.test/cover.jpg', 'https://example.test/second.jpg'])
   assert.equal(feed[0].seller_email, undefined)
+  assert.equal(feed[0].listingStatus, 'active', 'Older snapshots keep their For sale label')
   rows.website_listing_publications[0].publication_json = { title: 'Updated approved snapshot', listing_type: 'Sale', asking_price: 2400000 }
   feed = await getHomeSeekersPublishedListings(connection)
   assert.equal(feed[0].title, 'Updated approved snapshot')
   assert.equal(feed[0].price, 2400000)
+  for (const status of ['under_offer', 'sold']) {
+    rows.website_listing_publications[0].publication_json.listing_status = status
+    feed = await getHomeSeekersPublishedListings(connection)
+    assert.equal(feed[0].listingStatus, status, 'The public feed carries the approved sale status')
+  }
   rows.website_listing_publications[0].status = 'unpublished'
   feed = await getHomeSeekersPublishedListings(connection)
   assert.deepEqual(feed.map((listing) => listing.id), [rentalId])

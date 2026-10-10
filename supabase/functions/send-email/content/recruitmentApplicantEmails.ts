@@ -14,6 +14,7 @@ export const applicantEmailKinds = [
   "application_thanks",
   "documents_reminder",
   "documents_followup",
+  "contract_available",
 ];
 const documents = [
   {
@@ -51,6 +52,27 @@ export function buildRecruitmentApplicantEmail(
 ) {
   if (!applicantEmailKinds.includes(kind)) {
     throw new Error("Choose a saved applicant email");
+  }
+  if (kind === "contract_available") {
+    const link = new URL("/applicant/my-profile", baseUrl).href;
+    const paragraphs = [
+      "Your Home Seekers contract is ready in My Profile.",
+      "Log in using your application email address. Download the PDF, sign every required page and upload the complete signed copy as one PDF, up to 10 MB.",
+      "Our recruitment team will be notified when your signed copy is saved and will check it before confirming the next step.",
+    ];
+    return {
+      subject: "Home Seekers: Your contract is ready to sign",
+      text: `Hi ${lead.name},\n\n${paragraphs.join("\n\n")}\n\nOpen My Profile: ${link}`,
+      html: renderBridgeEmailLayout({
+        title: "Your contract is ready",
+        preheader: "Download, sign and return your contract through My Profile.",
+        greeting: `Hi ${lead.name},`, organisationName: "Home Seekers",
+        branding: homeSeekersRecruitmentBranding(branding),
+        contentHtml: renderBridgeIntroParagraphs(paragraphs) + renderBridgeCta("Open My Profile", link, { primaryColor: HOME_SEEKERS_RECRUITMENT_ACCENT }),
+        securityBody: "Your contract is private. Sign in to access it; no contract files are attached to this email.",
+        helpBody: "Need help? Contact admin@homeseekers.co.za.", footerText: "Home Seekers · Recruitment",
+      }),
+    };
   }
   const thanks = kind === "application_thanks",
     followup = kind === "documents_followup";

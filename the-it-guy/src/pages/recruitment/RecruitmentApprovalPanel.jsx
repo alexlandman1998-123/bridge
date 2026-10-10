@@ -1,10 +1,29 @@
-import { recruitmentApprovalErrors } from './recruitmentApprovalModel'
+import { approvalConfirmation, recruitmentApprovalErrors } from './recruitmentApprovalModel'
 import { recruitmentReviewSummary } from './recruitmentReviewModel'
 const date = (value) => new Date(value).toLocaleString('en-ZA', {timeZone:'Africa/Johannesburg'})
-export default function RecruitmentApprovalPanel({lead,draft,onChange,onApprove,busy,otherDirty}) {
+export default function RecruitmentApprovalPanel({lead,draft,onChange,onApprove,onReject,busy,otherDirty}) {
   if (lead.approved_at) return <section className="mt-6 rounded-2xl border border-[#cfe7d8] bg-[#f3fbf6] p-5" aria-label="Application approval"><h3 className="text-lg font-semibold text-[#26724c]">Application approved</h3><p className="mt-2 text-sm text-[#405b75]">Approved {date(lead.approved_at)}</p><p className="mt-1 break-all text-xs text-[#60758b]">Approved by · {lead.approved_by}</p><p className="mt-4 whitespace-pre-wrap break-words text-sm text-[#20364c]">{lead.approval_notes}</p><p className="mt-4 text-xs text-[#60758b]">The submitted application, review findings and documents have been preserved in the approval record. Contract preparation is the next phase.</p></section>
   if (lead.status !== 'under_review') return null
   const ready = lead.review_status === 'ready_for_approval' && recruitmentReviewSummary(lead).status === 'ready_for_approval'
   const errors = recruitmentApprovalErrors(lead,draft)
-  return <section className="mt-6 rounded-2xl border border-[#dbe7f2] bg-[#fbfdff] p-5" aria-label="Application approval"><h3 className="text-lg font-semibold text-[#20364c]">Application approval</h3><p className="mt-2 text-sm text-[#60758b]">{ready ? 'All saved review checks are resolved. Record your decision to approve the application.' : 'Resolve and save all four checks and review every uploaded document before approval.'}</p><form onSubmit={(event)=>{event.preventDefault(); if (!busy && !otherDirty && !errors.length) onApprove(draft)}}><fieldset disabled={busy || otherDirty || !ready} className="mt-4 space-y-4"><label className="block text-sm font-semibold text-[#405b75]">Approval reason<textarea className="mt-2 block w-full rounded-xl border border-[#dbe6f1] bg-white px-3 py-2 text-sm text-[#142132]" rows={3} maxLength={3000} minLength={5} required value={draft.notes} onChange={(event)=>onChange({...draft,notes:event.target.value})} placeholder="Record why the application is approved and any agreed joining conditions." /></label><label className="flex items-start gap-3 text-sm text-[#405b75]"><input type="checkbox" className="mt-1 shrink-0" checked={draft.confirmed} onChange={(event)=>onChange({...draft,confirmed:event.target.checked})} />I have reviewed the application and supporting evidence and approve this application.</label></fieldset><button type="submit" disabled={busy || otherDirty || errors.length > 0} className="mt-5 rounded-xl border border-[#0f2743] bg-[#0f2743] px-4 py-3 text-sm font-semibold text-white disabled:opacity-50">{busy ? 'Saving…' : 'Approve application'}</button>{otherDirty && <p className="mt-2 text-xs text-[#7890a8]">Save agent details and review findings before approving.</p>}</form><p className="mt-4 text-xs text-[#7890a8]">Approval records your decision and moves the lead to Application Approved. It does not send a contract or create an agent account.</p></section>
+  return <section className="mt-6 rounded-2xl border border-[#e1e7eb] bg-white p-5" aria-label="Application approval">
+    <h3 className="text-lg font-semibold text-[var(--recruitment-primary-ink)]">Application approval</h3>
+    {!ready && <p className="mt-2 text-sm text-[#607080]">Resolve and save all four checks and review every uploaded document before approval.</p>}
+    <form onSubmit={(event) => {
+      event.preventDefault()
+      if (!busy && !otherDirty && !errors.length) onApprove(draft)
+    }}>
+      <fieldset disabled={busy || otherDirty || !ready} className="mt-4">
+        <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-[#e1e7eb] bg-[#fafbfc] p-4 text-sm leading-6 text-[#20364c]">
+          <input type="checkbox" className="recruitment-ci-focus mt-1 h-4 w-4 shrink-0 accent-[var(--recruitment-primary)]" checked={draft.confirmed} onChange={(event) => onChange({...draft,confirmed:event.target.checked})} />
+          {approvalConfirmation}
+        </label>
+      </fieldset>
+      <div role="group" aria-label="Application decision" className="mt-5 flex flex-wrap items-center gap-3">
+        <button type="submit" disabled={busy || otherDirty || errors.length > 0} className="recruitment-ci-primary-button recruitment-ci-focus rounded-xl border px-4 py-3 text-sm font-semibold disabled:opacity-50">{busy ? 'Saving…' : 'Approve application'}</button>
+        {onReject && <button type="button" disabled={busy || otherDirty} onClick={onReject} className="recruitment-ci-focus rounded-xl border border-[#e8c9c5] bg-white px-4 py-3 text-sm font-semibold text-[#9f3028] hover:bg-[#fff5f4] disabled:opacity-50">Reject Application</button>}
+      </div>
+      {otherDirty && <p className="mt-2 text-xs text-[#607080]">Save agent details and review findings before approving.</p>}
+    </form>
+  </section>
 }

@@ -28,6 +28,44 @@ function getExistingFormData(listing = {}) {
   }
 }
 
+// Capture this with the editor's initial values, never from a read made at save time.
+export function getSellerOnboardingSaveRevision(listing = {}) {
+  const onboarding = object(listing.sellerOnboarding || listing.seller_onboarding)
+  const raw = object(listing.seller_onboarding)
+  return onboarding.saveRevision || {
+    onboardingId: onboarding.id || raw.id || null,
+    updatedAt: onboarding.updated_at ?? onboarding.updatedAt ?? raw.updated_at ?? null,
+  }
+}
+
+export function applyListingSellerOnboardingSaveSnapshot(listing = {}, receipt = {}) {
+  if (!receipt.id || !receipt.form_data) return listing
+  return {
+    ...listing,
+    updatedAt: receipt.listing_updated_at || listing.updatedAt,
+    updated_at: receipt.listing_updated_at || listing.updated_at,
+    sellerOnboardingStatus: receipt.status,
+    seller_onboarding_status: receipt.status,
+    sellerCanonicalFacts: receipt.canonical_facts_json || listing.sellerCanonicalFacts,
+    sellerCanonicalFactReadiness: receipt.canonical_fact_readiness_json || listing.sellerCanonicalFactReadiness,
+    seller_canonical_facts_json: receipt.canonical_facts_json || listing.seller_canonical_facts_json,
+    seller_canonical_fact_readiness_json: receipt.canonical_fact_readiness_json || listing.seller_canonical_fact_readiness_json,
+    sellerOnboardingFormData: receipt.form_data,
+    seller_onboarding_form_data: receipt.form_data,
+    seller_onboarding: { ...object(listing.seller_onboarding), ...receipt, formData: receipt.form_data },
+    sellerOnboarding: {
+      ...object(listing.sellerOnboarding),
+      ...receipt,
+      formData: receipt.form_data,
+      updatedAt: receipt.updated_at,
+      submittedAt: receipt.submitted_at,
+      completedAt: receipt.submitted_at,
+      currentStep: Number(receipt.form_data.currentStep || 0),
+      saveRevision: { onboardingId: receipt.id, updatedAt: receipt.updated_at },
+    },
+  }
+}
+
 function createMutationId() {
   if (typeof globalThis.crypto?.randomUUID === 'function') return globalThis.crypto.randomUUID()
   return `seller-${Date.now()}-${Math.random().toString(16).slice(2)}`
@@ -47,6 +85,12 @@ function sameJsonValue(left, right) {
   const keys = Object.keys(left)
   return keys.length === Object.keys(right).length && keys.every((key) =>
     Object.hasOwn(right, key) && sameJsonValue(left[key], right[key]))
+}
+
+export function isMatchingSellerOnboardingCompletion(onboarding, formData = {}) {
+  if (onboarding?.status !== 'completed') return false
+  const expected = JSON.parse(JSON.stringify(formData))
+  return Object.entries(expected).every(([key, value]) => sameJsonValue(onboarding.form_data?.[key], value))
 }
 
 // The RPC merges form fields into the saved onboarding row. Send only changed
@@ -180,7 +224,14 @@ export function buildListingSellerCanonicalUpdate({
     primaryContactName: contactName, contactName })
   const currentFacts = object(listing.sellerCanonicalFacts || listing.seller_canonical_facts_json)
   const generatedFacts = object(generated.canonicalSellerFacts || suppliedCanonicalFacts)
-  const authoritativeFacts = authority.identified && Object.keys(generatedFacts).length ? generatedFacts : currentFacts
+  const ownershipCleared = !authority.identified && ['ownerEntityType', 'ownerStructureType', 'ownershipType'].some(key =>
+    Object.hasOwn(normalizedPatch, key) && !text(normalizedPatch[key]))
+  const authoritativeFacts = ownershipCleared ? {
+    ...currentFacts,
+    ...generatedFacts,
+    seller: { ...object(generatedFacts.seller), owner_entity_type: '', owner_structure_type: '', legal_type: '',
+      company: {}, trust: {}, deceased_estate: {}, power_of_attorney: {}, other_entity: {}, owners: [], spouse: {} },
+  } : authority.identified && Object.keys(generatedFacts).length ? generatedFacts : currentFacts
   const canonicalFacts = {
     ...authoritativeFacts,
     fullName,
@@ -256,6 +307,7 @@ export function buildListingSellerCanonicalUpdate({
     source,
     now,
     expectedUpdatedAt: text(listing.updatedAt || listing.updated_at),
+    expectedOnboardingRevision: getSellerOnboardingSaveRevision(listing),
     formPatch: normalizedPatch,
     nextFormData,
     persistedFormPatch,
@@ -275,6 +327,9 @@ export function buildListingSellerCanonicalUpdate({
 
 export function applyListingSellerCanonicalUpdateSnapshot(listing = {}, update = {}, remoteListing = null) {
   const committed = remoteListing && typeof remoteListing === 'object' ? remoteListing : {}
+  // Read-back may include a subsequent save. Keep its data and server revision
+  // together rather than attaching our older draft to the newer timestamp.
+  if (committed.id && committed.sellerOnboarding) return { ...listing, ...committed }
   return {
     ...listing,
     ...committed,

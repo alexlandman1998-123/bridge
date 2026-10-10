@@ -1,3 +1,5 @@
+> Current contract update (10 October 2026): v55 supports the mapped sale and rental categories, including industrial, commercial rentals and vacant-land rentals. The former category blocks and mandatory commercial zoning/parking checks below are superseded by the [field audit](listing-syndication-field-comparison.md). Optional supplied values must remain valid. Live provider acceptance has not been exercised by this local change.
+
 # Property24 listing-category contract
 
 Version: `arch9_property24_listing_category_contract_v3`

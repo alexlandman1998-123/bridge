@@ -3971,7 +3971,7 @@ function PipelineCanvassingPage() {
     return (
       <section className="space-y-5">
         {canvassingWorkspaceHeader}
-        <PropertySearchWorkspace />
+        <PropertySearchWorkspace initialQuery={new URLSearchParams(location.search).get('query') || ''} />
       </section>
     )
   }

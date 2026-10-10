@@ -747,7 +747,7 @@ export function createPrivatePropertyListingPlan({
   })
   const propertyStatus = resolvePrivatePropertyStatus({
     listingType,
-    value: firstText(options.status, publication.status, listing.listing_status, listing.listingStatus),
+    value: firstText(options.status, listing.listing_status, listing.listingStatus, publication.status),
   })
   const branchId = firstText(options.branchGuid, options.branchId, existingSync.branch_guid, existingSync.branchGuid, listing.private_property_branch_guid, listing.privatePropertyBranchGuid)
   const propertyId = resolvePropertyId(listing, publication, options, existingSync)

@@ -69,7 +69,7 @@ export async function dispatchRecruitmentContacts(request: Request, {
       if (
         job.organisation_id !== organisationId ||
         !recipients.has(job.recipient) ||
-        !["lead_received", "application_received", "documents_received"]
+        !["lead_received", "application_received", "documents_received", "contract_returned"]
           .includes(job.event_kind || "lead_received")
       ) {
         await complete(null, "invalid_saved_recipient");

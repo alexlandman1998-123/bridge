@@ -42,6 +42,6 @@ export async function updateListingPropertyDetails(listingId, payload = {}) {
   return updatePrivateListing(listingId, payload)
 }
 
-export async function syncListingFromSellerOnboarding(listingId, formData = {}) {
-  return updatePrivateListingOnboardingFormData(listingId, formData)
+export async function syncListingFromSellerOnboarding(listingId, formData = {}, options = {}) {
+  return updatePrivateListingOnboardingFormData(listingId, formData, options)
 }

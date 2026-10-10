@@ -152,3 +152,16 @@ test('observed inactive status outranks old acceptance, verification, links and 
     }
   }
 })
+
+
+test('lifecycle-only channels omit content failures and unpublished edits without hiding an inactive advert', () => {
+  const base = { key: 'property24', label: 'Property24', live: true, reference: '123', publicUrl: 'https://www.property24.com/for-sale/123', lifecycleOnly: true,
+    publicationState: { stage: 'failed', changeCount: 3 }, updateState: { status: 'needs_attention' }, issueCount: 2, activityAvailable: false }
+  assert.equal(buildListingChannelPublicationDisplay(base).statusLabel, 'Live')
+  for (const [externalStatus, statusLabel] of [['inactive','Inactive'], ['expired','Expired'], ['withdrawn','Withdrawn'], ['failed','Not published']]) {
+    const result = buildListingChannelPublicationDisplay({ ...base, externalStatus })
+    assert.equal(result.statusLabel, statusLabel)
+    assert.equal(result.live, false)
+    assert.equal(result.href, '')
+  }
+})

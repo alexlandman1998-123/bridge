@@ -308,3 +308,14 @@ Deno.test("unknown saved notification events cannot send a staff email", async (
   await dispatchRecruitmentContacts(request(), h.dependencies as any);
   assert(h.sends.length === 0);
 });
+Deno.test('a saved signed-return notification goes to the agency with a review link and retains provider idempotency', async () => {
+  const job = { ...base, recipient: recipients[0], event_kind: 'contract_returned', contact_json: { ...contact, contractVersion: 1, contractFilename: 'Signed.pdf' } };
+  const h = harness([job]);
+  const response = await dispatchRecruitmentContacts(request(), h.dependencies as any);
+  assert((await response.json()).accepted === 1);
+  assert(h.sends[0].subject.includes('returned their signed contract'));
+  assert(h.sends[0].text.includes('verify all pages and signatures'));
+  assert(h.sends[0].html.includes(`/agency/recruitment/${base.lead_id}`));
+  assert(h.sends[0].idempotencyKey === `recruitment-contact/${base.id}`);
+  assert(!h.sends[0].html.includes('storage/v1'));
+});

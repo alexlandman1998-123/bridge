@@ -5,10 +5,11 @@ import { buildAgentInviteLink } from '../lib/agentInviteService'
 import { onboardingChecks, onboardingDocumentTypes, recruitmentOnboardingErrors } from '../pages/recruitment/recruitmentOnboardingModel'
 import { supabase } from '../lib/supabaseClient'
 import { recruitmentDeliveryErrors, recruitmentSignatureErrors } from '../pages/recruitment/recruitmentSigningModel'
-import { recruitmentApprovalErrors } from '../pages/recruitment/recruitmentApprovalModel'
+import { approvalConfirmation, recruitmentApprovalErrors } from '../pages/recruitment/recruitmentApprovalModel'
 import { recruitmentReviewErrors } from '../pages/recruitment/recruitmentReviewModel'
 import { validateRecruitmentLead } from '../pages/recruitment/recruitmentModel'
-const fields = 'id,organisation_id,name,email,phone,area,source,status,details_json,documents_json,version,created_at,updated_at,received_at,captured_by,intake_channel,intake_key,activity_json,application_json,application_submitted_at,review_json,review_started_at,review_started_by,review_updated_at,review_updated_by,review_status,approved_at,approved_by,approval_notes,approval_snapshot,contracts_json,contract_delivery_json,contract_signature_json,onboarding_json,onboarding_documents_json,onboarding_completed_at,onboarding_completed_by,onboarding_snapshot,activation_json,activated_at,activated_by,contact_capture_json,email_verification_status,email_verified_at,applicant_draft_json,applicant_draft_revision,applicant_draft_saved_at,joining_json,joining_invite_id,contacted_at,contacted_by,documents_uploaded_at,document_waivers_json,rejection_json'
+// Read the manager-scoped record so optional portal fields tolerate a staged rollout.
+const fields = '*'
 function clientFor(organisationId) {
   if (!supabase) throw new Error('Recruitment is unavailable: database connection is not configured.')
   if (!organisationId || organisationId === 'all') throw new Error('Choose an organisation to manage recruitment.')
@@ -166,7 +167,7 @@ export async function saveRecruitmentReview(organisationId, lead, draft) {
 export async function approveRecruitmentApplication(organisationId, lead, draft) {
   const errors = recruitmentApprovalErrors(lead, draft)
   if (errors.length) throw new Error(errors.join(' '))
-  const { data, error } = await clientFor(organisationId).rpc('recruitment_approve_application', { p_organisation_id: organisationId, p_lead_id: lead.id, p_version: lead.version, p_notes: draft.notes.trim() }).maybeSingle()
+  const { data, error } = await clientFor(organisationId).rpc('recruitment_approve_application', { p_organisation_id: organisationId, p_lead_id: lead.id, p_version: lead.version, p_notes: approvalConfirmation }).maybeSingle()
   if (['40001', 'PT409'].includes(error?.code) || (!error && !data)) throw new Error('This application changed or access was removed. Approval was not saved. Reload and review it before trying again.')
   if (error) fail(error)
   return data
@@ -190,7 +191,7 @@ export async function prepareRecruitmentContract(organisationId, lead, file) {
       })
       const result = await attempt.persist({
         save: async () => {
-          const {data,error} = await clientFor(organisationId).rpc('recruitment_prepare_contract',{p_organisation_id:organisationId,p_lead_id:lead.id,p_version:lead.version,p_document:{path,name:file.name,size:file.size}}).maybeSingle()
+          const {data,error} = await clientFor(organisationId).rpc(organisationId === '2958d402-368e-43c9-b728-0098e10505f1' ? 'recruitment_publish_contract' : 'recruitment_prepare_contract',{p_organisation_id:organisationId,p_lead_id:lead.id,p_version:lead.version,p_document:{path,name:file.name,size:file.size}}).maybeSingle()
           if (['40001', 'PT409'].includes(error?.code) || (!error && !data)) throw Object.assign(new Error('This application changed or access was removed. Reload before preparing the contract again.'), { cause: error })
           if (error) fail(error)
           return { data }
@@ -201,6 +202,13 @@ export async function prepareRecruitmentContract(organisationId, lead, file) {
       return result.data
     },
   })
+}
+export async function publishRecruitmentContract(organisationId, lead) {
+  if (!lead.approved_at || !lead.contracts_json?.length) throw new Error('Upload a contract before sharing it.')
+  const { data, error } = await clientFor(organisationId).rpc('recruitment_publish_contract', { p_organisation_id: organisationId, p_lead_id: lead.id, p_version: lead.version }).maybeSingle()
+  if (error) fail(error)
+  if (!data) throw new Error('Contract unavailable. Reload the application.')
+  return data
 }
 export async function downloadRecruitmentContract(organisationId, lead, contract) {
   if (!contract?.path?.startsWith(`${organisationId}/${lead.id}/`) || !lead.contracts_json?.some(item=>item.path===contract.path)) throw new Error('Contract does not belong to this agent lead.')
@@ -223,6 +231,17 @@ export async function recordRecruitmentContractDelivery(organisationId, lead, dr
 export async function recordRecruitmentContractSignature(organisationId, lead, draft) {
   const errors=recruitmentSignatureErrors(lead,draft)
   if(errors.length) throw new Error(errors.join(' '))
+  if (!draft.file && draft.returnedId) {
+    const returned = lead.contract_returns_json?.find(item => item.id === draft.returnedId && item.contractVersion === draft.contractVersion)
+    if (!returned) throw new Error('Reload the returned contract before verifying it.')
+    const payload = Object.fromEntries(['contractVersion','agentSigner','organisationSigner','signedOn','method','reference','notes'].map(key => [key, typeof draft[key] === 'string' ? draft[key].trim() : draft[key]]))
+    payload.checks = Object.fromEntries(['sameVersion','allPages','agentSignature','organisationSignature'].map(key => [key, draft.checks[key] === true]))
+    Object.assign(payload, { path: returned.path, name: returned.name, size: returned.size })
+    const { data, error } = await clientFor(organisationId).rpc('recruitment_record_contract_signature', { p_organisation_id: organisationId, p_lead_id: lead.id, p_version: lead.version, p_signature: payload }).maybeSingle()
+    if (error) fail(error)
+    if (!data) throw new Error('This contract changed. Reload before verifying it.')
+    return data
+  }
   const file=draft.file
   const header=new TextDecoder().decode(await file.slice(0,5).arrayBuffer())
   if(header!=='%PDF-') throw new Error('The selected signed copy is not a PDF. Scan or export all signed pages into one PDF.')
@@ -253,9 +272,9 @@ export async function recordRecruitmentContractSignature(organisationId, lead, d
     },
   })
 }
-export async function downloadRecruitmentSignedContract(organisationId,lead) {
-  const signature=lead.contract_signature_json
-  if(!signature?.recordedAt || !signature.path?.startsWith(`${organisationId}/${lead.id}/`)) throw new Error('No signed contract is recorded for this lead.')
+export async function downloadRecruitmentSignedContract(organisationId,lead,returned) {
+  const signature=returned ? lead.contract_returns_json?.find(item => item.id === returned.id && item.contractVersion === lead.contract_delivery_json?.contractVersion) : lead.contract_signature_json
+  if(!(returned ? signature?.submittedAt : signature?.recordedAt) || !signature.path?.startsWith(`${organisationId}/${lead.id}/`)) throw new Error('No signed contract is recorded for this lead.')
   const {data,error}=await clientFor(organisationId).storage.from('recruitment-signed-contracts').download(signature.path)
   if(error) throw new Error('Signed contract could not be downloaded. Please try again.')
   const url=URL.createObjectURL(data), link=window.document.createElement('a')
@@ -342,7 +361,7 @@ export async function getRecruitmentInvitationStatus(organisationId, leadId, kin
   return data
 }
 export async function sendRecruitmentInvitation(organisationId, leadId, kind, referenceId, {requestId, applicationLink, allowDuplicate=false}={}) {
-  if(!leadId || !referenceId || !requestId || !['application','workspace'].includes(kind)) throw new Error('Choose a saved application or workspace invitation.')
+  if(!leadId || !referenceId || !requestId || !['application','workspace','documents_reminder','approval'].includes(kind)) throw new Error('Choose a saved recruitment email or invitation.')
   const {data,error}=await clientFor(organisationId).functions.invoke('send-email',{body:{type:'recruitment_invitation',organisationId,leadId,kind,referenceId,requestId,...(kind==='application' ? {applicationLink} : {}),allowDuplicate:allowDuplicate===true}})
   if(error) {
     let detail

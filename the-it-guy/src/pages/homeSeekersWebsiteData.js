@@ -40,6 +40,8 @@ export function homeSeekersCard(listing) {
     description: listing.description,
     image: listing.image,
     transactionType: listing.transactionType,
+    listingStatus: listing.listingStatus,
+    statusLabel: listing.transactionType === 'rental' ? 'To let' : listing.listingStatus === 'sold' ? 'Sold' : listing.listingStatus === 'under_offer' ? 'Under offer' : 'For sale',
   }
 }
 

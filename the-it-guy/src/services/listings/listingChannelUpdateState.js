@@ -1,4 +1,4 @@
-const CHANNELS = Object.freeze(['Property24', 'Private Property'])
+const CHANNELS = Object.freeze(['Property24', 'Private Property', 'Agency Website', 'Kingdom Website'])
 const DELIVERY_TYPES = new Set([
   'listing_price_changed', 'listing_under_offer', 'listing_sold', 'listing_portal_update_retried', 'listing_portal_update_started',
   'listing_channel_publication_submitted', 'listing_channel_publication_accepted', 'listing_channel_publication_failed',
@@ -44,12 +44,17 @@ function eventAction(event, metadata) {
 export function deriveListingChannelUpdateStates(activityRows = [], sessionResults = [], sessionAction = '') {
   const states = Object.fromEntries(CHANNELS.map((channel) => [channel, null]))
   const events = (Array.isArray(activityRows) ? activityRows : [])
-    .filter((event) => DELIVERY_TYPES.has(eventType(event)) || ['listing_portal_update_verified', 'listing_channel_publication_verified'].includes(eventType(event)))
+    .filter((event) => DELIVERY_TYPES.has(eventType(event)) || ['listing_portal_update_verified', 'listing_channel_publication_verified', 'listing_channel_withdrawal_succeeded'].includes(eventType(event)))
     .sort((left, right) => eventTime(right) - eventTime(left))
 
   for (const event of events) {
     const metadata = eventMetadata(event)
     const action = eventAction(event, metadata)
+    if (eventType(event) === 'listing_channel_withdrawal_succeeded') {
+      const channel = text(metadata.channel)
+      if (CHANNELS.includes(channel) && !states[channel]) states[channel] = { status: 'current', action: 'withdrawn', detail: 'Advert removed from this channel.' }
+      continue
+    }
     if (['listing_portal_update_verified', 'listing_channel_publication_verified'].includes(eventType(event))) {
       const channel = text(metadata.channel)
       if (CHANNELS.includes(channel) && !states[channel]) {
@@ -72,10 +77,11 @@ export function deriveListingChannelUpdateStates(activityRows = [], sessionResul
     for (const result of Array.isArray(metadata.channelResults) ? metadata.channelResults : []) {
       const channel = text(result?.channel)
       if (!CHANNELS.includes(channel) || states[channel]) continue
-      if (result.status === 'failed') states[channel] = { status: 'needs_attention', action, detail: text(result.detail) || 'Portal update failed.', retriable: true }
-      else if (result.status === 'pending') states[channel] = { status: 'needs_attention', action, detail: 'Arch9 saved this change, but the portal update has not been confirmed.' }
-      else if (result.status === 'sent') states[channel] = { status: 'awaiting_verification', action, detail: 'Update accepted; check the public page before confirming it is current.' }
-      else if (result.status === 'not_connected') states[channel] = { status: 'needs_attention', action, detail: text(result.detail) || 'No confirmed live listing to update.', retriable: false }
+      const resultAction = text(result.action) || action
+      if (result.status === 'failed') states[channel] = { status: 'needs_attention', action: resultAction, detail: text(result.detail) || 'Portal update failed.', retriable: true }
+      else if (result.status === 'pending') states[channel] = { status: 'needs_attention', action: resultAction, detail: 'Arch9 saved this change, but the portal update has not been confirmed.' }
+      else if (result.status === 'sent') states[channel] = { status: 'awaiting_verification', action: resultAction, detail: 'Update accepted; check the public page before confirming it is current.' }
+      else if (result.status === 'not_connected') states[channel] = { status: 'needs_attention', action: resultAction, detail: text(result.detail) || 'No confirmed live listing to update.', retriable: false }
     }
   }
 
@@ -83,7 +89,7 @@ export function deriveListingChannelUpdateStates(activityRows = [], sessionResul
   for (const result of Array.isArray(sessionResults) ? sessionResults : []) {
     const channel = text(result?.channel)
     if (!CHANNELS.includes(channel)) continue
-    if (result.status === 'failed') states[channel] = { ...states[channel], action: text(sessionAction) || states[channel]?.action || '', status: 'needs_attention', detail: text(result.detail) || 'Portal update failed.' }
+    if (result.status === 'failed') states[channel] = { ...states[channel], action: text(result.action) || text(sessionAction) || states[channel]?.action || '', status: 'needs_attention', detail: text(result.detail) || 'Portal update failed.' }
     else if (result.status === 'not_connected') states[channel] = { action: text(sessionAction), status: 'needs_attention', detail: text(result.detail) || 'No confirmed live listing to update.', retriable: false }
     else if (result.status === 'sent' && !['current', 'needs_attention'].includes(states[channel]?.status)) states[channel] = { ...states[channel], action: text(sessionAction) || states[channel]?.action || '', status: 'awaiting_verification', detail: 'Update accepted; check the public page before confirming it is current.' }
   }

@@ -5,6 +5,19 @@ import { getSellerMandatePreparationIssues } from '../src/lib/sellerMandateCaptu
 import assert from 'node:assert/strict'
 import { createListingSellerProfileBuilderDraft, buildListingSellerProfileFormPatch, buildListingSellerProfileCapturePayload, selectListingSellerProfileBranch } from '../src/lib/listingSellerProfileBuilderModel.js'
 import { readFile } from 'node:fs/promises'
+
+// Clearing a previously chosen owner is allowed as a draft, but must never
+// retain the previous company as the current legal identity.
+const previousCompany = { id: 'owner-clear-fixture', sellerType: 'company', sellerOnboarding: { formData: {
+  ownerEntityType: 'company', ownerStructureType: 'company', ownershipRouteConfirmed: true, companyName: 'Previous Company',
+} }, sellerCanonicalFacts: { importReference: 'keep', seller: { owner_entity_type: 'company', owner_structure_type: 'company', company: { name: 'Previous Company' } } } }
+const ownerClear = buildListingSellerProfileCapturePayload(selectListingSellerProfileBranch(createListingSellerProfileBuilderDraft(previousCompany), ''), previousCompany, { draft: true })
+const clearedOwner = buildListingSellerCanonicalUpdate({ listing: previousCompany, formPatch: ownerClear.formPatch })
+assert.equal(clearedOwner.authority.identified, false)
+assert.equal(clearedOwner.readiness.ownerStructureType, false)
+assert.equal(clearedOwner.canonicalFacts.seller.owner_structure_type, '')
+assert.deepEqual(clearedOwner.canonicalFacts.seller.company, {})
+assert.equal(clearedOwner.canonicalFacts.importReference, 'keep')
 import { PGlite } from '@electric-sql/pglite'
 
 import {
@@ -41,9 +54,11 @@ await test('stale seller saves return a non-retryable conflict without writes, w
   const mutation = '44444444-4444-4444-8444-444444444444'
   const initial = '2026-10-01T00:00:00Z'
   const signature = 'public.save_private_listing_seller_canonical_update(uuid,jsonb,jsonb,jsonb,jsonb,text,text,text,text,uuid,text,text,text[],timestamptz)'
-  const [original, correction] = await Promise.all([
+  const [original, correction, concurrency, revisionScope] = await Promise.all([
     readFile(new URL('../../supabase/migrations/20260924151653_listing_seller_canonical_update_phase2.sql', import.meta.url), 'utf8'),
     readFile(new URL('../../supabase/migrations/20261006095510_seller_save_non_retryable_conflict.sql', import.meta.url), 'utf8'),
+    readFile(new URL('../../supabase/migrations/20261010215549_seller_save_concurrency_guards.sql', import.meta.url), 'utf8'),
+    readFile(new URL('../../supabase/migrations/20261010225607_seller_canonical_revision_scope.sql', import.meta.url), 'utf8'),
   ])
   try {
     await db.exec(`
@@ -134,6 +149,36 @@ await test('stale seller saves return a non-retryable conflict without writes, w
     await db.exec('reset role')
     await db.exec(correction)
     assert.deepEqual(await definition(), after)
+
+    // Execute the current canonical command from the pending migration, then
+    // its forward correction against the same RLS-protected saved records.
+    const commandStart = concurrency.indexOf('create or replace function public.save_private_listing_seller_canonical_update(')
+    assert.ok(commandStart > 0)
+    await db.exec(concurrency.slice(commandStart, concurrency.indexOf("notify pgrst, 'reload schema';", commandStart)))
+    const guarded = await definition()
+    await db.exec(revisionScope)
+    const scoped = await definition()
+    assert.equal(scoped.prosecdef, false)
+    assert.equal(scoped.acl, guarded.acl)
+    assert.deepEqual(scoped.proconfig, guarded.proconfig)
+    const current = (await state()).onboarding[0]
+    nextForm.__sellerSave = { onboardingId: current.id, updatedAt: current.updated_at }
+    await db.query('update private_listings set updated_at=$1 where id=$2', ['2026-10-10T12:00:00Z', owned])
+    await enterActor()
+    const scopedMutation = '66666666-6666-4666-8666-666666666666'
+    const sellerSaved = await save(owned, initial, scopedMutation)
+    assert.equal(sellerSaved.idempotentReplay, false, 'An unrelated listing update must allow the current seller revision to save.')
+    assert.equal(sellerSaved.onboarding.form_data.__sellerSave, undefined)
+    const scopedState = await state()
+    await assert.rejects(save(owned, initial, '77777777-7777-4777-8777-777777777777'), error => error.code === 'PT409' && /seller record/.test(error.message))
+    assert.deepEqual(await state(), scopedState, 'A stale seller revision must leave all rows unchanged.')
+    assert.equal((await save(owned, initial, scopedMutation)).idempotentReplay, true)
+    delete nextForm.__sellerSave
+    await assert.rejects(save(owned, initial, '88888888-8888-4888-8888-888888888888'), error => error.code === 'PT409')
+    await assert.rejects(save(foreign, initial, '99999999-9999-4999-8999-999999999999'), error => error.code === 'P0002')
+    await db.exec('reset role')
+    await db.exec(revisionScope)
+    assert.deepEqual(await definition(), scoped)
   } finally {
     await db.close()
   }
@@ -186,6 +231,12 @@ await test('the existing seller client handles PT409 once and keeps the reload-b
     buildListingSellerCanonicalSavePayload,
     runSellerCanonicalRequest: request => request(new AbortController().signal),
     SELLER_CANONICAL_SAVE_TIMEOUT_MS: 1000,
+    sellerSaveConflict: function(cause) {
+  return Object.assign(new Error('Someone else saved changes to this seller record. Your entries are still in this form. Review the latest saved details before trying again.'), {
+    code: 'SELLER_UPDATE_CONFLICT', recoverable: true, cause,
+  })
+}
+,
     isMissingRpcError: () => false,
     isSellerOnboardingCompletionTimeoutError: () => false,
   }
@@ -193,7 +244,7 @@ await test('the existing seller client handles PT409 once and keeps the reload-b
   const update = buildListingSellerCanonicalUpdate({ listing, formPatch: { sellerFirstName: 'Updated' },
     mutationId: '33333333-3333-4333-8333-333333333333' })
   await assert.rejects(save(update), error => error.code === 'SELLER_UPDATE_CONFLICT' && error.recoverable === true &&
-    /A newer saved version/.test(error.message) && /background update/.test(error.message) && /Reload the listing/.test(error.message))
+    /Someone else saved changes/.test(error.message) && /entries are still/.test(error.message) && /Review the latest/.test(error.message))
   assert.equal(calls, 1)
   assert.equal(listing.sellerOnboarding.formData.sellerFirstName, 'Old')
 })

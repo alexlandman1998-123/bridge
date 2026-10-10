@@ -2,6 +2,7 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import RecruitmentApplicantDocuments from '../RecruitmentApplicantDocuments'
+import RecruitmentDocumentsPanel from '../RecruitmentDocumentsPanel'
 import RecruitmentNextAction from '../RecruitmentNextAction'
 import { recruitmentSignupRequest } from '../../../services/recruitmentSignupService'
 import { getRecruitmentInvitationStatus, sendRecruitmentInvitation } from '../../../services/recruitmentService'
@@ -10,6 +11,37 @@ vi.mock('../../../services/recruitmentService', () => ({ getRecruitmentInvitatio
 afterEach(() => { cleanup(); vi.clearAllMocks(); vi.unstubAllGlobals() })
 const org = '2958d402-368e-43c9-b728-0098e10505f1', id = '22222222-2222-4222-8222-222222222222'
 const applicant = { applicationSubmitted: true, emailVerification: 'verified', documents: [], documentsEditable: true }
+it('routes each portal category upload and download to its original document type', async () => {
+  const onUpload = vi.fn().mockResolvedValue(undefined), onDownload = vi.fn()
+  const categories = [['CV', 'CV'], ['Identity document', 'Identity document'], ['Qualifications', 'Qualifications'], ['FFC certificate', 'Registration evidence'], ['Proof of address / supporting FICA', 'Other']]
+  const documents = categories.map(([, type], index) => ({ type, name: `evidence-${index}.pdf`, path: `own-file-${index}` }))
+  const profile = { organisation_id: org, documents_json: documents }
+  render(<RecruitmentDocumentsPanel lead={profile} onUpload={onUpload} onDownload={onDownload} />)
+  expect(screen.getByText('5 of 5 categories uploaded')).toBeTruthy()
+  for (const [index, [title, type]] of categories.entries()) {
+    const row = within(screen.getByRole('article', { name: title }))
+    const input = row.getByLabelText(`Upload ${title}`)
+    const file = new File(['%PDF'], `new-${index}.pdf`, { type: 'application/pdf' })
+    fireEvent.change(input, { target: { files: [file] } })
+    expect(onUpload).toHaveBeenLastCalledWith(file, type)
+    await waitFor(() => expect(input.disabled).toBe(false))
+    fireEvent.click(row.getByRole('button', { name: `Download ${documents[index].name} (${title})` }))
+    expect(onDownload).toHaveBeenLastCalledWith(documents[index])
+  }
+})
+it('keeps empty categories visible, rejects invalid files and preserves upload locks', () => {
+  const onUpload = vi.fn(), onDownload = vi.fn()
+  const profile = { organisation_id: org, documents_json: [] }
+  const view = render(<RecruitmentDocumentsPanel lead={profile} onUpload={onUpload} onDownload={onDownload} />)
+  expect(screen.getAllByText('No file uploaded yet')).toHaveLength(5)
+  fireEvent.change(screen.getByLabelText('Upload Identity document'), { target: { files: [new File(['exe'], 'bad.exe', { type: 'application/exe' })] } })
+  expect(screen.getByRole('alert').textContent).toContain('PDF, JPG or PNG')
+  expect(onUpload).not.toHaveBeenCalled()
+  for (const lock of [{ dirty: true }, { busy: true }, { isNew: true }, { lead: { ...profile, approved_at: '2026-10-10' } }]) {
+    view.rerender(<RecruitmentDocumentsPanel lead={profile} onUpload={onUpload} onDownload={onDownload} {...lock} />)
+    for (const input of document.querySelectorAll('input[type="file"]')) expect(input.disabled).toBe(true)
+  }
+})
 it('retries the same uploaded file after a lost save response without uploading or attaching it twice', async () => {
   let commits = 0
   const onSaved = vi.fn(), fetcher = vi.fn().mockResolvedValue({ ok: true })
@@ -59,17 +91,20 @@ it('keeps contacted leads at receipt and offers the actual email reminder after 
   const reminder = await screen.findByRole('button', { name: 'Send reminder to log in and upload documents' })
   fireEvent.click(reminder)
   await waitFor(() => expect(sendRecruitmentInvitation).toHaveBeenCalledWith(org, id, 'documents_reminder', id, expect.objectContaining({ requestId: expect.any(String) })))
-  expect(screen.getByRole('button', { name: 'Start application review' }).disabled).toBe(true)
+  expect(screen.getAllByRole('button').map(button => button.textContent)).toEqual(['Send reminder to log in and upload documents', 'Refresh invitation status'])
+  expect(screen.queryByText(/Document reminder ·/)).toBeNull()
+  expect(screen.queryByText('No sending result recorded.')).toBeNull()
 })
-it('places review, decision, contract and activation actions in the Next best action container', () => {
+it('opens the review from one action and retains the contract and activation actions', () => {
   const open = vi.fn()
   const view = render(<RecruitmentNextAction lead={{ id, status: 'under_review', review_status: 'ready_for_approval' }} onOpen={open} />)
   const container = within(screen.getByLabelText('Next best action'))
-  for (const [label, target] of [['Open Application','application'],['Approve','approve'],['Reject Application','reject']]) {
-    fireEvent.click(container.getByRole('button', { name: label })); expect(open).toHaveBeenLastCalledWith(target)
-  }
+  expect(container.getAllByRole('button')).toHaveLength(1)
+  fireEvent.click(container.getByRole('button', { name: 'Continue review' })); expect(open).toHaveBeenLastCalledWith('application')
   view.rerender(<RecruitmentNextAction lead={{ id, status: 'contract_sent' }} onOpen={open} />)
-  fireEvent.click(screen.getByRole('button', { name: 'Upload Contract' })); expect(open).toHaveBeenLastCalledWith('signed')
+  fireEvent.click(screen.getByRole('button', { name: 'View contract' })); expect(open).toHaveBeenLastCalledWith('signed')
+  view.rerender(<RecruitmentNextAction lead={{ id, status: 'contract_sent', contract_returns_json: [{ id: 'returned-copy' }] }} onOpen={open} />)
+  fireEvent.click(screen.getByRole('button', { name: 'Review signed contract' })); expect(open).toHaveBeenLastCalledWith('signed')
   view.rerender(<RecruitmentNextAction lead={{ id, status: 'contract_signed' }} onOpen={open} />)
   fireEvent.click(screen.getByRole('button', { name: 'Mark as activated' })); expect(open).toHaveBeenLastCalledWith('activation')
 })

@@ -808,6 +808,9 @@ function formatDraftSavedAt(value = '') {
 }
 
 function getDraftSaveStatusMeta(status = 'idle', savedAt = '', fallback = '') {
+  if (status === 'conflict') {
+    return { label: 'Newer seller details saved. Review before saving.', dotClass: 'bg-[#b45309]', className: 'border-[#e2b893] bg-[#fff5ea] text-[#9a5c17]' }
+  }
   if (status === 'saving') {
     return {
       label: 'Saving draft...',
@@ -2824,7 +2827,7 @@ function SignatureRequestDialog({ request = null, copied = false, onClose, onCop
   )
 }
 
-export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmitted = null }) {
+export function SellerOnboarding({ tokenOverride = '', embedded = false, completionModeOverride = '', onSubmitted = null, onDraftSaved = null, onSaveStateChange = null, onDirtyStateChange = null }) {
   const params = useParams()
   const token = String(tokenOverride || params?.token || '').trim()
   const isDemoOnboarding = isSellerOnboardingDemoToken(token)
@@ -2851,18 +2854,34 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   const draftAutosaveTimerRef = useRef(null)
   const lastDraftSignatureRef = useRef('')
   const saveDraftRef = useRef(null)
+  const sellerSaveSnapshotRef = useRef(null)
+  const sellerSaveQueueRef = useRef(Promise.resolve())
+
+  useEffect(() => { sellerSaveSnapshotRef.current = listing }, [listing])
+
+  function queueSellerSave(operation) {
+    const queued = sellerSaveQueueRef.current.catch(() => null).then(operation)
+    sellerSaveQueueRef.current = queued
+    return queued
+  }
   // Signer acknowledgements are saved independently of the final signature.
   // Keep a serialized local draft so quick consecutive checkbox changes can
   // never write an older acknowledgement set over a newer one.
   const signerAcknowledgementFormRef = useRef(null)
   const signerAcknowledgementPersistenceRef = useRef(Promise.resolve())
   const requestedComplianceSignerId = useMemo(() => getSellerComplianceSignerIdFromUrl(), [token])
-  const onboardingCompletionMode = useMemo(() => getSellerOnboardingCompletionModeFromUrl(), [token])
+  const onboardingCompletionMode = useMemo(() => completionModeOverride
+    ? normalizeSellerOnboardingCompletionMode(completionModeOverride)
+    : getSellerOnboardingCompletionModeFromUrl(), [completionModeOverride, token])
   const isAgentAssistedCompletion = onboardingCompletionMode === SELLER_ONBOARDING_COMPLETION_MODES.agentAssisted && !requestedComplianceSignerId
   const agentLeadIdFromUrl = isAgentAssistedCompletion && typeof window !== 'undefined'
     ? new URLSearchParams(window.location.search).get('lead_id') || ''
     : ''
   const agentLeadId = /^[a-zA-Z0-9-]+$/.test(agentLeadIdFromUrl) ? agentLeadIdFromUrl : ''
+
+  useEffect(() => {
+    onSaveStateChange?.(saving || submitting)
+  }, [onSaveStateChange, saving, submitting])
 
   useEffect(() => {
     setSignerAcknowledgements(null)
@@ -3067,6 +3086,10 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   }, [listing?.sellerOnboarding?.status])
 
   const isCompleted = String(listing?.sellerOnboarding?.status || '').trim().toLowerCase() === SELLER_ONBOARDING_STATUS.COMPLETED
+  useEffect(() => {
+    const signature = form && listing ? buildSellerDraftSignature(normalizeSellerFormForProgression(form, listing), currentStep) : ''
+    onDirtyStateChange?.(!isCompleted && Boolean(signature && signature !== lastDraftSignatureRef.current))
+  }, [currentStep, draftSyncStatus, form, isCompleted, listing, onDirtyStateChange])
   const flow = useMemo(() => getFlowContract(form || {}, listing || {}, getCanonicalSellerFacts(listing || {})), [form, listing])
   const propertyBranch = String(flow?.property_branch || form?.propertyBranch || '').trim() || 'residential'
   const sellerComplianceSigningFlow = useMemo(() => buildSellerComplianceSigningForForm({
@@ -3215,24 +3238,27 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     }
 
     if (useDbFirstSellerOnboarding) {
-      const current = listing || {}
-      const candidate = updater({ ...current })
-      const nextStatus = String(candidate?.sellerOnboarding?.status || '').trim().toLowerCase() || SELLER_ONBOARDING_STATUS.IN_PROGRESS
-      const nextStep = Number(candidate?.sellerOnboarding?.currentStep || currentStep || 0)
-      const progressUpdate = await updateSellerOnboardingProgress(token, {
-        listingSnapshot: candidate,
-        status: nextStatus,
-        currentStep: nextStep,
-        formData: (candidate?.sellerOnboarding?.formData && typeof candidate.sellerOnboarding.formData === 'object')
-          ? candidate.sellerOnboarding.formData
-          : (form || {}),
+      return queueSellerSave(async () => {
+        const current = sellerSaveSnapshotRef.current || listing || {}
+        const candidate = updater({ ...current })
+        const nextStatus = String(candidate?.sellerOnboarding?.status || '').trim().toLowerCase() || SELLER_ONBOARDING_STATUS.IN_PROGRESS
+        const nextStep = Number(candidate?.sellerOnboarding?.currentStep || currentStep || 0)
+        const progressUpdate = await updateSellerOnboardingProgress(token, {
+          listingSnapshot: current,
+          status: nextStatus,
+          currentStep: nextStep,
+          formData: (candidate?.sellerOnboarding?.formData && typeof candidate.sellerOnboarding.formData === 'object')
+            ? candidate.sellerOnboarding.formData
+            : (form || {}),
+        })
+        const updated = progressUpdate?.listing || null
+        if (updated) {
+          sellerSaveSnapshotRef.current = updated
+          setListing(updated)
+          if (options.refreshForm) setForm(normalizeFormData(updated))
+        }
+        return updated
       })
-      const updated = progressUpdate?.listing || null
-      if (updated) {
-        setListing(updated)
-        if (options.refreshForm) setForm(normalizeFormData(updated))
-      }
-      return updated
     }
 
     const updated = updateSellerWorkflowRecordByToken(token, updater)
@@ -3876,6 +3902,10 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       })
       setLastDraftSavedAt(savedAt)
       setDraftSyncStatus('saved')
+      // A parent workspace can refresh its projection without running a second save.
+      try { onDraftSaved?.(updated) } catch (callbackError) {
+        console.error('[Seller Onboarding] draft projection failed', callbackError)
+      }
 
       if (!silent) {
         setSuccess('Draft saved.')
@@ -3884,8 +3914,9 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       return true
     } catch (draftError) {
       console.error('[Seller Onboarding] draft save failed', draftError)
-      setDraftSyncStatus('error')
-      if (!silent) {
+      const conflicted = draftError?.code === 'SELLER_UPDATE_CONFLICT'
+      setDraftSyncStatus(conflicted ? 'conflict' : 'error')
+      if (!silent || conflicted) {
         setError(resolveSellerOnboardingDraftError(draftError))
         scrollSellerOnboardingToTop({ focusAlert: true })
       }
@@ -3908,6 +3939,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       isCompleted ||
       submitting ||
       saving ||
+      draftSyncStatus === 'conflict' ||
       hasRequestedComplianceSigner ||
       (!embedded && showWelcome)
     ) {
@@ -3940,7 +3972,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         draftAutosaveTimerRef.current = null
       }
     }
-  }, [currentStep, embedded, form, hasRequestedComplianceSigner, isCompleted, isOffline, listing, loading, saving, showWelcome, submitting, useDbFirstSellerOnboarding])
+  }, [currentStep, draftSyncStatus, embedded, form, hasRequestedComplianceSigner, isCompleted, isOffline, listing, loading, saving, showWelcome, submitting, useDbFirstSellerOnboarding])
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined
@@ -3949,7 +3981,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     const currentSignature = buildSellerDraftSignature(form, currentStep)
     const hasUnsavedDraft =
       Boolean(currentSignature && currentSignature !== lastDraftSignatureRef.current) ||
-      ['pending', 'saving', 'error', 'offline'].includes(draftSyncStatus)
+      ['pending', 'saving', 'error', 'offline', 'conflict'].includes(draftSyncStatus)
 
     if (!hasUnsavedDraft) return undefined
 
@@ -4802,17 +4834,21 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       const submitFormData = { ...finalForm, ...canonicalPayload }
       let updated = null
       if (useDbFirstSellerOnboarding) {
-        const submitted = await submitSellerOnboarding(token, {
-          status: 'completed',
-          formData: submitFormData,
-          completionMode: onboardingCompletionMode,
-          sellerType: String(submissionForm?.ownerEntityType || submissionForm?.ownershipType || '').trim().toLowerCase() || null,
-          ownershipStructure: String(submissionForm?.ownerStructureType || submissionForm?.ownershipType || '').trim().toLowerCase() || null,
-          maritalRegime: String(submissionForm?.ownershipType || '').trim().toLowerCase().includes('married')
-            ? String(submissionForm?.ownershipType || '').trim().toLowerCase()
-            : null,
-          skipPortalNotification: true,
-          listingSnapshot: listing,
+        const submitted = await queueSellerSave(async () => {
+          const result = await submitSellerOnboarding(token, {
+            status: 'completed',
+            formData: submitFormData,
+            completionMode: onboardingCompletionMode,
+            sellerType: String(submissionForm?.ownerEntityType || submissionForm?.ownershipType || '').trim().toLowerCase() || null,
+            ownershipStructure: String(submissionForm?.ownerStructureType || submissionForm?.ownershipType || '').trim().toLowerCase() || null,
+            maritalRegime: String(submissionForm?.ownershipType || '').trim().toLowerCase().includes('married')
+              ? String(submissionForm?.ownershipType || '').trim().toLowerCase()
+              : null,
+            skipPortalNotification: true,
+            listingSnapshot: sellerSaveSnapshotRef.current || listing,
+          })
+          if (result?.listing) sellerSaveSnapshotRef.current = result.listing
+          return result
         })
         updated = submitted?.listing || null
       } else {
@@ -4885,6 +4921,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       })
     } catch (submitError) {
       console.error('[Seller Onboarding] submit failed', submitError)
+      if (submitError?.code === 'SELLER_UPDATE_CONFLICT') setDraftSyncStatus('conflict')
       setError(resolveSellerOnboardingSubmitError(submitError))
       scrollSellerOnboardingToTop({ focusAlert: true })
     } finally {
@@ -5099,7 +5136,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     : []
 
   const shouldShowWelcome = !embedded && !isCompleted && !hasRequestedComplianceSigner && !isAgentAssistedCompletion && showWelcome
-  const onboardingActions = !embedded && !isCompleted && !hasRequestedComplianceSigner ? (
+  const onboardingActions = (!embedded || isAgentAssistedCompletion) && !isCompleted && !hasRequestedComplianceSigner ? (
     <div className="rounded-[24px] border border-white/70 bg-white/95 p-3 shadow-[0_14px_32px_rgba(15,23,42,0.08)] backdrop-blur-xl">
       <div className="grid gap-2 md:hidden">
         <div className="flex min-w-0 items-center justify-between gap-2">
@@ -5179,7 +5216,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     <div className={PAGE_STACK_CLASS}>
       {!isCompleted && !hasRequestedComplianceSigner ? (
         <>
-          <SellerOnboardingHero brand={agencyBrand} listing={listing} form={form} statusLabel={statusLabel} />
+          {!(embedded && isAgentAssistedCompletion) ? <SellerOnboardingHero brand={agencyBrand} listing={listing} form={form} statusLabel={statusLabel} /> : null}
           {isAgentAssistedCompletion ? (
             <div className="mt-4 flex items-start gap-3 rounded-[16px] border border-[#c9dceb] bg-[#f4f9ff] px-4 py-3 text-sm leading-6 text-[#315879]">
               <UserRound size={18} className="mt-0.5 shrink-0" />
@@ -5883,7 +5920,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                           checked={Boolean(currentConsent?.accepted)}
                           onChange={(event) => handleFormUpdate('sellerOnboardingConsents', updateSellerOnboardingConsent(form, consent.key, event.target.checked))}
                         />
-                        <span>{consent.label}</span>
+                        <span>{isAgentAssistedCompletion ? <>I confirm the seller gave this permission or declaration: “{consent.label}”</> : consent.label}</span>
                       </label>
                     )
                   })}

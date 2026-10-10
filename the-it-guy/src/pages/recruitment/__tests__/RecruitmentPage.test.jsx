@@ -12,8 +12,10 @@ import { WorkspaceContext } from '../../../context/WorkspaceContextBase'
 import { recruitmentLocalDate } from '../recruitmentSigningModel'
 import { emptyRecruitmentLead, recruitmentReadiness } from '../recruitmentModel'
 import { recruitmentReviewDraft } from '../recruitmentReviewModel'
+import { approvalConfirmation } from '../recruitmentApprovalModel'
 import RecruitmentJourney from '../RecruitmentJourney'
-import { getRecruitmentJoiningOptions, recordRecruitmentContractSignature, approveRecruitmentApplication, getRecruitmentLead, saveRecruitmentLead } from '../../../services/recruitmentService'
+import { validProfile } from './helpers/recruitmentProfileFixture'
+import { getRecruitmentJoiningOptions, recordRecruitmentContractSignature, approveRecruitmentApplication, getRecruitmentLead, saveRecruitmentLead, saveRecruitmentReview } from '../../../services/recruitmentService'
 vi.mock('../../../services/recruitmentIntakeService', () => ({ createRecruitmentIntakeLink: vi.fn(), listRecruitmentIntakeLinks: vi.fn().mockResolvedValue([]), revokeRecruitmentIntakeLink: vi.fn() }))
 vi.mock('../../../services/recruitmentService', () => ({ getRecruitmentInvitationStatus: vi.fn().mockResolvedValue({referenceStatus:'prepared',attempt:null}), sendRecruitmentInvitation: vi.fn(), getRecruitmentJoiningOptions: vi.fn().mockResolvedValue({ branches: [{id:'a1111111-1111-4111-8111-111111111111',name:'Head Office'}], commissionStructures: [] }), getRecruitmentJoiningConnections: vi.fn().mockResolvedValue({ applications: [], workspace: [] }), activateRecruitmentAgent: vi.fn(), getRecruitmentAgentAccessLink: vi.fn(), saveRecruitmentOnboarding: vi.fn(), uploadRecruitmentOnboardingDocument: vi.fn(), downloadRecruitmentOnboardingDocument: vi.fn(), recordRecruitmentContractDelivery: vi.fn(), recordRecruitmentContractSignature: vi.fn(), downloadRecruitmentSignedContract: vi.fn(), prepareRecruitmentContract: vi.fn(), downloadRecruitmentContract: vi.fn(), approveRecruitmentApplication: vi.fn(), getRecruitmentLead: vi.fn(), listRecruitmentLeads: vi.fn().mockResolvedValue([]), startRecruitmentReview: vi.fn(), saveRecruitmentReview: vi.fn(), saveRecruitmentLead: vi.fn(), uploadRecruitmentDocument: vi.fn(), openRecruitmentDocument: vi.fn() }))
 afterEach(() => { cleanup(); vi.clearAllMocks() })
@@ -68,7 +70,7 @@ it('saves planned setup with agent details and protects unsaved joining choices 
   fireEvent.click(screen.getByLabelText('Rentals'))
   expect(screen.getByRole('button', { name: 'Close Lead' }).disabled).toBe(true)
   fireEvent.click(screen.getByRole('tab', { name: 'Documents' }))
-  expect(screen.getByLabelText('Upload document').disabled).toBe(true)
+  expect(screen.getByLabelText('Upload CV').disabled).toBe(true)
   fireEvent.click(screen.getByRole('tab', { name: 'Agent Details' }))
   fireEvent.click(screen.getByRole('button', { name: 'Save Agent Details' }))
   expect(save).toHaveBeenCalledOnce()
@@ -133,7 +135,7 @@ it('keeps a signed and onboarded agent awaiting activation until activation is s
 it('shows where a closed lead stopped without marking a future stage as current', () => {
   wrap(<RecruitmentWorkspace lead={{ ...lead, status: 'closed_lost', application_submitted_at: '2026-10-05', review_started_at: '2026-10-05' }} />)
   const stages = within(screen.getByRole('region', { name: 'Agent journey stages' })).getAllByRole('listitem')
-  expect(document.querySelector('[aria-current="step"]')).toBeNull()
+  expect(screen.getByRole('region', { name: 'Agent journey stages' }).querySelector('[aria-current="step"]')).toBeNull()
   expect(within(stages[1]).getByText('Complete')).toBeTruthy()
   expect(within(stages[2]).getByText('Not uploaded')).toBeTruthy()
   expect(within(stages[3]).getByText('Stopped here')).toBeTruthy()
@@ -165,7 +167,7 @@ it('captures details and prevents losing edits through upload', () => {
   fireEvent.change(screen.getByLabelText('Experience & track record'), { target: { value: 'Five years in residential sales' } })
   expect(screen.getByRole('button', { name: 'Close Lead' }).disabled).toBe(true)
   fireEvent.click(screen.getByRole('tab', { name: 'Documents' }))
-  expect(screen.getByLabelText('Upload document').disabled).toBe(true)
+  expect(screen.getByLabelText('Upload CV').disabled).toBe(true)
   fireEvent.click(screen.getByRole('tab', { name: 'Agent Details' }))
   fireEvent.click(screen.getByRole('button', { name: 'Save Agent Details' }))
   expect(onSave.mock.calls[0][0].details_json).toMatchObject({ onboardingCaptured: false, experience: 'Five years in residential sales' })
@@ -177,9 +179,8 @@ it('reopens closed leads and uploads the selected document type', () => {
   fireEvent.click(screen.getByRole('button', { name: 'Reopen Lead' }))
   expect(onSave.mock.calls[0][0].status).toBe('lead_received')
   fireEvent.click(screen.getByRole('tab', { name: 'Documents' }))
-  fireEvent.change(screen.getByLabelText('Document type'), { target: { value: 'Qualifications' } })
   const file = new File(['test'], 'certificate.pdf', { type: 'application/pdf' })
-  fireEvent.change(screen.getByLabelText('Upload document'), { target: { files: [file] } })
+  fireEvent.change(screen.getByLabelText('Upload Qualifications'), { target: { files: [file] } })
   expect(onUpload).toHaveBeenCalledWith(file, 'Qualifications')
 })
 it('shows load failure with recovery, without inventing an empty lead', async () => {
@@ -212,26 +213,57 @@ it('captures a referral at Lead Received without exposing future stage controls'
   fireEvent.click(screen.getByRole('button', { name: 'Create Agent Lead' }))
   expect(onSave.mock.calls[0][0]).toMatchObject({ status: 'lead_received', source: 'Referral', details_json: { referredBy: 'Sam' } })
 })
-it('shows all eight journey stages and the authoritative receipt history', () => {
+it('shows all eight journey stages and contact details without the activity feed', () => {
   wrap(<RecruitmentWorkspace lead={{ ...lead, received_at: '2026-10-05T12:00:00Z', activity_json: [{ type: 'lead_received', at: '2026-10-05T12:00:00Z' }] }} />)
   expect(screen.getByText('Agent Activated')).toBeTruthy()
   expect(screen.getByText('Application Submitted')).toBeTruthy()
   expect(document.querySelector('[aria-current="step"]').textContent).toBe('1Lead Received')
   expect(screen.getByRole('heading', { name: 'Contact details' })).toBeTruthy()
-  expect(screen.getByText('Lead received')).toBeTruthy()
+  expect(screen.queryByRole('heading', { name: 'Activity' })).toBeNull()
+  expect(screen.queryByText('Lead received')).toBeNull()
 })
 
-it('feeds the submitted answers and review requirements into the recruitment workspace', () => {
+it('keeps submitted answers available without the overview requirements section', () => {
   const application = { version:'recruitment-application-v1', channel:'website', answers:{yearsExperience:'3',dealsPerMonth:'2',activeMandates:'no',practitionerStatus:'candidate',ffcStatus:'pending',qualificationRoute:'occupational',qualificationStatus:'in_progress',pdeStatus:'not_started',practicalStatus:'in_progress',cpdStatus:'not_applicable',motivation:'Training'} }
   const onSave = vi.fn()
   wrap(<RecruitmentWorkspace lead={{...lead,status:'closed_lost',application_submitted_at:'2026-10-05',application_json:application}} onSave={onSave} />)
-  expect(screen.getByText('Application requirements')).toBeTruthy()
-  expect(screen.getByText('PPRA / FFC evidence')).toBeTruthy()
+  expect(screen.queryByText('Application requirements')).toBeNull()
+  expect(screen.queryByText('PPRA / FFC evidence')).toBeNull()
   fireEvent.click(screen.getByRole('button',{name:'Reopen Lead'}))
   expect(onSave.mock.calls[0][0].status).toBe('application_submitted')
   fireEvent.click(screen.getByRole('tab',{name:'Agent Details'}))
   expect(screen.getByText('Submitted application')).toBeTruthy()
-  expect(screen.getByText('3 years')).toBeTruthy()
+  const professional = screen.getByRole('region', {name:'Professional profile'})
+  expect(within(professional.querySelector('.recruitment-details__highlights')).getByText('3 years')).toBeTruthy()
+  expect(within(professional.querySelector('details')).getByText('3 years')).toBeTruthy()
+})
+
+it('groups the submitted profile and saves staff edits without changing applicant answers', () => {
+  const application = {version:'recruitment-application-v1', questionnaireVersion:'recruitment-profile-v1', channel:'website', answers:{...validProfile(lead.email),packagePreference:'deals'}}
+  const record = {...lead,status:'application_submitted',application_submitted_at:'2026-10-05',application_json:application}
+  const onSave = vi.fn()
+  wrap(<RecruitmentWorkspace lead={record} onSave={onSave} />)
+  fireEvent.click(screen.getByRole('tab', {name:'Agent Details'}))
+  const personal = screen.getByRole('region', {name:'Personal & contact'})
+  const professional = screen.getByRole('region', {name:'Professional profile'})
+  const joining = screen.getByRole('region', {name:'Joining setup'})
+  const notes = screen.getByRole('region', {name:'Agency notes'})
+  expect(within(personal).getByText('123 Fixture Road, Pretoria, Gauteng, 0001')).toBeTruthy()
+  expect(within(personal).getByText('1990-06-15')).toBeTruthy()
+  expect(within(professional).getByText('FFC FFC-FIXTURE-123')).toBeTruthy()
+  expect(within(professional).getByText('Non-principal property practitioner')).toBeTruthy()
+  expect(within(joining).getByText('Post Paid')).toBeTruthy()
+  expect(within(joining).getByText('2099-01-01')).toBeTruthy()
+  expect(within(notes).getByText('How did you find out about us?')).toBeTruthy()
+  expect(screen.getAllByRole('button', {name:/^Save/})).toHaveLength(1)
+  fireEvent.change(within(personal).getByLabelText('Phone'), {target:{value:'0827654321'}})
+  fireEvent.change(within(professional).getByLabelText('Experience & track record'), {target:{value:'References checked with prior brokerage.'}})
+  fireEvent.change(within(notes).getByLabelText('Recruitment notes'), {target:{value:'Follow up after branch introduction.'}})
+  fireEvent.click(screen.getByRole('button', {name:'Save Agent Details'}))
+  expect(onSave).toHaveBeenCalledOnce()
+  expect(onSave.mock.calls[0][0]).toMatchObject({phone:'0827654321',details_json:{experience:'References checked with prior brokerage.',notes:'Follow up after branch introduction.'}})
+  expect(onSave.mock.calls[0][0].application_json).toEqual(application)
+  expect(onSave.mock.calls[0][0].joining_json).toEqual(record.joining_json)
 })
 
 const submitted = {...lead,status:'application_submitted',application_submitted_at:'2026-10-05',application_json:{version:'recruitment-application-v1',answers:{practitionerStatus:'candidate',ffcStatus:'pending',activeMandates:'no'}}}
@@ -250,18 +282,20 @@ it('starts review with a submitted application and complete documents, and prote
 it('saves review findings and protects unsaved review work from other mutations', () => {
   const save = vi.fn()
   const reviewed = {...submitted,status:'under_review',review_started_at:'2026-10-05'}
+  reviewed.review_json = {...recruitmentReviewDraft(reviewed),notes:'Previous interview notes',followUpOn:'2026-10-12'}
   wrap(<RecruitmentWorkspace lead={reviewed} onSaveReview={save} />)
-  fireEvent.change(screen.getByLabelText('PPRA / FFC evidence status'),{target:{value:'needs_information'}})
+  fireEvent.click(screen.getByRole('button',{name:'Reject PPRA / FFC evidence',exact:true}))
   fireEvent.change(screen.getByLabelText('PPRA / FFC evidence findings'),{target:{value:'Request the current FFC and renewal details'}})
-  fireEvent.change(screen.getByLabelText('Follow-up date (optional)'),{target:{value:'2026-10-12'}})
+  fireEvent.click(screen.getByRole('button',{name:'Outcome'}))
   expect(screen.getByRole('button',{name:'Close Lead'}).disabled).toBe(true)
   fireEvent.click(screen.getByRole('tab',{name:'Documents'}))
-  expect(screen.getByLabelText('Upload document').disabled).toBe(true)
+  expect(screen.getByLabelText('Upload CV').disabled).toBe(true)
   fireEvent.click(screen.getByRole('tab',{name:'Agent Details'}))
   expect(screen.getByRole('button',{name:'Save Agent Details'}).disabled).toBe(true)
   fireEvent.click(screen.getByRole('tab',{name:'Overview'}))
+  fireEvent.click(screen.getByRole('button',{name:'Outcome'}))
   fireEvent.click(screen.getByRole('button',{name:'Save review'}))
-  expect(save.mock.calls[0][0]).toMatchObject({checks:{registration:{status:'needs_information',notes:'Request the current FFC and renewal details'}},followUpOn:'2026-10-12'})
+  expect(save.mock.calls[0][0]).toMatchObject({checks:{registration:{status:'needs_information',notes:'Request the current FFC and renewal details'}},notes:'Previous interview notes',followUpOn:'2026-10-12'})
 })
 it('shows saved document findings and restores Under Review on reopening', () => {
   const onSave = vi.fn(), path = 'org/lead/file'
@@ -275,7 +309,50 @@ it('shows saved document findings and restores Under Review on reopening', () =>
   expect(onSave.mock.calls[0][0].status).toBe('under_review')
   expect(screen.queryByRole('button',{name:'Save review'})).toBeNull()
   fireEvent.click(screen.getByRole('tab',{name:'Documents'}))
-  expect(screen.getByText(/Registration evidence.*Reviewed/)).toBeTruthy()
+  expect(within(screen.getByRole('article', { name: 'Registration evidence' })).getByText('Reviewed')).toBeTruthy()
+})
+
+it('reviews matching filenames by category and preserves previously linked evidence when saving', () => {
+  const onSaveReview = vi.fn(), onDownload = vi.fn()
+  const documents = [{path:'org/agent-1/cv',name:'upload.jpeg',type:'CV'},{path:'org/agent-1/ffc',name:'upload.jpeg',type:'Registration evidence'}]
+  const reviewed = {...submitted,status:'under_review',organisation_id:'2958d402-368e-43c9-b728-0098e10505f1',review_started_at:'2026-10-05',documents_json:documents}
+  reviewed.review_json = recruitmentReviewDraft(reviewed)
+  reviewed.review_json.checks.registration.evidence = [documents[1].path]
+  wrap(<RecruitmentWorkspace lead={reviewed} onSaveReview={onSaveReview} onDownload={onDownload} />)
+  const ffc = screen.getByRole('article', {name:'FFC certificate (upload.jpeg)'})
+  expect(within(ffc).getByRole('button', {name:'Approve FFC certificate (upload.jpeg)',exact:true})).toBeTruthy()
+  fireEvent.click(within(ffc).getByRole('button', {name:'Download FFC certificate (upload.jpeg)'}))
+  expect(onDownload).toHaveBeenCalledWith(documents[1])
+  fireEvent.click(screen.getByRole('button',{name:'Approve FFC certificate (upload.jpeg)',exact:true}))
+  fireEvent.change(screen.getByLabelText('FFC certificate (upload.jpeg) findings'), {target:{value:'File opened and registration confirmed.'}})
+  fireEvent.click(screen.getByRole('button', {name:'Application checks'}))
+  expect(within(screen.getByRole('region',{name:'Review checklist'})).queryByRole('checkbox')).toBeNull()
+  fireEvent.click(screen.getByRole('button',{name:'Approve PPRA / FFC evidence',exact:true}))
+  fireEvent.change(screen.getByLabelText('PPRA / FFC evidence findings'), {target:{value:'Licence details checked against the FFC.'}})
+  expect(screen.getByText('1 / 4')).toBeTruthy()
+  expect(screen.getByText('1 / 2')).toBeTruthy()
+  expect(screen.getByText('Unsaved changes')).toBeTruthy()
+  expect(screen.getAllByRole('button', {name:'Save progress'})).toHaveLength(1)
+  fireEvent.click(screen.getByRole('button', {name:'Save progress'}))
+  expect(onSaveReview).toHaveBeenCalledOnce()
+  expect(onSaveReview.mock.calls[0][0]).toMatchObject({checks:{registration:{status:'verified',notes:'Licence details checked against the FFC.',evidence:[documents[1].path]}},documents:[{path:documents[0].path,status:'pending',notes:''},{path:documents[1].path,status:'reviewed',notes:'File opened and registration confirmed.'}]})
+})
+
+it('keeps approved findings locked while allowing the preserved document to be downloaded', () => {
+  const onDownload = vi.fn(), document = {path:'org/agent-1/ffc',name:'ffc.pdf',type:'Registration evidence'}
+  wrap(<RecruitmentWorkspace lead={{...submitted,status:'application_approved',approved_at:'2026-10-06',review_started_at:'2026-10-05',documents_json:[document]}} onDownload={onDownload} />)
+  const file = screen.getByRole('article', {name:'Registration evidence (ffc.pdf)'})
+  expect(screen.getByRole('button',{name:'Approve Registration evidence (ffc.pdf)',exact:true}).matches(':disabled')).toBe(true)
+  expect(screen.getByRole('button',{name:'Reject Registration evidence (ffc.pdf)',exact:true}).matches(':disabled')).toBe(true)
+  const download = within(file).getByRole('button', {name:'Download Registration evidence (ffc.pdf)'})
+  expect(download.disabled).toBe(false)
+  fireEvent.click(download)
+  expect(onDownload).toHaveBeenCalledWith(document)
+  fireEvent.click(screen.getByRole('button', {name:'Continue to application checks'}))
+  expect(screen.getByRole('button',{name:'Approve PPRA / FFC evidence',exact:true}).matches(':disabled')).toBe(true)
+  expect(screen.getByRole('button',{name:'Reject PPRA / FFC evidence',exact:true}).matches(':disabled')).toBe(true)
+  expect(screen.getByRole('textbox', {name:'PPRA / FFC evidence findings'}).matches(':disabled')).toBe(true)
+  expect(screen.queryByRole('button', {name:'Save review'})).toBeNull()
 })
 
 const approvalReady = () => {
@@ -284,22 +361,32 @@ const approvalReady = () => {
   for (const check of Object.values(ready.review_json.checks)) {check.status='verified';check.notes='Evidence reviewed by staff'}
   return ready
 }
-it('requires a saved resolved review, reason and deliberate confirmation before approval', () => {
+it('requires a saved resolved review and deliberate confirmation before approval without extra fields', () => {
   const approve=vi.fn()
   wrap(<RecruitmentWorkspace lead={approvalReady()} onApprove={approve} />)
   expect(screen.getByRole('button',{name:'Approve application'}).disabled).toBe(true)
-  fireEvent.change(screen.getByLabelText('Approval reason'),{target:{value:'Approved following the evidence review'}})
+  expect(screen.queryByLabelText('Approval reason')).toBeNull()
+  expect(screen.queryByLabelText('Overall review / interview notes')).toBeNull()
+  expect(screen.queryByLabelText('Follow-up date (optional)')).toBeNull()
+  const confirmation = screen.getByRole('checkbox',{name:approvalConfirmation})
+  fireEvent.click(confirmation)
+  expect(screen.getByRole('button',{name:'Approve application'}).disabled).toBe(false)
+  expect(screen.queryByText(/You have an unsaved approval decision/)).toBeNull()
+  expect(screen.queryByText(/Uploading documents and changing the lead stage are disabled/)).toBeNull()
+  fireEvent.click(confirmation)
   expect(screen.getByRole('button',{name:'Approve application'}).disabled).toBe(true)
-  fireEvent.click(screen.getByRole('checkbox',{name:/I have reviewed the application/}))
+  fireEvent.click(confirmation)
   expect(screen.getByRole('button',{name:'Close Lead'}).disabled).toBe(true)
   fireEvent.click(screen.getByRole('button',{name:'Approve application'}))
-  expect(approve).toHaveBeenCalledWith({notes:'Approved following the evidence review',confirmed:true})
+  expect(approve).toHaveBeenCalledWith({confirmed:true})
 })
 it('blocks approval while review findings or agent details are unsaved', () => {
   wrap(<RecruitmentWorkspace lead={approvalReady()} />)
-  fireEvent.change(screen.getByLabelText('Overall review / interview notes'),{target:{value:'Unsaved interview'}})
-  expect(screen.getByLabelText('Approval reason').matches(':disabled')).toBe(true)
-  expect(screen.getByRole('button',{name:'Approve application'}).disabled).toBe(true)
+  fireEvent.click(screen.getByRole('button',{name:'Application checks'}))
+  fireEvent.change(screen.getByLabelText('PPRA / FFC evidence findings'),{target:{value:'Unsaved finding'}})
+  fireEvent.click(screen.getByRole('button',{name:'Outcome'}))
+  expect(screen.queryByRole('button',{name:'Approve application'})).toBeNull()
+  expect(screen.getByRole('button',{name:'Save review'}).disabled).toBe(false)
 })
 it('shows the approval decision and locks review evidence while retaining the approved stage on reopen', () => {
   const onSave=vi.fn()
@@ -309,28 +396,64 @@ it('shows the approval decision and locks review evidence while retaining the ap
   fireEvent.click(screen.getByRole('button',{name:'Reopen Lead'}))
   expect(onSave.mock.calls[0][0].status).toBe('application_approved')
   fireEvent.click(screen.getByRole('tab',{name:'Documents'}))
-  expect(screen.getByLabelText('Upload document').disabled).toBe(true)
+  expect(screen.getByLabelText('Upload CV').disabled).toBe(true)
+})
+
+it('preserves a historical approval even when the record has no review-start timestamp', () => {
+  wrap(<RecruitmentWorkspace lead={{...lead,status:'application_approved',approved_at:'2026-10-05',approved_by:'manager',approval_notes:'Approved in the prior recruitment process.'}} />)
+  expect(screen.getByRole('region',{name:'Application approval'})).toBeTruthy()
+  expect(screen.getAllByText('Approved in the prior recruitment process.')).toHaveLength(1)
+  expect(screen.queryByRole('button',{name:'Approve application'})).toBeNull()
+})
+
+it.each([false,true])('keeps the guided outcome open after saving and preserves findings on failure (failure=%s)', async failure => {
+  const ready=approvalReady(), notes='Interview findings checked before the decision.'
+  vi.mocked(getRecruitmentLead).mockResolvedValue(ready)
+  if (failure) vi.mocked(saveRecruitmentReview).mockRejectedValue(new Error('Review could not be saved. Please retry.'))
+  else vi.mocked(saveRecruitmentReview).mockImplementation(async (_org, record, draft) => ({...record,review_json:draft,review_updated_at:'2026-10-10'}))
+  render(<WorkspaceContext.Provider value={{currentWorkspace:{id:'org'},organisationMembershipRole:'principal'}}><MemoryRouter initialEntries={['/agency/recruitment/agent-1']}><Routes><Route path='/agency/recruitment/:leadId' element={<RecruitmentPage />} /></Routes></MemoryRouter></WorkspaceContext.Provider>)
+  await screen.findByRole('heading',{name:'Record the outcome'})
+  fireEvent.click(screen.getByRole('button',{name:'Application checks'}))
+  const field = screen.getByRole('textbox',{name:'PPRA / FFC evidence findings'})
+  fireEvent.change(field,{target:{value:notes}})
+  fireEvent.click(screen.getByRole('button',{name:'Outcome'}))
+  expect(screen.queryByRole('button',{name:'Approve application'})).toBeNull()
+  fireEvent.click(screen.getByRole('button',{name:'Save review'}))
+  const review = within(screen.getByRole('region',{name:'Application review'}))
+  if (failure) {
+    expect((await review.findByRole('alert')).textContent).toBe('Review could not be saved. Please retry.')
+    expect(review.getByLabelText('PPRA / FFC evidence findings').value).toBe(notes)
+    await waitFor(() => expect(review.getByRole('button',{name:'Save review'}).disabled).toBe(false))
+    expect(screen.queryByRole('button',{name:'Approve application'})).toBeNull()
+  } else {
+    await screen.findByRole('button',{name:'Approve application'})
+    expect(review.queryByRole('button',{name:'Save review'})).toBeNull()
+    expect(review.getByLabelText('PPRA / FFC evidence findings').value).toBe(notes)
+  }
+  expect(saveRecruitmentReview).toHaveBeenCalledOnce()
+  expect(saveRecruitmentReview).toHaveBeenCalledWith('org',ready,expect.objectContaining({checks:expect.objectContaining({registration:expect.objectContaining({notes})})}))
+  expect(approveRecruitmentApplication).not.toHaveBeenCalled()
 })
 
 it.each([false,true])('handles an approval response and preserves the decision on failure (failure=%s)', async (failure) => {
-  const ready=approvalReady(), reason='Approved after the complete review'
+  const ready=approvalReady()
   vi.mocked(getRecruitmentLead).mockResolvedValue(ready)
   if(failure) vi.mocked(approveRecruitmentApplication).mockRejectedValue(new Error('Approval was not saved. Reload and review.'))
-  else vi.mocked(approveRecruitmentApplication).mockResolvedValue({...ready,status:'application_approved',approved_at:'2026-10-05',approved_by:'manager',approval_notes:reason})
+  else vi.mocked(approveRecruitmentApplication).mockResolvedValue({...ready,status:'application_approved',approved_at:'2026-10-05',approved_by:'manager',approval_notes:approvalConfirmation})
   render(<WorkspaceContext.Provider value={{currentWorkspace:{id:'org'},organisationMembershipRole:'principal'}}><MemoryRouter initialEntries={['/agency/recruitment/agent-1']}><Routes><Route path='/agency/recruitment/:leadId' element={<RecruitmentPage />} /></Routes></MemoryRouter></WorkspaceContext.Provider>)
-  await screen.findByLabelText('Approval reason')
-  fireEvent.change(screen.getByLabelText('Approval reason'),{target:{value:reason}})
-  fireEvent.click(screen.getByRole('checkbox',{name:/I have reviewed the application/}))
+  const confirmation = await screen.findByRole('checkbox',{name:approvalConfirmation})
+  fireEvent.click(confirmation)
   fireEvent.click(screen.getByRole('button',{name:'Approve application'}))
   if(failure){
     expect(await screen.findByRole('alert')).toBeTruthy()
-    expect(screen.getByLabelText('Approval reason').value).toBe(reason)
+    expect(screen.getByRole('checkbox',{name:approvalConfirmation}).checked).toBe(true)
   }else{
     expect(await screen.findByText('Application approved. Approval email queued automatically.')).toBeTruthy()
-    expect(screen.queryByLabelText('Approval reason')).toBeNull()
+    expect(screen.queryByRole('checkbox',{name:approvalConfirmation})).toBeNull()
+    expect(screen.getByText(approvalConfirmation)).toBeTruthy()
     expect(document.querySelector('[aria-current="step"]').textContent).toBe('5Application Approved')
   }
-  expect(approveRecruitmentApplication).toHaveBeenCalledWith('org',ready,{notes:reason,confirmed:true})
+  expect(approveRecruitmentApplication).toHaveBeenCalledWith('org',ready,{confirmed:true})
 })
 
 it('prepares contract PDFs separately from locked review evidence and protects unsaved agent edits', () => {
@@ -340,6 +463,7 @@ it('prepares contract PDFs separately from locked review evidence and protects u
   expect(download).toHaveBeenCalledWith(ready.contracts_json[0])
   const file=new File(['%PDF- sample'],'Agreement.pdf',{type:'application/pdf'})
   fireEvent.change(screen.getByLabelText('Prepare contract PDF'),{target:{files:[file]}})
+  fireEvent.click(screen.getByRole('button', { name: 'Prepare contract PDF', exact: true }))
   expect(prepare).toHaveBeenCalledWith(file)
   fireEvent.click(screen.getByRole('tab',{name:'Agent Details'}))
   fireEvent.change(screen.getByLabelText('Name'),{target:{value:'Unsaved correction'}})
@@ -461,7 +585,7 @@ it('uploads the final pack through Documents after signatures without changing a
   const upload=vi.fn()
   wrap(<RecruitmentWorkspace lead={signedForOnboarding()} onUploadOnboarding={upload} />)
   fireEvent.click(screen.getByRole('tab',{name:'Documents'}))
-  expect(screen.getByLabelText('Upload document').disabled).toBe(true)
+  expect(screen.getByLabelText('Upload CV').disabled).toBe(true)
   expect(screen.getByLabelText('Upload onboarding document').disabled).toBe(false)
   fireEvent.change(screen.getByLabelText('Onboarding document type'),{target:{value:'Training / CPD'}})
   const file=new File(['evidence'],'Training.pdf',{type:'application/pdf'})
@@ -635,17 +759,23 @@ it('links a verified Commercial broker back to the broker directory and Commerci
  expect(screen.getByRole('link',{name:'Open Commercial branches'}).getAttribute('href')).toBe('/commercial/agency/branches')
  expect(screen.queryByRole('link',{name:'Open agent'})).toBeNull()
 })
-it('opens the application popup with submitted answers and private documents from the next action', async () => {
+it('continues the guided review without a popup and shows submitted answers beside the checks', () => {
   const onDownload=vi.fn(), profile={...submitted,status:'under_review',review_started_at:'2026-10-10',documents_json:[{name:'identity.pdf',type:'Identity document',path:'org/agent-1/identity'}]}
   wrap(<RecruitmentWorkspace lead={profile} organisationId="org" onDownload={onDownload} />)
-  fireEvent.click(within(screen.getByLabelText('Next best action')).getByRole('button',{name:'Open Application'}))
-  const popup=within(screen.getByRole('dialog',{name:'Application and documents'}))
-  expect(popup.getByText('Sam Agent · sam@example.test · 0821234567')).toBeTruthy()
-  expect(popup.getByLabelText('Required application documents')).toBeTruthy()
-  fireEvent.click(popup.getByRole('button',{name:'Download identity.pdf'}))
+  const review = screen.getByRole('region',{name:'Application review'})
+  review.scrollIntoView = vi.fn()
+  expect(within(screen.getByLabelText('Next best action')).getAllByRole('button')).toHaveLength(1)
+  fireEvent.click(within(screen.getByLabelText('Next best action')).getByRole('button',{name:'Continue review'}))
+  expect(review.scrollIntoView).toHaveBeenCalledWith({behavior:'smooth',block:'start'})
+  expect(screen.queryByRole('dialog')).toBeNull()
+  fireEvent.click(screen.getByRole('button',{name:'Download Identity document (identity.pdf)'}))
   expect(onDownload).toHaveBeenCalledWith(profile.documents_json[0])
+  fireEvent.click(screen.getByRole('button',{name:'Application checks'}))
+  const registration = within(screen.getByRole('article',{name:'PPRA / FFC evidence'}))
+  expect(registration.getByText('Candidate practitioner')).toBeTruthy()
+  expect(registration.getByText('Application / renewal pending')).toBeTruthy()
 })
-it('opens manual required document upload and records a reasoned rejection from the next action',async()=>{
+it('opens manual required document upload and records a reasoned rejection from the review outcome',async()=>{
   const onUpload=vi.fn(), onReject=vi.fn().mockResolvedValue({...submitted,status:'closed_lost'})
   const view=wrap(<RecruitmentWorkspace lead={{...submitted,status:'documents_uploaded'}} onUpload={onUpload} />)
   fireEvent.click(within(screen.getByLabelText('Next best action')).getByRole('button',{name:'Upload manually'}))
@@ -655,11 +785,20 @@ it('opens manual required document upload and records a reasoned rejection from 
   fireEvent.change(popup.getByLabelText('Upload Identity document manually'),{target:{files:[file]}})
   expect(onUpload).toHaveBeenCalledWith(file,'Identity document')
   view.unmount()
-  wrap(<RecruitmentWorkspace lead={{...submitted,status:'under_review',review_started_at:'2026-10-10'}} onReject={onReject} />)
-  fireEvent.click(within(screen.getByLabelText('Next best action')).getByRole('button',{name:'Reject Application'}))
+  wrap(<RecruitmentWorkspace lead={approvalReady()} onReject={onReject} />)
+  fireEvent.click(screen.getByRole('button',{name:'Outcome'}))
+  const decision=within(screen.getByRole('group',{name:'Application decision'}))
+  expect(decision.getByRole('button',{name:'Approve application'}).disabled).toBe(true)
+  expect(screen.getAllByRole('button',{name:'Reject Application'})).toHaveLength(1)
+  fireEvent.click(screen.getByRole('checkbox',{name:approvalConfirmation}))
+  expect(decision.getByRole('button',{name:'Approve application'}).disabled).toBe(false)
+  expect(decision.getByRole('button',{name:'Reject Application'}).disabled).toBe(false)
+  fireEvent.click(decision.getByRole('button',{name:'Reject Application'}))
   const rejection=within(screen.getByRole('dialog',{name:'Reject application'}))
+  expect(rejection.getByRole('button',{name:'Reject Application'}).disabled).toBe(true)
   fireEvent.change(rejection.getByLabelText('Rejection reason'),{target:{value:'This opening needs more experience'}})
   fireEvent.click(rejection.getByRole('button',{name:'Reject Application'}))
   await waitFor(()=>expect(onReject).toHaveBeenCalledWith('This opening needs more experience'))
   await waitFor(()=>expect(screen.queryByRole('dialog')).toBeNull())
+  expect(screen.getByRole('checkbox',{name:approvalConfirmation}).checked).toBe(false)
 })

@@ -48,3 +48,14 @@ it('continues to honour the production recovery opt-out', () => {
   renderFailure(new TypeError('Failed to fetch dynamically imported module: /assets/Dashboard-old.js'), { autoRecoverStaleChunks: false })
   expect(recover).not.toHaveBeenCalled()
 })
+
+it('keeps applicant recovery in Home Seekers with a My Profile fallback', () => {
+  vi.stubEnv('DEV', false)
+  vi.spyOn(AppErrorBoundary.prototype, 'recoverFromStaleChunk').mockImplementation(function () {
+    this.setState({ recoveringFromStaleChunk: true })
+  })
+  renderFailure(new TypeError('Failed to fetch dynamically imported module: /assets/Profile-old.js'), { brandName: 'Home Seekers', fallbackPath: '/applicant/my-profile', fallbackLabel: 'My Profile' })
+  expect(screen.getByText(/A newer version of Home Seekers/)).toBeTruthy()
+  expect(screen.queryByText(/A newer version of Arch9/)).toBeNull()
+  expect(screen.getByRole('link', { name: 'My Profile' }).getAttribute('href')).toBe('/applicant/my-profile')
+})

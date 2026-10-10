@@ -1,5 +1,6 @@
 import { saveListingRecoveryDraft, readListingRecoveryDraft, clearListingRecoveryDraft } from '../services/listings/listingDraftRecovery'
 import ListingChannelLogo from '../components/listings/ListingChannelLogo'
+import ListingPublicationProgress from '../components/listings/ListingPublicationProgress'
 import ListingFieldIssues from '../components/listings/ListingFieldIssues'
 import { getListingFieldIssues } from '../services/listings/listingFieldRequirements'
 import { getDocumentUploadPolicy } from '../lib/documentUploadPolicy.js'
@@ -112,7 +113,7 @@ import MobileListingProgress from './mobile/MobileListingProgress.jsx'
 import './mobile/mobile-listing-editor.css'
 import { getWebsiteListingPublicationStatus, setWebsiteListingPublication } from '../services/websiteListingPublicationService'
 import { getListingEditChannels } from '../services/listings/listingEditChannels'
-import { INITIAL_LISTING_PUBLICATION_EVENT, publishInitialListingChannels, readInitialListingChannelResults } from '../services/listings/listingInitialPublicationService'
+import { INITIAL_LISTING_PUBLICATION_EVENT, publishInitialListingChannels, readInitialListingChannelResults, watchInitialListingPublication, refreshListingPublicationResults, retryFailedListingChannels } from '../services/listings/listingInitialPublicationService'
 import { buildListingPublicationSnapshot } from '../services/listings/listingPublicationState'
 import useListingWebsitePublications from '../hooks/useListingWebsitePublications'
 import { getListingLiveChannels } from '../services/listings/listingMarketingChannelPresentation'
@@ -892,7 +893,7 @@ function FileUpload({ label, fileName = '', accept = '', onFileSelect, onClear }
   )
 }
 
-export function WizardFooter({ isFinalStep = false, isSaving = false, leftLabel = 'Cancel', leftIcon = null, onCancel, onSaveDraft, onContinue, finalLabel = 'Create listing', showSaveDraft = true }) {
+export function WizardFooter({ isFinalStep = false, isSaving = false, publishBlocked = false, leftLabel = 'Cancel', leftIcon = null, onCancel, onSaveDraft, onContinue, finalLabel = 'Create listing', showSaveDraft = true }) {
   return (
     <footer className="sticky bottom-0 z-10 flex flex-col gap-3 border-t border-[#e6edf5] bg-white/95 px-5 py-4 backdrop-blur sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
       <Button type="button" variant="secondary" onClick={onCancel} disabled={isSaving}>
@@ -906,7 +907,7 @@ export function WizardFooter({ isFinalStep = false, isSaving = false, leftLabel 
           </Button>
         ) : null}
         {isFinalStep ? (
-          <Button key="submit-listing" type="submit" disabled={isSaving}>
+          <Button key="submit-listing" type="submit" disabled={isSaving || publishBlocked}>
             {isSaving ? <Loader2 size={16} className="animate-spin" /> : null}
             {finalLabel}
           </Button>
@@ -3747,14 +3748,10 @@ function AgentListings({ mobileEditor = false } = {}) {
       : {}),
   }))
   const [initialChannelResults, setInitialChannelResults] = useState([])
-  useEffect(() => {
-    const refreshInitialChannels = (event) => {
-      const results = event.detail?.results
-      if (Array.isArray(results)) setInitialChannelResults(results)
-    }
-    window.addEventListener(INITIAL_LISTING_PUBLICATION_EVENT, refreshInitialChannels)
-    return () => window.removeEventListener(INITIAL_LISTING_PUBLICATION_EVENT, refreshInitialChannels)
-  }, [])
+  const [publicationStatusBusy, setPublicationStatusBusy] = useState(false)
+  const publicationPending = initialChannelResults.some(row => row.status === 'publishing')
+  const publicationUncertain = initialChannelResults.some(row => row.status === 'uncertain')
+  const sellerEditBaselineRef = useRef(null)
   const [hydratedEditListingId, setHydratedEditListingId] = useState('')
   const [editListingDataReadyId, setEditListingDataReadyId] = useState('')
   // The listing grid deliberately refreshes through a lightweight summary
@@ -3766,6 +3763,18 @@ function AgentListings({ mobileEditor = false } = {}) {
   const isCreateListingWorkspace = location.pathname === '/listings/new' || (mobileEditor && location.pathname === '/mobile/listings/new')
   const isEditListingWorkspace = Boolean(editListingId && (location.pathname.startsWith('/listings/') || (mobileEditor && location.pathname.startsWith('/mobile/listings/'))) && location.pathname.endsWith('/edit'))
   const isListingEditorWorkspace = isCreateListingWorkspace || isEditListingWorkspace
+  useEffect(() => {
+    setInitialChannelResults(editListingId ? readInitialListingChannelResults(editListingId) : [])
+    const refreshInitialChannels = event => {
+      const currentId = editListingId || pendingCreatedListingIdRef.current
+      if (event.detail?.listingId === currentId && Array.isArray(event.detail.results)) setInitialChannelResults(event.detail.results)
+    }
+    window.addEventListener(INITIAL_LISTING_PUBLICATION_EVENT, refreshInitialChannels)
+    return () => window.removeEventListener(INITIAL_LISTING_PUBLICATION_EVENT, refreshInitialChannels)
+  }, [editListingId])
+  useEffect(() => {
+    if (isEditListingWorkspace && isUuidLike(editListingId) && isSupabaseConfigured) return watchInitialListingPublication(editListingId)
+  }, [editListingId, isEditListingWorkspace, publicationPending])
   const isListingPublicationEditor = isEditListingWorkspace && ['property', 'listing-publication'].includes(new URLSearchParams(location.search || '').get('scope'))
   const listingEditorSteps = useMemo(
     () => CREATE_LISTING_WORKFLOW_STEPS.filter((step) => isCreateListingWorkspace && !isDeveloperWorkspace
@@ -4131,6 +4140,7 @@ function AgentListings({ mobileEditor = false } = {}) {
     if (!editListingRecord) return
     if (editListingDataReadyId !== editListingId) return
     if (hydratedEditListingId === editListingId) return
+    sellerEditBaselineRef.current = structuredClone(editListingRecord)
     setForm(buildListingEditorFormFromListing(editListingRecord, profile, workspace))
     setHydratedEditListingId(editListingId)
   }, [editListingDataReadyId, editListingId, editListingRecord, hydratedEditListingId, isEditListingWorkspace, profile, workspace])
@@ -4521,7 +4531,7 @@ function AgentListings({ mobileEditor = false } = {}) {
     }
     setError('')
     const nextIndex = Math.min(createListingStepIndex + 1, listingEditorSteps.length - 1)
-    if (isEditListingWorkspace && !isListingSaving) {
+    if (isEditListingWorkspace && !isListingSaving && !publicationPending && !publicationUncertain) {
       setIsListingSaving(true)
       setError('')
       try {
@@ -4825,6 +4835,7 @@ function AgentListings({ mobileEditor = false } = {}) {
       pendingCreatedListingIdRef.current = listingId
       saveCurrentCreateListingDraft()
       const savedOnboarding = await persistSellerProfileOnboardingFormData({
+        listingSnapshot: created.listing,
         listingId,
         formData: directListingPersistence.sellerOnboardingFormData,
         status: 'not_started',
@@ -5116,8 +5127,8 @@ function AgentListings({ mobileEditor = false } = {}) {
       assertListingEditorSellerOwnership(form, currentSellerListing)
       const databaseListingPatch = { ...listingPatch }
       delete databaseListingPatch.assignedAgentId
-      const savedListing = await updatePrivateListing(listingId, databaseListingPatch, { includeRequirementsAndDocuments: false })
       const savedOnboarding = await persistSellerProfileOnboardingFormData({
+        listingSnapshot: sellerEditBaselineRef.current || listing,
         listingId,
         formData: onboardingPatch,
         status: listing.sellerOnboardingStatus || listing.seller_onboarding_status || 'in_progress',
@@ -5129,6 +5140,13 @@ function AgentListings({ mobileEditor = false } = {}) {
       if (!savedOnboarding?.id) {
         throw new Error('Your property details could not be written to the listing record. Your entries are still available here; please try again.')
       }
+      // Seller facts and their revision were committed by the guarded command.
+      // Do not overwrite them again with the editor's earlier snapshot.
+      delete databaseListingPatch.sellerCanonicalFacts
+      delete databaseListingPatch.sellerCanonicalFactReadiness
+      delete databaseListingPatch.sellerCanonicalFactsUpdatedAt
+      delete databaseListingPatch.sellerType
+      const savedListing = await updatePrivateListing(listingId, databaseListingPatch, { includeRequirementsAndDocuments: false })
       if (mobileEditor && isDeveloperWorkspace) await updatePrivateListing(listingId, { sellerCanonicalFacts: listingPatch.sellerCanonicalFacts, sellerCanonicalFactReadiness: listingPatch.sellerCanonicalFactReadiness }, { includeRequirementsAndDocuments: false })
       const distributionSync = await syncPrivateListingDistributionData(listingId, {
         publicationData: {
@@ -5300,8 +5318,8 @@ function AgentListings({ mobileEditor = false } = {}) {
       listingUpdateRequestRef.current ||= crypto.randomUUID()
       try {
         const results = await publishInitialListingChannels({ listingId, listingStatus: listingPatch.listingStatus, channels: form.selectedSyndicationChannels, action: 'update', requestKey: listingUpdateRequestRef.current })
-        if (results.some(result => ['needs_attention', 'uncertain'].includes(result.status))) throw new Error('A channel needs attention. Review its status before retrying.')
         successMessage = results.length ? 'Listing saved. Updates queued for your selected channels.' : 'Listing saved in Arch9. No external channels selected.'
+        if (results.length) navigateAfterSave = false
       } catch (publicationError) {
         setError(`Listing saved, but updates were not confirmed: ${publicationError.message}`)
         return false
@@ -5703,6 +5721,7 @@ function AgentListings({ mobileEditor = false } = {}) {
         patch.internalListingNotes = mergeQuickListingMetadataInNotes(mergedNotes, { handoffPlan })
         await updatePrivateListing(listingMatch.id, patch, { includeRequirementsAndDocuments: false })
         await persistSellerProfileOnboardingFormData({
+        listingSnapshot: existingListing,
           listingId: listingMatch.id,
           formData: directListingPersistence.sellerOnboardingFormData,
           status: 'not_started',
@@ -6082,6 +6101,7 @@ function AgentListings({ mobileEditor = false } = {}) {
               capturedBy: profile?.id || '', listingStatus: developerListingStatus, mandateStatus: 'not_started',
             })
             const savedOnboarding = await persistSellerProfileOnboardingFormData({
+        listingSnapshot: created.listing,
               listingId: createdListingId, formData: captured.sellerOnboardingFormData,
               status: 'completed', sellerType: 'developer', ownershipStructure: 'developer',
             })
@@ -6432,6 +6452,7 @@ function AgentListings({ mobileEditor = false } = {}) {
         let verifiedInitialListing = null
         try {
           const savedOnboarding = await persistSellerProfileOnboardingFormData({
+        listingSnapshot: created.listing,
             listingId: createdListingId,
             formData: directListingPersistence.sellerOnboardingFormData,
             status: 'not_started',
@@ -6491,7 +6512,7 @@ function AgentListings({ mobileEditor = false } = {}) {
               galleryImages: listingDistributionSync.uploadedImages || [],
               coverImageId: form.coverImageId,
             }),
-          })
+          }).catch(() => null)
           initialPublicationResults = readInitialListingChannelResults(createdListingId)
           setInitialChannelResults(initialPublicationResults)
         }
@@ -6620,7 +6641,7 @@ function AgentListings({ mobileEditor = false } = {}) {
         if (isCreateListingWorkspace && createdListingId) {
           completedCreateListingRef.current = true
           if (typeof window !== 'undefined') window.localStorage.removeItem(createListingDraftStorageKey); void clearListingRecoveryDraft(createListingDraftStorageKey).catch(() => {})
-          navigate(mobileEditor ? '/mobile/listings' : `/agent/listings/${encodeURIComponent(createdListingId)}?tab=marketing`, {
+          navigate(initialPublicationResults.length ? `${mobileEditor ? '/mobile/listings' : '/listings'}/${encodeURIComponent(createdListingId)}/edit?step=syndication&scope=listing-publication` : mobileEditor ? '/mobile/listings' : `/agent/listings/${encodeURIComponent(createdListingId)}?tab=marketing`, {
             replace: true,
             state: { message: resolvedListingStatus === 'active' ? initialPublicationResults.some((result) => ['needs_attention', 'uncertain'].includes(result.status)) ? 'Listing active. Some channels need attention; see the submission results.' : initialPublicationResults.length ? 'Listing active. Selected channels are being submitted; see their progress below.' : 'Listing active in Arch9.' : 'Draft saved. It has not been published.', initialChannelResults: initialPublicationResults },
           })
@@ -7121,13 +7142,41 @@ function AgentListings({ mobileEditor = false } = {}) {
     window.dispatchEvent(new Event('itg:listings-updated'))
   }
 
+  async function checkListingPublication() {
+    if (publicationStatusBusy) return
+    setPublicationStatusBusy(true)
+    try {
+      const results = await refreshListingPublicationResults(editListingId || pendingCreatedListingIdRef.current)
+      if (results.some(row => row.status === 'uncertain')) setError('The channel has not confirmed the last request. Check the advert with the channel before sending again.')
+      else if (!results.length) setError('No publishing request was found. Your listing is saved; submit it from Review when ready.')
+      else setError('')
+    } catch { setError('Unable to check publishing status. Your listing is saved. Try checking again.') }
+    finally { setPublicationStatusBusy(false) }
+  }
+
+  async function retryListingPublication() {
+    if (publicationStatusBusy || isListingSaving || publicationPending || !isEditListingWorkspace) return
+    if (listingFieldIssues.length) {
+      setValidationAttemptedStep(listingFieldIssues[0].step); setCreateListingStep(listingFieldIssues[0].step); setError(listingFieldIssues[0].message); return
+    }
+    setPublicationStatusBusy(true)
+    setError('')
+    try {
+      const saved = await performUpdateExistingListing({ sendUpdates: false, navigateAfterSave: false })
+      if (!saved) return
+      const retried = await retryFailedListingChannels({ listingId: editListingId, listingStatus: form.listingStatus, channels: form.selectedSyndicationChannels, requestKey: crypto.randomUUID() })
+      setWorkflowMessage(retried.length ? 'Listing saved. Retrying the failed channels.' : 'Listing saved. No failed requests to retry for your selected channels.')
+    } catch (publicationError) { setError(`Your listing is saved. ${publicationError.message}`) }
+    finally { setPublicationStatusBusy(false) }
+  }
+
   async function handleSaveListing(event) {
     event.preventDefault()
     if ((isCreateListingWorkspace || isEditListingWorkspace) && ['active', 'under_offer'].includes(form.listingStatus) && listingFieldIssues.length) {
       setValidationAttemptedStep(listingFieldIssues[0].step); setCreateListingStep(listingFieldIssues[0].step); setError(listingFieldIssues[0].message); return
     }
     if (isCreateListingWorkspace && createListingDraftHydratedKey !== createListingDraftScopeKey) return
-    if (floorplanUploading || isListingSaving || listingSaveInFlightRef.current || (isCreateListingWorkspace && completedCreateListingRef.current)) return
+    if (floorplanUploading || isListingSaving || publicationStatusBusy || publicationPending || publicationUncertain || listingSaveInFlightRef.current || (isCreateListingWorkspace && completedCreateListingRef.current)) return
     listingSaveInFlightRef.current = true
 
     setError('')
@@ -8038,8 +8087,8 @@ function AgentListings({ mobileEditor = false } = {}) {
     const createListingOwnerCards = normalizeCreateListingOwnerCards(form.multipleOwners, form.multipleOwnersText, { includeBlank: sellerTypeKey === 'multiple_owners' })
     const isFinalCreateListingStep = createListingStepIndex === listingEditorSteps.length - 1
     const editorTitle = isListingPublicationEditor ? 'Edit Listing Publication' : isEditListingWorkspace ? 'Edit Listing' : 'New listing (sales)'
-    const editorHeading = isListingPublicationEditor ? 'Property, marketing & syndication' : isEditListingWorkspace ? 'Edit Listing' : 'New listing'
-    const editorDescription = isListingPublicationEditor ? 'Update property data, public marketing content and distribution. Seller, mandate and documents remain in their dedicated workspaces.' : isEditListingWorkspace ? 'Update the details of your property listing.' : 'Capture the listing details.'
+    const editorHeading = isEditListingWorkspace ? 'Edit Listing' : 'New listing'
+    const editorDescription = isEditListingWorkspace ? 'Update the details of your property listing.' : 'Capture the listing details.'
     const editorCrumbTitle = isEditListingWorkspace ? normalizeText(editListingRecord?.listingTitle || editListingRecord?.title || editListingRecord?.addressLine1 || editListingRecord?.propertyAddress || 'Listing') : ''
     const cancelEditor = () => navigate(mobileEditor ? '/mobile/listings' : isEditListingWorkspace ? `/agent/listings/${encodeURIComponent(editListingId)}` : '/listings')
 
@@ -8057,19 +8106,15 @@ function AgentListings({ mobileEditor = false } = {}) {
                 <span className="text-[#142132]">{editorTitle}</span>
                 <span className="ml-2 rounded-full border border-[#cfe9dc] bg-[#edf9f2] px-2 py-0.5 text-xs font-bold text-[#1f7d44]">Editing</span>
               </div>
-              <h1 className="mt-3 text-2xl font-semibold text-[#142132]">{editorHeading}</h1>
-              <p className="mt-1 text-sm text-[#607387]">{editorDescription}</p>
+              {!isListingPublicationEditor ? <>
+                <h1 className="mt-3 text-2xl font-semibold text-[#142132]">{editorHeading}</h1>
+                <p className="mt-1 text-sm text-[#607387]">{editorDescription}</p>
+              </> : null}
             </div>
           ) : null}
           <div className="flex flex-wrap items-center gap-2">
             {isEditListingWorkspace && !mobileEditor ? (
-              <>
-                <Button type="button" variant="secondary" onClick={cancelEditor}>Cancel</Button>
-                <Button type="submit" disabled={isListingSaving}>
-                  {isListingSaving ? <Loader2 size={16} className="animate-spin" /> : null}
-                  Save Changes
-                </Button>
-              </>
+              <Button type="button" variant="secondary" onClick={cancelEditor}>Cancel</Button>
             ) : (
               <button
                 type="button"
@@ -8091,13 +8136,13 @@ function AgentListings({ mobileEditor = false } = {}) {
           onStepClick={openCreateListingStep}
         />
 
-        {error ? <p role={mobileEditor ? "alert" : undefined} className="rounded-[8px] border border-[#f6d4d4] bg-[#fff5f5] px-4 py-3 text-sm font-semibold text-[#b42318]">{error}</p> : null}
+        {error ? <p role="alert" className="rounded-[8px] border border-[#f6d4d4] bg-[#fff5f5] px-4 py-3 text-sm font-semibold text-[#b42318]">{error}</p> : null}
         {missingDraftPhotoCount > 0 ? <p className="rounded-[8px] border border-[#f3d7a8] bg-[#fff8ea] px-4 py-3 text-sm font-semibold text-[#88531a]">Your listing draft and current step have been restored. Select the {missingDraftPhotoCount} photo{missingDraftPhotoCount === 1 ? '' : 's'} again; files that had not uploaded cannot be restored after a refresh.</p> : null}
         {workflowMessage ? <p className="rounded-[8px] border border-[#d8ecdf] bg-[#eefbf3] px-4 py-3 text-sm font-semibold text-[#1f7d44]">{workflowMessage}</p> : null}
-        {initialChannelResults.length ? <div role="status" aria-live="polite" className="rounded-lg border border-[#dce6f2] p-4 text-sm">
-          <p className="font-semibold">Listing saved — channel progress</p>
-          {initialChannelResults.map((result) => <p key={result.key} className="mt-2">{result.label}: {result.message}</p>)}
-        </div> : null}
+        <ListingPublicationProgress results={initialChannelResults} busy={publicationStatusBusy || isListingSaving}
+          onRetry={() => void retryListingPublication()}
+          onCheckStatus={() => void checkListingPublication()}
+          onViewListing={isEditListingWorkspace ? () => navigate(mobileEditor ? '/mobile/listings' : `/agent/listings/${encodeURIComponent(editListingId)}?tab=marketing`) : undefined} />
 
         <ListingFieldIssues issues={listingFieldIssues} step={createListingStep} form={form} attempted={validationAttemptedStep === createListingStep} onGoToStep={step => { setCreateListingStep(step); setError('') }} />
 
@@ -8105,13 +8150,14 @@ function AgentListings({ mobileEditor = false } = {}) {
           footer={(
             <WizardFooter
               isFinalStep={isFinalCreateListingStep}
-              isSaving={isListingSaving || floorplanUploading}
+              isSaving={isListingSaving || floorplanUploading || publicationStatusBusy}
+              publishBlocked={publicationPending || publicationUncertain}
               leftLabel={createListingStepIndex === 0 ? 'Cancel' : 'Back'}
               leftIcon={createListingStepIndex === 0 ? null : <ArrowLeft size={16} />}
               onCancel={createListingStepIndex === 0 ? cancelEditor : goToPreviousCreateListingStep}
               onSaveDraft={isEditListingWorkspace ? undefined : saveCreateListingDraft}
               onContinue={goToNextCreateListingStep}
-              finalLabel={isEditListingWorkspace ? ['active', 'under_offer'].includes(form.listingStatus) && form.selectedSyndicationChannels?.some(channel => ['property24', 'private_property', 'agency_website'].includes(channel)) ? 'Save & send updates' : 'Save changes' : form.listingStatus === 'draft' ? 'Save draft' : 'Submit & activate'}
+              finalLabel={isEditListingWorkspace ? ['active', 'under_offer'].includes(form.listingStatus) && form.selectedSyndicationChannels?.some(channel => ['property24', 'private_property', 'agency_website'].includes(channel)) ? 'Save and publish changes' : 'Save changes' : form.listingStatus === 'draft' ? 'Save draft' : 'Submit & activate'}
               showSaveDraft={!isEditListingWorkspace}
             />
           )}
@@ -8352,7 +8398,7 @@ function AgentListings({ mobileEditor = false } = {}) {
                       />
                     ))}
                   </div>
-                  <p className="mt-3 text-xs text-[#607387]">Reduced-price portal banners are unavailable until the portals confirm a supported feed control. You can record and send a lower price from the listing’s Marketing tab.</p>
+                  <p className="mt-3 text-xs text-[#607387]">Save a price change here and send it to your selected channels from Review.</p>
                 </ListingWizardSection>
                 {mobileEditor && <details className="mobile-listing-more-fields"><summary>Address display & country</summary><div><FormField label="Country"><Field value={form.country} onChange={(event) => updateForm('country', event.target.value)} /></FormField><FormField label="Portal address display"><Field as="select" value={form.exactAddressVisibility} onChange={(event) => updateForm('exactAddressVisibility', event.target.value)}>{LISTING_ADDRESS_VISIBILITY_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</Field></FormField></div></details>}
               </div>
@@ -8468,7 +8514,7 @@ function AgentListings({ mobileEditor = false } = {}) {
                     </ListingSyndicationChannelCard>
                   })}
                 </div>
-                <p className="text-xs leading-5 text-[#607891]">{isCreateListingWorkspace && !isDeveloperWorkspace ? 'Submit & activate sends the listing to these selected channels. Drafts stay private. Use Edit property details for updates and Channels to withdraw from one platform.' : isEditListingWorkspace ? 'Save & send updates saves this listing and sends it to the selected channels. Use channel management to withdraw from an individual platform.' : 'Choose the channels for this listing.'}</p>
+                <p className="text-xs leading-5 text-[#607891]">{isCreateListingWorkspace && !isDeveloperWorkspace ? 'Submit & activate sends the listing to these selected channels. Drafts stay private. Use Edit property details for updates and Channels to withdraw from one platform.' : isEditListingWorkspace ? 'Save and publish changes saves this listing and sends it to the selected channels. Use channel management to withdraw from an individual platform.' : 'Choose the channels for this listing.'}</p>
               </div>
             ) : null}
 
@@ -8535,7 +8581,7 @@ function AgentListings({ mobileEditor = false } = {}) {
                   </> : null}
                   <section className="rounded-[8px] border border-[#dce6f2] bg-[#fbfdff] p-4">
                     <p className="text-sm font-bold text-[#142132]">Publishing readiness</p>
-                    <p className="mt-1 text-xs text-[#607387]">Submit & activate saves the listing and sends it to your selected channels. Each channel confirms when it is live.</p>
+                    <p className="mt-1 text-xs text-[#607387]">{isEditListingWorkspace ? 'Save and publish changes sends your changes to the selected channels.' : 'Submit & activate saves the listing and sends it to your selected channels.'} Each channel confirms when it is live.</p>
                     <div className="mt-3 grid gap-2">
                       {selectedCreateListingPortalStatuses.map((portal) => (
                         <div key={portal.key} className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-lg border border-[#dce6f2] bg-white p-3">

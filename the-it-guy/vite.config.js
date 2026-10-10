@@ -373,6 +373,8 @@ function missionControlApiPlugin() {
 
 // https://vite.dev/config/
 export default defineConfig({
+  // Shared Edge/editor code resolves the parser from this app's pinned package.
+  resolve: { dedupe: ['parse5'] },
   plugins: [documentTitleFallbackPlugin(), releaseIntegrityPlugin(), react(), missionControlApiPlugin()],
   build: {
     chunkSizeWarningLimit: 1800,

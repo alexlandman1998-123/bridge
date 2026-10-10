@@ -5,6 +5,7 @@ import { recordRecruitmentContractDelivery, recordRecruitmentContractSignature, 
 import { recruitmentLocalDate } from '../recruitmentSigningModel'
 import { prepareRecruitmentContract, downloadRecruitmentContract } from '../../../services/recruitmentService'
 import { approveRecruitmentApplication } from '../../../services/recruitmentService'
+import { approvalConfirmation } from '../recruitmentApprovalModel'
 import { afterEach, expect, it, vi } from 'vitest'
 import { emptyRecruitmentLead } from '../recruitmentModel'
 const mocks = vi.hoisted(() => ({ from: vi.fn(), storage: vi.fn(), rpc: vi.fn(), invoke: vi.fn() }))
@@ -97,16 +98,29 @@ it('does not overwrite review findings after a concurrent save', async () => {
   expect(chain.update).toHaveBeenCalledWith({review_json:review})
   expect(chain.eq.mock.calls).toEqual([['organisation_id','org'],['id','lead'],['version',3]])
 })
+it('saves blank approved notes without inventing findings and rejects missing rejection reasons before writing', async () => {
+  const reviewing = {...lead,status:'under_review',review_started_at:'2026-10-05',documents_json:[{path:'org/lead/cv'}]}
+  const review = {version:'recruitment-review-v1',checks:Object.fromEntries(['registration','qualifications','training','handover'].map(key=>[key,{status:'verified',notes:'',evidence:[]}])),documents:[{path:'org/lead/cv',status:'reviewed',notes:''}],notes:'',followUpOn:''}
+  const chain = query({data:{...reviewing,review_json:review,review_status:'ready_for_approval'},error:null})
+  expect((await saveRecruitmentReview('org',reviewing,review)).review_status).toBe('ready_for_approval')
+  expect(chain.update).toHaveBeenCalledWith({review_json:review})
+  mocks.from.mockClear()
+  review.checks.registration.status = 'needs_information'
+  await expect(saveRecruitmentReview('org',reviewing,review)).rejects.toThrow('rejection reason')
+  expect(mocks.from).not.toHaveBeenCalled()
+})
 
-it.each(['40001', 'PT409'])('approves only saved resolved applications with a confirmed reason and protects stale decisions (%s)', async (code) => {
+it.each(['40001', 'PT409'])('records the confirmed approval declaration and protects unchecked or stale decisions (%s)', async (code) => {
   const review={version:'recruitment-review-v1',checks:Object.fromEntries(['registration','qualifications','training','handover'].map(key=>[key,{status:'verified',notes:'Reviewed by management',evidence:[]}])),documents:[],notes:'',followUpOn:''}
   const ready={...lead,status:'under_review',application_submitted_at:'2026-10-05',review_started_at:'2026-10-05',review_status:'ready_for_approval',review_json:review}
-  const draft={notes:'  Approved after evidence review  ',confirmed:true}
+  const draft={confirmed:true}
   mocks.rpc.mockReturnValue({maybeSingle:vi.fn().mockResolvedValue({data:{...ready,status:'application_approved'},error:null})})
   expect((await approveRecruitmentApplication('org',ready,draft)).status).toBe('application_approved')
-  expect(mocks.rpc).toHaveBeenCalledWith('recruitment_approve_application',{p_organisation_id:'org',p_lead_id:'lead',p_version:3,p_notes:'Approved after evidence review'})
+  expect(mocks.rpc).toHaveBeenCalledWith('recruitment_approve_application',{p_organisation_id:'org',p_lead_id:'lead',p_version:3,p_notes:approvalConfirmation})
+  mocks.rpc.mockClear()
   await expect(approveRecruitmentApplication('org',ready,{...draft,confirmed:false})).rejects.toThrow('Confirm')
   await expect(approveRecruitmentApplication('org',{...ready,review_status:'in_progress'},draft)).rejects.toThrow('Resolve')
+  expect(mocks.rpc).not.toHaveBeenCalled()
   mocks.rpc.mockReturnValue({maybeSingle:vi.fn().mockResolvedValue({data:null,error:{code}})})
   await expect(approveRecruitmentApplication('org',ready,draft)).rejects.toThrow('Approval was not saved')
   await expect(uploadRecruitmentDocument('org',{...ready,approved_at:'2026-10-05'},{type:'application/pdf',size:10},'CV')).rejects.toThrow('locked')
@@ -242,13 +256,37 @@ it('blocks access preparation when the handover migration is absent, without usi
   expect(mocks.rpc.mock.calls[0][0]).toBe('recruitment_activate_joining_agent_v2')
 })
 
-it('loads invitation status without raw token data and sends only a scoped stable request',async()=>{
+it.each(['workspace','documents_reminder','approval'])('loads invitation status without raw token data and sends only a scoped stable %s request',async(kind)=>{
  mocks.rpc.mockResolvedValue({data:{referenceStatus:'prepared',attempt:null}})
  expect(await getRecruitmentInvitationStatus('org','lead','application','link')).toEqual({referenceStatus:'prepared',attempt:null})
  expect(mocks.rpc).toHaveBeenCalledWith('recruitment_invitation_status',{p_organisation_id:'org',p_lead_id:'lead',p_kind:'application',p_reference_id:'link'})
  mocks.invoke.mockResolvedValue({data:{ok:true,status:'provider_accepted'}})
- await sendRecruitmentInvitation('org','lead','workspace','invite',{requestId:'same-request',applicationLink:'not-applicable',to:'forged@example.test'})
- expect(mocks.invoke).toHaveBeenCalledWith('send-email',{body:{type:'recruitment_invitation',organisationId:'org',leadId:'lead',kind:'workspace',referenceId:'invite',requestId:'same-request',allowDuplicate:false}})
+ const referenceId=kind==='workspace' ? 'invite' : 'lead'
+ await sendRecruitmentInvitation('org','lead',kind,referenceId,{requestId:'same-request',applicationLink:'not-applicable',to:'forged@example.test'})
+ expect(mocks.invoke).toHaveBeenCalledWith('send-email',{body:{type:'recruitment_invitation',organisationId:'org',leadId:'lead',kind,referenceId,requestId:'same-request',allowDuplicate:false}})
+ mocks.invoke.mockClear()
+ await expect(sendRecruitmentInvitation('org','lead','unsupported','lead',{requestId:'same-request'})).rejects.toThrow('saved recruitment email')
+ expect(mocks.invoke).not.toHaveBeenCalled()
  mocks.invoke.mockResolvedValue({error:{context:{json:async()=>({error:'Invitation expired'})}}})
  await expect(sendRecruitmentInvitation('org','lead','application','link',{requestId:'same-request'})).rejects.toThrow('expired')
+})
+it('uploads and publishes a Home Seekers contract in one transaction, with no client-controlled recipient', async () => {
+  const org = '2958d402-368e-43c9-b728-0098e10505f1', ready = { ...lead, organisation_id: org, status: 'application_approved', approved_at: '2026-10-10' }
+  const file = { type: 'application/pdf', size: 128, name: 'Contract.pdf', slice: () => ({ arrayBuffer: async () => new TextEncoder().encode('%PDF-').buffer }) }
+  const storage = { upload: vi.fn().mockResolvedValue({ error: null }), remove: vi.fn() }
+  mocks.storage.mockReturnValue(storage)
+  mocks.rpc.mockReturnValue({ maybeSingle: vi.fn().mockResolvedValue({ data: { ...ready, status: 'contract_sent' } }) })
+  expect((await prepareRecruitmentContract(org, ready, file)).status).toBe('contract_sent')
+  expect(mocks.rpc).toHaveBeenCalledWith('recruitment_publish_contract', { p_organisation_id: org, p_lead_id: 'lead', p_version: 3, p_document: { path: expect.stringContaining(`${org}/lead/`), name: 'Contract.pdf', size: 128 } })
+  expect(storage.upload.mock.calls[0][2].upsert).toBe(false)
+})
+it('verifies the registered returned PDF without a duplicate upload and ignores forged path metadata', async () => {
+  const returned = { id: 'returned', path: 'org/lead/registered', name: 'Signed.pdf', size: 128, contractVersion: 2, submittedAt: '2026-10-10' }
+  const sent = { ...lead, status: 'contract_sent', contract_delivery_json: { contractVersion: 2, recordedAt: '2026-10-10', sentOn: recruitmentLocalDate() }, contract_returns_json: [returned] }
+  const draft = { contractVersion: 2, returnedId: returned.id, file: null, agentSigner: 'Sam Agent', organisationSigner: 'Agency Principal', signedOn: recruitmentLocalDate(), method: 'wet_ink', reference: '', notes: 'All pages and both signatures verified.', checks: { sameVersion: true, allPages: true, agentSignature: true, organisationSignature: true }, path: 'foreign' }
+  mocks.rpc.mockReturnValue({ maybeSingle: vi.fn().mockResolvedValue({ data: { ...sent, status: 'contract_signed' } }) })
+  expect((await recordRecruitmentContractSignature('org', sent, draft)).status).toBe('contract_signed')
+  expect(mocks.storage).not.toHaveBeenCalled()
+  expect(mocks.rpc.mock.calls[0][1].p_signature).toMatchObject({ path: returned.path, name: returned.name, size: returned.size })
+  await expect(recordRecruitmentContractSignature('org', sent, { ...draft, returnedId: 'foreign' })).rejects.toThrow('Choose the complete signed')
 })

@@ -8,9 +8,9 @@ vi.mock('../../lib/supabaseClient', () => ({
   BRANDING_BUCKET_CANDIDATES: ['branding'], PROFILE_AVATAR_BUCKET_CANDIDATES: ['avatars'],
   LEGAL_TEMPLATES_BUCKET_CANDIDATES: ['legal-templates'],
 }))
-import { getSellerOnboardingByToken, submitSellerOnboarding, updateSellerOnboardingProgress, savePrivateListingSellerCanonicalUpdate, syncPrivateListingRequirements, ensurePrivateListingDocumentRequirements, resolvePrivateListingDocumentRequirement } from '../privateListingService'
+import { getSellerOnboardingByToken, persistSellerProfileOnboardingFormData, submitSellerOnboarding, updateSellerOnboardingProgress, savePrivateListingSellerCanonicalUpdate, syncPrivateListingRequirements, ensurePrivateListingDocumentRequirements, resolvePrivateListingDocumentRequirement } from '../privateListingService'
 import { repairSellerDocumentRequirementLinks, isUnlinkedSellerReviewDocument } from '../sellerDocumentReviewWorkflowService.js'
-import { buildListingSellerCanonicalUpdate } from '../listings/listingSellerCanonicalUpdateModel.js'
+import { applyListingSellerOnboardingSaveSnapshot, getSellerOnboardingSaveRevision, buildListingSellerCanonicalUpdate } from '../listings/listingSellerCanonicalUpdateModel.js'
 import { syncSellerDocumentRequirements } from '../../lib/sellerDocumentRequirementEngine.js'
 import { buildListingSellerProfileFormPatch, createListingSellerProfileBuilderDraft, selectListingSellerProfileBranch } from '../../lib/listingSellerProfileBuilderModel.js'
 
@@ -26,6 +26,34 @@ beforeEach(() => {
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers() })
 
 describe('seller token mutation boundary', () => {
+  it.each(['bridge_update_private_listing_seller_onboarding_progress', 'bridge_complete_private_listing_seller_onboarding'])('passes the displayed seller revision to %s and retains inputs on conflict', async (rpcName) => {
+    const displayed = { id: listingId, sellerOnboarding: { id: onboardingId, updatedAt: '2026-10-10T09:00:00Z' } }
+    const formData = { sellerFirstName: 'Unsaved', phone: '0820000000' }
+    client.rpc.mockReturnValue(rpcResult(null, { code: 'PT409', message: 'Stale form' }))
+    const save = rpcName.includes('progress') ? updateSellerOnboardingProgress : submitSellerOnboarding
+    await expect(save('valid-token', { listingSnapshot: displayed, formData })).rejects.toMatchObject({ code: 'SELLER_UPDATE_CONFLICT', recoverable: true })
+    expect(client.rpc).toHaveBeenCalledWith(rpcName, expect.objectContaining({ p_form_data: expect.objectContaining({
+      __sellerSave: { onboardingId, updatedAt: '2026-10-10T09:00:00Z' }, phone: '0820000000',
+    }) }))
+    expect(formData).toEqual({ sellerFirstName: 'Unsaved', phone: '0820000000' })
+    expect(client.from).not.toHaveBeenCalled()
+  })
+
+  it('profile saves use the opening revision even when the merge read has newer data', async () => {
+    const existing = { id: onboardingId, private_listing_id: listingId, token: 'valid-token', status: 'in_progress',
+      updated_at: '2026-10-10T10:00:00Z', form_data: { sellerName: 'New saved owner' } }
+    const query = { select: vi.fn(() => query), eq: vi.fn(() => query), maybeSingle: vi.fn(async () => ({ data: existing, error: null })) }
+    client.from.mockReturnValue(query)
+    client.rpc.mockReturnValue(rpcResult(null, { code: 'PT409', message: 'Stale form' }))
+    await expect(persistSellerProfileOnboardingFormData({ listingId, token: 'valid-token',
+      listingSnapshot: { sellerOnboarding: { id: onboardingId, updatedAt: '2026-10-10T09:00:00Z' } },
+      formData: { sellerName: 'Old form edit' },
+    })).rejects.toMatchObject({ code: 'SELLER_UPDATE_CONFLICT' })
+    expect(client.rpc).toHaveBeenCalledWith('save_private_listing_seller_onboarding_profile', expect.objectContaining({
+      p_revision: { onboardingId, updatedAt: '2026-10-10T09:00:00Z' },
+    }))
+    expect(existing.form_data.sellerName).toBe('New saved owner')
+  })
   it('agent submission records its capture actor and a later seller submission preserves it', async () => {
     client.rpc.mockImplementation(name => rpcResult(name === 'bridge_can_access_private_listing' ? false : { listingId, onboardingId, status: 'completed', submittedAt: '2026-10-09T10:00:00Z' }))
     const capture = { mode: 'agent_assisted', status: 'awaiting_seller_review_and_signature', capturedBy: 'original-agent', capturedAt: '2026-10-09T09:00:00Z' }
@@ -70,15 +98,32 @@ describe('seller token mutation boundary', () => {
   it('valid submission and timeout recovery retain the token receipt without anonymous follow-up writes', async () => {
     const receipt = { listingId, onboardingId, status: 'completed', submittedAt: '2026-10-01T10:00:00Z' }
     for (const timeout of [false, true]) {
-      client.rpc.mockImplementation((name) => {
+      let submittedForm
+      client.rpc.mockImplementation((name, args) => {
         if (name === 'bridge_can_access_private_listing') return rpcResult(false)
-        if (timeout && name === 'bridge_complete_private_listing_seller_onboarding') return rpcResult(null, { code: '57014', message: 'canceling statement due to statement timeout' })
+        if (name === 'bridge_complete_private_listing_seller_onboarding') {
+          submittedForm = { ...args.p_form_data }
+          delete submittedForm.__sellerSave
+          if (timeout) return rpcResult(null, { code: '57014', message: 'canceling statement due to statement timeout' })
+        }
+        if (name === 'bridge_get_private_listing_seller_onboarding_form') return rpcResult({ id: onboardingId, status: 'completed', form_data: submittedForm })
         return rpcResult(receipt)
       })
       const result = await submitSellerOnboarding('valid-token', { listingSnapshot: { id: listingId }, formData: { sellerName: 'Owner' } })
       expect(result.listing.id).toBe(listingId)
       expect(result.onboarding.status).toBe('completed')
     }
+    expect(client.from).not.toHaveBeenCalled()
+  })
+
+  it('does not treat another tab\'s completed form as confirmation after a submission timeout', async () => {
+    client.rpc.mockImplementation(name => {
+      if (name === 'bridge_complete_private_listing_seller_onboarding') return rpcResult(null, { code: '57014', message: 'statement timeout' })
+      if (name === 'bridge_get_private_listing_seller_onboarding_form') return rpcResult({ id: onboardingId, status: 'completed', form_data: { sellerName: 'Another saved owner' } })
+      return rpcResult({ listingId, onboardingId, status: 'completed', submittedAt: '2026-10-10T10:00:00Z' })
+    })
+    await expect(submitSellerOnboarding('valid-token', { listingSnapshot: { id: listingId }, formData: { sellerName: 'My unsaved owner' } }))
+      .rejects.toMatchObject({ code: 'seller_onboarding_completion_timeout' })
     expect(client.from).not.toHaveBeenCalled()
   })
 
@@ -630,4 +675,27 @@ it('flags pending seller files while retaining generic internal and buyer offer 
   expect(isUnlinkedSellerReviewDocument({ document_type:'listing_document',status:'uploaded' })).toBe(false)
   expect(isUnlinkedSellerReviewDocument({ document_type:'wet_ink_otp_buyer',category:'buyer_offer',status:'uploaded' })).toBe(false)
   expect(isUnlinkedSellerReviewDocument({ document_type:'cipc_documents',status:'approved' })).toBe(false)
+})
+
+
+describe('confirmed seller profile snapshots', () => {
+  it('clears old completion timestamps when a confirmed correction reopens the record', () => {
+    const saved = applyListingSellerOnboardingSaveSnapshot({ sellerOnboarding: { completedAt: 'old completion', submittedAt: 'old completion', status: 'completed' } },
+      { id: onboardingId, status: 'in_progress', submitted_at: null, updated_at: 'new revision', form_data: { currentStep: 1 } })
+    expect(saved.sellerOnboarding.status).toBe('in_progress')
+    expect(saved.sellerOnboarding.completedAt).toBeNull()
+    expect(saved.sellerOnboarding.submittedAt).toBeNull()
+    expect(saved.sellerOnboarding.currentStep).toBe(1)
+  })
+  it('advances both revisions and every form alias for a subsequent save', () => {
+    const stale = { id: listingId, updatedAt: 'old listing', sellerOnboarding: { id: onboardingId, saveRevision: { onboardingId, updatedAt: 'old onboarding' }, formData: { phone: 'old' } }, seller_onboarding_form_data: { phone: 'old' } }
+    const receipt = { id: onboardingId, private_listing_id: listingId, listing_updated_at: 'new listing', updated_at: 'new onboarding', status: 'completed', form_data: { phone: 'new' }, canonical_facts_json: { seller: { phone: 'new' } } }
+    const saved = applyListingSellerOnboardingSaveSnapshot(stale, receipt)
+    expect(saved.updatedAt).toBe('new listing')
+    expect(getSellerOnboardingSaveRevision(saved)).toEqual({ onboardingId, updatedAt: 'new onboarding' })
+    expect(saved.sellerOnboarding.formData.phone).toBe('new')
+    expect(saved.seller_onboarding_form_data.phone).toBe('new')
+    expect(saved.sellerCanonicalFacts.seller.phone).toBe('new')
+    expect(stale.sellerOnboarding.formData.phone).toBe('old')
+  })
 })

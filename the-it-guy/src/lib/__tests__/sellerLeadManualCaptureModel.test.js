@@ -13,6 +13,34 @@ import {
   getSellerLeadProfileEditChanges,
 } from '../sellerLeadManualCaptureModel.js'
 
+test('compact edits preserve deliberate clears instead of reviving onboarding aliases', () => {
+  const legacyFormData = { ownerStructureType: 'individual', firstName: 'Old', sellerFirstName: 'Old',
+    lastName: 'Name', sellerSurname: 'Name', residentialStreet: 'Old address', residentialAddress: 'Old address',
+    propertyAddress: 'Old property', formattedAddress: 'Old property' }
+  const captured = buildSellerLeadManualCapturePayload({ legacyFormData,
+    form: { firstName: '', lastName: '', residentialAddress: '', propertyAddress: '' } })
+  for (const key of ['firstName', 'sellerFirstName', 'lastName', 'sellerSurname', 'residentialAddress', 'residentialStreet', 'propertyAddress']) {
+    assert.equal(captured.formPatch[key] ?? '', '', key)
+  }
+})
+
+test('seller contact, VAT and representative details survive listing capture and reopen', () => {
+  for (const branch of ['company', 'trust', 'married', 'deceased_estate', 'power_of_attorney']) {
+    const source = { ownerStructureType: branch, ownershipRouteConfirmed: true, alternativeNumber: '0820000000',
+      vatRegistered: 'yes', vatNumber: 'VAT-1', spousePhone: '0821111111', authorisedSignatoryPhone: '0822222222',
+      authorisedTrusteePhone: '0823333333', executorPhone: '0824444444', powerOfAttorneyPhone: '0825555555' }
+    const listing = { sellerOnboarding: { formData: source } }
+    const draft = createListingSellerProfileBuilderDraft(listing)
+    assert.equal(draft.alternativeContact, source.alternativeNumber)
+    const captured = buildListingSellerProfileCapturePayload(draft, listing, { draft: true })
+    const reopened = createListingSellerProfileBuilderDraft({ sellerOnboarding: { formData: { ...source, ...captured.formPatch } } })
+    assert.equal(reopened.alternativeContact, source.alternativeNumber)
+    assert.equal(reopened.vatNumber, 'VAT-1')
+    const phone = { company: 'authorisedSignatoryPhone', trust: 'authorisedTrusteePhone', married: 'spousePhone', deceased_estate: 'executorPhone', power_of_attorney: 'powerOfAttorneyPhone' }[branch]
+    assert.equal(reopened[phone], source[phone], `${branch} representative`)
+  }
+})
+
 test('nested onboarding consent and legacy FICA fields survive capture, editing and reopen', () => {
   const acceptedAt = '2026-09-30T08:00:00Z'
   const existingFormData = {

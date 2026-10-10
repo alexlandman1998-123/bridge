@@ -9,7 +9,7 @@
 .recruitment-profile__recovery { padding: 18px; margin: 20px 0; border: 1px solid #f25c1f; border-radius: 10px; background: #fff8f3; }
 .recruitment-profile .recruitment-profile__packages { padding: 0; margin-top: 28px; }
 .recruitment-profile__packages legend { color: #31312e; font-size: 16px; font-weight: 600; }
-.recruitment-profile__packages > p { color: #62625d; font-size: 13px; line-height: 1.6; }
+.recruitment-profile__packages > p { margin: 12px 0 16px; color: #62625d; font-size: 13px; line-height: 1.6; }
 .recruitment-profile__packages > div { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }
 .recruitment-signup .recruitment-profile__packages label { display: flex; align-items: flex-start; gap: 10px; padding: 14px; margin: 0; border: 1px solid #d8d8d2; border-radius: 8px; cursor: pointer; }
 .recruitment-profile__packages label:has(input:checked) { border-color: var(--recruitment-accent,#f25c1f); background: var(--recruitment-accent-soft,#fff0e8); }
@@ -20,10 +20,12 @@
 @media(max-width:600px) { .recruitment-profile__packages > div { grid-template-columns: 1fr; } }
 @media(max-width:600px) { .recruitment-profile__navigation ol { grid-template-columns: repeat(2,minmax(0,1fr)); } }
 .recruitment-profile .recruitment-profile__part { color: var(--recruitment-accent-text,#bd4515); font-size: 12px; font-weight: 600; margin-top: 20px; }
-.recruitment-profile h4 { margin-top: 12px; }
+.recruitment-profile h4 { margin: 12px 0 24px; }
 .recruitment-profile h5 { color: #31312e; font-size: 14px; margin: 20px 0 16px; }
+.recruitment-profile__group:first-child h5 { margin-top: 0; }
+.recruitment-profile__group + .recruitment-profile__group { margin-top: 28px; }
 .recruitment-profile .recruitment-profile__wide { grid-column: 1 / -1; }
-.recruitment-profile select { display: block; width: 100%; min-height: 46px; border: 1px solid #d8d8d2; border-radius: 8px; background: #fff; color: #1c1c1c; padding: 11px 12px; margin-top: 7px; font: 400 16px/1.4 Asap,Arial,sans-serif; }
+.recruitment-profile select { display: block; box-sizing: border-box; width: 100%; min-width: 0; max-width: 100%; min-height: 46px; border: 1px solid #d8d8d2; border-radius: 8px; background: #fff; color: #1c1c1c; padding: 11px 12px; margin-top: 8px; font: 400 16px/1.4 Asap,Arial,sans-serif; }
 .recruitment-profile select:focus-visible { outline: 2px solid var(--recruitment-accent,#f25c1f); outline-offset: 3px; }
 .recruitment-profile select[aria-invalid=true] { border-color: #ba352b; }
 .recruitment-profile .recruitment-profile__radio { padding: 0; }
@@ -40,12 +42,18 @@
 .recruitment-signup--home-seekers .recruitment-profile__actions .recruitment-profile__back { border: 1px solid #d8d8d2; background: #fff; padding-inline: 20px; }
 .recruitment-signup .recruitment-profile__save-status { margin: 20px 0 0; color: #62625d; font-size: 12px; line-height: 1.5; }
 @media(max-width:600px) {
+  .recruitment-profile__navigation button { display: grid; grid-template-columns: 22px minmax(0,1fr); gap: 6px 10px; min-width: 0; }
+  .recruitment-profile__navigation span { grid-row: 1 / 3; }
+  .recruitment-profile__navigation small { grid-column: 2; margin: 0; }
   .recruitment-profile__actions { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   .recruitment-profile__forward-actions { display: contents; }
   .recruitment-signup .recruitment-profile__actions .recruitment-signup__secondary { width: 100%; }
   .recruitment-signup .recruitment-profile__actions .recruitment-signup__submit { grid-column: 1 / -1; grid-row: 2; width: 100%; }
   .recruitment-profile__actions:not(:has(.recruitment-profile__back)) .recruitment-signup__secondary { grid-column: 1 / -1; }
 }
+.recruitment-profile__packages label > span { min-width: 0; }
+.recruitment-profile__review dl > div { min-width: 0; }
+.recruitment-profile > .recruitment-signup__error { margin-top: 16px; }
 .recruitment-profile__complete { text-align: center; }
 
 .recruitment-profile__review-group { border: 1px solid #e6e4df; padding: 16px; border-radius: 10px; margin: 18px 0; }

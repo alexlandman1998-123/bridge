@@ -22,7 +22,7 @@ export default function HomeSeekersProperty() {
   const images = home.images || []
   const rental = home.transactionType === 'rental'
   const collectionUrl = homeSeekersPath(`/${rental ? 'renting' : 'buying'}`)
-  const listingLabel = rental ? 'TO LET' : 'FOR SALE'
+  const listingLabel = rental ? 'TO LET' : home.listingStatus === 'sold' ? 'SOLD' : home.listingStatus === 'under_offer' ? 'UNDER OFFER' : 'FOR SALE'
   const price = formatHomeSeekersPrice(home.price, home.transactionType)
   const facts = [[BedDouble, home.bedrooms || '-', 'Bedrooms'], [Bath, home.bathrooms || '-', 'Bathrooms'], [Car, home.parkingBays || '-', 'Parking']]
   async function submit(event) {

@@ -49,3 +49,13 @@ current terms. Explicit sale POA suppresses the public numeric price, including
 when a numeric amount was supplied for another portal. The forward migration
 `20261010111500_website_listing_public_price_terms.sql` applies this to both own
 and partner website publication, retaining membership, grant and media checks.
+
+
+## Listing sale status
+
+Owned and partner snapshots include the sale status after applying
+`20261010214831_website_listing_sale_status.sql` and updating the listing channel.
+Cards and detail pages display Sold or Under offer from that accepted snapshot.
+Legacy snapshots retain For sale until updated; rentals retain To let. This does
+not publish, withdraw or rewrite existing adverts. The primary app owns the
+all-channel sale-status action and per-channel removal controls.

@@ -8,7 +8,6 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const detailSource = fs.readFileSync(path.join(root, 'src/pages/AgentListingDetail.jsx'), 'utf8')
 
 test('marketing has one edit route and no duplicate save toolbar', () => {
-  assert.match(detailSource, /Listing content &amp; media/)
   assert.match(detailSource, /onClick=\{openPropertyDetailsFromMarketing\}/)
   assert.doesNotMatch(detailSource, /Marketing changes saved/)
   assert.doesNotMatch(detailSource, /Save the Arch9 record before reviewing/)

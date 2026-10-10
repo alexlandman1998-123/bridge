@@ -75,42 +75,34 @@ for (const evidence of [
 }
 
 const page = readFileSync(new URL('../../pages/agency/AgencyPipelinePage.jsx', import.meta.url), 'utf8')
-const handler = page.slice(page.indexOf('  async function handleSubmitManualSellerOnboarding('), page.indexOf('  async function handleSendSellerPortalLink()', page.indexOf('  async function handleSubmitManualSellerOnboarding(')))
+const handler = page.slice(page.indexOf('  async function handleManualSellerOnboardingSubmitted('), page.indexOf('  function closeManualSellerOnboarding('))
 
-async function runHandler({ draft = {}, saveAsDraft = false, fail = false } = {}) {
-  const events = { writes: [], errors: [], closed: false, busy: false }
-  const manual = { leadId: 'lead-a', listing: { id: 'listing-a' }, token: 'token-a', formData: {} }
+async function runCompletionHandler(fail = false) {
+  const events = { writes: [], errors: [], messages: [], closed: false }
+  const listing = { id: 'listing-a', sellerOnboarding: { status: 'completed', formData: { propertyDisclosure: { comments: 'Seller answers', signature: '' } } } }
   const scope = {
-    manualSellerOnboarding: manual, manualSellerOnboardingDraft: draft, isManualSellerOnboardingSaving: false,
-    buildSellerLeadAgentOnboardingSubmission, currentAgent: { id: 'agent-a' }, normalizeText: value => String(value || '').trim(),
-    setError: error => events.errors.push(error), setIsManualSellerOnboardingSaving: value => { events.busy = value },
-    updateSellerOnboardingProgress: async (token, payload) => { events.writes.push({ token, payload }); if (fail) throw new Error('Save failed'); return { listing: manual.listing, onboarding: {} } },
-    submitSellerOnboarding: async () => { throw new Error('An incomplete submission must not write') },
-    setManualSellerOnboarding: value => { events.closed = value === null }, setSelectedLeadHydratedListing: () => {}, patchSelectedLeadRecord: () => {}, setMessage: () => {},
+    manualSellerOnboarding: { leadId: 'lead-a', token: 'token-a' }, organisationId: 'org-a',
+    patchSelectedLeadRecord: () => {}, setSelectedLeadHydratedListing: saved => { events.listing = saved },
+    setManualSellerOnboarding: value => { events.closed = value === null }, setIsManualSellerOnboardingSaving: () => {},
+    setMessage: message => events.messages.push(message), scheduleRecordsReload: () => {},
+    updateAgencyCrmLeadRecord: async (...args) => { events.writes.push(args); if (fail) throw new Error('CRM refresh failed') },
+    console: { warn: () => {} },
   }
-  await Function(...Object.keys(scope), `${handler}; return handleSubmitManualSellerOnboarding(null, ${saveAsDraft})`)(...Object.values(scope))
+  await Function(...Object.keys(scope), `${handler}; return handleManualSellerOnboardingSubmitted(arguments[arguments.length-1])`)(...Object.values(scope), listing)
   return events
 }
 
-test('actual agent handler blocks incomplete submission before persistence', async () => {
-  const result = await runHandler()
-  assert.equal(result.writes.length, 0)
-  assert.ok(result.errors.some(error => /20 remaining/.test(error)))
-  assert.equal(result.closed, false)
-})
-
-test('actual agent draft handler persists partial answers and leaves the editor open, including on failure', async () => {
-  const draft = { propertyDisclosure: { responses: { electrical_faults: { answer: 'yes', note: 'Reported fault.' } } } }
-  for (const fail of [false, true]) {
-    const result = await runHandler({ draft, saveAsDraft: true, fail })
+for (const fail of [false, true]) {
+  test(`shared questionnaire completion stays saved after CRM projection (failure: ${fail})`, async () => {
+    const result = await runCompletionHandler(fail)
     assert.equal(result.writes.length, 1)
-    assert.equal(result.writes[0].payload.formData.sellerDisclosureCapture.capturedBy, 'agent-a')
-    assert.equal(result.writes[0].payload.status, 'in_progress')
-    assert.equal(result.closed, false)
-    assert.equal(result.busy, false)
-    if (fail) assert.equal(result.errors.at(-1), 'Save failed')
-  }
-})
+    assert.equal(result.writes[0][2].sellerOnboardingStatus, 'completed')
+    assert.equal(result.listing.sellerOnboarding.formData.propertyDisclosure.comments, 'Seller answers')
+    assert.equal(result.listing.sellerOnboarding.formData.propertyDisclosure.signature, '')
+    assert.equal(result.closed, true)
+    assert.match(result.messages.at(-1), fail ? /onboarding saved.*status could not be refreshed/ : /submitted for review/)
+  })
+}
 
 const onboarding = readFileSync(new URL('../../pages/SellerOnboarding.jsx', import.meta.url), 'utf8')
 const missingFunction = onboarding.slice(onboarding.indexOf('function getPropertyDisclosureMissingItems('), onboarding.indexOf('function getPropertyAddressDetails('))
@@ -131,7 +123,7 @@ test('actual assisted autosave keeps capture timestamps out of dirty-input compa
   const signature = (form, currentStep) => JSON.stringify({ currentStep, form })
   const last = { current: '' }
   const scope = {
-    form: current, currentStep: 2, hasRequestedComplianceSigner: false, listing: {},
+    form: current, currentStep: 2, hasRequestedComplianceSigner: false, listing: {}, onDraftSaved: () => {},
     normalizeSellerFormForProgression: value => structuredClone(value), buildSellerDraftSignature: signature,
     isAgentAssistedCompletion: true, assistedDisclosureSource: {}, buildSellerAgentAssistedDisclosurePatch,
     useDbFirstSellerOnboarding: false, setSaving: () => {}, setError: () => {}, setDraftSyncStatus: () => {},

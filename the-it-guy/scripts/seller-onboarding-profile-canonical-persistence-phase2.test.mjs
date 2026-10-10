@@ -44,13 +44,10 @@ assert.match(
 )
 assert.match(
   helperSource,
-  /existing\?\.id[\s\S]*?\.update\(payload\)[\s\S]*?\.eq\('id', existing\.id\)[\s\S]*?:[\s\S]*?\.insert\(payload\)/,
-  'Seller profile persistence should update an existing row or insert when a linked listing has no row.',
+  /client\.rpc\('save_private_listing_seller_onboarding_profile', \{[\s\S]*?p_listing_id: scopedListingId[\s\S]*?p_form_data: nextFormData[\s\S]*?p_revision: getSellerOnboardingSaveRevision\(listingSnapshot\)/,
+  'Profile creation and edits must use the staff-only, revision-checked atomic save.',
 )
-assert.match(
-  helperSource,
-  /select\('id, private_listing_id, token, status, seller_type, ownership_structure, marital_regime, form_data, submitted_at, created_at, updated_at'\)/,
-  'Seller profile persistence should return the canonical onboarding row needed by Phase 3.',
-)
+assert.doesNotMatch(helperSource, /\.update\(payload\)|\.insert\(payload\)/, 'A missing RPC must not fall back to an unguarded table write.')
+assert.match(helperSource, /if \(!result\.data\?\.id\)/, 'A successful save needs a confirmed onboarding row.')
 
 console.log('Seller onboarding profile canonical persistence Phase 2 contract passed.')

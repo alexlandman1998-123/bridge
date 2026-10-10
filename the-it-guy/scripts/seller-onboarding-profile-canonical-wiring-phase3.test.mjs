@@ -70,6 +70,6 @@ assert.ok(
   'The linked listing save must complete before updating the CRM projection.',
 )
 const listingPage = await readFile(new URL('../src/pages/AgentListingDetail.jsx', import.meta.url), 'utf8')
-const profileSave = listingPage.slice(listingPage.indexOf('async function handleSaveSellerProfileBuilder'), listingPage.indexOf('function handleSellerProfileBuilderSubmit'))
+const profileSave = listingPage.slice(listingPage.indexOf('async function handleSaveSellerProfileBuilder'), listingPage.indexOf('function handleSellerInformationEditorSubmit'))
 assert.equal((profileSave.match(/saveListingSellerCanonicalUpdate\(/g) || []).length, 1)
 assert.doesNotMatch(profileSave, /remoteListingMissing|remote: false/, 'A failed remote profile save must not silently become a local-only save.')

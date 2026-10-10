@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { createHomeSeekersSignupResponse } from './homeSeekersRecruitmentSignupApi.js'
 import { HOME_SEEKERS_ORGANISATION_ID as org } from './homeSeekersWebsiteBridge.js'
 
-const actions = ['resume', 'open_account', 'sign_in', 'send_verification', 'verify_email', 'sign_out', 'prepare_document', 'commit_document', 'download_document', 'prepare_photo', 'commit_photo']
+const actions = ['resume', 'open_account', 'sign_in', 'send_verification', 'verify_email', 'sign_out', 'prepare_document', 'commit_document', 'download_document', 'prepare_photo', 'commit_photo', 'prepare_contract_return', 'commit_contract_return', 'download_contract']
 const reply = (status, body) => ({ status, headers: { 'Cache-Control': 'private, no-store', 'Referrer-Policy': 'no-referrer' }, body })
 const cookieName = `a9_recruitment_${org.replaceAll('-', '')}`
 function sessionHash(value) {
@@ -12,7 +12,12 @@ function sessionHash(value) {
 }
 async function withPhoto(db, tokenHash, applicant) {
   if (!applicant?.applicationSubmitted) return applicant
-  const result = await db.rpc('recruitment_applicant_setup_photo', { p_organisation_id: org, p_token_hash: tokenHash })
+  const [contract, result] = await Promise.all([
+    db.rpc('recruitment_applicant_contract', { p_organisation_id: org, p_token_hash: tokenHash }),
+    db.rpc('recruitment_applicant_setup_photo', { p_organisation_id: org, p_token_hash: tokenHash }),
+  ])
+  if ((contract.error && contract.error.code !== 'PGRST202') || contract.data?.unavailable) throw new Error('Contract access unavailable')
+  applicant = { ...applicant, contract: contract.data ? Object.fromEntries(['version', 'name', 'publishedAt', 'canUpload', 'verified', 'returns'].map(key => [key, contract.data[key]])) : null }
   if (result.error) throw result.error
   if (!result.data?.path) return { ...applicant, photo: null }
   const signed = await db.storage.from('recruitment-profile-photos').createSignedUrl(result.data.path, 300)
@@ -35,6 +40,41 @@ export async function createRecruitmentApplicantSetupResponse({ method = 'POST',
       db = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } })
     }
     const tokenHash = sessionHash(headers.cookie)
+    if (['prepare_contract_return', 'commit_contract_return', 'download_contract'].includes(body.action)) {
+      if (!tokenHash) return reply(401, { error: 'Log in again to open your contract.' })
+      const args = { p_organisation_id: org, p_token_hash: tokenHash }
+      if (body.action === 'download_contract') {
+        if (body.returnId != null && !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(body.returnId)) return reply(400, { error: 'Choose a saved contract.' })
+        const result = await db.rpc('recruitment_applicant_contract', { ...args, p_return_id: body.returnId || null })
+        if (result.error || !result.data?.path) return reply(result.data?.unavailable ? 401 : 409, { error: 'This contract is unavailable. Refresh My Profile or log in again.' })
+        const signed = await db.storage.from(result.data.bucket).createSignedUrl(result.data.path, 300, { download: result.data.downloadName })
+        if (signed.error || !signed.data?.signedUrl) throw new Error('Download unavailable')
+        return reply(200, { downloadUrl: signed.data.signedUrl })
+      }
+      if (!/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(body.requestId || '')) return reply(400, { error: 'Choose a signed PDF.' })
+      args.p_request_id = body.requestId
+      // Preparing on both requests binds finalisation to the same file metadata and verified session.
+      args.p_document = Object.fromEntries(['name', 'size', 'mimeType'].map(key => [key, body.document?.[key]]))
+      const prepared = await db.rpc('recruitment_prepare_contract_return', args)
+      if (prepared.data?.unavailable) return reply(409, { error: 'Your contract is no longer awaiting a signed copy. Refresh My Profile.' })
+      if (prepared.error || !prepared.data?.path) return reply(422, { error: 'Choose a PDF up to 10 MB. Retry the same file if it was already uploaded.' })
+      const storage = db.storage.from('recruitment-signed-contracts')
+      if (body.action === 'prepare_contract_return') {
+        if (prepared.data.committed) return reply(200, { committed: true })
+        const signed = await storage.createSignedUploadUrl(prepared.data.path, { upsert: false })
+        if (signed.error || !signed.data?.signedUrl) throw new Error('Upload unavailable')
+        return reply(200, { uploadUrl: signed.data.signedUrl })
+      }
+      if (!prepared.data.committed) {
+        const file = await storage.download(prepared.data.path)
+        if (file.error || file.data?.size !== body.document?.size || new TextDecoder().decode(await file.data.slice(0, 5).arrayBuffer()) !== '%PDF-') return reply(422, { error: 'The signed copy must be a valid PDF. Scan or export every signed page into one PDF.' })
+      }
+      const saved = await db.rpc('recruitment_commit_contract_return', { p_organisation_id: org, p_token_hash: tokenHash, p_request_id: body.requestId })
+      if (saved.error || !saved.data?.saved) return reply(409, { error: 'Your signed contract could not be confirmed. Retry this file or refresh My Profile.' })
+      const resumed = await db.rpc('recruitment_resume_applicant', { p_organisation_id: org, p_token_hash: tokenHash })
+      if (resumed.error || !resumed.data) throw new Error('Session unavailable')
+      return reply(200, { saved: true, applicant: await withPhoto(db, tokenHash, resumed.data) })
+    }
     if (body.action === 'open_account') {
       const bearer = /^Bearer (.+)$/.exec(headers.authorization || '')?.[1]
       if (!bearer) return reply(401, { error: 'Log in to open My Profile.' })

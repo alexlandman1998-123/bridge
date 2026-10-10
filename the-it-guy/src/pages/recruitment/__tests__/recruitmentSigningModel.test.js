@@ -20,3 +20,11 @@ it('restores the delivery or signed stage on reopening',()=>{
   expect(reopenRecruitmentStage({...sent,status:'closed_lost'})).toBe('contract_sent')
   expect(reopenRecruitmentStage({...sent,status:'closed_lost',contract_signature_json:{recordedAt:'2026-10-05'}})).toBe('contract_signed')
 })
+it('accepts a registered return for the delivered version while retaining every staff verification requirement', () => {
+  const returned = { id: 'return', contractVersion: 1, submittedAt: '2026-10-05' }, withReturn = { ...sent, contract_returns_json: [returned] }
+  const draft = { ...signature, file: null, returnedId: 'return' }
+  expect(emptySignatureDraft(withReturn).returnedId).toBe('return')
+  expect(recruitmentSignatureErrors(withReturn, draft, '2026-10-05')).toEqual([])
+  expect(recruitmentSignatureErrors(withReturn, { ...draft, checks: { ...draft.checks, organisationSignature: false } }, '2026-10-05')).not.toEqual([])
+  expect(recruitmentSignatureErrors(withReturn, { ...draft, returnedId: 'foreign' }, '2026-10-05')).not.toEqual([])
+})

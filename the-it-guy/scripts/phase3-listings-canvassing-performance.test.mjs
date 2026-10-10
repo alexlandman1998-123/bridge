@@ -2,27 +2,27 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
 const listings = await readFile(new URL('../src/pages/AgentListings.jsx', import.meta.url), 'utf8')
+const listingCard = await readFile(new URL('../src/components/listings/SalesListingIndexCard.jsx', import.meta.url), 'utf8')
 const canvassing = await readFile(new URL('../src/pages/PipelineCanvassingPage.jsx', import.meta.url), 'utf8')
 
 const listingsSummaryIndex = listings.indexOf('await getAgentPrivateListingSummaries(profile.id, {')
 const listingsCoreReadyIndex = listings.indexOf('if (showLoading) setLoading(false)', listingsSummaryIndex)
-const listingsDetailIndex = listings.indexOf('getAgentPrivateListings(profile.id, {', listingsSummaryIndex)
 
 assert.ok(listingsSummaryIndex > 0, 'Listings must use a lightweight summary query for its first usable render.')
 assert.match(listings, /coreFieldsOnly: true/, 'Listings hot path must request schema-stable core fields only.')
 assert.ok(
-  listingsCoreReadyIndex > listingsSummaryIndex && listingsCoreReadyIndex < listingsDetailIndex,
-  'Listings must publish core rows before detailed listing hydration starts.',
+  listingsCoreReadyIndex > listingsSummaryIndex,
+  'Listings must publish core rows without waiting for supporting workspaces.',
 )
 assert.match(
   listings,
   /data-performance-settled=\{isPrimaryListingsRoute \? \(loading \|\| supportingDataLoading \? 'false' : 'true'\)/,
   'Listings must not report settled while background hydration is running.',
 )
-assert.match(listings, /contentVisibility: 'auto'/, 'Off-screen listing cards should defer layout and paint work.')
-assert.match(listings, /includeMedia: false/, 'Detailed listing hydration should not fetch every media row on page load.')
+assert.match(listingCard, /contentVisibility: 'auto'/, 'Off-screen listing cards should defer layout and paint work.')
+assert.doesNotMatch(listings, /getAgentPrivateListings\(profile.id/, 'The listing grid must not bulk-download seller onboarding and documents.')
 assert.match(listings, /getPrivateListingCoverImageUrls\(pending\.map/, 'Card covers should load for the visible collection.')
-assert.match(listings, /loading=\{priority \? 'eager' : 'lazy'\}/, 'Only the first visible card images should load eagerly.')
+assert.match(listingCard, /loading=\{priority \? 'eager' : 'lazy'\}/, 'Only the first visible card images should load eagerly.')
 
 const currentWorkspaceIndex = canvassing.indexOf('let orgId = normalizeText(currentWorkspace?.id)')
 const settingsFallbackIndex = canvassing.indexOf('if (!orgId) {', currentWorkspaceIndex)

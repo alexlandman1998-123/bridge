@@ -36,3 +36,13 @@ it('Edit listing opens the shared editor without publishing', async () => {
  expect(onEdit).toHaveBeenCalledTimes(1)
  expect(mocks.set).not.toHaveBeenCalled()
 })
+
+it('lifecycle mode hides setup blockers and has no content publishing control', async () => {
+  mocks.get.mockResolvedValue({ ...connected, status: 'unpublished', blockers: ['Missing headline.'] })
+  render(<KingdomWebsitePublicationChannel listingId="listing-1" manageActions={<button type="button">Manage listing</button>} />)
+  await screen.findByRole('button', { name: 'Manage listing' })
+  expect(screen.queryByText('Missing headline.')).toBeNull()
+  expect(screen.queryByText('Needs attention')).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Publish to website' })).toBeNull()
+  expect(mocks.set).not.toHaveBeenCalled()
+})

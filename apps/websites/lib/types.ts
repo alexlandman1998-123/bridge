@@ -4,6 +4,7 @@ export type PublicProperty = {
   reference: string
   legacyReference?: string
   transactionType: 'sale' | 'rental'
+  listingStatus?: 'active' | 'under_offer' | 'sold'
   propertyType: string
   suburb: string
   province?: string

@@ -83,7 +83,7 @@ import {
 } from './sellerDocumentSatisfactionAssuranceService.js'
 import { normalizeSellerPortalActivationTermsConfig } from '../lib/sellerPortalActivationTerms.js'
 import { buildPrivateListingDocumentPersistenceReceipt } from './listings/listingSellerDocumentPersistenceModel.js'
-import { buildListingSellerCanonicalSavePayload, isMatchingSellerCanonicalSaveReceipt } from './listings/listingSellerCanonicalUpdateModel.js'
+import { buildListingSellerCanonicalSavePayload, getSellerOnboardingSaveRevision, isMatchingSellerCanonicalSaveReceipt, isMatchingSellerOnboardingCompletion } from './listings/listingSellerCanonicalUpdateModel.js'
 
 const LISTING_STATUSES = PRIVATE_LISTING_LIFECYCLE.STATUSES
 
@@ -589,61 +589,6 @@ function getCanonicalSellerPayloadFromFormData(formData = {}, listing = {}, opti
   }
 
   return { facts: null, readiness: null }
-}
-
-async function persistCanonicalSellerFactPayload(client, { listingId = '', onboardingId = '', formData = {}, listing = {}, draft = false, source = 'seller_onboarding' } = {}) {
-  const { facts, readiness } = getCanonicalSellerPayloadFromFormData(formData, listing, {
-    contextType: 'private_listing',
-    contextId: listingId || listing?.id || null,
-    listingId: listingId || listing?.id || null,
-    source,
-    draft,
-  })
-  if (!facts) return { skipped: true, reason: 'canonical_seller_facts_missing' }
-
-  const nowIso = new Date().toISOString()
-  const updates = []
-  if (onboardingId) {
-    updates.push(
-      client
-        .from('private_listing_seller_onboarding')
-        .update({
-          canonical_facts_json: facts,
-          canonical_fact_readiness_json: readiness || {},
-          canonical_facts_updated_at: nowIso,
-        })
-        .eq('id', onboardingId),
-    )
-  }
-  if (listingId) {
-    updates.push(
-      client
-        .from('private_listings')
-        .update({
-          seller_canonical_facts_json: facts,
-          seller_canonical_fact_readiness_json: readiness || {},
-          seller_canonical_facts_updated_at: nowIso,
-        })
-        .eq('id', listingId),
-    )
-  }
-
-  const results = await Promise.all(updates)
-  const blockingError = results.find((result) => {
-    const error = result?.error
-    return error && !isMissingColumnError(error, 'canonical_facts_json') &&
-      !isMissingColumnError(error, 'canonical_fact_readiness_json') &&
-      !isMissingColumnError(error, 'canonical_facts_updated_at') &&
-      !isMissingColumnError(error, 'seller_canonical_facts_json') &&
-      !isMissingColumnError(error, 'seller_canonical_fact_readiness_json') &&
-      !isMissingColumnError(error, 'seller_canonical_facts_updated_at')
-  })?.error
-  if (blockingError) throw blockingError
-  return {
-    skipped: false,
-    persisted: results.filter((result) => !result?.error).length,
-    missingColumns: results.filter((result) => result?.error).map((result) => result.error?.message).filter(Boolean),
-  }
 }
 
 function isDeletedPrivateListingRow(row = {}) {
@@ -1316,6 +1261,10 @@ async function recoverSellerOnboardingSubmitAfterTimeout(client, token, timeoutE
   })
 
   if (!receipt || !isCompletedSellerOnboardingContext(receipt)) return null
+  // A different tab may have submitted while this request was timing out.
+  // A completed status alone must never confirm our older form as saved.
+  const saved = await fetchSellerOnboardingFormByToken(client, normalizedToken).catch(() => null)
+  if (!isMatchingSellerOnboardingCompletion(saved, options.formData)) return null
   return buildSellerOnboardingCompletionContext(receipt, options)
 }
 
@@ -3222,6 +3171,8 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
     },
     sellerOnboarding: onboarding
       ? {
+          id: onboarding.id,
+          saveRevision: { onboardingId: onboarding.id, updatedAt: onboarding.updated_at || null },
           token: onboarding.token || '',
           sellerPortalToken: onboarding.seller_portal_token || '',
           clientPortalLink: onboarding.seller_portal_token
@@ -4049,6 +4000,8 @@ export async function persistSellerProfileOnboardingFormData({
   allowProtectedSectionOverride = false,
   explicitClearFields = [],
   replaceToken = false,
+  reopenForCorrection = false,
+  listingSnapshot = {},
   client: providedClient = null,
 } = {}) {
   const client = providedClient || requireClient()
@@ -4058,12 +4011,23 @@ export async function persistSellerProfileOnboardingFormData({
   if (!isPlainObject(formData)) return null
 
   const existing = await fetchSellerPortalOnboardingRowByToken(client, normalizedToken, normalizedListingId)
+  if (normalizedListingId && existing?.private_listing_id && existing.private_listing_id !== normalizedListingId) {
+    throw new Error('This seller link belongs to a different listing. Reopen the correct seller workspace before saving.')
+  }
   const existingFormData = getSellerOnboardingFormData(existing)
   const nextFormData = mergeSellerProfileCanonicalFormData(existingFormData, formData, {
     allowEmptyOverride,
     allowProtectedSectionOverride,
     explicitClearFields,
   })
+  const { facts, readiness } = getCanonicalSellerPayloadFromFormData(nextFormData, listingSnapshot, {
+    draft: (status || existing?.status) !== 'completed',
+    source: 'seller_profile_save',
+  })
+  if (facts) {
+    nextFormData.canonicalSellerFacts = facts
+    nextFormData.canonicalSellerFactReadiness = readiness || {}
+  }
   const nowIso = new Date().toISOString()
   const nextStatus = normalizeStatus(status || existing?.status || 'in_progress', SELLER_ONBOARDING_STATUSES, 'in_progress')
   const scopedListingId = normalizeUuid(existing?.private_listing_id || normalizedListingId)
@@ -4081,29 +4045,34 @@ export async function persistSellerProfileOnboardingFormData({
     updated_at: nowIso,
   }
 
-  const query = existing?.id
-    ? client
-      .from('private_listing_seller_onboarding')
-      .update(payload)
-      .eq('id', existing.id)
-    : client
-      .from('private_listing_seller_onboarding')
-      .insert(payload)
-
-  const result = await query
-    .select('id, private_listing_id, token, status, seller_type, ownership_structure, marital_regime, form_data, submitted_at, created_at, updated_at')
-    .single()
+  const result = await client.rpc('save_private_listing_seller_onboarding_profile', {
+    p_listing_id: scopedListingId,
+    p_token: payload.token,
+    p_form_data: nextFormData,
+    p_revision: getSellerOnboardingSaveRevision(listingSnapshot),
+    p_status: nextStatus,
+    p_seller_type: payload.seller_type,
+    p_ownership_structure: payload.ownership_structure,
+    p_marital_regime: payload.marital_regime,
+    p_replace_token: replaceToken,
+    p_reopen_for_correction: reopenForCorrection,
+  })
 
   if (result.error) {
-    if (isMissingTableError(result.error, 'private_listing_seller_onboarding')) return null
+    if (isMissingRpcError(result.error, 'save_private_listing_seller_onboarding_profile')) {
+      throw new Error('Safe seller saving is not available in this environment yet. The seller saving migration must be applied before saving.')
+    }
+    if (['40001', 'PT409'].includes(result.error.code)) throw sellerSaveConflict(result.error)
     throw result.error
   }
+  if (!result.data?.id) throw new Error('Seller saving returned no confirmation. Your entries are still in this form. Check the saved record before retrying.')
+  return result.data
+}
 
-  return result.data || {
-    ...payload,
-    id: existing?.id || null,
-    created_at: existing?.created_at || null,
-  }
+function sellerSaveConflict(cause) {
+  return Object.assign(new Error('Someone else saved changes to this seller record. Your entries are still in this form. Review the latest saved details before trying again.'), {
+    code: 'SELLER_UPDATE_CONFLICT', recoverable: true, cause,
+  })
 }
 
 function mergeSellerPortalOnboardingFormData(context = null, persistedOnboarding = null) {
@@ -4116,18 +4085,21 @@ function mergeSellerPortalOnboardingFormData(context = null, persistedOnboarding
     ? context.listing.sellerOnboarding
     : {}
   const mergedFormData = {
-    ...persistedFormData,
     ...getSellerOnboardingFormData(contextOnboarding),
     ...getSellerOnboardingFormData(listingOnboarding),
+    ...persistedFormData,
   }
   const mergedOnboarding = {
-    ...persistedOnboarding,
     ...contextOnboarding,
+    ...persistedOnboarding,
     form_data: mergedFormData,
     formData: mergedFormData,
   }
   const mergedListingOnboarding = {
     ...listingOnboarding,
+    id: mergedOnboarding.id,
+    saveRevision: { onboardingId: mergedOnboarding.id, updatedAt: mergedOnboarding.updated_at || null },
+    updatedAt: mergedOnboarding.updated_at || null,
     token: mergedOnboarding.token || listingOnboarding.token || '',
     sellerPortalToken: mergedOnboarding.seller_portal_token || listingOnboarding.sellerPortalToken || '',
     status: mergedOnboarding.status || listingOnboarding.status || '',
@@ -5889,93 +5861,19 @@ export async function resolvePrivateListingIdForDeletion(listing = {}, { organis
 }
 
 export async function updatePrivateListingOnboardingFormData(listingId, formData = {}, options = {}) {
-  const client = requireClient()
   const normalizedId = normalizeUuid(listingId)
   if (!normalizedId) throw new Error('Listing id is required.')
-
-  const existing = await client
-    .from('private_listing_seller_onboarding')
-    .select('id, private_listing_id, token, status, seller_type, ownership_structure, marital_regime, form_data, submitted_at')
-    .eq('private_listing_id', normalizedId)
-    .maybeSingle()
-  if (existing.error) {
-    if (isMissingTableError(existing.error, 'private_listing_seller_onboarding')) return null
-    throw existing.error
-  }
-  if (!existing.data?.id) {
-    const inserted = await client
-      .from('private_listing_seller_onboarding')
-      .insert({
-        private_listing_id: normalizedId,
-        token: generateSellerOnboardingToken(),
-        form_data: formData && typeof formData === 'object' ? formData : {},
-        status: normalizeStatus(options.status || 'completed', SELLER_ONBOARDING_STATUSES, 'completed'),
-        submitted_at: new Date().toISOString(),
-        seller_type: normalizeNullableText(options.sellerType || formData?.sellerType || formData?.sellerLegalType || formData?.ownerStructureType || formData?.ownershipType),
-        ownership_structure: normalizeNullableText(options.ownershipStructure || formData?.ownerStructureType || formData?.ownershipType),
-        marital_regime: normalizeNullableText(options.maritalRegime || formData?.maritalRegime || formData?.marriageRegime),
-      })
-      .select('*')
-      .single()
-    if (inserted.error) throw inserted.error
-    await persistCanonicalSellerFactPayload(client, {
-      listingId: normalizedId,
-      onboardingId: inserted.data?.id,
-      formData,
-      listing: { id: normalizedId },
-      draft: normalizeStatus(options.status || 'completed', SELLER_ONBOARDING_STATUSES, 'completed') !== 'completed',
-    }).catch((factError) => {
-      console.warn('[Private Listings] canonical seller facts persistence skipped after onboarding form insert', factError)
-      return null
-    })
-    let requirementSyncResult = null
-    if (options.syncRequirements !== false) {
-      requirementSyncResult = await syncPrivateListingRequirements(normalizedId, {
-        emitActivity: false,
-        reason: options.requirementSyncReason || 'onboarding_form_saved',
-      }).catch((requirementsError) => {
-        console.warn('[Private Listings] seller requirement sync skipped after onboarding form insert', requirementsError)
-        if (options.requireRequirementSync === true) throw requirementsError
-        return null
-      })
-    }
-    return {
-      ...inserted.data,
-      requirementSyncResult,
-      syncedRequirements: requirementSyncResult?.requirements || null,
-      syncedListing: requirementSyncResult?.listing || null,
-    }
-  }
-
-  const existingFormData = existing.data.form_data && typeof existing.data.form_data === 'object' ? existing.data.form_data : {}
-  const nextFormData = {
-    ...existingFormData,
-    ...(formData && typeof formData === 'object' ? formData : {}),
-  }
-  const nextStatus = normalizeStatus(options.status || existing.data.status || 'completed', SELLER_ONBOARDING_STATUSES, 'completed')
-  const update = await client
-    .from('private_listing_seller_onboarding')
-    .update({
-      form_data: nextFormData,
-      status: nextStatus,
-      submitted_at: existing.data.submitted_at || (nextStatus === 'completed' ? new Date().toISOString() : null),
-      seller_type: normalizeNullableText(options.sellerType || nextFormData.sellerType || nextFormData.sellerLegalType || nextFormData.ownerStructureType || nextFormData.ownershipType || existing.data.seller_type),
-      ownership_structure: normalizeNullableText(options.ownershipStructure || nextFormData.ownerStructureType || nextFormData.ownershipType || existing.data.ownership_structure),
-      marital_regime: normalizeNullableText(options.maritalRegime || existing.data.marital_regime || nextFormData.maritalRegime || nextFormData.marriageRegime),
-    })
-    .eq('id', existing.data.id)
-    .select('*')
-    .single()
-  if (update.error) throw update.error
-  await persistCanonicalSellerFactPayload(client, {
+  const saved = await persistSellerProfileOnboardingFormData({
     listingId: normalizedId,
-    onboardingId: update.data?.id,
-    formData: nextFormData,
-    listing: { id: normalizedId },
-    draft: nextStatus !== 'completed',
-  }).catch((factError) => {
-    console.warn('[Private Listings] canonical seller facts persistence skipped after onboarding form update', factError)
-    return null
+    listingSnapshot: options.listingSnapshot || {},
+    formData,
+    status: options.status || options.listingSnapshot?.sellerOnboarding?.status || 'completed',
+    sellerType: options.sellerType || formData.sellerType || formData.sellerLegalType || formData.ownerStructureType,
+    ownershipStructure: options.ownershipStructure || formData.ownerStructureType || formData.ownershipType,
+    maritalRegime: options.maritalRegime || formData.maritalRegime || formData.marriageRegime,
+    allowProtectedSectionOverride: true,
+    allowEmptyOverride: true,
+    reopenForCorrection: options.reopenForCorrection === true,
   })
   let requirementSyncResult = null
   if (options.syncRequirements !== false) {
@@ -5989,7 +5887,7 @@ export async function updatePrivateListingOnboardingFormData(listingId, formData
     })
   }
   return {
-    ...update.data,
+    ...saved,
     requirementSyncResult,
     syncedRequirements: requirementSyncResult?.requirements || null,
     syncedListing: requirementSyncResult?.listing || null,
@@ -6066,7 +5964,7 @@ export async function savePrivateListingSellerCanonicalUpdate(update = {}, optio
   try {
     result = await runSellerCanonicalRequest((signal) => client.rpc('save_private_listing_seller_canonical_update', {
       p_listing_id: listingId,
-      p_form_data: payload.formData,
+      p_form_data: { ...payload.formData, __sellerSave: update.expectedOnboardingRevision },
       p_canonical_facts: update.canonicalFacts && typeof update.canonicalFacts === 'object' ? update.canonicalFacts : {},
       p_canonical_readiness: update.readiness && typeof update.readiness === 'object' ? update.readiness : {},
       p_listing_patch: payload.listingPatch,
@@ -6102,10 +6000,7 @@ export async function savePrivateListingSellerCanonicalUpdate(update = {}, optio
       throw new Error('Canonical seller saving is not available in this environment yet. Apply the listing seller canonical update migration before editing seller details.')
     }
     if (['40001', 'PT409'].includes(normalizeText(result.error.code)) || normalizeText(result.error.message).toLowerCase().includes('changed after you opened')) {
-      const conflict = new Error('A newer saved version of this seller record is available. This can happen after a background update. Reload the listing and review the latest information before saving.')
-      conflict.code = 'SELLER_UPDATE_CONFLICT'
-      conflict.recoverable = true
-      throw conflict
+      throw sellerSaveConflict(result.error)
     }
     throw result.error
   }
@@ -8267,25 +8162,14 @@ async function maybeResolveCanonicalSellerRequirements({ listing, formData, clie
 
 function enqueueSellerOnboardingProgressProjection(client, {
   listing = null,
-  onboardingId = '',
   formData = {},
-  draft = true,
   reason = 'seller_onboarding_progress',
 } = {}) {
   const listingId = normalizeText(listing?.id)
   return enqueueKeyedOperation(sellerOnboardingProjectionQueues, listingId, async () => {
     if (!await canManageSellerOnboardingProjections(client, listingId)) return null
-    await persistCanonicalSellerFactPayload(client, {
-      listingId,
-      onboardingId,
-      formData,
-      listing,
-      draft,
-      source: reason,
-    }).catch((factError) => {
-      console.warn('[Private Listings] canonical seller facts persistence skipped after onboarding progress update', factError)
-      return null
-    })
+    // Raw form and canonical facts were committed together by the guarded RPC.
+    // A delayed browser projection must never write an older draft over them.
 
     const requirementSync = await syncPrivateListingRequirements(listing, {
       emitActivity: false,
@@ -8351,6 +8235,7 @@ export async function submitSellerOnboarding(token, payload = {}) {
     ...formData,
     ...(canonicalFacts ? { canonicalSellerFacts: canonicalFacts } : {}),
     ...(canonicalReadiness ? { canonicalSellerFactReadiness: canonicalReadiness } : {}),
+    __sellerSave: getSellerOnboardingSaveRevision(payload.listingSnapshot),
   }
   const timeout = createRequestTimeout(SELLER_ONBOARDING_COMPLETION_TIMEOUT_MS)
   let rpc
@@ -8382,6 +8267,7 @@ export async function submitSellerOnboarding(token, payload = {}) {
       completionTimeoutError.code = 'seller_onboarding_completion_timeout'
       throw completionTimeoutError
     }
+    if (['40001', 'PT409'].includes(rpc.error.code)) throw sellerSaveConflict(rpc.error)
     throw rpc.error
   }
   if (!rpc.error) {
@@ -8440,6 +8326,7 @@ async function updateSellerOnboardingProgressInternal(token, payload = {}) {
   const rpcFormData = {
     ...formData,
     ...(facts ? { canonicalSellerFacts: facts, canonicalSellerFactReadiness: readiness || {} } : {}),
+    __sellerSave: getSellerOnboardingSaveRevision(payload.listingSnapshot),
   }
 
   const rpc = await client.rpc('bridge_update_private_listing_seller_onboarding_progress', {
@@ -8451,16 +8338,18 @@ async function updateSellerOnboardingProgressInternal(token, payload = {}) {
     p_marital_regime: normalizeNullableText(payload.maritalRegime),
   })
   // Fail closed: missing or timed-out RPCs must not become direct table writes.
-  if (rpc.error) throw rpc.error
+  if (rpc.error) {
+    if (['40001', 'PT409'].includes(rpc.error.code)) throw sellerSaveConflict(rpc.error)
+    throw rpc.error
+  }
   if (!rpc.error) {
     let rpcContext = mapSellerClientPortalPayload(rpc.data)
     if (!rpcContext?.listing) {
       throw new Error('Seller onboarding link is invalid or inactive.')
     }
-    // The RPC has already persisted the raw draft. Canonical facts and
-    // requirement reconciliation are secondary projections and must not
-    // hold up the Step 1 save/next transition. They are queued per listing
-    // so an older autosave cannot finish after and overwrite a newer one.
+    // The RPC has already committed the raw draft and canonical facts.
+    // Queue secondary requirement reconciliation without holding up the
+    // Step 1 save/next transition.
     void enqueueSellerOnboardingProgressProjection(client, {
       listing: rpcContext.listing,
       onboardingId: rpcContext.onboarding?.id,

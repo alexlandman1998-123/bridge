@@ -67,6 +67,7 @@ function publicListing(channel) {
     suburb: String(row.suburb || ''),
     type: String(row.property_type || 'Property'),
     transactionType,
+    listingStatus: row.listing_status === 'sold' || row.listing_status === 'under_offer' ? row.listing_status : 'active',
     price: Number(row.asking_price || 0),
     bedrooms: Number(row.bedrooms || 0),
     bathrooms: Number(row.bathrooms || 0),

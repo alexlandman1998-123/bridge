@@ -6,6 +6,7 @@ import {
   LISTING_SELLER_PROFILE_CAPTURE_SOURCE,
   addListingSellerProfileDraftPerson,
   buildListingSellerProfileCapturePayload,
+  buildListingMandateReadiness,
   buildListingSellerProfileFormPatch,
   buildListingSellerProfileRequirementProjection,
   createListingSellerProfileBuilderDraft,
@@ -70,14 +71,14 @@ await test('ownership editor switches structures using the branch reset and co-o
   assert.equal(calls.length, 2)
 })
 
-await test('actual ownership save retains the editor on refresh failure and retries even with unchanged ownership', async () => {
+await test('a committed ownership save closes the editor and reports a checklist follow-up without demanding another save', async () => {
   let listing = { id: '00000000-0000-4000-8000-000000000001', sellerType: 'individual', addressLine1: '10 Example Road', sellerOnboarding: { formData: { ownerStructureType: 'individual', sellerFirstName: 'Owner', sellerSurname: 'Person' } } }
   const draft = { ...selectListingSellerProfileBranch(createListingSellerProfileBuilderDraft(listing), 'trust'), trustName: 'Corrected Trust' }
   const state = { open: true }
   let refreshFailed = true
   const saveCalls = []
-  const run = () => loadDetailHandler('handleSaveSellerProfileBuilder', 'handleSellerProfileBuilderSubmit', {
-    listingRecord: listing, sellerProfileBuilderDraft: draft, listingOrganisationId: '',
+  const run = () => loadDetailHandler('handleSaveSellerProfileBuilder', 'handleSellerInformationEditorSubmit', {
+    listingRecord: listing, sellerEditorBaselineRef: { current: listing }, sellerProfileBuilderDraft: draft, listingOrganisationId: '',
     sellerProfileBuilderReturnToDocuments: false, isSupabaseConfigured: true, isUuidLike: () => true,
     validateListingSellerProfileBuilderDraft, buildListingSellerProfileRequirementProjection,
     limitSellerCanonicalSaveWait: promise => promise,
@@ -97,12 +98,13 @@ await test('actual ownership save retains the editor on refresh failure and retr
     setSellerProfileBuilderReturnToDocuments: () => {}, resetSellerDocumentMandateTerms: () => {}, setSellerDocumentSendOpen: () => {},
   })
   await run()({ preventDefault() {} }, { informationEditor: true })
-  assert.ok(!state.error || state.error.includes('ownership details are saved'), state.error)
+  assert.equal(state.error, '')
   assert.equal(listing.sellerOnboarding.formData.ownerStructureType, 'trust')
-  assert.equal(state.open, true)
+  assert.equal(state.open, false)
   assert.equal(state.saving, false)
-  assert.match(state.error, /ownership details are saved.*save again/)
-  assert.equal(state.message, '')
+  assert.match(state.message, /Seller details saved.*checklist could not be refreshed/)
+  assert.doesNotMatch(state.message, /save again/)
+  assert.equal(saveCalls.length, 1)
   assert.equal(listing.documentRequirements, undefined, 'A failed refresh must not show unpersisted projected document requests as saved.')
   refreshFailed = false
   await run()({ preventDefault() {} }, { informationEditor: true })
@@ -122,12 +124,12 @@ await test('AgentListingDetail exposes the listing seller profile builder workfl
 
   assert.ok(source.includes("from '../lib/listingSellerProfileBuilderModel'"), 'AgentListingDetail should import the builder model.')
   assert.ok(source.includes('sellerProfileBuilderOpen'), 'AgentListingDetail should keep builder modal state.')
-  assert.ok(source.includes("'Capture Owner Details'"), 'The seller profile builder should prompt to capture an unknown owner.')
-  assert.ok(source.includes('Choose the property owner'), 'The seller profile builder should require an owner type selection.')
-  assert.ok(source.includes('listing-seller-profile-builder-form'), 'The builder modal should submit through a dedicated form.')
+  assert.ok(source.includes('title="Capture seller details"'), 'Unknown owners should use the shared capture editor.')
+  assert.equal((source.match(/<ListingSellerInformationEditor/g) || []).length, 2, 'Capture and edit should use the same fields.')
+  assert.ok(source.includes('Save what you have now.'), 'Partial capture should be available.')
   assert.ok(source.includes("requirementSyncReason: 'listing_seller_profile_capture'"), 'Saving should trigger seller requirement recalculation.')
   assert.ok(source.includes("key === 'complete_seller_facts'"), 'The follow-up action should route into the builder.')
-  assert.ok(source.includes('Capture Owner Details'), 'Unidentified imported listings should show an owner-capture prompt.')
+  assert.ok(source.includes('openSellerProfileBuilder'), 'Unidentified imported listings should expose owner capture.')
 })
 
 await test('inline seller detail edits refresh the seller requirement model for bulk uploaded listings', async () => {
@@ -363,7 +365,8 @@ await test('property category, building type, and title type can be selected ind
   const capture = await readFile(new URL('../src/pages/AgentListingDetail.jsx', import.meta.url), 'utf8')
   const editor = await readFile(new URL('../src/components/listings/ListingSellerInformationEditor.jsx', import.meta.url), 'utf8')
   const sellerOnboarding = await readFile(new URL('../src/pages/SellerOnboarding.jsx', import.meta.url), 'utf8')
-  const propertySection = capture.slice(capture.indexOf('{sellerProfileBuilderStep === 3 ? <>'), capture.indexOf('Mandate start date', capture.indexOf('{sellerProfileBuilderStep === 3 ? <>')))
+  assert.equal((capture.match(/<ListingSellerInformationEditor/g) || []).length, 2)
+  const propertySection = editor.slice(editor.indexOf('Property and ownership details'), editor.indexOf('<SellerMandateDetailsEditor'))
   assert.ok(propertySection.indexOf('Property title type') < propertySection.indexOf('Property address'))
   for (const label of ['Scheme name', 'Unit / section number', 'Managing agent name (optional)', 'Bond account number']) assert.ok(propertySection.includes(label))
   assert.equal(propertySection.includes('Body corporate name'), false)
@@ -430,9 +433,9 @@ await test('owner-type changes discard only prior branch details after confirmat
   assert.equal(individual.propertyAddress, '10 Road')
   const source = await readFile(new URL('../src/pages/AgentListingDetail.jsx', import.meta.url), 'utf8')
   const builder = source.slice(source.indexOf('open={sellerProfileBuilderOpen}'), source.indexOf('open={Boolean(activeSellerSectionEditor)}'))
-  assert.match(builder, /handleSellerProfileBuilderBranchSelection\(branch\.value\)/)
+  assert.match(builder, /handleSellerProfileBuilderBranchSelection\(value\)/)
   assert.match(source, /window\.confirm\('Changing the owner type/)
-  assert.match(builder, /minimumRows=\{2\}/)
+  assert.match(builder, /onAddPerson=\{addSellerProfileBuilderPerson\}/)
   assert.doesNotMatch(builder, /Co-owner details/)
 })
 
@@ -457,3 +460,15 @@ await test('validates foreign owner jurisdiction requirements', () => {
 })
 
 console.log('listing seller profile capture phase 2 checks passed.')
+
+await test('incomplete manual profiles save progress without becoming ready for signing', async () => {
+  for (const draft of [{ branch: '', sellerFirstName: 'Partial' }, { branch: 'company' }, { branch: 'multiple_owners', multipleOwners: [{ name: 'First owner' }] }, { branch: 'foreign_individual', sellerFirstName: 'Partial' }]) {
+    assert.deepEqual(validateListingSellerProfileBuilderDraft(draft, { saveAsDraft: true }), [])
+    assert.ok(validateListingSellerProfileBuilderDraft(draft).length > 0)
+    const captured = buildListingSellerProfileCapturePayload(draft, {}, { draft: true })
+    const update = buildListingSellerCanonicalUpdate({ listing: { id: 'partial-listing' }, formPatch: captured.formPatch, suppliedCanonicalFacts: captured.canonicalSellerFacts })
+    if (!draft.branch) assert.equal(update.authority.identified, false)
+  }
+  const oneOwner = { sellerOnboarding: { formData: { ownerStructureType: 'multiple_owners', ownershipRouteConfirmed: true, multipleOwners: [{ name: 'First owner' }] } } }
+  assert.ok(buildListingMandateReadiness(oneOwner).missing.includes('Add at least two property owners.'))
+})

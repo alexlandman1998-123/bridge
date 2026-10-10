@@ -25,3 +25,10 @@ Deno.test('applicant names are escaped in HTML and never determine the action UR
   assert(email.html.includes('&lt;script&gt;')&&!email.html.includes('<script>'));
   assert(!email.text.includes('evil.test')&&!('to' in email));
 });
+Deno.test('contract availability gives clear download, sign and return instructions through the private portal', () => {
+  const email = build('contract_available');
+  assert(email.subject === 'Home Seekers: Your contract is ready to sign');
+  for (const phrase of ['My Profile', 'Download the PDF', 'sign every required page', 'upload the complete signed copy', '10 MB', 'recruitment team will be notified']) assert(email.text.includes(phrase), phrase);
+  assert(email.html.includes('https://app.arch9.co.za/applicant/my-profile'));
+  assert(!email.html.includes('/invite/') && !email.html.includes('storage/v1'));
+});

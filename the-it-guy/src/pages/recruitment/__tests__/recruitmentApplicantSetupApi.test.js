@@ -59,3 +59,39 @@ it('opens a restricted profile with a verified application password and ignores 
   expect(JSON.stringify(result.body)).not.toContain('FixturePass123')
   expect(JSON.stringify(result.body)).not.toContain('validated-password-session')
 })
+
+function contractFixture() {
+  const f = fixture(), original = f.db.rpc.getMockImplementation()
+  f.storage.download = vi.fn().mockResolvedValue({ data: { size: 128, slice: () => ({ arrayBuffer: async () => new TextEncoder().encode('%PDF-').buffer }) } })
+  f.db.rpc.mockImplementation(async (name, args) => name === 'recruitment_prepare_contract_return' ? { data: { path: `${org}/own/${requestId}`, committed: false } } : name === 'recruitment_commit_contract_return' ? { data: { saved: true } } : name === 'recruitment_applicant_contract' ? { data: { name: 'Contract.pdf', version: 1, canUpload: true, verified: false, returns: [], bucket: 'recruitment-contracts', path: `${org}/own/contract`, downloadName: 'Contract.pdf' } } : original(name, args))
+  return f
+}
+it('signs contract access only from the verified cookie and ignores forged ownership and file paths', async () => {
+  const f = contractFixture()
+  const result = await f.run({ action: 'download_contract', organisationId: 'forged', leadId: 'foreign', path: 'foreign', bucket: 'foreign' })
+  expect(result.status).toBe(200)
+  expect(f.storage.createSignedUrl).toHaveBeenCalledWith(`${org}/own/contract`, 300, { download: 'Contract.pdf' })
+  expect(f.db.rpc).toHaveBeenCalledWith('recruitment_applicant_contract', { p_organisation_id: org, p_token_hash: expect.stringMatching(/^[a-f0-9]{64}$/), p_return_id: null })
+  expect(JSON.stringify(result.body)).not.toContain('/own/')
+  expect((await f.run({ action: 'download_contract' }, { headers: { host: headers.host } })).status).toBe(401)
+})
+it('verifies the actual PDF before committing a signed return and strips storage paths from the portal projection', async () => {
+  const f = contractFixture(), document = { name: 'Signed.pdf', size: 128, mimeType: 'application/pdf', path: 'forged' }
+  const result = await f.run({ action: 'commit_contract_return', requestId, document, leadId: 'foreign' })
+  expect(result.status).toBe(200); expect(result.body.saved).toBe(true)
+  expect(result.body.applicant.contract).toEqual({ name: 'Contract.pdf', version: 1, canUpload: true, verified: false, returns: [], publishedAt: undefined })
+  expect(f.db.rpc).toHaveBeenCalledWith('recruitment_commit_contract_return', { p_organisation_id: org, p_token_hash: expect.any(String), p_request_id: requestId })
+  f.storage.download.mockResolvedValueOnce({ data: { size: 128, slice: () => ({ arrayBuffer: async () => new TextEncoder().encode('wrong').buffer }) } })
+  f.db.rpc.mockClear()
+  expect((await f.run({ action: 'commit_contract_return', requestId, document })).status).toBe(422)
+  expect(f.db.rpc).not.toHaveBeenCalledWith('recruitment_commit_contract_return', expect.anything())
+})
+it('uses immutable upload URLs, handles an already committed request and refuses preview or cross-origin contract actions', async () => {
+  const f = contractFixture(), document = { name: 'Signed.pdf', size: 128, mimeType: 'application/pdf' }
+  expect((await f.run({ action: 'prepare_contract_return', requestId, document })).body.uploadUrl).toBe('https://storage.test/upload')
+  expect(f.storage.createSignedUploadUrl).toHaveBeenCalledWith(`${org}/own/${requestId}`, { upsert: false })
+  expect((await f.run({ action: 'prepare_contract_return', requestId, document }, { preview: true })).status).toBe(503)
+  expect((await f.run({ action: 'download_contract' }, { headers: { ...headers, origin: 'https://foreign.test' } })).status).toBe(403)
+  f.db.rpc.mockResolvedValueOnce({ data: { path: 'saved', committed: true } })
+  expect((await f.run({ action: 'prepare_contract_return', requestId, document })).body.committed).toBe(true)
+})

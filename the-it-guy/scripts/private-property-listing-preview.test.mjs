@@ -452,7 +452,7 @@ assert.match(rentalFeaturePreview.listingXml, /<AttributeType>ElectrictyIncluded
 
 const soldFeaturePreview = createPrivatePropertyListingPlan({
   listing: { ...featureJourneyListing, listing_status: 'sold', asking_price: 1995000 },
-  publication: { ...featureJourneyPublication, asking_price: 1995000 },
+  publication: { ...featureJourneyPublication, asking_price: 1995000, status: 'Published' },
   media: [1, 2, 3].map((index) => ({ media_type: 'image', file_url: `https://cdn.example.com/sold-${index}.jpg` })),
   agentMapping: { agentIds: 'ARCH9-SANDBOX-USER-1' },
   options: { branchGuid: 'CA167B18-C6DC-49AD-B018-2B72B187918F', suburbId: '309' },
@@ -460,6 +460,16 @@ const soldFeaturePreview = createPrivatePropertyListingPlan({
 assert.equal(soldFeaturePreview.canPreview, true)
 assert.equal(soldFeaturePreview.payload.propertyStatus, 'Sold')
 assert.equal(soldFeaturePreview.payload.price, 1995000)
+
+const underOfferPreview = createPrivatePropertyListingPlan({
+  listing: { ...featureJourneyListing, listing_status: 'under_offer' },
+  publication: { ...featureJourneyPublication, status: 'Published' },
+  media: [1, 2, 3].map((index) => ({ media_type: 'image', file_url: `https://cdn.example.com/offer-${index}.jpg` })),
+  agentMapping: { agentIds: 'ARCH9-SANDBOX-USER-1' },
+  options: { branchGuid: 'CA167B18-C6DC-49AD-B018-2B72B187918F', suburbId: '309' },
+})
+assert.equal(underOfferPreview.canPreview, true)
+assert.equal(underOfferPreview.payload.propertyStatus, 'PendingOffer', 'A content update must keep the canonical sale status, independently of website publication readiness')
 
 const illegalDescription = createPrivatePropertyListingPlan({
   ...fixture,

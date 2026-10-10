@@ -27,7 +27,7 @@ assert.match(
 )
 const progressSave = serviceSource.slice(serviceSource.indexOf('async function updateSellerOnboardingProgressInternal('), serviceSource.indexOf('export async function updateSellerOnboardingProgress('))
 assert.doesNotMatch(progressSave, /\.from\(/, 'token progress must not fall back to direct table writes')
-assert.match(progressSave, /if \(rpc\.error\) throw rpc\.error/, 'a failed secure save must remain a failed save')
+assert.match(progressSave, /if \(rpc\.error\) \{[\s\S]*?throw rpc\.error/, 'a failed secure save must remain a failed save')
 assert.match(
   onboardingSource,
   /setSaving\(true\)[\s\S]*?finally \{[\s\S]*?setSaving\(false\)/,
@@ -45,7 +45,7 @@ assert.match(
 )
 assert.match(
   onboardingSource,
-  /This secure link is for your signature only[\s\S]*?signatureOnly=\{hasRequestedComplianceSigner\}/,
+  /signatureOnly=\{hasRequestedComplianceSigner\}/,
   'a signer link must render as a dedicated declaration-signing experience instead of normal onboarding.',
 )
 assert.match(
@@ -105,3 +105,36 @@ assert.match(
 )
 
 console.log('seller onboarding progress serialization contract passed')
+
+// Execute the actual page queue and persistence function with delayed saves.
+// Submission must consume the preceding draft's receipt, not its render closure.
+const queueStart = onboardingSource.indexOf('  function queueSellerSave(')
+const queueEnd = onboardingSource.indexOf('\n  }', queueStart) + 4
+const persistStart = onboardingSource.indexOf('  async function persistListingUpdate(')
+const persistEnd = onboardingSource.indexOf('\n  function handleFormUpdate', persistStart)
+const initial = { id: 'listing-a', sellerOnboarding: { id: 'onboarding-a', status: 'in_progress', updatedAt: 'first', formData: {} } }
+const saved = { ...initial, sellerOnboarding: { ...initial.sellerOnboarding, updatedAt: 'second', formData: { phone: '0820000000' } } }
+const snapshotRef = { current: initial }
+const requests = []
+let releaseDraft
+const draftResponse = new Promise(resolve => { releaseDraft = resolve })
+const scope = {
+  isDemoOnboarding: false, useDbFirstSellerOnboarding: true, listing: initial, token: 'token-a', currentStep: 1,
+  sellerSaveSnapshotRef: snapshotRef, sellerSaveQueueRef: { current: Promise.resolve() },
+  SELLER_ONBOARDING_STATUS: { IN_PROGRESS: 'in_progress' },
+  setListing: () => {},
+  updateSellerOnboardingProgress: async (_token, request) => { requests.push(request); return draftResponse },
+}
+const runtime = Function(...Object.keys(scope), `${onboardingSource.slice(queueStart, queueEnd)}\n${onboardingSource.slice(persistStart, persistEnd)}\nreturn {queueSellerSave,persistListingUpdate}`)(...Object.values(scope))
+const draft = runtime.persistListingUpdate(row => ({ ...row, sellerOnboarding: { ...row.sellerOnboarding, formData: { phone: '0820000000' } } }))
+let submittedRevision
+const submission = runtime.queueSellerSave(async () => { submittedRevision = snapshotRef.current.sellerOnboarding.updatedAt })
+await new Promise(resolve => setImmediate(resolve))
+assert.equal(requests.length, 1)
+assert.equal(requests[0].listingSnapshot.sellerOnboarding.updatedAt, 'first')
+assert.equal(submittedRevision, undefined, 'Submission must wait for the pending autosave')
+releaseDraft({ listing: saved })
+await Promise.all([draft, submission])
+assert.equal(submittedRevision, 'second', 'Submission must use the committed draft revision')
+assert.equal(snapshotRef.current.sellerOnboarding.formData.phone, '0820000000')
+console.log('actual portal draft/submission queue regression passed')

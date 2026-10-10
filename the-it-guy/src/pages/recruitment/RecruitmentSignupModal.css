@@ -11,14 +11,16 @@
 .recruitment-signup__steps li[aria-current]>span{background:var(--recruitment-accent-soft,#fff0e8)}
 .recruitment-signup__intro{margin-bottom:22px}
 .recruitment-signup fieldset{border:0;padding:0;margin:0;min-width:0}
-.recruitment-signup__fields{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+.recruitment-signup__fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px 16px;margin-bottom:20px}
+.recruitment-signup__fields>*{min-width:0}
 .recruitment-signup label{display:block;font-size:13px;font-weight:600;color:#31312e}
 .recruitment-signup label>span[aria-hidden]{color:var(--recruitment-accent-text,#bd4515)}
-.recruitment-signup input:not([type=checkbox]):not([type=radio]){display:block;width:100%;min-height:46px;border:1px solid #d8d8d2;border-radius:8px;background:#fff;color:#1c1c1c;padding:11px 12px;margin-top:7px;font:400 16px/1.4 Asap,Arial,sans-serif}
+.recruitment-signup input:not([type=checkbox]):not([type=radio]){display:block;box-sizing:border-box;width:100%;min-width:0;max-width:100%;min-height:46px;border:1px solid #d8d8d2;border-radius:8px;background:#fff;color:#1c1c1c;padding:11px 12px;margin-top:8px;font:400 16px/1.4 Asap,Arial,sans-serif}
 .recruitment-signup input[readonly]{background:#f4f4f2;color:#62625d}
 .recruitment-signup input[aria-invalid=true]{border-color:#ba352b}
 .recruitment-signup :is(input,button):focus-visible{outline:2px solid var(--recruitment-accent,#f25c1f);outline-offset:3px}
-.recruitment-signup small{display:block;margin-top:7px;color:#62625d;font-size:12px;font-weight:400;line-height:1.4}
+.recruitment-signup small{display:block;margin-top:8px;color:#62625d;font-size:12px;font-weight:400;line-height:1.5;overflow-wrap:anywhere}
+.recruitment-signup small:empty{display:none}
 .recruitment-signup__password{position:relative}
 .recruitment-signup__password input{padding-right:48px!important}
 .recruitment-signup__password button{position:absolute;right:4px;top:4px;display:grid;place-items:center;width:38px;height:38px;color:#62625d;background:transparent;border:0;border-radius:6px;cursor:pointer}
@@ -34,7 +36,17 @@
 .recruitment-signup__note svg{flex-shrink:0;margin-top:2px}
 .recruitment-signup__receipt{text-align:center;padding:18px 0}
 .recruitment-signup__receipt-icon{display:grid;place-items:center;width:52px;height:52px;margin:auto;border-radius:50%;background:var(--recruitment-accent-soft,#fff0e8);color:var(--recruitment-accent-text,#bd4515)}
-@media(max-width:600px){.ui-modal.recruitment-signup{width:calc(100% - 20px);border-radius:14px}.recruitment-signup .ui-modal-head,.recruitment-signup .ui-modal-body{padding:20px}.recruitment-signup__fields{grid-template-columns:1fr;gap:14px}.recruitment-signup__steps{gap:8px}.recruitment-signup__steps li{font-size:10px}.recruitment-signup .ui-modal-head h3{font-size:20px}}
+@media(max-width:600px){
+  .ui-modal-overlay:has(>.recruitment-signup){padding:10px}
+  .ui-modal.recruitment-signup{width:100%;max-height:calc(100dvh - 20px);border-radius:16px}
+  .recruitment-signup .ui-modal-head,.recruitment-signup .ui-modal-body{padding:20px}
+  .recruitment-signup__fields{grid-template-columns:minmax(0,1fr);gap:20px}
+  .recruitment-signup__steps{gap:8px}
+  .recruitment-signup__steps li{font-size:10px}
+  .recruitment-signup .ui-modal-head h3{font-size:20px}
+  .recruitment-signup .ui-modal-body{padding-bottom:24px}
+  .recruitment-signup__secondary{max-width:100%;white-space:normal;line-height:1.5}
+}
 
 .recruitment-signup__summary { display: grid; grid-template-columns: auto 1fr; gap: 10px 16px; margin: 24px 0; text-align: left; font-size: .9rem; }
 .recruitment-signup__summary dt { color: #68727b; }
@@ -66,7 +78,7 @@
   .recruitment-signup--home-seekers .ui-modal-head h3{font-size:18px}
   .recruitment-signup--home-seekers .ui-modal-head p{font-size:12px}
   .recruitment-signup--home-seekers .recruitment-signup__steps{gap:8px;margin-bottom:24px}
-  .recruitment-signup--home-seekers .recruitment-signup__steps li{gap:9px;padding-bottom:12px;font-size:10.5px}
+  .recruitment-signup--home-seekers .recruitment-signup__steps li{gap:9px;padding-bottom:12px;font-size:10.5px;white-space:normal}
   .recruitment-signup--home-seekers .recruitment-signup__steps li>span{width:26px;height:26px;font-size:11px}
   .recruitment-signup--home-seekers .recruitment-signup__email-actions{gap:8px}
   .recruitment-signup--home-seekers .recruitment-signup__email-actions .recruitment-signup__secondary{min-height:48px;padding:10px 8px;font-size:12px}

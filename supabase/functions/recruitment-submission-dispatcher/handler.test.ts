@@ -22,13 +22,13 @@ Deno.test('submission dispatcher keeps failed, uncertain and suppressed deliveri
     assert(completions[0].p_error === ('suppressed' in outcome ? 'controlled_test_recipient' : 'dispatch_unconfirmed'));
   }
 });
-Deno.test('submission dispatcher selects all three email kinds and completion leases from saved jobs, ignoring caller content',async()=>{
+Deno.test('submission dispatcher selects applicant email kinds and completion leases from saved jobs, ignoring caller content',async()=>{
   const sends:any[]=[],completions:any[]=[];
-  const jobs=['application_thanks','documents_reminder','documents_followup'].map((email_kind,index)=>({...job,id:`00000000-0000-4000-8000-00000000000${index}`,email_kind,lease_id:`lease-${index}`}));
+  const jobs=['application_thanks','documents_reminder','documents_followup','contract_available'].map((email_kind,index)=>({...job,id:`00000000-0000-4000-8000-00000000000${index}`,email_kind,lease_id:`lease-${index}`}));
   const admin={rpc:async(name:string,args:any)=>{if(name==='recruitment_complete_submission_email')completions.push(args);return{data:name==='recruitment_claim_submission_emails'?jobs:true}}};
   const deliver:any=async(_req:any,payload:any)=>{sends.push(payload);return new Response(JSON.stringify({ok:true,status:'provider_accepted'}))};
   const result=await dispatchRecruitmentSubmissions(new Request('https://worker.test',{method:'POST',headers:{authorization:'Bearer server-only'},body:JSON.stringify({kind:'workspace',to:'attacker@test'})}),{key:'server-only',admin,deliver});
-  assert((await result.json()).accepted===3);
+  assert((await result.json()).accepted===4);
   assert(sends.every((payload,index)=>payload.kind===jobs[index].email_kind&&payload.requestId===jobs[index].id));
   assert(completions.every((completion,index)=>completion.p_lease_id===jobs[index].lease_id));
 });

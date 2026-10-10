@@ -6,7 +6,7 @@ function FeaturedCard({ home, index }) {
   return <article className="hs-featured-card">
     <div className="hs-featured-card__image">
       {home.image ? <img src={home.image} alt={`${home.place} property`} loading="lazy" /> : <div className="hs-featured-card__image-placeholder" aria-hidden="true" />}
-      <span>FOR SALE</span>
+      <span>{home.statusLabel?.toUpperCase() || 'FOR SALE'}</span>
       <b>{String(index + 1).padStart(2, '0')}</b>
     </div>
     <div className="hs-featured-card__body">

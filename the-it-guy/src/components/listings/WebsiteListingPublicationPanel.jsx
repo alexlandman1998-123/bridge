@@ -33,7 +33,7 @@ function describeWebsiteBlocker(blocker) {
   return message
 }
 
-export default function WebsiteListingPublicationPanel({ listingId, listingTitle, listingReference = '', preparationBlockers = [], onPrepare, onEdit, onStatusChange, onPublicationAction, publicationState = null, onReviewChanges, savedAt = '', variant = 'panel', showConnectionState = false, hideDisconnected = false }) {
+export default function WebsiteListingPublicationPanel({ listingId, listingTitle, listingReference = '', preparationBlockers = [], onPrepare, onEdit, onStatusChange, onPublicationAction, publicationState = null, onReviewChanges, savedAt = '', variant = 'panel', showConnectionState = false, hideDisconnected = false, manageActions = null, refreshKey = 0 }) {
   const [publication, setPublication] = useState(null)
   const [loading, setLoading] = useState(true)
   const [action, setAction] = useState('')
@@ -53,13 +53,13 @@ export default function WebsiteListingPublicationPanel({ listingId, listingTitle
     }
   }, [listingId])
 
-  useEffect(() => { void load() }, [load])
+  useEffect(() => { void load() }, [load, refreshKey])
   useEffect(() => { onStatusChange?.(publication) }, [onStatusChange, publication])
 
   const published = publication?.status === 'published'
   const effectivelyLive = published && publication?.websiteStatus === 'published' && publication?.projectionStatus === 'Published'
   const withdrawn = publicationState?.stage === 'withdrawn'
-  const stale = effectivelyLive && (Boolean(publication?.stale) || Number(publicationState?.changeCount || 0) > 0)
+  const stale = !manageActions && effectivelyLive && (Boolean(publication?.stale) || Number(publicationState?.changeCount || 0) > 0)
   const publicUrl = effectivelyLive
     ? buildWebsiteListingPublicUrl(publication, listingId, listingTitle)
     : ''
@@ -203,17 +203,17 @@ export default function WebsiteListingPublicationPanel({ listingId, listingTitle
               <span className={`h-2 w-2 rounded-full ${statusDotClass}`} />
               {statusLabel}
             </p>
-            {publicationState?.changeCount ? <button type="button" onClick={onReviewChanges} className="mt-1 inline-flex items-center gap-1 rounded-full border border-[#f1dfb8] bg-[#fff8e8] px-2 py-1 text-[0.68rem] font-semibold text-[#8a641d]">{publicationState.changeCount} unpublished change{publicationState.changeCount === 1 ? '' : 's'}</button> : null}
+            {!manageActions && publicationState?.changeCount ? <button type="button" onClick={onReviewChanges} className="mt-1 inline-flex items-center gap-1 rounded-full border border-[#f1dfb8] bg-[#fff8e8] px-2 py-1 text-[0.68rem] font-semibold text-[#8a641d]">{publicationState.changeCount} unpublished change{publicationState.changeCount === 1 ? '' : 's'}</button> : null}
           </div>
-          <ListingChannelLastUpdate publicationState={publicationState} publication={publication} fallback={savedAt ? `Saved in Arch9 · ${savedAt}` : ''} />
-          <div className="flex justify-start lg:justify-end"><ListingChannelManageMenu channelName={websiteLabel}>
+          <ListingChannelLastUpdate publicationState={publicationState} publication={publication} lifecycleOnly={Boolean(manageActions)} fallback={savedAt ? `Saved in Arch9 · ${savedAt}` : ''} />
+          <div className="flex justify-start lg:justify-end"><ListingChannelManageMenu channelName={websiteLabel}>{manageActions || <>
             <Button type="button" variant="secondary" onClick={() => void load()} disabled={Boolean(action) || loading}><RefreshCw size={15} />Refresh status</Button>
             <Button type="button" variant="secondary" onClick={() => onEdit ? onEdit() : void run(published ? 'update' : 'publish')} disabled={Boolean(action) || loading || (!onEdit && infrastructureBlocked)}>{action ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}{onEdit ? 'Edit listing' : published ? publishButtonLabel : 'Publish to website'}</Button>
             {published || publication?.mediaCleanupPending > 0 ? <Button type="button" variant="secondary" className="text-[#a43d35]" onClick={() => void run('unpublish')} disabled={Boolean(action)}><X size={15} />Remove from website</Button> : null}
-          </ListingChannelManageMenu></div>
-          {itemsToFix.length ? <p className="text-xs text-[#825514] lg:col-span-5">{itemsToFix.join(' ')}</p> : null}
-          {publication?.mediaCleanupPending > 0 ? <p className="text-xs text-[#8a3030] lg:col-span-5">{publication.mediaCleanupPending} website photos could not be removed. Choose Remove from website again to retry.</p> : null}
-          {error ? <p className="lg:col-span-5 rounded-[12px] border border-[#f4d4d4] bg-[#fff5f5] px-3 py-2 text-sm text-[#b42318]" role="alert">{error}</p> : null}
+          </>}</ListingChannelManageMenu></div>
+          {!manageActions && itemsToFix.length ? <p className="text-xs text-[#825514] lg:col-span-5">{itemsToFix.join(' ')}</p> : null}
+          {!manageActions && publication?.mediaCleanupPending > 0 ? <p className="text-xs text-[#8a3030] lg:col-span-5">{publication.mediaCleanupPending} website photos could not be removed. Choose Remove from website again to retry.</p> : null}
+          {!manageActions && error ? <p className="lg:col-span-5 rounded-[12px] border border-[#f4d4d4] bg-[#fff5f5] px-3 py-2 text-sm text-[#b42318]" role="alert">{error}</p> : null}
           {notice ? <p className="lg:col-span-5 rounded-[12px] border border-[#cfe7d7] bg-[#eef9f2] px-3 py-2 text-sm text-[#257044]" role="status">{notice}</p> : null}
         </div>
 

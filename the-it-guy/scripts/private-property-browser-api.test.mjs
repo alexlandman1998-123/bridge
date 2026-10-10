@@ -236,3 +236,23 @@ assert.ok(cachedQueries.some(([key, value]) => key === 'private_listing_id' && v
 assert.doesNotMatch(JSON.stringify(storedResponse.body), /service-role|test-token/)
 
 console.log('Private Property browser API contract passed')
+
+// Developer publication uses the same ownership checks as agent publication.
+for (const [category, owned, expected] of [['development_unit', true, 200], ['private_sale', true, 403], ['development_unit', false, 403]]) {
+  const client = {
+    auth: { getUser: async () => ({ data: { user: { id: 'developer', email: 'developer@example.test' } } }) },
+    from(table) {
+      const query = { select() { return query }, eq() { return query }, or() { return query },
+        maybeSingle: async () => ({ data: { id: 'listing-123', organisation_id: 'org', listing_category: category, assigned_agent_id: owned ? 'developer' : 'another-agent' } }),
+        limit: async () => ({ data: [{ user_id: 'developer', role: 'developer', membership_status: 'active' }] }),
+      }
+      assert.ok(['private_listings', 'organisation_users'].includes(table))
+      return query
+    },
+  }
+  const result = await createPrivatePropertyApiResponse({ method: 'POST', url: '/api/private-property/listings/listing-123/publish',
+    headers: { authorization: 'Bearer browser-user-token' }, env: baseEnv,
+    dependencies: { createSupabase: () => client, runControlledPublish: async () => ({ status: 'SUBMITTED' }) },
+  })
+  assert.equal(result.status, expected, `${category}, owned=${owned}`)
+}

@@ -138,6 +138,84 @@ These use local fixtures and send no invitations or hosted database writes.
 Stock allocation checks: `node --test src/core/developments/__tests__/developmentStockPlan.test.js`
 and `npm run test:development-structure-model`.
 
+## Development inventory
+
+Availability is the shared inventory tab for development stock. Below its stats,
+use the contrasting banner to choose Availability for the live unit list or
+Interactive site plan for the map.
+Both views retain the current filters and selected unit. Expand Manage units in
+Availability for bulk setup, catalogue and structure tools, and inline unit edits.
+Unit availability can switch between List and Cards without resetting those
+filters or the selected unit.
+Selecting a unit from List, Cards or the site plan opens a full-screen unit
+workspace. Facts and pricing have room to read, while fixed Previous and Next
+controls browse the currently filtered units. Close or Escape returns to inventory.
+
+The development Leads tab switches between List and Kanban without changing the
+recorded stages. Kanban retains source branding, property images, assigned agent,
+last activity and the existing developer lead link. Buyer contact details remain
+hidden for users who are not assigned to the lead. The total-leads pill is removed.
+The board follows the Revo buyer flow from Captured through Transaction, with
+Lost as a separate outcome. Editable cards support drag-and-drop and a keyboard/
+touch Move to menu. Follow-up changes save the lead status under its owning
+developer and reject concurrent changes. Reservation, onboarding, OTP and
+transaction drops open the relevant workflow; they do not fabricate a reservation
+or completed sale. Returning from the buyer workspace restores the development
+Leads board. Existing confirmed reservations can move into the reservation column.
+
+The development Transactions tab uses the same table and row styling as the
+main Transactions module, with property, buyer, progress, agency and Open/Capture
+actions. Search and stage filters retain development scope; transaction creation
+and backfill use the existing workflows. Smaller screens show each row as a card.
+
+Configuration groups settings under Development, Developer, Bond Originator and
+Agents. The contrasting status bar links to general details, seller entity,
+deposits, routing and team access. Existing save permissions and confirmations
+for discarding unsaved edits remain in place; Advanced settings opens the danger zone.
+
+The development Snags tab shows submitted lists as unit/owner cards with the
+recorded handover date, a 90-day countdown and resolution progress. Submissions
+and handovers are read only within the selected development using the signed-in
+user's permissions. Purchases for the same unit remain separate; missing
+handover dates stay marked as not recorded. View snag list opens submitted items
+in a larger dialog. Search, status filters and Refresh remain within this development.
+Focused checks: `node src/core/developments/__tests__/developmentSnags.test.js`
+and `npx vitest run src/services/__tests__/developmentSnagsService.test.js`.
+
+## Development marketing
+
+The development Marketing tab combines listing records and marketing tools.
+Its menu is Overview, Listings, Website, Media, Events and Campaigns. Listings
+uses the shared listing card design; Website shows analytics only; Media includes
+floor plans. Overview combines
+listing performance across all linked agents and teams, with channel coverage,
+unique buyer leads, viewings and average days on market above a horizontal listing
+gallery. Missing statistics remain unavailable or partial; organisation permissions
+are preserved. Readiness, activity, events and partner access panels are removed
+from Overview. Older marketing section links open the
+corresponding new section. The website preview does not publish changes.
+
+Website shows sessions, scene views, property opens and enquiries using existing
+tracking, with 7/30/90-day periods, refresh, selectable device breakdowns and
+sortable rankings. Harbour Heights has a clearly labelled demo data option;
+switch to Tracked activity to read recorded visits. Demo figures never write
+visitor events. Website settings, publishing controls and brand panels are hidden
+from this tab. Missing tracking remains unavailable rather than appearing as zero.
+
+Events has large Create show day and Create launch actions, each opening a focused
+form. Upcoming events and past event history show the date, time, venue, notes,
+status and organising agent resolved from the existing event creator. Cancelled
+events remain in the history. Event creation retains development permissions.
+
+Campaigns replaces the Marketing Documents tab, including old `documents` links.
+Email and WhatsApp actions use the existing campaign builders, with Meta marked
+Coming soon. New campaigns retain development context in the existing JSON data:
+email `content_json.arch9_context`, WhatsApp `parameter_values.__arch9_context`.
+These values stay out of message rendering. History is scoped to the active
+organisation and development, with drafts, sent results, delivery and engagement.
+Lead attribution is not yet recorded and is shown as Not tracked. Existing
+unlinked campaigns are not assigned to a development based on name matching.
+
 ## Development image access
 
 Development covers, galleries, floorplans and visual-map backgrounds renew private
@@ -171,6 +249,121 @@ src/services/listings/__tests__/listingSellerLeadService.test.js`,
 `node scripts/agency-lead-create-dialog-controls.test.mjs` and
 `node scripts/direct-listing-persistence-phase3.test.mjs`.
 These use fixtures without live CRM writes. No new migration is required.
+
+Existing sales listings include **Link to seller lead** below Seller Profile.
+Search by name, email or phone, choose an available seller lead, then link it.
+Linked listings show **Open seller lead**. The link preserves saved seller facts,
+onboarding, signed documents, lead stages and assignments; it does not merge
+profiles or replace an existing lead. Both directions are saved atomically under
+the current user's listing and lead permissions. Repeated submissions are safe,
+and records linked elsewhere after searching are rejected.
+This requires the forward migration
+`20261010223242_listing_link_existing_seller_lead.sql` before release.
+Focused checks: `npx vitest run src/components/listings/__tests__/ListingSellerLeadLinkPanel.test.jsx
+src/services/listings/__tests__/listingSellerLeadLinkService.test.js` and
+`node --test server/tests/listingSellerLeadLink.test.js`. They use local fixtures
+and an isolated PostgreSQL engine without hosted writes.
+
+## Agent sales portfolio navigation
+
+Sales navigation places Developments directly below Listings. The portfolio uses
+existing organisation and development relationship access, and opens the same
+development workspace. Development creation remains permission controlled.
+Listings uses All, Residential, Commercial and Developments categories, showing
+property listing cards rather than project cards. Development links take
+precedence over property category; Commercial includes the non-residential
+categories. All contains each listing once. Current, Previous and Imported review
+are selected through Listing status. Each category retains its filters while
+switching tabs. More filters, removable chips and Clear filters keep the selected
+criteria visible. Missing price, area or availability never matches a numeric or
+stock filter as zero. Phase, block and unit availability appear when recorded.
+The existing rental and developer listing workspaces retain their workflows.
+
+Focused checks: `npx vitest run src/services/listings/__tests__/listingIndexFilterModel.test.js
+src/components/listings/__tests__/ListingIndexFilters.test.jsx
+src/lib/__tests__/agentDevelopmentsNavigation.test.js`, plus the existing
+`node scripts/listings-tab-route-containment.test.mjs` and
+`node scripts/agent-listings-principal-scope.test.mjs` checks.
+
+## Listing capture and publication
+
+New sales listings on desktop and mobile use Property details → Marketing →
+Channels → Review. Seller capture happens after creation in the saved listing;
+partially captured sellers in older drafts do not block listing submission.
+Seller CRM creation is deferred to seller capture/editing, so its availability
+does not hold up a new listing or draft. Extra property features are optional;
+mandate, FICA and disclosure preparation remain in the saved listing's Documents area.
+A new listing defaults to Active. Submit & activate saves and verifies its
+property details and photos, then submits selected, connected channels together.
+Listing setup stays open while submissions finish; their receipts distinguish
+accepted submissions, failures and uncertain responses. A submission is never
+shown as proof that a portal is live. Save Draft does not submit channels.
+New submissions and content updates are sent only from listing setup. Confirmed
+failures can be retried there; successful channels are excluded after a fresh
+receipt check. Unconfirmed requests require a status check and are never
+automatically resent. Marketing shows channel lifecycle status without review,
+readiness or unpublished-change controls.
+Property24's initial marketing expiry defaults to 90 days, independently of
+seller mandate dates.
+
+Listing Channels uses one Manage menu and a small Manage listing popup. Sold and
+Under offer update all active portals and websites; expiry-date edits, Withdraw
+and Expire apply only to the selected advert. Property24 supports expiry;
+Private Property and websites offer withdrawal. Save changes sends only lifecycle
+changes; an unchanged popup never publishes content. Lifecycle failures remain in
+that popup and retry only failed channels.
+Website snapshots require the forward migration
+`20261010214831_website_listing_sale_status.sql` for their Sold/Under offer labels.
+No existing snapshots are rewritten. Release the primary app, Home Seekers site
+and public websites renderer together with this migration; local implementation
+and fixture checks do not apply it or update live listings.
+Focused checks: `npm run test:listing-marketing`,
+`node --test scripts/listing-channel-update-state.test.mjs scripts/listing-quick-actions-phase4.test.mjs scripts/website-listing-sale-status.test.mjs`,
+and the ListingChannelManageDialog/listingChannelManagement Vitest tests.
+Publishing recovery is covered by the listingInitialPublicationService,
+listingPublicationEditor and ListingPublicationProgress Vitest tests.
+Pull deeds opens the existing property search with the
+listing address filled in; supplier setup and paid report confirmation remain
+in that workspace.
+
+Rental creation follows the same submit-and-activate policy across residential,
+commercial, industrial, retail, agricultural and land categories. Landlord and
+mandate capture stay available after creation. Channels can be chosen in the
+Property step; channel-specific address, description, photos and rental-term
+errors appear in their capture steps. Property24-only rentals do not require a
+deposit; Private Property requires a known deposit amount (zero is allowed).
+Initial website publication prepares its projection automatically.
+See [the field audit](docs/listing-syndication-field-comparison.md) for exact
+portal differences, supported categories and remaining provider checks.
+
+Sales listing cards use summaries rather than downloading every seller form and
+full document history. Rental list reads omit document requirements, uploaded
+documents and mandate packet/version history while retaining scoped stock,
+canonical rental terms, media and distribution state. Detail headers load from
+the core record before related data; marketing, document and offer actions wait
+for their required data.
+
+Property24 photo preparation overlaps two downloads/conversions at a time for
+both sales and rentals. Gallery order, cover priority, conversion quality and
+per-image/total byte limits remain unchanged. Initial channel receipts appear
+individually, with one persisted-detail refresh after all selected submissions
+settle instead of a full reload per channel. Browser uploads remain bounded to
+two storage operations, preserving successful uploads on retries.
+The forward migration `20261010094542_seller_existing_evidence_agent_access.sql`
+fixes agent uploads of existing signed evidence through an authorized boolean
+signing-conflict check. Private signing documents remain unreadable to agents;
+online signing conflicts and evidence review checks remain enforced.
+
+Focused checks: `node --test scripts/create-listing-save-recovery.test.mjs
+scripts/phase3-listings-canvassing-performance.test.mjs
+scripts/direct-listing-persistence-phase3.test.mjs
+scripts/quick-add-listing-bypass.test.mjs
+scripts/listing-detail-progressive-loading.test.mjs`,
+`npx vitest run src/services/listings/__tests__/listingInitialPublicationService.test.js
+src/services/__tests__/privateListingService.previousDetails.test.js`, and
+`node --test src/core/documents/__tests__/sellerExistingSignedEvidence.test.js`.
+These checks use local fixtures; deployment and hosted migration application
+are separate release actions.
 
 ## Agent workspace listings
 
@@ -251,6 +444,52 @@ src/pages/__tests__/PublicAgentDigitalCardPage.rental.test.jsx
 server/tests/agentCardRentalMigration.test.js`,
 `node src/services/__tests__/agencyPublicIntakeLinkService.test.js` and
 `node server/tests/publicAgencyIntakeApi.test.js`.
+
+## Seller capture in leads and listings
+
+Seller Lead → Capture Seller Onboarding Manually uses the same questionnaire as
+seller onboarding, embedded in the agent workspace. Identity, entity authority,
+FICA answers, mandate preferences, property details, occupancy, bond details and
+all disclosure questions therefore share their fields, draft saving and submission
+checks. Permissions are recorded as the agent's confirmation of the seller's
+permission; disclosure signatures remain the seller's own action.
+
+Listing → Seller Profile can link an existing seller lead or capture details
+without one. Capture and correction use the same seller editor. Incomplete facts
+can save as progress, including missing email or ownership information; document
+preparation still checks the required identity, owners and signing authority.
+Full manual intake can be opened without emailing a seller onboarding link.
+A claimed existing mandate is not signature evidence: upload its signed copy
+through the existing document workflow. Backdated capture does not create a new
+mandate or change the original document's date.
+
+Mandate, disclosure and FICA declaration retain upload, generate/download and
+generate/send-for-signature routes. Supporting documents remain conditional on
+the entity, people, ownership and property facts. Saving does not complete FICA
+verification or approve uploaded evidence.
+
+Canonical seller saving is authoritative. A later checklist or CRM projection
+failure is reported as a follow-up after a successful save; it does not keep a
+saved draft open asking for another save. A rejected save retains the entries.
+Real concurrent seller changes are still protected, while the pending seller-save
+migration compares the onboarding revision rather than unrelated listing changes.
+
+Read-only production audit on 11 October 2026: Kingdom Real Estate's latest sales
+listing was the Bergvallei property, with seller facts saved on 8 October and no
+seller lead link. This proves the profile exists, not the cause of every browser
+error. Production lacks `save_private_listing_seller_onboarding_profile` and still
+uses the older listing-wide concurrency check. Release prerequisites are
+`20261010215549_seller_save_concurrency_guards.sql`, its listing timestamp
+correction `20261010225607_seller_canonical_revision_scope.sql`, and, for linking an existing
+lead, `20261010223242_listing_link_existing_seller_lead.sql`. Neither was applied
+by this audit. Do not replace missing database functions with direct table writes.
+
+Focused checks: `npm run verify:seller-onboarding-profile-sync`,
+`node scripts/listing-seller-profile-capture-phase2.test.mjs`,
+`node scripts/listing-seller-canonical-update.test.mjs`,
+`npm run test:seller-document-journey`, and
+`npx vitest run src/components/onboarding/__tests__/SellerOnboardingCapture.test.jsx src/components/listings/__tests__/ListingSellerInformationEditor.test.jsx`.
+These use local fixtures and do not send mail or write hosted records.
 
 ## Transaction buyer and seller capture
 
@@ -1880,9 +2119,13 @@ include scheduled jobs. Generate this artifact from the approved release source;
 do not copy a previous `dist` directory into a static-only deployment.
 
 The frontend now has a dedicated public entry (`home-seekers.html` and
-`src/homeSeekersMain.jsx`), containing only Home Seekers routes. It preserves the
-existing page links and aliases without importing the private app, CRM pages or
-staff authentication. The builder disables dotenv loading for this public entry
+`src/homeSeekersMain.jsx`), containing only Home Seekers routes. The standalone
+homepage is `/`, with clean links such as `/buying`, `/selling` and `/join`.
+The builder sets `VITE_HOME_SEEKERS_STANDALONE` for this entry only; the same page
+components retain `/demo/homeseekers` links inside the Arch9 app. Old standalone
+demo URLs redirect in the browser, preserving search parameters and fragments.
+The standalone entry excludes the private app, CRM pages and staff
+authentication. The builder disables dotenv loading for this public entry
 and the functions; any approved optional campaign settings must be provided
 explicitly as build environment variables. No database credentials are required
 for the frontend build.
@@ -1917,7 +2160,7 @@ testing real lead delivery are separate authorised tasks.
 After explicit production release approval, deploy the reviewed artifact from
 this package with
 `VERCEL_PROJECT_ID=prj_uxIQ3zvHt7AM0iKSBXLa9ezBh5MA VERCEL_ORG_ID=team_ezJ5RCE7qwTf14fw215IhPs5 vercel deploy --prebuilt --prod --cwd .vercel/home-seekers-website`.
-The root redirects to `/demo/homeseekers`; real files and functions resolve before
+The root serves the homepage directly; real files and functions resolve before
 the public page fallback. Unknown API paths return JSON 404 responses. Verify
 the standalone `/api/home-seekers/site` returns JSON and `/api/home-seekers/leads`
 rejects GET with JSON 405, then check the Home Seekers pages load. These checks
@@ -3801,46 +4044,180 @@ Both branch and organisation boundaries are retained. Focused checks:
 `npx vitest run src/pages/agency/__tests__/BranchStaffAllocations.test.jsx`.
 These checks use local fixtures and make no remote writes or send invitations.
 
-### Listing capture validation (8 October 2026)
 
-Sales and rental capture now check fields on their owning page. Agents can select
-publication channels at the start, so portal requirements appear before they fill
-Property details, Rental terms or Marketing. Continue, forward progress clicks
-and the final submit cannot bypass incomplete earlier pages. Save draft retains
-its existing recovery path and does not require publication-ready photos or
-signed mandate/FICA evidence.
+## Agency client profiles
 
-Each issue links to the exact field or container, expands address details or the
-appropriate feature dialog, focuses its input, and shows the correction beside
-it. Saved listing channel issues carry their message into the same editor target;
-portal account and agent-mapping issues retain their settings destination.
+The primary agency Clients directory uses permanent client profiles after applying
+`20261009113042_agency_client_identity_and_reviewed_merge.sql`. Existing contacts,
+enquiries, prospects, buyers, transaction parties and listing sellers are indexed
+without rewriting their source records. Source-table triggers maintain those
+associations for later intake. Only a valid known email or an existing source
+relationship matches automatically; names and shared phones suggest a review.
+The same email can belong to independent profiles in different agencies.
 
-Capture checks include Private Property's three-photo minimum, address details,
-confirmed bedroom/bathroom counts (zero is accepted), description restrictions,
-positive pricing, valid rental dates and amounts, future Property24 expiry and
-category support. Residential floor size remains optional. Property24 category
-and type rules reuse the server's pure contract; the authoritative server check
-still verifies account/location mappings and prepares media before publishing.
-This change owns only the primary app and requires no database migration.
+Open a client to see alternative emails/phones and links to their enquiries and
+transactions. Owners and principals can edit primary contact details and review
+two profiles before merging. A merge requires a reason, explicit confirmation
+and unchanged versions of both profiles. It preserves source records and email
+marketing preferences, retains alternative identifiers, redirects former profile
+references and records the approving account and original associations. There
+is no self-service undo. Staff access cannot widen through a merged profile;
+profiles containing inaccessible source records remain restricted. Missing
+identity tables show setup pending and leave existing records accessible.
 
-Focused verification:
-`node --test src/services/listings/__tests__/listingCaptureValidation.test.js src/services/rentals/__tests__/rentalListingReadinessPresentation.test.js`,
-`npx vitest run src/pages/rentals/__tests__/RentalListingCreatePage.save.test.jsx src/pages/mobile/__tests__/MobileListingWizardKeyboard.test.jsx src/pages/mobile/__tests__/MobileListingFields.test.jsx`,
-`npm run test:direct-listing-persistence-phase3`,
-`npm run test:property24-commercial-listing-readiness`, and
-`npm run test:public-listing-readiness`.
+Focused local checks (no hosted writes or communications):
+`node scripts/client-identity.test.mjs` and
+`npx vitest run src/core/clients/__tests__/agentClientDirectory.test.js src/components/clients/ClientIdentityPanel.test.jsx src/services/__tests__/clientIdentityService.test.js`.
+The SQL check executes the migration in an isolated PostgreSQL fixture and tests
+intake, aliases, merges, audit, old references, version conflicts, preserved
+records, denied bypasses and agency/staff boundaries. Apply the migration and
+release the primary app only through an explicitly approved release; this work
+does not deploy itself or add activity/campaign tracking.
 
-Release verified at `https://app.arch9.co.za` on 8 October 2026: runtime commit
-`51956d7b7ad978c8b598679b711b6e331126a94d`, Vercel deployment
-`dpl_8YttRkA1JVctbyScZNjapuQSrKM6`. This includes the already-live Home Seekers
-commit `80d1180f840863e66930a9051b0c41494bf47cc9`; the rollback deployment is
-`dpl_EGXGLggC5oEcyLNxXmXra9gfwSev`. No migration or live listing write was performed.
-The primary app check, exact-source production build, 57 focused tests, local
-desktop/mobile capture interactions and all 830 deployed critical assets passed.
-The live app shell identifies the same runtime commit. Signed-in production
-capture was not retested because no authenticated browser was available.
-The older `test:listing-portal-readiness-phase5` source-text assertion still expects
-the previously removed rental readiness grid; use the focused behavior checks above.
+## Agency client activity
+
+The primary agency client workspace has an Activity tab. Apply
+`20261009121124_agency_client_activity_timeline.sql` after the client identity
+migration to activate it. No hosted migration or deployment is performed by
+this implementation.
+
+Source-table triggers journal enquiries, contact changes, CRM interactions,
+tasks, appointments/responses, offers, transaction updates, documents, buyer
+and seller onboarding, viewing responses, snags, alterations, service reviews,
+handover, finance application status and operational notification responses.
+The journal is append-only for app users. Profiles retain both histories through
+reviewed merges and old profile references. Owners, principals and assigned
+staff can log calls, notes, emails, messages and meetings for an accessible
+client; logging an email/message does not send it. Request IDs prevent duplicate
+interaction entries after uncertain saves, including retries after a merge.
+
+Existing source records are imported with their original dates and explicitly
+marked as historical. Earlier browser actions that were never recorded cannot
+be reconstructed. New authenticated buyer/seller portal navigation and document
+access requests are recorded on a best-effort basis, once per source/section per
+minute. Demo portals are excluded. Portal credentials resolve their own client;
+invalid, expired or revoked credentials cannot record activity. The timeline
+never copies access tokens, URLs, passwords, raw onboarding forms or bank data.
+
+Client and source permissions apply to every read. Restricted documents and
+professional notes remain restricted; removing a source can hide its original
+content while generic CRM removal evidence remains. Each page is bounded and
+uses a timestamp/ID cursor; latest activity in the directory includes accessible
+journal entries. Missing setup and load failures are shown explicitly. UTM
+attribution and campaign engagement remain separate later phases.
+
+Focused verification: `node scripts/client-activity.test.mjs` executes the actual
+identity and activity migrations in an isolated PostgreSQL fixture. It checks
+history, new intake, aliases/merges, immutable entries, uncertain-save retries,
+source permissions, cross-agency isolation, late linking, cursor pagination,
+and buyer/seller portal access guards. Also run the existing identity check and
+`npx vitest run src/components/clients/ClientActivityPanel.test.jsx src/services/__tests__/clientActivityService.test.js src/core/clients/__tests__/agentClientDirectory.test.js src/components/clients/ClientIdentityPanel.test.jsx src/services/__tests__/clientIdentityService.test.js`.
+
+## Agency client source attribution
+
+The primary app's client workspace has a Sources tab showing the first known source, latest known enquiry source and paged enquiry
+source history. Apply `20261009131638_agency_client_utm_attribution.sql` after the
+identity and activity migrations to activate it. This implementation does not
+apply hosted migrations, release the app or send campaigns.
+
+Five UTM fields normalize from existing snake-case public intake and camel-case
+website enquiries. Each enquiry matches through the permanent profile's exact
+known email/source relationships. UTM values, names, shared phones and supplied
+client IDs never establish identity. Reviewed merges retain source evidence and
+old profile references; reassigning an enquiry to a different person cannot
+transfer the previous person's attribution. Agency and client/source access
+permissions apply to summaries and every history page.
+
+Public agency intake keeps first and latest evidence within an agency-scoped
+browser session for up to 24 hours. Tagged navigation updates the latest source;
+untagged navigation retains it. Storage failures fall back to the current link.
+There is no persistent visitor ID or cross-agency browser matching. The first
+known source is captured browser-session/enquiry evidence, not a claim about
+unrecorded earlier visits. Historical rows keep original enquiry dates. Untagged
+enquiries remain visibly untagged instead of being labelled as a paid campaign.
+
+Lead and linked intake/website receipt triggers maintain one first-source and
+one enquiry-source record per enquiry. Late receipts can fill missing fields or
+replace a first-source fallback with explicit browser evidence. Existing known
+UTM values are preserved, conflicting campaigns are not mixed, and repeated
+hydration does not duplicate history. The journal contains bounded allowlisted
+campaign strings and website hostnames; it never copies raw forms, URL queries,
+access credentials, email addresses or contact IDs. Newly attributed enquiries
+also appear in the activity timeline. Campaign delivery/response tracking is described below.
+
+Focused checks: `node scripts/client-attribution.test.mjs` executes all three
+client migrations in an isolated PostgreSQL fixture. It verifies historical
+dates, normalisation, automatic matching, late receipt enrichment, merges, old
+references, source reassignment, pagination and denied bypasses. Run the existing
+identity/activity checks plus
+`npx vitest run src/core/clients/__tests__/utmAttribution.test.js src/services/__tests__/agencyIntakeAttribution.test.js src/services/__tests__/clientAttributionService.test.js src/components/clients/ClientAttributionPanel.test.jsx`
+and `node server/tests/publicAgencyIntakeApi.test.js` for browser transport and
+server normalization. These checks use fixtures and send no communications.
+
+
+## Agency client campaign history
+
+The primary app includes a Campaigns tab in the full agent client workspace. Apply
+`20261009135332_agency_client_campaign_engagement.sql` after the existing email
+campaign foundation and the client identity/activity migrations. This is local
+implementation only; no hosted schema change, deployment or email delivery is
+performed by these checks.
+
+One addressed recipient row links to the client's exact known email alias within
+the agency. Existing deliveries are backfilled; later identifiers hydrate older
+history. Reviewed merges preserve original bindings and resolve old profile IDs.
+Recipient reassignment cannot transfer the previous person's history. All reads
+retain both client and existing campaign permissions, including the Activity
+entries; restricted campaigns can therefore be absent for an assigned agent.
+Draft campaign membership, contact names, shared phones and UTM campaign names
+never count as a send or a confirmed response.
+
+Campaign history shows recorded sent/delivered/opened/clicked timestamps,
+recipient status, open/click observations and response evidence. Its summaries
+count addressed emails for delivery/engagement and distinct campaigns for
+campaign/response totals. Timestamp/ID pagination stays stable when later events
+arrive. Provider payloads, bodies, tracking tokens and redirect URLs are excluded.
+First-observed milestones enter Activity once per recipient/type; repeated opens,
+clicks and ordinary saves do not flood the journal. Historical capture keeps the
+original occurrence dates. Provider evidence may arrive out of order; the panel
+uses the earliest timestamp available from recipient fields and event records.
+
+A staff member with access to the client and campaign can record a confirmed
+email reply, phone response, enquiry, RSVP or other response, with details and its
+occurrence time. This is an auditable staff assertion, clearly labelled in the
+panel. It requires an actual recorded send, validates the time and records the
+response in Activity atomically. A retry reuses its request ID even after a merge.
+Opens/clicks never mark a client as responded. Mailbox reply import and automatic
+form-to-campaign response linkage are not included: the existing inbox does not
+retain a verified campaign reply reference. UTM attribution remains available in
+Sources; matching a campaign name alone cannot establish response evidence.
+
+Run from `the-it-guy/`: `node scripts/client-campaign.test.mjs` executes the actual
+client migrations and original campaign table/policy definitions in isolated
+PostgreSQL. It checks permissions, recipient matching, safe projections, delayed
+and duplicate events, late identity links, validation, retry IDs, merged aliases,
+reassignment and pagination. Also run
+`npx vitest run src/components/clients/ClientCampaignPanel.test.jsx src/services/__tests__/clientCampaignService.test.js src/components/clients/ClientActivityPanel.test.jsx src/services/__tests__/clientActivityService.test.js`
+and the earlier identity/activity/attribution checks. Use root `npm run check:app`
+for the full app baseline before an approved release. Provider tracking/domain
+configuration still determines which open/click evidence is available; this
+change does not enable provider tracking or send campaigns.
+
+
+Client selection opens a full workspace at `/clients/:clientId`, from both the
+Clients cards and list rows, including the Open workspace action menu. The agent
+workspace retains contact identity/merge controls, linked records and transactions,
+Activity, Sources, Campaigns and bulk-email tags (in Overview). Client links are
+encoded safely and work when opened directly. Back to Clients preserves the
+originating directory's URL filters, search, filter selections and grid/list
+view; a direct link returns to Clients. Tag editing
+uses the selected client's agency and email, blocks writes after a failed load,
+and keeps edits for retry after an uncertain save. Client-switch guards discard
+late profile and tag responses from the previous workspace.
+
+Focused navigation checks: `node scripts/client-marketing-directory.test.mjs`
+and `npx vitest run src/pages/__tests__/ClientWorkspaceNavigation.test.jsx src/components/clients/ClientMarketingTagsPanel.test.jsx`.
+This navigation change requires no new database migration. Deployment is separate.
 
 ### Home Seekers common login (10 October 2026)
 
@@ -3869,3 +4246,42 @@ Verify with the Home Seekers login/listing/form checks, applicant setup checks,
 for the shared login change and rebuild the standalone website. Release needs
 this migration and the updated primary app and website together; local checks
 and the login layout preview do not confirm a production login or deployment.
+
+## Recruitment contracts in My Profile
+
+Home Seekers managers choose a PDF and select **Upload and share contract** after
+application approval. One database transaction retains the original PDF version,
+publishes that version in the applicant’s restricted My Profile, records Contract
+Sent and queues the `contract_available` applicant email. Existing prepared PDFs
+can be shared without uploading them again. Publishing is availability in the
+portal, not proof of email delivery. Other organisations retain manual delivery.
+
+My Profile shows Download → Sign → Upload signed copy. Signed PDFs are limited to
+10 MB. The server checks the verified applicant session, the published contract
+version, immutable upload request, Storage metadata and actual PDF header before
+confirming the return. Corrected copies retain earlier files. Each confirmed
+return queues one notice per existing agency recipient; retries reuse its request
+and provider keys. Download URLs expire after five minutes and require an owning
+applicant session. Applicant return metadata exposes no Storage paths.
+
+A return stays at Contract Sent. Managers download it and verify all pages and
+both signatures before recording Contract Signed. The saved applicant PDF can be
+used directly, or a manager can upload a completed countersigned copy. Stale
+records, foreign files, edits to retained returns and subsequent applicant uploads
+after verification are rejected. Applicant portal access creates no agency role.
+
+Release the append-only `20261010205014_recruitment_contract_portal.sql` migration,
+the primary app/API, and `recruitment-submission-dispatcher` plus
+`recruitment-contact-dispatcher` together after explicit target approval. Refresh
+`recruitment-approval-dispatcher` as well when its bundled sender helper predates
+the configured temporary Home Seekers sender fallback. Follow the database release
+runbook; pause the three existing schedules during the schema/worker cutover.
+No historical contract notices are backfilled. Applying the migration does not
+publish existing prepared contracts or send emails. Restarting workers processes
+already queued recruitment notifications. Confirm the production portal and
+recipient inboxes separately from local checks and provider acceptance.
+
+Focused checks cover the recruitment database, applicant API, contract component,
+workspace, signing model and service in `src/pages/recruitment/__tests__`, plus the
+recruitment email content and dispatcher tests. `npm run check:app` covers the
+primary app lint, established service baseline and production build.

@@ -327,12 +327,12 @@ Deno.test("automatic submission delivery uses the queued applicant claim and the
     assert((await f.dispatch()).status === 400);
     assert(f.sends() === 1);
   }));
-Deno.test("thank-you and one-day follow-up can send only through their saved automation kind and applicant claim", () =>
+Deno.test("thank-you, follow-up and contract notices require their saved automation kind and applicant claim", () =>
   fixture(async (f) => {
     f.submissionAutomation = true;
     f.authenticated = false;
     f.allowed = false;
-    for (const kind of ["application_thanks", "documents_followup"]) {
+    for (const kind of ["application_thanks", "documents_followup", "contract_available"]) {
       f.kind = kind;
       const response = await f.dispatch({
         organisationId: "2958d402-368e-43c9-b728-0098e10505f1",
@@ -356,7 +356,9 @@ Deno.test("thank-you and one-day follow-up can send only through their saved aut
       assert(
         kind === "application_thanks"
           ? f.sent.text.includes("second email")
-          : f.sent.text.includes("still missing"),
+          : kind === "documents_followup"
+          ? f.sent.text.includes("still missing")
+          : f.sent.text.includes("sign"),
       );
     }
     f.submissionAutomation = false;
@@ -368,10 +370,10 @@ Deno.test("thank-you and one-day follow-up can send only through their saved aut
         referenceId: lead,
       })).status === 400,
     );
-    assert(f.sends() === 2);
+    assert(f.sends() === 3);
   }));
 
-Deno.test("Home Seekers receipt, document instructions, follow-up and approval load saved branding and use its verified sender", () =>
+Deno.test("Home Seekers applicant notices load saved branding and use its verified sender", () =>
   fixture(async (f) => {
     const organisationId = "2958d402-368e-43c9-b728-0098e10505f1";
     for (
@@ -380,6 +382,7 @@ Deno.test("Home Seekers receipt, document instructions, follow-up and approval l
         "documents_reminder",
         "documents_followup",
         "approval",
+        "contract_available",
       ]
     ) {
       f.kind = kind;

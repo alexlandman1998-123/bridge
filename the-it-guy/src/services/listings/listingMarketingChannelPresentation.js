@@ -105,12 +105,12 @@ export function buildListingChannelPublicationDisplay({
   key = '', label = '', live = false, reference = '', publicUrl = '',
   publicationState = {}, updateState = {}, activityAvailable = true,
   actionBusy = false, withdrawn = false, submitted = false, issueCount = 0,
-  externalStatus = '',
+  externalStatus = '', lifecycleOnly = false,
 } = {}) {
-  const stage = text(publicationState?.stage).toLowerCase()
-  const updateStatus = text(updateState?.status).toLowerCase()
+  const stage = lifecycleOnly && publicationState?.stage !== 'withdrawn' ? '' : text(publicationState?.stage).toLowerCase()
+  const updateStatus = lifecycleOnly ? '' : text(updateState?.status).toLowerCase()
   const observedStatus = text(externalStatus).toLowerCase()
-  const inactive = ['inactive', 'removed', 'paused', 'failed'].includes(observedStatus)
+  const inactive = ['inactive', 'removed', 'paused', 'failed', 'expired', 'withdrawn'].includes(observedStatus)
   if (inactive) live = false
   const tracked = Boolean(live || reference || publicUrl || (stage && stage !== 'not_published'))
   let status = 'not_published'
@@ -121,9 +121,10 @@ export function buildListingChannelPublicationDisplay({
   } else if (actionBusy) {
     status = 'syncing'; statusLabel = 'Syncing'
   } else if (inactive) {
-    status = 'needs_attention'
-    statusLabel = { inactive: 'Inactive', removed: 'Removed', paused: 'Paused', failed: 'Failed' }[observedStatus]
-  } else if (stage === 'failed' || stage === 'withdrawal_failed' || Number(publicationState?.changeCount || 0) > 0 || updateStatus === 'needs_attention' || (!activityAvailable && tracked)) {
+    status = lifecycleOnly ? 'not_published' : 'needs_attention'
+    statusLabel = { inactive: 'Inactive', removed: 'Removed', paused: 'Paused', failed: 'Failed', expired: 'Expired', withdrawn: 'Withdrawn' }[observedStatus]
+    if (lifecycleOnly && observedStatus === 'failed') statusLabel = 'Not published'
+  } else if (!lifecycleOnly && (stage === 'failed' || stage === 'withdrawal_failed' || Number(publicationState?.changeCount || 0) > 0 || updateStatus === 'needs_attention' || (!activityAvailable && tracked))) {
     status = 'needs_attention'
     statusLabel = Number(publicationState?.changeCount || 0) > 0 ? 'Changes not published' : 'Needs attention'
   } else if (updateStatus === 'awaiting_verification') {
@@ -134,7 +135,7 @@ export function buildListingChannelPublicationDisplay({
     status = 'live'; statusLabel = 'Live'
   } else if (submitted) {
     status = 'syncing'; statusLabel = 'Submitted'
-  } else if (issueCount > 0) {
+  } else if (!lifecycleOnly && issueCount > 0) {
     status = 'needs_attention'; statusLabel = 'Needs attention'
   }
   const safeUrl = getListingChannelViewUrl(key, publicUrl)

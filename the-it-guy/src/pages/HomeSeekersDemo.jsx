@@ -56,7 +56,7 @@ function ListingCard({ listing }) {
     <article className="hs-brief-listing">
       {listing.image ? <img src={listing.image} alt={`${listing.place} property`} /> : <div className="hs-brief-listing-placeholder" aria-hidden="true" />}
       <div>
-        <p>For sale · {listing.place}</p>
+        <p>{listing.statusLabel} · {listing.place}</p>
         <h3>{listing.price}</h3>
         <span>
           <BedDouble size={15} /> {listing.beds}

@@ -15,9 +15,8 @@ test('withdrawal results close the publication lifecycle for every attempted cha
 })
 
 test('intentional withdrawals render as withdrawn instead of portal errors', () => {
-  assert.match(detailSource, /property24IntentionallyInactive/)
-  assert.match(detailSource, /privatePropertyIntentionallyInactive/)
-  assert.match(detailSource, /Removed through the Arch9 withdrawal workflow/)
-  assert.match(detailSource, /withdrawal_failed: 'Withdrawal needs attention'/)
+  assert.match(detailSource, /lifecycleOnly: true/)
+  const displaySource = readFileSync(new URL('../src/services/listings/listingMarketingChannelPresentation.js', import.meta.url), 'utf8')
+  assert.match(displaySource, /withdrawn \|\| stage === 'withdrawn'/)
   assert.match(websiteSource, /publicationState\?\.stage === 'withdrawn'/)
 })

@@ -75,7 +75,7 @@ assert.match(
 )
 assert.match(
   privateListingService,
-  /function enqueueSellerOnboardingProgressProjection\(client, \{[\s\S]*?enqueueKeyedOperation\(sellerOnboardingProjectionQueues, listingId, async \(\) => \{[\s\S]*?persistCanonicalSellerFactPayload\(client,[\s\S]*?syncPrivateListingRequirements\(listing,[\s\S]*?maybeResolveCanonicalSellerRequirements\(/,
+  /function enqueueSellerOnboardingProgressProjection\(client, \{[\s\S]*?enqueueKeyedOperation\(sellerOnboardingProjectionQueues, listingId, async \(\) => \{[\s\S]*?syncPrivateListingRequirements\(listing,[\s\S]*?maybeResolveCanonicalSellerRequirements\(/,
   'seller onboarding draft projections should be queued per listing without blocking the save response',
 )
 assert.match(
@@ -102,7 +102,7 @@ assert.match(
   'seller onboarding submit should accept a recovered completed context after a timeout',
 )
 assert.doesNotMatch(sellerOnboardingPage, /generatedDocument: disclosureDocument/, 'submit must not embed generated disclosure HTML in form_data')
-assert.match(sellerOnboardingPage, /submitSellerOnboarding\(token, \{[\s\S]*?listingSnapshot: listing,/, 'submit should build the immediate UI result from the already-loaded listing')
+assert.match(sellerOnboardingPage, /submitSellerOnboarding\(token, \{[\s\S]*?listingSnapshot: sellerSaveSnapshotRef\.current \|\| listing,/, 'submit should build the immediate UI result from the already-loaded listing')
 assert.match(
   sellerOnboardingPage,
   /getSellerOnboardingByToken\(token, \{[\s\S]*?includeRequirementsAndDocuments: false,[\s\S]*?corePayload: true,[\s\S]*?\}\)/,
@@ -153,3 +153,6 @@ console.log('seller onboarding submit fast-return contract ok')
 
 const secureSubmit = privateListingService.slice(privateListingService.indexOf('export async function submitSellerOnboarding('), privateListingService.indexOf('export async function updateSellerOnboardingProgress('))
 assert.doesNotMatch(secureSubmit, /\.from\(/, 'token submit and progress must never fall back to direct table writes')
+
+const projections = privateListingService.slice(privateListingService.indexOf('function enqueueSellerOnboardingProgressProjection('), privateListingService.indexOf('export async function submitSellerOnboarding('))
+assert.doesNotMatch(projections, /persistCanonicalSellerFactPayload|\.from\(/, 'Deferred draft projections must not overwrite committed seller facts.')

@@ -45,12 +45,12 @@ export const LISTING_SELLER_PROFILE_BRANCHES = [
 const BRANCH_VALUES = new Set(LISTING_SELLER_PROFILE_BRANCHES.map((item) => item.value))
 
 const BRANCH_DETAIL_FIELDS = Object.freeze({
-  married: ['spouseName', 'spouseEmail', 'spouseIdNumber'],
+  married: ['spouseName', 'spouseEmail', 'spouseIdNumber', 'spousePhone'],
   multiple_owners: ['multipleOwners', 'coOwnerDetails'],
-  company: ['companyName', 'companyRegistrationNumber', 'companyRegisteredAddress', 'companyDirectors', 'companyBeneficialOwners', 'authorisedSignatoryName', 'authorisedSignatoryCapacity', 'authorisedSignatoryEmail', 'authorisedSignatoryIdNumber', 'authorisedSignatoryNationality', 'authorisedSignatoryAddress', 'companyAuthorityBasis', 'companyResolutionDate'],
-  trust: ['trustName', 'trustRegistrationNumber', 'trustRegisteredAddress', 'trustees', 'trustFounders', 'trustBeneficiaries', 'trustBeneficiaryClass', 'authorisedTrusteeName', 'authorisedTrusteeCapacity', 'authorisedTrusteeEmail', 'authorisedTrusteeIdNumber', 'authorisedTrusteeNationality', 'authorisedTrusteeAddress', 'trustAuthorityBasis'],
-  deceased_estate: ['deceasedEstateName', 'estateReferenceNumber', 'executorName', 'executorEmail', 'executorAuthorityDetails'],
-  power_of_attorney: ['powerOfAttorneyPrincipalName', 'powerOfAttorneyPrincipalIdNumber', 'powerOfAttorneyName', 'powerOfAttorneyEmail', 'powerOfAttorneyAuthorityDetails'],
+  company: ['companyName', 'companyRegistrationNumber', 'companyRegisteredAddress', 'companyDirectors', 'companyBeneficialOwners', 'authorisedSignatoryName', 'authorisedSignatoryCapacity', 'authorisedSignatoryEmail', 'authorisedSignatoryIdNumber', 'authorisedSignatoryNationality', 'authorisedSignatoryAddress', 'authorisedSignatoryPhone', 'companyAuthorityBasis', 'companyResolutionDate'],
+  trust: ['trustName', 'trustRegistrationNumber', 'trustRegisteredAddress', 'trustees', 'trustFounders', 'trustBeneficiaries', 'trustBeneficiaryClass', 'authorisedTrusteeName', 'authorisedTrusteeCapacity', 'authorisedTrusteeEmail', 'authorisedTrusteeIdNumber', 'authorisedTrusteeNationality', 'authorisedTrusteeAddress', 'authorisedTrusteePhone', 'trustAuthorityBasis'],
+  deceased_estate: ['deceasedEstateName', 'estateReferenceNumber', 'executorName', 'executorEmail', 'executorPhone', 'executorAuthorityDetails'],
+  power_of_attorney: ['powerOfAttorneyPrincipalName', 'powerOfAttorneyPrincipalIdNumber', 'powerOfAttorneyName', 'powerOfAttorneyEmail', 'powerOfAttorneyPhone', 'powerOfAttorneyAuthorityDetails'],
   other: ['otherEntityName', 'otherEntityRegistrationNumber', 'otherAuthorityDetails'],
   foreign: ['foreignOwnerCountry', 'foreignPassportNumber', 'foreignRegistrationNumber', 'foreignResidencyStatus'],
 })
@@ -310,8 +310,14 @@ export function createListingSellerProfileBuilderDraft(listing = {}) {
     incomeTaxNumber: normalizeText(form.incomeTaxNumber ?? form.income_tax_number ?? form.sellerTaxNumber ?? form.taxNumber ?? form.tax_number ?? sellerFacts.tax_number),
     saResident: sellerYesNoValue(form.saResident ?? form.sa_resident ?? form.taxResident ?? form.tax_resident ?? sellerFacts.sa_resident),
     vatRegistered: sellerYesNoValue(form.vatRegistered ?? form.vat_registered ?? sellerFacts.vat_registered),
-    alternativeContact: normalizeText(pickFirst(form.alternativeContact, form.alternateContact, form.secondaryPhone, form.alternativePhone)),
+    alternativeContact: normalizeText(pickFirst(form.alternativeContact, form.alternativeNumber, form.alternative_number, form.alternateContact, form.secondaryPhone, form.alternativePhone)),
     preferredContactMethod: normalizeText(pickFirst(form.preferredContactMethod, form.contactPreference)),
+    vatNumber: normalizeText(form.vatNumber ?? form.vat_number ?? sellerFacts.vat_number),
+    spousePhone: normalizeText(form.spousePhone ?? sellerFacts.spouse?.phone),
+    authorisedSignatoryPhone: normalizeText(form.authorisedSignatoryPhone ?? canonicalCompany.authorised_signatory?.phone),
+    authorisedTrusteePhone: normalizeText(form.authorisedTrusteePhone ?? canonicalTrust.authorised_trustee?.phone),
+    executorPhone: normalizeText(form.executorPhone ?? sellerFacts.deceased_estate?.executor?.phone),
+    powerOfAttorneyPhone: normalizeText(form.powerOfAttorneyPhone ?? sellerFacts.power_of_attorney?.representative?.phone),
     maritalStatus: normalizeText(pickFirst(form.maritalStatus, form.marital_status, sellerFacts.marital_status)),
     spouseName: normalizeText(pickFirst(form.spouseName, form.spouseFullName, form.spouse?.fullName, sellerFacts.spouse?.full_name)),
     spouseEmail: normalizeText(pickFirst(form.spouseEmail, form.spouse?.email, sellerFacts.spouse?.email)).toLowerCase(),
@@ -516,6 +522,10 @@ export function buildListingSellerProfileFormPatch(draft = {}) {
     mobile: normalizeText(draft.phone),
     alternativeContact: normalizeText(draft.alternativeContact),
     alternateContact: normalizeText(draft.alternativeContact),
+    alternativeNumber: normalizeText(draft.alternativeContact),
+    alternative_number: normalizeText(draft.alternativeContact),
+    vatNumber: normalizeText(draft.vatNumber),
+    vat_number: normalizeText(draft.vatNumber),
     preferredContactMethod: normalizeText(draft.preferredContactMethod),
     contactPreference: normalizeText(draft.preferredContactMethod),
     idNumber: normalizeText(draft.idNumber),
@@ -709,7 +719,8 @@ export function buildListingSellerProfileFormPatch(draft = {}) {
   // Profile edits must carry intentional clears through the saved-data merge.
   for (const key of ['residential_address', 'residentialStreet', 'dateOfBirth', 'date_of_birth', 'nationality',
     'incomeTaxNumber', 'income_tax_number', 'sellerTaxNumber', 'taxNumber', 'tax_number',
-    'saResident', 'sa_resident', 'taxResident', 'tax_resident', 'vatRegistered', 'vat_registered',
+    'saResident', 'sa_resident', 'taxResident', 'tax_resident', 'vatRegistered', 'vat_registered', 'vatNumber', 'vat_number',
+    'alternativeContact', 'alternateContact', 'alternativeNumber', 'alternative_number',
     'occupation', 'sourceOfFunds', 'source_of_funds', 'politicallyExposedPerson', 'politically_exposed_person',
     'politicallyExposedDetails', 'politically_exposed_details', 'popiConsentAcceptedAt', 'popi_consent_accepted_at']) {
     if (Object.hasOwn(base, key)) patch[key] = base[key]
@@ -726,7 +737,9 @@ export function buildListingSellerProfileFormPatch(draft = {}) {
   return patch
 }
 
-export function validateListingSellerProfileBuilderDraft(draft = {}) {
+export function validateListingSellerProfileBuilderDraft(draft = {}, { saveAsDraft = false } = {}) {
+  // Saving progress is independent of readiness to prepare legal documents.
+  if (saveAsDraft) return []
   const branch = normalizeBranch(draft.branch, '')
   const errors = []
   if (!branch) return ['Choose who owns this property before continuing.']
@@ -777,7 +790,7 @@ export function buildListingMandateReadiness(listing = {}, commission = {}, { re
 
   require(Boolean(branch), 'Choose the ownership type.')
   if (branch === 'multiple_owners') {
-    require(owners.length > 0, 'Add every property owner.')
+    require(owners.length >= 2, 'Add at least two property owners.')
     owners.forEach((owner, index) => {
       require(Boolean(personName(owner)), `Add owner ${index + 1}'s full name.`)
       require(emailReady(owner.email), `Add a valid email for owner ${index + 1}.`)

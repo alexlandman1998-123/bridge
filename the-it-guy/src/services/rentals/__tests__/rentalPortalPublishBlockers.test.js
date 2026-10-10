@@ -12,6 +12,18 @@ function optionalMissing() {
 }
 const p24 = (listing) => createProperty24RentalListingPlan({ listing, media, agentMapping: { property24AgentId: 77959, sourceReference: '' }, options: { includeSubmitPayload: true } })
 const pp = (listing, chosenMedia = media) => createPrivatePropertyRentalListingPlan({ listing, media: chosenMedia, agentMapping: { privatePropertyAgentId: 'pp-agent' }, options: { branchGuid: '11111111-1111-4111-8111-111111111111', suburbId: '140', propertyId: 'rental-test' } })
+for (const [category, type, p24Type] of [['residential', 'House', 4], ['commercial', 'Office', 11], ['industrial', 'Warehouse', 12], ['retail', 'Shop', 11], ['mixed_use', 'Mixed Use', 11], ['agricultural', 'Farm', 10], ['vacant_land', 'Vacant Land', 8]]) {
+  it(`maps a ${category} rental to both portals without landlord or mandate capture`, () => {
+    const listing = { ...optionalMissing(), propertyCategory: category, propertyType: type, property24PropertyTypeId: String(p24Type), erfSize: category === 'vacant_land' ? 500 : undefined }
+    const property24 = p24(listing)
+    expect(property24.dataBlockers).toEqual([])
+    expect(property24.canSubmit).toBe(true)
+    expect(property24.payload.propertyInfo.propertyTypeId).toBe(p24Type)
+    const privateProperty = pp(listing)
+    expect(privateProperty.dataBlockers).toEqual([])
+    expect(privateProperty.canPreview).toBe(true)
+  })
+}
 it('keeps local P24 readiness and backend publishing open without optional capture or tenant onboarding', () => {
   const listing = optionalMissing()
   const readiness = buildRentalProperty24Readiness(listing)

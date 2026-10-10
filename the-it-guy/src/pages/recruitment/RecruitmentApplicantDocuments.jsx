@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { Check, Download, FileText, Files, Upload } from 'lucide-react'
 import { recruitmentSignupRequest } from '../../services/recruitmentSignupService'
-import { homeSeekersRecruitmentOrganisationId, recruitmentDocumentAccept, recruitmentDocumentError, recruitmentDocumentMime, recruitmentDocumentTypes, requiredRecruitmentDocuments, recruitmentDocumentsComplete } from './recruitmentDocumentsModel'
+import { homeSeekersRecruitmentOrganisationId, recruitmentDocumentAccept, recruitmentDocumentError, recruitmentDocumentMime, recruitmentDocumentTypes, requiredRecruitmentDocuments, recruitmentDocumentsComplete, recruitmentDocumentPresentation } from './recruitmentDocumentsModel'
 
 export default function RecruitmentApplicantDocuments({ applicant, endpoint, token, preview = false, disabled = false, homeSeekers = false, presentation = 'default', onSaved, onBusy, onSessionExpired }) {
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState('')
@@ -55,7 +55,7 @@ export default function RecruitmentApplicantDocuments({ applicant, endpoint, tok
       const saved = files.filter(file => file.type === type && typeof file.path === 'string' && file.path.trim())
       const exception = applicant.documentWaivers?.[type]
       const ready = saved.length > 0 || (typeof exception === 'string' && exception.trim().length >= 5)
-      const title = type === 'Other' ? 'Proof of address / supporting FICA' : type === 'Registration evidence' ? 'FFC certificate' : type
+      const { title } = recruitmentDocumentPresentation(type, homeSeekers)
       const hint = type === 'Identity document' ? 'Upload your ID or passport for FICA.' : type === 'Registration evidence' ? 'Upload your FFC certificate here.' : type === 'Other' ? 'A recent proof of address or other supporting FICA evidence.' : type === 'CV' ? 'Your experience and professional background.' : 'Your relevant qualifications and certificates.'
       const locked = busy || disabled || !editable
       return <section key={type} className="applicant-setup__document" aria-label={title}>

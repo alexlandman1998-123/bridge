@@ -135,6 +135,7 @@ function mapProperty(row: Record<string, unknown>, media: PublicProperty['media'
     reference: String(row.arch9_reference || row.listing_id),
     title: String(row.title || 'Property listing'),
     transactionType,
+    listingStatus: row.listing_status === 'sold' || row.listing_status === 'under_offer' ? row.listing_status : 'active',
     rentalPriceFrequency: transactionType === 'rental' ? resolveRentalPriceFrequency(row.rental_price_frequency) : undefined,
     propertyType: String(row.property_type || 'Property'),
     suburb: String(row.suburb || ''),

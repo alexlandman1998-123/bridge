@@ -5,6 +5,7 @@ import { createRecruitmentIntakeResponse } from '../../../../server/services/rec
 import { createHomeSeekersSignupResponse } from '../../../../server/services/homeSeekersRecruitmentSignupApi'
 import { HOME_SEEKERS_ORGANISATION_ID as homeOrg } from '../../../../server/services/homeSeekersWebsiteBridge'
 import { createHash } from 'node:crypto'
+import { approvalConfirmation } from '../recruitmentApprovalModel'
 const org = '11111111-1111-4111-8111-111111111111', other = '22222222-2222-4222-8222-222222222222'
 const manager = '33333333-3333-4333-8333-333333333333', agent = '44444444-4444-4444-8444-444444444444'
 const lead = '55555555-5555-4555-8555-555555555555', otherLead = '66666666-6666-4666-8666-666666666666'
@@ -220,7 +221,7 @@ it('allows approval only from a resolved saved review with current version and o
   await db.exec('reset role;')
   await db.exec(readFileSync(new URL('../../../../../supabase/migrations/20261005134622_recruitment_application_approved.sql', import.meta.url), 'utf8'))
   await asUser(manager)
-  const approve = (version=reviewing.version, organisation=org, notes='Reviewed evidence and agreed joining conditions') => db.query('select * from recruitment_approve_application($1,$2,$3,$4)',[organisation,reviewing.id,version,notes])
+  const approve = (version=reviewing.version, organisation=org, notes=approvalConfirmation) => db.query('select * from recruitment_approve_application($1,$2,$3,$4)',[organisation,reviewing.id,version,notes])
   await expect(approve()).rejects.toThrow('completed saved review')
   const review = structuredClone(reviewing.review_json)
   review.documents.push({path:`${org}/${reviewing.id}/new-evidence`,status:'reviewed',notes:'Qualification evidence checked by staff'})
@@ -245,6 +246,7 @@ it('allows approval only from a resolved saved review with current version and o
   await expect(db.query("update recruitment_leads set status='application_approved',approval_notes='Approve this candidate',review_json=$1::jsonb where id=$2",[JSON.stringify({...review,notes:'New unsaved notes'}),reviewing.id])).rejects.toThrow()
   approved=(await approve()).rows[0]
   expect(approved.status).toBe('application_approved')
+  expect(approved.approval_notes).toBe(approvalConfirmation)
   expect(approved.approved_by).toBe(manager)
   expect(approved.approved_at).toBeTruthy()
   expect(approved.approval_snapshot).toMatchObject({version:'recruitment-approval-v1',leadVersion:reviewing.version,application:reviewing.application_json,review:reviewing.review_json,documents:reviewing.documents_json})
@@ -1922,8 +1924,9 @@ it('queues approval email atomically and never grants agency membership when an 
   const checks=Object.fromEntries(['registration','qualifications','training','handover'].map(key=>[key,{status:'not_applicable',notes:'Reasoned fixture finding for this candidate',evidence:[]}]))
   const review={version:'recruitment-review-v1',checks,documents:candidate.documents_json.map(doc=>({path:doc.path,status:'reviewed',notes:'Identity file opened and checked'})),notes:'Interview completed',followUpOn:''}
   const ready=(await db.query('update recruitment_leads set review_json=$1::jsonb where id=$2 returning *',[JSON.stringify(review),homeDraft.id])).rows[0]
-  journeyApproval=(await db.query('select * from recruitment_approve_application($1,$2,$3,$4)',[homeOrg,homeDraft.id,ready.version,'Approved after interview and evidence review'])).rows[0]
+  journeyApproval=(await db.query('select * from recruitment_approve_application($1,$2,$3,$4)',[homeOrg,homeDraft.id,ready.version,approvalConfirmation])).rows[0]
   expect(journeyApproval.status).toBe('application_approved')
+  expect(journeyApproval.approval_notes).toBe(approvalConfirmation)
   await db.exec('reset role;')
   const queue=(await db.query('select * from recruitment_approval_email_queue where lead_id=$1',[homeDraft.id])).rows
   expect(queue).toHaveLength(1);expect(queue[0]).toMatchObject({status:'pending',actor_id:manager})
@@ -2411,4 +2414,164 @@ it('does not route a foreign, banned or changed-email identity into another pers
   expect((await db.query('select recruitment_applicant_portal_required() as required')).rows[0].required).toBe(false)
   await db.exec('reset role; set role anon;')
   await expect(db.query('select recruitment_applicant_portal_required()')).rejects.toThrow('permission denied')
+})
+
+let optionalFindingsLead, optionalFindingsReview
+const saveOptionalFindings = review => db.query('update recruitment_leads set review_json=$1::jsonb where id=$2 returning *',[JSON.stringify(review),optionalFindingsLead.id])
+it('allows approved items to save without findings while preserving existing reviews and server audit stamps',async()=>{
+  const application = await newMailApplication()
+  for (const type of ['CV','Identity document','Qualifications','Registration evidence','Other']) await uploadMailDocument(application,type)
+  await asUser(manager)
+  const submitted = (await db.query('select * from recruitment_leads where id=$1',[application.id])).rows[0]
+  optionalFindingsLead = (await db.query('select * from recruitment_start_review($1,$2,$3)',[homeOrg,application.id,submitted.version])).rows[0]
+  optionalFindingsReview = {...optionalFindingsLead.review_json,checks:Object.fromEntries(Object.entries(optionalFindingsLead.review_json.checks).map(([key,value])=>[key,{...value,status:'verified',notes:''}])),documents:optionalFindingsLead.documents_json.map(document=>({path:document.path,status:'reviewed',notes:''}))}
+  await expect(saveOptionalFindings(optionalFindingsReview)).rejects.toThrow('finding or reason')
+  await db.exec('reset role;')
+  const before = (await db.query('select id,status,review_json,review_updated_at from recruitment_leads order by id')).rows
+  await db.exec(readFileSync(new URL('../../../../../supabase/migrations/20261010202255_recruitment_optional_review_findings.sql',import.meta.url),'utf8'))
+  expect((await db.query('select id,status,review_json,review_updated_at from recruitment_leads order by id')).rows).toEqual(before)
+  const guard = (await db.query("select prosecdef,proconfig from pg_proc where oid='public.recruitment_review_guard()'::regprocedure")).rows[0]
+  expect(guard.prosecdef).toBe(false)
+  expect(guard.proconfig).toContain('search_path=""')
+  await asUser(manager)
+  optionalFindingsLead = (await saveOptionalFindings(optionalFindingsReview)).rows[0]
+  expect(optionalFindingsLead.status).toBe('under_review')
+  expect(optionalFindingsLead.review_status).toBe('ready_for_approval')
+  expect(optionalFindingsLead.review_updated_by).toBe(manager)
+  expect([...Object.values(optionalFindingsLead.review_json.checks),...optionalFindingsLead.review_json.documents].every(item=>item.notes===''&&item.updatedBy===manager)).toBe(true)
+  optionalFindingsReview.checks.qualifications.notes = 'OK'
+  optionalFindingsReview.documents[0].notes = 'OK'
+  expect((await saveOptionalFindings(optionalFindingsReview)).rows[0].review_status).toBe('ready_for_approval')
+})
+it('still requires a meaningful rejection reason for both checks and files',async()=>{
+  await asUser(manager)
+  for (const notes of ['', '   ', 'No']) {
+    const checkReview = structuredClone(optionalFindingsReview)
+    checkReview.checks.registration = {...checkReview.checks.registration,status:'needs_information',notes}
+    await expect(saveOptionalFindings(checkReview)).rejects.toThrow('reason for rejected items')
+    const documentReview = structuredClone(optionalFindingsReview)
+    documentReview.documents[0] = {...documentReview.documents[0],status:'needs_information',notes}
+    await expect(saveOptionalFindings(documentReview)).rejects.toThrow('reason for rejected items')
+  }
+  const rejected = structuredClone(optionalFindingsReview)
+  rejected.checks.registration = {...rejected.checks.registration,status:'needs_information',notes:'The FFC certificate has expired.'}
+  rejected.documents[0] = {...rejected.documents[0],status:'needs_information',notes:'Please upload a legible copy.'}
+  expect((await saveOptionalFindings(rejected)).rows[0].review_status).toBe('needs_information')
+})
+it('retains note limits, evidence ownership, management access and the document-pack gate with optional findings',async()=>{
+  await asUser(manager)
+  for (const notes of [null,'x'.repeat(2001)]) {
+    const review = structuredClone(optionalFindingsReview)
+    review.checks.registration.notes = notes
+    await expect(saveOptionalFindings(review)).rejects.toThrow('notes up to 2000')
+    review.checks.registration.notes = ''
+    review.documents[0].notes = notes
+    await expect(saveOptionalFindings(review)).rejects.toThrow('notes up to 2000')
+  }
+  const foreign = structuredClone(optionalFindingsReview)
+  foreign.checks.registration.evidence = [`${other}/${otherLead}/cv`]
+  await expect(saveOptionalFindings(foreign)).rejects.toThrow('belonging to this lead')
+  await asUser(agent)
+  expect((await saveOptionalFindings(optionalFindingsReview)).rows).toEqual([])
+  const incomplete = await newMailApplication()
+  await asUser(manager)
+  const lead = (await db.query('select * from recruitment_leads where id=$1',[incomplete.id])).rows[0]
+  await expect(db.query('select * from recruitment_start_review($1,$2,$3)',[homeOrg,lead.id,lead.version])).rejects.toThrow('document pack')
+})
+
+let portalContractLead, portalContractApplication, portalReturnId
+it('publishes a private version in My Profile atomically and queues one applicant email without granting workspace access', async () => {
+  await db.exec('reset role;')
+  await db.exec(readFileSync(new URL('../../../../../supabase/migrations/20261010205014_recruitment_contract_portal.sql',import.meta.url),'utf8'))
+  expect((await db.query("select prosecdef from pg_proc where oid='public.recruitment_queue_application_notifications()'::regprocedure")).rows[0].prosecdef).toBe(true)
+  portalContractApplication = await newMailApplication()
+  for (const type of ['CV','Identity document','Qualifications','Registration evidence','Other']) await uploadMailDocument(portalContractApplication,type)
+  await asUser(manager)
+  let current = (await db.query('select * from recruitment_leads where id=$1',[portalContractApplication.id])).rows[0]
+  current = (await db.query('select * from recruitment_start_review($1,$2,$3)',[homeOrg,current.id,current.version])).rows[0]
+  const review = {...current.review_json,checks:Object.fromEntries(Object.entries(current.review_json.checks).map(([key,value])=>[key,{...value,status:'verified',notes:''}])),documents:current.documents_json.map(d=>({path:d.path,status:'reviewed',notes:''}))}
+  current = (await db.query('update recruitment_leads set review_json=$1::jsonb where id=$2 returning *',[JSON.stringify(review),current.id])).rows[0]
+  current = (await db.query('select * from recruitment_approve_application($1,$2,$3,$4)',[homeOrg,current.id,current.version,approvalConfirmation])).rows[0]
+  const document = {path:`${homeOrg}/${current.id}/${crypto.randomUUID()}`,name:'Agency contract.pdf',size:128}
+  await db.query("insert into storage.objects(bucket_id,name,owner_id,metadata) values('recruitment-contracts',$1,$2,'{\"size\":128,\"mimetype\":\"application/pdf\"}')",[document.path,manager])
+  await expect(db.query('select * from recruitment_publish_contract($1,$2,$3,$4::jsonb)',[homeOrg,current.id,current.version-1,JSON.stringify(document)])).rejects.toThrow('changed')
+  portalContractLead = (await db.query('select * from recruitment_publish_contract($1,$2,$3,$4::jsonb)',[homeOrg,current.id,current.version,JSON.stringify(document)])).rows[0]
+  expect(portalContractLead.status).toBe('contract_sent')
+  expect(portalContractLead.contract_delivery_json).toMatchObject({source:'applicant_portal',contractVersion:1,contractPath:document.path,recipientContact:homeEmail,recordedBy:manager})
+  expect((await db.query('select * from recruitment_publish_contract($1,$2,$3,$4::jsonb)',[homeOrg,current.id,current.version,JSON.stringify(document)])).rows[0].version).toBe(portalContractLead.version)
+  await contactServer()
+  expect((await db.query("select count(*)::int as n from recruitment_submission_email_queue where lead_id=$1 and email_kind='contract_available'",[current.id])).rows[0].n).toBe(1)
+  const contract = (await db.query('select recruitment_applicant_contract($1,$2) as c',[homeOrg,portalContractApplication.hash])).rows[0].c
+  expect(contract).toMatchObject({path:document.path,bucket:'recruitment-contracts',canUpload:true,verified:false,returns:[]})
+  expect((await db.query('select recruitment_applicant_contract($1,$2) as c',[homeOrg,createHash('sha256').update(crypto.randomUUID()).digest('hex')])).rows[0].c.unavailable).toBe(true)
+  await asUser(homeUser)
+  expect((await db.query('select * from recruitment_leads where id=$1',[current.id])).rows).toEqual([])
+  await expect(db.query('select recruitment_applicant_contract($1,$2)',[homeOrg,portalContractApplication.hash])).rejects.toThrow('permission denied')
+})
+it('confirms only a saved PDF for the verified applicant, retains returns and notifies the agency once per upload', async () => {
+  await contactServer()
+  portalReturnId=crypto.randomUUID()
+  const document={name:'Signed contract.pdf',size:128,mimeType:'application/pdf'}
+  const prepare=()=>db.query('select recruitment_prepare_contract_return($1,$2,$3,$4::jsonb) as r',[homeOrg,portalContractApplication.hash,portalReturnId,JSON.stringify(document)])
+  const prepared=(await prepare()).rows[0].r
+  await expect(db.query('select recruitment_commit_contract_return($1,$2,$3)',[homeOrg,portalContractApplication.hash,portalReturnId])).rejects.toThrow('verified')
+  await db.exec('reset role;')
+  await db.query("insert into storage.objects(bucket_id,name,owner_id,metadata) values('recruitment-signed-contracts',$1,$2,'{\"size\":128,\"mimetype\":\"application/pdf\"}')",[prepared.path,manager])
+  await contactServer()
+  const commit=()=>db.query('select recruitment_commit_contract_return($1,$2,$3) as r',[homeOrg,portalContractApplication.hash,portalReturnId])
+  expect((await commit()).rows[0].r).toEqual({saved:true,duplicate:false})
+  expect((await commit()).rows[0].r).toEqual({saved:true,duplicate:true})
+  expect((await prepare()).rows[0].r.committed).toBe(true)
+  expect((await db.query("select recipient,event_key from recruitment_contact_notifications where lead_id=$1 and event_kind='contract_returned' order by recipient",[portalContractLead.id])).rows).toEqual(staffRecipients.map(recipient=>({recipient,event_key:portalReturnId})))
+  const contract=(await db.query('select recruitment_applicant_contract($1,$2,$3) as c',[homeOrg,portalContractApplication.hash,portalReturnId])).rows[0].c
+  expect(contract).toMatchObject({path:prepared.path,bucket:'recruitment-signed-contracts',returns:[{id:portalReturnId,name:document.name,contractVersion:1}]})
+  expect(contract.returns[0].path).toBeUndefined()
+  await expect(db.query('select recruitment_prepare_contract_return($1,$2,$3,$4::jsonb)',[homeOrg,portalContractApplication.hash,portalReturnId,JSON.stringify({...document,name:'Other.pdf'})])).rejects.toThrow('another contract')
+  await asUser(manager)
+  portalContractLead=(await db.query('select * from recruitment_leads where id=$1',[portalContractLead.id])).rows[0]
+  expect(portalContractLead.status).toBe('contract_sent')
+  expect(portalContractLead.contract_signature_json).toEqual({})
+  expect(portalContractLead.contract_returns_json).toHaveLength(1)
+  await expect(db.query("update recruitment_leads set contract_returns_json='[]' where id=$1",[portalContractLead.id])).rejects.toThrow('immutable')
+  expect((await db.query("delete from storage.objects where bucket_id='recruitment-signed-contracts' and name=$1 returning name",[prepared.path])).rows).toEqual([])
+})
+it('retains corrected signed uploads and deduplicates each notification independently', async () => {
+  await contactServer()
+  const id=crypto.randomUUID(), document={name:'Corrected signed.pdf',size:128,mimeType:'application/pdf'}
+  const prepared=(await db.query('select recruitment_prepare_contract_return($1,$2,$3,$4::jsonb) as r',[homeOrg,portalContractApplication.hash,id,JSON.stringify(document)])).rows[0].r
+  await db.exec('reset role;')
+  await db.query("insert into storage.objects(bucket_id,name,metadata) values('recruitment-signed-contracts',$1,'{\"size\":128,\"mimetype\":\"application/pdf\"}')",[prepared.path])
+  await contactServer()
+  await db.query('select recruitment_commit_contract_return($1,$2,$3)',[homeOrg,portalContractApplication.hash,id])
+  await db.query('select recruitment_commit_contract_return($1,$2,$3)',[homeOrg,portalContractApplication.hash,id])
+  expect((await db.query("select count(*)::int as n from recruitment_contact_notifications where lead_id=$1 and event_kind='contract_returned'",[portalContractLead.id])).rows[0].n).toBe(6)
+  await asUser(manager)
+  portalContractLead=(await db.query('select * from recruitment_leads where id=$1',[portalContractLead.id])).rows[0]
+  expect(portalContractLead.contract_returns_json).toHaveLength(2)
+})
+it('requires agency signature verification before advancing a returned contract and then locks applicant uploads', async () => {
+  await asUser(manager)
+  const returned=portalContractLead.contract_returns_json.at(-1)
+  const signature={...returned,agentSigner:'Applicant Agent',organisationSigner:'Agency Principal',signedOn:portalContractLead.contract_delivery_json.sentOn,method:'wet_ink',reference:'',notes:'Both signatures and all pages checked.',checks:{sameVersion:true,allPages:true,agentSignature:true,organisationSignature:false}}
+  await expect(db.query('select * from recruitment_record_contract_signature($1,$2,$3,$4::jsonb)',[homeOrg,portalContractLead.id,portalContractLead.version,JSON.stringify(signature)])).rejects.toThrow('both signatures')
+  signature.checks.organisationSignature=true
+  const signed=(await db.query('select * from recruitment_record_contract_signature($1,$2,$3,$4::jsonb)',[homeOrg,portalContractLead.id,portalContractLead.version,JSON.stringify(signature)])).rows[0]
+  expect(signed.status).toBe('contract_signed')
+  expect(signed.contract_signature_json).toMatchObject({path:returned.path,source:'staff_verified',recordedBy:manager})
+  await contactServer()
+  expect((await db.query('select recruitment_applicant_contract($1,$2) as c',[homeOrg,portalContractApplication.hash])).rows[0].c).toMatchObject({canUpload:false,verified:true})
+  expect((await db.query('select recruitment_prepare_contract_return($1,$2,$3,$4::jsonb) as r',[homeOrg,portalContractApplication.hash,crypto.randomUUID(),JSON.stringify({name:'Late.pdf',size:128,mimeType:'application/pdf'})])).rows[0].r.unavailable).toBe(true)
+})
+
+it('preserves staff document notifications after extending the queue deduplication key', async () => {
+  const application=await newMailApplication()
+  for (const type of ['CV','Identity document','Qualifications','Registration evidence']) await uploadMailDocument(application,type)
+  await asUser(manager)
+  const lead=(await db.query('select * from recruitment_leads where id=$1',[application.id])).rows[0]
+  const path=`${homeOrg}/${lead.id}/${crypto.randomUUID()}`
+  await db.query("insert into storage.objects(bucket_id,name,owner_id) values('recruitment-documents',$1,$2)",[path,manager])
+  const document={path,name:'Address.pdf',type:'Other'}
+  await db.query('update recruitment_leads set documents_json=$1::jsonb where id=$2',[JSON.stringify([...lead.documents_json,document]),lead.id])
+  await contactServer()
+  expect((await db.query("select count(*)::int as n from recruitment_contact_notifications where lead_id=$1 and event_kind='documents_received'",[lead.id])).rows[0].n).toBe(3)
 })

@@ -16,7 +16,7 @@ function publicSlug(title, reference, listingId) {
   return `${slug}-${listingId}`
 }
 
-export default function KingdomWebsitePublicationChannel({ listingId, listingTitle, listingReference, onPrepare, onEdit, onStatusChange, onPublicationAction, publicationState = null, savedAt = '', showConnectionState = false }) {
+export default function KingdomWebsitePublicationChannel({ listingId, listingTitle, listingReference, onPrepare, onEdit, onStatusChange, onPublicationAction, publicationState = null, savedAt = '', showConnectionState = false, manageActions = null, refreshKey = 0 }) {
   const [publication, setPublication] = useState(null)
   const [loading, setLoading] = useState(true)
   const [action, setAction] = useState('')
@@ -36,7 +36,7 @@ export default function KingdomWebsitePublicationChannel({ listingId, listingTit
     }
   }, [listingId])
 
-  useEffect(() => { void load() }, [load])
+  useEffect(() => { void load() }, [load, refreshKey])
   useEffect(() => { onStatusChange?.(publication) }, [onStatusChange, publication])
 
   if (!publication?.available) return showConnectionState && (loading || error)
@@ -49,9 +49,9 @@ export default function KingdomWebsitePublicationChannel({ listingId, listingTit
   const link = live && publication.hostname
     ? normalizeListingChannelPublicUrl(`https://${publication.hostname}/properties/${publicSlug(listingTitle, listingReference, listingId)}`)
     : ''
-  const stale = publication.stale || publicationState?.changeCount > 0
-  const statusLabel = live ? stale ? 'Changes not published' : 'Live' : blockers.length ? 'Needs attention' : 'Not published'
-  const statusColor = live && !stale ? 'text-[#18713e]' : blockers.length || stale ? 'text-[#9a5b13]' : 'text-[#526a82]'
+  const stale = !manageActions && (publication.stale || publicationState?.changeCount > 0)
+  const statusLabel = live ? stale ? 'Changes not published' : 'Live' : !manageActions && blockers.length ? 'Needs attention' : 'Not published'
+  const statusColor = live && !stale ? 'text-[#18713e]' : !manageActions && (blockers.length || stale) ? 'text-[#9a5b13]' : 'text-[#526a82]'
   const infrastructureBlocked = blockers.some((blocker) => /Kingdom website|Kingdom website domain/.test(String(blocker)))
 
   const run = async (nextAction) => {
@@ -94,14 +94,14 @@ export default function KingdomWebsitePublicationChannel({ listingId, listingTit
         <div className="min-w-0"><p className="truncate text-sm font-semibold text-[#142132]">Kingdom Website</p></div>
       </div>
       <div className="min-w-0"><p className="truncate text-sm font-semibold text-[#243d56]">{listingReference || 'Not assigned'}</p>{link ? <a href={link} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-1 text-xs font-semibold text-[#1f4f78] hover:underline">View listing <ExternalLink size={12} /></a> : <p className="mt-1 text-xs text-[#8a98a8]">Listing link unavailable</p>}</div>
-      <div className="min-w-0"><p className={`inline-flex items-center gap-2 text-sm font-semibold ${statusColor}`}><span className={`h-2 w-2 rounded-full ${live && !stale ? 'bg-[#1f9d64]' : blockers.length || stale ? 'bg-[#d99321]' : 'border border-[#aebdca] bg-white'}`} />{statusLabel}</p>{blockers.length ? <p className="mt-1 text-xs text-[#8a641d]">{blockers[0]}</p> : null}</div>
-      <ListingChannelLastUpdate publicationState={publicationState} publication={publication} fallback={savedAt ? `Saved in Arch9 · ${savedAt}` : ''} />
-      <div className="flex justify-start lg:justify-end"><ListingChannelManageMenu channelName="Kingdom Website">
+      <div className="min-w-0"><p className={`inline-flex items-center gap-2 text-sm font-semibold ${statusColor}`}><span className={`h-2 w-2 rounded-full ${live && !stale ? 'bg-[#1f9d64]' : !manageActions && (blockers.length || stale) ? 'bg-[#d99321]' : 'border border-[#aebdca] bg-white'}`} />{statusLabel}</p>{!manageActions && blockers.length ? <p className="mt-1 text-xs text-[#8a641d]">{blockers[0]}</p> : null}</div>
+      <ListingChannelLastUpdate publicationState={publicationState} publication={publication} lifecycleOnly={Boolean(manageActions)} fallback={savedAt ? `Saved in Arch9 · ${savedAt}` : ''} />
+      <div className="flex justify-start lg:justify-end"><ListingChannelManageMenu channelName="Kingdom Website">{manageActions || <>
         <Button type="button" variant="secondary" onClick={() => void load()} disabled={loading || Boolean(action)}><RefreshCw size={15} />Refresh status</Button>
         <Button type="button" variant="secondary" onClick={() => onEdit ? onEdit() : void run(published ? 'update' : 'publish')} disabled={Boolean(action) || loading || (!onEdit && infrastructureBlocked)}>{action ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}{onEdit ? 'Edit listing' : published ? 'Update website' : 'Publish to Kingdom'}</Button>
         {published ? <Button type="button" variant="secondary" className="text-[#a43d35]" onClick={() => void run('unpublish')} disabled={Boolean(action)}>Remove from website</Button> : null}
-      </ListingChannelManageMenu></div>
-      {error ? <p className="text-sm text-[#b42318] lg:col-span-5" role="alert">{error}</p> : null}
+      </>}</ListingChannelManageMenu></div>
+      {!manageActions && error ? <p className="text-sm text-[#b42318] lg:col-span-5" role="alert">{error}</p> : null}
       {notice ? <p className="text-sm text-[#257044] lg:col-span-5" role="status">{notice}</p> : null}
     </div>
 

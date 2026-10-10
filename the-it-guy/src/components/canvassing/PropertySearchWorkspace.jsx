@@ -56,7 +56,7 @@ function delay(milliseconds) {
   return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
 }
 
-export default function PropertySearchWorkspace() {
+export default function PropertySearchWorkspace({ initialQuery = '' }) {
   const navigate = useNavigate();
   const { currentWorkspace, profile } = useWorkspace();
   const { session } = useAuthSession();
@@ -68,7 +68,7 @@ export default function PropertySearchWorkspace() {
   const useKnowledgeFactoryMap =
     KNOWLEDGE_FACTORY_MAP_ENABLED &&
     !SAMPLE_MAP_ORGANISATION_IDS.has(organisationId);
-  const [filters, setFilters] = useState(INITIAL_FILTERS);
+  const [filters, setFilters] = useState(() => ({ ...INITIAL_FILTERS, query: String(initialQuery).trim().slice(0, 500) }));
   const [propertyState, setPropertyState] = useState({
     status: "loading",
     properties: [],

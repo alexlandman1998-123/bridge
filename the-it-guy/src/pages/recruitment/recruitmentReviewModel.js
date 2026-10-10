@@ -16,13 +16,15 @@ export function recruitmentReviewErrors(draft, lead) {
   for (const key of reviewCheckKeys) {
     const check = draft.checks?.[key]
     if (!check || !reviewStatuses.some(([status]) => status === check.status)) { errors.push('Choose a valid status for every review check.'); continue }
-    if (typeof check.notes !== 'string' || check.notes.length > 2000 || (check.status !== 'pending' && check.notes.trim().length < 5)) errors.push('Add a finding or reason (5–2,000 characters) for each completed check or information request.')
+    if (typeof check.notes !== 'string' || check.notes.length > 2000) errors.push('Keep check notes to 2,000 characters.')
+    else if (check.status === 'needs_information' && check.notes.trim().length < 5) errors.push('Add a rejection reason of at least 5 characters for each rejected check.')
     if (!Array.isArray(check.evidence) || check.evidence.some((path) => !paths.includes(path))) errors.push('Supporting evidence must belong to this lead.')
   }
   if (!Array.isArray(draft.documents) || draft.documents.length !== paths.length || new Set(draft.documents.map((doc) => doc.path)).size !== paths.length) errors.push('Refresh the lead to review its current documents.')
   for (const doc of draft.documents || []) {
     if (!paths.includes(doc.path) || !documentReviewStatuses.some(([status]) => status === doc.status)) errors.push('Choose a valid review status for each uploaded document.')
-    if (typeof doc.notes !== 'string' || doc.notes.length > 2000 || (doc.status !== 'pending' && doc.notes.trim().length < 5)) errors.push('Add a review finding or reason (5–2,000 characters) for each reviewed document.')
+    if (typeof doc.notes !== 'string' || doc.notes.length > 2000) errors.push('Keep document notes to 2,000 characters.')
+    else if (doc.status === 'needs_information' && doc.notes.trim().length < 5) errors.push('Add a rejection reason of at least 5 characters for each rejected document.')
   }
   if (typeof draft.notes !== 'string' || draft.notes.length > 3000) errors.push('Keep overall review notes to 3,000 characters.')
   if (draft.followUpOn && (!/^\d{4}-\d{2}-\d{2}$/.test(draft.followUpOn) || !Number.isFinite(new Date(`${draft.followUpOn}T12:00:00Z`).getTime()) || new Date(`${draft.followUpOn}T12:00:00Z`).toISOString().slice(0,10) !== draft.followUpOn)) errors.push('Choose a valid follow-up date.')

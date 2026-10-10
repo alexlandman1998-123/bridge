@@ -50,22 +50,18 @@ it('does not treat an empty file receipt as an uploaded required document', () =
   expect(recruitmentDocumentsComplete({ documents_json: ['CV', 'Identity document', 'Qualifications', 'Registration evidence'].map(type => ({ type, name: `${type}.pdf` })) })).toBe(false)
 })
 
-it('puts the application and decision buttons in review and blocks approval until findings are ready', () => {
-  const open = vi.fn()
-  const view = renderAction({ ...lead, status: 'under_review', review_status: 'in_progress' }, { onOpen: open })
-  fireEvent.click(screen.getByRole('button', { name: 'Open Application' }))
-  expect(open).toHaveBeenLastCalledWith('application')
-  expect(screen.getByRole('button', { name: 'Approve' }).disabled).toBe(true)
-  fireEvent.click(screen.getByRole('button', { name: 'Reject Application' }))
-  expect(open).toHaveBeenLastCalledWith('reject')
-  view.rerender(<RecruitmentNextAction lead={{ ...lead, status: 'under_review', review_status: 'ready_for_approval' }} onOpen={open} />)
-  fireEvent.click(screen.getByRole('button', { name: 'Approve' }))
-  expect(open).toHaveBeenLastCalledWith('approve')
+it('provides one review entry action and keeps decisions inside the guided outcome', () => {
+  const continueReview = vi.fn(), open = vi.fn()
+  renderAction({ ...lead, status: 'under_review', review_status: 'in_progress' }, { onOpen: open, onContinueReview: continueReview, dirty: true })
+  expect(screen.getAllByRole('button')).toHaveLength(1)
+  fireEvent.click(screen.getByRole('button', { name: 'Continue review' }))
+  expect(continueReview).toHaveBeenCalledOnce()
+  expect(open).not.toHaveBeenCalled()
 })
 
 it.each([
-  ['application_approved', 'Mark as sent', 'contract'],
-  ['contract_sent', 'Upload Contract', 'signed'],
+  ['application_approved', 'Upload contract', 'contract'],
+  ['contract_sent', 'View contract', 'signed'],
   ['contract_signed', 'Mark as activated', 'activation'],
   ['onboarding_complete', 'Mark as activated', 'activation'],
 ])('opens the required evidence step from %s instead of advancing immediately', async (status, label, dialog) => {
@@ -78,9 +74,9 @@ it.each([
   await waitFor(() => expect(screen.getByRole('button', { name: label })).toBeTruthy())
 })
 
-it.each(['lead_received', 'documents_uploaded', 'under_review', 'contract_sent', 'contract_signed'])('prevents writes from %s while other edits are unsaved', (status) => {
+it.each(['lead_received', 'documents_uploaded', 'contract_sent', 'contract_signed'])('prevents writes from %s while other edits are unsaved', (status) => {
   renderAction({ ...lead, status, review_status: 'ready_for_approval' }, { dirty: true })
-  const writes = screen.getAllByRole('button').filter(button => button.textContent !== 'Open Application')
+  const writes = screen.getAllByRole('button')
   expect(writes.every(button => button.disabled)).toBe(true)
 })
 

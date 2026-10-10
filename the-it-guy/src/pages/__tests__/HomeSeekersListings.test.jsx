@@ -7,7 +7,7 @@ import HomeSeekersBuying from '../HomeSeekersBuying'
 import HomeSeekersRenting from '../HomeSeekersRenting'
 import HomeSeekersProperty from '../HomeSeekersProperty'
 import HomeSeekersFeaturedHomes from '../HomeSeekersFeaturedHomes'
-import { useHomeSeekersWebsiteData } from '../homeSeekersWebsiteData'
+import { homeSeekersCard, useHomeSeekersWebsiteData } from '../homeSeekersWebsiteData'
 
 const sale = { id: 'sale-1', title: 'Published sale', transactionType: 'sale', suburb: 'Waterkloof', address: 'Approved sale address', type: 'House', price: 2500000, bedrooms: 3, bathrooms: 2, parkingBays: 2, description: 'Approved website description', image: 'https://example.test/sale.jpg', images: ['https://example.test/sale.jpg'] }
 const rental = { ...sale, id: 'rental-1', title: 'Published rental', transactionType: 'rental', suburb: 'Menlyn', address: 'Approved rental address', price: 12000 }
@@ -98,6 +98,24 @@ it('does not show an unpublished or missing property', async () => {
   render(<MemoryRouter initialEntries={['/demo/homeseekers/properties/sale-1']}><Routes><Route path="/demo/homeseekers/properties/:propertyId" element={<HomeSeekersProperty />} /></Routes></MemoryRouter>)
   await screen.findByRole('link', { name: 'Browse current homes' })
   expect(screen.queryByRole('button', { name: /Request a private viewing/ })).toBeNull()
+})
+
+it.each([['sold', 'SOLD'], ['under_offer', 'UNDER OFFER']])('shows the approved %s status on sale search and the property page', async (listingStatus, label) => {
+  feed([{ ...sale, listingStatus }])
+  const { unmount } = render(<HomeSeekersBuying />)
+  await screen.findByRole('link', { name: 'View property' })
+  expect(screen.getByText(label)).toBeTruthy()
+  unmount()
+  render(<MemoryRouter initialEntries={['/demo/homeseekers/properties/sale-1']}><Routes><Route path="/demo/homeseekers/properties/:propertyId" element={<HomeSeekersProperty />} /></Routes></MemoryRouter>)
+  await screen.findByRole('link', { name: 'All homes' })
+  expect(screen.getAllByText(new RegExp(label)).length).toBe(2)
+})
+
+it('featured homes carry the sale label while rentals stay To let', () => {
+  const card = homeSeekersCard({ ...sale, listingStatus: 'under_offer' })
+  render(<HomeSeekersFeaturedHomes listings={[card]} />)
+  expect(screen.getByText('UNDER OFFER')).toBeTruthy()
+  expect(homeSeekersCard({ ...rental, listingStatus: 'sold' }).statusLabel).toBe('To let')
 })
 
 it('reports a malformed API response without exposing a parser error or sample stock', async () => {

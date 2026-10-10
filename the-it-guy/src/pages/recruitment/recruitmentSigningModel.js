@@ -4,7 +4,7 @@ export const deliveryChannels = [['email','Email'],['whatsapp','WhatsApp'],['in_
 export const signingMethods = [['wet_ink','Signed on paper'],['external_electronic','Signed using an external electronic service']]
 export const recruitmentLocalDate = (value = new Date()) => new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Johannesburg',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(value))
 export const emptyDeliveryDraft = (lead) => ({contractVersion:lead.contracts_json?.at(-1)?.version,recipientName:lead.name || '',recipientContact:lead.email || lead.phone || '',channel:lead.email ? 'email' : 'in_person',sentOn:'',notes:'',confirmed:false})
-export const emptySignatureDraft = (lead) => ({contractVersion:lead.contract_delivery_json?.contractVersion,agentSigner:lead.contract_delivery_json?.recipientName || lead.name || '',organisationSigner:'',signedOn:'',method:'wet_ink',reference:'',notes:'',checks:Object.fromEntries(signingChecks.map(([key])=>[key,false])),file:null})
+export const emptySignatureDraft = (lead) => ({contractVersion:lead.contract_delivery_json?.contractVersion,agentSigner:lead.contract_delivery_json?.recipientName || lead.name || '',organisationSigner:'',signedOn:'',method:'wet_ink',reference:'',notes:'',checks:Object.fromEntries(signingChecks.map(([key])=>[key,false])),file:null,returnedId:lead.contract_returns_json?.filter(item=>item.contractVersion===lead.contract_delivery_json?.contractVersion).at(-1)?.id || null})
 const validDate = (value) => typeof value==='string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(new Date(`${value}T12:00:00Z`).getTime()) && new Date(`${value}T12:00:00Z`).toISOString().slice(0,10)===value
 const length = (value,min,max) => typeof value==='string' && value.trim().length>=min && value.length<=max
 export function recruitmentDeliveryErrors(lead,draft,today=recruitmentLocalDate()) {
@@ -25,7 +25,9 @@ export function recruitmentSignatureErrors(lead,draft,today=recruitmentLocalDate
   if (!signingMethods.some(([key])=>key===draft.method) || typeof draft.reference!=='string' || draft.reference.length>254 || (draft.method==='external_electronic' && !length(draft.reference,3,254))) errors.push('Choose the signing method and include the external signing reference when applicable.')
   if (!length(draft.notes,5,3000)) errors.push('Record verification findings (5–3,000 characters).')
   if (signingChecks.some(([key])=>draft.checks?.[key]!==true)) errors.push('Verify the version, all pages and both signatures.')
+  const returned = !draft.file && lead.contract_returns_json?.find(item=>item.id===draft.returnedId && item.contractVersion===draft.contractVersion)
   try {
+    if (returned?.submittedAt) return errors
     validateDocumentUploadFile(draft.file, { surface: 'recruitment_signed_contract' })
     if (draft.file.size < 5 || !length(draft.file.name,1,254)) throw new Error('Invalid signed PDF.')
   } catch { errors.push('Choose the complete signed contract PDF, up to 10 MB.') }

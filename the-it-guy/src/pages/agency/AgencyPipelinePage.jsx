@@ -35,7 +35,6 @@ import {
 } from './agencyLeadWorkspaceSnapshotCache'
 import Button from '../../components/ui/Button'
 import Field from '../../components/ui/Field'
-import SellerLeadAgentOnboardingEditor from '../../components/leads/SellerLeadAgentOnboardingEditor'
 import SellerFicaQuestions from '../../components/onboarding/SellerFicaQuestions'
 import { sellerYesNoValue } from '../../lib/sellerFicaOnboardingFields'
 import SellerOnboardingAgentReviewPanel from '../../components/onboarding/SellerOnboardingAgentReviewPanel'
@@ -52,20 +51,15 @@ import {
   resolveSellerLeadOwnershipRoute,
 } from '../../lib/sellerLeadOwnershipSetupModel'
 import {
-  buildSellerLeadAgentOnboardingSubmission,
   buildSellerLeadManualCapturePayload,
   buildSellerLeadSigningPackTermsPatch,
-  createSellerLeadAgentOnboardingDraft,
   getSellerLeadProfileEditChanges,
 } from '../../lib/sellerLeadManualCaptureModel'
 import {
   addListingSellerProfileDraftPerson,
   createListingSellerProfileBuilderDraft,
   getListingSellerFormData,
-  hasListingSellerProfileBranchDetailsToDiscard,
   removeListingSellerProfileDraftPerson,
-  selectListingSellerProfileBranch,
-  updateListingSellerProfileDraftField,
   updateListingSellerProfileDraftPerson,
 } from '../../lib/listingSellerProfileBuilderModel'
 import { buildSellerSubject } from '../../lib/sellerSubjectModel'
@@ -217,6 +211,9 @@ import {
   normalizeBuyerProcessStageKey,
 } from '../../services/buyerProcessDefinitionService'
 import { buildBuyerJourneyAlignmentModel } from '../../services/buyerJourneyAlignmentService'
+import { buildDevelopmentBuyerJourneyModel } from '../../services/developmentBuyerJourneyService.js'
+import { enrichDevelopmentBuyerLeads } from '../../services/developmentBuyerLeadService.js'
+import { DEVELOPMENT_SELECTION_STAGE, getLeadDevelopmentId, isDevelopmentBuyerLead } from '../../core/leads/developmentBuyerLead.js'
 import {
   BUYER_INTAKE_NOTE_END,
   BUYER_INTAKE_NOTE_START,
@@ -355,6 +352,9 @@ const PIPELINE_APPOINTMENT_ROLLING_FUTURE_DAYS = 180
 const PIPELINE_CALENDAR_RANGE_PADDING_DAYS = 7
 const PIPELINE_MANDATE_SIGNING_EMAIL_TIMEOUT_MS = 20000
 const LEGACY_LEAD_LIST_RENDER_ENABLED = false
+// Keep verification panels hidden until the live FICA integration is ready.
+const FICA_VERIFICATION_UI_ENABLED = false
+const SellerAgentOnboarding = lazy(() => import('../SellerOnboarding.jsx').then(module => ({ default: module.SellerOnboarding })))
 const LeadListPage = lazy(() => import('./LeadListPage'))
 const LeadActivityWorkspace = lazy(loadLeadActivityWorkspace)
 const LeadDocumentWorkspace = lazy(loadLeadDocumentWorkspace)
@@ -12114,8 +12114,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [isSellerOnboardingSending, setIsSellerOnboardingSending] = useState(false)
   const [isManualSellerOnboardingPreparing, setIsManualSellerOnboardingPreparing] = useState(false)
   const [manualSellerOnboarding, setManualSellerOnboarding] = useState(null)
-  const [manualSellerOnboardingDraft, setManualSellerOnboardingDraft] = useState({})
   const [isManualSellerOnboardingSaving, setIsManualSellerOnboardingSaving] = useState(false)
+  const [manualSellerOnboardingDirty, setManualSellerOnboardingDirty] = useState(false)
   const [sellerOnboardingDeliveryState, setSellerOnboardingDeliveryState] = useState({
     linkStatus: 'idle',
     emailStatus: 'idle',
@@ -14073,6 +14073,21 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   const selectedLeadCategory = resolveLeadCategoryView(selectedLead)
   const selectedLeadIsSeller = selectedLeadCategory === 'seller'
+  const [developmentJourneyLead, setDevelopmentJourneyLead] = useState(null)
+  const selectedLeadForDevelopmentJourney = developmentJourneyLead?.leadId === selectedLead?.leadId && developmentJourneyLead?.organisationId === organisationId
+    ? developmentJourneyLead : selectedLead
+  const selectedLeadIsDevelopment = isDevelopmentBuyerLead(selectedLeadForDevelopmentJourney || {})
+  useEffect(() => {
+    let cancelled = false
+    setDevelopmentJourneyLead(null)
+    if (!selectedLead || selectedLeadIsSeller || !organisationId) return undefined
+    void enrichDevelopmentBuyerLeads(organisationId, [selectedLead]).then(([lead]) => {
+      if (!cancelled) setDevelopmentJourneyLead(lead)
+    }).catch((loadError) => {
+      if (!cancelled) setError(loadError?.message || 'Unable to load development lead details.')
+    })
+    return () => { cancelled = true }
+  }, [organisationId, selectedLead, selectedLeadIsSeller])
   const assignmentPermissionContext = useMemo(() => ({
     profile,
     appRole: role,
@@ -19528,7 +19543,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     const offerStarted = selectedLeadBuyerOfferDocumentUploaded || selectedLeadOfferSummary.total > 0 || stageKey.includes('offer') || stageKey.includes('otp')
     const offerComplete = selectedLeadBuyerOfferDocumentUploaded || Boolean(selectedLeadAcceptedOffer)
     const transactionDone = Boolean(selectedLeadLinkedTransactionId)
-    return buildBuyerJourneyAlignmentModel({
+    const buildJourney = selectedLeadIsDevelopment ? buildDevelopmentBuyerJourneyModel : buildBuyerJourneyAlignmentModel
+    return buildJourney({
+      lead: selectedLeadForDevelopmentJourney,
       persistedStage: stageKey,
       inPersonOtpFlow: selectedLeadUsesKingstonsInPersonOtpFlow,
       evidence: {
@@ -19566,6 +19583,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     })
   }, [
 	    selectedLead,
+    selectedLeadForDevelopmentJourney,
+    selectedLeadIsDevelopment,
     selectedLeadAcceptedOffer,
       selectedLeadBuyerOfferDocumentUploaded,
     selectedLeadContactActivities.length,
@@ -22922,6 +22941,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     sellerProfileEditBaselineRef.current = {
       leadId: normalizeLeadIdentityKey(selectedLead?.leadId || selectedLead?.lead_id),
       form: structuredClone(draft),
+      listing: structuredClone(selectedLeadLinkedListing?.sourceListing || selectedLeadLinkedListing || {
+        sellerOnboarding: selectedLead?.sellerOnboarding || selectedLead?.rawEnquiryPayload?.sellerOnboarding,
+      }),
     }
     setSellerProfileEditForm(draft)
     setSellerLeadEditModal({ open: true, mode: normalizeKey(mode) || 'personal' })
@@ -22956,11 +22978,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setError('Enter a valid seller email before saving.')
       return
     }
-    if (normalizeKey(sellerLeadEditModal.mode) === 'profile' && !resolveSellerLeadOwnershipRoute(sellerProfileEditForm)) {
-      setError('Choose the legal owner before saving seller ownership setup.')
-      return
-    }
-
     setIsLeadDetailSaving(true)
     let canonicalSaveResult = null
     try {
@@ -23043,9 +23060,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       })
       let persistedSellerProfileOnboarding = null
       if (!sellerOnboardingReplacementRequired && isSupabaseConfigured && sellerProfileListingId) {
-        let listingSnapshot = selectedLeadLinkedListing?.sourceListing || selectedLeadLinkedListing
+        const listingSnapshot = baseline.listing
         if (!listingSnapshot?.updatedAt && !listingSnapshot?.updated_at) {
-          listingSnapshot = await getPrivateListing(sellerProfileListingId, { includeRequirementsAndDocuments: !isCharacteristicsEdit })
+          throw new Error('The original saved seller details could not be checked. Reopen this editor after the linked listing has loaded.')
         }
         if (!listingSnapshot?.id) throw new Error('The linked listing could not be loaded. Reload before saving the seller profile.')
         canonicalSaveResult = await saveListingSellerCanonicalUpdate({
@@ -23057,12 +23074,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           organisationId,
           syncLinkedCrmContact: false,
         })
-        formData = canonicalSaveResult.update.nextFormData
-        sellerCanonicalFacts = canonicalSaveResult.update.canonicalFacts
+        formData = canonicalSaveResult.listing?.sellerOnboarding?.formData || canonicalSaveResult.update.nextFormData
+        sellerCanonicalFacts = canonicalSaveResult.listing?.sellerCanonicalFacts || canonicalSaveResult.update.canonicalFacts
         persistedSellerProfileOnboarding = canonicalSaveResult.receipt?.onboarding || canonicalSaveResult.listing.sellerOnboarding
         setSelectedLeadHydratedListing(canonicalSaveResult.listing)
       } else if (!sellerOnboardingReplacementRequired && isSupabaseConfigured && sellerProfileOnboardingToken) {
         persistedSellerProfileOnboarding = await persistSellerProfileOnboardingFormData({
+          listingSnapshot: baseline.listing,
           token: sellerProfileOnboardingToken, formData,
           status: normalizeText(existingOnboarding.status || rawOnboarding.status || selectedLead?.sellerOnboardingStatus || 'in_progress'),
           sellerType: normalizeText(formData.sellerLegalType || formData.ownershipType),
@@ -23101,6 +23119,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         replacement_form_data: sellerOnboardingReplacementRequired ? formData : null,
         updatedAt: persistedSellerProfileOnboarding?.updated_at || savedAt,
         updated_at: persistedSellerProfileOnboarding?.updated_at || savedAt,
+        ...(persistedSellerProfileOnboarding?.id ? {
+          saveRevision: persistedSellerProfileOnboarding.saveRevision || {
+            onboardingId: persistedSellerProfileOnboarding.id,
+            updatedAt: persistedSellerProfileOnboarding.updated_at || persistedSellerProfileOnboarding.updatedAt || null,
+          },
+        } : {}),
         updatedBy: normalizeText(currentAgent.email || currentAgent.fullName || currentAgent.id),
       }
       sellerOnboarding.form_data = sellerOnboarding.formData
@@ -23203,9 +23227,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setSellerLeadEditModal((previous) => ({ ...previous, open: false }))
       scheduleRecordsReload(organisationId, 500)
     } catch (saveError) {
-      setError(canonicalSaveResult
-        ? 'Seller details were saved on the listing, but the CRM refresh failed. Reload the lead before retrying.'
-        : saveError?.message || 'Unable to save seller profile right now.')
+      if (canonicalSaveResult?.listing) {
+        setSelectedLeadHydratedListing(canonicalSaveResult.listing)
+        sellerProfileEditBaselineRef.current = null
+        setSellerLeadEditModal((previous) => ({ ...previous, open: false }))
+        setError('')
+        setMessage('Seller details saved. The linked lead or contact could not be refreshed. Refresh the lead to check it; you do not need to save the seller details again.')
+        scheduleRecordsReload(organisationId, 500)
+      } else {
+        setError(saveError?.message || 'Unable to save seller profile right now.')
+      }
     } finally {
       setIsLeadDetailSaving(false)
     }
@@ -24679,6 +24710,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
         if (canonicalListingId) {
           const preparedOnboarding = await persistSellerProfileOnboardingFormData({
+            listingSnapshot: reusableListing || {},
             listingId: canonicalListingId,
             token,
             formData: onboardingSetupFormData,
@@ -24690,11 +24722,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           })
           reusableListing = {
             ...(reusableListing || {}),
+            updatedAt: preparedOnboarding?.listing_updated_at || reusableListing?.updatedAt,
             sellerCanonicalFacts: Object.keys(sellerCanonicalFacts).length
               ? sellerCanonicalFacts
               : reusableListing?.sellerCanonicalFacts,
             sellerOnboarding: {
               ...(reusableListing?.sellerOnboarding || {}),
+              ...preparedOnboarding,
+              saveRevision: { onboardingId: preparedOnboarding?.id, updatedAt: preparedOnboarding?.updated_at },
               token: normalizeText(preparedOnboarding?.token || token),
               formData: isPlainObject(preparedOnboarding?.form_data) ? preparedOnboarding.form_data : onboardingSetupFormData,
             },
@@ -26115,6 +26150,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const existingOnboardingFormData = existingListingForRetry?.sellerOnboarding?.formData || existingListingForRetry?.sellerOnboarding?.form_data || {}
       if (!createdListingAlreadyExisted || (existingListingForRetry && !Object.keys(existingOnboardingFormData).length)) {
         const persistedOnboarding = await persistSellerProfileOnboardingFormData({
+          listingSnapshot: existingListingForRetry || {},
           listingId: createdListingId,
           token: normalizeText(selectedLead?.sellerOnboardingToken || selectedLead?.sellerOnboarding?.token),
           formData: prefilledFormData,
@@ -27020,7 +27056,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const token = selectedLeadNeedsOnboardingReplacement
         ? generateSellerOnboardingToken()
         : normalizeText(selectedLead?.sellerOnboardingToken || selectedLeadLinkedListing?.sellerOnboarding?.token) || generateSellerOnboardingToken()
-      const onboarding = await persistSellerProfileOnboardingFormData({
+      // Reopening an existing intake must not save prefilled/stale lead data
+      // over the seller's latest answers or depend on a new profile-save RPC.
+      const existingOnboarding = selectedLeadLinkedListing?.sellerOnboarding
+      const onboarding = !selectedLeadNeedsOnboardingReplacement && existingOnboarding?.token
+        ? existingOnboarding
+        : await persistSellerProfileOnboardingFormData({
+        listingSnapshot: listingResult?.listing || selectedLeadLinkedListing?.sourceListing || selectedLeadLinkedListing || {},
         listingId,
         token,
         formData,
@@ -27037,21 +27079,21 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const leadPatch = {
         listingId,
         sellerOnboardingToken: savedToken,
-        sellerOnboardingStatus: 'in_progress',
+        sellerOnboardingStatus: onboarding.status || 'in_progress',
         sellerOnboardingReplacementRequired: false,
         seller_onboarding_replacement_required: false,
       }
-      await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, leadPatch)
+      if (selectedLead.listingId !== listingId || selectedLead.sellerOnboardingToken !== savedToken || selectedLeadNeedsOnboardingReplacement) {
+        try {
+          await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, leadPatch)
+        } catch (leadError) {
+          console.warn('[AgencyPipelinePage] intake ready, lead link projection pending', leadError)
+        }
+      }
       patchSelectedLeadRecord(leadPatch, selectedLead.leadId)
-      setManualSellerOnboardingDraft(createSellerLeadAgentOnboardingDraft({
-        lead: selectedLead,
-        contact: selectedLeadContact || {},
-        listing: { ...(listingResult?.listing || {}), id: listingId },
-        formData: savedFormData,
-      }))
       setManualSellerOnboarding({
         leadId: selectedLead.leadId,
-        listing: { ...(listingResult?.listing || {}), id: listingId },
+        listing: { ...(listingResult?.listing || {}), id: listingId, updatedAt: onboarding.listing_updated_at, sellerOnboarding: { ...onboarding, formData: savedFormData } },
         token: savedToken,
         formData: savedFormData,
       })
@@ -27062,93 +27104,36 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }
 
-  async function handleSubmitManualSellerOnboarding(event, saveAsDraft = false) {
-    event?.preventDefault()
-    if (!manualSellerOnboarding || isManualSellerOnboardingSaving) return
-    const { errors, formData } = buildSellerLeadAgentOnboardingSubmission({
-      draft: manualSellerOnboardingDraft,
-      listing: manualSellerOnboarding.listing,
-      existingFormData: manualSellerOnboarding.formData,
-      saveAsDraft,
-      capturedBy: normalizeText(currentAgent.id),
-    })
-    if (errors.length) {
-      setError(`Finish the required onboarding details: ${errors.join(' ')}`)
-      return
+  async function handleManualSellerOnboardingSubmitted(listing) {
+    const leadId = manualSellerOnboarding?.leadId
+    if (!leadId || !listing?.id) return
+    const onboarding = listing.sellerOnboarding || {}
+    const leadPatch = {
+      stage: 'Seller Onboarding Submitted', status: 'Submitted',
+      listingId: listing.id, sellerOnboardingToken: manualSellerOnboarding.token,
+      sellerOnboardingStatus: 'completed', sellerOnboarding: onboarding,
+      sellerOnboardingSubmittedAt: onboarding.submittedAt || onboarding.submitted_at,
     }
-    setIsManualSellerOnboardingSaving(true)
-    setError('')
+    patchSelectedLeadRecord(leadPatch, leadId)
+    setSelectedLeadHydratedListing(listing)
+    setManualSellerOnboarding(null)
+    setIsManualSellerOnboardingSaving(false)
+    setMessage('Seller onboarding submitted for review. The seller still needs to review and sign the disclosure.')
     try {
-      if (saveAsDraft) {
-        const result = await updateSellerOnboardingProgress(manualSellerOnboarding.token, {
-          status: 'in_progress', formData,
-          sellerType: formData.sellerLegalType, ownershipStructure: formData.ownerStructureType,
-          maritalRegime: formData.maritalRegime, listingSnapshot: manualSellerOnboarding.listing,
-        })
-        if (!result?.listing) throw new Error('Draft save could not be confirmed. Please retry.')
-        setManualSellerOnboarding((previous) => ({ ...previous, formData, listing: result.listing }))
-        setSelectedLeadHydratedListing({ ...result.listing, sellerOnboarding: { ...result.onboarding, formData } })
-        patchSelectedLeadRecord({ sellerOnboardingStatus: 'in_progress', sellerOnboarding: { ...result.onboarding, formData } }, manualSellerOnboarding.leadId)
-        setMessage('Seller onboarding draft saved. Continue here or reopen it later; the seller still needs to review and sign the disclosure.')
-        return
-      }
-      const result = await submitSellerOnboarding(manualSellerOnboarding.token, {
-        status: 'completed',
-        formData,
-        completionMode: 'agent_assisted',
-        completedBy: normalizeText(currentAgent.id),
-        skipPortalNotification: true,
-        sellerType: formData.sellerLegalType,
-        ownershipStructure: formData.ownerStructureType,
-        maritalRegime: formData.maritalRegime,
-        listingSnapshot: manualSellerOnboarding.listing,
-      })
-      if (!result?.listing) throw new Error('Onboarding submission could not be confirmed. Please retry.')
-      const submittedAt = new Date().toISOString()
-      const leadPatch = {
-        stage: 'Seller Onboarding Submitted',
-        status: 'Submitted',
-        listingId: manualSellerOnboarding.listing.id,
-        sellerOnboardingToken: manualSellerOnboarding.token,
-        sellerOnboardingStatus: 'completed',
-        sellerOnboardingSubmittedAt: submittedAt,
-        sellerOnboarding: {
-          ...(isPlainObject(result.onboarding) ? result.onboarding : {}),
-          status: 'completed',
-          token: manualSellerOnboarding.token,
-          submittedAt,
-          formData,
-        },
-      }
-      patchSelectedLeadRecord(leadPatch, manualSellerOnboarding.leadId)
-      setSelectedLeadHydratedListing({
-        ...result.listing,
-        sellerOnboardingStatus: 'completed',
-        sellerOnboarding: {
-          ...(isPlainObject(result.listing.sellerOnboarding) ? result.listing.sellerOnboarding : {}),
-          status: 'completed',
-          submittedAt,
-          formData,
-        },
-      })
-      let leadSyncFailed = false
-      try {
-        await updateAgencyCrmLeadRecord(organisationId, manualSellerOnboarding.leadId, leadPatch)
-      } catch (leadError) {
-        leadSyncFailed = true
-        console.warn('[AgencyPipelinePage] onboarding completed, but lead projection needs a refresh', leadError)
-      }
-      setManualSellerOnboarding(null)
-      setManualSellerOnboardingDraft({})
-      setMessage(leadSyncFailed
-        ? 'Seller onboarding was submitted, but the lead stage could not be confirmed. Refresh to check its status.'
-        : 'Seller onboarding submitted for review. The disclosure answers await the seller’s review and signature.')
-      scheduleRecordsReload(organisationId, 500)
-    } catch (submitError) {
-      setError(submitError?.message || 'Unable to submit manual seller onboarding right now.')
-    } finally {
-      setIsManualSellerOnboardingSaving(false)
+      await updateAgencyCrmLeadRecord(organisationId, leadId, leadPatch)
+    } catch (leadError) {
+      console.warn('[AgencyPipelinePage] onboarding saved, lead projection pending', leadError)
+      setMessage('Seller onboarding saved. The lead status could not be refreshed; refresh the lead to check it.')
     }
+    scheduleRecordsReload(organisationId, 500)
+  }
+
+  function closeManualSellerOnboarding() {
+    if (isManualSellerOnboardingSaving) return
+    if (manualSellerOnboardingDirty && !window.confirm('Some changes have not saved yet. Close and discard those changes?')) return
+    setManualSellerOnboarding(null)
+    setManualSellerOnboardingDirty(false)
+    setError('')
   }
 
   async function handleSendSellerPortalLink() {
@@ -32778,7 +32763,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     },
     tax: {
       title: 'Edit Tax & Compliance',
-      subtitle: 'Update tax and POPI details. FICA verification is managed from the central verification record.',
+      subtitle: 'Update tax and POPI details.',
     },
     ownership: {
       title: 'Edit Property Ownership',
@@ -35069,7 +35054,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       </span>
                     </div>
                     <div className="mt-6 overflow-x-auto pb-2">
-                      <div className="grid min-w-[820px] grid-cols-6 items-start">
+                      <div className="grid min-w-[820px] items-start" style={{ gridTemplateColumns: `repeat(${selectedLeadBuyerJourneyStages.length}, minmax(140px, 1fr))` }}>
                         {selectedLeadBuyerJourneyStages.map((stage, index) => {
                           const isSelected = buyerJourneyActionStage === stage.key
                           const isCompleted = stage.state === 'completed'
@@ -35134,6 +35119,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             ) : (
                               <Button type="button" size="sm" onClick={() => handleBuyerJourneyScheduleViewingAction()}>Arrange a viewing</Button>
                             )
+                          ) : buyerJourneyActionStage === DEVELOPMENT_SELECTION_STAGE ? (
+                            <>
+                              <Button type="button" size="sm" onClick={() => navigate(`/developments/${getLeadDevelopmentId(selectedLeadForDevelopmentJourney)}`)}>Open development</Button>
+                              <Button type="button" size="sm" variant="secondary" onClick={() => setLeadWorkspaceTab(BUYER_PROFILE_WORKSPACE_TAB_KEY)}>Capture buyer profile</Button>
+                            </>
                           ) : buyerJourneyActionStage === BUYER_PROCESS_STAGE_KEYS.transactionSetup ? (
 	                            <>
 	                              <Button type="button" size="sm" onClick={() => setLeadWorkspaceTab(BUYER_PROFILE_WORKSPACE_TAB_KEY)}>Capture buyer profile</Button>
@@ -36591,6 +36581,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         ]
                         const journeyAction = selectedLeadBuyerJourneyModel.nextAction
                         const buyerJourneyWhatsNext = (() => {
+                          if (journeyAction.key === 'open_development') return { ...journeyAction, icon: Building2, actions: [{ key: journeyAction.key, label: 'Open development', icon: Building2, primary: true, onClick: () => navigate(`/developments/${getLeadDevelopmentId(selectedLeadForDevelopmentJourney)}`) }] }
                           if (journeyAction.key === 'mark_contacted') return { ...journeyAction, icon: Phone, actions: [{ key: journeyAction.key, label: 'Mark contacted', icon: CheckCircle2, primary: true, onClick: () => void handleBuyerJourneyMarkContactedAndQualify() }] }
                           if (journeyAction.key === 'qualify') return { ...journeyAction, icon: CheckSquare, actions: [{ key: journeyAction.key, label: 'Qualify lead', icon: Pencil, primary: true, onClick: handleOpenBuyerQualificationAction }] }
                           if (journeyAction.key === 'schedule_viewing') return { ...journeyAction, icon: CalendarDays, actions: [{ key: journeyAction.key, label: 'Arrange a viewing', icon: CalendarDays, primary: true, onClick: () => handleBuyerJourneyScheduleViewingAction() }] }
@@ -36604,6 +36595,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           return { ...journeyAction, icon: ArrowUpRight, actions: [{ key: journeyAction.key, label: 'Open transaction', icon: ArrowUpRight, primary: true, onClick: () => selectedLeadLinkedTransactionId && navigate(`/transactions/${selectedLeadLinkedTransactionId}`) }] }
                         })()
                         const buyerJourneyNextActionTip = {
+                          open_development: 'Confirm the unit and its reservation in the development workspace before proceeding.',
                           mark_contacted: 'A quick call now increases your chances of converting this lead.',
                           qualify: 'Capture the buyer’s needs while the conversation is still fresh.',
                           schedule_viewing: 'Offer a small choice of viewing times to improve confirmation rates.',
@@ -38554,7 +38546,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           </div>
                         ) : null}
 
-                      <Suspense fallback={<div className="h-56 animate-pulse rounded-[20px] border border-[#dce7f2] bg-[#f5f8fb]" />}>
+                      {FICA_VERIFICATION_UI_ENABLED ? <Suspense fallback={<div className="h-56 animate-pulse rounded-[20px] border border-[#dce7f2] bg-[#f5f8fb]" />}>
                         <BuyerFicaVerification
                           organisationId={organisationId}
                           clientContactId={normalizeText(selectedLead?.contactId || selectedLeadContact?.contactId)}
@@ -38580,7 +38572,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             })
                           }}
                         />
-                      </Suspense>
+                      </Suspense> : null}
                       </section>
 
                       <form id="buyer-profile-onboarding-form" className="grid gap-4 lg:grid-cols-2" onSubmit={handleSaveBuyerProfileSection}>
@@ -40121,7 +40113,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         </section>
                       ) : null}
 
-                      <Suspense fallback={<div className="mt-5 h-56 animate-pulse rounded-[20px] border border-[#dce7f2] bg-[#f5f8fb]" />}>
+                      {FICA_VERIFICATION_UI_ENABLED ? <Suspense fallback={<div className="mt-5 h-56 animate-pulse rounded-[20px] border border-[#dce7f2] bg-[#f5f8fb]" />}>
                         <SellerFicaVerification
                           organisationId={organisationId}
                           clientContactId={normalizeText(selectedLead?.contactId || selectedLeadContact?.contactId)}
@@ -40149,9 +40141,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             })
                           }}
                         />
-                      </Suspense>
+                      </Suspense> : null}
 
-                      {selectedSellerProfileWorkspace.ficaScope.subjects.length > 1 ? (
+                      {FICA_VERIFICATION_UI_ENABLED && selectedSellerProfileWorkspace.ficaScope.subjects.length > 1 ? (
                       <section className="mt-4 rounded-[16px] border border-[#dfe8f2] bg-[#f8fbfe] p-4" data-testid="seller-fica-scope">
                         <div className="flex flex-wrap items-start justify-between gap-2">
                           <div>
@@ -41568,38 +41560,27 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
       <Modal
         open={Boolean(manualSellerOnboarding)}
-        onClose={isManualSellerOnboardingSaving ? undefined : () => { setManualSellerOnboarding(null); setError('') }}
+        onClose={isManualSellerOnboardingSaving ? undefined : closeManualSellerOnboarding}
         title="Capture Seller Onboarding Manually"
-        subtitle="Enter the seller's details in the agent workspace. The seller-facing onboarding page will not open."
+        subtitle="Capture the same details as seller onboarding, here in the agent workspace."
         className="!max-w-5xl"
-        footer={(
-          <div className="flex flex-wrap justify-end gap-2">
-            <Button type="button" variant="secondary" onClick={() => { setManualSellerOnboarding(null); setError('') }} disabled={isManualSellerOnboardingSaving}>Cancel</Button>
-            <Button type="button" variant="secondary" onClick={() => void handleSubmitManualSellerOnboarding(null, true)} disabled={isManualSellerOnboardingSaving}>Save Draft</Button>
-            <Button type="button" onClick={() => void handleSubmitManualSellerOnboarding()} disabled={isManualSellerOnboardingSaving}>
-              {isManualSellerOnboardingSaving ? 'Submitting…' : 'Save and Submit Onboarding'}
-            </Button>
-          </div>
-        )}
+        footer={<Button type="button" variant="secondary" onClick={closeManualSellerOnboarding} disabled={isManualSellerOnboardingSaving}>Close</Button>}
       >
-        {error ? <div role="alert" className="mb-4 rounded-[12px] border border-[#f3d2cc] bg-[#fef3f2] p-3 text-sm text-[#b42318]">{error}</div> : null}
-        {message ? <div role="status" className="mb-4 rounded-[12px] border border-[#cfe8da] bg-[#f2fbf5] p-3 text-sm text-[#25603d]">{message}</div> : null}
-        <SellerLeadAgentOnboardingEditor
-          draft={manualSellerOnboardingDraft}
-          saving={isManualSellerOnboardingSaving}
-          onChange={(field, value) => {
-            if (field === 'branch' && hasListingSellerProfileBranchDetailsToDiscard(manualSellerOnboardingDraft, value) &&
-              !window.confirm('Changing the legal owner type will remove the previous owner details. Continue?')) return
-            setManualSellerOnboardingDraft((previous) => field === 'branch'
-              ? selectListingSellerProfileBranch(previous, value)
-              : updateListingSellerProfileDraftField(previous, field, value))
-            setError('')
-          }}
-          onAddPerson={(key, roleTitle) => setManualSellerOnboardingDraft((previous) => addListingSellerProfileDraftPerson(previous, key, roleTitle))}
-          onUpdatePerson={(key, index, field, value) => setManualSellerOnboardingDraft((previous) => updateListingSellerProfileDraftPerson(previous, key, index, field, value))}
-          onRemovePerson={(key, index) => setManualSellerOnboardingDraft((previous) => removeListingSellerProfileDraftPerson(previous, key, index))}
-          onSubmit={(event) => void handleSubmitManualSellerOnboarding(event)}
-        />
+        <Suspense fallback={<LoadingSkeleton />}>
+          {manualSellerOnboarding ? <SellerAgentOnboarding
+            key={manualSellerOnboarding.token}
+            tokenOverride={manualSellerOnboarding.token}
+            embedded
+            completionModeOverride="agent_assisted"
+            onSaveStateChange={setIsManualSellerOnboardingSaving}
+            onDirtyStateChange={setManualSellerOnboardingDirty}
+            onDraftSaved={(listing) => {
+              setSelectedLeadHydratedListing(listing)
+              patchSelectedLeadRecord({ sellerOnboardingStatus: 'in_progress', sellerOnboarding: listing.sellerOnboarding }, manualSellerOnboarding.leadId)
+            }}
+            onSubmitted={(listing) => { void handleManualSellerOnboardingSubmitted(listing) }}
+          /> : null}
+        </Suspense>
       </Modal>
 
       <Modal

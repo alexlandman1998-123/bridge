@@ -19,12 +19,11 @@ test('listing marketing tracks submitted, accepted, verified and failed publicat
   assert.match(channelState, /listing_channel_publication_accepted/)
 })
 
-test('unpublished changes have a channel-aware review interface', () => {
-  assert.match(detail, /title="Publication changes"/)
-  assert.match(detail, /Compare the current Arch9 record with the last snapshot accepted by each channel/)
-  assert.match(detail, /Unpublished changes/)
-  assert.match(detail, /unpublished change/)
-  assert.doesNotMatch(detail, /Matches verified snapshot/)
+test('content publishing and error fixes belong to listing setup', () => {
+  const marketing = detail.slice(detail.indexOf('function renderMarketingConsole()'), detail.indexOf('function renderListingLeads'))
+  assert.doesNotMatch(marketing, /Publication changes|Unpublished changes|Review issues|Listing readiness|onReviewChanges/)
+  assert.match(marketing, /onClick=\{openPropertyDetailsFromMarketing\}/)
+  assert.match(marketing, /simpleChannelMenu/)
   assert.match(detail, /ListingChannelLastUpdate/)
 })
 
