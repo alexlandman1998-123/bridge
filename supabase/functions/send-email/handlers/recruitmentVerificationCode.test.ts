@@ -1,4 +1,7 @@
-import { handleHomeSeekersRecruitmentCodeEmail } from "./recruitmentVerificationCode.ts";
+import {
+  authorizeRecruitmentCodeSender,
+  handleHomeSeekersRecruitmentCodeEmail,
+} from "./recruitmentVerificationCode.ts";
 import { buildHomeSeekersRecruitmentCodeEmail } from "../content/recruitmentVerificationCode.ts";
 import { HOME_SEEKERS_ORGANISATION_ID } from "./homeSeekersSellerEnquiry.ts";
 
@@ -13,9 +16,10 @@ const contact = {
   email: "applicant@sample.co.za",
 };
 async function configured(run: () => Promise<void>) {
-  const keys = ["SUPABASE_SERVICE_ROLE_KEY", "RESEND_API_KEY"];
+  const keys = ["SUPABASE_SERVICE_ROLE_KEY", "RESEND_API_KEY", "SUPABASE_URL"];
   const previous = keys.map((key) => Deno.env.get(key));
   keys.forEach((key) => Deno.env.set(key, "fixture-private-key"));
+  Deno.env.set("SUPABASE_URL", "https://project.supabase.co");
   try {
     await run();
   } finally {
@@ -38,6 +42,8 @@ function fixture(
     generatedEmail = contact.email,
     senderAddress = "Home Seekers <recruitment@homeseekers.co.za>",
     expectedPlatformSender = "",
+    fetchAdmin =
+      (async () => new Response(null, { status: 403 })) as typeof fetch,
   } = {},
 ) {
   const filters: unknown[][] = [], sends: any[] = [], generations: any[] = [];
@@ -75,6 +81,7 @@ function fixture(
   };
   const dependencies = {
     admin,
+    fetchAdmin,
     branding: async (args: any) => {
       assert(
         args.supabase === admin &&
@@ -125,20 +132,28 @@ function fixture(
 Deno.test("verification codes use the approved temporary Arch9 sender and Thomas reply-to", () =>
   configured(async () => {
     const previous = Deno.env.get("HOME_SEEKERS_RECRUITMENT_FALLBACK_FROM");
-    Deno.env.set("HOME_SEEKERS_RECRUITMENT_FALLBACK_FROM", "notifications@arch9.co.za");
+    Deno.env.set(
+      "HOME_SEEKERS_RECRUITMENT_FALLBACK_FROM",
+      "notifications@arch9.co.za",
+    );
     try {
-      const f = fixture({ senderAddress: "notifications@arch9.co.za", expectedPlatformSender: "notifications@arch9.co.za" });
+      const f = fixture({
+        senderAddress: "notifications@arch9.co.za",
+        expectedPlatformSender: "notifications@arch9.co.za",
+      });
       assert((await f.run()).status === 200);
       assert(f.sends.length === 1);
       assert(f.sends[0].from === "Home Seekers <notifications@arch9.co.za>");
       assert(f.sends[0].replyTo === "thomas@homeseekers.co.za");
       assert(f.sends[0].to === contact.email);
     } finally {
-      previous === undefined ? Deno.env.delete("HOME_SEEKERS_RECRUITMENT_FALLBACK_FROM") : Deno.env.set("HOME_SEEKERS_RECRUITMENT_FALLBACK_FROM", previous);
+      previous === undefined
+        ? Deno.env.delete("HOME_SEEKERS_RECRUITMENT_FALLBACK_FROM")
+        : Deno.env.set("HOME_SEEKERS_RECRUITMENT_FALLBACK_FROM", previous);
     }
   }));
 
-Deno.test("recruitment code email requires the configured server credential before reading or sending", () =>
+Deno.test("recruitment code email rejects unverified server credentials before reading or sending", () =>
   configured(async () => {
     const f = fixture();
     const forged = `Bearer ${btoa('{"role":"service_role"}')}.forged`;
@@ -148,6 +163,95 @@ Deno.test("recruitment code email requires the configured server credential befo
       f.filters.length === 0 && f.generations.length === 0 &&
         f.sends.length === 0,
     );
+  }));
+Deno.test("a rotated server credential is verified by this project's Auth before delivering a code", () =>
+  configured(async () => {
+    const calls: { url: string; init?: RequestInit }[] = [];
+    const authorization = "Bearer rotated-valid-service-credential";
+    const f = fixture({
+      fetchAdmin: (async (url: string | URL | Request, init?: RequestInit) => {
+        calls.push({ url: String(url), init });
+        return new Response("sensitive-user-records", { status: 200 });
+      }) as typeof fetch,
+    });
+    const result = await f.run(
+      { leadId, to: "attacker@sample.co.za" },
+      authorization,
+    );
+    assert(result.status === 200);
+    assert(calls.length === 1);
+    assert(
+      calls[0].url ===
+        "https://project.supabase.co/auth/v1/admin/users?page=1&per_page=1",
+    );
+    const headers = new Headers(calls[0].init?.headers);
+    assert(headers.get("authorization") === authorization);
+    assert(headers.get("apikey") === "rotated-valid-service-credential");
+    assert(calls[0].init?.redirect === "error" && calls[0].init?.signal);
+    assert(f.generations.length === 1 && f.sends.length === 1);
+    assert(f.sends[0].to === contact.email);
+    assert(
+      !JSON.stringify(await result.json()).includes("sensitive-user-records"),
+    );
+  }));
+Deno.test("matching server credentials avoid an extra Auth request", () =>
+  configured(async () => {
+    let calls = 0;
+    const allowed = await authorizeRecruitmentCodeSender(
+      new Request("https://sample.co.za", {
+        headers: { authorization: "Bearer fixture-private-key" },
+      }),
+      (async () => {
+        calls++;
+        throw new Error("unexpected request");
+      }) as typeof fetch,
+    );
+    assert(allowed && calls === 0);
+  }));
+Deno.test("anonymous, ordinary user, forged and failing Auth checks cannot generate or send a code", () =>
+  configured(async () => {
+    for (const status of [401, 403, 302, 500]) {
+      const f = fixture({
+        fetchAdmin: (async () =>
+          new Response(null, { status })) as typeof fetch,
+      });
+      assert(
+        (await f.run({ leadId }, "Bearer unprivileged-credential")).status ===
+          403,
+      );
+      assert(
+        f.filters.length === 0 && f.generations.length === 0 &&
+          f.sends.length === 0,
+      );
+    }
+    const f = fixture({
+      fetchAdmin: (async () => {
+        throw new Error("private-network-detail");
+      }) as typeof fetch,
+    });
+    const result = await f.run({ leadId }, "Bearer different-credential");
+    assert(
+      result.status === 403 &&
+        !JSON.stringify(await result.json()).includes("private-network-detail"),
+    );
+    assert(
+      f.filters.length === 0 && f.generations.length === 0 &&
+        f.sends.length === 0,
+    );
+    Deno.env.delete("SUPABASE_SERVICE_ROLE_KEY");
+    let calls = 0;
+    assert(
+      !(await authorizeRecruitmentCodeSender(
+        new Request("https://sample.co.za", {
+          headers: { authorization: "Bearer another-credential" },
+        }),
+        (async () => {
+          calls++;
+          return new Response(null, { status: 200 });
+        }) as typeof fetch,
+      )),
+    );
+    assert(calls === 0);
   }));
 Deno.test("recruitment code email uses only the canonical Home Seekers contact and never sends the activation URL", () =>
   configured(async () => {

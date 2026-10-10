@@ -9,10 +9,42 @@ import { assessControlledTestRecipient } from "../utils/controlledTestRecipient.
 import { jsonResponse } from "../utils/http.ts";
 import { HOME_SEEKERS_ORGANISATION_ID } from "./homeSeekersSellerEnquiry.ts";
 import {
-  homeSeekersRecruitmentBranding,
   HOME_SEEKERS_RECRUITMENT_REPLY_TO,
+  homeSeekersRecruitmentBranding,
   resolveHomeSeekersRecruitmentSender,
 } from "../services/homeSeekersRecruitmentBranding.ts";
+
+export async function authorizeRecruitmentCodeSender(
+  request: Request,
+  fetchAdmin: typeof fetch = fetch,
+) {
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+  const authorization = request.headers.get("authorization") || "";
+  if (!serviceKey || !authorization.startsWith("Bearer ")) return false;
+  if (authorization === `Bearer ${serviceKey}`) return true;
+
+  // A rotated server credential can remain valid without matching the key
+  // injected into this function. Auth must independently verify its admin
+  // permission for this project; decoded JWT claims never grant access.
+  const url = Deno.env.get("SUPABASE_URL") || "";
+  const credential = authorization.slice("Bearer ".length);
+  if (!url || !credential) return false;
+  try {
+    const response = await fetchAdmin(
+      `${url.replace(/\/$/, "")}/auth/v1/admin/users?page=1&per_page=1`,
+      {
+        headers: { authorization, apikey: credential },
+        redirect: "error",
+        signal: AbortSignal.timeout(5_000),
+      },
+    );
+    // Only the permission result is needed. Do not read user records.
+    await response.body?.cancel();
+    return response.status === 200;
+  } catch {
+    return false;
+  }
+}
 
 export async function handleHomeSeekersRecruitmentCodeEmail(
   request: Request,
@@ -22,13 +54,12 @@ export async function handleHomeSeekersRecruitmentCodeEmail(
     send: typeof sendViaResendApi;
     branding: typeof resolveEmailBranding;
     sender: typeof resolveAudienceEmailSender;
+    fetchAdmin?: typeof fetch;
   },
 ) {
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
-  // Compare the actual configured credential; never trust decoded JWT claims.
   if (
-    !serviceKey ||
-    request.headers.get("authorization") !== `Bearer ${serviceKey}`
+    !(await authorizeRecruitmentCodeSender(request, dependencies?.fetchAdmin))
   ) {
     return jsonResponse(403, { error: "Server authorization required." });
   }
