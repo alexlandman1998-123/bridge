@@ -28,14 +28,14 @@ function bind(context, code, expression) {
   return new Function('context', `with (context) { ${code}; return ${expression}; }`)(context)
 }
 
-test('older feature-step drafts resume in Marketing with a navigable previous step', () => {
+test('feature-step drafts resume in Extra details with navigable property and photo steps', () => {
   const steps = bind({}, source.match(/const CREATE_LISTING_WORKFLOW_STEPS = \[[\s\S]*?\n\]/)[0], 'CREATE_LISTING_WORKFLOW_STEPS')
   const resolve = bind({ CREATE_LISTING_WORKFLOW_STEPS: steps, normalizeDirectListingKey: normalizeKey }, between('function resolveListingEditorStep(', 'function buildListingEditorFormFromListing('), 'resolveListingEditorStep')
-  assert.equal(resolve('features', 'property'), 'marketing')
+  assert.equal(resolve('features', 'property'), 'features')
   const newListingSteps = steps.filter(step => step.key !== 'seller')
   const restoredIndex = newListingSteps.findIndex(step => step.key === resolve('features'))
   assert.equal(newListingSteps[restoredIndex - 1].key, 'property')
-  assert.equal(newListingSteps[restoredIndex + 1].key, 'syndication')
+  assert.equal(newListingSteps[restoredIndex + 1].key, 'marketing')
   assert.equal(resolve('marketing'), 'marketing')
 })
 
@@ -212,6 +212,8 @@ test('uploaded and removed photo previews release their object URLs', () => {
   const context = {
     form: { listingImages: [original], coverImageId: original.id },
     listingImagePreviewUrlsRef: { current: new Set([original.url]) },
+    photoSaveCountRef: { current: 0 },
+    setPhotoSaveProgress() {},
     URL: { revokeObjectURL: (url) => revoked.push(url) },
     setForm: (update) => { context.form = update(context.form) },
   }
@@ -372,7 +374,8 @@ for (const [mobile, developer] of [[false, false], [false, true], [true, true]])
   assert.deepEqual(calls.find(([action]) => action === 'navigate'), ['navigate', `${mobile ? '/mobile/listings' : '/listings'}/listing-1/edit?step=marketing`])
   const editorDraft = JSON.parse(data.get('draft:edit:listing-1'))
   assert.equal(editorDraft.__draftRecovery.baseRevision, 'confirmed-revision')
-  assert.deepEqual(editorDraft.selectedSyndicationChannels, context.form.selectedSyndicationChannels)
+  assert.deepEqual(editorDraft.selectedSyndicationChannels, [], 'recovery must reopen the confirmed stored form, rather than unsaved advertising choices')
+  assert.equal(calls.some(([action]) => action === 'publish'), false)
   assert.deepEqual(editorDraft.__draftRecovery.baseForm.selectedSyndicationChannels, [])
   assert.equal(data.has('draft-prefix:edit:listing-1'), false)
 })

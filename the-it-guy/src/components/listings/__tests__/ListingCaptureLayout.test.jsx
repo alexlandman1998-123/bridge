@@ -69,3 +69,13 @@ it('lets agents navigate from the preview with buttons that cannot submit the fo
   expect(onEdit).toHaveBeenCalledWith('terms')
   expect(screen.getByText(/Each website may display it differently/)).toBeTruthy()
 })
+
+it('keeps the streamlined sales preview read-only without helper copy or stage shortcuts', () => {
+ render(<ListingCaptureLayout streamlined form={{ listingTitle: 'Garden home' }} onEdit={vi.fn()} />)
+ fireEvent.click(screen.getByRole('button', { name: 'Show draft preview' }))
+ expect(screen.getByText('Garden home')).toBeTruthy()
+ expect(screen.queryByText(/Updates as you type/)).toBeNull()
+ expect(screen.queryByRole('button', { name: /Change property details/ })).toBeNull()
+ expect(screen.queryByRole('button', { name: /Change price/ })).toBeNull()
+ expect(screen.queryByRole('button', { name: /Change photos/ })).toBeNull()
+})

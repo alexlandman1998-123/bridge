@@ -36,3 +36,20 @@ it('makes continuing rental and sale drafts visible on their listing cards', () 
     <SalesListingIndexCard card={{ addressLabel: 'Sale draft', liveChannels: [] }} openLabel="Continue draft" /></>)
   expect(screen.getAllByRole('button', { name: 'Continue draft' })).toHaveLength(2)
 })
+
+it('can hide the routine device notice while preserving actual save errors', () => {
+ const view = render(<ListingSaveStatus hideDeviceNotice recovery="device" dirty />)
+ expect(screen.queryByRole('status')).toBeNull()
+ view.rerender(<ListingSaveStatus hideDeviceNotice cloud={{ status: 'error' }} recovery="device" dirty />)
+ expect(screen.getByText(/Could not confirm saving/)).toBeTruthy()
+})
+
+
+it('hides an editor’s routine saved notice while keeping saving and failure visible', () => {
+  const view = render(<ListingSaveStatus hideSavedNotice hideDeviceNotice cloud={{ status: 'saved', savedAt: '2026-10-11T12:00:00Z' }} />)
+  expect(screen.queryByRole('status')).toBeNull()
+  view.rerender(<ListingSaveStatus hideSavedNotice cloud={{ status: 'saving' }} />)
+  expect(screen.getByText('Saving to Listings…')).toBeTruthy()
+  view.rerender(<ListingSaveStatus hideSavedNotice cloud={{ status: 'error' }} saveLabel="Save changes" />)
+  expect(screen.getByText(/retry Save changes/)).toBeTruthy()
+})

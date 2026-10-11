@@ -1,5 +1,5 @@
 import ListingLandSizeInput from '../../components/listings/ListingLandSizeInput'
-import ListingAdvertisingChoices from '../../components/listings/ListingAdvertisingChoices'
+import Modal from '../../components/ui/Modal'
 import ListingReviewDetails from '../../components/listings/ListingReviewDetails'
 import { RENTAL_SAVED_NOT_SENT_MESSAGE } from '../../services/listings/listingCaptureModel'
 import { saveListingRecoveryDraft, readListingRecoveryDraft, clearListingRecoveryDraft, writeListingTextRecoveryDraft, listingRecoveryRevision, reconcileListingEditRecovery } from '../../services/listings/listingDraftRecovery'
@@ -14,7 +14,7 @@ import { getSyndicationChannelAvailability, UNAVAILABLE_SYNDICATION_CHANNELS } f
 import { isRentalCreationId, serializeRentalCreationDraft } from '../../services/rentals/rentalListingCreationRecovery'
 import { buildRentalWorkspaceKey, buildRentalListingDraftStorageKey, buildRentalListingQueryOptions } from '../../services/rentals/rentalWorkspaceScope'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Blocks, Building2, CalendarDays, CheckCircle2, ClipboardCheck, ChevronLeft, ChevronRight, Coins, FileText, Globe2, House, ImagePlus, Landmark, LandPlot, Loader2, Minus, Plus, Save, ShieldCheck, Sprout, Store, Trash2, UserRound, Users, Wallet, Warehouse, X } from 'lucide-react'
+import { Blocks, Building2, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Coins, FileText, Globe2, House, ImagePlus, Landmark, LandPlot, Loader2, Minus, Plus, Save, ShieldCheck, Sprout, Store, Trash2, UserRound, Users, Wallet, Warehouse, X } from 'lucide-react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { useOptionalOrganisation } from '../../context/OrganisationContext'
@@ -235,7 +235,7 @@ function PropertyCounter({ label, name, value, onChange, step = 1, studio = fals
   const changeValue = (nextValue) => onChange(String(Math.max(0, Number(nextValue.toFixed(1)))))
 
   return (
-    <div className="grid gap-2">
+    <div className="flex min-w-0 flex-col gap-2 self-start">
       <span className="text-sm font-semibold text-[#2d445e]">{label}</span>
       <div className="grid min-h-12 grid-cols-[3rem_1fr_3rem] overflow-hidden rounded-xl border border-[#dbe6f2] bg-white">
         <button data-rental-control type="button" aria-label={`Decrease ${label}`} disabled={safeValue <= 0} onClick={() => changeValue(safeValue - step)} className="inline-flex items-center justify-center border-r border-[#e6edf5] bg-white text-lg font-semibold text-[#1f4f78] transition hover:bg-[#f4f8fc] disabled:cursor-not-allowed disabled:text-[#b5c3d1]">
@@ -288,7 +288,7 @@ function RentalCreateProgressNav({ activeStep, onStepClick, steps = CREATE_STEPS
   const compactLabels = steps.map(step => step.label)
   return (
     <nav className="rental-create-progress" aria-label="Create rental listing progress">
-      <div className="rental-create-progress-grid">
+      <div className="rental-create-progress-grid" style={{ gridTemplateColumns: `repeat(${steps.length}, minmax(0, 1fr))` }}>
         {steps.map((step, index) => {
           const complete = index < activeIndex
           const active = index === activeIndex
@@ -354,6 +354,8 @@ function ScopedRentalListingCreatePage() {
   const [correctionField, setCorrectionField] = useState('')
   const [correctionRequest, setCorrectionRequest] = useState(0)
   const [notice, setNotice] = useState('')
+  const [leaveAction, setLeaveAction] = useState(null)
+  const requestLeave = useCallback(proceed => setLeaveAction(() => proceed), [])
   const [linkedLandlordLead, setLinkedLandlordLead] = useState(null)
   const [pendingListingId, setPendingListingId] = useState('')
   const pendingListingIdRef = useRef('')
@@ -414,7 +416,7 @@ function ScopedRentalListingCreatePage() {
       setForm(restored)
       if (CREATE_STEPS.some(step => step.key === parsedDraft.activeStep) && (parsedDraft.activeStep !== 'landlord' || getRentalListingValidationIssues(restored, { organisationId }).some(issue => issue.step === 'landlord'))) setActiveStep(parsedDraft.activeStep); else setActiveStep('property')
       const missingPhotos = parsedDraft.missingPhotoCount ? ' Reselect photos that had not finished uploading before the refresh.' : ''
-      setNotice(`Your saved rental draft was restored on this device.${missingPhotos}`)
+      setNotice(missingPhotos.trim())
       const recoveryId = parsedDraft.pendingListingId || parsedDraft.creationId
       if (recoveryId) {
         setRecovering(true)
@@ -435,7 +437,7 @@ function ScopedRentalListingCreatePage() {
             savedForm.coverImageId = restored.coverImageId
           }
           setForm(recoveredDraft ? restored : savedForm)
-          setNotice(`Your existing rental was recovered. Review its saved details before retrying.${missingPhotos}`)
+          setNotice(missingPhotos.trim())
         }).catch(loadError => {
           if (!cancelled) { setRecoveryBlocked(true); setError(loadError?.message || 'Unable to verify the existing rental. Reload before retrying.') }
         }).finally(() => { if (!cancelled) setRecovering(false) })
@@ -465,7 +467,7 @@ function ScopedRentalListingCreatePage() {
   const recoveryProtection = useListingRecoveryProtection({
     enabled: draftReadyKey === draftStorageKey && !recovering && !recoveryBlocked && !editDraftConflict && !completedDraftRef.current
       && (!isEditing || JSON.stringify(form) !== JSON.stringify(editBaselineRef.current?.form)),
-    scope: draftStorageKey, form, recovery: recoveryMetadata, photoField: 'galleryImages', onWarning: setNotice, requireSaved: unsavedToListings,
+    onLeaveRequested: requestLeave, scope: draftStorageKey, form, recovery: recoveryMetadata, photoField: 'galleryImages', onWarning: setNotice, requireSaved: unsavedToListings,
   })
 
   useEffect(() => {
@@ -497,7 +499,7 @@ function ScopedRentalListingCreatePage() {
           setNotice('This listing has changed since your draft. Review your changes before saving.')
         } else {
           setForm(restored?.form || savedForm)
-          setNotice(restored ? 'Your unsaved rental changes were restored on this device.' : 'Editing this rental in the same guided capture flow used for new listings.')
+          setNotice('')
           if (draft?.recovery?.activeStep && CREATE_STEPS.some(step => step.key === draft.recovery.activeStep)) setActiveStep(draft.recovery.activeStep)
           else if (!requestedStepRef.current && CREATE_STEPS.some(step => step.key === existingListing.sellerCanonicalFacts?.rentalCaptureDraft?.step)) setActiveStep(existingListing.sellerCanonicalFacts.rentalCaptureDraft.step)
         }
@@ -652,6 +654,8 @@ function ScopedRentalListingCreatePage() {
     setValidationAttemptedStep(activeStep)
     const stepErrors = validationErrors.filter((validationError) => activeStep === 'syndication' || stepForError(validationError) === activeStep)
     if (stepErrors.length) {
+      const target = stepForError(stepErrors[0])
+      if (target !== activeStep) { goToStep(target); setValidationAttemptedStep(target) }
       setError(stepErrors[0])
       return
     }
@@ -713,6 +717,7 @@ function ScopedRentalListingCreatePage() {
       setError('')
       setNotice('Draft saved to Listings. Nothing was published. You can continue here or reopen it from Listings on another device.')
       window.dispatchEvent(new Event('itg:listings-updated'))
+      return true
     } catch (saveError) {
       if (!mountedRef.current) return
       if (saveError.listingId) { pendingListingIdRef.current = saveError.listingId; setPendingListingId(saveError.listingId) }
@@ -853,7 +858,7 @@ function ScopedRentalListingCreatePage() {
 
   return (
     <section className="page-content w-full min-w-0 max-w-full">
-      <form onSubmit={handleSubmit} className="ui-section-stack w-full min-w-0 max-w-full">
+      <form onSubmit={handleSubmit} className="rental-capture-form ui-section-stack w-full min-w-0 max-w-full">
         <header className="flex items-stretch gap-3">
           <div className="flex min-w-0 flex-1 items-center rounded-[16px] border border-[#dde6ef] bg-white px-5 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.035)]">
             <h1 className="text-[1.8rem] font-semibold tracking-[-0.03em] text-[#18324b]">{isDraftCapture ? 'Continue rental draft' : isEditing ? 'Edit rental listing' : 'Create new listing'}</h1>
@@ -863,7 +868,7 @@ function ScopedRentalListingCreatePage() {
             type="button"
             disabled={saving}
             className="inline-flex h-12 w-12 items-center justify-center rounded-xl text-[#607891] transition hover:bg-[#f4f8fc] hover:text-[#286b43] disabled:opacity-50"
-            onClick={() => navigate(isEditing ? `/agent/rentals/listings/${encodeURIComponent(editListingId)}` : '/agent/rentals/listings')}
+            onClick={() => { const leave = () => navigate(isEditing ? `/agent/rentals/listings/${encodeURIComponent(editListingId)}` : '/agent/rentals/listings'); if (unsavedToListings) requestLeave(leave); else leave() }}
             aria-label={isEditing ? 'Close rental listing editor' : 'Close new rental listing'}
           >
             <X size={21} aria-hidden="true" />
@@ -871,7 +876,7 @@ function ScopedRentalListingCreatePage() {
           </div>
         </header>
 
-        <ListingSaveStatus cloud={{ ...cloudSave, message: saveProgress }} recovery={recoveryProtection.status} dirty={unsavedToListings} />
+        <ListingSaveStatus cloud={{ ...cloudSave, message: saveProgress }} recovery={recoveryProtection.status} dirty={unsavedToListings} hideDeviceNotice />
         {cloudSave.status === 'saved' && !isEditing && pendingListingId ? <Button type="button" onClick={() => navigate('/agent/rentals/listings')}>Back to Listings</Button> : null}
 
         {recovering ? <p role="status" className="px-4 text-sm text-[#607891]">Checking the saved rental before retrying…</p> : null}
@@ -894,12 +899,11 @@ function ScopedRentalListingCreatePage() {
         <fieldset disabled={saving || Boolean(editDraftConflict) || recoveryBlocked} className="m-0 min-w-0 space-y-6 border-0 p-0">
         <RentalCreateProgressNav steps={steps} activeStep={activeStep} onStepClick={goToStep} />
 
-        <ListingFieldIssues completion draftNote={isEditing ? "Save draft saves your changes without sending an update to websites." : undefined} channels={form.selectedSyndicationChannels} issues={fieldIssues} step={activeStep} form={form} attempted={validationAttemptedStep === activeStep} onGoToStep={goToStep} />
-        <ListingCaptureLayout form={form} rental onEdit={goToStep}>
+        <ListingCaptureLayout form={form} rental streamlined>
+        <ListingFieldIssues issues={fieldIssues.filter(issue => issue.step === activeStep)} step={activeStep} attempted={validationAttemptedStep === activeStep} onGoToStep={goToStep} />
         <div className="grid w-full min-w-0 max-w-full gap-6">
           {linkedLandlordLead ? <p className="rounded-[8px] border border-[#cfe8dc] bg-[#f2fbf5] px-4 py-3 text-sm font-semibold text-[#286b43]">Creating this listing for landlord lead {linkedLandlordLead.name}. The listing will be linked after it is created.</p> : null}
           {activeStep === 'property' ? <FormSection>
-            <ListingAdvertisingChoices selected={form.selectedSyndicationChannels} availability={channelAvailability} loading={channelAvailabilityLoading} onToggle={toggleDistributionChannel} />
             <section>
               <h3 id="rental-property-category-label" className="text-sm font-semibold text-[#18324b]">Property category</h3>
               <div role="group" aria-labelledby="rental-property-category-label" className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -1026,6 +1030,7 @@ function ScopedRentalListingCreatePage() {
           </FormSection> : null}
 
           {activeStep === 'terms' ? <FormSection title="Rent & deposit">
+            <p className="text-sm text-[#607387]">Rent and availability use portal fields where supported. Lease terms, deposit instructions, utilities and fees are added to the advert description on Property24 and Private Property. Only add details you want tenants to see.</p>
             <div className="grid min-w-0 items-start gap-4 xl:grid-cols-2">
               <RentalTermsCard title="Rent" icon={Coins}>
                 <label className="form-field"><span>Rental amount</span><input type="number" min="0" step="0.01" aria-describedby="rental-price-unit-help" {...formField('monthlyRent', form.monthlyRent, updateForm)} placeholder="Amount in rand" /></label>
@@ -1062,11 +1067,6 @@ function ScopedRentalListingCreatePage() {
                 <label className="form-field sm:col-span-2"><span>Rental excludes</span><input {...formField('rentalExcludes', form.rentalExcludes, updateForm)} placeholder="Electricity, refuse, sewerage" /></label>
               </RentalTermsCard>
 
-              <RentalTermsCard title="Inspection" icon={ClipboardCheck}>
-                <div className="sm:col-span-2"><SelectField label="Inspection" name="inspectionStatus" value={form.inspectionStatus} onChange={updateForm} options={RENTAL_SELECT_OPTIONS.inspectionStatus} /></div>
-                <label className="form-field sm:col-span-2"><span>Inspection notes</span><textarea rows={3} {...formField('inspectionNotes', form.inspectionNotes, updateForm)} placeholder="Repairs, access or inspection arrangements" /></label>
-              </RentalTermsCard>
-
               <details className="min-w-0 rounded-2xl border border-[#dbe6f2] bg-white p-4 sm:p-5">
                 <summary className="cursor-pointer text-sm font-semibold text-[#18324b]"><span className="inline-flex items-center gap-3 align-middle"><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#eef4fa] text-[#315f80]"><FileText size={18} aria-hidden="true" /></span>Additional deposits & fees</span></summary>
                 <div className="mt-5 grid min-w-0 gap-4 sm:grid-cols-2">
@@ -1090,11 +1090,11 @@ function ScopedRentalListingCreatePage() {
                 </div>
                 <label className="inline-flex cursor-pointer items-center gap-2 rounded-[10px] border border-[#1f7d44] bg-[#1f7d44] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#176338] focus-within:ring-2 focus-within:ring-[#286b43] focus-within:ring-offset-2"><ImagePlus size={16} aria-hidden="true" />Upload photos<input name="galleryImages" type="file" accept="image/*" multiple className="sr-only" onChange={handleGalleryUpload} aria-label="Upload listing photos" /></label>
               </div>
-              {form.galleryImages.length ? <div className="mt-5 grid max-h-[30rem] min-w-0 grid-cols-1 gap-3 overflow-y-auto pr-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {form.galleryImages.length ? <div aria-label="Listing photos" role="region" className="sales-capture-gallery mt-5">
                 {form.galleryImages.map((image, index) => {
                   const isCover = String(form.coverImageId) === String(image.id)
                   return <article key={image.id} className={`min-w-0 overflow-hidden rounded-xl border ${isCover ? 'border-[#91abc0]' : 'border-[#dbe6f2]'} bg-white`}>
-                    <div className="relative aspect-[16/10] bg-[#eef4fa]">
+                    <div className="sales-capture-photo relative bg-[#eef4fa]">
                       <img src={image.url} alt={image.name} className="block h-full w-full object-cover" loading="lazy" />
                       <span className="absolute left-2 top-2 flex h-6 min-w-6 items-center justify-center rounded-md bg-white/95 px-1.5 text-xs font-semibold text-[#18324b]">{index + 1}</span>
                       {isCover ? <span className="absolute right-2 top-2 rounded-md bg-[#18324b] px-2 py-1 text-xs font-semibold text-white">Cover</span> : null}
@@ -1119,25 +1119,14 @@ function ScopedRentalListingCreatePage() {
               <label className="form-field"><span>Video link</span><input type="url" aria-label="Video link" {...formField('videoLink', form.videoLink, updateForm)} placeholder="https://youtu.be/..." /><small>Optional link to a property video.</small></label>
               <label className="form-field"><span>Virtual tour link</span><input type="url" aria-label="Virtual tour link" {...formField('virtualTourLink', form.virtualTourLink, updateForm)} placeholder="https://my.matterport.com/..." /><small>Optional link to a virtual tour.</small></label>
             </section>
-            <div className="grid min-w-0 items-start gap-4 xl:grid-cols-3">
-              <section className="min-w-0 rounded-2xl border border-[#dbe6f2] bg-white p-4 sm:p-5 xl:col-span-2">
+            <div className="grid min-w-0 gap-4">
+              <section className="min-w-0 rounded-2xl border border-[#dbe6f2] bg-white p-4 sm:p-5">
                 <div className="mb-5 flex items-center gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#eef4fa] text-[#315f80]"><FileText size={18} aria-hidden="true" /></span><h3 className="text-sm font-semibold text-[#18324b]">Title and description</h3></div>
                 <div className="grid min-w-0 gap-4">
                   <label className="form-field"><span>Listing title</span><input {...formField('title', form.title, updateForm)} placeholder={listingTitleExample(form.propertyCategory)} /></label>
                   <label className="form-field"><span>Listing description</span><textarea rows={8} {...formField('description', form.description, updateForm)} placeholder="Describe the property, its size, access and main features." /></label>
                 </div>
               </section>
-
-              <div className="grid min-w-0 gap-4">
-                <section className="min-w-0 rounded-2xl border border-[#dbe6f2] bg-white p-4 sm:p-5">
-                  <div className="flex flex-wrap items-center justify-between gap-3"><div className="flex items-center gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#eef4fa] text-[#315f80]"><CheckCircle2 size={18} aria-hidden="true" /></span><h3 className="text-sm font-semibold text-[#18324b]">Confirmed features</h3></div><button type="button" data-rental-control="edit-features" className="text-xs font-semibold text-[#315f80] underline underline-offset-2" onClick={() => goToStep('features')}>Edit features</button></div>
-                  <div className="mt-5 flex flex-wrap gap-2">{selectedSellingPoints.length ? selectedSellingPoints.map((label) => <span key={label} className="rounded-lg border border-[#dbe6f2] bg-[#f5f9fc] px-2.5 py-1.5 text-xs text-[#315f80]">{label}</span>) : <p className="text-sm text-[#607891]">No features selected</p>}</div>
-                </section>
-                <details className="min-w-0 rounded-2xl border border-[#dbe6f2] bg-white p-4 sm:p-5">
-                  <summary className="cursor-pointer text-sm font-semibold text-[#18324b]">Internal notes</summary>
-                  <label className="form-field mt-4"><span>Internal notes</span><textarea rows={4} {...formField('internalNotes', form.internalNotes, updateForm)} placeholder="Notes for your team" /></label>
-                </details>
-              </div>
             </div>
           </FormSection> : null}
 
@@ -1162,7 +1151,7 @@ function ScopedRentalListingCreatePage() {
               <span>Selected channels need more photos.</span>
               <button type="button" data-rental-control="syndication-photos" className="font-semibold underline underline-offset-2" onClick={() => goToStep('marketing')}>Add photos</button>
             </div> : null}
-            <p className="text-xs leading-5 text-[#607891]">{isEditing ? 'Save rental changes saves your details here. It does not update public adverts. Send updates from the saved listing when you are ready.' : 'Choose the websites for this rental. Save draft keeps it private. Save and publish sends it to your selected websites. You can add landlord and mandate details after saving.'}</p>
+            <p className="text-xs leading-5 text-[#607891]">{isEditing ? 'Save rental changes saves your details here. It does not update public adverts. Send updates from the saved listing when you are ready.' : 'Choose where this rental will appear. Save draft keeps it private.'}</p>
           </FormSection> : null}
 
           {activeStep === 'review' ? <section className="ui-panel ui-panel-body grid gap-6">
@@ -1174,7 +1163,7 @@ function ScopedRentalListingCreatePage() {
               {isEditing ? <ReviewSummaryCard title="Landlord & mandate" onEdit={() => goToStep('landlord')} details={[{ label: 'Landlord', value: form.landlordName || 'Not added' }, { label: 'Contact', value: form.landlordEmail || form.landlordPhone || 'Not added' }, { label: 'Mandate', value: RENTAL_SELECT_OPTIONS.mandateStatus.find((option) => option.value === form.mandateStatus)?.label || 'Not captured' }]} /> : null}
               <ReviewSummaryCard title="Extra details (optional)" onEdit={() => goToStep('features')} details={[{ label: 'Confirmed features', value: `${selectedSellingPoints.length} confirmed` }, { label: 'Pet friendly', value: form.petsPolicy === 'allowed' ? 'Yes' : form.petsPolicy === 'not_allowed' ? 'No' : 'Subject to approval' }]} />
             </div>
-            <ListingReviewDetails form={form} rental onEdit={goToStep} />
+            <ListingReviewDetails form={form} rental compact onEdit={goToStep} />
             {isEditing ? <p className="rounded-xl border border-[#f1d4a6] bg-[#fffaf0] p-4 text-sm">Saving here does not update your public adverts. Send the updates from the saved listing.</p> : null}
             <div className="rounded-xl border border-[#dce6f2] bg-[#fbfdff] p-4">
               <h3 className="text-sm font-semibold text-[#18324b]">Publishing readiness</h3>
@@ -1192,7 +1181,7 @@ function ScopedRentalListingCreatePage() {
 
         </div>
         </ListingCaptureLayout>
-          <footer className="listing-capture-actions ui-panel ui-panel-body flex flex-wrap items-center justify-between gap-3">
+          <footer className="listing-capture-actions sales-capture-actions ui-panel ui-panel-body flex flex-wrap items-center justify-between gap-3">
             <div>
               {activeStepIndex > 0 ? (
                 <Button type="button" onClick={goToPreviousStep}>
@@ -1210,12 +1199,33 @@ function ScopedRentalListingCreatePage() {
                 disabled={saving || recovering || recoveryBlocked}
               >
                 {activeStep === 'review' && saving ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : activeStep === 'review' ? <Save size={16} aria-hidden="true" /> : <ChevronRight size={16} aria-hidden="true" />}
-                {activeStep === 'review' ? (saving ? 'Saving rental…' : isEditing && !isDraftCapture ? 'Save rental changes' : (pendingListingId || creationId) && cloudSave.status !== 'saved' && !isDraftCapture ? selectedDistributionChannels.length ? 'Retry save and publish' : 'Retry save listing' : selectedDistributionChannels.length ? 'Save and publish' : 'Save listing') : activeStep === 'features' ? 'Continue — skip optional details' : 'Continue'}
+                {activeStep === 'review' ? (saving ? 'Saving rental…' : isEditing && !isDraftCapture ? 'Save rental changes' : (pendingListingId || creationId) && cloudSave.status !== 'saved' && !isDraftCapture ? selectedDistributionChannels.length ? 'Retry save and publish' : 'Retry save listing' : selectedDistributionChannels.length ? 'Save and publish' : 'Save listing') : 'Continue'}
               </Button>
             </div>
           </footer>
         </fieldset>
       </form>
+      <Modal open={Boolean(leaveAction)} onClose={saving ? undefined : () => setLeaveAction(null)} title="Leave this rental listing?" subtitle="Save a private draft to finish later, or discard your unsaved changes." footer={<div className="flex flex-wrap justify-end gap-3">
+        <Button type="button" disabled={saving} onClick={() => setLeaveAction(null)}>Keep editing</Button>
+        <Button type="button" disabled={saving} onClick={async () => {
+          recoveryProtection.markSaved()
+          try {
+            await clearListingRecoveryDraft(draftStorageKey)
+            window.localStorage.removeItem(draftStorageKey)
+            window.sessionStorage.removeItem(draftStorageKey)
+            const proceed = leaveAction
+            setLeaveAction(null)
+            proceed?.()
+          } catch { setForm(current => ({ ...current })); setError('Could not discard the device draft. Keep editing and try again.'); }
+        }}>Discard changes</Button>
+        <Button type="button" disabled={saving || recoveryBlocked || recovering || Boolean(editDraftConflict)} onClick={async () => {
+          const proceed = leaveAction
+          if (await saveDraftToListings()) { setLeaveAction(null); proceed?.() }
+        }}>{saving ? 'Saving draft…' : 'Save draft and leave'}</Button>
+      </div>}>
+        {pendingListingId || isEditing ? <p className="text-sm text-[#607387]">Discard removes changes on this device. A draft already saved to Listings remains there.</p> : null}
+        {error ? <p role="alert" className="mt-3 text-sm text-red-700">{error}</p> : null}
+      </Modal>
     </section>
   )
 }

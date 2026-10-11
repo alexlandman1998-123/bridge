@@ -2,7 +2,7 @@ import DocumentRequirementManager from '../components/documents/DocumentRequirem
 import { readDocumentRequirementContext, watchDocumentRequirementContext } from '../services/documents/documentRequirementReadService.js'
 import SellerDisclosurePreparation from '../components/documents/SellerDisclosurePreparation.jsx'
 import { buildSellerDisclosurePreparationPatch } from '../lib/sellerAgentAssistedDisclosure.js'
-import { INITIAL_LISTING_PUBLICATION_EVENT, readInitialListingChannelResults, watchInitialListingPublication, refreshListingPublicationResults, requireSettledListingPublication } from '../services/listings/listingInitialPublicationService'
+import { watchInitialListingPublication, requireSettledListingPublication } from '../services/listings/listingInitialPublicationService'
 import SellerDocumentWorkflowActions from '../components/documents/SellerDocumentWorkflowActions'
 import { SELLER_DOCUMENT_ACTIONS, SELLER_DOCUMENT_SELECTION_KEYS, buildSellerDocumentWorkflow, getSellerDocumentSigningRequest, sellerDocumentHasActiveSigning, sellerDocumentHasUploadedEvidence } from '../core/documents/sellerDocumentWorkflow'
 import { DOCUMENT_UPLOAD_ACCEPT, DOCUMENT_UPLOAD_HELP_TEXT } from '../lib/documentUploadPolicy.js'
@@ -121,8 +121,8 @@ import { buildListingOverviewPricePosition } from '../services/listings/listingO
 import {
   buildSellerFicaOverview,
 } from '../services/listings/listingSellerOverviewModel'
+import LeadSourceLogo from '../components/mobile-shell/LeadSourceLogo.jsx'
 import SyndicationReviewModal from '../components/listings/SyndicationReviewModal'
-import ListingPublicationProgress from '../components/listings/ListingPublicationProgress'
 import WebsiteListingPublicationPanel from '../components/listings/WebsiteListingPublicationPanel'
 import KingdomWebsitePublicationChannel from '../components/listings/KingdomWebsitePublicationChannel'
 import { getWebsiteListingPublicationStatus, setWebsiteListingPublication } from '../services/websiteListingPublicationService'
@@ -2297,15 +2297,6 @@ function CompactSnapshotRow({ label, value }) {
   )
 }
 
-function OverviewStatusRow({ label, value, status = '' }) {
-  return (
-    <div className="flex min-h-11 items-center justify-between gap-3 border-b border-[#edf2f7] py-2 last:border-b-0">
-      <span className="text-[0.8rem] font-medium text-[#5f7389]">{label}</span>
-      {status ? <StatusPill status={status} label={value} /> : <span className="text-right text-xs font-semibold text-[#142132]">{value}</span>}
-    </div>
-  )
-}
-
 function StatusPill({ status = '', label = '' }) {
   const normalized = String(status || label || '').trim().toLowerCase()
   const done = ['done', 'complete', 'completed', 'approved', 'signed', 'published', 'active', 'activated', 'profile_complete', 'live', 'verified'].includes(normalized)
@@ -3663,21 +3654,6 @@ function AgentListingDetail() {
   const [wetInkConversionMigrationDependencySavingId, setWetInkConversionMigrationDependencySavingId] = useState('')
   const [detailMessage, setDetailMessage] = useState('')
   useEffect(() => watchInitialListingPublication(listingId), [listingId])
-  const [initialChannelResults, setInitialChannelResults] = useState(() => readInitialListingChannelResults(listingId))
-  const [publicationStatusBusy, setPublicationStatusBusy] = useState(false)
-  useEffect(() => {
-    setInitialChannelResults(readInitialListingChannelResults(listingId))
-    const refresh = event => { if (event.detail?.listingId === listingId) setInitialChannelResults(event.detail.results) }
-    window.addEventListener(INITIAL_LISTING_PUBLICATION_EVENT, refresh)
-    return () => window.removeEventListener(INITIAL_LISTING_PUBLICATION_EVENT, refresh)
-  }, [listingId])
-  async function checkAdvertisingStatus() {
-    if (publicationStatusBusy) return
-    setPublicationStatusBusy(true)
-    try { await refreshListingPublicationResults(listingId); setDetailError('') }
-    catch { setDetailError('Your listing is saved. Advertising status could not be checked. Try again before sending.') }
-    finally { setPublicationStatusBusy(false) }
-  }
   const [detailError, setDetailError] = useState('')
   const [postCreateProgress, setPostCreateProgress] = useState(() => readListingPostCreateProgress(listingId))
   const [retryingPostCreateSellerPortal, setRetryingPostCreateSellerPortal] = useState(false)
@@ -3856,7 +3832,6 @@ function AgentListingDetail() {
   const [websiteRefreshKey, setWebsiteRefreshKey] = useState(0)
   const [propertyDetailsReturnTarget, setPropertyDetailsReturnTarget] = useState('')
   const [sellerWorkspaceTab, setSellerWorkspaceTab] = useState(() => getSellerWorkspaceTabFromSearch(typeof window !== 'undefined' ? window.location.search : '') || 'overview')
-  const compactSellerLeadsHeader = sellerWorkspaceTab === 'leads'
   const salesWorkspaceTabs = useMemo(() => buildListingWorkspaceTabs('sales'), [])
   const activeSalesWorkspaceTab = useMemo(
     () => resolveSalesListingWorkspaceTabFromLegacyState({ activeTab, sellerWorkspaceTab }),
@@ -12927,9 +12902,6 @@ function AgentListingDetail() {
         <Button type="button" variant="secondary" onClick={() => void loadListingData({ showLoading: false })}>Retry loading</Button>
       </div> : null}
       {listingSupportingDataLoading && ['documents', 'offers'].includes(activeTab) ? <p role="status" className="p-5 text-sm text-[#607387]">Loading listing documents…</p> : null}
-      <div className="flex justify-end">
-        <Button type="button" variant="secondary" onClick={() => navigateFromListing(`/pipeline/canvassing/property-search?query=${encodeURIComponent(listingRecord.propertyAddress || listingRecord.addressLine1 || '')}`)}>Pull deeds</Button>
-      </div>
       <Modal
         open={Boolean(sellerPortalSignedPreview)}
         onClose={() => setSellerPortalSignedPreview(null)}
@@ -13401,18 +13373,6 @@ function AgentListingDetail() {
       {detailMessage ? (
         <div className="rounded-[14px] border border-[#d8eddf] bg-[#ecfaf1] px-4 py-3 text-sm font-medium text-[#1f7d44]">{detailMessage}</div>
       ) : null}
-      <ListingPublicationProgress saved results={initialChannelResults} title={listingRecord?.title || listingRecord?.listingTitle} listingStatus={listingRecord?.listingStatus}
-        channels={listingRecord?.sellerCanonicalFacts?.distribution?.selectedChannels}
-        changesNotSent={Object.values(listingPublicationStates).some(state => state.changeCount > 0)} unsavedChanges={marketingDraftDirty}
-        busy={publicationStatusBusy} onCheckStatus={() => void checkAdvertisingStatus()}
-        onReview={() => navigate(`/listings/${encodeURIComponent(listingId)}/edit?step=syndication&scope=listing-publication`)}
-        onFollowUp={() => navigate(`/agent/listings/${encodeURIComponent(listingId)}?tab=seller`)}
-        onDocuments={() => navigate(`/agent/listings/${encodeURIComponent(listingId)}?tab=documents`)} />
-      <ListingPostCreateProgressCard
-        progress={postCreateProgress}
-        onRetrySellerPortal={handleRetryPostCreateSellerPortal}
-        retryingSellerPortal={retryingPostCreateSellerPortal}
-      />
       <Modal
         open={sellerInformationEditorOpen}
         onClose={sellerProfileBuilderSaving ? undefined : () => setSellerInformationEditorOpen(false)}
@@ -15686,16 +15646,16 @@ function AgentListingDetail() {
 
       {activeTab === 'seller' ? (
         <section className="mx-auto w-full max-w-[1600px] space-y-5 px-0">
-          <section className={`relative overflow-hidden rounded-[24px] border border-[#dde4ee] bg-[#123955] shadow-[0_14px_34px_rgba(15,23,42,0.08)] ${compactSellerLeadsHeader ? 'min-h-[112px]' : 'min-h-[240px] sm:min-h-[300px]'}`}>
+          <section className="relative min-h-[240px] overflow-hidden rounded-[24px] border border-[#dde4ee] bg-[#123955] shadow-[0_14px_34px_rgba(15,23,42,0.08)] sm:min-h-[300px]">
             <div className="absolute inset-0">
               {getImageBlock(coverImage?.url || '', listingIdentity.title)}
             </div>
             <div className="absolute inset-0 bg-gradient-to-r from-[#081e32]/85 via-[#0d304b]/48 to-[#0d304b]/10" />
-            <div className={`relative flex items-end ${compactSellerLeadsHeader ? 'min-h-[112px] p-4 sm:p-5' : 'min-h-[240px] p-6 sm:min-h-[300px] sm:p-8'}`}>
+            <div className="relative flex min-h-[240px] items-end p-6 sm:min-h-[300px] sm:p-8">
               <div className="max-w-4xl">
-                <h1 className={`font-semibold tracking-[-0.04em] text-white ${compactSellerLeadsHeader ? 'text-lg sm:text-xl' : 'text-3xl sm:text-4xl'}`}>{listingIdentity.title}</h1>
-                <p className={`font-semibold text-white/90 ${compactSellerLeadsHeader ? 'mt-1 text-sm' : 'mt-2 text-lg'}`}>{listingIdentity.location}</p>
-                <div className={`flex flex-wrap gap-x-3 gap-y-2 font-semibold text-white/90 ${compactSellerLeadsHeader ? 'mt-2 text-xs' : 'mt-4 text-sm'}`}>
+                <h1 className="text-3xl font-semibold tracking-[-0.04em] text-white sm:text-4xl">{listingIdentity.title}</h1>
+                <p className="mt-2 text-lg font-semibold text-white/90">{listingIdentity.location}</p>
+                <div className="mt-4 flex flex-wrap gap-x-3 gap-y-2 text-sm font-semibold text-white/90">
                   {listingIdentity.facts.map((fact, index) => (
                     <span key={`${fact}-${index}`} className="inline-flex items-center gap-3">
                       {index > 0 ? <span className="h-1 w-1 rounded-full bg-white/65" /> : null}
@@ -15733,6 +15693,11 @@ function AgentListingDetail() {
 
           {sellerWorkspaceTab === 'overview' ? (
             <section className="space-y-6">
+              <ListingPostCreateProgressCard
+                progress={postCreateProgress}
+                onRetrySellerPortal={handleRetryPostCreateSellerPortal}
+                retryingSellerPortal={retryingPostCreateSellerPortal}
+              />
               <article className="rounded-[22px] border border-[#e1e7ec] bg-white p-4 shadow-[0_8px_28px_rgba(15,23,42,0.035)] sm:p-6">
                 <ListingChannelStatistics
                   organisationId={listingOrganisationId}
@@ -15852,57 +15817,9 @@ function AgentListingDetail() {
                 </article>
               </section>
 
-              <section className="grid items-stretch gap-5 lg:grid-cols-2 xl:grid-cols-3" data-testid="listing-overview-three-columns">
-                <article className="order-2 flex min-h-0 flex-col rounded-[16px] border border-[#dde4ee] bg-white p-5 shadow-[0_8px_20px_rgba(15,23,42,0.035)] lg:order-1">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <h2 className="text-base font-semibold text-[#142132]">Seller</h2>
-                      <p className="mt-1 text-xs text-[#607387]">Canonical seller, compliance and portal status.</p>
-                    </div>
-                    <StatusPill status={overviewSellerSnapshot.ready ? 'complete' : 'attention'} label={overviewSellerSnapshot.ready ? 'Ready' : `${overviewSellerSnapshot.attentionItems.length} to review`} />
-                  </div>
-                  <div className="min-h-0 flex-1 xl:overflow-y-auto xl:pr-1">
-                  <div className="mt-5 pb-5">
-                    <p className="text-[0.78rem] font-semibold text-[#526b82]">Seller details</p>
-                    <div className="mt-3 flex min-w-0 items-center gap-3">
-                      <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full border border-[#dbe6f2] bg-[#eef4fa] text-sm font-semibold text-[#42617f]">
-                        {getInitials(overviewSellerSnapshot.name)}
-                      </span>
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-[#142132]">{overviewSellerSnapshot.name}</p>
-                        <p className="mt-1 truncate text-xs text-[#607387]">{overviewSellerSnapshot.email || 'Email not captured'}</p>
-                        <p className="mt-1 text-xs text-[#607387]">{overviewSellerSnapshot.phone || 'Phone not captured'}</p>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="border-t border-[#e7edf5] pt-5">
-                    <h3 className="text-[0.78rem] font-semibold text-[#526b82]">Seller setup</h3>
-                    <div className="mt-2">
-                    <OverviewStatusRow label="Seller Portal" value={overviewSellerSnapshot.portalStatus} status={overviewSellerSnapshot.portalStatusKey} />
-                    <OverviewStatusRow label="Recovery" value={overviewSellerSnapshot.recoveryStatus} />
-                    <OverviewStatusRow label="FICA" value={overviewSellerSnapshot.ficaStatus} status={overviewSellerSnapshot.ficaStatusKey} />
-                    <OverviewStatusRow label="Mandate" value={overviewSellerSnapshot.mandateStatus} status={overviewSellerSnapshot.mandateStatusKey} />
-                    <OverviewStatusRow label="Mandate expiry" value={overviewSellerSnapshot.mandateExpiry} />
-                    </div>
-                  </div>
-                  </div>
-                  <div className="mt-5 shrink-0 border-t border-[#e7edf5] pt-5">
-                    {!overviewSellerSnapshot.portalActivated ? (
-                      <Button type="button" size="sm" className="w-full justify-center" onClick={openSellerPortalActivationModal} disabled={sellerPortalActivationSending}>
-                        <Send size={14} />
-                        {sellerOwnershipUnidentified ? 'Set Up Seller Portal' : 'Activate Portal'}
-                      </Button>
-                    ) : null}
-                    <div className={`${!overviewSellerSnapshot.portalActivated ? 'mt-2' : ''} grid gap-2`}>
-                      <Button type="button" size="sm" variant="secondary" className="justify-center" onClick={() => openSellerWorkspaceSection('seller')}>
-                        <UserRound size={14} />
-                        Open Seller
-                      </Button>
-                    </div>
-                  </div>
-                </article>
+              <section className="grid items-start gap-5 lg:grid-cols-2" data-testid="listing-overview-three-columns">
 
-                <div className="order-1 flex min-w-0 flex-col gap-5 lg:order-2">
+                <div className="flex min-w-0 flex-col gap-5">
                 <ListingAgentReassignmentPanel
                   listingId={listingRecord.id}
                   listing={listingRecord}
@@ -15961,7 +15878,7 @@ function AgentListingDetail() {
                 </article>
                 </div>
 
-                <div className="order-3 grid content-start gap-5 lg:col-span-2 lg:grid-cols-2 xl:col-span-1 xl:grid-cols-1">
+                <div className="grid content-start gap-5">
                   <article className="min-h-[210px] rounded-[16px] border border-[#dde4ee] bg-white p-5 shadow-[0_8px_20px_rgba(15,23,42,0.035)]" data-testid="listing-overview-document-progress">
                     <div className="flex items-center justify-between gap-3">
                       <h2 className="text-base font-semibold text-[#142132]">Document Progress</h2>
@@ -16036,8 +15953,8 @@ function AgentListingDetail() {
           ) : null}
 
           {sellerWorkspaceTab === 'leads' ? (
-            <section className="space-y-3">
-              <article className="rounded-[20px] border border-[#dde4ee] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.045)] sm:p-5">
+            <section className="space-y-5">
+              <article className="rounded-[20px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.045)] sm:p-6">
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                   <div>
                     <h2 className="text-xl font-semibold text-[#142132]">Leads for this listing</h2>
@@ -16077,7 +15994,7 @@ function AgentListingDetail() {
                   </div>
                 ) : null}
 
-                <div className="mt-3 grid grid-cols-2 gap-2 lg:grid-cols-4" aria-label="Listing lead metrics">
+                <div className="mt-5 grid grid-cols-2 gap-4 lg:grid-cols-4" aria-label="Listing lead metrics">
                   {[
                     { label: 'Total leads', value: listingLeadSummary.total, meta: 'All time', icon: Users },
                     { label: 'New this week', value: listingLeadSummary.newThisWeek, meta: 'Last 7 days', icon: UserRound },
@@ -16086,7 +16003,7 @@ function AgentListingDetail() {
                   ].map((card) => {
                     const Icon = card.icon
                     return (
-                      <article key={card.label} className="flex min-h-[92px] flex-col justify-between rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-3">
+                      <article key={card.label} className="flex min-h-[92px] flex-col justify-between rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4">
                         <div className="flex items-start gap-2">
                           <span aria-hidden="true" className="hidden h-7 w-7 shrink-0 sm:grid place-items-center rounded-[12px] bg-[#eef5fb] text-[#1f4f78]">
                             <Icon size={16} />
@@ -16100,7 +16017,7 @@ function AgentListingDetail() {
                   })}
                 </div>
 
-                <div className="mt-3 flex items-center gap-3">
+                <div className="mt-3 flex items-center gap-4">
                   <label className="relative block min-w-0 flex-1">
                     <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#7b8ca2]" />
                     <Field
@@ -16167,25 +16084,22 @@ function AgentListingDetail() {
                 {listingLeadRows.length ? (
                   <>
                     <div className="hidden overflow-x-auto lg:block">
-                      <table className="w-full min-w-[1120px] table-fixed text-left text-sm">
+                      <table className="w-full min-w-[760px] table-fixed text-left text-sm">
                         <caption className="sr-only">Leads linked to this property</caption>
                         <thead className="bg-[#f8fbfd] text-[0.66rem] uppercase tracking-[0.1em] text-[#7b8ca2]">
                           <tr className="border-b border-[#e5edf6]">
-                            <th className="w-[18%] px-5 py-3">Lead</th>
-                            <th className="w-[12%] px-5 py-3">Source</th>
-                            <th className="w-[13%] px-5 py-3">Status</th>
-                            <th className="w-[13%] px-5 py-3">Contacted</th>
-                            <th className="w-[14%] px-5 py-3">Viewing</th>
-                            <th className="w-[12%] px-5 py-3">Offer</th>
-                            <th className="w-[10%] px-5 py-3">Date added ↓</th>
-                            <th className="w-[8%] px-5 py-3 text-right">Actions</th>
+                            <th scope="col" className="px-6 py-4">Lead</th>
+                            <th scope="col" className="w-[20%] px-6 py-4">Source</th>
+                            <th scope="col" className="w-[16%] px-6 py-4">Status</th>
+                            <th scope="col" className="w-[18%] px-6 py-4">Date added ↓</th>
+                            <th scope="col" className="w-[132px] px-4 py-4 text-right">Actions</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-[#edf2f7]">
                           {visibleListingLeadRows.length ? visibleListingLeadRows.map((lead) => (
                             <tr key={lead.leadId || lead.id} className="align-middle text-[#425970] transition hover:bg-[#fbfdff]">
-                              <td className="px-5 py-4">
-                                <button type="button" onClick={() => lead.leadId && navigate(`/pipeline/leads/${lead.leadId}`)} className="flex min-w-0 items-center gap-3 text-left" disabled={!lead.leadId}>
+                              <td className="px-6 py-5">
+                                <button type="button" onClick={() => lead.leadId && navigate(`/pipeline/leads/${lead.leadId}`)} className="flex w-full min-w-0 items-center gap-3 text-left" disabled={!lead.leadId}>
                                   <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#eef5fb] text-xs font-semibold text-[#1f4f78]">
                                     {getInitials(lead.name)}
                                   </span>
@@ -16195,43 +16109,16 @@ function AgentListingDetail() {
                                   </span>
                                 </button>
                               </td>
-                              <td className="px-5 py-4">
-                                <span className="inline-flex rounded-full border border-[#dbe6f2] bg-[#f7fbff] px-2.5 py-1 text-[0.7rem] font-semibold text-[#35546c]">
-                                  {lead.sourceLabel}
-                                </span>
+                              <td className="px-6 py-5">
+                                <LeadSourceLogo source={lead.sourceLabel} className="inline-flex min-h-9 max-w-full items-center text-xs font-semibold text-[#35546c] [&_img]:max-h-8 [&_img]:w-[120px] [&_img]:max-w-full [&_img]:object-contain [&_img]:object-left" />
                               </td>
-                              <td className="px-5 py-4">
+                              <td className="px-6 py-5">
                                 <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.7rem] font-semibold ${statusClass(lead.statusGroup)}`}>
                                   {lead.statusLabel}
                                 </span>
                               </td>
-                              <td className="px-5 py-4">
-                                {lead.contactedAt ? (
-                                  <>
-                                    <p className="font-semibold text-[#243d56]">{formatOverviewTimestamp(lead.contactedAt)}</p>
-                                    <p className="mt-1 text-xs text-[#607387]">by {lead.contactedBy || 'Agent'}</p>
-                                  </>
-                                ) : <span className="text-[#9aa9b8]">—</span>}
-                              </td>
-                              <td className="px-5 py-4">
-                                {lead.viewing ? (
-                                  <>
-                                    <p className="font-semibold text-[#243d56]">{formatDate(lead.viewing.proposed_date)}</p>
-                                    <p className="mt-1 text-xs text-[#607387]">{lead.viewing.proposed_time || 'Time pending'}</p>
-                                    <p className="mt-1 text-xs font-semibold text-[#1f7d44]">{formatViewingStatusLabel(lead.viewing.status)}</p>
-                                  </>
-                                ) : <span className="text-[#9aa9b8]">—</span>}
-                              </td>
-                              <td className="px-5 py-4">
-                                {lead.offer ? (
-                                  <>
-                                    <p className="font-semibold text-[#142132]">{lead.offer.offerPrice ? formatMoneyValue(lead.offer.offerPrice) : '—'}</p>
-                                    <p className="mt-1 text-xs text-[#607387]">{formatStatusLabel(lead.offer.status)}</p>
-                                  </>
-                                ) : <span className="text-[#9aa9b8]">—</span>}
-                              </td>
-                              <td className="px-5 py-4 font-semibold text-[#607387]">{formatOverviewTimestamp(lead.createdAt)}</td>
-                              <td className="px-5 py-4">
+                              <td className="px-6 py-5 font-semibold text-[#607387]">{formatOverviewTimestamp(lead.createdAt)}</td>
+                              <td className="px-4 py-5">
                                 <div className="flex justify-end gap-2">
                                   <button type="button" onClick={() => handleContactListingLead(lead)} className="grid h-9 w-9 place-items-center rounded-xl border border-[#dbe6f2] bg-white text-[#1f4f78] transition hover:border-[#b7c8db] hover:bg-[#f7fbff]" aria-label={`Contact ${lead.name}`} title="Contact lead">
                                     <MessageSquare size={15} />
@@ -16257,7 +16144,7 @@ function AgentListingDetail() {
                             </tr>
                           )) : (
                             <tr>
-                              <td colSpan={8} className="px-5 py-10 text-center text-sm text-[#607387]"><span role="status">No leads match the current filters.</span></td>
+                              <td colSpan={5} className="px-5 py-10 text-center text-sm text-[#607387]"><span role="status">No leads match the current filters.</span></td>
                             </tr>
                           )}
                         </tbody>
@@ -16267,8 +16154,8 @@ function AgentListingDetail() {
                     <div className="grid gap-3 p-4 lg:hidden">
                       {visibleListingLeadRows.length ? visibleListingLeadRows.map((lead) => (
                         <article key={lead.leadId || lead.id} className="rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4">
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="flex min-w-0 items-center gap-3">
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="flex min-w-0 items-center gap-4">
                               <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#eef5fb] text-xs font-semibold text-[#1f4f78]">{getInitials(lead.name)}</span>
                               <div className="min-w-0">
                                 <p className="truncate text-sm font-semibold text-[#22374d]">{lead.name}</p>
@@ -16280,11 +16167,8 @@ function AgentListingDetail() {
                             </button>
                           </div>
                           <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                            <CompactSnapshotRow label="Source" value={lead.sourceLabel} />
+                            <CompactSnapshotRow label="Source" value={<LeadSourceLogo source={lead.sourceLabel} className="inline-flex min-h-8 max-w-full items-center [&_img]:max-h-7 [&_img]:w-[112px] [&_img]:max-w-full [&_img]:object-contain [&_img]:object-right" />} />
                             <CompactSnapshotRow label="Status" value={lead.statusLabel} />
-                            <CompactSnapshotRow label="Contacted" value={lead.contactedAt ? formatOverviewTimestamp(lead.contactedAt) : '—'} />
-                            <CompactSnapshotRow label="Viewing" value={lead.viewing ? `${formatDate(lead.viewing.proposed_date)} ${formatViewingStatusLabel(lead.viewing.status)}` : '—'} />
-                            <CompactSnapshotRow label="Offer" value={lead.offer?.offerPrice ? formatMoneyValue(lead.offer.offerPrice) : '—'} />
                             <CompactSnapshotRow label="Date added" value={formatOverviewTimestamp(lead.createdAt)} />
                           </div>
                         </article>
@@ -16293,7 +16177,7 @@ function AgentListingDetail() {
                       )}
                     </div>
 
-                    <div className="flex flex-col gap-3 border-t border-[#e5edf6] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex flex-col gap-3 border-t border-[#e5edf6] px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
                       <p className="text-sm text-[#607387]">
                         Showing {filteredListingLeadRows.length ? ((listingLeadPage - 1) * listingLeadPageSize) + 1 : 0} to {Math.min(listingLeadPage * listingLeadPageSize, filteredListingLeadRows.length)} of {filteredListingLeadRows.length} leads
                       </p>
@@ -16927,13 +16811,6 @@ function AgentListingDetail() {
                       <p className="mt-1 text-sm leading-6 text-[#607387]">Collect, review and request documents required for this listing.</p>
                     </div>
                   </div>
-                  <div className="max-w-sm lg:text-right">
-                    <Button type="button" size="sm" onClick={openSellerDocumentSend}>
-                      <Send size={14} />
-                      Review &amp; send FICA + mandate
-                    </Button>
-                    <p className="mt-2 text-xs leading-5 text-[#74879d]">Generate the seller FICA pack and request outstanding documents.</p>
-                  </div>
                 </div>
 
                 <div className="grid gap-3 border-t border-[#edf2f7] px-5 py-4 sm:grid-cols-3">
@@ -17197,34 +17074,6 @@ function AgentListingDetail() {
                 )
               })() : null}
 
-              <article className="rounded-[18px] border border-[#dde4ee] bg-white p-5 shadow-[0_8px_22px_rgba(15,23,42,0.035)]" data-testid="listing-document-transaction-continuity">
-                <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="text-base font-semibold text-[#142132]">Transaction continuity</h3>
-                      <StatusPill status={sellerPackTransactionSummary.status} label={sellerPackTransactionSummary.label} />
-                    </div>
-                    <p className="mt-1 max-w-3xl text-sm leading-6 text-[#607387]">Approved listing documents remain canonical and are promoted into the transaction file when a transaction is created. A failed handoff stays visible and can be retried without re-uploading the document.</p>
-                  </div>
-                  <Button type="button" size="sm" variant="secondary" onClick={() => void handleRepairSellerPackTransactionHandoff()} disabled={sellerPackHandoffAction === 'repair'}>
-                    {sellerPackHandoffAction === 'repair' ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-                    {sellerPackTransactionSummary.attention || sellerPackTransactionSummary.queued || sellerPackTransactionSummary.uploadedOnly ? 'Retry handoff' : 'Check handoff'}
-                  </Button>
-                </div>
-                <div className="mt-4 grid gap-3 sm:grid-cols-4">
-                  <div className="rounded-[14px] border border-[#e0e8f0] bg-[#f8fbfd] px-3 py-2"><p className="text-lg font-semibold text-[#142132]">{sellerPackTransactionSummary.promoted}</p><p className="text-xs text-[#607387]">promoted</p></div>
-                  <div className="rounded-[14px] border border-[#e0e8f0] bg-[#f8fbfd] px-3 py-2"><p className="text-lg font-semibold text-[#142132]">{sellerPackTransactionSummary.queued}</p><p className="text-xs text-[#607387]">queued</p></div>
-                  <div className="rounded-[14px] border border-[#e0e8f0] bg-[#f8fbfd] px-3 py-2"><p className="text-lg font-semibold text-[#142132]">{sellerPackTransactionSummary.attention}</p><p className="text-xs text-[#607387]">needs attention</p></div>
-                  <div className="rounded-[14px] border border-[#e0e8f0] bg-[#f8fbfd] px-3 py-2"><p className="text-lg font-semibold text-[#142132]">{sellerPackTransactionSummary.missing + sellerPackTransactionSummary.uploadedOnly}</p><p className="text-xs text-[#607387]">not ready</p></div>
-                </div>
-                {sellerPackTransactionRows.some((row) => row.handoff.status === 'attention') ? (
-                  <div className="mt-4 space-y-2">
-                    {sellerPackTransactionRows.filter((row) => row.handoff.status === 'attention').map((row) => (
-                      <p key={row.key} className="rounded-[12px] border border-[#efcbc8] bg-[#fff7f6] px-3 py-2 text-xs leading-5 text-[#963d35]">{row.label}: {row.handoff.detail || 'Transaction handoff needs attention.'}</p>
-                    ))}
-                  </div>
-                ) : null}
-              </article>
             </section>
           ) : null}
 

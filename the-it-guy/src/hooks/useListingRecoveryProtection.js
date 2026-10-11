@@ -1,4 +1,5 @@
 import { useContext, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { registerListingNavigationGuard } from '../services/listings/listingNavigationGuard'
 import { UNSAFE_NavigationContext } from 'react-router-dom'
 import { hasPendingListingRecoveryPhotos, saveListingRecoveryDraft, writeListingTextRecoveryDraft } from '../services/listings/listingDraftRecovery'
 
@@ -7,7 +8,9 @@ function containsFile(value) {
   return Boolean(value && typeof value === 'object' && Object.values(value).some(containsFile))
 }
 
-export default function useListingRecoveryProtection({ enabled, scope, form, recovery, photoField = 'listingImages', onWarning, requireSaved = false }) {
+export default function useListingRecoveryProtection({ enabled, scope, form, recovery, photoField = 'listingImages', onWarning, requireSaved = false, onLeaveRequested }) {
+  const leaveRequestedRef = useRef(onLeaveRequested)
+  leaveRequestedRef.current = onLeaveRequested
   const navigation = useContext(UNSAFE_NavigationContext)
   const latest = useRef(null)
   const flushRef = useRef(() => {})
@@ -70,20 +73,31 @@ export default function useListingRecoveryProtection({ enabled, scope, form, rec
     let historyIndex = window.history.state?.idx
     let returning = false
     let approvedPop = false
+    let pendingPop = null
     const popState = event => {
-      if (returning) { returning = false; event.stopImmediatePropagation(); return }
+      if (returning) { returning = false; event.stopImmediatePropagation(); const resume = pendingPop; pendingPop = null; if (resume) leaveRequestedRef.current(resume); return true }
       const nextIndex = window.history.state?.idx
       if (approvedPop) { approvedPop = false; historyIndex = nextIndex; return }
-      if ((protectedRef.current || (unsavedRef.current && window.location.pathname !== editorPath)) && Number.isInteger(historyIndex) && Number.isInteger(nextIndex)
-        && nextIndex !== historyIndex && !window.confirm(leaveMessage())) {
-        event.stopImmediatePropagation()
-        returning = true
-        window.history.go(historyIndex - nextIndex)
-        return
+      const needsProtection = protectedRef.current || (unsavedRef.current && window.location.pathname !== editorPath)
+      if (needsProtection && Number.isInteger(historyIndex) && Number.isInteger(nextIndex) && nextIndex !== historyIndex) {
+        const delta = nextIndex - historyIndex
+        if (leaveRequestedRef.current) {
+          event.stopImmediatePropagation()
+          pendingPop = () => { approvedPop = true; window.history.go(delta) }
+          returning = true
+          window.history.go(-delta)
+          return true
+        }
+        if (!window.confirm(leaveMessage())) {
+          event.stopImmediatePropagation()
+          returning = true
+          window.history.go(-delta)
+          return true
+        }
       }
       historyIndex = nextIndex
     }
-    window.addEventListener('popstate', popState, true)
+    const unregisterPopState = registerListingNavigationGuard(popState)
     const originals = {}
     const wrappers = {}
     for (const method of ['push', 'replace', 'go']) {
@@ -93,7 +107,18 @@ export default function useListingRecoveryProtection({ enabled, scope, form, rec
         const destination = args[0]
         const destinationPath = typeof destination === 'string' ? new URL(destination, window.location.href).pathname : destination?.pathname
         const leavingEditor = method === 'go' || destinationPath !== editorPath
-        if ((protectedRef.current || (unsavedRef.current && leavingEditor)) && !window.confirm(leaveMessage())) return
+        if (protectedRef.current || (unsavedRef.current && leavingEditor)) {
+          if (leaveRequestedRef.current) {
+            leaveRequestedRef.current(() => {
+              if (method === 'go') approvedPop = true
+              const result = originals[method].apply(this, args)
+              historyIndex = window.history.state?.idx
+              return result
+            })
+            return
+          }
+          if (!window.confirm(leaveMessage())) return
+        }
         if (method === 'go') approvedPop = true
         const result = originals[method].apply(this, args)
         historyIndex = window.history.state?.idx
@@ -103,7 +128,7 @@ export default function useListingRecoveryProtection({ enabled, scope, form, rec
     }
     return () => {
       window.removeEventListener('beforeunload', beforeUnload)
-      window.removeEventListener('popstate', popState, true)
+      unregisterPopState()
       for (const method of Object.keys(originals)) if (navigator[method] === wrappers[method]) navigator[method] = originals[method]
     }
   }, [enabled, navigation])

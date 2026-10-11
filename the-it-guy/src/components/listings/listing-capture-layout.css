@@ -36,3 +36,84 @@
   .listing-capture-fields .sales-property-categories { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .listing-capture-fields .xl\:col-span-2 { grid-column: auto; }
 }
+
+/* New sales capture: actions and preview follow the page, without overlays. */
+.sales-capture-form { position: relative; }
+.sales-capture-form .sales-capture-close { position: absolute; right: 0; top: 0; }
+.sales-capture-form .sales-create-progress { margin-top: 0; margin-right: 52px; padding: 8px; }
+.sales-capture-form .sales-create-step { padding-top: 8px; padding-bottom: 8px; gap: 6px; }
+.sales-capture-form .sales-create-step:not(:last-child)::after { top: 24px; }
+.sales-capture-actions { position: static; box-shadow: none; overflow: hidden; }
+.sales-capture-layout .listing-capture-preview { position: static; max-height: none; align-self: start; }
+.sales-capture-layout .listing-preview-photo { aspect-ratio: 16 / 9; }
+.sales-capture-layout .listing-preview-heading, .sales-capture-layout .listing-preview-body { padding: 14px; }
+.sales-capture-layout .listing-preview-description { max-height: 160px; overflow-y: auto; }
+.sales-capture-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; max-height: 360px; overflow-y: auto; margin-top: 16px; padding: 2px 6px 2px 2px; scrollbar-gutter: stable; }
+.sales-capture-gallery article > div:first-child { aspect-ratio: auto; height: 110px; }
+.sales-capture-form .listing-capture-fields > div { padding: 20px; }
+.sales-capture-form .listing-capture-fields > div > div[aria-live] { margin-bottom: 16px; }
+.sales-capture-form .listing-capture-fields details > div > details { padding: 16px; }
+.sales-capture-form .listing-capture-fields details input, .sales-capture-form .listing-capture-fields details select { min-height: 42px; }
+@container listing-capture (min-width: 1040px) {
+  .sales-capture-layout .listing-capture-preview { height: 0; min-height: 100%; overflow-y: auto; }
+}
+.ui-page-scroll:has(.sales-capture-form) { padding-top: 12px; }
+@container listing-capture (min-width: 1040px) {
+  .sales-capture-layout .listing-capture-preview { border: 0; border-radius: 0; background: transparent; overflow: hidden; }
+  .sales-capture-layout .listing-preview-content { max-height: 100%; overflow-y: auto; border: 1px solid #dbe6f2; border-radius: 16px; background: white; }
+}
+
+/* Shared sale and rental review: compact facts, with price beside the property. */
+.listing-review-details { display: grid; gap: 18px; min-width: 0; container: listing-review / inline-size; }
+.listing-review-card { min-width: 0; padding: 20px; border: 1px solid #dbe6f2; border-radius: 16px; background: #fff; }
+.listing-review-card-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 16px; margin-bottom: 18px; border-bottom: 1px solid #edf2f7; }
+.listing-review-card-heading h3 { display: flex; align-items: center; gap: 10px; margin: 0; color: #18324b; font-size: 16px; font-weight: 700; }
+.listing-review-icon { display: grid; place-items: center; flex-shrink: 0; width: 36px; height: 36px; border-radius: 10px; background: #edf6f2; color: #236b51; }
+.listing-review-edit { display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex-shrink: 0; min-height: 36px; padding: 6px 10px; border: 1px solid #dbe6f2; border-radius: 9px; color: #315f80; background: #fff; font-size: 12px; font-weight: 600; }
+.listing-review-edit:hover { background: #f5f9fc; border-color: #adc2d4; }
+.listing-review-property-layout { display: grid; align-items: start; gap: 20px; min-width: 0; }
+.listing-review-rows { display: grid; align-content: start; gap: 18px; margin: 0; min-width: 0; }
+.listing-review-rows > div { min-width: 0; }
+.listing-review-rows dt { display: flex; align-items: center; gap: 6px; color: #607387; font-size: 12px; font-weight: 600; }
+.listing-review-rows dt svg { flex-shrink: 0; color: #7890a1; }
+.listing-review-rows dd { margin: 6px 0 0; color: #18324b; font-size: 14px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.listing-review-wide { grid-column: 1 / -1; }
+.listing-review-price { min-width: 0; padding: 16px; border: 1px solid #d5e7dd; border-radius: 12px; background: #f3faf6; }
+.listing-review-price-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+.listing-review-price-heading > span { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; color: #286b43; }
+.listing-review-price .listing-review-rows > div:first-child dd { font-size: 24px; line-height: 1.3; font-weight: 700; color: #236b51; }
+.listing-review-price .listing-review-rows { gap: 14px; }
+@container listing-review (min-width: 320px) {
+  .listing-review-property-rows, .listing-review-marketing-rows { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@container listing-review (min-width: 680px) {
+  .listing-review-property-layout { grid-template-columns: minmax(0, 1fr) 240px; }
+}
+.listing-review-price.is-rental .listing-review-rows { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.listing-review-price.is-rental .listing-review-rows > div:first-child { grid-column: 1 / -1; }
+.listing-review-edit:focus-visible { outline: 2px solid #236b51; outline-offset: 2px; }
+
+.sales-extra-details { container: sales-extra / inline-size; min-width: 0; }
+.sales-extra-groups { display: grid; gap: 16px; margin-top: 24px; }
+.sales-extra-groups > button { display: flex; align-items: center; gap: 14px; min-width: 0; min-height: 108px; padding: 18px; border: 1px solid #dbe6f2; border-radius: 16px; background: #fff; text-align: left; color: #18324b; }
+.sales-extra-groups > button:hover { background: #f7fafc; border-color: #91abc0; }
+.sales-extra-icon { display: grid; place-items: center; flex-shrink: 0; width: 48px; height: 48px; border-radius: 12px; background: #eef4fa; color: #315f80; }
+.sales-extra-group-label { display: grid; gap: 6px; min-width: 0; flex: 1; }
+.sales-extra-group-label strong { font-size: 14px; }
+.sales-extra-group-label > span { color: #607387; font-size: 12px; }
+.sales-extra-groups > button > svg { flex-shrink: 0; color: #607387; }
+.sales-extra-dialog { max-width: 900px; }
+.sales-extra-fields { display: grid; gap: 16px; min-width: 0; border: 0; padding: 0; }
+.sales-extra-field { min-width: 0; padding: 18px; border: 1px solid #e0e8f1; border-radius: 12px; background: #fbfdff; }
+.sales-extra-field label { display: grid; gap: 12px; }
+.sales-extra-field-label { color: #2d445e; font-size: 14px; font-weight: 600; }
+.sales-extra-field :is(input,select,textarea) { width: 100%; min-width: 0; min-height: 44px; padding: 10px; border: 1px solid #dbe6f2; border-radius: 9px; color: #243d56; background: white; font-size: 14px; }
+.sales-extra-field textarea { min-height: 100px; resize: vertical; }
+.sales-extra-answers { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+.sales-extra-answers button { min-height: 44px; border: 1px solid #dbe6f2; border-radius: 9px; color: #526f88; background: #fff; font-size: 14px; font-weight: 600; }
+.sales-extra-answers button[aria-pressed="true"] { color: #18324b; border-color: #274c69; background: #eaf2f8; }
+.sales-extra-answer-state { display: flex; justify-content: space-between; gap: 12px; min-height: 20px; margin-top: 10px; color: #607387; font-size: 12px; }
+.sales-extra-answer-state button { text-decoration: underline; text-underline-offset: 2px; }
+.sales-extra-details button:focus-visible, .sales-extra-dialog :is(button,input,select,textarea):focus-visible { outline: 2px solid #236b51; outline-offset: 2px; }
+@container sales-extra (min-width: 600px) { .sales-extra-groups { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 640px) { .sales-extra-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); } .sales-extra-field-wide { grid-column: 1 / -1; } }

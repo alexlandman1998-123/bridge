@@ -51,8 +51,8 @@ const leadsStart = pageSource.indexOf("{sellerWorkspaceTab === 'leads'")
 const overview = pageSource.slice(overviewStart, leadsStart)
 
 assert.match(pageSource, /buildSellerFicaOverview\(/)
-assert.match(overview, /Activate Portal/)
-assert.match(overview, /overviewSellerSnapshot\.ficaStatus/)
+assert.doesNotMatch(overview, /Activate Portal/)
+assert.doesNotMatch(overview, /overviewSellerSnapshot\.ficaStatus/)
 assert.doesNotMatch(overview, /Review FICA|Portal security|Communication|No recorded seller contact/)
 assert.doesNotMatch(overview, /sellerPortalSecurityOverview|sellerEmailDeliveryOverview/)
 

@@ -168,6 +168,10 @@ export function clearListingRecoveryDraft(scope) {
   if (!scope) return Promise.resolve()
   try { globalThis.localStorage?.removeItem(textKey(scope)) } catch { /* Browser cleanup cannot undo a confirmed hosted save. */ }
   return ordered(scope, async () => {
+    if (!globalThis.indexedDB) {
+      for (const key of savedFiles.keys()) if (key.startsWith(`${scope}:`)) savedFiles.delete(key)
+      return
+    }
     const db = await openDatabase()
     const transaction = db.transaction(['drafts','photos'], 'readwrite')
     transaction.objectStore('drafts').delete(scope)

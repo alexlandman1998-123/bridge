@@ -1,5 +1,5 @@
 import ListingLandSizeInput from '../components/listings/ListingLandSizeInput'
-import ListingAdvertisingChoices from '../components/listings/ListingAdvertisingChoices'
+import ListingAgentChoices from '../components/listings/ListingAgentChoices'
 import ListingReviewDetails from '../components/listings/ListingReviewDetails'
 import { salesPropertyTypeOptions, salesPropertyTypeMatches, salesCategoryChange } from '../services/listings/listingCaptureModel'
 import { applyListingSellerOnboardingSaveSnapshot } from '../services/listings/listingSellerCanonicalUpdateModel.js'
@@ -7,7 +7,7 @@ import { saveListingRecoveryDraft, readListingRecoveryDraft, clearListingRecover
 import useListingRecoveryProtection from '../hooks/useListingRecoveryProtection'
 import ListingSaveStatus from '../components/listings/ListingSaveStatus'
 import ListingCaptureLayout from '../components/listings/ListingCaptureLayout'
-import { plainPropertyFieldLabel, listingTitleExample } from '../services/listings/listingAdvertPreviewModel'
+import { listingTitleExample } from '../services/listings/listingAdvertPreviewModel'
 import ListingChannelLogo from '../components/listings/ListingChannelLogo'
 import ListingPublicationProgress from '../components/listings/ListingPublicationProgress'
 import ListingFieldIssues from '../components/listings/ListingFieldIssues'
@@ -21,7 +21,7 @@ import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
 import SectionHeader from '../components/ui/SectionHeader'
 import FinalListingModuleOverview from '../components/listings/FinalListingModuleOverview'
-import ListingFeatureFields from '../components/listings/ListingFeatureFields'
+import SalesExtraDetails from '../components/listings/SalesExtraDetails'
 import ListingSyndicationChannelCard from '../components/listings/ListingSyndicationChannelCard'
 import { useOptionalOrganisation } from '../context/OrganisationContext'
 import './sales-listing-wizard.css'
@@ -110,7 +110,7 @@ import {
   PROPERTY_STRUCTURE_TYPES,
 } from '../lib/propertyTaxonomy'
 import { buildFinalListingModuleOverview } from '../services/listings/finalListingModuleModel'
-import { getSpecialistSalesListingSchema, buildSpecialistSalesFacts, SPECIALIST_SALES_FIELD_KEYS } from '../services/listings/specialistSalesListingSchema'
+import { buildSpecialistSalesFacts, SPECIALIST_SALES_FIELD_KEYS } from '../services/listings/specialistSalesListingSchema'
 import {
   mergeListingFeatureSelections,
   normalizeListingFeatureFacts,
@@ -292,6 +292,7 @@ const QUICK_ADD_SELLER_TYPE_CARDS = SELLER_ENTITY_TYPES.map((option) => ({
 const CREATE_LISTING_WORKFLOW_STEPS = [
   { key: 'seller', label: 'Seller', description: 'Owner details' },
   { key: 'property', label: 'Property details', description: 'Address & specifications' },
+  { key: 'features', label: 'Extra details', description: 'Optional' },
   { key: 'marketing', label: 'Photos & description', description: '' },
   { key: 'syndication', label: 'Where to advertise', description: '' },
   { key: 'review', label: 'Check & publish', description: '' },
@@ -681,7 +682,7 @@ function isUnstorableCreateListingImageUrl(value) {
 
 function CreateListingProgressNav({ steps = [], activeStep = 'seller', maxVisitedStep = 0, onStepClick, mobile = false }) {
   const activeIndex = Math.max(0, steps.findIndex((step) => step.key === activeStep))
-  const compactLabels = { seller: 'Seller', property: 'Property', features: 'Features', marketing: 'Marketing', syndication: 'Portals', review: 'Review' }
+  const compactLabels = { seller: 'Seller', property: 'Property', features: 'Extra details', marketing: 'Marketing', syndication: 'Portals', review: 'Review' }
   if (mobile) return <MobileListingProgress steps={steps} activeIndex={activeIndex} maxVisitedStep={maxVisitedStep} onStepClick={onStepClick} />
   return (
     <nav className="sales-create-progress" aria-label="Create listing progress">
@@ -697,13 +698,13 @@ function CreateListingProgressNav({ steps = [], activeStep = 'seller', maxVisite
   )
 }
 
-function ListingWizard({ children, footer, form, onEdit }) {
+function ListingWizard({ children, footer, form, onEdit, streamlined = false, anchored = streamlined }) {
   return (
     <>
-      <ListingCaptureLayout form={form} rental={form.listingType === 'rental'} onEdit={step => onEdit(step === 'terms' ? 'property' : step)}>
+      <ListingCaptureLayout streamlined={streamlined} form={form} rental={form.listingType === 'rental'} onEdit={step => onEdit(step === 'terms' ? 'property' : step)}>
         <div className="rounded-[16px] border border-[#dde6ef] bg-white px-5 py-6 shadow-[0_14px_34px_rgba(15,23,42,0.045)] sm:px-6 lg:px-8">{children}</div>
       </ListingCaptureLayout>
-      <div className="listing-capture-actions">{footer}</div>
+      <div className={`listing-capture-actions ${anchored ? 'sales-capture-actions' : ''}`}>{footer}</div>
     </>
   )
 }
@@ -898,9 +899,9 @@ function FileUpload({ label, fileName = '', accept = '', onFileSelect, onClear }
   )
 }
 
-export function WizardFooter({ isFinalStep = false, isSaving = false, publishBlocked = false, leftLabel = 'Cancel', leftIcon = null, onCancel, onSaveDraft, onContinue, finalLabel = 'Create listing', showSaveDraft = true }) {
+export function WizardFooter({ isFinalStep = false, isSaving = false, publishBlocked = false, leftLabel = 'Cancel', leftIcon = null, onCancel, onSaveDraft, onContinue, finalLabel = 'Create listing', showSaveDraft = true, anchored = false }) {
   return (
-    <footer className="sticky bottom-0 z-10 flex flex-col gap-3 border-t border-[#e6edf5] bg-white/95 px-5 py-4 backdrop-blur sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
+    <footer className={`${anchored ? '' : 'sticky bottom-0 z-10'} flex flex-col gap-3 border-t border-[#e6edf5] bg-white/95 px-5 py-4 backdrop-blur sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8`}>
       <Button type="button" variant="secondary" onClick={onCancel} disabled={isSaving}>
         {leftIcon}
         {leftLabel}
@@ -1177,7 +1178,6 @@ function resolveListingEditorStep(value = '', fallback = 'seller') {
     seller_and_mandate: 'seller',
     property_details: 'property',
     media: 'marketing',
-    features: 'marketing',
     documents: 'syndication',
     publishing: 'syndication',
   }
@@ -4569,8 +4569,14 @@ function AgentListings({ mobileEditor = false } = {}) {
 
   async function goToNextCreateListingStep() {
     setValidationAttemptedStep(createListingStep)
-    const issues = listingFieldIssues.filter(issue => createListingStep === 'syndication' || issue.step === createListingStep)
-    if (issues.length) { setError(issues[0].message); return }
+    const issues = (isCreateListingWorkspace && !isDeveloperWorkspace ? listingCompletionIssues : listingFieldIssues).filter(issue => createListingStep === 'syndication' || issue.step === createListingStep)
+    if (issues.length) {
+      const targetStep = issues[0].step
+      setCreateListingStep(targetStep)
+      setValidationAttemptedStep(targetStep)
+      setError('')
+      return
+    }
     if (isCreateListingWorkspace && !listingEditorSteps.some((step) => step.key === createListingStep)) {
       setCreateListingStep('property')
       return
@@ -5023,6 +5029,7 @@ function AgentListings({ mobileEditor = false } = {}) {
     const askingPrice = Number(normalizeIntegerInput(form.listingPrice || form.estimatedAskingPrice)) || 0
     const propertyValidationErrors = getSalesListingRequiredIssues({ ...form, propertyAddress, propertyType }, { editing: true }).map(issue => issue.message)
     if (propertyValidationErrors.length) {
+      setValidationAttemptedStep('property')
       setCreateListingStep('property')
       throw new Error(propertyValidationErrors.join(' '))
     }
@@ -7249,7 +7256,7 @@ function AgentListings({ mobileEditor = false } = {}) {
     event.preventDefault()
     if (draftRecoveryBlocked || editDraftConflict) return
     if ((isCreateListingWorkspace || isEditListingWorkspace) && ['active', 'under_offer'].includes(form.listingStatus) && listingFieldIssues.length) {
-      setValidationAttemptedStep(listingFieldIssues[0].step); setCreateListingStep(listingFieldIssues[0].step); setError(listingFieldIssues[0].message); return
+      setValidationAttemptedStep(listingFieldIssues[0].step); setCreateListingStep(listingFieldIssues[0].step); setError(''); return
     }
     if (isCreateListingWorkspace && createListingDraftHydratedKey !== createListingDraftScopeKey) return
     if (floorplanUploading || isListingSaving || publicationStatusBusy || publicationPending || publicationUncertain || listingSaveInFlightRef.current || (isCreateListingWorkspace && completedCreateListingRef.current)) return
@@ -8164,9 +8171,9 @@ function AgentListings({ mobileEditor = false } = {}) {
         : 'Price not captured'
     const createListingOwnerCards = normalizeCreateListingOwnerCards(form.multipleOwners, form.multipleOwnersText, { includeBlank: sellerTypeKey === 'multiple_owners' })
     const isFinalCreateListingStep = createListingStepIndex === listingEditorSteps.length - 1
+    const streamlinedSales = isCreateListingWorkspace && !isDeveloperWorkspace && !mobileEditor
     const editorTitle = isListingPublicationEditor ? 'Edit Listing Publication' : isEditListingWorkspace ? 'Edit Listing' : 'New listing (sales)'
     const editorHeading = isEditListingWorkspace ? 'Edit Listing' : 'New listing'
-    const editorDescription = isEditListingWorkspace ? 'Update the details of your property listing.' : 'Capture the listing details.'
     const editorCrumbTitle = isEditListingWorkspace ? normalizeText(editListingRecord?.listingTitle || editListingRecord?.title || editListingRecord?.addressLine1 || editListingRecord?.propertyAddress || 'Listing') : ''
     const cancelEditor = () => navigate(mobileEditor ? '/mobile/listings' : isEditListingWorkspace ? `/agent/listings/${encodeURIComponent(editListingId)}` : '/listings')
 
@@ -8182,8 +8189,8 @@ function AgentListings({ mobileEditor = false } = {}) {
       </div>
     </section>
     return (
-      <form className={`space-y-5 pb-6 ${mobileEditor ? 'mobile-listing-editor' : ''}`} onSubmit={(event) => { event.preventDefault(); if (isFinalCreateListingStep) void handleSaveListing(event); else void goToNextCreateListingStep() }} noValidate>
-        <header className="flex flex-wrap items-start justify-between gap-3">
+      <form className={`${streamlinedSales ? 'sales-capture-form space-y-3' : 'space-y-5'} pb-6 ${mobileEditor ? 'mobile-listing-editor' : ''}`} onSubmit={(event) => { event.preventDefault(); if (isFinalCreateListingStep) void handleSaveListing(event); else void goToNextCreateListingStep() }} noValidate>
+        <header className={`flex flex-wrap items-start justify-between gap-3 ${streamlinedSales ? 'sales-capture-close' : ''}`}>
           {mobileEditor ? <div className="mobile-listing-editor-intro"><p>{isDeveloperWorkspace ? 'Development portfolio' : 'Property portfolio'}</p><h1>{isEditListingWorkspace ? 'Edit listing' : 'New listing'}</h1><span>Save your progress. Finish when you’re ready.</span></div> : isEditListingWorkspace ? (
             <div>
               <div className="text-sm font-semibold text-[#607387]">
@@ -8196,7 +8203,6 @@ function AgentListings({ mobileEditor = false } = {}) {
               </div>
               {!isListingPublicationEditor ? <>
                 <h1 className="mt-3 text-2xl font-semibold text-[#142132]">{editorHeading}</h1>
-                <p className="mt-1 text-sm text-[#607387]">{editorDescription}</p>
               </> : null}
             </div>
           ) : null}
@@ -8226,23 +8232,26 @@ function AgentListings({ mobileEditor = false } = {}) {
 
         {error && !listingCompletionIssues.some(issue => issue.message === error) ? <p role="alert" className="rounded-[8px] border border-[#f6d4d4] bg-[#fff5f5] px-4 py-3 text-sm font-semibold text-[#b42318]">{error}</p> : null}
         {missingDraftPhotoCount > 0 ? <p className="rounded-[8px] border border-[#f3d7a8] bg-[#fff8ea] px-4 py-3 text-sm font-semibold text-[#88531a]">Your listing draft and current step have been restored. Select the {missingDraftPhotoCount} photo{missingDraftPhotoCount === 1 ? '' : 's'} again; files that had not uploaded cannot be restored after a refresh.</p> : null}
-        <ListingSaveStatus cloud={isListingSaving ? { status: 'saving', message: photoSaveProgress || (form.listingImages.some(image => image.file) ? `Preparing ${form.listingImages.length} photos…` : 'Saving to Listings…') } : cloudSave} recovery={recoveryProtection.status} dirty={isEditListingWorkspace ? JSON.stringify(form) !== savedEditorFormRef.current : JSON.stringify(form) !== initialEditorFormRef.current} saveLabel={isEditListingWorkspace ? 'Save changes' : 'Save draft'} />
+        <ListingSaveStatus hideSavedNotice={isEditListingWorkspace} hideDeviceNotice={streamlinedSales || isEditListingWorkspace} cloud={isListingSaving ? { status: 'saving', message: photoSaveProgress || (form.listingImages.some(image => image.file) ? `Preparing ${form.listingImages.length} photos…` : 'Saving to Listings…') } : cloudSave} recovery={recoveryProtection.status} dirty={isEditListingWorkspace ? JSON.stringify(form) !== savedEditorFormRef.current : JSON.stringify(form) !== initialEditorFormRef.current} saveLabel={isEditListingWorkspace ? 'Save changes' : 'Save draft'} />
         {workflowMessage ? <p className="rounded-[8px] border border-[#d8ecdf] bg-[#eefbf3] px-4 py-3 text-sm font-semibold text-[#1f7d44]">{workflowMessage}</p> : null}
-        <ListingPublicationProgress results={initialChannelResults} saved={isEditListingWorkspace && cloudSave.status === 'saved'} title={form.listingTitle || form.propertyAddress} listingStatus={form.listingStatus} channels={form.selectedSyndicationChannels}
+        <ListingPublicationProgress results={initialChannelResults} title={form.listingTitle || form.propertyAddress} listingStatus={form.listingStatus} channels={form.selectedSyndicationChannels}
           unsavedChanges={isEditListingWorkspace && JSON.stringify(form) !== savedEditorFormRef.current} changesNotSent={savedChangesNotSent} retrySavesChanges
           busy={publicationStatusBusy || isListingSaving}
           onRetry={isEditListingWorkspace ? () => void retryListingPublication() : undefined}
           onCheckStatus={() => void checkListingPublication()}
           onViewListing={isEditListingWorkspace ? () => navigate(mobileEditor ? '/mobile/listings' : `/agent/listings/${encodeURIComponent(editListingId)}?tab=marketing`) : undefined} />
 
-        <ListingFieldIssues completion channels={form.selectedSyndicationChannels} draftNote={isEditListingWorkspace ? "Save changes needs the listing details below. Website requirements apply when publishing." : undefined} issues={listingCompletionIssues} step={createListingStep} form={form} attempted={validationAttemptedStep === createListingStep} onGoToStep={step => { setCreateListingStep(step); setError('') }} />
+        {!streamlinedSales && !isEditListingWorkspace ? <ListingFieldIssues completion channels={form.selectedSyndicationChannels} draftNote={isEditListingWorkspace ? "Save changes needs the listing details below. Website requirements apply when publishing." : undefined} issues={listingCompletionIssues} step={createListingStep} form={form} attempted={validationAttemptedStep === createListingStep} onGoToStep={step => { setCreateListingStep(step); setError('') }} /> : null}
 
-        {!isEditListingWorkspace ? <p className="px-5 py-2 text-sm text-[#607387]">Save the property first. You can add seller and mandate details from the saved listing.</p> : null}
+        {!isEditListingWorkspace && !streamlinedSales ? <p className="px-5 py-2 text-sm text-[#607387]">Save the property first. You can add seller and mandate details from the saved listing.</p> : null}
         <ListingWizard
+          streamlined={streamlinedSales || (isEditListingWorkspace && ['features', 'review'].includes(createListingStep))}
+          anchored={streamlinedSales || isEditListingWorkspace}
           form={form}
           onEdit={step => openCreateListingStep(step, { allowForward: true })}
           footer={(
             <WizardFooter
+              anchored={streamlinedSales || isEditListingWorkspace}
               isFinalStep={isFinalCreateListingStep}
               isSaving={isListingSaving || floorplanUploading || publicationStatusBusy}
               publishBlocked={publicationPending || publicationUncertain}
@@ -8256,6 +8265,7 @@ function AgentListings({ mobileEditor = false } = {}) {
             />
           )}
         >
+            {streamlinedSales || isEditListingWorkspace ? <ListingFieldIssues issues={listingCompletionIssues.filter(issue => issue.step === createListingStep)} step={createListingStep} attempted={validationAttemptedStep === createListingStep} onGoToStep={step => { setCreateListingStep(step); setError('') }} /> : null}
             {createListingStep === 'seller' && mobileEditor && isDeveloperWorkspace ? <MobileDeveloperListingStock form={form} update={updateForm} developments={developmentOptions} units={listingUnitOptions} unitsLoading={listingUnitsLoading} onSelectUnit={applyDeveloperUnitSelection} agents={assignableAgents} branches={effectiveBranchOptions} canAssign={canAssignAcrossOrganisation || canAssignWithinBranch} canAssignAcross={canAssignAcrossOrganisation} /> : createListingStep === 'seller' ? (
               <div className="space-y-6">
                 <ListingWizardHeader
@@ -8370,7 +8380,6 @@ function AgentListings({ mobileEditor = false } = {}) {
             {createListingStep === 'property' ? (
               <div className="space-y-6">
                 <ListingWizardHeader title="Property details" />
-                <ListingAdvertisingChoices selected={form.selectedSyndicationChannels} availability={syndicationAvailability} loading={syndicationAvailabilityLoading} onToggle={toggleCreateListingSyndicationChannel} />
 
                 <ListingWizardSection title="Property category">
                   <div className="sales-property-categories" role="group" aria-label="Property category">
@@ -8506,11 +8515,12 @@ function AgentListings({ mobileEditor = false } = {}) {
                       />
                     ))}
                   </div>
-                  <p className="mt-3 text-xs text-[#607387]">{form.listingType === 'rental' ? 'Enter the monthly rent in rand (R).' : 'Enter the selling price in rand (R).'}</p>
                 </ListingWizardSection>
                 {<details className="mobile-listing-more-fields"><summary>Public address and country</summary><div><FormField label="Country"><Field value={form.country} onChange={(event) => updateForm('country', event.target.value)} /></FormField><FormField label="Public address display"><Field as="select" value={form.exactAddressVisibility} onChange={(event) => updateForm('exactAddressVisibility', event.target.value)}>{LISTING_ADDRESS_VISIBILITY_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</Field></FormField></div></details>}
               </div>
             ) : null}
+
+            {createListingStep === 'features' ? <SalesExtraDetails form={form} onChange={updateForm} onFeatureChange={updateListingFeatureFact} disabled={isListingSaving} /> : null}
 
             {createListingStep === 'marketing' ? (
               <div className="space-y-6">
@@ -8531,7 +8541,7 @@ function AgentListings({ mobileEditor = false } = {}) {
                     </label>
                   </div>
                   {form.listingImages.length ? (
-                    <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    <div className={streamlinedSales ? "sales-capture-gallery" : "mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4"} tabIndex={streamlinedSales ? 0 : undefined} role={streamlinedSales ? "region" : undefined} aria-label={streamlinedSales ? "Listing photos" : undefined}>
                       {form.listingImages.map((image, index) => {
                         const isCover = normalizeText(form.coverImageId) === normalizeText(image.id)
                         return (
@@ -8579,31 +8589,6 @@ function AgentListings({ mobileEditor = false } = {}) {
                   <label className="grid gap-2"><span className="text-sm font-semibold text-[#2d445e]">Floor plans</span><input type="file" accept=".pdf,image/*" multiple onChange={uploadEditorFloorplans} disabled={floorplanUploading || isListingSaving} />{floorplanUploading ? <span role="status">Uploading floor plans…</span> : null}</label>
                   <div>{(form.floorplans || []).map(plan => <div key={plan.id} className="flex items-center gap-2"><span className="truncate text-sm">{plan.label || plan.name}</span><Button type="button" size="sm" variant="secondary" onClick={() => updateForm('floorplans', form.floorplans.filter(item => item.id !== plan.id))}>Remove {plan.label || plan.name}</Button></div>)}</div>
                 </div> : null}
-                <details className="rounded-xl border border-[#dce6f2] p-4">
-                  <summary className="cursor-pointer text-sm font-semibold text-[#2d445e]">Extra property details (optional)</summary>
-                  <p className="mt-3 text-sm text-[#607387]">Add what you know. These details can be left blank. If a selected website needs a value, we will show it above.</p>
-                  <div className="mt-4 space-y-6">
-                    {getSpecialistSalesListingSchema(form.propertyCategory, form.listingType).fields.length ? (
-                      <ListingWizardSection title="Category-specific details">
-                        <div className="mt-3 grid gap-4 md:grid-cols-2">
-                          {getSpecialistSalesListingSchema(form.propertyCategory, form.listingType).fields.filter((field) => field.key !== 'erfSize').map((field) => (
-                            field.kind === 'boolean' ? (
-                              <BooleanChoiceField key={field.key} label={field.label} value={Boolean(form[field.key])} yesDescription="Available at this property." noDescription="Not available or not confirmed." onChange={(value) => updateForm(field.key, value)} />
-                            ) : (
-                              <FormField key={field.key} label={`${field.key === 'parking' ? 'Parking details' : plainPropertyFieldLabel(field)}${field.unit ? ` (${field.unit === 'ha' ? 'hectares' : field.unit})` : ''}`} className={field.kind === 'terms' ? 'md:col-span-2' : ''}>
-                                <Field name={field.key} as={field.kind === 'terms' ? 'textarea' : undefined} type={field.kind === 'measurement' ? 'number' : undefined} min={field.kind === 'measurement' ? '0' : undefined} step={field.kind === 'measurement' ? '0.1' : undefined} value={form[field.key] || ''} onChange={(event) => updateForm(field.key, event.target.value)} placeholder={field.unit ? `Enter ${field.label.toLowerCase()} in ${field.unit}` : `Enter ${field.label.toLowerCase()}`} />
-                              </FormField>
-                            )
-                          ))}
-                        </div>
-                      </ListingWizardSection>
-                    ) : null}
-
-                    <ListingWizardSection title="Features & facilities">
-                      <ListingFeatureFields facts={normalizeListingFeatureFacts(form.featureFacts, form.keySellingPoints)} listingType={form.listingType} propertyCategory={form.propertyCategory} onChange={updateListingFeatureFact} presentation="cards" />
-                    </ListingWizardSection>
-                  </div>
-                </details>
               </div>
             ) : null}
 
@@ -8650,8 +8635,15 @@ function AgentListings({ mobileEditor = false } = {}) {
                     </div>
                   </div>
                 </div>
-                <ListingReviewDetails form={form} onEdit={step => openCreateListingStep(step, { allowForward: true })} />
+                <ListingReviewDetails compact={streamlinedSales} form={form} onEdit={step => openCreateListingStep(step, { allowForward: true })} />
                 {!mobileEditor && (canAssignAcrossOrganisation || canAssignWithinBranch) ? (
+                  streamlinedSales ? <ListingAgentChoices agents={assignableAgents} value={form.assignedAgentId || form.assignedAgentEmail} onChange={value => {
+                          const agent = assignableAgents.find((item) => normalizeText(item.userId || item.id || item.email) === value)
+                          updateForm('assignedAgentId', normalizeText(agent?.userId || agent?.id || value))
+                          updateForm('assignedAgent', normalizeText(agent?.fullName || agent?.email))
+                          updateForm('assignedAgentEmail', normalizeText(agent?.email))
+                          if (agent?.branchId && !form.branchId) updateForm('branchId', agent.branchId)
+                  }} /> : (
                   <div className="grid gap-4 border-t border-[#e6edf5] pt-5 md:grid-cols-2">
                     <label className="grid gap-2">
                       <span className="text-sm font-semibold text-[#2d445e]">Assigned agent</span>
@@ -8673,6 +8665,7 @@ function AgentListings({ mobileEditor = false } = {}) {
                       </Field>
                     </label>
                   </div>
+                  )
                 ) : null}
                 {mobileEditor && <><MobileListingAssignment form={form} update={updateForm} agents={assignableAgents} branches={effectiveBranchOptions} canAssign={canAssignAcrossOrganisation || canAssignWithinBranch} canAssignAcross={canAssignAcrossOrganisation} />{isCreateListingWorkspace && !isDeveloperWorkspace ? <p className="text-sm text-[#607387]">Save and publish makes the listing active and sends it to your selected channels. Save draft keeps it private.</p> : <MobileListingReviewFields form={form} update={updateForm} onStatusChange={applyQuickAddLifecycleStatus} />}</>}
                 <div className={`grid gap-4 ${isCreateListingWorkspace && !isDeveloperWorkspace ? '' : 'md:grid-cols-3'}`}>

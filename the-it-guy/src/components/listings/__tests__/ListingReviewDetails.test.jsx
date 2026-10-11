@@ -28,3 +28,21 @@ it('reviews vacant land without room counts and uses the advertised POA setting'
  expect(screen.getByText('Price on Application')).toBeTruthy()
  expect(screen.getByText('500 m²')).toBeTruthy()
 })
+
+it('combines price with the property card and stacks the compact sales review', () => {
+ render(<ListingReviewDetails compact form={{ propertyCategory: 'residential', listingPrice: '1250000' }} onEdit={() => {}} />)
+ expect(screen.queryByRole('heading', { name: 'Price', exact: true })).toBeNull()
+ const price = screen.getByText('Advertised price').closest('section')
+ expect(price.querySelector('h3').textContent).toBe('Property and address')
+ expect(screen.getByRole('button', { name: 'Edit photos and description' })).toBeTruthy()
+})
+
+
+it('lets an agent correct the property, price and advert from the sales review', () => {
+ const onEdit = vi.fn()
+ render(<ListingReviewDetails form={{ propertyCategory: 'residential', listingPrice: '1000000' }} onEdit={onEdit} />)
+ fireEvent.click(screen.getByRole('button', { name: 'Edit property and address' }))
+ fireEvent.click(screen.getByRole('button', { name: 'Edit price' }))
+ fireEvent.click(screen.getByRole('button', { name: 'Edit photos and description' }))
+ expect(onEdit.mock.calls).toEqual([['property'], ['property'], ['marketing']])
+})

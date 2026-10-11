@@ -98,3 +98,12 @@ it('does not restore a recovery copy that is identical to the confirmed saved fo
  expect(reconcileListingEditRecovery({ form, recovery: { baseForm: form, baseRevision: 'saved|' } }, form, 'saved|')).toBeNull()
  expect(reconcileListingEditRecovery({ form, recovery: { baseForm: form, baseRevision: 'old|' } }, { ...form, listingPrice: '1300000' }, 'new|')).toBeNull()
 })
+
+it('discards text recovery when photo storage is unavailable', async () => {
+ browserStorage()
+ vi.stubGlobal('indexedDB', undefined)
+ const scope = 'discard:text-only'
+ writeListingTextRecoveryDraft(scope, { form: { title: 'Old rental', galleryImages: [] }, photoField: 'galleryImages' })
+ await clearListingRecoveryDraft(scope)
+ expect(await readListingRecoveryDraft(scope)).toBeNull()
+})

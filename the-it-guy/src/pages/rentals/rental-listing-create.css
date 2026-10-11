@@ -64,3 +64,10 @@
   .rental-create-step-number { width: 26px; height: 26px; font-size: 11px; }
   .rental-create-step:not(:last-child)::after { top: 22px; left: calc(50% + 16px); width: calc(100% - 32px); }
 }
+
+.rental-capture-form .form-field { min-width: 0; align-self: start; align-content: start; }
+.rental-capture-form .form-field > span { min-height: 1.5rem; }
+.rental-capture-form .form-field input, .rental-capture-form .form-field select { min-height: 46px; }
+.ui-page-scroll:has(.rental-capture-form) { padding-top: 12px; }
+.rental-capture-form .sales-capture-gallery { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+.rental-capture-form .listing-capture-fields > [aria-live] { margin-bottom: 16px; }

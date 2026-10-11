@@ -27,7 +27,6 @@ const overviewBlock = source.slice(overviewStart, leadsStart)
 const overviewSections = [
   'Latest Buyer Activity',
   'Upcoming Viewings',
-  'Seller',
   'Marketing',
   'Price Position',
 ]
@@ -52,7 +51,7 @@ for (const removedOverviewCopy of [
 }
 
 assert.ok(overviewBlock.includes("openSellerWorkspaceSection('leads')"), 'Overview buyer activity CTA should open Leads.')
-assert.ok(overviewBlock.includes("openSellerWorkspaceSection('seller')"), 'Overview seller snapshot CTA should open Seller.')
+assert.equal(overviewBlock.includes('>Seller</h2>'), false, 'Seller setup belongs in its own tab, not the listing overview.')
 assert.ok(overviewBlock.includes("openSellerWorkspaceSection('marketing')"), 'Overview marketing/pricing CTAs should open Marketing.')
 assert.equal(overviewBlock.includes('>Recent Activity<'), false, 'Overview should not repeat the retired recent activity block.')
 assert.equal(overviewBlock.includes('No offers received yet.'), false, 'Price Position should not reference the retired offer workflow.')
@@ -78,19 +77,13 @@ assert.ok(
 const leadsBlock = source.slice(leadsStart, sellerStart)
 const requiredLeadsCopy = [
   'Leads for this listing',
-  'All enquiries and leads that came in through this property.',
   'Total leads',
   'New this week',
   'Contacted',
   'Viewings booked',
-  'Offers',
-  'Converted',
   '>Lead<',
   '>Source<',
   '>Status<',
-  '>Contacted<',
-  '>Viewing<',
-  '>Offer<',
   'Date added',
   'No leads yet',
 ]
@@ -99,7 +92,15 @@ for (const copy of requiredLeadsCopy) {
   assert.ok(leadsBlock.includes(copy), `Leads tab should include ${copy}.`)
 }
 
+assert.ok(leadsBlock.includes('LeadSourceLogo source={lead.sourceLabel}'), 'Listing leads should show the existing source brand.')
+assert.equal(source.includes('compactSellerLeadsHeader'), false, 'Leads must use the same property header as Overview.')
+assert.equal(source.includes('<ListingPublicationProgress'), false, 'The saved confirmation does not belong above the listing header.')
+assert.equal(source.includes('>Pull deeds</Button>'), false, 'Deeds lookup does not belong in the listing header.')
+
 for (const removedLeadsCopy of [
+  '>Contacted</th>',
+  '>Viewing</th>',
+  '>Offer</th>',
   'Offer Table',
   'Secure Offer Links',
   'Historical offer records',

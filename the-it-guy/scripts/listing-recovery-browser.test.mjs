@@ -9,7 +9,7 @@ import { buildRentalPrivateListingPayload } from '../src/services/rentals/rental
 
 const out = resolve(process.argv[2] || '../output/playwright/listing-recovery-browser')
 await mkdir(out, { recursive: true })
-const fixture = await startListingDiagnosticBrowserFixture(out, { realRentalDetail: process.argv[5] === 'publication' })
+const fixture = await startListingDiagnosticBrowserFixture(out, { realRentalDetail: process.argv[5] === 'publication', ...(process.argv[4] === 'rental' ? { saleSource: 'export default function Sale(){return null}' } : {}) })
 const browser = await chromium.launch({ channel: 'chrome', headless: true })
 const results = []
 try {
@@ -37,7 +37,8 @@ try {
     // Exercise the same draft through recovery, a failed upload and a confirmed
     // save. A fresh context must use the saved record, not device recovery.
     const start = fixture.events.length
-    await page.getByRole('complementary', { name: 'Draft advert preview' }).getByRole('button', { name: 'Change photos and description', exact: true }).click()
+    if (kind === 'sale') { await page.locator('[name="listingPrice"]').fill('1234567'); await page.getByRole('button', { name: 'Continue', exact: true }).click() }
+    else await page.getByRole('button', { name: /Step .*Photos & description/ }).click()
     const photo = await (await page.request.get(fixture.origin + '/fixture/photo.png')).body()
     const photoField = kind === 'sale' ? 'listingImages' : 'galleryImages'
     await page.locator(`input[name="${photoField}"]`).setInputFiles({ name: 'recovered.png', mimeType: 'image/png', buffer: photo })
@@ -58,7 +59,8 @@ try {
     recovered.on('pageerror', error => errors.push(error.message))
     try {
      await recovered.goto(fixture.origin + base + '/new', { waitUntil: 'domcontentloaded' })
-     await recovered.getByRole('complementary', { name: 'Draft advert preview' }).getByRole('button', { name: 'Change photos and description', exact: true }).click()
+     if (kind === 'sale') await recovered.getByRole('button', { name: /Step .*Photos & description/ }).click()
+     else await recovered.getByRole('button', { name: /Step .*Photos & description/ }).click()
      await recovered.getByRole('complementary', { name: 'Draft advert preview' }).getByAltText('Selected cover photo').waitFor()
      assert.equal(await recovered.getByRole('textbox', { name: 'Listing description', exact: true }).inputValue(), 'Text entered while the connection was interrupted.')
      assert.equal(fixture.events.slice(start).filter(row => ['create', 'queue'].includes(row.kind)).length, 0)
@@ -73,11 +75,13 @@ try {
      assert.equal(fixture.events.slice(start).filter(row => row.kind === 'queue').length, 0)
      results.push({ category, kind, check: 'interrupted photo upload reports an unconfirmed save and never publishes the partial draft', passed: true })
      await recovered.reload({ waitUntil: 'domcontentloaded' })
-     await recovered.getByRole('complementary', { name: 'Draft advert preview' }).getByRole('button', { name: 'Change property details', exact: true }).click()
+     if (kind === 'sale') await recovered.getByRole('button', { name: /Step 1: Property details/ }).click()
+     else await recovered.getByRole('button', { name: /Step .*Property details/ }).click()
      const recoveredAddress = recovered.getByRole('combobox', { name: /Property address/i })
      await recoveredAddress.waitFor()
      assert.equal(await recoveredAddress.inputValue(), `90 Latest ${category} Road`)
-     await recovered.getByRole('complementary', { name: 'Draft advert preview' }).getByRole('button', { name: 'Change photos and description', exact: true }).click()
+     if (kind === 'sale') await recovered.getByRole('button', { name: /Step .*Photos & description/ }).click()
+     else await recovered.getByRole('button', { name: /Step .*Photos & description/ }).click()
      await recovered.getByRole('complementary', { name: 'Draft advert preview' }).getByAltText('Selected cover photo').waitFor()
      await recovered.getByRole('button', { name: 'Save draft', exact: true }).click()
      if (kind === 'sale') await recovered.waitForURL(new RegExp('/listings/' + id + '/edit'))
@@ -104,12 +108,12 @@ try {
       const newAddress = reopened.getByRole('combobox', { name: /Property address/i })
       await newAddress.waitFor()
       assert.equal(await newAddress.inputValue(), `90 Latest ${category} Road`)
-      await reopened.getByRole('complementary', { name: 'Draft advert preview' }).getByRole('button', { name: 'Change photos and description', exact: true }).click()
+      await reopened.getByRole('button', { name: /Step .*Photos & description/ }).click()
       await reopened.getByRole('complementary', { name: 'Draft advert preview' }).getByAltText('Selected cover photo').waitFor()
       assert.equal(await reopened.getByRole('textbox', { name: 'Listing description', exact: true }).inputValue(), 'Text entered while the connection was interrupted.')
       results.push({ category, kind, check: 'a separate browser restores confirmed text and photos from Listings without device recovery', passed: true })
       await recovered.goto(fixture.origin + base + '/' + id + '/edit?step=property&scope=property', { waitUntil: 'domcontentloaded' })
-      await recovered.getByRole('complementary', { name: 'Draft advert preview' }).getByRole('button', { name: 'Change property details', exact: true }).click()
+      await recovered.getByRole('button', { name: /Step .*Property details/ }).click()
       await recoveredAddress.waitFor()
       await recoveredAddress.fill(`91 Local ${category} Road`)
       const before = await read()
@@ -164,7 +168,7 @@ try {
      assert.equal((await seed.json()).error, null)
      await page.goto(fixture.origin + `/listings/${id}/edit?step=property&scope=listing-publication`, { waitUntil: 'domcontentloaded' })
      for (const channel of ['Property24', 'Private Property', 'Website']) await page.getByRole('checkbox', { name: channel === 'Website' ? /website/i : channel, exact: true }).check()
-     await page.getByRole('button', { name: /Step 4: Check/ }).click()
+     await page.getByRole('button', { name: /Step .*Check/ }).click()
     }
     await fail('private_property')
     await page.getByRole('button', { name: kind === 'sale' ? 'Save and publish changes' : 'Save and publish', exact: true }).click()
@@ -200,9 +204,9 @@ try {
     const lostStart = fixture.events.length
     if (kind === 'rental') await rentalDraft()
     else {
-     await page.getByRole('button', { name: 'Step 2: Photos & description', exact: true }).click()
+     await page.getByRole('button', { name: /Step .*Photos & description/ }).click()
      await page.locator('[name="listingDescription"]').fill('Updated saved description for lost-response check.')
-     await page.getByRole('button', { name: /Step 4: Check/ }).click()
+     await page.getByRole('button', { name: /Step .*Check/ }).click()
     }
     await fail('queue-response')
     await page.getByRole('button', { name: kind === 'sale' ? 'Save and publish changes' : 'Save and publish', exact: true }).click()
@@ -224,54 +228,42 @@ try {
     assert.deepEqual(errors, [])
     continue
    }
-   if (process.argv[5] === 'completion') {
-    const checklist = page.getByRole('region', { name: 'Listing completion checklist' })
-    await checklist.getByText('No websites selected. This listing will stay private.').waitFor()
-    results.push({ category, kind, check: 'incomplete private draft has no website blockers', passed: true })
+   if (process.argv[5] === 'completion' && kind === 'sale') {
     const start = fixture.events.length
-    for (const channel of ['Property24', 'Private Property', 'Website']) await page.getByRole('checkbox', { name: channel === 'Website' ? /website/i : channel, exact: true }).check()
-    for (const channel of ['Property24', 'Private Property', 'Website']) await checklist.getByText(new RegExp('^' + channel + ': [1-9]')).waitFor()
-    await checklist.locator('summary').click()
-    await checklist.screenshot({ path: resolve(out, category + '-' + kind + '-desktop-checklist.png') })
-    assert.equal(await checklist.getByRole('button', { name: 'Edit photos', exact: true }).count(), 1)
-    assert.equal(await checklist.getByRole('button', { name: kind === 'sale' ? 'Edit price' : 'Edit rent', exact: true }).count(), 1)
-    results.push({ category, kind, check: 'selected websites share one correction per field with individual counts', passed: true })
-    if (kind === 'sale') await checklist.getByRole('button', { name: 'Edit price', exact: true }).click()
-    else await checklist.getByRole('button', { name: 'Edit rent', exact: true }).click()
-    const priceName = kind === 'sale' ? 'listingPrice' : 'monthlyRent'
-    await page.waitForFunction(name => document.activeElement?.name === name, priceName)
-    await page.locator('[name="' + priceName + '"]').fill(kind === 'sale' ? '1250000' : '12500')
-    await checklist.getByRole('button', { name: kind === 'sale' ? 'Edit price' : 'Edit rent', exact: true }).waitFor({ state: 'hidden' })
-    results.push({ category, kind, check: 'price correction focuses exact field and disappears once fixed', passed: true })
-    await checklist.getByRole('button', { name: 'Edit street number', exact: true }).click()
-    await page.waitForFunction(() => document.activeElement?.name === 'streetNumber')
-    assert.equal(await page.locator('[name="streetNumber"]').evaluate(node => node.closest('details').open), true)
-    results.push({ category, kind, check: 'address correction opens collapsed details and focuses street number', passed: true })
-    await checklist.getByRole('button', { name: 'Edit photos', exact: true }).click()
-    await page.waitForFunction(name => document.activeElement?.name === name, kind === 'sale' ? 'listingImages' : 'galleryImages')
-    assert.equal(fixture.events.slice(start).filter(event => ['create', 'update', 'onboarding', 'queue'].includes(event.kind)).length, 0)
-    results.push({ category, kind, check: 'future-section photo correction focuses upload without saving or publishing', passed: true })
-    await page.getByRole('complementary', { name: 'Draft advert preview' }).getByRole('button', { name: 'Change property details', exact: true }).click()
-    for (const channel of ['Property24', 'Private Property', 'Website']) await page.getByRole('checkbox', { name: channel === 'Website' ? /website/i : channel, exact: true }).uncheck()
-    await checklist.getByText('No websites selected. This listing will stay private.').waitFor()
-    assert.equal(await checklist.getByRole('button', { name: 'Edit photos', exact: true }).count(), 0)
-    assert.equal(await checklist.locator('details').count(), 0)
-    results.push({ category, kind, check: 'removing destinations immediately removes their requirements', passed: true })
-    if (kind === 'rental') {
-     await page.getByRole('complementary', { name: 'Draft advert preview' }).getByRole('button', { name: 'Change rent', exact: true }).click()
-     await page.locator('[name="monthlyRent"]').fill('-1')
-     await checklist.getByText('1 field to finish', { exact: true }).waitFor()
-     await checklist.getByRole('button', { name: 'Edit rent', exact: true }).waitFor()
-     await page.locator('[name="monthlyRent"]').fill('12500')
-     await checklist.getByText('Listing details ready', { exact: true }).waitFor()
-     assert.equal(fixture.events.slice(start).filter(event => ['create', 'update', 'onboarding', 'queue'].includes(event.kind)).length, 0)
-     results.push({ category, kind, check: 'invalid private rental amount has a correction and becomes ready only when fixed', passed: true })
-    }
-    await page.setViewportSize({ width: 390, height: 900 })
-    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
-    results.push({ category, kind, check: 'completion summary fits narrow screens', passed: true })
-    await page.screenshot({ path: resolve(out, category + '-' + kind + '-completion.png') })
-    assert.deepEqual(errors, [])
+    assert.equal(await page.getByRole('region', { name: 'Listing completion checklist' }).count(), 0)
+    await page.getByRole('button', { name: 'Continue', exact: true }).click()
+    await page.getByRole('button', { name: 'Edit price', exact: true }).click()
+    await page.waitForFunction(() => document.activeElement?.name === 'listingPrice')
+    await page.locator('[name="listingPrice"]').fill('1250000')
+    await page.getByText('Address details', { exact: true }).click()
+    await page.locator('[name="suburb"]').fill('Sandton')
+    await page.getByRole('button', { name: 'Continue', exact: true }).click()
+    assert.equal(await page.getByText('Add the public description.', { exact: false }).count(), 0)
+    await page.getByRole('button', { name: 'Continue', exact: true }).click()
+    await page.getByRole('button', { name: 'Property24', exact: true }).click()
+    await page.getByRole('button', { name: 'Continue', exact: true }).click()
+    await page.getByRole('button', { name: 'Edit description', exact: true }).waitFor()
+    assert.equal(await page.getByRole('button', { name: 'Edit photos', exact: true }).count(), 1)
+    assert.equal(await page.getByRole('region', { name: 'Listing completion checklist' }).count(), 0)
+    assert.equal(fixture.events.slice(start).filter(row => ['create', 'queue'].includes(row.kind)).length, 0)
+    await page.screenshot({ path: resolve(out, category + '-sale-stage-validation.png'), fullPage: true })
+    results.push({ category, kind, check: 'new sales has no checklist, validates only on continuation and routes website errors to their capture stage without saving or publishing', passed: true })
+    continue
+   }
+   if (process.argv[5] === 'completion') {
+    const start = fixture.events.length
+    assert.equal(await page.getByRole('region', { name: 'Listing completion checklist' }).count(), 0)
+    await page.getByRole('button', { name: /Step .*Rent & deposit/ }).click()
+    await page.getByRole('button', { name: 'Continue', exact: true }).click()
+    await page.getByRole('button', { name: 'Edit rent', exact: true }).click()
+    await page.waitForFunction(() => document.activeElement?.name === 'monthlyRent')
+    await page.locator('[name="monthlyRent"]').fill('12500')
+    await page.getByRole('button', { name: /Step .*Where to advertise/ }).click()
+    await page.getByRole('button', { name: 'Property24', exact: true }).click()
+    await page.getByRole('button', { name: 'Continue', exact: true }).click()
+    assert.equal(await page.getByRole('region', { name: 'Listing completion checklist' }).count(), 0)
+    assert.equal(fixture.events.slice(start).filter(row => ['create', 'queue'].includes(row.kind)).length, 0)
+    results.push({ category, kind, check: 'rental validates within capture steps without saving or publishing', passed: true })
     continue
    }
    if (process.argv[5] === 'capture') {
@@ -292,7 +284,7 @@ try {
     if (category === 'vacant_land') assert.equal(await page.getByRole(kind === 'sale' ? 'textbox' : 'spinbutton', { name: /Floor size/ }).count(), 0)
     results.push({ category, kind, check: 'irrelevant rooms and land floor-size controls do not dominate capture', passed: true })
     const start = fixture.events.length
-    await preview.getByRole('button', { name: kind === 'sale' ? 'Change price' : 'Change rent', exact: true }).click()
+    await page.getByRole('button', { name: kind === 'sale' ? /Step .*Property details/ : /Step .*Rent & deposit/ }).click()
     if (kind === 'sale') await page.locator('[name="listingPrice"]').fill('1250000')
     else {
      await page.getByLabel('Rental amount', { exact: true }).fill('12500.75')
@@ -300,7 +292,7 @@ try {
     }
     await preview.getByText(kind === 'sale' ? 'R 1 250 000' : 'R 12 500,75 per week', { exact: true }).waitFor()
     results.push({ category, kind, check: 'preview updates current price with clear sale or rental units', passed: true })
-    await preview.getByRole('button', { name: 'Change photos and description', exact: true }).click()
+    await page.getByRole('button', { name: /Step .*Photos & description/ }).click()
     const description = page.getByRole('textbox', { name: 'Listing description', exact: true })
     await description.fill('Current unsaved description for ' + category)
     await preview.getByText('Current unsaved description for ' + category, { exact: true }).waitFor()
@@ -310,6 +302,7 @@ try {
     assert.equal(fixture.events.slice(start).filter(event => ['create', 'update', 'onboarding', 'queue'].includes(event.kind)).length, 0)
     assert.ok(!(await preview.innerText()).includes('90 Latest'), 'Private free-typed address must not leak into the preview')
     results.push({ category, kind, check: 'preview mirrors selected photos and unsaved description without writing or leaking hidden address', passed: true })
+    await page.locator('.listing-capture-actions').scrollIntoViewIfNeeded()
     const desktopFooter = await page.locator('.listing-capture-actions').boundingBox()
     assert.ok(desktopFooter && desktopFooter.y >= 0 && desktopFooter.y + desktopFooter.height <= 901, 'Desktop actions must stay visible during capture')
     await page.screenshot({ path: resolve(out, category + '-' + kind + '-desktop-preview.png') })
@@ -333,12 +326,14 @@ try {
    }
    if (process.argv[5] === 'progress') {
     const eventOffset = fixture.events.length
-    await page.getByRole('checkbox', { name: 'Property24', exact: true }).check()
+    if (kind === 'rental') { await page.getByRole('button', { name: /Step .*Where to advertise/ }).click(); await page.getByRole('button', { name: 'Property24', exact: true }).click(); await page.getByRole('button', { name: /Step .*Property details/ }).click() }
+    else await page.getByRole('checkbox', { name: 'Property24', exact: true }).check()
     await page.getByRole('button', { name: 'Save draft', exact: true }).click()
     if (kind === 'sale') await page.waitForURL(/\/listings\/[^/]+\/edit/)
     else await page.getByText(/^Saved to Listings at/).waitFor()
     if (kind === 'sale') {
-     await page.getByText(/^Saved to Listings at/).waitFor()
+     await page.getByRole('combobox', { name: /Property address/i }).waitFor()
+     assert.equal(await page.getByText(/^Saved to Listings at/).count(), 0)
      assert.equal(await page.getByText('Your unsaved listing changes were restored on this device.', { exact: true }).count(), 0)
      assert.equal(await page.getByText(/Changes in this form have not been saved/).count(), 0)
     }
@@ -362,7 +357,8 @@ try {
      const reopenedAddress = reopened.getByRole('combobox', { name: /Property address/i })
      await reopenedAddress.waitFor()
      assert.equal(await reopenedAddress.inputValue(), `90 Latest ${category} Road`)
-     assert.equal(await reopened.getByRole('checkbox', { name: 'Property24', exact: true }).isChecked(), true)
+     if (kind === 'rental') { await reopened.getByRole('button', { name: /Step .*Where to advertise/ }).click(); assert.equal(await reopened.getByRole('button', { name: 'Property24', exact: true }).getAttribute('aria-pressed'), 'true'); await reopened.getByRole('button', { name: /Step .*Property details/ }).click() }
+     else assert.equal(await reopened.getByRole('checkbox', { name: 'Property24', exact: true }).isChecked(), true)
      if (kind === 'rental') {
       assert.equal(await reopened.getByRole('heading', { name: 'Continue rental draft' }).count(), 1)
       await reopened.getByRole('button', { name: /Step.*Rent & deposit/ }).click()
@@ -394,8 +390,52 @@ try {
    assert.equal((await seeded.json()).error, null)
    const read = async () => (await (await page.request.post(fixture.origin + '/fixture/read', { data: { id } })).json()).data
    const before = await read()
+   if (process.argv[5] === 'extras' && kind === 'sale') {
+    const eventOffset = fixture.events.length
+    await page.goto(fixture.origin + `/listings/${id}/edit?scope=property&step=features`, { waitUntil: 'domcontentloaded' })
+    await page.getByRole('heading', { name: 'Extra details (optional)', exact: true }).waitFor()
+    assert.equal(await page.getByRole('navigation', { name: 'Create listing progress' }).getByRole('button').count(), 5)
+    await page.getByRole('button', { name: 'Open Security', exact: true }).click()
+    const alarm = page.getByRole('group', { name: 'Alarm', exact: true })
+    await alarm.getByRole('button', { name: 'No', exact: true }).click()
+    await page.getByRole('button', { name: 'Done', exact: true }).click()
+    await page.reload({ waitUntil: 'domcontentloaded' })
+    await page.getByRole('button', { name: 'Open Security', exact: true }).click()
+    assert.equal(await alarm.getByRole('button', { name: 'No', exact: true }).getAttribute('aria-pressed'), 'true')
+    await page.screenshot({ path: resolve(out, category + '-extra-dialog.png') })
+    await page.getByRole('button', { name: 'Done', exact: true }).click()
+    await page.screenshot({ path: resolve(out, category + '-extra-step.png'), fullPage: true })
+    await page.getByRole('button', { name: 'Continue', exact: true }).click()
+    await page.getByRole('heading', { name: 'Photos & description', exact: true }).waitFor()
+    assert.equal(await page.getByRole('button', { name: 'Open Security', exact: true }).count(), 0)
+    await page.goto(fixture.origin + `/listings/${id}/edit?scope=property&step=features`, { waitUntil: 'domcontentloaded' })
+    await page.getByRole('button', { name: 'Open Security', exact: true }).click()
+    assert.equal(await alarm.getByRole('button', { name: 'No', exact: true }).getAttribute('aria-pressed'), 'true')
+    await page.getByRole('button', { name: 'Done', exact: true }).click()
+    if (category === 'residential') {
+     await page.setViewportSize({ width: 390, height: 844 })
+     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
+     await page.getByRole('button', { name: 'Open Security', exact: true }).click()
+     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
+     await page.screenshot({ path: resolve(out, 'extra-details-mobile.png') })
+    }
+    assert.equal(fixture.events.slice(eventOffset).filter(event => event.kind === 'queue').length, 0)
+    assert.deepEqual(errors, [])
+    results.push({category,kind,check:'separate optional extra-details step preserves No across refresh, save and reopen without publishing',passed:true})
+    continue
+   }
    await page.goto(fixture.origin + base + '/' + id + '/edit?scope=property&step=property', { waitUntil: 'domcontentloaded' })
    await address.waitFor()
+   if (kind === 'sale') {
+    assert.equal(await page.getByText('Update the details of your property listing.', { exact: true }).count(), 0)
+    assert.equal(await page.getByText(/^Saved to Listings at/).count(), 0)
+    assert.equal(await page.getByRole('region', { name: 'Saved listing and advertising' }).count(), 0)
+    assert.equal(await page.getByRole('region', { name: 'Listing completion checklist' }).count(), 0)
+    assert.equal(await page.locator('.listing-capture-actions').evaluate(element => getComputedStyle(element).position), 'static')
+    assert.equal(await page.locator('.listing-capture-actions footer').evaluate(element => getComputedStyle(element).position), 'static')
+    results.push({ category, kind, check: 'edit screen keeps routine notices hidden and actions beneath the form', passed: true })
+    await page.screenshot({ path: resolve(out, category + '-edit-layout.png'), fullPage: true })
+   }
    await address.fill(`91 Recovered ${category} Road`)
    await page.reload({ waitUntil: 'domcontentloaded' })
    await address.waitFor(); assert.equal(await address.inputValue(), `91 Recovered ${category} Road`)
@@ -404,10 +444,10 @@ try {
    assert.equal(after.addressLine1, before.addressLine1)
    results.push({ category, kind, check: 'edit draft reopens without a server write', passed: true })
    if (kind === 'sale') {
-    await page.getByRole('button', { name: 'Step 2: Photos & description', exact: true }).click()
+    await page.getByRole('button', { name: /Step .*Photos & description/ }).click()
     await page.locator('[name="listingDescription"]').fill('')
     await page.reload({ waitUntil: 'domcontentloaded' })
-    await page.getByRole('button', { name: 'Step 2: Photos & description', exact: true }).click()
+    await page.getByRole('button', { name: /Step .*Photos & description/ }).click()
     assert.equal(await page.locator('[name="listingDescription"]').inputValue(), '')
     results.push({ category, kind, check: 'deliberate description clear survives refresh', passed: true })
    }

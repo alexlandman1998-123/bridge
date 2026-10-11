@@ -60,20 +60,21 @@ it('retains the confirmed details receipt when activation fails and retries the 
   expect(mocks.create).toHaveBeenCalledTimes(1)
 })
 
-it('offers an early checklist and focuses the address correction without saving', async () => {
+it('shows errors only after continuing and focuses the address correction without saving', async () => {
   window.localStorage.setItem(DRAFT_KEY, JSON.stringify({ activeStep: 'property', form: { propertyAddress: 'Example Road', monthlyRent: '11000', selectedSyndicationChannels: ['private_property'], description: 'See www.example.test' } }))
   render(<MemoryRouter><RentalListingCreatePage /></MemoryRouter>)
   await waitFor(() => expect(screen.getByRole('combobox', { name: /Property address/i }).value).toBe('Example Road'))
   expect(screen.queryByRole('heading', { name: 'Where to advertise' })).toBeNull()
-  const checklist = screen.getByRole('region', { name: 'Listing completion checklist' })
-  expect(checklist.querySelector('details').open).toBe(false)
+  expect(screen.queryByRole('region', { name: 'Listing completion checklist' })).toBeNull()
+  expect(screen.queryByText('Add the street number in Address details.', { exact: false })).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
-  expect(checklist.querySelector('details').open).toBe(true)
+
   const addressIssue = screen.getByText('Add the street number in Address details.', { exact: false })
   fireEvent.click(within(addressIssue.closest('li')).getByRole('button', { name: 'Edit street number' }))
   await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText('Street number')))
   expect(screen.getByLabelText('Street number').closest('details').open).toBe(true)
   fireEvent.click(screen.getByRole('button', { name: 'Step 4: Photos & description' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
   expect(screen.getByText('Remove website links from the public description.', { exact: false })).toBeTruthy()
   expect(mocks.create).not.toHaveBeenCalled()
 })
@@ -302,7 +303,8 @@ it('recovers the saved rental and its photos after refresh without creating anot
   mocks.load.mockResolvedValue(row)
   mocks.update.mockResolvedValue({ listing: row })
   render(<MemoryRouter><RentalListingCreatePage /></MemoryRouter>)
-  await screen.findByText(/Your existing rental was recovered/)
+  await waitFor(() => expect(screen.queryByText('Checking the saved rental before retrying…')).toBeNull())
+  await screen.findByRole('button', { name: 'Retry save listing' })
   fireEvent.click(screen.getByRole('button', { name: 'Retry save listing' }))
   await waitFor(() => expect(mocks.update).toHaveBeenCalledTimes(1))
   expect(mocks.create).not.toHaveBeenCalled()
@@ -333,10 +335,11 @@ it('does not create remotely when browser storage cannot retain the recovery ide
   } finally { storage.mockRestore() }
 })
 
-it('offers early publication choices and keeps selections on the advertising step', async () => {
+it('keeps advertising choices only on the advertising step', async () => {
  window.localStorage.setItem(DRAFT_KEY, JSON.stringify({ activeStep: 'property', form: { selectedSyndicationChannels: ['property24','private_property','agency_website'] } }))
  render(<MemoryRouter><RentalListingCreatePage /></MemoryRouter>)
- await screen.findByText(/Your saved rental draft was restored on this device/ )
+ await screen.findByRole('combobox', { name: /Property address/i })
+ expect(screen.queryByText(/Your saved rental draft was restored/)).toBeNull()
  expect(screen.queryByRole('heading', { name: 'Where to advertise' })).toBeNull()
  expect(screen.queryByText('Check these details')).toBeNull()
  fireEvent.click(screen.getByRole('button', { name: /Step 5: Where to advertise/ }))
@@ -344,11 +347,11 @@ it('offers early publication choices and keeps selections on the advertising ste
  expect(screen.getByText('3 websites selected')).toBeTruthy()
  expect(screen.queryByText('Check these details')).toBeNull()
  fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
- expect(screen.getByRole('region', { name: 'Listing completion checklist' }).querySelector('details').open).toBe(true)
+ expect(screen.queryByRole('region', { name: 'Listing completion checklist' })).toBeNull()
  expect(mocks.create).not.toHaveBeenCalled()
  fireEvent.click(screen.getByRole('button', { name: /Step 1: Property details/ }))
  expect(screen.queryByRole('heading', { name: 'Where to advertise' })).toBeNull()
- expect(screen.queryByText('Check these details')).toBeNull()
+ expect(screen.getByText('Check these details')).toBeTruthy()
 })
 
 it('distinguishes unanswered rooms, explicit studio zero and half bathrooms through draft recovery', async () => {
@@ -544,6 +547,7 @@ it('retains the first created revision across a failed draft upload and retry', 
 it('lets a new rental correct invalid restored optional landlord data without requiring owner details', async () => {
  window.localStorage.setItem(DRAFT_KEY, JSON.stringify({ activeStep: 'review', form: { ...recoveryForm, landlordEmail: 'bad-email', landlordName: '' } }))
  render(<MemoryRouter><RentalListingCreatePage /></MemoryRouter>)
+ fireEvent.click(await screen.findByRole('button', { name: /^(Save listing|Retry save listing)$/ }))
  const correction = await screen.findByRole('button', { name: 'Edit landlord email' })
  fireEvent.click(correction)
  const input = await screen.findByRole('textbox', { name: 'Email', exact: true })
@@ -554,4 +558,39 @@ it('lets a new rental correct invalid restored optional landlord data without re
  fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
  expect(screen.getByRole('combobox', { name: /Property address/ })).toBeTruthy()
  expect(mocks.create).not.toHaveBeenCalled()
+})
+
+
+it('lets an agent cancel leaving or discard a recovered device draft and start fresh', async () => {
+ localStorage.setItem(DRAFT_KEY, JSON.stringify({ activeStep: 'property', form: { propertyAddress: 'Old recovered address' } }))
+ const view = render(<MemoryRouter><RentalListingCreatePage /></MemoryRouter>)
+ await screen.findByDisplayValue('Old recovered address')
+ fireEvent.click(screen.getByRole('button', { name: 'Close new rental listing' }))
+ expect(screen.getByRole('dialog', { name: 'Leave this rental listing?' })).toBeTruthy()
+ fireEvent.click(screen.getByRole('button', { name: 'Keep editing' }))
+ expect(mocks.navigate).not.toHaveBeenCalled()
+ expect(screen.getByDisplayValue('Old recovered address')).toBeTruthy()
+ fireEvent.click(screen.getByRole('button', { name: 'Close new rental listing' }))
+ fireEvent.click(screen.getByRole('button', { name: 'Discard changes' }))
+ await waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith('/agent/rentals/listings'))
+ expect(localStorage.getItem(DRAFT_KEY)).toBeNull()
+ view.unmount()
+ render(<MemoryRouter><RentalListingCreatePage /></MemoryRouter>)
+ expect((await screen.findByRole('combobox', { name: /Property address/i })).value).toBe('')
+ expect(mocks.create).not.toHaveBeenCalled()
+ expect(mocks.progress).not.toHaveBeenCalled()
+})
+
+it('keeps the exit dialog open after a failed private save, and leaves only after confirmation', async () => {
+ localStorage.setItem(DRAFT_KEY, JSON.stringify({ activeStep: 'property', form: { propertyAddress: '12 Saved Road' } }))
+ render(<MemoryRouter><RentalListingCreatePage /></MemoryRouter>)
+ await screen.findByDisplayValue('12 Saved Road')
+ fireEvent.click(screen.getByRole('button', { name: 'Close new rental listing' }))
+ fireEvent.click(screen.getByRole('button', { name: 'Save draft and leave' }))
+ await waitFor(() => expect(within(screen.getByRole('dialog')).getByRole('alert').textContent).toContain('Cloud saving unavailable'))
+ expect(mocks.navigate).not.toHaveBeenCalled()
+ mocks.progress.mockResolvedValueOnce({ listing: { id: 'private-draft', sellerCanonicalFacts: buildRentalCanonicalFacts({ ...recoveryForm, propertyAddress: '12 Saved Road' }), listingMedia: [] } })
+ fireEvent.click(screen.getByRole('button', { name: 'Save draft and leave' }))
+ await waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith('/agent/rentals/listings'))
+ expect(mocks.activate).not.toHaveBeenCalled()
 })
