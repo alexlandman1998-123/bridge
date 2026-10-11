@@ -17,9 +17,21 @@ export function getInitialProperty24Expiry(now = new Date()) {
 export function mapPublicationJobs(jobs = []) {
   return jobs.map(job => ({ key: job.channel, label: CHANNELS[job.channel] || job.channel, jobId: job.id,
     status: ['queued', 'processing', 'dispatching'].includes(job.state) ? 'publishing' : job.state === 'accepted' ? 'submitted' : job.state === 'uncertain' ? 'uncertain' : 'needs_attention',
-    retryable: ['failed', 'cancelled'].includes(job.state),
+    retryable: ['failed', 'cancelled'].includes(job.state), jobState: job.state,
     message: job.message,
   }))
+}
+
+// A cached failure may have completed elsewhere. Check the durable receipt
+// before any alternative publishing control can bypass an unresolved request.
+export async function requireSettledListingPublication(listingId, channels, dependencies = {}) {
+  const results = await refreshListingPublicationResults(listingId, dependencies)
+  // The durable website job can dispatch to Kingdom as the partner fallback.
+  const jobChannels = channels.map(key => key === 'kingdom_website' ? 'agency_website' : key)
+  if (results.some(row => jobChannels.includes(row.key) && ['publishing', 'uncertain'].includes(row.status))) {
+    throw new Error('The previous advertising request is still sending or not confirmed. Check status before sending again.')
+  }
+  return results
 }
 
 // Await only durable acceptance. Publication belongs to the server after this
@@ -115,7 +127,13 @@ export function watchInitialListingPublication(listingId, { client = supabase, i
     } catch { if (!stopped) timer = setTimeout(refresh, interval * 4) }
   }
   void refresh()
+  const requestQueued = event => {
+    if (!stopped && event.detail?.listingId === listingId && event.detail.results?.some(row => row.status === 'publishing')) {
+      clearTimeout(timer); timer = setTimeout(refresh, interval)
+    }
+  }
+  if (typeof window !== 'undefined') window.addEventListener?.(INITIAL_LISTING_PUBLICATION_EVENT, requestQueued)
   const visibility = () => { if (!document.hidden) void refresh() }
   if (typeof document !== 'undefined') document.addEventListener('visibilitychange', visibility)
-  return () => { stopped = true; clearTimeout(timer); if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', visibility) }
+  return () => { stopped = true; clearTimeout(timer); if (typeof window !== 'undefined') window.removeEventListener?.(INITIAL_LISTING_PUBLICATION_EVENT, requestQueued); if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', visibility) }
 }

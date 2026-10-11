@@ -5,7 +5,8 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import RentalListingDetailPage from '../RentalListingDetailPage'
 import { buildRentalListingOverview } from '../../../services/rentals/rentalListingOverviewModel'
 
-const mocks = vi.hoisted(() => ({ load: vi.fn(), overview: vi.fn(), expiry: vi.fn(), gallery: vi.fn(), createLead: vi.fn(), withdrawP24: vi.fn(), withdrawPP: vi.fn(), previewP24: vi.fn(), previewPP: vi.fn(), channels: vi.fn(async () => ({ activity: [], errors: {} })), status: vi.fn(), reconcile: vi.fn(), statusUpdate: vi.fn(), scope: { organisationId: 'org-1', assignedAgentId: 'agent-1', scopeLevel: 'assigned' }, workspace: {} }))
+const mocks = vi.hoisted(() => ({ publication: [], refreshPublication: vi.fn(), retryPublication: vi.fn(), settle: vi.fn(), publishP24: vi.fn(), load: vi.fn(), overview: vi.fn(), expiry: vi.fn(), gallery: vi.fn(), createLead: vi.fn(), withdrawP24: vi.fn(), withdrawPP: vi.fn(), previewP24: vi.fn(), previewPP: vi.fn(), channels: vi.fn(async () => ({ activity: [], errors: {} })), status: vi.fn(), reconcile: vi.fn(), statusUpdate: vi.fn(), scope: { organisationId: 'org-1', assignedAgentId: 'agent-1', scopeLevel: 'assigned' }, workspace: {} }))
+vi.mock('../../../services/listings/listingInitialPublicationService', () => ({ INITIAL_LISTING_PUBLICATION_EVENT: 'itg:initial-listing-publication', readInitialListingChannelResults: () => mocks.publication, watchInitialListingPublication: () => () => {}, refreshListingPublicationResults: mocks.refreshPublication, retryFailedListingChannels: mocks.retryPublication, requireSettledListingPublication: mocks.settle }))
 vi.mock('../../../services/rentals/rentalLeadService', () => ({ createRentalLead: mocks.createLead }))
 vi.mock('../../../components/listings/WebsiteListingPublicationPanel', () => ({ default: () => null }))
 vi.mock('../../../components/listings/KingdomWebsitePublicationChannel', () => ({ default: () => null }))
@@ -13,8 +14,8 @@ vi.mock('../../../services/rentals/rentalListingChannelService', () => ({ loadRe
 vi.mock('../../../context/WorkspaceContext', () => ({ useWorkspace: () => mocks.workspace }))
 vi.mock('../../../services/rentals/rentalWorkspaceScope', async (original) => ({ ...await original(), resolveRentalWorkspaceScope: () => mocks.scope }))
 vi.mock('../../../services/rentals/rentalListingOverviewService', () => ({ loadRentalListingOverview: mocks.overview }))
-vi.mock('../../../services/rentals/rentalListingDraftService', () => ({ getRentalListingForAgent: mocks.load, updateRentalListingDraft: vi.fn(), updateRentalProperty24Expiry:mocks.expiry, updateRentalListingGallery: mocks.gallery, previewPrivatePropertyRentalListing: mocks.previewPP, publishPrivatePropertyRentalListing: vi.fn(), expirePrivatePropertyRentalListing: mocks.withdrawPP, previewRentalProperty24Listing: mocks.previewP24, publishRentalProperty24Listing: vi.fn(), withdrawRentalProperty24Listing: mocks.withdrawP24 }))
-beforeEach(() => { vi.resetAllMocks(); mocks.channels.mockResolvedValue({ activity: [], errors: {} }); mocks.scope = { organisationId: 'org-1', assignedAgentId: 'agent-1', scopeLevel: 'assigned' }; mocks.workspace = {} })
+vi.mock('../../../services/rentals/rentalListingDraftService', () => ({ getRentalListingForAgent: mocks.load, updateRentalListingDraft: vi.fn(), updateRentalProperty24Expiry:mocks.expiry, updateRentalListingGallery: mocks.gallery, previewPrivatePropertyRentalListing: mocks.previewPP, publishPrivatePropertyRentalListing: vi.fn(), expirePrivatePropertyRentalListing: mocks.withdrawPP, previewRentalProperty24Listing: mocks.previewP24, publishRentalProperty24Listing: mocks.publishP24, withdrawRentalProperty24Listing: mocks.withdrawP24 }))
+beforeEach(() => { vi.resetAllMocks(); mocks.publication = []; mocks.refreshPublication.mockResolvedValue([]); mocks.settle.mockResolvedValue([]); mocks.channels.mockResolvedValue({ activity: [], errors: {} }); mocks.scope = { organisationId: 'org-1', assignedAgentId: 'agent-1', scopeLevel: 'assigned' }; mocks.workspace = {} })
 afterEach(() => { cleanup(); vi.clearAllMocks(); vi.restoreAllMocks() })
 
 it('opens the saved rental document matrix from the listing Documents route', async () => {
@@ -45,6 +46,51 @@ function renderMedia(listing, tab='marketing') {
   mocks.overview.mockResolvedValue(buildRentalListingOverview({ listing }))
   return render(<MemoryRouter initialEntries={[`/agent/rentals/listings/listing-1/${tab}`]}><Routes><Route path="/agent/rentals/listings/:listingId/:detailTab?" element={<RentalListingDetailPage />} /></Routes></MemoryRouter>)
 }
+
+it('shows persisted partial results and retries the saved rental without creating or resending every website', async () => {
+  const listing = { ...mediaListing(), listingStatus: 'active', sellerCanonicalFacts: { distribution: { selectedChannels: ['property24', 'private_property'] } } }
+  mocks.publication = [{ key: 'property24', label: 'Property24', status: 'submitted' }, { key: 'private_property', label: 'Private Property', status: 'needs_attention', retryable: true, message: 'Fix the description.' }]
+  let finish
+  mocks.retryPublication.mockImplementation(() => new Promise(resolve => { finish = resolve }))
+  renderMedia(listing)
+  const summary = await screen.findByRole('region', { name: 'Saved listing and advertising' })
+  expect(within(summary).getByText(/Check the public advert before treating it as live/)).toBeTruthy()
+  fireEvent.click(within(summary).getByRole('button', { name: 'Retry failed channels' }))
+  await waitFor(() => expect(mocks.retryPublication).toHaveBeenCalledWith(expect.objectContaining({ listingId: listing.id, listingStatus: 'active', channels: ['property24', 'private_property'] })))
+  expect(within(summary).getByRole('button', { name: 'Retry failed channels' }).disabled).toBe(true)
+  finish([{ key: 'private_property', status: 'publishing' }])
+  await screen.findByText(/Retrying only the failed websites/)
+  expect(mocks.publishP24).not.toHaveBeenCalled()
+})
+it('keeps a saved rental visible when status checking fails and offers no unknown-request retry', async () => {
+  mocks.publication = [{ key: 'property24', label: 'Property24', status: 'uncertain' }]
+  mocks.refreshPublication.mockRejectedValue(new Error('Offline'))
+  renderMedia(mediaListing())
+  const summary = await screen.findByRole('region', { name: 'Saved listing and advertising' })
+  expect(within(summary).queryByRole('button', { name: 'Retry failed channels' })).toBeNull()
+  fireEvent.click(within(summary).getByRole('button', { name: 'Check status' }))
+  await screen.findByText(/Your rental is saved. Advertising status could not be checked/)
+  expect(screen.getByRole('heading', { name: 'Media rental' })).toBeTruthy()
+})
+it('moves from the saved result directly to the rental advertising controls with keyboard focus', async () => {
+  renderMedia({ ...mediaListing(), listingStatus: 'active' }, 'overview')
+  const summary = await screen.findByRole('region', { name: 'Saved listing and advertising' })
+  fireEvent.click(within(summary).getByRole('button', { name: 'Review advertising' }))
+  const heading = await screen.findByRole('heading', { name: 'Listing Channels' })
+  await waitFor(() => expect(document.activeElement).toBe(heading))
+})
+it('checks durable initial requests before an alternative portal publish control sends anything', async () => {
+  mocks.previewP24.mockResolvedValue({ report: { preview: { canSubmit: true, dataBlockers: [], technicalBlockers: [] } } })
+  mocks.settle.mockRejectedValue(new Error('Check status before sending again.'))
+  renderMedia(mediaListing())
+  const requirements = await screen.findByRole('region', { name: 'Property24 requirements' })
+  fireEvent.click(within(requirements).getByRole('button', { name: 'Check Property24 requirements' }))
+  await waitFor(() => expect(within(requirements).getByRole('status').textContent).toBe('Ready to submit'))
+  fireEvent.click(screen.getAllByRole('button', { name: 'Publish', hidden: true })[0])
+  await screen.findByText('Check status before sending again.')
+  expect(mocks.settle).toHaveBeenCalledWith('listing-1', ['property24'])
+  expect(mocks.publishP24).not.toHaveBeenCalled()
+})
 
 it('deletes the selected cover photo and displays the confirmed replacement cover and saved links', async () => {
   const listing = mediaListing()

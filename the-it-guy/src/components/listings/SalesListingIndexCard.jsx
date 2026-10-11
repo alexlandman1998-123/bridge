@@ -65,7 +65,7 @@ function ListingCardImage({ src = '', fallbackSrc = '', alt = '', priority = fal
   )
 }
 
-export default function SalesListingIndexCard({ card, imageSource = { src: card.imageUrl }, priority = false, priceLabel, onOpen, actions = null }) {
+export default function SalesListingIndexCard({ card, imageSource = { src: card.imageUrl }, priority = false, priceLabel, onOpen, openLabel = 'Open', actions = null }) {
   return (
     <article
       style={{ contentVisibility: 'auto', containIntrinsicSize: '0 430px' }}
@@ -124,7 +124,7 @@ export default function SalesListingIndexCard({ card, imageSource = { src: card.
           }}
           className="inline-flex min-h-9 w-full min-w-0 items-center justify-center gap-1.5 rounded-full border border-[#c6d8ea] bg-white px-3 text-[0.76rem] font-semibold text-[#1f4f78] transition hover:border-[#9fb7d1] hover:bg-[#f6faff]"
         >
-          <span className="truncate">Open</span>
+          <span className="truncate">{openLabel}</span>
           <ArrowRight size={14} className="shrink-0" />
         </button>
       </div>

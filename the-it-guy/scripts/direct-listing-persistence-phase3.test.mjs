@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
+import { getSalesListingRequiredIssues } from '../src/services/listings/listingFieldRequirements.js'
 import { buildDirectListingIntakePayload } from '../src/lib/directListingIntakeModel.js'
 import { verifyListingPropertyPersistenceCopies, verifyListingPropertySave } from '../src/lib/listingPropertySaveVerification.js'
 import { preferSavedPropertyFact, recoverStructuredPropertyFactsFromMarketingCopy } from '../src/lib/listingMarketingPropertyFactRecovery.js'
@@ -92,7 +93,8 @@ test('listing editor verifies durable property details before navigating away', 
   assert.match(agentListingsSource, /const verifiedListing = await getPrivateListing/)
   assert.match(agentListingsSource, /verifyListingPropertyPersistenceCopies\(/)
   assert.match(agentListingsSource, /allowProtectedSectionOverride: true/)
-  assert.match(agentListingsSource, /Enter a listing price or select Price on Application\./)
+  assert.match(agentListingsSource, /getSalesListingRequiredIssues\(\{ \.\.\.form, propertyAddress, propertyType \}, \{ editing: true \}\)/)
+  assert.ok(getSalesListingRequiredIssues({}, { editing: true }).some(issue => issue.field === 'listingPrice' && issue.message === 'Enter a listing price or select Price on Application.'))
   assert.match(agentListingsSource, /const structuredAddress = composeStructuredListingAddress\(form\)/)
   assert.doesNotMatch(agentListingsSource, /listing editor onboarding form persistence skipped/)
   assert.doesNotMatch(agentListingsSource, /listing editor distribution sync skipped/)
@@ -313,21 +315,32 @@ test('publication sync can still save description when feature columns are missi
 })
 
 test('approved listings publish their selected agency-website channel after the public projection is ready', () => {
-  assert.match(agentListingsSource, /import \{ setWebsiteListingPublication \} from '..\/services\/websiteListingPublicationService'/)
+  assert.match(agentListingsSource, /import \{[^}]*setWebsiteListingPublication[^}]*\} from '..\/services\/websiteListingPublicationService'/)
   assert.match(agentListingsSource, /function shouldAutoPublishToAgencyWebsite\(listingStatus = '', selectedChannels = \[\]\)/)
   assert.match(agentListingsSource, /status: !context\.deferPublication && !uploadError && shouldAutoPublishToAgencyWebsite\(context\.listingStatus, form\.selectedSyndicationChannels\) \? 'Published' : 'Draft'/)
   assert.match(agentListingsSource, /setWebsiteListingPublication\(created\.listing\.id, 'publish'\)/)
-  assert.match(agentListingsSource, /setWebsiteListingPublication\(listingId, 'publish'\)/)
+  assert.match(agentListingsSource, /publishInitialListingChannels\(\{ listingId, listingStatus: listingPatch.listingStatus, channels: form.selectedSyndicationChannels, action: 'update'/)
 })
 
 test('missing marketing fields preserve saved content while explicit drafts use the shared resolver', () => {
   assert.match(agentListingsSource, /LISTING_MARKETING_DRAFT_STORAGE_KEY = 'itg:listing-marketing-draft:v1'/)
   assert.match(agentListingsSource, /writeListingMarketingDraftStorage\(editListingId,\s*\{\s*\n\s*description: normalizeText\(value\)/)
-  assert.match(agentListingsSource, /const effectiveListingDescription = normalizeText\(form\.listingDescription\) \|\| normalizeText\(/)
-  assert.match(agentListingsSource, /const effectiveKeySellingPoints = keySellingPoints\.length \? keySellingPoints : existingKeySellingPoints/)
+  assert.match(agentListingsSource, /const effectiveListingDescription = Object\.hasOwn\(form, 'listingDescription'\) \? normalizeText\(form\.listingDescription\) : normalizeText\(/)
+  assert.match(agentListingsSource, /const effectiveKeySellingPoints = Array\.isArray\(form\.keySellingPoints\) \? keySellingPoints : existingKeySellingPoints/)
   assert.match(agentListingDetailSource, /const effectiveDescription = resolveMarketingDraftText\(draft, 'description', existingDescription\)/)
   assert.match(agentListingDetailSource, /(?:const|let) effectiveDraft = \{\s*\n\s*\.\.\.draft,\s*\n\s*description: effectiveDescription,/)
   assert.match(privateListingServiceSource, /if \(nextDescription \|\| options\?\.allowBlankDescription === true\)/)
-  assert.match(privateListingServiceSource, /if \(!publicationPayload\.description && existingPublicationData\.description\)/)
-  assert.match(privateListingServiceSource, /if \(!publicationPayload\.features\.length && Array\.isArray\(existingPublicationData\.features\) && existingPublicationData\.features\.length\)/)
+  assert.match(privateListingServiceSource, /if \(!publicationPayload\.description && payload\.allowBlankDescription !== true && existingPublicationData\.description\)/)
+  assert.match(privateListingServiceSource, /if \(!publicationPayload\.features\.length && payload\.allowBlankFeatures !== true && Array\.isArray\(existingPublicationData\.features\) && existingPublicationData\.features\.length\)/)
+})
+
+
+test('explicit description and feature clears persist while omitted marketing preserves saved content', () => {
+  const start = privateListingServiceSource.indexOf('  const existingPublicationData =', privateListingServiceSource.indexOf('export async function syncPrivateListingDistributionData('))
+  const end = privateListingServiceSource.indexOf('  let publication =', start)
+  assert.ok(start > 0 && end > start)
+  const apply = new Function('payload', 'publicationPayload', 'existingPublication', 'normalizeNullableText', privateListingServiceSource.slice(start, end) + '; return publicationPayload')
+  const existing = { data: { description: 'Saved description', features: ['Pool'], amenities: [] } }
+  assert.deepEqual(apply({}, { description: '', features: [], amenities: [] }, existing, value => String(value)), { description: 'Saved description', features: ['Pool'], amenities: [] })
+  assert.deepEqual(apply({ allowBlankDescription: true, allowBlankFeatures: true }, { description: '', features: [], amenities: [] }, existing, value => String(value)), { description: '', features: [], amenities: [] })
 })

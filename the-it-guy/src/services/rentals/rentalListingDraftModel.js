@@ -1,4 +1,5 @@
-import { captureRentalPortalFacts, validateRentalPortalFacts } from './rentalPortalFieldContract.js'
+import { RENTAL_PORTAL_FIELDS, captureRentalPortalFacts, validateRentalPortalFacts } from './rentalPortalFieldContract.js'
+import { rentalFeatureCaptureFields } from './rentalFeatureCaptureModel.js'
 import { isRentalMediaLink } from './rentalListingMediaModel.js'
 import { getListingFieldIssues } from '../listings/listingFieldRequirements.js'
 
@@ -320,34 +321,45 @@ export function buildRentalListingTitle(form = {}) {
     'Rental listing draft'
 }
 
-export function validateRentalListingDraftForm(form = {}, context = {}) {
+export function getRentalListingValidationIssues(form = {}, context = {}) {
   const errors = []
-  if (!normalizeText(context.organisationId)) errors.push('Organisation context is required.')
+  const add = (field, step, message, label) => errors.push({ field, step, message, label, channels: [] })
+  if (!normalizeText(context.organisationId)) add('', 'review', 'Organisation context is required.')
   const landlordType = normalizeText(form.landlordType) || 'individual'
-  if (!RENTAL_SELECT_OPTIONS.landlordType.some((option) => option.value === landlordType)) errors.push('Choose a supported landlord type.')
+  if (!RENTAL_SELECT_OPTIONS.landlordType.some((option) => option.value === landlordType)) add('landlordType', 'landlord', 'Choose a supported landlord type.')
   const landlordEmail = normalizeText(form.landlordEmail)
-  if (landlordEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(landlordEmail)) errors.push('Enter a valid landlord email address.')
+  if (landlordEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(landlordEmail)) add('landlordEmail', 'landlord', 'Enter a valid landlord email address.')
   const mandateStatus = normalizeText(form.mandateStatus) || 'not_started'
   const persistedMandateStatuses = ['ready', 'generated', 'viewed', 'signed_external_pending_upload', 'rejected', 'expired']
-  if (!RENTAL_SELECT_OPTIONS.mandateStatus.some((option) => option.value === mandateStatus) && !persistedMandateStatuses.includes(mandateStatus)) errors.push('Choose a supported rental mandate status.')
+  if (!RENTAL_SELECT_OPTIONS.mandateStatus.some((option) => option.value === mandateStatus) && !persistedMandateStatuses.includes(mandateStatus)) add('mandateStatus', 'landlord', 'Choose a supported rental mandate status.')
   const marketingApproval = normalizeText(form.marketingApprovalStatus) || 'draft'
-  if (!RENTAL_SELECT_OPTIONS.marketingApprovalStatus.some((option) => option.value === marketingApproval)) errors.push('Choose a supported marketing approval status.')
+  if (!RENTAL_SELECT_OPTIONS.marketingApprovalStatus.some((option) => option.value === marketingApproval)) add('marketingApprovalStatus', 'landlord', 'Choose a supported marketing approval status.')
   for (const [field, label] of [['mandateStartDate', 'Mandate start date'], ['mandateEndDate', 'Mandate end date']]) {
     const value = normalizeText(form[field])
     if (!value) continue
     const parsed = new Date(`${value}T00:00:00Z`)
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || !Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value) errors.push(`${label} must be a valid date.`)
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || !Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value) add(field, 'landlord', `${label} must be a valid date.`)
   }
-  if (form.mandateStartDate && form.mandateEndDate && form.mandateEndDate < form.mandateStartDate) errors.push('Mandate end date cannot be before its start date.')
-  if (!normalizeText(form.propertyAddress)) errors.push('Property address is required.')
-  if (!normalizeNumber(form.monthlyRent)) errors.push('Rental amount is required.')
-  if (!normalizeText(form.rentalPriceFrequency)) errors.push('Rental price frequency is required.')
+  if (form.mandateStartDate && form.mandateEndDate && form.mandateEndDate < form.mandateStartDate) add('mandateEndDate', 'landlord', 'Mandate end date cannot be before its start date.')
+  if (!normalizeText(form.propertyAddress)) add('propertyAddress', 'property', 'Property address is required.')
+  if (!(normalizeNumber(form.monthlyRent) > 0)) add('monthlyRent', 'terms', 'Enter a rental amount greater than zero.')
+  if (!normalizeText(form.rentalPriceFrequency)) add('rentalPriceFrequency', 'terms', 'Rental price frequency is required.')
   for (const [field, label] of [['videoLink', 'Video link'], ['virtualTourLink', 'Virtual tour link']]) {
-    if (normalizeText(form[field]) && !isRentalMediaLink(form[field])) errors.push(`${label} must be a valid HTTP or HTTPS URL.`)
+    if (normalizeText(form[field]) && !isRentalMediaLink(form[field])) add(field, 'marketing', `${label} must be a valid HTTP or HTTPS URL.`)
   }
-  errors.push(...validateRentalPortalFacts(form))
-  errors.push(...getListingFieldIssues(form, { rental: true }).map(issue => issue.message))
+  for (const message of validateRentalPortalFacts(form)) {
+    const extra = RENTAL_PORTAL_FIELDS.find(field => message === `Enter a valid ${field.label.toLowerCase()}.`)
+    const step = extra?.derivedFrom === 'availableFrom' ? 'terms' : extra && rentalFeatureCaptureFields(form).some(field => field.key === extra.key) ? 'features' : 'property'
+    const field = extra?.key === 'propertyInfo.propertyDescription.propertyDescriptionType' ? 'rentalTitleType' : extra?.formKey || extra?.key || ''
+    add(field, step, message, extra?.label)
+  }
+  errors.push(...getListingFieldIssues(form, { rental: true }))
   return errors
+}
+
+
+export function validateRentalListingDraftForm(form = {}, context = {}) {
+  return getRentalListingValidationIssues(form, context).map(issue => issue.message)
 }
 
 export function buildRentalCanonicalFacts(form = {}) {

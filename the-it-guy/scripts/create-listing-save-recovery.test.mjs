@@ -1,4 +1,5 @@
-import { getListingFieldIssues } from '../src/services/listings/listingFieldRequirements.js'
+import { buildSpecialistSalesFacts } from '../src/services/listings/specialistSalesListingSchema.js'
+import { getListingFieldIssues, getSalesListingRequiredIssues } from '../src/services/listings/listingFieldRequirements.js'
 import assert from 'node:assert/strict'
 import { File } from 'node:buffer'
 import { readFileSync } from 'node:fs'
@@ -23,6 +24,7 @@ function between(start, end) {
 }
 
 function bind(context, code, expression) {
+  Object.assign(context, { publicationStatusBusy: false, publicationPending: false, publicationUncertain: false, draftRecoveryBlocked: false, editDraftConflict: null, buildSpecialistSalesFacts, recoveryProtection: { markSaved() {} }, setCloudSave() {}, ...context })
   return new Function('context', `with (context) { ${code}; return ${expression}; }`)(context)
 }
 
@@ -38,7 +40,7 @@ test('older feature-step drafts resume in Marketing with a navigable previous st
 })
 
 test('listing validation accepts incomplete sellers of every ownership type while retaining property requirements', () => {
-  const context = { normalizeText, normalizeKey, MANUAL_LISTING_STATUSES: ['draft', 'active', 'mandate_signed', 'under_offer', 'sold'] }
+  const context = { getSalesListingRequiredIssues, normalizeText, normalizeKey, MANUAL_LISTING_STATUSES: ['draft', 'active', 'mandate_signed', 'under_offer', 'sold'] }
   context.hasListingPriceOrPoa = bind(context, between('function hasListingPriceOrPoa(', 'function listingHasPriceOrPoa('), 'hasListingPriceOrPoa')
   const validate = bind(context, between('function validateQuickListingMinimumFields(', 'function getDeveloperOrganisationName('), 'validateQuickListingMinimumFields')
   const form = { propertyType: 'House', suburb: 'Test suburb', streetNumber: '18', streetName: 'Test Avenue', city: 'Cape Town', province: 'Western Cape', bedrooms: 2, bathrooms: 1, propertyAddress: '18 Test Avenue', listingPrice: '2500000', propertyType: 'House', listingStatus: 'active' }
@@ -56,7 +58,7 @@ test('initial channel guidance follows the integration photo and price requireme
   const form = { propertyType: 'House', suburb: 'Test suburb', streetNumber: '18', streetName: 'Test Avenue', city: 'Cape Town', province: 'Western Cape', bedrooms: 2, bathrooms: 1, propertyAddress: '18 Test Avenue', listingPrice: '', priceOnApplication: true, listingDescription: 'A family home.', listingImages: [{ id: 'photo-1' }], floorSize: '' }
   const result = statuses(form)
   assert.deepEqual(result.find(row => row.key === 'property24').missing, [])
-  assert.deepEqual(result.find(row => row.key === 'private_property').missing, ['Enter a price greater than zero.', 'Add at least 3 photos.'])
+  assert.deepEqual(result.find(row => row.key === 'private_property').missing, ['Private Property needs an asking price even when it is hidden. Add a price, or remove Private Property from your selected channels.', 'Add at least 3 photos.'])
   assert.deepEqual(statuses({ ...form, listingPrice: '2500000', listingImages: [{ id: 'a' }, { id: 'b' }, { id: 'c' }] }).find(row => row.key === 'private_property').missing, [])
 })
 
@@ -64,6 +66,7 @@ function storageContext() {
   const data = new Map()
   const context = {
     normalizeText, isUnstorableCreateListingImageUrl, console: quietConsole,
+    writeListingTextRecoveryDraft: (scope, data) => ({ scope, ...data }),
     saveListingRecoveryDraft: async () => {}, readListingRecoveryDraft: async () => null, clearListingRecoveryDraft: async () => {},
     listingCreationIdRef: { current: "" }, reserveListingCreationId: () => "00000000-0000-4000-8000-000000000001",
     isDeveloperWorkspace: false, legacyCreateListingDraftStorageKey: "legacy",
@@ -113,12 +116,7 @@ const restoreMarker = source.indexOf('// An edit form must always open')
 const restoreStart = source.lastIndexOf('useEffect(() => {', restoreMarker)
 const restoreEnd = source.indexOf('}, [isDeveloperWorkspace, createListingDraftScopeKey', restoreStart)
 const restoreBody = source.slice(restoreStart + 'useEffect(() => {'.length, restoreEnd)
-const autosaveMarker = source.indexOf('if (createListingDraftHydratedKey !== createListingDraftScopeKey')
-const autosaveStart = source.lastIndexOf('useEffect(() => {', autosaveMarker)
-const autosaveEnd = source.indexOf('}, [form,', autosaveStart)
-const autosaveBody = source.slice(autosaveStart + 'useEffect(() => {'.length, autosaveEnd)
-
-test('refresh resumes the photo step and its existing listing before autosave runs', async () => {
+test('refresh resumes the photo step and existing listing before accepting input', async () => {
   const { context, data } = storageContext()
   const pendingState = []
   const steps = ['seller', 'property', 'features', 'marketing', 'syndication', 'review'].map((key) => ({ key }))
@@ -144,9 +142,7 @@ test('refresh resumes the photo step and its existing listing before autosave ru
     pendingListingId: 'listing-1', organisationId: 'org-1', step: 'marketing', maxVisitedStep: 4, missingPhotoCount: 2,
   })
   const restore = bind(context, '', `() => { ${restoreBody} }`)
-  const autosave = bind(context, '', `() => { ${autosaveBody} }`)
   restore()
-  autosave()
   assert.equal(JSON.parse(data.get('draft')).propertyAddress, '18 Test Avenue', 'initial defaults must not overwrite the saved draft')
   await new Promise(resolve => setImmediate(resolve))
   pendingState.splice(0).forEach((apply) => apply())
@@ -155,7 +151,6 @@ test('refresh resumes the photo step and its existing listing before autosave ru
   assert.equal(context.createListingMaxVisitedStep, 4)
   assert.equal(context.pendingCreatedListingIdRef.current, 'listing-1')
   assert.equal(context.missingDraftPhotoCount, 2)
-  autosave()
   assert.equal(JSON.parse(data.get('draft')).__draftRecovery.pendingListingId, 'listing-1')
   const legacyDraft = JSON.parse(data.get('draft'))
   legacyDraft.__draftRecovery.step = 'seller'
@@ -171,7 +166,6 @@ test('refresh resumes the photo step and its existing listing before autosave ru
   assert.equal(context.pendingCreatedListingIdRef.current, 'listing-1')
   context.completedCreateListingRef.current = true
   data.delete('draft')
-  autosave()
   assert.equal(data.has('draft'), false, 'completed creates must not leave a new blank draft')
 })
 
@@ -336,11 +330,25 @@ test('retry updates the original listing and opens it only after verified persis
   assert.equal(context.completedCreateListingRef.current, true)
 })
 
+test('blocked browser cleanup cannot turn a verified creation into a failed save', async () => {
+  const { context, calls, save, createdCount } = saveContext()
+  let released = false
+  context.recoveryProtection = { markSaved() { released = true } }
+  context.window.localStorage.removeItem = () => { throw new Error('Browser storage blocked') }
+  await save()
+  assert.equal(createdCount(), 1)
+  assert.equal(context.completedCreateListingRef.current, true)
+  assert.equal(released, true)
+  assert.ok(calls.find(([action]) => action === 'navigate'))
+})
+
 for (const [mobile, developer] of [[false, false], [false, true], [true, true]]) test(`saving a ${mobile ? 'mobile' : 'desktop'} ${developer ? 'developer' : 'sale'} photo draft retries the same record and waits for saved marketing details`, async () => {
   const { context, data, calls, createdCount } = saveContext()
   Object.assign(context, {
     mobileEditor: mobile, isDeveloperWorkspace: developer, workspace: {}, buildDeveloperSellerFacts: () => ({ sellerRole: 'developer' }),
     isSupabaseConfigured: true, MOCK_DATA_ENABLED: false,
+    buildListingEditorFormFromListing: () => ({ ...context.form, selectedSyndicationChannels: [] }),
+    listingRecoveryRevision: () => 'confirmed-revision',
     listingSaveInFlightRef: { current: false }, currentBranchId: '',
     createListingStep: 'marketing', CREATE_LISTING_DRAFT_STORAGE_KEY: 'draft-prefix',
     listingEditorDraftStorageKey: 'draft', deletedListingIds: [],
@@ -362,6 +370,11 @@ for (const [mobile, developer] of [[false, false], [false, true], [true, true]])
   assert.equal(calls.find(([action]) => action === 'create')[1].listingCategory, developer ? 'development_unit' : 'private_sale')
   assert.ok(calls.findIndex(([action]) => action === 'navigate') > calls.findLastIndex(([action]) => action === 'media'))
   assert.deepEqual(calls.find(([action]) => action === 'navigate'), ['navigate', `${mobile ? '/mobile/listings' : '/listings'}/listing-1/edit?step=marketing`])
+  const editorDraft = JSON.parse(data.get('draft:edit:listing-1'))
+  assert.equal(editorDraft.__draftRecovery.baseRevision, 'confirmed-revision')
+  assert.deepEqual(editorDraft.selectedSyndicationChannels, context.form.selectedSyndicationChannels)
+  assert.deepEqual(editorDraft.__draftRecovery.baseForm.selectedSyndicationChannels, [])
+  assert.equal(data.has('draft-prefix:edit:listing-1'), false)
 })
 
 for (const mobile of [false, true]) test(`${mobile ? 'mobile' : 'desktop'} activation sends selected channels after verified persistence and opens without waiting for a slow portal`, async () => {

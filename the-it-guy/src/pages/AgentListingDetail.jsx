@@ -1,4 +1,4 @@
-import { readInitialListingChannelResults, watchInitialListingPublication } from '../services/listings/listingInitialPublicationService'
+import { INITIAL_LISTING_PUBLICATION_EVENT, readInitialListingChannelResults, watchInitialListingPublication, refreshListingPublicationResults, requireSettledListingPublication } from '../services/listings/listingInitialPublicationService'
 import SellerDocumentWorkflowActions from '../components/documents/SellerDocumentWorkflowActions'
 import { SELLER_DOCUMENT_ACTIONS, SELLER_DOCUMENT_SELECTION_KEYS, buildSellerDocumentWorkflow, getSellerDocumentSigningRequest, sellerDocumentHasActiveSigning, sellerDocumentHasUploadedEvidence } from '../core/documents/sellerDocumentWorkflow'
 import { DOCUMENT_UPLOAD_ACCEPT, DOCUMENT_UPLOAD_HELP_TEXT } from '../lib/documentUploadPolicy.js'
@@ -118,6 +118,7 @@ import {
   buildSellerFicaOverview,
 } from '../services/listings/listingSellerOverviewModel'
 import SyndicationReviewModal from '../components/listings/SyndicationReviewModal'
+import ListingPublicationProgress from '../components/listings/ListingPublicationProgress'
 import WebsiteListingPublicationPanel from '../components/listings/WebsiteListingPublicationPanel'
 import KingdomWebsitePublicationChannel from '../components/listings/KingdomWebsitePublicationChannel'
 import { getWebsiteListingPublicationStatus, setWebsiteListingPublication } from '../services/websiteListingPublicationService'
@@ -3562,7 +3563,8 @@ function mergeAddressIntoMarketingDraft(previous, value) {
 function ListingPostCreateProgressCard({ progress = null, onRetrySellerPortal = null, retryingSellerPortal = false } = {}) {
   if (!progress?.tasks) return null
   const tasks = Object.entries(progress.tasks)
-  const complete = Boolean(progress.completedAt)
+  if (!tasks.length) return null
+  const complete = tasks.every(([, task]) => ['complete', 'skipped'].includes(task?.status))
   const Icon = ({ status }) => {
     if (status === 'complete' || status === 'skipped') return <CheckCircle2 size={16} className="text-[#1f7d44]" />
     if (status === 'attention') return <CircleAlert size={16} className="text-[#b7791f]" />
@@ -3575,8 +3577,8 @@ function ListingPostCreateProgressCard({ progress = null, onRetrySellerPortal = 
       <div className="flex items-start gap-3 border-b border-[#dce8f3] px-4 py-3">
         {complete ? <CheckCircle2 size={18} className="mt-0.5 text-[#1f7d44]" /> : <Loader2 size={18} className="mt-0.5 animate-spin text-[#1f4f78]" />}
         <div>
-          <p className="text-sm font-semibold text-[#18324b]">{complete ? 'Listing setup complete' : 'Finishing listing setup'}</p>
-          <p className="mt-0.5 text-sm text-[#607387]">{complete ? 'Your listing is ready to continue working on.' : 'You can continue working while these steps finish.'}</p>
+          <p className="text-sm font-semibold text-[#18324b]">{complete ? 'Other listing tasks complete' : 'Other tasks for this listing'}</p>
+          <p className="mt-0.5 text-sm text-[#607387]">Advertising results are shown separately. Check seller invitations, documents and other follow-ups here.</p>
         </div>
       </div>
       <div className="grid gap-2 p-4 sm:grid-cols-2">
@@ -3657,6 +3659,21 @@ function AgentListingDetail() {
   const [wetInkConversionMigrationDependencySavingId, setWetInkConversionMigrationDependencySavingId] = useState('')
   const [detailMessage, setDetailMessage] = useState('')
   useEffect(() => watchInitialListingPublication(listingId), [listingId])
+  const [initialChannelResults, setInitialChannelResults] = useState(() => readInitialListingChannelResults(listingId))
+  const [publicationStatusBusy, setPublicationStatusBusy] = useState(false)
+  useEffect(() => {
+    setInitialChannelResults(readInitialListingChannelResults(listingId))
+    const refresh = event => { if (event.detail?.listingId === listingId) setInitialChannelResults(event.detail.results) }
+    window.addEventListener(INITIAL_LISTING_PUBLICATION_EVENT, refresh)
+    return () => window.removeEventListener(INITIAL_LISTING_PUBLICATION_EVENT, refresh)
+  }, [listingId])
+  async function checkAdvertisingStatus() {
+    if (publicationStatusBusy) return
+    setPublicationStatusBusy(true)
+    try { await refreshListingPublicationResults(listingId); setDetailError('') }
+    catch { setDetailError('Your listing is saved. Advertising status could not be checked. Try again before sending.') }
+    finally { setPublicationStatusBusy(false) }
+  }
   const [detailError, setDetailError] = useState('')
   const [postCreateProgress, setPostCreateProgress] = useState(() => readListingPostCreateProgress(listingId))
   const [retryingPostCreateSellerPortal, setRetryingPostCreateSellerPortal] = useState(false)
@@ -5414,7 +5431,7 @@ function AgentListingDetail() {
     if (channelMutationRef.current) throw new Error('An update is already running. Please wait.')
     if (!listingRecord?.id || !isSupabaseConfigured) throw new Error('Sign in and save this listing first.')
     if (marketingDraftDirtyRef.current) throw new Error('Save your listing edits first, then update the channels.')
-    if (readInitialListingChannelResults(listingId).some((result) => result.status === 'publishing')) throw new Error('The first listing submission is still running. Wait for it to finish.')
+    await requireSettledListingPublication(listingId, ['property24', 'private_property', 'agency_website'])
     if (channel === 'Property24' && !values.retryResults?.length && (values.listingStatus === marketingDraft.listingStatus || values.expiryDate !== marketingDraft.property24ExpiryDate)) {
       const expiryError = getProperty24ExpiryDateError(values.expiryDate)
       if (expiryError) throw new Error(expiryError)
@@ -6142,10 +6159,8 @@ function AgentListingDetail() {
   }
 
   async function publishProperty24Listing() {
-    if (readInitialListingChannelResults(listingId).some((result) => result.key === 'property24' && result.status === 'publishing')) {
-      setDetailMessage('The initial submission to Property24 is still running. Its result will appear above.')
-      return null
-    }
+    try { await requireSettledListingPublication(listingId, ['property24']) }
+    catch (error) { setDetailError(error.message || 'Check advertising status before sending again.'); return null }
     if (!ensureMarketingMediaReady(marketingDraft, 'publishing to Property24')) return null
     const expiryError = getProperty24ExpiryDateError(marketingDraft.property24ExpiryDate)
     if (expiryError) {
@@ -6355,10 +6370,8 @@ function AgentListingDetail() {
   }
 
   async function publishPrivatePropertyListing() {
-    if (readInitialListingChannelResults(listingId).some((result) => result.key === 'private_property' && result.status === 'publishing')) {
-      setDetailMessage('The initial submission to Private Property is still running. Its result will appear above.')
-      return null
-    }
+    try { await requireSettledListingPublication(listingId, ['private_property']) }
+    catch (error) { setDetailError(error.message || 'Check advertising status before sending again.'); return null }
     if (!ensureMarketingMediaReady(marketingDraft, 'publishing to Private Property')) return null
     if (!await requireSyndicationReviewBeforePublish('privateProperty')) return null
     const confirmation = `PRIVATE_PROPERTY_PUBLISH:${listingRecord?.id || ''}:production`
@@ -13331,6 +13344,13 @@ function AgentListingDetail() {
       {detailMessage ? (
         <div className="rounded-[14px] border border-[#d8eddf] bg-[#ecfaf1] px-4 py-3 text-sm font-medium text-[#1f7d44]">{detailMessage}</div>
       ) : null}
+      <ListingPublicationProgress saved results={initialChannelResults} title={listingRecord?.title || listingRecord?.listingTitle} listingStatus={listingRecord?.listingStatus}
+        channels={listingRecord?.sellerCanonicalFacts?.distribution?.selectedChannels}
+        changesNotSent={Object.values(listingPublicationStates).some(state => state.changeCount > 0)} unsavedChanges={marketingDraftDirty}
+        busy={publicationStatusBusy} onCheckStatus={() => void checkAdvertisingStatus()}
+        onReview={() => navigate(`/listings/${encodeURIComponent(listingId)}/edit?step=syndication&scope=listing-publication`)}
+        onFollowUp={() => navigate(`/agent/listings/${encodeURIComponent(listingId)}?tab=seller`)}
+        onDocuments={() => navigate(`/agent/listings/${encodeURIComponent(listingId)}?tab=documents`)} />
       <ListingPostCreateProgressCard
         progress={postCreateProgress}
         onRetrySellerPortal={handleRetryPostCreateSellerPortal}

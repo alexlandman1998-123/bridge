@@ -6,6 +6,7 @@ import { captureRentalPortalFacts } from '../../services/rentals/rentalPortalFie
 import { rentalFeatureCaptureFields, rentalFeatureGroup } from '../../services/rentals/rentalFeatureCaptureModel.js'
 
 const icons = { Security: ShieldCheck, 'Rooms & living': House, 'Parking & buildings': Car, 'Energy & water': Droplets, 'Connectivity & utilities': Wifi, 'Property & title details': ClipboardList, 'Outdoor & leisure': Trees, 'Accessibility & views': Eye, 'Pet friendly': PawPrint, 'Business premises': Building2, 'Warehouse & loading': Warehouse }
+const fieldLabel = field => field.key === 'commercialInfo.grossLettableAreaSqm' ? 'Rentable floor area (m²)' : field.label
 const optionLabel = (value) => value.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/_/g, ' ')
 
 export default function RentalCategoryFields({ form, onChange, disabled = false, focusField = '' }) {
@@ -45,8 +46,8 @@ export default function RentalCategoryFields({ form, onChange, disabled = false,
         {fields.filter((field) => rentalFeatureGroup(field) === activeGroup).map((field) => {
           const value = answers[field.key]
           return <div key={field.key} data-listing-field={field.formKey || field.key} className="min-w-0 rounded-xl border border-[#e0e8f1] bg-[#fbfdff] p-4">
-            {field.type === 'boolean' ? <div role="group" aria-label={field.label}>
-              <p className="text-sm font-semibold text-[#2d445e]">{field.label}</p>
+            {field.type === 'boolean' ? <div role="group" aria-label={fieldLabel(field)}>
+              <p className="text-sm font-semibold text-[#2d445e]">{fieldLabel(field)}</p>
               <div className="mt-3 grid grid-cols-2 gap-2">{['yes', 'no'].map((choice) => {
                 const selected = value === (choice === 'yes')
                 return <button key={choice} type="button" data-rental-control="feature-answer" aria-pressed={selected} onClick={() => update(field, selected ? '' : choice)} className={`min-h-10 rounded-lg border text-sm font-semibold ${selected ? 'border-[#274c69] bg-[#eaf2f8] text-[#18324b]' : 'border-[#dbe6f2] bg-white text-[#526f88]'}`}>{choice === 'yes' ? 'Yes' : 'No'}</button>
@@ -55,7 +56,7 @@ export default function RentalCategoryFields({ form, onChange, disabled = false,
                 <span>{value === null || value === undefined ? field.key === 'feature.pet_friendly' ? 'Subject to approval' : 'Not answered' : 'Answered'}</span>
                 {value !== null && value !== undefined ? <button type="button" data-rental-control="clear-answer" onClick={() => update(field, '')} className="underline underline-offset-2">Clear</button> : null}
               </div>
-            </div> : <label className="form-field"><span>{field.label}</span>{field.options ? <select name={field.formKey || field.key} value={value ?? ''} onChange={(event) => update(field, event.target.value)}><option value="">Not captured</option>{field.options.map((option) => <option key={option} value={option}>{optionLabel(option)}</option>)}</select>
+            </div> : <label className="form-field"><span>{fieldLabel(field)}</span>{field.options ? <select name={field.formKey || field.key} value={value ?? ''} onChange={(event) => update(field, event.target.value)}><option value="">Not captured</option>{field.options.map((option) => <option key={option} value={option}>{optionLabel(option)}</option>)}</select>
               : <input name={field.formKey || field.key} type={field.format === 'date-time' ? 'date' : field.type === 'integer' || field.type === 'number' ? 'number' : 'text'} min={field.type === 'integer' || field.type === 'number' ? 0 : undefined} max={field.max} step={field.type === 'integer' ? 1 : field.type === 'number' ? 'any' : undefined} value={field.formKey ? form[field.formKey] ?? '' : field.format === 'date-time' ? (form.rentalPortalFacts?.[field.key] || '').slice(0, 10) : form.rentalPortalFacts?.[field.key] ?? ''} onChange={(event) => update(field, event.target.value)} placeholder="Not captured" />}</label>}
           </div>
         })}

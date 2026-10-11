@@ -98,3 +98,12 @@ it('dismisses the menu with Escape and an outside click', async () => {
   fireEvent.click(document.body)
   expect(screen.queryByRole('menu')).toBeNull()
 })
+
+
+it('takes an unpublished draft straight to the guided editor from Continue draft', async () => {
+  mocks.listings.mockResolvedValue([{ ...rental, listingStatus: 'seller_lead' }])
+  render(<MemoryRouter initialEntries={['/agent/rentals/listings']}><RentalListingsPage /><Location /></MemoryRouter>)
+  fireEvent.click(await screen.findByRole('button', { name: 'Continue draft' }))
+  expect(screen.getByTestId('location').textContent).toBe('/agent/rentals/listings/rental-1/edit')
+  expect(mocks.delete).not.toHaveBeenCalled()
+})

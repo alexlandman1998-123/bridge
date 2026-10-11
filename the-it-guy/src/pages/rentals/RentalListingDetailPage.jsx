@@ -1,5 +1,4 @@
-import { RENTAL_SAVED_NOT_SENT_MESSAGE } from '../../services/listings/listingCaptureModel'
-import { INITIAL_LISTING_PUBLICATION_EVENT, readInitialListingChannelResults, watchInitialListingPublication } from '../../services/listings/listingInitialPublicationService'
+import { INITIAL_LISTING_PUBLICATION_EVENT, readInitialListingChannelResults, watchInitialListingPublication, refreshListingPublicationResults, retryFailedListingChannels, requireSettledListingPublication } from '../../services/listings/listingInitialPublicationService'
 import { buildRentalWorkspaceKey } from '../../services/rentals/rentalWorkspaceScope'
 import { getListingChannelViewUrl } from '../../services/listings/listingMarketingChannelPresentation'
 import ListingChannelTableHeader from '../../components/listings/ListingChannelTableHeader'
@@ -29,6 +28,7 @@ import {
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { ListingWorkspaceTabs } from '../../components/listings/ListingWorkspaceShell'
 import ListingAgentReassignmentPanel from '../../components/listings/ListingAgentReassignmentPanel'
+import ListingPublicationProgress from '../../components/listings/ListingPublicationProgress'
 import WebsiteListingPublicationPanel from '../../components/listings/WebsiteListingPublicationPanel'
 import KingdomWebsitePublicationChannel from '../../components/listings/KingdomWebsitePublicationChannel'
 import RentalPortalManagementPanel from './RentalPortalManagementPanel'
@@ -1040,7 +1040,7 @@ function RentalTabContent({
         <RentalMarketingOverview detail={detail} row={row} galleryImages={galleryImages} onOpenEdit={() => onOpenEdit('marketing')} onPhotoAction={onPhotoAction} savingMedia={savingMedia} mediaError={mediaError} />
         <RentalListingReadinessPanel detail={detail} property24Preview={property24Preview} privatePropertyPreview={privatePropertyPreview} property24Error={property24PreviewError} privatePropertyError={privatePropertyReadinessError} checkingProperty24={checkingProperty24} checkingPrivateProperty={checkingPrivateProperty} onFix={onReadinessFix} busy={portalBusy || savingMedia || publishing || publishingPrivateProperty} />
         <article id="listing-distribution-channels" className="overflow-visible rounded-[22px] border border-[#dde4ee] bg-white shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
-          <div className="border-b border-[#edf2f7] p-5"><h3 className="text-base font-semibold text-[#142132]">Listing Channels</h3><p className="mt-1 text-sm text-[#607387]">Manage where this rental is advertised.</p></div>
+          <div className="border-b border-[#edf2f7] p-5"><h3 id="rental-listing-advertising" tabIndex={-1} className="text-base font-semibold text-[#142132]">Listing Channels</h3><p className="mt-1 text-sm text-[#607387]">Manage where this rental is advertised.</p></div>
           <ListingChannelTableHeader />
           <RentalDistributionChannel
             channelKey="property24"
@@ -1201,6 +1201,8 @@ function ScopedRentalListingDetailPage() {
   const listingMutationRef = useRef(false)
   const mediaSavingRef = useRef(false)
   useEffect(() => { setMediaError('') }, [organisationId, listingId])
+  const [publicationStatusBusy, setPublicationStatusBusy] = useState(false)
+  const publicationStatusBusyRef = useRef(false)
   const [initialChannelResults, setInitialChannelResults] = useState(() => readInitialListingChannelResults(listingId))
   useEffect(() => watchInitialListingPublication(listingId), [listingId])
   useEffect(() => {
@@ -1447,6 +1449,7 @@ function ScopedRentalListingDetailPage() {
   }
 
   async function prepareRentalWebsitePublication(channel = 'agency_website') {
+    await requireSettledListingPublication(listingId, [channel])
     if (!canSaveEdit) {
       const preparationError = new Error(editValidationErrors[0] || 'Complete the required rental listing fields before publishing to the website.')
       setEditError(preparationError.message)
@@ -1489,7 +1492,25 @@ function ScopedRentalListingDetailPage() {
     setChannelData(current => ({ ...current, activity:[row,...(current.activity || [])] }))
   }
 
+  async function checkAdvertisingStatus(retry = false) {
+    if (publicationStatusBusyRef.current || portalActionRef.current || listingMutationRef.current) return
+    publicationStatusBusyRef.current = true
+    portalActionRef.current = true
+    setPublicationStatusBusy(true)
+    setPortalAction(retry ? 'advertising:retry' : 'advertising:check')
+    setPublishError('')
+    try {
+      const results = retry
+        ? await retryFailedListingChannels({ listingId, listingStatus: listing.listingStatus, channels: buildRentalListingEditForm(listing).selectedSyndicationChannels, requestKey: crypto.randomUUID() })
+        : await refreshListingPublicationResults(listingId)
+      if (!results.some(row => row.status === 'uncertain') && location.state?.rentalListingPublicationError) navigate(location.pathname, { replace: true, state: { ...location.state, rentalListingPublicationError: undefined } })
+      if (retry) setSuccessMessage(results.length ? 'Retrying only the failed websites. Successful and unconfirmed requests are kept.' : 'No confirmed failures to retry for the selected websites. Check the results below.')
+    } catch { setPublishError('Your rental is saved. Advertising status could not be checked. Try checking again before sending.') }
+    finally { publicationStatusBusyRef.current = false; portalActionRef.current = false; setPublicationStatusBusy(false); setPortalAction('') }
+  }
+
   async function performPortalAction(channel,action,perform) {
+    if (action === 'publish') await requireSettledListingPublication(listingId, [channel])
     const channelState = portalChannels.find(item => item.key === channel)
     if (channelState?.requiresReconciliation) throw new Error('Reconcile the previous portal request before sending another change.')
     if (channelState?.loadError || channelState?.loading) throw new Error('Load the saved portal status before sending a change.')
@@ -1765,14 +1786,29 @@ function ScopedRentalListingDetailPage() {
     navigate(buildRentalListingDetailPath(listingId, tabKey))
   }
 
+  function reviewRentalAdvertising() {
+    if (listing.listingStatus === 'draft') return openEditPanel()
+    openRentalListingWorkspaceTab('marketing')
+    requestAnimationFrame(() => {
+      const heading = document.getElementById('rental-listing-advertising')
+      heading?.scrollIntoView?.({ block: 'start' })
+      heading?.focus({ preventScroll: true })
+    })
+  }
+
   return (
     <section className="page-content rental-listing-detail">
       <div className="ui-section-stack">
-        {location.state?.rentalListingChangesNotSent ? <div role="status" className="rounded-xl border border-[#f1d4a6] bg-[#fffaf0] p-4 text-sm"><p>{RENTAL_SAVED_NOT_SENT_MESSAGE}</p><button type="button" className="mt-2 underline" onClick={() => navigate(location.pathname, { replace: true, state: { ...location.state, rentalListingChangesNotSent: false } })}>Dismiss saved notice</button></div> : null}
-        {initialChannelResults.length ? <div role="status" aria-live="polite" className="rounded-xl border border-[#dce6f2] p-4 text-sm">
-          <p className="font-semibold">Initial channel submission</p>
-          {initialChannelResults.map(result => <p key={result.key} className="mt-2">{result.label}: {result.message}</p>)}
-        </div> : null}
+        
+        {location.state?.rentalListingPublicationError ? <p role="alert" className="rounded-xl border border-[#f1d4a6] bg-[#fffaf0] p-4 text-sm">Your rental is saved. The advertising request could not be confirmed. Check status before sending again.</p> : null}
+        <ListingPublicationProgress saved results={initialChannelResults} title={row.title} listingStatus={listing.listingStatus}
+          channels={listing.sellerCanonicalFacts?.distribution?.selectedChannels ?? listing.listingPublicationData?.selectedSyndicationChannels ?? null}
+          changesNotSent={Boolean(location.state?.rentalListingChangesNotSent) || portalChannels.some(channel => channel.publicationState?.changeCount > 0) || Object.values(websitePublicationStates).some(state => state.changeCount > 0)}
+          busy={publicationStatusBusy || Boolean(portalAction) || savingMedia || publishing || publishingPrivateProperty}
+          onCheckStatus={() => void checkAdvertisingStatus()} onRetry={() => void checkAdvertisingStatus(true)}
+          onReview={reviewRentalAdvertising}
+          onDismissChanges={location.state?.rentalListingChangesNotSent ? () => navigate(location.pathname, { replace: true, state: { ...location.state, rentalListingChangesNotSent: false } }) : undefined}
+          onFollowUp={() => openRentalListingWorkspaceTab('landlord')} followUpLabel="Landlord details" onDocuments={() => openRentalListingWorkspaceTab('documents')} />
         <header className="relative isolate min-h-[240px] overflow-hidden rounded-[24px] border border-[#d7e1eb] bg-[#153751] shadow-[0_12px_28px_rgba(15,23,42,0.12)] sm:min-h-[300px]">
           <div className="absolute inset-0 -z-20">
             <RentalListingImage src={row.imageUrl} title={row.title} />

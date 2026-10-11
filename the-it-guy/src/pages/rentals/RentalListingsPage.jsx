@@ -222,7 +222,7 @@ export default function RentalListingsPage() {
                   key={row.id}
                   row={row}
                   liveChannels={getListingLiveChannels({ ...row, bridgeListingStatus: row.websiteStatus }, websitePublications[row.id])}
-                  onOpen={() => navigate(`/agent/rentals/listings/${encodeURIComponent(row.id)}`)}
+                  onOpen={() => navigate(`/agent/rentals/listings/${encodeURIComponent(row.id)}${row.isCaptureDraft ? '/edit' : ''}`)}
                   menuOpen={menuId === row.id}
                   onMenu={() => setMenuId(previous => previous === row.id ? '' : row.id)}
                   onDelete={() => { setMenuId(''); setPendingDeletion(row) }}

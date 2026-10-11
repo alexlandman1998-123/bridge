@@ -11,6 +11,7 @@ import {
   validateRentalListingDraftForm,
 } from './rentalListingDraftModel.js'
 import { buildRentalListingIndexRow, getRentalListingFacts } from './rentalListingIndexModel.js'
+import { RENTAL_PORTAL_FIELDS } from './rentalPortalFieldContract.js'
 import { getRentalMediaLinks } from './rentalListingMediaModel.js'
 
 export const RENTAL_LISTING_EDIT_VERSION = 'arch9_rental_listing_edit_v1'
@@ -86,7 +87,8 @@ export function buildRentalListingEditForm(listing = {}) {
       '',
   ).trim()
 
-  return {
+  const captureDraft = facts.rentalCaptureDraft?.version === 1 ? facts.rentalCaptureDraft.form : null
+  const result = {
     ...RENTAL_LISTING_INITIAL_FORM,
     ...getRentalMediaLinks(raw),
     rentalPortalFacts: { ...facts.rentalPortalFacts },
@@ -201,6 +203,12 @@ export function buildRentalListingEditForm(listing = {}) {
       publication.selected_syndication_channels,
     ),
   }
+  if (captureDraft && typeof captureDraft === 'object' && !Array.isArray(captureDraft)) {
+    for (const key of new Set([...Object.keys(RENTAL_LISTING_INITIAL_FORM), ...RENTAL_PORTAL_FIELDS.map(field => field.formKey).filter(Boolean)])) {
+      if (!['galleryImages', 'coverImageId', 'expectedUpdatedAt'].includes(key) && Object.hasOwn(captureDraft, key)) result[key] = captureDraft[key]
+    }
+  }
+  return result
 }
 
 export function validateRentalListingEditForm(form = {}, context = {}) {

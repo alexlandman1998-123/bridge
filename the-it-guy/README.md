@@ -301,10 +301,55 @@ shown as proof that a portal is live. Save Draft does not submit channels.
 New submissions and content updates are sent only from listing setup. Confirmed
 failures can be retried there; successful channels are excluded after a fresh
 receipt check. Unconfirmed requests require a status check and are never
-automatically resent. Marketing shows channel lifecycle status without review,
-readiness or unpublished-change controls.
+automatically resent. Marketing shows channel lifecycle status and the saved-result summary. Full
+sales content review and updates continue in listing setup.
 Property24's initial marketing expiry defaults to 90 days, independently of
 seller mandate dates.
+
+The saved-listing summary identifies the property and the next action. It keeps
+saving, queued requests, sending, accepted requests, confirmed failures and
+unconfirmed outcomes separate. Accepted requests still need public-advert
+verification. Keep the page open until the advertising request has a durable
+receipt; confirmed queued work continues after navigation. Rental publishing
+queue failures open the saved rental with an advertising warning rather than
+reporting a failed property save. An activation failure retains the confirmed
+save and retries the same rental identity and revision.
+
+Rental edits save without sending adverts. Their saved notice and receipt
+comparison explain which updates still need sending. Review advertising opens
+the existing controls; seller/landlord details and documents have separate
+links. Rental results offer a targeted failed-website retry; sales offer it in
+listing setup. Every retry rereads durable receipts and excludes successful,
+pending and unconfirmed requests. Alternative portal/website publish controls
+also check unresolved durable requests before sending. Status watching resumes
+when a new request or retry is queued.
+
+Focused browser check: `node scripts/listing-recovery-browser.test.mjs
+<output-directory> '' '' publication` covers all seven categories for sales and
+rentals, including partial failures, reloads, targeted retries, narrow-screen
+results and lost responses. It uses loopback fixtures, actual sales capture and
+rental capture/detail screens, and migrated rental SQL; accounts, storage, sales
+persistence and portal outcomes are simulated. It does not publish adverts or
+certify hosted permissions, real-provider acceptance or first-time-agent usability.
+
+Run the complete local desktop acceptance suite with the existing command:
+`npm run test:listing-diagnostic -- --browser --desktop-acceptance`.
+It runs the contract/category diagnostic followed by recovery, private-draft
+resume, responsive capture, checklist corrections, publication results and
+interrupted-save journeys sequentially. Every mode must cover all seven
+categories for both sales and rentals with its full set of distinct assertions;
+missing, duplicate, failed or interrupted journeys fail acceptance. Each run
+removes old result files before launch. Results remain local evidence and never
+set `releaseReady` to true.
+
+The `acceptance` mode in `listing-recovery-browser.test.mjs` follows one draft
+through offline text input, tab-close photo recovery, interrupted upload, retry
+without duplicate creation, confirmed save, a separate browser reopen and
+review of a conflicting newer saved edit. Hosted save/reopen, agency/role
+permissions, actual portal receipts and photos, editor/save/upload timings and
+observed first-time-agent tasks must be recorded separately after an approved
+release. A successful provider request or historical public advert cannot stand
+in for those checks.
 
 Listing Channels uses one Manage menu and a small Manage listing popup. Sold and
 Under offer update all active portals and websites; expiry-date edits, Withdraw

@@ -1,0 +1,38 @@
+.listing-capture-layout { container: listing-capture / inline-size; min-width: 0; }
+.listing-capture-grid { display: grid; gap: 24px; min-width: 0; align-items: start; }
+.listing-capture-fields { min-width: 0; }
+.listing-capture-preview { min-width: 0; border: 1px solid #dbe6f2; border-radius: 16px; background: white; color: #18324b; overflow: hidden; }
+.listing-preview-toggle { width: 100%; min-height: 44px; padding: 14px 18px; text-align: left; font-weight: 600; }
+.listing-preview-content { display: none; }
+.listing-preview-content.is-expanded { display: block; }
+.listing-preview-heading { padding: 18px; border-bottom: 1px solid #e6edf5; }
+.listing-preview-heading h2 { font-size: 16px; font-weight: 700; }
+.listing-preview-heading p { margin-top: 6px; color: #607387; font-size: 12px; line-height: 1.5; }
+.listing-preview-photo { position: relative; aspect-ratio: 4 / 3; background: #eef4fa; }
+.listing-preview-photo img { width: 100%; height: 100%; object-fit: cover; }
+.listing-preview-photo > div { display: flex; height: 100%; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 20px; text-align: center; font-size: 13px; color: #607387; }
+.listing-preview-photo > span { position: absolute; right: 10px; bottom: 10px; border-radius: 8px; background: #18324b; padding: 4px 8px; color: white; font-size: 12px; }
+.listing-preview-body { padding: 18px; overflow-wrap: anywhere; }
+.listing-preview-price { font-size: 22px; font-weight: 700; color: #1f7d44; }
+.listing-preview-body h3 { margin-top: 8px; font-size: 18px; font-weight: 600; }
+.listing-preview-location { margin-top: 8px; font-size: 14px; }
+.listing-preview-type { margin-top: 6px; color: #607387; font-size: 12px; }
+.listing-preview-body dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 18px 0; }
+.listing-preview-body dt { font-size: 12px; color: #607387; }
+.listing-preview-body dd { margin: 2px 0 0; font-weight: 600; font-size: 14px; }
+.listing-preview-description { margin-top: 18px; white-space: pre-wrap; font-size: 14px; line-height: 1.6; }
+.listing-preview-edit { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 20px; }
+.listing-preview-edit button { min-height: 32px; text-decoration: underline; font-size: 13px; color: #1f4f78; }
+.listing-capture-actions { position: sticky; bottom: 0; z-index: 10; border: 1px solid #dde6ef; border-radius: 12px; background: #fff; box-shadow: 0 -6px 18px rgb(15 23 42 / 5%); }
+.listing-capture-layout button:focus-visible { outline: 2px solid #1f7d44; outline-offset: 2px; }
+@container listing-capture (min-width: 1040px) {
+  .listing-capture-grid { grid-template-columns: minmax(0, 1fr) 320px; }
+  .listing-capture-preview { position: sticky; top: 16px; max-height: calc(100dvh - 120px); overflow-y: auto; }
+  .listing-preview-toggle { display: none; }
+  .listing-preview-content { display: block; }
+  /* Viewport-based form grids would squeeze controls beside the preview. */
+  .listing-capture-fields :is(.xl\:grid-cols-3, .xl\:grid-cols-4, .xl\:grid-cols-5, .xl\:grid-cols-6, .lg\:grid-cols-3) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .listing-capture-fields .xl\:grid-cols-2 { grid-template-columns: minmax(0, 1fr); }
+  .listing-capture-fields .sales-property-categories { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .listing-capture-fields .xl\:col-span-2 { grid-column: auto; }
+}

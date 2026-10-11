@@ -28,7 +28,9 @@ export const LISTING_CAPTURE_FIELD_LABELS = {
   listingImages: 'photos', galleryImages: 'photos', streetNumber: 'street number', streetName: 'street name',
   suburb: 'suburb', city: 'city', province: 'province', bedrooms: 'bedrooms', bathrooms: 'bathrooms',
   erfSize: 'land size', floorSize: 'floor size', complexName: 'complex name', unitNumber: 'unit number',
-  rentalPriceFrequency: 'rent frequency', rentalMandateType: 'rental type', depositAmount: 'deposit',
+  propertyStructureType: 'ownership type', landlordEmail: 'landlord email', landlordType: 'landlord type',
+  mandateStatus: 'rental mandate', marketingApprovalStatus: 'marketing approval', mandateStartDate: 'mandate start date', mandateEndDate: 'mandate end date',
+  videoLink: 'video link', virtualTourLink: 'virtual tour link', rentalPriceFrequency: 'how rent is charged', rentalMandateType: 'rental type', depositAmount: 'deposit',
 }
 
 export const RENTAL_SAVED_NOT_SENT_MESSAGE = 'Changes saved. This save did not update your public adverts. Use the advertising controls below to send updates when you are ready.'

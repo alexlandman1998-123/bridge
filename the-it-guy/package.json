@@ -7,6 +7,7 @@
     "node": "22.x"
   },
   "scripts": {
+    "test:listing-diagnostic": "node scripts/listing-diagnostic.mjs",
     "preview:revo-properties": "node scripts/revo-property-preview.mjs",
     "build:revo-properties": "node scripts/revo-property-preview.mjs build && node scripts/build-revo-property-widget.mjs",
     "test:external-websites": "node --test server/tests/externalWebsites.test.js server/tests/externalWebsiteExamples.test.js server/tests/revoWebsiteProxy.test.js && vitest run src/pages/settings/__tests__/SettingsExternalWebsitesPage.test.jsx src/modules/revo/website/__tests__/RevoPropertyExperience.test.jsx",

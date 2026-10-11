@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, expect, it, vi } from 'vitest'
-import { activateRentalListing, listRentalListingsForAgent, createRentalListingDraft, updateRentalListingDraft, updateRentalListingGallery, updateRentalProperty24Expiry, uploadRentalGalleryImages } from '../rentalListingDraftService'
+import { activateRentalListing, listRentalListingsForAgent, createRentalListingDraft, updateRentalListingDraft, updateRentalListingGallery, updateRentalProperty24Expiry, uploadRentalGalleryImages, saveRentalListingProgress } from '../rentalListingDraftService'
 import { buildRentalListingEditForm } from '../rentalListingEditModel'
 import { buildRentalListingIndexRow } from '../rentalListingIndexModel'
 
@@ -269,5 +269,55 @@ it('never submits if activation cannot be saved', async () => {
 
 it('retains the saved rental when its publishing queue cannot be confirmed', async () => {
  mocks.publish.mockRejectedValueOnce(new Error('Queue unavailable'))
- await expect(activateRentalListing({id:'saved-rental'},form())).rejects.toThrow('Queue unavailable')
+ await expect(activateRentalListing({id:'saved-rental'},form())).resolves.toEqual({ listingId: 'saved-rental', publicationError: 'Queue unavailable' })
+ expect(mocks.create).not.toHaveBeenCalled()
+})
+
+
+it('saves incomplete rental answers to a verified unpublished draft without activation', async () => {
+  const incomplete = { propertyCategory: 'agricultural', propertyType: 'Farm', propertyAddress: '', monthlyRent: '', description: '', bedrooms: '', bathrooms: '1.5', selectedSyndicationChannels: ['private_property'], rentalPortalFacts: { farmSize: '42.5' }, galleryImages: [], coverImageId: '' }
+  const result = await saveRentalListingProgress(incomplete, { ...context, activeStep: 'terms' })
+  expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ listingStatus: 'seller_lead', listingVisibility: 'internal', askingPrice: null }), expect.objectContaining({ rentalCreationId: context.creationId, syncRequirements: false }))
+  expect(mocks.sync.mock.calls[0][1].publicationData.status).toBe('Draft')
+  expect(result.listing.sellerCanonicalFacts.rentalCaptureDraft).toMatchObject({ version: 1, step: 'terms', form: incomplete.rentalPortalFacts ? { rentalPortalFacts: incomplete.rentalPortalFacts, monthlyRent: '', propertyAddress: '', bathrooms: '1.5' } : {} })
+  const reopened = buildRentalListingEditForm(result.listing)
+  expect(reopened).toMatchObject({ monthlyRent: '', propertyAddress: '', description: '', bedrooms: '', bathrooms: '1.5', propertyCategory: 'agricultural', rentalPortalFacts: incomplete.rentalPortalFacts })
+  expect(mocks.publish).not.toHaveBeenCalled()
+  expect(mocks.update).not.toHaveBeenCalled()
+})
+
+it('keeps the opened revision and existing publication status on an incomplete edit save', async () => {
+  const existing = await mocks.get()
+  mocks.get.mockImplementation(async () => mocks.saved || { ...existing, listingPublicationData: { status: 'Published' }, listingStatus: 'active' })
+  await saveRentalListingProgress({ ...form(), monthlyRent: '', expectedUpdatedAt: '2026-09-30T00:00:00Z' }, { ...context, listingId: 'listing-1' })
+  expect(mocks.sync.mock.calls[0][1]).toMatchObject({ expectedUpdatedAt: '2026-09-30T00:00:00Z', publicationData: { status: 'Published' } })
+  expect(mocks.create).not.toHaveBeenCalled()
+  expect(mocks.publish).not.toHaveBeenCalled()
+})
+
+it('refuses foreign workspace draft writes before photo upload', async () => {
+  await expect(saveRentalListingProgress(form([photo(1)]), { ...context, listingId: 'listing-1', organisationId: 'another-org' })).rejects.toThrow('workspace')
+  expect(mocks.sync).not.toHaveBeenCalled()
+  expect(mocks.upload).not.toHaveBeenCalled()
+})
+
+it('reconciles an existing creation identity without replacing its saved draft', async () => {
+  mocks.create.mockResolvedValue({ listing: { id: 'listing-1' }, existing: true })
+  const result = await saveRentalListingProgress(form(), context)
+  expect(result.recovered).toBe(true)
+  expect(mocks.sync).not.toHaveBeenCalled()
+})
+
+it('does not confirm a draft when readback fails after committing', async () => {
+  mocks.get.mockRejectedValue(new Error('Readback unavailable'))
+  await expect(saveRentalListingProgress(form(), context)).rejects.toMatchObject({ committed: true, code: 'RENTAL_SAVE_READBACK_FAILED', listingId: 'listing-1' })
+  expect(mocks.publish).not.toHaveBeenCalled()
+})
+
+it('removes unfinished answer metadata when completing a validated rental save', async () => {
+  const existing = await mocks.get()
+  mocks.get.mockImplementation(async () => mocks.saved || { ...existing, sellerCanonicalFacts: { rentalCaptureDraft: { version: 1, form: { monthlyRent: '' } } } })
+  const result = await updateRentalListingDraft('listing-1', form(), context)
+  expect(result.listing.sellerCanonicalFacts.rentalCaptureDraft).toBeUndefined()
+  expect(buildRentalListingEditForm(result.listing).monthlyRent).toBe('11000')
 })

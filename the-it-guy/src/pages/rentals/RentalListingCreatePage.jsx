@@ -1,10 +1,14 @@
 import ListingAdvertisingChoices from '../../components/listings/ListingAdvertisingChoices'
 import ListingReviewDetails from '../../components/listings/ListingReviewDetails'
 import { RENTAL_SAVED_NOT_SENT_MESSAGE } from '../../services/listings/listingCaptureModel'
-import { saveListingRecoveryDraft, readListingRecoveryDraft, clearListingRecoveryDraft } from '../../services/listings/listingDraftRecovery'
+import { saveListingRecoveryDraft, readListingRecoveryDraft, clearListingRecoveryDraft, writeListingTextRecoveryDraft, listingRecoveryRevision, reconcileListingEditRecovery } from '../../services/listings/listingDraftRecovery'
+import useListingRecoveryProtection from '../../hooks/useListingRecoveryProtection'
+import ListingSaveStatus from '../../components/listings/ListingSaveStatus'
+import ListingCaptureLayout from '../../components/listings/ListingCaptureLayout'
+import { RENT_PREVIEW_UNITS, listingTitleExample } from '../../services/listings/listingAdvertPreviewModel'
+import { isRentalListingDraft } from '../../services/rentals/rentalListingIndexModel'
 import ListingChannelLogo from '../../components/listings/ListingChannelLogo'
 import ListingFieldIssues from '../../components/listings/ListingFieldIssues'
-import { getListingFieldIssues } from '../../services/listings/listingFieldRequirements'
 import { getSyndicationChannelAvailability, UNAVAILABLE_SYNDICATION_CHANNELS } from '../../services/syndicationChannelAvailabilityService'
 import { isRentalCreationId, serializeRentalCreationDraft } from '../../services/rentals/rentalListingCreationRecovery'
 import { buildRentalWorkspaceKey, buildRentalListingDraftStorageKey, buildRentalListingQueryOptions } from '../../services/rentals/rentalWorkspaceScope'
@@ -18,16 +22,16 @@ import AddressAutocomplete from '../../components/location/AddressAutocomplete'
 import Button from '../../components/ui/Button'
 import ListingSyndicationChannelCard from '../../components/listings/ListingSyndicationChannelCard'
 import RentalCategoryFields from '../../components/listings/RentalCategoryFields'
-import { rentalFeatureAnswerLabels, rentalFeatureCaptureFields, restoreRentalFeatureSelections } from '../../services/rentals/rentalFeatureCaptureModel'
+import { rentalFeatureAnswerLabels, restoreRentalFeatureSelections } from '../../services/rentals/rentalFeatureCaptureModel'
 import { RENTAL_CATEGORY_TYPES, RENTAL_PORTAL_FIELDS } from '../../services/rentals/rentalPortalFieldContract'
-import { activateRentalListing, createRentalListingDraft, getRentalListingForAgent, updateRentalListingDraft } from '../../services/rentals/rentalListingDraftService'
+import { activateRentalListing, createRentalListingDraft, getRentalListingForAgent, updateRentalListingDraft, saveRentalListingProgress } from '../../services/rentals/rentalListingDraftService'
 import {
   buildRentalListingTitle,
   normalizeRentalDistributionChannels,
   RENTAL_DISTRIBUTION_CHANNELS,
   RENTAL_LISTING_INITIAL_FORM,
   RENTAL_SELECT_OPTIONS,
-  validateRentalListingDraftForm,
+  getRentalListingValidationIssues,
 } from '../../services/rentals/rentalListingDraftModel'
 import { buildRentalListingEditForm } from '../../services/rentals/rentalListingEditModel'
 import { resolveRentalWorkspaceScope } from '../../services/rentals/rentalWorkspaceScope'
@@ -325,12 +329,20 @@ function ScopedRentalListingCreatePage() {
   const assignedAgentId = rentalScope.assignedAgentId
   const editListingId = String(params.listingId || '').trim()
   const isEditing = Boolean(editListingId)
-  const steps = useMemo(() => CREATE_STEPS.filter(step => isEditing || step.key !== 'landlord').map(step => isEditing && step.key === 'review' ? { ...step, label: 'Check & save' } : step), [isEditing])
+  const [isDraftCapture, setIsDraftCapture] = useState(false)
+  const requestedStepRef = useRef(searchParams.get('step'))
   const portfolioPropertyId = String(searchParams.get('portfolioPropertyId') || '').trim()
   const draftStorageKey = buildRentalListingDraftStorageKey(rentalScope, { leadId: searchParams.get('leadId') || '', portfolioPropertyId }) + (isEditing ? `:edit:${editListingId}` : '')
   const [draftReadyKey, setDraftReadyKey] = useState('')
+  const editBaselineRef = useRef(null)
+  const [editRecoveryBaseline, setEditRecoveryBaseline] = useState(null)
+  const [editDraftConflict, setEditDraftConflict] = useState(null)
   const completedDraftRef = useRef(false)
   const [form, setForm] = useState(createInitialFormState)
+  const cloudSavedFormRef = useRef(JSON.stringify(createInitialFormState()))
+  const recoveryWarningGenerationRef = useRef(0)
+  const [cloudSave, setCloudSave] = useState({ status: 'idle' })
+  const unsavedToListings = JSON.stringify(form) !== cloudSavedFormRef.current
   const [activeStep, setActiveStep] = useState(() => isEditing && CREATE_STEPS.some((step) => step.key === searchParams.get('step')) ? searchParams.get('step') : 'property')
   const galleryImagesRef = useRef(form.galleryImages)
   const [saving, setSaving] = useState(false)
@@ -344,6 +356,7 @@ function ScopedRentalListingCreatePage() {
   const [linkedLandlordLead, setLinkedLandlordLead] = useState(null)
   const [pendingListingId, setPendingListingId] = useState('')
   const pendingListingIdRef = useRef('')
+  const pendingDraftRevisionRef = useRef('')
   const [creationId, setCreationId] = useState('')
   const creationIdRef = useRef('')
   const [recovering, setRecovering] = useState(false)
@@ -353,22 +366,11 @@ function ScopedRentalListingCreatePage() {
 
   const [channelAvailability, setChannelAvailability] = useState(UNAVAILABLE_SYNDICATION_CHANNELS)
   useEffect(() => { let cancelled = false; getSyndicationChannelAvailability(organisationId, { listingType: 'rental' }).then(value => { if (!cancelled) setChannelAvailability(value) }).catch(() => {}); return () => { cancelled = true } }, [organisationId])
-  const fieldIssues = useMemo(() => {
-    const channelIssues = getListingFieldIssues(form, { rental: true })
-    const basicIssues = validateRentalListingDraftForm(form, { organisationId }).filter(message => !channelIssues.some(issue => issue.message === message)).map(message => {
-      const field = message.includes('Property address') ? 'propertyAddress' : message.includes('Rental amount') ? 'monthlyRent' : message.includes('Rental price frequency') ? 'rentalPriceFrequency' : message.startsWith('Video link') ? 'videoLink' : message.startsWith('Virtual tour link') ? 'virtualTourLink' : ''
-      const extra = RENTAL_PORTAL_FIELDS.find(item => message === `Enter a valid ${item.label.toLowerCase()}.`)
-      const extraStep = extra && rentalFeatureCaptureFields(form).some(item => item.key === extra.key) ? 'features' : 'property'
-      const extraField = extra?.key === 'propertyInfo.propertyDescription.propertyDescriptionType' ? 'rentalTitleType' : extra?.formKey || extra?.key
-      return { field: field || extraField || '', label: extra?.label, step: extra ? extraStep : stepForValidationError(message), message, channels: [] }
-    }).filter(issue => !issue.field || !channelIssues.some(other => other.field === issue.field))
-    return [...channelIssues, ...basicIssues]
-  }, [form, organisationId])
+  const fieldIssues = useMemo(() => getRentalListingValidationIssues(form, { organisationId }), [form, organisationId])
+  const includeLandlordStep = isEditing || activeStep === 'landlord' || fieldIssues.some(issue => issue.step === 'landlord')
+  const steps = useMemo(() => CREATE_STEPS.filter(step => includeLandlordStep || step.key !== 'landlord').map(step => isEditing && !isDraftCapture && step.key === 'review' ? { ...step, label: 'Check & save' } : step), [isEditing, isDraftCapture, includeLandlordStep])
   const stepForError = message => fieldIssues.find(issue => issue.message === message)?.step || stepForValidationError(message)
-  const validationErrors = useMemo(
-    () => validateRentalListingDraftForm(form, { organisationId }),
-    [form, organisationId],
-  )
+  const validationErrors = fieldIssues.map(issue => issue.message)
   const suggestedDepositAmount = useMemo(() => {
     const rent = Number(form.monthlyRent || 0)
     const multiplier = Number(form.depositMultiplier || 0)
@@ -383,7 +385,7 @@ function ScopedRentalListingCreatePage() {
     () => normalizeRentalDistributionChannels(form.selectedSyndicationChannels),
     [form.selectedSyndicationChannels],
   )
-  const canSubmit = validationErrors.length === 0 && !saving && !recovering && !recoveryBlocked && (isEditing || draftReadyKey === draftStorageKey) && (!searchParams.get('leadId') || Boolean(linkedLandlordLead))
+  const canSubmit = validationErrors.length === 0 && !saving && !recovering && !recoveryBlocked && (draftReadyKey === draftStorageKey && !editDraftConflict) && (!searchParams.get('leadId') || Boolean(linkedLandlordLead))
   const activeStepIndex = steps.findIndex((step) => step.key === activeStep)
   const priceFrequencyOptions = rentalPriceFrequencyOptions(form.propertyCategory)
 
@@ -394,12 +396,12 @@ function ScopedRentalListingCreatePage() {
     completedDraftRef.current = false
     void (async () => {
     try {
-      recoveredDraft = await readListingRecoveryDraft(draftStorageKey).catch(() => null)
+      recoveredDraft = await readListingRecoveryDraft(draftStorageKey)
       if (cancelled) { recoveredDraft?.release(); return }
       const storedDraft = window.localStorage.getItem(draftStorageKey) || window.sessionStorage.getItem(draftStorageKey)
       if (!storedDraft && !recoveredDraft) return
       const localDraft = storedDraft ? JSON.parse(storedDraft) : null
-      const parsedDraft = recoveredDraft ? { ...recoveredDraft.recovery, ...(localDraft || {}), form: recoveredDraft.form, missingPhotoCount: recoveredDraft.missingPhotos } : localDraft
+      const parsedDraft = recoveredDraft ? { ...recoveredDraft.recovery, ...(recoveredDraft.version === 2 ? {} : localDraft || {}), form: recoveredDraft.form, missingPhotoCount: recoveredDraft.missingPhotos } : localDraft
       if (!parsedDraft || typeof parsedDraft !== 'object') throw new Error('Invalid saved draft.')
       if (parsedDraft.creationId && !isRentalCreationId(parsedDraft.creationId)) throw new Error('The saved creation identity is invalid. Open Rental Listings to find the existing draft.')
       pendingListingIdRef.current = parsedDraft.pendingListingId || ''
@@ -408,7 +410,7 @@ function ScopedRentalListingCreatePage() {
       const restored = restoreRentalFeatureSelections({ ...createInitialFormState(), ...parsedDraft.form,
         galleryImages: parsedDraft.form?.galleryImages || [], coverImageId: parsedDraft.form?.coverImageId || '' })
       setForm(restored)
-      if (steps.some(step => step.key === parsedDraft.activeStep)) setActiveStep(parsedDraft.activeStep); else setActiveStep('property')
+      if (CREATE_STEPS.some(step => step.key === parsedDraft.activeStep) && (parsedDraft.activeStep !== 'landlord' || getRentalListingValidationIssues(restored, { organisationId }).some(issue => issue.step === 'landlord'))) setActiveStep(parsedDraft.activeStep); else setActiveStep('property')
       const missingPhotos = parsedDraft.missingPhotoCount ? ' Reselect photos that had not finished uploading before the refresh.' : ''
       setNotice(`Your saved rental draft was restored on this device.${missingPhotos}`)
       const recoveryId = parsedDraft.pendingListingId || parsedDraft.creationId
@@ -442,41 +444,69 @@ function ScopedRentalListingCreatePage() {
     } finally { if (!cancelled) setDraftReadyKey(draftStorageKey) }
     })()
     return () => { cancelled = true; recoveredDraft?.release() }
-  }, [assignedAgentId, draftStorageKey, isEditing, rentalScope, steps])
+  }, [assignedAgentId, draftStorageKey, isEditing, rentalScope, organisationId])
 
   const persistRecoveryDraft = useCallback((currentForm, pendingId = pendingListingIdRef.current) => {
-    const draft = serializeRentalCreationDraft(currentForm, { activeStep, creationId: creationIdRef.current, pendingListingId: pendingId })
+    if (!currentForm.expectedUpdatedAt && pendingDraftRevisionRef.current) currentForm = { ...currentForm, expectedUpdatedAt: pendingDraftRevisionRef.current }
+    const warningGeneration = recoveryWarningGenerationRef.current
+    const recovery = { activeStep, creationId: creationIdRef.current, pendingListingId: pendingId,
+      ...(isEditing && editBaselineRef.current ? { baseForm: editBaselineRef.current.form, baseRevision: editBaselineRef.current.revision } : {}) }
+    const snapshot = writeListingTextRecoveryDraft(draftStorageKey, { form: currentForm, recovery, photoField: 'galleryImages' })
+    const draft = { ...serializeRentalCreationDraft(currentForm, recovery), ...recovery }
     window.localStorage.setItem(draftStorageKey, JSON.stringify(draft))
-    void saveListingRecoveryDraft(draftStorageKey, { form: currentForm, recovery: { activeStep, creationId: creationIdRef.current, pendingListingId: pendingId }, photoField: 'galleryImages' })
-      .catch(() => { if (mountedRef.current) setNotice('Automatic photo recovery is unavailable. Keep this tab open until the listing is saved.') })
-  }, [activeStep, draftStorageKey])
+    void saveListingRecoveryDraft(draftStorageKey, { form: currentForm, recovery, photoField: 'galleryImages', snapshot })
+      .catch(() => { if (mountedRef.current && warningGeneration === recoveryWarningGenerationRef.current && currentForm.galleryImages.some(photo => photo.file instanceof Blob)) setNotice('Automatic photo recovery is unavailable. Keep this tab open until the listing is saved.') })
+  }, [activeStep, draftStorageKey, isEditing])
 
-  useEffect(() => {
-    if (isEditing || draftReadyKey !== draftStorageKey || recovering || recoveryBlocked || saving || completedDraftRef.current) return
-    const timer = setTimeout(() => {
-      try { persistRecoveryDraft(form) }
-      catch { setNotice('Automatic draft recovery is unavailable. Keep this tab open until the listing is saved.') }
-    }, 300)
-    return () => clearTimeout(timer)
-  }, [form, activeStep, isEditing, draftReadyKey, draftStorageKey, recovering, recoveryBlocked, saving, persistRecoveryDraft])
+  const recoveryMetadata = useMemo(() => ({ activeStep, creationId, pendingListingId,
+    ...(isEditing && editRecoveryBaseline ? { baseForm: editRecoveryBaseline.form, baseRevision: editRecoveryBaseline.revision } : {}) }), [activeStep, creationId, pendingListingId, isEditing, editRecoveryBaseline])
+  const recoveryProtection = useListingRecoveryProtection({
+    enabled: draftReadyKey === draftStorageKey && !recovering && !recoveryBlocked && !editDraftConflict && !completedDraftRef.current
+      && (!isEditing || JSON.stringify(form) !== JSON.stringify(editBaselineRef.current?.form)),
+    scope: draftStorageKey, form, recovery: recoveryMetadata, photoField: 'galleryImages', onWarning: setNotice, requireSaved: unsavedToListings,
+  })
 
   useEffect(() => {
     if (!isEditing || !organisationId) return
     let cancelled = false
+    let recoveredDraft
     setSaving(true)
     setError('')
-    getRentalListingForAgent(editListingId, assignedAgentId, buildRentalListingQueryOptions(rentalScope)).then((existingListing) => {
-      if (cancelled) return
-      if (!existingListing) throw new Error('Rental listing not found.')
-      setForm(restoreRentalFeatureSelections(buildRentalListingEditForm(existingListing)))
-      setNotice('Editing this rental in the same guided capture flow used for new listings.')
-    }).catch((loadError) => {
-      if (!cancelled) setError(loadError?.message || 'Unable to load the rental listing for editing.')
-    }).finally(() => {
-      if (!cancelled) setSaving(false)
-    })
-    return () => { cancelled = true }
-  }, [assignedAgentId, editListingId, isEditing, organisationId, rentalScope])
+    void (async () => {
+      try {
+        const existingListing = await getRentalListingForAgent(editListingId, assignedAgentId, buildRentalListingQueryOptions(rentalScope))
+        if (!existingListing) throw new Error('Rental listing not found.')
+        recoveredDraft = await readListingRecoveryDraft(draftStorageKey)
+        if (cancelled) { recoveredDraft?.release(); return }
+        const savedForm = restoreRentalFeatureSelections(buildRentalListingEditForm(existingListing))
+        cloudSavedFormRef.current = JSON.stringify(savedForm)
+        setCloudSave({ status: 'saved', savedAt: existingListing.updatedAt || existingListing.updated_at })
+        setIsDraftCapture(isRentalListingDraft(existingListing))
+        const revision = listingRecoveryRevision(existingListing)
+        editBaselineRef.current = { form: savedForm, revision }
+        setEditRecoveryBaseline(editBaselineRef.current)
+        const legacy = window.localStorage.getItem(draftStorageKey)
+        const stored = legacy ? JSON.parse(legacy) : null
+        const draft = recoveredDraft || (stored ? { form: stored.form, recovery: stored } : null)
+        const restored = reconcileListingEditRecovery(draft, savedForm, revision)
+        if (restored?.conflict) {
+          setForm(savedForm)
+          setEditDraftConflict(restored)
+          setNotice('This listing has changed since your draft. Review your changes before saving.')
+        } else {
+          setForm(restored?.form || savedForm)
+          setNotice(restored ? 'Your unsaved rental changes were restored on this device.' : 'Editing this rental in the same guided capture flow used for new listings.')
+          if (draft?.recovery?.activeStep && CREATE_STEPS.some(step => step.key === draft.recovery.activeStep)) setActiveStep(draft.recovery.activeStep)
+          else if (!requestedStepRef.current && CREATE_STEPS.some(step => step.key === existingListing.sellerCanonicalFacts?.rentalCaptureDraft?.step)) setActiveStep(existingListing.sellerCanonicalFacts.rentalCaptureDraft.step)
+        }
+        if (recoveredDraft?.missingPhotos) setNotice('Your text was restored. Reselect photos that did not finish saving for recovery.')
+        setDraftReadyKey(draftStorageKey)
+      } catch (loadError) {
+        if (!cancelled) { setRecoveryBlocked(true); setError(loadError?.message || 'Unable to load the rental listing for editing.') }
+      } finally { if (!cancelled) setSaving(false) }
+    })()
+    return () => { cancelled = true; recoveredDraft?.release() }
+  }, [assignedAgentId, draftStorageKey, editListingId, isEditing, organisationId, rentalScope])
 
   useEffect(() => {
     galleryImagesRef.current = form.galleryImages
@@ -634,14 +664,63 @@ function ScopedRentalListingCreatePage() {
 
 
 
-  function saveDraftForSession() {
-    if (recoveryBlocked || recovering) return
+  async function saveDraftToListings() {
+    if (savingRef.current || recoveryBlocked || recovering || editDraftConflict || draftReadyKey !== draftStorageKey) return
+    savingRef.current = true
+    setSaving(true)
+    setCloudSave({ status: 'saving' })
     try {
+      if (!isEditing) creationIdRef.current ||= globalThis.crypto.randomUUID()
       persistRecoveryDraft(form)
+      setCreationId(creationIdRef.current)
+      const result = await saveRentalListingProgress(form, {
+        ...rentalScope, organisationId, branchId, assignedAgentId, performedBy: assignedAgentId,
+        listingId: editListingId || pendingListingIdRef.current,
+        creationId: creationIdRef.current, activeStep,
+        onListingCreated: (id, row) => {
+          pendingListingIdRef.current = id
+          pendingDraftRevisionRef.current = row?.updatedAt || row?.updated_at || pendingDraftRevisionRef.current
+          persistRecoveryDraft(form, id)
+          if (mountedRef.current) { setPendingListingId(id); setForm(current => ({ ...current, expectedUpdatedAt: current.expectedUpdatedAt || pendingDraftRevisionRef.current })) }
+        },
+        onUploadProgress: ({ completed, total, phase }) => { if (mountedRef.current) setSaveProgress(phase === 'saving' ? 'Confirming saved details…' : `Saving photos: ${completed} of ${total}…`) },
+      })
+      if (!mountedRef.current) return
+      if (!result?.listing?.id) throw new Error('The rental save returned no confirmation. Keep this tab open and retry.')
+      if (result.recovered) {
+        pendingListingIdRef.current = result.listing.id
+        setPendingListingId(result.listing.id)
+        setForm(current => ({ ...current, expectedUpdatedAt: result.listing.updatedAt || result.listing.updated_at }))
+        setCloudSave({ status: 'idle' })
+        setNotice('An existing rental was found for this draft. Your typed information is still here. Review it and retry Save draft to finish the same rental.')
+        return
+      }
+      const savedForm = restoreRentalFeatureSelections(buildRentalListingEditForm(result.listing))
+      pendingDraftRevisionRef.current = savedForm.expectedUpdatedAt
+      cloudSavedFormRef.current = JSON.stringify(savedForm)
+      recoveryWarningGenerationRef.current += 1
+      editBaselineRef.current = { form: savedForm, revision: listingRecoveryRevision(result.listing) }
+      setEditRecoveryBaseline(editBaselineRef.current)
+      setForm(savedForm)
+      pendingListingIdRef.current = result.listing.id
+      setPendingListingId(result.listing.id)
+      setCloudSave({ status: 'saved', savedAt: result.listing.updatedAt || result.listing.updated_at || new Date().toISOString() })
+      recoveryProtection.markSaved()
+      void clearListingRecoveryDraft(draftStorageKey).catch(() => {})
+      try { window.localStorage.removeItem(draftStorageKey); window.sessionStorage.removeItem(draftStorageKey) } catch { /* Confirmed Listings save remains authoritative. */ }
       setError('')
-      setNotice('Draft saved. Selected photos are being saved for recovery on this device.')
-    } catch {
-      setError('Unable to save this draft in the current browser session.')
+      setNotice('Draft saved to Listings. Nothing was published. You can continue here or reopen it from Listings on another device.')
+      window.dispatchEvent(new Event('itg:listings-updated'))
+    } catch (saveError) {
+      if (!mountedRef.current) return
+      if (saveError.listingId) { pendingListingIdRef.current = saveError.listingId; setPendingListingId(saveError.listingId) }
+      if (Array.isArray(saveError.galleryImages)) setForm(current => ({ ...current, galleryImages: saveError.galleryImages }))
+      setCloudSave({ status: 'error' })
+      setError(saveError.message || 'Could not confirm the draft save. Keep this tab open and retry Save draft.')
+      setNotice('')
+    } finally {
+      savingRef.current = false
+      if (mountedRef.current) { setSaving(false); setSaveProgress('') }
     }
   }
 
@@ -656,9 +735,12 @@ function ScopedRentalListingCreatePage() {
       if (!recoveryBlocked && !recovering) { setValidationAttemptedStep(validationErrors[0] ? stepForError(validationErrors[0]) : activeStep); setError(validationErrors[0] || 'Complete the required rental listing fields.'); if (validationErrors[0]) setActiveStep(stepForError(validationErrors[0])) }
       return
     }
+    let detailsSaved = false
+    let savedFormForRecovery = form
     try {
       savingRef.current = true
       setSaving(true)
+      setCloudSave({ status: 'saving' })
       setSaveProgress(pendingListingId || isEditing ? 'Saving rental details…' : 'Creating rental draft…')
       setError('')
       if (!isEditing) {
@@ -673,11 +755,12 @@ function ScopedRentalListingCreatePage() {
         canonicalPropertyId: linkedLandlordLead && portfolioPropertyId
           ? landlordWorkspace(linkedLandlordLead).portfolio.find(item => item.id === portfolioPropertyId)?.canonicalPropertyId : undefined,
         ...rentalScope, organisationId, branchId, assignedAgentId, performedBy: assignedAgentId,
-        onListingCreated: id => {
+        onListingCreated: (id, row) => {
           // Persist the receipt even if the user has since switched workspaces.
           pendingListingIdRef.current = id
+          pendingDraftRevisionRef.current = row?.updatedAt || row?.updated_at || pendingDraftRevisionRef.current
           persistRecoveryDraft(form, id)
-          if (mountedRef.current) setPendingListingId(id)
+          if (mountedRef.current) { setPendingListingId(id); setForm(current => ({ ...current, expectedUpdatedAt: current.expectedUpdatedAt || pendingDraftRevisionRef.current })) }
         },
         onUploadProgress: ({ completed, total, phase }) => setSaveProgress(phase === 'saving' ? 'Saving rental marketing…' : `Saving photos: ${completed} of ${total}…`),
       }
@@ -700,6 +783,18 @@ function ScopedRentalListingCreatePage() {
           setNotice('Your existing rental was recovered. Review its saved details, then retry saving to finish the same rental.')
           return
         }
+        pendingListingIdRef.current = listingId
+        if (!isEditing) setPendingListingId(listingId)
+        const savedMedia = buildRentalListingEditForm(result.listing)
+        const confirmedForm = { ...form,
+          ...(Array.isArray(result.listing.listingMedia) ? { galleryImages: savedMedia.galleryImages, coverImageId: savedMedia.coverImageId } : {}),
+          expectedUpdatedAt: result.listing.updatedAt || result.listing.updated_at || form.expectedUpdatedAt }
+        savedFormForRecovery = confirmedForm
+        pendingDraftRevisionRef.current = confirmedForm.expectedUpdatedAt
+        cloudSavedFormRef.current = JSON.stringify(confirmedForm)
+        setForm(confirmedForm)
+        setCloudSave({ status: 'saved', savedAt: confirmedForm.expectedUpdatedAt || new Date().toISOString() })
+        detailsSaved = true
         if (linkedLandlordLead && !isEditing) {
           setPendingListingId(listingId)
           try {
@@ -711,15 +806,20 @@ function ScopedRentalListingCreatePage() {
           }
         }
         if (!mountedRef.current) return
-        if (!isEditing) await activateRentalListing(result.listing, form, { websiteDestination: channelAvailability.agency_website })
+        const activation = !isEditing || isDraftCapture ? await activateRentalListing(result.listing, form, { websiteDestination: channelAvailability.agency_website }) : null
         if (!mountedRef.current) return
-        if (!isEditing) { completedDraftRef.current = true; void clearListingRecoveryDraft(draftStorageKey).catch(() => {}); try { window.localStorage.removeItem(draftStorageKey); window.sessionStorage.removeItem(draftStorageKey) } catch { /* The saved identity still prevents duplication. */ } }
+        recoveryProtection.markSaved()
+        recoveryWarningGenerationRef.current += 1
+        completedDraftRef.current = true
+        void clearListingRecoveryDraft(draftStorageKey).catch(() => {})
+        try { window.localStorage.removeItem(draftStorageKey); window.sessionStorage.removeItem(draftStorageKey) } catch { /* Confirmed save remains authoritative. */ }
         navigate(`/agent/rentals/listings/${encodeURIComponent(listingId)}/marketing`, {
           state: {
             [isEditing ? 'rentalListingUpdatedTitle' : 'rentalListingCreatedTitle']: buildRentalListingTitle(form),
             rentalListingDistributionChannels: selectedDistributionChannels,
-            rentalListingChangesNotSent: isEditing,
-            rentalListingSaveMessage: isEditing ? RENTAL_SAVED_NOT_SENT_MESSAGE : undefined,
+            rentalListingPublicationError: activation?.publicationError,
+            rentalListingChangesNotSent: isEditing && !isDraftCapture,
+            rentalListingSaveMessage: isEditing && !isDraftCapture ? RENTAL_SAVED_NOT_SENT_MESSAGE : undefined,
           },
         })
         return
@@ -729,10 +829,12 @@ function ScopedRentalListingCreatePage() {
       })
     } catch (saveError) {
       if (!isEditing && creationIdRef.current) {
-        try { persistRecoveryDraft({ ...form, galleryImages: saveError.galleryImages || form.galleryImages }, saveError.listingId || pendingListingIdRef.current) }
+        try { persistRecoveryDraft({ ...savedFormForRecovery, galleryImages: saveError.galleryImages || savedFormForRecovery.galleryImages }, saveError.listingId || pendingListingIdRef.current) }
         catch { /* The identity saved before creation remains the recovery anchor. */ }
       }
       if (!mountedRef.current) return
+      if (!detailsSaved) setCloudSave({ status: 'error' })
+      else setNotice('Your rental details are saved. Activation did not finish. Continue with the same listing; do not create another rental.')
       if (!isEditing && saveError.listingId) { pendingListingIdRef.current = saveError.listingId; setPendingListingId(saveError.listingId) }
       if (Array.isArray(saveError.galleryImages)) {
         setForm((current) => ({ ...current, galleryImages: saveError.galleryImages }))
@@ -745,14 +847,14 @@ function ScopedRentalListingCreatePage() {
     }
   }
 
-  if (!isEditing && draftReadyKey !== draftStorageKey) return <p role="status">Restoring listing draft…</p>
+  if (draftReadyKey !== draftStorageKey && !recoveryBlocked) return <p role="status">Restoring listing draft…</p>
 
   return (
-    <section className="page-content w-full min-w-0 max-w-full overflow-x-hidden">
+    <section className="page-content w-full min-w-0 max-w-full">
       <form onSubmit={handleSubmit} className="ui-section-stack w-full min-w-0 max-w-full">
         <header className="flex items-stretch gap-3">
           <div className="flex min-w-0 flex-1 items-center rounded-[16px] border border-[#dde6ef] bg-white px-5 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.035)]">
-            <h1 className="text-[1.8rem] font-semibold tracking-[-0.03em] text-[#18324b]">{isEditing ? 'Edit rental listing' : 'Create new listing'}</h1>
+            <h1 className="text-[1.8rem] font-semibold tracking-[-0.03em] text-[#18324b]">{isDraftCapture ? 'Continue rental draft' : isEditing ? 'Edit rental listing' : 'Create new listing'}</h1>
           </div>
           <div className="flex shrink-0 items-center justify-center rounded-[16px] border border-[#dde6ef] bg-white p-3 shadow-[0_10px_24px_rgba(15,23,42,0.035)]">
           <button
@@ -767,6 +869,8 @@ function ScopedRentalListingCreatePage() {
           </div>
         </header>
 
+        <ListingSaveStatus cloud={cloudSave} recovery={recoveryProtection.status} dirty={unsavedToListings} />
+        {cloudSave.status === 'saved' && !isEditing && pendingListingId ? <Button type="button" onClick={() => navigate('/agent/rentals/listings')}>Back to Listings</Button> : null}
         {saving && saveProgress ? <p role="status" className="px-4 py-3 text-sm font-semibold text-[#607891]">{saveProgress}</p> : null}
         {recovering ? <p role="status" className="px-4 text-sm text-[#607891]">Checking the saved rental before retrying…</p> : null}
         {pendingListingId && error ? <p className="px-4 text-sm text-[#607891]">Your rental draft already exists. Retry saving here to finish its photos and marketing without creating another listing.</p> : null}
@@ -777,10 +881,19 @@ function ScopedRentalListingCreatePage() {
           <p className="rounded-[8px] border border-[#cfe8dc] bg-[#f2fbf5] px-4 py-3 text-sm font-semibold text-[#286b43]">{notice}</p>
         ) : null}
 
-        <fieldset disabled={saving} className="m-0 min-w-0 space-y-6 border-0 p-0">
+        {editDraftConflict ? <section role="alert" className="ui-panel ui-panel-body">
+          <p>The saved listing changed after you started this draft. Reviewing your draft keeps newer saved values in fields you did not change.</p>
+          <div className="mt-3 flex gap-3">
+            <Button type="button" onClick={() => { setForm(editDraftConflict.form); setEditDraftConflict(null); setNotice('Your recovered changes are ready to review. Nothing has been saved or sent.'); }}>Review my draft changes</Button>
+            <Button type="button" onClick={() => { recoveryProtection.markSaved(); void clearListingRecoveryDraft(draftStorageKey).catch(() => {}); try { window.localStorage.removeItem(draftStorageKey) } catch { /* Keep the verified saved record. */ }; setEditDraftConflict(null); setNotice('Using the saved listing.'); }}>Use saved listing</Button>
+          </div>
+        </section> : null}
+
+        <fieldset disabled={saving || Boolean(editDraftConflict) || recoveryBlocked} className="m-0 min-w-0 space-y-6 border-0 p-0">
         <RentalCreateProgressNav steps={steps} activeStep={activeStep} onStepClick={goToStep} />
 
-        <ListingFieldIssues issues={fieldIssues} step={activeStep} form={form} attempted={validationAttemptedStep === activeStep} onGoToStep={goToStep} />
+        <ListingFieldIssues completion draftNote={isEditing ? "Save draft saves your changes without sending an update to websites." : undefined} channels={form.selectedSyndicationChannels} issues={fieldIssues} step={activeStep} form={form} attempted={validationAttemptedStep === activeStep} onGoToStep={goToStep} />
+        <ListingCaptureLayout form={form} rental onEdit={goToStep}>
         <div className="grid w-full min-w-0 max-w-full gap-6">
           {linkedLandlordLead ? <p className="rounded-[8px] border border-[#cfe8dc] bg-[#f2fbf5] px-4 py-3 text-sm font-semibold text-[#286b43]">Creating this listing for landlord lead {linkedLandlordLead.name}. The listing will be linked after it is created.</p> : null}
           {activeStep === 'property' ? <FormSection>
@@ -793,7 +906,7 @@ function ScopedRentalListingCreatePage() {
             </section>
             <section className="border-t border-[#e6edf5] pt-6">
               <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                <SelectField label="Ownership / title type" name="rentalTitleType" value={form.rentalPortalFacts?.['propertyInfo.propertyDescription.propertyDescriptionType'] || ''} onChange={(_, value) => updateForm('rentalPortalFacts', { ...form.rentalPortalFacts, ['propertyInfo.propertyDescription.propertyDescriptionType']: value })} options={[{ value: '', label: 'Not captured' }, ...RENTAL_PORTAL_FIELDS.find((field) => field.key === 'propertyInfo.propertyDescription.propertyDescriptionType').options.map((value) => ({ value, label: ({ Erf: 'Freehold / erf', Unit: 'Sectional title', ExclusiveUseArea: 'Sectional title — exclusive use area', AgriculturalHolding: 'Agricultural holding' })[value] || value }))]} />
+                <SelectField label="Ownership type" name="rentalTitleType" value={form.rentalPortalFacts?.['propertyInfo.propertyDescription.propertyDescriptionType'] || ''} onChange={(_, value) => updateForm('rentalPortalFacts', { ...form.rentalPortalFacts, ['propertyInfo.propertyDescription.propertyDescriptionType']: value })} options={[{ value: '', label: 'Not captured' }, ...RENTAL_PORTAL_FIELDS.find((field) => field.key === 'propertyInfo.propertyDescription.propertyDescriptionType').options.map((value) => ({ value, label: ({ Erf: 'Freehold / erf', Unit: 'Sectional title', ExclusiveUseArea: 'Sectional title — exclusive use area', AgriculturalHolding: 'Agricultural holding' })[value] || value }))]} />
                 <SelectField label="Property type" name="propertyType" value={form.propertyType} onChange={updateForm} options={[...(RENTAL_CATEGORY_TYPES[form.propertyCategory] || []).map((value) => ({ value, label: value })), ...(!RENTAL_CATEGORY_TYPES[form.propertyCategory]?.includes(form.propertyType) ? [{ value: form.propertyType, label: LEGACY_PROPERTY_TYPE_OPTIONS.find((option) => option.value === form.propertyType)?.label || form.propertyType }] : [])]} />
                 {['residential', 'agricultural'].includes(form.propertyCategory) ? <div role="group" aria-labelledby="rental-retirement-label"><p id="rental-retirement-label" className="text-sm font-semibold text-[#2d445e]">Retirement accommodation</p><div className="mt-2 grid grid-cols-2 gap-3">{['yes', 'no'].map((value) => <PropertyChoiceCard key={value} label={value === 'yes' ? 'Yes' : 'No'} active={form.retirementAccommodation === value} onClick={() => updateForm('retirementAccommodation', value)} />)}</div></div> : null}
               </div>
@@ -829,13 +942,14 @@ function ScopedRentalListingCreatePage() {
             <section className="border-t border-[#e6edf5] pt-6">
               <h3 className="text-sm font-semibold text-[#18324b]">Property specifications</h3>
               <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                {['residential', 'agricultural', 'commercial', 'industrial', 'retail', 'mixed_use'].includes(form.propertyCategory) ? <PropertyCounter studio={form.propertyCategory === 'residential'} name="bedrooms" label="Bedrooms" value={form.bedrooms} onChange={(value) => updateForm('bedrooms', value)} /> : null}
+                {['residential', 'agricultural', 'mixed_use'].includes(form.propertyCategory) ? <PropertyCounter studio={form.propertyCategory === 'residential'} name="bedrooms" label="Bedrooms" value={form.bedrooms} onChange={(value) => updateForm('bedrooms', value)} /> : null}
                 {form.propertyCategory !== 'vacant_land' ? <PropertyCounter name="bathrooms" step={0.5} label="Bathrooms" value={form.bathrooms} onChange={(value) => updateForm('bathrooms', value)} /> : null}
                 {['residential', 'agricultural'].includes(form.propertyCategory) ? <PropertyCounter name="garages" label="Garages" value={form.garages} onChange={(value) => updateForm('garages', value)} /> : null}
                 <PropertyCounter name="parkingBays" label="Parking" value={form.parkingBays} onChange={(value) => updateForm('parkingBays', value)} />
               </div>
+              {['commercial', 'industrial', 'retail'].includes(form.propertyCategory) ? <details data-listing-rooms className="mt-4 rounded-xl border border-[#dbe6f2] p-4"><summary className="cursor-pointer text-sm font-semibold">Living accommodation (optional)</summary><div className="mt-4"><PropertyCounter name="bedrooms" label="Bedrooms" value={form.bedrooms} onChange={value => updateForm('bedrooms', value)} /></div></details> : null}
               <div className="mt-4 grid gap-4 md:grid-cols-2">
-                <label className="form-field"><span>Floor size (m²)</span><input type="number" min="0" step="0.1" {...formField('floorSize', form.floorSize, updateForm)} placeholder="120" /></label>
+                {form.propertyCategory !== 'vacant_land' ? <label className="form-field"><span>Floor size (m²)</span><input type="number" min="0" step="0.1" {...formField('floorSize', form.floorSize, updateForm)} placeholder="120" /></label> : null}
                 <label className="form-field"><span>Land size (m²)</span><input type="number" min="0" step="0.1" {...formField('erfSize', form.erfSize, updateForm)} placeholder="350" /></label>
               </div>
               {['residential', 'agricultural'].includes(form.propertyCategory) ? <details className="mt-5 rounded-xl border border-[#dbe6f2] bg-[#fbfdff] p-4">
@@ -858,10 +972,10 @@ function ScopedRentalListingCreatePage() {
 
           {activeStep === 'features' ? <FormSection><RentalCategoryFields key={correctionRequest} form={form} onChange={updateForm} disabled={saving} focusField={correctionField} /></FormSection> : null}
 
-          {isEditing && activeStep === 'landlord' ? <FormSection>
+          {activeStep === 'landlord' ? <FormSection>
             <section>
               <h3 className="text-sm font-semibold text-[#18324b]">Landlord type</h3>
-              <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div data-listing-field="landlordType" className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 {LANDLORD_TYPE_CARDS.map((option) => (
                   <LandlordTypeCard
                     key={option.value}
@@ -877,8 +991,8 @@ function ScopedRentalListingCreatePage() {
               <h3 className="text-sm font-semibold text-[#18324b]">Landlord details</h3>
               <div className="mt-4 grid gap-4 md:grid-cols-3">
                 <label className="form-field">
-                  <span>{form.landlordType === 'company' ? 'Company name *' : form.landlordType === 'trust' ? 'Trust name *' : form.landlordType === 'multiple_owners' ? 'Primary owner full name *' : form.landlordType === 'foreign_owner' ? 'Owner or entity name *' : form.landlordType === 'individual' ? 'Full name *' : 'Entity name *'}</span>
-                  <input required {...formField('landlordName', form.landlordName, updateForm)} placeholder={form.landlordType === 'individual' ? 'Landlord full name' : 'Registered entity name'} />
+                  <span>{form.landlordType === 'company' ? 'Company name (optional)' : form.landlordType === 'trust' ? 'Trust name (optional)' : form.landlordType === 'multiple_owners' ? 'Primary owner full name (optional)' : form.landlordType === 'foreign_owner' ? 'Owner or entity name (optional)' : form.landlordType === 'individual' ? 'Full name (optional)' : 'Entity name (optional)'}</span>
+                  <input {...formField('landlordName', form.landlordName, updateForm)} placeholder={form.landlordType === 'individual' ? 'Landlord full name' : 'Registered entity name'} />
                 </label>
                 <label className="form-field">
                   <span>Mobile</span>
@@ -912,8 +1026,9 @@ function ScopedRentalListingCreatePage() {
           {activeStep === 'terms' ? <FormSection title="Rent & deposit">
             <div className="grid min-w-0 items-start gap-4 xl:grid-cols-2">
               <RentalTermsCard title="Rent" icon={Coins}>
-                <label className="form-field"><span>Rental amount</span><input type="number" min="0" {...formField('monthlyRent', form.monthlyRent, updateForm)} placeholder="Amount in rand" /></label>
-                <SelectField label="Rental price frequency" name="rentalPriceFrequency" value={form.rentalPriceFrequency} onChange={updateForm} options={priceFrequencyOptions} />
+                <label className="form-field"><span>Rental amount</span><input type="number" min="0" step="0.01" aria-describedby="rental-price-unit-help" {...formField('monthlyRent', form.monthlyRent, updateForm)} placeholder="Amount in rand" /></label>
+                <SelectField label="How is rent charged?" name="rentalPriceFrequency" value={form.rentalPriceFrequency} onChange={updateForm} options={priceFrequencyOptions} />
+                <p id="rental-price-unit-help" className="sm:col-span-2 text-xs text-[#607387]">{form.rentalPriceFrequency === 'per_square_metre' ? 'Enter the rate in rand (R) for one square metre. Add the rentable floor area in Extra details.' : `Enter the rent in rand (R), ${RENT_PREVIEW_UNITS[form.rentalPriceFrequency] || 'then choose how it is charged'}.`}</p>
                 <div className="sm:col-span-2"><SelectField label="Furnished" name="furnishedStatus" value={form.furnishedStatus} onChange={updateForm} options={RENTAL_SELECT_OPTIONS.furnishedStatus} /></div>
               </RentalTermsCard>
 
@@ -999,15 +1114,15 @@ function ScopedRentalListingCreatePage() {
             </section>
 
             <section className="grid gap-4 rounded-2xl border border-[#dbe6f2] bg-white p-4 sm:grid-cols-2 sm:p-5">
-              <label className="form-field"><span>Video link</span><input type="url" aria-label="Video link" {...formField('videoLink', form.videoLink, updateForm)} placeholder="https://youtu.be/..." /><small>Optional public video URL.</small></label>
-              <label className="form-field"><span>Virtual tour link</span><input type="url" aria-label="Virtual tour link" {...formField('virtualTourLink', form.virtualTourLink, updateForm)} placeholder="https://my.matterport.com/..." /><small>Optional public virtual tour URL.</small></label>
+              <label className="form-field"><span>Video link</span><input type="url" aria-label="Video link" {...formField('videoLink', form.videoLink, updateForm)} placeholder="https://youtu.be/..." /><small>Optional link to a property video.</small></label>
+              <label className="form-field"><span>Virtual tour link</span><input type="url" aria-label="Virtual tour link" {...formField('virtualTourLink', form.virtualTourLink, updateForm)} placeholder="https://my.matterport.com/..." /><small>Optional link to a virtual tour.</small></label>
             </section>
             <div className="grid min-w-0 items-start gap-4 xl:grid-cols-3">
               <section className="min-w-0 rounded-2xl border border-[#dbe6f2] bg-white p-4 sm:p-5 xl:col-span-2">
                 <div className="mb-5 flex items-center gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#eef4fa] text-[#315f80]"><FileText size={18} aria-hidden="true" /></span><h3 className="text-sm font-semibold text-[#18324b]">Title and description</h3></div>
                 <div className="grid min-w-0 gap-4">
-                  <label className="form-field"><span>Listing title</span><input {...formField('title', form.title, updateForm)} placeholder="e.g. Bright two-bedroom apartment in Green Point" /></label>
-                  <label className="form-field"><span>Listing description</span><textarea rows={8} {...formField('description', form.description, updateForm)} placeholder="Describe the home and what makes it stand out" /></label>
+                  <label className="form-field"><span>Listing title</span><input {...formField('title', form.title, updateForm)} placeholder={listingTitleExample(form.propertyCategory)} /></label>
+                  <label className="form-field"><span>Listing description</span><textarea rows={8} {...formField('description', form.description, updateForm)} placeholder="Describe the property, its size, access and main features." /></label>
                 </div>
               </section>
 
@@ -1050,7 +1165,7 @@ function ScopedRentalListingCreatePage() {
 
           {activeStep === 'review' ? <section className="ui-panel ui-panel-body grid gap-6">
             <div className="flex flex-col gap-4 border-b border-[#e6edf5] pb-5 md:flex-row md:items-start md:justify-between">
-              <div><p className="text-xs font-semibold uppercase text-[#607891]">Step {steps.length} of {steps.length}</p><h2 className="text-2xl font-semibold text-[#18324b]">Check your rental listing</h2><p className="mt-1 text-sm text-[#607891]">Check the details below, then {isEditing ? 'save your changes. Public adverts will need a separate update.' : selectedDistributionChannels.length ? 'save and publish to your selected websites.' : 'save this listing. No adverts will be sent.'}</p></div>
+              <div><p className="text-xs font-semibold uppercase text-[#607891]">Step {steps.length} of {steps.length}</p><h2 className="text-2xl font-semibold text-[#18324b]">Check your rental listing</h2><p className="mt-1 text-sm text-[#607891]">Check the details below, then {isEditing && !isDraftCapture ? 'save your changes. Public adverts will need a separate update.' : selectedDistributionChannels.length ? 'save and publish to your selected websites.' : 'save this listing. No adverts will be sent.'}</p></div>
               <span className={`rounded-full px-3 py-1 text-xs font-bold ${validationAttemptedStep === activeStep && validationErrors.length ? 'bg-[#fff5e5] text-[#a76a12]' : 'bg-[#eef9f1] text-[#286b43]'}`}>{validationAttemptedStep !== activeStep ? 'Review details' : validationErrors.length ? `${validationErrors.length} items still needed` : isEditing ? 'Ready to save' : 'Ready to create'}</span>
             </div>
             <div className="grid gap-4 md:grid-cols-2">
@@ -1073,7 +1188,9 @@ function ScopedRentalListingCreatePage() {
             </div>
           </section> : null}
 
-          <footer className="ui-panel ui-panel-body flex flex-wrap items-center justify-between gap-3">
+        </div>
+        </ListingCaptureLayout>
+          <footer className="listing-capture-actions ui-panel ui-panel-body flex flex-wrap items-center justify-between gap-3">
             <div>
               {activeStepIndex > 0 ? (
                 <Button type="button" onClick={goToPreviousStep}>
@@ -1083,7 +1200,7 @@ function ScopedRentalListingCreatePage() {
               ) : null}
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button type="button" onClick={saveDraftForSession}>Save draft</Button>
+              <Button type="button" onClick={saveDraftToListings} disabled={saving || recovering || recoveryBlocked}>Save draft</Button>
               <Button
                 key={activeStep === 'review' ? 'submit' : 'continue'}
                 type={activeStep === 'review' ? 'submit' : 'button'}
@@ -1091,11 +1208,10 @@ function ScopedRentalListingCreatePage() {
                 disabled={saving || recovering || recoveryBlocked}
               >
                 {activeStep === 'review' && saving ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : activeStep === 'review' ? <Save size={16} aria-hidden="true" /> : <ChevronRight size={16} aria-hidden="true" />}
-                {activeStep === 'review' ? (saving ? 'Saving rental…' : isEditing ? 'Save rental changes' : pendingListingId || creationId ? selectedDistributionChannels.length ? 'Retry save and publish' : 'Retry save listing' : selectedDistributionChannels.length ? 'Save and publish' : 'Save listing') : activeStep === 'features' ? 'Continue — skip optional details' : 'Continue'}
+                {activeStep === 'review' ? (saving ? 'Saving rental…' : isEditing && !isDraftCapture ? 'Save rental changes' : (pendingListingId || creationId) && cloudSave.status !== 'saved' && !isDraftCapture ? selectedDistributionChannels.length ? 'Retry save and publish' : 'Retry save listing' : selectedDistributionChannels.length ? 'Save and publish' : 'Save listing') : activeStep === 'features' ? 'Continue — skip optional details' : 'Continue'}
               </Button>
             </div>
           </footer>
-        </div>
         </fieldset>
       </form>
     </section>

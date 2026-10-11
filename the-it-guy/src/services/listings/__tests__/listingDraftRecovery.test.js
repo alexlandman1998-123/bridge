@@ -1,7 +1,59 @@
 // @vitest-environment node
-import { expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import 'fake-indexeddb/auto'
-import { saveListingRecoveryDraft, readListingRecoveryDraft, clearListingRecoveryDraft } from '../listingDraftRecovery'
+import { saveListingRecoveryDraft, readListingRecoveryDraft, clearListingRecoveryDraft, writeListingTextRecoveryDraft, reconcileListingEditRecovery } from '../listingDraftRecovery'
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals() })
+
+function browserStorage() {
+ const values = new Map()
+ vi.stubGlobal('localStorage', { getItem: key => values.get(key) || null, setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) })
+ return values
+}
+
+it.each(['sale', 'rental', 'developer'])('keeps newest %s text with older photo bytes, including clears and reordered photos', async kind => {
+ browserStorage()
+ const scope = `newest:${kind}`; const photoField = kind === 'rental' ? 'galleryImages' : 'listingImages'
+ const file = new File(['photo-bytes'], 'local.jpg', { type: 'image/jpeg' })
+ const photos = [{ id: 'local', file, url: 'blob:preview' }, { id: 'remote', url: 'https://fixture.example/photo.jpg' }]
+ await saveListingRecoveryDraft(scope, { form: { title: 'Older', selectedSyndicationChannels: ['property24'], [photoField]: photos }, photoField })
+ writeListingTextRecoveryDraft(scope, { form: { title: '', selectedSyndicationChannels: [], [photoField]: [...photos].reverse(), coverImageId: 'remote' }, photoField })
+ const restored = await readListingRecoveryDraft(scope)
+ expect(restored.form.title).toBe(''); expect(restored.form.selectedSyndicationChannels).toEqual([])
+ expect(restored.form[photoField].map(photo => photo.id)).toEqual(['remote', 'local'])
+ expect(await restored.form[photoField][1].file.text()).toBe('photo-bytes')
+ expect(restored.form.coverImageId).toBe('remote')
+ restored.release(); await clearListingRecoveryDraft(scope)
+})
+
+it('recovers text while clearly counting photo bytes that never committed', async () => {
+ browserStorage()
+ const scope = 'uncommitted-photo'
+ writeListingTextRecoveryDraft(scope, { form: { title: 'Latest text', listingImages: [{ id: 'new', file: new File(['bytes'], 'new.jpg'), url: 'blob:new' }] } })
+ const restored = await readListingRecoveryDraft(scope)
+ expect(restored.form.title).toBe('Latest text'); expect(restored.missingPhotos).toBe(1)
+ await clearListingRecoveryDraft(scope)
+})
+
+it.each(['residential','commercial','industrial','retail','agricultural','mixed_use','vacant_land'])('recovers %s edits with deliberate clears and protects untouched competing values', category => {
+ const baseForm = { propertyCategory: category, description: 'Original', selectedSyndicationChannels: ['property24'], specialistSize: '12.5', monthlyRent: '11000', expectedUpdatedAt: 'old' }
+ const draft = { form: { ...baseForm, description: '', selectedSyndicationChannels: [], specialistSize: '42.5' }, recovery: { baseForm, baseRevision: 'old|' } }
+ const unchanged = reconcileListingEditRecovery(draft, baseForm, 'old|')
+ expect(unchanged.conflict).toBe(false); expect(unchanged.form.description).toBe(''); expect(unchanged.form.selectedSyndicationChannels).toEqual([])
+ const competing = reconcileListingEditRecovery(draft, { ...baseForm, monthlyRent: '15000', expectedUpdatedAt: 'new' }, 'new|')
+ expect(competing.conflict).toBe(true); expect(competing.form.monthlyRent).toBe('15000')
+ expect(competing.form.specialistSize).toBe('42.5'); expect(competing.form.expectedUpdatedAt).toBe('new')
+})
+
+it('requires review for an old edit draft without a trustworthy saved baseline', () => {
+ expect(reconcileListingEditRecovery({ form: { description: '' } }, { description: 'Saved' }, 'current|').conflict).toBe(true)
+})
+
+it('does not turn a confirmed save into a failure when browser cleanup is blocked', async () => {
+ browserStorage()
+ await saveListingRecoveryDraft('blocked-cleanup', { form: { title: 'Already saved', listingImages: [] } })
+ vi.spyOn(localStorage, 'removeItem').mockImplementation(() => { throw new Error('Browser storage blocked') })
+ await expect(clearListingRecoveryDraft('blocked-cleanup')).resolves.toBeUndefined()
+})
 
 it.each(['sale','rental','developer'])('restores %s text, original photo bytes, cover and order after reopening',async kind=>{
  const scope=`user:agency:${kind}`;const field=kind==='rental'?'galleryImages':'listingImages'

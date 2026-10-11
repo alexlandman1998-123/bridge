@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 vi.mock('../../../lib/supabaseClient', () => ({ supabase: null }))
-import { publishInitialListingChannels, readInitialListingChannelResults, watchInitialListingPublication, mapPublicationJobs, refreshListingPublicationResults, retryFailedListingChannels } from '../listingInitialPublicationService'
+import { publishInitialListingChannels, readInitialListingChannelResults, watchInitialListingPublication, mapPublicationJobs, refreshListingPublicationResults, retryFailedListingChannels, requireSettledListingPublication } from '../listingInitialPublicationService'
 let listingId='00000000-0000-4000-8000-000000000001'
 const input = (channels=['property24']) => ({ listingId, listingStatus:'active', channels })
 function dependencies() {
@@ -108,4 +108,42 @@ it('does not replace current progress after the status watcher is cancelled', as
  await publishInitialListingChannels(input(),deps)
  await refreshListingPublicationResults(listingId,{...deps,shouldApply:()=>false})
  expect(readInitialListingChannelResults(listingId)[0].status).toBe('publishing')
+})
+
+it.each(['queued', 'processing', 'dispatching', 'uncertain'])('blocks alternative publishing controls for a durable %s request', async state => {
+ const deps = receiptDependencies([{ id: 'p24', channel: 'property24', state }])
+ await expect(requireSettledListingPublication(listingId, ['property24'], deps)).rejects.toThrow('Check status before sending again')
+ expect(deps.fetch).not.toHaveBeenCalled()
+ await expect(requireSettledListingPublication(listingId, ['private_property'], deps)).resolves.toHaveLength(1)
+})
+it('fails closed when an alternative publishing control cannot read durable status', async () => {
+ const deps = receiptDependencies([])
+ deps.client.from = () => ({ select: () => ({ eq: async () => ({ error: new Error('Offline') }) }) })
+ await expect(requireSettledListingPublication(listingId, ['property24'], deps)).rejects.toThrow('Offline')
+ expect(deps.fetch).not.toHaveBeenCalled()
+})
+it.each(['queued', 'processing', 'dispatching', 'uncertain'])('blocks the Kingdom fallback control for the same durable website %s request', async state => {
+ const deps = receiptDependencies([{ id: 'web', channel: 'agency_website', state }])
+ await expect(requireSettledListingPublication(listingId, ['kingdom_website'], deps)).rejects.toThrow('Check status before sending again')
+ expect(deps.fetch).not.toHaveBeenCalled()
+})
+it('restarts status watching for a retry after the initial request has finished', async () => {
+ vi.useFakeTimers()
+ let listener
+ const dispatchEvent = vi.fn(event => { if (event.type === 'itg:initial-listing-publication') listener?.(event) })
+ vi.stubGlobal('window', { dispatchEvent, addEventListener: vi.fn((name, fn) => { listener = fn }), removeEventListener: vi.fn() })
+ const jobs = [{ id: 'p24', channel: 'property24', state: 'accepted' }]
+ const deps = receiptDependencies(jobs)
+ const stop = watchInitialListingPublication(listingId, { client: deps.client, interval: 10 })
+ await vi.advanceTimersByTimeAsync(0)
+ jobs[0].state = 'queued'; jobs[0].update_request_key = 'retry-key'
+ deps.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ jobs }) })
+ await publishInitialListingChannels({ ...input(), action: 'update', requestKey: 'retry-key' }, deps)
+ await vi.advanceTimersByTimeAsync(10)
+ expect(readInitialListingChannelResults(listingId)[0]).toMatchObject({ status: 'publishing', jobState: 'queued' })
+ jobs[0].state = 'accepted'
+ await vi.advanceTimersByTimeAsync(10)
+ expect(readInitialListingChannelResults(listingId)[0].status).toBe('submitted')
+ stop()
+ expect(window.removeEventListener).toHaveBeenCalledWith('itg:initial-listing-publication', expect.any(Function))
 })

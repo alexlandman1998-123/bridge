@@ -40,6 +40,10 @@ async function contextPage() {
     return route.continue()
   })
   const page = await context.newPage()
+  // This matrix deliberately leaves creation screens to seed independent
+  // scenarios. Accept browser departure warnings; the focused recovery tests
+  // separately verify that unsaved changes raise them and cancellation works.
+  page.on('dialog', dialog => dialog.type() === 'beforeunload' ? dialog.accept() : dialog.dismiss())
   if (mobileSlow) {
     const cdp = await context.newCDPSession(page)
     await cdp.send('Emulation.setCPUThrottlingRate', { rate: profileEvidence.cpuSlowdown })
@@ -60,6 +64,8 @@ try {
       await page.goto(fixture.origin + '/listings/new', { waitUntil: 'domcontentloaded' })
       await page.getByRole('button', { name: label, exact: true }).click()
       check(`[UX-11] ${category}/sale new editor avoids inventory and transaction loading`, () => assert.equal(fixture.events.slice(editorStart).filter(row => ['all', 'workspace-transactions', 'workspace-assignments', 'workspace-developments', 'website-status'].includes(row.kind)).length, 0))
+      const optionalRooms = page.locator('details[data-listing-rooms] > summary')
+      if (await optionalRooms.count()) await optionalRooms.click()
       const type = await page.getByRole('combobox', { name: 'Property type *', exact: true }).inputValue()
       if (category !== 'residential') check(`[UX-05] ${category}/sale category cannot retain House`, () => assert.notEqual(type.toLowerCase(), 'house'))
       for (const [label, value] of (category === 'vacant_land' ? [['Land size m²', '500.5']] : [['Bathrooms', '2.5'], ['Floor size m²', '98.5'], ['Land size m²', '500.5']])) {
@@ -100,9 +106,9 @@ try {
         await page.getByRole('button', { name: 'Step 2: Photos & description', exact: true }).click()
         await page.getByText('Extra property details (optional)', { exact: true }).click()
         const fields = category === 'industrial' ? { 'Warehouse / factory area (m²)': '2200.5', 'Yard size (m²)': '900.5', 'Power supply': '250 kVA' }
-          : category === 'agricultural' ? { 'Farm size (ha)': '42.5', 'Water supply / rights': 'Borehole and water rights', 'Agricultural use': 'Citrus orchard' }
+          : category === 'agricultural' ? { 'Farm size (hectares)': '42.5', 'Water supply / rights': 'Borehole and water rights', 'Agricultural use': 'Citrus orchard' }
           : category === 'vacant_land' ? { 'Zoning': 'Residential 2' }
-          : { 'Gross lettable area (m²)': '1250.5', 'Zoning': 'Business 4', 'Parking details': '18 bays', 'Lease or sale terms': 'Vacant occupation' }
+          : { 'Rentable floor area (m²)': '1250.5', 'Zoning': 'Business 4', 'Parking details': '18 bays', 'Sale or lease terms': 'Vacant occupation' }
         for (const [name, value] of Object.entries(fields)) await page.getByLabel(name, { exact: true }).fill(value)
         const before = fixture.events.length
         await page.getByRole('button', { name: 'Continue', exact: true }).click()
@@ -124,11 +130,13 @@ try {
         check(`[UX-03] ${category}/sale second save uses confirmed revision`, () => assert.equal(fixture.events.slice(before).filter(row => row.kind === 'onboarding').length, 2))
         await page.goto(fixture.origin + `/listings/${id}/edit?scope=property&step=marketing`, { waitUntil: 'domcontentloaded' })
         await page.getByRole('button', { name: 'Step 2: Photos & description', exact: true }).click()
-        const specialistInput = name => page.getByRole(/^(Gross lettable area|Warehouse \/ factory area|Yard size|Farm size)/.test(name) ? 'spinbutton' : 'textbox', { name, exact: true })
+        const specialistInput = name => page.getByRole(/^(Rentable floor area|Warehouse \/ factory area|Yard size|Farm size)/.test(name) ? 'spinbutton' : 'textbox', { name, exact: true })
         if (!await specialistInput(Object.keys(fields)[0]).isVisible()) await page.getByText('Extra property details (optional)', { exact: true }).click()
         const reopened = await Promise.all(Object.keys(fields).map(name => specialistInput(name).inputValue()))
         check(`[UX-03] ${category}/sale reopened values match`, () => assert.deepEqual(reopened, Object.values(fields)))
         await page.getByRole('button', { name: 'Step 1: Property details', exact: true }).click()
+        const reopenedRooms = page.locator('details[data-listing-rooms]')
+        if (await reopenedRooms.count() && await reopenedRooms.getAttribute('open') === null) await reopenedRooms.locator('summary').click()
         const amounts = await Promise.all((category === 'vacant_land' ? ['Land size m²'] : ['Bathrooms', 'Floor size m²', 'Land size m²']).map(name => page.getByRole('textbox', { name, exact: true }).inputValue()))
         check(`[UX-02] ${category}/sale decimal measurements survive reopening`, () => assert.deepEqual(amounts, category === 'vacant_land' ? ['500.5'] : ['2.5', '98.5', '500.5']))
       }

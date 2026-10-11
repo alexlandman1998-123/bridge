@@ -35,8 +35,15 @@ export async function activateRentalListing(listing, form, { websiteDestination 
   const id = listing?.id
   if (!id) throw new Error('Save the rental before activating it.')
   await updatePrivateListing(id, { listingStatus: 'active', expiryDate: form.property24ExpiryDate || getInitialProperty24Expiry() }, { includeRequirementsAndDocuments: false })
-  await publishInitialListingChannels({ listingId: id, listingType: 'rental', listingStatus: 'active', channels: form.selectedSyndicationChannels,
-    websiteDestination, snapshot: buildRentalPublicationSnapshot({ ...listing, listingStatus: 'active' }) })
+  try {
+    const results = await publishInitialListingChannels({ listingId: id, listingType: 'rental', listingStatus: 'active', channels: form.selectedSyndicationChannels,
+      websiteDestination, snapshot: buildRentalPublicationSnapshot({ ...listing, listingStatus: 'active' }) })
+    return { listingId: id, results }
+  } catch (publicationError) {
+    // Saving/activation succeeded. Keep that receipt separate from an unknown
+    // queue outcome so the form never asks the agent to create this rental again.
+    return { listingId: id, publicationError: publicationError.message }
+  }
 }
 
 function normalizeText(value) {
@@ -176,6 +183,17 @@ async function saveRentalListingMedia(listingId, form, publicationData, context,
     const media = buildRentalListingMediaPayload(form, galleryImages)
     const coverIndex = galleryImages.findIndex((image) => image.id === media.coverImageId)
     const listingPatch = buildRentalListingUpdatePayload(form, existingListing)
+    if (context.saveProgress) {
+      // Keep unfinished answers, including explicit blanks, without storing
+      // File objects or expiring photo previews in the listing facts.
+      const { galleryImages: _gallery, coverImageId: _cover, expectedUpdatedAt: _revision, ...answers } = form
+      listingPatch.sellerCanonicalFacts.rentalCaptureDraft = {
+        version: 1, step: context.activeStep || 'property',
+        form: JSON.parse(JSON.stringify(answers, (_, value) => typeof Blob !== 'undefined' && value instanceof Blob ? null : value)),
+      }
+    } else {
+      delete listingPatch.sellerCanonicalFacts.rentalCaptureDraft
+    }
     const mediaEdits = context.galleryOnly ? [] : buildRentalMediaEdits(form, existingListing)
     receipt = await saveRentalListingSnapshot(listingId, {
       expectedUpdatedAt: form.expectedUpdatedAt || existingListing.updatedAt || existingListing.updated_at,
@@ -364,6 +382,41 @@ export async function updateRentalListingDraft(listingId, form = {}, context = {
     publicationResult,
     activity: null,
   }
+}
+
+// Explicit Save draft accepts unfinished capture. It uses the same atomic,
+// revision-guarded save/readback as the completed editor and never activates.
+export async function saveRentalListingProgress(form = {}, context = {}) {
+  if (!normalizeText(context.organisationId) || !normalizeText(context.assignedAgentId)) {
+    throw new Error('Select an organisation and sign in before saving this draft.')
+  }
+  let listing
+  if (context.listingId) {
+    listing = await getPrivateListing(context.listingId, { includeRequirementsAndDocuments: false, requireDistributionData: true })
+    if (!listing || !isRentalListingRecord(listing) || !isRentalListingInWorkspace(listing, context.assignedAgentId, context)) {
+      throw new Error('Rental listing not found in this workspace. Reload before saving.')
+    }
+  } else {
+    if (!isRentalCreationId(context.creationId)) throw new Error('Save the rental creation identity before saving this draft.')
+    const created = await createPrivateListing(buildRentalPrivateListingPayload(form, context), {
+      includeRequirementsAndDocuments: false, syncRequirements: false,
+      rentalCreationId: context.creationId, onListingCreated: context.onListingCreated,
+    })
+    listing = created?.listing
+    if (!listing?.id) throw new Error('Unable to create the rental draft.')
+    context.onListingCreated?.(listing.id, listing)
+    if (created.existing) {
+      listing = await getPrivateListing(listing.id, { includeRequirementsAndDocuments: false, requireDistributionData: true })
+      if (!listing || !isRentalListingInWorkspace(listing, context.assignedAgentId, context)) throw new Error('The saved draft is outside this workspace.')
+      return { listing, recovered: true }
+    }
+  }
+  const publicationData = {
+    ...buildRentalListingEditPublicationDraft(form),
+    status: listing.listingPublicationData?.status || 'Draft',
+  }
+  const publicationResult = await saveRentalListingMedia(listing.id, form, publicationData, { ...context, saveProgress: true }, listing)
+  return { listing: publicationResult.listing, publicationResult }
 }
 
 // Photo controls must also work on older rentals with incomplete capture fields.

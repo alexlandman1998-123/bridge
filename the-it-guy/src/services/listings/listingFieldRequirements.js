@@ -19,20 +19,20 @@ export function getListingFieldIssues(form = {}, { rental = false, channels = fo
   }
   const category = text(form.propertyCategory || 'residential')
   const priceField = rental ? 'monthlyRent' : 'listingPrice'
-  const price = number(form[priceField] || form.estimatedAskingPrice)
+  const price = number(form[priceField] ?? form.estimatedAskingPrice)
   const priceStep = rental ? 'terms' : 'property'
   const descriptionField = rental ? 'description' : 'listingDescription'
   const description = text(form[descriptionField])
   const photos = rental ? form.galleryImages : form.listingImages
   const photoField = rental ? 'galleryImages' : 'listingImages'
   for (const channel of Object.keys(LISTING_CHANNEL_LABELS)) {
-    if (!(price > 0) && !(['property24', 'agency_website'].includes(channel) && !rental && form.priceOnApplication)) add(channel, priceField, priceStep, rental ? 'Enter a rental amount greater than zero.' : channel === 'private_property' && form.priceOnApplication ? PRIVATE_PROPERTY_POA_PRICE_MESSAGE : 'Enter a price greater than zero.')
+    if (!(Number.isFinite(price) && price > 0) && !(['property24', 'agency_website'].includes(channel) && !rental && form.priceOnApplication)) add(channel, priceField, priceStep, rental ? 'Enter a rental amount greater than zero.' : channel === 'private_property' && form.priceOnApplication ? PRIVATE_PROPERTY_POA_PRICE_MESSAGE : 'Enter a price greater than zero.')
     if (channel !== 'agency_website' && !description) add(channel, descriptionField, 'marketing', 'Add the public description.')
     const minimum = channel === 'private_property' ? 3 : 1
     if ((photos?.length || 0) < minimum) add(channel, photoField, 'marketing', `Add at least ${minimum} photo${minimum === 1 ? '' : 's'}.`)
     if (channel !== 'agency_website' && !text(form.propertyType)) add(channel, 'propertyType', 'property', 'Choose the property type.')
   }
-  if (!text(form.property24SuburbId) && !text(form.suburb)) add('property24', 'suburb', 'property', 'Select the suburb for portal location matching.')
+  if (!text(form.property24SuburbId) && !text(form.suburb)) add('property24', 'suburb', 'property', 'Choose the suburb so Property24 can find the area.')
   const address = form.propertyAddressValue || {}
   for (const [field, label, limit] of [['streetNumber', 'street number', 10], ['streetName', 'street name', 100], ['suburb', 'suburb', 100], ['city', 'city / town', 100], ['province', 'province', 0]]) {
     const value = text(form[field] || address[field] || (field === 'streetName' ? form.route || address.route : ''))
@@ -62,7 +62,7 @@ export function getListingFieldIssues(form = {}, { rental = false, channels = fo
     if (!['monthly', 'weekly', 'daily', 'annual', 'per_square_metre'].includes(frequency)) add('property24', 'rentalPriceFrequency', 'terms', 'Choose a supported rental price frequency.')
     if (frequency === 'annual') add('private_property', 'rentalPriceFrequency', 'terms', 'Private Property does not accept annual rental pricing; choose another frequency or deselect that channel.')
     if (frequency === 'per_square_metre' && !(['commercial', 'industrial', 'retail', 'mixed_use'].includes(category) || (['land', 'vacant_land'].includes(category) && text(form.propertyType).toLowerCase().replace(/[ _-]+/g, '_') === 'commercial_land'))) add('private_property', 'rentalPriceFrequency', 'terms', 'Per-square-metre rental pricing requires commercial property or commercial land on Private Property.')
-    if (form.rentalMandateType === 'house_share') add('property24', 'rentalMandateType', 'terms', 'Property24 does not support this house-share feed type; choose another type or deselect that channel.')
+    if (form.rentalMandateType === 'house_share') add('property24', 'rentalMandateType', 'terms', 'Property24 cannot advertise this house-share rental. Choose another rental type or remove Property24.')
     if (form.depositPolicy !== 'no_deposit' && (number(form.depositAmount) === null || !Number.isFinite(number(form.depositAmount)) || number(form.depositAmount) < 0)) add('private_property', 'depositAmount', 'terms', 'Enter the deposit amount, or select No deposit.')
   }
   for (const field of ['bedrooms', 'bathrooms', 'garages', 'parkingBays', 'floorSize', 'erfSize']) {
@@ -71,4 +71,34 @@ export function getListingFieldIssues(form = {}, { rental = false, channels = fo
     }
   }
   return issues
+}
+
+// Property requirements for finishing a sale. Save draft creation deliberately
+// bypasses these; saved-listing edits enforce the same details before writing.
+export function getSalesListingRequiredIssues(form = {}, { editing = false } = {}) {
+  const issues = []
+  const add = (field, message) => issues.push({ field, step: 'property', message, channels: [] })
+  if (!text(form.propertyAddress)) add('propertyAddress', 'Property address is required.')
+  if (editing && !text(form.propertyStructureType)) add('propertyStructureType', 'Ownership scheme is required.')
+  if (!text(form.propertyType)) add('propertyType', editing ? 'Descriptive property type is required.' : 'Property type is required.')
+  const price = number(form.listingPrice ?? form.estimatedAskingPrice)
+  if (!form.priceOnApplication && !(Number.isFinite(price) && price > 0)) add('listingPrice', editing ? 'Enter a listing price or select Price on Application.' : 'Listing price or price on application is required.')
+  return issues
+}
+
+// One correction per field, even when several websites require it. Keep every
+// restriction and its destination: photo minimums and POA rules can differ.
+export function groupListingFieldIssues(issues = []) {
+  const groups = new Map()
+  for (const issue of issues) {
+    const key = issue.field || issue.message
+    if (!groups.has(key)) groups.set(key, { ...issue, requirements: [], channels: [], basic: false })
+    const group = groups.get(key)
+    group.basic ||= !issue.channels?.length
+    group.channels = [...new Set([...group.channels, ...(issue.channels || [])])]
+    const requirement = group.requirements.find(row => row.message === issue.message)
+    if (requirement) requirement.channels = [...new Set([...requirement.channels, ...(issue.channels || [])])]
+    else group.requirements.push({ ...issue, channels: [...(issue.channels || [])] })
+  }
+  return [...groups.values()]
 }

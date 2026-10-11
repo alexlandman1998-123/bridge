@@ -144,7 +144,7 @@ export default function RentalListingIndexCard({ row, liveChannels, onOpen, menu
           }}
           className="inline-flex min-h-9 w-full min-w-0 items-center justify-center gap-1.5 rounded-full border border-[#c6d8ea] bg-white px-3 text-[0.76rem] font-semibold text-[#1f4f78] transition hover:border-[#9fb7d1] hover:bg-[#f6faff]"
         >
-          <span className="truncate">Open</span>
+          <span className="truncate">{row.isCaptureDraft ? 'Continue draft' : 'Open'}</span>
           <ArrowRight size={14} className="shrink-0" aria-hidden="true" />
         </button>
       </div>

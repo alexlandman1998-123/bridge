@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-export async function startListingDiagnosticBrowserFixture(out, { saleSource = null, traceEvents = true } = {}) {
+export async function startListingDiagnosticBrowserFixture(out, { saleSource = null, traceEvents = true, realRentalDetail = false } = {}) {
   const root = path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
   const f = await createRentalListingAcceptanceFixture();
   const {
@@ -33,7 +33,9 @@ export async function startListingDiagnosticBrowserFixture(out, { saleSource = n
     if (!extra) return null;
     if (extra.listingCategory !== 'rental') return {
       ...extra,
-      galleryImages: extra.galleryImages || extra.propertyDetails?.galleryImages || []
+      // Match getPrivateListing's distribution-media projection. An empty
+      // creation-time gallery must not hide photos subsequently saved.
+      galleryImages: extra.listingMedia?.length ? extra.listingMedia.filter(row => row.media_type === 'image').map(row => ({ id: row.id, url: row.file_url, name: row.caption, isCover: row.is_cover })) : extra.galleryImages || extra.propertyDetails?.galleryImages || []
     };
     const row = (await db.query('select * from private_listings where id=$1', [id])).rows[0];
     const media = (await db.query('select * from listing_media where listing_id=$1 order by sort_order,id', [id])).rows;
@@ -109,7 +111,7 @@ export async function startListingDiagnosticBrowserFixture(out, { saleSource = n
         updatedAt: new Date().toISOString()
       });
       await putExtra(b.id, row);
-      if (row.listingCategory === 'rental') await db.query('update private_listings set listing_status=coalesce($2,listing_status) where id=$1', [b.id, b.payload.listingStatus || null]);
+      if (row.listingCategory === 'rental') await db.query('update private_listings set listing_status=coalesce($2,listing_status),title=coalesce($3,title),updated_at=$4 where id=$1', [b.id, b.payload.listingStatus || null, b.payload.title || null, row.updatedAt]);
       return readListing(b.id);
     }
     if (kind === 'onboarding') {
@@ -192,6 +194,7 @@ export async function startListingDiagnosticBrowserFixture(out, { saleSource = n
       return (await db.query('select public.' + b.name + '(' + fields.map((_, i) => '$' + (i + 1)).join(',') + ') as receipt', vals)).rows[0].receipt;
     }
     if (kind === 'jobs') return jobs.get(b.id) || [];
+    if (kind === 'seed-jobs') { jobs.set(b.id, b.jobs); return true; }
     if (kind === 'failure') {
       failure = b.value;
       return true;
@@ -227,8 +230,12 @@ export async function startListingDiagnosticBrowserFixture(out, { saleSource = n
     }
   };
   const modules = new Map([['src/context/WorkspaceContext.jsx', `const ctx=${JSON.stringify(ctx)};export const useWorkspace=()=>ctx;`], ['src/context/OrganisationContext.jsx', `export const useOptionalOrganisation=()=>null;`], ['src/lib/supabaseClient.js', `${request}export const isSupabaseConfigured=true;function from(table){let eq={};let q={select(){return q},eq(k,v){eq[k]=v;return q},in(){return q},order(){return q},limit(){return q},range(){return q},is(){return q},or(){return q},not(){return q},maybeSingle:async()=>({data:null,error:null}),single:async()=>({data:null,error:null}),then(resolve,reject){return (table==='listing_publication_jobs'?request('jobs',{id:eq.listing_id}).then(data=>({data,error:null})):Promise.resolve({data:[],error:null})).then(resolve,reject)},insert(){throw new Error('Unmocked fixture insert '+table)},update(){throw new Error('Unmocked fixture update '+table)}};return q}export const supabase={from,rpc:async(name,args)=>{try{return{data:await request('rpc',{name,args}),error:null}}catch(error){return{data:null,error}}},auth:{getSession:async()=>({data:{session:{access_token:'fixture-only'}}}),getUser:async()=>({data:{user:{id:'${actor}'}}}),onAuthStateChange:()=>({data:{subscription:{unsubscribe(){}}}})}};export const clearSupabaseLocalAuthState=async()=>{};export const isUnsupportedJwtAlgorithmError=()=>false;export const isUserFromSubClaimMissingError=()=>false;export const createScopedSupabaseClient=()=>supabase;export const invokeEdgeFunction=async()=>{throw new Error('External functions disabled')};export const getEdgeFunctionInvokeError=r=>r?.error;export const assertEdgeFunctionSuccess=r=>r?.data;export const DOCUMENTS_BUCKET='documents',DOCUMENTS_BUCKET_CANDIDATES=['documents'],LEGAL_TEMPLATES_BUCKET='legal-templates',LEGAL_TEMPLATES_BUCKET_CANDIDATES=['legal-templates'],BRANDING_BUCKET='organisation-branding',BRANDING_BUCKET_CANDIDATES=['organisation-branding'],PROFILE_AVATAR_BUCKET='profile-avatars',PROFILE_AVATAR_BUCKET_CANDIDATES=['profile-avatars'];`], ['src/lib/settingsApi.js', `${request}export * from '/src/lib/settingsApi.js?original';export const fetchOrganisationSettings=()=>request('workspace-settings');export const listOrganisationUsers=()=>request('workspace-users');`], ['src/lib/api.js', `${request}export * from '/src/lib/api.js?original';export const fetchAssignedDevelopmentIdsForRole=()=>request('workspace-assignments');export const fetchDevelopmentOptions=()=>request('workspace-developments');export const fetchUnitsForTransactionSetup=async()=>[];`], ['src/domains/reporting/api.js', `${request}export * from '/src/domains/reporting/api.js?original';export const fetchTransactionsByParticipantSummary=()=>request('workspace-transactions');`], ['src/services/privateListingService.js', `${request}export * from '/src/services/privateListingService.js?original';export const getPrivateListing=id=>request('read',{id});export const getAgentPrivateListingSummaries=()=>request('all');export const getAgentPrivateListings=()=>request('all');export const getPrivateListingCoverImageUrls=async()=>({});export const createPrivateListing=(payload,options)=>request('create',{payload,options});export const updatePrivateListing=(id,payload)=>request('update',{id,payload});export const persistSellerProfileOnboardingFormData=payload=>request('onboarding',payload);export const syncPrivateListingDistributionData=(id,payload)=>request('distribution',{id,payload});export const createPrivateListingActivity=payload=>request('activity',payload);export const uploadPrivateListingMediaAsset=(file,options)=>request('upload',{name:file.name,size:file.size,...options});export const signPrivateListingMediaAsset=async asset=>({...asset,url:'${origin}/fixture/photo.png'});export const getPrivateListingDocuments=async()=>[];export const getPrivateListingDocumentRequirements=async()=>[];export const syncPrivateListingRequirements=async()=>({});`], ['src/services/rentals/rentalLeadService.js', `export * from '/src/services/rentals/rentalLeadService.js?original';export const listRentalLeads=async()=>[];`], ['src/services/rentals/rentalLandlordMandateRepository.js', `export * from '/src/services/rentals/rentalLandlordMandateRepository.js?original';export const listRentalPropertyMandates=async()=>[];`], ['src/services/listings/listingSellerLeadService.js', `export const ensureListingSellerLead=async()=>null;`], ['src/services/syndicationChannelAvailabilityService.js', `export const UNAVAILABLE_SYNDICATION_CHANNELS={property24:{available:true},private_property:{available:true},agency_website:{available:true,label:'Agency website'}};export const getSyndicationChannelAvailability=async()=>UNAVAILABLE_SYNDICATION_CHANNELS;`], ['src/services/websiteListingPublicationService.js', `${request}export const getWebsiteListingPublicationStatus=id=>request('website-status',{id});export const setWebsiteListingPublication=async()=>{throw new Error('Use fixture publication queue')};`]]);
+  if (realRentalDetail) {
+    modules.set('src/services/rentals/rentalListingChannelService.js', `export const loadRentalListingChannels=async()=>({activity:[],errors:{}});export const recordRentalPublicationEvent=async()=>({id:'fixture-event'});export const runRentalPublicationAction=async()=>{throw new Error('Direct provider calls are disabled in this fixture')};export const getRentalPortalStatus=async()=>({});export const reconcileRentalPortalPublication=async()=>({});export const updateRentalPortalStatus=async()=>({});`);
+    modules.set('src/services/rentals/rentalListingOverviewService.js', `import{buildRentalListingOverview}from'/src/services/rentals/rentalListingOverviewModel.js';export const loadRentalListingOverview=async listing=>buildRentalListingOverview({listing});`);
+  }
   if (saleSource) modules.set('src/pages/AgentListings.jsx', saleSource);
-  const entry = `import React from'react';import{createRoot}from'react-dom/client';import{BrowserRouter,Routes,Route,useParams,Link}from'react-router-dom';import Sale from'/src/pages/AgentListings.jsx';import Rental from'/src/pages/rentals/RentalListingCreatePage.jsx';import ListingPublicationProgress from'/src/components/listings/ListingPublicationProgress.jsx';import{refreshListingPublicationResults,retryFailedListingChannels}from'/src/services/listings/listingInitialPublicationService.js';import'/src/index.css';function Saved(){let{listingId}=useParams();const[row,setRow]=React.useState(null),[results,setResults]=React.useState([]);React.useEffect(()=>{fetch('/fixture/read',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:listingId})}).then(r=>r.json()).then(r=>setRow(r.data));refreshListingPublicationResults(listingId).then(setResults)},[listingId]);return <main><h1>Fixture saved record</h1><p>This receipt viewer replaces the full detail page; editor and save services above are real.</p>{row && <Link to={row.listingCategory==='rental'?'/agent/rentals/listings/'+listingId+'/edit?step=property':'/listings/'+listingId+'/edit?scope=property'}>Reopen editor</Link>}<ListingPublicationProgress results={results} onCheckStatus={()=>refreshListingPublicationResults(listingId).then(setResults)} onRetry={()=>retryFailedListingChannels({listingId,listingStatus:'active',channels:['property24','private_property','agency_website'],requestKey:crypto.randomUUID()}).then(setResults)}/><pre>{JSON.stringify(row,null,2)}</pre></main>}createRoot(document.getElementById('root')).render(<BrowserRouter><div style={{padding:8,background:'#fff3ce'}}>Local diagnostic. Simulated account/storage/portal. Rental updates execute real local SQL.</div><Routes><Route path='/listings/new' element={<Sale/>}/><Route path='/mobile/listings/new' element={<Sale mobileEditor/>}/><Route path='/listings/:listingId/edit' element={<Sale/>}/><Route path='/agent/rentals/listings/new' element={<Rental/>}/><Route path='/agent/rentals/listings/:listingId/edit' element={<Rental/>}/><Route path='/agent/listings/:listingId' element={<Saved/>}/><Route path='/agent/rentals/listings/:listingId/marketing' element={<Saved/>}/></Routes></BrowserRouter>);`;
+  const entry = `import React from'react';import{createRoot}from'react-dom/client';import{BrowserRouter,Routes,Route,useParams,Link}from'react-router-dom';import Sale from'/src/pages/AgentListings.jsx';import Rental from'/src/pages/rentals/RentalListingCreatePage.jsx';${realRentalDetail ? "import RentalDetail from'/src/pages/rentals/RentalListingDetailPage.jsx';" : ''}import ListingPublicationProgress from'/src/components/listings/ListingPublicationProgress.jsx';import{refreshListingPublicationResults,retryFailedListingChannels}from'/src/services/listings/listingInitialPublicationService.js';import'/src/index.css';function Saved(){let{listingId}=useParams();const[row,setRow]=React.useState(null),[results,setResults]=React.useState([]);React.useEffect(()=>{fetch('/fixture/read',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:listingId})}).then(r=>r.json()).then(r=>setRow(r.data));refreshListingPublicationResults(listingId).then(setResults)},[listingId]);return <main><h1>Fixture saved record</h1><p>This receipt viewer replaces the full detail page; editor and save services above are real.</p>{row && <Link to={row.listingCategory==='rental'?'/agent/rentals/listings/'+listingId+'/edit?step=property':'/listings/'+listingId+'/edit?scope=property'}>Reopen editor</Link>}<ListingPublicationProgress results={results} onCheckStatus={()=>refreshListingPublicationResults(listingId).then(setResults)} onRetry={()=>retryFailedListingChannels({listingId,listingStatus:'active',channels:['property24','private_property','agency_website'],requestKey:crypto.randomUUID()}).then(()=>refreshListingPublicationResults(listingId)).then(setResults)}/><pre>{JSON.stringify(row,null,2)}</pre></main>}createRoot(document.getElementById('root')).render(<BrowserRouter><div style={{padding:8,background:'#fff3ce'}}>Local diagnostic. Simulated account/storage/portal. Rental updates execute real local SQL.</div><Routes><Route path='/listings/new' element={<Sale/>}/><Route path='/mobile/listings/new' element={<Sale mobileEditor/>}/><Route path='/listings/:listingId/edit' element={<Sale/>}/><Route path='/agent/rentals/listings/new' element={<Rental/>}/><Route path='/agent/rentals/listings/:listingId/edit' element={<Rental/>}/><Route path='/agent/listings/:listingId' element={<Saved/>}/><Route path='/agent/rentals/listings/:listingId/:detailTab' element={${realRentalDetail ? '<RentalDetail/>' : '<Saved/>'}}/></Routes></BrowserRouter>);`;
   const send = (res, data, error = null) => {
     res.setHeader('Content-Type', 'application/json');
     res.end(JSON.stringify({
@@ -241,9 +248,10 @@ export async function startListingDiagnosticBrowserFixture(out, { saleSource = n
     root,
     configFile: false,
     envDir: false,
-    optimizeDeps: { noDiscovery: true, include: ['react', 'react-dom/client', 'react-router-dom'] },
+    // Avoid thousands of unbundled icon requests in each fresh browser context.
+    optimizeDeps: { noDiscovery: true, include: ['react', 'react-dom/client', 'react-router-dom', 'lucide-react'] },
     cacheDir,
-    plugins: [react(), {
+    plugins: [react({ exclude: [/node_modules/, /\/deps\//] }), {
       name: 'matrix-fixture',
       enforce: 'pre',
       resolveId(id) {
@@ -284,11 +292,14 @@ export async function startListingDiagnosticBrowserFixture(out, { saleSource = n
                 id: randomUUID(),
                 listing_id: b.listingId,
                 channel,
-                state: failure === channel ? 'failed' : failure === 'uncertain' ? 'uncertain' : 'accepted',
+                state: failure === channel ? 'failed' : ['uncertain', 'queue-response'].includes(failure) ? 'uncertain' : 'accepted',
                 message: 'Local simulated provider receipt',
                 update_request_key: b.requestKey
               }));
-              jobs.set(b.listingId, rows);
+              jobs.set(b.listingId, [...(jobs.get(b.listingId) || []).filter(row => !b.channels.includes(row.channel)), ...rows]);
+              if (failure === 'queue-response') {
+                failure = ''; res.statusCode = 503; send(res, null, 'Simulated lost publishing response'); return;
+              }
               await writeFile(out + '/events.json', JSON.stringify(events, null, 2));
               res.setHeader('Content-Type', 'application/json');
               res.end(JSON.stringify({

@@ -255,8 +255,13 @@ export function buildRentalListingIndexRow(listing = {}) {
   row.landlordContact = joinNonEmpty([row.landlordEmail, row.landlordPhone], ' / ')
   row.assignedAgentContact = joinNonEmpty([row.assignedAgentEmail, row.assignedAgentPhone], ' / ')
   row.statusGroup = resolveStatusGroup(row)
+  row.isCaptureDraft = isRentalListingDraft(listing)
   row.nextAction = resolveNextAction(row)
   return row
+}
+
+export function isRentalListingDraft(listing = {}) {
+  return ['draft', 'seller_lead'].includes(normalizeKey(firstText(listing.listingStatus, listing.listing_status, listing.status)))
 }
 
 export function buildRentalListingIndexRows(listings = []) {

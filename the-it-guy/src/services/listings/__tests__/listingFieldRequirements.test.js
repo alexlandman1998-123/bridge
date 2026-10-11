@@ -1,6 +1,7 @@
+import { getRentalListingValidationIssues, validateRentalListingDraftForm } from '../../rentals/rentalListingDraftModel.js'
 import { getPropertyTypeOptionsByCategory } from '../../../lib/propertyTaxonomy'
 import { describe, expect, it } from 'vitest'
-import { getListingFieldIssues } from '../listingFieldRequirements'
+import { getListingFieldIssues, getSalesListingRequiredIssues, groupListingFieldIssues } from '../listingFieldRequirements'
 
 const form = {
   propertyCategory: 'residential', propertyType: 'House', listingPrice: '1500000', monthlyRent: '15000',
@@ -49,4 +50,66 @@ describe('channel-specific capture requirements', () => {
     expect(getListingFieldIssues({ ...form, depositPolicy: 'deposit_required', depositAmount: '0' }, { rental: true })).toEqual([])
     expect(getListingFieldIssues({ ...form, depositPolicy: '', selectedSyndicationChannels: ['property24'] }, { rental: true })).toEqual([])
   })
+})
+
+
+it('does not treat a deliberately cleared or invalid price as ready using an older estimate', () => {
+ for (const listingPrice of ['', 'Infinity', 'invalid', '-1']) {
+  const draft = { ...form, listingPrice, estimatedAskingPrice: '1500000', selectedSyndicationChannels: ['property24'] }
+  expect(getListingFieldIssues(draft).map(issue => issue.field)).toContain('listingPrice')
+  expect(getSalesListingRequiredIssues(draft).map(issue => issue.field)).toContain('listingPrice')
+ }
+})
+
+it('retains differing provider reasons with one field correction and keeps optional details out', () => {
+ const issues = [...getSalesListingRequiredIssues({}), ...getListingFieldIssues({ selectedSyndicationChannels: ['property24', 'private_property'] })]
+ const grouped = groupListingFieldIssues(issues)
+ expect(grouped.filter(issue => issue.field === 'listingPrice')).toHaveLength(1)
+ expect(grouped.find(issue => issue.field === 'listingImages').requirements.map(issue => issue.message)).toEqual(['Add at least 1 photo.', 'Add at least 3 photos.'])
+ expect(grouped.some(issue => ['sellerEmail','landlordEmail','floorSize','mandateStatus'].includes(issue.field))).toBe(false)
+})
+
+it('includes ownership when editing an existing sale but leaves it out of new-sale minimums', () => {
+ expect(getSalesListingRequiredIssues({}, { editing: true }).map(issue => issue.field)).toContain('propertyStructureType')
+ expect(getSalesListingRequiredIssues({}).map(issue => issue.field)).not.toContain('propertyStructureType')
+})
+
+
+for (const category of ['residential', 'commercial', 'industrial', 'retail', 'mixed_use', 'agricultural', 'vacant_land']) {
+ it(`${category} rental checklist keeps optional unanswered details out and selected requirements in`, () => {
+  const draft = { ...form, propertyAddress: 'Example Road', propertyCategory: category, propertyType: getPropertyTypeOptionsByCategory(category)[0].value, erfSize: category === 'vacant_land' ? '500' : '', selectedSyndicationChannels: [] }
+  expect(getRentalListingValidationIssues(draft, { organisationId: 'org' })).toEqual([])
+  const selected = { ...draft, selectedSyndicationChannels: ['private_property'], streetNumber: '', galleryImages: [], depositPolicy: '', depositAmount: '' }
+  const issues = getRentalListingValidationIssues(selected, { organisationId: 'org' })
+  expect(issues.map(issue => issue.message)).toEqual(validateRentalListingDraftForm(selected, { organisationId: 'org' }))
+  for (const field of ['streetNumber', 'galleryImages', 'depositAmount']) expect(issues).toContainEqual(expect.objectContaining({ field, channels: ['private_property'] }))
+  expect(issues.some(issue => ['landlordEmail', 'mandateStatus', 'floorSize'].includes(issue.field))).toBe(false)
+ })
+}
+
+it('maps entered optional rental validation failures to real fields and sections', () => {
+ const issues = getRentalListingValidationIssues({ ...form, propertyAddress: 'Example Road', landlordEmail: 'bad', mandateEndDate: 'impossible', videoLink: 'bad', selectedSyndicationChannels: [] }, { organisationId: 'org' })
+ expect(issues).toEqual(expect.arrayContaining([
+  expect.objectContaining({ field: 'landlordEmail', step: 'landlord' }),
+  expect.objectContaining({ field: 'mandateEndDate', step: 'landlord' }),
+  expect.objectContaining({ field: 'videoLink', step: 'marketing' }),
+ ]))
+})
+
+
+it('keeps a private rental with invalid rent out of the ready state while permitting an unfinished draft', () => {
+ for (const monthlyRent of ['-1', '0', '', 'Infinity']) {
+  const issues = getRentalListingValidationIssues({ ...form, propertyAddress: 'Example Road', selectedSyndicationChannels: [], monthlyRent }, { organisationId: 'org' })
+  expect(issues).toContainEqual(expect.objectContaining({ field: 'monthlyRent', step: 'terms', channels: [] }))
+ }
+})
+
+
+it('combines identical basic and channel reasons without mutating the validators', () => {
+ const source = [{ field: 'monthlyRent', message: 'Enter a positive rent.', channels: [] }, { field: 'monthlyRent', message: 'Enter a positive rent.', channels: ['property24', 'private_property'] }]
+ const group = groupListingFieldIssues(source)[0]
+ expect(group.basic).toBe(true)
+ expect(group.requirements).toHaveLength(1)
+ expect(group.requirements[0].channels).toEqual(['property24', 'private_property'])
+ expect(source[0].channels).toEqual([])
 })

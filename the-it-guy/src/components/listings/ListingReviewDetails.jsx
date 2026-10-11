@@ -1,3 +1,4 @@
+import { plainPropertyFieldLabel } from '../../services/listings/listingAdvertPreviewModel'
 import { getPropertyCategoryLabel, getPropertyTypeLabel } from '../../lib/propertyTaxonomy'
 import { getSpecialistSalesListingSchema } from '../../services/listings/specialistSalesListingSchema'
 
@@ -20,7 +21,7 @@ export default function ListingReviewDetails({ form, rental = false, onEdit }) {
       ['Deposit', form.depositPolicy === 'no_deposit' ? 'No deposit' : money(form.depositAmount)],
       ['Deposit notes', display(form.depositRequirement)], ['Available from', display(form.availableFrom)], ['Lease length', form.leasePeriodType === 'month_to_month' ? 'Month to month' : form.leasePeriodType === 'negotiable' ? 'Negotiable' : form.leasePeriodMonths ? `${form.leasePeriodMonths} months` : 'Not added'],
     ] : [['Advertised price', form.priceOnApplication ? 'Price on Application' : money(form.listingPrice || form.estimatedAskingPrice)]] },
-    ...(!rental && getSpecialistSalesListingSchema(form.propertyCategory, form.listingType).fields.length ? [{ title: 'Extra property details', step: 'marketing', rows: getSpecialistSalesListingSchema(form.propertyCategory, form.listingType).fields.filter(field => field.key !== 'erfSize').map(field => [field.label, field.unit ? size(form[field.key], field.unit) : typeof form[field.key] === 'boolean' ? (form[field.key] ? 'Yes' : 'No') : display(form[field.key])]) }] : []),
+    ...(!rental && getSpecialistSalesListingSchema(form.propertyCategory, form.listingType).fields.length ? [{ title: 'Extra property details', step: 'marketing', rows: getSpecialistSalesListingSchema(form.propertyCategory, form.listingType).fields.filter(field => field.key !== 'erfSize').map(field => [plainPropertyFieldLabel(field), field.unit ? size(form[field.key], field.unit === 'ha' ? 'hectares' : field.unit) : typeof form[field.key] === 'boolean' ? (form[field.key] ? 'Yes' : 'No') : display(form[field.key])]) }] : []),
     { title: 'Photos and description', step: 'marketing', rows: [
       ['Photos', String((rental ? form.galleryImages : form.listingImages)?.length || 0)],
       ['Listing title', display(rental ? form.title : form.listingTitle)], ['Description', display(rental ? form.description : form.listingDescription)],
