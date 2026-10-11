@@ -234,6 +234,14 @@ test('the standalone website artifact serves its own CRM APIs', async (t) => {
       }
     })
 
+    await t.test('the public CSS is compiled and removes the browser outer margin', async () => {
+      const stylesheets = frontendBuild.output.filter((item) => item.type === 'asset' && item.fileName.endsWith('.css'))
+      assert.ok(stylesheets.length > 0)
+      const css = stylesheets.map((item) => String(item.source)).join('\n')
+      assert.doesNotMatch(css, /@(?:tailwind|apply)\b/)
+      assert.match(css, /body\{[^}]*margin:0(?:[;}])/)
+    })
+
     await t.test('only Home Seekers functions are bundled and project identity is fixed', async () => {
       assert.deepEqual((await readdir(join(outputRoot, 'functions/api'))), ['home-seekers'])
       assert.deepEqual((await readdir(join(outputRoot, 'functions/api/home-seekers'))).sort(), HOME_SEEKERS_FUNCTIONS.map((name) => `${name}.func`).sort())

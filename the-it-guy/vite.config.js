@@ -376,6 +376,8 @@ export default defineConfig({
   // Shared Edge/editor code resolves the parser from this app's pinned package.
   resolve: { dedupe: ['parse5'] },
   plugins: [documentTitleFallbackPlugin(), releaseIntegrityPlugin(), react(), missionControlApiPlugin()],
+  // Saved HTML previews can reference disposable Vite cache files.
+  optimizeDeps: { entries: ['index.html', 'home-seekers.html'] },
   build: {
     chunkSizeWarningLimit: 1800,
     rollupOptions: {

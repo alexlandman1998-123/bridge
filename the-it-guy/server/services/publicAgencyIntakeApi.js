@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import { createClient } from '@supabase/supabase-js'
 import { resolveOnboardingBranding } from '../../src/lib/onboardingBranding.js'
 import { createRentalCrmLeadMetadata } from '../../src/services/rentals/rentalCrmLeadModel.js'
+import { normalizeAttributionTouch, normalizeUtmAttribution } from '../../src/core/clients/utmAttribution.js'
 import { writeNodeJsonResponse } from './hqMissionControlApi.js'
 
 let cachedRuntimeEnv = null
@@ -817,9 +818,13 @@ export function normalizeAgencyIntakeSubmissionPayload(payload = {}, link = {}) 
     selectedListings: normalizeSelectedListings(payload),
     sourceChannel: normalizeSourceChannel(rawSourceChannel, link.source_channel),
     campaignCode: normalizeCampaignCode(payload.campaignCode || payload.campaign_code || link.campaign_code),
-    utm: safeObject(payload.utm || payload.utm_json || safeObject(payload.context).utm),
+    utm: normalizeUtmAttribution(payload.utm || payload.utm_json || safeObject(payload.context).utm),
     metadata: {
       ...safeObject(payload.context || payload.requestMetadata || payload.request_metadata),
+      clientAttribution: {
+        firstTouch: normalizeAttributionTouch(safeObject(payload.context).clientAttribution?.firstTouch),
+        lastTouch: normalizeAttributionTouch(safeObject(payload.context).clientAttribution?.lastTouch),
+      },
       ...(rawSourceChannel ? { originalSourceChannel: rawSourceChannel } : {}),
     },
     privacyConsent: payload.privacyConsent === true || payload.privacy_consent === true,

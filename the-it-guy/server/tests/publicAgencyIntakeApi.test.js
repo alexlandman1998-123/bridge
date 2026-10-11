@@ -7,12 +7,21 @@ import {
   buildPublicIntakeSupervisorLeadOperationsPayload,
   createPublicAgencyIntakeResponse,
   normalizeAgencyIntakeSlug,
+  normalizeAgencyIntakeSubmissionPayload,
   resolveAgencyPublicIntakeSlugCandidates,
   selectPublicIntakeFallbackOwner,
   validateAgencyIntakeSubmission,
 } from '../services/publicAgencyIntakeApi.js'
 
 assert.equal(normalizeAgencyIntakeSlug(' Kingstons-Atlantic '), 'kingstons-atlantic')
+const boundedTracking = normalizeAgencyIntakeSubmissionPayload({
+  utm: { utmSource: ' Facebook ', utm_medium: 'paid_social', utm_campaign: 'x'.repeat(300), utm_content: { token: 'secret' }, password: 'secret' },
+  context: { clientAttribution: { firstTouch: { sourceChannel: 'qr', utm: { utmSource: 'qr' }, capturedAt: '2026-10-09T10:00:00Z', landingHost: 'revo.co.za', clientId: 'forged', token: 'secret' } } },
+})
+assert.deepEqual(boundedTracking.utm, { utm_source: 'Facebook', utm_medium: 'paid_social', utm_campaign: 'x'.repeat(160) })
+assert.equal(boundedTracking.metadata.clientAttribution.firstTouch.utm.utm_source, 'qr')
+assert(!JSON.stringify(boundedTracking.metadata.clientAttribution).includes('secret'))
+assert(!JSON.stringify(boundedTracking.metadata.clientAttribution).includes('forged'))
 assert.deepEqual(
   resolveAgencyPublicIntakeSlugCandidates(' Kingstons '),
   ['kingstons', 'kingstons-real-estate'],
