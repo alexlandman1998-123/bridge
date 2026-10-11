@@ -1,3 +1,4 @@
+import ListingLandSizeInput from '../../components/listings/ListingLandSizeInput'
 import ListingAdvertisingChoices from '../../components/listings/ListingAdvertisingChoices'
 import ListingReviewDetails from '../../components/listings/ListingReviewDetails'
 import { RENTAL_SAVED_NOT_SENT_MESSAGE } from '../../services/listings/listingCaptureModel'
@@ -365,7 +366,8 @@ function ScopedRentalListingCreatePage() {
   useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false } }, [])
 
   const [channelAvailability, setChannelAvailability] = useState(UNAVAILABLE_SYNDICATION_CHANNELS)
-  useEffect(() => { let cancelled = false; getSyndicationChannelAvailability(organisationId, { listingType: 'rental' }).then(value => { if (!cancelled) setChannelAvailability(value) }).catch(() => {}); return () => { cancelled = true } }, [organisationId])
+  const [channelAvailabilityLoading, setChannelAvailabilityLoading] = useState(true)
+  useEffect(() => { let cancelled = false; setChannelAvailabilityLoading(true); getSyndicationChannelAvailability(organisationId, { listingType: 'rental' }).then(value => { if (!cancelled) setChannelAvailability(value) }).catch(() => { if (!cancelled) setChannelAvailability(UNAVAILABLE_SYNDICATION_CHANNELS) }).finally(() => { if (!cancelled) setChannelAvailabilityLoading(false) }); return () => { cancelled = true } }, [organisationId])
   const fieldIssues = useMemo(() => getRentalListingValidationIssues(form, { organisationId }), [form, organisationId])
   const includeLandlordStep = isEditing || activeStep === 'landlord' || fieldIssues.some(issue => issue.step === 'landlord')
   const steps = useMemo(() => CREATE_STEPS.filter(step => includeLandlordStep || step.key !== 'landlord').map(step => isEditing && !isDraftCapture && step.key === 'review' ? { ...step, label: 'Check & save' } : step), [isEditing, isDraftCapture, includeLandlordStep])
@@ -869,9 +871,9 @@ function ScopedRentalListingCreatePage() {
           </div>
         </header>
 
-        <ListingSaveStatus cloud={cloudSave} recovery={recoveryProtection.status} dirty={unsavedToListings} />
+        <ListingSaveStatus cloud={{ ...cloudSave, message: saveProgress }} recovery={recoveryProtection.status} dirty={unsavedToListings} />
         {cloudSave.status === 'saved' && !isEditing && pendingListingId ? <Button type="button" onClick={() => navigate('/agent/rentals/listings')}>Back to Listings</Button> : null}
-        {saving && saveProgress ? <p role="status" className="px-4 py-3 text-sm font-semibold text-[#607891]">{saveProgress}</p> : null}
+
         {recovering ? <p role="status" className="px-4 text-sm text-[#607891]">Checking the saved rental before retrying…</p> : null}
         {pendingListingId && error ? <p className="px-4 text-sm text-[#607891]">Your rental draft already exists. Retry saving here to finish its photos and marketing without creating another listing.</p> : null}
         {error && !validationErrors.includes(error) ? (
@@ -897,7 +899,7 @@ function ScopedRentalListingCreatePage() {
         <div className="grid w-full min-w-0 max-w-full gap-6">
           {linkedLandlordLead ? <p className="rounded-[8px] border border-[#cfe8dc] bg-[#f2fbf5] px-4 py-3 text-sm font-semibold text-[#286b43]">Creating this listing for landlord lead {linkedLandlordLead.name}. The listing will be linked after it is created.</p> : null}
           {activeStep === 'property' ? <FormSection>
-            <ListingAdvertisingChoices selected={form.selectedSyndicationChannels} availability={channelAvailability} onToggle={toggleDistributionChannel} />
+            <ListingAdvertisingChoices selected={form.selectedSyndicationChannels} availability={channelAvailability} loading={channelAvailabilityLoading} onToggle={toggleDistributionChannel} />
             <section>
               <h3 id="rental-property-category-label" className="text-sm font-semibold text-[#18324b]">Property category</h3>
               <div role="group" aria-labelledby="rental-property-category-label" className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -950,7 +952,7 @@ function ScopedRentalListingCreatePage() {
               {['commercial', 'industrial', 'retail'].includes(form.propertyCategory) ? <details data-listing-rooms className="mt-4 rounded-xl border border-[#dbe6f2] p-4"><summary className="cursor-pointer text-sm font-semibold">Living accommodation (optional)</summary><div className="mt-4"><PropertyCounter name="bedrooms" label="Bedrooms" value={form.bedrooms} onChange={value => updateForm('bedrooms', value)} /></div></details> : null}
               <div className="mt-4 grid gap-4 md:grid-cols-2">
                 {form.propertyCategory !== 'vacant_land' ? <label className="form-field"><span>Floor size (m²)</span><input type="number" min="0" step="0.1" {...formField('floorSize', form.floorSize, updateForm)} placeholder="120" /></label> : null}
-                <label className="form-field"><span>Land size (m²)</span><input type="number" min="0" step="0.1" {...formField('erfSize', form.erfSize, updateForm)} placeholder="350" /></label>
+                <ListingLandSizeInput value={form.erfSize} onChange={value => updateForm('erfSize', value)} />
               </div>
               {['residential', 'agricultural'].includes(form.propertyCategory) ? <details className="mt-5 rounded-xl border border-[#dbe6f2] bg-[#fbfdff] p-4">
                 <summary className="cursor-pointer text-sm font-semibold text-[#1f4f78]">More specifications</summary>
@@ -1035,8 +1037,8 @@ function ScopedRentalListingCreatePage() {
               <RentalTermsCard title="Availability & lease" icon={CalendarDays}>
                 <label className="form-field"><span>Available from</span><input type="date" {...formField('availableFrom', form.availableFrom, updateForm)} /></label>
                 <label className="form-field"><span>Occupation date</span><input type="date" {...formField('occupationDate', form.occupationDate, updateForm)} /></label>
-                <label className="form-field"><span>Lease period (months)</span><input type="number" min="1" {...formField('leasePeriodMonths', form.leasePeriodMonths, updateForm)} /></label>
-                <SelectField label="Lease period type" name="leasePeriodType" value={form.leasePeriodType} onChange={updateForm} options={RENTAL_SELECT_OPTIONS.leasePeriodType} />
+                <SelectField label="Lease length" name="leasePeriodType" value={['month_to_month', 'negotiable'].includes(form.leasePeriodType) ? form.leasePeriodType : 'fixed'} onChange={(_, value) => setForm(current => ({ ...current, leasePeriodType: value === 'fixed' ? `fixed_${current.leasePeriodMonths || 12}_months` : value, leasePeriodMonths: value === 'fixed' ? current.leasePeriodMonths || '12' : '' }))} options={[{ value: 'fixed', label: 'Fixed number of months' }, { value: 'month_to_month', label: 'Month to month' }, { value: 'negotiable', label: 'Negotiable' }]} />
+                {!['month_to_month', 'negotiable'].includes(form.leasePeriodType) ? <label className="form-field"><span>Number of months</span><input type="number" min="1" step="1" name="leasePeriodMonths" value={form.leasePeriodMonths} onChange={event => { const value = event.target.value; setForm(current => ({ ...current, leasePeriodMonths: value, leasePeriodType: `fixed_${value}_months` })) }} /></label> : null}
                 <div className="sm:col-span-2"><SelectField label="Rental type" name="rentalMandateType" value={form.rentalMandateType} onChange={updateForm} options={RENTAL_SELECT_OPTIONS.rentalMandateType} /></div>
               </RentalTermsCard>
 
@@ -1152,7 +1154,7 @@ function ScopedRentalListingCreatePage() {
                   : channel.key === 'agency_website' && form.galleryImages.length < 1
                     ? 'Add at least 1 photo.'
                     : ''
-                return <ListingSyndicationChannelCard key={channel.key} channel={{ ...channel, availability: channelAvailability[channel.key] }} selected={selected} disabled={!channelAvailability[channel.key]?.available} needsAttention={!channelAvailability[channel.key]?.available ? 'Connection needed' : selected && validationAttemptedStep === activeStep ? needsAttention : ''} onToggle={toggleDistributionChannel} agencyLogo={agencyLogo} />
+                return <ListingSyndicationChannelCard key={channel.key} channel={{ ...channel, availability: channelAvailability[channel.key] }} selected={selected} disabled={channelAvailabilityLoading || !channelAvailability[channel.key]?.available} needsAttention={channelAvailabilityLoading ? 'Checking connection…' : !channelAvailability[channel.key]?.available ? 'Connection needed' : selected && validationAttemptedStep === activeStep ? needsAttention : ''} onToggle={toggleDistributionChannel} agencyLogo={agencyLogo} />
               })}
               <ListingSyndicationChannelCard channel={{ key: 'arch9_internal', label: 'Arch9 Platform', internalOnly: true }} selected />
             </div>
@@ -1160,7 +1162,7 @@ function ScopedRentalListingCreatePage() {
               <span>Selected channels need more photos.</span>
               <button type="button" data-rental-control="syndication-photos" className="font-semibold underline underline-offset-2" onClick={() => goToStep('marketing')}>Add photos</button>
             </div> : null}
-            <p className="text-xs leading-5 text-[#607891]">{isEditing ? 'Save rental changes saves your details here. It does not update public adverts. Send updates from the saved listing when you are ready.' : 'Choose the websites for this rental. Only the final publish button saves and sends it. You can add landlord and mandate details later.'}</p>
+            <p className="text-xs leading-5 text-[#607891]">{isEditing ? 'Save rental changes saves your details here. It does not update public adverts. Send updates from the saved listing when you are ready.' : 'Choose the websites for this rental. Save draft keeps it private. Save and publish sends it to your selected websites. You can add landlord and mandate details after saving.'}</p>
           </FormSection> : null}
 
           {activeStep === 'review' ? <section className="ui-panel ui-panel-body grid gap-6">

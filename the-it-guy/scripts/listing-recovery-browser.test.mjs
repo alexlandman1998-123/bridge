@@ -337,6 +337,11 @@ try {
     await page.getByRole('button', { name: 'Save draft', exact: true }).click()
     if (kind === 'sale') await page.waitForURL(/\/listings\/[^/]+\/edit/)
     else await page.getByText(/^Saved to Listings at/).waitFor()
+    if (kind === 'sale') {
+     await page.getByText(/^Saved to Listings at/).waitFor()
+     assert.equal(await page.getByText('Your unsaved listing changes were restored on this device.', { exact: true }).count(), 0)
+     assert.equal(await page.getByText(/Changes in this form have not been saved/).count(), 0)
+    }
     const created = fixture.events.slice(eventOffset).find(event => event.kind === 'create')
     assert.ok(created, 'Save draft must create a durable record')
     const savedId = created.body.options.creationId || created.body.options.rentalCreationId
@@ -362,6 +367,16 @@ try {
       assert.equal(await reopened.getByRole('heading', { name: 'Continue rental draft' }).count(), 1)
       await reopened.getByRole('button', { name: /Step.*Rent & deposit/ }).click()
       assert.equal(await reopened.getByLabel('Rental amount', { exact: true }).inputValue(), '')
+      await reopened.getByRole('combobox', { name: 'Lease length', exact: true }).selectOption('month_to_month')
+      assert.equal(await reopened.getByLabel('Number of months', { exact: true }).count(), 0)
+      await reopened.getByRole('combobox', { name: 'Lease length', exact: true }).selectOption('fixed')
+      await reopened.getByLabel('Number of months', { exact: true }).fill('18')
+      await reopened.getByRole('button', { name: 'Save draft', exact: true }).click()
+      await reopened.getByText(/^Saved to Listings at/).waitFor()
+      await reopened.reload({ waitUntil: 'domcontentloaded' })
+      await reopened.getByRole('button', { name: /Step.*Rent & deposit/ }).click()
+      assert.equal(await reopened.getByLabel('Number of months', { exact: true }).inputValue(), '18')
+      results.push({ category, kind, check: 'lease length uses one choice, hides irrelevant months and retains a custom 18-month private draft after reload', passed: true })
      }
      await reopened.screenshot({ path: resolve(out, category + '-' + kind + '-continued-draft.png') })
      results.push({ category, kind, check: 'draft resumes in a fresh browser with unanswered fields and advertising choices retained', passed: true })

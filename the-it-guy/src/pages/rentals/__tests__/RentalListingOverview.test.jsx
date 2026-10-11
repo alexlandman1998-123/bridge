@@ -29,3 +29,11 @@ it('links application records to the rental application workspace', () => {
   fireEvent.click(screen.getByRole('button', { name: 'Amy Tenant submitted' }))
   expect(navigate).toHaveBeenCalledWith('/agent/rentals/applications/application-1')
 })
+
+it('distinguishes missing room counts from an explicit studio zero', () => {
+  const snapshot = buildRentalListingOverview({ listing: { id: 'listing-1' } })
+  render(<RentalListingOverview detail={{ ...detail, row: { ...detail.row, bedrooms: 0, bathrooms: null, parkingBays: '' } }} snapshot={snapshot} />)
+  expect(screen.getByText('Bedrooms: 0')).toBeTruthy()
+  expect(screen.getByText('Bathrooms: Not captured')).toBeTruthy()
+  expect(screen.getByText('Parking: Not captured')).toBeTruthy()
+})

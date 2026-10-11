@@ -92,3 +92,9 @@ it('does not overwrite saved photos after a transient read failure', async () =>
  expect((await readListingRecoveryDraft(scope)).form.title).toBe('Recovered edit')
  await clearListingRecoveryDraft(scope)
 })
+
+it('does not restore a recovery copy that is identical to the confirmed saved form', () => {
+ const form = { listingTitle: 'Saved', listingImages: [], listingPrice: '1234567' }
+ expect(reconcileListingEditRecovery({ form, recovery: { baseForm: form, baseRevision: 'saved|' } }, form, 'saved|')).toBeNull()
+ expect(reconcileListingEditRecovery({ form, recovery: { baseForm: form, baseRevision: 'old|' } }, { ...form, listingPrice: '1300000' }, 'new|')).toBeNull()
+})

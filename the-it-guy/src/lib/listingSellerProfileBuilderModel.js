@@ -229,6 +229,7 @@ export function getListingSellerFormData(listing = {}) {
 }
 
 function getCanonicalFacts(listing = {}) {
+  if (!listing || typeof listing !== 'object') return {}
   const onboarding = listing.sellerOnboarding || listing.seller_onboarding || {}
   const form = onboarding.formData || onboarding.form_data || listing.sellerOnboardingFormData || listing.seller_onboarding_form_data || {}
   return [onboarding.storedCanonicalFacts, onboarding.canonicalFacts, onboarding.canonical_facts_json,

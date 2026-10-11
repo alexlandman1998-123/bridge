@@ -43,7 +43,7 @@ export default function AgentWorkspaceListings({ agent }) {
     let cancelled = false
     const ids = JSON.parse(imageKey).map(([id]) => id)
     if (!ids.length || !organisationId) return undefined
-    getPrivateListingCoverImageUrls(ids).then((urls) => {
+    getPrivateListingCoverImageUrls(ids, { thumbnail: true }).then((urls) => {
       if (!cancelled) { setCovers((current) => ({ ...current, ...Object.fromEntries(ids.map((id) => [id, urls[id] || ''])) })); setImageError('') }
     }).catch(() => { if (!cancelled) setImageError('Listing photos could not be loaded.') })
     return () => { cancelled = true }

@@ -1,3 +1,4 @@
+import { getListingDescriptionConflicts } from '../../services/listings/listingDescriptionConsistency'
 import { plainPropertyFieldLabel } from '../../services/listings/listingAdvertPreviewModel'
 import { getPropertyCategoryLabel, getPropertyTypeLabel } from '../../lib/propertyTaxonomy'
 import { getSpecialistSalesListingSchema } from '../../services/listings/specialistSalesListingSchema'
@@ -29,6 +30,7 @@ export default function ListingReviewDetails({ form, rental = false, onEdit }) {
     ] },
   ]
   return <div className="grid min-w-0 gap-4 md:grid-cols-2" aria-label="Listing review details">
+    {getListingDescriptionConflicts(form, rental).map(message => <div key={message} role="alert" className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm md:col-span-2"><p>{message}</p><button type="button" className="underline" onClick={() => onEdit('marketing')}>Review description</button></div>)}
     {sections.map(section => <section key={section.title} className="min-w-0 rounded-xl border border-[#dbe6f2] bg-[#fbfdff] p-4">
       <div className="flex items-start justify-between gap-3"><h3 className="font-semibold">{section.title}</h3><button type="button" className="shrink-0 text-sm underline" onClick={() => onEdit(section.step)}>Edit {section.title.toLowerCase()}</button></div>
       <dl className="mt-3 grid gap-3 text-sm">{section.rows.map(([label, value]) => <div key={label}><dt className="font-semibold text-[#18324b]">{label}</dt><dd className="m-0 whitespace-pre-wrap break-words text-[#607387]">{value}</dd></div>)}</dl>

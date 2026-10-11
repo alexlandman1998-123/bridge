@@ -60,6 +60,7 @@ export function reconcileListingEditRecovery(draft, currentForm, currentRevision
     if (key === 'expectedUpdatedAt') continue
     if (!base || JSON.stringify(value) !== JSON.stringify(base[key])) form[key] = value
   }
+  if (base && JSON.stringify(form) === JSON.stringify(currentForm)) return null
   return { form, conflict: !base || draft.recovery?.baseRevision !== currentRevision }
 }
 function openDatabase() {

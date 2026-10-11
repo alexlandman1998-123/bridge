@@ -68,8 +68,8 @@ try {
       if (await optionalRooms.count()) await optionalRooms.click()
       const type = await page.getByRole('combobox', { name: 'Property type *', exact: true }).inputValue()
       if (category !== 'residential') check(`[UX-05] ${category}/sale category cannot retain House`, () => assert.notEqual(type.toLowerCase(), 'house'))
-      for (const [label, value] of (category === 'vacant_land' ? [['Land size m²', '500.5']] : [['Bathrooms', '2.5'], ['Floor size m²', '98.5'], ['Land size m²', '500.5']])) {
-        const input = page.getByRole('textbox', { name: label, exact: true })
+      for (const [label, value] of (category === 'vacant_land' ? [['Land size (m²)', '500.5']] : [['Bathrooms', '2.5'], ['Floor size m²', '98.5'], ['Land size (m²)', '500.5']])) {
+        const input = page.getByRole(label.startsWith('Land size') ? 'spinbutton' : 'textbox', { name: label, exact: true })
         await input.fill(value)
         const actual = await input.inputValue()
         check(`[UX-02] ${category}/sale ${label} preserves decimal`, () => assert.equal(actual, value))
@@ -137,7 +137,7 @@ try {
         await page.getByRole('button', { name: 'Step 1: Property details', exact: true }).click()
         const reopenedRooms = page.locator('details[data-listing-rooms]')
         if (await reopenedRooms.count() && await reopenedRooms.getAttribute('open') === null) await reopenedRooms.locator('summary').click()
-        const amounts = await Promise.all((category === 'vacant_land' ? ['Land size m²'] : ['Bathrooms', 'Floor size m²', 'Land size m²']).map(name => page.getByRole('textbox', { name, exact: true }).inputValue()))
+        const amounts = await Promise.all((category === 'vacant_land' ? ['Land size (m²)'] : ['Bathrooms', 'Floor size m²', 'Land size (m²)']).map(name => page.getByRole(name.startsWith('Land size') ? 'spinbutton' : 'textbox', { name, exact: true }).inputValue()))
         check(`[UX-02] ${category}/sale decimal measurements survive reopening`, () => assert.deepEqual(amounts, category === 'vacant_land' ? ['500.5'] : ['2.5', '98.5', '500.5']))
       }
       if (category === 'residential') {

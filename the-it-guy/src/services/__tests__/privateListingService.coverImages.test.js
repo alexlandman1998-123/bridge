@@ -45,10 +45,11 @@ test('loads one cover URL per requested listing and falls back to image order', 
           order() {
             return this
           },
+          limit(value) { this.maximum = value; return this },
           then(resolve) {
             queries.push({ ids: [...this.ids], filters: [...this.filters] })
             resolve({
-              data: mediaRows.filter((row) => this.ids.includes(row.listing_id) && this.filters.every(({ column, value }) => row[column] === value)),
+              data: mediaRows.filter((row) => this.ids.includes(row.listing_id) && this.filters.every(({ column, value }) => row[column] === value)).sort((a, b) => a.sort_order - b.sort_order).slice(0, this.maximum),
               error: null,
             })
           },
@@ -64,7 +65,7 @@ test('loads one cover URL per requested listing and falls back to image order', 
         ids: [FIRST_LISTING_ID, SECOND_LISTING_ID],
         filters: [{ column: 'media_type', value: 'image' }, { column: 'is_cover', value: true }],
       },
-      { ids: [SECOND_LISTING_ID], filters: [] },
+      { ids: [SECOND_LISTING_ID], filters: [{ column: 'media_type', value: 'image' }] },
     ])
     assert.deepEqual(urls, {
       [FIRST_LISTING_ID]: 'https://example.test/cover.jpg',
@@ -112,4 +113,37 @@ test('uses a card-sized public image and retains its original as a fallback', as
   } finally {
     await server.close()
   }
+})
+
+test('private cover thumbnails retain an original fallback and report cards progressively', async () => {
+  const server = await createServer({ root: PROJECT_ROOT, logLevel: 'silent', server: { middlewareMode: true } })
+  try {
+    const { getPrivateListingCoverImageUrls, getListingCardImageSource } = await server.ssrLoadModule('/src/services/privateListingService.js')
+    const path = `private-listings/${FIRST_LISTING_ID}/gallery/cover.jpg`
+    const original = 'https://arch9.supabase.co/storage/v1/object/sign/documents/cover?token=fixture'
+    const thumbnail = 'https://arch9.supabase.co/storage/v1/render/image/sign/documents/cover?token=fixture'
+    const signedPaths = [], progress = []
+    const client = {
+      supabaseUrl: 'https://arch9.supabase.co',
+      from: () => ({ select() { return this }, in() { return this }, eq() { return this }, order() { return this },
+        then(resolve) { resolve({ data: [{ listing_id: FIRST_LISTING_ID, media_type: 'image', is_cover: true, storage_bucket: 'documents', storage_path: path }] }) } }),
+      storage: { from(bucket) {
+        assert.equal(bucket, 'documents')
+        return {
+          async createSignedUrls(paths) { signedPaths.push(...paths); return { data: paths.map(path => ({ path, signedUrl: original })) } },
+          async createSignedUrl(actual, expiry, options) {
+            assert.equal(actual, path); assert.equal(expiry, 3600)
+            assert.deepEqual(options.transform, { width: 480, height: 264, resize: 'cover', quality: 72 })
+            return { data: { signedUrl: thumbnail } }
+          },
+        }
+      } },
+    }
+    const urls = await getPrivateListingCoverImageUrls([FIRST_LISTING_ID], { client, thumbnail: true, onCover: value => progress.push(value) })
+    assert.deepEqual(signedPaths, [path])
+    assert.deepEqual(progress, [{ [FIRST_LISTING_ID]: thumbnail }])
+    assert.deepEqual(getListingCardImageSource(urls[FIRST_LISTING_ID], { client }), { src: thumbnail, fallbackSrc: original })
+    client.storage.from = () => ({ createSignedUrls: async () => ({ data: [{ path, signedUrl: original }] }), createSignedUrl: async () => ({ error: new Error('Transformation unavailable') }) })
+    assert.equal((await getPrivateListingCoverImageUrls([FIRST_LISTING_ID], { client, thumbnail: true }))[FIRST_LISTING_ID], original)
+  } finally { await server.close() }
 })

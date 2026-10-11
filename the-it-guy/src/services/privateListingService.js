@@ -798,7 +798,9 @@ async function fetchMediaRowsForListings(client, listingIds = [], { strict = fal
   return mediaByListingId
 }
 
-export async function getPrivateListingCoverImageUrls(listingIds = [], { client = requireClient() } = {}) {
+const privateCoverFallbacks = new Map()
+
+export async function getPrivateListingCoverImageUrls(listingIds = [], { client = requireClient(), onCover = () => {}, thumbnail = false } = {}) {
   const ids = [...new Set((Array.isArray(listingIds) ? listingIds : []).map(normalizeUuid).filter(Boolean))]
   if (!ids.length) return {}
 
@@ -819,30 +821,52 @@ export async function getPrivateListingCoverImageUrls(listingIds = [], { client 
   }
 
   const coverUrls = {}
-  for (const row of await refreshListingPhotoUrls(client, coverQuery.data || [])) {
+  const publishCover = async (row) => {
     const listingId = normalizeText(row?.listing_id)
-    if (listingId && !coverUrls[listingId]) coverUrls[listingId] = normalizeText(row?.file_url)
-  }
-
-  const missingIds = ids.filter((id) => !coverUrls[id])
-  const fallbackBatches = []
-  for (let index = 0; index < missingIds.length; index += 10) {
-    fallbackBatches.push(fetchMediaRowsForListings(client, missingIds.slice(index, index + 10)))
-  }
-  const fallbackMaps = await Promise.all(fallbackBatches)
-  for (const mediaByListingId of fallbackMaps) {
-    for (const [listingId, rows] of mediaByListingId) {
-      coverUrls[listingId] = normalizeListingMediaRows(rows)[0]?.url || ''
+    if (!listingId || coverUrls[listingId]) return
+    const [photo] = await refreshListingPhotoUrls(client, [row])
+    let url = normalizeText(photo?.file_url)
+    if (thumbnail && url && photo.storage_bucket && photo.storage_path) {
+      try {
+        const { data, error } = await client.storage.from(photo.storage_bucket).createSignedUrl(photo.storage_path, 3600, {
+          transform: { width: 480, height: 264, resize: 'cover', quality: 72 },
+        })
+        if (!error && data?.signedUrl) {
+          privateCoverFallbacks.set(data.signedUrl, url)
+          if (privateCoverFallbacks.size > 500) privateCoverFallbacks.delete(privateCoverFallbacks.keys().next().value)
+          url = data.signedUrl
+        }
+      } catch { /* Keep the original private link when resizing is unavailable. */ }
     }
+    coverUrls[listingId] = url
+    onCover({ [listingId]: url })
+  }
+  const coversById = new Map()
+  for (const row of coverQuery.data || []) if (!coversById.has(row.listing_id)) coversById.set(row.listing_id, row)
+  // Resolve each card independently. Never retrieve/sign a whole gallery for its cover.
+  for (let index = 0; index < ids.length; index += 6) {
+    await Promise.all(ids.slice(index, index + 6).map(async (id) => {
+      let row = coversById.get(id)
+      if (!row) {
+        const fallback = await client.from('listing_media')
+          .select('listing_id, media_type, file_url, is_cover, sort_order, storage_bucket, storage_path')
+          .in('listing_id', [id]).eq('media_type', 'image')
+          .order('sort_order', { ascending: true }).order('id', { ascending: true }).limit(1)
+        if (fallback.error) throw fallback.error
+        row = fallback.data?.[0]
+      }
+      if (row) await publishCover(row)
+    }))
   }
 
   return coverUrls
 }
 
-// Only public Arch9 listing media can be resized without changing access rules.
-// External portal images and signed/private URLs retain their original URL.
+// Covers signed with a transform retain their original private viewing fallback.
+// Other private/external URLs are never rewritten; public media uses the public transform API.
 export function getListingCardImageSource(originalUrl = '', { client = supabase } = {}) {
   const url = normalizeText(originalUrl)
+  if (privateCoverFallbacks.has(url)) return { src: url, fallbackSrc: privateCoverFallbacks.get(url) }
   if (!url) return { src: '', fallbackSrc: '' }
   try {
     const parsed = new URL(url)
@@ -6574,6 +6598,13 @@ export async function getAgentPrivateListingSummaries(
   const createSummaryQuery = ({ includeIsActive = true, offset = 0 } = {}) => {
     const coreSelectColumns = [
       'id',
+      'property24_status',
+      'property24_reference',
+      'property24_listing_url',
+      'private_property_status',
+      'private_property_reference',
+      'private_property_listing_url',
+      'bridge_listing_status',
       'listing_reference',
       'listing_status',
       'listing_visibility',

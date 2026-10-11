@@ -136,7 +136,7 @@ export function buildRentalListingEditForm(listing = {}) {
     depositMultiplier: formValue(row.depositMultiplier || RENTAL_LISTING_INITIAL_FORM.depositMultiplier),
     availableFrom: normalizeText(row.availableFrom),
     occupationDate: normalizeText(row.occupationDate),
-    leasePeriodMonths: formValue(row.leasePeriodMonths || RENTAL_LISTING_INITIAL_FORM.leasePeriodMonths),
+    leasePeriodMonths: ['month_to_month', 'negotiable'].includes(row.leasePeriodType) ? '' : formValue(row.leasePeriodMonths ?? RENTAL_LISTING_INITIAL_FORM.leasePeriodMonths),
     leasePeriodType: normalizeText(row.leasePeriodType) || RENTAL_LISTING_INITIAL_FORM.leasePeriodType,
     rentalMandateType: normalizeText(rentalInfo.rentalMandateType || rentalInfo.rental_mandate_type) || RENTAL_LISTING_INITIAL_FORM.rentalMandateType,
     rentalIncludes: normalizeText(row.rentalIncludes),

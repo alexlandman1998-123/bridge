@@ -39,10 +39,13 @@ test('mobile inventory reads every scoped page with stable ordering and complete
   const server = await createServer({ root, logLevel: 'silent', server: { middlewareMode: true } })
   try {
     const { getAgentPrivateListingSummaries } = await server.ssrLoadModule('/src/services/privateListingService.js')
-    const rows = Array.from({ length: 405 }, (_, i) => ({ id: uuid(i), organisation_id: org, assigned_agent_id: user, listing_status: 'active', title: `Unit ${i}`, listing_category: i === 0 ? 'rental' : 'private_sale', is_active: true, development_id: i === 404 ? uuid(997) : null, unit_id: i === 404 ? uuid(996) : null, property_category: i === 404 ? 'commercial' : 'residential', seller_canonical_facts_json: { property: i === 404 ? { scheme: { unit_number: String(i) } } : { unitNumber: String(i) } } }))
+    const rows = Array.from({ length: 405 }, (_, i) => ({ id: uuid(i), organisation_id: org, assigned_agent_id: user, listing_status: 'active', property24_status: 'published', property24_reference: '117672933', private_property_status: 'published', private_property_reference: 'T5639823', title: `Unit ${i}`, listing_category: i === 0 ? 'rental' : 'private_sale', is_active: true, development_id: i === 404 ? uuid(997) : null, unit_id: i === 404 ? uuid(996) : null, property_category: i === 404 ? 'commercial' : 'residential', seller_canonical_facts_json: { property: i === 404 ? { scheme: { unit_number: String(i) } } : { unitNumber: String(i) } } }))
     const client = clientFor(rows)
     const inventory = await getAgentPrivateListingSummaries(user, { organisationId: org, fetchAll: true, coreFieldsOnly: true, includePublicationDetails: true, requireAvailable: true, client })
     assert.equal(inventory.length, 405)
+    for (const field of ['property24_status', 'property24_reference', 'property24_listing_url', 'private_property_status', 'private_property_reference', 'private_property_listing_url', 'bridge_listing_status']) assert.ok(client.requests[0].columns.split(', ').includes(field))
+    assert.equal(inventory[0].property24Status, 'published')
+    assert.equal(inventory[0].privatePropertyStatus, 'published')
     assert.deepEqual(client.requests.filter((r) => r.table === 'private_listings').map((r) => r.range), [[0, 199], [200, 399], [400, 599]])
     for (const request of client.requests.filter((r) => r.table === 'private_listings')) {
       assert.deepEqual(request.filters, [['organisation_id', org], ['assigned_agent_id', user]])

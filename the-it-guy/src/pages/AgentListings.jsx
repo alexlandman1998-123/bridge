@@ -1,3 +1,4 @@
+import ListingLandSizeInput from '../components/listings/ListingLandSizeInput'
 import ListingAdvertisingChoices from '../components/listings/ListingAdvertisingChoices'
 import ListingReviewDetails from '../components/listings/ListingReviewDetails'
 import { salesPropertyTypeOptions, salesPropertyTypeMatches, salesCategoryChange } from '../services/listings/listingCaptureModel'
@@ -1344,15 +1345,15 @@ function buildListingEditorFormFromListing(listing = {}, profile = {}, workspace
     estimatedAskingPrice: normalizeText(listing.estimatedValue || ''),
     listingPrice: normalizeText(listing.askingPrice || listingPropertyDetails.price || ''),
     listingTitle: normalizeText(listing.listingTitle || listing.title),
-    bedrooms: preferSavedPropertyFact(listing.bedrooms || listingPropertyDetails.bedrooms, recoveredPropertyFacts.bedrooms),
-    bathrooms: preferSavedPropertyFact(listing.bathrooms || listingPropertyDetails.bathrooms, recoveredPropertyFacts.bathrooms),
-    garages: preferSavedPropertyFact(listing.garages || listingPropertyDetails.garages, recoveredPropertyFacts.garages),
-    parkingCount: preferSavedPropertyFact(listing.parkingCount || listing.coveredParking || listing.openParking || listingPropertyDetails.parkingBays, recoveredPropertyFacts.parkingCount),
-    floorSize: preferSavedPropertyFact(listing.floorSize || listingPropertyDetails.floorSize, recoveredPropertyFacts.floorSize),
+    bedrooms: preferSavedPropertyFact(listing.bedrooms ?? listingPropertyDetails.bedrooms, recoveredPropertyFacts.bedrooms),
+    bathrooms: preferSavedPropertyFact(listing.bathrooms ?? listingPropertyDetails.bathrooms, recoveredPropertyFacts.bathrooms),
+    garages: preferSavedPropertyFact(listing.garages ?? listingPropertyDetails.garages, recoveredPropertyFacts.garages),
+    parkingCount: preferSavedPropertyFact(listing.parkingCount ?? listing.coveredParking ?? listing.openParking ?? listingPropertyDetails.parkingBays, recoveredPropertyFacts.parkingCount),
+    floorSize: preferSavedPropertyFact(listing.floorSize ?? listingPropertyDetails.floorSize, recoveredPropertyFacts.floorSize),
     ratesTaxes: normalizeText(listing.ratesTaxes ?? listingPropertyDetails.ratesTaxes ?? onboardingFormData.ratesTaxes ?? listing.listingPublicationData?.ratesTaxes ?? listing.publicationData?.ratesTaxes),
     levies: normalizeText(listing.levies ?? listingPropertyDetails.levies ?? onboardingFormData.levies ?? listing.listingPublicationData?.levies ?? listing.publicationData?.levies),
     grossLettableArea: normalizeText(specialistFacts.grossLettableArea),
-    erfSize: normalizeText(specialistFacts.erfSize) || preferSavedPropertyFact(listing.erfSize || listingPropertyDetails.erfSize, recoveredPropertyFacts.erfSize),
+    erfSize: normalizeText(specialistFacts.erfSize) || preferSavedPropertyFact(listing.erfSize ?? listingPropertyDetails.erfSize, recoveredPropertyFacts.erfSize),
     zoning: normalizeText(specialistFacts.zoning),
     parking: normalizeText(specialistFacts.parking),
     listingTerms: normalizeText(specialistFacts.listingTerms),
@@ -3699,6 +3700,9 @@ function AgentListings({ mobileEditor = false } = {}) {
   const [quickAddSuccess, setQuickAddSuccess] = useState(null)
   const [retryingQuickAddDocumentKey, setRetryingQuickAddDocumentKey] = useState('')
   const [isListingSaving, setIsListingSaving] = useState(false)
+  const [photoSaveProgress, setPhotoSaveProgress] = useState('')
+  const photoSaveCountRef = useRef(0)
+  useEffect(() => { photoSaveCountRef.current = 0; setPhotoSaveProgress('') }, [isListingSaving])
   const listingSaveInFlightRef = useRef(false)
   const pendingCreatedListingIdRef = useRef('')
   const listingCreationIdRef = useRef('')
@@ -3778,7 +3782,7 @@ function AgentListings({ mobileEditor = false } = {}) {
     () => CREATE_LISTING_WORKFLOW_STEPS.filter((step) => isCreateListingWorkspace && !isDeveloperWorkspace
       ? step.key !== 'seller'
       : !isListingPublicationEditor || step.key !== 'seller')
-      .map((step) => mobileEditor && isDeveloperWorkspace && step.key === 'seller' ? { ...step, label: 'Development & unit' } : step.key === 'syndication' ? { ...step, label: 'Channels' } : step),
+      .map((step) => mobileEditor && isDeveloperWorkspace && step.key === 'seller' ? { ...step, label: 'Development & unit' } : step.key === 'syndication' ? { ...step, label: 'Where to advertise' } : step),
     [isCreateListingWorkspace, isListingPublicationEditor, mobileEditor, isDeveloperWorkspace],
   )
   const selectedWorkspaceOrganisationId = useMemo(
@@ -4674,6 +4678,8 @@ function AgentListings({ mobileEditor = false } = {}) {
   }
 
   function retainUploadedListingImage(uploaded, original) {
+    photoSaveCountRef.current += 1
+    setPhotoSaveProgress(photoSaveCountRef.current < form.listingImages.length ? `Saving photos: ${photoSaveCountRef.current} of ${form.listingImages.length}…` : 'Confirming saved details…')
     if (uploaded.url !== original.url && listingImagePreviewUrlsRef.current.delete(original.url)) {
       URL.revokeObjectURL(original.url)
     }
@@ -4900,14 +4906,14 @@ function AgentListings({ mobileEditor = false } = {}) {
         throw new Error('The listing draft exists, but its photos and marketing details could not be saved. Retry to finish saving the same draft.')
       }
 
-      // Carry UI-only choices into the same account-scoped recovery key the
-      // editor reads, using the confirmed saved record as its conflict baseline.
+      // Reopen from confirmed saved values. Raw form defaults and photo previews
+      // differ from stored values and must not be mistaken for unsaved edits.
       const confirmedDraft = await getPrivateListing(listingId, { includeRequirementsAndDocuments: false })
       if (!confirmedDraft?.id) throw new Error('The draft was saved, but could not be reopened for confirmation. Keep this tab open and retry.')
-      const recoveredForm = { ...form, listingImages: savedDistribution.uploadedImages || form.listingImages }
+      const recoveredForm = buildListingEditorFormFromListing(confirmedDraft, profile, workspace)
       if (!saveCreateListingDraftToStorage(`${createListingDraftStorageKey}:edit:${listingId}`, recoveredForm, {
         step: createListingStep,
-        baseForm: buildListingEditorFormFromListing(confirmedDraft, profile, workspace),
+        baseForm: recoveredForm,
         baseRevision: listingRecoveryRevision(confirmedDraft),
       })) throw new Error('The draft was saved to Listings, but your remaining browser choices could not be protected. Keep this tab open and retry.')
       completedCreateListingRef.current = true
@@ -7672,7 +7678,7 @@ function AgentListings({ mobileEditor = false } = {}) {
     })
     if (!pending.length) return
 
-    getPrivateListingCoverImageUrls(pending.map(({ id }) => id))
+    getPrivateListingCoverImageUrls(pending.map(({ id }) => id), { thumbnail: true, onCover: urls => setCardCoverImageUrls(previous => ({ ...previous, ...urls })) })
       .then((urls) => {
         setCardCoverImageUrls((previous) => ({
           ...previous,
@@ -8220,7 +8226,7 @@ function AgentListings({ mobileEditor = false } = {}) {
 
         {error && !listingCompletionIssues.some(issue => issue.message === error) ? <p role="alert" className="rounded-[8px] border border-[#f6d4d4] bg-[#fff5f5] px-4 py-3 text-sm font-semibold text-[#b42318]">{error}</p> : null}
         {missingDraftPhotoCount > 0 ? <p className="rounded-[8px] border border-[#f3d7a8] bg-[#fff8ea] px-4 py-3 text-sm font-semibold text-[#88531a]">Your listing draft and current step have been restored. Select the {missingDraftPhotoCount} photo{missingDraftPhotoCount === 1 ? '' : 's'} again; files that had not uploaded cannot be restored after a refresh.</p> : null}
-        <ListingSaveStatus cloud={isListingSaving ? { status: 'saving' } : cloudSave} recovery={recoveryProtection.status} dirty={isEditListingWorkspace ? JSON.stringify(form) !== savedEditorFormRef.current : JSON.stringify(form) !== initialEditorFormRef.current} saveLabel={isEditListingWorkspace ? 'Save changes' : 'Save draft'} />
+        <ListingSaveStatus cloud={isListingSaving ? { status: 'saving', message: photoSaveProgress || (form.listingImages.some(image => image.file) ? `Preparing ${form.listingImages.length} photos…` : 'Saving to Listings…') } : cloudSave} recovery={recoveryProtection.status} dirty={isEditListingWorkspace ? JSON.stringify(form) !== savedEditorFormRef.current : JSON.stringify(form) !== initialEditorFormRef.current} saveLabel={isEditListingWorkspace ? 'Save changes' : 'Save draft'} />
         {workflowMessage ? <p className="rounded-[8px] border border-[#d8ecdf] bg-[#eefbf3] px-4 py-3 text-sm font-semibold text-[#1f7d44]">{workflowMessage}</p> : null}
         <ListingPublicationProgress results={initialChannelResults} saved={isEditListingWorkspace && cloudSave.status === 'saved'} title={form.listingTitle || form.propertyAddress} listingStatus={form.listingStatus} channels={form.selectedSyndicationChannels}
           unsavedChanges={isEditListingWorkspace && JSON.stringify(form) !== savedEditorFormRef.current} changesNotSent={savedChangesNotSent} retrySavesChanges
@@ -8231,6 +8237,7 @@ function AgentListings({ mobileEditor = false } = {}) {
 
         <ListingFieldIssues completion channels={form.selectedSyndicationChannels} draftNote={isEditListingWorkspace ? "Save changes needs the listing details below. Website requirements apply when publishing." : undefined} issues={listingCompletionIssues} step={createListingStep} form={form} attempted={validationAttemptedStep === createListingStep} onGoToStep={step => { setCreateListingStep(step); setError('') }} />
 
+        {!isEditListingWorkspace ? <p className="px-5 py-2 text-sm text-[#607387]">Save the property first. You can add seller and mandate details from the saved listing.</p> : null}
         <ListingWizard
           form={form}
           onEdit={step => openCreateListingStep(step, { allowForward: true })}
@@ -8245,7 +8252,7 @@ function AgentListings({ mobileEditor = false } = {}) {
               onSaveDraft={isEditListingWorkspace ? undefined : saveCreateListingDraft}
               onContinue={goToNextCreateListingStep}
               finalLabel={isEditListingWorkspace ? ['active', 'under_offer'].includes(form.listingStatus) && form.selectedSyndicationChannels?.some(channel => ['property24', 'private_property', 'agency_website'].includes(channel)) ? 'Save and publish changes' : 'Save changes' : form.listingStatus === 'draft' ? 'Save draft' : form.selectedSyndicationChannels?.length ? 'Save and publish' : 'Save listing'}
-              showSaveDraft={!isEditListingWorkspace}
+              showSaveDraft={!isEditListingWorkspace && !(isFinalCreateListingStep && form.listingStatus === 'draft')}
             />
           )}
         >
@@ -8363,7 +8370,7 @@ function AgentListings({ mobileEditor = false } = {}) {
             {createListingStep === 'property' ? (
               <div className="space-y-6">
                 <ListingWizardHeader title="Property details" />
-                <ListingAdvertisingChoices selected={form.selectedSyndicationChannels} availability={syndicationAvailability} onToggle={toggleCreateListingSyndicationChannel} />
+                <ListingAdvertisingChoices selected={form.selectedSyndicationChannels} availability={syndicationAvailability} loading={syndicationAvailabilityLoading} onToggle={toggleCreateListingSyndicationChannel} />
 
                 <ListingWizardSection title="Property category">
                   <div className="sales-property-categories" role="group" aria-label="Property category">
@@ -8378,8 +8385,8 @@ function AgentListings({ mobileEditor = false } = {}) {
                   <div className="mt-3 grid gap-4 md:grid-cols-2">
                     <FormField label="Ownership type *">
                       <Field name="propertyStructureType" as="select" value={form.propertyStructureType} onChange={(event) => updateForm('propertyStructureType', event.target.value)}>
-                        {CREATE_LISTING_PROPERTY_STRUCTURE_OPTIONS.map((option) => (
-                          <option key={option.value} value={option.value}>{option.label}</option>
+                        {CREATE_LISTING_PROPERTY_STRUCTURE_OPTIONS.filter(option => !['full_title', 'freehold'].includes(option.value) || option.value === (form.propertyStructureType === 'freehold' ? 'freehold' : 'full_title')).map((option) => (
+                          <option key={option.value} value={option.value}>{['full_title', 'freehold'].includes(option.value) ? 'Full title / freehold (land and building)' : option.label}</option>
                         ))}
                       </Field>
                     </FormField>
@@ -8464,7 +8471,7 @@ function AgentListings({ mobileEditor = false } = {}) {
                   <div className="mt-4 grid gap-4 md:grid-cols-2">
                     {form.propertyCategory !== 'vacant_land' ? <UnitInput name="floorSize" label="Floor size" value={form.floorSize} onChange={(value) => updateForm('floorSize', value)} /> : null}
                     {normalizeDirectListingKey(form.propertyType) !== 'apartment' ? (
-                      <UnitInput name="erfSize" label="Land size" value={form.erfSize} onChange={(value) => updateForm('erfSize', value)} />
+                      <ListingLandSizeInput value={form.erfSize} onChange={value => updateForm('erfSize', value)} />
                     ) : null}
                   </div>
                   <details className="mt-4 rounded-xl border border-[#dbe6f2] p-4"><summary className="cursor-pointer text-sm font-semibold">Rates and levies (optional)</summary><div className="mt-4 grid gap-4 md:grid-cols-2">
@@ -8927,8 +8934,8 @@ function AgentListings({ mobileEditor = false } = {}) {
                   imageSource={getListingCardImageSource(cardCoverImageUrls[getRemotePrivateListingId(card.listingRecord)] || card.imageUrl)}
                   priority={index < 4}
                   priceLabel={formatCurrency(card.price)}
-                  onOpen={() => navigate(['draft', 'seller_lead'].includes(String(card.listingRecord?.listingStatus || card.listingRecord?.listing_status || '').toLowerCase()) ? `/listings/${encodeURIComponent(card.id)}/edit` : `/agent/listings/${encodeURIComponent(card.id)}`)}
-                  openLabel={['draft', 'seller_lead'].includes(String(card.listingRecord?.listingStatus || card.listingRecord?.listing_status || '').toLowerCase()) ? 'Continue draft' : 'Open'}
+                  onOpen={() => navigate(!card.liveChannels?.length && ['draft', 'seller_lead'].includes(String(card.listingRecord?.listingStatus || card.listingRecord?.listing_status || '').toLowerCase()) ? `/listings/${encodeURIComponent(card.id)}/edit` : `/agent/listings/${encodeURIComponent(card.id)}`)}
+                  openLabel={!card.liveChannels?.length && ['draft', 'seller_lead'].includes(String(card.listingRecord?.listingStatus || card.listingRecord?.listing_status || '').toLowerCase()) ? 'Continue draft' : 'Open'}
                   actions={(
                     <div className="absolute right-3 top-3 z-10">
                       <button

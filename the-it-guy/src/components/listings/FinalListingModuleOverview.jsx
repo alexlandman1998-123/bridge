@@ -25,7 +25,7 @@ function ModuleLaneButton({ lane, onNavigate }) {
       <span className="min-w-0">
         <span className="block truncate text-sm font-semibold">{lane.listingLabel}</span>
         <span className="mt-1 block truncate text-xs font-medium text-[#6d8095]">
-          {countLabel} - {lane.ownerLabel}-first flow
+          {countLabel}
         </span>
       </span>
       <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#dbe6f2] bg-white text-[#1f4f78]">
