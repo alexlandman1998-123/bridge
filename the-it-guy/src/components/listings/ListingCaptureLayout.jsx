@@ -3,14 +3,14 @@ import { ImageIcon } from 'lucide-react'
 import { buildListingAdvertPreview } from '../../services/listings/listingAdvertPreviewModel'
 import './listing-capture-layout.css'
 
-export default function ListingCaptureLayout({ form, rental = false, onEdit, children, streamlined = false }) {
+export default function ListingCaptureLayout({ form, rental = false, onEdit, children, streamlined = false, showPreview = true }) {
   const [expanded, setExpanded] = useState(false)
   const previewId = useId()
   const preview = buildListingAdvertPreview(form, rental)
   return <div className={`listing-capture-layout ${streamlined ? 'sales-capture-layout' : ''}`}>
-    <div className="listing-capture-grid">
+    <div className={`listing-capture-grid ${showPreview ? '' : 'listing-capture-grid-full-width'}`}>
       <div className="listing-capture-fields">{children}</div>
-      <aside className="listing-capture-preview" aria-label="Draft advert preview">
+      {showPreview ? <aside className="listing-capture-preview" aria-label="Draft advert preview">
         <button type="button" className="listing-preview-toggle" aria-controls={previewId} aria-expanded={expanded} onClick={() => setExpanded(value => !value)}>{expanded ? 'Hide draft preview' : 'Show draft preview'}</button>
         <div id={previewId} className={`listing-preview-content ${expanded ? 'is-expanded' : ''}`}>
           <div className="listing-preview-heading"><h2>Draft advert preview</h2>{!streamlined ? <p>Updates as you type. Each website may display it differently. This preview does not save or publish.</p> : null}</div>
@@ -28,7 +28,7 @@ export default function ListingCaptureLayout({ form, rental = false, onEdit, chi
             {!streamlined ? <div className="listing-preview-edit"><button type="button" onClick={() => onEdit('property')}>Change property details</button><button type="button" onClick={() => onEdit(rental ? 'terms' : 'property')}>Change {rental ? 'rent' : 'price'}</button><button type="button" onClick={() => onEdit('marketing')}>Change photos and description</button></div> : null}
           </div>
         </div>
-      </aside>
+      </aside> : null}
     </div>
   </div>
 }

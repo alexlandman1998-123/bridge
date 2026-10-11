@@ -1,5 +1,6 @@
 .listing-capture-layout { container: listing-capture / inline-size; min-width: 0; }
 .listing-capture-grid { display: grid; gap: 24px; min-width: 0; align-items: start; }
+.listing-capture-layout .listing-capture-grid-full-width { grid-template-columns: minmax(0, 1fr); }
 .listing-capture-fields { min-width: 0; }
 .listing-capture-preview { min-width: 0; border: 1px solid #dbe6f2; border-radius: 16px; background: white; color: #18324b; overflow: hidden; }
 .listing-preview-toggle { width: 100%; min-height: 44px; padding: 14px 18px; text-align: left; font-weight: 600; }

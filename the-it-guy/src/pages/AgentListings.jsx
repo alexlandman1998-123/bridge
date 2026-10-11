@@ -5,6 +5,7 @@ import { salesPropertyTypeOptions, salesPropertyTypeMatches, salesCategoryChange
 import { applyListingSellerOnboardingSaveSnapshot } from '../services/listings/listingSellerCanonicalUpdateModel.js'
 import { saveListingRecoveryDraft, readListingRecoveryDraft, clearListingRecoveryDraft, writeListingTextRecoveryDraft, listingRecoveryRevision, reconcileListingEditRecovery } from '../services/listings/listingDraftRecovery'
 import useListingRecoveryProtection from '../hooks/useListingRecoveryProtection'
+import useListingCaptureSession from '../hooks/useListingCaptureSession'
 import ListingSaveStatus from '../components/listings/ListingSaveStatus'
 import ListingCaptureLayout from '../components/listings/ListingCaptureLayout'
 import { listingTitleExample } from '../services/listings/listingAdvertPreviewModel'
@@ -698,10 +699,10 @@ function CreateListingProgressNav({ steps = [], activeStep = 'seller', maxVisite
   )
 }
 
-function ListingWizard({ children, footer, form, onEdit, streamlined = false, anchored = streamlined }) {
+function ListingWizard({ children, footer, form, onEdit, streamlined = false, anchored = streamlined, showPreview = true }) {
   return (
     <>
-      <ListingCaptureLayout streamlined={streamlined} form={form} rental={form.listingType === 'rental'} onEdit={step => onEdit(step === 'terms' ? 'property' : step)}>
+      <ListingCaptureLayout showPreview={showPreview} streamlined={streamlined} form={form} rental={form.listingType === 'rental'} onEdit={step => onEdit(step === 'terms' ? 'property' : step)}>
         <div className="rounded-[16px] border border-[#dde6ef] bg-white px-5 py-6 shadow-[0_14px_34px_rgba(15,23,42,0.045)] sm:px-6 lg:px-8">{children}</div>
       </ListingCaptureLayout>
       <div className={`listing-capture-actions ${anchored ? 'sales-capture-actions' : ''}`}>{footer}</div>
@@ -3789,11 +3790,11 @@ function AgentListings({ mobileEditor = false } = {}) {
     () => resolveSelectedWorkspaceOrganisationId({ workspace, currentMembership }),
     [currentMembership, workspace],
   )
-  const legacyCreateListingDraftStorageKey = `${CREATE_LISTING_DRAFT_STORAGE_KEY}:${normalizeText(profile?.id || profile?.email || 'local')}`
   const createListingDraftStorageKey = `${CREATE_LISTING_DRAFT_STORAGE_KEY}:${normalizeText(profile?.id || profile?.email || 'local')}:${selectedWorkspaceOrganisationId || organisationId || 'local'}:${isDeveloperWorkspace ? 'developer' : 'sale'}:${linkedDevelopmentId || 'new'}`
+  const captureSessionId = useListingCaptureSession()
   const listingEditorDraftStorageKey = isEditListingWorkspace && editListingId
     ? `${createListingDraftStorageKey}:edit:${editListingId}`
-    : createListingDraftStorageKey
+    : `${createListingDraftStorageKey}:capture:${captureSessionId}`
 
   const createListingDraftScopeKey = `${listingEditorDraftStorageKey}:${selectedWorkspaceOrganisationId || organisationId || 'local'}`
   useEffect(() => {
@@ -4215,6 +4216,12 @@ function AgentListings({ mobileEditor = false } = {}) {
     listingCreationIdRef.current = ''
     completedCreateListingRef.current = false
     setMissingDraftPhotoCount(0)
+    setDraftRecoveryBlocked(false)
+    setForm({ ...buildInitialListingLeadForm(profile, workspace), listingStatus: 'active', quickAddIntent: 'new_listing' })
+    setCreateListingStep(listingEditorSteps[0]?.key || 'property')
+    setCreateListingMaxVisitedStep(0)
+    setQuickAddSuccess(null)
+    setCloudSave({ status: 'idle' })
     let cancelled = false
     let recoveredDraft
     void (async () => {
@@ -4222,16 +4229,6 @@ function AgentListings({ mobileEditor = false } = {}) {
       recoveredDraft = await readListingRecoveryDraft(listingEditorDraftStorageKey)
       if (cancelled) { recoveredDraft?.release(); return }
       let stored = window.localStorage.getItem(listingEditorDraftStorageKey)
-      if (!stored && !recoveredDraft) {
-        const legacy = JSON.parse(window.localStorage.getItem(legacyCreateListingDraftStorageKey) || 'null')
-        const sameOrganisation = legacy?.__draftRecovery?.organisationId === (selectedWorkspaceOrganisationId || organisationId)
-        const developerDraft = legacy?.listingCategory === 'development_unit' || Boolean(legacy?.developmentId)
-        if (legacy && sameOrganisation && developerDraft === isDeveloperWorkspace) {
-          stored = JSON.stringify(legacy)
-          window.localStorage.setItem(listingEditorDraftStorageKey, stored)
-          window.localStorage.removeItem(legacyCreateListingDraftStorageKey)
-        }
-      }
       if (!stored && !recoveredDraft) return
       const parsed = recoveredDraft ? { ...recoveredDraft.form, __draftRecovery: recoveredDraft.recovery } : JSON.parse(stored)
       if (parsed && typeof parsed === 'object') {
@@ -4240,6 +4237,11 @@ function AgentListings({ mobileEditor = false } = {}) {
         const localRecovery = stored ? JSON.parse(stored).__draftRecovery : null
         const recovery = recoveredDraft?.version === 2 ? (parsed.__draftRecovery || {}) : { ...(parsed.__draftRecovery || {}), ...(localRecovery || {}) }
         if (recovery.organisationId && recovery.organisationId !== (selectedWorkspaceOrganisationId || organisationId)) return
+        if ([recovery.pendingListingId, recovery.creationId].some(id => id && getCurrentDeletedListingIds().has(normalizeText(id)))) {
+          window.localStorage.removeItem(listingEditorDraftStorageKey)
+          await clearListingRecoveryDraft(listingEditorDraftStorageKey)
+          return
+        }
         delete parsed.__draftRecovery
         pendingCreatedListingIdRef.current = normalizeText(recovery.pendingListingId)
         listingCreationIdRef.current = normalizeText(recovery.creationId)
@@ -4288,7 +4290,7 @@ function AgentListings({ mobileEditor = false } = {}) {
     }
     })()
     return () => { cancelled = true; recoveredDraft?.release() }
-  }, [isDeveloperWorkspace, createListingDraftScopeKey, isEditListingWorkspace, isListingEditorWorkspace, listingEditorDraftStorageKey, legacyCreateListingDraftStorageKey, listingEditorSteps, organisationId, selectedWorkspaceOrganisationId])
+  }, [isDeveloperWorkspace, createListingDraftScopeKey, isEditListingWorkspace, isListingEditorWorkspace, listingEditorDraftStorageKey, listingEditorSteps, organisationId, selectedWorkspaceOrganisationId, profile, workspace, getCurrentDeletedListingIds])
 
   const listingRecoveryMetadata = useMemo(() => ({
     pendingListingId: pendingCreatedListingIdRef.current, creationId: listingCreationIdRef.current,
@@ -4924,7 +4926,7 @@ function AgentListings({ mobileEditor = false } = {}) {
       })) throw new Error('The draft was saved to Listings, but your remaining browser choices could not be protected. Keep this tab open and retry.')
       completedCreateListingRef.current = true
       recoveryProtection.markSaved()
-      try { window.localStorage.removeItem(createListingDraftStorageKey) } catch { /* Confirmed listing save remains authoritative. */ }; void clearListingRecoveryDraft(createListingDraftStorageKey).catch(() => {})
+      try { window.localStorage.removeItem(listingEditorDraftStorageKey) } catch { /* Confirmed listing save remains authoritative. */ }; void clearListingRecoveryDraft(listingEditorDraftStorageKey).catch(() => {})
       setPrivateListings((previous) => mergePrivateListingRows([created.listing], previous, deletedListingIds))
       window.dispatchEvent(new Event('itg:listings-updated'))
       navigate(`${mobileEditor ? '/mobile/listings' : '/listings'}/${encodeURIComponent(listingId)}/edit?step=${encodeURIComponent(createListingStep)}`, {
@@ -6330,7 +6332,7 @@ function AgentListings({ mobileEditor = false } = {}) {
           writeAgentPrivateListings([developerListing, ...readAgentPrivateListings()])
         }
 
-        if (isCreateListingWorkspace) { completedCreateListingRef.current = true; recoveryProtection.markSaved(); try { window.localStorage.removeItem(createListingDraftStorageKey) } catch { /* Confirmed listing save remains authoritative. */ }; void clearListingRecoveryDraft(createListingDraftStorageKey).catch(() => {}) }
+        if (isCreateListingWorkspace) { completedCreateListingRef.current = true; recoveryProtection.markSaved(); try { window.localStorage.removeItem(listingEditorDraftStorageKey) } catch { /* Confirmed listing save remains authoritative. */ }; void clearListingRecoveryDraft(listingEditorDraftStorageKey).catch(() => {}) }
         setShowNewListingModal(false)
         resetForm()
         setError('')
@@ -6359,7 +6361,7 @@ function AgentListings({ mobileEditor = false } = {}) {
         if (mobileEditor) {
           completedCreateListingRef.current = true
           recoveryProtection.markSaved()
-          try { window.localStorage.removeItem(createListingDraftStorageKey) } catch { /* Confirmed listing save remains authoritative. */ }; void clearListingRecoveryDraft(createListingDraftStorageKey).catch(() => {})
+          try { window.localStorage.removeItem(listingEditorDraftStorageKey) } catch { /* Confirmed listing save remains authoritative. */ }; void clearListingRecoveryDraft(listingEditorDraftStorageKey).catch(() => {})
           navigate('/mobile/listings', { replace: true, state: { message: 'Listing saved.' } })
         }
         return
@@ -6720,7 +6722,7 @@ function AgentListings({ mobileEditor = false } = {}) {
         if (isCreateListingWorkspace && createdListingId) {
           completedCreateListingRef.current = true
           recoveryProtection.markSaved()
-          try { window.localStorage.removeItem(createListingDraftStorageKey) } catch { /* Confirmed listing save remains authoritative. */ }; void clearListingRecoveryDraft(createListingDraftStorageKey).catch(() => {})
+          try { window.localStorage.removeItem(listingEditorDraftStorageKey) } catch { /* Confirmed listing save remains authoritative. */ }; void clearListingRecoveryDraft(listingEditorDraftStorageKey).catch(() => {})
           navigate(initialPublicationResults.length ? `${mobileEditor ? '/mobile/listings' : '/listings'}/${encodeURIComponent(createdListingId)}/edit?step=syndication&scope=listing-publication` : mobileEditor ? '/mobile/listings' : `/agent/listings/${encodeURIComponent(createdListingId)}?tab=marketing`, {
             replace: true,
             state: { message: resolvedListingStatus === 'active' ? initialPublicationResults.some((result) => ['needs_attention', 'uncertain'].includes(result.status)) ? 'Listing saved. Some advertising requests need attention; see the results below.' : initialPublicationResults.length ? 'Listing saved. Check the advertising results below.' : 'Listing saved in Arch9. No adverts were sent by this save.' : 'Draft saved. It has not been published.', initialChannelResults: initialPublicationResults },
@@ -6950,7 +6952,7 @@ function AgentListings({ mobileEditor = false } = {}) {
       )
       window.dispatchEvent(new Event('itg:listings-updated'))
       if (isCreateListingWorkspace && createdListingId) {
-        try { window.localStorage.removeItem(createListingDraftStorageKey) } catch { /* Confirmed listing save remains authoritative. */ }; void clearListingRecoveryDraft(createListingDraftStorageKey).catch(() => {})
+        try { window.localStorage.removeItem(listingEditorDraftStorageKey) } catch { /* Confirmed listing save remains authoritative. */ }; void clearListingRecoveryDraft(listingEditorDraftStorageKey).catch(() => {})
       }
       return
     }
@@ -8245,6 +8247,7 @@ function AgentListings({ mobileEditor = false } = {}) {
 
         {!isEditListingWorkspace && !streamlinedSales ? <p className="px-5 py-2 text-sm text-[#607387]">Save the property first. You can add seller and mandate details from the saved listing.</p> : null}
         <ListingWizard
+          showPreview={createListingStep !== 'review'}
           streamlined={streamlinedSales || (isEditListingWorkspace && ['features', 'review'].includes(createListingStep))}
           anchored={streamlinedSales || isEditListingWorkspace}
           form={form}

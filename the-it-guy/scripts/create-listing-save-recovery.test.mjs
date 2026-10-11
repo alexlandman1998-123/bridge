@@ -24,7 +24,7 @@ function between(start, end) {
 }
 
 function bind(context, code, expression) {
-  Object.assign(context, { publicationStatusBusy: false, publicationPending: false, publicationUncertain: false, draftRecoveryBlocked: false, editDraftConflict: null, buildSpecialistSalesFacts, recoveryProtection: { markSaved() {} }, setCloudSave() {}, ...context })
+  Object.assign(context, { publicationStatusBusy: false, publicationPending: false, publicationUncertain: false, draftRecoveryBlocked: false, editDraftConflict: null, buildSpecialistSalesFacts, recoveryProtection: { markSaved() {} }, setCloudSave() {}, setDraftRecoveryBlocked() {}, setQuickAddSuccess() {}, buildInitialListingLeadForm: () => ({ listingImages: [] }), getCurrentDeletedListingIds: () => new Set(), profile: {}, workspace: {}, ...context })
   return new Function('context', `with (context) { ${code}; return ${expression}; }`)(context)
 }
 
@@ -164,6 +164,16 @@ test('refresh resumes the photo step and existing listing before accepting input
   assert.equal(context.createListingStep, 'property', 'old seller-step drafts must resume at the property without losing their saved listing')
   assert.equal(context.listingCreationIdRef.current, legacyDraft.__draftRecovery.creationId, 'the synchronous identity must survive an older photo transaction')
   assert.equal(context.pendingCreatedListingIdRef.current, 'listing-1')
+  context.getCurrentDeletedListingIds = () => new Set(['listing-1'])
+  let clearedScope = ''
+  context.clearListingRecoveryDraft = async scope => { clearedScope = scope }
+  restore()
+  await new Promise(resolve => setImmediate(resolve))
+  pendingState.splice(0).forEach(apply => apply())
+  assert.notEqual(context.form.propertyAddress, '18 Test Avenue', 'deleted listing recovery must not return to the form')
+  assert.equal(context.pendingCreatedListingIdRef.current, '')
+  assert.equal(data.has('draft'), false)
+  assert.equal(clearedScope, 'draft')
   context.completedCreateListingRef.current = true
   data.delete('draft')
   assert.equal(data.has('draft'), false, 'completed creates must not leave a new blank draft')
@@ -254,7 +264,7 @@ function saveContext() {
     completeness: {}, CANONICAL_LISTING_STRUCTURE: {}, createdListingId: '', createdListingTitle: '',
     directListingPersistence: { sellerOnboardingFormData: {}, seller: { sellerLegalType: 'unknown' } },
     pendingCreatedListingIdRef: { current: '' }, completedCreateListingRef: { current: false },
-    isCreateListingWorkspace: true, isDeveloperWorkspace: false, createListingDraftStorageKey: 'draft',
+    isCreateListingWorkspace: true, isDeveloperWorkspace: false, createListingDraftStorageKey: 'draft', listingEditorDraftStorageKey: 'draft',
     profile: { id: 'agent-1' }, activationTier: { statusLabel: 'Draft' }, complianceWarnings: [],
     listingDistributionSync: null, documentUploadQueue: [], normalizedStatus: 'draft',
     selectedQuickAddIntent: {}, activationWarnings: [], mandateUploaded: false, quickAddDuplicateOverride: false, mandatePack: {},

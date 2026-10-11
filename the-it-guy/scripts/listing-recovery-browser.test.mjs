@@ -9,7 +9,7 @@ import { buildRentalPrivateListingPayload } from '../src/services/rentals/rental
 
 const out = resolve(process.argv[2] || '../output/playwright/listing-recovery-browser')
 await mkdir(out, { recursive: true })
-const fixture = await startListingDiagnosticBrowserFixture(out, { realRentalDetail: process.argv[5] === 'publication', ...(process.argv[4] === 'rental' ? { saleSource: 'export default function Sale(){return null}' } : {}) })
+const fixture = await startListingDiagnosticBrowserFixture(out, { navigationChecks: process.argv[5] === 'fresh', realRentalDetail: process.argv[5] === 'publication', ...(process.argv[4] === 'rental' ? { saleSource: 'export default function Sale(){return null}' } : {}) })
 const browser = await chromium.launch({ channel: 'chrome', headless: true })
 const results = []
 try {
@@ -33,6 +33,29 @@ try {
    await page.reload({ waitUntil: 'domcontentloaded' })
    await address.waitFor(); assert.equal(await address.inputValue(), `90 Latest ${category} Road`)
    results.push({ category, kind, check: 'immediate creation refresh retains last input', passed: true })
+   if (process.argv[5] === 'fresh') {
+    // Explicit New ignores recovery from abandoned or deleted drafts.
+    const previousSession = await page.evaluate(() => history.state.listingCaptureSession.id)
+    await page.evaluate(() => {
+     for (const key of Object.keys(localStorage).filter(key => key.includes(':capture:'))) {
+      const legacyKey = key.replace(/:capture:[^:]+$/, '')
+      localStorage.setItem(legacyKey, localStorage.getItem(key))
+     }
+    })
+    await page.getByRole('link', { name: kind === 'sale' ? 'Open sales capture' : 'Open rental capture', exact: true }).click()
+    await address.waitFor()
+    await page.waitForFunction(() => document.querySelector('[role="combobox"]')?.value === '', null, { timeout: 30000 })
+    assert.equal(await address.inputValue(), '')
+    assert.notEqual(await page.evaluate(() => history.state.listingCaptureSession.id), previousSession)
+    assert.equal(await page.getByRole('complementary', { name: 'Draft advert preview' }).getByAltText('Selected cover photo').count(), 0)
+    results.push({ category, kind, check: 'New opens blank despite abandoned and legacy deleted-draft recovery', passed: true })
+    await address.fill('New independent property')
+    await page.reload({ waitUntil: 'domcontentloaded' })
+    await address.waitFor()
+    assert.equal(await address.inputValue(), 'New independent property')
+    assert.equal(fixture.events.filter(row => row.kind === 'queue').length, 0)
+    results.push({ category, kind, check: 'fresh form refresh retains only its own input without publishing', passed: true })
+   }
    if (process.argv[5] === 'acceptance') {
     // Exercise the same draft through recovery, a failed upload and a confirmed
     // save. A fresh context must use the saved record, not device recovery.

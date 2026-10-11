@@ -9,6 +9,7 @@ import RentalListingCreatePage from '../RentalListingCreatePage'
 window.scrollTo = vi.fn()
 
 const mocks = vi.hoisted(() => ({ params: {}, create: vi.fn(), progress: vi.fn(async () => { throw new Error('Cloud saving unavailable in this recovery fixture') }), activate: vi.fn(async () => {}), update: vi.fn(), navigate: vi.fn(), loadMaps: vi.fn(), load: vi.fn(async () => null), scope: { organisationId: 'org-1', assignedAgentId: 'agent-1', branchId: '' } }))
+vi.mock('../../../hooks/useListingCaptureSession', () => ({ default: () => 'test-session' }))
 vi.mock('react-router-dom', async (original) => ({ ...await original(), useNavigate: () => mocks.navigate, useParams: () => mocks.params }))
 vi.mock('../../../context/WorkspaceContext', () => ({ useWorkspace: () => ({}) }))
 vi.mock('../../../services/rentals/rentalWorkspaceScope', async (original) => ({ ...await original(), resolveRentalWorkspaceScope: () => mocks.scope }))
@@ -17,8 +18,18 @@ vi.mock('../../../services/syndicationChannelAvailabilityService', () => ({ UNAV
 vi.mock('../../../lib/googleMaps', () => ({ hasGoogleMapsApiKey: () => true, loadGoogleMaps: mocks.loadMaps }))
 vi.mock('../../../services/rentals/rentalLeadService', () => ({ listRentalLeads: async () => [] }))
 vi.mock('../../../services/rentals/rentalLandlordListingHandoffService', () => ({ linkRentalLandlordLeadToListing: async () => null }))
-const DRAFT_KEY = buildRentalListingDraftStorageKey({ organisationId: 'org-1', assignedAgentId: 'agent-1', branchId: '' })
+const BASE_DRAFT_KEY = buildRentalListingDraftStorageKey({ organisationId: 'org-1', assignedAgentId: 'agent-1', branchId: '' })
+const DRAFT_KEY = BASE_DRAFT_KEY + ':capture:test-session'
 afterEach(() => { mocks.params = {}; mocks.scope = { organisationId: 'org-1', assignedAgentId: 'agent-1', branchId: '' }; cleanup(); vi.clearAllMocks(); mocks.load.mockReset().mockResolvedValue(null); mocks.progress.mockReset().mockRejectedValue(new Error('Cloud saving unavailable in this recovery fixture')); window.localStorage.clear() })
+
+it('opens blank instead of resurrecting a deleted rental from the previous shared browser draft', async () => {
+  localStorage.setItem(BASE_DRAFT_KEY, JSON.stringify({ pendingListingId: 'deleted-rental', activeStep: 'review', form: { propertyAddress: 'Deleted property', monthlyRent: '11000' } }))
+  render(<MemoryRouter><RentalListingCreatePage /></MemoryRouter>)
+  expect((await screen.findByRole('combobox', { name: /Property address/i })).value).toBe('')
+  expect(mocks.load).not.toHaveBeenCalled()
+  expect(mocks.create).not.toHaveBeenCalled()
+  expect(mocks.activate).not.toHaveBeenCalled()
+})
 
 it('activates a new rental after saving without landlord, mandate, deposit or availability capture', async () => {
   window.localStorage.setItem(DRAFT_KEY, JSON.stringify({ activeStep: 'review', form: { propertyAddress: '12 Example Road', monthlyRent: '11000', rentalPriceFrequency: 'monthly' } }))
@@ -158,7 +169,7 @@ it('keeps landlord and mandate capture available when editing a saved rental', a
     if (name !== 'landlordType') fireEvent.change(screen.getByLabelText(labels[name]), { target: { value } })
   }
   fireEvent.click(screen.getByRole('button', { name: 'Save draft' }))
-  expect(JSON.parse(window.localStorage.getItem(DRAFT_KEY + ':edit:listing-1')).form).toMatchObject(values)
+  expect(JSON.parse(window.localStorage.getItem(BASE_DRAFT_KEY + ':edit:listing-1')).form).toMatchObject(values)
   view.unmount()
   render(<MemoryRouter initialEntries={['/rentals/listing-1/edit?step=landlord']}><RentalListingCreatePage /></MemoryRouter>)
   await screen.findByRole('button', { name: /Trust A trust owns/ })
@@ -247,7 +258,7 @@ it('does not restore an unscoped legacy draft into the selected organisation', a
 
 it('resets the editor on organisation switch and restores only that organisation draft', async () => {
   window.localStorage.setItem(DRAFT_KEY, JSON.stringify({ activeStep: 'landlord', form: { propertyAddress: 'First agency property', landlordName: 'First agency owner' } }))
-  const secondKey = buildRentalListingDraftStorageKey({ ...mocks.scope, organisationId: 'org-2' })
+  const secondKey = buildRentalListingDraftStorageKey({ ...mocks.scope, organisationId: 'org-2' }) + ':capture:test-session'
   window.localStorage.setItem(secondKey, JSON.stringify({ activeStep: 'landlord', form: { propertyAddress: 'Second agency property', landlordName: 'Second agency owner' } }))
   const view = render(<MemoryRouter><RentalListingCreatePage /></MemoryRouter>)
   expect((await screen.findByRole('combobox', { name: /Property address/i })).value).toBe('First agency property')

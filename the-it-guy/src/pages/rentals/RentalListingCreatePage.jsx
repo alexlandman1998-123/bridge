@@ -16,6 +16,7 @@ import { buildRentalWorkspaceKey, buildRentalListingDraftStorageKey, buildRental
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Blocks, Building2, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Coins, FileText, Globe2, House, ImagePlus, Landmark, LandPlot, Loader2, Minus, Plus, Save, ShieldCheck, Sprout, Store, Trash2, UserRound, Users, Wallet, Warehouse, X } from 'lucide-react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import useListingCaptureSession from '../../hooks/useListingCaptureSession'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { useOptionalOrganisation } from '../../context/OrganisationContext'
 import './rental-listing-create.css'
@@ -310,14 +311,15 @@ function RentalCreateProgressNav({ activeStep, onStepClick, steps = CREATE_STEPS
 }
 
 export default function RentalListingCreatePage() {
+  const captureSessionId = useListingCaptureSession()
   const scope = resolveRentalWorkspaceScope(useWorkspace())
   const params = useParams()
   const [searchParams] = useSearchParams()
   const routeKey = [params.listingId || '', searchParams.get('leadId') || '', searchParams.get('portfolioPropertyId') || ''].join(':')
-  return <ScopedRentalListingCreatePage key={buildRentalWorkspaceKey(scope, routeKey)} />
+  return <ScopedRentalListingCreatePage key={buildRentalWorkspaceKey(scope, routeKey) + (params.listingId ? '' : `:capture:${captureSessionId}`)} captureSessionId={captureSessionId} />
 }
 
-function ScopedRentalListingCreatePage() {
+function ScopedRentalListingCreatePage({ captureSessionId }) {
   const navigate = useNavigate()
   const params = useParams()
   const [searchParams] = useSearchParams()
@@ -333,7 +335,7 @@ function ScopedRentalListingCreatePage() {
   const [isDraftCapture, setIsDraftCapture] = useState(false)
   const requestedStepRef = useRef(searchParams.get('step'))
   const portfolioPropertyId = String(searchParams.get('portfolioPropertyId') || '').trim()
-  const draftStorageKey = buildRentalListingDraftStorageKey(rentalScope, { leadId: searchParams.get('leadId') || '', portfolioPropertyId }) + (isEditing ? `:edit:${editListingId}` : '')
+  const draftStorageKey = buildRentalListingDraftStorageKey(rentalScope, { leadId: searchParams.get('leadId') || '', portfolioPropertyId }) + (isEditing ? `:edit:${editListingId}` : `:capture:${captureSessionId}`)
   const [draftReadyKey, setDraftReadyKey] = useState('')
   const editBaselineRef = useRef(null)
   const [editRecoveryBaseline, setEditRecoveryBaseline] = useState(null)
@@ -899,7 +901,7 @@ function ScopedRentalListingCreatePage() {
         <fieldset disabled={saving || Boolean(editDraftConflict) || recoveryBlocked} className="m-0 min-w-0 space-y-6 border-0 p-0">
         <RentalCreateProgressNav steps={steps} activeStep={activeStep} onStepClick={goToStep} />
 
-        <ListingCaptureLayout form={form} rental streamlined>
+        <ListingCaptureLayout form={form} rental streamlined showPreview={activeStep !== 'review'}>
         <ListingFieldIssues issues={fieldIssues.filter(issue => issue.step === activeStep)} step={activeStep} attempted={validationAttemptedStep === activeStep} onGoToStep={goToStep} />
         <div className="grid w-full min-w-0 max-w-full gap-6">
           {linkedLandlordLead ? <p className="rounded-[8px] border border-[#cfe8dc] bg-[#f2fbf5] px-4 py-3 text-sm font-semibold text-[#286b43]">Creating this listing for landlord lead {linkedLandlordLead.name}. The listing will be linked after it is created.</p> : null}
