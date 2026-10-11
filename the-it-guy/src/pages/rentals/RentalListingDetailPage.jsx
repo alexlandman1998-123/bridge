@@ -1,3 +1,4 @@
+import { RENTAL_SAVED_NOT_SENT_MESSAGE } from '../../services/listings/listingCaptureModel'
 import { INITIAL_LISTING_PUBLICATION_EVENT, readInitialListingChannelResults, watchInitialListingPublication } from '../../services/listings/listingInitialPublicationService'
 import { buildRentalWorkspaceKey } from '../../services/rentals/rentalWorkspaceScope'
 import { getListingChannelViewUrl } from '../../services/listings/listingMarketingChannelPresentation'
@@ -25,7 +26,7 @@ import {
   Users,
   X,
 } from 'lucide-react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { ListingWorkspaceTabs } from '../../components/listings/ListingWorkspaceShell'
 import ListingAgentReassignmentPanel from '../../components/listings/ListingAgentReassignmentPanel'
 import WebsiteListingPublicationPanel from '../../components/listings/WebsiteListingPublicationPanel'
@@ -1138,6 +1139,7 @@ export default function RentalListingDetailPage() {
 }
 
 function ScopedRentalListingDetailPage() {
+  const location = useLocation()
   const navigate = useNavigate()
   const params = useParams()
   const listingId = params.listingId || ''
@@ -1766,6 +1768,7 @@ function ScopedRentalListingDetailPage() {
   return (
     <section className="page-content rental-listing-detail">
       <div className="ui-section-stack">
+        {location.state?.rentalListingChangesNotSent ? <div role="status" className="rounded-xl border border-[#f1d4a6] bg-[#fffaf0] p-4 text-sm"><p>{RENTAL_SAVED_NOT_SENT_MESSAGE}</p><button type="button" className="mt-2 underline" onClick={() => navigate(location.pathname, { replace: true, state: { ...location.state, rentalListingChangesNotSent: false } })}>Dismiss saved notice</button></div> : null}
         {initialChannelResults.length ? <div role="status" aria-live="polite" className="rounded-xl border border-[#dce6f2] p-4 text-sm">
           <p className="font-semibold">Initial channel submission</p>
           {initialChannelResults.map(result => <p key={result.key} className="mt-2">{result.label}: {result.message}</p>)}

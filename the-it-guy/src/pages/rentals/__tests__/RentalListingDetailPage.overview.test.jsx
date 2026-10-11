@@ -417,3 +417,13 @@ it('offers reconciliation without a lost reference and keeps publish and status 
  await screen.findByText('Property24 expiry date saved.')
  expect(mocks.expiry).toHaveBeenCalledWith(listing.id,{expiryDate:'2028-04-30',expectedUpdatedAt:listing.updatedAt},expect.objectContaining({organisationId:'org-1',assignedAgentId:'agent-1'}))
  })
+
+ it('shows a dismissible saved-not-sent receipt after editing without claiming publication', async () => {
+  const listing = mediaListing()
+  mocks.load.mockResolvedValue(listing)
+  mocks.overview.mockResolvedValue(buildRentalListingOverview({ listing }))
+  render(<MemoryRouter initialEntries={[{ pathname: '/agent/rentals/listings/listing-1/marketing', state: { rentalListingChangesNotSent: true } }]}><Routes><Route path="/agent/rentals/listings/:listingId/:detailTab?" element={<RentalListingDetailPage />} /></Routes></MemoryRouter>)
+  expect(await screen.findByText(/This save did not update your public adverts/)).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: /Dismiss/ }))
+  expect(screen.queryByText(/This save did not update your public adverts/)).toBeNull()
+ })

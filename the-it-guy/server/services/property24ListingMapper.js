@@ -263,6 +263,7 @@ function resolveExpiryDate(listing = {}, publication = {}, options = {}) {
     listing.propertyDetails?.mandateEndDate,
     property24Import.expiryDate,
     property24Import.expiry_date,
+    options.defaultExpiryDate,
   )
   if (!raw) return ''
   const date = new Date(raw)

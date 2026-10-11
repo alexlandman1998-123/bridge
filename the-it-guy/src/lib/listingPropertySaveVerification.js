@@ -1,3 +1,5 @@
+import { getSpecialistSalesListingSchema } from '../services/listings/specialistSalesListingSchema.js'
+
 function normalizeText(value) {
   return String(value ?? '').trim()
 }
@@ -76,7 +78,18 @@ export function verifyListingPropertyPersistenceCopies({ form = {}, listing = {}
     propertyStructureType: '',
     parkingCount: '',
   }
+  const specialistChecks = getSpecialistSalesListingSchema(form.propertyCategory, form.listingType || 'sale').fields
+    .filter(({ key }) => form[key] !== undefined)
+    .flatMap(({ key, label, kind }) => {
+      const expected = kind === 'boolean' ? form[key] === true : normalizeText(form[key])
+      return [['onboarding', onboardingForm[key]], ['saved property', canonicalProperty(listing).specialistFacts?.[key]]]
+        .map(([copy, value]) => {
+          const actual = kind === 'boolean' ? value : normalizeText(value)
+          return expected === actual ? null : { field: key, label: `${label} (${copy})`, expected, actual }
+        })
+    })
   const checks = [
+    ...specialistChecks,
     // Address copies may use different formats and are optional on portals.
     // Continue saving them, but do not make their verification a save gate.
     ...verifyListingPropertySave(listingVerificationForm, listing).mismatches,

@@ -1,3 +1,6 @@
+import ListingAdvertisingChoices from '../../components/listings/ListingAdvertisingChoices'
+import ListingReviewDetails from '../../components/listings/ListingReviewDetails'
+import { RENTAL_SAVED_NOT_SENT_MESSAGE } from '../../services/listings/listingCaptureModel'
 import { saveListingRecoveryDraft, readListingRecoveryDraft, clearListingRecoveryDraft } from '../../services/listings/listingDraftRecovery'
 import ListingChannelLogo from '../../components/listings/ListingChannelLogo'
 import ListingFieldIssues from '../../components/listings/ListingFieldIssues'
@@ -15,7 +18,7 @@ import AddressAutocomplete from '../../components/location/AddressAutocomplete'
 import Button from '../../components/ui/Button'
 import ListingSyndicationChannelCard from '../../components/listings/ListingSyndicationChannelCard'
 import RentalCategoryFields from '../../components/listings/RentalCategoryFields'
-import { rentalFeatureAnswerLabels, restoreRentalFeatureSelections } from '../../services/rentals/rentalFeatureCaptureModel'
+import { rentalFeatureAnswerLabels, rentalFeatureCaptureFields, restoreRentalFeatureSelections } from '../../services/rentals/rentalFeatureCaptureModel'
 import { RENTAL_CATEGORY_TYPES, RENTAL_PORTAL_FIELDS } from '../../services/rentals/rentalPortalFieldContract'
 import { activateRentalListing, createRentalListingDraft, getRentalListingForAgent, updateRentalListingDraft } from '../../services/rentals/rentalListingDraftService'
 import {
@@ -70,11 +73,11 @@ function rentalPriceFrequencyOptions(propertyCategory) {
 const CREATE_STEPS = Object.freeze([
   { key: 'landlord', label: 'Landlord & Mandate', description: 'Owner & mandate details' },
   { key: 'property', label: 'Property details', description: '' },
-  { key: 'features', label: 'Additional property details', description: 'Features & facilities' },
-  { key: 'terms', label: 'Rental terms', description: 'Price & lease' },
-  { key: 'marketing', label: 'Marketing', description: 'Photos & description' },
-  { key: 'syndication', label: 'Syndication', description: 'Choose publication channels' },
-  { key: 'review', label: 'Review', description: 'Confirm & create' },
+  { key: 'features', label: 'Extra details (optional)', description: '' },
+  { key: 'terms', label: 'Rent & deposit', description: '' },
+  { key: 'marketing', label: 'Photos & description', description: '' },
+  { key: 'syndication', label: 'Where to advertise', description: '' },
+  { key: 'review', label: 'Check & publish', description: '' },
 ])
 
 
@@ -221,7 +224,7 @@ function LandlordTypeCard({ option, active, onClick }) {
   )
 }
 
-function PropertyCounter({ label, value, onChange, step = 1 }) {
+function PropertyCounter({ label, name, value, onChange, step = 1, studio = false }) {
   const amount = Number(value || 0)
   const safeValue = Number.isFinite(amount) && amount > 0 ? amount : 0
   const changeValue = (nextValue) => onChange(String(Math.max(0, Number(nextValue.toFixed(1)))))
@@ -233,11 +236,12 @@ function PropertyCounter({ label, value, onChange, step = 1 }) {
         <button data-rental-control type="button" aria-label={`Decrease ${label}`} disabled={safeValue <= 0} onClick={() => changeValue(safeValue - step)} className="inline-flex items-center justify-center border-r border-[#e6edf5] bg-white text-lg font-semibold text-[#1f4f78] transition hover:bg-[#f4f8fc] disabled:cursor-not-allowed disabled:text-[#b5c3d1]">
           <Minus size={17} aria-hidden="true" />
         </button>
-        <output className="flex items-center justify-center text-sm font-semibold text-[#18324b]">{safeValue}</output>
+        <input name={name} aria-label={label} type="number" min="0" step={step} inputMode={step < 1 ? 'decimal' : 'numeric'} value={value ?? ''} placeholder="Not added" onChange={event => onChange(event.target.value)} className="min-w-0 border-0 bg-white px-1 text-center text-sm font-semibold text-[#18324b]" />
         <button data-rental-control type="button" aria-label={`Increase ${label}`} onClick={() => changeValue(safeValue + step)} className="inline-flex items-center justify-center border-l border-[#e6edf5] bg-white text-lg font-semibold text-[#1f4f78] transition hover:bg-[#f4f8fc]">
           <Plus size={17} aria-hidden="true" />
         </button>
       </div>
+      {studio && name === 'bedrooms' ? <button type="button" className="text-left text-xs text-[#1f4f78] underline" onClick={() => onChange('0')}>Studio? Set bedrooms to 0</button> : null}
     </div>
   )
 }
@@ -254,7 +258,7 @@ function ReviewSummaryCard({ title, details, onEdit }) {
     <article className="rounded-[12px] border border-[#dbe6f2] bg-[#fbfdff] p-4">
       <div className="flex items-start justify-between gap-3">
         <p className="text-xs font-bold uppercase tracking-wide text-[#607891]">{title}</p>
-        <button type="button" onClick={onEdit} className="text-xs font-semibold text-[#1f7d44] underline underline-offset-2">Edit</button>
+        <button type="button" aria-label={`Edit ${title.toLowerCase()}`} onClick={onEdit} className="text-xs font-semibold text-[#1f7d44] underline underline-offset-2">Edit</button>
       </div>
       <div className="mt-3 grid gap-1.5 text-sm text-[#607891]">
         {details.map((detail) => <p key={detail.label}><span className="font-semibold text-[#18324b]">{detail.label}:</span> {detail.value}</p>)}
@@ -321,7 +325,7 @@ function ScopedRentalListingCreatePage() {
   const assignedAgentId = rentalScope.assignedAgentId
   const editListingId = String(params.listingId || '').trim()
   const isEditing = Boolean(editListingId)
-  const steps = useMemo(() => CREATE_STEPS.filter(step => isEditing || step.key !== 'landlord'), [isEditing])
+  const steps = useMemo(() => CREATE_STEPS.filter(step => isEditing || step.key !== 'landlord').map(step => isEditing && step.key === 'review' ? { ...step, label: 'Check & save' } : step), [isEditing])
   const portfolioPropertyId = String(searchParams.get('portfolioPropertyId') || '').trim()
   const draftStorageKey = buildRentalListingDraftStorageKey(rentalScope, { leadId: searchParams.get('leadId') || '', portfolioPropertyId }) + (isEditing ? `:edit:${editListingId}` : '')
   const [draftReadyKey, setDraftReadyKey] = useState('')
@@ -334,6 +338,8 @@ function ScopedRentalListingCreatePage() {
   const [saveProgress, setSaveProgress] = useState('')
   const [error, setError] = useState('')
   const [validationAttemptedStep, setValidationAttemptedStep] = useState('')
+  const [correctionField, setCorrectionField] = useState('')
+  const [correctionRequest, setCorrectionRequest] = useState(0)
   const [notice, setNotice] = useState('')
   const [linkedLandlordLead, setLinkedLandlordLead] = useState(null)
   const [pendingListingId, setPendingListingId] = useState('')
@@ -347,7 +353,17 @@ function ScopedRentalListingCreatePage() {
 
   const [channelAvailability, setChannelAvailability] = useState(UNAVAILABLE_SYNDICATION_CHANNELS)
   useEffect(() => { let cancelled = false; getSyndicationChannelAvailability(organisationId, { listingType: 'rental' }).then(value => { if (!cancelled) setChannelAvailability(value) }).catch(() => {}); return () => { cancelled = true } }, [organisationId])
-  const fieldIssues = useMemo(() => getListingFieldIssues(form, { rental: true }), [form])
+  const fieldIssues = useMemo(() => {
+    const channelIssues = getListingFieldIssues(form, { rental: true })
+    const basicIssues = validateRentalListingDraftForm(form, { organisationId }).filter(message => !channelIssues.some(issue => issue.message === message)).map(message => {
+      const field = message.includes('Property address') ? 'propertyAddress' : message.includes('Rental amount') ? 'monthlyRent' : message.includes('Rental price frequency') ? 'rentalPriceFrequency' : message.startsWith('Video link') ? 'videoLink' : message.startsWith('Virtual tour link') ? 'virtualTourLink' : ''
+      const extra = RENTAL_PORTAL_FIELDS.find(item => message === `Enter a valid ${item.label.toLowerCase()}.`)
+      const extraStep = extra && rentalFeatureCaptureFields(form).some(item => item.key === extra.key) ? 'features' : 'property'
+      const extraField = extra?.key === 'propertyInfo.propertyDescription.propertyDescriptionType' ? 'rentalTitleType' : extra?.formKey || extra?.key
+      return { field: field || extraField || '', label: extra?.label, step: extra ? extraStep : stepForValidationError(message), message, channels: [] }
+    }).filter(issue => !issue.field || !channelIssues.some(other => other.field === issue.field))
+    return [...channelIssues, ...basicIssues]
+  }, [form, organisationId])
   const stepForError = message => fieldIssues.find(issue => issue.message === message)?.step || stepForValidationError(message)
   const validationErrors = useMemo(
     () => validateRentalListingDraftForm(form, { organisationId }),
@@ -589,9 +605,11 @@ function ScopedRentalListingCreatePage() {
     updateForm('coverImageId', imageId)
   }
 
-  function goToStep(stepKey) {
+  function goToStep(stepKey, field = '') {
     if (steps.some((step) => step.key === stepKey)) {
       setActiveStep(stepKey)
+      setCorrectionField(field)
+      if (field) setCorrectionRequest(current => current + 1)
       setError('')
       setNotice('')
       window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -602,7 +620,7 @@ function ScopedRentalListingCreatePage() {
     setValidationAttemptedStep(activeStep)
     const stepErrors = validationErrors.filter((validationError) => activeStep === 'syndication' || stepForError(validationError) === activeStep)
     if (stepErrors.length) {
-      setError(stepErrors.join(' '))
+      setError(stepErrors[0])
       return
     }
     const next = steps[activeStepIndex + 1]
@@ -700,6 +718,8 @@ function ScopedRentalListingCreatePage() {
           state: {
             [isEditing ? 'rentalListingUpdatedTitle' : 'rentalListingCreatedTitle']: buildRentalListingTitle(form),
             rentalListingDistributionChannels: selectedDistributionChannels,
+            rentalListingChangesNotSent: isEditing,
+            rentalListingSaveMessage: isEditing ? RENTAL_SAVED_NOT_SENT_MESSAGE : undefined,
           },
         })
         return
@@ -750,7 +770,7 @@ function ScopedRentalListingCreatePage() {
         {saving && saveProgress ? <p role="status" className="px-4 py-3 text-sm font-semibold text-[#607891]">{saveProgress}</p> : null}
         {recovering ? <p role="status" className="px-4 text-sm text-[#607891]">Checking the saved rental before retrying…</p> : null}
         {pendingListingId && error ? <p className="px-4 text-sm text-[#607891]">Your rental draft already exists. Retry saving here to finish its photos and marketing without creating another listing.</p> : null}
-        {error ? (
+        {error && !validationErrors.includes(error) ? (
           <p className="rounded-[8px] border border-[#f2c6c6] bg-[#fff7f7] px-4 py-3 text-sm font-semibold text-[#9f3131]">{error}</p>
         ) : null}
         {notice ? (
@@ -764,10 +784,11 @@ function ScopedRentalListingCreatePage() {
         <div className="grid w-full min-w-0 max-w-full gap-6">
           {linkedLandlordLead ? <p className="rounded-[8px] border border-[#cfe8dc] bg-[#f2fbf5] px-4 py-3 text-sm font-semibold text-[#286b43]">Creating this listing for landlord lead {linkedLandlordLead.name}. The listing will be linked after it is created.</p> : null}
           {activeStep === 'property' ? <FormSection>
+            <ListingAdvertisingChoices selected={form.selectedSyndicationChannels} availability={channelAvailability} onToggle={toggleDistributionChannel} />
             <section>
               <h3 id="rental-property-category-label" className="text-sm font-semibold text-[#18324b]">Property category</h3>
               <div role="group" aria-labelledby="rental-property-category-label" className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {PROPERTY_CATEGORY_OPTIONS.filter((option) => option.value !== 'mixed_use' || form.propertyCategory === 'mixed_use').map((option) => <PropertyChoiceCard key={option.value} label={option.label} icon={option.icon} active={form.propertyCategory === option.value} onClick={() => { updateForm('propertyCategory', option.value); if (!RENTAL_CATEGORY_TYPES[option.value]?.includes(form.propertyType)) updateForm('propertyType', RENTAL_CATEGORY_TYPES[option.value]?.[0] || 'Apartment') }} />)}
+                {PROPERTY_CATEGORY_OPTIONS.map((option) => <PropertyChoiceCard key={option.value} label={option.label} icon={option.icon} active={form.propertyCategory === option.value} onClick={() => { updateForm('propertyCategory', option.value); if (!RENTAL_CATEGORY_TYPES[option.value]?.includes(form.propertyType)) updateForm('propertyType', RENTAL_CATEGORY_TYPES[option.value]?.[0] || 'Apartment') }} />)}
               </div>
             </section>
             <section className="border-t border-[#e6edf5] pt-6">
@@ -778,7 +799,7 @@ function ScopedRentalListingCreatePage() {
               </div>
             </section>
             <section>
-              <div>
+              <div data-listing-field="propertyAddress">
                 <AddressAutocomplete
                   label="Property address"
                   value={{ formattedAddress: form.propertyAddress, streetNumber: form.streetNumber, streetName: form.streetName, suburb: form.suburb, city: form.city, province: form.province, postalCode: form.postalCode, latitude: form.latitude, longitude: form.longitude, googlePlaceId: form.googlePlaceId }}
@@ -790,7 +811,7 @@ function ScopedRentalListingCreatePage() {
                 />
               </div>
               <details className="mt-4 rounded-xl border border-[#dbe6f2] bg-[#fbfdff] p-4">
-                <summary className="cursor-pointer text-sm font-semibold text-[#1f4f78]">Address details and portal display</summary>
+                <summary className="cursor-pointer text-sm font-semibold text-[#1f4f78]">Address details and public display</summary>
                 <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                   {['Unit', 'ExclusiveUseArea'].includes(form.rentalPortalFacts?.['propertyInfo.propertyDescription.propertyDescriptionType']) ? <><label className="form-field"><span>Unit number</span><input {...formField('unitNumber', form.unitNumber, updateForm)} placeholder="Unit 12" /></label>
                   <label className="form-field"><span>Complex / building</span><input {...formField('complexName', form.complexName, updateForm)} placeholder="The Atrium" /></label></> : null}
@@ -800,7 +821,7 @@ function ScopedRentalListingCreatePage() {
                   <label className="form-field"><span>City</span><input {...formField('city', form.city, updateForm)} placeholder="City" /></label>
                   <label className="form-field"><span>Province</span><input {...formField('province', form.province, updateForm)} placeholder="Province" /></label>
                   <label className="form-field"><span>Postal code</span><input {...formField('postalCode', form.postalCode, updateForm)} placeholder="8005" /></label>
-                  <SelectField label="Portal address display" name="exactAddressVisibility" value={form.exactAddressVisibility} onChange={updateForm} options={RENTAL_SELECT_OPTIONS.exactAddressVisibility} />
+                  <SelectField label="Public address display" name="exactAddressVisibility" value={form.exactAddressVisibility} onChange={updateForm} options={RENTAL_SELECT_OPTIONS.exactAddressVisibility} />
                 </div>
               </details>
             </section>
@@ -808,34 +829,34 @@ function ScopedRentalListingCreatePage() {
             <section className="border-t border-[#e6edf5] pt-6">
               <h3 className="text-sm font-semibold text-[#18324b]">Property specifications</h3>
               <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                {['residential', 'agricultural', 'commercial', 'industrial', 'retail', 'mixed_use'].includes(form.propertyCategory) ? <PropertyCounter label="Bedrooms" value={form.bedrooms} onChange={(value) => updateForm('bedrooms', value)} /> : null}
-                {form.propertyCategory !== 'vacant_land' ? <PropertyCounter label="Bathrooms" value={form.bathrooms} onChange={(value) => updateForm('bathrooms', value)} /> : null}
-                {['residential', 'agricultural'].includes(form.propertyCategory) ? <PropertyCounter label="Garages" value={form.garages} onChange={(value) => updateForm('garages', value)} /> : null}
-                <PropertyCounter label="Parking" value={form.parkingBays} onChange={(value) => updateForm('parkingBays', value)} />
+                {['residential', 'agricultural', 'commercial', 'industrial', 'retail', 'mixed_use'].includes(form.propertyCategory) ? <PropertyCounter studio={form.propertyCategory === 'residential'} name="bedrooms" label="Bedrooms" value={form.bedrooms} onChange={(value) => updateForm('bedrooms', value)} /> : null}
+                {form.propertyCategory !== 'vacant_land' ? <PropertyCounter name="bathrooms" step={0.5} label="Bathrooms" value={form.bathrooms} onChange={(value) => updateForm('bathrooms', value)} /> : null}
+                {['residential', 'agricultural'].includes(form.propertyCategory) ? <PropertyCounter name="garages" label="Garages" value={form.garages} onChange={(value) => updateForm('garages', value)} /> : null}
+                <PropertyCounter name="parkingBays" label="Parking" value={form.parkingBays} onChange={(value) => updateForm('parkingBays', value)} />
               </div>
               <div className="mt-4 grid gap-4 md:grid-cols-2">
                 <label className="form-field"><span>Floor size (m²)</span><input type="number" min="0" step="0.1" {...formField('floorSize', form.floorSize, updateForm)} placeholder="120" /></label>
-                <label className="form-field"><span>Erf size (m²)</span><input type="number" min="0" step="0.1" {...formField('erfSize', form.erfSize, updateForm)} placeholder="350" /></label>
+                <label className="form-field"><span>Land size (m²)</span><input type="number" min="0" step="0.1" {...formField('erfSize', form.erfSize, updateForm)} placeholder="350" /></label>
               </div>
               {['residential', 'agricultural'].includes(form.propertyCategory) ? <details className="mt-5 rounded-xl border border-[#dbe6f2] bg-[#fbfdff] p-4">
                 <summary className="cursor-pointer text-sm font-semibold text-[#1f4f78]">More specifications</summary>
                 <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                  <PropertyCounter label="Covered parking" value={form.coveredParking} onChange={(value) => updateForm('coveredParking', value)} />
-                  <PropertyCounter label="Open parking" value={form.openParking} onChange={(value) => updateForm('openParking', value)} />
-                  <PropertyCounter label="Carports" value={form.carports} onChange={(value) => updateForm('carports', value)} />
-                  <PropertyCounter label="En-suite bathrooms" value={form.enSuiteBathrooms} step={0.5} onChange={(value) => updateForm('enSuiteBathrooms', value)} />
-                  <PropertyCounter label="Lounges" value={form.lounges} onChange={(value) => updateForm('lounges', value)} />
-                  <PropertyCounter label="Dining rooms" value={form.diningRooms} onChange={(value) => updateForm('diningRooms', value)} />
-                  <PropertyCounter label="Kitchens" value={form.kitchens} onChange={(value) => updateForm('kitchens', value)} />
-                  <PropertyCounter label="Studies" value={form.studies} onChange={(value) => updateForm('studies', value)} />
-                  <PropertyCounter label="Storerooms" value={form.storerooms} onChange={(value) => updateForm('storerooms', value)} />
-                  <PropertyCounter label="Staff rooms" value={form.staffRooms} onChange={(value) => updateForm('staffRooms', value)} />
+                  <PropertyCounter name="coveredParking" label="Covered parking" value={form.coveredParking} onChange={(value) => updateForm('coveredParking', value)} />
+                  <PropertyCounter name="openParking" label="Open parking" value={form.openParking} onChange={(value) => updateForm('openParking', value)} />
+                  <PropertyCounter name="carports" label="Carports" value={form.carports} onChange={(value) => updateForm('carports', value)} />
+                  <PropertyCounter name="enSuiteBathrooms" label="En-suite bathrooms" value={form.enSuiteBathrooms} step={0.5} onChange={(value) => updateForm('enSuiteBathrooms', value)} />
+                  <PropertyCounter name="lounges" label="Lounges" value={form.lounges} onChange={(value) => updateForm('lounges', value)} />
+                  <PropertyCounter name="diningRooms" label="Dining rooms" value={form.diningRooms} onChange={(value) => updateForm('diningRooms', value)} />
+                  <PropertyCounter name="kitchens" label="Kitchens" value={form.kitchens} onChange={(value) => updateForm('kitchens', value)} />
+                  <PropertyCounter name="studies" label="Studies" value={form.studies} onChange={(value) => updateForm('studies', value)} />
+                  <PropertyCounter name="storerooms" label="Storerooms" value={form.storerooms} onChange={(value) => updateForm('storerooms', value)} />
+                  <PropertyCounter name="staffRooms" label="Staff rooms" value={form.staffRooms} onChange={(value) => updateForm('staffRooms', value)} />
                 </div>
               </details> : null}
             </section>
           </FormSection> : null}
 
-          {activeStep === 'features' ? <FormSection><RentalCategoryFields form={form} onChange={updateForm} disabled={saving} /></FormSection> : null}
+          {activeStep === 'features' ? <FormSection><RentalCategoryFields key={correctionRequest} form={form} onChange={updateForm} disabled={saving} focusField={correctionField} /></FormSection> : null}
 
           {isEditing && activeStep === 'landlord' ? <FormSection>
             <section>
@@ -888,7 +909,7 @@ function ScopedRentalListingCreatePage() {
             </section>
           </FormSection> : null}
 
-          {activeStep === 'terms' ? <FormSection title="Rental terms">
+          {activeStep === 'terms' ? <FormSection title="Rent & deposit">
             <div className="grid min-w-0 items-start gap-4 xl:grid-cols-2">
               <RentalTermsCard title="Rent" icon={Coins}>
                 <label className="form-field"><span>Rental amount</span><input type="number" min="0" {...formField('monthlyRent', form.monthlyRent, updateForm)} placeholder="Amount in rand" /></label>
@@ -908,9 +929,9 @@ function ScopedRentalListingCreatePage() {
                 <div className="sm:col-span-2"><SelectField label="Deposit policy" name="depositPolicy" value={form.depositPolicy} onChange={updateForm} options={RENTAL_SELECT_OPTIONS.depositPolicy} /></div>
                 {form.depositPolicy !== 'no_deposit' ? <>
                   <label className="form-field"><span>Deposit amount</span><input type="number" min="0" {...formField('depositAmount', form.depositAmount, updateForm)} placeholder="Amount in rand" /></label>
-                  <label className="form-field"><span>Deposit multiplier</span><input type="number" min="0" step="0.5" {...formField('depositMultiplier', form.depositMultiplier, updateForm)} placeholder="e.g. 1.5" /></label>
+                  <label className="form-field"><span>Months of rent for the deposit (optional)</span><input type="number" min="0" step="0.5" {...formField('depositMultiplier', form.depositMultiplier, updateForm)} placeholder="e.g. 1.5" /></label>
                   <label className="form-field sm:col-span-2"><span>Deposit requirements</span><input {...formField('depositRequirement', form.depositRequirement, updateForm)} placeholder="e.g. One and a half months’ rent" /></label>
-                  <p className="text-xs text-[#607891] sm:col-span-2">The entered amount takes priority over the multiplier.</p>
+                  <p className="text-xs text-[#607891] sm:col-span-2">You can enter a deposit amount, or calculate it using months of rent. Select Use calculated amount to apply it.</p>
                   {suggestedDepositAmount ? <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-[#f4f8fc] px-3 py-3 text-sm text-[#315f80] sm:col-span-2">
                     <span>Calculated deposit <strong className="ml-1 text-[#18324b]">R {suggestedDepositAmount.toLocaleString('en-ZA')}</strong></span>
                     <button type="button" data-rental-control="deposit-calculation" className="font-semibold underline underline-offset-2" onClick={() => updateForm('depositAmount', String(suggestedDepositAmount))}>Use calculated amount</button>
@@ -942,7 +963,7 @@ function ScopedRentalListingCreatePage() {
             </div>
           </FormSection> : null}
 
-          {activeStep === 'marketing' ? <FormSection title="Marketing">
+          {activeStep === 'marketing' ? <FormSection title="Photos & description">
             <section className="min-w-0 rounded-2xl border border-[#dbe6f2] bg-white p-4 sm:p-5">
               <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
@@ -950,7 +971,7 @@ function ScopedRentalListingCreatePage() {
                   <h3 className="text-sm font-semibold text-[#18324b]">Photos</h3>
                   <span className="rounded-full bg-[#eef4fa] px-2.5 py-1 text-xs font-semibold text-[#526f88]">{form.galleryImages.length}</span>
                 </div>
-                <label className="inline-flex cursor-pointer items-center gap-2 rounded-[10px] border border-[#1f7d44] bg-[#1f7d44] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#176338] focus-within:ring-2 focus-within:ring-[#286b43] focus-within:ring-offset-2"><ImagePlus size={16} aria-hidden="true" />Upload photos<input type="file" accept="image/*" multiple className="sr-only" onChange={handleGalleryUpload} aria-label="Upload listing photos" /></label>
+                <label className="inline-flex cursor-pointer items-center gap-2 rounded-[10px] border border-[#1f7d44] bg-[#1f7d44] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#176338] focus-within:ring-2 focus-within:ring-[#286b43] focus-within:ring-offset-2"><ImagePlus size={16} aria-hidden="true" />Upload photos<input name="galleryImages" type="file" accept="image/*" multiple className="sr-only" onChange={handleGalleryUpload} aria-label="Upload listing photos" /></label>
               </div>
               {form.galleryImages.length ? <div className="mt-5 grid max-h-[30rem] min-w-0 grid-cols-1 gap-3 overflow-y-auto pr-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                 {form.galleryImages.map((image, index) => {
@@ -983,7 +1004,7 @@ function ScopedRentalListingCreatePage() {
             </section>
             <div className="grid min-w-0 items-start gap-4 xl:grid-cols-3">
               <section className="min-w-0 rounded-2xl border border-[#dbe6f2] bg-white p-4 sm:p-5 xl:col-span-2">
-                <div className="mb-5 flex items-center gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#eef4fa] text-[#315f80]"><FileText size={18} aria-hidden="true" /></span><h3 className="text-sm font-semibold text-[#18324b]">Listing copy</h3></div>
+                <div className="mb-5 flex items-center gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#eef4fa] text-[#315f80]"><FileText size={18} aria-hidden="true" /></span><h3 className="text-sm font-semibold text-[#18324b]">Title and description</h3></div>
                 <div className="grid min-w-0 gap-4">
                   <label className="form-field"><span>Listing title</span><input {...formField('title', form.title, updateForm)} placeholder="e.g. Bright two-bedroom apartment in Green Point" /></label>
                   <label className="form-field"><span>Listing description</span><textarea rows={8} {...formField('description', form.description, updateForm)} placeholder="Describe the home and what makes it stand out" /></label>
@@ -1003,10 +1024,10 @@ function ScopedRentalListingCreatePage() {
             </div>
           </FormSection> : null}
 
-          {activeStep === 'syndication' ? <FormSection title="Where to publish">
+          {activeStep === 'syndication' ? <FormSection title="Where to advertise">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <h3 className="text-sm font-semibold text-[#18324b]">Publication channels</h3>
-              <span className="rounded-full bg-[#eef4fa] px-3 py-1 text-xs font-semibold text-[#526f88]">{selectedDistributionChannels.length} external selected</span>
+              <h3 className="text-sm font-semibold text-[#18324b]">Advertising websites</h3>
+              <span className="rounded-full bg-[#eef4fa] px-3 py-1 text-xs font-semibold text-[#526f88]">{selectedDistributionChannels.length} websites selected</span>
             </div>
             <div className="listing-syndication-grid">
               {RENTAL_DISTRIBUTION_CHANNELS.map((channel) => {
@@ -1024,21 +1045,20 @@ function ScopedRentalListingCreatePage() {
               <span>Selected channels need more photos.</span>
               <button type="button" data-rental-control="syndication-photos" className="font-semibold underline underline-offset-2" onClick={() => goToStep('marketing')}>Add photos</button>
             </div> : null}
-            <p className="text-xs leading-5 text-[#607891]">Choose where to publish this rental. Submit & activate saves the rental and sends it to these channels. Add the landlord and mandate from the saved rental.</p>
+            <p className="text-xs leading-5 text-[#607891]">{isEditing ? 'Save rental changes saves your details here. It does not update public adverts. Send updates from the saved listing when you are ready.' : 'Choose the websites for this rental. Only the final publish button saves and sends it. You can add landlord and mandate details later.'}</p>
           </FormSection> : null}
 
           {activeStep === 'review' ? <section className="ui-panel ui-panel-body grid gap-6">
             <div className="flex flex-col gap-4 border-b border-[#e6edf5] pb-5 md:flex-row md:items-start md:justify-between">
-              <div><p className="text-xs font-semibold uppercase text-[#607891]">Step {steps.length} of {steps.length}</p><h2 className="text-2xl font-semibold text-[#18324b]">Review rental listing</h2><p className="mt-1 text-sm text-[#607891]">Check the capture is complete, then {isEditing ? 'save the rental changes.' : 'submit to the selected channels.'}</p></div>
+              <div><p className="text-xs font-semibold uppercase text-[#607891]">Step {steps.length} of {steps.length}</p><h2 className="text-2xl font-semibold text-[#18324b]">Check your rental listing</h2><p className="mt-1 text-sm text-[#607891]">Check the details below, then {isEditing ? 'save your changes. Public adverts will need a separate update.' : selectedDistributionChannels.length ? 'save and publish to your selected websites.' : 'save this listing. No adverts will be sent.'}</p></div>
               <span className={`rounded-full px-3 py-1 text-xs font-bold ${validationAttemptedStep === activeStep && validationErrors.length ? 'bg-[#fff5e5] text-[#a76a12]' : 'bg-[#eef9f1] text-[#286b43]'}`}>{validationAttemptedStep !== activeStep ? 'Review details' : validationErrors.length ? `${validationErrors.length} items still needed` : isEditing ? 'Ready to save' : 'Ready to create'}</span>
             </div>
             <div className="grid gap-4 md:grid-cols-2">
               {isEditing ? <ReviewSummaryCard title="Landlord & mandate" onEdit={() => goToStep('landlord')} details={[{ label: 'Landlord', value: form.landlordName || 'Not added' }, { label: 'Contact', value: form.landlordEmail || form.landlordPhone || 'Not added' }, { label: 'Mandate', value: RENTAL_SELECT_OPTIONS.mandateStatus.find((option) => option.value === form.mandateStatus)?.label || 'Not captured' }]} /> : null}
-              <ReviewSummaryCard title="Property" onEdit={() => goToStep('property')} details={[{ label: 'Listing', value: buildRentalListingTitle(form) || 'Untitled rental listing' }, { label: 'Address', value: form.propertyAddress || 'Not added' }, { label: 'Type', value: form.propertyType || 'Not captured' }]} />
-              <ReviewSummaryCard title="Additional property details" onEdit={() => goToStep('features')} details={[{ label: 'Confirmed features', value: `${selectedSellingPoints.length} confirmed` }, { label: 'Pet friendly', value: form.petsPolicy === 'allowed' ? 'Yes' : form.petsPolicy === 'not_allowed' ? 'No' : 'Subject to approval' }]} />
-              <ReviewSummaryCard title="Rental terms" onEdit={() => goToStep('terms')} details={[{ label: 'Rental amount', value: form.monthlyRent ? `R ${Number(form.monthlyRent).toLocaleString('en-ZA')}` : 'Not added' }, { label: 'Frequency', value: RENTAL_SELECT_OPTIONS.rentalPriceFrequency.find((option) => option.value === form.rentalPriceFrequency)?.label || 'Not captured' }, { label: 'Available', value: form.availableFrom || 'Not added' }, { label: 'Lease', value: form.leasePeriodMonths ? `${form.leasePeriodMonths} months` : 'Not captured' }]} />
-              <ReviewSummaryCard title="Marketing" onEdit={() => goToStep('marketing')} details={[{ label: 'Photos', value: `${form.galleryImages.length} selected` }, { label: 'Video', value: form.videoLink ? 'Added' : 'Not added (optional)' }, { label: 'Virtual tour', value: form.virtualTourLink ? 'Added' : 'Not added (optional)' }, { label: 'Description', value: form.description ? 'Added' : 'Not added' }, { label: 'Selling points', value: `${selectedSellingPoints.length} selected` }]} />
+              <ReviewSummaryCard title="Extra details (optional)" onEdit={() => goToStep('features')} details={[{ label: 'Confirmed features', value: `${selectedSellingPoints.length} confirmed` }, { label: 'Pet friendly', value: form.petsPolicy === 'allowed' ? 'Yes' : form.petsPolicy === 'not_allowed' ? 'No' : 'Subject to approval' }]} />
             </div>
+            <ListingReviewDetails form={form} rental onEdit={goToStep} />
+            {isEditing ? <p className="rounded-xl border border-[#f1d4a6] bg-[#fffaf0] p-4 text-sm">Saving here does not update your public adverts. Send the updates from the saved listing.</p> : null}
             <div className="rounded-xl border border-[#dce6f2] bg-[#fbfdff] p-4">
               <h3 className="text-sm font-semibold text-[#18324b]">Publishing readiness</h3>
               <div className="mt-3 grid gap-2">
@@ -1051,7 +1071,6 @@ function ScopedRentalListingCreatePage() {
                 })}
               </div>
             </div>
-            {validationAttemptedStep === activeStep && validationErrors.length ? <div className="rounded-[12px] border border-[#f1d4a6] bg-[#fffaf0] p-4"><p className="font-semibold text-[#8a5a12]">Complete these required items before creating</p><ul className="mt-3 grid gap-2 text-sm text-[#8a5a12]">{validationErrors.map((item) => { const step = stepForError(item); return <li key={item} className="flex flex-wrap items-center justify-between gap-2"><span>{item}</span>{step !== 'review' ? <button type="button" className="font-semibold underline underline-offset-2" onClick={() => goToStep(step)}>Fix in {steps.find((entry) => entry.key === step)?.label}</button> : null}</li> })}</ul></div> : null}
           </section> : null}
 
           <footer className="ui-panel ui-panel-body flex flex-wrap items-center justify-between gap-3">
@@ -1066,12 +1085,13 @@ function ScopedRentalListingCreatePage() {
             <div className="flex flex-wrap gap-2">
               <Button type="button" onClick={saveDraftForSession}>Save draft</Button>
               <Button
+                key={activeStep === 'review' ? 'submit' : 'continue'}
                 type={activeStep === 'review' ? 'submit' : 'button'}
-                onClick={activeStep === 'review' ? undefined : goToNextStep}
+                onClick={activeStep === 'review' ? undefined : (event) => { event.preventDefault(); goToNextStep() }}
                 disabled={saving || recovering || recoveryBlocked}
               >
                 {activeStep === 'review' && saving ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : activeStep === 'review' ? <Save size={16} aria-hidden="true" /> : <ChevronRight size={16} aria-hidden="true" />}
-                {activeStep === 'review' ? (saving ? 'Saving rental…' : isEditing ? 'Save rental changes' : pendingListingId || creationId ? 'Retry submit & activate' : 'Submit & activate') : 'Continue'}
+                {activeStep === 'review' ? (saving ? 'Saving rental…' : isEditing ? 'Save rental changes' : pendingListingId || creationId ? selectedDistributionChannels.length ? 'Retry save and publish' : 'Retry save listing' : selectedDistributionChannels.length ? 'Save and publish' : 'Save listing') : activeStep === 'features' ? 'Continue — skip optional details' : 'Continue'}
               </Button>
             </div>
           </footer>

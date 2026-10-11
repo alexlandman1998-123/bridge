@@ -76,7 +76,6 @@ assert.match(publishServiceSource, /listingNumber,\s*status,\s*photosChanged/)
 
 const apiSource = read('server/property24/api.js')
 assert.match(apiSource, /status: resolvedConfig\.status,\s*storageBaseUrl: resolvedConfig\.supabaseUrl/)
-assert.match(apiSource, /loadImageBytes: !\(resolvedConfig\.listingNumber && resolvedConfig\.photosChanged === false\)/)
 
 const packageJson = JSON.parse(read('package.json'))
 assert.equal(packageJson.scripts['property24:publish-listing'], 'node scripts/property24-publish-listing.mjs')

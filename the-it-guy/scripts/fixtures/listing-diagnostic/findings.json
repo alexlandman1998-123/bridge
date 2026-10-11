@@ -1,0 +1,260 @@
+[
+  {
+    "id": "UX-01",
+    "priority": "P1",
+    "title": "Rental Continue submits before approval",
+    "scope": "All six available rental creation categories",
+    "status": "open",
+    "reproducer": "A valid rental with three selected destinations starts creation and queues publication when Continue is clicked on Syndication. The person has not clicked Submit & activate. Reproduced in all six categories.",
+    "acceptance": "A real-browser test must show zero create/activate/queue calls after Continue, and one submission only after the final publish button.",
+    "source": "RentalListingCreatePage.jsx:1068",
+    "verification": "automated_browser",
+    "manualSteps": [],
+    "limitations": ""
+  },
+  {
+    "id": "UX-02",
+    "priority": "P1",
+    "title": "Sales decimals silently become different numbers",
+    "scope": "All seven sales categories; desktop and mobile",
+    "status": "open",
+    "reproducer": "Typing 2.5 bathrooms produces 25; 98.5 m\u00b2 produces 985; 500.5 m\u00b2 land produces 5005. These altered numbers reach the saved publication data.",
+    "acceptance": "Create, save and reopen each category with fractional bathrooms and measurements; verify the same values in the form, saved record and outgoing advert.",
+    "source": "AgentListings.jsx:508,772,829",
+    "verification": "automated_browser",
+    "manualSteps": [],
+    "limitations": ""
+  },
+  {
+    "id": "UX-03",
+    "priority": "P1",
+    "title": "Specialist sales edits disappear despite successful saving",
+    "scope": "Commercial, industrial, retail, agricultural, mixed use and vacant land",
+    "status": "open",
+    "reproducer": "After editing category-specific fields and continuing, the editor reports success. Reopening shows the previous values (blank in the test). Examples: farm size 42.5, warehouse area 2200.5, yard 900.5, rentable area 1250.5, zoning, power and water information.",
+    "acceptance": "For each specialist category, create, edit, clear where allowed, reload and compare every specialist value through the guarded persistence boundary and both portal payloads.",
+    "source": "AgentListings.jsx:1653,2162,5090,5143,5146",
+    "verification": "automated_browser",
+    "manualSteps": [],
+    "limitations": "Sales browser persistence is simulated; outgoing save requests are real. Hosted persistence remains a later gate."
+  },
+  {
+    "id": "API-01",
+    "priority": "P1",
+    "title": "Private Property rental XML fails the published schema",
+    "scope": "All seven rental categories",
+    "status": "open",
+    "reproducer": "Every representative rental XML fails validation against the freshly downloaded production WSDL. RentalPriceType appears after Deposit, where the schema requires ListingDate. All seven sales XML examples pass. Moving only RentalPriceType after HideUnitNumber in diagnostic control copies makes all seven rentals pass.",
+    "acceptance": "All seven rental categories pass independent XML validation for monthly, weekly and daily rent; permitted commercial/commercial-land per-m\u00b2 cases pass. Annual PP rent remains blocked. Verify the eventual provider readback in an approved environment.",
+    "source": "privatePropertyListingMapper.js:696; official production WSDL Listing sequence; api-contract/contract-validation.json and xml-order-controls.json",
+    "verification": "automated_contract",
+    "manualSteps": [],
+    "limitations": ""
+  },
+  {
+    "id": "API-02",
+    "priority": "P1",
+    "title": "Private Property loses the price-on-application instruction",
+    "scope": "All seven sales categories",
+    "status": "open",
+    "reproducer": "For all seven sale examples, a numeric price plus priceOnApplication/isPOA and pricePresentation=Poa still produces a ready PP plan with a numeric Price and no SalesPricePresentation. A POA-only form without a positive amount is blocked by local validation. The partner specification documents SalesPricePresentation=Poa.",
+    "acceptance": "For every sale category, POA with and without a retained numeric price either generates an explicit supported POA payload or a clear pre-publication block. Check the preview and provider readback. Clarify the partner document\u2019s POA exception versus its generic zero-price moderation rule.",
+    "source": "listingFieldRequirements.js:26,49; privatePropertyListingMapper.js:795\u2013802 and buildPrivatePropertyListingXml; partner specification pp.14\u201315; api-contract/edge-cases.json",
+    "verification": "automated_contract",
+    "manualSteps": [],
+    "limitations": ""
+  },
+  {
+    "id": "UX-04",
+    "priority": "P2",
+    "title": "Mixed-use rentals cannot be started",
+    "scope": "Mixed-use rental",
+    "status": "open",
+    "reproducer": "The new rental selector offers six categories. Existing mixed-use rentals can be edited and saved; both local portal mappers support mixed use.",
+    "acceptance": "Create a mixed-use rental through the normal UI without seeded data, then save, reopen and generate portal payloads.",
+    "source": "RentalListingCreatePage.jsx:770",
+    "verification": "automated_browser",
+    "manualSteps": [],
+    "limitations": ""
+  },
+  {
+    "id": "UX-05",
+    "priority": "P2",
+    "title": "Sale category and property type can contradict each other",
+    "scope": "All sales; most visible outside residential",
+    "status": "open",
+    "reproducer": "Selecting Industrial still leaves House selected. All seven categories expose the same 25-type list. Bedrooms and bathrooms also remain prominent on vacant land.",
+    "acceptance": "Changing category must never retain an incompatible type; test category changes as well as fresh creation.",
+    "source": "AgentListings.jsx property category/type controls",
+    "verification": "automated_browser",
+    "manualSteps": [],
+    "limitations": ""
+  },
+  {
+    "id": "UX-06",
+    "priority": "P2",
+    "title": "Rental room counters cannot clearly express a studio or half bathroom",
+    "scope": "Residential and applicable rental categories",
+    "status": "open",
+    "reproducer": "An untouched Bedrooms counter displays 0, but Private Property validation treats it as unanswered. To explicitly save zero, the person must increase and decrease it. Bathrooms moves only in whole numbers; en-suite bathrooms separately supports halves.",
+    "acceptance": "A new studio can be entered as zero bedrooms without a hidden workaround; 1.5 bathrooms survives saving and reopening.",
+    "source": "RentalListingCreatePage.jsx:224,811,812,826",
+    "verification": "manual_browser_or_usability",
+    "manualSteps": [
+      "Start a residential rental and select Private Property. Leave Bedrooms at its displayed zero.",
+      "Complete all other required fields and continue; observe the missing-bedroom issue.",
+      "Try to enter 1.5 bathrooms directly without using the optional en-suite field."
+    ],
+    "limitations": ""
+  },
+  {
+    "id": "UX-07",
+    "priority": "P2",
+    "title": "Saving rental edits does not update the selected adverts",
+    "scope": "All rental categories",
+    "status": "open",
+    "reproducer": "Each of the six creation tests queued the three selected channels once. After changing rent from R12,500 to R13,500 and saving, the saved rent updated but no new publication job was queued. The editor still includes wording about sending to selected channels.",
+    "acceptance": "An edited rental must either send an explicitly approved update or clearly state that the public adverts still need updating.",
+    "source": "RentalListingCreatePage.jsx:696,1028,1074",
+    "verification": "manual_browser_or_usability",
+    "manualSteps": [
+      "Create a rental in the isolated fixture with both portals selected and record queue events.",
+      "Reopen it, change rent from 12500 to 13500, and save.",
+      "Compare the saved amount, queue events and screen wording; require either an explicit update action or an unmistakable saved-but-not-sent notice."
+    ],
+    "limitations": ""
+  },
+  {
+    "id": "UX-08",
+    "priority": "P2",
+    "title": "Optional details look like an unfinished examination",
+    "scope": "Sales and rentals; particularly farms and homes",
+    "status": "open",
+    "reproducer": "Rental feature cards show 122 questions for residential, 120 for agricultural, 95 for industrial, 78 for commercial/retail and 11 for land. They show \u201c0 of \u2026 answered\u201d without saying the whole step can be skipped. Sales shows similar long feature groups even for land. Specialist sales fields marked * are inside \u201cMore property features (optional)\u201d and can be left blank.",
+    "acceptance": "A novice can identify the minimum needed to publish and finish without believing all feature questions must be answered.",
+    "source": "RentalListingCreatePage.jsx features step; AgentListings.jsx:8475",
+    "verification": "manual_browser_or_usability",
+    "manualSteps": [
+      "Open Additional property details for each category and record the number of questions.",
+      "Without answering optional questions, identify how to skip and whether any asterisk is required by the selected destination.",
+      "Ask a first-time agent to explain what must be completed and record assistance needed."
+    ],
+    "limitations": ""
+  },
+  {
+    "id": "UX-09",
+    "priority": "P2",
+    "title": "Errors arrive late and corrections are hard to follow",
+    "scope": "Sales and rentals",
+    "status": "open",
+    "reproducer": "External requirements only become visible after destinations are selected near the end. A blank residential rental produces 11 Private Property issues, repeated in a long error paragraph and a list. Every correction button says \u201cEdit field\u201d. The earlier sales browser check found the price correction opened the step but left focus on BODY and hid the error.",
+    "acceptance": "Mouse and keyboard correction links focus the right field and preserve the error until corrected; zero and missing values are clearly different.",
+    "source": "ListingFieldIssues.jsx:4\u201318; AgentListings.jsx:8147",
+    "verification": "manual_browser_or_usability",
+    "manualSteps": [
+      "Select Private Property with missing required fields and continue.",
+      "Follow each correction link by mouse and keyboard.",
+      "Check section, input focus, and a single clear error remaining until fixed."
+    ],
+    "limitations": ""
+  },
+  {
+    "id": "UX-10",
+    "priority": "P2",
+    "title": "Review does not show enough to catch mistakes",
+    "scope": "Sales and rentals",
+    "status": "open",
+    "reproducer": "Sales review exposes raw values such as office_building, retail_store, mixed_use_building and vacant_land. It shows bedroom/bathroom counts on all categories but omits the full description and measurements. Rental review has useful Edit buttons, but describes the description only as \u201cAdded\u201d and omits key property sizes and deposit detail.",
+    "acceptance": "A person can spot an incorrect size, price, deposit, description or public address before approving publication.",
+    "source": "AgentListings.jsx:8519; RentalListingCreatePage.jsx:1036\u20131040",
+    "verification": "manual_browser_or_usability",
+    "manualSteps": [
+      "Complete a listing with distinctive fractional area, price, deposit, description and three photos.",
+      "Reach Review and compare every value and destination against the form.",
+      "Check readable type names and Edit links to the correct section."
+    ],
+    "limitations": ""
+  },
+  {
+    "id": "UX-11",
+    "priority": "P2",
+    "title": "Sales editor does unnecessary work before the user can finish",
+    "scope": "Primarily sales, with shared bundle costs",
+    "status": "open",
+    "reproducer": "The sales page combines the listing inventory and editor in a roughly 10,700-line module. Its editor still loads inventory and related organisation/development/transaction data. Website status enrichment runs per listing, up to four requests at a time. Edit-step Continue uses a multi-request save pipeline.",
+    "acceptance": "Measure cold/warm editor time and request counts against small and large portfolios; verify typing/navigation stays responsive on a slower phone and network.",
+    "source": "AgentListings.jsx:3802,3877,3928,3974; useListingWebsitePublications.js:23\u201338",
+    "verification": "manual_browser_or_usability",
+    "manualSteps": [
+      "Load a new and existing sale while recording calls and network requests in the isolated fixture.",
+      "Compare editor-only work against inventory loading and per-listing website enrichment.",
+      "Later in an authorised environment, compare cold/warm interactive time for small/large portfolios on a slower device/network. Local Vite startup is not production latency."
+    ],
+    "limitations": ""
+  },
+  {
+    "id": "API-03",
+    "priority": "P2",
+    "title": "Office and retail sales become generic commercial adverts",
+    "scope": "Commercial office sales and retail sales",
+    "status": "open",
+    "reproducer": "Office Building becomes PP BusinessType=Commercial instead of Offices; Retail Store becomes Commercial instead of Retail. The equivalent rental Office and Shop examples map correctly. The vendor Appendix A explicitly distinguishes Offices and Retail.",
+    "acceptance": "Office Building maps to Offices and Retail Store to Retail; enumerate every visible subtype and verify its intended mapping on both portals. Preserve broad Farms/Land/Commercial category handling.",
+    "source": "privatePropertyListingMapper.js:497\u2013512; partner specification Appendix A p.96; api-contract/contract-validation.json",
+    "verification": "automated_contract",
+    "manualSteps": [],
+    "limitations": ""
+  },
+  {
+    "id": "API-04",
+    "priority": "P2",
+    "title": "Private Property headline rules are missing from early validation",
+    "scope": "Sales and rentals, all seven categories",
+    "status": "open",
+    "reproducer": "A synthetic headline containing a phone number and website address passes the UI requirements and PP mapper in all 14 combinations. The partner document prohibits these in headlines, along with email and unsupported punctuation. Current checks cover parts of the description instead.",
+    "acceptance": "A prohibited headline cannot reach a ready-to-send state; a valid headline with allowed punctuation passes. Correction links open and focus the title field. Show understandable messages rather than vendor error codes.",
+    "source": "privatePropertyListingMapper.js:335\u2013336,642\u2013646; listingFieldRequirements.js; partner specification Appendix B p.101; api-contract/edge-cases.json",
+    "verification": "automated_contract",
+    "manualSteps": [],
+    "limitations": ""
+  },
+  {
+    "id": "API-05",
+    "priority": "P2",
+    "title": "Queued updates resend unchanged photos to both portals",
+    "scope": "Sales and rentals, every category, when an existing advert is updated through the queue",
+    "status": "open",
+    "reproducer": "dispatchPublicationJob hard-codes photosChanged=true for both portals. The mapper already supports null photos for unchanged images. Property24 documents this optimisation; PP\u2019s November 2025 update explains that missing its nil marker causes unnecessary image downloads and resizing.",
+    "acceptance": "A price/description-only update sends no image bytes or URLs; new, changed, reordered and cover-changed photos still update. Verify no accidental empty-array deletion and measure payload size and portal update duration.",
+    "source": "listingPublicationJobs.js:46\u201347; property24ListingMapper.js:666; privatePropertyListingMapper.js:654\u2013656,785; P24 v55 Listing.photos; PP partner specification p.20",
+    "verification": "automated_contract",
+    "manualSteps": [],
+    "limitations": ""
+  },
+  {
+    "id": "API-06",
+    "priority": "P2",
+    "title": "Queued Property24 publication overrides the chosen expiry date",
+    "scope": "Sales and rentals, all categories, queued publication",
+    "status": "open",
+    "reproducer": "The job dispatcher constructs an expiry 90 days from dispatch and supplies it to the P24 API instead of reading the listing\u2019s chosen date. Saving/reopening an expiry in the earlier rental test only proves local persistence. PP\u2019s partner specification separately says its ExpiryDate input is deprecated and ignored.",
+    "acceptance": "Set a distinctive expiry, enqueue with a stub provider, and verify that exact intended P24 date. Test delayed jobs and expired mandates. Check PP status/renewal readback separately in an approved environment.",
+    "source": "listingPublicationJobs.js:41\u201346; property24/api.js:1393; P24 v55 Listing.expiryDate; PP partner specification p.14",
+    "verification": "automated_contract",
+    "manualSteps": [],
+    "limitations": ""
+  },
+  {
+    "id": "API-07",
+    "priority": "P2",
+    "title": "Property24 rental amounts are rounded without explanation",
+    "scope": "All seven rental categories; especially per-m\u00b2 business rents",
+    "status": "open",
+    "reproducer": "A rental amount of R12,500.75 becomes 12501 in every P24 rental payload while PP retains 12500.75. P24\u2019s live specification defines price as a double, so this precision loss is not imposed by the API schema.",
+    "acceptance": "Monthly and permitted per-m\u00b2 fractional rents remain identical across the saved record and both portal payloads; verify deposit amounts too. The final review displays the same amount that will be sent.",
+    "source": "property24RentalListingAdapter.js:43\u201345,115; P24 v55 Listing.price; api-contract/decimal-price-matrix.json",
+    "verification": "automated_contract",
+    "manualSteps": [],
+    "limitations": ""
+  }
+]

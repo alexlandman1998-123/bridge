@@ -1,3 +1,4 @@
+import { getPropertyTypeOptionsByCategory } from '../../../lib/propertyTaxonomy'
 import { describe, expect, it } from 'vitest'
 import { getListingFieldIssues } from '../listingFieldRequirements'
 
@@ -12,7 +13,7 @@ const form = {
 describe('channel-specific capture requirements', () => {
   for (const rental of [false, true]) for (const category of ['residential', 'commercial', 'industrial', 'retail', 'mixed_use', 'agricultural', 'vacant_land']) {
     it(`${category} ${rental ? 'rental' : 'sale'} does not require seller, landlord, mandate, approval or floor size`, () => {
-      expect(getListingFieldIssues({ ...form, propertyCategory: category, erfSize: category === 'vacant_land' ? '500' : '' }, { rental })).toEqual([])
+      expect(getListingFieldIssues({ ...form, propertyCategory: category, propertyType: getPropertyTypeOptionsByCategory(category)[0].value, erfSize: category === 'vacant_land' ? '500' : '' }, { rental })).toEqual([])
     })
   }
   it('allows explicit POA on P24 and Website while explaining PP numeric pricing', () => {
@@ -30,10 +31,10 @@ describe('channel-specific capture requirements', () => {
     expect(getListingFieldIssues({}, { channels: [] })).toEqual([])
   })
   it('uses PP land and residential requirements without applying them to other categories/channels', () => {
-    expect(getListingFieldIssues({ ...form, propertyCategory: 'vacant_land' }).map(x => x.field)).toContain('erfSize')
-    expect(getListingFieldIssues({ ...form, propertyCategory: 'vacant_land', selectedSyndicationChannels: ['property24'] })).toEqual([])
+    expect(getListingFieldIssues({ ...form, propertyCategory: 'vacant_land', propertyType: 'vacant_land' }).map(x => x.field)).toContain('erfSize')
+    expect(getListingFieldIssues({ ...form, propertyCategory: 'vacant_land', propertyType: 'vacant_land', selectedSyndicationChannels: ['property24'] })).toEqual([])
     expect(getListingFieldIssues({ ...form, bathrooms: 0 }).map(x => x.field)).toContain('bathrooms')
-    expect(getListingFieldIssues({ ...form, propertyCategory: 'commercial', bathrooms: '' })).toEqual([])
+    expect(getListingFieldIssues({ ...form, propertyCategory: 'commercial', propertyType: 'office_building', bathrooms: '' })).toEqual([])
   })
   it('handles each rental cadence without silently converting the price', () => {
     for (const frequency of ['monthly', 'weekly', 'daily', 'annual', 'per_square_metre']) {
@@ -41,7 +42,7 @@ describe('channel-specific capture requirements', () => {
     }
     expect(getListingFieldIssues({ ...form, rentalPriceFrequency: 'annual' }, { rental: true }).map(x => x.field)).toContain('rentalPriceFrequency')
     expect(getListingFieldIssues({ ...form, propertyCategory: 'commercial', rentalPriceFrequency: 'per_square_metre' }, { rental: true })).toEqual([])
-    expect(getListingFieldIssues({ ...form, propertyCategory: 'vacant_land', erfSize: 500, rentalPriceFrequency: 'per_square_metre' }, { rental: true }).map(x => x.field)).toContain('rentalPriceFrequency')
+    expect(getListingFieldIssues({ ...form, propertyCategory: 'vacant_land', propertyType: 'vacant_land', erfSize: 500, rentalPriceFrequency: 'per_square_metre' }, { rental: true }).map(x => x.field)).toContain('rentalPriceFrequency')
   })
   it('allows zero deposit explicitly and requires an amount only for PP rentals', () => {
     expect(getListingFieldIssues({ ...form, depositPolicy: '', depositAmount: '' }, { rental: true }).map(x => x.field)).toContain('depositAmount')

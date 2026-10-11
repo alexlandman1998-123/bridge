@@ -37,14 +37,14 @@ export async function dispatchPublicationJob(job, { client, env = process.env, p
     const value = Reflect.get(target, key)
     return typeof value === 'function' ? value.bind(target) : value
   } })
-  const expiry = new Date(); expiry.setUTCDate(expiry.getUTCDate() + 90)
+  // Resolve the saved expiry in the provider plan at dispatch time, including retries.
   const p24 = job.channel === 'property24'
   return (p24 ? property24 : privateProperty)({
     method: 'POST',
     url: p24 ? `/api/property24/${rental ? 'rentals' : 'listings'}/${job.listing_id}/publish` : `/api/private-property/listings/${job.listing_id}/publish`,
     headers: { authorization: `Bearer ${job.id}` },
-    body: p24 ? { environment: 'production', photosChanged: true, expiryDate: expiry.toISOString().slice(0, 10) }
-      : { environment: 'production', photosChanged: true, confirm: `PRIVATE_PROPERTY_PUBLISH:${job.listing_id}:production` },
+    body: p24 ? { environment: 'production', photosChanged: 'auto' }
+      : { environment: 'production', photosChanged: 'auto', confirm: `PRIVATE_PROPERTY_PUBLISH:${job.listing_id}:production` },
     env, dependencies: { createSupabase: () => actorClient },
   })
 }

@@ -1,3 +1,4 @@
+import { resolveListingPhotoChange } from '../services/listingPhotoChangeService.js'
 import { beginRentalPublicationAttempt, updateRentalPublicationAttempt, retainUncertainRentalPublication, isDefinitePortalRejection, publicRentalPublicationAttempt } from '../services/rentalPublicationAttemptService.js'
 import {
   createProperty24Arch9ListingPreview,
@@ -368,6 +369,7 @@ export async function buildProperty24ListingSubmitPlan({
   suburbId,
   propertyTypeId,
   expiryDate,
+  defaultExpiryDate,
   listingNumber,
   status,
   storageBaseUrl = '',
@@ -378,6 +380,17 @@ export async function buildProperty24ListingSubmitPlan({
 } = {}) {
   if (!supabase) throw new Error('Supabase client is required.')
   const bundle = await fetchArch9ListingForProperty24Preview({ client: supabase, listingId })
+  const destinationNumber = bundle.existingSync?.listing_number || listingNumber || ''
+  const photoChange = resolveListingPhotoChange({
+    media: bundle.media, existingSync: bundle.existingSync,
+    scope: { channel: 'property24', environment, agencyId: String(agencyId), maxImages, convertImagesToJpeg },
+    identityMatches: Boolean(destinationNumber) &&
+      bundle.existingSync?.last_payload_summary?.photoListingNumber === String(destinationNumber) &&
+      String(bundle.existingSync?.agency_id) === String(agencyId) && bundle.existingSync?.environment === environment,
+    force: photosChanged === true,
+  })
+  photosChanged = photoChange.photosChanged
+  loadImageBytes = loadImageBytes && photosChanged
   const loaded = loadImageBytes
     ? await loadProperty24ImageBytesForPreview({
         media: bundle.media,
@@ -398,7 +411,7 @@ export async function buildProperty24ListingSubmitPlan({
         results: [],
       }
 
-  return createProperty24Arch9ListingPreview({
+  const preview = createProperty24Arch9ListingPreview({
     ...bundle,
     media: loaded.media,
     agentMapping: {
@@ -418,6 +431,7 @@ export async function buildProperty24ListingSubmitPlan({
       environment,
       sandboxPayloadTestMode,
       expiryDate,
+      defaultExpiryDate,
       listingNumber,
       status,
       photosChanged,
@@ -426,6 +440,13 @@ export async function buildProperty24ListingSubmitPlan({
       expectedPhotoPayloadCount: loaded.summary.requested,
     },
   })
+  preview.summary.photoFingerprint = photoChange.fingerprint
+  if (photosChanged && Array.isArray(preview.payload?.photos) && preview.payload.photos.length === 0) {
+    preview.dataBlockers.push('missing_listing_image')
+    preview.canSubmit = false
+    preview.canPreview = false
+  }
+  return preview
 }
 
 export async function buildProperty24RentalListingSubmitPlan({
@@ -440,6 +461,7 @@ export async function buildProperty24RentalListingSubmitPlan({
   suburbId,
   propertyTypeId,
   expiryDate,
+  defaultExpiryDate,
   listingNumber,
   storageBaseUrl = '',
   maxImages = null,
@@ -455,6 +477,17 @@ export async function buildProperty24RentalListingSubmitPlan({
     error.status = 400
     throw error
   }
+  const destinationNumber = bundle.existingSync?.listing_number || listingNumber || ''
+  const photoChange = resolveListingPhotoChange({
+    media: bundle.media, existingSync: bundle.existingSync,
+    scope: { channel: 'property24', environment, agencyId: String(agencyId), maxImages, convertImagesToJpeg },
+    identityMatches: Boolean(destinationNumber) &&
+      bundle.existingSync?.last_payload_summary?.photoListingNumber === String(destinationNumber) &&
+      String(bundle.existingSync?.agency_id) === String(agencyId) && bundle.existingSync?.environment === environment,
+    force: photosChanged === true,
+  })
+  photosChanged = photoChange.photosChanged
+  loadImageBytes = loadImageBytes && photosChanged
   const loaded = loadImageBytes
     ? await loadProperty24ImageBytesForPreview({
         media: bundle.media,
@@ -475,7 +508,7 @@ export async function buildProperty24RentalListingSubmitPlan({
         results: [],
       }
 
-  return createProperty24RentalListingPlan({
+  const preview = createProperty24RentalListingPlan({
     ...bundle,
     media: loaded.media,
     agentMapping: {
@@ -492,6 +525,7 @@ export async function buildProperty24RentalListingSubmitPlan({
       apiVersion,
       sandboxPayloadTestMode,
       expiryDate,
+      defaultExpiryDate,
       listingNumber,
       photosChanged,
       includeSubmitPayload: true,
@@ -503,6 +537,13 @@ export async function buildProperty24RentalListingSubmitPlan({
       results: loaded.results,
     },
   })
+  preview.summary.photoFingerprint = photoChange.fingerprint
+  if (photosChanged && Array.isArray(preview.payload?.photos) && preview.payload.photos.length === 0) {
+    preview.dataBlockers.push('missing_listing_image')
+    preview.canSubmit = false
+    preview.canPreview = false
+  }
+  return preview
 }
 
 export function createProperty24PublishReport({ config = {}, preview, apply = false } = {}) {
@@ -619,7 +660,7 @@ export async function applyProperty24ListingPublish({
       isOnPortal: portalIsOnPortal,
       reasons: Array.isArray(result.data?.reasons) ? result.data.reasons : [],
       responseSummary: nextReport.property24Response.summary,
-      payloadSummary: preview.summary,
+      payloadSummary: { ...preview.summary, photoListingNumber: String(listingNumber) },
       payloadHash: config.payloadHash,
       imagePayloadHash: config.imagePayloadHash,
       property24ListingUrl: resolveProperty24PublicUrl(result.data, config.property24ListingUrl),

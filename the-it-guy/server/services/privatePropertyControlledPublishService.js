@@ -1,3 +1,4 @@
+import { resolveListingPhotoChange } from './listingPhotoChangeService.js'
 import { beginRentalPublicationAttempt, updateRentalPublicationAttempt, retainUncertainRentalPublication, isDefinitePortalRejection, publicRentalPublicationAttempt } from './rentalPublicationAttemptService.js'
 import { createHash } from 'node:crypto'
 import {
@@ -112,13 +113,22 @@ function createBaseReport({ listingId = '', environment = 'sandbox', apply = fal
   }
 }
 
-async function buildSubmitPreview({ client, listingId = '', readiness = {}, overrides = {} } = {}) {
+export async function buildSubmitPreview({ client, listingId = '', readiness = {}, overrides = {} } = {}) {
   const bundle = await fetchArch9ListingForPrivatePropertyPreview({ client, listingId, environment: readiness.environment })
-  return createPrivatePropertyArch9ListingPreview({
-    ...bundle,
-    agentMapping: readiness.agentMapping || {},
-    options: createPreviewOptions({ readiness, overrides }),
+  const options = createPreviewOptions({ readiness, overrides })
+  const preview = createPrivatePropertyArch9ListingPreview({ ...bundle, agentMapping: readiness.agentMapping || {}, options: { ...options, photosChanged: true } })
+  const photoChange = resolveListingPhotoChange({
+    media: bundle.media, existingSync: bundle.existingSync,
+    scope: { channel: 'private_property', environment: readiness.environment, branchGuid: options.branchGuid, propertyId: preview.summary.propertyId },
+    identityMatches: Boolean(bundle.existingSync?.property_id) && preview.summary.propertyId === bundle.existingSync.property_id &&
+      bundle.existingSync?.branch_guid === options.branchGuid && bundle.existingSync?.environment === readiness.environment,
+    force: overrides.photosChanged === true,
   })
+  const submitPreview = photoChange.photosChanged ? preview : createPrivatePropertyArch9ListingPreview({
+    ...bundle, agentMapping: readiness.agentMapping || {}, options: { ...options, photosChanged: false },
+  })
+  submitPreview.summary.photoFingerprint = photoChange.fingerprint
+  return submitPreview
 }
 
 export async function runPrivatePropertyControlledPublishRehearsal({

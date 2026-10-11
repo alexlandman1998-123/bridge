@@ -76,6 +76,7 @@ export function summarizePrivatePropertySyncPayload(payloadSummary = {}) {
     suburbId: payload.suburbId ?? null,
     imageUrlCount: payload.imageUrlCount ?? null,
     photoUrlPayloadCount: payload.photoUrlPayloadCount ?? null,
+    ...(payload.photoFingerprint ? { photoFingerprint: normalizePrivatePropertyText(payload.photoFingerprint) } : {}),
     attributeCount: payload.attributeCount ?? null,
     ...(addressFingerprint ? { addressFingerprint } : {}),
     ...(payload.submission ? { submission: {

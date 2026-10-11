@@ -1,3 +1,4 @@
+import { getPrivatePropertyHeadlineIssues, PRIVATE_PROPERTY_POA_PRICE_MESSAGE } from '../../src/services/listings/privatePropertyContentRules.js'
 import { buildRentalPortalMapping, appendRentalPortalDescription, rentalListingPortalFacts } from '../../src/services/rentals/rentalPortalFieldContract.js'
 import {
   escapePrivatePropertyXml,
@@ -333,7 +334,7 @@ function appendSpecialistDescription(description = '', facts = {}, specialistCat
 }
 
 function resolveHeadline(listing = {}, publication = {}) {
-  return firstText(publication.headline, publication.title, listing.title, listing.listingTitle).slice(0, 200)
+  return firstText(publication.headline, publication.title, listing.title, listing.listingTitle)
 }
 
 function resolvePrice(listing = {}, publication = {}, options = {}) {
@@ -498,13 +499,18 @@ function resolveBusinessType(value = '') {
   const key = normalizePrivatePropertyListingKey(value)
   const map = {
     office: 'Offices',
+    office_building: 'Offices',
     offices: 'Offices',
     commercial: 'Commercial',
     industrial: 'Industrial',
     warehouse: 'Industrial',
     factory: 'Industrial',
+    distribution_centre: 'Industrial',
+    industrial_park: 'Industrial',
     showroom: 'Retail',
     retail: 'Retail',
+    retail_store: 'Retail',
+    shopping_centre: 'Retail',
     shop: 'Retail',
     hotel: 'Hotel',
     bed_and_breakfast: 'Bed And Breakfast',
@@ -525,6 +531,7 @@ function resolveFarmType(value = '') {
     smallholding: 'Small Holding',
     farm_with_house: 'Farm with house',
     farm_land: 'Farm Land',
+    agricultural_land: 'Farm Land',
     agricultural_holding: 'Agricultural Holding',
     commercial_farm: 'Commercial Farm',
     game_farm: 'Game Farm',
@@ -693,7 +700,6 @@ export function buildPrivatePropertyListingXml(plan = {}) {
     `<Description><![CDATA[${payload.description.replaceAll(']]>', ']]]]><![CDATA[>')}]]></Description>`,
     `<Price>${payload.price}</Price>`,
     `<Deposit>${payload.deposit || 0}</Deposit>`,
-    rentalPriceTypeXml,
     `<ListingDate>${escapePrivatePropertyXml(toPrivatePropertyDateTime(payload.listingDate))}</ListingDate>`,
     `<ExpiryDate>${escapePrivatePropertyXml(toPrivatePropertyDateTime(payload.expiryDate))}</ExpiryDate>`,
     payload.availableFrom ? `<AvailableFrom>${escapePrivatePropertyXml(toPrivatePropertyDateTime(payload.availableFrom))}</AvailableFrom>` : '',
@@ -710,6 +716,8 @@ export function buildPrivatePropertyListingXml(plan = {}) {
     `<HideStreetNo>${payload.address.hideStreetNo ? 'true' : 'false'}</HideStreetNo>`,
     `<HideComplexName>${payload.address.hideComplexName ? 'true' : 'false'}</HideComplexName>`,
     `<HideUnitNumber>${payload.address.hideUnitNo ? 'true' : 'false'}</HideUnitNumber>`,
+    rentalPriceTypeXml,
+    payload.salesPricePresentation ? `<SalesPricePresentation>${escapePrivatePropertyXml(payload.salesPricePresentation)}</SalesPricePresentation>` : '',
     payload.soleMandateExclusiveDays ? `<SoleMandateExclusiveDays>${payload.soleMandateExclusiveDays}</SoleMandateExclusiveDays>` : '<SoleMandateExclusiveDays xsi:nil="true" />',
     '</ListingImport>',
   ].join('')
@@ -753,6 +761,12 @@ export function createPrivatePropertyListingPlan({
   const propertyId = resolvePropertyId(listing, publication, options, existingSync)
   const agentIds = resolveAgentIds(agentMapping, listing, options)
   const price = resolvePrice(listing, publication, options)
+  const isPoa = listingType === 'Sale' && (
+    [options, publication, listing].some(source =>
+      ['priceOnApplication', 'price_on_application', 'isPOA', 'isPoa', 'is_poa'].some(key => normalizeBoolean(source[key], false)) ||
+      ['salesPricePresentation', 'pricePresentation', 'sales_price_presentation', 'price_presentation'].some(key => normalizePrivatePropertyListingKey(source[key]) === 'poa') ||
+      hasFeature(source, ['price_on_application', 'poa', 'is_poa']))
+  )
   const deposit = listingType === 'Rental'
     ? firstNumber(options.deposit, publication.deposit, listing.deposit) ?? 0
     : firstNumber(options.deposit, publication.deposit, listing.deposit) ?? 0
@@ -793,7 +807,7 @@ export function createPrivatePropertyListingPlan({
   if (!propertyId) dataBlockers.push('missing_property_id')
   if (!agentIds.length) dataBlockers.push('missing_private_property_agent_id')
   if (!description) dataBlockers.push('missing_description')
-  if (price === null || price <= 0) dataBlockers.push('missing_or_invalid_price')
+  if (price === null || price <= 0) dataBlockers.push(isPoa ? 'poa_requires_positive_asking_price' : 'missing_or_invalid_price')
   if (!listingDate) dataBlockers.push('missing_listing_date')
   if (!address.streetName) dataBlockers.push('missing_street_name')
   if (!address.streetNumber) dataBlockers.push('missing_street_number')
@@ -818,6 +832,8 @@ export function createPrivatePropertyListingPlan({
   if (category === 'Farms' && !attributes.some((item) => item.attributeType === 'FarmType')) dataBlockers.push('missing_farm_type_attribute')
   if (soleMandateExclusiveDays && (listingType !== 'Sale' || mandateType !== 'FullMandate')) dataBlockers.push('exclusive_days_requires_sale_full_mandate')
   if (soleMandateExclusiveDays && (soleMandateExclusiveDays < 1 || soleMandateExclusiveDays > 92)) dataBlockers.push('exclusive_days_must_be_between_1_and_92')
+  const headlineIssues = getPrivatePropertyHeadlineIssues(headline)
+  dataBlockers.push(...headlineIssues.map(issue => issue.code))
   dataBlockers.push(...validateDescription(description))
   dataBlockers.push(...rentalMapping.privatePropertyBlockers)
   dataBlockers.push(...rentalMapping.invalidFields.map((key) => `invalid_rental_field:${key}`))
@@ -832,6 +848,7 @@ export function createPrivatePropertyListingPlan({
     propertyStatus,
     address,
     headline,
+    salesPricePresentation: listingType === 'Sale' ? (isPoa ? 'Poa' : 'Standard') : null,
     description,
     price: price ?? 0,
     deposit,
@@ -858,6 +875,10 @@ export function createPrivatePropertyListingPlan({
     canPreview,
     canSubmit: false,
     dataBlockers,
+    fieldIssues: [
+      ...headlineIssues.map(issue => ({ ...issue, field: listingType === 'Sale' ? 'listingTitle' : 'title', step: 'marketing' })),
+      ...(dataBlockers.includes('poa_requires_positive_asking_price') ? [{ code: 'poa_requires_positive_asking_price', field: 'listingPrice', step: 'property', message: PRIVATE_PROPERTY_POA_PRICE_MESSAGE }] : []),
+    ],
     technicalBlockers,
     qualityWarnings: video.warnings,
     summary: {
@@ -869,6 +890,7 @@ export function createPrivatePropertyListingPlan({
       mandateType,
       propertyStatus,
       rentalPriceType,
+      salesPricePresentation: payload.salesPricePresentation,
       price: price ?? 0,
       listingDate,
       suburbId: address.suburbId || null,

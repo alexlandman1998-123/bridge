@@ -1,3 +1,7 @@
+import ListingAdvertisingChoices from '../components/listings/ListingAdvertisingChoices'
+import ListingReviewDetails from '../components/listings/ListingReviewDetails'
+import { salesPropertyTypeOptions, salesPropertyTypeMatches, salesCategoryChange } from '../services/listings/listingCaptureModel'
+import { applyListingSellerOnboardingSaveSnapshot } from '../services/listings/listingSellerCanonicalUpdateModel.js'
 import { saveListingRecoveryDraft, readListingRecoveryDraft, clearListingRecoveryDraft } from '../services/listings/listingDraftRecovery'
 import ListingChannelLogo from '../components/listings/ListingChannelLogo'
 import ListingPublicationProgress from '../components/listings/ListingPublicationProgress'
@@ -92,8 +96,8 @@ import { isListingSellerOwnershipUnidentified } from '../lib/listingSellerProfil
 import { SELLER_ENTITY_TYPES, normalizeSellerEntityType } from '../lib/sellerEntityModel'
 import {
   getPropertyCategoryLabel,
+  getPropertyTypeLabel,
   getPropertyStructureTypeLabel,
-  getPropertyTypeOptionsForListing,
   normalizeListingSource,
   normalizePropertyCategory,
   normalizePropertyStructureType,
@@ -101,7 +105,7 @@ import {
   PROPERTY_STRUCTURE_TYPES,
 } from '../lib/propertyTaxonomy'
 import { buildFinalListingModuleOverview } from '../services/listings/finalListingModuleModel'
-import { getSpecialistSalesListingSchema } from '../services/listings/specialistSalesListingSchema'
+import { getSpecialistSalesListingSchema, buildSpecialistSalesFacts, SPECIALIST_SALES_FIELD_KEYS } from '../services/listings/specialistSalesListingSchema'
 import {
   mergeListingFeatureSelections,
   normalizeListingFeatureFacts,
@@ -283,9 +287,9 @@ const QUICK_ADD_SELLER_TYPE_CARDS = SELLER_ENTITY_TYPES.map((option) => ({
 const CREATE_LISTING_WORKFLOW_STEPS = [
   { key: 'seller', label: 'Seller', description: 'Owner details' },
   { key: 'property', label: 'Property details', description: 'Address & specifications' },
-  { key: 'marketing', label: 'Marketing', description: 'Photos & description' },
-  { key: 'syndication', label: 'Syndication', description: 'Publish to portals' },
-  { key: 'review', label: 'Review', description: 'Confirm & create' },
+  { key: 'marketing', label: 'Photos & description', description: '' },
+  { key: 'syndication', label: 'Where to advertise', description: '' },
+  { key: 'review', label: 'Check & publish', description: '' },
 ]
 
 const CREATE_LISTING_PROPERTY_STRUCTURE_OPTIONS = PROPERTY_STRUCTURE_TYPES
@@ -295,21 +299,6 @@ const CREATE_LISTING_PROPERTY_STRUCTURE_OPTIONS = PROPERTY_STRUCTURE_TYPES
     label: getPropertyStructureTypeLabel(structureType),
   }))
 
-const CREATE_LISTING_DESCRIPTIVE_PROPERTY_TYPES = [
-  { value: 'House', label: 'House' },
-  { value: 'Apartment', label: 'Apartment / Flat' },
-  { value: 'Townhouse', label: 'Townhouse' },
-  { value: 'Cluster', label: 'Cluster' },
-  { value: 'Duplex', label: 'Duplex' },
-  { value: 'Penthouse', label: 'Penthouse' },
-  { value: 'vacant_stand', label: 'Vacant Stand' },
-  { value: 'smallholding', label: 'Smallholding' },
-  { value: 'Farm', label: 'Farm' },
-  { value: 'new_development', label: 'New Development' },
-  ...getPropertyTypeOptionsForListing('residential').filter((option) => ![
-    'house', 'apartment', 'townhouse', 'cluster', 'duplex', 'penthouse', 'vacant_stand', 'smallholding', 'farm',
-  ].includes(option.value)),
-]
 
 const CREATE_LISTING_SALES_FLAG_OPTIONS = [
   { key: 'onAuction', label: 'On Auction', description: 'Market this listing as an auction listing.' },
@@ -511,6 +500,12 @@ function normalizeIntegerInput(value) {
   const number = Math.floor(Number(digits))
   if (!Number.isFinite(number) || number < 0) return ''
   return String(number)
+}
+
+// Keep the decimal point while typing (including a trailing point). Reject
+// invalid edits instead of silently turning 2.5 into 25 or -2 into 2.
+function isNonNegativeNumberInput(value, decimal = false) {
+  return (decimal ? /^\d*(?:\.\d*)?$/ : /^\d*$/).test(value)
 }
 
 function getListingSortTimestamp(card = {}) {
@@ -769,10 +764,10 @@ function BooleanChoiceField({ label, value = false, onChange, yesLabel = 'Yes', 
   )
 }
 
-function NumberStepper({ label, value = '', onChange, min = 0 }) {
-  const currentValue = Math.max(min, Number(normalizeIntegerInput(value) || min) || min)
+function NumberStepper({ label, name, value = '', onChange, min = 0, step = 1 }) {
+  const currentValue = Math.max(min, Number(value || min) || min)
   const updateValue = (nextValue) => {
-    const normalized = Math.max(min, Number(normalizeIntegerInput(nextValue) || min) || min)
+    const normalized = Math.max(min, Number(nextValue || min) || min)
     onChange?.(String(normalized))
   }
 
@@ -783,23 +778,24 @@ function NumberStepper({ label, value = '', onChange, min = 0 }) {
         <button
           type="button"
           className="grid place-items-center border-r border-[#e3ebf4] text-lg font-semibold text-[#1f4f78] transition hover:bg-[#f5f8fb] disabled:text-[#b8c4d1]"
-          onClick={() => updateValue(currentValue - 1)}
+          onClick={() => updateValue(currentValue - step)}
           disabled={currentValue <= min}
           aria-label={`Decrease ${label}`}
         >
           −
         </button>
         <input
-          value={value === '' ? '' : currentValue}
-          inputMode="numeric"
-          onChange={(event) => onChange?.(normalizeIntegerInput(event.target.value))}
+          name={name}
+          value={value}
+          inputMode={step < 1 ? 'decimal' : 'numeric'}
+          onChange={(event) => { if (isNonNegativeNumberInput(event.target.value, step < 1)) onChange?.(event.target.value) }}
           className="min-w-0 border-0 bg-white px-2 text-center text-sm font-semibold text-[#142132] outline-none"
           aria-label={label}
         />
         <button
           type="button"
           className="grid place-items-center border-l border-[#e3ebf4] text-lg font-semibold text-[#1f4f78] transition hover:bg-[#f5f8fb]"
-          onClick={() => updateValue(currentValue + 1)}
+          onClick={() => updateValue(currentValue + step)}
           aria-label={`Increase ${label}`}
         >
           +
@@ -809,12 +805,13 @@ function NumberStepper({ label, value = '', onChange, min = 0 }) {
   )
 }
 
-function CurrencyInput({ label, value = '', onChange, placeholder = '1,000,000' }) {
+function CurrencyInput({ label, name, value = '', onChange, placeholder = '1,000,000' }) {
   return (
     <FormField label={label}>
       <div className="grid h-11 grid-cols-[52px_minmax(0,1fr)] overflow-hidden rounded-[12px] border border-[#dce6f2] bg-white focus-within:border-[#1f8a4c] focus-within:ring-2 focus-within:ring-[#d8efdf]">
         <span className="grid place-items-center border-r border-[#e3ebf4] bg-[#f8fafc] text-sm font-semibold text-[#607387]">R</span>
         <input
+          name={name}
           value={formatCurrencyNumber(value)}
           inputMode="numeric"
           onChange={(event) => onChange?.(normalizeText(event.target.value).replace(/[^\d]/g, ''))}
@@ -826,14 +823,15 @@ function CurrencyInput({ label, value = '', onChange, placeholder = '1,000,000' 
   )
 }
 
-function UnitInput({ label, value = '', unit = 'm²', onChange }) {
+function UnitInput({ label, name, value = '', unit = 'm²', onChange }) {
   return (
     <FormField label={label}>
       <div className="grid h-11 grid-cols-[minmax(0,1fr)_52px] overflow-hidden rounded-[12px] border border-[#dce6f2] bg-white focus-within:border-[#1f8a4c] focus-within:ring-2 focus-within:ring-[#d8efdf]">
         <input
+          name={name}
           value={normalizeText(value)}
-          inputMode="numeric"
-          onChange={(event) => onChange?.(normalizeIntegerInput(event.target.value))}
+          inputMode="decimal"
+          onChange={(event) => { if (isNonNegativeNumberInput(event.target.value, true)) onChange?.(event.target.value) }}
           className="min-w-0 border-0 bg-white px-4 text-sm font-semibold text-[#142132] outline-none placeholder:text-[#9aa9ba]"
         />
         <span className="grid place-items-center border-l border-[#e3ebf4] bg-[#f8fafc] text-sm font-semibold text-[#607387]">{unit}</span>
@@ -1659,6 +1657,7 @@ function buildQuickAddDirectListingPersistencePayload(form = {}, context = {}) {
   const keySellingPoints = normalizeDirectListingFeatureSelections(form.keySellingPoints)
   const sellerOnboardingFormData = {
     ...directListingIntake.sellerOnboardingFormData,
+    ...buildSpecialistSalesFacts(form),
     ...Object.fromEntries([
       'sellerSurname', 'spouseName', 'spouseEmail', 'spousePhone', 'companyDirectorsText', 'trusteesText',
       'deceasedEstateName', 'executorName', 'executorsText', 'foreignPassportNumber',
@@ -2159,20 +2158,7 @@ function buildListingPropertyCanonicalFacts(form = {}) {
   const formattedAddress = normalizeText(addressValue?.formattedAddress || form?.propertyAddress)
   const propertyAddress = normalizeText(formattedAddress || addressValue?.streetAddress)
   const askingPrice = Number(normalizeIntegerInput(form?.listingPrice || form?.estimatedAskingPrice)) || 0
-  const specialistFacts = {
-    grossLettableArea: normalizeText(form?.grossLettableArea),
-    zoning: normalizeText(form?.zoning),
-    parking: normalizeText(form?.parking),
-    listingTerms: normalizeText(form?.listingTerms),
-    warehouseOrFactoryArea: normalizeText(form?.warehouseOrFactoryArea),
-    yardSize: normalizeText(form?.yardSize),
-    powerSupply: normalizeText(form?.powerSupply),
-    loadingAccess: Boolean(form?.loadingAccess),
-    farmSize: normalizeText(form?.farmSize),
-    waterSupplyOrRights: normalizeText(form?.waterSupplyOrRights),
-    agriculturalUse: normalizeText(form?.agriculturalUse),
-    erfSize: normalizeText(form?.erfSize),
-  }
+  const specialistFacts = buildSpecialistSalesFacts(form)
   const estateOrHoa = Boolean(form?.estateOrHoa || estateName || propertyStructureType === 'estate')
   return {
     property: {
@@ -3752,6 +3738,7 @@ function AgentListings({ mobileEditor = false } = {}) {
   const publicationPending = initialChannelResults.some(row => row.status === 'publishing')
   const publicationUncertain = initialChannelResults.some(row => row.status === 'uncertain')
   const sellerEditBaselineRef = useRef(null)
+  const savedEditorFormRef = useRef('')
   const [hydratedEditListingId, setHydratedEditListingId] = useState('')
   const [editListingDataReadyId, setEditListingDataReadyId] = useState('')
   // The listing grid deliberately refreshes through a lightweight summary
@@ -3800,7 +3787,7 @@ function AgentListings({ mobileEditor = false } = {}) {
     return () => window.removeEventListener('itg:listing-draft-warning', warning)
   }, [listingEditorDraftStorageKey])
   const websitePublications = useListingWebsitePublications(
-    privateListings.filter((listing) => !rowMatchesDeletedListing(listing, deletedListingIds) && !shouldHideListingRecord(listing) && !isRentalListingRecord(listing)),
+    isListingEditorWorkspace ? [] : privateListings.filter((listing) => !rowMatchesDeletedListing(listing, deletedListingIds) && !shouldHideListingRecord(listing) && !isRentalListingRecord(listing)),
     profile?.id ? `${profile.id}:${selectedWorkspaceOrganisationId || organisationId}` : '',
   )
 
@@ -3881,6 +3868,34 @@ function AgentListings({ mobileEditor = false } = {}) {
       setSupportingDataLoading(true)
       setDevelopmentDataLoading(true)
       setError('')
+      // An editor needs assignment choices, not the agency's stock and transaction history.
+      // Keep optional development choices separate from the form's initial render.
+      if (isListingEditorWorkspace) {
+        setLoading(false)
+        setOrganisationId(selectedWorkspaceOrganisationId)
+        if (!isSupabaseConfigured) return
+        const needsDevelopments = isDeveloperWorkspace || Boolean(linkedDevelopmentId) || form.listingSource === 'development'
+        const [context, users, assigned] = await Promise.all([
+          fetchOrganisationSettings().catch(() => null),
+          listOrganisationUsers().catch(() => []),
+          needsDevelopments ? fetchAssignedDevelopmentIdsForRole({
+            userId: profile?.id || null, participantEmail: profile?.email || '',
+            roleType: isDeveloperWorkspace ? 'developer' : 'agent',
+          }).catch(() => []) : Promise.resolve([]),
+        ])
+        const editorOrganisationId = selectedWorkspaceOrganisationId || String(context?.organisation?.id || '').trim()
+        setOrganisationId(editorOrganisationId)
+        setOrganisationUsers(Array.isArray(users) ? users : [])
+        setBranchOptions(extractBranchOptions(context))
+        setAssignedDevelopmentIds(assigned)
+        setSupportingDataLoading(false)
+        const options = needsDevelopments ? await fetchDevelopmentOptions({
+          ...(assigned.length ? { developmentIds: assigned } : {}),
+          ...(isDeveloperWorkspace ? { organisationId: editorOrganisationId } : {}),
+        }).catch(() => []) : []
+        setDevelopmentOptions(options)
+        return
+      }
       let participantRows = []
       let options = []
       let assignedIds = []
@@ -4029,7 +4044,7 @@ function AgentListings({ mobileEditor = false } = {}) {
       setSupportingDataLoading(false)
       setDevelopmentDataLoading(false)
     }
-  }, [agencyWorkflowMode, currentMembership, getCurrentDeletedListingIds, isDeveloperWorkspace, mobileEditor, profile, selectedWorkspaceOrganisationId, syncDeletedListingIds, workspaceRole])
+  }, [agencyWorkflowMode, currentMembership, form.listingSource, getCurrentDeletedListingIds, isDeveloperWorkspace, isListingEditorWorkspace, linkedDevelopmentId, mobileEditor, profile, selectedWorkspaceOrganisationId, syncDeletedListingIds, workspaceRole])
 
   useEffect(() => {
     let cancelled = false
@@ -4141,7 +4156,9 @@ function AgentListings({ mobileEditor = false } = {}) {
     if (editListingDataReadyId !== editListingId) return
     if (hydratedEditListingId === editListingId) return
     sellerEditBaselineRef.current = structuredClone(editListingRecord)
-    setForm(buildListingEditorFormFromListing(editListingRecord, profile, workspace))
+    const savedForm = buildListingEditorFormFromListing(editListingRecord, profile, workspace)
+    savedEditorFormRef.current = JSON.stringify(savedForm)
+    setForm(savedForm)
     setHydratedEditListingId(editListingId)
   }, [editListingDataReadyId, editListingId, editListingRecord, hydratedEditListingId, isEditListingWorkspace, profile, workspace])
 
@@ -4317,7 +4334,7 @@ function AgentListings({ mobileEditor = false } = {}) {
 
   function updateForm(key, value) {
     setForm((previous) => {
-      const next = { ...previous, [key]: key === 'sellerType' ? normalizeSellerEntityType(value) : value }
+      const next = key === 'propertyCategory' ? salesCategoryChange(previous, value) : { ...previous, [key]: key === 'sellerType' ? normalizeSellerEntityType(value) : value }
       if (key === 'propertyType' && normalizePropertyStructureType(value, { fallback: '' }) === 'sectional_title') {
         next.propertyStructureType = 'sectional_title'
       }
@@ -4531,7 +4548,7 @@ function AgentListings({ mobileEditor = false } = {}) {
     }
     setError('')
     const nextIndex = Math.min(createListingStepIndex + 1, listingEditorSteps.length - 1)
-    if (isEditListingWorkspace && !isListingSaving && !publicationPending && !publicationUncertain) {
+    if (isEditListingWorkspace && !isListingSaving && !publicationPending && !publicationUncertain && JSON.stringify(form) !== savedEditorFormRef.current) {
       setIsListingSaving(true)
       setError('')
       try {
@@ -5135,11 +5152,14 @@ function AgentListings({ mobileEditor = false } = {}) {
         sellerType: form.sellerType,
         ownershipStructure: form.sellerType,
         allowProtectedSectionOverride: true,
-        explicitClearFields: ['features', 'keySellingPoints'],
+        explicitClearFields: ['features', 'keySellingPoints', ...SPECIALIST_SALES_FIELD_KEYS],
       })
       if (!savedOnboarding?.id) {
         throw new Error('Your property details could not be written to the listing record. Your entries are still available here; please try again.')
       }
+      // Advance only from our confirmed receipt, including when a later
+      // publication save fails and this same form must retry.
+      sellerEditBaselineRef.current = applyListingSellerOnboardingSaveSnapshot(sellerEditBaselineRef.current || listing, savedOnboarding)
       // Seller facts and their revision were committed by the guarded command.
       // Do not overwrite them again with the editor's earlier snapshot.
       delete databaseListingPatch.sellerCanonicalFacts
@@ -5331,6 +5351,7 @@ function AgentListings({ mobileEditor = false } = {}) {
     if (typeof window !== 'undefined') {
       window.localStorage.removeItem(listingEditorDraftStorageKey)
     }
+    savedEditorFormRef.current = JSON.stringify(form)
     if (emitListingsUpdated) {
       window.dispatchEvent(new Event('itg:listings-updated'))
     }
@@ -8055,7 +8076,7 @@ function AgentListings({ mobileEditor = false } = {}) {
   }
 
   if (isListingEditorWorkspace) {
-    if (isEditListingWorkspace && loading) {
+    if (isEditListingWorkspace && (loading || editListingDataReadyId !== editListingId)) {
       return (
         <section className="rounded-[18px] border border-[#dde6ef] bg-white p-6 text-sm font-semibold text-[#607387] shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
           Loading listing editor...
@@ -8081,9 +8102,10 @@ function AgentListings({ mobileEditor = false } = {}) {
     const selectedAgentKey = normalizeText(form.assignedAgentId || form.assignedAgentEmail)
     const selectedAgent = assignableAgents.find((agent) => normalizeText(agent.userId || agent.id || agent.email) === selectedAgentKey) || assignableAgents[0] || null
     const selectedSellerName = mobileEditor && isDeveloperWorkspace ? getDeveloperOrganisationName({ workspace, profile }) : getQuickAddSellerDisplayName(form) || 'Seller not captured'
-    const priceLabel = Number(form.listingPrice || form.estimatedAskingPrice || 0)
-      ? `R${Number(form.listingPrice || form.estimatedAskingPrice || 0).toLocaleString('en-ZA')}`
-      : form.priceOnApplication ? 'Price on Application' : 'Price not captured'
+    const priceLabel = form.priceOnApplication ? 'Price on Application'
+      : Number(form.listingPrice || form.estimatedAskingPrice || 0)
+        ? `R${Number(form.listingPrice || form.estimatedAskingPrice || 0).toLocaleString('en-ZA')}`
+        : 'Price not captured'
     const createListingOwnerCards = normalizeCreateListingOwnerCards(form.multipleOwners, form.multipleOwnersText, { includeBlank: sellerTypeKey === 'multiple_owners' })
     const isFinalCreateListingStep = createListingStepIndex === listingEditorSteps.length - 1
     const editorTitle = isListingPublicationEditor ? 'Edit Listing Publication' : isEditListingWorkspace ? 'Edit Listing' : 'New listing (sales)'
@@ -8136,7 +8158,7 @@ function AgentListings({ mobileEditor = false } = {}) {
           onStepClick={openCreateListingStep}
         />
 
-        {error ? <p role="alert" className="rounded-[8px] border border-[#f6d4d4] bg-[#fff5f5] px-4 py-3 text-sm font-semibold text-[#b42318]">{error}</p> : null}
+        {error && !listingFieldIssues.some(issue => issue.message === error) ? <p role="alert" className="rounded-[8px] border border-[#f6d4d4] bg-[#fff5f5] px-4 py-3 text-sm font-semibold text-[#b42318]">{error}</p> : null}
         {missingDraftPhotoCount > 0 ? <p className="rounded-[8px] border border-[#f3d7a8] bg-[#fff8ea] px-4 py-3 text-sm font-semibold text-[#88531a]">Your listing draft and current step have been restored. Select the {missingDraftPhotoCount} photo{missingDraftPhotoCount === 1 ? '' : 's'} again; files that had not uploaded cannot be restored after a refresh.</p> : null}
         {workflowMessage ? <p className="rounded-[8px] border border-[#d8ecdf] bg-[#eefbf3] px-4 py-3 text-sm font-semibold text-[#1f7d44]">{workflowMessage}</p> : null}
         <ListingPublicationProgress results={initialChannelResults} busy={publicationStatusBusy || isListingSaving}
@@ -8157,7 +8179,7 @@ function AgentListings({ mobileEditor = false } = {}) {
               onCancel={createListingStepIndex === 0 ? cancelEditor : goToPreviousCreateListingStep}
               onSaveDraft={isEditListingWorkspace ? undefined : saveCreateListingDraft}
               onContinue={goToNextCreateListingStep}
-              finalLabel={isEditListingWorkspace ? ['active', 'under_offer'].includes(form.listingStatus) && form.selectedSyndicationChannels?.some(channel => ['property24', 'private_property', 'agency_website'].includes(channel)) ? 'Save and publish changes' : 'Save changes' : form.listingStatus === 'draft' ? 'Save draft' : 'Submit & activate'}
+              finalLabel={isEditListingWorkspace ? ['active', 'under_offer'].includes(form.listingStatus) && form.selectedSyndicationChannels?.some(channel => ['property24', 'private_property', 'agency_website'].includes(channel)) ? 'Save and publish changes' : 'Save changes' : form.listingStatus === 'draft' ? 'Save draft' : form.selectedSyndicationChannels?.length ? 'Save and publish' : 'Save listing'}
               showSaveDraft={!isEditListingWorkspace}
             />
           )}
@@ -8276,6 +8298,7 @@ function AgentListings({ mobileEditor = false } = {}) {
             {createListingStep === 'property' ? (
               <div className="space-y-6">
                 <ListingWizardHeader title="Property details" />
+                <ListingAdvertisingChoices selected={form.selectedSyndicationChannels} availability={syndicationAvailability} onToggle={toggleCreateListingSyndicationChannel} />
 
                 <ListingWizardSection title="Property category">
                   <div className="sales-property-categories" role="group" aria-label="Property category">
@@ -8286,7 +8309,7 @@ function AgentListings({ mobileEditor = false } = {}) {
                   </div>
                 </ListingWizardSection>
 
-                <ListingWizardSection title="Ownership title / type" divided>
+                <ListingWizardSection title="Property type and ownership" divided>
                   <div className="mt-3 grid gap-4 md:grid-cols-2">
                     <FormField label="Ownership title *">
                       <Field as="select" value={form.propertyStructureType} onChange={(event) => updateForm('propertyStructureType', event.target.value)}>
@@ -8296,8 +8319,9 @@ function AgentListings({ mobileEditor = false } = {}) {
                       </Field>
                     </FormField>
                     <FormField label="Property type *">
-                      <Field as="select" value={form.propertyType} onChange={(event) => updateForm('propertyType', event.target.value)}>
-                        {CREATE_LISTING_DESCRIPTIVE_PROPERTY_TYPES.map((option) => (
+                      <Field name="propertyType" as="select" value={salesPropertyTypeMatches(form.propertyCategory, form.propertyType) ? form.propertyType : ''} onChange={(event) => updateForm('propertyType', event.target.value)}>
+                        <option value="">Choose a property type</option>
+                        {salesPropertyTypeOptions(form.propertyCategory, form.propertyType).map((option) => (
                           <option key={option.value} value={option.value}>{option.label}</option>
                         ))}
                       </Field>
@@ -8306,7 +8330,7 @@ function AgentListings({ mobileEditor = false } = {}) {
                 </ListingWizardSection>
 
                 <ListingWizardSection divided>
-                  <AddressAutocomplete
+                  <div data-listing-field="propertyAddress"><AddressAutocomplete
                     label="Property address"
                     value={buildListingAddressValueFromForm(form)}
                     onChange={updatePropertyAddress}
@@ -8314,7 +8338,7 @@ function AgentListings({ mobileEditor = false } = {}) {
                     predictionTypes={['address']}
                     placeholder="Search for the property address..."
                     required
-                  />
+                  /></div>
                   <details className="mt-4 rounded-xl border border-[#dbe6f2] bg-[#fbfdff] p-4">
                     <summary className="cursor-pointer text-sm font-semibold text-[#1f4f78]">Address details</summary>
                   <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
@@ -8343,7 +8367,7 @@ function AgentListings({ mobileEditor = false } = {}) {
                         <Field name="complexName" value={form.complexName} onChange={(event) => updateForm('complexName', event.target.value)} />
                       </FormField>
                       <FormField label="Unit / section number">
-                        <Field value={form.unitNumber || form.sectionNumber} onChange={(event) => {
+                        <Field name="unitNumber" value={form.unitNumber || form.sectionNumber} onChange={(event) => {
                           updateForm('unitNumber', event.target.value)
                           updateForm('sectionNumber', event.target.value)
                         }} />
@@ -8356,15 +8380,15 @@ function AgentListings({ mobileEditor = false } = {}) {
 
                 <ListingWizardSection title="Property specifications" divided>
                   <div className="mt-3 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                    <NumberStepper label="Bedrooms" value={form.bedrooms} onChange={(value) => updateForm('bedrooms', value)} />
-                    <NumberStepper label="Bathrooms" value={form.bathrooms} onChange={(value) => updateForm('bathrooms', value)} />
-                    <NumberStepper label="Garages" value={form.garages} onChange={(value) => updateForm('garages', value)} />
-                    <NumberStepper label="Parking" value={form.parkingCount} onChange={(value) => updateForm('parkingCount', value)} />
+                    {form.propertyCategory !== 'vacant_land' ? <NumberStepper name="bedrooms" label="Bedrooms" value={form.bedrooms} onChange={(value) => updateForm('bedrooms', value)} /> : null}
+                    {form.propertyCategory !== 'vacant_land' ? <NumberStepper step={0.5} name="bathrooms" label="Bathrooms" value={form.bathrooms} onChange={(value) => updateForm('bathrooms', value)} /> : null}
+                    {form.propertyCategory !== 'vacant_land' ? <NumberStepper name="garages" label="Garages" value={form.garages} onChange={(value) => updateForm('garages', value)} /> : null}
+                    <NumberStepper name="parkingCount" label="Parking" value={form.parkingCount} onChange={(value) => updateForm('parkingCount', value)} />
                   </div>
                   <div className="mt-4 grid gap-4 md:grid-cols-2">
-                    <UnitInput label="Floor size" value={form.floorSize} onChange={(value) => updateForm('floorSize', value)} />
+                    {form.propertyCategory !== 'vacant_land' ? <UnitInput name="floorSize" label="Floor size" value={form.floorSize} onChange={(value) => updateForm('floorSize', value)} /> : null}
                     {normalizeDirectListingKey(form.propertyType) !== 'apartment' ? (
-                      <UnitInput label="Erf size" value={form.erfSize} onChange={(value) => updateForm('erfSize', value)} />
+                      <UnitInput name="erfSize" label="Land size" value={form.erfSize} onChange={(value) => updateForm('erfSize', value)} />
                     ) : null}
                   </div>
                   <div className="mt-4 grid gap-4 md:grid-cols-2">
@@ -8380,6 +8404,7 @@ function AgentListings({ mobileEditor = false } = {}) {
                 <ListingWizardSection title="Price & sales options" divided>
                   <div className="mb-4 grid gap-4 md:grid-cols-2">
                     <CurrencyInput
+                      name="listingPrice"
                       label={form.listingType === 'rental' ? (form.priceOnApplication ? 'Monthly rent' : 'Monthly rent *') : (form.priceOnApplication ? 'Listing price' : 'Listing price *')}
                       value={form.listingPrice}
                       onChange={(value) => updateForm('listingPrice', value)}
@@ -8400,7 +8425,7 @@ function AgentListings({ mobileEditor = false } = {}) {
                   </div>
                   <p className="mt-3 text-xs text-[#607387]">Save a price change here and send it to your selected channels from Review.</p>
                 </ListingWizardSection>
-                {mobileEditor && <details className="mobile-listing-more-fields"><summary>Address display & country</summary><div><FormField label="Country"><Field value={form.country} onChange={(event) => updateForm('country', event.target.value)} /></FormField><FormField label="Portal address display"><Field as="select" value={form.exactAddressVisibility} onChange={(event) => updateForm('exactAddressVisibility', event.target.value)}>{LISTING_ADDRESS_VISIBILITY_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</Field></FormField></div></details>}
+                {<details className="mobile-listing-more-fields"><summary>Public address and country</summary><div><FormField label="Country"><Field value={form.country} onChange={(event) => updateForm('country', event.target.value)} /></FormField><FormField label="Portal address display"><Field as="select" value={form.exactAddressVisibility} onChange={(event) => updateForm('exactAddressVisibility', event.target.value)}>{LISTING_ADDRESS_VISIBILITY_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</Field></FormField></div></details>}
               </div>
             ) : null}
 
@@ -8408,7 +8433,7 @@ function AgentListings({ mobileEditor = false } = {}) {
               <div className="space-y-6">
                 <div className="border-b border-[#e6edf5] pb-5">
                   <p className="text-xs font-bold uppercase text-[#1f7d44]">Step {listingEditorSteps.findIndex((step) => step.key === 'marketing') + 1} of {listingEditorSteps.length}</p>
-                  <h2 className="mt-2 text-2xl font-semibold text-[#142132]">Marketing</h2>
+                  <h2 className="mt-2 text-2xl font-semibold text-[#142132]">Photos &amp; description</h2>
                 </div>
                 <div className="rounded-[8px] border border-dashed border-[#c8d7e8] bg-[#fbfdff] p-5">
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -8419,7 +8444,7 @@ function AgentListings({ mobileEditor = false } = {}) {
                     <label className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-[8px] border border-[#1f7d44] bg-[#1f7d44] px-3 text-sm font-semibold text-white transition hover:bg-[#176437]">
                       <ImagePlus size={16} />
                       Upload images
-                      <input type="file" accept="image/*" multiple className="hidden" onChange={handleCreateListingImageUpload} />
+                      <input name="listingImages" aria-label="Add photos" type="file" accept="image/*" multiple className="sr-only" onChange={handleCreateListingImageUpload} />
                     </label>
                   </div>
                   {form.listingImages.length ? (
@@ -8457,11 +8482,11 @@ function AgentListings({ mobileEditor = false } = {}) {
                 <div className="grid gap-4">
                   <label className="grid gap-2">
                     <span className="text-sm font-semibold text-[#2d445e]">Listing title</span>
-                    <Field value={form.listingTitle} onChange={(event) => updateForm('listingTitle', event.target.value)} placeholder="Modern family home in..." />
+                    <Field name="listingTitle" value={form.listingTitle} onChange={(event) => updateForm('listingTitle', event.target.value)} placeholder="Modern family home in..." />
                   </label>
                   <label className="grid gap-2">
                     <span className="text-sm font-semibold text-[#2d445e]">Listing description</span>
-                    <Field as="textarea" value={form.listingDescription} onChange={(event) => updateForm('listingDescription', event.target.value)} placeholder="Describe the property, lifestyle, and standout value." />
+                    <Field name="listingDescription" as="textarea" value={form.listingDescription} onChange={(event) => updateForm('listingDescription', event.target.value)} placeholder="Describe the property, lifestyle, and standout value." />
                   </label>
 
                 </div>
@@ -8472,7 +8497,8 @@ function AgentListings({ mobileEditor = false } = {}) {
                   <div>{(form.floorplans || []).map(plan => <div key={plan.id} className="flex items-center gap-2"><span className="truncate text-sm">{plan.label || plan.name}</span><Button type="button" size="sm" variant="secondary" onClick={() => updateForm('floorplans', form.floorplans.filter(item => item.id !== plan.id))}>Remove {plan.label || plan.name}</Button></div>)}</div>
                 </div> : null}
                 <details className="rounded-xl border border-[#dce6f2] p-4">
-                  <summary className="cursor-pointer text-sm font-semibold text-[#2d445e]">More property features (optional)</summary>
+                  <summary className="cursor-pointer text-sm font-semibold text-[#2d445e]">Extra property details (optional)</summary>
+                  <p className="mt-3 text-sm text-[#607387]">Add what you know. These details can be left blank. If a selected website needs a value, we will show it above.</p>
                   <div className="mt-4 space-y-6">
                     {getSpecialistSalesListingSchema(form.propertyCategory, form.listingType).fields.length ? (
                       <ListingWizardSection title="Category-specific details">
@@ -8481,8 +8507,8 @@ function AgentListings({ mobileEditor = false } = {}) {
                             field.kind === 'boolean' ? (
                               <BooleanChoiceField key={field.key} label={field.label} value={Boolean(form[field.key])} yesDescription="Available at this property." noDescription="Not available or not confirmed." onChange={(value) => updateForm(field.key, value)} />
                             ) : (
-                              <FormField key={field.key} label={`${field.key === 'parking' ? 'Parking details' : field.label}${field.required ? ' *' : ''}`} className={field.kind === 'terms' ? 'md:col-span-2' : ''}>
-                                <Field as={field.kind === 'terms' ? 'textarea' : undefined} type={field.kind === 'measurement' ? 'number' : undefined} min={field.kind === 'measurement' ? '0' : undefined} step={field.kind === 'measurement' ? '0.1' : undefined} value={form[field.key] || ''} onChange={(event) => updateForm(field.key, event.target.value)} placeholder={field.unit ? `Enter ${field.label.toLowerCase()} in ${field.unit}` : `Enter ${field.label.toLowerCase()}`} />
+                              <FormField key={field.key} label={`${field.key === 'parking' ? 'Parking details' : field.label}${field.unit ? ` (${field.unit})` : ''}`} className={field.kind === 'terms' ? 'md:col-span-2' : ''}>
+                                <Field name={field.key} as={field.kind === 'terms' ? 'textarea' : undefined} type={field.kind === 'measurement' ? 'number' : undefined} min={field.kind === 'measurement' ? '0' : undefined} step={field.kind === 'measurement' ? '0.1' : undefined} value={form[field.key] || ''} onChange={(event) => updateForm(field.key, event.target.value)} placeholder={field.unit ? `Enter ${field.label.toLowerCase()} in ${field.unit}` : `Enter ${field.label.toLowerCase()}`} />
                               </FormField>
                             )
                           ))}
@@ -8491,7 +8517,7 @@ function AgentListings({ mobileEditor = false } = {}) {
                     ) : null}
 
                     <ListingWizardSection title="Features & facilities">
-                      <ListingFeatureFields facts={normalizeListingFeatureFacts(form.featureFacts, form.keySellingPoints)} listingType={form.listingType} onChange={updateListingFeatureFact} presentation="cards" />
+                      <ListingFeatureFields facts={normalizeListingFeatureFacts(form.featureFacts, form.keySellingPoints)} listingType={form.listingType} propertyCategory={form.propertyCategory} onChange={updateListingFeatureFact} presentation="cards" />
                     </ListingWizardSection>
                   </div>
                 </details>
@@ -8500,10 +8526,10 @@ function AgentListings({ mobileEditor = false } = {}) {
 
             {createListingStep === 'syndication' ? (
               <div className="space-y-6">
-                <ListingWizardHeader title="Where to publish" />
+                <ListingWizardHeader title="Where to advertise" />
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <h3 className="text-sm font-semibold text-[#18324b]">Publication channels</h3>
-                  <span className="rounded-full bg-[#eef4fa] px-3 py-1 text-xs font-semibold text-[#526f88]">{selectedCreateListingPortalStatuses.filter((portal) => !portal.internalOnly).length} external selected</span>
+                  <h3 className="text-sm font-semibold text-[#18324b]">Advertising websites</h3>
+                  <span className="rounded-full bg-[#eef4fa] px-3 py-1 text-xs font-semibold text-[#526f88]">{selectedCreateListingPortalStatuses.filter((portal) => !portal.internalOnly).length} websites selected</span>
                 </div>
                 <div className="listing-syndication-grid">
                   {createListingPortalStatuses.map((portal) => {
@@ -8514,7 +8540,7 @@ function AgentListings({ mobileEditor = false } = {}) {
                     </ListingSyndicationChannelCard>
                   })}
                 </div>
-                <p className="text-xs leading-5 text-[#607891]">{isCreateListingWorkspace && !isDeveloperWorkspace ? 'Submit & activate sends the listing to these selected channels. Drafts stay private. Use Edit property details for updates and Channels to withdraw from one platform.' : isEditListingWorkspace ? 'Save and publish changes saves this listing and sends it to the selected channels. Use channel management to withdraw from an individual platform.' : 'Choose the channels for this listing.'}</p>
+                <p className="text-xs leading-5 text-[#607891]">{isCreateListingWorkspace && !isDeveloperWorkspace ? 'Only the final publish button sends your listing to these websites. Save draft keeps it private.' : isEditListingWorkspace ? 'Save and publish changes saves this listing and sends it to the selected channels. Use channel management to withdraw from an individual platform.' : 'Choose the channels for this listing.'}</p>
               </div>
             ) : null}
 
@@ -8522,7 +8548,7 @@ function AgentListings({ mobileEditor = false } = {}) {
               <div className="space-y-6">
                 <div className="border-b border-[#e6edf5] pb-5">
                   <p className="text-xs font-bold uppercase text-[#1f7d44]">Step {listingEditorSteps.findIndex((step) => step.key === 'review') + 1} of {listingEditorSteps.length}</p>
-                  <h2 className="mt-2 text-2xl font-semibold text-[#142132]">Review Listing</h2>
+                  <h2 className="mt-2 text-2xl font-semibold text-[#142132]">Check your listing</h2>
                 </div>
                 <div className="grid gap-4 md:grid-cols-[180px_minmax(0,1fr)]">
                   <div className="aspect-[4/3] overflow-hidden rounded-[8px] border border-[#dce6f2] bg-[#eef4fa]">
@@ -8535,12 +8561,13 @@ function AgentListings({ mobileEditor = false } = {}) {
                     </div>
                     <div className="grid gap-2 text-sm text-[#2d445e] sm:grid-cols-2 xl:grid-cols-4">
                       <span>{priceLabel}</span>
-                      <span>{form.propertyType || 'Property type'}</span>
-                      <span>{form.bedrooms || 0} bed / {form.bathrooms || 0} bath</span>
+                      <span>{getPropertyTypeLabel(form.propertyType) || 'Property type'}</span>
+                      {form.propertyCategory !== 'vacant_land' ? <span>{form.bedrooms === '' ? 'Bedrooms not added' : `${form.bedrooms} bed`} / {form.bathrooms === '' ? 'Bathrooms not added' : `${form.bathrooms} bath`}</span> : null}
                       <span>{selectedAgent?.fullName || selectedAgent?.email || 'Current agent'}</span>
                     </div>
                   </div>
                 </div>
+                <ListingReviewDetails form={form} onEdit={step => openCreateListingStep(step, { allowForward: true })} />
                 {!mobileEditor && (canAssignAcrossOrganisation || canAssignWithinBranch) ? (
                   <div className="grid gap-4 border-t border-[#e6edf5] pt-5 md:grid-cols-2">
                     <label className="grid gap-2">
@@ -8564,7 +8591,7 @@ function AgentListings({ mobileEditor = false } = {}) {
                     </label>
                   </div>
                 ) : null}
-                {mobileEditor && <><MobileListingAssignment form={form} update={updateForm} agents={assignableAgents} branches={effectiveBranchOptions} canAssign={canAssignAcrossOrganisation || canAssignWithinBranch} canAssignAcross={canAssignAcrossOrganisation} />{isCreateListingWorkspace && !isDeveloperWorkspace ? <p className="text-sm text-[#607387]">Submit & activate makes the listing active and sends it to your selected channels. Save draft keeps it private.</p> : <MobileListingReviewFields form={form} update={updateForm} onStatusChange={applyQuickAddLifecycleStatus} />}</>}
+                {mobileEditor && <><MobileListingAssignment form={form} update={updateForm} agents={assignableAgents} branches={effectiveBranchOptions} canAssign={canAssignAcrossOrganisation || canAssignWithinBranch} canAssignAcross={canAssignAcrossOrganisation} />{isCreateListingWorkspace && !isDeveloperWorkspace ? <p className="text-sm text-[#607387]">Save and publish makes the listing active and sends it to your selected channels. Save draft keeps it private.</p> : <MobileListingReviewFields form={form} update={updateForm} onStatusChange={applyQuickAddLifecycleStatus} />}</>}
                 <div className={`grid gap-4 ${isCreateListingWorkspace && !isDeveloperWorkspace ? '' : 'md:grid-cols-3'}`}>
                   {!(isCreateListingWorkspace && !isDeveloperWorkspace) ? <>
                   <section className="rounded-[8px] border border-[#dce6f2] bg-[#fbfdff] p-4">
@@ -8581,7 +8608,7 @@ function AgentListings({ mobileEditor = false } = {}) {
                   </> : null}
                   <section className="rounded-[8px] border border-[#dce6f2] bg-[#fbfdff] p-4">
                     <p className="text-sm font-bold text-[#142132]">Publishing readiness</p>
-                    <p className="mt-1 text-xs text-[#607387]">{isEditListingWorkspace ? 'Save and publish changes sends your changes to the selected channels.' : 'Submit & activate saves the listing and sends it to your selected channels.'} Each channel confirms when it is live.</p>
+                    <p className="mt-1 text-xs text-[#607387]">{isEditListingWorkspace ? 'Save and publish changes sends your changes to the selected channels.' : 'The final button saves the listing and sends it to any websites you selected.'} Each channel confirms when it is live.</p>
                     <div className="mt-3 grid gap-2">
                       {selectedCreateListingPortalStatuses.map((portal) => (
                         <div key={portal.key} className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-lg border border-[#dce6f2] bg-white p-3">
@@ -9653,9 +9680,9 @@ function AgentListings({ mobileEditor = false } = {}) {
                       </label>
                       <label className="grid gap-2">
                         <span className="text-sm font-semibold text-[#2d445e]">Property type *</span>
-                        <Field as="select" value={form.propertyType} onChange={(event) => updateForm('propertyType', event.target.value)}>
-                          {form.propertyType === 'Sectional Title' ? <option value="Sectional Title">Sectional Title</option> : null}
-                          {CREATE_LISTING_DESCRIPTIVE_PROPERTY_TYPES.map((option) => (
+                        <Field as="select" name="propertyType" value={salesPropertyTypeMatches(form.propertyCategory, form.propertyType) ? form.propertyType : ''} onChange={(event) => updateForm('propertyType', event.target.value)}>
+                          <option value="">Choose a property type</option>
+                          {salesPropertyTypeOptions(form.propertyCategory, form.propertyType).map((option) => (
                             <option key={option.value} value={option.value}>{option.label}</option>
                           ))}
                         </Field>
@@ -9718,7 +9745,7 @@ function AgentListings({ mobileEditor = false } = {}) {
                           <>
                             <label className="grid gap-2">
                               <span className="text-sm font-semibold text-[#2d445e]">Unit / section number</span>
-                              <Field value={form.unitNumber || form.sectionNumber} onChange={(event) => {
+                              <Field name="unitNumber" value={form.unitNumber || form.sectionNumber} onChange={(event) => {
                                 updateForm('unitNumber', event.target.value)
                                 updateForm('sectionNumber', event.target.value)
                               }} placeholder="12" />

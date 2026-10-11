@@ -61,3 +61,14 @@ export function getSpecialistSalesListingSchema(propertyCategory = '', listingTy
 export function getSpecialistSalesRequiredFields(propertyCategory = '', listingType = 'sale') {
   return getSpecialistSalesListingSchema(propertyCategory, listingType).requiredFields
 }
+
+// An explicit blank or false clears a previously saved value. Missing keys
+// preserve it when another seller section is saved without these controls.
+export const SPECIALIST_SALES_FIELD_KEYS = Object.freeze(Object.keys(FIELD_DEFINITIONS))
+
+export function buildSpecialistSalesFacts(form = {}, existing = {}) {
+  return Object.fromEntries(SPECIALIST_SALES_FIELD_KEYS.map((key) => {
+    const value = form[key] !== undefined ? form[key] : existing[key]
+    return [key, key === 'loadingAccess' ? value === true || value === 'true' : String(value ?? '').trim()]
+  }))
+}

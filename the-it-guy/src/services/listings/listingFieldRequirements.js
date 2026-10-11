@@ -1,3 +1,5 @@
+import { salesPropertyTypeIssue } from './listingCaptureModel.js'
+import { getPrivatePropertyHeadlineIssues, PRIVATE_PROPERTY_POA_PRICE_MESSAGE } from './privatePropertyContentRules.js'
 // Sources: Property24 Listing Service v55 OpenAPI (2026-10-10), Private
 // Property Agency Feed Service Rev 4.7 pp.14–20 / Appendix B, and the website
 // publication RPC. These are channel requirements, not CRM completeness rules.
@@ -7,7 +9,8 @@ export const LISTING_CHANNEL_LABELS = { property24: 'Property24', private_proper
 
 export function getListingFieldIssues(form = {}, { rental = false, channels = form.selectedSyndicationChannels || [] } = {}) {
   const selected = new Set(channels)
-  const issues = []
+  const typeIssue = !rental && salesPropertyTypeIssue(form)
+  const issues = typeIssue ? [typeIssue] : []
   const add = (channel, field, step, message) => {
     if (!selected.has(channel)) return
     const existing = issues.find(row => row.field === field && row.message === message)
@@ -23,7 +26,7 @@ export function getListingFieldIssues(form = {}, { rental = false, channels = fo
   const photos = rental ? form.galleryImages : form.listingImages
   const photoField = rental ? 'galleryImages' : 'listingImages'
   for (const channel of Object.keys(LISTING_CHANNEL_LABELS)) {
-    if (!(price > 0) && !(['property24', 'agency_website'].includes(channel) && !rental && form.priceOnApplication)) add(channel, priceField, priceStep, rental ? 'Enter a rental amount greater than zero.' : 'Enter a price greater than zero.')
+    if (!(price > 0) && !(['property24', 'agency_website'].includes(channel) && !rental && form.priceOnApplication)) add(channel, priceField, priceStep, rental ? 'Enter a rental amount greater than zero.' : channel === 'private_property' && form.priceOnApplication ? PRIVATE_PROPERTY_POA_PRICE_MESSAGE : 'Enter a price greater than zero.')
     if (channel !== 'agency_website' && !description) add(channel, descriptionField, 'marketing', 'Add the public description.')
     const minimum = channel === 'private_property' ? 3 : 1
     if ((photos?.length || 0) < minimum) add(channel, photoField, 'marketing', `Add at least ${minimum} photo${minimum === 1 ? '' : 's'}.`)
@@ -48,6 +51,7 @@ export function getListingFieldIssues(form = {}, { rental = false, channels = fo
     if (!text(form[field])) add('private_property', field, 'property', `Add the ${label} for this sectional-title property.`)
   }
   if (!rental && price > 0 && price < 10000) add('private_property', priceField, priceStep, 'Private Property requires a sale price of at least R10,000.')
+  for (const issue of getPrivatePropertyHeadlineIssues(rental ? form.title : form.listingTitle ?? form.title)) add('private_property', rental ? 'title' : 'listingTitle', 'marketing', issue.message)
   if (description.length > 4000) add('private_property', descriptionField, 'marketing', 'Keep the description within 4,000 characters.')
   if (/https?:\/\/|www\./i.test(description)) add('private_property', descriptionField, 'marketing', 'Remove website links from the public description.')
   if (/(?:\+?\d[\s().-]*){9,}/.test(description)) add('private_property', descriptionField, 'marketing', 'Remove telephone numbers from the public description.')

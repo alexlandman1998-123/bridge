@@ -1,3 +1,4 @@
+import { buildSpecialistSalesFacts } from '../listings/specialistSalesListingSchema.js'
 import { readSellerPopiConsent } from '../../core/documents/sellerOnboardingConsent.js'
 import { resolveSellerBondStatus, sellerBondDeclaration } from '../../lib/sellerBondStatus.js'
 import { getPropertyCategoryLabel, normalizePropertyCategory, normalizePropertyStructureType } from '../../lib/propertyTaxonomy.js'
@@ -645,6 +646,12 @@ export function transformSellerOnboardingToFacts(form = {}, listing = {}, option
       owners: buildOwnerFacts(form),
     },
     property: {
+      specialistFacts: buildSpecialistSalesFacts(form, {
+        ...(listingSource.sellerCanonicalFacts?.specialistFacts || listingSource.seller_canonical_facts_json?.specialistFacts || {}),
+        ...(listingSource.sellerCanonicalFacts?.property?.specialistFacts || listingSource.seller_canonical_facts_json?.property?.specialistFacts || {}),
+        ...(form.canonicalSellerFacts?.specialistFacts || {}),
+        ...(form.canonicalSellerFacts?.property?.specialistFacts || {}),
+      }),
       branch: flow.property_branch,
       branch_label: flow.property_branch_label,
       legacy_type: flow.property_legacy_type,

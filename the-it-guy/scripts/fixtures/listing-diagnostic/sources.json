@@ -1,0 +1,33 @@
+{
+  "retrieved": "2026-10-11",
+  "sources": [
+    {
+      "file": "property24-v55.json",
+      "sha256": "29c498912bc27ce118db866c184ed303af63ba128b3013498cbf8f547c3a5bdf",
+      "url": "https://api.property24.com/swagger/v55-listing/docs",
+      "recheckedAt": "2026-10-11T07:53:46.806Z",
+      "freshSha256": "29c498912bc27ce118db866c184ed303af63ba128b3013498cbf8f547c3a5bdf",
+      "unchanged": true
+    },
+    {
+      "file": "private-property.wsdl",
+      "sha256": "410e5973f844f67ab2f37b46ac3af705dd98666d59ed94efd8d88517cb8e2879",
+      "url": "https://services.privateproperty.co.za/AgentImport/AgentImport.asmx?WSDL",
+      "recheckedAt": "2026-10-11T07:53:47.091Z",
+      "freshSha256": "410e5973f844f67ab2f37b46ac3af705dd98666d59ed94efd8d88517cb8e2879",
+      "unchanged": true
+    }
+  ],
+  "partnerDocument": {
+    "revision": "4.7",
+    "revisionDate": "2026-07-20",
+    "latestRevisionConfirmed": false,
+    "note": "Available vendor partner document has a stale 4.6 cover. PP distributes updates through feed support; no request was sent."
+  },
+  "catalogue": {
+    "status": "blocked_missing_local_provider_credentials",
+    "note": "Public P24 property-type GET returns 401; application .env and .env.local do not provide basic-auth credentials. Synthetic IDs do not establish authenticated catalogue or agency entitlement."
+  },
+  "property24LatestAdvertised": 55,
+  "indexCheckedAt": "2026-10-11T07:53:47.221Z"
+}

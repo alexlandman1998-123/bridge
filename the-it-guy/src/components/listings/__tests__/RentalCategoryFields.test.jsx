@@ -21,7 +21,7 @@ it('captures Yes, No and clearing in a security dialog and retains answers when 
   fireEvent.click(question.getByRole('button', { name: 'No' }))
   fireEvent.keyDown(document, { key: 'Escape' })
   expect(screen.queryByRole('dialog')).toBeNull()
-  expect(screen.getByRole('button', { name: 'Open Security' }).textContent).toContain('1 of')
+  expect(screen.getByRole('button', { name: 'Open Security' }).textContent).toContain('1 details added')
   fireEvent.click(screen.getByRole('button', { name: 'Open Security' }))
   const reopened = within(screen.getByRole('group', { name: 'Alarm' }))
   expect(reopened.getByRole('button', { name: 'No' }).getAttribute('aria-pressed')).toBe('true')

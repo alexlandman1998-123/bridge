@@ -347,7 +347,7 @@ function getValueForField(key, { listing, row, publication, rentalInfo, payloadP
     case 'availableFrom':
       return payloadPreview.rentalInfo?.occupationDate || payloadPreview.rentalInfo?.availableFrom
     case 'expiryDate':
-      return firstText(rentalInfo.property24ExpiryDate, rentalInfo.property24_expiry_date, listing.property24ExpiryDate, listing.property24_expiry_date, listing.expiryDate, listing.expiry_date, listing.mandateEndDate, listing.mandate_end_date, row.mandateEndDate, rentalInfo.mandateEndDate, rentalInfo.mandate_end_date)
+      return firstText(payloadPreview.expiryDate, rentalInfo.property24ExpiryDate, rentalInfo.property24_expiry_date, listing.property24ExpiryDate, listing.property24_expiry_date, listing.expiryDate, listing.expiry_date, listing.mandateEndDate, listing.mandate_end_date, row.mandateEndDate, rentalInfo.mandateEndDate, rentalInfo.mandate_end_date)
     case 'description':
       return payloadPreview.marketing?.description
     case 'title':

@@ -5,7 +5,7 @@ export const PROPERTY24_PHASE2_CATALOGUE_VERSION = 'property24_v55_phase2_2026_0
 // developments: Vacant Land / Plot is the only land scope in this phase.
 export const PROPERTY24_PHASE2_PROPERTY_TYPES = Object.freeze([
   { id: 4, description: 'House', category: 'residential', aliases: ['house', 'home', 'freehold', 'freehold_house'] },
-  { id: 5, description: 'Apartment / Flat', category: 'residential', aliases: ['apartment', 'flat', 'unit', 'sectional_title', 'sectional_title_apartment'] },
+  { id: 5, description: 'Apartment / Flat', category: 'residential', aliases: ['apartment', 'flat', 'unit', 'sectional_title', 'sectional_title_apartment', 'penthouse'] },
   { id: 6, description: 'Townhouse', category: 'residential', aliases: ['townhouse', 'town_house', 'duplex', 'cluster'] },
   { id: 8, description: 'Vacant Land / Plot', category: 'land', aliases: ['vacant_land', 'vacant_stand', 'plot', 'land', 'stand'] },
   { id: 10, description: 'Farm', category: 'agricultural', aliases: ['farm', 'smallholding', 'small_holding', 'agricultural_holding', 'agricultural_land'] },

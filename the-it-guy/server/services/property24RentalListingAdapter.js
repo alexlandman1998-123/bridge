@@ -41,7 +41,7 @@ function normalizeDateTime(value) {
 
 function normalizeMoney(value) {
   const amount = toProperty24Number(value)
-  return amount === null ? null : Math.round(amount)
+  return amount
 }
 
 function mapPetsAllowed(value) {
@@ -276,6 +276,7 @@ export function createProperty24RentalListingPlan({
       suburbId: catalogMapping.suburbId || catalogMapping.suburb_id,
       propertyTypeId: catalogMapping.propertyTypeId || catalogMapping.property_type_id,
       expiryDate: options.expiryDate,
+      defaultExpiryDate: options.defaultExpiryDate,
     },
   })
   const values = buildRentalValues({ listing, comparison: fieldComparison })

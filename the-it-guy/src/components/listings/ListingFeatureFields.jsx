@@ -1,20 +1,20 @@
 import { useId } from 'react'
 import { LISTING_FEATURE_CATALOG, LISTING_FEATURE_GROUPS } from '../../services/listings/listingFeatureCatalog'
 
-export default function ListingFeatureFields({ facts = {}, onChange, compact = false, listingType = 'sale', presentation = 'rows' }) {
+export default function ListingFeatureFields({ facts = {}, onChange, compact = false, listingType = 'sale', presentation = 'rows', propertyCategory = '' }) {
   const fieldId = useId()
   const cards = presentation === 'cards'
   const groups = cards ? [...LISTING_FEATURE_GROUPS.filter((group) => group !== 'Other'), 'Pet friendly', 'Other'] : LISTING_FEATURE_GROUPS
   return <div className={cards ? 'sales-feature-groups' : 'grid gap-3'}>
-    {!cards ? <p className="text-xs text-[#607387]">Choose Yes, No or Unknown for each fact. Only confirmed Yes features become selling points; portal-native mapping is reviewed separately.</p> : null}
+    {!cards ? <p className="text-xs text-[#607387]">Add what you know. These details are optional. Leave answers as Unknown when you are not sure.</p> : null}
     {groups.map((group, index) => {
       const features = LISTING_FEATURE_CATALOG.filter((feature) => (group === 'Pet friendly' ? feature.key === 'pet_friendly' : feature.group === group && (!cards || feature.key !== 'pet_friendly')) && (
         feature.listingTypes.includes(String(listingType).toLowerCase()) || facts[feature.key] !== undefined && facts[feature.key] !== null
       ))
-      if (!features.length) return null
+      if (!features.length || (propertyCategory === 'vacant_land' && ['Rooms & living', 'Parking & buildings'].includes(group))) return null
       const known = features.filter((feature) => facts[feature.key] !== undefined && facts[feature.key] !== null).length
       return <details key={group} open={!cards && index === 0} className="rounded-xl border border-[#dbe6f2] bg-white p-3">
-        <summary className="cursor-pointer text-sm font-semibold text-[#243d56]">{group} <span className="ml-2 text-xs font-normal text-[#607387]">{known}/{features.length} answered</span></summary>
+        <summary className="cursor-pointer text-sm font-semibold text-[#243d56]">{group} <span className="ml-2 text-xs font-normal text-[#607387]">{known ? `${known} details added` : 'Optional'}</span></summary>
         <div className={`mt-3 grid gap-3 ${cards || compact ? 'sm:grid-cols-2' : 'sm:grid-cols-2 xl:grid-cols-3'}`}>
           {features.map((feature) => <div key={feature.key} className={`grid ${cards ? 'gap-2' : 'gap-1'} text-xs font-semibold text-[#2d445e]`}>
             <span id={`${fieldId}-${feature.key}`}>{feature.label}</span>
